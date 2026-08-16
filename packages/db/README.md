@@ -27,7 +27,9 @@ await withTransaction(async (tx) => {
 |---|---|
 | `sql` / `raw` / `identifier` / `literal` / `join` | fragment builders |
 | `db()` / `baseClient()` / `setDbClient()` | the ambient client; `db()` returns the open tx if any |
-| `withTransaction()` / `currentTx()` | transaction scope; `currentTx()` is the outbox seam |
+| `DbTx.origin` | `As of 2026-08`: the client the transaction was **opened on** — `options.client` or `baseClient()`, never the reservation it runs statements through. `@ultimat3/entity` compares a pinned repository's client against it, so a pinned repo joins its own shard's transaction instead of being refused |
+| `withTransaction()` / `currentTx()` | transaction scope; `currentTx()` is the outbox seam. `{ retry: n }` (`As of 2026-08`) re-runs `fn` from the top on a `40001`/`40P01` and on nothing else — default 0, so `fn` must be idempotent before you ask for it |
+| `sqlState()` / `sqlStateCode()` / `isRetryableState()` / `SQLSTATE` | `As of 2026-08`: the SQLSTATE a driver error carries, and the closed table from it to a code. `Bun.SQL` puts it on `errno`; PGlite puts it on `code`; **one** reader answers for both |
 | `migrate()` / `rollback()` / `readLedger()` | the `x_migrations` ledger |
 | `statementsOf()` | `As of 2026-08`: a SQL script → the statements a driver sends one at a time. One send is one statement, so `migrate()` splits with this — a `;` inside a literal, an identifier, a dollar-quoted body or a comment is data |
 | `checkDrift()` / `diffSchema()` / `assertNoDrift()` | drift, with a `--json` report. `checkDrift()` is the **post-migrate verification** — the live database against the ledger: columns, declared indexes, and declared foreign keys, matched on where the key points and not on its constraint name |
@@ -182,21 +184,43 @@ scope is already holding, because waiting would be a deadlock with no error to e
 
 `ROLE` picks the profile — a `worker` draining a queue must not size like a `web` process.
 
-| Role | max | statement timeout | idle timeout |
-|---|---|---|---|
-| `web` | 20 | 10s | 30s |
-| `sync` | 10 | 10s | 60s |
-| `worker` | 8 | 120s | 30s |
-| `scheduler` | 2 | 15s | 60s |
-| `migrate` | 1 | none | 10s |
-| `replicator` | 4 | none | 60s |
+| Role | max | statement timeout | idle timeout | lock timeout | acquire timeout |
+|---|---|---|---|---|---|
+| `web` | 20 | 10s | 30s | none | 5s |
+| `sync` | 10 | 10s | 60s | none | 5s |
+| `worker` | 8 | 120s | 30s | none | 10s |
+| `scheduler` | 2 | 15s | 60s | none | 10s |
+| `migrate` | 1 | none | 10s | 3s | none |
+| `replicator` | 4 | none | 60s | none | none |
 
-The timeout is pinned per connection via libpq `options=-c statement_timeout=`. `Bun.SQL` is
-reached lazily, so importing this package never opens a socket.
+The statement timeout is pinned per connection via libpq `options=-c statement_timeout=`, and it
+does reach the backend: `client.live.test.ts` asserts `current_setting('statement_timeout')`, which
+is the only reading a DSN test cannot fake. `Bun.SQL` is reached lazily, so importing this package
+never opens a socket.
+
+**`DATABASE_POOL_MAX` overrides `max`** (`As of 2026-08`), and it is the only pool knob an operator
+can turn without shipping an image — 400 `web` pods × the frozen `max: 20` is 8,000 backends. A
+value that is not a positive integer refuses at boot rather than falling back.
+
+**`acquireTimeoutMs` bounds `reserve()`**, because queueing turns exhaustion into a hang: `/readyz`'s
+`select 1` joins the same queue, the kubelet kills the pod, and the replacement inherits the same
+saturated database. 0 waits, which is what a run-once role wants.
+
+**`lockTimeoutMs` bounds a *wait*, never the work.** `alter table … add column` takes `ACCESS
+EXCLUSIVE`; a long `SELECT` holding `ACCESS SHARE` makes it queue, and Postgres' lock queue is FIFO,
+so every later query on that table queues behind the ALTER. `migrate` runs `statement_timeout = 0`,
+so nothing else would ever end that wait. `migrate()` emits it as `SET LOCAL lock_timeout` inside
+each migration's own transaction — it reverts at COMMIT, so a DDL value never leaks onto the session
+the ledger insert runs on.
 
 ## Migrations
 
-`migrate()` takes an advisory lock (`pg_advisory_lock(4919202607)`), ensures `x_migrations`
+`migrate()` takes the advisory lock by **polling** `pg_try_advisory_lock(4919202607)` every 500ms
+until `lockWaitMs` (default 60s) and then throwing `X_MIGRATE_CONCURRENT` (`As of 2026-08`).
+`pg_advisory_lock` has no timeout, and a predecessor OOM-killed on a partition keeps its backend —
+and the lock — for hours, so a deploy hook sat inside one statement printing nothing while
+`helm upgrade --wait` blocked and `backoffLimit` never fired, because a job that never finishes
+never fails. It then ensures `x_migrations`
 (`id, name, checksum, applied_at, app_version, duration_ms`), audits, then applies each pending
 migration inside its own transaction. It refuses **before applying anything** when:
 
@@ -255,16 +279,29 @@ is optional and a detector must fall back to the statement text either way.
 
 ## Error codes
 
+Every driver failure is typed by the **SQLSTATE the server sent**, `As of 2026-08`. The state was
+always on the error and nothing read it, so a `23505` from two clicks racing a signup answered
+"cannot reach the database" and paged on-call for an outage that never happened. The table
+(`sqlstate.ts`) is closed; everything outside it is still `X_DB_UNAVAILABLE`, unchanged.
+
 | Code | Meaning |
 |---|---|
-| `X_DB_UNAVAILABLE` | no reachable database; `fix:` names `DATABASE_URL` |
+| `X_DB_UNAVAILABLE` | no reachable database, or a SQLSTATE the table does not name; `fix:` names `DATABASE_URL` |
+| `X_DB_UNIQUE_VIOLATION` | `23505` — `fix:` names `upsertAll(rows, { onConflict: [...] })` and the constraint the server named |
+| `X_DB_FOREIGN_KEY_VIOLATION` | `23503` |
+| `X_DB_SERIALIZATION_FAILURE` | `40001` / `40P01`, and an exhausted `withTransaction(fn, { retry: n })` budget |
+| `X_DB_STATEMENT_TIMEOUT` | `57014` — the statement ran past `statement_timeout` |
+| `X_DB_LOCK_TIMEOUT` | `55P03` — it waited past `lock_timeout` for a lock it never got |
+| `X_DB_POOL_EXHAUSTED` | `53300` / `53200`, or `reserve()` past `acquireTimeoutMs` |
 | `X_DB_DRIFT` | live schema differs from migrations |
 | `X_MIGRATION_CONFLICT` | ledger app-version fence or checksum mismatch |
+| `X_MIGRATE_CONCURRENT` | another migrator still held the lock when the wait ran out |
 | `X_MIGRATION_IRREVERSIBLE` | generated `down` would lose data |
 | `X_SQL_UNSAFE` | non-bindable interpolation, or an unsafe identifier/branch name |
 | `X_BRANCH_EXISTS` | branch database already exists (or is the connected one) |
 | `X_READONLY_VIOLATION` | a mutating statement reached a `readOnly()` client |
 | `X_NOT_IMPLEMENTED` | branching an in-memory PGlite — a copy needs a directory |
+| `X_ENV_MISSING` | core's — `DATABASE_POOL_MAX` is set to something that is not a positive integer |
 
 ```bash
 x db migrate --json

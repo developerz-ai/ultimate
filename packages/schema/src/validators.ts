@@ -6,17 +6,19 @@ import {
   type AnySchema,
   type Check,
   checkOf,
-  expected,
   fail,
   failWith,
   isPlainObject,
   makeSchema,
   pass,
+  type Refinement,
   type Schema,
   type Shape,
   type ShapeInput,
   type ShapeOutput,
 } from './builder';
+import { expected } from './describe-value';
+import { discriminatedUnionSchema } from './discriminated-union';
 import { type MoneyValue, moneySchema } from './money-value';
 import type { SchemaNode } from './node';
 import type { InferInput, InferOutput, StandardIssue } from './standard';
@@ -276,6 +278,18 @@ export function optionalSchema<S extends AnySchema>(
   return schema.optional() as Schema<InferInput<S> | undefined, InferOutput<S> | undefined>;
 }
 
+/**
+ * The free-function spelling of `schema.refine(...)`, shipped beside `t.refine` for the same
+ * reason `nullableSchema` ships beside `t.nullable`: a call site that already holds a schema
+ * should not have to reach for the namespace.
+ */
+export function refineSchema<In, Out>(
+  schema: Schema<In, Out>,
+  refinement: Refinement<Out>,
+): Schema<In, Out> {
+  return schema.refine(refinement);
+}
+
 function isTimeZone(value: string): boolean {
   try {
     new Intl.DateTimeFormat('en', { timeZone: value });
@@ -336,6 +350,13 @@ export interface TNamespace {
   union<S extends readonly [AnySchema, ...AnySchema[]]>(
     ...members: S
   ): Schema<InferInput<S[number]>, InferOutput<S[number]>>;
+  /** A union routed by one literal key: one branch's issues on failure, not every branch's. */
+  discriminatedUnion<S extends readonly [AnySchema, ...AnySchema[]]>(
+    discriminant: string,
+    ...members: S
+  ): Schema<InferInput<S[number]>, InferOutput<S[number]>>;
+  /** A rule the IR cannot state structurally — cross-field, cross-row, or arithmetic. */
+  refine<In, Out>(schema: Schema<In, Out>, refinement: Refinement<Out>): Schema<In, Out>;
   record<S extends AnySchema>(
     values: S,
   ): Schema<Readonly<Record<string, InferInput<S>>>, Record<string, InferOutput<S>>>;
@@ -380,6 +401,8 @@ export const builtinT: TNamespace = Object.freeze({
   enumerated: <const V extends readonly [string, ...string[]]>(...values: V) => enumSchema(values),
   literal: literalSchema,
   union: unionSchema,
+  discriminatedUnion: discriminatedUnionSchema,
+  refine: refineSchema,
   record: recordSchema,
   nullable: nullableSchema,
   optional: optionalSchema,

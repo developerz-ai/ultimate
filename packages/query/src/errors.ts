@@ -10,6 +10,7 @@ export { CursorInvalidError } from '@ultimat3/core';
 /** Titles for the framework-wide code table — every one of them owned by this package. */
 const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_MATCHER_UNSUPPORTED: 'live query shape cannot be patched incrementally',
+  X_QUERY_DEPRECATION_INVALID: 'a query declares a deprecation whose dates cannot be rendered',
   X_QUERY_DUPLICATE: 'two queries are registered under one name',
   X_QUERY_FOREIGN: 'a value that is not a query was projected as one',
   X_QUERY_NOT_PAGEABLE: 'a read returned rows with no id, so a cursor cannot name a position',
@@ -125,6 +126,24 @@ export class QueryPolicyMissingError extends UltimateError {
       cause: `query "${name}" was registered without a policy`,
       fix: `add \`policy: can('${name}')\` to the query definition in the file that exports it`,
       docs: docs('X_QUERY_POLICY_MISSING'),
+    });
+  }
+}
+
+/**
+ * A `deprecated:` block whose dates cannot become the headers it promises. Refused where the
+ * declaration is converted, so every projection that reads it refuses the same value — the mirror
+ * of `@ultimat3/action`'s `X_ACTION_DEPRECATION_INVALID`, and for the same reason: a `Sunset`
+ * header rendering `Invalid Date` is a contract statement no client can act on.
+ */
+export class QueryDeprecationInvalidError extends UltimateError {
+  constructor(name: string, field: string, value: string) {
+    super({
+      code: 'X_QUERY_DEPRECATION_INVALID',
+      cause: `query "${name}" declares deprecated.${field} as "${value}", which is not a date`,
+      fix: `edit \`deprecated: { ${field}: … }\` on ${name} to an ISO-8601 instant — e.g. '2026-12-31T23:59:59Z'`,
+      docs: docs('X_QUERY_DEPRECATION_INVALID'),
+      meta: { query: name, field, value },
     });
   }
 }

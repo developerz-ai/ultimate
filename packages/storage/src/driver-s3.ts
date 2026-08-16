@@ -3,7 +3,7 @@
 // The client is built lazily on first use so importing this module never opens a socket, and
 // credentials arrive as env var NAMES: a literal key in app.config.ts is a key in git.
 
-import { ConfigInvalidError, EnvMissingError } from '@ultimat3/core';
+import { ConfigInvalidError, EnvMissingError, stringField } from '@ultimat3/core';
 import {
   DEFAULT_CONTENT_TYPE,
   DEFAULT_LIST_LIMIT,
@@ -13,19 +13,22 @@ import {
   type SignedUrlOptions,
   type StorageBody,
   type StorageDriver,
+  type StorageListEntry,
   type StorageObject,
   type StorageRead,
   sha256Base64,
   toBytes,
 } from './driver';
-import { checksumMismatch, objectNotFound, storageNotImplemented } from './errors';
+import { checksumMismatch, deleteFailed, objectNotFound, storageNotImplemented } from './errors';
 import { assertSafeKey } from './path';
+import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
 const DRIVER_NAME = 's3';
 
 /** Structural view of `Bun.S3Client` — typing it here keeps `bun-types` out of the contract. */
 export interface S3FileLike {
-  write(data: Uint8Array | Blob, options?: { type?: string }): Promise<number>;
+  /** `S3FileLike` is in the union because Bun's own `write` takes an `S3File` — that is `copy`. */
+  write(data: Uint8Array | Blob | S3FileLike, options?: { type?: string }): Promise<number>;
   arrayBuffer(): Promise<ArrayBuffer>;
   exists(): Promise<boolean>;
   delete(): Promise<void>;
@@ -79,6 +82,13 @@ export interface S3DriverOptions {
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
   /** Injected in tests; production constructs `Bun.S3Client`. */
   readonly client?: S3ClientLike | undefined;
+  /**
+   * Ceiling on ONE server-side `put()`, because `put()` buffers the whole body. Defaults to the
+   * upload policy's ceiling — the same number for the same fact. Raise it for a disk that really
+   * does write large objects from the server; a user upload belongs on `grantUpload` instead,
+   * and S3's single-PUT limit is 5GB regardless of what this says.
+   */
+  readonly maxPutBytes?: number | undefined;
 }
 
 interface S3ClientConstructor {
@@ -137,7 +147,63 @@ function buildClient(options: S3DriverOptions): S3ClientLike {
 const toDate = (value: string | Date | undefined): Date =>
   value === undefined ? new Date(0) : value instanceof Date ? value : new Date(value);
 
+/** One numeric field off a value that may fight being read — `stringField`'s missing twin. */
+function numberField(value: unknown, key: string): number | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  try {
+    const held = (value as Record<string, unknown>)[key];
+    return typeof held === 'number' ? held : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The provider codes that mean "there is nothing at that key", and nothing wider. */
+const ABSENT_OBJECT_CODES: ReadonlySet<string> = new Set(['NoSuchKey', 'NotFound', 'ENOENT']);
+
+/**
+ * The ONE delete failure the contract calls success. `AccessDenied`, `SlowDown`, an expired
+ * credential and a reset connection are none of them, and the previous `.catch(() => undefined)`
+ * reported all four as deleted — which is how an erasure sweep certifies data it never removed.
+ *
+ * Read structurally: an `S3Error` is `name: 'S3Error'` with a `code` the service returned, and
+ * every field of a value this process did not build is a getter that can throw.
+ */
+function isAbsentObject(error: unknown): boolean {
+  const code = stringField(error, 'code');
+  if (code !== undefined && ABSENT_OBJECT_CODES.has(code)) return true;
+  return numberField(error, 'statusCode') === 404 || numberField(error, 'status') === 404;
+}
+
+/**
+ * Everything `put()` may be handed that this driver cannot honour, refused before a byte moves.
+ * A typed refusal at the call site is the whole point: `serverSideEncryption` exists on
+ * `PutOptions` so that "this disk cannot prove per-object encryption" is something an engineer
+ * meets while writing the call, not while answering a security review.
+ */
+function refuseUnsupportedPut(bucket: string, key: string, putOptions?: PutOptions): void {
+  if (putOptions?.metadata !== undefined || putOptions?.cacheControl !== undefined) {
+    const uri = `s3://${bucket}/${key}`;
+    throw storageNotImplemented(
+      'user metadata and cache-control on the s3 driver (Bun exposes no header hook yet)',
+      `drop metadata/cacheControl from put(), or set them out of band: ` +
+        `aws s3 cp ${uri} ${uri} --metadata-directive REPLACE`,
+    );
+  }
+  const sse = putOptions?.serverSideEncryption;
+  if (sse === undefined) return;
+  const rule =
+    sse.algorithm === 'aws:kms'
+      ? `{"SSEAlgorithm":"aws:kms","KMSMasterKeyID":"${sse.kmsKeyId ?? '<key-arn>'}"}`
+      : '{"SSEAlgorithm":"AES256"}';
+  throw storageNotImplemented(
+    'per-object server-side encryption on the s3 driver (Bun.S3Client exposes acl, storageClass and type, and nothing for x-amz-server-side-encryption)',
+    `set it bucket-wide, then drop serverSideEncryption from put(): aws s3api put-bucket-encryption --bucket ${bucket} --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":${rule},"BucketKeyEnabled":true}]}'`,
+  );
+}
+
 export function s3Driver(options: S3DriverOptions): StorageDriver {
+  const maxPutBytes = options.maxPutBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
   let client: S3ClientLike | undefined;
   const conn = (): S3ClientLike => {
     client ??= buildClient(options);
@@ -160,17 +226,12 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
 
     async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
       const safe = assertSafeKey(key);
-      if (putOptions?.metadata !== undefined || putOptions?.cacheControl !== undefined) {
-        const uri = `s3://${options.bucket}/${safe}`;
-        throw storageNotImplemented(
-          'user metadata and cache-control on the s3 driver (Bun exposes no header hook yet)',
-          `drop metadata/cacheControl from put(), or set them out of band: ` +
-            `aws s3 cp ${uri} ${uri} --metadata-directive REPLACE`,
-        );
-      }
-      // Buffered on purpose: size and checksum must be known before the object exists.
-      // Multipart streaming upload is a later optimisation, not a correctness change.
-      const bytes = await toBytes(body);
+      refuseUnsupportedPut(options.bucket, safe, putOptions);
+      // Buffered on purpose: size and checksum must be known before the object exists — so this
+      // path is for objects that FIT IN MEMORY, and `maxPutBytes` is what makes that a contract
+      // rather than a hope. User uploads never come through here: they go direct to the bucket
+      // via `grantUpload`, which is the architecture, not a later optimisation.
+      const bytes = await toBytes(body, { driver: DRIVER_NAME, key: safe, maxBytes: maxPutBytes });
       const claimed = putOptions?.checksum;
       if (claimed !== undefined) {
         const actual = sha256Base64(bytes);
@@ -197,11 +258,40 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
       return file.stream();
     },
 
-    async delete(key: string): Promise<void> {
+    /**
+     * Bytes from one key to another without a round trip through this process. Bun exposes no
+     * `CopyObject`, so the source `S3File` is handed to `write()` — Bun's own union accepts one —
+     * and the bytes move inside Bun rather than through the app's heap. That is the half of the
+     * win available today: promoting a 500MB attachment used to be `get()` + `put()`, a full GB
+     * resident in the pod. A true server-side copy needs a Bun API that does not exist in 1.3.
+     */
+    async copy(from: string, to: string): Promise<StorageObject> {
+      const source = assertSafeKey(from);
+      const destination = assertSafeKey(to);
+      const file = conn().file(source);
+      if (!(await file.exists())) throw objectNotFound(DRIVER_NAME, source);
+      const stat = await file.stat();
       await conn()
-        .file(assertSafeKey(key))
-        .delete()
-        .catch(() => undefined);
+        .file(destination)
+        .write(file, { type: stat.type ?? DEFAULT_CONTENT_TYPE });
+      return statObject(destination);
+    },
+
+    async delete(key: string): Promise<void> {
+      const safe = assertSafeKey(key);
+      try {
+        await conn().file(safe).delete();
+      } catch (error) {
+        // Idempotent means an ABSENT key, and nothing else. AWS answers DELETE on a missing key
+        // with 204, so this branch is for the providers that do not.
+        if (isAbsentObject(error)) return;
+        throw deleteFailed(
+          DRIVER_NAME,
+          safe,
+          error,
+          `grant s3:DeleteObject on this prefix to the app's role, then reproduce with the provider's own words: aws s3api delete-object --bucket ${options.bucket} --key ${safe}`,
+        );
+      }
     },
 
     async exists(key: string): Promise<boolean> {
@@ -214,17 +304,17 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
         ...(listOptions?.prefix === undefined ? {} : { prefix: listOptions.prefix }),
         ...(listOptions?.cursor === undefined ? {} : { continuationToken: listOptions.cursor }),
       });
-      const objects: StorageObject[] = [];
+      const objects: StorageListEntry[] = [];
       for (const entry of result.contents ?? []) {
         if (entry.key === undefined) continue;
+        // No `contentType`. ListObjectsV2 does not return one, and reading it for real would
+        // cost one HeadObject per listed row — which is what `list()` exists to avoid. It used
+        // to report `application/octet-stream`, indistinguishable from an object that really is
+        // one, while the local driver reported the truth from its sidecar: a caller filtering a
+        // listing by content type got everything on `local` and nothing on `s3`. Absent now.
         objects.push({
           key: entry.key,
           size: entry.size ?? 0,
-          // ListObjectsV2 does not return Content-Type — unlike the local driver's `list()`,
-          // which reads it back from the `.meta/` sidecar per entry. Getting the real value
-          // here would cost one HeadObject per listed row, defeating what `list()` is for; a
-          // caller that needs the real type calls `get()` on that one key instead.
-          contentType: DEFAULT_CONTENT_TYPE,
           etag: entry.eTag ?? '',
           lastModified: toDate(entry.lastModified),
         });

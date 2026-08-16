@@ -68,9 +68,10 @@ async function parkOne(heartbeat: () => Promise<void>): Promise<Parked> {
   const base = createMemoryDriver();
   const driver: JobDriver = {
     ...base,
-    heartbeat: () => {
+    heartbeat: async () => {
       renewals += 1;
-      return heartbeat();
+      await heartbeat();
+      return true;
     },
   };
   await driver.enqueue({

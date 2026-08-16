@@ -6,14 +6,53 @@
 import type { Money } from '@ultimat3/money';
 import { AiKeyMissingError, AiTransportError } from './errors';
 import type { Effort, ModelId, ThinkingMode } from './models';
-import { DEFAULT_MODEL, MODEL_IDS, MODELS, reasoningBody } from './models';
+import { ANTHROPIC_MODEL_IDS, DEFAULT_MODEL, modelIds, modelSpec, reasoningBody } from './models';
 import { readSse } from './sse';
 import type { LlmTool, LlmToolCall } from './tools';
 import { MessageStream, parseStopDetails, parseStopReason, parseUsage } from './wire';
 
+/**
+ * One block of a structured message. A plain string message is still the common case and still
+ * legal; blocks exist because a tool loop cannot be expressed without them — a `tool_result` has
+ * to name the `tool_use` it answers, and a string has nowhere to put the id.
+ *
+ * The field names are the Messages API's, not a translated set, so `body()` passes a block
+ * through untouched. A second vocabulary here would be a mapping table to keep in step with a
+ * wire format we do not own.
+ */
+export type AiContentBlock =
+  | { readonly type: 'text'; readonly text: string }
+  | {
+      readonly type: 'tool_use';
+      readonly id: string;
+      readonly name: string;
+      readonly input: Record<string, unknown>;
+    }
+  | {
+      readonly type: 'tool_result';
+      readonly tool_use_id: string;
+      readonly content: string;
+      readonly is_error?: boolean;
+    };
+
 export interface AiMessage {
   readonly role: 'user' | 'assistant';
-  readonly content: string;
+  readonly content: string | readonly AiContentBlock[];
+}
+
+/**
+ * The readable text of a message, blocks flattened. For ESTIMATING and for the echo provider —
+ * never for building a request, which sends `content` as it stands.
+ */
+export function messageText(message: AiMessage): string {
+  if (typeof message.content === 'string') return message.content;
+  return message.content
+    .map((block) => {
+      if (block.type === 'text') return block.text;
+      if (block.type === 'tool_result') return block.content;
+      return JSON.stringify(block.input);
+    })
+    .join(' ');
 }
 
 export interface GenerateRequest {
@@ -61,6 +100,14 @@ export interface StopDetails {
 
 export interface GenerateResult {
   readonly model: ModelId;
+  /**
+   * Which provider actually answered. Stamped by the GATEWAY, not by the provider: falling back
+   * from one provider to the next is a gateway concept, and a `Provider` implementation an app
+   * wrote cannot be asked to report on a decision it did not make. Optional for exactly that
+   * reason — a provider's own result has not been through the router yet. `llm()` puts it on the
+   * span as `llm.provider`, which is what makes a fallback visible rather than silent.
+   */
+  readonly provider?: string;
   readonly text: string;
   readonly toolCalls: readonly LlmToolCall[];
   readonly stopReason: StopReason;
@@ -91,7 +138,7 @@ export interface Provider {
  * away is money the framework silently absorbs, and under-reporting spend defeats a budget.
  */
 export function costOf(model: ModelId, usage: TokenUsage): Money {
-  const spec = MODELS[model];
+  const spec = modelSpec(model);
   // Cache reads are ~0.1x input; cache writes ~1.25x. Scaled by 10 to stay integral.
   const inputUnits =
     usage.inputTokens * 10 + usage.cacheReadTokens * 1 + Math.ceil(usage.cacheWriteTokens * 12.5);
@@ -134,7 +181,7 @@ export const STREAM_ONLY_MAX_TOKENS = 16_000;
 /** Whether this request has to go over the streaming transport to arrive at all. */
 export function requiresStreaming(request: GenerateRequest): boolean {
   const model = request.model ?? DEFAULT_MODEL;
-  return Math.min(request.maxTokens, MODELS[model].maxOutput) > STREAM_ONLY_MAX_TOKENS;
+  return Math.min(request.maxTokens, modelSpec(model).maxOutput) > STREAM_ONLY_MAX_TOKENS;
 }
 
 /**
@@ -146,7 +193,8 @@ export function requiresStreaming(request: GenerateRequest): boolean {
  */
 export class AnthropicProvider implements Provider {
   readonly name = 'anthropic';
-  readonly models = MODEL_IDS;
+  /** Its own list, never the registry's: an app's internal model must not be routed here. */
+  readonly models: readonly ModelId[] = ANTHROPIC_MODEL_IDS;
   private readonly config: AnthropicProviderInput;
 
   constructor(config: AnthropicProviderInput = {}) {
@@ -217,7 +265,7 @@ export class AnthropicProvider implements Provider {
     const model = request.model ?? DEFAULT_MODEL;
     const body: Record<string, unknown> = {
       model,
-      max_tokens: Math.min(request.maxTokens, MODELS[model].maxOutput),
+      max_tokens: Math.min(request.maxTokens, modelSpec(model).maxOutput),
       messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
       ...reasoningBody(model, request.effort, request.thinking),
     };
@@ -324,7 +372,14 @@ export interface EchoProviderInput {
  */
 export class EchoProvider implements Provider {
   readonly name = 'echo';
-  readonly models = MODEL_IDS;
+  /**
+   * A getter over the whole registry, not a snapshot: the test double has to serve whatever the
+   * test registered, and a field read at construction time would miss a model registered after.
+   */
+  get models(): readonly ModelId[] {
+    return modelIds();
+  }
+
   private readonly config: EchoProviderInput;
 
   constructor(config: EchoProviderInput = {}) {
@@ -365,7 +420,7 @@ export class EchoProvider implements Provider {
 function lastUserMessage(messages: readonly AiMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
-    if (message !== undefined && message.role === 'user') return message.content;
+    if (message !== undefined && message.role === 'user') return messageText(message);
   }
   return '';
 }
@@ -381,7 +436,7 @@ export function estimateTokens(request: GenerateRequest): number {
 
 /** The prompt half alone — what the provider bills at the input rate. */
 export function estimateInputTokens(request: GenerateRequest): number {
-  const body = request.messages.map((m) => m.content).join(' ');
+  const body = request.messages.map(messageText).join(' ');
   return estimateTextTokens(body) + estimateTextTokens(request.system ?? '');
 }
 
@@ -394,7 +449,7 @@ export function estimateCost(request: GenerateRequest): Money {
   const model = request.model ?? DEFAULT_MODEL;
   return costOf(model, {
     inputTokens: estimateInputTokens(request),
-    outputTokens: Math.min(request.maxTokens, MODELS[model].maxOutput),
+    outputTokens: Math.min(request.maxTokens, modelSpec(model).maxOutput),
     cacheReadTokens: 0,
     cacheWriteTokens: 0,
   });

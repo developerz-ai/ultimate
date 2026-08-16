@@ -11,16 +11,18 @@
 import { type Clock, isUltimateError, renderThrowable, type UltimateError } from '@ultimat3/core';
 import type { Auth, LoginResult } from './auth';
 import { oauthDenied, oauthExchangeFailed, oauthProviderUnknown } from './errors';
-import { beginOAuth, OAUTH_PROVIDERS, type OAuthProviderId } from './oauth';
+import { beginOAuth, type OAuthProviderId } from './oauth';
+import { BUILTIN_OAUTH_PROVIDER_IDS } from './oauth-builtins';
 import { clearHandshakeCookie, handshakeCookie, readHandshakeCookie } from './oauth-cookie';
 import type { OAuthClientCredentials, OAuthFetch } from './oauth-exchange';
 import { oauthCredentials } from './oauth-exchange';
-import { completeOAuthLogin } from './oauth-login';
+import { completeOAuthLogin, type ResolveOAuthGrants } from './oauth-login';
 import {
   OAUTH_CALLBACK_ROUTE_PATH,
   OAUTH_START_ROUTE_PATH,
   oauthCallbackPath,
 } from './oauth-paths';
+import { hasOAuthProvider } from './oauth-registry';
 
 /**
  * What a router needs to mount one of these. Structural, like `RequestLike` in `session.ts`:
@@ -65,6 +67,18 @@ export interface OAuthLoginOptions {
    * trusted-proxy chain, and this package cannot see one. `@ultimat3/http` can, and passes it.
    */
   readonly clientIp?: ((request: Request) => string | null | undefined) | undefined;
+  /**
+   * What the IdP's answer entitles this identity to. **Omit it and a first-time SSO user is
+   * created with `roles: []` and `orgId: null`** — an actor every `can()` denies, and a
+   * tenant-scoped read that throws `X_TENANCY_ACTOR_ORG_REQUIRED` before the query is built. SSO
+   * "works" and the person can do nothing until somebody runs SQL.
+   *
+   * A seam and not a group-to-role table, because which IdP group means which role is business
+   * convention and business convention never ships (axiom 8). The framework's part is calling it
+   * on every login, so removing somebody from a group in the IdP takes effect at their next
+   * sign-in rather than never.
+   */
+  readonly resolveGrants?: ResolveOAuthGrants | undefined;
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
 }
 
@@ -140,15 +154,21 @@ function providerSegment(request: Request, leg: 'start' | 'callback'): string {
  * the app left out of `defineAuth({ providers })` are the same 404 on purpose — telling an
  * anonymous caller which of the two it hit describes the app's configuration for free.
  *
- * The refusal names the providers ULTIMATE supports, never the ones this app enabled: the first
- * is a framework constant already in the docs, the second is the configuration the shared refusal
- * exists to keep quiet. It is also the half that makes the fix executable for either branch — a
- * segment Ultimate has never heard of cannot be added to `providers` at all.
+ * The list in the refusal is the THREE BUILT-INS, never the live registry and never
+ * `defineAuth({ providers })`. Both of the latter are this deployment's own configuration, and
+ * this caller is an anonymous stranger who typed a URL: an app that registered an internal OP has
+ * put its own vocabulary into the registry, and echoing it back names a system the stranger had no
+ * way to know exists. The built-in list is a framework constant already in the public docs, so it
+ * discloses nothing while still making the fix executable — and `registerOAuthProvider` in the
+ * same sentence covers the other branch without enumerating anything.
+ *
+ * `providerFor()` keeps the full registered list for the same reason in reverse: its reader is a
+ * developer holding a stack trace, and there the list is exactly what makes the fix runnable.
  */
 function assertEnabled(auth: Auth, segment: string): OAuthProviderId {
-  const supported = Object.keys(OAUTH_PROVIDERS);
-  if (!Object.hasOwn(OAUTH_PROVIDERS, segment)) throw oauthProviderUnknown(segment, supported);
-  const provider = segment as OAuthProviderId;
+  const supported = BUILTIN_OAUTH_PROVIDER_IDS;
+  if (!hasOAuthProvider(segment)) throw oauthProviderUnknown(segment, supported);
+  const provider: OAuthProviderId = segment;
   if (!auth.providers.includes(provider)) throw oauthProviderUnknown(segment, supported);
   return provider;
 }
@@ -210,9 +230,7 @@ async function callbackHandler(
   const segment = providerSegment(request, 'callback');
   // Cleared on every outcome, success and failure alike: the code it authorised is spent either
   // way, so a handshake that outlives its own callback is a replay window and nothing else.
-  const clear = Object.hasOwn(OAUTH_PROVIDERS, segment)
-    ? [clearHandshakeCookie(segment as OAuthProviderId)]
-    : [];
+  const clear = hasOAuthProvider(segment) ? [clearHandshakeCookie(segment)] : [];
   try {
     const provider = assertEnabled(auth, segment);
     const url = new URL(request.url);
@@ -226,6 +244,7 @@ async function callbackHandler(
       ...(options.credentials === undefined ? {} : { credentials: options.credentials }),
       ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
       ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options.resolveGrants === undefined ? {} : { resolveGrants: options.resolveGrants }),
       ip: options.clientIp?.(request) ?? null,
       userAgent: request.headers.get('user-agent'),
     });

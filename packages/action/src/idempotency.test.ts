@@ -3,7 +3,7 @@ import { createContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
-import { MemoryIdempotencyStore } from './idempotency';
+import { MemoryIdempotencyStore } from './idempotency-memory';
 import { invoke } from './invoke';
 
 const Input = t.object({ postId: t.uuid });

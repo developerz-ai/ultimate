@@ -25,15 +25,53 @@ Swapping `local` for `s3` in `app.config.ts` changes no call site. `x dev` needs
 | `localDriver` | `Bun.file`/`Bun.write`, one root dir | dev, tests, single-node | HMAC + dev route |
 | `s3Driver` | `Bun.s3` | prod: MinIO, R2, AWS | provider presign |
 
+`copy(from, to)` is on the contract so a promotion is not a download-and-reupload:
+`promoteAttachment` used to `get()` the whole object into the app and `put()` it back, a gigabyte
+through the pod to rename a 500MB attachment. `localDriver` does a real file copy; `s3Driver`
+hands the source `S3File` to `write()` — Bun exposes no `CopyObject`, so the bytes still cross the
+network, but never this process's heap. Both arguments go through `assertSafeKey`.
+
 One S3 driver covers all three backends — the difference is `endpoint` + `forcePathStyle`.
 Credentials are **env var NAMES** (`accessKeyIdEnv`, default `S3_ACCESS_KEY_ID`), never
 literals: a key in `app.config.ts` is a key in git. Missing ones throw `X_ENV_MISSING`.
 `localDriver` keeps content type, etag, `cacheControl` and `metadata` in a `<root>/.meta/`
 sidecar so `get()`/`list()` round-trip everything `put()` was handed; sidecars never appear in
 `list()`. `s3Driver` cannot: it refuses `cacheControl`/`metadata` on `put()` (`X_NOT_IMPLEMENTED`,
-Bun exposes no header hook yet), and its `list()` always reports `DEFAULT_CONTENT_TYPE` — S3's
-`ListObjectsV2` does not return Content-Type, and reading it for real would cost one `HeadObject`
-per listed row.
+Bun exposes no header hook yet).
+
+**`StorageListEntry.contentType` is optional; `StorageObject.contentType` is not.** S3's
+`ListObjectsV2` returns no Content-Type, so a listed s3 object simply has none — reading the real
+value would cost one `HeadObject` per row, which is what `list()` exists to avoid. It used to
+report `application/octet-stream`, indistinguishable from an object that really is one, while the
+local driver read the truth out of its sidecar: a caller filtering a listing by content type got
+everything on `local` and nothing on `s3`. `get()` always answers a full `StorageObject`.
+
+## `put()` is for objects that fit in memory
+
+`put()` buffers the whole body — size and checksum have to be known before the object exists —
+so every disk enforces a ceiling, `maxPutBytes`, defaulting to `DEFAULT_MAX_UPLOAD_BYTES` (10MB).
+Past it is `X_STORAGE_TOO_LARGE`, raised **before** the bytes are resident: a `Uint8Array` and a
+`Blob` already know their length, and a `ReadableStream` is cancelled the moment the running total
+crosses the line. Without it a route piping a 4GB request body into `disk.put(key, req.body)` grew
+the heap by 4GB and the kubelet killed the pod.
+
+**User uploads never go through `put()`.** They go direct to the disk through `grantUpload`, which
+is the architecture and not an optimisation — see the round trip below. Raise `maxPutBytes` only
+for a disk that really does write large objects server-side, and remember S3 caps a single PUT at
+5GB whatever you set.
+
+## Server-side encryption, storage classes, lifecycle
+
+`PutOptions.serverSideEncryption` exists so the gap is visible **at the type level**, and every
+shipped driver refuses it (`X_NOT_IMPLEMENTED`) with the out-of-band command in the `fix`.
+`Bun.S3Client` exposes `acl`, `storageClass` and `type` and nothing for
+`x-amz-server-side-encryption*`; a local disk writes plain files. A typed refusal an engineer
+meets at the call site beats a silent absence discovered during a security review.
+
+Encryption at rest is therefore a **bucket default**, and so are lifecycle rules, storage classes
+and cross-region replication: all four are bucket-side configuration and belong to terraform, not
+to the framework (axiom 7 — zero platform primitives). Ultimate half-building any of them would
+be a second place to look for the same setting.
 
 ## Keys
 
@@ -122,13 +160,40 @@ An upload happens **before** the row it belongs to exists, so it lands at
 | Call | Key |
 |---|---|
 | `pendingKey(orgId, uploadName(id, filename))` | `org/o1/pending/u-1.png` |
+| `quarantineKey(orgId, name)` | `org/o1/pending/quarantine/u-1.png` |
 | `attachmentKey(orgId, { entity, id, field }, name)` | `org/o1/post/p-1/cover/u-1.png` |
-| `promoteAttachment({ disk, key, orgId, target })` | copy then delete — never the reverse |
-| `sweepOrphans({ disk, orgId, olderThanMs })` | deletes stale `pending/` keys, returns them |
+| `promoteAttachment({ disk, key, orgId, target })` | `copy` then `delete` — never the reverse |
+| `releaseQuarantine({ disk, key, orgId })` | quarantine → pending; returns the released key |
+| `sweepOrphans({ disk, orgId, olderThanMs })` | `{ deleted, failed }` for stale `pending/` keys |
 
 The filename contributes nothing but its extension, and only if it matches `.[a-z0-9]{1,12}`.
 `sweepOrphans` can only reach the `pending/` prefix of one org — a sweep that could touch an
 attached key is a job that deletes production data the first time an app forgets to promote.
+
+**Two lists, because one cannot be wrong.** `sweepOrphans` answers `{ deleted, failed }`: a
+refused delete goes in `failed` with the disk's own words and the sweep keeps going. A single
+array of "deleted" keys put every refusal in it, so an erasure sweep over a bucket whose policy
+had lost `s3:DeleteObject` reported 200 objects gone that were all still there.
+
+### Quarantine is the mechanism; the scanner is your app's
+
+Magic-byte sniffing closes stored XSS. It is **not** malware scanning, and `application/zip` is
+accepted on purpose as the OOXML container, so a macro-laden `.docx` passes `validateUpload`
+exactly as a clean one does. A scanner is a business decision with a vendor, a licence and a
+latency budget (axiom 8), so what ships is the place to put one — one more segment in a
+convention that already existed:
+
+```ts
+const grant = await grantUpload({ disk, orgId, request, quarantine: true });
+// → org/<orgId>/pending/quarantine/<uploadId><ext>
+
+// promoteAttachment on that key throws X_STORAGE_QUARANTINED. Your scan job decides:
+const released = await releaseQuarantine({ disk, key, orgId });   // clean
+await promoteAttachment({ disk, key: released, orgId, target });
+```
+
+Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan, so
+`sweepOrphans` collects it with no second prefix to walk.
 
 ## Errors
 
@@ -137,14 +202,16 @@ attached key is a job that deletes production data the first time an app forgets
 | `X_STORAGE_DISK_UNKNOWN` | `disk(name)` is not in `storage.disks`; cause lists the real ones |
 | `X_STORAGE_NOT_FOUND` | `get`/`stream` on a key that does not exist |
 | `X_STORAGE_PATH_UNSAFE` | traversal, absolute key, backslash, NUL, `%2e`, empty segment |
-| `X_STORAGE_TOO_LARGE` | payload over the policy `maxBytes` |
+| `X_STORAGE_TOO_LARGE` | payload over the policy `maxBytes`, or over a disk's `maxPutBytes` |
 | `X_STORAGE_TYPE_REJECTED` | declared type off the allowlist, or contradicted by magic bytes |
 | `X_STORAGE_CHECKSUM_MISMATCH` | supplied base64 SHA-256 does not describe the bytes |
 | `X_STORAGE_URL_INVALID` | a signed request that does not match what was signed — edited constraint, wrong base, wrong method, contradicting `Content-Type` |
 | `X_STORAGE_URL_EXPIRED` | the grant's window closed; the signature was fine |
 | `X_STORAGE_ORG_MISMATCH` | the key is well-formed and unforged, and belongs to another org |
 | `X_STORAGE_UPLOAD_FAILED` | client half: the presigned `PUT` answered non-2xx or never landed |
-| `X_NOT_IMPLEMENTED` | S3 user metadata |
+| `X_STORAGE_DELETE_FAILED` | the disk REFUSED a delete — denied `s3:DeleteObject`, a throttle, an expired credential, a read-only mount. An **absent** key is still not an error |
+| `X_STORAGE_QUARANTINED` | `promoteAttachment` on a key nothing has released from `pending/quarantine/` |
+| `X_NOT_IMPLEMENTED` | S3 user metadata / cache-control; `serverSideEncryption` on either driver |
 | `X_ENV_MISSING` | core's: S3 credential env vars, or a `localDriver` built outside development where neither `signingSecret` nor `STORAGE_SIGNING_SECRET` holds a secret other than the published `DEV_SIGNING_SECRET` |
 | `X_IMAGE_UNSUPPORTED` | core's: an `avif`/`webp` encode, or a source no built-in decoder reads |
 | `X_IMAGE_DECODE_FAILED` | core's: truncated or corrupt image bytes |

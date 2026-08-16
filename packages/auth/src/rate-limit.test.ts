@@ -325,3 +325,33 @@ describe('auth rate limiting', () => {
     expect(locked.code).toBe('X_ACCOUNT_LOCKED');
   });
 });
+
+/**
+ * The failure case first: `ipKey(ip)` builds its key from whatever address string the caller
+ * handed `login({ ip })`, and that key was interpolated into `X_ACCOUNT_LOCKED`'s cause raw. A
+ * newline in it writes a second log line an operator reads as genuine — the same log-forging
+ * class `oauthDenied` already guarded, in a package that already knew the rule.
+ */
+describe('a hostile value cannot forge a line in the lockout refusal', () => {
+  test('a newline in the key is escaped, not printed', async () => {
+    const clock = frozenClock(0);
+    const limiter = createAuthLimiter(clock, {
+      ...DEFAULT_AUTH_RATE_LIMIT,
+      maxAttempts: 1,
+      lockoutMs: 60_000,
+    });
+    const forged = ipKey('203.0.113.7"\n2026-08-16 level=info msg="all clear');
+    await limiter.recordFailure(forged);
+
+    const thrown = await limiter.assertAllowed(forged).catch((error: unknown) => error);
+    const error = thrown instanceof AuthError ? thrown : null;
+    expect(error?.code).toBe('X_ACCOUNT_LOCKED');
+    // Rendered as a JSON string literal, so the newline is two characters and the quote is
+    // escaped: the refusal is still one line, and the value is still readable inside it.
+    expect(error?.cause).not.toContain('\n');
+    expect(error?.cause).toContain('\\n');
+    expect(error?.cause).toContain('203.0.113.7');
+    // The fix side was already closed; assert both halves here so neither can regress alone.
+    expect(error?.fix).not.toContain('\n');
+  });
+});

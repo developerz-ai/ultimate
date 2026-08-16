@@ -36,9 +36,22 @@ function matches(stub: Stub, text: string): boolean {
   return typeof stub.match === 'string' ? text.includes(stub.match) : stub.match.test(text);
 }
 
+/**
+ * The one statement a recording client cannot answer with silence. `migrate()` polls
+ * `pg_try_advisory_lock` until it wins or its deadline passes, so "no rows" reads as "another
+ * migrator holds it" — and every migration test in the framework, and in every app, would spend
+ * `MIGRATION_LOCK_WAIT_MS` waiting for a lock nobody holds before failing.
+ *
+ * Registered first, so `on(/pg_try_advisory_lock/, { rows: [{ locked: false }] })` still wins:
+ * later registrations override, and a test about contention says so out loud.
+ */
+const DEFAULT_STUBS: readonly Stub[] = [
+  { match: /pg_try_advisory_lock/, response: { rows: [{ locked: true }] } },
+];
+
 export function createRecordingClient(): RecordingClient {
   const statements: RecordedStatement[] = [];
-  const stubs: Stub[] = [];
+  const stubs: Stub[] = [...DEFAULT_STUBS];
 
   function respond(fragment: SqlFragment): StubResponse {
     statements.push({ text: fragment.text, values: [...fragment.values] });
@@ -61,7 +74,8 @@ export function createRecordingClient(): RecordingClient {
     },
     reset(): void {
       statements.length = 0;
-      stubs.length = 0;
+      // Back to the defaults, never to nothing: `reset()` restores the client a test was handed.
+      stubs.splice(0, stubs.length, ...DEFAULT_STUBS);
     },
     async query<T>(fragment: SqlFragment): Promise<readonly T[]> {
       return (respond(fragment).rows ?? []) as readonly T[];

@@ -174,10 +174,20 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
     // Never take the lock a drain is on its way to releasing: a round that acquired it here
     // would still be enqueueing after `stop()` handed the occurrence to the next node.
     if (!dispatching()) return [];
-    if (!isLeader) {
-      isLeader = await leader.acquire();
-      if (!isLeader) return [];
+    // Asked EVERY round, not only while `isLeader` is false. A lease-backed election (the one a
+    // pooled executor can use — `createPgLeaseLeader`) expires, so `acquire()` is also its
+    // renewal, and a node that cached `isLeader = true` would keep dispatching past a lease
+    // another node has already taken. `soleLeader` answers true every time, and `createPgLeader`
+    // holds its grant internally, so this is a no-op for both.
+    const held = await leader.acquire();
+    if (!held) {
+      // Demoted, or never elected. Nothing to release — a lease we no longer hold is not ours to
+      // hand back, and `teardown` reads this same flag before it calls `release()`.
+      if (isLeader) logger.warn('jobs.scheduler.leadership-lost', { at: nowMs(options.clock) });
+      isLeader = false;
+      return [];
     }
+    isLeader = true;
 
     const at = nowMs(options.clock);
     const tasks = options.tasks ?? registeredTasks();

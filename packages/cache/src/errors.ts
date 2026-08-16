@@ -5,6 +5,7 @@ import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 /** Codes this package declares and owns. */
 export const CACHE_OWNED_ERROR_CODES = [
   'X_CACHE_DRIVER_UNAVAILABLE',
+  'X_CACHE_JITTER_INVALID',
   'X_CACHE_PURGE_FAILED',
   'X_CACHE_TAG_UNKNOWN',
   'X_CACHE_TOO_LARGE',
@@ -19,6 +20,7 @@ export type CacheErrorCode = (typeof CACHE_ERROR_CODES)[number];
 
 export const CACHE_ERROR_TITLES: Readonly<Record<CacheOwnedErrorCode, string>> = {
   X_CACHE_DRIVER_UNAVAILABLE: "a tier's backing store is missing",
+  X_CACHE_JITTER_INVALID: 'a TTL jitter fraction outside [0, 1)',
   X_CACHE_PURGE_FAILED: 'the CDN refused a purge',
   X_CACHE_TAG_UNKNOWN: 'a tag no entity declared',
   X_CACHE_TOO_LARGE: "one entry exceeds the tier's byte budget",
@@ -93,6 +95,29 @@ export class CacheTtlInvalidError extends UltimateError {
       fix: `cache.write('${input.key}', value, { ttlMs: 60_000 })   # or drop the option for the tier default; a value you do not want held is one you do not write`,
       docs: docsFor('X_CACHE_TTL_INVALID'),
       meta: { key: input.key, ttlMs: input.ttlMs, tier: input.tier },
+    });
+  }
+}
+
+/**
+ * A jitter fraction a tier cannot spread a TTL with.
+ *
+ * Jitter exists because 40,000 keys warmed by one rolling restart share one TTL and therefore one
+ * expiry instant; spreading them is the only thing that stops the herd. A fraction of `1` or more
+ * would shave a whole lease away and a negative one would EXTEND it past what the caller asked
+ * for, so both are miswiring rather than a preference — refused where the TTL rule already lives,
+ * for the same reason `0` is not silently reinterpreted as "never expires".
+ */
+export class CacheJitterInvalidError extends UltimateError {
+  constructor(input: { tier: string; jitterFraction: number }) {
+    super({
+      code: 'X_CACHE_JITTER_INVALID',
+      cause: `the ${input.tier} tier was configured with jitterFraction=${String(
+        input.jitterFraction,
+      )}; a jitter fraction is a finite number in [0, 1)`,
+      fix: `set cache.${input.tier}.jitterFraction in app.config.ts to a value in [0, 1) — 0.05 is the default, 0 disables jitter`,
+      docs: docsFor('X_CACHE_JITTER_INVALID'),
+      meta: { tier: input.tier, jitterFraction: input.jitterFraction },
     });
   }
 }

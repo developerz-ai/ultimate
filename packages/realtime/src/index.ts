@@ -234,10 +234,13 @@ export {
 } from './pgoutput';
 export { authorizeWithPolicy, type GateOptions, visibleWithPolicy } from './policy-gate';
 export {
+  DEFAULT_MAX_PRESENCE_MEMBERS,
   PRESENCE_KEY_PREFIX,
+  PRESENCE_SWEEP_PREFIX,
   type PresenceInput,
   type PresenceOptions,
   PresenceRegistry,
+  type PresenceRoster,
   presenceFrame,
 } from './presence';
 /** The typed projection: one query bound to one named hook, `useLiveFeed({ orgId })`. */
@@ -246,6 +249,13 @@ export {
   type LiveQuerySource,
   liveHookFor,
 } from './query-hook';
+export {
+  createEntry,
+  fillWindow,
+  orgIdOf,
+  type QueryEntry,
+  refillWindowInLane,
+} from './query-window';
 export {
   type ConflictStrategy,
   type CustomMerge,
@@ -263,14 +273,17 @@ export {
 export {
   type AdvisoryLock,
   CHANGE_SUBJECT_PREFIX,
+  type ChangeEnvelope,
   changeSubject,
   createReplicator,
   InMemoryAdvisoryLock,
   normalize,
   parseChange,
+  parseEnvelope,
   type Replicator,
   type ReplicatorOptions,
   type ReplicatorStats,
+  SeqGapDetector,
 } from './replicator';
 export {
   actorIdOf,
@@ -289,11 +302,27 @@ export type {
   SubscriberGateOptions,
 } from './subscriber-gate';
 export {
-  createSyncNode,
+  GrantBook,
+  type GrantSweepDeps,
+  type GrantSweepResult,
+  type SyncAuthenticator,
+  type SyncGrant,
+  sweepGrants,
+} from './sync-auth';
+export {
+  createFrameRouter,
+  type FrameRouter,
+  type FrameRouterOptions,
+  type MutationHandler,
+} from './sync-frames';
+export {
   type ListenOptions,
   listenSyncNode,
-  type MutationHandler,
   type SyncListener,
+} from './sync-listen';
+export {
+  createSyncNode,
+  DEFAULT_REAUTH_INTERVAL_MS,
   type SyncNode,
   type SyncNodeOptions,
   type SyncWs,

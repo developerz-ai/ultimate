@@ -16,7 +16,7 @@ import {
 } from './invalidate';
 import { createLruTier } from './lru';
 import type { RedisLike } from './redis';
-import { createRedisTier } from './redis';
+import { createRedisTier, REDIS_INVALIDATE_SCRIPT, REDIS_TAG_MEMBER_SCRIPT } from './redis';
 import { declareTags, isolateDeclaredTags, knownTags, resetDeclaredTags, tag } from './tags';
 import { bestEffort, recentTierFailures } from './tier-failures';
 import type { CacheTier, TierInvalidation } from './tiers';
@@ -40,18 +40,20 @@ function fakeRedis(): RedisLike & { readonly sent: string[][] } {
         values.set(String(args[0]), String(args[1]));
         return Promise.resolve('OK');
       }
-      if (command === 'SADD') {
-        const bucket = String(args[0]);
-        const existing = sets.get(bucket) ?? new Set<string>();
-        existing.add(String(args[1]));
-        sets.set(bucket, existing);
-        return Promise.resolve(1);
-      }
       if (command === 'DEL') {
         values.delete(String(args[0]));
         return Promise.resolve(1);
       }
-      if (command === 'EVAL') {
+      if (command === 'EVAL' && args[0] === REDIS_TAG_MEMBER_SCRIPT) {
+        // Mirrors TAG_MEMBER_SCRIPT: join the member, lease the bucket. `redis.test.ts` owns the
+        // lease assertions; here the join only has to happen so the fan-out has something to find.
+        const bucket = String(args[2]);
+        const existing = sets.get(bucket) ?? new Set<string>();
+        existing.add(String(args[3]));
+        sets.set(bucket, existing);
+        return Promise.resolve(1);
+      }
+      if (command === 'EVAL' && args[0] === REDIS_INVALIDATE_SCRIPT) {
         // Mirrors INVALIDATE_SCRIPT exactly, and the mirroring is the point: the script reads
         // the members and drops the TAG SETS ONLY. It must not delete a value key — a script may
         // only touch what it was handed in KEYS, and a fake that deleted them anyway would hide

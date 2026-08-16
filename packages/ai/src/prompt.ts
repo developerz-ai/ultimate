@@ -24,7 +24,7 @@ export interface DefinePromptInput<V extends PromptVars> {
   readonly template: string;
   /** Optional system prompt. Part of the hash — it changes behaviour. */
   readonly system?: string;
-  /** Schema of the variables, for the manifest and for `x ai prompts`. */
+  /** Schema of the variables, for the manifest. */
   readonly input?: JsonSchema;
   /** Expected output shape, fed to `output_config.format` when the caller opts in. */
   readonly output?: JsonSchema;

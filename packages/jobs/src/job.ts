@@ -52,7 +52,15 @@ export interface JobDefinition<I> {
   readonly idempotencyKey: (input: I) => string;
   readonly retry: RetryPolicy;
   readonly queue?: string;
-  /** Max in-flight runs of THIS job across the fleet. Omit for the queue-wide cap. */
+  /**
+   * Max in-flight runs of THIS job across the fleet. Omit for the queue-wide cap.
+   *
+   * Enforced by `JobDriver.leases` — a row every replica can see — and NOT by `limits.ts`, which
+   * counts one process's heap. A driver with no lease store cannot hold this cap, so
+   * `createWorker().start()` refuses to boot rather than let it pass silently
+   * (`X_JOB_CONCURRENCY_UNENFORCEABLE`): this field was declared, documented and in the manifest
+   * while nothing read it, which is exactly what axiom 3 exists to prevent.
+   */
   readonly concurrency?: number;
   readonly timeout?: DurationInput;
   run(args: JobRunArgs<I>): Promise<unknown>;
@@ -64,6 +72,18 @@ export interface JobDefinition<I> {
  */
 export interface JobActor {
   readonly orgId?: string | undefined;
+  /**
+   * The actor's id, recorded as `enqueuedBy` — ATTRIBUTION, never authority.
+   *
+   * The framework picks one answer to "whose permissions does a job run with" (axiom 1) and it is
+   * this: a job body runs with SYSTEM authority and this is an audit column. Impersonating the
+   * enqueuer at claim time is the defensible alternative and is rejected for one reason — a job
+   * that sleeps three days, or dead-letters and is retried next quarter, would then act as
+   * somebody whose role, org membership or employment has changed since. `02-primitives.md`
+   * already frames a job as server-authoritative work. A job that must act FOR a user takes that
+   * user's id in its input and re-authorises it in the body, where the check is visible in review.
+   */
+  readonly id?: string | undefined;
 }
 
 /**
@@ -158,9 +178,15 @@ export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
       const tenantId = options.tenantId ?? tenantFor(actor);
       // `NO_TENANT` is the limiter's own bucket for an absent tenant, so leaving the column
       // empty is the same limit and one less fake org id on the row.
+      //
+      // `enqueuedBy` is the actor's id and NOTHING ELSE crosses: the body runs with system
+      // authority, so this is an audit column, not a principal. See `JobActor.id` for why the
+      // framework chose attribution over impersonation.
+      const enqueuedBy = options.enqueuedBy ?? actor?.id;
       return handle.enqueue(input, {
         ...options,
         ...(tenantId === NO_TENANT ? {} : { tenantId }),
+        ...(enqueuedBy === undefined ? {} : { enqueuedBy }),
       });
     },
     // Reads `handle`, never the captured `name`: `nameJobs()` rebinds the property in place.

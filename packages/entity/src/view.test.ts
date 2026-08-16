@@ -106,7 +106,9 @@ describe('$view()', () => {
       expect(String((error as { cause?: string }).cause)).toContain("$view(['nope'])");
       expect(String((error as { cause?: string }).cause)).toContain('title');
       // The fix names the entity, not the view, so the command is one an agent can run.
-      expect(String((error as { fix?: string }).fix)).toContain('x entity explain view_test_posts');
+      expect(String((error as { fix?: string }).fix)).toContain(
+        'x entities describe view_test_posts',
+      );
     }
   });
 });

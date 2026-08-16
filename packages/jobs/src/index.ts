@@ -65,6 +65,7 @@ export type {
   ConflictPolicy,
   EnqueueRequest,
   EnqueueResult,
+  HeartbeatOptions,
   JobDriver,
   JobFilter,
   JobIntrospection,
@@ -93,11 +94,23 @@ export {
   SQL_BACKFILL_LIST,
   SQL_BACKFILL_PROGRESS,
   SQL_BACKFILL_START,
+  SQL_CANCEL,
   SQL_CLAIM,
   SQL_ENQUEUE,
   SQL_HEARTBEAT,
   SQL_JOBS_TABLE,
+  SQL_LEADER_ACQUIRE,
+  SQL_LEADER_RELEASE,
+  SQL_LEASE_ACQUIRE,
+  SQL_LEASE_RELEASE,
+  SQL_LEASE_RENEW,
   SQL_NACK,
+  SQL_OUTBOX_CLAIM,
+  SQL_OUTBOX_MARK_PUBLISHED,
+  SQL_OUTBOX_STAGE,
+  SQL_OUTBOX_TABLE,
+  SQL_SCHEDULER_STATE_GET,
+  SQL_SCHEDULER_STATE_MARK,
   SQL_STATS,
   SQL_STEP_GET,
   SQL_STEP_PUT,
@@ -114,6 +127,8 @@ export {
   BackfillRunningError,
   BackfillStalledError,
   BackfillUnknownError,
+  CancelUnsupportedError,
+  ConcurrencyUnenforceableError,
   DriverUnavailableError,
   IdempotencyRequiredError,
   JOB_ERROR_CODES,
@@ -122,13 +137,17 @@ export {
   JobDuplicateError,
   JobMaxAttemptsError,
   JobNameTakenError,
+  JobNotCancellableError,
   JobsNotImplementedError,
   JobTimeoutError,
+  LeaseLostError,
   OutboxNoTxError,
   StepDuplicateError,
 } from './errors';
 export type { EventBus, JobEvent, MemoryEventBusOptions, PublishOptions } from './events';
 export { createMemoryEventBus, eventBus, publishEvent, setEventBus } from './events';
+export type { PgEventBusOptions } from './events-pg';
+export { createPgEventBus } from './events-pg';
 export type { ExecuteJobOptions, JobExecution, JobOutcome } from './execute';
 export { executeJob } from './execute';
 export type {
@@ -139,6 +158,7 @@ export type {
   StepTrace,
 } from './inspect';
 export {
+  cancelJob,
   inspectDeadLetters,
   inspectJob,
   inspectJobList,
@@ -148,6 +168,8 @@ export {
 } from './inspect';
 export type { AnyJobHandle, JobActor, JobDefinition, JobHandle, JobRunArgs } from './job';
 export { describeJobs, getJob, isJobHandle, job, registeredJobs, resetJobs } from './job';
+export type { HeldLease, LeaseStore, MemoryLeaseStoreOptions } from './leases';
+export { createMemoryLeaseStore, jobLeaseKey } from './leases';
 export type {
   Lease,
   LimitConfig,
@@ -158,6 +180,12 @@ export type {
   RateLimit,
 } from './limits';
 export { createLimiter, NO_TENANT, tenantKeyFrom } from './limits';
+export {
+  queueDeadJobs,
+  queueOldestReady,
+  recordQueueDeadJobs,
+  recordQueueOldestReady,
+} from './metrics';
 export type {
   EnqueueOptions,
   JobsFacade,
@@ -175,12 +203,10 @@ export {
   enqueueInTx,
   jobsFacade,
   resetJobsFacade,
-  SQL_OUTBOX_CLAIM,
-  SQL_OUTBOX_MARK_PUBLISHED,
-  SQL_OUTBOX_STAGE,
-  SQL_OUTBOX_TABLE,
   setJobsFacade,
 } from './outbox';
+export type { PgOutboxOptions } from './outbox-pg';
+export { createPgOutboxStore } from './outbox-pg';
 
 export type { BackoffStrategy, Random, RetryDecision, RetryPolicy } from './retry';
 export { backoffDelayMs, DEFAULT_RETRY, nextRetry, retrySchedule } from './retry';
@@ -193,6 +219,13 @@ export type {
   SchedulerState,
 } from './scheduler';
 export { createMemorySchedulerState, createScheduler, soleLeader } from './scheduler';
+export type { PgLeaseLeaderOptions } from './scheduler-pg';
+export {
+  createPgLeaseLeader,
+  currentLeader,
+  DEFAULT_LEADER_TTL_MS,
+  pgSchedulerState,
+} from './scheduler-pg';
 export type {
   EventLookup,
   StepApi,

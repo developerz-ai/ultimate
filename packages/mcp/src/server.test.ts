@@ -100,8 +100,10 @@ describe('hidden is not forbidden', () => {
     expect(response?.error?.message).toBe('missing scope: db:read');
     const data = response?.error?.data as { code: string; fix: string } | undefined;
     expect(data?.code).toBe('X_MCP_SCOPE_DENIED');
-    // The caller can legitimately fix this, so the runnable command travels with the refusal.
-    expect(data?.fix).toContain('x token grant db:read');
+    // The caller can legitimately fix this, so the refusal names the scope and where it comes
+    // from. Not `x token grant` — that command is planned and exits X_NOT_IMPLEMENTED.
+    expect(data?.fix).toContain('"db:read"');
+    expect(data?.fix).toContain('resolveToken(token)');
   });
 });
 

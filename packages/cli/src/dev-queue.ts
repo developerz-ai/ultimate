@@ -1,19 +1,40 @@
 // The database and the job queue, started together and released together. Split from
 // `dev-runtime.ts` because `x jobs` needs exactly this pair and nothing else — and because a
-// process that installs two ambient accessors (`db()`, `jobDriver()`) must have one place that
-// takes both back, or the next command in the same process inherits a driver over a closed socket.
+// process that installs ambient accessors (`db()`, `jobDriver()`, the jobs facade, the event bus)
+// must have one place that takes them all back, or the next command in the same process inherits
+// a driver over a closed socket.
 
-import type { PgliteClient, PostgresClient, SqlFragment } from '@ultimat3/db';
+import {
+  postgresIdempotencyStore,
+  resetIdempotency,
+  SQL_IDEMPOTENCY_TABLE,
+  setIdempotencyStore,
+} from '@ultimat3/action';
+import type { DbClient, PgliteClient, PostgresClient, SqlFragment } from '@ultimat3/db';
 import {
   createPgliteClient,
   createPostgresClient,
+  currentTx,
   pgliteDataDir,
   raw,
   setDbClient,
 } from '@ultimat3/db';
-import type { JobDriver, PgExecutor } from '@ultimat3/jobs';
-import { createPgDriver, resetJobDriver, SQL_JOBS_TABLE, setJobDriver } from '@ultimat3/jobs';
+import type { Tx } from '@ultimat3/entity';
+import type { EventBus, JobDriver, OutboxStore, PgExecutor } from '@ultimat3/jobs';
+import {
+  createJobsFacade,
+  createPgDriver,
+  createPgEventBus,
+  createPgOutboxStore,
+  resetJobDriver,
+  resetJobsFacade,
+  SQL_JOBS_TABLE,
+  setEventBus,
+  setJobDriver,
+  setJobsFacade,
+} from '@ultimat3/jobs';
 import type { DevServices } from './dev-services';
+import type { RuntimeOverrides } from './runtime-overrides';
 
 /** Both embedded and external clients boot lazily and close explicitly. */
 export type DevDbClient = PgliteClient | PostgresClient;
@@ -21,6 +42,13 @@ export type DevDbClient = PgliteClient | PostgresClient;
 export interface RunningQueue {
   readonly db: DevDbClient;
   readonly jobs: JobDriver;
+  /**
+   * The `x_outbox` store this boot installed behind `handle.enqueue()`. Returned because the
+   * relay that drains it is a ROLE's decision, not the queue's — `dev-roles.ts` starts one.
+   */
+  readonly outbox: OutboxStore;
+  /** The `x_job_events` bus a `step.waitForEvent` resumes from. Durable, not per-process. */
+  readonly events: EventBus;
   stop(): Promise<void>;
 }
 
@@ -43,7 +71,7 @@ function startDb(services: DevServices): DevDbClient {
  * The fragment is assembled by hand rather than through `sql`` ` because the driver hands over
  * `$1..$n` text it wrote itself plus already-bound values — there is no interpolation to guard.
  */
-function executorFor(client: DevDbClient): PgExecutor {
+export function pgExecutorFor(client: DbClient): PgExecutor {
   return {
     query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
       client.query<R>({ text, values } satisfies SqlFragment),
@@ -51,30 +79,86 @@ function executorFor(client: DevDbClient): PgExecutor {
 }
 
 /**
+ * Every table this process's framework packages own, applied before anything reads one.
+ *
+ * PGlite speaks the extended protocol, which carries one statement per round trip, so the DDL is
+ * applied statement by statement. Safe to split on `;`: both constants are fixed, with no
+ * semicolon inside a literal, and each package's own SQL test is where that stays true.
+ *
+ * `SQL_IDEMPOTENCY_TABLE` is here and not in `@ultimat3/action` because a package that holds no
+ * database dependency cannot apply its own schema — the same reason `SQL_JOBS_TABLE` is applied
+ * here. Without it `postgresIdempotencyStore` is a store whose first reservation fails on a
+ * missing relation, which is how a retried `POST /api/payments/charge` charges a card twice.
+ */
+async function applySchema(client: DevDbClient): Promise<void> {
+  for (const ddl of [SQL_JOBS_TABLE, SQL_IDEMPOTENCY_TABLE]) {
+    for (const statement of ddl.split(';')) {
+      if (statement.trim().length > 0) await client.execute(raw(statement));
+    }
+  }
+}
+
+/**
  * The dev queue is the real Postgres queue on the embedded Postgres — claiming, leases and the
  * one-live-job-per-key index all behave here exactly as in production. A memory queue in dev
  * would hide every bug this driver exists to make impossible.
  *
- * PGlite speaks the extended protocol, which carries one statement per round trip, so the DDL
- * is applied statement by statement. Safe to split on `;`: `SQL_JOBS_TABLE` is a fixed constant
- * with no semicolon inside a literal, and `driver-pg-sql.test.ts` is where that stays true.
+ * Three ambient installs, not one, and they go in together because they are one decision:
+ *
+ * - `setJobDriver` is what `jobDriver()` answers and what a worker claims from.
+ * - `setJobsFacade` is what `handle.enqueue()` routes through, so an enqueue inside a request's
+ *   transaction STAGES a row that commits or vanishes with the business rows. Without it the
+ *   fallback facade publishes straight to the driver, and a job for a transaction that rolled
+ *   back still runs. `currentTx()` resolves the executor because a `DbTx` IS a client on the
+ *   transaction's own connection, while the `Tx` token `@ultimat3/entity` hands over is not that
+ *   object — so the token is a key and the ALS is the lookup.
+ * - `setEventBus` makes `step.waitForEvent` durable. The memory bus this replaced forgot every
+ *   pending correlation on restart, which is a job that waits forever.
+ * - `setIdempotencyStore` makes `idempotent: true` mean it across replicas. The memory default is
+ *   one process' worth of keys, so a client retrying `POST /api/payments/charge` after a timeout
+ *   lands on a replica that has never seen the key and charges the card a second time.
+ *
+ * The idempotency store is installed HERE and not from the app, even though
+ * `@ultimat3/action` documents `postgresIdempotencyStore({ executor: Bun.sql })`: `Bun.sql` has no
+ * `.query(text, values)` — it is a tagged template whose positional form is `unsafe` — so that
+ * line does not satisfy `PgExecutor` at all, and a second executor would open a second pool
+ * against a URL this boot already resolved. Boot owns the connection, so boot supplies it.
+ * `startServices` runs before `loadApp`, so the store is in place before `registerAction`
+ * evaluates a `scope: 'shared'` declaration against it.
  */
-async function startJobs(client: DevDbClient): Promise<JobDriver> {
-  for (const statement of SQL_JOBS_TABLE.split(';')) {
-    if (statement.trim().length > 0) await client.execute(raw(statement));
-  }
-  const driver = createPgDriver({ executor: executorFor(client) });
+async function startJobs(client: DevDbClient, overrides?: RuntimeOverrides): Promise<RunningQueue> {
+  await applySchema(client);
+  const executor = pgExecutorFor(client);
+  const driver = overrides?.jobs ?? createPgDriver({ executor });
   setJobDriver(driver);
-  return driver;
+  const outbox = createPgOutboxStore({
+    executor,
+    // The open transaction is a client on its own connection; the `Tx` token is not that object.
+    txExecutor: () => pgExecutorFor(currentTx() ?? client),
+  });
+  setJobsFacade(
+    createJobsFacade({ store: outbox, driver }, () => currentTx() as unknown as Tx | undefined),
+  );
+  const events = createPgEventBus({ executor });
+  setEventBus(events);
+  setIdempotencyStore(postgresIdempotencyStore({ executor }));
+  return { db: client, jobs: driver, outbox, events, stop: () => releaseQueue(client, driver) };
 }
 
 /**
- * Release both ambient accessors, then the resources behind them, in that order: a driver reset
+ * Release every ambient accessor, then the resources behind them, in that order: a driver reset
  * after its database is closed leaves a window where `jobDriver()` answers over a dead socket.
  * A stale driver is worse than none — the next command sees one installed and skips queue
  * startup entirely, so every query it makes fails on a connection this process already dropped.
+ *
+ * The facade goes with the driver for the same reason: an enqueue routed through a store bound to
+ * a closed client is a staged row nothing will ever publish.
  */
 async function releaseQueue(db: DevDbClient, jobs: JobDriver | undefined): Promise<void> {
+  // The idempotency store goes back to the memory default for the same reason the facade does: it
+  // holds this client, and the next command in this process would reserve keys over a closed one.
+  resetIdempotency();
+  resetJobsFacade();
   resetJobDriver();
   setDbClient(undefined);
   await jobs?.close?.();
@@ -87,14 +171,16 @@ async function releaseQueue(db: DevDbClient, jobs: JobDriver | undefined): Promi
  * would pay for services it cannot even use. `startServices` builds on this so there is one boot
  * path for "which database" and "which queue", not two.
  */
-export async function startQueue(services: DevServices): Promise<RunningQueue> {
+export async function startQueue(
+  services: DevServices,
+  overrides?: RuntimeOverrides,
+): Promise<RunningQueue> {
   const db = startDb(services);
   try {
     // Pay the Postgres boot here, so the first request is not the slow one and a broken database
     // fails at boot rather than on some later query.
     await db.ping();
-    const jobs = await startJobs(db);
-    return { db, jobs, stop: () => releaseQueue(db, jobs) };
+    return await startJobs(db, overrides);
   } catch (error) {
     // `db.ping()` or `startJobs` is where a broken database is supposed to fail. Without this,
     // the caller exits holding the PGlite lock and the ambient accessors, and nothing is left to

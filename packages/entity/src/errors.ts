@@ -17,6 +17,7 @@ export const ENTITY_OWNED_ERROR_CODES = [
   'X_PRELOAD_UNKNOWN_RELATION',
   'X_N_PLUS_ONE_QUERY',
   'X_N_PLUS_ONE_WRITE',
+  'X_REPO_CLIENT_PINNED',
 ] as const;
 
 /**
@@ -50,6 +51,7 @@ export const ENTITY_ERROR_TITLES: Readonly<Record<EntityOwnedErrorCode, string>>
   X_PRELOAD_UNKNOWN_RELATION: 'no relation of that name on this entity',
   X_N_PLUS_ONE_QUERY: 'a read repeated once per row',
   X_N_PLUS_ONE_WRITE: 'a write repeated once per row',
+  X_REPO_CLIENT_PINNED: 'a repository pinned to its own client cannot join the open transaction',
 };
 
 // Registered at module load, unconditionally, in one call. Without this the registry humanises the
@@ -119,7 +121,7 @@ export const invariantViolated = (
   new EntityError({
     code: 'X_INVARIANT_VIOLATED',
     cause: `${entityName}.${invariantName}: ${message}`,
-    fix: `x entity explain ${entityName} --json   # shows the invariant and its SQL CHECK`,
+    fix: `x entities describe ${entityName} --json   # shows the invariant and its SQL CHECK`,
   });
 
 /**
@@ -238,6 +240,29 @@ export const crossTenantDenied = (init: {
     fix: `grant the capability where the actor is minted — serviceActor({ id: 'reconciler', scopes: ['${init.scope}'] }) — and run the sweep inside runWithContext(createContext({ actor }), fn); an ordinary request scopes to its own tenant instead and needs no crossTenant()`,
   });
 
+/**
+ * A repository built with an explicit `client`, used while a transaction is open.
+ *
+ * Refused rather than resolved, because neither answer is available. `withTransaction` reserves
+ * ONE connection and runs `BEGIN` on it — the ambient pool's, or a reservation of its own
+ * `client:` option — while a repository pinned through `postgresDriver({ client })` sends every
+ * statement straight to that client, which takes a different connection out of the pool. So the
+ * write commits immediately and survives the rollback, and the read cannot see the rows the
+ * transaction has already written; both are silent. Joining the transaction instead would be the
+ * worse half of the same guess: a `DbTx` does not name the client it was opened on, so "is this
+ * even the same database" is not a question this layer can ask, and on a sharded app the answer
+ * is no.
+ *
+ * The fix names the ambient seam because that is the one path a repository joins a transaction
+ * through: `db()` resolves `currentTx()` first, which is exactly what a pinned client skips.
+ */
+export const repoClientPinned = (entityName: string): EntityError =>
+  new EntityError({
+    code: 'X_REPO_CLIENT_PINNED',
+    cause: `${entityName} is served by a repository pinned to its own client, and a transaction is open — its statements would run on another connection, outside that transaction, committed whether it commits or rolls back`,
+    fix: `setDbClient(client) at boot and build the repository with no client: — postgresDriver() then resolves the open transaction through db() — or run this call outside withTransaction()`,
+  });
+
 export const dbDrift = (tableName: string, columnName: string): EntityError =>
   new EntityError({
     code: 'X_DB_DRIFT',
@@ -249,7 +274,7 @@ export const notFound = (entityName: string, id: string): EntityError =>
   new EntityError({
     code: 'X_NOT_FOUND',
     cause: `${entityName} ${id} does not exist (or is soft-deleted)`,
-    fix: `x db query "select id from ${entityName} limit 5" --json   # confirm the id you expect`,
+    fix: `repo.findMany({ includeDeleted: true, limit: 5 })   # a soft-deleted row answers there and never from findById`,
   });
 
 /**

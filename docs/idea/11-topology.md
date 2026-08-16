@@ -117,21 +117,22 @@ Caveats, stated: this is per-node capacity, not free. Live-query *matching* and 
 | Config | env only, validated against a typed schema at boot — a missing key fails in ~40ms |
 | Secrets | env or mounted file; the framework never talks to a vendor secret API |
 | Migration | `ROLE=migrate` as a pre-deploy hook, must exit 0 before new `web`/`sync` start |
-| Autoscaling signals | RPS (`web`), connection count (`sync`), queue depth (`worker`) — **partly wired**, see below |
+| Autoscaling signals | RPS (`web`), connection count (`sync`), queue depth (`worker`) — **emitted and scrapeable**; the cluster-side adapter is yours, see below |
 | Platform primitives | none. Containers only ([axiom 7](./00-thesis.md)) |
 
 ### Autoscaling signals, honestly
 
-`As of 2026-08`, the three signals above are **named but not emitted end to end**:
+`As of 2026-08`, the three signals above are **emitted, served and scrapeable**; only the cluster-side adapter is missing, and it was never the framework's:
 
 | Piece | State |
 |---|---|
 | A metric API — counter, gauge, histogram on the OTel data model, a `MetricExporter` seam, and a Prometheus-text renderer | shipped — [`packages/core/src/metrics.ts`](../../packages/core/src/metrics.ts), [`metrics-text.ts`](../../packages/core/src/metrics-text.ts) |
 | The three series the chart scales on, declared once so `roles.ts` and `docker/helm` cannot drift | shipped — `SCALING_METRICS` in [`packages/core/src/runtime-metrics.ts`](../../packages/core/src/runtime-metrics.ts): `http_requests_total`, `connections`, `queue_depth` |
-| `recordRequest` / `recordConnection` / `recordQueueDepth` called from `http`, `realtime`, `jobs` | shipped — one call site each: `pipeline.ts`'s `finally`, `SocketRegistry.add`/`remove`, `worker.ts`'s `tick()`. `recordJob` is still uncalled |
+| `recordRequest` / `recordConnection` / `recordQueueDepth` called from `http`, `realtime`, `jobs` | shipped — one call site each: `pipeline.ts`'s `finally`, `SocketRegistry.add`/`remove`, `worker.ts`'s `tick()`. `recordJob` is called too, once per settled attempt in [`worker.ts`](../../packages/jobs/src/worker.ts) |
 | `METRICS_PATH` served by any role | shipped — every role, on `METRICS_PORT` (default 9090), not the role's HTTP port: the Helm ingress routes `/` with no path exclusion, so a metrics endpoint on 3000 would be public |
+| The chart's half — a `metrics` containerPort on every role but `migrate`, that port published on the Service, a ServiceMonitor | shipped — [`_helpers.tpl`](../../docker/helm/templates/_helpers.tpl), [`service.yaml`](../../docker/helm/templates/service.yaml), [`servicemonitor.yaml`](../../docker/helm/templates/servicemonitor.yaml), the last behind `serviceMonitor.enabled` because a cluster without the Prometheus operator has no such CRD |
 | A custom-metrics adapter in the cluster | never the framework's, and the chart does not ship one |
 
-Until the call sites and the route land, [`docker/helm/templates/hpa.yaml`](../../docker/helm/templates/hpa.yaml)'s `rps`, `connections` and `queue_depth` have no emitter, and an HPA pointed at an absent `Pods` metric sits at `<unknown>` and never scales. Before 1.1.0 there was no metric API at all — the seam is the new part, not the wiring. Turn the HPAs off and pin `replicas`, or supply the signals from outside the app; [`docs/ops/03-observability.md`](../ops/03-observability.md) is the operational half, and this doc does not repeat it.
+The call sites, the route and the chart's own port all landed, so [`docker/helm/templates/hpa.yaml`](../../docker/helm/templates/hpa.yaml)'s `rps`, `connections` and `queue_depth` have an emitter and a scrape target `As of 2026-08`. One piece is still not the framework's: a custom-metrics adapter turning scraped series into `Pods` metrics. An HPA pointed at an absent `Pods` metric sits at `<unknown>` and never scales, so install the adapter first. Turn the HPAs off and pin `replicas`, or supply the signals from outside the app; [`docs/ops/03-observability.md`](../ops/03-observability.md) is the operational half, and this doc does not repeat it.
 
 Running an Ultimate app for real — Kubernetes, secrets, datastore sizing, disaster recovery, runbooks — is [`docs/ops/`](../ops/README.md). Recommendations, not framework dependencies.

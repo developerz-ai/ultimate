@@ -34,6 +34,9 @@ const { start, callback } = oauthLogin(auth);
   store takes `(purpose, identifier, tokenHash)`. Consuming first and comparing afterwards made an
   unauthenticated wrong guess destroy the victim's live reset link.
 - Guards assert on the actor. They never evaluate a policy.
+- A user's `scopes` column reaches `Actor.scopes`, so a human can hold a scope. `permissions` is a
+  different field and `hasScope()` does not read it.
+- `verifySession` writes at most once per `idleSlideMs`, not once per request.
 - The lockout counts attempts against one identity, so it has to be **one** count. `AuthLimiter`
   is async on every member and declares the policy it enforces; `defineAuth` refuses a limiter
   that disagrees with the app's declaration.
@@ -62,10 +65,171 @@ refuses any pairing that would make it a lie:
 | `scope: 'shared'` | `scope: 'process'` | `X_AUTH_LIMITER_NOT_SHARED` |
 | `maxAttempts`/`windowMs`/`lockoutMs` | any of the three different | `X_AUTH_LIMITER_POLICY_MISMATCH` |
 
+### The third bucket: one tenant
+
+`account:<email>` and `ip:<addr>` were the only key shapes, so one tenant's misconfigured
+integration hammering login from 400 addresses was capped by neither — each IP bucket allowed its
+own quota, the account buckets protected individuals, and the shared limiter saturated behind
+them. `orgKey(orgId)` is the third shape, checked in `login()` once the address resolves to an org
+and still before the KDF runs.
+
+`rateLimit.orgMaxAttempts` is its own number, defaulting to `maxAttempts * 20`: a whole tenant
+sharing five attempts is a denial of service against that tenant. A success on one member's
+account clears the **account** window and deliberately not the tenant one — otherwise the traffic
+that proves the tenant is alive is also the traffic that resets its cap. Pass `orgLimiter` to
+`defineAuth` to share those counters across replicas; unlike `limiter`, it is not required under
+`scope: 'shared'`, because a tenant cap is a throughput ceiling and not a guessing allowance.
+
+## Service-to-service
+
+`verifyWorkloadToken` is the one function, and it reads all three shapes because they are all the
+same JWT: a Kubernetes projected service-account token, a SPIFFE JWT-SVID, and a cloud IMDS token.
+It is also the shape RFC 8693's `subject_token` takes.
+
+```ts
+const { identity } = await verifyWorkloadToken({
+  token,
+  issuers: ['https://kubernetes.default.svc'],
+  audience: 'https://ledger.internal',
+  keys: createJwksClient({ provider: 'k8s', jwksUri: 'https://kubernetes.default.svc/openid/v1/jwks' }),
+  clock,
+});
+const actor = actorFromService(identity);   // kind: 'service', id: the caller's own sub
+```
+
+Signature first, then issuer, audience, `exp` and `nbf`. `scope` (space-delimited) or `scp` (an
+array) become the actor's scopes; a token with neither carries none. There is no trusted-channel
+exemption here — the token arrived in a header.
+
+**mTLS is out of scope.** TLS termination is the mesh's job ([axiom
+7](../../docs/idea/README.md)); the framework's part is reading a trusted
+`x-forwarded-client-cert` through `@ultimat3/http`'s trusted-proxy seam, which that package owns.
+
 `maxKeys` is not compared — it bounds one process' table, not a limit. A custom limiter therefore
 does **not** own its own configuration: the policy stays the app's single statement of the limits,
 and the boot check is what keeps it true. **No shared limiter ships yet, `As of 2026-08`** —
 `createAuthLimiter` is the only implementation in the framework.
+
+## Providers are a registry, not a union
+
+`OAuthProviderId` is `string`, and `registerOAuthProvider()` is the one way a provider gets in —
+the three built-ins go through the same call. Before 1.3.0 the id was `keyof typeof
+OAUTH_PROVIDERS` over `github | google | apple`, so an enterprise OP was **unrepresentable**: the
+constraint was a type, there was no runtime escape, and the only ways out were forking the package
+or bypassing OAuth entirely and losing PKCE, the sealed handshake, issuer pinning and account
+linking with it.
+
+```ts
+import { discoverOAuthProvider, registerOAuthProvider } from '@ultimat3/auth';
+
+// By hand, when you know the four endpoints:
+registerOAuthProvider({
+  id: 'bigco-sso',
+  authorizeUrl: 'https://sso.bigco.test/oauth2/v1/authorize',
+  tokenUrl: 'https://sso.bigco.test/oauth2/v1/token',
+  userInfoUrl: 'https://sso.bigco.test/oauth2/v1/userinfo',
+  userEmailsUrl: null,
+  issuers: ['https://sso.bigco.test'],
+  jwksUri: 'https://sso.bigco.test/oauth2/v1/keys',
+  scopes: ['openid', 'email', 'profile'],
+  usesPkce: true,          // the literal `true`; `false` does not typecheck, for anyone
+  usesNonce: true,
+  clientIdEnv: 'BIGCO_SSO_CLIENT_ID',
+  clientSecretEnv: 'BIGCO_SSO_CLIENT_SECRET',
+});
+
+// Or read them once at boot, from the issuer's own discovery document:
+registerOAuthProvider(await discoverOAuthProvider({ id: 'bigco-sso', issuer: 'https://sso.bigco.test' }));
+```
+
+| Call | Answers |
+|---|---|
+| `registerOAuthProvider(provider)` | the frozen provider; `X_OAUTH_PROVIDER_DUPLICATE` on a second claim of one id |
+| `providerFor(id)` | the provider, or throws `X_OAUTH_PROVIDER_UNKNOWN` — never `undefined` |
+| `hasOAuthProvider(id)` | whether the id is registered |
+| `BUILTIN_OAUTH_PROVIDER_IDS` | the three shipped ids — the only list an **anonymous** refusal names |
+| `oauthProviderIds()` | every registered id, live — `defineAuth({ providers })` defaults to it |
+
+`discoverOAuthProvider` refuses a document with no `jwks_uri`: without a key set there is nothing
+to check an id token's signature against, and the token-endpoint TLS exemption below is a thing a
+caller declares, not one a provider inherits by omission.
+
+**SAML is out of scope and will stay out of scope.** XML-DSig canonicalisation has no Bun native
+and implementing it would mean a real dependency in the primitive vocabulary, which
+[`docs/idea/18-build-vs-wrap.md`](../../docs/idea/18-build-vs-wrap.md) does not permit. The honest
+answer is to put an OIDC-speaking SAML bridge (Okta, Entra, Keycloak, Dex, a SAML-to-OIDC proxy) in
+front and register **that** as a provider.
+
+## Id token signatures
+
+`verifyIdToken({ keys })` is **required** to say where its trust comes from. There is no default,
+because a default is what silently makes a second door as trusting as the first.
+
+| `keys` | Means |
+|---|---|
+| `'token-endpoint-tls'` | this token came off a TLS response from the provider's own token endpoint — the one case OIDC Core 3.1.3.7 exempts. `exchangeOAuthCode` passes it, and that is the only shipped call site that may |
+| a `JwksKeySource` | the signature is checked. `providerJwks(providerFor(id))`, or `createJwksClient({ provider, jwksUri })` |
+
+```ts
+const keys = providerJwks(providerFor('bigco-sso'));
+const claims = await verifyIdToken({ provider: 'bigco-sso', idToken, clientId, nonce, clock, keys });
+```
+
+`crypto.subtle` covers RS256 and ES256, so this costs no dependency. `HS256` and `alg: none` are
+refused before a key is even looked up — a symmetric algorithm verified against a *public* key set
+is the classic algorithm-confusion forgery. Keys are cached by `kid` with a TTL and one unknown
+`kid` triggers exactly one refetch, so a rotation heals itself.
+
+Wire an unsolicited token — IdP-initiated login, `response_mode=form_post`, back-channel logout,
+token exchange — to anything that does **not** check the signature and an attacker posts a
+self-minted JWT with the right `iss`, your `aud`, a VP's `sub` and tomorrow's `exp`, and gets a
+session. That is account takeover with no credential, and it is what this exists to stop.
+
+## What an SSO user is allowed to do
+
+`oauthLogin(auth, { resolveGrants })`. **Omit it and a first-time SSO user is created with
+`roles: []` and `orgId: null`** — an actor every `can()` denies, and a tenant-scoped read that
+throws before the query is built. SSO "works" and the person can do nothing until somebody runs
+SQL, so the omission logs `auth.oauth.user_created_without_grants` rather than passing silently.
+
+```ts
+oauthLogin(auth, {
+  resolveGrants: async (profile) => {
+    const member = await directory.lookup(profile.email);
+    return { orgId: member.orgId, roles: member.groups.map(toRole), scopes: [] };
+  },
+});
+```
+
+It is a **seam and not a group-to-role table**: which IdP group means which role is business
+convention and business convention never ships ([axiom
+8](../../docs/idea/19-mechanism-not-convention.md)). What the framework owns is calling it on
+**every** login — so removing somebody from a group in the IdP takes effect at their next sign-in,
+rather than never. A seam that returns the stored answer writes nothing.
+
+## Revocation, offboarding and access review
+
+| Call | Blast radius |
+|---|---|
+| `revokeSession(runtime, id)` | one session |
+| `revokeOtherSessions(runtime, userId, keep)` | every session but the caller's |
+| `revokeUserSessions(auth, userId, reason)` | one person, their current session included |
+| `revokeOrgSessions(auth, orgId, reason)` | one tenant, at 03:00, without touching another |
+| `revokeSessionsCreatedBefore(auth, at, reason)` | everything minted under a rotated secret |
+| `disableUser(auth, userId, reason)` | stamps `disabledAt` **and** kills the sessions |
+| `listOrgUsers(auth, orgId, { role })` | the quarterly access review, as safe summaries |
+| `updatePrivileges(auth, userId, patch, session?)` | the grant, plus the session rotation it requires |
+
+`reason` is a required argument on every revocation, for the reason `crossTenant()` requires one:
+an incident review asks who killed these sessions and why, and a `delete` with no line answers
+neither. Each one logs `auth.revocation` before it runs.
+
+`deleteSessionsForOrg` joins through `x_users` and `x_sessions` deliberately does **not** gain an
+`org_id`: a denormalised copy of the membership goes stale the moment somebody moves org, and a
+stale row means the sweep leaves live exactly the sessions it was run to kill.
+
+`describeUser` is an allow-list, never a delete-list — a column added to `AuthUser` later must not
+appear in an admin response by default. No password hash, no TOTP secret, no recovery-code hash.
 
 ## Adapter seam
 
@@ -78,9 +242,36 @@ an adapter implementation, not a dependency of this package.
 | `MemoryAdapter` | `x new` before a database exists, and every test in this package |
 | your own | implement `AuthAdapter`; DDL in `tables.ts` shows what the columns mean |
 
+The seam's newer members — `findUserByExternalId`, `listUsersByOrg`, `deleteSessionsForUser`,
+`deleteSessionsForOrg`, `deleteSessionsCreatedBefore` — are **optional**, so a 1.2-era adapter
+still satisfies the interface. Calling one an adapter has not implemented is `X_NOT_IMPLEMENTED`
+with the method named, not a silent no-op.
+
+`x_users` gained two columns in 1.3.0 — `scopes text[]` and `external_id text unique` — plus an
+`org_id` index. `X_USERS_MIGRATION_1_3` is those statements for an app already on 1.2; both
+columns are additive with a default, so the migration takes no table rewrite.
+
 ```bash
 x db gen "auth tables"     # emits AUTH_TABLES into a migration
 ```
+
+## Sessions are not a write path
+
+`verifySession` used to `UPDATE x_sessions … RETURNING *` on **every** authenticated request: one
+request was a SELECT, a write and a second SELECT before the app's own first query. At 20k rps
+that is 20k writes a second on one hot table, autovacuum falls behind, and the incident reads as
+"the database is slow".
+
+`SessionPolicy.idleSlideMs` — defaulting to `idleTtlMs / 20` — is how far `lastSeenAt` may drift
+before a request writes it forward. A second request inside that window issues no write at all. A
+changed IP or user agent is still written immediately, because that is the row a device list and
+an incident review read. The trade is bounded and explicit: idle expiry is now precise to within
+one `idleSlideMs`.
+
+**Revocation is unaffected, and deliberately so.** `authenticate` re-reads the *user* row on every
+request, so a revoked role takes effect on the very next one with no token-expiry lag — a better
+property than any claims-in-a-JWT design. Throttling the session write is safe; caching the user
+row would not be, and nothing does.
 
 ## Cookie
 
@@ -236,14 +427,15 @@ An api key's scopes become **exactly** the agent actor's scopes — never the ow
 | `X_MFA_REQUIRED` | password proven, second factor outstanding |
 | `X_OAUTH_STATE_INVALID` | state, nonce or PKCE verifier did not match |
 | `X_OAUTH_EXCHANGE_FAILED` | the provider refused the exchange, or returned no usable identity |
-| `X_OAUTH_TOKEN_INVALID` | the id token failed its issuer, audience or expiry check |
-| `X_OAUTH_PROVIDER_UNKNOWN` | the URL named a provider `defineAuth({ providers })` did not enable |
+| `X_OAUTH_TOKEN_INVALID` | the id token failed its signature, issuer, audience or expiry check, or no key in the published set matched its `kid` |
+| `X_OAUTH_PROVIDER_UNKNOWN` | the URL named a provider nothing registered, or one `defineAuth({ providers })` did not enable — the route's refusal lists only the three built-ins, never your registry |
+| `X_OAUTH_PROVIDER_DUPLICATE` | two `registerOAuthProvider` calls claimed one id — at boot, never at a login |
 | `X_OAUTH_DENIED` | the user pressed Cancel, or the provider declined — `403`, never a `502` |
 | `X_PASSWORD_WEAK` | strength check rejected the password |
-| `X_ACCOUNT_LOCKED` | per-ip or per-account bucket is inside its lockout |
+| `X_ACCOUNT_LOCKED` | the per-ip, per-account or per-org bucket is inside its lockout |
 | `X_API_KEY_INVALID` | key unknown, revoked, expired or wrong |
 | `X_ENV_MISSING` | `oauthCredentials()` found no client id or secret for an enabled provider |
-| `X_NOT_IMPLEMENTED` | an `AuthAdapter` refused a method (`authNotImplemented(feature, fix)`), or lost a write it accepted — `emailVerifiedNotStored(provider, userId)` when `updateUser` drops the OAuth verified stamp |
+| `X_NOT_IMPLEMENTED` | an `AuthAdapter` has not implemented an optional seam member (`revokeOrgSessions`, `listOrgUsers`, …), or lost a write it accepted — `emailVerifiedNotStored(provider, userId)` when `updateUser` drops the OAuth verified stamp |
 
 ```bash
 bun test packages/auth

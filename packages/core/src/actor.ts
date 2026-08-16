@@ -61,6 +61,15 @@ export type ActorFactKey = FactKeysOf<ActorFacts>;
  */
 export type ActorFactMap = FactMapOf<ActorFacts>;
 
+/**
+ * Who is REALLY acting, when the effective actor is someone else. Two fields, both bounded and
+ * both already log-safe — a support engineer's id and kind, never their email or name.
+ */
+export interface ActorOrigin {
+  readonly actorId: string;
+  readonly actorKind: ActorKind;
+}
+
 export interface Actor {
   readonly kind: ActorKind;
   readonly id: string;
@@ -71,6 +80,12 @@ export interface Actor {
   readonly scopes: readonly string[];
   /** App-declared facts. Read it through `actorFact()`; never logged — `actorLabel` is id-only. */
   readonly facts?: ActorFactMap | undefined;
+  /**
+   * Set by `impersonate()`. Its absence is a positive statement — this actor is acting for
+   * themselves — which is what makes a refund issued during impersonation distinguishable from
+   * one the customer issued. Every surface that renders an actor renders this with it.
+   */
+  readonly onBehalfOf?: ActorOrigin | undefined;
 }
 
 export interface ActorInit {
@@ -79,6 +94,8 @@ export interface ActorInit {
   readonly roles?: readonly string[] | undefined;
   readonly scopes?: readonly string[] | undefined;
   readonly facts?: ActorFactMap | undefined;
+  /** For a session that already recorded an impersonation; `impersonate()` sets it otherwise. */
+  readonly onBehalfOf?: ActorOrigin | undefined;
 }
 
 const NO_FACTS: ActorFactMap = Object.freeze({});
@@ -99,6 +116,7 @@ function build(kind: ActorKind, init: ActorInit): Actor {
     roles: Object.freeze([...(init.roles ?? [])]),
     scopes: Object.freeze([...(init.scopes ?? [])]),
     facts: Object.freeze({ ...init.facts }),
+    onBehalfOf: init.onBehalfOf === undefined ? undefined : Object.freeze({ ...init.onBehalfOf }),
   });
 }
 
@@ -156,9 +174,22 @@ export function actorFact<K extends ActorFactKey>(
   return actor?.facts?.[key];
 }
 
-/** Log/trace-safe identity — no email, no token, stable across surfaces. */
+/** The origin tuple for an actor, for stamping onto whoever they go on to impersonate. */
+export function actorOrigin(actor: Actor): ActorOrigin {
+  return Object.freeze({ actorId: actor.id, actorKind: actor.kind });
+}
+
+/**
+ * Log/trace-safe identity — no email, no token, stable across surfaces. Under impersonation it
+ * renders `service:eng-7→user:cust-99@org-3`: the real actor, an arrow, the effective one. One
+ * string, so no reader of a log line, a span or an audit row can see the second half alone.
+ */
 export function actorLabel(actor: Actor): string {
-  return actor.orgId === undefined
-    ? `${actor.kind}:${actor.id}`
-    : `${actor.kind}:${actor.id}@${actor.orgId}`;
+  const base =
+    actor.orgId === undefined
+      ? `${actor.kind}:${actor.id}`
+      : `${actor.kind}:${actor.id}@${actor.orgId}`;
+  return actor.onBehalfOf === undefined
+    ? base
+    : `${actor.onBehalfOf.actorKind}:${actor.onBehalfOf.actorId}→${base}`;
 }

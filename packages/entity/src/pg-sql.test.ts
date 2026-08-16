@@ -321,11 +321,29 @@ describe('updateStatement', () => {
       planOf({ where: [{ column: 'id', op: 'eq', value: 'p1' }] }),
       new Map<string, unknown>([['title', 't2']]),
       SHAPE,
+      true,
     );
     expect(stmt.text).toContain('update "pgsql_posts" set "title" = $1');
     expect(stmt.text).toContain('where "id" = $2 and "deleted_at" is null');
     expect(stmt.text).toContain('returning *');
     expect(stmt.values).toEqual(['t2', 'p1']);
+  });
+
+  // The failure case first: a caller that reads a COUNT must not be handed the rows anyway. A
+  // filtered write over a whole tenant is the one statement here whose result set is the caller's
+  // filter rather than a page, so `returning *` there is a table crossing the wire for nobody.
+  test('returning: false writes the same rows and names none of them', () => {
+    const same = (returning: boolean): string =>
+      updateStatement(
+        posts,
+        planOf({ where: [{ column: 'id', op: 'eq', value: 'p1' }] }),
+        new Map<string, unknown>([['title', 't2']]),
+        SHAPE,
+        returning,
+      ).text;
+    expect(same(false)).not.toContain('returning');
+    // Identical up to the clause, so the two are one statement and not two builders.
+    expect(`${same(false)} returning *`).toBe(same(true));
   });
 });
 

@@ -3,11 +3,12 @@
 // the declaration reached OpenAPI and stopped, and the endpoint ran on `default` — 120 burst.
 
 import { describe, expect, test } from 'bun:test';
-import { createServer, defineHttpConfig } from '@ultimat3/http';
+import type { HttpConfig } from '@ultimat3/http';
+import { createServer, defineHttpConfig, toBucket } from '@ultimat3/http';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
-import { toBucket, toOpenApiOperation, toRoute } from './http';
+import { toOpenApiOperation, toRoute } from './http';
 
 const Input = t.object({ email: t.email });
 const Output = t.object({ ok: t.boolean });
@@ -31,6 +32,13 @@ const openContact = () =>
     handle: () => ({ ok: true }),
   }).named('contactSales');
 
+/**
+ * Every server here runs as ONE process, said out loud: `defineHttpConfig` refuses to guess a
+ * rate-limit scope (`X_RATE_LIMIT_SCOPE_UNSET`), because the number of replicas is the one thing
+ * only the app knows and a wrong guess enforces every bucket N times over.
+ */
+const oneProcess = (): HttpConfig => defineHttpConfig({ rateLimit: { scope: 'process' } });
+
 const call = (server: ReturnType<typeof createServer>): Promise<Response> =>
   server.fetch(
     new Request('http://dev.test/api/sales/contact', {
@@ -52,14 +60,14 @@ async function drain(
 
 describe('an action rate limit is enforced, not only published', () => {
   test('the sixth call to a limit: 5 action is refused', async () => {
-    const server = createServer({ routes: [toRoute(contactSales())] });
+    const server = createServer({ routes: [toRoute(contactSales())], config: oneProcess() });
     const statuses = await drain(server, 6);
     expect(statuses.slice(0, 5)).toEqual([200, 200, 200, 200, 200]);
     expect(statuses[5]).toBe(429);
   });
 
   test('the limit header states the declared number, so a client reads what is enforced', async () => {
-    const server = createServer({ routes: [toRoute(contactSales())] });
+    const server = createServer({ routes: [toRoute(contactSales())], config: oneProcess() });
     const response = await call(server);
     expect(response.headers.get('ratelimit-limit')).toBe('5');
   });
@@ -71,13 +79,13 @@ describe('an action rate limit is enforced, not only published', () => {
       windowMs: number;
     };
     expect(published).toEqual({ limit: 5, windowMs: 600_000 });
-    const server = createServer({ routes: [toRoute(target)] });
+    const server = createServer({ routes: [toRoute(target)], config: oneProcess() });
     const statuses = await drain(server, published.limit + 1);
     expect(statuses.filter((status) => status === 200)).toHaveLength(published.limit);
   });
 
   test('an action that declares nothing keeps the default bucket', async () => {
-    const server = createServer({ routes: [toRoute(openContact())] });
+    const server = createServer({ routes: [toRoute(openContact())], config: oneProcess() });
     const statuses = await drain(server, 10);
     expect(statuses.every((status) => status === 200)).toBe(true);
   });
@@ -85,6 +93,7 @@ describe('an action rate limit is enforced, not only published', () => {
   test('a configured bucket of the same name with other numbers is refused at boot', () => {
     const config = defineHttpConfig({
       rateLimit: {
+        scope: 'process',
         buckets: {
           default: { capacity: 120, refillPerSecond: 2 },
           contactSales: { capacity: 120, refillPerSecond: 2 },
@@ -99,6 +108,7 @@ describe('an action rate limit is enforced, not only published', () => {
   test('a configured bucket restating the same numbers is accepted', () => {
     const config = defineHttpConfig({
       rateLimit: {
+        scope: 'process',
         buckets: { contactSales: toBucket('contactSales', { limit: 5, windowMs: 600_000 }) },
       },
     });
@@ -129,37 +139,16 @@ describe('a rate limit the limiter could not run on is refused', () => {
     // admit a request, which is why the rate can no longer underflow to zero at all.
     ['a limit smaller than one token', { limit: Number.MIN_VALUE, windowMs: 1e10 }],
     ['a capacity below one request', { limit: 0.5, windowMs: 1_000 }],
-  ])('%s is X_ACTION_RATE_LIMIT_INVALID', (_label, rateLimit) => {
-    expect(() => toRoute(declaring(rateLimit))).toThrow(/X_ACTION_RATE_LIMIT_INVALID/);
-  });
-
-  test('the cause names which of the three checks the pair failed', () => {
-    const reason = (rateLimit: { limit: number; windowMs: number }): string => {
-      try {
-        toBucket('contactSales', rateLimit);
-        return 'accepted';
-      } catch (error) {
-        return (error as { cause: string }).cause;
-      }
-    };
-    expect(reason({ limit: Number.MAX_VALUE, windowMs: 1 })).toContain('never empties');
-    expect(reason({ limit: 0.5, windowMs: 1_000 })).toContain('at least 1 request');
-    expect(reason({ limit: 5, windowMs: 0 })).toContain('windowMs must be finite');
-    // The smallest rate a valid pair can reach, so the `<= 0` guard below it is unreachable —
-    // pinned here because that is what makes relaxing `limit >= 1` a visible decision.
-    expect(reason({ limit: 1, windowMs: Number.MAX_VALUE })).toBe('accepted');
-  });
-
-  test('an ordinary declaration still converts, and the arithmetic is exact', () => {
-    expect(toBucket('contactSales', { limit: 5, windowMs: 600_000 })).toEqual({
-      capacity: 5,
-      refillPerSecond: 5 / 600,
-    });
+    // The three checks themselves are `@ultimat3/http`'s — `rate-limit.test.ts` there pins the
+    // arithmetic and the cause text. What belongs HERE is that both of this package's
+    // projections reach that conversion, so neither can publish a pair the limiter refuses.
+  ])('%s is refused by the route projection', (_label, rateLimit) => {
+    expect(() => toRoute(declaring(rateLimit))).toThrow(/X_RATE_LIMIT_INVALID/);
   });
 
   test('the OpenAPI operation refuses the same numbers, so no spec publishes them', () => {
     expect(() => toOpenApiOperation(declaring({ limit: 5, windowMs: 0 }))).toThrow(
-      /X_ACTION_RATE_LIMIT_INVALID/,
+      /X_RATE_LIMIT_INVALID/,
     );
   });
 });

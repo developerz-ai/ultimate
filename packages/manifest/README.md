@@ -18,16 +18,21 @@ verifyContract({ before: committed, after: manifest });
 |---|---|
 | `routes` | url, render mode, offline strategy, hydrate, revalidate tags, budget |
 | `entities` | table, columns (type, nullability, PK, FK), named invariants |
-| `actions` | input + output schema, policy, cache invalidations, MCP exposure, `mutator` when it is one |
-| `queries` | input schema, policy, live, cache tags |
+| `actions` | input + output schema, policy label, **required permissions**, cache invalidations, declared rate limit, MCP exposure, `mutator` when it is one |
+| `queries` | input schema, policy label, **required permissions**, live, cache tags |
 | `jobs` | input schema, queue, retry policy, step names |
 | `tasks` | cron, tz, jobs enqueued |
 | `policies` | permission, where enforced |
-| `permissions` | **derived** from policies + primitives, never declared twice |
+| `permissions` | **derived** from policies + each operation's own list, never declared twice |
 | `locales`, `errorCodes` | catalogs a tool can enumerate |
 
 Plus `manifestVersion` (shape version, so a reader can check compatibility), `app`, and
 `buildId`.
+
+An operation's `policy` is its **display label** — a composite renders as
+`and(post:publish, org:administer)`, which is not a permission and matches no grant. Match a grant
+against `permissions`; matching on `policy` reports every non-trivially-guarded operation as
+enforcing nothing.
 
 ## Determinism
 
@@ -53,8 +58,8 @@ whole mechanism.
 
 | Class | Examples |
 |---|---|
-| **breaking** | action/query/route/job/entity removed; input or output schema changed; policy changed; MCP exposure withdrawn; column removed, retyped, or made NOT NULL; live query became non-live |
-| **additive** | primitive added; nullable column added; MCP exposure granted; locale added |
+| **breaking** | action/query/route/job/entity removed; input or output schema changed; policy changed; **an operation gained a required permission**; **a rate limit was tightened or introduced**; MCP exposure withdrawn; column removed, retyped, or made NOT NULL; live query became non-live |
+| **additive** | primitive added; nullable column added; a required permission dropped; a rate limit loosened or removed; MCP exposure granted; locale added |
 | **internal** | cache tags changed; render mode changed; job steps reordered; `buildId` |
 
 `verifyContract()` is the gate: a breaking change fails unless the app's **major** version

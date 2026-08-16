@@ -122,3 +122,56 @@ describe('request context', () => {
     });
   });
 });
+
+describe('request-scoped log fields', () => {
+  const lineOf = (fn: () => void): Record<string, unknown> => {
+    const lines: string[] = [];
+    const log = createLogger({ writer: (line) => lines.push(line) });
+    runWithContext(
+      createContext({
+        actor: userActor({ id: 'u-1', orgId: 'org-3' }),
+        logger: log,
+        role: 'worker',
+      }),
+      () => {
+        useContext().logger.info('event');
+        fn();
+      },
+    );
+    return JSON.parse(lines[0] ?? '{}') as Record<string, unknown>;
+  };
+
+  test('an incident query can scope to a tenant without the app threading it', () => {
+    const line = lineOf(() => undefined);
+    expect(line['orgId']).toBe('org-3');
+    expect(line['actorId']).toBe('u-1');
+    expect(line['actorKind']).toBe('user');
+    expect(line['role']).toBe('worker');
+    expect(line['requestId']).toBeString();
+    expect(line['traceId']).toBeString();
+  });
+
+  test('carries nothing PII-bearing — no email, no name, no token', () => {
+    const line = lineOf(() => undefined);
+    expect(Object.keys(line).sort()).toEqual([
+      'actorId',
+      'actorKind',
+      'level',
+      'msg',
+      'orgId',
+      'requestId',
+      'role',
+      'traceId',
+      'ts',
+    ]);
+  });
+
+  test('omits orgId for an actor that has none, rather than logging undefined', () => {
+    const lines: string[] = [];
+    const log = createLogger({ writer: (line) => lines.push(line) });
+    runWithContext(createContext({ actor: anonymousActor(), logger: log }), () => {
+      useContext().logger.info('event');
+    });
+    expect(JSON.parse(lines[0] ?? '{}')).not.toHaveProperty('orgId');
+  });
+});

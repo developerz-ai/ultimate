@@ -20,6 +20,8 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_LIVE_ROW_UNIDENTIFIED',
   'X_LIVE_QUERY_UNKNOWN',
   'X_QUERY_NOT_SUBSCRIBABLE',
+  'X_SOCKET_UNAUTHENTICATED',
+  'X_SOCKET_AUTH_UNAVAILABLE',
 ] as const;
 
 /**
@@ -57,6 +59,9 @@ export const REALTIME_CLIENT_FAULT_CODES: ReadonlySet<string> = new Set([
   'X_LIVE_QUERY_UNKNOWN',
   'X_CURSOR_STALE',
   'X_REBASE_CONFLICT',
+  // The credential is the client's to send; the node deciding it has none is not this node failing.
+  // Its twin, `X_SOCKET_AUTH_UNAVAILABLE`, is deliberately absent — that one IS this node failing.
+  'X_SOCKET_UNAUTHENTICATED',
 ]);
 
 /** True when the client is the one who can fix it, so the node must not page anyone about it. */
@@ -105,6 +110,8 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_LIVE_ROW_UNIDENTIFIED: 'a live query returned a row with no id',
   X_LIVE_QUERY_UNKNOWN: 'no live query is registered under the name a subscribe frame asked for',
   X_QUERY_NOT_SUBSCRIBABLE: 'a hook was bound to a query that is not declared live',
+  X_SOCKET_UNAUTHENTICATED: 'the sync upgrade carried no credential this app accepts',
+  X_SOCKET_AUTH_UNAVAILABLE: 'the sync node could not decide who a connecting socket is',
 };
 
 // One unconditional call, so a second package claiming one of realtime's codes throws
@@ -350,6 +357,39 @@ export class QueryNotSubscribableError extends RealtimeError {
       // name yet — say so rather than printing `query ""`.
       cause: `query ${args.name === '' ? '<unregistered>' : `"${args.name}"`} is not declared live: true, so it has no subscription for a hook to read`,
       fix: 'add live: true to the query declaration, or read it once through query.client({ baseUrl }) — wiki/Queries-And-Live-Queries.md',
+    });
+  }
+}
+
+/**
+ * The app's `authenticate` decided this upgrade belongs to nobody. A **decision**, so it is the
+ * client's own condition and never pages anyone: the refusal is the whole point of the hook.
+ *
+ * Distinct from `X_TOPIC_FORBIDDEN`, which is a subscriber that got a socket and then asked for
+ * something it may not have. This one never gets a socket at all — a websocket refused after the
+ * upgrade is a connection the client must tear down to learn about.
+ */
+export class SocketUnauthenticatedError extends RealtimeError {
+  constructor(args: { reason: string }) {
+    super({
+      code: 'X_SOCKET_UNAUTHENTICATED',
+      cause: `the websocket upgrade was refused: ${args.reason}`,
+      fix: 'send the credential createSyncNode({ authenticate }) reads on the upgrade request, or return an anonymous Actor from it to admit this socket',
+    });
+  }
+}
+
+/**
+ * `authenticate` raised instead of deciding. The same rule the row gate follows: a failure is not a
+ * denial, so the client is told to come back rather than told it may not connect — a token service
+ * that timed out must not read to a user as "you are signed out", and it must page someone.
+ */
+export class SocketAuthUnavailableError extends RealtimeError {
+  constructor(args: { detail: string }) {
+    super({
+      code: 'X_SOCKET_AUTH_UNAVAILABLE',
+      cause: `authenticate() raised instead of deciding who a connecting socket is: ${args.detail}`,
+      fix: 'x doctor --json',
     });
   }
 }

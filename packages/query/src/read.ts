@@ -106,7 +106,41 @@ function asActor<T>(options: QueryOptions, run: (ctx: Ctx) => Promise<T>): Promi
     : runWithContext(base, () => withChildContext(patch, inChild));
 }
 
-async function readRows(
+/**
+ * The span covers the WHOLE read, not just `execute()`. Wrapping the execution alone left the
+ * input parse, the policy evaluation and `sql()`'s own construction outside every span, so a read
+ * whose cost was in building the source reported milliseconds while its parent HTTP span reported
+ * seconds — a gap with no name, which reads as framework overhead and gets hand-instrumented.
+ *
+ * Attributes are bounded: surface, actor KIND, booleans, and a row count. Never the input, never
+ * an actor id — a read is keyed per tenant and per cursor, and either would be unbounded.
+ */
+function readRows(
+  target: AnyQuery,
+  raw: unknown,
+  ctx: Ctx,
+  options: QueryOptions,
+): Promise<readonly object[]> {
+  const name = queryName(target);
+  return withSpan(`query.${name}`, async (span) => {
+    span.setAttributes({
+      'ultimate.primitive': 'query',
+      'ultimate.query': name,
+      'ultimate.surface': options.surface ?? 'server',
+      'ultimate.actor.kind': ctx.actor.kind,
+      'ultimate.live': target.isLive,
+      'ultimate.fresh': options.fresh === true,
+      // Whether this read goes through the tier at all. Every read is memoized; only a `cache:`
+      // read is filled — and which of the two a slow read took is the first thing to ask.
+      'ultimate.cached': defOf(target).cache !== undefined,
+    });
+    const rows = await readRowsIn(target, raw, ctx, options);
+    span.setAttribute('ultimate.rows', rows.length);
+    return rows;
+  });
+}
+
+async function readRowsIn(
   target: AnyQuery,
   raw: unknown,
   ctx: Ctx,
@@ -115,7 +149,7 @@ async function readRows(
   const def = defOf(target);
   const name = queryName(target);
   const source = await buildSource(target, raw, ctx, options);
-  const read = (): Promise<readonly object[]> => withSpan(`query.${name}`, () => source.execute());
+  const read = (): Promise<readonly object[]> => source.execute();
   // The source came from this query's own `sql()`, so its rows are TRow throughout —
   // which is what the typed overload above states, and this body never has to assert.
   const tags = def.cache?.tags ?? [];

@@ -29,7 +29,12 @@ const server = () =>
     routes,
     role: 'web',
     // start() is never called here, so no port is bound.
-    config: defineHttpConfig({ port: 0, hostname: '127.0.0.1', dev: false }),
+    config: defineHttpConfig({
+      rateLimit: { scope: 'process' },
+      port: 0,
+      hostname: '127.0.0.1',
+      dev: false,
+    }),
   });
 
 // Core's lifecycle is a process singleton, so each test starts from `starting`.
@@ -118,7 +123,11 @@ describe('rate limiting across replicas', () => {
 
   test('the default declaration still boots on the memory store', () => {
     expect(() =>
-      createServer({ routes, role: 'web', config: defineHttpConfig({ port: 0 }) }),
+      createServer({
+        routes,
+        role: 'web',
+        config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0 }),
+      }),
     ).not.toThrow();
   });
 });
@@ -151,7 +160,7 @@ describe('lifecycle wiring', () => {
         },
       ],
       role: 'web',
-      config: defineHttpConfig({ port: 0, dev: false }),
+      config: defineHttpConfig({ rateLimit: { scope: 'process' }, port: 0, dev: false }),
     });
     const before = inflightCount();
     const response = await handle.fetch(new Request('http://local/boom'));

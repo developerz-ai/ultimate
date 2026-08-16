@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import type { ManifestSources } from './build';
 import { buildManifest } from './build';
 import { manifestJson, verifyBuildId } from './emit';
-import { MANIFEST_VERSION } from './schema';
+import type { Manifest } from './schema';
+import { isCompatible, isManifest, MANIFEST_VERSION } from './schema';
 
 const sources: ManifestSources = {
   app: { name: 'acme', version: '1.4.2' },
@@ -27,14 +28,21 @@ const sources: ManifestSources = {
       input: { postId: 'uuid' },
       output: { id: 'uuid' },
       policy: 'post:publish',
+      permissions: ['post:publish'],
       cacheInvalidates: ['feed', 'post'],
+      rateLimit: { limit: 1000, windowMs: 60_000 },
       mcp: { expose: true, description: 'Publish a draft post' },
     },
     {
       name: 'archivePost',
       input: { postId: 'uuid' },
       output: { ok: true },
-      policy: 'post:archive',
+      // A COMPOSITE, deliberately: the label is not a permission and matches no grant. Deriving
+      // the permission list from it published `and(...)` as if it were one and dropped both real
+      // grants — and every non-trivial rule in a real app is a composite, so no fixture with a
+      // bare `can()` could have caught it.
+      policy: 'and(post:archive, org:administer)',
+      permissions: ['org:administer', 'post:archive'],
       cacheInvalidates: ['post'],
       mcp: { expose: false },
       mutator: true,
@@ -45,6 +53,7 @@ const sources: ManifestSources = {
       name: 'liveFeed',
       input: { orgId: 'uuid' },
       policy: 'feed:read',
+      permissions: ['feed:read'],
       live: true,
       cacheTags: ['feed'],
     },
@@ -101,6 +110,7 @@ describe('the manifest is deterministic', () => {
           input: { postId: 'uuid', notify: 'boolean' },
           output: { id: 'uuid' },
           policy: 'post:publish',
+          permissions: ['post:publish'],
           cacheInvalidates: ['feed', 'post'],
           mcp: { expose: true },
         },
@@ -134,9 +144,58 @@ describe('normalisation', () => {
     expect(actions[0]?.mutator).toBe(true);
   });
 
+  // Same failure mode as the mutator flag, and the same reason it needs its own assertion: the
+  // rule that classifies a tightened limit as breaking can only see what normalisation carried.
+  test('the rate limit survives normalisation, and is absent when none was declared', () => {
+    const actions = buildManifest(sources).actions;
+    // Sorted, so: archivePost declares none, publishPost declares 1000/minute.
+    expect(actions.map((action) => 'rateLimit' in action)).toEqual([false, true]);
+    expect(actions[1]?.rateLimit).toEqual({ limit: 1000, windowMs: 60_000 });
+  });
+
+  test("an action's own permissions are sorted, whoever assembled the sources", () => {
+    const unsorted = buildManifest({
+      ...sources,
+      actions: [
+        {
+          ...(sources.actions?.[1] as NonNullable<ManifestSources['actions']>[number]),
+          permissions: ['post:archive', 'org:administer'],
+        },
+      ],
+    });
+    expect(unsorted.actions[0]?.permissions).toEqual(['org:administer', 'post:archive']);
+  });
+
   test('permissions are derived from policies and primitives, never declared twice', () => {
     const manifest = buildManifest(sources);
-    expect(manifest.permissions).toEqual(['feed:read', 'post:archive', 'post:publish']);
+    // `org:administer` is here only because `archivePost`'s COMPOSITE policy is flattened. Read
+    // from the label instead and this list gains the string `and(post:archive, org:administer)`
+    // and loses both of its parts.
+    expect(manifest.permissions).toEqual([
+      'feed:read',
+      'org:administer',
+      'post:archive',
+      'post:publish',
+    ]);
     expect(manifest.manifestVersion).toBe(MANIFEST_VERSION);
+  });
+});
+
+describe('shape compatibility', () => {
+  // The decision an added field turns on. `isCompatible` is an equality check, so bumping
+  // `MANIFEST_VERSION` rejects every `x.manifest.json` in existence at once — and `diffManifest`
+  // calls a version change breaking, so the bump would also demand a major release of every app
+  // that regenerates. A field a reader tolerates by absence is not that, and this is the
+  // assertion that stops the reflex: if it ever fails, the bump was earned.
+  test('a manifest written before the newest fields is still readable', () => {
+    const older = JSON.parse(JSON.stringify(buildManifest(sources))) as Manifest;
+    for (const fact of older.actions) {
+      delete (fact as { permissions?: unknown }).permissions;
+      delete (fact as { rateLimit?: unknown }).rateLimit;
+    }
+    for (const fact of older.queries) delete (fact as { permissions?: unknown }).permissions;
+
+    expect(isManifest(older)).toBe(true);
+    expect(isCompatible(older)).toBe(true);
   });
 });

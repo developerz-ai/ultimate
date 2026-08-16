@@ -131,7 +131,7 @@ function unauthorized(): Response {
     JSON.stringify({
       code: 'X_MCP_PROTOCOL',
       cause: 'missing or unrecognised bearer token',
-      fix: 'x token create --scopes dev:read, then send Authorization: Bearer <token>',
+      fix: "send Authorization: Bearer <token> with a token the app's resolveToken(token) resolves to { actor, scopes } — it is the only issuer this route has",
     }),
     {
       status: 401,

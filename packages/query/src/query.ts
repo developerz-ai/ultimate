@@ -10,12 +10,13 @@ import type { CacheTag } from '@ultimat3/cache';
 import type { Actor, Ctx } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { QueryClientMethod, QueryClientOptions } from './client';
+import type { Deprecation } from './deprecation';
 import { facadeFor } from './facade';
 import type { LiveQuery, ToLiveOptions } from './live';
 import type { QueryToolDescriptor } from './mcp-tool';
 import type { Page, PaginateArgs } from './pagination';
 import type { QueryPolicy, QuerySurface } from './policy-gate';
-import { policyCapability } from './policy-gate';
+import { policyCapability, policyPermissions } from './policy-gate';
 import { hasDef, queryName, runQuery, stashDef } from './read';
 import type { SqlSource } from './source';
 import { fingerprint } from './stable';
@@ -40,6 +41,17 @@ export interface QueryMcp {
   readonly visibleTo?: readonly string[];
 }
 
+/**
+ * The symmetric twin of `ActionRateLimit`, and the field whose absence meant a read could not be
+ * throttled at all: every `GET /_x/query/*` fell through to the `default` bucket (120 burst, 2/s
+ * per actor), so one authenticated caller could hold 120 cross-tenant aggregates in flight and
+ * then 2/s forever, from a single account, with no declaration able to say otherwise.
+ */
+export interface QueryRateLimit {
+  readonly limit: number;
+  readonly windowMs: number;
+}
+
 export interface QueryDef<TInput extends StandardSchemaV1, TRow extends object> {
   readonly input: TInput;
   readonly policy: QueryPolicy;
@@ -48,6 +60,16 @@ export interface QueryDef<TInput extends StandardSchemaV1, TRow extends object> 
   sql(input: InferOutput<TInput>, ctx: Ctx): SqlSource<TRow>;
   readonly cache?: QueryCache;
   readonly mcp?: QueryMcp;
+  /** Burst and refill for THIS read's route, in the limiter's own vocabulary. */
+  readonly rateLimit?: QueryRateLimit;
+  /**
+   * On its way out. `Deprecation` and `Sunset` response headers (RFC 9745 / RFC 8594), a
+   * `rel="successor-version"` link when `replacedBy` names one, and a
+   * `deprecated_calls_total{name}` counter — the only way to answer "is anyone still reading
+   * it?" before deleting it. Versioning itself is two deployments behind one ingress, not a
+   * router feature; see the README.
+   */
+  readonly deprecated?: Deprecation;
 }
 
 export interface QueryOptions {
@@ -81,9 +103,18 @@ export interface QueryDescriptor {
   readonly kind: 'query';
   readonly name: string;
   readonly live: boolean;
+  /** The policy's DISPLAY label. A composite renders as `or(a:b, c:d)` — never a permission. */
   readonly capability: string;
+  /**
+   * Every permission the policy tree references, flattened. The field a compliance report
+   * matches a grant against; `capability` is a label and matching on it reported every
+   * composite-guarded read as enforcing nothing.
+   */
+  readonly permissions: readonly string[];
   readonly tags: readonly string[];
   readonly ttlMs: number | null;
+  readonly rateLimit: QueryRateLimit | null;
+  readonly deprecated: Deprecation | null;
 }
 
 /**
@@ -98,6 +129,8 @@ export interface AnyQueryDef {
   sql(input: unknown, ctx: Ctx): SqlSource<object>;
   readonly cache?: QueryCache;
   readonly mcp?: QueryMcp;
+  readonly rateLimit?: QueryRateLimit;
+  readonly deprecated?: Deprecation;
 }
 
 export interface AnyQuery {
@@ -110,6 +143,9 @@ export interface AnyQuery {
   readonly policy: QueryPolicy;
   readonly cache?: QueryCache;
   readonly mcp?: QueryMcp;
+  /** Lifted so `toQueryRoute` reads the declaration without reaching through `defOf`. */
+  readonly rateLimit?: QueryRateLimit;
+  readonly deprecated?: Deprecation;
   describe(): QueryDescriptor;
   /** A twin under another name. Registration names through `named`. */
   named(name: string): AnyQuery;
@@ -146,7 +182,17 @@ export interface Query<
 /** The fluent half of a query: lifted declaration plus one method per projection. */
 export type QueryFacade<TInput extends StandardSchemaV1, TRow extends object> = Pick<
   Query<TInput, TRow>,
-  'input' | 'policy' | 'cache' | 'mcp' | 'as' | 'page' | 'live' | 'tool' | 'client'
+  | 'input'
+  | 'policy'
+  | 'cache'
+  | 'mcp'
+  | 'rateLimit'
+  | 'deprecated'
+  | 'as'
+  | 'page'
+  | 'live'
+  | 'tool'
+  | 'client'
 >;
 
 export function query<TInput extends StandardSchemaV1, TRow extends object>(
@@ -208,8 +254,12 @@ export function describeQuery(target: AnyQuery): QueryDescriptor {
     name: queryName(target),
     live: target.isLive,
     capability: policyCapability(target.policy),
+    // The flattened list, beside the label and never instead of it: one is read, one is matched.
+    permissions: policyPermissions(target.policy),
     tags: tagKeys(target.cache?.tags ?? []),
     ttlMs: target.cache?.ttlMs ?? null,
+    rateLimit: target.rateLimit ?? null,
+    deprecated: target.deprecated ?? null,
   };
 }
 

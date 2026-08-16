@@ -59,7 +59,12 @@ const routes: readonly Route[] = [
   },
 ];
 
-const config = defineHttpConfig({ dev: false, buildId: null, hostname: '127.0.0.1' });
+const config = defineHttpConfig({
+  rateLimit: { scope: 'process' },
+  dev: false,
+  buildId: null,
+  hostname: '127.0.0.1',
+});
 
 const pipeline = () => createPipeline({ table: createRouter(routes), config });
 

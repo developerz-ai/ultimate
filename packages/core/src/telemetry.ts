@@ -6,7 +6,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { type Clock, systemClock } from './clock';
 import { tryUseContext } from './context';
 import { isUltimateError } from './errors';
-import { spanId as newSpanId, traceId as newTraceId } from './ids';
+import { isSpanId, isTraceId, spanId as newSpanId, traceId as newTraceId } from './ids';
+import { defaultSampler, resetDefaultSampler, type Sampler } from './sampler';
 
 export type SpanKind = 'internal' | 'server' | 'client' | 'producer' | 'consumer';
 
@@ -87,6 +88,8 @@ export interface TelemetryOptions {
   readonly serviceName?: string | undefined;
   readonly serviceVersion?: string | undefined;
   readonly enabled?: boolean | undefined;
+  /** Defaults to `defaultSampler()`: honour the parent, else the ratio the env asks for. */
+  readonly sampler?: Sampler | undefined;
 }
 
 export const noopExporter: SpanExporter = Object.freeze({
@@ -100,7 +103,7 @@ export interface MemoryExporter extends SpanExporter {
   reset(): void;
 }
 
-/** For tests and for `x trace --json`. */
+/** For tests, and for reading back what a run traced with no collector on the box. */
 export function memoryExporter(): MemoryExporter {
   const spans: ReadableSpan[] = [];
   return {
@@ -119,12 +122,14 @@ const activeSpan = new AsyncLocalStorage<Span>();
 let exporter: SpanExporter = noopExporter;
 let clock: Clock = systemClock;
 let enabled = true;
+let sampler: Sampler | undefined;
 let resource: SpanResource = Object.freeze({ serviceName: 'ultimate', serviceVersion: '0.0.1' });
 
 export function configureTelemetry(options: TelemetryOptions): void {
   if (options.exporter !== undefined) exporter = options.exporter;
   if (options.clock !== undefined) clock = options.clock;
   if (options.enabled !== undefined) enabled = options.enabled;
+  if (options.sampler !== undefined) sampler = options.sampler;
   if (options.serviceName !== undefined || options.serviceVersion !== undefined) {
     resource = Object.freeze({
       serviceName: options.serviceName ?? resource.serviceName,
@@ -137,6 +142,13 @@ export function resetTelemetry(): void {
   exporter = noopExporter;
   clock = systemClock;
   enabled = true;
+  sampler = undefined;
+  resetDefaultSampler();
+}
+
+/** The sampler in force: whatever `configureTelemetry` was given, else the env's. */
+export function currentSampler(): Sampler {
+  return sampler ?? defaultSampler();
 }
 
 /**
@@ -162,12 +174,16 @@ export function currentSpanContext(): SpanContext | undefined {
 
 export function startSpan(name: string, options?: StartSpanOptions): Span {
   const parent = options?.parent ?? currentSpanContext();
+  const attributes: Record<string, AttributeValue> = { ...(options?.attributes ?? {}) };
+  // The bit is decided ONCE, here, and every child of this span inherits it through `parent` —
+  // so one trace is sampled or not sampled as a whole. Before this, `traceFlags` was hardcoded to
+  // 1 for a root and `end()` exported regardless, which made the bit a value the framework
+  // forwarded and nobody obeyed.
   const context: SpanContext = {
     traceId: parent?.traceId ?? newTraceId(),
     spanId: newSpanId(),
-    traceFlags: parent?.traceFlags ?? 1,
+    traceFlags: currentSampler().shouldSample(name, parent, attributes) ? 1 : 0,
   };
-  const attributes: Record<string, AttributeValue> = { ...(options?.attributes ?? {}) };
   const events: SpanEvent[] = [];
   const startedAt = clock.now().getTime();
   const startedMono = clock.monotonic();
@@ -215,6 +231,10 @@ export function startSpan(name: string, options?: StartSpanOptions): Span {
       if (ended) return;
       ended = true;
       if (!enabled) return;
+      // The whole point of propagating a sampling bit is that somebody obeys it. A span still
+      // exists, still parents its children and still carries the decision onward in
+      // `traceparent`; it is simply not exported.
+      if ((context.traceFlags & 1) === 0) return;
       const endedAt = clock.now().getTime();
       const parentSpanId = parent === undefined || parent.spanId === '' ? undefined : parent.spanId;
       exporter.export({
@@ -272,8 +292,13 @@ export function withSpanContext<T>(context: SpanContext, name: string, fn: (span
 
 const TRACEPARENT_RE = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/;
 
+/**
+ * Round-trips with `traceId()` / `spanId()` from `ids.ts` and with nothing else. A context whose
+ * `traceId` came from `uuid()` renders a 36-character dashed header here that `parseTraceparent`
+ * — and every OTLP collector — rejects, so mint the pair with those two generators.
+ */
 export function traceparent(context: SpanContext): string {
-  const flags = context.traceFlags.toString(16).padStart(2, '0');
+  const flags = (context.traceFlags & 0xff).toString(16).padStart(2, '0');
   return `00-${context.traceId}-${context.spanId}-${flags}`;
 }
 
@@ -281,11 +306,12 @@ export function parseTraceparent(header: string | null | undefined): SpanContext
   if (header === null || header === undefined) return undefined;
   const match = TRACEPARENT_RE.exec(header.trim());
   if (match === null) return undefined;
-  return {
-    traceId: match[1] as string,
-    spanId: match[2] as string,
-    traceFlags: Number.parseInt(match[3] as string, 16),
-  };
+  const traceId = match[1] as string;
+  const spanId = match[2] as string;
+  // `ids.ts` owns what a valid id is, so the all-zero rejection the spec requires lives in one
+  // place instead of being a second regex here that drifts from the generator's.
+  if (!isTraceId(traceId) || !isSpanId(spanId)) return undefined;
+  return { traceId, spanId, traceFlags: Number.parseInt(match[3] as string, 16) };
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {

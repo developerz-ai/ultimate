@@ -50,7 +50,7 @@ const serve = (): ReturnType<typeof createServer> =>
   createServer({
     routes: appRoutes({ buildId: BUILD_ID }),
     role: 'web',
-    config: defineHttpConfig({ dev: true, buildId: BUILD_ID }),
+    config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
   });
 
 const get = async (path: string): Promise<Response> =>

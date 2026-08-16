@@ -24,12 +24,35 @@ export interface AiRuntimeInput {
   readonly embedder?: Embedder;
   /** One cache per scope key. Defaults to the in-memory driver; pgvector in production. */
   readonly semanticCache?: (scope: string) => SemanticCache;
+  /**
+   * The last thing that runs over a prompt before it leaves the process. Declared here, in the
+   * one place the framework already owns, because `vars()` is the one declared place a model call
+   * loads data — the framework knows exactly where the row enters the prompt, and until now
+   * nothing sat between that and a third-party endpoint.
+   *
+   * WHAT to remove is the app's decision, not the framework's: a PII classifier is a model choice
+   * and ships in no framework (axiom 8). Ultimate ships the seam, the span attribute
+   * (`llm.redacted`) and the one rule it can enforce structurally — a `Secret` reaching `vars()`
+   * is `X_AI_PROMPT_SECRET`, whether or not a redactor is installed.
+   */
+  readonly redact?: Redactor;
 }
+
+/**
+ * Rewrites a prompt on its way to the provider. Sees the whole RENDERED text, system prompt
+ * included — template as well as values, because a redactor shown only the values cannot tell
+ * a name in a data slot from the same name in an instruction.
+ */
+export type Redactor = (text: string) => string;
+
+/** No app redactor installed. Named rather than inline so `llm.redacted` has one thing to mean. */
+const noRedaction: Redactor = (text) => text;
 
 interface AiRuntime {
   readonly gateway: Gateway;
   readonly embedder: Embedder;
   readonly semanticCache: (scope: string) => SemanticCache;
+  readonly redact: Redactor;
 }
 
 let runtime: AiRuntime | undefined;
@@ -40,6 +63,7 @@ export function configureAi(input: AiRuntimeInput): void {
     gateway: input.gateway,
     embedder: input.embedder ?? new HashEmbedder(),
     semanticCache: input.semanticCache ?? (() => createMemorySemanticCache()),
+    redact: input.redact ?? noRedaction,
   };
   // A new runtime means a new embedder and a new gateway; vectors from the old one are not
   // comparable to vectors from the new one, and a stale hit would answer the wrong question.
@@ -54,6 +78,11 @@ export function aiGateway(prompt: string): Gateway {
 
 export function aiEmbedder(): Embedder {
   return runtime?.embedder ?? new HashEmbedder();
+}
+
+/** The installed redactor, or the identity. Never absent, so the call site has no branch. */
+export function aiRedactor(): Redactor {
+  return runtime?.redact ?? noRedaction;
 }
 
 /**

@@ -21,22 +21,24 @@ guess. Every failure mode in [`06-runbooks.md`](./06-runbooks.md) happened to so
 
 ## The ladder
 
+Rung numbers are [`../idea/17-scale-ladder.md`](../idea/17-scale-ladder.md)'s — that doc is the canonical ladder and this one does not renumber it. Its five rungs collapse to the three shapes an operator actually runs: rungs 0 and 1 are the same platform with one service or several, so they are one row here, and rung 4 is rung 3 plus datastores.
+
 | Rung | You run | You deploy by | Costs you |
 |---|---|---|---|
-| **0 — PaaS** | one container per role on a managed platform, managed Postgres | pushing an image; the platform restarts | per-process pricing, and whatever datastore the platform does not sell |
-| **1 — one box + Compose** | [`docker-compose.prod.yml`](../../docker/docker-compose.prod.yml), Postgres and NATS beside it or managed | `ssh` + `docker compose up -d` | the box is the availability story; a deploy is visible |
-| **2 — Kubernetes** | the Helm chart or the manifest set in [`01-kubernetes.md`](./01-kubernetes.md) | `git push` (GitOps) | a control plane, a secrets story, an on-call story |
+| **0–1 — PaaS** | one container per role on a managed platform, managed Postgres | pushing an image; the platform restarts | per-process pricing, and whatever datastore the platform does not sell |
+| **2 — one box + Compose** | [`docker-compose.prod.yml`](../../docker/docker-compose.prod.yml), Postgres and NATS beside it or managed | `ssh` + `docker compose up -d` | the box is the availability story; a deploy is visible |
+| **3 — Kubernetes** | the Helm chart or the manifest set in [`01-kubernetes.md`](./01-kubernetes.md) | `git push` (GitOps) | a control plane, a secrets story, an on-call story |
 
-**You are on rung 0 or 1 until something on this list is true.** Not before.
+**You are on a PaaS or one box until something on this list is true.** Not before.
 
-| Climb 0 → 1 when | Climb 1 → 2 when |
+| Climb to Compose (rung 2) when | Climb to Kubernetes (rung 3) when |
 |---|---|
 | you need NATS, object storage or a Postgres extension the platform does not sell | one machine cannot hold peak, and vertical growth has run out |
 | the platform's build step cannot build your image, so you are fighting buildpacks | a deploy is user-visible and that now costs you money |
 | per-role scaling on the platform costs more than a box | you need more than one machine for availability, not for capacity |
 | — | you need a migration to gate traffic rather than race it |
 
-Rung 1's real ceiling, `As of 2026-08`: the shipped prod compose publishes static host ports
+Rung 2's real ceiling, `As of 2026-08`: the shipped prod compose publishes static host ports
 (`3000:3000`, `3001:3001`) for `web` and `sync`. Two processes cannot bind one host port, so both
 services declare `replicas: 1` — the file says what it does, rather than declaring 3 and starting 1.
 `worker` has no published port and scales freely.
@@ -46,7 +48,7 @@ Two ways past it, in order of cost:
 | Want | Do |
 |---|---|
 | more `web`/`sync` on the same box | delete their `ports:` lines, add a reverse proxy of your choosing to the compose file, point it at the service names — compose DNS resolves each to every replica |
-| more `web`/`sync`, full stop | climb to rung 2; `docker/helm` already carries a per-role HPA and an ingress |
+| more `web`/`sync`, full stop | climb to rung 3; `docker/helm` already carries a per-role HPA and an ingress |
 
 The framework ships neither proxy. A proxy image in `docker-compose.prod.yml` would be a dependency
 every app inherits and a second answer to "how does traffic reach a role" beside the chart's
@@ -77,11 +79,11 @@ pays for the control plane.
 | [`docker/helm/`](../../docker/helm/) | per-role Deployments, per-role HPAs, a `pre-install,pre-upgrade` migrate Job, an optional Ingress |
 | `/healthz` and `/readyz` on every role | shipped — [`packages/core/src/lifecycle.ts`](../../packages/core/src/lifecycle.ts) |
 | SIGTERM drain on every role | shipped — see [`../architecture/13-topology-runtime.md`](../architecture/13-topology-runtime.md) |
-| OTel-shaped tracing | shipped as a **seam**: spans exist, the default exporter is a no-op and no OTLP exporter ships |
-| `/metrics` on any role | **not yet implemented** at the time of writing — a metrics seam is landing in `packages/core`; confirm what your build actually exposes before wiring a scrape |
+| OTel-shaped tracing | **shipped, and exportable** — `otlpSpanExporter()` speaks OTLP/HTTP JSON to `OTEL_EXPORTER_OTLP_ENDPOINT`, head-based sampling included. The default stays a no-op, so nothing leaves the process until you wire it. gRPC `:4317` is refused; use the collector's `:4318`. No logs signal |
+| `/metrics` on any role | **shipped** — `METRICS_PATH` on `METRICS_PORT` (default 9090), never the app port. The chart declares the `metrics` containerPort on every role but `migrate`, publishes it on the Service, and ships a ServiceMonitor behind `serviceMonitor.enabled` (off by default: a cluster with no Prometheus operator has no such CRD) |
+| a custom-metrics adapter | **never shipped** — the chart's per-role HPAs target pod metrics (`rps`, `connections`, `queue_depth`), and turning scraped series into those is the cluster's job, not the framework's |
 | `x logs` | listed as **planned** in `x --help` |
 
-That last row is load-bearing for [`03-observability.md`](./03-observability.md): the chart's per-role
-HPAs target custom pod metrics (`rps`, `connections`, `queue_depth`). Confirm the framework emits
-them, and that a custom metrics adapter is installed, before enabling autoscaling — an HPA with no
-metric source sits at `<unknown>` and never scales.
+That adapter row is load-bearing for [`03-observability.md`](./03-observability.md): the app emits
+the three signals and the chart exposes them, but an HPA with no metrics adapter behind it still
+sits at `<unknown>` and never scales. Install the adapter before enabling autoscaling.

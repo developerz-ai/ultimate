@@ -11,7 +11,7 @@ import { PRIMITIVE_KINDS } from '@ultimat3/core';
 import { allow, deny } from '@ultimat3/policy';
 import { createGateway } from './gateway';
 import { llm } from './llm';
-import { DEFAULT_MODEL, MODEL_IDS } from './models';
+import { ANTHROPIC_MODEL_IDS, DEFAULT_MODEL } from './models';
 import { definePrompt, type Prompt } from './prompt';
 import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
 import { costOf, EchoProvider } from './provider';
@@ -39,7 +39,7 @@ function stub(...answers: readonly unknown[]): { provider: Provider; seen: Gener
   const echo = new EchoProvider();
   const provider: Provider = {
     name: 'stub',
-    models: MODEL_IDS,
+    models: ANTHROPIC_MODEL_IDS,
     generate(request) {
       const answer = answers[Math.min(seen.length, answers.length - 1)];
       seen.push(request);
@@ -250,7 +250,7 @@ describe('a response that is not an answer', () => {
     const seen: GenerateRequest[] = [];
     const provider: Provider = {
       name: 'stopping',
-      models: MODEL_IDS,
+      models: ANTHROPIC_MODEL_IDS,
       generate(request) {
         seen.push(request);
         return Promise.resolve({

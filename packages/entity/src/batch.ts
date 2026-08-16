@@ -9,19 +9,22 @@
 import { assertSeekable } from './cursor';
 import type { EntityCore } from './entity';
 import { EntityError } from './errors';
-import { totalOrder } from './plan';
+import { MAX_PAGE_SIZE, totalOrder } from './plan';
 import type { Page } from './repo';
 import type { SortKey } from './tenancy';
 
 /**
- * A batch size is rows, whole and at least one. `0`, a fraction and a `NaN` from a parsed
- * environment variable all reach the same statement — `limit 0` reads nothing forever — so they are
- * refused where they were written instead of hanging a job.
+ * A batch size is rows, whole, at least one and at most `MAX_PAGE_SIZE`. `0`, a fraction and a
+ * `NaN` from a parsed environment variable all reach the same statement — `limit 0` reads nothing
+ * forever — so they are refused where they were written instead of hanging a job. The ceiling is
+ * the top of the same range: a batch IS a page (`inBatches` sends the `findMany` the chain would
+ * have sent), so `planFor` would refuse it one statement in, in `limit()`'s voice, for an author
+ * who never wrote a `limit()`.
  */
 const badBatchSize = (entityName: string, size: number): EntityError =>
   new EntityError({
     code: 'X_INVARIANT_VIOLATED',
-    cause: `${entityName}.inBatches(${size}) — a batch is a whole number of rows, at least one`,
+    cause: `${entityName}.inBatches(${String(size)}) — a batch is a whole number of rows, at least one and at most ${MAX_PAGE_SIZE}`,
     fix: `${entityName}.inBatches(500)   # the rows one statement reads`,
   });
 
@@ -47,7 +50,9 @@ export const assertBatchable = <Row>(
   size: number,
   chain: { readonly limit: number | undefined; readonly orderBy: readonly SortKey[] },
 ): void => {
-  if (!Number.isSafeInteger(size) || size < 1) throw badBatchSize(entity.$name, size);
+  if (!Number.isSafeInteger(size) || size < 1 || size > MAX_PAGE_SIZE) {
+    throw badBatchSize(entity.$name, size);
+  }
   if (chain.limit !== undefined) throw limitedBatches(entity.$name, chain.limit, size);
   // The order the driver will sort by, primary key included: the cursor between two batches is
   // minted from it, and an ordering that cannot carry one fails on the batch *after* the first —

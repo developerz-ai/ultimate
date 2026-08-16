@@ -1,10 +1,11 @@
-// Direct coverage for `builder.ts` — the result constructors and `makeSchema` every `t.*` type in
-// this package is assembled from. Exercised only indirectly until now, through the types built on
-// it, so a drift in an issue's path or in `describeValue`'s wording surfaced as a puzzling
-// failure in some other suite rather than here.
+// Direct coverage for `builder.ts` — the result constructors, `makeSchema` and `refine`, which
+// every `t.*` type in this package is assembled from. Exercised only indirectly until now, through
+// the types built on it, so a drift in an issue's path surfaced as a puzzling failure in some
+// other suite rather than here. Value rendering has its own file: `describe-value.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import { checkOf, describeValue, expected, fail, failWith, makeSchema, pass } from './builder';
+import { checkOf, fail, failWith, makeSchema, pass } from './builder';
+import { expected } from './describe-value';
 import { ValidationFailedError } from './errors';
 import type { SchemaNode } from './node';
 
@@ -34,53 +35,6 @@ describe('failWith', () => {
   test('passes issues through unchanged', () => {
     const issues = [{ message: 'bad', path: ['x'] }];
     expect(failWith(issues)).toEqual({ ok: false, issues });
-  });
-});
-
-describe('expected', () => {
-  test('renders "expected X, received Y"', () => {
-    expect(expected('a uuid', 'abc')).toBe('expected a uuid, received "abc"');
-    expect(expected('a number', undefined)).toBe('expected a number, received undefined');
-  });
-});
-
-describe('describeValue', () => {
-  test('undefined', () => {
-    expect(describeValue(undefined)).toBe('undefined');
-  });
-
-  test('null', () => {
-    expect(describeValue(null)).toBe('null');
-  });
-
-  test('string is JSON-quoted', () => {
-    expect(describeValue('abc')).toBe('"abc"');
-    expect(describeValue('a "quote"')).toBe(JSON.stringify('a "quote"'));
-  });
-
-  test('number and boolean use String()', () => {
-    expect(describeValue(42)).toBe('42');
-    expect(describeValue(true)).toBe('true');
-    expect(describeValue(false)).toBe('false');
-  });
-
-  test('array renders as array(n)', () => {
-    expect(describeValue([1, 2, 3])).toBe('array(3)');
-    expect(describeValue([])).toBe('array(0)');
-  });
-
-  test('a valid Date renders as Date(<iso>)', () => {
-    const date = new Date('2026-01-01T00:00:00.000Z');
-    expect(describeValue(date)).toBe(`Date(${date.toISOString()})`);
-  });
-
-  test('an Invalid Date renders as Date(Invalid Date)', () => {
-    expect(describeValue(new Date('not a date'))).toBe('Date(Invalid Date)');
-  });
-
-  test('a plain object renders as its typeof', () => {
-    expect(describeValue({})).toBe('object');
-    expect(describeValue({ a: 1 })).toBe('object');
   });
 });
 
@@ -153,6 +107,75 @@ describe('makeSchema', () => {
     expect(described.node.description).toBe('a count');
     expect(described.safeParse(42)).toEqual({ value: 42 });
     expect(described.safeParse('nope').issues).toBeDefined();
+  });
+});
+
+describe('refine', () => {
+  const positive = { name: 'positive', message: 'must be greater than zero' } as const;
+
+  test('a failing predicate reports the rule, never the value it rejected', () => {
+    const schema = makeNumberSchema().refine({ ...positive, check: (value) => value > 0 });
+    const issues = schema.safeParse(-4321).issues ?? [];
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.message).toBe('must be greater than zero');
+    expect(issues[0]?.message).not.toContain('4321');
+  });
+
+  test('the predicate never runs when the shape already failed', () => {
+    let ran = false;
+    const schema = makeNumberSchema().refine({
+      ...positive,
+      check: () => {
+        ran = true;
+        return true;
+      },
+    });
+    expect(schema.safeParse('nope').issues).toBeDefined();
+    expect(ran).toBe(false);
+  });
+
+  test('a passing predicate returns the parsed value untouched', () => {
+    const schema = makeNumberSchema().refine({ ...positive, check: (value) => value > 0 });
+    expect(schema.safeParse(7)).toEqual({ value: 7 });
+  });
+
+  test('the rule is declared on the node so a projection can read it without the closure', () => {
+    const schema = makeNumberSchema().refine({
+      ...positive,
+      path: ['amount'],
+      check: (value) => value > 0,
+    });
+    expect(schema.node.refinements).toEqual([
+      { name: 'positive', message: 'must be greater than zero', path: ['amount'] },
+    ]);
+    // The original is untouched — every builder method returns a new schema.
+    expect(makeNumberSchema().node.refinements).toBeUndefined();
+  });
+
+  test('`path` moves the issue onto the field the rule is about', () => {
+    const schema = makeNumberSchema().refine({
+      ...positive,
+      path: ['amount'],
+      check: (value) => value > 0,
+    });
+    expect(schema.safeParse(-1).issues?.[0]?.path).toEqual(['amount']);
+  });
+
+  test('refinements stack in declaration order and both reach the node', () => {
+    const schema = makeNumberSchema()
+      .refine({ ...positive, check: (value) => value > 0 })
+      .refine({ name: 'even', message: 'must be even', check: (value) => value % 2 === 0 });
+    expect(schema.node.refinements?.map((rule) => rule.name)).toEqual(['positive', 'even']);
+    expect(schema.safeParse(3).issues?.[0]?.message).toBe('must be even');
+    expect(schema.safeParse(4).issues).toBeUndefined();
+  });
+
+  test('optional/nullable/default/describe all carry the refinement through', () => {
+    const schema = makeNumberSchema().refine({ ...positive, check: (value) => value > 0 });
+    expect(schema.optional().node.refinements).toHaveLength(1);
+    expect(schema.nullable().safeParse(null)).toEqual({ value: null });
+    expect(schema.optional().safeParse(-1).issues).toBeDefined();
+    expect(schema.describe('a count').safeParse(-1).issues).toBeDefined();
   });
 });
 

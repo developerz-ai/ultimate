@@ -1,6 +1,5 @@
-// The transactional outbox — ON BY DEFAULT, because the alternative is a bug you cannot see
-// in review. `ctx.jobs.enqueue()` inside a request writes the job row in the SAME `tx` as the
-// business rows and a relay publishes it after commit. Without it, every enqueue is a
+// The transactional outbox. `ctx.jobs.enqueue()` inside a request writes the job row in the SAME
+// `tx` as the business rows and a relay publishes it after commit. Without it, every enqueue is a
 // distributed-transaction coin flip:
 //
 //   enqueue then rollback  -> the job runs against rows that never existed
@@ -9,9 +8,23 @@
 // Both are load-dependent, both pass every test, and both are the top source of "the email
 // went out but the order isn't in the database" tickets. Joining the transaction removes the
 // window entirely; the relay's at-least-once delivery is deduped by the job's idempotencyKey.
+//
+// **It is NOT on by default, and this header used to claim it was** (`As of 2026-08`). Three
+// things have to be true in a process for an enqueue to be transactional, and the fallback at
+// `jobsFacade()` is what happens when they are not:
+//
+//   1. `x_outbox` exists — it ships in `SQL_JOBS_TABLE` now, so applying the queue DDL is enough.
+//   2. `setJobsFacade(createJobsFacade({ store, driver }, currentTx))` ran at boot, with a store
+//      from `createPgOutboxStore` and a REAL `currentTx` accessor.
+//   3. `createOutboxRelay({ store, driver }).start()` is running somewhere.
+//
+// With none of them, `jobsFacade()` answers the fallback below, whose `currentTx` is
+// `() => undefined`: every enqueue publishes straight to the driver, outside the caller's
+// transaction, and both failure modes above are live. That fallback is deliberate — a script, a
+// test and `x dev` must enqueue with nothing wired — but it is a fallback, not the guarantee.
 
 import type { Clock } from '@ultimat3/core';
-import { logger, uuid } from '@ultimat3/core';
+import { currentSpanContext, logger, traceparent, uuid } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import { nowMs } from './clock';
 import type { EnqueueResult, JobDriver } from './driver';
@@ -29,6 +42,9 @@ export interface OutboxRecord {
   readonly runAt: number;
   readonly stagedAt: number;
   readonly tenantId?: string;
+  /** The enqueuing request's trace, carried across the relay so the job's span still has a parent. */
+  readonly traceparent?: string;
+  readonly enqueuedBy?: string;
   readonly publishedAt?: number;
 }
 
@@ -115,6 +131,29 @@ export interface EnqueueOptions {
   readonly queue?: string;
   /** Escape hatch for enqueues that must fire regardless of the caller's transaction. */
   readonly outbox?: boolean;
+  /**
+   * Who asked. AUDIT ONLY — the job body still runs with system authority. `handle.as(actor, ...)`
+   * fills it from the actor; set it directly only where there is no actor object to hand over.
+   */
+  readonly enqueuedBy?: string;
+  /** Override the ambient trace. Almost never: the facade stamps the current span for you. */
+  readonly traceparent?: string;
+}
+
+/**
+ * The W3C `traceparent` of the span this enqueue is happening inside, or `undefined` outside a
+ * trace. This is the ONE place the link is minted: `docs/idea/04-jobs.md` promises a job trace
+ * linked to the enqueuing request, and before this there was no field to carry the link, so a
+ * checkout's `chargeCard` opened a fresh root two seconds later with nothing pointing back.
+ *
+ * A context recovered from a `Ctx` has an empty `spanId` (`currentSpanContext`), which renders as
+ * an all-zero parent that every collector rejects — so that case carries no header rather than a
+ * malformed one, and the job opens a root as it did before.
+ */
+function ambientTraceparent(): string | undefined {
+  const context = currentSpanContext();
+  if (context === undefined || context.spanId === '') return undefined;
+  return traceparent(context);
 }
 
 export interface OutboxDeps {
@@ -134,6 +173,7 @@ export function enqueueInTx<I>(
   options: EnqueueOptions = {},
 ): Promise<OutboxRecord> {
   const at = nowMs(deps.clock);
+  const trace = options.traceparent ?? ambientTraceparent();
   const record: OutboxRecord = {
     id: uuid(),
     job: handle.name,
@@ -144,6 +184,10 @@ export function enqueueInTx<I>(
     runAt: options.runAt ?? at,
     stagedAt: at,
     ...(options.tenantId === undefined ? {} : { tenantId: options.tenantId }),
+    // Stamped at STAGE time and not at publish time: the relay runs after commit, in its own
+    // timer, with no request span in scope — a trace read there would be nobody's.
+    ...(trace === undefined ? {} : { traceparent: trace }),
+    ...(options.enqueuedBy === undefined ? {} : { enqueuedBy: options.enqueuedBy }),
   };
   return deps.store.stage(tx, record).then(() => record);
 }
@@ -171,6 +215,7 @@ export function createJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
         if (deps.mode === 'required' && options.outbox !== false) {
           throw new OutboxNoTxError({ job: handle.name });
         }
+        const trace = options.traceparent ?? ambientTraceparent();
         return deps.driver.enqueue({
           name: handle.name,
           queue: options.queue ?? handle.queue,
@@ -179,6 +224,8 @@ export function createJobsFacade(deps: OutboxDeps, currentTx: () => Tx | undefin
           maxAttempts: handle.retry.attempts,
           runAt: options.runAt ?? nowMs(deps.clock),
           ...(options.tenantId === undefined ? {} : { tenantId: options.tenantId }),
+          ...(trace === undefined ? {} : { traceparent: trace }),
+          ...(options.enqueuedBy === undefined ? {} : { enqueuedBy: options.enqueuedBy }),
         });
       }
 
@@ -273,16 +320,26 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
           maxAttempts: record.maxAttempts,
           runAt: record.runAt,
           ...(record.tenantId === undefined ? {} : { tenantId: record.tenantId }),
+          ...(record.traceparent === undefined ? {} : { traceparent: record.traceparent }),
+          ...(record.enqueuedBy === undefined ? {} : { enqueuedBy: record.enqueuedBy }),
         });
         await options.store.markPublished(record.id, nowMs(options.clock));
         published += 1;
       } catch (error) {
-        // Leave the row unpublished; the next tick retries it. Order is preserved per queue.
+        // STOP the batch. `claim()` returns rows in `staged_at` order and the loop used to log
+        // and continue, which published every LATER row past the one that failed — so an app
+        // that stages `createInvoice` then `chargeCard` in one transaction could have the charge
+        // run first. The row stays unpublished and the next tick starts again from it; a
+        // permanently poisoned row wedges its queue, which is visible in `pending()` and is the
+        // correct trade against silently reordering committed work.
         logger.warn('jobs.outbox.publish-failed', {
           job: record.job,
           id: record.id,
+          published,
+          remaining: batch.length - published,
           error: error instanceof Error ? error.message : String(error),
         });
+        break;
       }
     }
     return published;
@@ -318,42 +375,7 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
   };
 }
 
-/** SQL for the pg-backed outbox. The relay publishes rows this INSERT created. */
-export const SQL_OUTBOX_TABLE = `
-create table if not exists x_outbox (
-  id              uuid primary key,
-  job             text        not null,
-  queue           text        not null default 'default',
-  input           jsonb       not null,
-  idempotency_key text        not null,
-  max_attempts    int         not null default 3,
-  run_at          timestamptz not null default now(),
-  staged_at       timestamptz not null default now(),
-  tenant_id       text,
-  published_at    timestamptz
-);
-create index if not exists x_outbox_unpublished_idx
-  on x_outbox (staged_at) where published_at is null;
-`.trim();
-
-export const SQL_OUTBOX_STAGE = `
-insert into x_outbox
-  (id, job, queue, input, idempotency_key, max_attempts, run_at, staged_at, tenant_id)
-values ($1, $2, $3, $4::jsonb, $5, $6, to_timestamp($7 / 1000.0), to_timestamp($8 / 1000.0), $9)
-`.trim();
-
-export const SQL_OUTBOX_CLAIM = `
-select id, job, queue, input, idempotency_key, max_attempts,
-       (extract(epoch from run_at) * 1000)::bigint    as run_at,
-       (extract(epoch from staged_at) * 1000)::bigint as staged_at,
-       tenant_id
-  from x_outbox
- where published_at is null
- order by staged_at
- limit $1
-   for update skip locked
-`.trim();
-
-export const SQL_OUTBOX_MARK_PUBLISHED = `
-update x_outbox set published_at = to_timestamp($2 / 1000.0) where id = $1
-`.trim();
+// The outbox's SQL moved to `driver-pg-sql.ts`, where every statement this package runs lives —
+// and, more to the point, where `SQL_JOBS_TABLE` is: `x_outbox` was declared here, in a constant
+// no boot code applied, which is the whole reason the outbox was documented and never created.
+// `src/index.ts` still re-exports the same four names, from there.

@@ -39,6 +39,8 @@ const ADDED_SINCE = [
   'X_QUERY_NOT_SUBSCRIBABLE',
   'X_LIVE_QUERY_UNKNOWN',
   'X_SUBSCRIPTION_ID_TAKEN',
+  'X_SOCKET_UNAUTHENTICATED',
+  'X_SOCKET_AUTH_UNAVAILABLE',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */

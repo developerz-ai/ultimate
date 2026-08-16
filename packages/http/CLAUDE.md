@@ -12,6 +12,68 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 ## Rules
 
 - Route `meta.auth` is required. Never default a route to public.
+- **`asCtx` is a WIDENING the compiler checks, never a cast.** `RequestContext extends Ctx`, and
+  `asCtx` is the identity function. It used to be `ctx as unknown as Ctx` over an object that set
+  none of `clock`, `now`, `logger`, `signal` or `services` — so `ctx.now()` threw
+  `TypeError: ctx.now is not a function` on every audited action served over HTTP,
+  `useService()` threw a `TypeError` instead of the `X_SERVICE_MISSING` it exists to raise, and
+  `throwIfAborted()` — the documented cancellation seam — was inert on the one surface where a
+  caller can actually go away. Never reintroduce the assertion: the type error IS the enforcement,
+  and it is a type-pin rather than a `.test.ts` because `tsconfig.json` excludes tests.
+  `ctx.buildId` is core's meaning — the build this PROCESS serves; the CLIENT's claim is
+  `ctx.clientBuildId`, read only by `assertBuild()`.
+- **The two inbound ids are read BEFORE the context and the span, in `correlation.ts`.** `startSpan`
+  resolves its parent from `currentSpanContext()`, which reads `ctx.traceId`, so a `traceparent`
+  parsed by a stage arrived one frame after the span's context was already frozen: the caller's
+  trace was discarded, the root span carried a dashed UUIDv7 no collector accepts as a trace id,
+  and the log lines beside it quoted a third value. The `request-id` and `trace` stages now only
+  PUBLISH what was decided — they do not decide. The regex is core's `parseTraceparent`, one copy.
+- **Every proxy-supplied header goes through `forwardedElement(header, hops)` and nothing else.**
+  `trustProxy` documented reading `x-forwarded-for` and had no reader at all, so behind any ingress
+  every anonymous request keyed to the proxy — one `auth` bucket (capacity 10) for the whole
+  internet, and one scanner enough to 429 every signup on the fleet. The entry read is
+  `entries.length - hops`, never `[0]`, which is whatever the client typed; a chain shorter than
+  declared trusts nothing rather than falling back leftward. `trustProxy` defaults to **false** and
+  requires `trustedProxyHops` (`X_TRUST_PROXY_UNSET` at `defineHttpConfig`) — it also gates the
+  `x-request-id` echo, and a direct caller choosing its own request id poisons log correlation.
+  `x-forwarded-proto` rides the same rule, which is what finally emits HSTS behind a
+  TLS-terminating ingress, and so does Envoy's `x-forwarded-client-cert` (`peer-identity.ts`).
+  **A peer certificate read from an untrusted hop is worse than none, because it authenticates** —
+  so `ctx.peer` is `null` for an untrusted deployment, a missing header and a short chain alike.
+  `ctx.peer` is never an actor: `hooks.authenticate` is the one funnel, through
+  `verifyWorkloadToken()` -> `actorFromService()` in `@ultimat3/auth`.
+- **One deadline per request, and it is what makes `ctx.signal` exist.** `deadline.ts` holds the
+  `AbortController` and the timer; `config.requestTimeoutMs` (30s, `0` disables) is the budget and
+  a caller may SHORTEN it with `x-request-timeout-ms`, never lengthen it. Two halves, both needed:
+  the abort is what cooperative code unwinds on, and the race in `execute` is what answers the
+  socket when a handler never looked at the signal. `X_TIMEOUT` is borrowed (core's concept) and
+  already mapped to 504. Always `deadline.clear()` in the `finally` — a live timer keeps the event
+  loop from going idle, so a process that answered everything still refuses to exit.
+- **`admit` is the second stage, and it refuses before ANY work.** `isDraining()` had no reader in
+  this package while this file claimed the layer answered 503 on it; past `config.maxInflight`
+  (1000, `0` disables) a request is shed `X_OVERLOADED` with `retry-after`. Both set the header on
+  `ctx.headers`, which the `response` stage merges, rather than teaching `error-map` a second
+  special case. The in-flight number is core's `inflightCount()` — the same counter `beginWork()`
+  in `server.ts` maintains — never a private one, for the same reason the drain phase is core's.
+  A refusal that costs as much as a served request is not load shedding.
+- **`csrf` sits after `auth` and before `body`, and CORS cannot replace it.**
+  `application/x-www-form-urlencoded` is a CORS-*simple* content type, so a cross-site
+  `<form method="post">` is SENT and EXECUTED with the session cookie attached and
+  `cors.origins: []` only withholds the reply — long after the refund went through. After auth
+  because only an AMBIENT credential can be forged into (anonymous and bearer callers are exempt);
+  before body so a rejected write never allocates its payload. `sec-fetch-site: same-origin`, an
+  `Origin` equal to this app, or an `Origin` already in `cors.origins`; anything else is
+  `X_CSRF_BLOCKED` (403, never 401 — the caller IS signed in, which is the problem). The self
+  origin is built from `ctx.https`, not `url.protocol`, or every legitimate post behind a
+  TLS-terminating ingress would be refused. **`mode: 'token'` is deliberately NOT shipped** — a
+  double-submit token needs a cookie issuer and a form-field helper at tier 4/5, and a half-built
+  token mode is worse than an honest `'origin' | 'off'`.
+- **A rejected value is a log FIELD, never part of the message.** `logger.emit()` redacts `bound`,
+  `contextFields` and `fields` — and never `msg` — so `logger.error(\`${code}: ${cause}\`)` in the
+  `error-map` stage wrote a rejected password verbatim into the log store, at 4xx, which is logged
+  and not reported and therefore kept for the full retention. The message is the CODE alone. The
+  other half is `@ultimat3/schema`'s `describeValue` (shape, never content) and it is the
+  load-bearing one; this half is what makes the value redactable at all.
 - **A browser that fails `auth: 'required'` is redirected; an agent gets the problem document.**
   One condition, two audiences, decided once in `auth-redirect.ts` and applied in the `error-map`
   stage before the overlay. `config.signInPath` is `null` until an app names its page, because a
@@ -69,6 +131,10 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `PipelineDeps`. Adding a stage means an entry in **both** `PIPELINE_STAGES` and the
   `Record<StageName, StageRun>` table; the record type is what makes forgetting one a build error.
 - Never add a stage to `PIPELINE_STAGES` without a `why` and a test.
+- **`toBucket` lives here, not in `@ultimat3/action`.** `action` and `query` are the same tier and
+  can never import each other, so the only conversion between `{ limit, windowMs }` and a `Bucket`
+  sitting in one of them is why a `query` could not declare a rate limit at all. It is beside
+  `Bucket` and the maths it validates, and it throws http's own `X_RATE_LIMIT_INVALID`.
 - Statuses live in `error-map.ts` only. No other file writes a status number. The framework's
   table (`ERROR_STATUS`) is closed; an app declares its own codes' statuses with
   `registerErrorStatus()`, which refuses a code the framework already holds. Without that half,
@@ -112,7 +178,13 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   reset for whoever spent it, so the most-throttled key is the last one to go. Never swap that
   comparator for insertion order or an LRU — recency is not the same as worthlessness here.
 - **Where the limiter's counters live is DECLARED by the app, never inferred, and refused at
-  boot.** `RateLimitStore.scope` says what a driver provides; `config.rateLimit.scope` says what
+  boot — and there is no default.** `DEFAULT_RATE_LIMIT` carries no `scope`, so
+  `resolveRateLimitConfig` refuses `X_RATE_LIMIT_SCOPE_UNSET` at `defineHttpConfig` when a limiter
+  that is ENABLED has not been told. `'process'` used to be the default, which made "nobody asked"
+  and "the app said one replica" the same value while `docker/helm/values.yaml` runs three — so
+  `assertRateLimitScope` below, which only fires on a `'shared'` declaration, could never see the
+  silent case. A disabled limiter owes no declaration: nothing is enforced, so nothing can be
+  wrong. The rest of the check is unchanged: `RateLimitStore.scope` says what a driver provides; `config.rateLimit.scope` says what
   the deployment requires; `assertRateLimitScope` compares them once, inside `createPipeline` —
   the one construction path `createServer`, the tests and any embedder all share. `'shared'` over
   a per-process store is `X_RATE_LIMIT_NOT_SHARED` before the socket opens, because the failure it
@@ -177,7 +249,12 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `redirect.ts` | the intent slot a handler that cannot return a `Response` fills |
 | `auth-redirect.ts` | where an unauthenticated browser goes, and where it comes back to |
 | `cache-policy.ts` | the default `CacheHint` for a route that declared none — route AND actor |
-| `rate-limit.ts` | the token-bucket maths, the store interface and the memory driver |
+| `rate-limit.ts` | the token-bucket maths, the store interface, the memory driver and `toBucket` |
+| `correlation.ts` | the inbound request id and trace, read before the context and the span exist |
+| `forwarded.ts` | one hop-indexed reader for every header a trusted proxy writes |
+| `peer-identity.ts` | Envoy XFCC -> `ctx.peer`, on that same trust rule |
+| `deadline.ts` | the per-request `AbortController`, the timer and `X_TIMEOUT` |
+| `csrf.ts` | the origin proof an unsafe method from a credentialed browser must carry |
 | `rate-limit-buckets.ts` | the one point routes and config meet: a route's own bucket, registered or refused |
 
 ## Commands

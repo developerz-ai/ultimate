@@ -8,11 +8,12 @@ is a change to every package.
 | Deps | none (`bun-types` only) |
 | Errors | subclass `UltimateError`; never `throw new Error` |
 | Values in a message | `renderCauseValue()` / `renderFixLiteral()`; never raw `JSON.stringify`, `String()` or `${…}` on an `unknown` |
+| A value a CALLER supplied | `describeValue()` — shape, never content. `renderCauseValue` is safe against throwing, not against leaking |
 | Reading a caught value | `renderThrowable()` / `isThrownError()` / `stringField()`; never `error.message`, `error instanceof Error` or `typeof error.code === 'string'` directly — the probe throws before the renderer runs |
 | New code | add to `CORE_CODE_TITLES` in `error-codes.ts`, else the title is auto-humanised |
 | Time | take a `Clock`; `Date.now()` / `new Date()` only inside `clock.ts` |
 | Context | never thread `ctx` as a parameter — `useContext()` |
-| Exports | add to `src/index.ts` explicitly; no `export *` |
+| Exports | add to `src/index.ts` explicitly; no `export *`. Three subjects that each span a dozen modules arrive through `src/exports/` — every name is still written out in `index.ts`, so the public surface is one file to read |
 | Files | < 200 LOC, 500 hard ceiling, one responsibility, `kebab-case.ts`, test beside source |
 | Type claims | `type-pins.ts`, never a `.test.ts` — `tsconfig.json` excludes tests, so `tsc` never reads one |
 
@@ -30,6 +31,15 @@ VERBATIM, `a object` included, so a package adopting it changes no message. `toU
 parameters typed `unknown` that reach a `cause:` / `fix:`, and it cannot see a value laundered
 through a local helper first (`packages/ui/src/components/ErrorState.tsx` builds a `message`
 const, then assigns it).
+
+`describeValue` in `error-render.ts` is a character-for-character duplicate of `describeValue` in
+`packages/schema/src/describe-value.ts`, for the same tier-0 reason `SCHEMA_ERROR_CODE_TITLES` is
+one: schema and core are both tier 0 and `core → schema` is **not** a declared edge in
+`scripts/lib/tiers.ts`, so neither may import the other. Keep the two identical; a pin test in
+`@ultimat3/cli` (which may legally import both) is the mechanical half, the same shape as
+`schema-error-codes-pin.test.ts`. The rule it enforces: a `cause` reaches the log index AND the
+HTTP problem document, redaction is by log FIELD key, and a value baked into a message string has
+no key left to redact — so `parseId`/`uuidTimestamp` describe a rejected id and never echo it.
 
 `logger.ts` must not import `context.ts`. `context.ts` injects the ids via
 `setLoggerContextFields()`. It **does** import `secret.ts`, one way only: `secret.ts` owns
@@ -105,6 +115,22 @@ the bug:
 | `recordJob` | `@ultimat3/jobs` `worker.ts`, the outcome branch inside `tick()` | the loop is where the queue name is in scope; `JOB_OUTCOME_LABELS` maps the four outcomes onto three labels and drops `suspended`, because parking a run is control flow |
 | `recordLeaseLost` | `@ultimat3/jobs` `heartbeat.ts`, once per lease that lapsed | the lease heartbeat is the only thing that knows a renewal stopped landing; deliberately not an `outcome` on `jobs_total`, because nothing failed and nothing finished — the queue simply re-delivered a job this process was still running |
 
+Tracing has three parts and they are three files on purpose: `telemetry.ts` builds spans,
+`sampler.ts` decides whether a trace is worth exporting, and `otlp*.ts` puts it on the wire.
+`span.end()` returns early when `traceFlags & 1` is 0 — the bit is obeyed, not merely forwarded,
+which is what stops an exporter from turning 40k rps into 40k rps of spans. `configureTelemetry`
+takes a `Sampler`; the default reads `OTEL_TRACES_SAMPLER*` **at the first span, never at module
+scope** (same call-time rule as `cursor.ts`'s secret). `resetTelemetry()` drops both.
+
+The OTLP exporters are built, not wrapped, and the case is in
+[`docs/idea/18-build-vs-wrap.md`](../../docs/idea/18-build-vs-wrap.md): OTLP/HTTP JSON is `fetch`
+plus `JSON.stringify`, while `@opentelemetry/api` would put a SECOND `Span` type in the framework
+(axiom 1) and `sdk-node` would fight `context.ts` for the AsyncLocalStorage. `otlpTraceRequest` /
+`otlpMetricsRequest` are pure so the wire format is a unit test, exactly as `sentryEnvelope` is.
+**gRPC (`:4317`) is out of scope** — it needs HTTP/2 and protobuf, and both the `:4317` port and a
+non-`http/json` `OTEL_EXPORTER_OTLP_PROTOCOL` throw `X_OTLP_PROTOCOL_UNSUPPORTED` naming `:4318`.
+A boot that must not throw asks `tryOtlpEndpoint(signal)` first.
+
 `error-reporter.ts` is the same shape a third time: `ErrorReporter`, a no-op default, a memory
 reporter for tests, and a transport on the wire (`error-reporter-sentry.ts`, an optional separate
 export — the DSN is the app's typed env, never a constant here). `reportError` never throws and
@@ -123,6 +149,29 @@ bun test                      # from packages/core
 bun run typecheck
 ```
 
+`markReady()` means **bound**, and readiness means **usable** — two different facts since
+`registerReadinessCheck(name, check)`. `/readyz` is ready only when the state is `ready` AND every
+named check passes, and `HealthReport.checks` carries them by name because "alert on check
+failures by check name" is not writable against a boolean. Checks are **synchronous** on purpose:
+a probe that awaits a network call turns a slow dependency into a wedged endpoint and a restart
+loop, so the owner of the dependency keeps a boolean fresh and this reads it. Liveness ignores
+them — a database outage that failed `/healthz` would restart the whole fleet into the same
+outage. The registration returns its unregister, same shape and same ownership rule as
+`onShutdown`; `readinessCheckCount()` is the leak probe.
+
+`impersonate(actor, reason, fn)` is the ONE door through `withChildContext({ actor })`. It stamps
+the caller onto the child as `Actor.onBehalfOf`, so `actorLabel` renders
+`service:eng-7→user:cust-99@org-3` and a refund issued during a support session can never read as
+the customer's. The non-blank-reason assert is `@ultimat3/entity`'s `crossTenant()` template
+verbatim — two escapes from the framework's default posture should not look like two things. Do
+not add a second impersonation path.
+
+Every `UltimateError` carries `retry` (`terminal | retryable | retry-after`), **defaulting to
+`terminal`** — fail closed, because a client retrying on `status >= 500` hammers `X_DB_DRIFT` and
+`X_TENANCY_UNSCOPED`, which are permanent config faults. `registerErrorRetry()` is the one
+registration path and it refuses to reclassify a core code, the same way `registerErrorStatus`
+refuses to remap one. A new code in any package should be classified beside its declaration.
+
 Gotchas:
 - `exactOptionalPropertyTypes` is on — declare optional fields as `x?: T | undefined`.
 - `noPropertyAccessFromIndexSignature` is on — `ctx.services['mail']`, not `.mail`.
@@ -131,7 +180,13 @@ Gotchas:
   declared and nobody installed reads as a value rather than a build error (`examples/dummy`
   shipped `ctx.storage.ensureBucket()` against a method no package has). Deleting the signature
   is the fix and a breaking change; until then `ctx.services['mail']` is the honest late-bound
-  path and a declared augmentation is the only typed one.
+  path and a declared augmentation is the only typed one. **Measured 2026-08:** deleting the
+  signature compiles core clean on its own, and the augmentation seam survives untouched — an
+  augmentation adds NAMED members and `Ctx extends CtxServices` picks them up with no index
+  signature at all. What is unmeasured is the rest of the tree: the change is only a build error
+  where an app reads an undeclared service, which is the point, but `examples/dummy` ships one
+  such read and it would land on the app gate's ratchet. Land it as its own change, alone, with a
+  full `bun run verify` — never folded into another branch.
 - Tests that touch the registry, the lifecycle or the listener table must call
   `resetErrorCodes()` / `resetLifecycle()` / `resetListeners()`.
 - `onShutdown`'s return value is the unregister, and every caller that can be started twice owns

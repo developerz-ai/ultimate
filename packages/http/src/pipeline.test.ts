@@ -80,7 +80,12 @@ const routes: readonly Route[] = [
   },
 ];
 
-const config = defineHttpConfig({ dev: false, buildId: null, hostname: '127.0.0.1' });
+const config = defineHttpConfig({
+  rateLimit: { scope: 'process' },
+  dev: false,
+  buildId: null,
+  hostname: '127.0.0.1',
+});
 
 interface PipelineTestOptions {
   actorId?: string;
@@ -95,7 +100,7 @@ const pipelineWith = (options: PipelineTestOptions) => {
   const active =
     options.buildId === undefined
       ? config
-      : defineHttpConfig({ dev: false, buildId: options.buildId });
+      : defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false, buildId: options.buildId });
   const decision = options.decision;
   const actorId = options.actorId;
   const onAuthorize = options.onAuthorize;
@@ -129,11 +134,13 @@ describe('stage order', () => {
   test('is the documented order, and this test is the guarantee', () => {
     expect(PIPELINE_STAGES.map((stage) => stage.name)).toEqual([
       'request-id',
+      'admit',
       'trace',
       'context',
       'locale',
       'auth',
       'rate-limit',
+      'csrf',
       'body',
       'authz',
       'handler',
@@ -221,7 +228,11 @@ describe('lifecycle', () => {
   test('a browser hitting the same route is sent to the sign-in page', async () => {
     const signIn = createPipeline({
       table: createRouter(routes),
-      config: defineHttpConfig({ dev: false, signInPath: '/signin' }),
+      config: defineHttpConfig({
+        rateLimit: { scope: 'process' },
+        dev: false,
+        signInPath: '/signin',
+      }),
       hooks: { authenticate: () => null },
     });
     const response = await signIn.handle(get('/private', { headers: { accept: 'text/html' } }), {

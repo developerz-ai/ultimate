@@ -31,7 +31,7 @@ const context = (path: string): RequestContext =>
     url: new URL(`http://dev.test${path}`),
     method: 'GET',
     role: 'web',
-    config: defineHttpConfig({ dev: true }),
+    config: defineHttpConfig({ dev: true, rateLimit: { scope: 'process' } }),
   });
 
 /** The hook takes a request only to pass it to app code; nothing in `authorize` reads it. */

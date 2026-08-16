@@ -54,9 +54,10 @@ function held(heartbeat: (clock: FrozenClock) => Promise<void>): Harness {
     renewals: () => renewals,
     heartbeat: startLeaseHeartbeat({
       driver: {
-        heartbeat: () => {
+        heartbeat: async () => {
           renewals += 1;
-          return heartbeat(clock);
+          await heartbeat(clock);
+          return true;
         },
       },
       claimed,
@@ -239,7 +240,7 @@ describe('the interval drives it without the test touching a timer', () => {
       driver: {
         heartbeat: () => {
           renewals += 1;
-          return Promise.resolve();
+          return Promise.resolve(true);
         },
       },
       claimed,

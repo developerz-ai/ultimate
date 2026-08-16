@@ -3,6 +3,7 @@
 // and reports the same /healthz + /readyz state.
 
 import { type Clock, systemClock } from './clock';
+import { UltimateError } from './errors';
 import { type Logger, logger as rootLogger } from './logger';
 
 export type HealthState = 'starting' | 'ready' | 'draining' | 'stopped';
@@ -33,12 +34,33 @@ export interface LifecycleOptions {
   readonly logger?: Logger | undefined;
 }
 
+export type ReadinessStatus = 'ok' | 'failing';
+
+/**
+ * Synchronous, and that is the design, not a limitation. **Do not widen this to
+ * `() => Promise<boolean>`** — the signature is the mechanism.
+ *
+ * A readiness endpoint that does I/O is a liveness bomb. A probe that awaits a network call takes
+ * as long as the dependency does, so a slow database makes the endpoint miss its `timeoutSeconds`,
+ * the kubelet reads that as unready, and capacity is pulled from an already-struggling system —
+ * the outage the probe existed to prevent, caused by the probe. Worse under a liveness probe
+ * sharing the handler: the pod is killed and restarts into the same slow database, cold.
+ *
+ * So the owner of the dependency keeps a boolean fresh — a pool exposes `isOpen`, a background
+ * poller flips a flag on its own schedule with its own timeout — and this reads it. That puts the
+ * waiting where a timeout can be tuned, and leaves this path unable to block. A check that throws
+ * is `failing`.
+ */
+export type ReadinessCheck = () => boolean;
+
 export interface HealthReport {
   readonly state: HealthState;
   readonly ready: boolean;
   readonly uptimeMs: number;
   readonly inflight: number;
   readonly buildId: string;
+  /** Named, because "alert on check failures BY CHECK NAME" is not writable against a boolean. */
+  readonly checks: Readonly<Record<string, ReadinessStatus>>;
 }
 
 export interface HealthPayload {
@@ -65,6 +87,7 @@ let inflight = 0;
 let registrations: Registration[] = [];
 let drainPromise: Promise<void> | undefined;
 let idleWaiters: (() => void)[] = [];
+const readiness = new Map<string, ReadinessCheck>();
 
 export function configureLifecycle(options: LifecycleOptions): void {
   if (options.deadlineMs !== undefined) deadlineMs = options.deadlineMs;
@@ -79,8 +102,52 @@ export function lifecycleState(): HealthState {
   return state;
 }
 
+/**
+ * "This process bound its socket." NOT "this process can serve a request" — that is what the
+ * readiness checks answer. Before them, `markReady()` was the whole of `/readyz`, so a pod went
+ * green the instant it bound and the load balancer sent traffic into a Postgres pool that had not
+ * opened a connection yet; `maxUnavailable: 0` does not help when readiness lies.
+ */
 export function markReady(): void {
   if (state === 'starting') state = 'ready';
+}
+
+/**
+ * Register a named readiness check. Returns its unregister — the same shape as `onShutdown`, and
+ * owned by whoever can be started twice, for the same reason.
+ */
+export function registerReadinessCheck(name: string, check: ReadinessCheck): () => void {
+  if (readiness.has(name)) {
+    throw new UltimateError({
+      code: 'X_READINESS_CHECK_DUPLICATE',
+      cause: `a readiness check named "${name}" is already registered (have: ${[...readiness.keys()].join(', ')})`,
+      fix: `name the second check for what it actually probes, e.g. registerReadinessCheck('${name}-replica', check) — or hold the unregister the first registration returned and call it first`,
+      meta: { name },
+    });
+  }
+  readiness.set(name, check);
+  return () => {
+    if (readiness.get(name) === check) readiness.delete(name);
+  };
+}
+
+/** Test-only: registered checks. A count that climbs across a start/stop cycle is a leak. */
+export function readinessCheckCount(): number {
+  return readiness.size;
+}
+
+/** Every check, run now, by name. A check that throws is `failing` — never an unhandled error. */
+export function readinessChecks(): Readonly<Record<string, ReadinessStatus>> {
+  const results: Record<string, ReadinessStatus> = {};
+  for (const [name, check] of readiness) {
+    try {
+      results[name] = check() ? 'ok' : 'failing';
+    } catch (thrown) {
+      results[name] = 'failing';
+      log.warn('readiness check threw', { check: name, error: thrown });
+    }
+  }
+  return results;
 }
 
 export function inflightCount(): number {
@@ -225,27 +292,34 @@ export function installSignalHandlers(options?: SignalHandlerOptions): () => voi
 }
 
 export function healthReport(): HealthReport {
+  const checks = readinessChecks();
   return {
     state,
-    ready: state === 'ready',
+    // `ready` is the same predicate `/readyz` answers on, so a body and its status can never
+    // disagree — a 200 whose body says `ready: false` is the bug this shares one source to avoid.
+    ready: state === 'ready' && Object.values(checks).every((status) => status === 'ok'),
     uptimeMs: Math.round(clock.monotonic() - startedAtMono),
     inflight,
     buildId: process.env['BUILD_ID'] ?? 'dev',
+    checks,
   };
 }
 
-/** Liveness: the process exists and is not wedged. Stays 200 while draining. */
+/**
+ * Liveness: the process exists and is not wedged. Stays 200 while draining, and deliberately
+ * ignores the checks — a database outage that failed liveness everywhere would restart the whole
+ * fleet into the same outage, with cold caches and no connections.
+ */
 export function healthzPayload(): HealthPayload {
   const body = healthReport();
   const ok = state !== 'stopped';
   return { ok, status: ok ? 200 : 503, body };
 }
 
-/** Readiness: may this instance receive traffic? 503 while starting or draining. */
+/** Readiness: may this instance receive traffic? 503 while starting, draining or any check fails. */
 export function readyzPayload(): HealthPayload {
   const body = healthReport();
-  const ok = state === 'ready';
-  return { ok, status: ok ? 200 : 503, body };
+  return { ok: body.ready, status: body.ready ? 200 : 503, body };
 }
 
 /** Test-only: forget all hooks and return to `starting`. */
@@ -259,4 +333,5 @@ export function resetLifecycle(): void {
   registrations = [];
   drainPromise = undefined;
   idleWaiters = [];
+  readiness.clear();
 }

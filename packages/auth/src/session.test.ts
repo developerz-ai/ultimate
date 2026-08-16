@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { type FrozenClock, frozenClock } from '@ultimat3/core';
+import type { SessionStore } from './adapter';
 import { AuthError } from './errors';
 import { MemoryAdapter } from './memory-adapter';
 import {
   createSession,
   DEFAULT_SESSION_POLICY,
+  idleSlideMs,
   listDevices,
   readSessionCookie,
   revokeSession,
@@ -138,5 +140,90 @@ describe('session', () => {
     });
     const raw = readSessionCookie(request, POLICY) ?? '';
     expect((await caught(() => verifySession(rt, raw))).code).toBe('X_UNAUTHENTICATED');
+  });
+});
+
+/**
+ * The failure case first: before `idleSlideMs`, `verifySession` wrote on EVERY authenticated
+ * request. One request was a SELECT, an `UPDATE … RETURNING *` and a second SELECT before the
+ * app's own first query — 20k writes a second on one hot table at 20k rps, presenting as "the
+ * database is slow" rather than "authentication is a write path".
+ */
+describe('the idle window slides, it does not grind', () => {
+  /** Counts writes without changing behaviour: the real adapter still does the work. */
+  const counting = (base: MemoryAdapter): { store: SessionStore; writes: () => number } => {
+    let writes = 0;
+    const store: SessionStore = {
+      getSession: (id) => base.getSession(id),
+      createSession: (session) => base.createSession(session),
+      updateSession: (id, patch) => {
+        writes += 1;
+        return base.updateSession(id, patch);
+      },
+      deleteSession: (id) => base.deleteSession(id),
+      deleteOtherSessions: (userId, keep) => base.deleteOtherSessions(userId, keep),
+      listSessions: (userId) => base.listSessions(userId),
+    };
+    return { store, writes: () => writes };
+  };
+
+  const slidingRuntime = (clock: FrozenClock) => {
+    const counted = counting(new MemoryAdapter());
+    // idleTtlMs 30s / IDLE_SLIDE_DIVISOR 20 = a 1.5s slide. The absolute ceiling is widened so
+    // these tests measure the idle window and only the idle window.
+    const policy: SessionPolicy = { ...POLICY, absoluteTtlMs: 3_600_000 };
+    return { runtime: { store: counted.store, policy, clock }, writes: counted.writes };
+  };
+
+  test('a second request inside the slide window issues no write at all', async () => {
+    const clock = frozenClock(0);
+    const { runtime: rt, writes } = slidingRuntime(clock);
+    const issued = await createSession(rt, { userId: 'user-1' });
+    const before = writes();
+
+    clock.advance(500);
+    await verifySession(rt, issued.token);
+    clock.advance(500);
+    await verifySession(rt, issued.token);
+    expect(writes()).toBe(before);
+
+    // Past the slide, exactly one write moves the window forward.
+    clock.advance(1_000);
+    const slid = await verifySession(rt, issued.token);
+    expect(writes()).toBe(before + 1);
+    expect(slid.lastSeenAt.getTime()).toBe(2_000);
+  });
+
+  test('the window still slides, so a session used steadily never idles out', async () => {
+    const clock = frozenClock(0);
+    const { runtime: rt } = slidingRuntime(clock);
+    const issued = await createSession(rt, { userId: 'user-1' });
+    // idleTtlMs is 30s; ten hops of 20s each would expire it if nothing ever moved lastSeenAt.
+    for (let hop = 0; hop < 10; hop += 1) {
+      clock.advance(20_000);
+      await verifySession(rt, issued.token);
+    }
+    expect((await rt.store.getSession(issued.session.id))?.lastSeenAt.getTime()).toBe(200_000);
+  });
+
+  test('a changed address is written immediately, slide window or not', async () => {
+    const clock = frozenClock(0);
+    const { runtime: rt, writes } = slidingRuntime(clock);
+    const issued = await createSession(rt, { userId: 'user-1', ip: '203.0.113.7' });
+    const before = writes();
+    clock.advance(100);
+    // Well inside the slide — but a device list and an incident review read this row.
+    const touched = await verifySession(rt, issued.token, { ip: '198.51.100.9' });
+    expect(writes()).toBe(before + 1);
+    expect(touched.ip).toBe('198.51.100.9');
+    // The window itself did NOT move: only the observation did.
+    expect(touched.lastSeenAt.getTime()).toBe(0);
+  });
+
+  test('idleSlideMs is derived from idleTtlMs, so shortening the TTL cannot outrun it', () => {
+    expect(idleSlideMs({ ...DEFAULT_SESSION_POLICY, idleTtlMs: 60 * 60 * 1000 })).toBe(180_000);
+    // An explicit value wins, including zero — which restores the write-every-request behaviour
+    // for an app that would rather pay for exact idle expiry.
+    expect(idleSlideMs({ ...DEFAULT_SESSION_POLICY, idleSlideMs: 0 })).toBe(0);
   });
 });

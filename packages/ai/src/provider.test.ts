@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createGateway, isRetryable } from './gateway';
-import { MODEL_IDS, MODELS } from './models';
+import { ANTHROPIC_MODEL_IDS, modelSpec } from './models';
 import {
   AnthropicProvider,
   costOf,
@@ -157,7 +157,7 @@ describe('Anthropic request body', () => {
   test('an effort nobody asked for is not sent, on any model', () => {
     // A default sent as a request is indistinguishable on the wire from a declaration that asked
     // for it, and it is a 400 on a model without the knob — so omission is the only safe shape.
-    for (const model of MODEL_IDS) {
+    for (const model of ANTHROPIC_MODEL_IDS) {
       const body = provider.body({
         model,
         messages: [{ role: 'user', content: 'hi' }],
@@ -169,8 +169,8 @@ describe('Anthropic request body', () => {
 
   test('every blessed model gets a body its own spec says it accepts', () => {
     // Catalogue-driven, so a fourth model cannot be added with a body it would 400 on.
-    for (const model of MODEL_IDS) {
-      const { reasoning } = MODELS[model];
+    for (const model of ANTHROPIC_MODEL_IDS) {
+      const { reasoning } = modelSpec(model);
       const body = provider.body({
         model,
         messages: [{ role: 'user', content: 'hi' }],
@@ -200,7 +200,7 @@ describe('Anthropic request body', () => {
       messages: [{ role: 'user', content: 'hi' }],
       maxTokens: 500_000,
     });
-    expect(body['max_tokens']).toBe(MODELS['claude-haiku-4-5'].maxOutput);
+    expect(body['max_tokens']).toBe(modelSpec('claude-haiku-4-5').maxOutput);
   });
 
   test('a remote call without a key throws X_AI_KEY_MISSING naming the env var', async () => {

@@ -213,11 +213,40 @@ a caller reads past a write made earlier in the same request, and the read it ju
 request's answer from then on, so a later plain read of the same key joins it rather than the entry
 the write moved past. Invalidation drops tier entries, not memo entries.
 
+## `rateLimit:` — the read half, and it is enforced
+
+```ts
+rateLimit: { limit: 3, windowMs: 600_000 },   // 3 held, one back every three and a bit minutes
+```
+
+Symmetric with an action's, and for a reason: without it **every** `GET /_x/query/*` fell to the
+`default` bucket — 120 burst, 2/s per actor — so one authenticated caller could hold 120
+cross-tenant aggregates in flight and then 2/s indefinitely, from a single account, with no
+declaration able to say otherwise. `toQueryRoute` sets the bucket NAME and the NUMBERS, and
+`@ultimat3/http`'s `withRouteBuckets` registers them: a name alone falls through to `default`.
+The conversion is `toBucket` from `@ultimat3/http` — the same one the action route uses, because
+http owns `Bucket` and `action` is the same tier as this package. A pair the limiter cannot run
+on is `X_RATE_LIMIT_INVALID`, at projection.
+
+## `deprecated:` — a compat window, not a version
+
+```ts
+deprecated: { since: '2026-08-01T00:00:00Z', sunset: '2026-12-31T23:59:59Z', replacedBy: 'searchOrders' },
+```
+
+`Deprecation` (RFC 9745) and `Sunset` (RFC 8594) on every answer, a
+`link: </_x/query/search-orders>; rel="successor-version"`, the dates on the descriptor, and a
+`deprecated_calls_total{primitive,name}` counter so "is anyone still reading it?" has an answer
+before the read is deleted. A date that cannot be rendered is `X_QUERY_DEPRECATION_INVALID` at
+projection, not on the first read. Versioning is two deployments behind one ingress, never a
+router feature here.
+
 ## Errors
 
 | Code | When | Fix |
 |---|---|---|
 | `X_QUERY_DUPLICATE` | two queries under one name | rename one export |
+| `X_QUERY_DEPRECATION_INVALID` | `deprecated:` with a `since`/`sunset` that is not a date | use an ISO-8601 instant |
 | `X_QUERY_POLICY_MISSING` | registration without `policy:` | add `policy: can('…')` |
 | `X_MATCHER_UNSUPPORTED` | live query the matcher cannot patch | reshape it, or `live: false` |
 | `X_CURSOR_INVALID` | tampered / foreign / malformed cursor | request the first page again |

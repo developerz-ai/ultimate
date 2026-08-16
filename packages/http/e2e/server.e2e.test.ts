@@ -35,7 +35,12 @@ resetLifecycle();
 const handle = createServer({
   routes,
   role: 'web',
-  config: defineHttpConfig({ port: 0, hostname: '127.0.0.1', dev: false }),
+  config: defineHttpConfig({
+    rateLimit: { scope: 'process' },
+    port: 0,
+    hostname: '127.0.0.1',
+    dev: false,
+  }),
 }).start();
 
 afterAll(async () => {
@@ -76,7 +81,12 @@ describe('drain', () => {
     const draining = createServer({
       routes,
       role: 'worker',
-      config: defineHttpConfig({ port: 0, hostname: '127.0.0.1', dev: false }),
+      config: defineHttpConfig({
+        rateLimit: { scope: 'process' },
+        port: 0,
+        hostname: '127.0.0.1',
+        dev: false,
+      }),
     }).start();
     const url = draining.url();
     expect((await fetch(`${url}/readyz`)).status).toBe(200);

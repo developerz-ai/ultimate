@@ -8,42 +8,41 @@ import {
   type Clock,
   healthzPayload,
   logger,
-  markListening,
   markReady,
-  onShutdown,
   readyzPayload,
   reportError,
   systemClock,
   uuid,
 } from '@ultimat3/core';
 import type { ChannelHub, Topic } from './channel';
-import { topic as makeTopic } from './channel';
-import { isClientFault } from './errors';
+import { isClientFault, SocketAuthUnavailableError, SocketUnauthenticatedError } from './errors';
 import type { Transport, TransportSubscription } from './fanout';
-import type { JsonValue, Row } from './json';
 import type { LiveQueryRegistry } from './live-query';
-import { type PresenceRegistry, presenceFrame } from './presence';
-import { CHANGE_SUBJECT_PREFIX, parseChange } from './replicator';
+import type { PresenceRegistry } from './presence';
+import { CHANGE_SUBJECT_PREFIX, parseEnvelope, SeqGapDetector } from './replicator';
 import { CLOSE, SocketRegistry, SyncSocket, type WsLike } from './socket';
-import { decode, type Frame, PROTOCOL_VERSION, toWireError } from './sync-protocol';
+import { GrantBook, type SyncAuthenticator, type SyncGrant, sweepGrants } from './sync-auth';
+import { createFrameRouter, type MutationHandler } from './sync-frames';
+import { decode, PROTOCOL_VERSION, toWireError } from './sync-protocol';
 import { AcceptBudget, drainPlan, type Rng, reconnectFrame } from './thundering-herd';
 
+/**
+ * What the upgrade hands the socket. It carries no actor: the grant does, and one identity written
+ * in two places is two that disagree the moment a re-auth renews one of them.
+ */
 export interface WsData {
   readonly socketId: string;
   readonly clientBuildId: string;
-  readonly actorId: string | null;
 }
 
 export type SyncWs = WsLike & { readonly data: WsData };
 
-/** Server-authoritative mutation execution. Injected: `sync` never owns business logic. */
-export type MutationHandler = (args: {
-  socket: SyncSocket;
-  name: string;
-  key: string;
-  seq: number;
-  input: JsonValue;
-}) => Promise<{ lsn?: string | null; entity?: string; row?: Row | null }>;
+/**
+ * How often an expired grant is re-decided. A third of the shortest TTL worth issuing: a grant is
+ * re-checked on the pass after it expires, so the window a revoked actor keeps its socket is this
+ * interval and not its token's lifetime.
+ */
+export const DEFAULT_REAUTH_INTERVAL_MS = 30_000;
 
 export interface SyncNodeOptions {
   readonly hub: ChannelHub;
@@ -54,6 +53,18 @@ export interface SyncNodeOptions {
   readonly sockets?: SocketRegistry;
   readonly accept?: AcceptBudget;
   readonly onMutate?: MutationHandler;
+  /**
+   * Who is dialling. Injected for the same reason `onMutate` is: `sync` owns no business logic and
+   * imports no authenticator, so an app supplies the one function that turns an upgrade request
+   * into an actor — from `@ultimat3/auth` or from anywhere else.
+   *
+   * **Omitted, every socket on this node is anonymous** and every policy downstream — the topic
+   * guard, `authorize`, `visible`, the per-tenant subscription cap — decides against `null`. That
+   * is a single-tenant node, and `start()` says so in the log.
+   */
+  readonly authenticate?: SyncAuthenticator;
+  /** How often an expired grant is re-decided. The clock a socket's authority runs on. */
+  readonly reauthenticateIntervalMs?: number;
   readonly clock?: Clock;
   readonly rng?: Rng;
   /** WS endpoint. One path, no negotiation — the protocol version lives in the frames. */
@@ -71,7 +82,12 @@ export interface SyncNode {
   readonly ready: boolean;
   start(): Promise<void>;
   stop(): Promise<void>;
-  fetch(request: Request, server: UpgradeTarget): Response | undefined;
+  /**
+   * Async because `authenticate` is: the credential is decided *before* `server.upgrade`, so a
+   * refused one never costs a websocket. Bun's `fetch` may return a promise, and an upgrade that
+   * awaits first is still an upgrade.
+   */
+  fetch(request: Request, server: UpgradeTarget): Promise<Response | undefined>;
   readonly websocket: {
     idleTimeout: number;
     backpressureLimit: number;
@@ -92,9 +108,12 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
   const accept = options.accept ?? new AcceptBudget({ perSecond: 500, burst: 2000, clock });
   const path = options.path ?? '/_x/sync';
   const presence = options.presence;
+  const grants = new GrantBook();
+  const gaps = new SeqGapDetector();
   let ready = false;
   let changes: TransportSubscription | null = null;
   let sweeping: ReturnType<typeof setInterval> | null = null;
+  let reauthing: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Work nobody is waiting on — a presence leave from a synchronous close, a sweep on a timer, a
@@ -128,112 +147,73 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     changes = null;
     if (sweeping !== null) clearInterval(sweeping);
     sweeping = null;
+    if (reauthing !== null) clearInterval(reauthing);
+    reauthing = null;
+    gaps.forget();
   };
 
-  const routeFrame = async (socket: SyncSocket, frame: Frame): Promise<void> => {
-    socket.touch();
-    switch (frame.type) {
-      case 'hello': {
-        socket.send({
-          type: 'hello',
-          v: PROTOCOL_VERSION,
-          buildId: options.buildId,
-          sessionId: socket.id,
-          actorId: socket.actorId,
-          resume: [],
-        });
-        if (socket.skewed) {
-          socket.send({ type: 'update-available', v: PROTOCOL_VERSION, buildId: options.buildId });
-        }
-        return;
-      }
-      case 'subscribe': {
-        if (frame.target.kind === 'topic') {
-          const name = makeTopic(...frame.target.topic.split('.'));
-          if (frame.op === 'drop') {
-            options.hub.unsubscribe(socket, name);
-            if (presence) await presence.leave(name, socket.id);
-            return;
-          }
-          await options.hub.subscribe(socket, name);
-          // Subscribing to a topic IS joining its presence set: presence has no frame of its own,
-          // so a second round trip saying "and I am here" would be a second way to do one thing,
-          // and a client that skipped it would be invisible in a room it is receiving from.
-          // Repeating the frame is therefore also the heartbeat — `join` re-`put`s the member.
-          if (presence) {
-            const members = await presence.join(name, { id: socket.id, actorId: socket.actorId });
-            socket.send(presenceFrame(name, 'sync', members));
-          }
-          return;
-        }
-        if (frame.op === 'drop') {
-          // Scoped to this socket: a sid is client data, and an unscoped drop let one client
-          // end another's live stream by guessing — or reusing — its id.
-          options.registry.unsubscribe(socket.id, frame.sid);
-          return;
-        }
-        const { frame: reply } = await options.registry.subscribe({
-          socket,
-          name: frame.target.qid,
-          input: frame.target.input,
-          sid: frame.sid,
-          cursor: frame.target.cursor,
-        });
-        socket.send(reply);
-        return;
-      }
-      case 'mutate': {
-        if (!options.onMutate) {
-          socket.send({
-            type: 'ack',
-            v: PROTOCOL_VERSION,
-            ref: frame.key,
-            lsn: null,
-            error: toWireError({
-              code: 'X_NOT_IMPLEMENTED',
-              cause: 'this sync node was started without a mutation handler',
-              fix: 'pass onMutate to createSyncNode({ onMutate })',
-            }),
-          });
-          return;
-        }
-        const result = await options.onMutate({
-          socket,
-          name: frame.name,
-          key: frame.key,
-          seq: frame.seq,
-          input: frame.input,
-        });
-        socket.send({
-          type: 'ack',
-          v: PROTOCOL_VERSION,
-          ref: frame.key,
-          lsn: result.lsn ?? null,
-          error: null,
-        });
-        if (result.entity !== undefined) {
-          socket.send({
-            type: 'rebase',
-            v: PROTOCOL_VERSION,
-            key: frame.key,
-            entity: result.entity,
-            strategy: 'server-wins',
-            row: result.row ?? null,
-          });
-        }
-        return;
-      }
-      // Server-authored frames are never received from a client.
-      case 'snapshot':
-      case 'patch':
-      case 'ack':
-      case 'rebase':
-      case 'presence':
-      case 'reconnect':
-      case 'update-available':
-        return;
+  /**
+   * Everything one socket held, released once. Bun's `close` callback runs it, and so does a
+   * revoked grant — a socket this node closes itself gets no callback in a unit test, and in
+   * production the second run is the no-op every step here already is.
+   */
+  const teardown = (socket: SyncSocket): void => {
+    options.registry.unsubscribeSocket(socket.id);
+    const topics = [...socket.topics] as Topic[];
+    for (const name of topics) options.hub.unsubscribe(socket, name);
+    sockets.remove(socket.id);
+    grants.delete(socket.id);
+    // A closed socket is a leave, said now rather than left to TTL: everyone else would otherwise
+    // keep rendering a member who is provably gone for the rest of its window. The write is on the
+    // bus and the close callback is synchronous, so it cannot be awaited here.
+    if (presence) {
+      for (const name of topics) detach(presence.leave(name, socket.id), 'presence.leave', name);
     }
   };
+
+  /**
+   * One pass over the grants whose window has closed. This is the half R2 was missing: `reauthorize`
+   * and `onActorChange` were both written and neither had a caller, so a socket that was accepted
+   * was authorized for as long as it stayed open — and an active client's socket never idles out,
+   * because every inbound frame touches it.
+   */
+  const reauthenticate = async (): Promise<void> => {
+    await sweepGrants({
+      grants,
+      clock,
+      onActor: async (socketId, actor) => {
+        const socket = sockets.get(socketId);
+        if (!socket) return;
+        // The hub sets `socket.actor` and drops the topics this actor may no longer read; the
+        // registry re-decides every live subscription and desyncs the survivors, so the next
+        // delivery re-snapshots them under the new authority rather than the old window.
+        await options.hub.onActorChange(socket, actor);
+        await options.registry.reauthorize(socket);
+      },
+      onRevoked: (socketId) => {
+        const socket = sockets.get(socketId);
+        if (!socket) return;
+        teardown(socket);
+        socket.close(CLOSE.policy, 'grant expired');
+      },
+      onRefreshFailed: (socketId, error) => {
+        // Not a denial: the grant is kept and retried next pass. Reported because a socket nobody
+        // can re-decide is not something to discover from a connection graph.
+        reportError(error, {
+          source: 'realtime',
+          scope: { operation: 'sync.reauthenticate', extra: { socketId } },
+        });
+      },
+    });
+  };
+
+  const routeFrame = createFrameRouter({
+    hub: options.hub,
+    registry: options.registry,
+    buildId: options.buildId,
+    presence,
+    onMutate: options.onMutate,
+  });
 
   return {
     sockets,
@@ -244,11 +224,20 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
 
     async start(): Promise<void> {
       changes = await options.transport.subscribe(`${CHANGE_SUBJECT_PREFIX}.>`, (payload) => {
-        const change = parseChange(payload);
+        const envelope = parseEnvelope(payload);
+        if (!envelope) return;
+        // Fanout is at-most-once over core NATS, so a reconnect is changes this node never saw.
+        // Nothing downstream could notice: no window's lsn moved, so no cursor moved, so nothing
+        // ever asked for a re-snapshot. A gap invalidates every window here instead, and the
+        // subscribers are re-served on the next change to each query.
+        if (gaps.observe(envelope)) {
+          const marked = options.registry.invalidate();
+          logger.warn('live.change_gap', { entity: envelope.change.entity, desynced: marked });
+        }
         // Not awaited: the bus handler must return before the next change, and ordering is the
         // registry's — one serial lane per query id. What this call site owes is the failure. An
         // unhandled rejection here is a fanout that reached nobody, reported as a dead process.
-        if (change) detach(options.registry.deliver(change), 'live.deliver', change.entity);
+        detach(options.registry.deliver(envelope.change), 'live.deliver', envelope.change.entity);
       });
       // One pass per heartbeat window: a member is swept only once it has actually missed its
       // window, and the interval never holds the process open — shutdown is the drain's job.
@@ -258,6 +247,20 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
           presence.heartbeatMs,
         );
         sweeping.unref();
+      }
+      if (options.authenticate) {
+        reauthing = setInterval(
+          () => detach(reauthenticate(), 'sync.reauthenticate'),
+          options.reauthenticateIntervalMs ?? DEFAULT_REAUTH_INTERVAL_MS,
+        );
+        reauthing.unref();
+      } else {
+        // Enforced where it can be: nothing here can invent a credential, so the one honest signal
+        // is that every policy on this node is about to be asked about `null`.
+        logger.warn('sync node has no authenticator: every socket is anonymous', {
+          buildId: options.buildId,
+          fix: 'pass authenticate to createSyncNode({ authenticate })',
+        });
       }
       ready = true;
       markReady();
@@ -269,7 +272,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       release();
     },
 
-    fetch(request: Request, server: UpgradeTarget): Response | undefined {
+    async fetch(request: Request, server: UpgradeTarget): Promise<Response | undefined> {
       const url = new URL(request.url);
       // Health is the process's, readiness is this node's: a draining node stays healthy while it
       // hands its sockets to the rest of the fleet.
@@ -286,14 +289,39 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
           headers: { 'retry-after-ms': String(accept.retryAfterMs(options.rng ?? Math.random)) },
         });
       }
+      let grant: SyncGrant | null = null;
+      if (options.authenticate) {
+        try {
+          grant = await options.authenticate(request);
+        } catch (error) {
+          // A failure is not a denial. The token service timing out must not read to a client as
+          // "you may not connect" — it is told to come back, and this node is the one that pages.
+          reportError(error, { source: 'realtime', scope: { operation: 'sync.authenticate' } });
+          return wireErrorResponse(
+            503,
+            new SocketAuthUnavailableError({ detail: 'see the node log for the cause' }),
+          );
+        }
+        // The decision, made before a socket exists: an upgrade is the cheapest thing to refuse and
+        // the most expensive thing to take back.
+        if (grant === null) {
+          return wireErrorResponse(
+            401,
+            new SocketUnauthenticatedError({ reason: 'authenticate() resolved no actor' }),
+          );
+        }
+      }
       const data: WsData = {
         socketId: uuid(),
         clientBuildId: url.searchParams.get('build') ?? options.buildId,
-        actorId: null,
       };
-      return server.upgrade(request, { data })
-        ? undefined
-        : new Response('expected websocket', { status: 426 });
+      if (!server.upgrade(request, { data })) {
+        return new Response('expected websocket', { status: 426 });
+      }
+      // After the upgrade took, never before: a grant recorded for a socket that was never opened
+      // is one nothing will ever close, and `open` is the next thing to run.
+      if (grant) grants.set(data.socketId, grant);
+      return undefined;
     },
 
     websocket: {
@@ -303,11 +331,15 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       sendPings: true,
 
       open(ws: SyncWs): void {
+        // The actor the upgrade resolved, carried into the socket the whole pipeline decides
+        // against — the topic guard, `authorize`, `visible`, the per-tenant cap. It was hardcoded
+        // `null` here, which made every one of those a decision about nobody.
         const socket = new SyncSocket({
           ws,
           id: ws.data.socketId,
           clientBuildId: ws.data.clientBuildId,
           serverBuildId: options.buildId,
+          actor: grants.get(ws.data.socketId)?.actor ?? null,
           clock,
         });
         sockets.add(socket);
@@ -341,18 +373,13 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
 
       close(ws: SyncWs): void {
         const socket = sockets.get(ws.data.socketId);
-        if (!socket) return;
-        options.registry.unsubscribeSocket(socket.id);
-        const topics = [...socket.topics] as Topic[];
-        for (const name of topics) options.hub.unsubscribe(socket, name);
-        sockets.remove(socket.id);
-        // A closed socket is a leave, said now rather than left to TTL: everyone else would
-        // otherwise keep rendering a member who is provably gone for the rest of its window. The
-        // write is on the bus, and this callback is synchronous, so it cannot be awaited here.
-        if (presence) {
-          for (const name of topics)
-            detach(presence.leave(name, socket.id), 'presence.leave', name);
+        if (!socket) {
+          // The socket is already gone, but a grant recorded for an upgrade whose `open` never ran
+          // is not — and nothing else would ever reach it.
+          grants.delete(ws.data.socketId);
+          return;
         }
+        teardown(socket);
       },
     },
 
@@ -371,6 +398,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       for (const socket of [...sockets.all()]) {
         socket.close(CLOSE.goingAway, 'drain');
         sockets.remove(socket.id);
+        grants.delete(socket.id);
       }
       // Released once the sockets are gone rather than at the top: a client is entitled to its
       // patches for the whole grace window, and it is entitled to them *before* the hub the
@@ -382,56 +410,13 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
   };
 }
 
-export interface ListenOptions {
-  readonly port?: number;
-}
-
-export interface SyncListener {
-  /** The bound websocket origin, e.g. `ws://localhost:3001`. With `port: 0` only the OS knows it. */
-  readonly url: string;
-  stop(): void;
-}
-
 /**
- * Binds the node to `Bun.serve` and wires SIGTERM to `drain()`. Kept tiny so the node itself stays
- * testable without a server.
+ * An upgrade refused before a socket exists, rendered as the error contract rather than as a word.
+ * There is no frame to carry it — the client never got a connection — so the body is the only
+ * channel, and `--json` on every error means this one too.
  */
-export function listenSyncNode(node: SyncNode, options: ListenOptions = {}): SyncListener {
-  const server = Bun.serve({
-    port: options.port ?? 3001,
-    fetch: node.fetch,
-    websocket: node.websocket,
-  });
-  // Same rule as @ultimat3/http: every socket the framework opens announces itself, so a request
-  // back to it is recognisably this process calling itself rather than egress.
-  const stopListening = markListening(server.url.origin);
-  // Unregistered by `stop()`: a hook left behind after the listener is gone drains a node that is
-  // already stopped, and the next process-wide shutdown hangs on it.
-  const unregister = onShutdown('realtime:sync', async () => {
-    await node.drain();
-    await node.stop();
-    server.stop();
-    stopListening();
-  });
-  return {
-    url: websocketOrigin(server.url),
-    stop: () => {
-      unregister();
-      server.stop();
-      stopListening();
-    },
-  };
-}
-
-/**
- * The listener reports where it actually landed: a caller asking for `port: 0` cannot guess the
- * port, and a guessed URL is a client that connects to someone else. Swapped on the URL's
- * protocol, never on the string — a hostname is allowed to contain "http".
- */
-function websocketOrigin(url: URL): string {
-  const ws = new URL(url);
-  ws.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  return ws.origin;
+function wireErrorResponse(status: number, error: unknown): Response {
+  return json({ status, body: { error: toWireError(error) } });
 }
 
 function json(payload: { status: number; body: unknown }): Response {

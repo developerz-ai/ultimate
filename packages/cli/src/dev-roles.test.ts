@@ -3,16 +3,20 @@
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
-import { logger, METRICS_PATH, userActor } from '@ultimat3/core';
+import { noopPurgeDriver } from '@ultimat3/cache';
+import { logger, METRICS_PATH, resetLifecycle, userActor } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import { configureAuthenticator, cspHashSource, resetAuthenticator } from '@ultimat3/http';
 import {
   createMemoryDriver,
   createMemoryEventBus,
+  createMemoryOutboxStore,
   resetJobs,
+  resetJobsFacade,
   resetTasks,
   task,
 } from '@ultimat3/jobs';
+import { createMemoryDriver as createMemoryMailDriver } from '@ultimat3/mail';
 import { DEFAULT_PRESENCE_TTL_MS, InProcessTransport } from '@ultimat3/realtime';
 import {
   clearRoutes,
@@ -38,6 +42,10 @@ function fakeRuntime(): RunningServices {
     services,
     db: { async ping() {}, async close() {} } as unknown as RunningServices['db'],
     jobs: createMemoryDriver(),
+    // A real store, not a stub: the `worker` role starts the outbox relay against it, and a relay
+    // whose `claim()` rejects on the first 200ms tick is an unhandled rejection in whichever test
+    // happens to still be running.
+    outbox: createMemoryOutboxStore(),
     events: createMemoryEventBus(),
     transport,
     transportDetail: 'in-process fanout',
@@ -45,6 +53,10 @@ function fakeRuntime(): RunningServices {
     // `NATS_URL` resolves to, so the fixture is the real number rather than a rounder one.
     presenceTtlMs: DEFAULT_PRESENCE_TTL_MS,
     storage: defineStorage({ disks: { local: localDriver({ root: `${ROOT}/storage` }) } }),
+    mail: createMemoryMailDriver(),
+    mailDetail: 'embedded',
+    purge: noopPurgeDriver(),
+    purgeDetail: 'none',
     stop: async () => transport.close(),
   };
 }
@@ -65,7 +77,13 @@ afterEach(async () => {
   await running?.stop();
   running = undefined;
   resetJobs();
+  resetJobsFacade();
   resetTasks();
+  // Core's lifecycle is process-global and a stopped server leaves it drained, so without this
+  // the SECOND web role in this file answers every request `X_DRAINING` — a suite that only
+  // passes when its own tests are run one at a time. `@ultimat3/http`'s own server suite does the
+  // same thing for the same reason.
+  resetLifecycle();
 });
 
 afterAll(async () => {
@@ -336,6 +354,47 @@ describe('the CSP the web role sends admits the styles it serves', () => {
         'content-security-policy',
       ) ?? '';
     expect(uncovered('<style>body{margin:0}</style>', csp)).toEqual([]);
+  });
+});
+
+/**
+ * The sync node evaluated no credential of its own AND no host handed it one, so every socket the
+ * framework ever opened carried `actorId: null` — the channel guard, the live-query gate, the
+ * presence entry and the per-tenant cap all decided against an anonymous actor. Realtime was
+ * single-tenant by wiring.
+ */
+describe('integration · the sync role is handed the app’s own authenticator', () => {
+  afterEach(resetAuthenticator);
+
+  const startSyncOnly = async (): Promise<readonly string[]> => {
+    const lines: string[] = [];
+    const original = logger.warn;
+    logger.warn = (line: string) => lines.push(line);
+    try {
+      running = await startRoles({
+        roles: ['sync'],
+        port: 0,
+        buildId: 'test',
+        runtime: fakeRuntime(),
+        routes: [],
+        env: {},
+      });
+    } finally {
+      logger.warn = original;
+    }
+    return lines;
+  };
+
+  test('no authenticator stays anonymous, loudly — the correct default for x dev', async () => {
+    resetAuthenticator();
+    const lines = await startSyncOnly();
+    expect(lines.some((line) => line.includes('no authenticator'))).toBe(true);
+  });
+
+  test('an app that configured one is used, and the node stops saying it is anonymous', async () => {
+    configureAuthenticator(() => userActor({ id: 'u1', roles: ['member'] }));
+    const lines = await startSyncOnly();
+    expect(lines.some((line) => line.includes('no authenticator'))).toBe(false);
   });
 });
 

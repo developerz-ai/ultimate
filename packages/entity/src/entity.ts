@@ -4,7 +4,7 @@
 // this one call.
 
 import { systemClock } from '@ultimat3/core';
-import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { describeValue, type StandardSchemaV1 } from '@ultimat3/schema';
 import { bindColumn, snake } from './column';
 import { newId } from './columns';
 import { describeEntity, describeReferences } from './describe';
@@ -221,7 +221,10 @@ export const entity = <const C extends ColumnMap>(
 
   const parse = (value: unknown): Row => {
     if (typeof value !== 'object' || value === null) {
-      throw invariantViolated(name, 'row', `expected an object, got ${String(value)}`);
+      // `describeValue`, never `String(value)`: this message is a `$parse` failure, which reaches
+      // the caller and the log line — and the whole row is the last value in the framework that
+      // may be echoed there. Same renderer as the column builders (`columns.ts`) use.
+      throw invariantViolated(name, 'row', `expected an object, got ${describeValue(value)}`);
     }
     const input = value as Readonly<Record<string, unknown>>;
     const row: Record<string, unknown> = {};

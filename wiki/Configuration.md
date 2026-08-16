@@ -85,18 +85,29 @@ Better Auth, wrapped. Sessions live in Postgres. Authorization is **not** here �
 
 ## `realtime`
 
+`RealtimeConfig` is five fields and no more `As of 2026-08` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)):
+
 | field | type | default | notes |
 |---|---|---|---|
-| `realtime.tier` | `1 \| 2 \| 3` | `1` | tiers 1–2 in v1; tier 3 in v2 ([Realtime](Realtime)) |
-| `realtime.transport` | `'memory' \| 'nats' \| 'redis'` | `'memory'` | `memory` = in-process, single node, dev and small deploys |
-| `realtime.url` | `string` | — | required unless `memory`; missing → `X_CONFIG_INVALID` |
-| `realtime.limits.perSocket` | `number` | `50` | subscriptions per socket. Exceeded → `X_SUBSCRIPTION_LIMIT` |
-| `realtime.limits.perTenant` | `number` | `5000` | subscriptions per tenant |
-| `realtime.limits.perTenantQueries` | `number` | `200` | distinct live queries per tenant. Exceeded → `X_LIVE_QUERY_LIMIT` |
-| `realtime.changeBuffer.perQuery` | `number` | `512` | ring-buffer entries per query hash; a reconnect inside it is a delta, not a snapshot |
-| `realtime.changeBuffer.window` | duration | `'60s'` | outside it the client re-snapshots (`X_CURSOR_STALE` if no snapshot path) |
-| `realtime.drain.window` | duration \| `'auto'` | `'auto'` | `auto` derives the jitter window from live connection count |
-| `realtime.drain.maxDelay` | duration | `'120s'` | ceiling on a server-directed `afterMs`; `realtime.heartbeat` defaults to `'15s'` |
+| `realtime.enabled` | `boolean` | `false` | off unless the app turns it on |
+| `realtime.tier` | `'channels' \| 'live-queries' \| 'local-first'` | `'channels'` | **names, not numbers**. `channels` and `live-queries` in v1; `local-first` in v2 ([Realtime](Realtime)) |
+| `realtime.transport` | `'memory' \| 'nats' \| 'redis'` | `'memory'` | `memory` = in-process, single node, dev and small deploys. `redis` type-checks and is never built — `selectTransport` resolves in-process or NATS only |
+| `realtime.urlEnv` | `string` | — | the **env key name**, never a URL. Required unless `memory`; missing → `X_CONFIG_INVALID` |
+| `realtime.heartbeatMs` | `number` | `15000` | socket heartbeat interval |
+
+At runtime the transport is chosen by `NATS_URL` rather than by this field — the config documents intent, the env decides ([`17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md)).
+
+**`realtime.limits.*`, `realtime.changeBuffer.*` and `realtime.drain.*` are not `app.config.ts` fields** `As of 2026-08`, and never were — `RealtimeConfig` is `{ enabled, tier, transport, urlEnv, heartbeatMs }` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)). Writing one is a typecheck failure, not a silent no-op, because the input type is `Input<RealtimeConfig>` and an unknown key is an excess property. The caps and the ring are **constructor options**, passed where the node is built:
+
+| Option | Where | Default | Effect |
+|---|---|---|---|
+| `maxPerSocket` | `new LiveQueryRegistry({ … })` | `128` | subscriptions per socket. Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `socket`. **Always applies** |
+| `maxPerTenant` | same | none | subscriptions per tenant. Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `tenant` |
+| `tenantOf` | same | none | `(actor) => tenantId \| null`. **Required for `maxPerTenant` to do anything** — `assertCapacity` returns early when either is absent |
+| `capacity` | `new RingChangeBuffer({ … })` | `1024` | retained patches per query hash; a reconnect inside the window is a delta, not a snapshot |
+| `maxQueries` | same | `4096` | retained query hashes, least-recently-written dropped first |
+
+**The per-tenant cap is reachable but not wired** `As of 2026-08`. It reads `socket.actor`, which was hardcoded `null` until WebSocket authentication landed, so it could not fire at all; and the boot ([`dev-roles.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/dev-roles.ts)) passes `source: new RingChangeBuffer()` and **no caps**. So a per-tenant limit is not protecting you today whatever you configure — set `maxPerTenant` **and** `tenantOf` on the registry yourself if you need one. The per-socket cap needs nothing and is enforced at its default.
 
 ## `cache`
 

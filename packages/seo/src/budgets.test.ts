@@ -72,7 +72,10 @@ describe('checkBudgets', () => {
     } catch (error) {
       const err = error as { code?: string; fix?: string; cause?: string };
       expect(err.code).toBe(SEO_ERROR_CODES.budgetExceeded);
-      expect(err.fix).toContain('x analyze /');
+      // No command: `x analyze` does not exist. Both halves of the repair are edits, and the
+      // one that needs a number carries it.
+      expect(err.fix).toContain('raise budget.js');
+      expect(err.fix).toContain('apps/web/site/page.tsx');
       expect(err.cause).toContain('apps/web/site/page.tsx');
     }
   });

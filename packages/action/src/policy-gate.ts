@@ -7,7 +7,7 @@
 import type { Actor, Ctx } from '@ultimat3/core';
 import { assertNever, isAnonymous } from '@ultimat3/core';
 import type { Policy, Surface as PolicySurface } from '@ultimat3/policy';
-import { enforce } from '@ultimat3/policy';
+import { enforce, policyPermissions as flattenedPermissions } from '@ultimat3/policy';
 import { ActionDeniedError } from './errors';
 
 /**
@@ -75,7 +75,19 @@ export function actorOf(ctx: Ctx): Actor | null {
   return isAnonymous(ctx.actor) ? null : ctx.actor;
 }
 
-/** The capability an action requires, for manifests and OpenAPI metadata. */
+/** The capability an action requires, for manifests and OpenAPI metadata. A DISPLAY label. */
 export function policyCapability(policy: ActionPolicy): string {
   return policy.label;
+}
+
+/**
+ * Every permission the policy tree references, flattened and deduped — and the only field a
+ * compliance report may match a grant against. `label` renders a composite as
+ * `and(post:publish, org:administer)`, which is a sentence and never equals a permission string,
+ * so matching on it reported every action guarded by a composite as enforcing nothing: `x policy
+ * list` showed real grants as dead. The two are kept side by side rather than one replacing the
+ * other — the label is what a human reads, this is what a machine compares.
+ */
+export function policyPermissions(policy: ActionPolicy): readonly string[] {
+  return flattenedPermissions(policy);
 }

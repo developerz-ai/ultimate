@@ -11,13 +11,7 @@ describe('defineConfig', () => {
     expect(config.defaultCurrency).toBe('USD');
     expect(config.theme.defaultMode).toBe('system');
     expect(config.pwa.enabled).toBe(false);
-    expect(config.database).toEqual({
-      driver: 'postgres',
-      urlEnv: 'DATABASE_URL',
-      poolSize: 10,
-      ssl: false,
-      schema: 'public',
-    });
+    expect(config.database).toEqual({ driver: 'postgres', ssl: false });
     expect(config.jobs.queues).toEqual(['myapp-default']);
     expect(config.ai.mcp).toEqual({ expose: true, path: '/mcp' });
     expect(Object.isFrozen(config)).toBe(true);
@@ -79,5 +73,15 @@ describe('defineConfig', () => {
     expect(causeOf(() => defineConfig({ name: 'myapp', cache: { driver: 'redis' } }))).toContain(
       'cache.urlEnv',
     );
+  });
+});
+
+// The claim that `poolSize` / `urlEnv` / `schema` are now a BUILD error lives in `type-pins.ts`,
+// not here: `tsconfig.json` excludes `*.test.ts`, so a `@ts-expect-error` written in this file is
+// never read by `tsc` and asserts nothing.
+describe('database config carries only what something reads', () => {
+  test('the fields that remain still default and still overlay', () => {
+    expect(defineConfig({ name: 'myapp' }).database).toEqual({ driver: 'postgres', ssl: false });
+    expect(defineConfig({ name: 'myapp', database: { ssl: true } }).database.ssl).toBe(true);
   });
 });

@@ -24,14 +24,13 @@ export const config = defineConfig({
   /** Prices are stored per currency; nothing is converted at runtime. */
   defaultCurrency: 'USD',
 
-  // Env KEYS, never the value: the same image deploys to every environment.
-  //
-  // `poolSize` is per PROCESS and one image runs one ROLE per process, so a web replica and a
-  // worker never share a pool in production. The binding case is `x dev`, which runs every role
-  // in ONE process: 12 = jobs.concurrency (8) + the queue poller + 3 left for HTTP, where 10
-  // would leave requests queueing behind a full digest run. Keep `replicas x 12` under the
-  // server's `max_connections`.
-  database: { urlEnv: 'DATABASE_URL', poolSize: 12 },
+  // The pool is sized by `DATABASE_POOL_MAX`, not here — `config.database.poolSize` was read by
+  // nothing and was deleted `As of 2026-08`. The sizing argument still holds and still applies:
+  // the pool is per PROCESS and one image runs one ROLE per process, so a web replica and a
+  // worker never share one in production. The binding case is `x dev`, which runs every role in
+  // ONE process: 12 = jobs.concurrency (8) + the queue poller + 3 left for HTTP, where 10 would
+  // leave requests queueing behind a full digest run. Keep `replicas x 12` under the server's
+  // `max_connections`.
 
   cache: { driver: 'redis', urlEnv: 'REDIS_URL', tiers: ['memo', 'lru', 'shared', 'isr'] },
 

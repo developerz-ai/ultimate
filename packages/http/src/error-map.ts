@@ -43,6 +43,19 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   X_RATE_LIMIT_BUCKET_CONFLICT: 500,
   // Construction time as well: the limiter installed cannot enforce a bucket a route declares.
   X_RATE_LIMIT_BUCKET_UNBOUND: 500,
+  // `defineHttpConfig` time, both of them: a declaration the deployment owes and did not make.
+  X_RATE_LIMIT_SCOPE_UNSET: 500,
+  X_TRUST_PROXY_UNSET: 500,
+  // Raised by `toBucket` while a route or an action is being projected, never on the request.
+  X_RATE_LIMIT_INVALID: 500,
+  // The two the `admit` stage answers with, and the only 503s the pipeline produces. Both carry
+  // `retry-after`: a shed request that does not say when to come back is a request that comes
+  // back immediately, which is the load it was shed to avoid.
+  X_DRAINING: 503,
+  X_OVERLOADED: 503,
+  // 403 and never 401: the caller IS authenticated — that is what makes the forged write work —
+  // so a 401 would send a signed-in user to a sign-in page they are already past.
+  X_CSRF_BLOCKED: 403,
   // @ultimat3/action — the code every primitive throws when the CALLER's input fails the schema
   // the primitive declared. 400 because that is what the published OpenAPI operation promises for
   // it, and because a missing row made a typo'd uuid a 500: the caller was told the server broke,
@@ -87,6 +100,11 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   X_STORAGE_CHECKSUM_MISMATCH: 422,
   X_STORAGE_URL_INVALID: 403,
   X_STORAGE_URL_EXPIRED: 410,
+  // 409, not the 500 it fell through to: the object exists and the request is well formed — the
+  // STATE is wrong. A validated upload lands under the quarantine segment and `promoteAttachment`
+  // refuses it until the app's own scanner calls `releaseQuarantine`, which is a thing the caller
+  // can do. A 500 would have read as "the server broke" for a workflow working exactly as built.
+  X_STORAGE_QUARANTINED: 409,
   // 404, deliberately NOT 403: the org check fires before anything is read, so answering
   // "forbidden" would confirm that a key exists to the one caller who must not learn it.
   X_STORAGE_ORG_MISMATCH: 404,
@@ -196,7 +214,11 @@ export const factsOf = (error: unknown): ErrorFacts => {
     code,
     title,
     cause,
-    fix: str(record, 'fix') ?? 'x logs tail --json   # then fix the throwing call site',
+    // `x logs tail` is in `PLANNED_COMMANDS` — it exits `X_NOT_IMPLEMENTED`. A fix line naming a
+    // command that throws is axiom 4 inverted: the one instruction the reader is given fails.
+    // `x errors explain` ships, and it is the command that answers "what is this code".
+    fix:
+      str(record, 'fix') ?? `x errors explain ${code} --json   # then fix the throwing call site`,
     docs: str(record, 'docs') ?? `https://ultimate.dev/errors/${code}`,
     status: statusFor(code),
     stack: str(record, 'stack'),

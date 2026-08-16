@@ -248,7 +248,53 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   double presence membership, double fanout — until the tab closed. `#socket` is nulled before the
   close so the corpse's `onClose` takes its early return, and `onMessage` carries the same identity
   guard `onClose` already had.
+- **A socket's actor comes from `createSyncNode({ authenticate })` and from nowhere else.** The node
+  imports no authenticator — the app supplies one, exactly as it supplies `onMutate` — and it runs
+  on the upgrade *before* `server.upgrade`, so a refused credential never costs a websocket.
+  `null` is a **decision** (401, `X_SOCKET_UNAUTHENTICATED`, a client fault that pages nobody); a
+  throw is a **failure** (503, `X_SOCKET_AUTH_UNAVAILABLE`, reported) — the same rule the row gate
+  follows, one layer out. Absent, every socket is anonymous and `start()` warns: that node is
+  single-tenant, and `hub.guard('org.*.feed', ({ actor }) => actor?.orgId === …)` denies everyone.
+  The actor is written in exactly one place, the `GrantBook`; `WsData` deliberately carries none,
+  because two spellings of one identity disagree the moment a re-auth renews one of them.
+- **A grant expires; a socket does not.** `authenticate` answers a `SyncGrant`, not an `Actor`: a
+  15-minute token on a socket that stays up for hours was authorized once and served forever, and
+  an active client never idles out either — every inbound frame `touch()`es it. The node re-decides
+  an expired grant on an interval and then calls both halves that already existed and had no
+  caller: `hub.onActorChange` (topics) and `registry.reauthorize` (subscriptions). `refresh` is the
+  app's closure, so the framework retains no credential of its own — re-reading the upgrade
+  `Request` would mean holding one per socket. No `refresh` = close with `1008` and let the client
+  re-dial. A `refresh` that **raises** keeps the socket and retries: a token service timing out is
+  not a revocation.
+- **`desynced` is a mark with a reader.** It is written when a patch is dropped by backpressure,
+  when a gate fails, when a window loses its tail and when a re-auth survives; the *next* delivery
+  serves that subscriber a fresh snapshot out of the shared window (no DB read) and only then
+  clears it. A snapshot the socket refuses leaves the mark, which is the state it is in. Four
+  writers and no reader was a subscription that stayed permanently and silently stale on a healthy
+  socket, with the server knowing and the client not.
+- **A change the window already holds is refused on the way in.** The replicator guarded duplicates
+  and out-of-order on the *publish* side; `entry.lsn = change.lsn` was unconditional on the
+  *consume* side, so a redelivery rewound every subscriber's cursor. `change.lsn <= entry.lsn` is
+  dropped and counted as `staleChanges`.
+- **A gap in the change stream is detected, not assumed away.** Fanout is core NATS — at most once
+  — and an lsn cannot reveal a gap, because a WAL position is a byte offset and every legitimate
+  next change is already an arbitrary jump. The replicator stamps `producer` + `seq`; a skipped
+  sequence marks every window `stale` and every subscriber desynced, and the next change to each
+  query re-reads. Both fields are optional on the bus: a publisher that does not sequence detects
+  nothing rather than crying gap, and a *new* producer restarts the count rather than reading as
+  one. A stale window is replaced in the lane (`refillWindowInLane`) — `fillWindow` takes the
+  entry's own lane and a lane is not reentrant.
 - Deny by default on topics. No guard = `X_TOPIC_FORBIDDEN`.
+- **A full presence frame is capped and says so; the set behind it is never capped.** `roster()` is
+  what a frame carries (`maxMembers`, 256, plus `total`); `list()` stays whole because the sweep
+  differences it, and a short list would report every member past the cap as having left. `total`
+  is set on `sync` only — a `join`/`leave`/`update` frame is a delta, and a count beside one reads
+  as truncation.
+- **One node per topic sweeps.** Every node sweeping every room it has seen is one full-set read
+  multiplied by the fleet, and the same `leave` frame published N times. The election needs no
+  compare-and-set the shared store does not have: the lease key is a *keyed set*, so each node's
+  claim is its own member and the leader is the lowest id every claimant can see. Eventually
+  consistent on purpose — the worst case is a duplicate `leave` for someone already gone.
 - Never a bare `Error`. Never `any`. Never `Date.now()` — take a `Clock` (`clock.now()` is a `Date`;
   use `monotonic()` for durations).
 
@@ -270,7 +316,11 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `live-rows.ts` | one subscription's window over that map — its scope, its order, its retain/release, and `Registration` itself |
 | `local-store.ts` / `offline-queue.ts` / `rebase.ts` | tier 3 |
 | `client.ts` / `sync-node.ts` | the two halves — connection lifecycle, subscriptions, mutations |
-| `client-frames.ts` | what a RECEIVED frame does to client state, and `ClientFrameTarget` — the only inbound surface the client exposes. The mirror of `sync-node.ts`'s handler |
+| `sync-auth.ts` | what a socket's identity IS (`SyncGrant`), the book that holds one per socket, and the pass that re-decides an expired one |
+| `sync-frames.ts` | what a RECEIVED frame does to server state — the node's inbound surface, and the mirror of `client-frames.ts` |
+| `sync-listen.ts` | binding a node to `Bun.serve` and to the shutdown hook — the only `Bun.serve` in the package |
+| `query-window.ts` | the shared pre-policy window per query id: built once, read once for N subscribers, and replaced when it is known to be wrong |
+| `client-frames.ts` | what a RECEIVED frame does to client state, and `ClientFrameTarget` — the only inbound surface the client exposes. The mirror of `sync-frames.ts` |
 | `client-harness-fixture.ts` | the injected socket + scheduler + harness both client suites drive. Excluded from the tarball |
 | `hooks-fixture.ts` | the same, for the two hook suites (`hooks.test.ts`, `hooks-identity.test.ts`). Excluded from the tarball |
 | `subscription-book.ts` | who holds which subscription, keyed by `(socket, sid)`, and the per-socket/per-tenant caps answered from it |

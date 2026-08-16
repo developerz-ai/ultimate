@@ -7,6 +7,12 @@
  * framework died; there is exactly one here, structurally.
  */
 
+/**
+ * `toBucket` is `@ultimat3/http`'s — http owns `Bucket` and the limiter maths, and `action` and
+ * `query` are the same tier, so a copy in either is a second answer for the other. Re-exported
+ * here, not re-implemented, so an action file still reaches it through one import.
+ */
+export { toBucket } from '@ultimat3/http';
 /** Re-exported so an `action` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
@@ -52,19 +58,29 @@ export type { ContractTest, ContractTestOptions } from './contract-test';
 export { anonymousCtx, contractTestsFor, policyTestStubFor } from './contract-test';
 export type { Api, ApiDef, ApiModule, ApiModules } from './define-api';
 export { defineApi } from './define-api';
+/**
+ * The compat window a retirement gets. Versioning itself is NOT here and never will be: two
+ * versions of one action side by side is two deployments behind one ingress (axiom 7), not a
+ * router feature. `renderDeprecation` is exported so a plain `route` can announce the same pair
+ * of headers the action projection does.
+ */
+export type { Deprecation, DeprecationField, DeprecationRender } from './deprecation';
+export { recordDeprecatedCall, renderDeprecation } from './deprecation';
 export type { IdempotencyConflictReason, RemoteFailure } from './errors';
 export {
   ActionDeniedError,
+  ActionDeprecationInvalidError,
   ActionDuplicateError,
   ActionForeignError,
   ActionPathDuplicateError,
   ActionPolicyMissingError,
-  ActionRateLimitInvalidError,
   ActionUnregisteredError,
   AuditSinkFailedError,
   AuditSinkMissingError,
   ContractDriftError,
   IdempotencyConflictError,
+  IdempotencyNotSharedError,
+  IdempotencyReplayedFailureError,
   InputInvalidError,
   OutputInvalidError,
   RemoteActionError,
@@ -75,23 +91,61 @@ export {
   BUILD_ID_HEADER,
   IDEMPOTENCY_HEADER,
   REPLAYED_HEADER,
-  toBucket,
   toOpenApiOperation,
   toRoute,
 } from './http';
+/**
+ * The idempotency seam. `withIdempotency` and `IDEMPOTENCY_HEADER` are both public, so a plain
+ * mutating `route` can reserve-and-replay exactly as an action does — `idempotencyKeyFor` is the
+ * namespacing it must apply, or two routes sharing a caller's key would share one record.
+ */
 export type {
+  IdempotencyConfig,
+  IdempotencyFailure,
   IdempotencyRecord,
   IdempotencyReservation,
+  IdempotencyScope,
+  IdempotencyStatus,
   IdempotencyStore,
   IdempotentOutcome,
 } from './idempotency';
 export {
+  assertIdempotencyScope,
+  configureIdempotency,
+  DEFAULT_IDEMPOTENCY_CONFIG,
   getIdempotencyStore,
+  idempotencyConfig,
   idempotencyKeyFor,
-  MemoryIdempotencyStore,
+  resetIdempotency,
   setIdempotencyStore,
   withIdempotency,
 } from './idempotency';
+export type { MemoryIdempotencyStoreOptions } from './idempotency-memory';
+export {
+  DEFAULT_IDEMPOTENCY_WINDOW_MS,
+  DEFAULT_MAX_IDEMPOTENCY_KEYS,
+  MemoryIdempotencyStore,
+} from './idempotency-memory';
+/**
+ * The SHARED store, and the only one an app running more than one replica may install. The
+ * statements are exported beside it because the table is applied the way `SQL_JOBS_TABLE` is —
+ * by `x db up` in development and by the release-phase `ROLE=migrate` in production.
+ */
+export type {
+  PgExecutor,
+  PostgresIdempotencyStore,
+  PostgresIdempotencyStoreOptions,
+} from './idempotency-postgres';
+export {
+  postgresIdempotencyStore,
+  SQL_IDEMPOTENCY_FAIL,
+  SQL_IDEMPOTENCY_GET,
+  SQL_IDEMPOTENCY_PURGE,
+  SQL_IDEMPOTENCY_RELEASE,
+  SQL_IDEMPOTENCY_RESERVE,
+  SQL_IDEMPOTENCY_SETTLE,
+  SQL_IDEMPOTENCY_TABLE,
+} from './idempotency-postgres';
 /** The one execution path. `defOf` stays unexported — that is the enforcement. */
 export { actionName, invoke } from './invoke';
 export type { ActionJobHandle } from './job-handle';
@@ -118,7 +172,8 @@ export { derivePath, inputSchemaName, outputSchemaName, pluralize, toToolName } 
 export type { BuildOpenApiOptions, OpenApiDocument, OpenApiInfo } from './openapi';
 export { buildOpenApi, serializeOpenApi } from './openapi';
 export type { ActionPolicy, PolicySubject, Surface } from './policy-gate';
-export { actorOf, guard, policyCapability } from './policy-gate';
+/** `policyCapability` is the display label; `policyPermissions` is what a report MATCHES on. */
+export { actorOf, guard, policyCapability, policyPermissions } from './policy-gate';
 export {
   describeActions,
   getAction,

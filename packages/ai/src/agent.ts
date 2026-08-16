@@ -1,0 +1,287 @@
+/**
+ * `agent()` — a multi-turn tool-using model call, declared as an `action`.
+ *
+ * The third instance of the framework's rule, after `llm()` and `backfill()`: a new capability
+ * arrives as a FACTORY over an existing primitive, never as a ninth kind. A tool-using run is
+ * still one server-authoritative operation with an input schema, an output schema and a policy —
+ * so this returns an `action`, and inherits `.tool()`, `.openapi()`, `.client()`, `.job()`,
+ * `.contract()` and its manifest row without a line here.
+ *
+ * It exists because the alternative is a hand-rolled loop outside the framework, and a hand-rolled
+ * loop is where the dangerous mistake lives: taking the ACTOR from the model's output. Here the
+ * actor is `ctx.actor` and nothing the model emits can reach it — `runLlmToolCall` is handed an
+ * identity the request established, and the tool it runs is an ordinary action whose own policy
+ * decides. There is no "LLM permissions" concept, because there is no second authz system.
+ *
+ * Deliberately NOT here: a semantic cache. Similar prompts do not have similar answers once the
+ * answer depends on what `lookupOrder` returned this second, and a cache over that would serve
+ * one run's world state to another. Version bump plus the tools' own caching is the story.
+ */
+
+import type { Action, ActionMcp, ActionPolicy } from '@ultimat3/action';
+import { action } from '@ultimat3/action';
+import type { Ctx } from '@ultimat3/core';
+import { withSpan } from '@ultimat3/core';
+import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
+import { formatIssues, validateAsync } from '@ultimat3/schema';
+import type { BudgetLimits } from './budget';
+import { BudgetLedger, currentBudget, withBudget } from './budget';
+import {
+  AgentMaxTurnsError,
+  AgentToolUnexposedError,
+  LlmOutputInvalidError,
+  LlmRefusedError,
+  LlmTruncatedError,
+} from './errors';
+import type { LlmBudget } from './llm';
+import { answerAttributes, RESPOND, respondToolFor, structuredOutputOf } from './llm';
+import type { ModelId } from './models';
+import { DEFAULT_MODEL, moreCapableThan } from './models';
+import type { Prompt, PromptVars } from './prompt';
+import type { AiContentBlock, AiMessage, GenerateRequest, GenerateResult } from './provider';
+import { assertNoSecrets } from './redaction';
+import { aiGateway, aiRedactor } from './runtime';
+import type { LlmTool, LlmToolResult, ProjectableAction } from './tools';
+import { runLlmToolCall, toLlmTools } from './tools';
+
+/**
+ * Turn ceiling when the declaration omits one. Low on purpose: a loop that needs more than this
+ * is usually a loop with no exit condition, and every turn re-sends the whole transcript, so cost
+ * grows quadratically in turns rather than linearly.
+ */
+const DEFAULT_MAX_TURNS = 8;
+
+/** Output ceiling per turn when the declaration omits one. Same reasoning as `llm()`'s. */
+const DEFAULT_MAX_TOKENS = 4_096;
+
+/**
+ * Characters of ONE tool result the model may read. A tool that returns a 2MB row set otherwise
+ * spends the whole context window on turn two and every later turn re-sends it — the transcript
+ * is the request, so an untruncated result is billed once per remaining turn.
+ */
+const DEFAULT_TOOL_RESULT_CHARS = 4_000;
+
+export interface AgentBudget extends LlmBudget {
+  /**
+   * Token ceiling for the WHOLE run, every turn counted. The one ceiling `llm()` does not need:
+   * a single call is bounded by `maxTokens`, a loop is bounded by nothing until this is set.
+   */
+  readonly tokensPerRun?: number;
+}
+
+export interface AgentVarsArgs<TInput extends StandardSchemaV1> {
+  readonly input: InferOutput<TInput>;
+  readonly ctx: Ctx;
+}
+
+export interface AgentDef<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  V extends PromptVars,
+> {
+  readonly model?: ModelId;
+  readonly input: TInput;
+  readonly output: TOutput;
+  readonly prompt: Prompt<V>;
+  /** Same contract as `llm()`: the one declared place a run loads data. */
+  vars(args: AgentVarsArgs<TInput>): V | Promise<V>;
+  /**
+   * The actions the model may call. Each must be `mcp: { expose: true }` — the same predicate an
+   * external MCP client is filtered by, so an in-app agent and an external one are offered
+   * exactly the same tools. Listing one that is not exposed is refused at declaration rather than
+   * dropped, because a tool that reads as offered and silently is not is the worst of both.
+   */
+  readonly tools: readonly ProjectableAction[];
+  /** Hard ceiling on model turns. Reaching it is `X_AGENT_MAX_TURNS`, never a partial answer. */
+  readonly maxTurns?: number;
+  readonly maxToolResultChars?: number;
+  readonly budget?: AgentBudget;
+  readonly policy: ActionPolicy;
+  readonly mcp?: ActionMcp;
+  /** Enforced completion ceiling PER TURN. The model never sees it. */
+  readonly maxTokens?: number;
+}
+
+export function agent<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  V extends PromptVars,
+>(def: AgentDef<TInput, TOutput, V>): Action<TInput, TOutput> {
+  const respond = respondToolFor(def.output);
+  // At declaration, because the tools are values by then and a run that discovers this at the
+  // first request has already been declared, registered and projected as if it worked.
+  const offered = toLlmTools(def.tools);
+  if (offered.length !== def.tools.length) {
+    throw new AgentToolUnexposedError({
+      agent: def.prompt.ref,
+      tools: def.tools.filter((a) => !offered.some((o) => o.name === a.name)).map((a) => a.name),
+    });
+  }
+  return action<TInput, TOutput>({
+    input: def.input,
+    output: def.output,
+    policy: def.policy,
+    ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
+    handle: (args) => run(def, respond, offered, args),
+  });
+}
+
+async function run<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  V extends PromptVars,
+>(
+  def: AgentDef<TInput, TOutput, V>,
+  respond: LlmTool,
+  offered: readonly LlmTool[],
+  args: { readonly input: InferOutput<TInput>; readonly ctx: Ctx },
+): Promise<InferOutput<TOutput>> {
+  const { prompt } = def;
+  const name = prompt.ref;
+  const model = def.model ?? prompt.model ?? DEFAULT_MODEL;
+  const vars = await def.vars({ input: args.input, ctx: args.ctx });
+  assertNoSecrets(name, vars);
+  const redact = aiRedactor();
+  const rawPrompt = prompt.render(vars);
+  const rendered = redact(rawPrompt);
+  const system = prompt.system === undefined ? undefined : redact(prompt.system);
+  const maxTurns = def.maxTurns ?? DEFAULT_MAX_TURNS;
+  const chars = def.maxToolResultChars ?? DEFAULT_TOOL_RESULT_CHARS;
+
+  return withSpan('ai.agent', async (span) => {
+    span.setAttributes({
+      'agent.model': model,
+      'agent.prompt': name,
+      'agent.prompt.hash': prompt.hash,
+      'agent.tools': offered.length,
+      'agent.max_turns': maxTurns,
+      'llm.redacted': rendered !== rawPrompt || system !== prompt.system,
+    });
+
+    const ledger = (currentBudget() ?? new BudgetLedger({ limits: {} })).derive(limitsOf(def));
+    const gateway = aiGateway(name);
+    const base: GenerateRequest = {
+      model,
+      ...(system === undefined ? {} : { system }),
+      messages: [],
+      maxTokens: def.maxTokens ?? DEFAULT_MAX_TOKENS,
+      ...(prompt.effort === undefined ? {} : { effort: prompt.effort }),
+      ...(prompt.thinking === undefined ? {} : { thinking: prompt.thinking }),
+      tools: [...offered, respond],
+    };
+
+    return withBudget(ledger, async () => {
+      // The actor is read ONCE, from the context the request established, and is the only
+      // identity any tool runs as. Nothing below reads an actor out of `result` — a model cannot
+      // name the identity it acts as, and a loop that let it would be an escalation primitive.
+      const { actor } = args.ctx;
+      let messages: readonly AiMessage[] = [{ role: 'user', content: rendered }];
+      let calls = 0;
+      let issues: string | undefined;
+
+      for (let turn = 1; turn <= maxTurns; turn += 1) {
+        const result = await gateway.generate({ ...base, messages });
+        span.setAttributes({
+          'agent.turns': turn,
+          'agent.tool_calls': calls,
+          ...answerAttributes(result),
+        });
+        assertAnswerable(result, name);
+
+        const requested = result.toolCalls.filter((call) => call.name !== RESPOND);
+        if (requested.length > 0) {
+          const results: LlmToolResult[] = [];
+          for (const call of requested) results.push(await runLlmToolCall(def.tools, call, actor));
+          calls += requested.length;
+          messages = [...messages, assistantTurn(result), toolResults(results, chars)];
+          continue;
+        }
+
+        const parsed = await validateAsync(def.output, structuredOutputOf(result));
+        if (parsed.issues === undefined) return parsed.value;
+        // A wrong shape gets another turn like any other, because unlike `llm()` this loop has
+        // turns left by construction — and unlike a tool result, the correction is the message.
+        issues = formatIssues(parsed.issues).join('; ');
+        if (result.stopReason === 'max_tokens') {
+          throw new LlmTruncatedError({ prompt: name, maxTokens: base.maxTokens });
+        }
+        messages = [...messages, assistantTurn(result), { role: 'user', content: repair(issues) }];
+      }
+
+      // Two different exhaustions, so two different causes: a loop that kept calling tools and
+      // never answered is not the same event as one that answered the wrong shape every time.
+      if (issues !== undefined) {
+        throw new LlmOutputInvalidError({ prompt: name, attempts: maxTurns, issues });
+      }
+      throw new AgentMaxTurnsError({ agent: name, turns: maxTurns, calls });
+    });
+  });
+}
+
+/** Refuse before the answer is read, for the reason `llm()` does: a refusal is a 200 with no answer. */
+function assertAnswerable(result: GenerateResult, name: string): void {
+  if (result.stopReason !== 'refusal') return;
+  throw new LlmRefusedError({
+    prompt: name,
+    model: result.model,
+    alternative: moreCapableThan(result.model),
+    category: result.stopDetails?.category,
+    explanation: result.stopDetails?.explanation,
+  });
+}
+
+/**
+ * The model's turn, replayed as the transcript the next request needs. `tool_use` blocks survive
+ * as themselves here — unlike `llm()`'s repair turn, which flattens them to text precisely
+ * because it has no `tool_result` to follow them with, and the API demands one.
+ */
+function assistantTurn(result: GenerateResult): AiMessage {
+  const blocks: AiContentBlock[] = [];
+  if (result.text !== '') blocks.push({ type: 'text', text: result.text });
+  for (const call of result.toolCalls) {
+    blocks.push({ type: 'tool_use', id: call.id, name: call.name, input: call.input });
+  }
+  // A turn with neither text nor a tool call would be an empty content array, which is a 400.
+  return blocks.length === 0
+    ? { role: 'assistant', content: '(no answer)' }
+    : { role: 'assistant', content: blocks };
+}
+
+function toolResults(results: readonly LlmToolResult[], chars: number): AiMessage {
+  return {
+    role: 'user',
+    content: results.map((result) => ({
+      type: 'tool_result' as const,
+      tool_use_id: result.toolUseId,
+      content: truncate(result.content, chars),
+      // A denial or a failure is an outcome the model should read and react to, flagged so it
+      // does not read as data.
+      ...(result.isError === true ? { is_error: true } : {}),
+    })),
+  };
+}
+
+/** Truncation says so. A silently shortened tool result is a model reasoning over half a table. */
+function truncate(text: string, chars: number): string {
+  if (text.length <= chars) return text;
+  return `${text.slice(0, chars)}\n[truncated: ${text.length - chars} more characters]`;
+}
+
+function repair(issues: string): string {
+  return `That answer failed its schema: ${issues}. Call the "${RESPOND}" tool with a value that satisfies it. Answer only through the tool.`;
+}
+
+function limitsOf<
+  TInput extends StandardSchemaV1,
+  TOutput extends StandardSchemaV1,
+  V extends PromptVars,
+>(def: AgentDef<TInput, TOutput, V>): BudgetLimits {
+  const budget = def.budget;
+  return {
+    ...(budget?.tokensIn === undefined ? {} : { tokensIn: budget.tokensIn }),
+    ...(budget?.costPerCall === undefined ? {} : { costPerCall: budget.costPerCall }),
+    // The ledger's `request` scope accumulates across every call made under one ledger, which for
+    // a run under `withBudget` is exactly "the whole run".
+    ...(budget?.tokensPerRun === undefined ? {} : { request: budget.tokensPerRun }),
+  };
+}

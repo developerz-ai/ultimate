@@ -7,24 +7,18 @@ export type {
   CheckOk,
   CheckResult,
   Path,
+  Refinement,
   Schema,
   Shape,
   ShapeInput,
   ShapeOutput,
   Simplify,
 } from './builder';
-export {
-  checkOf,
-  describeValue,
-  expected,
-  fail,
-  failWith,
-  makeSchema,
-  pass,
-  VENDOR,
-} from './builder';
+export { checkOf, fail, failWith, makeSchema, pass, VENDOR } from './builder';
 export type { QuerySource } from './coerce';
 export { coerceInput, coerceNode, coerceQuery } from './coerce';
+export { describeValue, expected } from './describe-value';
+export { discriminatedUnionSchema } from './discriminated-union';
 export type {
   SchemaErrorCodeDeclaration,
   SchemaErrorInit,
@@ -32,6 +26,7 @@ export type {
   ValidationIssue,
 } from './errors';
 export {
+  DiscriminantInvalidError,
   isSchemaError,
   SCHEMA_ERROR_CODES,
   SchemaError,
@@ -42,13 +37,14 @@ export {
 export type {
   JsonSchema,
   JsonSchemaDialect,
+  JsonSchemaDiscriminator,
   JsonSchemaType,
   ToJsonSchemaOptions,
 } from './json-schema';
 export { nodeToJsonSchema, toJsonSchema, toMcpInputSchema } from './json-schema';
 export type { MoneyValue } from './money-value';
 export { isMoneyScale, MAX_MONEY_SCALE } from './money-value';
-export type { SchemaFormat, SchemaKind, SchemaNode } from './node';
+export type { SchemaFormat, SchemaKind, SchemaNode, SchemaRefinement } from './node';
 export { isSchemaNode, nodeOf, requiredKeys } from './node';
 export type { SchemaProvider } from './provider';
 export {
@@ -99,5 +95,6 @@ export {
   objectSchema,
   optionalSchema,
   recordSchema,
+  refineSchema,
   unionSchema,
 } from './validators';

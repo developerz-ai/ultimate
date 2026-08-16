@@ -11,6 +11,9 @@ import {
   UltimateError,
 } from '@ultimat3/core';
 import type { SurfaceDenial } from '@ultimat3/policy';
+// Type-only: `idempotency.ts` imports the error classes below, and a runtime edge here would
+// close the cycle. `verbatimModuleSyntax` is what makes that guarantee mechanical.
+import type { IdempotencyFailure } from './idempotency';
 
 // Core's spelling, aliased — never a second one. A local template drifts from what
 // `x errors explain` prints the moment `ERROR_DOCS_BASE` moves.
@@ -26,13 +29,17 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_ACTION_DUPLICATE: 'two actions are registered under one name',
   X_AUDIT_SINK_FAILED: 'an audited action ran and the audit sink refused its record',
   X_AUDIT_SINK_MISSING: 'an action declares audit: true and no audit sink is installed',
+  X_ACTION_DEPRECATION_INVALID: 'an action declares a deprecation whose dates cannot be rendered',
   X_ACTION_PATH_DUPLICATE: 'two actions derive one HTTP path',
   X_ACTION_FOREIGN: 'a value that is not an action was projected as one',
   X_ACTION_POLICY_MISSING: 'an action was registered without a policy',
-  X_ACTION_RATE_LIMIT_INVALID: 'an action declares a rate limit that is not a positive allowance',
   X_ACTION_UNREGISTERED: 'an action was projected before it was registered',
   X_CONTRACT_DRIFT: 'client and server disagree about the contract',
   X_IDEMPOTENCY_CONFLICT: 'idempotency key reused with a different payload or still in flight',
+  X_IDEMPOTENCY_NOT_SHARED:
+    'idempotency is declared fleet-wide and the installed store is per-process',
+  X_IDEMPOTENCY_REPLAYED_FAILURE:
+    'a retried Idempotency-Key replays a first attempt that failed after it may have committed',
   X_INPUT_INVALID: 'input failed schema validation',
   X_OUTPUT_INVALID: 'a handler returned a value its output schema rejects',
   X_RPC_FAILED: 'an RPC call failed without a problem+json body',
@@ -160,31 +167,6 @@ export class ActionPolicyMissingError extends UltimateError {
   }
 }
 
-/**
- * A `rateLimit` the limiter cannot run on, raised where the declaration is converted — so both
- * projections that read it, the route and the OpenAPI operation, refuse the same numbers.
- *
- * `reason` is passed in rather than derived here, because the failure is not always visible in the
- * two declared numbers: `{ limit: Number.MAX_VALUE, windowMs: 1 }` has two finite positive halves
- * and computes to an infinite refill, which is a declared limit that enforces nothing. `toBucket`
- * is the one place that knows which of the three checks the pair failed.
- */
-export class ActionRateLimitInvalidError extends UltimateError {
-  constructor(
-    action: string,
-    limit: { readonly limit: number; readonly windowMs: number },
-    reason: string,
-  ) {
-    super({
-      code: 'X_ACTION_RATE_LIMIT_INVALID',
-      cause: `action "${action}" declares rateLimit { limit: ${limit.limit}, windowMs: ${limit.windowMs} }: ${reason}`,
-      fix: `edit the \`rateLimit:\` on ${action} to a whole allowance over a real window — e.g. { limit: 5, windowMs: 600_000 } for five per ten minutes — or delete it to keep the default bucket`,
-      docs: docs('X_ACTION_RATE_LIMIT_INVALID'),
-      meta: { action, limit: limit.limit, windowMs: limit.windowMs, reason },
-    });
-  }
-}
-
 export class InputInvalidError extends UltimateError {
   constructor(name: string, detail: string) {
     super({
@@ -227,6 +209,85 @@ export class IdempotencyConflictError extends UltimateError {
           ? 'send a fresh Idempotency-Key header for a different payload'
           : 'retry the same Idempotency-Key after the first request settles',
       docs: docs('X_IDEMPOTENCY_CONFLICT'),
+    });
+  }
+}
+
+/**
+ * The deployment declared `scope: 'shared'` and the installed store cannot keep it. Refused at
+ * registration, before a socket opens, because the failure it replaces is silent and expensive:
+ * a per-process store under `replicas: 3` means the retry that lands on another replica finds no
+ * record, re-runs the handler, and charges the card again — with nothing anywhere saying it did.
+ * An UNDECLARED scope is refused the same way: what cannot be shown to be shared is not assumed
+ * to be, the rule `assertRouteBuckets` already applies to a limiter that publishes no table.
+ */
+export class IdempotencyNotSharedError extends UltimateError {
+  constructor(storeScope: string | undefined) {
+    super({
+      code: 'X_IDEMPOTENCY_NOT_SHARED',
+      cause:
+        storeScope === undefined
+          ? "configureIdempotency({ scope: 'shared' }) is declared and the installed idempotency store declares no scope"
+          : `configureIdempotency({ scope: 'shared' }) is declared and the installed idempotency store is ${storeScope}`,
+      // NOT `executor: Bun.sql` — `Bun.sql.query` is `undefined` (it is a tagged template whose
+      // positional form is `unsafe`), so that line compiled and would have thrown on the first
+      // reservation. The framework's own boot already installs this store; a host booting the
+      // framework itself wraps the client it opened.
+      fix: "the framework boot installs a shared store — reach this only from a host that boots it itself: setIdempotencyStore(postgresIdempotencyStore({ executor: { query: (text, values) => client.query({ text, values }) } })) from '@ultimat3/action', or drop the declaration to configureIdempotency({ scope: 'process' })",
+      docs: docs('X_IDEMPOTENCY_NOT_SHARED'),
+      meta: { storeScope: storeScope ?? null },
+    });
+  }
+}
+
+/**
+ * The replay of a first attempt that FAILED. It is a replay and not a re-run on purpose: `guard()`
+ * and the input parse both run before the idempotency gate, so everything the gate can see throw
+ * is post-authorization and possibly post-commit — a handler that took the money and then failed
+ * its own `output:` schema is the case this exists for. Releasing the reservation there let the
+ * client's automatic retry charge a second time, which made idempotency the cause of the double
+ * charge it exists to prevent.
+ *
+ * The first attempt's code is re-used verbatim, the way `RemoteActionError` re-uses the server's:
+ * the caller is owed the failure it would have got, not a new one. `X_IDEMPOTENCY_REPLAYED_FAILURE`
+ * is the code only when the original throw carried none of its own.
+ */
+export class IdempotencyReplayedFailureError extends UltimateError {
+  /** The recorded first attempt, so a caller reads the original code without parsing a message. */
+  readonly failure: IdempotencyFailure;
+
+  constructor(key: string, failure: IdempotencyFailure | undefined) {
+    const recorded: IdempotencyFailure = failure ?? {
+      code: 'X_IDEMPOTENCY_REPLAYED_FAILURE',
+      cause: 'the first attempt under this key failed and the store kept no detail of it',
+      fix: 'read the first attempt in the logs, then send a fresh Idempotency-Key once the cause is fixed',
+    };
+    super({
+      code: recorded.code,
+      cause: `${recorded.cause} — replayed from the first attempt under Idempotency-Key "${key}", which may have committed before it failed`,
+      fix: recorded.fix,
+      ...(recorded.docs === undefined ? {} : { docs: recorded.docs }),
+      // `replayed` is what tells an operator this is not a second execution: nothing ran here.
+      meta: { origin: 'idempotent-replay', key, replayed: true, code: recorded.code },
+    });
+    this.failure = recorded;
+  }
+}
+
+/**
+ * A `deprecated:` block whose dates cannot become the headers it promises. Refused where the
+ * declaration is converted, so the route and the OpenAPI operation refuse the same value — the
+ * same shape as `@ultimat3/http`'s `X_RATE_LIMIT_INVALID`, and for the same reason: a `Sunset` that
+ * renders `Invalid Date` is a contract statement no client can act on.
+ */
+export class ActionDeprecationInvalidError extends UltimateError {
+  constructor(action: string, field: string, value: string) {
+    super({
+      code: 'X_ACTION_DEPRECATION_INVALID',
+      cause: `action "${action}" declares deprecated.${field} as "${value}", which is not a date`,
+      fix: `edit \`deprecated: { ${field}: … }\` on ${action} to an ISO-8601 instant — e.g. '2026-12-31T23:59:59Z'`,
+      docs: docs('X_ACTION_DEPRECATION_INVALID'),
+      meta: { action, field, value },
     });
   }
 }

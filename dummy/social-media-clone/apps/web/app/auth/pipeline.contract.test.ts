@@ -57,7 +57,13 @@ beforeAll(async () => {
   pipeline = createPipeline({
     table: createRouter([...listActions().map(toRoute), ...appRoutes({ buildId: 'test' })]),
     hooks: devHooks(),
-    config: defineHttpConfig({ signInPath: '/signin', buildId: 'test' }),
+    // One process, said out loud: `defineHttpConfig` refuses to guess where the limiter keeps its
+    // counters, and this pipeline is a single in-test server with nothing to share them with.
+    config: defineHttpConfig({
+      signInPath: '/signin',
+      buildId: 'test',
+      rateLimit: { scope: 'process' },
+    }),
   });
 });
 
@@ -107,9 +113,17 @@ contractTest('signing out revokes the row, and the SAME cookie stops working', a
   const cookie = await signIn('user', 'user');
   expect((await call('/friends', { headers: { cookie, accept: 'text/html' } })).status).toBe(200);
 
+  // The only CREDENTIALED write in this file, so the only call the CSRF stage judges: an unsafe
+  // method riding an ambient cookie must prove same-origin. A browser sends both of these on its
+  // own; a test that omitted them would be asserting the refusal, not the sign-out.
   const out = await call('/api/sessions/destroy', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', cookie },
+    headers: {
+      'content-type': 'application/json',
+      cookie,
+      origin: ORIGIN,
+      'sec-fetch-site': 'same-origin',
+    },
     body: JSON.stringify({ confirm: 'sign-out' }),
   });
   expect(out.status).toBe(200);

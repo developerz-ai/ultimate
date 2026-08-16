@@ -1,7 +1,7 @@
 # @ultimat3/jobs ⚙️
 
-Durable background work. Steps that replay, a transactional outbox that is on by default,
-and one driver interface so Postgres → Redis → NATS is a config line.
+Durable background work. Steps that replay, a transactional outbox, and one driver interface so
+a job's code never names a backend.
 
 ```ts
 import { job, t } from '@ultimat3/jobs';
@@ -285,7 +285,7 @@ Nothing can kill a body that ignores the signal, so the durable state is fenced:
 cancel every step write is refused with `X_ABORTED`, and a run that finishes anyway is logged
 as `jobs.timeout.abandoned` — the one way to find a handler that never reads `ctx.signal`.
 
-## The transactional outbox (on by default)
+## The transactional outbox
 
 ```ts
 await ctx.tx(async (tx) => {
@@ -305,8 +305,25 @@ it after commit. The bug class this removes:
 Both are load-dependent, both pass every test you would write, and both produce "the email
 went out but the order isn't in the database". Joining the transaction closes the window.
 The relay publishes *then* marks published, so a crash re-publishes — collapsed by the
-idempotency key. Set `mode: 'required'` to make an enqueue outside a transaction an
-`X_OUTBOX_NO_TX` error instead of a direct publish.
+idempotency key. A publish that FAILS stops the batch rather than letting later rows overtake it:
+`claim()` returns rows in `staged_at` order, so an app that stages `createInvoice` then
+`chargeCard` in one transaction must never have the charge run first. Set `mode: 'required'` to
+make an enqueue outside a transaction an `X_OUTBOX_NO_TX` error instead of a direct publish.
+
+**It is not on by default, and it is not on until you install it** (`As of 2026-08`). Three
+things have to be true in a process:
+
+| Step | Call |
+|---|---|
+| the table exists | ships in `SQL_JOBS_TABLE` — applying the queue DDL is enough |
+| the facade is installed | `setJobsFacade(createJobsFacade({ store, driver }, currentTx))` |
+| the relay is running | `createOutboxRelay({ store, driver }).start()` |
+
+with `store = createPgOutboxStore({ executor, txExecutor })`. `txExecutor` is what makes it
+transactional: `stage()` runs on the CALLER'S connection, never the pool. With nothing installed,
+`jobsFacade()` answers a fallback whose `currentTx` is `() => undefined` and every enqueue
+publishes straight to the driver — deliberate, so a script and a test enqueue with no wiring, but
+it is a fallback and not the guarantee.
 
 The memory store (`createMemoryOutboxStore`, `x dev` and tests) **drops** a published row —
 `retained()` is the relay's backlog, not a running total; the pg store keeps `published_at` as
@@ -316,11 +333,13 @@ and the loop re-arms: an unobserved rejection would end the process with rows st
 ## Drivers
 
 One interface: `enqueue`, `claim` (visibility timeout), `ack`, `nack` (backoff),
-`heartbeat`, `stats`. Zero job-code change between them.
+`heartbeat`, `stats`, plus optional `introspect`, `backfills` and `leases`. Zero job-code change
+between them — swapping is `setJobDriver(other)`, and there is **no `jobs.driver` config line**:
+`JobsConfig.driver` has no reader and boot always builds `createPgDriver`.
 
 | Driver | Status | Backing | Use |
 |---|---|---|---|
-| `pg` | **default** | `SELECT ... FOR UPDATE SKIP LOCKED`, partial unique index, advisory-lock leader | zero-infra start, most apps |
+| `pg` | **default** | `SELECT ... FOR UPDATE SKIP LOCKED`, a partial unique index on `(name, idempotency_key)`, lease-based leader, `x_job_leases` | zero-infra start, most apps |
 | `memory` | complete | in-process maps | `x dev`, tests |
 | `redis` | interface-complete, `X_NOT_IMPLEMENTED` | Streams + consumer groups | planned |
 | `nats` | interface-complete, `X_NOT_IMPLEMENTED` | JetStream work queue | planned |
@@ -333,7 +352,27 @@ debugging a stuck queue can read and run the exact statement.
 | Role | Entry | Behaviour |
 |---|---|---|
 | `worker` | `createWorker({ driver, queues, concurrency })` | per-queue pools, lease heartbeat, SIGTERM drain: stop claiming → finish in-flight → close |
-| `scheduler` | `createScheduler({ driver, leader })` | advisory-lock leader, one dispatch round at a time, catch-up policy, SIGTERM drain: stop dispatching → finish the round → release the lock |
+| `scheduler` | `createScheduler({ driver, leader, state })` | one dispatch round at a time, catch-up policy, SIGTERM drain: stop dispatching → finish the round → release the lock |
+
+**Pass `state` and `leader` in any real deployment.** The defaults are a `Map` and "always the
+leader", and both fail silently: with no durable watermark a redeployed scheduler arms to tomorrow
+and never detects the occurrence the pod it replaced dropped (`catchUp` and `maxCatchUp` are inert
+— "missed" is relative to a watermark that no longer exists), and with no election a rolling
+update runs two leaders.
+
+```ts
+createScheduler({
+  driver,
+  state: pgSchedulerState(executor),
+  leader: createPgLeaseLeader({ executor }),
+});
+```
+
+`createPgLeaseLeader` and not `createPgLeader`: `pg_try_advisory_lock` is scoped to a Postgres
+*session*, and the executor this package is handed is a **pool** — the lock is released the moment
+that connection goes back to it, so every node reads itself as leader. The lease is a row with an
+expiry and needs no connection affinity. `acquire()` is also the renewal, called every round, which
+is how a demoted node finds out.
 
 ```ts
 export const nightlyDigest = task({
@@ -371,9 +410,26 @@ retrySchedule({ attempts: 5, backoff: 'exponential', delay: 1000 })
 
 ## Limits
 
-Per-tenant concurrency (`tenantId` = the actor's `orgId`, carried on the queue row), a
-per-queue cap and a global cap. Over a cap, the claim is handed straight back without
-burning an attempt — one org's 50k-row import cannot starve the fleet.
+Two layers, and the difference matters:
+
+| Layer | Scope | Where |
+|---|---|---|
+| `LimitConfig` — `perTenant`, `perQueue`, `global`, `ratePerTenant` | **this process only** | `limits.ts`, three `Map`s in one heap |
+| `job.concurrency` | **the fleet** | `JobDriver.leases` over `x_job_leases` |
+
+`LimitConfig` is the fast path and is multiplied by your replica count: `perTenant: 2` on twenty
+pods is forty concurrent runs, and `ratePerTenant`'s window is in memory, so a rolling restart
+grants every tenant a fresh full allowance. Size it as a per-pod budget, never as a partner's
+contractual rate.
+
+`job.concurrency` is the one that is fleet-wide, and it is enforced by a row every replica can
+see — one per held slot, keyed `job:<name>`, renewed by the same heartbeat that renews the
+visibility lease and reclaimed by TTL when a worker is SIGKILLed. A driver with no lease store
+cannot hold the cap, so `createWorker().start()` **refuses to boot**
+(`X_JOB_CONCURRENCY_UNENFORCEABLE`) rather than let a documented guarantee do nothing.
+
+Over any cap the claim is handed straight back without burning an attempt — one org's 50k-row
+import cannot starve the fleet.
 
 ## Leases
 
@@ -394,7 +450,33 @@ heartbeat hangs is caught the same as one that rejects.
 ## Introspection
 
 `inspectQueues`, `inspectJob` (per-step trace), `inspectDeadLetters`, `retryFromStep`,
-`inspectManifest` — all `--json`-shaped, shared by `/_x`, the CLI and the MCP tools.
+`cancelJob`, `inspectManifest` — all `--json`-shaped, shared by `/_x`, the CLI and the MCP tools.
+
+`cancelJob(driver, id, reason?)` is the answer to a runaway pass. A queued row becomes `cancelled`
+immediately; a RUNNING one stops at its next heartbeat, which no longer matches its own row and
+aborts the attempt — `steps.ts` then refuses every write. `ack` and `nack` are fenced on
+`state = 'running'`, so the worker that was cancelled cannot un-cancel it on the way out.
+
+## Metrics
+
+| Series | Kind | Answers |
+|---|---|---|
+| `queue_depth{queue}` | gauge | how much work is waiting — the HPA's signal |
+| `jobs_total{queue,outcome}` | counter | is any of it succeeding |
+| `queue_oldest_ready_seconds{queue}` | gauge | *"page if the oldest job in `payments` is older than 5 minutes"* |
+| `queue_dead_jobs{queue}` | gauge | a dead-letter queue that filled overnight and stopped growing — a counter's rate is flat there |
+
+## Trace and actor
+
+An enqueue stamps the current span's `traceparent` onto the row, and the worker opens the job's
+span as a **child** of it: a checkout trace shows the HTTP span, the action span and the charge
+that ran two seconds later as one trace.
+
+`handle.as(actor, input)` also records `enqueuedBy` — the actor's id. **Attribution, never
+authority.** A job body runs with system authority; the framework does not impersonate the
+enqueuer, because a job that sleeps three days or dead-letters and is retried next quarter would
+act as somebody whose role, org membership or employment has changed since. A job that must act
+FOR a user takes that user's id in its input and re-authorises it in the body.
 
 ## Errors
 
@@ -408,6 +490,9 @@ heartbeat hangs is caught the same as one that rejects.
 | `X_OUTBOX_NO_TX` | enqueue outside a transaction with `mode: 'required'` |
 | `X_DRIVER_UNAVAILABLE` | no `DATABASE_URL` / executor for the pg driver |
 | `X_ABORTED` | a cancelled attempt tried to write a step — core's code, not a second name for it |
+| `X_JOB_LEASE_LOST` | the job was cancelled, or its lease lapsed and the queue re-delivered it, while this worker was still running it |
+| `X_JOB_NOT_CANCELLABLE` | `cancelJob` reached a job that already finished, or a driver with no `cancel` |
+| `X_JOB_CONCURRENCY_UNENFORCEABLE` | a registered job declares `concurrency` and the driver has no lease store |
 | `X_NOT_IMPLEMENTED` | redis / nats driver |
 
 ## Boundary

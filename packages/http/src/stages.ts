@@ -1,20 +1,30 @@
 // One function per stage name: what each stage of the lifecycle DOES. The package's three-way
 // split, each file naming the other two — `pipeline.ts` owns the ORDER the stages run in and the
 // run itself, `finalize.ts` owns the promise that the tail cannot reject, and this file owns the
-// work. The vocabulary (`StageName`, `Stage`) lives here too, beside the twelve implementations
+// work. The vocabulary (`StageName`, `Stage`) lives here too, beside the fourteen implementations
 // it names, so `Record<StageName, StageRun>` below is the build error that catches a missing one.
 
-import { anonymousActor, isAnonymous, logger, reportError } from '@ultimat3/core';
+import {
+  anonymousActor,
+  inflightCount,
+  isAnonymous,
+  isDraining,
+  reportError,
+} from '@ultimat3/core';
 import { signInRedirect } from './auth-redirect';
 import { defaultCache } from './cache-policy';
 import { type HttpConfig, stripBasePath } from './config';
 import { actorView, elapsedMs, type RequestContext } from './context';
 import { corsHeaders, preflight } from './cors';
+import { checkCsrf, selfOrigin } from './csrf';
 import { factsOf } from './error-map';
 import {
   bodyInvalid,
+  csrfBlocked,
+  draining,
   forbidden,
   methodNotAllowed,
+  overloaded,
   pathInvalid,
   rateLimited,
   routeNotFound,
@@ -33,11 +43,13 @@ import { validate } from './validate';
 
 export type StageName =
   | 'request-id'
+  | 'admit'
   | 'trace'
   | 'context'
   | 'locale'
   | 'auth'
   | 'rate-limit'
+  | 'csrf'
   | 'body'
   | 'authz'
   | 'handler'
@@ -69,8 +81,12 @@ export interface Stage extends StageDoc {
   readonly run: StageRun;
 }
 
-const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}$/;
-const REQUEST_ID = /^[\w.:-]{8,128}$/;
+/**
+ * A shed request must say when to come back, or it comes back immediately and the retry storm is
+ * the load it was shed to avoid. One second: long enough to matter across a fleet, short enough
+ * that a client is not parked past a rolling restart.
+ */
+const SHED_RETRY_AFTER_SECONDS = '1';
 
 /**
  * The one label a request with no matched route may carry. Every 404 and every scan of `/wp-admin`
@@ -101,20 +117,34 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
   for (const route of input.table.routes) wrapped.set(route, wrap(route.handler));
 
   const table: Record<StageName, StageRun> = {
-    'request-id': (request, ctx) => {
-      const inbound = config.trustProxy ? request.header('x-request-id') : null;
-      if (inbound !== null && REQUEST_ID.test(inbound)) ctx.requestId = inbound;
+    // Both ids are resolved in `correlation.ts`, before the context and the root span exist —
+    // this stage publishes what was decided there. It used to DECIDE, one frame after
+    // `withSpan` had already frozen the span's parent, so an inbound `traceparent` was read into
+    // `ctx.traceId` and the span kept a trace id nothing else in the request had ever seen.
+    'request-id': (_request, ctx) => {
       ctx.headers.set('x-request-id', ctx.requestId);
       return undefined;
     },
 
-    trace: (request, ctx) => {
-      const inbound = request.header('traceparent');
-      const parsed = inbound === null ? null : TRACEPARENT.exec(inbound);
-      if (parsed !== null) {
-        ctx.traceId = parsed[1] ?? ctx.traceId;
-        ctx.parentSpanId = parsed[2] ?? null;
+    admit: (_request, ctx) => {
+      // Before the trace, the route match, auth, the body — everything. A refusal that costs as
+      // much as a served request is not load shedding, and this is the stage that makes
+      // "reject 40% fast, serve 60% at p99" expressible at all.
+      if (isDraining()) {
+        ctx.headers.set('retry-after', SHED_RETRY_AFTER_SECONDS);
+        throw draining();
       }
+      const ceiling = config.maxInflight;
+      // `beginWork()` in `server.ts` counted THIS request before the pipeline was entered, so the
+      // ceiling is compared against a number that already includes it.
+      if (ceiling > 0 && inflightCount() > ceiling) {
+        ctx.headers.set('retry-after', SHED_RETRY_AFTER_SECONDS);
+        throw overloaded(inflightCount(), ceiling);
+      }
+      return undefined;
+    },
+
+    trace: (_request, ctx) => {
       ctx.headers.set('x-trace-id', ctx.traceId);
       return undefined;
     },
@@ -125,7 +155,7 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       const answered = preflight(request.raw, config.cors);
       if (answered !== undefined) return answered;
 
-      ctx.buildId = request.header(config.buildIdHeader);
+      ctx.clientBuildId = request.header(config.buildIdHeader);
       request.assertBuild();
 
       const pathname = stripBasePath(ctx.url.pathname, config.basePath);
@@ -188,6 +218,24 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         ctx.headers.set(name, value);
       }
       if (!decision.allowed) throw rateLimited(key, decision.retryAfterSeconds);
+      return undefined;
+    },
+
+    csrf: (request, ctx) => {
+      const verdict = checkCsrf({
+        method: ctx.method,
+        // `ctx.https`, not `ctx.url.protocol`: behind a TLS-terminating ingress the internal hop
+        // is plain http while the browser's `Origin` says https, so comparing the raw URL would
+        // refuse every legitimate form post in the shape the framework's own chart ships.
+        selfOrigin: selfOrigin(ctx.url, ctx.https),
+        origin: request.header('origin'),
+        secFetchSite: request.header('sec-fetch-site'),
+        hasAuthorizationHeader: request.header('authorization') !== null,
+        anonymous: isAnonymous(ctx.actor),
+        cors: config.cors,
+        config: config.csrf,
+      });
+      if (!verdict.ok) throw csrfBlocked(ctx.url.pathname, verdict.reason);
       return undefined;
     },
 
@@ -257,7 +305,15 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
         });
       }
       hooks.onError?.(error, ctx);
-      logger.error(`${facts.code}: ${facts.cause} [${ctx.requestId}]`);
+      // FIELDS, never interpolation. `logger.emit()` redacts `bound`, `contextFields` and
+      // `fields` — never `msg` — so a cause baked into the message reached the log store past
+      // every rule that exists to stop it: a rejected `{"password":"hunter2"}` was logged
+      // verbatim, at 4xx, which is logged and not reported and therefore kept for the full
+      // retention. The message is the CODE alone; everything variable is a field.
+      // The other half of this is `@ultimat3/schema`'s, and it is the load-bearing one: an issue
+      // message must stop echoing the rejected value at all. This change makes the value
+      // redactable; it does not make it absent.
+      ctx.logger.error(facts.code, { cause: facts.cause, status: facts.status });
       // Before the overlay and before the problem document: a browser with no session has not
       // hit a defect to debug, it has hit a login wall, and the answer to that is the sign-in
       // page. `signInPath` is null until an app declares one, so this is off by default.

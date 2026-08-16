@@ -1,7 +1,14 @@
+// The public surface of @ultimat3/policy. Explicit, never `export *`.
+export type { DecisionSink, MemoryDecisionSink, PolicyDecisionEvent } from './decisions';
+export {
+  decisionSinkInstalled,
+  memoryDecisionSink,
+  noopDecisionSink,
+  resetDecisionSink,
+  setDecisionSink,
+} from './decisions';
 export type { DefinePolicyInput } from './define';
 export { definePolicy } from './define';
-// The public surface of @ultimat3/policy. Explicit, never `export *`.
-
 export type { PolicyErrorCode } from './errors';
 export {
   forbidden,
@@ -10,9 +17,18 @@ export {
   PolicyError,
   permissionUnknown,
   policyMissing,
+  roleRedefined,
 } from './errors';
-export type { EvaluateArgs, PolicyEvaluation } from './evaluate';
-export { codeOf, evaluate, explain, reasonOf, renderTrace } from './evaluate';
+export type { EvaluateArgs, EvaluateOptions, PolicyEvaluation } from './evaluate';
+export {
+  codeOf,
+  evaluate,
+  explain,
+  reasonOf,
+  renderTrace,
+  resetPolicyTracing,
+} from './evaluate';
+export { actorHas, actorPermissions } from './grant-index';
 export type {
   KnownPermission,
   Permission,
@@ -37,16 +53,26 @@ export type {
   Recorder,
   TraceEntry,
 } from './policy';
-export { ALLOWED, allow, and, can, denied, deny, not, or } from './policy';
+export {
+  ALLOWED,
+  allow,
+  and,
+  can,
+  denied,
+  deny,
+  not,
+  or,
+  policyPermissions,
+} from './policy';
 export type { Actor, PolicyActorFields, RoleDef, RoleMap } from './roles';
 export {
-  actorHas,
-  actorPermissions,
   clearRoles,
   defineRoles,
   expandRoles,
   grantMatches,
+  roleDeclarationSites,
   roleDefinitions,
+  roleMapGeneration,
   rolesGranting,
 } from './roles';
 export type {

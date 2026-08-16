@@ -7,7 +7,7 @@
 import type { Actor, Ctx } from '@ultimat3/core';
 import { assertNever, isAnonymous } from '@ultimat3/core';
 import type { Policy, Surface as PolicySurface } from '@ultimat3/policy';
-import { enforce } from '@ultimat3/policy';
+import { enforce, policyPermissions as flattenedPermissions } from '@ultimat3/policy';
 import { QueryDeniedError } from './errors';
 
 /** Policies are opaque here: we evaluate them, we never introspect their rules. */
@@ -60,7 +60,18 @@ export function actorOf(ctx: Ctx): Actor | null {
   return isAnonymous(ctx.actor) ? null : ctx.actor;
 }
 
-/** The capability a read requires, for manifests and the `/_x` dashboard. */
+/** The capability a read requires, for manifests and the `/_x` dashboard. A DISPLAY label. */
 export function policyCapability(policy: QueryPolicy): string {
   return policy.label;
+}
+
+/**
+ * Every permission the policy tree references, flattened and deduped — and the only field a
+ * compliance report may match a grant against. `label` renders a composite as
+ * `or(feed:read, org:administer)`, which is a sentence and never equals a permission string, so
+ * matching on it reported every read guarded by a composite as enforcing nothing. The mirror of
+ * `@ultimat3/action`'s, because `x policy list` reads both lists the same way.
+ */
+export function policyPermissions(policy: QueryPolicy): readonly string[] {
+  return flattenedPermissions(policy);
 }

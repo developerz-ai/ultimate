@@ -7,13 +7,24 @@
 import { currentSpan, logger, systemClock, withSpan } from '@ultimat3/core';
 import { dependentsOfKind } from './graph';
 import type { CacheTag } from './tags';
-import { assertKnownTags, parseTag, serializeTags } from './tags';
+import { assertKnownTags, knownTags, parseTag, serializeTags } from './tags';
 import { isolateTierFailures, resetTierFailures } from './tier-failures';
 import type { CacheTier, TierInvalidation } from './tiers';
 import { sortTiers } from './tiers';
 
 /** Revalidates one ISR route path. Provided by `@ultimat3/render`; absent on a worker. */
 export type Revalidator = (path: string) => Promise<void> | void;
+
+/**
+ * Carries wire tags to every OTHER process. The seam, never the transport: `cache` is tier 1 and
+ * may not reach `realtime` (tier 3) or NATS, so `@ultimat3/cli` registers the sender at boot the
+ * same way `@ultimat3/render` registers the `Revalidator`.
+ *
+ * Without one, `invalidateTags` clears the LRU of exactly one process: a user edits their profile
+ * on pod 3, their next request lands on pod 7, and pod 7's in-process copy serves the pre-edit
+ * value for up to `defaultTtlMs`. The user watches their edit vanish and re-submits.
+ */
+export type InvalidationBroadcast = (wireTags: readonly string[]) => Promise<void> | void;
 
 export interface InvalidationReport {
   readonly tags: readonly string[];
@@ -75,6 +86,7 @@ export function recentInvalidations(): readonly InvalidationEvent[] {
 
 const registry: CacheTier[] = [];
 let revalidator: Revalidator | undefined;
+let broadcast: InvalidationBroadcast | undefined;
 
 /** Tiers register at boot from `app.config.ts`; order is normalised, not trusted. */
 export function registerTier(tier: CacheTier): void {
@@ -94,6 +106,7 @@ export function registeredTiers(): readonly CacheTier[] {
 export function resetTiers(): void {
   registry.length = 0;
   revalidator = undefined;
+  broadcast = undefined;
   invalidationLog.length = 0;
   resetTierFailures();
 }
@@ -113,6 +126,7 @@ export function resetTiers(): void {
 export function isolateTiers(): () => void {
   const capturedTiers = [...registry];
   const capturedRevalidator = revalidator;
+  const capturedBroadcast = broadcast;
   const capturedLog = [...invalidationLog];
   const restoreFailures = isolateTierFailures();
 
@@ -120,6 +134,7 @@ export function isolateTiers(): () => void {
     resetTiers();
     registry.push(...capturedTiers);
     revalidator = capturedRevalidator;
+    broadcast = capturedBroadcast;
     invalidationLog.push(...capturedLog);
     restoreFailures();
   };
@@ -127,6 +142,14 @@ export function isolateTiers(): () => void {
 
 export function registerRevalidator(next: Revalidator): void {
   revalidator = next;
+}
+
+/**
+ * Registers the outbound half of cross-instance invalidation. Called once at boot by whatever
+ * owns the transport — `@ultimat3/cli`, not this package.
+ */
+export function registerInvalidationBroadcast(next: InvalidationBroadcast): void {
+  broadcast = next;
 }
 
 /**
@@ -138,13 +161,53 @@ export function invalidateTags(tags: readonly CacheTag[]): Promise<InvalidationR
   // Captured before `withSpan` opens `cache.invalidate` below: inside that callback the active
   // span is already this call's own, which would make every event's source the same string.
   const source = currentSpan()?.name ?? 'invalidateTags';
+  return fanOut(tags, { source, emit: true, validate: true, errors: [] });
+}
+
+/**
+ * The inbound half: another instance's fan-out, applied here.
+ *
+ * It cannot re-emit, and that is structural rather than a flag a caller could set wrong — `emit`
+ * lives on `fanOut`'s private options and this is the only entry point that passes `false`. A
+ * broadcast that re-broadcast would be a storm bounded by nothing.
+ *
+ * A tag this process has not declared is DROPPED and reported, never thrown: mid-deploy the new
+ * pods know an entity the old ones do not, and a throw here kills the subscriber loop that
+ * delivered it — which would silently end cross-instance invalidation for the whole process.
+ */
+export function receiveInvalidationBroadcast(wire: readonly string[]): Promise<InvalidationReport> {
+  const declared = new Set(knownTags());
+  const errors: { tier: string; message: string }[] = [];
+  const accepted: CacheTag[] = [];
+  for (const value of wire) {
+    const parsed = parseTag(value);
+    // An empty registry is `assertKnownTags`'s "validation is off" state; honour the same rule.
+    if (declared.size === 0 || declared.has(parsed.entity)) accepted.push(parsed);
+    else errors.push({ tier: 'broadcast', message: `ignored undeclared tag "${value}"` });
+  }
+  return fanOut(accepted, { source: 'cache.broadcast', emit: false, validate: false, errors });
+}
+
+interface FanOutOptions {
+  readonly source: string;
+  /** Never widened to a public parameter: see `receiveInvalidationBroadcast`. */
+  readonly emit: boolean;
+  /** The local path throws on a typo; the inbound one has already filtered instead. */
+  readonly validate: boolean;
+  readonly errors: { tier: string; message: string }[];
+}
+
+function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<InvalidationReport> {
+  const { source, emit } = options;
 
   return withSpan('cache.invalidate', async (): Promise<InvalidationReport> => {
     const startedAt = performance.now();
-    assertKnownTags(tags);
+    // Inside the span, so a typo is a REJECTED promise and not a synchronous throw past every
+    // caller that only ever awaited this function.
+    if (options.validate) assertKnownTags(tags);
 
     const tiers: TierInvalidation[] = [];
-    const errors: { tier: string; message: string }[] = [];
+    const errors = options.errors;
 
     for (const tier of sortTiers(registry)) {
       try {
@@ -172,8 +235,23 @@ export function invalidateTags(tags: readonly CacheTag[]): Promise<InvalidationR
       }
     }
 
+    const wire = serializeTags(tags);
+
+    // Last, and best-effort: every LOCAL tier has already cleared, so a dead transport degrades
+    // to "the other pods clear on TTL" rather than failing the write that triggered the bust.
+    if (emit && wire.length > 0 && broadcast !== undefined) {
+      try {
+        await broadcast(wire);
+      } catch (error) {
+        errors.push({
+          tier: 'broadcast',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     const report: InvalidationReport = {
-      tags: serializeTags(tags),
+      tags: wire,
       tiers,
       isr,
       cdn,

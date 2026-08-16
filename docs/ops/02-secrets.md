@@ -13,7 +13,7 @@ choice below is the one an operator running this stack in production made (`As o
 |---|---|---|
 | **Sealed secrets** (an in-cluster controller holding an asymmetric keypair) | you own the cluster and want the encrypted value reviewable in a PR | one controller, one key to back up, one key whose loss is unrecoverable |
 | **An external secret operator** pulling from a managed vault | you already pay for a vault, or compliance wants an audit trail per read | a live dependency between the vault and every pod start |
-| **Your platform's secret store** | rung 0 or 1 — a PaaS or a single box with a `.env` file `chmod 600` | no review trail; rotation is manual |
+| **Your platform's secret store** | rungs 0–2 — a PaaS or a single box with a `.env` file `chmod 600` | no review trail; rotation is manual |
 
 The rest of this doc documents the first, because it is the one with real scar tissue attached.
 

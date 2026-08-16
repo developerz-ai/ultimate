@@ -85,7 +85,12 @@ const routes: readonly Route[] = [
   },
 ];
 
-const config = defineHttpConfig({ dev: false, buildId: null, hostname: '127.0.0.1' });
+const config = defineHttpConfig({
+  rateLimit: { scope: 'process' },
+  dev: false,
+  buildId: null,
+  hostname: '127.0.0.1',
+});
 const pipelineWith = (hooks: ServerHooks = {}) =>
   createPipeline({ table: createRouter(routes), config, hooks });
 const get = (path: string) => new Request(`http://localhost${path}`);
@@ -231,7 +236,12 @@ describe('a recover stage that throws', () => {
   });
 
   test('a devNotices producer that throws does not take the overlay down', async () => {
-    const dev = defineHttpConfig({ dev: true, buildId: null, hostname: '127.0.0.1' });
+    const dev = defineHttpConfig({
+      rateLimit: { scope: 'process' },
+      dev: true,
+      buildId: null,
+      hostname: '127.0.0.1',
+    });
     const pipeline = createPipeline({
       table: createRouter(routes),
       config: dev,

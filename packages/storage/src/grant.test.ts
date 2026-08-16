@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { frozenClock } from '@ultimat3/core';
+import { isPendingKey, isQuarantinedKey } from './attachment';
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
 import { isStorageError } from './errors';
@@ -38,6 +39,37 @@ afterEach(async () => {
 });
 
 describe('grantUpload', () => {
+  test('quarantine: true lands the key where promotion refuses it until a scan releases it', async () => {
+    // Magic-byte sniffing closes stored XSS; it is not malware scanning, and `.docx` is a zip
+    // by design. The framework ships the place a scan plugs in, never the scanner.
+    const grant = await grantUpload({
+      disk,
+      orgId: 'org-1',
+      request: { filename: 'report.png', contentType: 'image/png' },
+      policy: IMAGES,
+      quarantine: true,
+      uploadId: () => 'u-1',
+      clock,
+    });
+    expect(grant.key).toBe('org/org-1/pending/quarantine/u-1.png');
+    expect(isQuarantinedKey(grant.key, 'org-1')).toBe(true);
+    // Still inside `pending/`, so a never-scanned upload is still swept as an orphan.
+    expect(isPendingKey(grant.key, 'org-1')).toBe(true);
+  });
+
+  test('without it the key is the ordinary pending one', async () => {
+    const grant = await grantUpload({
+      disk,
+      orgId: 'org-1',
+      request: { filename: 'report.png', contentType: 'image/png' },
+      policy: IMAGES,
+      uploadId: () => 'u-1',
+      clock,
+    });
+    expect(grant.key).toBe('org/org-1/pending/u-1.png');
+    expect(isQuarantinedKey(grant.key, 'org-1')).toBe(false);
+  });
+
   test('refuses a type the policy never allowed, before anything is signed', async () => {
     const code = await codeOf(() =>
       grantUpload({

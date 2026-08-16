@@ -12,12 +12,30 @@ import { devActors } from './dev-policy';
 
 const isDefined = <T>(value: T | undefined): value is T => value !== undefined;
 
-/** Descriptor names whose `capability` is exactly this permission — shared by list and explain. */
-const namesEnforcing = <D extends { readonly name: string; readonly capability: string }>(
+/**
+ * Descriptor names whose policy references this permission — shared by list and explain.
+ *
+ * Matched on `permissions` and never on `capability`. `capability` is the DISPLAY label, and a
+ * composite policy renders as `and(post:publish, org:administer)` — never a bare permission — so
+ * an equality test against it reported every action guarded by a composite as enforcing nothing.
+ * That is `unenforced`: "this grant does nothing", printed about every non-trivial rule in a real
+ * app, to the compliance engineer reading it before an access review.
+ */
+const namesEnforcing = <
+  D extends { readonly name: string; readonly permissions: readonly string[] },
+>(
   descriptors: readonly D[],
   permission: string,
 ): readonly string[] =>
-  descriptors.filter((descriptor) => descriptor.capability === permission).map((d) => d.name);
+  descriptors
+    .filter((descriptor) => descriptor.permissions.includes(permission))
+    .map((d) => d.name);
+
+/** The same rule as `namesEnforcing`, for the two `explain` filters that keep the descriptor. */
+const enforces = (
+  descriptor: { readonly permissions: readonly string[] },
+  permission: string,
+): boolean => descriptor.permissions.includes(permission);
 
 // ── list ──────────────────────────────────────────────────────────────────
 
@@ -66,7 +84,14 @@ export type SubjectKind = 'permission' | DeclarationKind;
 export interface DeclarationExplanation {
   readonly name: string;
   readonly kind: DeclarationKind;
+  /** The policy's DISPLAY label — `and(post:publish, org:administer)` for a composite. */
   readonly capability: string;
+  /**
+   * Every permission the policy tree references, flattened. What a grant is MATCHED against; the
+   * label above is what a person reads. Published because `grantingRoles` is derived from it —
+   * `rolesGranting('and(a:b, c:d)')` is a lookup that can only ever answer nothing.
+   */
+  readonly permissions: readonly string[];
   readonly label: string;
   /**
    * Whether this policy can be decided at all outside a request. `false` when evaluating it
@@ -117,6 +142,7 @@ const explainAction = (action: AnyAction): DeclarationExplanation => {
     name: descriptor.name,
     kind: 'action',
     capability: descriptor.capability,
+    permissions: descriptor.permissions,
     label: action.policy.label,
     ...matrixFor(action.policy),
   };
@@ -128,6 +154,7 @@ const explainQuery = (query: AnyQuery): DeclarationExplanation => {
     name: descriptor.name,
     kind: 'query',
     capability: descriptor.capability,
+    permissions: descriptor.permissions,
     label: query.policy.label,
     ...matrixFor(query.policy),
   };
@@ -168,12 +195,12 @@ export function explainPolicy(name: string): SubjectExplanation | undefined {
     const { permission } = resolved;
     const declarations = [
       ...describeActions()
-        .filter((descriptor) => descriptor.capability === permission)
+        .filter((descriptor) => enforces(descriptor, permission))
         .map((descriptor) => getAction(descriptor.name))
         .filter(isDefined)
         .map(explainAction),
       ...describeQueries()
-        .filter((descriptor) => descriptor.capability === permission)
+        .filter((descriptor) => enforces(descriptor, permission))
         .map((descriptor) => getQuery(descriptor.name))
         .filter(isDefined)
         .map(explainQuery),
@@ -190,7 +217,12 @@ export function explainPolicy(name: string): SubjectExplanation | undefined {
   return {
     subject: name,
     kind: resolved.kind,
-    grantingRoles: rolesGranting(declaration.capability),
+    // The union over every permission the policy references, not a lookup on the label: a
+    // composite-guarded action reported NO granting roles at all, which reads as "nobody can do
+    // this" about a declaration half the roles in the app can reach.
+    grantingRoles: [
+      ...new Set(declaration.permissions.flatMap((permission) => rolesGranting(permission))),
+    ].sort(),
     declarations: [declaration],
   };
 }

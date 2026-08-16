@@ -64,10 +64,10 @@ Any test that can pass twice and fail the third time is worse than no test — i
 
 | Control | Behavior |
 |---|---|
-| **Seeds** | `seed(name)` builds a named, deterministic fixture graph via entity factories. Same input → identical rows, identical UUIDs |
+| **Seeds** | `seed(name)` builds a named, deterministic fixture graph via entity factories and returns a handle; `await handle.pick({ … })` takes the rows out by label. Same input → identical rows, identical UUIDs |
 | **Frozen clock** | time starts at a fixed instant. `clock.advance('3d')` moves it, and it also drives `step.sleep` and cron in tests |
 | **Seeded RNG** | `Math.random`, `crypto.randomUUID`, and Bun's RNG are seeded per test file from its path — reproducible, distinct across files |
-| **Sealed network** | any egress not explicitly mocked **fails the test** with `X_TEST_NETWORK_EGRESS`, naming the URL and the fix |
+| **Sealed network** | any egress not explicitly mocked **fails the test** with `X_TEST_NETWORK_SEALED`, naming the URL and the fix |
 | **Fixed timezone + locale** | `UTC` and `en-US` unless a test declares otherwise; a tz-dependent bug fails deterministically |
 | **Ordered concurrency** | job workers in tests run deterministically; `runJobs()` drains the queue synchronously |
 | **Per-table factory seeds** | `defineFactory` derives its seed from the table name unless given, so two entities never draw the same uuid stream — a shared `seed: 1` let a join assertion pass for the wrong reason |
@@ -90,16 +90,22 @@ Each type is a first-class runner with its own fixture shape — not a naming co
 ```ts
 // contract test — generated as a scaffold with the action
 test('publishPost denies a non-owner', async ({ seed, actorFor }) => {
-  const { post, stranger } = await seed('two-orgs');
+  // `seed(name)` hands back a handle, not rows; `pick` names the seed labels and aliases them.
+  const { post, stranger } = await seed('dev').pick({
+    post: 'post:draft',
+    stranger: 'user:outsider',
+  });
   await expect(publishPost.as(actorFor(stranger), { postId: post.id }))
     .rejects.toBeUltimateError('X_FORBIDDEN');
 });
 ```
 
+`seed` and `actorFor` are the **app's** fixtures, registered in its `scripts/test-setup.ts`; the labels are the ids its own seed file declares. `clock`, `mail`, `network`, `runJobs` and `statements` are the framework's, and arrive in every test.
+
 ```ts
 // job test — the step guarantee, not the happy path
-test('onboardOrg retries only the failed step', async ({ seed, clock, mail }) => {
-  const { org } = await seed('fresh-org');
+test('onboardOrg retries only the failed step', async ({ seed, clock, mail, runJobs }) => {
+  const { org } = await seed('dev').pick({ org: 'org:fresh' });
   mail.failOnce(nudgeEmail);
   await runJobs(onboardOrg, { orgId: org.id });
   clock.advance('3d');

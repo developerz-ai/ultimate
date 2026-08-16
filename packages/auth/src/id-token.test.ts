@@ -29,8 +29,29 @@ const codeOf = (call: () => unknown): string => {
   return 'did-not-throw';
 };
 
-const verify = (idToken: string, nonce = 'stored-nonce'): unknown =>
-  verifyIdToken({ provider: 'google', idToken, clientId: 'client-id', nonce, clock });
+const asyncCodeOf = async (call: () => Promise<unknown>): Promise<string> => {
+  try {
+    await call();
+  } catch (error) {
+    return error instanceof AuthError ? error.code : `not-an-AuthError: ${String(error)}`;
+  }
+  return 'did-not-throw';
+};
+
+/**
+ * `keys: 'token-endpoint-tls'` on every call here on purpose: these fixtures carry no real
+ * signature, and this describe block is about the CLAIM checks. The signature path is
+ * `jwks.test.ts`, where a forged token is refused against a real key set.
+ */
+const verify = async (idToken: string, nonce = 'stored-nonce'): Promise<unknown> =>
+  await verifyIdToken({
+    provider: 'google',
+    idToken,
+    clientId: 'client-id',
+    nonce,
+    clock,
+    keys: 'token-endpoint-tls',
+  });
 
 describe('decodeIdToken', () => {
   test('reads the claims this package acts on, including non-ASCII names', () => {
@@ -94,49 +115,85 @@ describe('isVerifiedFlag', () => {
 });
 
 describe('verifyIdToken', () => {
-  test('accepts both issuer spellings Google has shipped', () => {
-    expect(() => verify(unsignedJwt(googleClaims()))).not.toThrow();
-    expect(() => verify(unsignedJwt(googleClaims({ iss: 'accounts.google.com' })))).not.toThrow();
+  test('accepts both issuer spellings Google has shipped', async () => {
+    expect(await asyncCodeOf(() => verify(unsignedJwt(googleClaims())))).toBe('did-not-throw');
+    expect(
+      await asyncCodeOf(() => verify(unsignedJwt(googleClaims({ iss: 'accounts.google.com' })))),
+    ).toBe('did-not-throw');
   });
 
-  test('an issuer the provider never claims is rejected', () => {
-    expect(codeOf(() => verify(unsignedJwt(googleClaims({ iss: 'https://evil.test' }))))).toBe(
+  test('an issuer the provider never claims is rejected', async () => {
+    expect(
+      await asyncCodeOf(() => verify(unsignedJwt(googleClaims({ iss: 'https://evil.test' })))),
+    ).toBe('X_OAUTH_TOKEN_INVALID');
+  });
+
+  test('aud may be an array, and must contain this handshake client id', async () => {
+    expect(
+      await asyncCodeOf(() => verify(unsignedJwt(googleClaims({ aud: ['other', 'client-id'] })))),
+    ).toBe('did-not-throw');
+    expect(await asyncCodeOf(() => verify(unsignedJwt(googleClaims({ aud: 'another-app' }))))).toBe(
       'X_OAUTH_TOKEN_INVALID',
     );
   });
 
-  test('aud may be an array, and must contain this handshake client id', () => {
-    expect(() => verify(unsignedJwt(googleClaims({ aud: ['other', 'client-id'] })))).not.toThrow();
-    expect(codeOf(() => verify(unsignedJwt(googleClaims({ aud: 'another-app' }))))).toBe(
-      'X_OAUTH_TOKEN_INVALID',
-    );
+  test('an expired token is rejected, and one inside the skew window is not', async () => {
+    expect(
+      await asyncCodeOf(() => verify(unsignedJwt(googleClaims({ exp: seconds(-120_000) })))),
+    ).toBe('X_OAUTH_TOKEN_INVALID');
+    expect(
+      await asyncCodeOf(() => verify(unsignedJwt(googleClaims({ exp: seconds(-30_000) })))),
+    ).toBe('did-not-throw');
   });
 
-  test('an expired token is rejected, and one inside the skew window is not', () => {
-    expect(codeOf(() => verify(unsignedJwt(googleClaims({ exp: seconds(-120_000) }))))).toBe(
-      'X_OAUTH_TOKEN_INVALID',
-    );
-    expect(() => verify(unsignedJwt(googleClaims({ exp: seconds(-30_000) })))).not.toThrow();
-  });
-
-  test('a nonce from another browser is X_OAUTH_STATE_INVALID, not a token error', () => {
-    expect(codeOf(() => verify(unsignedJwt(googleClaims({ nonce: 'someone-elses-nonce' })))))
-      // Same class of event as a forged `state`: a token minted elsewhere, replayed here.
-      .toBe('X_OAUTH_STATE_INVALID');
+  test('a nonce from another browser is X_OAUTH_STATE_INVALID, not a token error', async () => {
+    // Same class of event as a forged `state`: a token minted elsewhere, replayed here.
+    expect(
+      await asyncCodeOf(() => verify(unsignedJwt(googleClaims({ nonce: 'someone-elses-nonce' })))),
+    ).toBe('X_OAUTH_STATE_INVALID');
     const withoutNonce = googleClaims();
     delete withoutNonce['nonce'];
-    expect(codeOf(() => verify(unsignedJwt(withoutNonce)))).toBe('X_OAUTH_STATE_INVALID');
+    expect(await asyncCodeOf(() => verify(unsignedJwt(withoutNonce)))).toBe(
+      'X_OAUTH_STATE_INVALID',
+    );
   });
 
-  test('a provider that issues no id token can never have one accepted for it', () => {
-    const asGithub = (): unknown =>
-      verifyIdToken({
+  test('a provider that issues no id token can never have one accepted for it', async () => {
+    const asGithub = async (): Promise<unknown> =>
+      await verifyIdToken({
         provider: 'github',
         idToken: unsignedJwt(googleClaims()),
         clientId: 'client-id',
         nonce: 'stored-nonce',
         clock,
+        keys: 'token-endpoint-tls',
       });
-    expect(codeOf(asGithub)).toBe('X_OAUTH_TOKEN_INVALID');
+    expect(await asyncCodeOf(asGithub)).toBe('X_OAUTH_TOKEN_INVALID');
+  });
+});
+
+/**
+ * `claims.iss` is a field of the JWT the caller just presented. It reached the refusal wrapped in
+ * hand-written quotes, which escape nothing — so a forged `iss` could close the sentence and add
+ * a line of its own to the log.
+ */
+describe('a forged iss cannot forge a log line', () => {
+  test('the rejected issuer is rendered, not interpolated', async () => {
+    const hostile = 'https://evil.test"\n2026-08-16 level=info msg="issuer ok';
+    const thrown = await verifyIdToken({
+      provider: 'google',
+      idToken: unsignedJwt(googleClaims({ iss: hostile })),
+      clientId: 'client-id',
+      nonce: 'stored-nonce',
+      clock,
+      keys: 'token-endpoint-tls',
+    }).catch((error: unknown) => error);
+
+    const error = thrown instanceof AuthError ? thrown : null;
+    expect(error?.code).toBe('X_OAUTH_TOKEN_INVALID');
+    expect(error?.cause).not.toContain('\n');
+    expect(error?.cause).toContain('\\n');
+    // Still readable: the operator can see which issuer was presented.
+    expect(error?.cause).toContain('evil.test');
   });
 });

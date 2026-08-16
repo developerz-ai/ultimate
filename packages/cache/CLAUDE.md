@@ -46,6 +46,19 @@ Tier 1. Tagged caching + THE invalidation graph.
   Every tier calls it before it writes. `0` used to be "never expires" here and `EX 1` in `redis.ts`,
   so one stack answered two ways; the rule lives beside `CacheSetOptions` precisely so a new tier
   cannot invent a third reading. `X_CACHE_TTL_INVALID`, never a resolution.
+- **`assertTtl` also SPREADS the lease it validated** — validate, then jitter, one choke point. A
+  rolling restart warms 40,000 keys in 30s on one lease and they all expire in one 30s window; the
+  spread is what makes that a ramp. `rng` is injected (`LruOptions.rng`, `RedisTierOptions.rng`) —
+  **never `Math.random()` at a call site**, or nothing downstream is deterministic. `rng: () => 0`
+  is the full lease and is what a test asserting an exact `expiresAt` passes; `jitterFraction: 0`
+  turns it off. Outside `[0, 1)` is `X_CACHE_JITTER_INVALID`, refused rather than clamped.
+- **`createCacheStack` shares one in-flight `load()` per key** (`single-flight.ts`, mirroring
+  `realtime`'s `entry.reading`). The share ends as the load settles — a REJECTED load must clear
+  its entry too, or one origin failure becomes a permanent cached rejection. One `SingleFlight` per
+  stack, never a module-level map: two stacks are two ladders.
+- **`negativeTtlMs` is the stack's decision, not a tier's.** Only `createCacheStack` sees what
+  `load()` answered, so the `null`/`undefined` branch lives in `ttlOptionsFor` there and reaches a
+  tier as an ordinary `ttlMs`.
 - **A promotion carries the entry's remaining life, not `options.ttlMs`** — `createCacheStack.read`
   writes the closer tiers with `hit.expiresAt - now`, and drops a hit that fails `isExpired`. A
   fresh full lease per read is a hot key that never goes stale enough to refetch. `isExpired` was
@@ -60,6 +73,26 @@ Tier 1. Tagged caching + THE invalidation graph.
   fails on Redis Cluster and Dragonfly strict mode — into `report.errors`, so the bust reads as
   partial and stale rows serve until TTL. The script returns the members; the tier deletes them
   client-side, one key per `DEL`, which is slot-local under every topology.
+- **That fixed half of it; `KEYS` itself was the other half.** Tag keys carry a `{entity}` hash tag
+  (`<ns>:t:{post}`, `<ns>:t:{post}:7`) and `invalidateTags` issues **one script call per tag**, so
+  every key a call is handed hashes to one slot. A single `EVAL` carrying two tags' buckets is
+  `CROSSSLOT`-rejected before the script runs. The invariant a test pins: no command's `KEYS` ever
+  spans two hash tags.
+- **Every tag set carries a lease, and the lease only grows.** `TAG_MEMBER_SCRIPT` does the `SADD`
+  and the `EXPIRE` in one call, one key in `KEYS`. A set with no TTL is unbounded memory and a
+  multi-million-member `SMEMBERS` on the next publish. `EXPIRE … GT` is NOT enough on its own — it
+  treats a key with no TTL as infinite, so a fresh bucket would stay immortal, which is the bug.
+  `SREM`-on-`del` is deliberately not done: `del(key)` does not know the key's tags without a read,
+  and a bounded bucket lease already bounds the growth.
+- **The Redis namespace carries the build id by default** (`namespaceFor`, `appVersion()`). Two
+  builds sharing one Redis otherwise read each other's payloads through a `JSON.parse` that does
+  not validate. `buildId: null` opts out. The layout is wire-visible: changing it is a cold cache.
+- **Cross-instance invalidation is a SEAM here, never a transport.** `registerInvalidationBroadcast`
+  (outbound) and `receiveInvalidationBroadcast` (inbound) mirror `registerRevalidator`; `cli` owns
+  the bus. The inbound half cannot re-emit and that is structural — `emit` is on `fanOut`'s private
+  options and only `receiveInvalidationBroadcast` passes `false`. An inbound tag this process never
+  declared is dropped into `report.errors`, never thrown: a throw kills the subscriber loop and
+  silently ends cross-instance invalidation for the whole process.
 - **`report.cdn` is what depends on the tags; `report.tiers` is what cleared.** The `cdn` tier
   purges `cdn-path` dependents itself, alongside the tags, so `busted` is built from `tiers` +
   `isr` + `liveQueries` and never from `cdn` — folding in a list nothing purged is exactly the
@@ -95,7 +128,8 @@ Tier 1. Tagged caching + THE invalidation graph.
 | `tier-failures.ts` | `bestEffort()`, and the bounded log of refusals it absorbs |
 | `memo.ts` | request memo over the ALS ctx (WeakMap, no lifecycle) |
 | `lru.ts` | byte-budgeted LRU (linked list + map + tag index) |
-| `redis.ts` | `Bun.redis` tier, one-`EVAL` tag invalidation |
+| `redis.ts` | `Bun.redis` tier, build-namespaced keys, hash-tagged buckets, one script call per tag |
+| `single-flight.ts` | one in-flight `load()` per key, shared by every concurrent miss |
 | `cdn.ts` | `Cache-Control`/`Surrogate-Key` emission, the `PurgeDriver` seam, `noopPurgeDriver` |
 | `purge-http.ts` | the HTTP half both remote drivers share: one POST, retryable table, batching, key guard |
 | `purge-fastly.ts` | `fastlyPurgeDriver`: surrogate-key batch purge, `purge_all` |

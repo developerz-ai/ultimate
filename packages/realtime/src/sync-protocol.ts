@@ -124,6 +124,14 @@ export interface PresenceFrame {
   readonly topic: string;
   readonly op: 'join' | 'leave' | 'update' | 'sync';
   readonly members: readonly PresenceMember[];
+  /**
+   * Members in the whole set behind a `sync` frame, which is capped: a 5,000-avatar row is not a UI
+   * anyone renders, and the count is what lets a client say "and 4,744 others" without holding
+   * them. Optional and **additive**, exactly like `snapshot.entity`: an old node omits it and a new
+   * one reads its absence as "this frame is the whole set", so neither skew is unreadable and
+   * `PROTOCOL_VERSION` does not move. Never set on a `join`/`leave`/`update` — those are deltas.
+   */
+  readonly total?: number;
 }
 
 export interface ReconnectFrame {
@@ -249,14 +257,16 @@ export function decode(raw: string | Uint8Array): Frame {
         strategy: pick(parsed, 'strategy', ['server-wins', 'last-write-wins', 'custom'] as const),
         row: parsed['row'] === null ? null : row(parsed['row']),
       };
-    case 'presence':
-      return {
+    case 'presence': {
+      const base = {
         type: 'presence',
         v: PROTOCOL_VERSION,
         topic: str(parsed, 'topic'),
         op: pick(parsed, 'op', ['join', 'leave', 'update', 'sync'] as const),
         members: list(parsed, 'members').map(member),
-      };
+      } as const;
+      return parsed['total'] === undefined ? base : { ...base, total: num(parsed, 'total') };
+    }
     case 'reconnect':
       return {
         type: 'reconnect',

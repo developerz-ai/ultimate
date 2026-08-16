@@ -53,6 +53,7 @@ export type {
   OfflineStrategy,
   PolicyFact,
   QueryFact,
+  RateLimitFact,
   RenderMode,
   RouteFact,
   TaskFact,

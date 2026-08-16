@@ -117,7 +117,7 @@ export function budgetExceeded(
   return new SeoError({
     code: SEO_ERROR_CODES.budgetExceeded,
     cause: `${route} (${file}) ${metric} is ${actual}${unit}, budget is ${limit}${unit}`,
-    fix: `x analyze ${route} --json   # then trim, or raise budget.${metric} in ${file}`,
+    fix: `trim ${route} until ${metric} is under ${limit}${unit}, or raise budget.${metric} to at least ${actual}${unit} in ${file}`,
     meta: { route, file, metric, limit, actual, unit },
   });
 }

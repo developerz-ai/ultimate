@@ -145,7 +145,10 @@ describe('migrate', () => {
     expect(error.code).toBe('X_MIGRATION_CONFLICT');
     expect(error.cause).toContain('applied by app version "1.6.0"');
     expect(error.cause).toContain('this build is "1.5.0"');
-    expect(error.fix).toContain('x db status --json');
+    // Not `x db status --json`: that subcommand has never existed, and this is one of the two
+    // errors most likely to fire during a real deploy.
+    expect(error.fix).toContain('deploy app version "1.6.0"');
+    expect(error.fix).toContain('psql "$DATABASE_URL"');
 
     // Nothing ran: no BEGIN, no user DDL, no ledger insert.
     expect(client.texts.some((text) => text.includes('create table "posts"'))).toBe(false);
@@ -304,10 +307,10 @@ describe('a multi-statement migration', () => {
     const report = await migrate({ migrations: [empty], appVersion: '1.5.0', client });
 
     expect(report.applied).toHaveLength(1);
-    const inside = client.texts.slice(
-      client.texts.indexOf('BEGIN') + 1,
-      client.texts.indexOf('COMMIT'),
-    );
+    // The lock timeout is the transaction's own guard, not the script's, so it is not counted.
+    const inside = client.texts
+      .slice(client.texts.indexOf('BEGIN') + 1, client.texts.indexOf('COMMIT'))
+      .filter((text) => !text.includes('lock_timeout'));
     expect(inside).toHaveLength(1);
     expect(inside[0]).toContain('insert into x_migrations');
   });
@@ -340,7 +343,7 @@ describe('the migration advisory lock', () => {
     await migrate({ migrations: [addPosts], appVersion: '1.5.0', client: pool.client });
 
     expect(pool.events[0]).toBe('reserve');
-    expect(pool.events[1]).toContain('pg_advisory_lock');
+    expect(pool.events[1]).toContain('pg_try_advisory_lock');
     expect(pool.events.at(-2)).toContain('pg_advisory_unlock');
     expect(pool.events.at(-1)).toBe('release');
     // Not one statement on the pool: `pg_advisory_lock` is session-scoped, so work done on any
@@ -394,7 +397,7 @@ describe('the migration advisory lock', () => {
 
     expect(reverted).toEqual([addPosts.id]);
     expect(pool.events[0]).toBe('reserve');
-    expect(pool.events[1]).toContain('pg_advisory_lock');
+    expect(pool.events[1]).toContain('pg_try_advisory_lock');
     expect(pool.events.some((event) => event.includes('drop table "posts"'))).toBe(true);
     expect(pool.events.filter((event) => event.startsWith('pool:'))).toEqual([]);
     expect(pool.events.at(-2)).toContain('pg_advisory_unlock');

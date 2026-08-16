@@ -9,6 +9,8 @@ import {
   memoryRateLimitStore,
   type RateLimitConfig,
   rateLimitKey,
+  resolveRateLimitConfig,
+  toBucket,
 } from './rate-limit';
 
 const limiterAt = (clock: { ms: number }, capacity: number, refillPerSecond: number) =>
@@ -155,24 +157,27 @@ describe('the memory store is bounded', () => {
 // The declaration is the app's: a framework cannot see `replicas: 3`, and one that inferred it
 // from the environment would be wrong on the first deployment that scaled differently.
 describe('scope is declared, and checked once', () => {
+  // `DEFAULT_RATE_LIMIT` no longer carries a scope — that is the whole of H8 — so a test that
+  // wants a resolved config says which one it means, exactly as an app now has to.
+  const PROCESS: RateLimitConfig = { ...DEFAULT_RATE_LIMIT, scope: 'process' };
   const config = (over: Partial<RateLimitConfig>): RateLimitConfig => ({
-    ...DEFAULT_RATE_LIMIT,
+    ...PROCESS,
     ...over,
   });
 
   test('the memory store is per-process, and says so', () => {
     expect(memoryRateLimitStore().scope).toBe('process');
-    expect(createRateLimiter({ config: DEFAULT_RATE_LIMIT }).scope).toBe('process');
+    expect(createRateLimiter({ config: PROCESS }).scope).toBe('process');
   });
 
   test('a limiter carries its store scope up, so the check reads one value', () => {
     const shared = { ...memoryRateLimitStore(), scope: 'shared' as const };
-    expect(createRateLimiter({ config: DEFAULT_RATE_LIMIT, store: shared }).scope).toBe('shared');
+    expect(createRateLimiter({ config: PROCESS, store: shared }).scope).toBe('shared');
   });
 
   test("the default declaration accepts the per-process store — that is what 'process' means", () => {
-    const limiter = createRateLimiter({ config: DEFAULT_RATE_LIMIT });
-    expect(() => assertRateLimitScope(DEFAULT_RATE_LIMIT, limiter)).not.toThrow();
+    const limiter = createRateLimiter({ config: PROCESS });
+    expect(() => assertRateLimitScope(PROCESS, limiter)).not.toThrow();
   });
 
   test('a shared declaration refuses a per-process limiter, with the fix in the error', () => {
@@ -233,5 +238,87 @@ describe('keys', () => {
     const read = DEFAULT_RATE_LIMIT.buckets['default'];
     expect(auth?.capacity).toBeLessThan(read?.capacity ?? 0);
     expect(auth?.refillPerSecond).toBeLessThan(read?.refillPerSecond ?? 0);
+  });
+});
+
+describe('resolveRateLimitConfig', () => {
+  // `scope` used to DEFAULT to `'process'`, so "we did not ask" and "the app said one replica"
+  // were the same value — and `docker/helm/values.yaml` runs `roles.web.replicas: 3`, so every
+  // configured number was enforced three times over with a green `x verify`. The boot check that
+  // exists for this only fires on a `'shared'` declaration, i.e. never in the silent case.
+  test('refuses a config that never declared where the counters live', () => {
+    expect(() => resolveRateLimitConfig(undefined)).toThrow(/X_RATE_LIMIT_SCOPE_UNSET/);
+    expect(() => resolveRateLimitConfig({ buckets: {} })).toThrow(/X_RATE_LIMIT_SCOPE_UNSET/);
+  });
+
+  test('names both answers, and the store that makes the second one true', () => {
+    const error = (() => {
+      try {
+        resolveRateLimitConfig(undefined);
+        return null;
+      } catch (thrown) {
+        return thrown as HttpError;
+      }
+    })();
+    expect(error?.fix).toContain("http.rateLimit.scope: 'process'");
+    expect(error?.fix).toContain('rateLimitStore');
+  });
+
+  test("'process' is still a legal answer — it is no longer an assumed one", () => {
+    expect(resolveRateLimitConfig({ scope: 'process' }).scope).toBe('process');
+    expect(resolveRateLimitConfig({ scope: 'shared' }).scope).toBe('shared');
+  });
+
+  // A limiter that is switched off has nothing to be wrong about, so it owes no declaration.
+  test('a disabled limiter needs no declaration', () => {
+    expect(resolveRateLimitConfig({ enabled: false }).scope).toBe('process');
+  });
+
+  test('the defaults it merges over are the shipped buckets', () => {
+    const resolved = resolveRateLimitConfig({ scope: 'process' });
+    expect(resolved.buckets['default']).toEqual({ capacity: 120, refillPerSecond: 2 });
+    expect(resolved.buckets['auth']).toEqual({ capacity: 10, refillPerSecond: 0.2 });
+  });
+});
+
+describe('toBucket', () => {
+  // It lives here rather than in `@ultimat3/action` because `action` and `query` are the same
+  // tier and can never import each other — a query could not declare a rate limit at all while
+  // the only conversion sat in its sibling.
+  test('a declaration becomes the capacity and the refill the limiter runs on', () => {
+    expect(toBucket('contactSales', { limit: 5, windowMs: 600_000 })).toEqual({
+      capacity: 5,
+      refillPerSecond: 5 / 600,
+    });
+  });
+
+  test('a limit under one request is a closed endpoint, not a limited one', () => {
+    expect(() => toBucket('x', { limit: 0, windowMs: 1_000 })).toThrow(/X_RATE_LIMIT_INVALID/);
+  });
+
+  test('a window of zero is a limit that enforces nothing', () => {
+    expect(() => toBucket('x', { limit: 5, windowMs: 0 })).toThrow(/X_RATE_LIMIT_INVALID/);
+  });
+
+  // The COMPUTED rate, not just the two declared halves: both of these read fine and neither is
+  // a bucket the limiter can run on.
+  test('a pair that computes to an infinite refill is refused', () => {
+    expect(() => toBucket('x', { limit: Number.MAX_VALUE, windowMs: 1 })).toThrow(
+      /X_RATE_LIMIT_INVALID/,
+    );
+  });
+
+  test('the cause names the owner and both declared numbers', () => {
+    const error = (() => {
+      try {
+        toBucket('contactSales', { limit: 5, windowMs: 0 });
+        return null;
+      } catch (thrown) {
+        return thrown as HttpError;
+      }
+    })();
+    expect(error?.cause).toContain('contactSales');
+    expect(error?.cause).toContain('windowMs: 0');
+    expect(error?.fix).toContain('{ limit: 5, windowMs: 600_000 }');
   });
 });

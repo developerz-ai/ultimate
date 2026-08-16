@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "5c0f3d1926783395",
+  "buildId": "fb9d114e4063030b",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -529,7 +529,12 @@
         "additionalProperties": false
       },
       "policy": "contact:submit",
+      "permissions": [],
       "cacheInvalidates": [],
+      "rateLimit": {
+        "limit": 5,
+        "windowMs": 600000
+      },
       "mcp": {
         "expose": false
       }
@@ -596,6 +601,9 @@
         "additionalProperties": false
       },
       "policy": "post:read",
+      "permissions": [
+        "post:read"
+      ],
       "cacheInvalidates": [
         "comment",
         "post"
@@ -714,6 +722,9 @@
         "additionalProperties": false
       },
       "policy": "post:create",
+      "permissions": [
+        "post:create"
+      ],
       "cacheInvalidates": [
         "feed"
       ],
@@ -789,6 +800,9 @@
         "additionalProperties": false
       },
       "policy": "member:self",
+      "permissions": [
+        "member:self"
+      ],
       "cacheInvalidates": [],
       "mcp": {
         "expose": false
@@ -920,6 +934,9 @@
         "additionalProperties": false
       },
       "policy": "org:invite",
+      "permissions": [
+        "org:invite"
+      ],
       "cacheInvalidates": [
         "member",
         "org"
@@ -1027,6 +1044,9 @@
         "additionalProperties": false
       },
       "policy": "post:like",
+      "permissions": [
+        "post:like"
+      ],
       "cacheInvalidates": [
         "feed",
         "post"
@@ -1061,6 +1081,9 @@
         "additionalProperties": false
       },
       "policy": "member:self",
+      "permissions": [
+        "member:self"
+      ],
       "cacheInvalidates": [],
       "mcp": {
         "expose": false
@@ -1168,6 +1191,9 @@
         "additionalProperties": false
       },
       "policy": "post:publish",
+      "permissions": [
+        "post:publish"
+      ],
       "cacheInvalidates": [
         "blog",
         "feed",
@@ -1299,6 +1325,9 @@
         "additionalProperties": false
       },
       "policy": "member:self",
+      "permissions": [
+        "member:self"
+      ],
       "cacheInvalidates": [
         "member"
       ],
@@ -1407,6 +1436,9 @@
         "additionalProperties": false
       },
       "policy": "member:self",
+      "permissions": [
+        "member:self"
+      ],
       "cacheInvalidates": [
         "member"
       ],
@@ -1460,6 +1492,9 @@
         "additionalProperties": false
       },
       "policy": "post:read",
+      "permissions": [
+        "post:read"
+      ],
       "cacheInvalidates": [],
       "mcp": {
         "expose": true,
@@ -1561,6 +1596,9 @@
         "additionalProperties": false
       },
       "policy": "member:self",
+      "permissions": [
+        "member:self"
+      ],
       "cacheInvalidates": [
         "member"
       ],
@@ -1719,6 +1757,9 @@
         "additionalProperties": false
       },
       "policy": "org:administer",
+      "permissions": [
+        "org:administer"
+      ],
       "cacheInvalidates": [
         "org",
         "plan"
@@ -1733,6 +1774,9 @@
     {
       "name": "feedActivity",
       "policy": "feed:read",
+      "permissions": [
+        "feed:read"
+      ],
       "live": false,
       "cacheTags": [
         "post"
@@ -1741,12 +1785,18 @@
     {
       "name": "liveFeed",
       "policy": "feed:read",
+      "permissions": [
+        "feed:read"
+      ],
       "live": true,
       "cacheTags": []
     },
     {
       "name": "postById",
       "policy": "post:read",
+      "permissions": [
+        "post:read"
+      ],
       "live": false,
       "cacheTags": [
         "comment",
@@ -1756,6 +1806,9 @@
     {
       "name": "postBySlug",
       "policy": "feed:read",
+      "permissions": [
+        "feed:read"
+      ],
       "live": false,
       "cacheTags": [
         "post"
@@ -1764,6 +1817,7 @@
     {
       "name": "publicPost",
       "policy": "post:read-public",
+      "permissions": [],
       "live": false,
       "cacheTags": [
         "blog"
@@ -1772,6 +1826,7 @@
     {
       "name": "publicPostSlugs",
       "policy": "post:read-public",
+      "permissions": [],
       "live": false,
       "cacheTags": [
         "blog"
@@ -1780,6 +1835,7 @@
     {
       "name": "publicPosts",
       "policy": "post:read-public",
+      "permissions": [],
       "live": false,
       "cacheTags": [
         "blog"

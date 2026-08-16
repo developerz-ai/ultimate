@@ -7,7 +7,9 @@ export class OrgNotFound extends UltimateError {
     super({
       code: 'X_ORG_NOT_FOUND',
       cause: `organisation ${JSON.stringify(orgId)} does not exist`,
-      fix: 'the actor’s session points at a deleted org — sign out and back in, or run `x db seed dev`',
+      fix:
+        'sign out and back in so the session carries a live org; ' +
+        'in a test, take the org from seed("dev") in scripts/test-setup.ts',
       docs: 'https://ultimate.dev/errors/X_ORG_NOT_FOUND',
     });
   }
@@ -23,11 +25,11 @@ export class NotAMember extends UltimateError {
     super({
       code: 'X_ORG_NOT_A_MEMBER',
       cause: `actor ${JSON.stringify(actorId)} carries no org and no membership role`,
-      // Runnable, not advice: the caller either has a membership row or does not, and this is the
-      // statement that answers it. `actorFor(member)` is what a test does with the row it finds.
+      // Runnable, not advice: the caller either has a membership row or does not, and this names
+      // the read that answers it. `actorFor(member)` is what a test does with the row it finds.
       fix:
-        'confirm the caller has a membership row, then build the actor with actorFor(member): ' +
-        `x db query "select id, org_id, role from members where id = '${actorId}'" --json`,
+        'read the membership row with memberById(orgId, id) from apps/web/app/orgs/repo.ts, ' +
+        'then build the actor with actorFor(member)',
       docs: 'https://ultimate.dev/errors/X_ORG_NOT_A_MEMBER',
     });
   }

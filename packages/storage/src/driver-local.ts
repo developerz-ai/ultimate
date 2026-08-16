@@ -3,7 +3,7 @@
 // Content type, etag and user metadata live in a sidecar under `.meta/`: a POSIX file has
 // nowhere to keep them, and `get` must round-trip exactly what `put` was handed.
 
-import { type Clock, isLocal, resolveEnvironment, systemClock } from '@ultimat3/core';
+import { type Clock, isLocal, resolveEnvironment, stringField, systemClock } from '@ultimat3/core';
 import {
   DEFAULT_CONTENT_TYPE,
   DEFAULT_LIST_LIMIT,
@@ -14,14 +14,22 @@ import {
   type SignedUrlOptions,
   type StorageBody,
   type StorageDriver,
+  type StorageListEntry,
   type StorageObject,
   type StorageRead,
   sha256Base64,
   toBytes,
 } from './driver';
-import { checksumMismatch, objectNotFound, signingSecretMissing } from './errors';
+import {
+  checksumMismatch,
+  deleteFailed,
+  objectNotFound,
+  signingSecretMissing,
+  storageNotImplemented,
+} from './errors';
 import { assertSafeKey, META_DIR } from './path';
 import { buildSignedUrl } from './signed-url';
+import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
 const DRIVER_NAME = 'local';
 
@@ -56,6 +64,13 @@ export interface LocalDriverOptions {
   /** Route prefix the dev server serves signed URLs from. */
   readonly baseUrl?: string | undefined;
   readonly clock?: Clock | undefined;
+  /**
+   * Ceiling on ONE server-side `put()`, because `put()` buffers the whole body. Defaults to the
+   * upload policy's ceiling — the same number for the same fact. The dev disk enforces it for
+   * the same reason production does: a limit an app only meets in production is a limit it
+   * discovers by being OOM-killed.
+   */
+  readonly maxPutBytes?: number | undefined;
 }
 
 interface Sidecar {
@@ -88,8 +103,26 @@ function parseSidecar(raw: unknown): Sidecar | undefined {
   };
 }
 
+/**
+ * A POSIX file is not encrypted at rest by this driver, and recording the request in the sidecar
+ * would answer a security review with a field the disk never honoured. Refused on the DEV disk
+ * too, and deliberately: a `put()` that succeeds locally and throws in production is a gap an app
+ * meets on the worst day, and both drivers refusing is one rule instead of two.
+ */
+function refuseUnsupportedPut(putOptions?: PutOptions): void {
+  if (putOptions?.serverSideEncryption === undefined) return;
+  throw storageNotImplemented(
+    'server-side encryption on the local driver (it writes plain files under one root)',
+    'drop serverSideEncryption from put(), and encrypt the disk itself — an s3Driver over a bucket with a default KMS rule, or a LUKS/FileVault volume under `root`',
+  );
+}
+
+/** `ENOENT` is the one delete failure that means "already in the desired state". */
+const isMissingFile = (error: unknown): boolean => stringField(error, 'code') === 'ENOENT';
+
 export function localDriver(options: LocalDriverOptions): StorageDriver {
   const root = options.root.replace(/\/+$/, '');
+  const maxPutBytes = options.maxPutBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
   const clock = options.clock ?? systemClock;
   const baseUrl = options.baseUrl ?? `/_storage/${DRIVER_NAME}`;
   // A dev disk must work with zero config. Outside development the fallback is refused rather
@@ -121,7 +154,10 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     }
   };
 
-  const head = async (key: string): Promise<StorageObject | undefined> => {
+  // No `contentType` fallback: the sidecar is the only thing that knows, so a missing one means
+  // this driver does not know either — exactly what the s3 driver's `list()` reports. `get()`
+  // fills the default below, because a `StorageObject` promises a type and a read has one.
+  const head = async (key: string): Promise<StorageListEntry | undefined> => {
     const file = Bun.file(filePath(key));
     if (!(await file.exists())) return undefined;
     const sidecar = await readSidecar(key);
@@ -130,12 +166,27 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     return {
       key,
       size: file.size,
-      contentType: sidecar?.contentType ?? DEFAULT_CONTENT_TYPE,
       etag,
       lastModified: new Date(file.lastModified),
+      ...(sidecar?.contentType === undefined ? {} : { contentType: sidecar.contentType }),
       ...(sidecar?.cacheControl === undefined ? {} : { cacheControl: sidecar.cacheControl }),
       ...(sidecar?.metadata === undefined ? {} : { metadata: sidecar.metadata }),
     };
+  };
+
+  /** Removes one path, or reports WHY it could not — a swallowed refusal is a false erasure. */
+  const removeIfPresent = async (path: string, key: string): Promise<void> => {
+    try {
+      await Bun.file(path).delete();
+    } catch (error) {
+      if (isMissingFile(error)) return;
+      throw deleteFailed(
+        DRIVER_NAME,
+        key,
+        error,
+        `make the disk root writable by this process, then retry: ls -ld ${root} && rm -f ${path}`,
+      );
+    }
   };
 
   return {
@@ -143,7 +194,8 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
 
     async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
       const safe = assertSafeKey(key);
-      const bytes = await toBytes(body);
+      refuseUnsupportedPut(putOptions);
+      const bytes = await toBytes(body, { driver: DRIVER_NAME, key: safe, maxBytes: maxPutBytes });
       const claimed = putOptions?.checksum;
       if (claimed !== undefined) {
         const actual = sha256Base64(bytes);
@@ -170,10 +222,13 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
 
     async get(key: string): Promise<StorageRead> {
       const safe = assertSafeKey(key);
-      const object = await head(safe);
-      if (object === undefined) throw objectNotFound(DRIVER_NAME, safe);
+      const entry = await head(safe);
+      if (entry === undefined) throw objectNotFound(DRIVER_NAME, safe);
       const bytes = new Uint8Array(await Bun.file(filePath(safe)).arrayBuffer());
-      return { object, bytes };
+      return {
+        object: { ...entry, contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE },
+        bytes,
+      };
     },
 
     async stream(key: string): Promise<ReadableStream<Uint8Array>> {
@@ -183,15 +238,35 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       return file.stream();
     },
 
+    /** A real file copy — `Bun.write` from a `BunFile` never routes the bytes through the heap. */
+    async copy(from: string, to: string): Promise<StorageObject> {
+      const source = assertSafeKey(from);
+      const destination = assertSafeKey(to);
+      const entry = await head(source);
+      if (entry === undefined) throw objectNotFound(DRIVER_NAME, source);
+      await Bun.write(filePath(destination), Bun.file(filePath(source)));
+      const sidecar: Sidecar = {
+        contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE,
+        etag: entry.etag,
+        cacheControl: entry.cacheControl,
+        metadata: entry.metadata,
+      };
+      await Bun.write(metaPath(destination), JSON.stringify(sidecar));
+      return {
+        ...entry,
+        key: destination,
+        contentType: sidecar.contentType,
+        lastModified: clock.now(),
+      };
+    },
+
     async delete(key: string): Promise<void> {
       const safe = assertSafeKey(key);
-      // Idempotent by contract: a missing key is already in the desired state.
-      await Bun.file(filePath(safe))
-        .delete()
-        .catch(() => undefined);
-      await Bun.file(metaPath(safe))
-        .delete()
-        .catch(() => undefined);
+      // Idempotent by contract: a missing key is already in the desired state. A REFUSED unlink
+      // is not — a read-only mount or a root this process cannot write reports the bytes gone
+      // when they are still on disk, which is the one lie an erasure sweep must never repeat.
+      await removeIfPresent(filePath(safe), safe);
+      await removeIfPresent(metaPath(safe), safe);
     },
 
     async exists(key: string): Promise<boolean> {
@@ -218,7 +293,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       }
       keys.sort();
       const page = keys.slice(0, limit);
-      const objects: StorageObject[] = [];
+      const objects: StorageListEntry[] = [];
       for (const key of page) {
         const object = await head(key);
         if (object !== undefined) objects.push(object);

@@ -5,7 +5,7 @@
 
 import { type Role, resolveRole } from '@ultimat3/core';
 import { statementAttribution } from './attribution';
-import { dbUnavailable } from './errors';
+import { DbError, dbUnavailable, driverError, poolAcquireTimeout, poolMaxInvalid } from './errors';
 import { expectedQueryLoopReason } from './expected-loop';
 import { statementObserver } from './observe';
 import { type SqlFragment, sql } from './sql';
@@ -42,20 +42,92 @@ export interface PoolProfile {
   /** 0 disables the timeout — only `migrate`, which is allowed to take as long as it takes. */
   readonly statementTimeoutMs: number;
   readonly idleTimeoutMs: number;
+  /**
+   * How long a statement may **wait for a lock** before `55P03`, distinct from how long it may run.
+   * 0 everywhere but `migrate`, which is the only role that takes `ACCESS EXCLUSIVE`: an `alter
+   * table` queued behind a long `SELECT` puts every later query on that table behind it too,
+   * because Postgres' lock queue is FIFO — and `migrate` runs `statement_timeout = 0`, so nothing
+   * else would ever end the wait. Read by `migrate()` as a `SET LOCAL`, never by the pool.
+   */
+  readonly lockTimeoutMs: number;
+  /**
+   * How long `reserve()` may wait for a free connection before `X_DB_POOL_EXHAUSTED`. 0 waits
+   * forever, which is what a run-once role wants and what a request-serving one must never do:
+   * queueing turns exhaustion into a hang, `/readyz`'s `select 1` joins the same queue, the kubelet
+   * kills the pod, and the replacement inherits the same saturated database.
+   */
+  readonly acquireTimeoutMs: number;
 }
 
 /** Sized per role because the failure modes differ: RPS bursts vs. queue depth vs. run-once. */
 export const POOL_PROFILES: Readonly<Record<Role, PoolProfile>> = Object.freeze({
-  web: { max: 20, statementTimeoutMs: 10_000, idleTimeoutMs: 30_000 },
-  sync: { max: 10, statementTimeoutMs: 10_000, idleTimeoutMs: 60_000 },
-  worker: { max: 8, statementTimeoutMs: 120_000, idleTimeoutMs: 30_000 },
-  scheduler: { max: 2, statementTimeoutMs: 15_000, idleTimeoutMs: 60_000 },
-  migrate: { max: 1, statementTimeoutMs: 0, idleTimeoutMs: 10_000 },
-  replicator: { max: 4, statementTimeoutMs: 0, idleTimeoutMs: 60_000 },
+  web: {
+    max: 20,
+    statementTimeoutMs: 10_000,
+    idleTimeoutMs: 30_000,
+    lockTimeoutMs: 0,
+    acquireTimeoutMs: 5_000,
+  },
+  sync: {
+    max: 10,
+    statementTimeoutMs: 10_000,
+    idleTimeoutMs: 60_000,
+    lockTimeoutMs: 0,
+    acquireTimeoutMs: 5_000,
+  },
+  worker: {
+    max: 8,
+    statementTimeoutMs: 120_000,
+    idleTimeoutMs: 30_000,
+    lockTimeoutMs: 0,
+    acquireTimeoutMs: 10_000,
+  },
+  scheduler: {
+    max: 2,
+    statementTimeoutMs: 15_000,
+    idleTimeoutMs: 60_000,
+    lockTimeoutMs: 0,
+    acquireTimeoutMs: 10_000,
+  },
+  // `migrate` waits: its pool is `max: 1` and the advisory-lock pin holds it for the whole run, so
+  // a deadline here would refuse the migration's own session. The wait that needed bounding is the
+  // advisory lock's, and `MIGRATION_LOCK_WAIT_MS` bounds it.
+  migrate: {
+    max: 1,
+    statementTimeoutMs: 0,
+    idleTimeoutMs: 10_000,
+    lockTimeoutMs: 3_000,
+    acquireTimeoutMs: 0,
+  },
+  replicator: {
+    max: 4,
+    statementTimeoutMs: 0,
+    idleTimeoutMs: 60_000,
+    lockTimeoutMs: 0,
+    acquireTimeoutMs: 0,
+  },
 });
 
 export function poolProfileFor(role: Role = resolveRole()): PoolProfile {
   return POOL_PROFILES[role];
+}
+
+/** The one pool knob an operator can turn without a rebuild. Layered over the role default. */
+export const POOL_MAX_ENV = 'DATABASE_POOL_MAX';
+
+/**
+ * `DATABASE_POOL_MAX`, or nothing. `POOL_PROFILES` is frozen into the build, so before this the
+ * only way to change a fleet's connection count was to ship a new image — and 400 `web` pods at
+ * `max: 20` is 8,000 backends against a `max_connections` of 450. An unparseable value **refuses**
+ * rather than falling back: a fleet that ignored the number it was given is the failure the
+ * variable exists to prevent, and it would only be found in `pg_stat_activity` at 3am.
+ */
+function poolMaxFromEnv(): Partial<PoolProfile> {
+  const raw = process.env[POOL_MAX_ENV];
+  if (raw === undefined || raw.trim() === '') return {};
+  const max = Number(raw);
+  if (!Number.isSafeInteger(max) || max < 1) throw poolMaxInvalid(raw);
+  return { max };
 }
 
 /** One connection pinned out of `Bun.SQL`'s pool, released back by hand. */
@@ -122,6 +194,49 @@ function affectedBy(result: unknown): number {
   return typeof count === 'number' && count > 0 ? count : result.length;
 }
 
+/**
+ * `pool.reserve()` under a deadline. Without one an exhausted pool does not fail, it **queues** —
+ * so a slow endpoint filling all 20 slots turns every later request, `/readyz`'s `select 1`
+ * included, into a wait with no end and no error, and the pod is killed for being unready rather
+ * than answering 503 for the requests it cannot serve.
+ *
+ * The losing reservation is released, never dropped: the pool hands out a connection whenever one
+ * frees, deadline or no deadline, and a pin nobody holds is a connection nobody gets back. That is
+ * the whole reason this is not a bare `Promise.race`.
+ */
+async function reserveWithin(
+  pool: Pick<BunSqlDriver, 'reserve'>,
+  profile: PoolProfile,
+): Promise<BunSqlReserved> {
+  const budget = profile.acquireTimeoutMs;
+  if (budget <= 0) return pool.reserve();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let expired = false;
+  const pending = pool.reserve();
+  try {
+    return await Promise.race([
+      pending,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          expired = true;
+          reject(poolAcquireTimeout(budget, profile.max));
+        }, budget);
+        // The deadline must not be what keeps a finished process alive.
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    // Attached unconditionally so a rejection arriving after we gave up is handled, not unhandled.
+    void pending.then(
+      (late) => {
+        if (expired) late.release();
+      },
+      () => undefined,
+    );
+  }
+}
+
 export interface PostgresClient extends ReservableClient {
   readonly profile: PoolProfile;
   ping(): Promise<void>;
@@ -150,7 +265,11 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
     try {
       return await driver.unsafe(fragment.text, fragment.values);
     } catch (error) {
-      throw dbUnavailable(`statement failed: ${fragment.text.slice(0, 120)}`, error);
+      // `driverError`, not `dbUnavailable`: the SQLSTATE has always been on this error and nothing
+      // read it, so a `23505` from two clicks racing a signup told the operator the database was
+      // unreachable and paged on-call for an outage that never happened. Everything the table does
+      // not classify is still `X_DB_UNAVAILABLE`, byte for byte.
+      throw driverError(`statement failed: ${fragment.text.slice(0, 120)}`, error);
     }
   }
 
@@ -232,13 +351,15 @@ export function createPostgresClient(options: PostgresClientOptions = {}): Postg
       const pool = connect();
       let reserved: BunSqlReserved;
       try {
-        reserved = await pool.reserve();
+        reserved = await reserveWithin(pool, profile);
       } catch (error) {
         // Acquiring the pin is the one step that runs outside `runOn`, so an exhausted or
         // unreachable pool would escape as an untyped driver error — and `readOnlyQuery` reaches
         // this line before its first statement, which is how MCP ends up returning something
-        // other than X_DB_UNAVAILABLE.
-        throw dbUnavailable('could not reserve a connection from the pool', error);
+        // other than X_DB_UNAVAILABLE. Our own deadline is already typed; only the driver's own
+        // failure needs classifying, and `53300` from the server lands as X_DB_POOL_EXHAUSTED too.
+        if (error instanceof DbError) throw error;
+        throw driverError('could not reserve a connection from the pool', error);
       }
       let held = true;
       // Direct only while the pin is held. `release()` hands this physical connection back, and
@@ -288,9 +409,16 @@ export function setDbClient(client: DbClient | undefined): void {
   ambient = client;
 }
 
-/** The pool, ignoring any open transaction. `withTransaction` must not re-enter `db()`. */
+/**
+ * The pool, ignoring any open transaction. `withTransaction` must not re-enter `db()`.
+ *
+ * The role default is layered under `DATABASE_POOL_MAX`, because this is the one place the process
+ * builds its own client and therefore the only place an operator's value can reach one:
+ * `createPostgresClient` has always taken a `profile` override and nothing in a running app passed
+ * it, so `POOL_PROFILES` was the last word in a deployed image.
+ */
 export function baseClient(): DbClient {
-  if (ambient === undefined) ambient = createPostgresClient();
+  if (ambient === undefined) ambient = createPostgresClient({ profile: poolMaxFromEnv() });
   return ambient;
 }
 

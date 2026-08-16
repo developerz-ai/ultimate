@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
+  describeValue,
   isThrownError,
   MAX_RENDERED_LENGTH,
   renderCauseValue,
@@ -253,5 +254,34 @@ describe('renderFixLiteral', () => {
     }
     expect(renderFixLiteral(undefined, '<org>')).toBe('<org>');
     expect(renderFixLiteral(7, '<org>')).toBe('<org>');
+  });
+});
+
+describe('describeValue', () => {
+  test('leaks no rejected content — not the value, not a substring of it', () => {
+    for (const secret of ['hunter2', 'sk-live-4f9c', '4111111111111111', 'a@b.com']) {
+      const rendered = describeValue(secret);
+      expect(rendered).not.toContain(secret);
+      for (let cut = 3; cut < secret.length; cut += 1) {
+        expect(rendered).not.toContain(secret.slice(0, cut));
+      }
+    }
+  });
+
+  test('leaks nothing from inside an object or an array either', () => {
+    expect(describeValue({ password: 'hunter2' })).toBe('an object');
+    expect(describeValue(['hunter2', 'x'])).toBe('an array of 2 items');
+  });
+
+  test('reports the shape, which is what a format violation needs', () => {
+    expect(describeValue(undefined)).toBe('undefined');
+    expect(describeValue(null)).toBe('null');
+    expect(describeValue('')).toBe('an empty string');
+    expect(describeValue('a')).toBe('a string of 1 character');
+    expect(describeValue('hunter2')).toBe('a string of 7 characters');
+    expect(describeValue(1)).toBe('a number');
+    expect(describeValue(Number.NaN)).toBe('NaN');
+    expect(describeValue(true)).toBe('a boolean');
+    expect(describeValue(new Date(Number.NaN))).toBe('an invalid Date');
   });
 });

@@ -1,9 +1,11 @@
-// Compile-time pins for the actor-facts seam. Source, not a `.test.ts`, on purpose:
+// Compile-time pins for the actor-facts seam and the config surface. Source, not a `.test.ts`,
+// on purpose:
 // `tsconfig.json` excludes `src/**/*.test.ts`, so `tsc -b` never reads a test file and a
 // type-level assertion written there can never fail. This module emits nothing and exports
 // nothing anybody imports — a regression is a build error, the only enforcement that counts.
 
 import type { Actor, ActorFactMap, FactKeysOf, FactMapOf } from './actor';
+import type { AppConfigInput, DatabaseConfig } from './config';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
 type Assert<T extends true> = T;
@@ -63,6 +65,29 @@ type _ActorWithoutFactsIsStillAnActor = Assert<
       readonly scopes: readonly string[];
     },
   ] extends [Actor]
+    ? true
+    : false
+>;
+
+/**
+ * The three `config.database` fields deleted 2026-08 must stay deleted. Each produced neither a
+ * build error nor a runtime effect, which is the worst state a config field can be in: an SRE set
+ * `poolSize: 3`, redeployed, and nothing changed. Re-adding one silently restores that, so the
+ * pin is here rather than in a `.test.ts` — a `@ts-expect-error` in an excluded file asserts
+ * nothing.
+ *
+ * `DATABASE_POOL_MAX` is the pool knob that works, `DATABASE_URL` is read as a literal by
+ * `@ultimat3/db`'s `client.ts`, and nothing emits `SET search_path`.
+ */
+type DeadDatabaseField = 'urlEnv' | 'poolSize' | 'schema';
+
+type _DatabaseConfigCarriesNoDeadField = Assert<
+  Extract<keyof DatabaseConfig, DeadDatabaseField> extends never ? true : false
+>;
+
+/** And the input side with it — `Input<DatabaseConfig>` is what an `app.config.ts` writes. */
+type _DatabaseInputCarriesNoDeadField = Assert<
+  Extract<keyof NonNullable<AppConfigInput['database']>, DeadDatabaseField> extends never
     ? true
     : false
 >;

@@ -25,6 +25,7 @@ const publishPost: ActionFact = {
   input: { postId: 'uuid' },
   output: { id: 'uuid' },
   policy: 'post:publish',
+  permissions: ['post:publish'],
   cacheInvalidates: ['post'],
   mcp: { expose: true },
 };

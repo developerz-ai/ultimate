@@ -51,12 +51,12 @@ describe('t', () => {
       'title',
       'tags[0]',
     ]);
-    expect(error.issues[0]?.message).toBe('expected a uuid, received "abc"');
+    expect(error.issues[0]?.message).toBe('expected a uuid, received a string of 3 characters');
     expect(error.issues[3]?.message).toBe(
-      'expected a slug matching ^[a-z0-9]+(?:-[a-z0-9]+)*$, received "Not A Slug"',
+      'expected a slug matching ^[a-z0-9]+(?:-[a-z0-9]+)*$, received a string of 10 characters',
     );
     expect(error.format().split('\n')).toHaveLength(3);
-    expect(error.format()).toContain('postId: expected a uuid, received "abc"');
+    expect(error.format()).toContain('postId: expected a uuid, received a string of 3 characters');
     expect(error.formatIssues().split('\n')).toHaveLength(4);
   });
 
@@ -66,7 +66,9 @@ describe('t', () => {
     if (good.issues === undefined) expect(good.value).toBe('dev@tesote.com');
 
     const bad = validate(t.email, 'nope');
-    expect(bad.issues?.[0]?.message).toBe('expected an email address, received "nope"');
+    expect(bad.issues?.[0]?.message).toBe(
+      'expected an email address, received a string of 4 characters',
+    );
     expect(t.email['~standard'].version).toBe(1);
     expect(t.email['~standard'].vendor).toBe('ultimate');
   });
@@ -102,6 +104,44 @@ describe('t', () => {
     const counts = t.record(t.number.int());
     expect(parse(counts, { a: 1, b: 2 })).toEqual({ a: 1, b: 2 });
     expect(parse(t.literal('post'), 'post')).toBe('post');
+  });
+
+  test('a cross-field rule lives on the schema, not in the handler', () => {
+    // `endDate > startDate` used to be unrepresentable, so it moved into the handler and vanished
+    // from openapi.json, the MCP tool schema, the typed client and every form binding at once.
+    const booking = t.refine(t.object({ startDate: t.date, endDate: t.date }), {
+      name: 'end-after-start',
+      message: 'endDate must be after startDate',
+      path: ['endDate'],
+      check: (value) => value.endDate > value.startDate,
+    });
+    expect(
+      parse(booking, { startDate: '2026-01-01T00:00:00Z', endDate: '2026-01-02T00:00:00Z' }),
+    ).toMatchObject({ endDate: new Date('2026-01-02T00:00:00Z') });
+
+    const bad = validate(booking, {
+      startDate: '2026-01-02T00:00:00Z',
+      endDate: '2026-01-01T00:00:00Z',
+    });
+    expect(bad.issues?.[0]?.message).toBe('endDate must be after startDate');
+    expect(bad.issues?.[0]?.path).toEqual(['endDate']);
+    // The declaration, not the closure, is what a projection reads.
+    expect(booking.node.refinements?.[0]?.name).toBe('end-after-start');
+  });
+
+  test('t.discriminatedUnion reports the branch the tag named', () => {
+    const body = t.discriminatedUnion(
+      'kind',
+      t.object({ kind: t.literal('post'), slug: t.slug }),
+      t.object({ kind: t.literal('page'), title: t.string.min(3) }),
+    );
+    expect(parse(body, { kind: 'post', slug: 'hello-world' })).toEqual({
+      kind: 'post',
+      slug: 'hello-world',
+    });
+    const issues = validate(body, { kind: 'page', title: 'hi' }).issues ?? [];
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.path).toEqual(['title']);
   });
 
   test('object schemas compose with extend / pick / omit', () => {

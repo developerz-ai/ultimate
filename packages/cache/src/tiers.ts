@@ -5,7 +5,8 @@
 
 import type { Clock } from '@ultimat3/core';
 import { systemClock } from '@ultimat3/core';
-import { CacheTtlInvalidError } from './errors';
+import { CacheJitterInvalidError, CacheTtlInvalidError } from './errors';
+import { createSingleFlight } from './single-flight';
 import type { CacheTag } from './tags';
 import { bestEffort } from './tier-failures';
 
@@ -13,6 +14,23 @@ export type TierName = 'request-memo' | 'lru' | 'redis' | 'cdn';
 
 /** Read order. Index in this array is the tier's distance from the request. */
 export const TIER_ORDER: readonly TierName[] = ['request-memo', 'lru', 'redis', 'cdn'];
+
+/** Injected so a jittered TTL is deterministic in a test. Never `Math.random()` at a call site. */
+export type Rng = () => number;
+
+/**
+ * 5%: enough to smear a warm-up herd across the tail of its lease, small enough that a 60s cache
+ * is never mistaken for a 54s one. Higher is a correctness question for the app, not the tier.
+ */
+export const DEFAULT_TTL_JITTER_FRACTION = 0.05;
+
+/** How a tier spreads its TTLs. Every tier takes it; `assertTtl` is the one place it is applied. */
+export interface TtlJitter {
+  /** Fraction of the lease that may be shaved off, in `[0, 1)`. `0` disables it. */
+  readonly jitterFraction?: number;
+  /** `() => 0` is "the full lease, this write" — the deterministic setting a test wants. */
+  readonly rng?: Rng;
+}
 
 export interface CacheEntry<T> {
   readonly value: T;
@@ -28,18 +46,44 @@ export interface CacheSetOptions {
    * LRU and Redis tiers read differently, so every tier now refuses it (`X_CACHE_TTL_INVALID`).
    */
   readonly ttlMs?: number;
+  /**
+   * Lifetime for a `null`/`undefined` load, when it should differ from `ttlMs`. A lookup for a
+   * row that has not replicated yet answers `null` 40ms before it lands; holding that for the
+   * positive TTL serves "does not exist" for five minutes. Omitted means "same as `ttlMs`",
+   * which is the accident this field makes a decision.
+   */
+  readonly negativeTtlMs?: number;
   readonly tags?: readonly CacheTag[];
 }
 
 /**
- * The one TTL rule, applied by every tier before it writes. Lives here rather than in each tier
- * because two tiers disagreeing about what `0` means is exactly the bug this replaced.
+ * The one TTL rule, applied by every tier before it writes: validate, then spread. It lives here
+ * rather than in each tier because two tiers disagreeing about what `0` means is exactly the bug
+ * this replaced — and jitter belongs at the same choke point for the same reason.
+ *
+ * Jitter is not a nicety. A rolling restart warms 40,000 keys inside 30 seconds and hands every
+ * one of them the same 300s lease; five minutes later all 40,000 expire inside the same 30-second
+ * window, and with single-flight sharing only the loads that overlap that is still 40,000 origin
+ * reads. Shaving a random slice off each lease is what turns one cliff into a ramp.
  */
-export function assertTtl(key: string, ttlMs: number, tier: TierName): number {
+export function assertTtl(
+  key: string,
+  ttlMs: number,
+  tier: TierName,
+  jitter: TtlJitter = {},
+): number {
   if (!Number.isFinite(ttlMs) || ttlMs <= 0) {
     throw new CacheTtlInvalidError({ key, ttlMs, tier });
   }
-  return ttlMs;
+  const fraction = jitter.jitterFraction ?? DEFAULT_TTL_JITTER_FRACTION;
+  if (!Number.isFinite(fraction) || fraction < 0 || fraction >= 1) {
+    throw new CacheJitterInvalidError({ tier, jitterFraction: fraction });
+  }
+  if (fraction === 0) return ttlMs;
+  // Clamped rather than trusted: an `rng` outside [0, 1) would EXTEND the lease past what the
+  // caller asked for, which is a stale read no reader can explain.
+  const roll = Math.min(1, Math.max(0, (jitter.rng ?? Math.random)()));
+  return Math.max(1, Math.round(ttlMs * (1 - fraction * roll)));
 }
 
 /** Per-tier result of an invalidation, surfaced verbatim in the `/_x` cache panel. */
@@ -85,6 +129,17 @@ export function sortTiers(tiers: readonly CacheTier[]): readonly CacheTier[] {
 }
 
 /**
+ * `negativeTtlMs` selected when the value IS the absence of one. Kept here rather than in a tier
+ * because the stack is the only layer that ever sees what `load()` answered.
+ */
+function ttlOptionsFor<T>(value: T, options?: CacheSetOptions): CacheSetOptions | undefined {
+  const negative = options?.negativeTtlMs;
+  if (negative === undefined) return options;
+  if (value !== null && value !== undefined) return options;
+  return { ...options, ttlMs: negative };
+}
+
+/**
  * Every tier call here goes through `bestEffort`: a tier that refuses is a tier that did not
  * answer, never a failed business read. `load()` is the one call left unguarded — it *is* the
  * business read, and swallowing it would return `undefined` as if it were the value.
@@ -100,48 +155,68 @@ export function createCacheStack(
 ): CacheStack {
   const ordered = sortTiers(tiers);
   const clock = options.clock ?? systemClock;
+  // Per stack, not per module: two stacks are two ladders and must not join each other's loads.
+  const flight = createSingleFlight();
+
+  const fill = async <T>(key: string, value: T, setOptions?: CacheSetOptions): Promise<void> => {
+    const resolved = ttlOptionsFor(value, setOptions);
+    for (const tier of ordered) {
+      await bestEffort(tier.name, 'set', key, () => tier.set(key, value, resolved));
+    }
+  };
+
+  /** Walks down, promoting into every tier it passed. `undefined` means every tier missed. */
+  const lookup = async <T>(
+    key: string,
+    setOptions?: CacheSetOptions,
+  ): Promise<CacheEntry<T> | undefined> => {
+    for (let i = 0; i < ordered.length; i += 1) {
+      const tier = ordered[i];
+      if (tier === undefined) continue;
+      const hit = await bestEffort(tier.name, 'get', key, () => tier.get<T>(key));
+      if (hit === undefined) continue;
+      const now = nowMs(clock);
+      // A tier may answer with an entry it has not reaped yet; expiry is decided here, once,
+      // by the predicate this module already exported and nothing had ever called.
+      if (isExpired(hit, now)) continue;
+      // Populate every tier we walked past, closest-first on the next read — carrying the
+      // entry's REMAINING life, never the caller's original ttlMs. Re-leasing a value one
+      // second from expiry for a fresh five minutes on every read is a hot key that never
+      // goes stale enough to be refetched.
+      const promoted: CacheSetOptions = {
+        ...setOptions,
+        tags: hit.tags,
+        ...(hit.expiresAt === undefined ? {} : { ttlMs: hit.expiresAt - now }),
+      };
+      for (let up = 0; up < i; up += 1) {
+        const closer = ordered[up];
+        if (closer === undefined) continue;
+        await bestEffort(closer.name, 'set', key, () => closer.set(key, hit.value, promoted));
+      }
+      return hit;
+    }
+    return undefined;
+  };
 
   return {
     tiers: ordered,
 
     async read<T>(key: string, load: () => Promise<T>, setOptions?: CacheSetOptions): Promise<T> {
-      for (let i = 0; i < ordered.length; i += 1) {
-        const tier = ordered[i];
-        if (tier === undefined) continue;
-        const hit = await bestEffort(tier.name, 'get', key, () => tier.get<T>(key));
-        if (hit === undefined) continue;
-        const now = nowMs(clock);
-        // A tier may answer with an entry it has not reaped yet; expiry is decided here, once,
-        // by the predicate this module already exported and nothing had ever called.
-        if (isExpired(hit, now)) continue;
-        // Populate every tier we walked past, closest-first on the next read — carrying the
-        // entry's REMAINING life, never the caller's original ttlMs. Re-leasing a value one
-        // second from expiry for a fresh five minutes on every read is a hot key that never
-        // goes stale enough to be refetched.
-        const promoted: CacheSetOptions = {
-          ...setOptions,
-          tags: hit.tags,
-          ...(hit.expiresAt === undefined ? {} : { ttlMs: hit.expiresAt - now }),
-        };
-        for (let up = 0; up < i; up += 1) {
-          const closer = ordered[up];
-          if (closer === undefined) continue;
-          await bestEffort(closer.name, 'set', key, () => closer.set(key, hit.value, promoted));
-        }
-        return hit.value;
-      }
+      const hit = await lookup<T>(key, setOptions);
+      if (hit !== undefined) return hit.value;
 
-      const value = await load();
-      for (const tier of ordered) {
-        await bestEffort(tier.name, 'set', key, () => tier.set(key, value, setOptions));
-      }
-      return value;
+      // The stampede guard. The homepage feed read 8,000x/s with a 60s lease misses for the whole
+      // ~200ms `load()` takes, so ~1,600 identical queries reach Postgres at every TTL boundary
+      // unless the arrivals inside that window join the read already running.
+      return await flight.run(key, async () => {
+        const value = await load();
+        await fill(key, value, setOptions);
+        return value;
+      });
     },
 
-    async write<T>(key: string, value: T, options?: CacheSetOptions): Promise<void> {
-      for (const tier of ordered) {
-        await bestEffort(tier.name, 'set', key, () => tier.set(key, value, options));
-      }
+    write<T>(key: string, value: T, options?: CacheSetOptions): Promise<void> {
+      return fill(key, value, options);
     },
 
     async drop(key: string): Promise<void> {

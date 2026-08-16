@@ -363,7 +363,7 @@ describe('upsertAll() compiles the conflict clause', () => {
 
     const undeclared = await refusal(repo().upsertAll([ROW], targeting('secret')));
     expect(undeclared.code).toBe('X_INVARIANT_VIOLATED');
-    expect(undeclared.fix).toContain('x entity explain pg_bulk_invoices');
+    expect(undeclared.fix).toContain('x entities describe pg_bulk_invoices');
 
     const nothingToSet = await refusal(postgresRepo(likes).upsertAll([keyOnly], target));
     expect(nothingToSet.code).toBe('X_INVARIANT_VIOLATED');

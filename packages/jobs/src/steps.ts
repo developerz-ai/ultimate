@@ -188,6 +188,33 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
   const pollMs = options.eventPollMs ?? 30_000;
   const runSignal = options.signal ?? NEVER_ABORTED;
 
+  /**
+   * This attempt's view of the run's persisted steps, hydrated from ONE `store.list(runId)` the
+   * first time a step asks. Replay used to cost one `SQL_STEP_GET` per completed step: a
+   * `backfill()` over 5M rows at `batch: 1000` is 5,000 steps, so an attempt killed at 4,800
+   * issued 4,800 sequential round trips before reading a single new row — and re-paid them on
+   * every retry, often outrunning its own visibility timeout while the heartbeat was still
+   * renewing.
+   *
+   * Sound because the fence in `put()` is: only the attempt that owns the run may write to it, so
+   * within one attempt an absent name stays absent unless this runner writes it. Writes go into
+   * the map as they go into the store, never the other way round — the store is still the record.
+   */
+  let hydrated: Map<string, StepRecord> | undefined;
+
+  const load = async (name: string): Promise<StepRecord | undefined> => {
+    if (hydrated === undefined) {
+      hydrated = new Map();
+      for (const record of await store.list(runId)) hydrated.set(record.name, record);
+    }
+    return hydrated.get(name);
+  };
+
+  /** Keep the hydrated view in step with what was just persisted. */
+  const remember = (record: StepRecord): void => {
+    hydrated?.set(record.name, record);
+  };
+
   const claimName = (name: string): void => {
     // The Set decides, the array only reports. `Array.includes` made a long run quadratic —
     // `backfill({ batch: 50 })` over a million rows is 20,000 steps and ~200M string compares.
@@ -207,13 +234,14 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
   const put = async (record: StepRecord): Promise<void> => {
     if (cancelled()) throw new JobAbortedError({ job: jobName, step: record.name });
     await store.put(record);
+    remember(record);
   };
 
   const now = (): number => nowMs(clock);
 
   async function run<T>(name: string, fn: (signal: AbortSignal) => Promise<T> | T): Promise<T> {
     claimName(name);
-    const existing = await store.get(runId, name);
+    const existing = await load(name);
     if (existing?.status === 'completed') {
       trace(replayed, name);
       return existing.output as T;
@@ -253,14 +281,18 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
       // attempt was cancelled, in which case the history is no longer ours to write. The original
       // error is what the caller has to see, never one raised by the bookkeeping.
       if (!cancelled()) {
-        await store.put({
+        // Deliberately NOT through `put`: the caller has to see the original error, never one
+        // raised by the bookkeeping. The hydrated view is updated by hand for the same reason.
+        const failure: StepRecord = {
           runId,
           name,
           status: 'failed',
           startedAt,
           attempts,
           error: error instanceof Error ? error.message : String(error),
-        });
+        };
+        await store.put(failure);
+        remember(failure);
       }
       throw error;
     }
@@ -272,9 +304,9 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
     const duration = b === undefined ? (a as DurationInput) : b;
     claimName(name);
 
-    const existing = await store.get(runId, name);
+    const existing = await load(name);
     if (existing?.status === 'completed') {
-      replayed.push(name);
+      trace(replayed, name);
       return;
     }
 
@@ -305,9 +337,9 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
     waitOptions: WaitForEventOptions = {},
   ): Promise<T | undefined> {
     claimName(name);
-    const existing = await store.get(runId, name);
+    const existing = await load(name);
     if (existing?.status === 'completed') {
-      replayed.push(name);
+      trace(replayed, name);
       return existing.output as T | undefined;
     }
 

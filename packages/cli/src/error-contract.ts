@@ -7,6 +7,7 @@
 // `join` is `node:`-only by necessity: Bun exposes no path-join primitive.
 import { join } from 'node:path';
 import { docsFor } from './error-codes';
+import { citedCommandProblem, loadCommandCatalog } from './fix-command';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated, isTest } from './source-files';
 import type { CodeSite, FixSite } from './ts-scan';
@@ -59,13 +60,28 @@ const fixFinding = (site: FixSite, problem: string): Finding => ({
   at: `${site.at}:${site.line}`,
 });
 
-/** Every `fix:` an agent can be handed, read out of shipped source and held to the rule. */
+/**
+ * Every `fix:` an agent can be handed, read out of shipped source and held to BOTH rules: it must
+ * be an instruction, and any `x <command>` it cites must be one this build ships.
+ *
+ * The second rule is the one a text scan could never decide. Six fix lines shipped citing
+ * `x db status`, `x logs tail`, `x trace`, `x metrics`, `x auth whoami` and `x ai prompts` — all
+ * of them named a command, so all of them passed, and every one handed its reader
+ * `X_NOT_IMPLEMENTED` or `X_CLI_UNKNOWN_COMMAND` in place of the fix it promised.
+ *
+ * The catalog is loaded ONCE per run rather than per fix line: it is a dynamic import (see
+ * `fix-command.ts` for the cycle it breaks) and this walks every shipped source file.
+ */
 export async function checkErrorFixes(root: string): Promise<readonly Finding[]> {
   const findings: Finding[] = [];
+  const catalog = await loadCommandCatalog();
   for await (const path of eachSourceFile(root)) {
     if (isTest(path) || isGenerated(path)) continue;
     for (const site of scanFixes(await Bun.file(join(root, path)).text(), path)) {
-      const problem = fixProblem(site.fix);
+      // The interpolation-blanked form for both rules: `x ${name}` names no command this can
+      // resolve, and reading `<value>` as one would be a finding nobody can act on.
+      const fix = staticFix(site.fix);
+      const problem = fixProblem(site.fix) ?? citedCommandProblem(fix, catalog);
       if (problem !== undefined) findings.push(fixFinding(site, problem));
     }
   }

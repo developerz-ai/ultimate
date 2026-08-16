@@ -4,7 +4,7 @@ Metrics, spans, and structured logs — all in `@ultimat3/core`, all dependency-
 
 v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
-Counter, gauge and histogram sit on the OpenTelemetry data model, aggregate in process, and are read through one `collectMetrics()`. The wire format is a **driver**: `MetricExporter` is the seam, the default is a no-op, and `metricsText()` renders the Prometheus/OpenMetrics scrape body. The framework ships **no OTLP client** — pointing `OTEL_EXPORTER_OTLP_ENDPOINT` at a collector means supplying a `MetricExporter` that speaks it, or scraping with an agent that does.
+Counter, gauge and histogram sit on the OpenTelemetry data model, aggregate in process, and are read through one `collectMetrics()`. The wire format is a **driver**: `MetricExporter` is the seam, the default is a no-op, and `metricsText()` renders the Prometheus/OpenMetrics scrape body. An **OTLP client ships** `As of 2026-08`: `otlpMetricExporter()` and `otlpSpanExporter()` speak OTLP/HTTP JSON over `fetch` and read `OTEL_EXPORTER_OTLP_ENDPOINT` (and the `_METRICS_`/`_TRACES_ENDPOINT`, `_HEADERS`, `_PROTOCOL` variants), with no new dependency. Two limits: **gRPC on `:4317` is refused** with `X_OTLP_PROTOCOL_UNSUPPORTED` and will stay refused — HTTP/2 plus protobuf is a dependency and a second wire format, so point the collector's HTTP receiver at `:4318` — and there is **no logs signal**. Scraping `metricsText()` with an agent remains equally supported.
 
 ## Instruments
 

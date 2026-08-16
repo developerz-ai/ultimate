@@ -118,6 +118,14 @@ these filters, this sort order. A tampered cursor, or one taken from another lis
 `X_CURSOR_INVALID` rather than a silent page one. The page size is deliberately outside the scope:
 asking for a bigger next page is the same query.
 
+**A page is bounded whether or not the caller bounded it.** `DEFAULT_PAGE_SIZE` (50) covers the read
+nobody sized; `MAX_PAGE_SIZE` (10,000) covers the one they did — `limit(input.pageSize)` on a number
+that arrived over the wire is the same production incident with an argument in front of it. A page
+size that is not a whole number of rows in `1..MAX_PAGE_SIZE` is `X_INVARIANT_VIOLATED` on the chain
+and again inside the plan both drivers build, so `findMany({ limit })` straight at the repository
+cannot route around it. `inBatches(size)` is the call that means "every row" — one page per
+statement, never a table in memory.
+
 ## Iterating every row
 
 `As of 2026-08`. A page is bounded on purpose, so reading a whole table is a loop — and the loop is
@@ -147,7 +155,7 @@ learn or to drift.
 | Statements | one per batch, each asking for one row past it, exactly as `page()` does. An empty batch is never yielded |
 | Position | keyset, never OFFSET: a row written mid-iteration cannot make the loop skip or repeat one. `after(cursor)` starts it, `.cursor` is where it stopped, `null` once exhausted |
 | Closing | `break`, `return` and a throw all stop the next statement; `await using` is the same guarantee for a handle kept in a variable, and `close()` is idempotent. One handle is one iteration — a second `for await` continues it rather than restarting the table |
-| Refusals | on the chain, not one batch later: a size that is not a whole number of rows, a `limit()` on the same chain (one number, two meanings), and an ordering no cursor can carry — a nullable sort column, which a result that fits in one batch would otherwise hide until the table grew |
+| Refusals | on the chain, not one batch later: a size that is not a whole number of rows between 1 and `MAX_PAGE_SIZE` (10,000), a `limit()` on the same chain (one number, two meanings), and an ordering no cursor can carry — a nullable sort column, which a result that fits in one batch would otherwise hide until the table grew |
 | Tenancy | the plan's, as everywhere else: an unscoped chain is `X_TENANCY_UNSCOPED` on its first batch |
 
 ## Counting by a column
@@ -206,6 +214,7 @@ and never unwritten.
 | Tenancy | the plan a read builds, through `scopedPlan` — the actor's org predicate is in the statement, and the empty-filter guard runs before it, because one tenant's every row is still every row. The patch is judged too, through `assertRowTenant`: a filter bounds which rows are written, never what they become |
 | Soft delete | the entity's `deletedAt` column is the same switch `delete(id)` uses. Stamped rows are not matched again by either call, so the original deletion time survives and a deleted row is never patched back into shape |
 | `onUpdateNow()` | stamped by `touch()`, the same helper `update(id, patch)` uses — one place, so the two can never disagree about `updatedAt` |
+| Rows read back | **only when something can still refuse them.** A `check` or a `unique` invariant is a constraint Postgres enforced on the statement, so the answer is a count and the statement carries no `returning *`. Only a JS-only rule (`kind: 'assert'`, `sql: null`) has to be judged on the result — and then the match is counted first and refused past `MAX_ASSERTED_ROWS` (50,000), naming `inBatches(1000)`, because a refusal issued after `returning *` is already holding what it is refusing |
 
 ## Writing many rows
 
@@ -342,6 +351,15 @@ returns the open transaction when there is one, so a repository call inside `wit
 joins it without being told — which is how a job's outbox row lands atomically with the write
 that enqueued it.
 
+`postgresDriver({ client })` pins one instead, for a test harness or `x db branch` — and a pinned
+repository used while a transaction is open is `X_REPO_CLIENT_PINNED`, `As of 2026-08`.
+`withTransaction` reserved a connection and ran `BEGIN` on it; a pinned repository sends straight
+to its own client, so the write would commit whatever the transaction decides and the read would
+miss what the transaction has written, both silently. It is refused rather than resolved because a
+`DbTx` does not name the client it was opened on: on a sharded app "the same connection" and "the
+same database" are two different questions and this layer can answer neither. `setDbClient(client)`
+plus an unpinned repository is the shape that joins.
+
 Every value is bound to `$n` and every identifier is resolved through the entity, so a column
 name can only be one the entity declared and a row value can never become SQL.
 
@@ -431,6 +449,12 @@ it triggers, so a loop that fails a test and a loop that warns in dev are the sa
 `tenant: 'orgId'` on the entity names the column outright. Omit it and it is inferred — a
 `.tenant()` column, else one named `orgId` — so an entity never becomes unscoped by forgetting the
 key; name a column that does not exist and the declaration fails with `X_INVARIANT_VIOLATED`.
+
+**A tenant column may not be nullable**, whichever of the three switches named it, and the
+declaration fails the same way. `assertRowTenant` leaves a row that names no tenant alone and
+delegates to the column's `NOT NULL`; on a nullable column that delegation has nothing behind it, so
+the row lands with a null tenant, is matched by no `org_id = $1`, and belongs to nobody — never in
+an export, never in an offboarding sweep, and there for as long as the table is.
 
 **The tenant is the acting actor's, and never an argument.** Inside a request every plan for a
 scoped entity is scoped to `ctx.actor.orgId`, whether the call named a tenant or not — so

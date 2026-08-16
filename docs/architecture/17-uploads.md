@@ -122,9 +122,30 @@ promoted by `promoteAttachment` once there is an id — copy first, delete secon
 that ran first loses the bytes on a failed write.
 
 That makes an orphan a fact about the key rather than a join nobody runs: anything still under
-`org/<orgId>/pending/` past the window is unclaimed. `sweepOrphans` can reach only that prefix,
-of one org, and returns the keys it deleted. A sweep that could reach an attached key is a job
-that deletes production data the first time an app forgets to promote something.
+`org/<orgId>/pending/` past the window is unclaimed. `sweepOrphans` can reach only that prefix, of
+one org. A sweep that could reach an attached key is a job that deletes production data the first
+time an app forgets to promote something.
+
+**It returns `{ deleted, failed }`, and a clean return is not proof of deletion until `failed` is
+empty.** Two lists because one cannot be wrong. `delete()` used to swallow every failure — 403
+AccessDenied, 503, an expired credential — because the contract said deleting an absent key is not
+an error and the implementation caught everything instead of only the 404. A GDPR erasure over 200
+objects, against a bucket whose policy had lost `s3:DeleteObject`, therefore resolved for all 200
+and reported all 200 deleted; the compliance report said the data was gone and it was not. Now only
+the genuinely absent case is idempotent (`NoSuchKey` / `NotFound` / `ENOENT` / 404) and everything
+else raises `X_STORAGE_DELETE_FAILED`. The sweep records a refusal and **keeps going**, so a caller
+can tell "one key is stuck" from "this disk denies deletes" ([`attachment.ts`](../../packages/storage/src/attachment.ts)).
+
+### Quarantine is a key convention, not a scanner
+
+An upload granted with `quarantine: true` is minted under `org/<orgId>/pending/quarantine/<name>` —
+inside the pending prefix on purpose, so an upload nobody ever scans is still an orphan and the
+sweep collects it with no second prefix to walk. `promoteAttachment` **refuses** a key still there
+with `X_STORAGE_QUARANTINED`, and the app's own scan job calls `releaseQuarantine` on a clean
+verdict to get an ordinary pending key back.
+
+The framework ships the convention and the refusal. **No scanner ships** — which engine, what it
+costs and what a verdict means are the app's, per [axiom 8](../idea/19-mechanism-not-convention.md).
 
 ## The UI half
 

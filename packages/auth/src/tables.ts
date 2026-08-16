@@ -10,11 +10,26 @@ export const X_USERS_TABLE = `create table if not exists x_users (
   org_id                uuid,
   roles                 text[] not null default '{}',
   permissions           text[] not null default '{}',
+  scopes                text[] not null default '{}',
+  external_id           text unique,
   mfa_secret            text,
   recovery_code_hashes  text[] not null default '{}',
   disabled_at           timestamptz,
   created_at            timestamptz not null default now()
-)`;
+);
+create index if not exists x_users_org_id_idx on x_users (org_id)`;
+
+/**
+ * The two columns `x_users` gained in 1.3.0, as the statements an app already running 1.2 runs
+ * once. Both are additive and both have a default, so the migration is not a rewrite and takes no
+ * exclusive lock beyond the catalog update.
+ */
+export const X_USERS_MIGRATION_1_3: readonly string[] = Object.freeze([
+  `alter table x_users add column if not exists scopes text[] not null default '{}'`,
+  'alter table x_users add column if not exists external_id text',
+  'create unique index if not exists x_users_external_id_key on x_users (external_id)',
+  'create index if not exists x_users_org_id_idx on x_users (org_id)',
+]);
 
 // `id` is the public half of the cookie; `token_hash` is sha256 of the secret half.
 export const X_SESSIONS_TABLE = `create table if not exists x_sessions (
@@ -29,7 +44,8 @@ export const X_SESSIONS_TABLE = `create table if not exists x_sessions (
   mfa_satisfied         boolean not null default false
 );
 create index if not exists x_sessions_user_id_idx on x_sessions (user_id);
-create index if not exists x_sessions_absolute_expires_at_idx on x_sessions (absolute_expires_at)`;
+create index if not exists x_sessions_absolute_expires_at_idx on x_sessions (absolute_expires_at);
+create index if not exists x_sessions_created_at_idx on x_sessions (created_at)`;
 
 export const X_ACCOUNTS_TABLE = `create table if not exists x_accounts (
   id                    uuid primary key,

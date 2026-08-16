@@ -244,15 +244,23 @@ export const insertStatement = <Row>(
   )}) values ${join(tuples)}${conflict} returning *`;
 };
 
+/**
+ * `returning` is a parameter and has no default, because the three callers want three different
+ * answers and the wrong one is not visible in the result: `update(id, patch)` needs the stored row,
+ * a soft delete and a filtered write need a count, and `returning *` on a filtered write over a
+ * whole tenant streams every matched row into the process for nobody to read. A default would make
+ * that the quiet case.
+ */
 export const updateStatement = <Row>(
   entity: EntityCore<Row>,
   plan: QueryPlan,
   values: ReadonlyMap<string, unknown>,
   shape: ReadShape,
+  returning: boolean,
 ): SqlFragment =>
   sql`update ${identifier(entity.$table)} set ${join(
     [...values].map(([column, value]) => sql`${identifier(column)} = ${value}`),
-  )} where ${conditions(entity, plan, shape)} returning *`;
+  )} where ${conditions(entity, plan, shape)}${returning ? sql` returning *` : sql``}`;
 
 /** Only reached when the entity has no soft-delete column, so there is no filter to apply. */
 export const deleteStatement = <Row>(entity: EntityCore<Row>, plan: QueryPlan): SqlFragment =>

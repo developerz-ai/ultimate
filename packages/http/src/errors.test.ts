@@ -75,7 +75,7 @@ describe('bodyInvalid', () => {
     expect(error.cause).toContain('title: required');
     expect(error.cause).toContain('body: too long');
     expect(error.fix).toBe(
-      'x schema show /posts --json   # then send a body matching the input schema',
+      'x routes --json   # find /posts, then send a body matching its input schema',
     );
     expect(error.docs).toBe('https://ultimate.dev/errors/X_BODY_INVALID');
   });
@@ -107,11 +107,16 @@ describe('forbidden', () => {
 });
 
 describe('rateLimited', () => {
-  test('cause carries the key and the retry window', () => {
-    const error = rateLimited('posts.create|actor:a1', 7);
+  // The KEY is `${routeName}|org:${orgId}` or `|actor:${actorId}`, and a 429 is a response any
+  // caller can provoke — so an anonymous caller promoted to an org bucket used to learn the
+  // internal org id from the body. It rides in `meta`, which `toProblem` does not render.
+  test('the cause names the window and NEVER the key; the key is meta only', () => {
+    const error = rateLimited('posts.create|org:o_9fd21', 7);
     expect(error).toBeInstanceOf(HttpError);
     expect(error.code).toBe('X_RATE_LIMITED');
-    expect(error.cause).toContain('posts.create|actor:a1');
+    expect(error.cause).not.toContain('o_9fd21');
+    expect(error.cause).not.toContain('posts.create');
+    expect(error.meta?.['key']).toBe('posts.create|org:o_9fd21');
     expect(error.cause).toContain('7s');
     expect(error.fix).toBe(
       'retry after the Retry-After header, or raise rateLimit.buckets in app.config.ts',
@@ -233,8 +238,8 @@ const OWNED_CODES: readonly string[] = HTTP_OWNED_ERROR_CODES;
 const BORROWED_CODES: readonly string[] = HTTP_BORROWED_ERROR_CODES;
 
 describe('HTTP_ERROR_CODES', () => {
-  test('contains exactly the 18 documented codes', () => {
-    expect(HTTP_ERROR_CODES.length).toBe(18);
+  test('contains exactly the 25 documented codes', () => {
+    expect(HTTP_ERROR_CODES.length).toBe(25);
     expect([...EVERY_CODE].sort()).toEqual(
       [
         'X_ROUTE_NOT_FOUND',
@@ -255,14 +260,35 @@ describe('HTTP_ERROR_CODES', () => {
         'X_RATE_LIMIT_NOT_SHARED',
         'X_RATE_LIMIT_BUCKET_CONFLICT',
         'X_RATE_LIMIT_BUCKET_UNBOUND',
+        'X_RATE_LIMIT_SCOPE_UNSET',
+        'X_RATE_LIMIT_INVALID',
+        'X_TRUST_PROXY_UNSET',
+        'X_OVERLOADED',
+        'X_CSRF_BLOCKED',
+        'X_TIMEOUT',
+        'X_DRAINING',
       ].sort(),
     );
   });
 });
 
 describe('HTTP_BORROWED_ERROR_CODES', () => {
-  test('is exactly the two codes owned by other packages', () => {
-    expect([...BORROWED_CODES]).toEqual(['X_UNAUTHENTICATED', 'X_FORBIDDEN']);
+  test('is exactly the codes owned by other packages', () => {
+    expect([...BORROWED_CODES]).toEqual([
+      'X_UNAUTHENTICATED',
+      'X_FORBIDDEN',
+      'X_TIMEOUT',
+      'X_DRAINING',
+    ]);
+  });
+
+  // The whole point of the borrowed list: registering a title for one of these throws
+  // `X_ERROR_CODE_DUPLICATE` at import. `X_DRAINING` is core's and already titled there, which
+  // is how this file learned it was borrowed rather than new.
+  test('no borrowed code has a title in this package', () => {
+    for (const code of BORROWED_CODES) {
+      expect(Object.keys(HTTP_ERROR_TITLES)).not.toContain(code);
+    }
   });
 
   test('owned and borrowed are disjoint and together are every code http throws', () => {

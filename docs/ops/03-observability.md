@@ -10,9 +10,11 @@ dashboard.
 | Signal | State | Consequence |
 |---|---|---|
 | Structured JSON logs, one line per event | **shipped** — [`packages/core/src/logger.ts`](../../packages/core/src/logger.ts) | works today: collect stdout, no app change |
-| `/healthz` and `/readyz`, both returning a JSON body with named checks | **shipped** — [`packages/core/src/lifecycle.ts`](../../packages/core/src/lifecycle.ts) | works today: probes and blackbox checks |
-| OTel-shaped spans, trace context propagated as `traceparent` | **shipped as a seam** — [`packages/core/src/telemetry.ts`](../../packages/core/src/telemetry.ts) | the default exporter is a no-op; `noopExporter` and `memoryExporter` are the only ones that ship |
-| An OTLP span exporter | **not yet implemented** | to get traces off the box you must implement `SpanExporter` and register it |
+| `/healthz` and `/readyz`, both returning a JSON body with named checks | **shipped** — `registerReadinessCheck(name, check)`, and `/readyz` is ready only when the state is ready **and** every check passes ([`packages/core/src/lifecycle.ts`](../../packages/core/src/lifecycle.ts)) | works today: probes and blackbox checks. **`ReadinessCheck` is `() => boolean` — synchronous by design.** A probe that awaits a dependency turns a slow dependency into a wedged endpoint and then a restart loop, so whoever owns the dependency keeps a boolean fresh and the check just reads it. `/healthz` deliberately ignores the checks: a database outage that failed liveness everywhere would restart the whole fleet |
+| OTel-shaped spans, trace context propagated as `traceparent` | **shipped** — [`packages/core/src/telemetry.ts`](../../packages/core/src/telemetry.ts) | the default exporter is still a no-op, so nothing leaves the process until you register one |
+| An OTLP span and metric exporter | **shipped** — `otlpSpanExporter()` / `otlpMetricExporter()`, OTLP/HTTP JSON over `fetch`, no new dependency ([`packages/core/src/otlp.ts`](../../packages/core/src/otlp.ts)) | set `OTEL_EXPORTER_OTLP_ENDPOINT` to a collector's HTTP receiver and register the exporter. Spans batch, and batches are chained rather than concurrent, so a collector cannot reorder a parent behind its child |
+| Head-based sampling | **shipped** — `parentBasedRatioSampler`, `OTEL_TRACES_SAMPLER_ARG` | `span.end()` honours `traceFlags`, so an upstream's do-not-sample decision is respected instead of propagated and ignored |
+| An OTLP **logs** signal, and retry of a rejected export | **not implemented** | a rejected POST is dropped with a `warn`; a collector outage loses that window rather than backing it up. Ship logs as stdout, as row 1 |
 | `/metrics` in the Prometheus text format, on every role | **shipped** — [`packages/cli/src/metrics-endpoint.ts`](../../packages/cli/src/metrics-endpoint.ts), served on `METRICS_PORT` (9090), **not** the app's port | scrape it; see [Scrape config](#scrape-config) |
 | Error reporting: caught server faults, with code, cause and `fix:` | **shipped as a seam** — [`packages/core/src/error-reporter.ts`](../../packages/core/src/error-reporter.ts), wired for HTTP, jobs and realtime | the default reporter is a no-op; set `SENTRY_DSN` to switch the shipped transport on |
 | `x logs` | listed **planned** in `x --help` | — |
@@ -74,10 +76,13 @@ parsing stage.
 Size the metrics volume **above** the retention cap. A busy period fills the disk before the
 time-based GC ever runs; `retentionSize` below the volume size is what stops that.
 
-Two things about OTLP that cost people an afternoon: the endpoint port does not switch the wire
-protocol — most SDKs default to OTLP/HTTP, so `:4317` also needs
-`OTEL_EXPORTER_OTLP_PROTOCOL=grpc` — and in-cluster collector endpoints are plaintext, so gRPC also
-needs the insecure flag.
+The OTLP port confusion that costs people an afternoon does not apply here, because there is
+nothing to choose: this framework speaks **OTLP/HTTP JSON and nothing else**. Point
+`OTEL_EXPORTER_OTLP_ENDPOINT` at the collector's HTTP receiver — `:4318`, not `:4317`. A gRPC
+endpoint or `OTEL_EXPORTER_OTLP_PROTOCOL=grpc` is refused at construction with
+`X_OTLP_PROTOCOL_UNSUPPORTED` rather than failing later on the wire, and it will stay refused:
+gRPC needs HTTP/2 plus protobuf, which is a dependency and a second wire format
+([`../idea/18-build-vs-wrap.md`](../idea/18-build-vs-wrap.md)).
 
 ## Scrape config
 

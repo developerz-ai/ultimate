@@ -15,7 +15,7 @@ import type { MemberId, OrgId } from '@postly/domain';
 import type { Clock } from '@ultimat3/core';
 import type {
   AttachmentTarget,
-  StorageObject,
+  StorageListEntry,
   UploadGrant,
   UploadRequest,
 } from '@ultimat3/storage';
@@ -81,8 +81,8 @@ export const mintAvatarGrant = (input: AvatarGrantInput): Promise<UploadGrant> =
  * ambiguous. Earlier uploads stay on the disk; reclaiming them needs the key on the member row,
  * a column this app deliberately does not have, so the prefix is the record and this picks.
  */
-const newest = (objects: readonly StorageObject[]): StorageObject | undefined =>
-  objects.reduce<StorageObject | undefined>((best, object) => {
+const newest = (objects: readonly StorageListEntry[]): StorageListEntry | undefined =>
+  objects.reduce<StorageListEntry | undefined>((best, object) => {
     if (best === undefined) return object;
     const delta = object.lastModified.getTime() - best.lastModified.getTime();
     return delta > 0 || (delta === 0 && object.key > best.key) ? object : best;
@@ -100,7 +100,7 @@ const newest = (objects: readonly StorageObject[]): StorageObject | undefined =>
 export async function signedAvatarUrl(orgId: OrgId, memberId: MemberId): Promise<string | null> {
   const driver = disk();
   const prefix = attachmentPrefix(orgId, avatarTarget(memberId));
-  let current: StorageObject | undefined;
+  let current: StorageListEntry | undefined;
   let cursor: string | undefined;
 
   do {

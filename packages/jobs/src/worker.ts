@@ -4,17 +4,28 @@
 // deploy turns "at least once" into "always twice", so draining is on by default.
 
 import type { Clock, Ctx } from '@ultimat3/core';
-import { logger, onShutdown, recordJob, recordQueueDepth, uuid, withSpan } from '@ultimat3/core';
+import {
+  logger,
+  onShutdown,
+  parseTraceparent,
+  recordJob,
+  recordQueueDepth,
+  uuid,
+  withSpan,
+} from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver, QueueStats } from './driver';
 import { DEFAULT_QUEUE, DEFAULT_VISIBILITY_TIMEOUT_MS } from './driver';
+import { ConcurrencyUnenforceableError } from './errors';
 import type { JobExecution, JobOutcome } from './execute';
 import { executeJob } from './execute';
 import { startLeaseHeartbeat } from './heartbeat';
-import { getJob } from './job';
+import { getJob, registeredJobs } from './job';
 import type { Limiter } from './limits';
 import { createLimiter } from './limits';
+import { recordQueueDeadJobs, recordQueueOldestReady } from './metrics';
 import type { EventLookup } from './steps';
+import { createFleetSlots } from './worker-fleet-slots';
 
 /**
  * How often the claim loop republishes `queue_depth`. Its own interval, not `pollIntervalMs`:
@@ -87,6 +98,15 @@ export function createWorker(options: WorkerOptions): Worker {
       ? options.concurrency
       : (options.concurrency?.[queue] ?? 5);
   const limiter = options.limiter ?? createLimiter({});
+  const driverLeases = options.driver.leases;
+  // `job.concurrency`, held as a row every replica sees. The TTL is the visibility timeout and the
+  // renewal rides the lease heartbeat's interval — `worker-fleet-slots.ts` says why both.
+  const fleetSlots = createFleetSlots({
+    leases: driverLeases,
+    workerId,
+    ttlMs: visibilityTimeoutMs,
+    renewIntervalMs: heartbeatIntervalMs,
+  });
 
   const inFlight = new Set<Promise<unknown>>();
   /**
@@ -118,7 +138,15 @@ export function createWorker(options: WorkerOptions): Worker {
     if (now - depthPublishedAt < QUEUE_DEPTH_INTERVAL_MS) return;
     depthPublishedAt = now;
     try {
-      for (const stat of await options.driver.stats()) recordQueueDepth(stat.queue, stat.ready);
+      for (const stat of await options.driver.stats()) {
+        recordQueueDepth(stat.queue, stat.ready);
+        // Depth alone is not alertable: it cannot tell "10 jobs stuck for an hour" from "10 jobs
+        // enqueued a second ago", and `jobs_total{outcome="dead"}` is a rate, so a dead-letter
+        // queue that filled overnight and stopped growing pages nobody. Both numbers are already
+        // in `stats()` — this queries nothing new.
+        recordQueueOldestReady(stat.queue, stat.oldestReadyMs);
+        recordQueueDeadJobs(stat.queue, stat.dead);
+      }
     } catch (error) {
       // Instrumentation never costs a tick: a queue that cannot be measured must still be worked.
       logger.warn('jobs.worker.depth-failed', {
@@ -161,19 +189,52 @@ export function createWorker(options: WorkerOptions): Worker {
       workerId,
       ...(options.clock === undefined ? {} : { clock: options.clock }),
     });
+    // The fleet slot this job already holds, kept alive for as long as the lease is and stopped in
+    // the same `finally`: one clock for "this worker still owns the job" and "this worker still
+    // owns the slot" is one fewer way for them to disagree.
+    const stopSlotRenewal = fleetSlots.startRenewal(claimed.id);
+
+    // The caller's context plus this lease's cancellation, so a job cancelled from outside — or
+    // one this worker lost the lease on — stops at the next renewal. `steps.ts` refuses every
+    // write past the signal, which is what unwinds a body that never reads it.
+    const base = options.context();
+    const ctx: Ctx = {
+      ...base,
+      signal:
+        base.signal instanceof AbortSignal
+          ? AbortSignal.any([base.signal, heartbeat.signal])
+          : heartbeat.signal,
+    };
+
+    // The job's span is a CHILD of the request that queued it when the row carries a trace. That
+    // link is what `04-jobs.md` promised and no column existed to hold: without it a checkout's
+    // `chargeCard` opens a fresh root two seconds later with nothing pointing back.
+    const parent = parseTraceparent(claimed.traceparent);
 
     try {
-      return await withSpan(`job.${handle.name}`, () =>
-        executeJob({
-          driver: options.driver,
-          claimed,
-          handle,
-          ctx: options.context(),
-          ...(options.clock === undefined ? {} : { clock: options.clock }),
-          ...(options.events === undefined ? {} : { events: options.events }),
-        }),
+      return await withSpan(
+        `job.${handle.name}`,
+        () =>
+          executeJob({
+            driver: options.driver,
+            claimed,
+            handle,
+            ctx,
+            ...(options.clock === undefined ? {} : { clock: options.clock }),
+            ...(options.events === undefined ? {} : { events: options.events }),
+          }),
+        {
+          ...(parent === undefined ? {} : { parent }),
+          attributes: {
+            'job.name': handle.name,
+            'job.id': claimed.id,
+            'job.attempt': claimed.attempt,
+            ...(claimed.enqueuedBy === undefined ? {} : { 'job.enqueued_by': claimed.enqueuedBy }),
+          },
+        },
       );
     } finally {
+      stopSlotRenewal();
       heartbeat.stop();
     }
   };
@@ -222,6 +283,19 @@ export function createWorker(options: WorkerOptions): Worker {
           continue;
         }
 
+        // `job.concurrency`, at last enforced. The limiter above counts slots in THIS heap, which
+        // twenty pods multiply by twenty; this one is a row every replica sees. Taken after the
+        // in-process lease so the cheap refusal happens first, and released in the same `finally`.
+        if (!(await fleetSlots.acquire(job))) {
+          lease.release();
+          await options.driver.nack(job.id, {
+            delayMs: pollIntervalMs,
+            countsAsAttempt: false,
+            error: `limited: job concurrency (${getJob(job.name)?.concurrency ?? 0})`,
+          });
+          continue;
+        }
+
         const running = runClaimed(job)
           .then((execution) => {
             if (execution.outcome === 'completed') processed += 1;
@@ -238,6 +312,7 @@ export function createWorker(options: WorkerOptions): Worker {
           })
           .finally(() => {
             lease.release();
+            void fleetSlots.release(job.id);
           });
 
         started.push(running);
@@ -351,6 +426,19 @@ export function createWorker(options: WorkerOptions): Worker {
       // Only from a standstill. A start mid-drain would put the claim loop back on a driver the
       // drain is about to close, and stack a second shutdown hook on the one still running.
       if (state !== 'idle' && state !== 'stopped') return;
+      // Refused HERE, at the earliest decidable point, and refused rather than logged: an agent
+      // reads "max in-flight runs of THIS job across the fleet", writes `concurrency: 1` on
+      // `rebuildSearchIndex`, ships, and two workers run it on the first deploy — while
+      // `x jobs show` and the manifest both confirm a guarantee that does not exist. A driver
+      // with no `leases` can only hold the cap per process, so it does not get to claim it.
+      if (driverLeases === undefined) {
+        const capped = registeredJobs()
+          .filter((handle) => handle.concurrency !== undefined)
+          .map((handle) => handle.name);
+        if (capped.length > 0) {
+          throw new ConcurrencyUnenforceableError({ driver: options.driver.name, jobs: capped });
+        }
+      }
       state = 'running';
       logger.info('jobs.worker.started', { workerId, queues });
       // 'accept' phase: stop claiming before core waits on in-flight jobs. The unregister is

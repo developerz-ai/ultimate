@@ -32,7 +32,7 @@ function defineCounted() {
 
 function requestFor(path: string, body: unknown) {
   const url = new URL(`https://app.test${path}`);
-  const config = defineHttpConfig({ dev: true });
+  const config = defineHttpConfig({ dev: true, rateLimit: { scope: 'process' } });
   const rctx = createRequestContext({ url, method: 'POST', role: 'web', config });
   const raw = new Request(url, {
     method: 'POST',

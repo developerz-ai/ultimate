@@ -331,6 +331,19 @@ const server =
 import { join } from 'node:path';
 import { runRole } from '@ultimat3/cli';
 
+// MORE THAN ONE REPLICA? Add these two lines, above \`runRole\`:
+//
+//   import { configureIdempotency } from '@ultimat3/action';
+//   configureIdempotency({ scope: 'shared' });
+//
+// \`idempotent: true\` on an action promises that a retry does not repeat the work. Under the
+// process-scoped default that promise holds inside ONE process — a client retrying
+// \`POST /api/payments/charge\` after a timeout lands on another replica, which has never seen the
+// key, and charges the card twice, silently, with \`x verify\` green. Declaring \`'shared'\` is what
+// makes that a boot error (\`X_IDEMPOTENCY_NOT_SHARED\`) unless a shared store is installed.
+// \`runRole\` installs the Postgres one for you, on the connection it resolved from \`DATABASE_URL\`,
+// so the declaration is all this app owes. It must run before \`runRole\` imports the actions.
+
 /**
  * Where the app is. From this file normally — the image's WORKDIR is not the app root's business.
  * A \`--compile\` binary is the exception: its \`import.meta.dir\` is Bun's virtual filesystem, which

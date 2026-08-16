@@ -1,13 +1,15 @@
 // The HTTP slice of `app.config.ts`. One resolver, so a value is either a locked
 // default or an explicit override — never "whatever the first caller passed".
 import { assertCorsConfig, type CorsConfig, DEFAULT_CORS } from './cors';
+import { type CsrfConfig, DEFAULT_CSRF } from './csrf';
+import { trustProxyUnset } from './errors';
 import {
   DEFAULT_LOCALE_CONFIG,
   DEFAULT_TZ_CONFIG,
   type LocaleConfig,
   type TimeZoneConfig,
 } from './locale';
-import { DEFAULT_RATE_LIMIT, type RateLimitConfig } from './rate-limit';
+import { type RateLimitConfig, resolveRateLimitConfig } from './rate-limit';
 import { DEFAULT_SECURITY, type SecurityConfig } from './security-headers';
 
 export interface HttpConfig {
@@ -25,14 +27,40 @@ export interface HttpConfig {
    * to a 404, and a framework may not invent one of its app's routes.
    */
   readonly signInPath: string | null;
-  /** Read `x-forwarded-for` / `x-forwarded-proto`. Only safe behind our own proxy. */
+  /**
+   * Read `x-forwarded-for` / `x-forwarded-proto`, and echo an inbound `x-request-id`. A claim
+   * about the DEPLOYMENT, so it is `false` until an app makes it — it used to default `true`,
+   * which let any direct caller choose its own request id and poison log correlation. Setting it
+   * requires `trustedProxyHops`.
+   */
   readonly trustProxy: boolean;
+  /**
+   * How many proxies APPEND to `x-forwarded-for` between the client and this process — 1 for a
+   * single ingress or ALB, 2 for a CDN in front of one. The header is read at
+   * `entries.length - hops`, never at `[0]`: the leftmost value is whatever the client typed.
+   * `0` when nothing is trusted.
+   */
+  readonly trustedProxyHops: number;
   readonly bodyLimitBytes: number;
+  /**
+   * How long one request may run before it is aborted and answered `X_TIMEOUT` (504). `0`
+   * disables it, which is a deployment saying it would rather hold a connection forever than
+   * cut one short. A caller may ask for LESS with `x-request-timeout-ms`, never for more.
+   */
+  readonly requestTimeoutMs: number;
+  /**
+   * Requests this process will hold at once before shedding with `X_OVERLOADED` (503) before any
+   * work. `0` disables it. The ceiling is not a capacity plan — it is the difference between
+   * degrading and collapsing, because past it every request queues behind the same pool and the
+   * retries multiply the load.
+   */
+  readonly maxInflight: number;
   /** How long SIGTERM waits for in-flight requests before hard-stopping. */
   readonly drainTimeoutMs: number;
   readonly locale: LocaleConfig;
   readonly tz: TimeZoneConfig;
   readonly cors: CorsConfig;
+  readonly csrf: CsrfConfig;
   readonly security: SecurityConfig;
   readonly rateLimit: RateLimitConfig;
 }
@@ -46,11 +74,15 @@ export interface HttpConfigInput {
   readonly dev?: boolean;
   readonly signInPath?: string | null;
   readonly trustProxy?: boolean;
+  readonly trustedProxyHops?: number;
   readonly bodyLimitBytes?: number;
+  readonly requestTimeoutMs?: number;
+  readonly maxInflight?: number;
   readonly drainTimeoutMs?: number;
   readonly locale?: Partial<LocaleConfig>;
   readonly tz?: Partial<TimeZoneConfig>;
   readonly cors?: Partial<CorsConfig>;
+  readonly csrf?: Partial<CsrfConfig>;
   readonly security?: Partial<Omit<SecurityConfig, 'csp'>> & {
     readonly csp?: Partial<SecurityConfig['csp']>;
   };
@@ -81,6 +113,10 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
   // The one resolver is the one place a resolved combination can be judged: an override is merged
   // over defaults the author never restated, so `origins: ['*']` alone is what reaches this.
   assertCorsConfig(cors);
+  const trustProxy = input.trustProxy ?? false;
+  // Refused here, not on the first request: "trust the header" and "know which entry of it" are
+  // one declaration, and half of it is a header the caller writes.
+  if (trustProxy && input.trustedProxyHops === undefined) throw trustProxyUnset();
   return {
     port: input.port ?? Number.parseInt(env('PORT') ?? '3000', 10),
     hostname: input.hostname ?? env('HOSTNAME') ?? '0.0.0.0',
@@ -89,17 +125,23 @@ export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
     buildIdHeader: input.buildIdHeader ?? 'x-ultimate-build',
     dev,
     signInPath: input.signInPath ?? null,
-    trustProxy: input.trustProxy ?? true,
+    trustProxy,
+    trustedProxyHops: trustProxy ? Math.max(0, Math.floor(input.trustedProxyHops ?? 0)) : 0,
     bodyLimitBytes: input.bodyLimitBytes ?? 1_048_576,
+    // 30s: longer than any request a browser waits out, shorter than the 15s drain budget times
+    // two, so a rolling restart cannot be held open by work started just before SIGTERM.
+    requestTimeoutMs: input.requestTimeoutMs ?? 30_000,
+    maxInflight: input.maxInflight ?? 1_000,
     drainTimeoutMs: input.drainTimeoutMs ?? 15_000,
     locale: { ...DEFAULT_LOCALE_CONFIG, ...input.locale },
     tz: { ...DEFAULT_TZ_CONFIG, ...input.tz },
     cors,
+    csrf: { ...DEFAULT_CSRF, ...input.csrf },
     security: {
       ...DEFAULT_SECURITY,
       ...input.security,
       csp: { ...DEFAULT_SECURITY.csp, reportOnly: dev, ...input.security?.csp },
     },
-    rateLimit: { ...DEFAULT_RATE_LIMIT, ...input.rateLimit },
+    rateLimit: resolveRateLimitConfig(input.rateLimit),
   };
 };

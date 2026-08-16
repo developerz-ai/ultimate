@@ -373,6 +373,50 @@ describe('composition', () => {
     expect(client.texts.at(-1)).toBe('COMMIT');
   });
 
+  /**
+   * The pin and the transaction cannot both be honoured, and the wrong answer is invisible.
+   * `withTransaction` reserved a connection and ran `BEGIN` on it — the ambient pool's — while a
+   * repository built with `client:` sends every statement straight to that client, which is a
+   * different connection and, on a sharded app, a different database. So the write commits
+   * whatever the transaction decides and survives its rollback, and the read cannot see what the
+   * transaction has already written. Refused rather than resolved: a `DbTx` does not name the
+   * client it was opened on, so "are these the same database" is not a question this layer can ask.
+   */
+  test('a repo pinned to its own client refuses to run inside a transaction', async () => {
+    const shard = createRecordingClient();
+    const pinned = postgresRepo(invoices, { client: shard });
+
+    // Outside a transaction it is exactly the repository it always was, on its own client.
+    shard.on('select', { rows: [physical()] });
+    expect(await pinned.findById(ID, { orgId: ORG })).not.toBeNull();
+    expect(shard.statements).toHaveLength(1);
+
+    await expect(
+      postgresTransactor().run(async () => {
+        await pinned.insert(ROW);
+      }),
+    ).rejects.toBeUltimateError('X_REPO_CLIENT_PINNED');
+
+    // The write into the wrong connection never happened, on either client.
+    expect(shard.statements).toHaveLength(1);
+    expect(client.texts.filter((text) => text.startsWith('insert into'))).toHaveLength(0);
+    expect(client.texts).toContain('ROLLBACK');
+  });
+
+  test('the refusal names the seam that does join a transaction', async () => {
+    const shard = createRecordingClient();
+    const error = await postgresTransactor()
+      .run(async () => postgresRepo(invoices, { client: shard }).count({ orgId: ORG }))
+      .then(
+        () => undefined,
+        (thrown: unknown) => thrown as { readonly fix?: unknown },
+      );
+    // `db()` resolves `currentTx()` first, which is exactly what a pinned client skips — so the
+    // repair is to stop pinning, not to pin harder.
+    expect(String(error?.fix)).toContain('setDbClient(client)');
+    expect(shard.statements).toHaveLength(0);
+  });
+
   test('a failing unit of work rolls back and never commits', async () => {
     await expect(
       postgresTransactor().run(async () => {

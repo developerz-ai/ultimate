@@ -10,6 +10,7 @@
  * `JSON.stringify` wrote. A surface that formats one converts at its own edge.
  */
 
+import { currentSpanContext, traceparent } from '@ultimat3/core';
 import type { InferInput, StandardSchemaV1 } from '@ultimat3/schema';
 import { QueryRequestFailedError } from './errors';
 import { derivePath } from './naming';
@@ -108,7 +109,10 @@ async function read(
   const url = `${base}${derivePath(name)}${search === '' ? '' : `?${search}`}`;
   const init: RequestInit = {
     method: 'GET',
-    headers: { accept: 'application/json', ...options.headers },
+    // `traceHeaders()` before the caller's, so an explicit `traceparent` still wins. Without it a
+    // service-to-service read started a fresh root trace on the other side, and "which of my
+    // downstreams is slow" was unanswerable across every Ultimate-to-Ultimate hop.
+    headers: { accept: 'application/json', ...traceHeaders(), ...options.headers },
     ...(callOptions.signal === undefined ? {} : { signal: callOptions.signal }),
   };
 
@@ -117,6 +121,27 @@ async function read(
     throw new QueryRequestFailedError(name, response.status, await problemOf(response));
   const body: unknown = await response.json();
   return body;
+}
+
+/** A `traceparent` is `00-<32 hex>-<16 hex>-<2 hex>`, and nothing else may be sent as one. */
+const TRACE_ID = /^[0-9a-f]{32}$/;
+const SPAN_ID = /^[0-9a-f]{16}$/;
+
+/**
+ * The current trace, as the W3C header — or nothing at all. `currentSpanContext()` answers with
+ * an empty `spanId` when a request context exists but no span is active, and `00-<trace>--01` is
+ * a header every collector drops, so an incomplete context sends none. In a browser there is no
+ * ambient context and this is always empty, which is also what keeps a cross-origin read from
+ * acquiring a CORS preflight it did not have.
+ *
+ * `@ultimat3/action`'s client carries the twin of this function: both are tier 3, so neither may
+ * import the other — the same reason `naming.ts` is ported rather than shared.
+ */
+function traceHeaders(): Record<string, string> {
+  const context = currentSpanContext();
+  if (context === undefined) return {};
+  if (!TRACE_ID.test(context.traceId) || !SPAN_ID.test(context.spanId)) return {};
+  return { traceparent: traceparent(context) };
 }
 
 /**

@@ -10,6 +10,7 @@ reaches down to this package for it. **Never** import `entity`, `jobs`, `http` o
 | Deps | none. `@electric-sql/pglite` is an **optional peer**, imported by variable specifier inside `loadPgliteDriver()` so no consumer's `tsc` or bundler resolves it. **No ORM** — `entity`'s hand-written `postgresDriver()` is the production backing |
 | SQL | `sql` binds `$n`; anything non-scalar and non-fragment throws `X_SQL_UNSAFE` |
 | Escape hatches | `raw()`, `identifier()`, `literal()` — each call is an audit point |
+| SQLSTATE | one reader, `sqlState()` (`sqlstate.ts`). Never read `error.code` for a SQLSTATE |
 | Errors | subclass `DbError`; never `throw new Error` **in source**. A test simulating a *database* failure throws `dbUnavailable()`; a test simulating the *caller's body* failing throws a bare `Error` on purpose — an arbitrary throw is exactly what rollback and disposal must survive, and a `DbError` there would prove the narrower thing |
 | New code | add to `DB_ERROR_CODES` **and** `DB_ERROR_TITLES` in `errors.ts` |
 | Exports | explicit in `src/index.ts`; no `export *` |
@@ -67,6 +68,60 @@ forever. `BEGIN` therefore lives inside the guarded scope, which is what `readon
 already did. Consequence worth knowing: a failed `BEGIN` now also emits a best-effort `ROLLBACK`
 the server answers with a notice — cheaper than a second code path for the one statement that
 opens nothing.
+
+**`sqlstate.ts` is the only place a SQLSTATE is read, and the ordering inside it is the whole
+point.** Measured, bun 1.3.14 against Postgres 17: `Bun.SQL` puts the literal string
+`ERR_POSTGRES_SERVER_ERROR` on `code` and the SQLSTATE on `errno`; PGlite — node-postgres' protocol
+— puts the SQLSTATE on `code` and carries no `errno` at all. So `errno` is read first, `code`
+second, and both are shape-tested (`^[0-9A-Z]{5}$`) so an Ultimate code can never be mistaken for
+one. `isLedgerMissing` used to do this read itself, reading `code` alone: correct on the embedded
+driver and **`false` for a genuinely missing ledger on every production one**, which is exactly the
+split axiom 1 forbids. `DB_SQLSTATE_CODES` is closed — a state the framework has no instruction for
+stays `X_DB_UNAVAILABLE`, and a new instruction is a new row there, never a new `catch` at a call
+site. `driverError()` in `errors.ts` is the only consumer that builds an error out of it, and
+`sendOn` is the only caller of that.
+
+**`DbTx.origin` is the client the scope was opened on, never the pin it runs on.** A `DbClient`
+handed to `withTransaction` (or `baseClient()`) is what identifies the *database*; the reservation
+is how this scope keeps its statements on one connection, which is an implementation detail nobody
+above should have to know. The field exists because tier 2 could not answer the question without
+it: `@ultimat3/entity`'s repositories can be pinned (`database(shard)`), and a pinned repository
+inside `withTransaction` sends to its own pool while the `BEGIN` sits on a reservation, so the write
+commits immediately, survives the rollback, and is invisible to reads inside the transaction —
+silent loss of transactionality, not a crash. `{ client: shard }` does not fix it either: the
+transaction runs on a *reservation* of the shard. With nothing to compare, entity's only honest
+answer was `X_REPO_CLIENT_PINNED`; `tx.origin === thePinnedClient` makes the case work and leaves
+the refusal for a genuine two-database mix. A nested scope reports the root's, because a SAVEPOINT
+belongs to the transaction that opened.
+
+**`withTransaction(fn, { retry })` re-runs `fn` from the top, and only on `40001`/`40P01`.** Default
+0, because a retry nobody asked for silently doubles every non-idempotent handler in the framework.
+Each attempt takes its own pin, its own `BEGIN` and its own undo list, so `runRoot` is extracted and
+the loop is around it — a retry reusing the pin would be re-running against a transaction that is
+already gone. A **nested** `retry` is refused through core's `assert` (`X_INVARIANT`), not ignored:
+measured against Postgres 17, a `40001` aborts the whole transaction, so the `ROLLBACK TO SAVEPOINT`
+that would start attempt two answers `25P01 ROLLBACK TO SAVEPOINT can only be used in transaction
+blocks`. There is nothing to retry into, and an author who believes they hold a budget they do not
+is worse off than one who is told.
+
+**The migration lock is polled, never waited on.** `pg_advisory_lock` blocks with no timeout, so a
+predecessor OOM-killed on a network partition kept its backend — and the lock — for hours while the
+new `ROLE=migrate` pod sat inside one statement printing nothing: `helm upgrade --wait` blocked on a
+pod that was `Running`, and because the job never *failed*, `backoffLimit` never fired.
+`acquireLock` loops on `pg_try_advisory_lock` every `MIGRATION_LOCK_POLL_MS` until
+`MIGRATION_LOCK_WAIT_MS` and then throws `X_MIGRATE_CONCURRENT` — a code reserved since 1.0 and
+never thrown until now. The loop declares itself with `expectedQueryLoop`, like every other
+deliberate loop here. `createRecordingClient` therefore stubs `pg_try_advisory_lock` to `locked:
+true` by default: a fake that answers nothing would read as "held" and make every migration test in
+every app wait out the full budget.
+
+**`lock_timeout` is the migration's, not the pool's.** `PoolProfile.lockTimeoutMs` is 0 everywhere
+but `migrate` (3s), and `migrate()`/`rollback()` emit it as `SET LOCAL lock_timeout` inside each
+migration's own transaction rather than on the connection string. `SET LOCAL` reverts at COMMIT, so
+a value chosen for DDL never leaks onto the session the ledger insert runs on — and the profile is
+read by role `migrate` whatever role is running, because an `alter table` takes the same `ACCESS
+EXCLUSIVE` from a laptop as from a deploy hook. Without it the migrator waits forever behind a long
+`SELECT` and, because Postgres' lock queue is FIFO, so does every later query on that table.
 
 **The migration advisory lock is held by one pinned session, and `migrate()`/`rollback()` run every
 statement on it.** `pg_advisory_lock` is scoped to a Postgres *session*, so taking it on a pooled
@@ -343,6 +398,20 @@ fix for a migration that already exists. `checkDrift` turns that `undefined` int
 `unknown-schema` difference rather than `ok: true`, and `x db gen` refuses with
 `X_MIGRATION_SNAPSHOT_MISSING` rather than diffing against the empty schema, which would emit
 `create table` for every table the database already holds.
+
+`compareTable` compares **nullability**, and it is the only column property it compares besides
+existence. `snapshotOf` had recorded `nullable` all along and nothing read it, which made the
+expand/contract flow a one-way door: `generate.ts` emits a `NOT NULL` add as nullable plus a
+`-- backfill "c", then: … set not null;` comment, phase 2 is a thing a human has to remember, and
+with nullability uncompared the column stayed nullable forever against an entity schema that said
+otherwise — `ok: true` on every check until an `undefined` write landed as `NULL` three services
+away. **Primary key columns are excluded, by the union of both sides' keys**: Postgres makes a key
+column `NOT NULL` whether or not anything declared it, so a snapshot spelling `id` nullable would
+otherwise put one finding on every table in a correct database. The type is still not compared —
+the catalog and a snapshot spell types differently often enough that it would report drift on a
+right database, and `x db gen`'s `retypeColumn` owns that question where both sides are generated.
+The `fix:` is the `alter table … set not null` itself and deliberately not `x db gen`, which has
+never emitted one and would answer with an empty migration.
 
 `compareTable` judges **declared** indexes: one the migrations name and the catalog does not hold is
 `missing-index`, and one whose column list or uniqueness moved is `changed-index` — which is what

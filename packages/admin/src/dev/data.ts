@@ -108,13 +108,22 @@ const unwired = <T>(source: string, panel: string): (() => Promise<T>) => {
 /** How many recent runs the jobs panel traces. A dev panel reads, it does not page. */
 const RUN_WINDOW = 50;
 
-/** `JobState` and `StepStatus` are the queue's vocabulary; the panel renders its own. */
+/**
+ * `JobState` and `StepStatus` are the queue's vocabulary; the panel renders its own.
+ *
+ * `cancelled` is `ok` and not `dead`, because the panel's four words split on "did this need
+ * attention", not on "did the handler run". `panel-jobs.ts` reads `dead` as the dead-letter list
+ * and `failed | dead` as the needs-attention list — a job an operator stopped on purpose belongs
+ * in neither, and filing it under `dead` would put `x jobs retry` in front of a reader as the
+ * remedy for a cancellation nobody wants resurrected.
+ */
 const RUN_STATUS: Readonly<Record<JobState, JobRunFact['status']>> = {
   ready: 'running',
   delayed: 'running',
   running: 'running',
   suspended: 'running',
   done: 'ok',
+  cancelled: 'ok',
   failed: 'failed',
   dead: 'dead',
 };

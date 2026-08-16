@@ -14,7 +14,7 @@ import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AnyAction } from './action';
 import { action, describeAction, isAction } from './action';
-import { MemoryIdempotencyStore } from './idempotency';
+import { MemoryIdempotencyStore } from './idempotency-memory';
 import { invoke } from './invoke';
 import type { Surface } from './policy-gate';
 import { listActions, registerActions, resetRegistry } from './registry';

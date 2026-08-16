@@ -1,5 +1,5 @@
 // Single responsibility: turn an entity snapshot into a timestamped, reversible migration.
-// `db` is tier 2 and cannot import `@ultimat3/entity`, so the snapshot arrives as a parameter —
+// `db` is tier 1 and cannot import `@ultimat3/entity`, so the snapshot arrives as a parameter —
 // the CLI passes `describeEntities()` and the types below mirror `EntityDescription` field for
 // field. Every generated migration must be reversible; a drop that loses data refuses instead.
 

@@ -10,7 +10,7 @@ A package may import from **strictly lower** tiers only. Never upward. Never sid
 
 ```
 tier 0  core, schema
-tier 1  i18n, money, time, cache, seo, db, storage   (may import tier 0)
+tier 1  i18n, money, time, cache, seo, db, storage, flags   (may import tier 0)
 tier 2  entity, policy, http, auth                   (may import tier 0-1)
 tier 3  action, query, jobs, realtime                (may import tier 0-2)
 tier 4  render, pwa, mcp, ai, manifest, mail         (may import tier 0-3)
@@ -52,6 +52,7 @@ Decided **2026-08**, when the Postgres entity driver needed a home. `db` imports
 | `seo` | 1 | metadata, typed JSON-LD, sitemap/robots/feeds, SEO checks | `ld.*`, `<head>` model, sitemap splitting, the SEO check set | render pages; fetch data |
 | `db` | 1 | Postgres access, transactions, migrations, drift detection | `sql` binding, `DbClient`, `withTransaction`, the migration ledger, branch/introspect | import `entity` — an entity snapshot arrives as a parameter, never as an import |
 | `storage` | 1 | named disks over `Bun.file` and `Bun.s3` | disk registry, safe keys, signed URLs, sniffed uploads | let a call site name a driver instead of a disk |
+| `flags` | 1 | feature flags whose expiry is a compile-time proof | `defineFlag`, `isEnabled`, targeting rules, stable `fnv1a` bucketing, `applyFlagSnapshot` for an external control plane | outlive its own expiry — a temporary flag with no `expires` does not typecheck; decide *what* a flag gates |
 | `entity` | 2 | a table + its domain type + invariants the DB also enforces | column types, defaults, invariants, tenant column, both repo drivers, cursor codec | business logic; HTTP awareness; policy decisions |
 | `policy` | 2 | the one authz rule, evaluated identically in every surface | `can()`, `evaluate()`, denial reasons, actor resolution contract | mutate; query outside declared repos; return partial data |
 | `http` | 2 | owned request lifecycle over `Bun.serve` | the ordered pipeline, router, problem+json rendering, ALS establishment | know about `action`/`query` concretely; render components |
@@ -92,7 +93,7 @@ graph TD
     entity; policy; http; auth
   end
   subgraph T1["tier 1"]
-    i18n; money; time; cache; seo; db; storage
+    i18n; money; time; cache; seo; db; storage; flags
   end
   subgraph T0["tier 0"]
     core; schema
@@ -143,6 +144,7 @@ graph TD
   auth --> db
   db --> core
   storage --> core
+  flags --> core
   policy --> i18n
   http --> i18n
   http --> time

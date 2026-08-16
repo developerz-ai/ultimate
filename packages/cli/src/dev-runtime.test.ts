@@ -224,7 +224,10 @@ describe('startServices', () => {
         FASTLY_SERVICE_ID: 'svc_1',
       });
       try {
-        expect(registeredTiers().map((tier) => tier.name)).toEqual(['cdn']);
+        // The two that need no external state are always registered — `createMemoTier` and
+        // `createLruTier` had zero callers before this boot did, so every cached read was
+        // recomputed on every replica. `cdn` joins them only for a real edge.
+        expect(registeredTiers().map((tier) => tier.name)).toEqual(['request-memo', 'lru', 'cdn']);
         expect(runtime.purge.name).toBe('fastly');
         expect(describeCdn(runtime)).toBe('cdn=external(fastly via FASTLY_API_TOKEN)');
       } finally {
@@ -245,7 +248,8 @@ describe('startServices', () => {
       resetTiers();
       const runtime = await startServices(resolveServices(root, {}), {});
       try {
-        expect(registeredTiers()).toHaveLength(0);
+        // No `cdn`, and the two process-local tiers still there: "no edge" is not "no cache".
+        expect(registeredTiers().map((tier) => tier.name)).toEqual(['request-memo', 'lru']);
         expect(describeCdn(runtime)).toBe('cdn=none');
       } finally {
         await runtime.stop();
@@ -271,7 +275,7 @@ describe('startServices', () => {
         FASTLY_API_TOKEN: 'fastly-token',
         FASTLY_SERVICE_ID: 'svc_1',
       });
-      expect(registeredTiers()).toHaveLength(1);
+      expect(registeredTiers()).toHaveLength(3);
       expect(tryMailDriver()?.name).toBe('smtp');
       expect(jobDriver()).toBeDefined();
       // The only thing this case changes: a bus that is already gone by the time shutdown asks.

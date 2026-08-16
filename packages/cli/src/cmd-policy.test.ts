@@ -121,7 +121,7 @@ describe('unit · x policy list', () => {
   test('a row per permission — roles, actions and queries joined, "-" when none', async () => {
     const result = await policyCommand.run(contextFor('list'));
     expect(result.ok).toBe(true);
-    expect(result.summary).toBe(msg('cli.policy.count', { permissions: 3, roles: 3, enforced: 2 }));
+    expect(result.summary).toBe(msg('cli.policy.count', { permissions: 4, roles: 3, enforced: 3 }));
     expect(result.lines?.[0]).toContain('permission');
 
     const publishLine = result.lines?.find((line) => line.trim().startsWith('post:publish'));
@@ -131,16 +131,24 @@ describe('unit · x policy list', () => {
     const readLine = result.lines?.find((line) => line.trim().startsWith('post:read'));
     expect(readLine).toBeDefined();
     expect(readLine).not.toContain('publishPost');
+    // The composite's second permission, which used to render as enforced by nothing.
+    expect(readLine).toContain('archivePost');
 
     expect(result.data).toEqual([
       { permission: 'feed:read', roles: ['admin', 'reader'], actions: [], queries: ['postFeed'] },
+      { permission: 'post:delete', roles: ['admin'], actions: [], queries: [] },
       {
         permission: 'post:publish',
         roles: ['admin', 'editor'],
-        actions: ['publishPost'],
+        actions: ['archivePost', 'publishPost'],
         queries: ['publishedPosts'],
       },
-      { permission: 'post:read', roles: ['admin', 'editor', 'reader'], actions: [], queries: [] },
+      {
+        permission: 'post:read',
+        roles: ['admin', 'editor', 'reader'],
+        actions: ['archivePost'],
+        queries: [],
+      },
     ]);
   });
 
@@ -149,7 +157,9 @@ describe('unit · x policy list', () => {
     const lines = result.lines ?? [];
     const at = lines.findIndex((line) => line.includes(msg('cli.policy.unenforced', { count: 1 })));
     expect(at).toBeGreaterThanOrEqual(0);
-    expect(lines[at + 1]?.trim()).toBe('post:read');
+    // `post:delete` and not `post:read`: the composite enforces `post:read`, so the only grant
+    // left doing nothing is the one no declaration references at all.
+    expect(lines[at + 1]?.trim()).toBe('post:delete');
   });
 });
 
@@ -157,9 +167,11 @@ describe('unit · x policy explain', () => {
   test('a permission aggregates every enforcing declaration into one summary and one table each', async () => {
     const result = await policyCommand.run(contextFor('explain', ['post:publish']));
     expect(result.ok).toBe(true);
-    // Two declarations × four actors: eight evaluations, not eight roles — the app declares three.
+    // THREE declarations × four actors: twelve evaluations, not twelve roles — the app declares
+    // three. The third is `archivePost`, whose composite references this permission; matching on
+    // the display label left it out and under-reported the blast radius of the grant.
     expect(result.summary).toBe(
-      msg('cli.policy.explained', { subject: 'post:publish', allowed: 4, evaluations: 8 }),
+      msg('cli.policy.explained', { subject: 'post:publish', allowed: 5, evaluations: 12 }),
     );
     const rendered = (result.lines ?? []).join('\n');
     expect(rendered).toContain(
@@ -186,7 +198,7 @@ describe('unit · x policy explain', () => {
     };
     expect(data.kind).toBe('permission');
     expect(data.grantingRoles).toEqual(['admin', 'editor']);
-    expect(data.declarations).toHaveLength(2);
+    expect(data.declarations).toHaveLength(3);
   });
 
   test('a compound policy names the SPECIFIC deciding clause per actor, not the and() wrapper', async () => {

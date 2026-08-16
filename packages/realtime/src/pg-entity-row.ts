@@ -3,6 +3,7 @@
 // The inverse of the camelCasing here is `@ultimat3/entity`'s `column.ts#snake` — not imported
 // (a tier-3 package may not reach across to tier-2), so the round trip is pinned by a test instead.
 
+import { describeValue } from '@ultimat3/core';
 import { ReplicationProtocolError } from './errors';
 import type { JsonObject, JsonValue } from './json';
 
@@ -45,9 +46,30 @@ function moneyMinor(column: string, value: number | string): number {
   if (Number.isSafeInteger(minor)) return minor;
   throw new ReplicationProtocolError({
     stage: 'value',
-    detail: `column "${column}" carries "${value}", which is not a whole number of minor units`,
+    detail: `column "${column}" carries ${shownMinor(value)}, which is not a whole number of minor units`,
     fix: `store ${column} as a bigint inside ±2^53 — Money.minor is a number, never a float or a bigint`,
   });
+}
+
+/**
+ * **Paired with `parseMinor` in `@ultimat3/entity`'s `columns.ts`, and the pairing is the rule
+ * rather than the spelling: an amount may be echoed when it is *provably numeric*, and this file
+ * has to prove it at run time because entity proves it from the branch.**
+ *
+ * Entity reaches its echo only on a value already narrowed to a finite non-integer `number`, a
+ * `bigint`, or a `/^-?\d+$/` string. Here the value came off the WAL, and a `<p>_minor` pair is
+ * matched by column *name*: any `text` column called `note_minor` beside `note_currency` routes
+ * arbitrary user content through this throw. `"${value}"` on that path is the leak
+ * `describeValue` exists for — the message is built before any field-level redaction can see it,
+ * and it reaches the log store and the operator alike.
+ *
+ * So the amount survives when its content is a number (a float, an out-of-range integer, or a
+ * string that *is* one), and everything else is reported as shape.
+ */
+function shownMinor(value: number | string): string {
+  if (typeof value === 'number') return `"${value}"`;
+  const numeric = value.trim() !== '' && Number.isFinite(Number(value));
+  return numeric ? `"${value}"` : describeValue(value);
 }
 
 /**

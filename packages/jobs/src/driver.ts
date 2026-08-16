@@ -1,11 +1,31 @@
-// The queue contract. Every driver (pg, memory, redis, nats) implements exactly this, so
-// switching backends is a config line and ZERO job-code change. Six methods and no more:
-// claim/ack/nack with a visibility timeout is the smallest set that survives a worker crash.
+// The queue contract. Every driver implements exactly this, so a job's code never names one.
+// Six methods and no more: claim/ack/nack with a visibility timeout is the smallest set that
+// survives a worker crash.
+//
+// This header used to say "switching backends is a config line" (`As of 2026-08`). There is no
+// such config line: `JobsConfig.driver` has no reader anywhere and boot always builds
+// `createPgDriver`. `pg` and `memory` are the two that exist; `redis` and `nats` are honest
+// `X_NOT_IMPLEMENTED` stubs. What IS true is the second half — swapping the driver is
+// `setJobDriver(other)` and ZERO job-code change — and that is what the interface buys.
 
 import type { BackfillLedger } from './backfill-ledger';
+import type { LeaseStore } from './leases';
 import type { StepStore } from './steps';
 
-export type JobState = 'ready' | 'delayed' | 'running' | 'suspended' | 'done' | 'failed' | 'dead';
+/**
+ * `cancelled` is terminal and is NOT `dead`: a dead letter is work that failed and can be retried,
+ * a cancellation is work an operator stopped on purpose and `x jobs retry` must not resurrect by
+ * accident. It appears in no claim predicate, so the queue never hands a cancelled row out again.
+ */
+export type JobState =
+  | 'ready'
+  | 'delayed'
+  | 'running'
+  | 'suspended'
+  | 'done'
+  | 'failed'
+  | 'dead'
+  | 'cancelled';
 
 export interface JobRecord {
   readonly id: string;
@@ -28,6 +48,14 @@ export interface JobRecord {
   readonly lastError?: string;
   readonly claimedBy?: string;
   readonly visibleAt?: number;
+  /**
+   * W3C `traceparent` of the request that queued this job. The job's span is opened as a CHILD of
+   * it, so a checkout trace shows the HTTP span, the action span and the charge that ran two
+   * seconds later as one trace rather than three unrelated roots.
+   */
+  readonly traceparent?: string;
+  /** Actor id of whoever asked for this work. AUDIT ONLY — see `EnqueueRequest.enqueuedBy`. */
+  readonly enqueuedBy?: string;
 }
 
 export type ConflictPolicy = 'dedupe' | 'error';
@@ -44,6 +72,21 @@ export interface EnqueueRequest {
   /** Reuse an existing run id when resuming, so step history is preserved. */
   readonly runId?: string;
   readonly onConflict?: ConflictPolicy;
+  /** W3C `traceparent` of the enqueuing request. The facade stamps it; callers rarely set it. */
+  readonly traceparent?: string;
+  /**
+   * Who asked for this work — an actor id, ATTRIBUTION AND NOT AUTHORITY.
+   *
+   * The framework picks one answer to "whose permissions does a job run with" and this is it: a
+   * job body runs with SYSTEM authority and this column is an audit trail. The alternative —
+   * resolving the enqueuer at claim time and impersonating them — is worse in exactly the case
+   * that matters: a job that sleeps three days, or dead-letters and is retried next quarter, would
+   * act as somebody whose role, org membership or employment has since changed. `02-primitives.md`
+   * already calls a job server-authoritative work; this makes the row say so too. A job that must
+   * act for a user takes that user's id in its INPUT and re-authorises it in the body, where the
+   * check is visible.
+   */
+  readonly enqueuedBy?: string;
 }
 
 export interface EnqueueResult {
@@ -103,6 +146,22 @@ export interface JobIntrospection {
   deadLetters(limit?: number): Promise<readonly JobRecord[]>;
   /** Re-queue a dead/failed job. `fromStep` drops step records from that step onward. */
   requeue(jobId: string, options?: { readonly fromStep?: string }): Promise<JobRecord>;
+  /**
+   * Stop a job from outside. The only answer to a runaway pass that was otherwise "scale the
+   * worker to zero" (which stops every job) or a hand-written `UPDATE` (which the running
+   * worker's next ack overwrote). Terminal for a queued row immediately; a RUNNING one stops at
+   * its next heartbeat, which no longer matches its own row and cancels the attempt.
+   *
+   * Optional on the interface for the reason `requeue` is not: a driver may have no way to
+   * address a single row. Answers `undefined` for a job id it does not hold.
+   */
+  cancel?(jobId: string, reason?: string): Promise<JobRecord | undefined>;
+}
+
+export interface HeartbeatOptions {
+  readonly visibilityTimeoutMs: number;
+  /** Renew only if this worker is still the claimant. Omit and any claimant matches. */
+  readonly workerId?: string;
 }
 
 export interface JobDriver {
@@ -113,8 +172,15 @@ export interface JobDriver {
   claim(options: ClaimOptions): Promise<readonly ClaimedJob[]>;
   ack(jobId: string): Promise<void>;
   nack(jobId: string, options: NackOptions): Promise<void>;
-  /** Extends the lease of a long-running job so it is not double-claimed. */
-  heartbeat(jobId: string, options: { readonly visibilityTimeoutMs: number }): Promise<void>;
+  /**
+   * Extends the lease of a long-running job so it is not double-claimed.
+   *
+   * Answers whether the renewal LANDED. `false` means this process no longer owns the job — it
+   * was cancelled, or its lease lapsed and another worker re-claimed it — and the caller must
+   * stop running it. A `void` return made both indistinguishable from success, so an external
+   * cancel had nothing to reach a running job with.
+   */
+  heartbeat(jobId: string, options: HeartbeatOptions): Promise<boolean>;
   stats(): Promise<readonly QueueStats[]>;
   /**
    * Optional, like `introspect`: `x_backfills` records what a `backfill()` pass has already swept,
@@ -123,6 +189,14 @@ export interface JobDriver {
    * so one install point covers both.
    */
   readonly backfills?: BackfillLedger;
+  /**
+   * Optional, like `introspect` and `backfills`: fleet-wide slot counting, which is the only thing
+   * that can make `job.concurrency` mean what its docstring says. The in-process limiter is a fast
+   * path over ONE heap and is multiplied by the replica count; this is the gate that is not.
+   * A driver without one enforces `concurrency` per process and the worker says so at start
+   * (`jobs.worker.concurrency-unenforced`) rather than letting the guarantee pass silently.
+   */
+  readonly leases?: LeaseStore;
   readonly introspect?: JobIntrospection;
   close?(): Promise<void>;
 }

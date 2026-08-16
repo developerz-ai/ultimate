@@ -75,8 +75,7 @@ export const resolveTenantColumn = (
   columns: ColumnMap,
   declared: string | undefined,
 ): string | null => {
-  if (declared === undefined) return tenantColumnOf(columns);
-  if (!Object.hasOwn(columns, declared)) {
+  if (declared !== undefined && !Object.hasOwn(columns, declared)) {
     const available = Object.keys(columns).join(', ');
     // Not `invariantViolated`: its fix points at `x entity explain`, which describes invariants
     // the author never wrote. What repairs this is one edit to the declaration, so the error
@@ -87,7 +86,24 @@ export const resolveTenantColumn = (
       fix: `set tenant to one of ${available} in entity('${entityName}'), or remove the tenant key — inference then takes the .tenant() column, else one named ${ORG_COLUMN}`,
     });
   }
-  return declared;
+  const property = declared ?? tenantColumnOf(columns);
+  if (property === null) return null;
+  // A NULLABLE tenant column is refused here, at the declaration, and this is the same guard as
+  // the one above rather than an extra rule: `assertRowTenant` returns early on a row that names
+  // no tenant — "left alone, and the column's NOT NULL answers it" — so on a nullable column the
+  // delegation has nothing to delegate to. The row lands with a null tenant, and a null is
+  // matched by no `org_id = $1`: it is invisible to every tenant-scoped read, so it never appears
+  // in an export, never goes in an offboarding sweep, and sits in the table owned by nobody.
+  // A tenant that may be absent is a table that is only sometimes multi-tenant, which is not a
+  // shape this layer can enforce — so it is refused where the author can see it.
+  if (columns[property]?.$meta.notNull === false) {
+    throw new EntityError({
+      code: 'X_INVARIANT_VIOLATED',
+      cause: `${entityName}.${property} is the tenant column and is nullable — a row written with no ${property} is matched by no tenant-scoped query, so it belongs to nobody and no sweep can ever find it`,
+      fix: `drop .nullable() from ${property} in entity('${entityName}'), then x db gen "backfill ${entityName} ${property}" — a row with no tenant needs one before the column can refuse it`,
+    });
+  }
+  return property;
 };
 
 export const emptyPlan = (entity: string, limit = 50): QueryPlan => ({

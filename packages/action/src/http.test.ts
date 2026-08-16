@@ -5,7 +5,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
 import { userActor } from '@ultimat3/core';
-import { createServer, setRedirect } from '@ultimat3/http';
+import type { HttpConfig } from '@ultimat3/http';
+import { createServer, defineHttpConfig, setRedirect } from '@ultimat3/http';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AnyAction } from './action';
@@ -37,11 +38,19 @@ function publisher(authorId: string, evaluations: { count: number }) {
   }).named('publishPost');
 }
 
+/**
+ * Every server here runs as ONE process, said out loud: `defineHttpConfig` refuses to guess a
+ * rate-limit scope (`X_RATE_LIMIT_SCOPE_UNSET`), because the number of replicas is the one thing
+ * only the app knows and a wrong guess enforces every bucket N times over.
+ */
+const oneProcess = (): HttpConfig => defineHttpConfig({ rateLimit: { scope: 'process' } });
+
 const editor = (id: string): Actor => ({ ...userActor({ id }), permissions: ['post:publish'] });
 
 function serve(target: ReturnType<typeof publisher>, actor: Actor | null) {
   return createServer({
     routes: [toRoute(target)],
+    config: oneProcess(),
     // No `authorize` hook. An action route must not need one: wiring a second opinion is how a
     // host grows a second authz system, and the pipeline used to 403 any route that declared a
     // policy without one.
@@ -53,7 +62,9 @@ const publish = (server: ReturnType<typeof serve>): Promise<Response> =>
   server.fetch(
     new Request('http://dev.test/api/posts/publish', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      // A credentialed write must show it is same-origin, or the `csrf` stage refuses it before
+      // the handler — the pipeline's own rule, and what a browser form actually sends.
+      headers: { 'content-type': 'application/json', origin: 'http://dev.test' },
       body: JSON.stringify({ postId: POST_ID }),
     }),
   );
@@ -120,7 +131,7 @@ describe('an action answering a form post', () => {
     }).named('createSession');
 
   const post = (target: AnyAction) =>
-    createServer({ routes: [toRoute(target)] }).fetch(
+    createServer({ routes: [toRoute(target)], config: oneProcess() }).fetch(
       new Request('http://dev.test/api/sessions/create', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -148,7 +159,7 @@ describe('an action answering a form post', () => {
   // what keeps a second call on the same context from inheriting the first one's destination.
   test('the redirect does not leak into the next request', async () => {
     const target = signIn('/feed');
-    const server = createServer({ routes: [toRoute(target)] });
+    const server = createServer({ routes: [toRoute(target)], config: oneProcess() });
     const call = () =>
       server.fetch(
         new Request('http://dev.test/api/sessions/create', {

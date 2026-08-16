@@ -27,7 +27,7 @@ Reads walk down until a hit, then populate every tier they walked past. Writes p
 |---|---|---|---|---|
 | 0 | `request-memo` | ALS context (`WeakMap`) | dies with the request | never |
 | 1 | `lru` | in-process, byte-budgeted | tag index | never |
-| 2 | `redis` | `Bun.redis` | tag→keys set, one `EVAL` + slot-local `DEL`s | single node |
+| 2 | `redis` | `Bun.redis` | tag→keys set, one `EVAL` **per tag** + slot-local `DEL`s | single node |
 | 3 | `cdn` | headers + purge driver | surrogate keys | no CDN |
 
 A tier is a `CacheTier` (`get`/`set`/`del`/`invalidateTags`). Swap or omit any of them
@@ -50,6 +50,31 @@ is `X_CACHE_TTL_INVALID`. There is no "never expires" and no "do not cache" — 
 first in the LRU tier and one second in the Redis tier, so a stack holding both answered
 differently depending on which one hit, and neither reading was what the caller meant. A value you
 do not want held is a value you do not put in the cache.
+
+**Every lease is spread.** A tier shortens each `ttlMs` by a random slice of up to 5%
+(`DEFAULT_TTL_JITTER_FRACTION`) before it writes, in `assertTtl` — the one place every tier already
+called. 40,000 keys warmed by one rolling restart otherwise share one expiry instant and all miss
+inside the same 30-second window. The roll is injected, never `Math.random()` at a call site:
+
+```ts
+createLruTier({ rng: () => 0 });          // the full lease — what a test asserting an exact expiry wants
+createRedisTier({ jitterFraction: 0 });   // off entirely
+createRedisTier({ jitterFraction: 0.2 }); // a wider spread; outside [0, 1) is X_CACHE_JITTER_INVALID
+```
+
+**N concurrent misses are ONE origin load.** `stack.read` shares an in-flight `load()` per key, so
+a reader arriving while another's load is running joins it instead of issuing its own — the share
+ends as the load settles, rejection included, so one failure is never held as a permanent one. A
+feed cached for 60s and read 8,000×/s otherwise sends ~1,600 identical queries to Postgres at every
+TTL boundary, because the write only lands after `load()` resolves. The primitive is
+`createSingleFlight()` if you need it elsewhere; the stack holds one per stack.
+
+**A `null` can carry its own TTL.** `negativeTtlMs` is used when the loaded value is `null` or
+`undefined`, so a lookup for a row that has not replicated yet is not held for the positive lease:
+
+```ts
+await stack.read(key, () => db.posts.byId(id), { ttlMs: 300_000, negativeTtlMs: 5_000 });
+```
 
 **A promoted hit carries its own remaining life.** When a read hits a far tier and populates the
 closer ones, it writes them with `expiresAt - now`, not with the `ttlMs` the caller passed — a
@@ -94,6 +119,38 @@ once anything is declared, an undeclared tag is `X_CACHE_TAG_UNKNOWN`. A test th
 fixture entity therefore turns validation on for every later file in the same `bun test` process.
 `isolateDeclaredTags()` is the seam for that — see [Test seams](#test-seams).
 
+## The Redis tier's key layout
+
+| Key | Holds |
+|---|---|
+| `<prefix>:<buildId>:c:<key>` | the value, `SET … EX` |
+| `<prefix>:<buildId>:t:{<entity>}` | the collection's members |
+| `<prefix>:<buildId>:t:{<entity>}:<id>` | one row's members |
+
+`{<entity>}` is a **Redis Cluster hash tag**, not decoration: it is what makes a row's bucket and
+its collection's bucket hash to one slot, so a script may take both in `KEYS`. Invalidation issues
+**one script call per tag** for that reason — the batched form carried every tag's buckets in one
+`EVAL` and was rejected with `CROSSSLOT` before the script ran, landing in `report.errors` as a
+partial bust while stale rows served until TTL. Value keys are still deleted client-side, one `DEL`
+each, which is slot-local under every topology.
+
+**Every tag set carries a lease**, renewed on each write to the member's own TTL plus 60s, raised
+only when the new lease is longer — a 60s member must not shorten a bucket a 1h member is in.
+Without it a tag set grew forever: value keys died after five minutes, their membership never did,
+and after a month `SMEMBERS` on a multi-million-member set blocked the server for hundreds of
+milliseconds and answered with a list the client then `DEL`'d in batches. One publish became a
+Redis outage. The renewal is a script (`REDIS_TAG_MEMBER_SCRIPT`, one key in `KEYS`) rather than
+`EXPIRE … GT`, because `GT` treats a key with no TTL as infinite and would leave a **fresh** bucket
+immortal — which is the bug being fixed.
+
+**`buildId` defaults to `appVersion()`** (`APP_VERSION`, else `dev`), so two builds sharing one
+Redis cannot read each other's payloads. Rename `PostView.author` to `PostView.authorId` and
+deploy: `JSON.parse` does not validate, so the old pod reads the new shape back and hands it to a
+renderer expecting the old one — an undefined author on every cached post, on half the fleet, for
+the length of the rolling deploy. The cost of the default is a **cold shared tier per deploy**,
+which is the cheaper of the two. Opt out with `createRedisTier({ buildId: null })` if you version
+your own payloads.
+
 ## Invalidating
 
 ```ts
@@ -128,6 +185,32 @@ one naming the span that triggered it. That is the log the `/_x` cache panel ren
 actually clear?" is answerable without a log dive because the one fan-out path retained the
 answer, not because a second recorder was wired next to it.
 
+### Across instances
+
+`invalidateTags` clears the tiers of the process that called it. On a fleet that is one pod: a user
+edits their profile on pod 3, their next request lands on pod 7, and pod 7's LRU serves the pre-edit
+value for up to `defaultTtlMs`. Cache ships the **seam**, not the transport — it is tier 1 and may
+not reach `realtime` or a message bus — and whoever owns the transport (`@ultimat3/cli`) wires it at
+boot, exactly as `@ultimat3/render` wires the `Revalidator`:
+
+```ts
+registerInvalidationBroadcast(async (wireTags) => bus.publish('cache.invalidate', wireTags));
+bus.subscribe('cache.invalidate', (wireTags) => receiveInvalidationBroadcast(wireTags));
+```
+
+| Half | Function | Emits? |
+|---|---|---|
+| outbound | `registerInvalidationBroadcast(fn)` — `fn(wireTags: readonly string[])`, called last, best-effort | — |
+| inbound | `receiveInvalidationBroadcast(wireTags)` → `InvalidationReport` | **never** |
+
+The inbound half **cannot** re-emit, and that is structural rather than a flag: `emit` lives on the
+private fan-out options and `receiveInvalidationBroadcast` is the only caller that passes `false`.
+A receiver that re-broadcast would be a storm bounded by nothing. A failed send lands in
+`report.errors` under `tier: "broadcast"` — the other pods then clear on TTL, and the write that
+triggered the bust still succeeds. An inbound tag this process has not declared is dropped and
+reported rather than thrown, because mid-deploy the new pods know an entity the old ones do not and
+a throw would kill the subscriber loop that delivered it.
+
 ## Test seams
 
 Every registry here is process-global and `bun test` is one process, so a suite undoes its own
@@ -143,7 +226,7 @@ afterAll(restoreTags);
 |---|---|
 | `isolateDeclaredTags()` | the declared-tag set |
 | `isolateGraph()` | every tag → dependent edge, across all three indexes |
-| `isolateTiers()` | everything `resetTiers()` drops: the tier registry in registration order, the revalidator, `recentInvalidations()` and `recentTierFailures()` |
+| `isolateTiers()` | everything `resetTiers()` drops: the tier registry in registration order, the revalidator, the invalidation broadcast, `recentInvalidations()` and `recentTierFailures()` |
 
 Each returns the function that puts back **exactly what it found**, so a per-test `resetGraph()` or
 `resetTierFailures()` is still fine — pair it with the module-scope isolate and the process gets its
@@ -203,6 +286,7 @@ cache).
 | Code | Cause |
 |---|---|
 | `X_CACHE_DRIVER_UNAVAILABLE` | `Bun.redis` missing, a purge driver built without its token, or a batch size that is not a positive integer |
+| `X_CACHE_JITTER_INVALID` | a tier's `jitterFraction` outside `[0, 1)` |
 | `X_CACHE_PURGE_FAILED` | the CDN refused a purge, or a key it would split on whitespace |
 | `X_CACHE_TAG_UNKNOWN` | a tag no entity declared — usually a typo |
 | `X_CACHE_TOO_LARGE` | one entry exceeds a tier's whole byte budget |

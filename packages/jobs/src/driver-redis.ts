@@ -11,6 +11,7 @@ import type {
   ClaimOptions,
   EnqueueRequest,
   EnqueueResult,
+  HeartbeatOptions,
   JobDriver,
   NackOptions,
   QueueStats,
@@ -66,7 +67,7 @@ export function createRedisDriver(_options: RedisDriverOptions = {}): JobDriver 
     nack(_jobId: string, _options: NackOptions): Promise<void> {
       return unavailable('nack');
     },
-    heartbeat(_jobId: string, _options: { readonly visibilityTimeoutMs: number }): Promise<void> {
+    heartbeat(_jobId: string, _options: HeartbeatOptions): Promise<boolean> {
       return unavailable('heartbeat');
     },
     stats(): Promise<readonly QueueStats[]> {

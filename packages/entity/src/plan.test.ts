@@ -10,8 +10,10 @@ import { integer, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
 import type { EntityError } from './errors';
 import {
+  DEFAULT_PAGE_SIZE,
   deletePlan,
   idPlan,
+  MAX_PAGE_SIZE,
   namedColumns,
   planFor,
   readPlan,
@@ -120,6 +122,31 @@ describe('planFor', () => {
     expect(plan.limit).toBe(50);
     expect('cursor' in plan).toBe(false);
     expect('select' in plan).toBe(false);
+  });
+
+  /**
+   * The failure first: `limit` used to be carried verbatim, so `limit(input.pageSize)` on a number
+   * that arrived over the wire bound whatever the client sent. `DEFAULT_PAGE_SIZE` bounded only
+   * the read nobody sized — an explicitly named page had no ceiling, no integer check and no
+   * positivity check, while `inBatches(size)` one file over had all three.
+   */
+  test('a page size nobody could have meant is refused, at the plan both drivers build', () => {
+    const refused = (limit: number) => caught(() => planFor(posts, { limit }));
+    expect(refused(5_000_000)).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(refused(MAX_PAGE_SIZE + 1)).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(refused(0)).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(refused(-1)).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(refused(2.5)).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(refused(Number.NaN)).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(refused(Number.POSITIVE_INFINITY)).toBeUltimateError('X_INVARIANT_VIOLATED');
+    // The way out of it is the call that reads every row without holding them all.
+    expect(String(refused(5_000_000)?.fix)).toContain('inBatches(1000)');
+  });
+
+  test('the ceiling itself, the default and one row all still build a plan', () => {
+    expect(planFor(posts, { limit: MAX_PAGE_SIZE }).limit).toBe(MAX_PAGE_SIZE);
+    expect(planFor(posts, { limit: 1 }).limit).toBe(1);
+    expect(planFor(posts, {}).limit).toBe(DEFAULT_PAGE_SIZE);
   });
 
   test('a null cursor is treated the same as an absent one', () => {

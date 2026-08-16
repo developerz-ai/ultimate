@@ -1,7 +1,12 @@
 // The HTTP layer's stable error codes. Every throw in this package goes through a
 // factory here so a code, a cause and an exact fix always travel together — the
 // terminal, the dev overlay and `--json` all render the same three strings.
-import { registerErrorCodes, renderThrowable, UltimateError } from '@ultimat3/core';
+import {
+  registerErrorCodes,
+  registerErrorRetry,
+  renderThrowable,
+  UltimateError,
+} from '@ultimat3/core';
 
 /** Codes this package declares and owns. */
 export const HTTP_OWNED_ERROR_CODES = [
@@ -21,6 +26,11 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_RATE_LIMIT_NOT_SHARED',
   'X_RATE_LIMIT_BUCKET_CONFLICT',
   'X_RATE_LIMIT_BUCKET_UNBOUND',
+  'X_RATE_LIMIT_SCOPE_UNSET',
+  'X_RATE_LIMIT_INVALID',
+  'X_TRUST_PROXY_UNSET',
+  'X_OVERLOADED',
+  'X_CSRF_BLOCKED',
 ] as const;
 
 /**
@@ -29,7 +39,19 @@ export const HTTP_OWNED_ERROR_CODES = [
  * `X_ERROR_CODE_DUPLICATE` at import. No titles for them either — the owner writes the one title
  * every surface renders, and a copy kept here is a copy that goes stale without anything failing.
  */
-export const HTTP_BORROWED_ERROR_CODES = ['X_UNAUTHENTICATED', 'X_FORBIDDEN'] as const;
+export const HTTP_BORROWED_ERROR_CODES = [
+  'X_UNAUTHENTICATED',
+  'X_FORBIDDEN',
+  // `X_TIMEOUT` has had its 504 row in `ERROR_STATUS` since the table was written and nothing in
+  // the framework threw it. The request deadline does now — borrowed rather than owned because
+  // the concept is core's (`Clock`, `throwIfAborted`) and a title registered here would throw
+  // `X_ERROR_CODE_DUPLICATE` at import the day core writes its own.
+  'X_TIMEOUT',
+  // Core's, titled in `CORE_CODE_TITLES` and classified `retryable` in `error-retry.ts`, because
+  // the lifecycle that answers `isDraining()` is core's. The `admit` stage is its first thrower:
+  // this package documented answering 503 while draining and had no reader of the flag at all.
+  'X_DRAINING',
+] as const;
 
 /** Every code http can throw: the ones it owns plus the two it borrows. */
 export const HTTP_ERROR_CODES = [...HTTP_OWNED_ERROR_CODES, ...HTTP_BORROWED_ERROR_CODES] as const;
@@ -55,6 +77,11 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_RATE_LIMIT_NOT_SHARED: 'the rate limit is declared fleet-wide and the store is per-process',
   X_RATE_LIMIT_BUCKET_CONFLICT: 'a route and the config declare different numbers for one bucket',
   X_RATE_LIMIT_BUCKET_UNBOUND: 'the installed limiter cannot enforce a bucket a route declares',
+  X_RATE_LIMIT_SCOPE_UNSET: 'the deployment has not said where the rate limiter keeps its counters',
+  X_RATE_LIMIT_INVALID: 'a declared rate limit computes to numbers the limiter cannot run on',
+  X_TRUST_PROXY_UNSET: 'proxy headers are trusted without saying how many proxies are in front',
+  X_OVERLOADED: 'in-flight requests are at the configured ceiling',
+  X_CSRF_BLOCKED: 'a credentialed write arrived from an origin that is not allowed to make it',
 };
 
 // Registered at module load, unconditionally, in one call, so core's registry renders OUR title
@@ -64,18 +91,41 @@ registerErrorCodes(
   Object.fromEntries(Object.entries(HTTP_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
 
+/**
+ * The two codes this package throws that a client is SUPPOSED to come back from, and both say
+ * when: each carries `retry-after` on the response. Unclassified defaults to `terminal`, which is
+ * right for the rest — a 404, a 422 and a wiring bug all fail the same way forever — but wrong for
+ * a shed request, whose whole contract is "not now". Only codes this package OWNS are listed:
+ * `X_TIMEOUT` and `X_DRAINING` are borrowed, and core classifies its own.
+ */
+registerErrorRetry({
+  X_RATE_LIMITED: 'retry-after',
+  X_OVERLOADED: 'retry-after',
+});
+
 const docsFor = (code: HttpErrorCode): string => `https://ultimate.dev/errors/${code}`;
 
 /** Base class for every error this package throws. Never throw a bare `Error`. */
 export class HttpError extends UltimateError {
   override readonly name = 'HttpError';
 
-  constructor(init: { code: HttpErrorCode; cause: string; fix: string }) {
+  constructor(init: {
+    code: HttpErrorCode;
+    cause: string;
+    fix: string;
+    /**
+     * Facts an operator needs and a CALLER must not be handed. `toProblem` renders code, cause,
+     * fix and docs — never this — so the rate limiter's internal key rides here instead of in a
+     * 429 body that told an anonymous caller the org id it had been promoted to.
+     */
+    meta?: Readonly<Record<string, unknown>>;
+  }) {
     super({
       code: init.code,
       cause: init.cause,
       fix: init.fix,
       docs: docsFor(init.code),
+      ...(init.meta === undefined ? {} : { meta: init.meta }),
     });
   }
 }
@@ -114,7 +164,11 @@ export const bodyInvalid = (pathname: string, issues: readonly string[]): HttpEr
   new HttpError({
     code: 'X_BODY_INVALID',
     cause: `${pathname} body rejected: ${issues.join('; ')}`,
-    fix: `x schema show ${pathname} --json   # then send a body matching the input schema`,
+    // `x schema show` is not a command — not in the registry and not in `PLANNED_COMMANDS`, so it
+    // exits `X_CLI_UNKNOWN_COMMAND`. The same axiom-4 inversion `x logs tail` had in `error-map`:
+    // the one instruction the reader is given fails when they run it. `x routes` ships, and
+    // `hasInputSchema` plus the route's name is what it prints.
+    fix: `x routes --json   # find ${pathname}, then send a body matching its input schema`,
   });
 
 export const unauthenticated = (pathname: string): HttpError =>
@@ -131,11 +185,18 @@ export const forbidden = (pathname: string, reason: string): HttpError =>
     fix: `x policy explain ${pathname} --json   # shows which clause denied`,
   });
 
+/**
+ * The KEY never reaches the caller. `rateLimitKey` is `${routeName}|org:${orgId}` — or
+ * `actor:${actorId}` — so the old cause handed an anonymous caller promoted to an org bucket the
+ * internal org id, in a 429 anyone can provoke. It rides in `meta`, which the problem document
+ * does not render and the error reporter does.
+ */
 export const rateLimited = (key: string, retryAfterSeconds: number): HttpError =>
   new HttpError({
     code: 'X_RATE_LIMITED',
-    cause: `bucket for ${key} is empty; refills in ${retryAfterSeconds}s`,
+    cause: `the rate limit for this caller is exhausted; it refills in ${retryAfterSeconds}s`,
     fix: 'retry after the Retry-After header, or raise rateLimit.buckets in app.config.ts',
+    meta: { key, retryAfterSeconds },
   });
 
 export const buildSkew = (clientBuildId: string, serverBuildId: string): HttpError =>
@@ -304,4 +365,103 @@ export const routeConflict = (path: string, detail: string): HttpError =>
     code: 'X_ROUTE_CONFLICT',
     cause: `${path} conflicts with an already registered route: ${detail}`,
     fix: `x routes list --json   # remove or rename one of the two routes at ${path}`,
+  });
+
+/**
+ * At `defineHttpConfig`, never on the request. `scope` used to DEFAULT to `'process'`, so an app
+ * that declared nothing enforced every configured number once per replica — three times over on
+ * the chart this repo ships — with a green `x verify` and nothing to read. The boot check that
+ * catches the other half (`assertRateLimitScope`) only fires for an app that said `'shared'`, so
+ * the silent case was exactly the one nobody declared. One process is still a legal answer; it is
+ * no longer an assumed one.
+ */
+export const rateLimitScopeUnset = (): HttpError =>
+  new HttpError({
+    code: 'X_RATE_LIMIT_SCOPE_UNSET',
+    cause:
+      'http.rateLimit is enabled and the deployment has not declared http.rateLimit.scope, so the numbers below it are per replica rather than per fleet',
+    fix: "in app.config.ts set http.rateLimit.scope: 'process' if this app runs as ONE replica, or 'shared' plus createServer({ routes, rateLimitStore }) for a fleet-wide limit",
+  });
+
+/**
+ * A `{ limit, windowMs }` pair the limiter cannot run on. Raised by `toBucket`, which lives here
+ * because http owns `Bucket` and the maths, and two tier-3 packages (`action`, `query`) need the
+ * same conversion without importing each other.
+ */
+export const rateLimitInvalid = (input: {
+  readonly owner: string;
+  readonly limit: number;
+  readonly windowMs: number;
+  readonly reason: string;
+}): HttpError =>
+  new HttpError({
+    code: 'X_RATE_LIMIT_INVALID',
+    cause: `"${input.owner}" declares rateLimit { limit: ${input.limit}, windowMs: ${input.windowMs} }: ${input.reason}`,
+    fix: `edit the \`rateLimit:\` on ${input.owner} to a whole allowance over a real window — e.g. { limit: 5, windowMs: 600_000 } for five per ten minutes — or delete it to keep the default bucket`,
+    meta: { owner: input.owner, limit: input.limit, windowMs: input.windowMs },
+  });
+
+/**
+ * At `defineHttpConfig`. `trustProxy` is a claim about the DEPLOYMENT — that something in front
+ * rewrites `x-forwarded-for` — and the leftmost value in that header is whatever the client
+ * typed. Without a hop count there is no way to tell the proxy's entry from the caller's, so
+ * trusting the header at all is trusting the caller. Asked in the same shape as
+ * `X_RATE_LIMIT_NOT_SHARED`, and for the same reason: only the app knows its own topology.
+ */
+export const trustProxyUnset = (): HttpError =>
+  new HttpError({
+    code: 'X_TRUST_PROXY_UNSET',
+    cause:
+      'http.trustProxy is true and http.trustedProxyHops is not set, so x-forwarded-for would be read from a position the client controls',
+    fix: 'in app.config.ts set http.trustedProxyHops to the number of proxies that append to x-forwarded-for — 1 for a single ingress or ALB, 2 for a CDN in front of one — or set http.trustProxy: false when this process is reached directly',
+  });
+
+/**
+ * SIGTERM has run the `accept` phase: `readyz` is already 503 and the socket is closing, but a
+ * connection the load balancer had not yet stopped using still arrives. Answering it with a
+ * coded 503 and a `Retry-After` is what `packages/http/CLAUDE.md` claimed the layer did — until
+ * this stage, `isDraining()` had no reader in this package at all.
+ */
+export const draining = (): HttpError =>
+  new HttpError({
+    code: 'X_DRAINING',
+    cause: 'this process is draining and will not start new work',
+    fix: 'retry after the Retry-After header — another replica is already serving, and this one is being replaced',
+  });
+
+/**
+ * Shed BEFORE any work: no route match, no auth, no body, no query. The alternative is not
+ * "serve everyone", it is "serve nobody" — every request queues behind the same pool, p99 walks
+ * off the chart and client retries multiply the load. `@ultimat3/realtime`'s `AcceptBudget` is
+ * the same decision for sockets; this is the one HTTP never had.
+ */
+export const overloaded = (inflight: number, ceiling: number): HttpError =>
+  new HttpError({
+    code: 'X_OVERLOADED',
+    cause: `${inflight} requests are already in flight and http.maxInflight is ${ceiling}`,
+    fix: 'retry after the Retry-After header; to serve more at once raise http.maxInflight in app.config.ts, and add replicas to match',
+  });
+
+/**
+ * A write that arrived with the browser's ambient credential and could not be shown to come from
+ * this app. Never a 401: the caller IS signed in, which is precisely the problem.
+ */
+export const csrfBlocked = (pathname: string, reason: string): HttpError =>
+  new HttpError({
+    code: 'X_CSRF_BLOCKED',
+    cause: `${pathname} refused a credentialed write: ${reason}`,
+    fix: "call it with an Authorization header instead of the session cookie, add the calling origin to http.cors.origins in app.config.ts, or set http.csrf.mode: 'off' if this app has no cookie session at all",
+  });
+
+/**
+ * The request ran past its deadline. `X_TIMEOUT` is borrowed (see `HTTP_BORROWED_ERROR_CODES`)
+ * and already maps to 504. The abort fires first for cooperative code; this is what the socket
+ * gets when the handler never looked at `ctx.signal`.
+ */
+export const requestTimedOut = (method: string, pathname: string, timeoutMs: number): HttpError =>
+  new HttpError({
+    code: 'X_TIMEOUT',
+    cause: `${method} ${pathname} did not finish within ${timeoutMs}ms`,
+    fix: 'pass ctx.signal to every outbound call (fetch(url, { signal: ctx.signal })) and call throwIfAborted(ctx) before expensive work, or raise http.requestTimeoutMs in app.config.ts',
+    meta: { timeoutMs },
   });

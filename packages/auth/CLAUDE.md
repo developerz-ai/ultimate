@@ -40,7 +40,43 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - Absolute and idle expiry are two separate computations in `sessionExpiry()`. Do not fold them.
 - PKCE is not provider-dependent. `OAuthProvider.usesPkce` is the literal `true`, not `boolean`,
   so `usesPkce: false` is a type error rather than a comment — and there is no
-  `if (provider.usesPkce)` branch left anywhere for it to have been false in.
+  `if (provider.usesPkce)` branch left anywhere for it to have been false in. It stays the literal
+  now that `registerOAuthProvider` is open to any app: the mechanism has to survive the opening.
+- **Providers are a registry, `OAuthProviderId` is `string`.** A closed union of three consumer
+  IdPs made an enterprise OP *unrepresentable* — a type constraint has no runtime escape, so the
+  only ways out were forking the package or bypassing OAuth entirely and losing PKCE, the sealed
+  handshake, issuer pinning and account linking with it. The three built-ins seed the registry
+  through the same `registerOAuthProvider()` an app calls, so there is still one way to do it.
+  `providerFor(id)` throws `X_OAUTH_PROVIDER_UNKNOWN` and never answers `undefined`; a second claim
+  on one id is `X_OAUTH_PROVIDER_DUPLICATE` at boot, never a silent replacement.
+- **`oauthProviderUnknown(provider, supported)` scopes its list to its reader.** The route passes
+  `BUILTIN_OAUTH_PROVIDER_IDS` — an anonymous stranger typed that URL, and the registry now holds
+  whatever internal OP this deployment registered. `providerFor()` passes `oauthProviderIds()` —
+  its reader is a developer with a stack trace, and the full list is what makes the fix runnable.
+  Neither ever passes `defineAuth({ providers })`. One code, two audiences, one sentence that stays
+  executable either way because it names `registerOAuthProvider` before it names the list.
+- **`verifyIdToken({ keys })` is required, with no default.** `'token-endpoint-tls'` is the OIDC
+  Core 3.1.3.7 exemption stated out loud, and `exchangeOAuthCode` is the only shipped caller
+  entitled to it. Anything else — IdP-initiated login, `form_post`, back-channel logout, token
+  exchange — passes a `JwksKeySource` and gets the signature checked. A default is exactly what
+  would let a second door inherit "unverified" from the first. `HS256` and `alg: none` are refused
+  in `decodeJwtHeader` before a key is ever looked up.
+- **`resolveGrants` is a seam, never a group-to-role table.** It is called on EVERY login, not only
+  at creation, or "remove them from the group in the IdP" is a no-op forever. Absent means the app
+  has no opinion and the stored row is left alone; a seam returning the stored answer writes
+  nothing. Creating a user with no roles and no org logs a warning — that account can do nothing.
+- **`verifySession` writes at most once per `idleSlideMs`** (default `idleTtlMs / 20`). Throttling
+  the SESSION write is safe; caching the USER row is not — `authenticate` re-reads it on every
+  request, and that is what makes a revoked role take effect on the next one with no token-expiry
+  lag. Do not cache it.
+- A user's `scopes` column reaches `Actor.scopes`. Hardcoding `[]` there made a scope something no
+  human could hold, so `hasScope(actor, 'tenancy:cross')` was satisfiable only by minting a
+  `serviceActor` inside the handler — which discards the operator's identity and makes the sweep
+  unattributable, the exact property the required reason string exists to preserve.
+- Every revocation takes a `reason` and logs `auth.revocation` before it runs.
+  `deleteSessionsForOrg` joins through `x_users`; `x_sessions` does **not** gain an `org_id`,
+  because a denormalised membership goes stale the moment somebody moves org and the 03:00 sweep
+  then leaves live exactly the sessions it was run to kill.
 - The code flow carries `nonce` inside the id token, not on the redirect. `assertOAuthCallback`
   checks an echoed one when present and never requires it; `verifyIdToken` is the real gate.
 - The handshake crosses two requests, so it is sealed (`sealHandshake`), never handed over in a
@@ -57,6 +93,16 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   argument would otherwise redeem any token. The Postgres statement carries `consumed_at is null`
   on the UPDATE **and** in its subselect (single-use under two racing redemptions), and
   `order by created_at desc limit 1` so it can only ever consume one row.
+- **Foreign text reaching a `cause:` goes through `renderCauseValue`, and a `fix:` through
+  `renderFixLiteral`.** Not for throw-safety — these values are `string` by type, so
+  `bun run error-render` (which only sees `unknown`/`any`) will never catch one — but because a
+  newline writes a second log line an operator reads as genuine. Three values in this package are
+  foreign and all three are rendered at their source: `providerDetail()`'s return (a REMOTE
+  server's bytes, rendered there rather than at `oauthExchangeFailed` so the prose details this
+  package authors stay unquoted), `claims.iss` in `id-token.ts` (a field of the JWT the caller
+  presented), and `accountLocked`'s `key` (built by `ipKey` from a caller-supplied address).
+  `${provider}` is NOT in that set — it is registry-validated on every shipped path, so it is boot
+  config like `clientIdEnv`, not request data. Swept whole `As of 2026-08`.
 - `readCookie` never throws on a malformed value. The `Cookie:` header is attacker-controlled and
   `decodeURIComponent('%')` is a bare `URIError`, which would escape every coded path in this
   package — the raw value goes to the signature or hash check, which is the readable refusal.
@@ -82,10 +128,16 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - Refresh is **not implemented**. `AuthAccount` persists `refreshToken` and `expiresAt`, and
   nothing reads them yet — the session is the framework's own credential and does not depend
   on the provider token.
-- id token signatures are not checked: it is read only where it arrived over TLS straight from
-  the token endpoint (OIDC Core 3.1.3.7). Never parse one that reached the browser.
+- The new `AuthAdapter` members are OPTIONAL (`findUserByExternalId`, `listUsersByOrg`,
+  `deleteSessionsForUser`, `deleteSessionsForOrg`, `deleteSessionsCreatedBefore`). A required
+  member is a breaking change to every third-party adapter; the callers throw
+  `X_NOT_IMPLEMENTED` naming the method instead.
 - An api key's scopes are the agent actor's scopes. Never union them with the owner's roles.
 - Rotate the session id on any privilege change (`rotateSession`), never patch the row.
+  `updatePrivileges` in `privileges.ts` is the caller that makes that rule exist — it had none
+  until 1.3.0, and `SessionPolicy.rotateOnPrivilegeChange` was a flag nothing read.
+- SAML is out of scope permanently: XML-DSig canonicalisation has no Bun native and would need a
+  real dependency. Put an OIDC-speaking bridge in front and register that.
 
 ## Files
 
@@ -95,14 +147,23 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `policy-bridge.ts` | the one funnel: identity → `Actor`, all four `ActorKind`s |
 | `session.ts` | two expiries, rotation, revocation, device list, the cookie |
 | `adapter.ts` | the seam; `builtin-adapter.ts` (Postgres) + `memory-adapter.ts` |
-| `rate-limit.ts` | per-ip + per-account buckets, lockout, scope check, `loginFailed()` |
-| `oauth.ts` | provider data, PKCE, `beginOAuth`, the callback gate. No I/O, no env |
+| `rate-limit.ts` | per-ip, per-account and per-org buckets, lockout, scope check, `loginFailed()` |
+| `oauth.ts` | `OAuthProvider`, PKCE, `beginOAuth`, the callback gate. No I/O, no env |
+| `oauth-builtins.ts` | the three shipped IdPs, as data. Imports only the type, so no cycle |
+| `oauth-registry.ts` | the registry: `registerOAuthProvider`, `providerFor`, `oauthProviderIds` |
+| `oauth-discovery.ts` | `/.well-known/openid-configuration` → an `OAuthProvider`. One `fetch` |
+| `jwks.ts` | `crypto.subtle` signature verification, cached by `kid`. No dependency |
+| `workload.ts` | a workload JWT (K8s SA / SPIFFE / IMDS / RFC 8693) → a `ServiceIdentity` |
+| `revocation.ts` | per-user, per-org and before-an-instant sweeps; `disableUser` |
+| `directory.ts` | `describeUser` (allow-list projection), `listOrgUsers`, external-id lookup |
+| `privileges.ts` | `updatePrivileges` — the grant, and the rotation it requires |
 | `oauth-cookie.ts` | the handshake's home between the two legs: seal, open, the cookie |
 | `oauth-exchange.ts` | `oauthCredentials` + the one POST to the token endpoint |
 | `id-token.ts` | id token → claims this handshake may believe |
 | `id-token-fixture.ts` | the one string-input JWT builder the OAuth tests share. Off `index.ts` |
 | `oauth-profile.ts` | claims or userinfo → one `OAuthProfile` |
 | `oauth-login.ts` | profile → account link → session. `completeOAuthLogin` is the entry point |
+| `oauth-login-fixture.ts` | the adapter, clock and profile the three `oauth-login*` suites share. Off `index.ts` |
 | `oauth-paths.ts` | the one declaration of where the two routes live. Imports nothing |
 | `oauth-route.ts` | `oauthLogin(auth)` — the redirect out and the callback back |
 

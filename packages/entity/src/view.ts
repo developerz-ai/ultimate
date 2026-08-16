@@ -3,7 +3,7 @@
 // already describe. Values are validated by the entity's own column parsers; an unknown key is a
 // declaration-time failure, not a surprise on the first request.
 
-import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { describeValue, type StandardSchemaV1 } from '@ultimat3/schema';
 import { invariantViolated } from './errors';
 import type { AnyColumn, ColumnMap } from './types';
 
@@ -50,7 +50,13 @@ export const viewFor = <Row, K extends keyof Row & string>(
 
   const parse = (value: unknown): Pick<Row, K> => {
     if (typeof value !== 'object' || value === null) {
-      throw invariantViolated(entityName, 'view', `expected an object, got ${String(value)}`);
+      // Shape, never content — the same renderer `columns.ts` uses, for the same reason: a
+      // view issue is folded into `X_BODY_INVALID` and reaches the caller and the log line.
+      throw invariantViolated(
+        entityName,
+        'view',
+        `expected an object, got ${describeValue(value)}`,
+      );
     }
     const input = value as Readonly<Record<string, unknown>>;
     const projected = {} as Record<K, unknown>;

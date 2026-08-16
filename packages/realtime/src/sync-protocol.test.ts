@@ -78,8 +78,9 @@ const fixtures: Record<FrameKind, Frame> = {
     type: 'presence',
     v: PROTOCOL_VERSION,
     topic: 'org.o1.cursors',
-    op: 'join',
+    op: 'sync',
     members: [{ id: 'm1', actorId: 'alice', meta: { x: 10, y: 4 }, updatedAt: 12 }],
+    total: 5_000,
   },
   reconnect: { type: 'reconnect', v: PROTOCOL_VERSION, afterMs: 4200, reason: 'drain' },
   'update-available': { type: 'update-available', v: PROTOCOL_VERSION, buildId: 'build-2' },
@@ -129,6 +130,25 @@ describe('sync-protocol', () => {
   test('a non-string entity is a malformed frame, never a scope the client would key rows by', () => {
     const bad = JSON.stringify({ ...fixtures.snapshot, entity: 7 });
     expect(() => decode(bad)).toThrow(ProtocolVersionError);
+  });
+
+  /**
+   * `total` is the same additive shape as `snapshot.entity`, one frame over: a full-set presence
+   * frame is capped, and the count is what lets a client render "and 4,744 others". A delta op
+   * carries no count at all, so its absence has to survive the round trip as an absence.
+   */
+  test('a presence frame without a total decodes, and does not invent one', () => {
+    const { total, ...withoutTotal } = fixtures.presence as Extract<Frame, { type: 'presence' }>;
+    expect(total).toBe(5_000);
+    const decoded = decode(JSON.stringify(withoutTotal));
+    expect(decoded).toEqual(withoutTotal);
+    expect('total' in decoded).toBe(false);
+  });
+
+  test('a non-numeric presence total is a malformed frame, never a count a UI would render', () => {
+    expect(() => decode(JSON.stringify({ ...fixtures.presence, total: 'lots' }))).toThrow(
+      ProtocolVersionError,
+    );
   });
 
   test('decode accepts the binary form Bun hands a WS handler', () => {

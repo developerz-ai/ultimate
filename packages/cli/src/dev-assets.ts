@@ -11,7 +11,7 @@ import type { Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders } from '@ultimat3/http';
 import type { IconPlan } from '@ultimat3/pwa';
 import { BuiltinImagePipeline, PwaIconMissingError, planIcons } from '@ultimat3/pwa';
-import type { ImageQuery } from '@ultimat3/seo';
+import type { ImageQuery, ImageTransformDriver } from '@ultimat3/seo';
 import { builtinImageDriver, parseImageQuery } from '@ultimat3/seo';
 import type { ImageFormat, ImageTransform, Storage } from '@ultimat3/storage';
 import { IMAGE_FORMATS, variantKey } from '@ultimat3/storage';
@@ -66,6 +66,7 @@ async function transformedVariant(
   storage: Storage,
   key: string,
   query: ImageQuery,
+  images: ImageTransformDriver | undefined,
 ): Promise<Response> {
   const disk = storage.disk();
   // A format storage cannot name has no variant key, so it cannot be cached. The driver refuses
@@ -80,7 +81,13 @@ async function transformedVariant(
   }
 
   const source = await disk.get(key);
-  const variant = await builtinImageDriver({ read: async () => source.bytes }).transform({
+  // The seam is WHICH driver transforms, not who resolves the bytes: `TransformRequest.width` is
+  // required, and a request with no `?w=` gets its width from the source's own header — so the
+  // read happens either way and a supplied driver is handed the same resolved request the builtin
+  // one gets. Constructed inline before this, with no seam at all, so a deployment that routes
+  // transforms through a CDN had to fork the route to do it.
+  const driver = images ?? builtinImageDriver({ read: async () => source.bytes });
+  const variant = await driver.transform({
     src: key,
     // A header read, not a decode: `?f=webp` alone still needs a width, and the source's own is
     // the only one that does not resize an image the caller never asked to resize.
@@ -94,10 +101,14 @@ async function transformedVariant(
   return imageResponse(variant.bytes, variant.contentType);
 }
 
-async function mediaResponse(request: UltimateRequest, storage: Storage): Promise<Response> {
+async function mediaResponse(
+  request: UltimateRequest,
+  storage: Storage,
+  images: ImageTransformDriver | undefined,
+): Promise<Response> {
   const key = request.params['key'] ?? '';
   const query = parseImageQuery(request.url.searchParams);
-  if (query !== null) return transformedVariant(storage, key, query);
+  if (query !== null) return transformedVariant(storage, key, query, images);
   // No transform asked for: the object itself, still under the storage key's own safety checks.
   const read = await storage.disk().get(key);
   return imageResponse(read.bytes, read.object.contentType);
@@ -145,6 +156,8 @@ export interface AssetRoutesOptions {
   /** App root. The source icon is resolved against it; storage keys never are. */
   readonly root: string;
   readonly storage: Storage;
+  /** Replaces `builtinImageDriver` for `/media/*`. Omitted, core's PNG/JPEG pipeline. */
+  readonly images?: ImageTransformDriver;
 }
 
 /**
@@ -170,7 +183,7 @@ export function assetRoutes(options: AssetRoutesOptions): readonly Route[] {
     path: `${MEDIA_BASE_PATH}/*key`,
     meta: { name: 'assets.media', auth: 'public', tags: ['assets'] },
     handler: async (request: UltimateRequest): Promise<Response> =>
-      mediaResponse(request, options.storage),
+      mediaResponse(request, options.storage, options.images),
   });
 
   return routes;

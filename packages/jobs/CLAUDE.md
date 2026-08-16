@@ -35,6 +35,57 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   A look-alike never registers. Deliberately not a registry lookup — the registry is what
   registration rewrites.
 - `idempotencyKey` is NON-OPTIONAL in `JobDefinition`. Never relax it, never default it.
+- **The idempotency namespace is `(name, idempotency_key)`, never the key alone** (`As of
+  2026-08`). It was the key alone, and that is silent data loss with no error anywhere: two jobs
+  that derive the same natural key from the same input — `sendWelcomeEmail` and
+  `provisionWorkspace` both keyed `user:${id}` — shared one namespace, so the second enqueue hit
+  `on conflict do nothing`, fell through to `SQL_FIND_LIVE_BY_KEY`, found the FIRST job's row and
+  returned `{ id: <A's>, deduped: true }`. The workspace was never provisioned and `x jobs ls`
+  showed one healthy job. Three places have to agree and a test pins them together: the index, the
+  conflict target, and the live-row lookup. `x_jobs` SHIPPED, so the DDL `drop index if exists`es
+  the old one — left in place it would keep enforcing exactly the collision this fixes. The
+  scheduler's occurrence key already prefixes the task name and is unaffected.
+- **`SQL_JOBS_TABLE` is the ONE install point, and every durable table this package owns is in
+  it** (`As of 2026-08`): `x_jobs`, `x_job_steps`, `x_backfills`, `x_outbox`, `x_scheduler_state`,
+  `x_scheduler_leader`, `x_job_leases`, `x_job_events`. Four of those were subsystems that shipped
+  fully built with no table behind them — the outbox, the scheduler's watermark and leader,
+  `job.concurrency`, and `step.waitForEvent`'s bus — and the outbox's DDL sat in its own exported
+  constant that no boot code applied, which is exactly how it came to be documented and never
+  created. A shipped table is extended with `alter table ... add column if not exists`, never by
+  editing its `create`: `create table if not exists` is a no-op against a database that already
+  has the table, so a column added only there reaches new installs and nothing else. Comments in
+  that constant carry NO apostrophes and NO semicolons — `dev-queue.ts` splits it on `;` and
+  `driver-pg-sql.test.ts` checks quote parity, neither of which can tell prose from a literal.
+- **`ack` and `nack` are FENCED on `state = 'running'`, and that fence is what makes cancellation
+  possible** (`As of 2026-08`). Without it the only way to stop a runaway pass was
+  `UPDATE x_jobs SET state='dead'`, which the worker's next settle wrote straight over. Same fence
+  in `driver-memory.ts`. `heartbeat` answers a BOOLEAN for the same reason: no row matched means
+  this process no longer owns the job, and `heartbeat.ts` turns that into an abort on
+  `LeaseHeartbeat.signal`, which `worker.ts` folds into the `Ctx` — so `x jobs cancel` reaches a
+  job that is already running, and `steps.ts`'s `put` fence refuses everything it writes after.
+  Read as `held === false`, never `!held`: a driver written before the return value existed
+  resolves `undefined`, and treating that as a loss would cancel every job on every renewal.
+- **`job.concurrency` is enforced by `JobDriver.leases`, and `limits.ts` is NOT a fleet gate.**
+  `limits.ts` is three `Map`s in one heap — `perTenant: 2` on twenty pods is forty concurrent
+  runs, and `ratePerTenant`'s window resets on every deploy. That is the fast path and it is
+  correct as such; the docstring that called `global` a "fleet-wide ceiling for this worker
+  process" was two numbers in one sentence and the code always meant the second. The fleet gate is
+  one row per HELD SLOT in `x_job_leases`, where the `(lease_key, slot)` primary key is the
+  serialisation — nothing reads a count and then acts on it. A driver with no lease store makes
+  `createWorker().start()` THROW `X_JOB_CONCURRENCY_UNENFORCEABLE` when a registered job declares
+  `concurrency`: a documented guarantee that silently does nothing is the worst of the three
+  options, and refusing is what axiom 3 asks for.
+- **`enqueuedBy` is ATTRIBUTION, never authority — decided 2026-08, do not re-litigate.** Both
+  answers were defensible. Impersonating the enqueuer at claim time gives correct authz and is
+  rejected because a job that sleeps three days, or dead-letters and is retried next quarter, then
+  acts as somebody whose role, org membership or employment has changed since. So the row carries
+  who asked, for audit, and the body is explicitly system-authority — which is how
+  `docs/idea/02-primitives.md` already frames a job. A job that must act FOR a user takes that
+  user's id in its INPUT and re-authorises it in the body, where the check is visible in review.
+- **`traceparent` is stamped at ENQUEUE time, in `outbox.ts`, and nowhere else.** The relay runs
+  after commit in its own timer with no request span in scope, so a trace read there would be
+  nobody's. A `currentSpanContext()` recovered from a `Ctx` has an empty `spanId`, which renders an
+  all-zero parent every collector rejects — that case carries no header rather than a broken one.
 - `tz` is NON-OPTIONAL in `TaskDefinition`, and validated by `@ultimat3/time`'s `isValidTimeZone`
   — never a local `Intl` probe, which accepts `'+02:00'`, a "zone" with no DST rules at all. A
   non-empty string is not a timezone. A task never contains a handler body.
@@ -260,9 +311,33 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   Never log it as an error, never let it burn an attempt.
 - Step results are persisted BEFORE the step returns. Keep it that way or replay breaks.
 - All time is epoch ms from an injected `Clock`, read via `nowMs()` in `clock.ts`.
-- Drivers implement exactly the six `JobDriver` methods plus optional `introspect` and
-  `backfills`. New capabilities go behind the interface, never as a driver-specific export.
+- Drivers implement exactly the six `JobDriver` methods plus optional `introspect`, `backfills`
+  and `leases`. New capabilities go behind the interface, never as a driver-specific export.
 - `inspect.ts` returns plain JSON-serialisable objects — CLI, `/_x` and MCP share them.
+- **`x jobs cancel` binds to `cancelJob(driver, id, reason?)`, which REFUSES rather than answering
+  a silent no-op.** An operator cancelling a 40M-row sweep has to know whether they stopped it or
+  missed it, so a finished job is `X_JOB_NOT_CANCELLABLE` and a driver with no `cancel` is too.
+- **The scheduler asks `leader.acquire()` EVERY round, not only while it thinks it is not the
+  leader.** A lease-backed election expires, so `acquire()` is its renewal and a cached
+  `isLeader = true` would keep dispatching past a lease another node already took. `soleLeader`
+  answers true every time and `createPgLeader` holds its grant behind an internal flag, so the
+  extra call is a no-op for both — the flag also stops Postgres refcounting a second advisory
+  grant that `release()`'s single unlock would never hand back.
+- **`createPgLeader` is correct only on a DEDICATED connection and boot has a pool.** A
+  session-level `pg_try_advisory_lock` is released when its connection returns to the pool, so
+  every node reads itself as leader. `@ultimat3/realtime`'s `PgAdvisoryLock` owns its connection
+  and is the shape that gets this right; this package holds no wire protocol, so it answers with a
+  row that has an expiry instead — `createPgLeaseLeader`. Use that one.
+- **`step.run` hydrates the run's steps from ONE `store.list(runId)` and consults it before
+  `store.get`.** A `backfill()` over 5M rows at `batch: 1000` killed at batch 4,800 used to issue
+  4,800 sequential `SQL_STEP_GET`s before reading a new row, re-paid on every retry and, on a slow
+  pool, outrunning its own visibility timeout while the heartbeat was still renewing. Sound only
+  because the `put` fence is: one attempt owns the run, so an absent name stays absent unless this
+  runner writes it — every write updates the view, including the failure branch's direct
+  `store.put`. `put` itself is UNCHANGED; the fence at `steps.ts` is the correctness boundary.
+- **`sleep` and `waitForEvent` record a replay through `trace()`, never `replayed.push`.** `trace`
+  is what enforces `MAX_TRACE_NAMES`; the raw push let a long run's replayed-name array grow
+  unbounded, which is the exact leak the bound exists to prevent.
 - `src/index.ts` re-exports `t` from `@ultimat3/schema` **verbatim**, so a job/task file imports
   one package. Never wrap, spread or re-declare it: `t` delegates to `schemaProvider()` on every
   access, and a copy would freeze the provider at import time. `index.test.ts` asserts identity.
@@ -309,15 +384,23 @@ picture from the other side.
 | `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements |
 | `describe.ts` | the JSON projection one handle emits; `describeJobs()` is a map over it |
 | `steps.ts` | `StepStore`, `StepApi`, memoized-replay executor, `StepSuspension` |
-| `outbox.ts` | staging in a `Tx`, the relay, the ambient `JobsFacade` slot, outbox SQL |
+| `outbox.ts` | staging in a `Tx`, the relay, the ambient `JobsFacade` slot |
+| `outbox-pg.ts` | `createPgOutboxStore` — `stage()` on the caller's OWN connection, claim on the pool |
+| `leases.ts` | `LeaseStore` — fleet-wide slots, the memory one, `jobLeaseKey` |
+| `metrics.ts` | `queue_oldest_ready_seconds` and `queue_dead_jobs`, the two alertable gauges |
+| `scheduler-pg.ts` | `pgSchedulerState` (the durable watermark) + `createPgLeaseLeader` |
+| `events-pg.ts` | `createPgEventBus` — `step.waitForEvent` across processes |
 | `driver.ts` | `JobDriver` contract + wire records |
 | `driver-pg.ts` | default driver, real SQL constants, advisory-lock leader |
+| `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` + `SQL_OUTBOX_TABLE` — the schema the driver installs. Whichever file holds the DDL is the one whose comments may carry no `;` and no `'` |
+| `driver-pg-rows.ts` | a Postgres row → a wire record: `JobRow`/`StepRow`/`BackfillRow` and their mappings |
 | `driver-memory.ts` | `x dev` / tests |
 | `driver-redis.ts`, `driver-nats.ts` | honest `X_NOT_IMPLEMENTED` stubs |
 | `retry.ts` | backoff arithmetic, dead-letter decision |
 | `execute.ts` | `executeJob` — one claimed job run and settled, and the run's deadline/cancel |
 | `heartbeat.ts` | one claimed job's lease: the renewal interval and the loss it reports |
 | `worker.ts` | `worker` role, claim loop, drain |
+| `worker-fleet-slots.ts` | the fleet slot an in-flight job holds — take, renew, hand back. The claim loop asks "may I start this one?"; this answers it across the fleet |
 | `task.ts` | the `task()` primitive + registry + the handle's surface + `registerTask` |
 | `scheduler.ts` | `scheduler` role: the dispatch round, catch-up, leader election, the drain |
 | `limits.ts` | per-tenant / per-queue / global concurrency + rate |

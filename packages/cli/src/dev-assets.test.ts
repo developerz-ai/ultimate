@@ -36,7 +36,7 @@ const call = async (routes: readonly Route[], path: string): Promise<Response> =
   const route = routes.find((candidate) => matches(candidate.path, url.pathname));
   expect(route).toBeDefined();
   if (route === undefined) return new Response(null, { status: 404 });
-  const config = defineHttpConfig({});
+  const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
   const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
   ctx.params = params(route.path, url.pathname);
   return route.handler(new UltimateRequest(new Request(url), ctx), ctx);

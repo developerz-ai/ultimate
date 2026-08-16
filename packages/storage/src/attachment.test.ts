@@ -6,15 +6,18 @@ import {
   attachmentKey,
   attachmentPrefix,
   isPendingKey,
+  isQuarantinedKey,
   pendingKey,
   promoteAttachment,
+  quarantineKey,
+  releaseQuarantine,
   sweepOrphans,
   uploadExtension,
   uploadName,
 } from './attachment';
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
-import { isStorageError } from './errors';
+import { deleteFailed, isStorageError } from './errors';
 
 const ORG = 'org-1';
 const TARGET = { entity: 'post', id: 'p-1', field: 'cover' } as const;
@@ -104,7 +107,10 @@ describe('promoteAttachment', () => {
 // A stub, not `localDriver`: a POSIX mtime comes from the real filesystem clock, so a sweep
 // driven by an injected `Clock` cannot be tested against one without racing the wall clock.
 // `driver-local.test.ts` already proves the disk half; this proves the age rule and the prefix.
-function agedDisk(ages: Readonly<Record<string, string>>): {
+function agedDisk(
+  ages: Readonly<Record<string, string>>,
+  refuse: ReadonlySet<string> = new Set(),
+): {
   readonly driver: StorageDriver;
   readonly deleted: string[];
 } {
@@ -128,6 +134,11 @@ function agedDisk(ages: Readonly<Record<string, string>>): {
       };
     },
     async delete(key: string) {
+      // A refused delete is a THROW, exactly as the driver contract now says — the bucket
+      // policy lost `s3:DeleteObject` and the object is still there.
+      if (refuse.has(key)) {
+        throw deleteFailed('aged', key, new Error('AccessDenied'), 'grant s3:DeleteObject');
+      }
       deleted.push(key);
     },
   } as unknown as StorageDriver;
@@ -149,8 +160,35 @@ describe('sweepOrphans', () => {
       olderThanMs: 1_800_000,
       clock,
     });
-    expect(swept).toEqual([stale]);
+    expect(swept).toEqual({ deleted: [stale], failed: [] });
     expect(deleted).toEqual([stale]);
+  });
+
+  test('a REFUSED delete lands in `failed`, never in `deleted`', async () => {
+    // The compliance case: a GDPR erasure sweep over a bucket whose policy lost
+    // `s3:DeleteObject`. One array of "deleted" keys could not express this, so it reported
+    // every refusal as a success and the report said the data was gone.
+    const denied = pendingKey(ORG, 'denied.png');
+    const gone = pendingKey(ORG, 'gone.png');
+    const { driver, deleted } = agedDisk(
+      {
+        [denied]: '2020-01-01T00:00:00.000Z',
+        [gone]: '2020-01-01T00:00:00.000Z',
+      },
+      new Set([denied]),
+    );
+
+    const swept = await sweepOrphans({
+      disk: driver,
+      orgId: ORG,
+      olderThanMs: 1_800_000,
+      clock,
+    });
+    expect(swept.deleted).toEqual([gone]);
+    expect(swept.failed.map((failure) => failure.key)).toEqual([denied]);
+    expect(swept.failed[0]?.reason).toContain('AccessDenied');
+    // The sweep kept going past the refusal — a caller has to see all of them, not the first.
+    expect(deleted).toEqual([gone]);
   });
 
   test('`keep` spares a key the app can still account for', async () => {
@@ -167,7 +205,75 @@ describe('sweepOrphans', () => {
       clock,
       keep: (object) => object.key === spared,
     });
-    expect(swept).toEqual([dropped]);
+    expect(swept).toEqual({ deleted: [dropped], failed: [] });
     expect(deleted).toEqual([dropped]);
+  });
+
+  test('reaches quarantined uploads too — they live inside the same pending prefix', async () => {
+    const rotting = quarantineKey(ORG, 'never-scanned.png');
+    const { driver, deleted } = agedDisk({ [rotting]: '2020-01-01T00:00:00.000Z' });
+    const swept = await sweepOrphans({
+      disk: driver,
+      orgId: ORG,
+      olderThanMs: 1_800_000,
+      clock,
+    });
+    // An upload nobody ever scanned is still an orphan, and there is no second prefix to walk.
+    expect(swept.deleted).toEqual([rotting]);
+    expect(deleted).toEqual([rotting]);
+  });
+});
+
+describe('quarantine', () => {
+  test('promoteAttachment REFUSES a key nothing has cleared', async () => {
+    const key = quarantineKey(ORG, 'u-1.png');
+    await disk.put(key, bytesOf('maybe-ransomware'), { contentType: 'image/png' });
+
+    let caught: unknown;
+    try {
+      await promoteAttachment({ disk, key, orgId: ORG, target: TARGET });
+    } catch (error) {
+      caught = error;
+    }
+    expect(isStorageError(caught) ? caught.code : '').toBe('X_STORAGE_QUARANTINED');
+    // Nothing reached the row's prefix, and the bytes are still where the scan can find them.
+    expect(await disk.exists(attachmentKey(ORG, TARGET, 'u-1.png'))).toBe(false);
+    expect(await disk.exists(key)).toBe(true);
+  });
+
+  test('releaseQuarantine moves the object onto the pending key promotion accepts', async () => {
+    const key = quarantineKey(ORG, 'u-1.png');
+    await disk.put(key, bytesOf('clean-bytes'), { contentType: 'image/png' });
+    expect(isQuarantinedKey(key, ORG)).toBe(true);
+    expect(isPendingKey(key, ORG)).toBe(true);
+
+    const released = await releaseQuarantine({ disk, key, orgId: ORG });
+    expect(released).toBe(pendingKey(ORG, 'u-1.png'));
+    expect(isQuarantinedKey(released, ORG)).toBe(false);
+    expect(await disk.exists(key)).toBe(false);
+
+    const object = await promoteAttachment({ disk, key: released, orgId: ORG, target: TARGET });
+    expect(object.key).toBe(attachmentKey(ORG, TARGET, 'u-1.png'));
+    expect(object.contentType).toBe('image/png');
+  });
+
+  test('releasing an already-released key is a no-op, not a second round trip', async () => {
+    const key = pendingKey(ORG, 'u-1.png');
+    await disk.put(key, bytesOf('x'), { contentType: 'image/png' });
+    expect(await releaseQuarantine({ disk, key, orgId: ORG })).toBe(key);
+    expect(await disk.exists(key)).toBe(true);
+  });
+
+  test('releaseQuarantine refuses another org’s key', async () => {
+    const key = quarantineKey('org-2', 'u-1.png');
+    await disk.put(key, bytesOf('x'), { contentType: 'image/png' });
+    let caught: unknown;
+    try {
+      await releaseQuarantine({ disk, key, orgId: ORG });
+    } catch (error) {
+      caught = error;
+    }
+    expect(isStorageError(caught) ? caught.code : '').toBe('X_STORAGE_ORG_MISMATCH');
+    expect(await disk.exists(key)).toBe(true);
   });
 });

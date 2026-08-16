@@ -62,7 +62,11 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
       input: asJson(action.input),
       output: asJson(action.output),
       policy: action.capability,
+      permissions: action.permissions,
       cacheInvalidates: action.invalidates,
+      // Written only when declared, exactly like `mcp.description`: absence already reads as
+      // "no limit", and the descriptor's `null` is not a JSON fact worth a line per action.
+      ...(action.rateLimit === null ? {} : { rateLimit: action.rateLimit }),
       mcp: {
         expose: action.mcp.expose,
         ...(action.mcp.description === null ? {} : { description: action.mcp.description }),
@@ -75,6 +79,7 @@ export function frameworkSources(input: FrameworkSourcesInput): ManifestSources 
     queries: describeQueries().map((query) => ({
       name: query.name,
       policy: query.capability,
+      permissions: query.permissions,
       live: query.live,
       cacheTags: query.tags,
     })),

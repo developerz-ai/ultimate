@@ -11,7 +11,6 @@
 // Every result is filed against a prompt's content hash, so a score is always attributable
 // to an exact prompt rather than "whatever was in main that day".
 
-import { EvalBaselineMissingError, EvalThresholdError } from './errors';
 import type { EvalBaseline, Regression } from './eval-baseline';
 import {
   baselinePath,
@@ -21,6 +20,7 @@ import {
   regressionsAgainst,
   writeBaseline,
 } from './eval-baseline';
+import { EvalBaselineMissingError, EvalThresholdError } from './eval-errors';
 import type { Gateway } from './gateway';
 import type { Prompt, PromptVars } from './prompt';
 import { describePrompts } from './prompt';

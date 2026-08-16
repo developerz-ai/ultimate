@@ -71,6 +71,7 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // which is not what is running when a `ROLE=wroker` pod refuses to boot.
   X_ROLE_UNKNOWN: 'docker run -e ROLE=web my-app:latest',
   X_PORT_INVALID: 'docker run -e PORT=3000 my-app:latest',
+  X_RUNTIME_DRIVER_SPLIT: 'x dev --json   # the boot names the driver the app installed twice',
   X_GENERATE_CONFLICT: 'x g route posts --force --json',
   X_PORT_IN_USE: 'x dev --port 3001 --json',
   // Not `x db status`: there is no such subcommand (`x db` is gen, migrate, reset, studio, branch),

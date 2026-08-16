@@ -115,7 +115,13 @@ export function createMemoryEventBus(options: MemoryEventBusOptions = {}): Event
 
 let ambientBus: EventBus = createMemoryEventBus();
 
-/** Swapped at boot for the NATS/Redis-streams bus in a multi-node deployment. */
+/**
+ * **Install `createPgEventBus({ executor })` here in any deployment with more than one process.**
+ * The default above is one process's heap: the pod that publishes and the pod that resumes are
+ * never the same one, so a webhook landing on web-3 strands a run on worker-7 until its 24h
+ * timeout dead-letters it, with nothing logged before then. This line used to promise a
+ * "NATS/Redis-streams bus swapped at boot"; no such bus existed and boot installed the memory one.
+ */
 export function setEventBus(bus: EventBus): void {
   ambientBus = bus;
 }

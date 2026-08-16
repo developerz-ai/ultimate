@@ -11,6 +11,8 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | `Result<T, E>` for boundaries where throwing is wrong | `result.ts` |
 | request context on `AsyncLocalStorage` | `context.ts` |
 | `Actor` (`user \| service \| agent \| anonymous`) | `actor.ts` |
+| acting as another actor, with an origin and a reason | `impersonate.ts` |
+| is an error worth retrying? one classification per code | `error-retry.ts` |
 | typed env validated at boot | `env.ts` |
 | `.env.example` rendered from that schema, and its drift check | `env-example.ts` |
 | named environments + `ULTIMATE_ENV` resolution | `environment.ts` |
@@ -23,6 +25,10 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | UUIDv7, nanoid, branded ids | `ids.ts` |
 | structured JSON logging + redaction | `logger.ts` |
 | OTel-shaped spans, always on, no-op by default | `telemetry.ts` |
+| the sampling decision, and `OTEL_TRACES_SAMPLER*` | `sampler.ts` |
+| OTLP/HTTP JSON: endpoint, headers, value encoding | `otlp.ts` |
+| `SpanExporter` on the wire, batched | `otlp-span-exporter.ts` |
+| `MetricExporter` on the wire | `otlp-metric-exporter.ts` |
 | OTel-shaped counter / gauge / histogram, same seam | `metrics.ts` |
 | the `/metrics` scrape body | `metrics-text.ts` |
 | the series every process emits, incl. what the chart scales on | `runtime-metrics.ts` |
@@ -50,8 +56,20 @@ X_DB_DRIFT: schema differs from migrations
 ```
 
 `format()` is always 3 lines (`format({ docs: true })` adds a 4th). `toJSON()` is the `--json`
-form: `{ code, title, cause, fix, docs, meta, stack }`. The title comes from the registry, so
+form: `{ code, title, cause, fix, docs, retry, meta, stack }`. The title comes from the registry, so
 the terminal, the browser overlay and `--json` cannot drift.
+
+`retry` is `terminal | retryable | retry-after`, and it **defaults to `terminal`** — a client that
+retried on `status >= 500` hammered `X_DB_DRIFT` and `X_TENANCY_UNSCOPED`, which are permanent
+config faults, during the incident they were already causing. Classify the codes your package or
+app throws once, beside the module that declares them:
+
+```ts
+registerErrorRetry({ X_OAUTH_EXCHANGE_FAILED: 'retryable', X_RATE_LIMITED: 'retry-after' });
+```
+
+Core's own classifications are closed, exactly as `registerErrorStatus`'s framework table is: a
+second, different registration for one code throws `X_ERROR_RETRY_INVALID`.
 
 | Code | Subclass |
 |---|---|
@@ -261,8 +279,19 @@ nothing and still reports healthy.
 - `uuid()` is UUIDv7: time-prefixed, monotonic within a millisecond, never backwards on clock
   skew. `typedId<'post'>()` brands it so a post id cannot be passed where a user id is wanted.
 - `withSpan('action.publishPost', fn)` is free until `configureTelemetry({ exporter })`.
-  Traces cross process boundaries via `traceparent()` / `parseTraceparent()` — Sentry, Honeycomb
-  and OTLP all plug in as a `SpanExporter`.
+  Traces cross process boundaries via `traceparent()` / `parseTraceparent()`, whose ids come from
+  `traceId()` / `spanId()` — **never `uuid()`**, whose dashed 36 characters every collector
+  rejects. `isTraceId()` / `isSpanId()` are the one definition of the valid shape.
+- **Sampling is honoured, not just propagated.** `startSpan` takes the parent's bit when there is
+  one, else asks the `Sampler`; `span.end()` exports nothing when the bit is 0. The default reads
+  `OTEL_TRACES_SAMPLER` / `OTEL_TRACES_SAMPLER_ARG` at the first span, and
+  `configureTelemetry({ sampler })` replaces it.
+- **The OTLP exporters ship**, speaking OTLP/HTTP JSON, no dependency:
+  `otlpSpanExporter({ endpoint })` (batched, with `flush()` / `shutdown()`) and
+  `otlpMetricExporter({ endpoint })`. Both default to `OTEL_EXPORTER_OTLP_ENDPOINT`;
+  `tryOtlpEndpoint('traces')` answers `undefined` when nobody configured one, so a boot can skip
+  the exporter instead of throwing. **gRPC (`:4317`) is out of scope** and says so with
+  `X_OTLP_PROTOCOL_UNSUPPORTED`.
 - Metrics are the same shape one signal over: `counter()`, `gauge()`, `histogram()`, aggregated
   in process, free until `configureMetrics({ exporter })`. See below.
 - `onShutdown(name, hook, { phase })` with phases `accept → inflight → close` under one
@@ -293,8 +322,8 @@ collectMetrics();       // the same numbers as data, for a MetricExporter
 | Temporality | cumulative, as OTel defines it — a read never resets a counter, so two scrapers cannot steal each other's samples |
 | Names | lowercase `snake_case`, the intersection every exposition format accepts. Dotted OTel names survive OTLP and die at a Prometheus scrape |
 | Attributes | `string \| number \| boolean` only — each distinct set is a stored series, so a user id here is an outage |
-| Driver seam | `MetricExporter`, defaulting to a no-op. `memoryMetricExporter()` for tests, `startMetricExport(ms)` for a periodic push |
-| Not shipped | an OTLP client. It is bytes on a wire and a dependency; the seam is here, the driver is yours — or scrape `/metrics` with an agent that already speaks it |
+| Cardinality | enforced, not advised: `maxSeries` per instrument (default `DEFAULT_MAX_SERIES`), and past it every new label set folds into one `otel_metric_overflow="true"` series with `X_METRIC_CARDINALITY` logged once, naming the instrument |
+| Driver seam | `MetricExporter`, defaulting to a no-op. `memoryMetricExporter()` for tests, `startMetricExport(ms)` for a periodic push, `otlpMetricExporter()` for a collector |
 
 `runtime-metrics.ts` holds the series every process emits, and `SCALING_METRICS` maps each
 `ScalingSignal` from `roles.ts` to the one that carries it — so the role table, the chart and the

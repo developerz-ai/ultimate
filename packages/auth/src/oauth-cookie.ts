@@ -8,7 +8,8 @@
 import type { Clock } from '@ultimat3/core';
 import { EnvMissingError, systemClock } from '@ultimat3/core';
 import { oauthStateInvalid } from './errors';
-import { OAUTH_PROVIDERS, type OAuthHandshake, type OAuthProviderId } from './oauth';
+import type { OAuthHandshake, OAuthProviderId } from './oauth';
+import { hasOAuthProvider } from './oauth-registry';
 import { type RequestLike, readCookie } from './session';
 import { base64Url, timingSafeEqual } from './tokens';
 
@@ -138,7 +139,7 @@ export function openHandshake(
   ) {
     throw oauthStateInvalid(provider, 'the stored handshake is not a handshake');
   }
-  if (!Object.hasOwn(OAUTH_PROVIDERS, sealedProvider) || sealedProvider !== provider) {
+  if (!hasOAuthProvider(sealedProvider) || sealedProvider !== provider) {
     throw oauthStateInvalid(provider, 'the stored handshake belongs to a different provider');
   }
 
@@ -157,7 +158,7 @@ export function openHandshake(
  * session cookie's: the callback is a top-level cross-site GET from the provider, which `Lax`
  * still attaches the cookie to and `Strict` would strip — leaving every login to fail its state
  * check. A provider answering with `response_mode=form_post` POSTs instead, and this cookie
- * would not reach it; no provider in `OAUTH_PROVIDERS` is configured that way.
+ * would not reach it; none of the three built-in providers is configured that way.
  */
 export function handshakeCookie(
   handshake: OAuthHandshake,

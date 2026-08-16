@@ -179,10 +179,10 @@ Scaling the two serving roles is the next rung, and it is not an edit to this fi
 
 | Expected | Reality `As of 2026-08` |
 |---|---|
-| `/metrics` on `ROLE=web` | `X_ROUTE_NOT_FOUND`. A metrics module ships in core; confirm what your build exposes before wiring a scrape |
+| `/metrics` on the **app** port | `X_ROUTE_NOT_FOUND`, and that is deliberate. Every role — `web` included — serves `/metrics` on `METRICS_PORT`, default **9090**, because the Helm ingress routes `/` with no path exclusion and metrics on 3000 would be public. Scrape `http://<host>:9090/metrics`, not `:3000/metrics` |
 | `x logs tail` | planned — `X_NOT_IMPLEMENTED`, with `x dev` → the `/_x` timeline panel as its fix |
 | `x status` | planned — `x doctor --json` is the shipped answer |
-| OTLP export | tracing is a seam; spans exist, the default exporter is a no-op and no OTLP exporter ships |
+| OTLP export, on by default | the exporter **ships** — `otlpSpanExporter()` / `otlpMetricExporter()`, OTLP/HTTP JSON — but the default is still the no-op, so nothing leaves the process until you register one: `configureTelemetry({ exporter: otlpSpanExporter() })` with `OTEL_EXPORTER_OTLP_ENDPOINT` set to a collector's HTTP receiver (`:4318` — `:4317` is gRPC and is refused) |
 | a Helm chart in your app | `x new` writes none. Copy [`docker/helm`](https://github.com/developerz-ai/ultimate/tree/main/docker/helm) from the framework repo, or stay on `--method compose` |
 
 ## Next

@@ -1,18 +1,35 @@
-// The tag -> keys bookkeeping is what buys the one-`EVAL` invalidation instead of a `KEYS` scan,
+// The tag -> keys bookkeeping is what buys the scripted invalidation instead of a `KEYS` scan,
 // and it is invisible from the outside: a bucket written wrong leaves keys that no tag can ever
-// reach again. A fake Redis records every command so the wire traffic itself is the assertion.
+// reach again. A fake Redis records every command so the wire traffic itself is the assertion —
+// including the two properties a single-node fake cannot otherwise show: that no command mixes
+// two slots, and that no tag set is left without a lease.
 
 import { describe, expect, test } from 'bun:test';
-import { frozenClock } from '@ultimat3/core';
+import { appVersion, frozenClock } from '@ultimat3/core';
 import { CacheDriverUnavailableError } from './errors';
 import { createLruTier } from './lru';
-import type { RedisLike } from './redis';
-import { createRedisTier } from './redis';
+import type { RedisLike, RedisTierOptions } from './redis';
+import {
+  createRedisTier,
+  namespaceFor,
+  REDIS_INVALIDATE_SCRIPT,
+  REDIS_TAG_MEMBER_SCRIPT,
+} from './redis';
 import { tag } from './tags';
 import { createCacheStack } from './tiers';
 
-function fakeRedis(): RedisLike & { readonly sent: string[][] } {
+interface FakeRedis extends RedisLike {
+  readonly sent: string[][];
+  /** Seconds of lease per tag set — what the bucket-TTL assertions read. */
+  readonly setTtls: Map<string, number>;
+  readonly sets: Map<string, Set<string>>;
+}
+
+function fakeRedis(): FakeRedis {
   const sets = new Map<string, Set<string>>();
+  // Seconds of lease on a tag set. A fake that ignored `EXPIRE` could not catch the unbounded
+  // growth that turns one publish into a multi-million-member `SMEMBERS`.
+  const setTtls = new Map<string, number>();
   const values = new Map<string, string>();
   // The lease `EX` bought, in ms. A fake that answered no `PTTL` could not catch a tier that
   // stopped asking for one — and a hit read back without its remaining life is promoted on the
@@ -21,6 +38,8 @@ function fakeRedis(): RedisLike & { readonly sent: string[][] } {
   const sent: string[][] = [];
   return {
     sent,
+    setTtls,
+    sets,
     get(key) {
       return Promise.resolve(values.get(key) ?? null);
     },
@@ -40,19 +59,24 @@ function fakeRedis(): RedisLike & { readonly sent: string[][] } {
         if (!values.has(key)) return Promise.resolve(-2);
         return Promise.resolve(expiries.get(key) ?? -1);
       }
-      if (command === 'SADD') {
-        const bucket = String(args[0]);
-        const existing = sets.get(bucket) ?? new Set<string>();
-        existing.add(String(args[1]));
-        sets.set(bucket, existing);
-        return Promise.resolve(1);
-      }
       if (command === 'DEL') {
         values.delete(String(args[0]));
         expiries.delete(String(args[0]));
         return Promise.resolve(1);
       }
-      if (command === 'EVAL') {
+      if (command === 'EVAL' && args[0] === REDIS_TAG_MEMBER_SCRIPT) {
+        // Mirrors TAG_MEMBER_SCRIPT: SADD, then raise the bucket lease only if the new one is
+        // longer. A short-lived member must never shorten a bucket a long-lived member is in.
+        const bucket = String(args[2]);
+        const existing = sets.get(bucket) ?? new Set<string>();
+        existing.add(String(args[3]));
+        sets.set(bucket, existing);
+        const ttl = Number(args[4]);
+        const current = setTtls.get(bucket) ?? -1;
+        if (current < 0 || current < ttl) setTtls.set(bucket, ttl);
+        return Promise.resolve(1);
+      }
+      if (command === 'EVAL' && args[0] === REDIS_INVALIDATE_SCRIPT) {
         // Mirrors INVALIDATE_SCRIPT exactly, and the mirroring is the point: the script reads
         // the members and drops the TAG SETS ONLY. It must not delete a value key — a script may
         // only touch what it was handed in KEYS, and a fake that deleted them anyway would hide
@@ -63,6 +87,7 @@ function fakeRedis(): RedisLike & { readonly sent: string[][] } {
         for (const bucket of buckets) {
           for (const member of sets.get(bucket) ?? []) removed.push(member);
           sets.delete(bucket);
+          setTtls.delete(bucket);
         }
         return Promise.resolve(removed);
       }
@@ -71,58 +96,79 @@ function fakeRedis(): RedisLike & { readonly sent: string[][] } {
   };
 }
 
+/**
+ * `buildId: null` and `rng: () => 0` are the two things a wire assertion needs pinned: the
+ * namespace carries the build id by default, and the lease is spread by default.
+ */
+function tierFor(client: RedisLike, extra: RedisTierOptions = {}) {
+  return createRedisTier({ client, buildId: null, rng: () => 0, ...extra });
+}
+
+/** The `{...}` hash tag of a key, which is what Redis Cluster hashes to a slot. */
+function slotTokenOf(key: string): string {
+  return /\{([^}]*)\}/.exec(key)?.[1] ?? key;
+}
+
+/** Every key argument of one command — `EVAL script numkeys k1 .. kN` and `DEL key`. */
+function keysOf(command: readonly string[]): string[] {
+  if (command[0] === 'EVAL') return command.slice(3, 3 + Number(command[2]));
+  if (command[0] === 'DEL') return command.slice(1);
+  return [];
+}
+
 describe('createRedisTier', () => {
   test('is named "redis"', () => {
-    const tier = createRedisTier({ client: fakeRedis() });
+    const tier = tierFor(fakeRedis());
     expect(tier.name).toBe('redis');
   });
 
   test('set then get round-trips the value', async () => {
-    const tier = createRedisTier({ client: fakeRedis() });
+    const tier = tierFor(fakeRedis());
     await tier.set('feed', { a: 1 });
     const entry = await tier.get<{ a: number }>('feed');
     expect(entry?.value).toEqual({ a: 1 });
   });
 
   test('get on a missing key resolves undefined', async () => {
-    const tier = createRedisTier({ client: fakeRedis() });
+    const tier = tierFor(fakeRedis());
     expect(await tier.get('missing')).toBeUndefined();
   });
 
   test('get on unparseable stored JSON resolves undefined, never throws', async () => {
     const client = fakeRedis();
     await client.set('x:c:badkey', 'not json');
-    const tier = createRedisTier({ client });
+    const tier = tierFor(client);
     await expect(tier.get('badkey')).resolves.toBeUndefined();
   });
 
-  test('set with tags SADDs into both the row bucket and the collection bucket', async () => {
+  test('set with tags joins both the row bucket and the collection bucket', async () => {
     const client = fakeRedis();
-    const tier = createRedisTier({ client });
+    const tier = tierFor(client);
     await tier.set('post-1', { title: 'hi' }, { tags: [tag('post', '1')] });
 
-    const saddCalls = client.sent.filter((entry) => entry[0] === 'SADD');
-    expect(saddCalls).toEqual(
-      expect.arrayContaining([
-        ['SADD', 'x:t:post:1', 'x:c:post-1'],
-        ['SADD', 'x:t:post', 'x:c:post-1'],
-      ]),
+    const joins = client.sent.filter(
+      (entry) => entry[0] === 'EVAL' && entry[1] === REDIS_TAG_MEMBER_SCRIPT,
     );
-    expect(saddCalls).toHaveLength(2);
+    expect(joins.map((entry) => [entry[3], entry[4]])).toEqual([
+      ['x:t:{post}:1', 'x:c:post-1'],
+      ['x:t:{post}', 'x:c:post-1'],
+    ]);
   });
 
-  test('set with an id-less tag SADDs only the collection bucket', async () => {
+  test('set with an id-less tag joins only the collection bucket', async () => {
     const client = fakeRedis();
-    const tier = createRedisTier({ client });
+    const tier = tierFor(client);
     await tier.set('users', ['u'], { tags: [tag('user')] });
 
-    const saddCalls = client.sent.filter((entry) => entry[0] === 'SADD');
-    expect(saddCalls).toEqual([['SADD', 'x:t:user', 'x:c:users']]);
+    const joins = client.sent.filter(
+      (entry) => entry[0] === 'EVAL' && entry[1] === REDIS_TAG_MEMBER_SCRIPT,
+    );
+    expect(joins.map((entry) => entry[3])).toEqual(['x:t:{user}']);
   });
 
   test('set with a custom ttlMs rounds up to whole seconds, minimum 1', async () => {
     const client = fakeRedis();
-    const tier = createRedisTier({ client });
+    const tier = tierFor(client);
     await tier.set('k', 'v', { ttlMs: 500 });
 
     const setCall = client.sent.find((entry) => entry[0] === 'SET');
@@ -131,7 +177,7 @@ describe('createRedisTier', () => {
 
   test('set with no ttlMs uses the default TTL (300_000ms -> EX 300)', async () => {
     const client = fakeRedis();
-    const tier = createRedisTier({ client });
+    const tier = tierFor(client);
     await tier.set('k', 'v');
 
     const setCall = client.sent.find((entry) => entry[0] === 'SET');
@@ -141,7 +187,7 @@ describe('createRedisTier', () => {
 
   test('a custom defaultTtlMs passed to createRedisTier is honoured', async () => {
     const client = fakeRedis();
-    const tier = createRedisTier({ client, defaultTtlMs: 5_000 });
+    const tier = tierFor(client, { defaultTtlMs: 5_000 });
     await tier.set('k', 'v');
 
     const setCall = client.sent.find((entry) => entry[0] === 'SET');
@@ -150,7 +196,7 @@ describe('createRedisTier', () => {
 
   test('del sends DEL for the value key only, not the tag buckets', async () => {
     const client = fakeRedis();
-    const tier = createRedisTier({ client });
+    const tier = tierFor(client);
     await tier.set('k', 'v', { tags: [tag('post', '1')] });
     client.sent.length = 0;
 
@@ -159,27 +205,27 @@ describe('createRedisTier', () => {
     expect(client.sent).toEqual([['DEL', 'x:c:k']]);
   });
 
-  test('invalidateTags([]) short-circuits without calling EVAL', async () => {
+  test('invalidateTags([]) short-circuits without running the invalidation script', async () => {
     const client = fakeRedis();
-    const tier = createRedisTier({ client });
+    const tier = tierFor(client);
 
     const result = await tier.invalidateTags([]);
 
     expect(result).toEqual({ tier: 'redis', keys: [] });
-    expect(client.sent.some((entry) => entry[0] === 'EVAL')).toBe(false);
+    expect(client.sent.some((entry) => entry[1] === REDIS_INVALIDATE_SCRIPT)).toBe(false);
   });
 
   test('invalidateTags removes the value and returns the unprefixed key', async () => {
     const client = fakeRedis();
-    const tier = createRedisTier({ client });
+    const tier = tierFor(client);
     await tier.set('feed', ['a'], { tags: [tag('post', '1')] });
 
     const result = await tier.invalidateTags([tag('post', '1')]);
 
     expect(result.tier).toBe('redis');
-    // 'feed' was SADD'd into both the row bucket (x:t:post:1) and the collection bucket
-    // (x:t:post) at set time and the script walks every bucket, so it comes back twice — deduped
-    // before it is deleted and reported, or the `/_x` panel overstates what cleared.
+    // 'feed' joined both the row bucket (x:t:{post}:1) and the collection bucket (x:t:{post}) at
+    // set time and the script walks every bucket, so it comes back twice — deduped before it is
+    // deleted and reported, or the `/_x` panel overstates what cleared.
     expect(result.keys).toEqual(['feed']);
     expect(await tier.get('feed')).toBeUndefined();
   });
@@ -190,13 +236,13 @@ describe('createRedisTier', () => {
     // node" on Redis Cluster and in Dragonfly's strict mode, swallowed into report.errors so a
     // failed bust read as partial and stale rows served until TTL.
     const client = fakeRedis();
-    const tier = createRedisTier({ client });
+    const tier = tierFor(client);
     await tier.set('feed', ['a'], { tags: [tag('post', '1')] });
     client.sent.length = 0;
 
     await tier.invalidateTags([tag('post', '1')]);
 
-    const evals = client.sent.filter((entry) => entry[0] === 'EVAL');
+    const evals = client.sent.filter((entry) => entry[1] === REDIS_INVALIDATE_SCRIPT);
     expect(evals).toHaveLength(1);
     const [, script = '', numkeys = '0', ...keys] = evals[0] ?? [];
     // The script's own body must not delete anything but the tag buckets it was handed.
@@ -207,23 +253,24 @@ describe('createRedisTier', () => {
     expect(deletes).toEqual([['DEL', 'x:c:feed']]);
   });
 
-  test('invalidateTags dedupes overlapping buckets across tags', async () => {
+  test('invalidateTags drops a bucket an earlier tag already claimed', async () => {
     const client = fakeRedis();
-    const tier = createRedisTier({ client });
+    const tier = tierFor(client);
     await tier.set('feed', ['a'], { tags: [tag('post', '1')] });
+    client.sent.length = 0;
 
     await tier.invalidateTags([tag('post', '1'), tag('post')]);
 
-    const evalCall = client.sent.find((entry) => entry[0] === 'EVAL');
-    expect(evalCall).toBeDefined();
-    // buckets for tag('post','1') = [x:t:post:1, x:t:post]; buckets for tag('post') = [x:t:post].
-    // Deduped, that's 2 buckets, not 3.
-    expect(evalCall?.[2]).toBe('2');
+    const evals = client.sent.filter((entry) => entry[1] === REDIS_INVALIDATE_SCRIPT);
+    // buckets for tag('post','1') = [{post}:1, {post}]; tag('post') adds nothing new, so its
+    // call is not issued at all rather than sent with an empty KEYS.
+    expect(evals).toHaveLength(1);
+    expect(evals[0]?.[2]).toBe('2');
   });
 
   test('get reports the remaining lease as expiresAt, read from PTTL', async () => {
     const client = fakeRedis();
-    const tier = createRedisTier({ client, clock: frozenClock(10_000) });
+    const tier = tierFor(client, { clock: frozenClock(10_000) });
     await tier.set('k', 'v', { ttlMs: 5_000 });
 
     expect((await tier.get('k'))?.expiresAt).toBe(15_000);
@@ -236,7 +283,7 @@ describe('createRedisTier', () => {
     // `-1` is a sentinel, not one millisecond ago, so the entry must report no expiry at all.
     const client = fakeRedis();
     await client.set('x:c:leaseless', JSON.stringify({ v: 'v', t: [] }));
-    const tier = createRedisTier({ client, clock: frozenClock(10_000) });
+    const tier = tierFor(client, { clock: frozenClock(10_000) });
 
     const entry = await tier.get('leaseless');
     expect(entry?.value).toBe('v');
@@ -249,9 +296,9 @@ describe('createRedisTier', () => {
     // minutes in the LRU on every read and the closer tier outlives the entry it copied.
     const client = fakeRedis();
     const clock = frozenClock(10_000);
-    const lru = createLruTier({ clock });
-    const stack = createCacheStack([lru, createRedisTier({ client, clock })], { clock });
-    await createRedisTier({ client, clock }).set('k', 'v', { ttlMs: 5_000 });
+    const lru = createLruTier({ clock, rng: () => 0 });
+    const stack = createCacheStack([lru, tierFor(client, { clock })], { clock });
+    await tierFor(client, { clock }).set('k', 'v', { ttlMs: 5_000 });
 
     expect(await stack.read('k', () => Promise.resolve('loaded'), { ttlMs: 300_000 })).toBe('v');
     expect(lru.cache.get('k')?.expiresAt).toBe(15_000);
@@ -271,5 +318,145 @@ describe('createRedisTier', () => {
     } finally {
       bunWithRedis.redis = original;
     }
+  });
+});
+
+describe('invalidation is slot-local on Redis Cluster', () => {
+  test('no single command is ever handed keys from two different tags', async () => {
+    // The failure this pins: one EVAL carrying every tag-set key is rejected with CROSSSLOT
+    // before the script runs, because `x:t:post` and `x:t:user` hash to different slots. It
+    // lands in report.errors as a partial bust, and stale rows serve until TTL.
+    const client = fakeRedis();
+    const tier = tierFor(client);
+    await tier.set('feed', ['a'], { tags: [tag('post', '1')] });
+    await tier.set('inbox', ['b'], { tags: [tag('user', '9')] });
+    await tier.set('teams', ['c'], { tags: [tag('team')] });
+    client.sent.length = 0;
+
+    await tier.invalidateTags([tag('post', '1'), tag('user', '9'), tag('team')]);
+
+    for (const command of client.sent) {
+      const slots = new Set(keysOf(command).map(slotTokenOf));
+      expect(slots.size).toBeLessThanOrEqual(1);
+    }
+    // One script call per tag, not one for the batch.
+    expect(client.sent.filter((entry) => entry[1] === REDIS_INVALIDATE_SCRIPT)).toHaveLength(3);
+  });
+
+  test("a row tag's two buckets share one slot, so they may travel in one call", async () => {
+    const client = fakeRedis();
+    const tier = tierFor(client);
+    await tier.set('feed', ['a'], { tags: [tag('post', '1')] });
+    client.sent.length = 0;
+
+    await tier.invalidateTags([tag('post', '1')]);
+
+    const evals = client.sent.filter((entry) => entry[1] === REDIS_INVALIDATE_SCRIPT);
+    expect(keysOf(evals[0] ?? [])).toEqual(['x:t:{post}:1', 'x:t:{post}']);
+    expect(new Set(keysOf(evals[0] ?? []).map(slotTokenOf))).toEqual(new Set(['post']));
+  });
+
+  test('every tag-set key carries a hash tag; value keys never need one', async () => {
+    const client = fakeRedis();
+    const tier = tierFor(client);
+    await tier.set('feed', ['a'], { tags: [tag('post', '1'), tag('user')] });
+
+    const buckets = client.sent
+      .filter((entry) => entry[1] === REDIS_TAG_MEMBER_SCRIPT)
+      .map((entry) => String(entry[3]));
+    expect(buckets).toEqual(['x:t:{post}:1', 'x:t:{post}', 'x:t:{user}']);
+    for (const bucket of buckets) expect(bucket).toMatch(/\{[^}]+\}/);
+  });
+});
+
+describe('tag sets are bounded', () => {
+  test('every join leases the bucket for longer than the member it added', async () => {
+    // Without this a tag set grows forever: value keys expire after five minutes, their
+    // membership never does, and one publish becomes a multi-million-member SMEMBERS.
+    const client = fakeRedis();
+    const tier = tierFor(client);
+    await tier.set('feed', ['a'], { ttlMs: 60_000, tags: [tag('post', '1')] });
+
+    const joins = client.sent.filter((entry) => entry[1] === REDIS_TAG_MEMBER_SCRIPT);
+    expect(joins).toHaveLength(2);
+    for (const join of joins) {
+      // 60s member + the 60s grace: the bucket must outlive what it points at.
+      expect(Number(join[5])).toBe(120);
+    }
+  });
+
+  test('a short-lived member cannot shorten a bucket a long-lived one is in', async () => {
+    const client = fakeRedis();
+    const tier = tierFor(client);
+    await tier.set('long', ['a'], { ttlMs: 3_600_000, tags: [tag('post')] });
+    await tier.set('short', ['b'], { ttlMs: 60_000, tags: [tag('post')] });
+
+    expect(client.setTtls.get('x:t:{post}')).toBe(3_660);
+  });
+
+  test('a bucket with no lease yet gets one — GT alone would leave it immortal', async () => {
+    // `EXPIRE key sec GT` treats a key with no TTL as infinite and refuses, so a FRESH bucket
+    // would keep no expiry at all. The script reads TTL first for exactly that case.
+    const client = fakeRedis();
+    const tier = tierFor(client);
+    await tier.set('feed', ['a'], { ttlMs: 60_000, tags: [tag('post')] });
+
+    expect(client.setTtls.get('x:t:{post}')).toBe(120);
+  });
+});
+
+describe('the shared tier is namespaced per build', () => {
+  test('the default namespace carries appVersion(), so two builds cannot read each other', async () => {
+    // Rename a field and deploy: old and new pods share one Redis, `JSON.parse` does not
+    // validate, and the old pod hands the new shape to a renderer expecting the old one.
+    const client = fakeRedis();
+    const tier = createRedisTier({ client, rng: () => 0 });
+    await tier.set('feed', ['a'], { tags: [tag('post')] });
+
+    const setCall = client.sent.find((entry) => entry[0] === 'SET');
+    expect(setCall?.[1]).toBe(`x:${appVersion()}:c:feed`);
+  });
+
+  test('an explicit buildId is used verbatim, and two of them never collide', async () => {
+    const one = fakeRedis();
+    const two = fakeRedis();
+    await createRedisTier({ client: one, buildId: 'v1', rng: () => 0 }).set('feed', ['a']);
+    await createRedisTier({ client: two, buildId: 'v2', rng: () => 0 }).set('feed', ['b']);
+
+    expect(one.sent.find((entry) => entry[0] === 'SET')?.[1]).toBe('x:v1:c:feed');
+    expect(two.sent.find((entry) => entry[0] === 'SET')?.[1]).toBe('x:v2:c:feed');
+  });
+
+  test('buildId: null is the opt-out, for a team that versions its own payloads', () => {
+    expect(namespaceFor('x', null)).toBe('x');
+    expect(namespaceFor('x', '')).toBe('x');
+    expect(namespaceFor('app', 'abc123')).toBe('app:abc123');
+    expect(namespaceFor('x', undefined)).toBe(`x:${appVersion()}`);
+  });
+
+  test('invalidateTags strips the whole namespace, not just the prefix', async () => {
+    const client = fakeRedis();
+    const tier = createRedisTier({ client, buildId: 'v1', prefix: 'app', rng: () => 0 });
+    await tier.set('feed', ['a'], { tags: [tag('post')] });
+
+    expect((await tier.invalidateTags([tag('post')])).keys).toEqual(['feed']);
+  });
+});
+
+describe('the redis lease is spread', () => {
+  test('the default jitter shortens EX, and rng() === 0 is the full lease', async () => {
+    const full = fakeRedis();
+    const shaved = fakeRedis();
+    await createRedisTier({ client: full, buildId: null, rng: () => 0 }).set('k', 'v');
+    await createRedisTier({ client: shaved, buildId: null, rng: () => 1 }).set('k', 'v');
+
+    expect(full.sent.find((entry) => entry[0] === 'SET')?.[4]).toBe('300');
+    expect(shaved.sent.find((entry) => entry[0] === 'SET')?.[4]).toBe('285');
+  });
+
+  test('jitterFraction: 0 turns it off', async () => {
+    const client = fakeRedis();
+    await createRedisTier({ client, buildId: null, jitterFraction: 0, rng: () => 1 }).set('k', 'v');
+    expect(client.sent.find((entry) => entry[0] === 'SET')?.[4]).toBe('300');
   });
 });

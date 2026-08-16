@@ -54,7 +54,7 @@ async function call(routes: readonly Route[], init: CallInit = {}): Promise<Resp
     url,
     method: 'GET',
     role: 'web',
-    config: defineHttpConfig({}),
+    config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
     ...(init.headers === undefined ? {} : { requestHeaders: init.headers }),
   });
   ctx.params = { disk: init.disk ?? 'local', key };
@@ -163,7 +163,7 @@ describe('unit · dev storage · authorization', () => {
       url,
       method: 'GET',
       role: 'web',
-      config: defineHttpConfig({}),
+      config: defineHttpConfig({ rateLimit: { scope: 'process' } }),
     });
     ctx.params = { disk: 'local', key: KEY };
     const answer = async (): Promise<Response> =>

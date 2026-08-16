@@ -1,9 +1,11 @@
 // Single responsibility: the OAuth2/OIDC handshake. PKCE is mandatory rather than
 // provider-dependent — an authorization code with no proof-of-possession is stealable from a
 // redirect, and "this provider does not need it" is how that becomes a real incident. Provider
-// configs are pure data: importing this file performs no network I/O and reads no env.
+// configs are pure data and live in `oauth-registry.ts`: importing this file performs no network
+// I/O and reads no env.
 
 import { oauthStateInvalid } from './errors';
+import { providerFor } from './oauth-registry';
 import { base64Url, randomToken, sha256Bytes, timingSafeEqual } from './tokens';
 
 export interface OAuthProvider {
@@ -18,12 +20,22 @@ export interface OAuthProvider {
    * token. A list rather than one string because Google has issued both forms for years.
    */
   readonly issuers: readonly string[];
+  /**
+   * Where this provider publishes the keys its id tokens are signed with. `null` for a provider
+   * that issues no id token (GitHub). A provider with a key set can have a token from it verified
+   * on a channel that is not the token endpoint — IdP-initiated login, `form_post`, back-channel
+   * logout — which is what `jwks.ts` and `verifyIdToken({ keys })` exist for.
+   */
+  readonly jwksUri: string | null;
   readonly scopes: readonly string[];
   /**
    * The literal `true`, not `boolean`. A provider config saying `usesPkce: false` was always
    * invalid — an authorization code with no proof-of-possession is stealable from a redirect —
    * and a comment saying so is not a build error. This is, and it deletes every downstream
    * `if (provider.usesPkce)` branch along with the state it could ever have been false in.
+   *
+   * It stays the literal now that `registerOAuthProvider` is open to any app: the mechanism this
+   * package exists to own has to survive the opening, so an app cannot register a PKCE-less IdP.
    */
   readonly usesPkce: true;
   /** OIDC providers echo `nonce` in the id token; it binds the token to this browser. */
@@ -32,59 +44,13 @@ export interface OAuthProvider {
   readonly clientSecretEnv: string;
 }
 
-export const OAUTH_PROVIDERS = {
-  github: {
-    id: 'github',
-    authorizeUrl: 'https://github.com/login/oauth/authorize',
-    tokenUrl: 'https://github.com/login/oauth/access_token',
-    userInfoUrl: 'https://api.github.com/user',
-    // GitHub omits a private address from the profile; the identity is still incomplete
-    // without it, so the flow asks for the verified list rather than guessing.
-    userEmailsUrl: 'https://api.github.com/user/emails',
-    issuers: [],
-    scopes: ['read:user', 'user:email'],
-    usesPkce: true,
-    usesNonce: false,
-    clientIdEnv: 'GITHUB_CLIENT_ID',
-    clientSecretEnv: 'GITHUB_CLIENT_SECRET',
-  },
-  google: {
-    id: 'google',
-    authorizeUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
-    tokenUrl: 'https://oauth2.googleapis.com/token',
-    // Reached only when a narrowed `scopes` leaves the id token without an email claim.
-    userInfoUrl: 'https://openidconnect.googleapis.com/v1/userinfo',
-    userEmailsUrl: null,
-    issuers: ['https://accounts.google.com', 'accounts.google.com'],
-    scopes: ['openid', 'email', 'profile'],
-    usesPkce: true,
-    usesNonce: true,
-    clientIdEnv: 'GOOGLE_CLIENT_ID',
-    clientSecretEnv: 'GOOGLE_CLIENT_SECRET',
-  },
-  apple: {
-    id: 'apple',
-    authorizeUrl: 'https://appleid.apple.com/auth/authorize',
-    tokenUrl: 'https://appleid.apple.com/auth/token',
-    // Apple returns claims in the id token only; there is no userinfo endpoint to call.
-    userInfoUrl: null,
-    userEmailsUrl: null,
-    issuers: ['https://appleid.apple.com'],
-    scopes: ['name', 'email'],
-    usesPkce: true,
-    usesNonce: true,
-    clientIdEnv: 'APPLE_CLIENT_ID',
-    // Apple alone does not accept a static secret: `APPLE_CLIENT_SECRET` must hold the ES256
-    // client-secret JWT signed with the .p8 key, which Apple expires every six months.
-    clientSecretEnv: 'APPLE_CLIENT_SECRET',
-  },
-} as const satisfies Readonly<Record<string, OAuthProvider>>;
-
-export type OAuthProviderId = keyof typeof OAUTH_PROVIDERS;
-
-export const OAUTH_PROVIDER_IDS: readonly OAuthProviderId[] = Object.freeze(
-  Object.keys(OAUTH_PROVIDERS) as OAuthProviderId[],
-);
+/**
+ * Any registered provider's id — `string`, not a closed union, since 1.3.0. The union of three
+ * consumer IdPs made an enterprise OP unrepresentable at the type level, which is a constraint no
+ * configuration can escape. `providerFor(id)` is the runtime check that replaces it, and it
+ * throws the same `X_OAUTH_PROVIDER_UNKNOWN` the route already answered with.
+ */
+export type OAuthProviderId = string;
 
 export interface PkcePair {
   readonly verifier: string;
@@ -121,7 +87,7 @@ export interface BeginOAuthInput {
 }
 
 export function beginOAuth(input: BeginOAuthInput): OAuthHandshake {
-  const provider = OAUTH_PROVIDERS[input.provider];
+  const provider = providerFor(input.provider);
   const pkce = createPkce();
   const state = randomToken(16);
   const nonce = randomToken(16);
@@ -161,7 +127,7 @@ export interface OAuthCallback {
  * tells an attacker which half to keep guessing at.
  */
 export function assertOAuthCallback(handshake: OAuthHandshake, callback: OAuthCallback): void {
-  const provider = OAUTH_PROVIDERS[handshake.provider];
+  const provider = providerFor(handshake.provider);
   if (!timingSafeEqual(handshake.state, callback.state)) {
     throw oauthStateInvalid(provider.id, 'state did not match the stored handshake');
   }

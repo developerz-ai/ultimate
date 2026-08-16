@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { topic } from './channel';
 import { InProcessTransport } from './fanout';
-import { PresenceRegistry } from './presence';
+import { PRESENCE_KEY_PREFIX, PRESENCE_SWEEP_PREFIX, PresenceRegistry } from './presence';
 
 const room = topic('org', 'o1', 'cursors');
 
@@ -58,5 +58,90 @@ describe('presence', () => {
     if (frame.type !== 'presence') throw new Error('expected a presence frame');
     expect(frame.op).toBe('sync');
     expect(frame.members).toHaveLength(1);
+    expect(frame.total).toBe(1);
+  });
+});
+
+/**
+ * A 5,000-person all-hands is the case that breaks presence: every join read the whole set and
+ * shipped it, and every node re-read it for every room every ten seconds forever. Neither number
+ * is one a UI or a bus should pay.
+ */
+describe('presence at all-hands size', () => {
+  test('a full-set frame is capped, and says how many it is standing for', async () => {
+    const clock = frozenClock(0);
+    const transport = new InProcessTransport({ clock });
+    const presence = new PresenceRegistry({ transport, clock, maxMembers: 3 });
+    for (let i = 0; i < 12; i += 1) {
+      await presence.join(room, { id: `m${String(i).padStart(2, '0')}`, actorId: `a${i}` });
+    }
+
+    const roster = await presence.roster(room);
+    expect(roster.members).toHaveLength(3);
+    expect(roster.total).toBe(12);
+    // The set itself is never capped: the sweep differences it, so a short list would report
+    // every member past the cap as gone.
+    expect(await presence.list(room)).toHaveLength(12);
+
+    const frame = await presence.syncFrame(room);
+    if (frame.type !== 'presence') throw new Error('expected a presence frame');
+    expect(frame.members).toHaveLength(3);
+    expect(frame.total).toBe(12);
+  });
+
+  test('one node per topic sweeps, and the others read no member set at all', async () => {
+    const clock = frozenClock(0);
+    const transport = new InProcessTransport({ clock });
+    const reads: string[] = [];
+    const shared = transport.shared;
+    const counting = {
+      ...shared,
+      entries: async (key: string) => {
+        reads.push(key);
+        return await shared.entries(key);
+      },
+      put: shared.put.bind(shared),
+      touch: shared.touch.bind(shared),
+      drop: shared.drop.bind(shared),
+    };
+    const fleet = ['node-a', 'node-b', 'node-c'].map(
+      (nodeId) =>
+        new PresenceRegistry({
+          transport: { ...transport, shared: counting },
+          clock,
+          nodeId,
+        }),
+    );
+    for (const node of fleet)
+      await node.join(room, { id: `s-${node.constructor.name}`, actorId: null });
+    reads.length = 0;
+
+    for (const node of fleet) await node.sweepAll();
+
+    // Three nodes, one room: one full-member-set read, not three. The rest is the lease.
+    const memberReads = reads.filter(
+      (key) => key.startsWith(`${PRESENCE_KEY_PREFIX}.`) && !key.startsWith(PRESENCE_SWEEP_PREFIX),
+    );
+    expect(memberReads).toHaveLength(1);
+    expect(reads.filter((key) => key.startsWith(PRESENCE_SWEEP_PREFIX))).toHaveLength(3);
+  });
+
+  test('the leader is the same node every pass, so leaves are announced once', async () => {
+    const clock = frozenClock(0);
+    const transport = new InProcessTransport({ clock });
+    const leader = new PresenceRegistry({ transport, clock, nodeId: 'node-a' });
+    const follower = new PresenceRegistry({ transport, clock, nodeId: 'node-z' });
+    await leader.join(room, { id: 'm1', actorId: 'alice' });
+    await follower.join(room, { id: 'm2', actorId: 'bob' });
+    // Both nodes see both members before either expires.
+    await leader.sweepAll();
+    await follower.sweepAll();
+
+    clock.advance(31_000);
+    const fromLeader = await leader.sweepAll();
+    const fromFollower = await follower.sweepAll();
+
+    expect(fromLeader.map((member) => member.id).sort()).toEqual(['m1', 'm2']);
+    expect(fromFollower).toEqual([]);
   });
 });
