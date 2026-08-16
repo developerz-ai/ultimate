@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { CacheTag } from '@ultimat3/cache';
-import { invalidateTags, resetGraph, tag } from '@ultimat3/cache';
+import { invalidateTags, isolateGraph, resetGraph, tag } from '@ultimat3/cache';
 import { clearRoutes, describeRoutes, registerRoute } from './registry';
 import { createIsrController, memoryIsrStore, parseTtlMs } from './render-isr';
 import type { RenderResult, RouteMetaFn } from './route';
@@ -28,10 +28,17 @@ function sMaxAge(result: RenderResult): string | undefined {
   return /s-maxage=(\d+)/.exec(result.headers['cache-control'] ?? '')?.[1];
 }
 
+// An empty graph is this file's subject, so the per-test reset stays. What it owes the process is
+// the restore: a reset drops the edges a neighbour registered, and the leak guard reports
+// additions only — so a destructive cleanup surfaces as a failure in an innocent file.
+const restoreGraph = isolateGraph();
+
 beforeEach(() => {
   clearRoutes();
   resetGraph();
 });
+
+afterAll(restoreGraph);
 
 describe('parseTtlMs', () => {
   test('parses duration strings and passes milliseconds through', () => {

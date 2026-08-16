@@ -4,9 +4,17 @@
  * entries but may never reverse an action result the caller was already handed.
  */
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import type { CacheTag, CacheTier, TierInvalidation, TierName } from '@ultimat3/cache';
-import { declareTags, registerTier, resetDeclaredTags, resetTiers, tag } from '@ultimat3/cache';
+import {
+  declareTags,
+  isolateDeclaredTags,
+  isolateTiers,
+  registerTier,
+  resetDeclaredTags,
+  resetTiers,
+  tag,
+} from '@ultimat3/cache';
 import { bustAfterCommit } from './cache-gate';
 
 /** Records what the fan-out actually reached it with, so "nothing was cleared" is assertable. */
@@ -23,9 +31,20 @@ function recordingTier(name: TierName, onInvalidate?: () => void): CacheTier {
   };
 }
 
+// The per-test reset is this file's own — every case here registers its own tier. The pair below
+// is what hands the process back what it was lent: a reset clears what a NEIGHBOUR registered, and
+// the leak guard reports additions only, so that damage surfaces as a failure in an innocent file.
+const restoreTiers = isolateTiers();
+const restoreTags = isolateDeclaredTags();
+
 afterEach(() => {
   resetTiers();
   resetDeclaredTags();
+});
+
+afterAll(() => {
+  restoreTiers();
+  restoreTags();
 });
 
 describe('the post-commit cache bust', () => {

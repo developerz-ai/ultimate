@@ -20,10 +20,23 @@ WORKDIR /src
 COPY --from=deps /src/node_modules ./node_modules
 COPY . .
 # --compile bundles the runtime, so the final stage needs no Bun and no node_modules.
-RUN bun build --compile --minify --sourcemap \
+#
+# The `--define` is not optional, and this image is why the caveat existed: a single-file
+# executable carries no `package.json`, so `resolveVersion` finds no manifest, falls through to the
+# define, and throws `X_INVARIANT` when it is absent too. The read is lazy, so the image did not
+# die at import — it died at whichever command first asked for a version. `x build --target binary`
+# has always passed it (`packages/cli/src/cmd-build.ts`, `binaryArgs`); the framework's own image
+# did not, so the target was fixed everywhere except in the artifact we ship.
+#
+# `JSON.stringify` rather than bare interpolation: the define's value is parsed as a JS expression,
+# so `1.2.0` unquoted is arithmetic and not a string.
+RUN VERSION_DEFINE="$(bun --print 'JSON.stringify(require("./packages/core/package.json").version)')" \
+ && bun build --compile --minify --sourcemap \
+      --define ULTIMATE_FRAMEWORK_VERSION="$VERSION_DEFINE" \
       --outfile /out/app \
       ./packages/cli/src/bin.ts \
- && chmod +x /out/app
+ && chmod +x /out/app \
+ && /out/app --version
 
 # ---------- runtime: distroless, non-root, no shell ----------
 # cc-debian12 rather than base-debian12: a Bun single-file executable links against libstdc++,

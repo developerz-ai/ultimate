@@ -132,7 +132,7 @@ services:
 ## Prod compose
 
 ```yaml
-# docker/compose.prod.yml
+# docker/docker-compose.prod.yml
 x-app: &app
   image: myapp:${BUILD_ID}
   env_file: .env.prod
@@ -140,9 +140,12 @@ x-app: &app
 
 services:
   migrate:    { <<: *app, environment: { ROLE: migrate },    restart: 'no' }
-  web:        { <<: *app, environment: { ROLE: web },        deploy: { replicas: 3 },
+  web:        { <<: *app, environment: { ROLE: web, PORT: 3000 }, ports: ['3000:3000'],
+                deploy: { replicas: 1 },
                 depends_on: { migrate: { condition: service_completed_successfully } } }
-  sync:       { <<: *app, environment: { ROLE: sync },       deploy: { replicas: 2 } }
+  # PORT is the WEB port even here: `sync` binds PORT + 1, so 3000 is a listener on 3001.
+  sync:       { <<: *app, environment: { ROLE: sync, PORT: 3000 }, ports: ['3001:3001'],
+                deploy: { replicas: 1 } }
   worker:     { <<: *app, environment: { ROLE: worker, WORKER_QUEUES: 'default,integrations' },
                 deploy: { replicas: 4 } }
   scheduler:  { <<: *app, environment: { ROLE: scheduler },  deploy: { replicas: 1 } }
@@ -152,13 +155,22 @@ services:
 | Rule | Reason |
 |---|---|
 | `migrate` completes before `web`/`sync` start | a new schema must exist before new code reads it |
+| `web` and `sync` at 1 replica | each publishes a host port, and a host port has exactly one binder |
+| `PORT: 3000` on `sync`, published as `3001:3001` | the `sync` role binds `PORT + 1`; naming 3001 opens 3002 and publishes a socket nothing in the container ever opened |
 | `scheduler` and `replicator` at 1 replica | leader lock makes a second one a standby, not throughput |
 | `stop_grace_period` >= `DRAIN_TIMEOUT` | otherwise SIGKILL truncates the drain and the reconnect fanout |
 | Health probes from `/readyz` | never from a TCP check — a process can accept sockets while unable to serve |
 
 `x deploy --method compose` applies this against the committed `docker/docker-compose.prod.yml`; it is a plain compose file you can read, diff, and run by hand.
 
-> **The shipped file cannot scale `web` past 1.** It declares `ports: ['3000:3000']` **and** `replicas: 3` — two processes cannot bind one host port. Drop `ports:` and put a reverse proxy in front, or set `replicas: 1`. This is the rung-1 ceiling, and climbing off it is what the Helm chart below is for → [Known gaps](Known-Gaps), [`docs/idea/17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md).
+> **`web` and `sync` are one replica each, and the file says so** `As of 2026-08`. Both publish a host port, one host port has exactly one binder, so both declare `replicas: 1` — a ceiling that is declared rather than discovered when the second container dies on `port is already allocated`. `worker`, `scheduler` and `replicator` publish nothing; `worker` scales freely.
+>
+> | Want | Do |
+> |---|---|
+> | more `web`/`sync` on the same box | delete their `ports:` lines, add a reverse proxy of your choosing to the compose file, point it at the service names — compose DNS resolves each to every replica |
+> | more `web`/`sync`, full stop | the Helm chart below, which carries a per-role HPA and an Ingress |
+>
+> The framework ships neither proxy: a proxy image in `docker-compose.prod.yml` is a dependency every app inherits and a second answer to "how does traffic reach a role" beside the chart's Ingress. This is the rung-1 ceiling → [`docs/idea/17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md).
 
 ## Helm
 

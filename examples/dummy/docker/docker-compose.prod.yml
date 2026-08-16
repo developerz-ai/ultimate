@@ -1,6 +1,10 @@
 # One image, one process per role. Each service differs only by ROLE and replica count.
 # `migrate` runs to completion before the rest start; it refuses to run concurrently with
 # a different build id.
+#
+# A published host port has exactly one binder, so `web` and `sync` run at 1 here. Compose is one
+# box; horizontal scaling of those two is the orchestrator's job (`docker/helm` in the framework
+# repo). To scale them on one box anyway, drop `ports:` and put your own proxy on this network.
 name: postly
 
 x-image: &image
@@ -20,7 +24,7 @@ services:
     environment: [ROLE=web]
     depends_on:
       migrate: { condition: service_completed_successfully }
-    deploy: { replicas: 3 } # scales on RPS, stateless, behind the CDN
+    deploy: { replicas: 1 } # scales on RPS, stateless, behind the CDN — pinned by the published port
     ports: ['3000:3000']
 
   sync:
@@ -28,8 +32,9 @@ services:
     environment: [ROLE=sync]
     depends_on:
       migrate: { condition: service_completed_successfully }
-    deploy: { replicas: 2 } # scales on concurrent WS; no sticky sessions
+    deploy: { replicas: 1 } # scales on concurrent WS, no sticky sessions — pinned by the published port
     # The sync role listens on PORT + 1; mapping to :3000 would route to a listener it never opens.
+    # PORT is unset here, so it is 3000 and this container listens on 3001.
     ports: ['3001:3001']
 
   worker:

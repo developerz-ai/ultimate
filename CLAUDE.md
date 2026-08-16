@@ -31,15 +31,16 @@ Open: roadmap milestone 11's two-platform deploy proof — 1.1.0 gave a scaffold
 deployable artifact (`packages/cli/src/serve.ts`; `x new` writes `apps/web/server.ts`,
 `prerender.ts`, a Dockerfile and `docker-compose.prod.yml`; `ROLE=migrate` runs release-phase
 migrations), but the demo app on Compose **and** K8s from one image with an invisible rolling
-restart is still not demonstrated. Of the four known gaps named in
-[`CHANGELOG.md`](CHANGELOG.md), **two are now closed and two remain**, `As of 2026-08`:
+restart is still not demonstrated — and until this branch the chart could not have demonstrated it,
+because `sync`'s readiness probe polled a port the process never opened. Of the four known gaps
+named in [`CHANGELOG.md`](CHANGELOG.md), **all four are now closed**, `As of 2026-08`:
 
 | Gap | State |
 |---|---|
-| `x build --target binary` compiled and crashed at import | **fixed** — the version read is lazy and `x build` passes `--define ULTIMATE_FRAMEWORK_VERSION`. The target is still unproven end to end, and `docker/Dockerfile` compiles the binary *without* that define |
+| `x build --target binary` compiled and crashed at import | **fixed, and now proven** — the version read is lazy and `x build` passes `--define ULTIMATE_FRAMEWORK_VERSION`. `docker/Dockerfile` passes it too as of this branch; it had not, so the target was fixed everywhere except in the artifact the framework ships. The image build now ends in `/out/app --version`, so a binary that cannot answer fails the build rather than the first command an operator runs |
 | the shared cache tier's Lua invalidation `DEL`s keys it never declares in `KEYS` | **fixed** — the script returns the member list and the tier deletes value keys client-side, one key per `DEL`, so it is slot-local on Redis Cluster and Dragonfly |
-| `docker-compose.prod.yml` pairs a published host port with `replicas` above 1 | **open** — and it is `web` *and* `sync`, in the framework's compose file, the demo's, and the one `x new` scaffolds |
-| `resolveEnvironment` exists in both `core` and `seo` with different return types | **open** — a real axiom-1 violation, deliberately deferred: both are shipped public APIs with different return unions, so unifying them is a breaking change that needs a major |
+| `docker-compose.prod.yml` pairs a published host port with `replicas` above 1 | **fixed** — a published host port has exactly one binder (reproduced: the second replica dies with `Bind for 0.0.0.0:3000 failed: port is already allocated`), so `web` and `sync` declare `replicas: 1` in all four files — framework, both tracked apps, and `x new`'s scaffold. Scaling either is the reverse proxy you add or the chart's per-role HPA, both named in the file header: Compose is the ladder's single-node rung and the box is the availability story |
+| `resolveEnvironment` exists in both `core` and `seo` with different return types | **fixed** — seo's is deleted; core's is the one reader of `ULTIMATE_ENV`, and `'preview'` is now core's `'staging'`. The half that was not obvious: `ULTIMATE_ENV` is **not in the env schema**, so nothing validates it at boot and a `robots.txt` render can be its first reader — hence `tryResolveEnvironment()` in core, which answers `undefined` rather than throwing, instead of a second resolver in seo |
 
 Milestone detail: [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md).
 

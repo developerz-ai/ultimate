@@ -84,7 +84,7 @@ An operator running this stack in production sizes one 6-vCPU / 12-GiB host to h
 
 **`x new` ships this file now** — `docker/docker-compose.prod.yml`, alongside `docker/Dockerfile` and its `.dockerignore`. `docker/helm/` still lives only in the framework repo and must be copied to reach rung 3.
 
-**The compose ceiling is one replica per role**, `As of 2026-08`: both the framework file and the scaffolded one declare a host port **and** `replicas` > 1 on `web`, and two containers cannot bind one host port. Scale a role on this rung by putting a proxy in front, not by raising the number ([`12-build-deploy.md`](./12-build-deploy.md)).
+**The compose ceiling is one replica per role for anything that publishes a host port**, and every shipped file declares it rather than violating it, `As of 2026-08` — one host port has exactly one binder. Scale a role on this rung by putting a proxy on the network and deleting the `ports:` line; raising the number is how you get a replica that never starts ([`12-build-deploy.md`](./12-build-deploy.md)). The portless roles — `worker`, `scheduler`, `replicator` — scale here freely, which is why `worker` is the knob this rung actually has.
 
 **App code change: none, plus config.**
 

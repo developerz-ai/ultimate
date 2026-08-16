@@ -268,11 +268,12 @@ Rules:
 Four names, one env var, and a spelling the framework does not use is a refusal rather than a guess.
 
 ```ts
-import { isLocal, isProduction, resolveEnvironment } from '@ultimat3/core';
+import { isLocal, isProduction, resolveEnvironment, tryResolveEnvironment } from '@ultimat3/core';
 
 resolveEnvironment();                          // 'development' | 'test' | 'staging' | 'production'
 resolveEnvironment({ fallback: 'production' });
 resolveEnvironment({ env: someRecord });
+tryResolveEnvironment() ?? 'development';      // the same, `undefined` instead of the throw
 ```
 
 | Concern | Behaviour |
@@ -282,17 +283,12 @@ resolveEnvironment({ env: someRecord });
 | Invalid `NODE_ENV` | never throws. CI images legitimately set it to anything, so it is a fallback that is silently ignored, not a second gate |
 | `isProduction()` | `=== 'production'` |
 | `isLocal()` | `development` or `test`. **`staging` is deliberately excluded** — staging is a real rehearsal |
+| `tryResolveEnvironment()` | the same resolution, `undefined` instead of the throw — and `undefined` means exactly one thing, an unrecognised `ULTIMATE_ENV`. For a caller that must **answer** rather than fail: `ULTIMATE_ENV` is not in the env schema, so nothing validates it at boot and a `robots.txt` render is routinely its first reader, where a typo would 500 the one response whose body was already going to be `Disallow: /`. It names no fallback of its own; the caller does |
 
-> **Name collision.** `@ultimat3/seo` exports a *different* `resolveEnvironment`. Import one with an alias.
->
-> | | `@ultimat3/core` | `@ultimat3/seo` |
-> |---|---|---|
-> | Parameter | an options object `{ env, fallback }` | the env record itself, positional, defaulting to `process.env` |
-> | Returns | `development \| test \| staging \| production` | `production \| preview \| development \| test` |
-> | Unknown value | **throws** `X_ENVIRONMENT_INVALID` | fails closed to `'preview'`, never throws |
-> | `ULTIMATE_ENV=staging` | `'staging'` | `'preview'` — so a staging deploy is non-indexable, which is the point |
->
-> Listed in [Known gaps](Known-Gaps).
+`@ultimat3/core` is the **only** reader of `ULTIMATE_ENV` and `Environment` is the only spelling of a
+deploy, `As of 2026-08`. `@ultimat3/seo` exported a second `resolveEnvironment` with its own union
+through 1.2.0; it exports neither that nor `SeoEnvironment` on `main`, and its `'preview'` is
+`'staging'` → [Known gaps](Known-Gaps).
 
 ## `.env.example` — a projection, never a second list
 

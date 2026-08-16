@@ -32,6 +32,17 @@ named `metrics` is a ServiceMonitor with nothing to scrape and an HPA pinned at 
 {{- $cfg := .cfg -}}
 {{- $root := .root -}}
 {{- $scraped := ne $role "migrate" -}}
+{{/*
+`roles.<role>.port` is the port the role LISTENS on — the only number a Service, an ingress backend
+and two probes can all use. `PORT` is a different number for exactly one role: the sync node binds
+`PORT + 1` (packages/cli/src/dev-roles.ts), so a sync container told `PORT=3001` opens 3002 and the
+readiness probe polls a socket nobody bound, forever. Derived here rather than stated a second time
+in values.yaml, where the two numbers would drift.
+*/}}
+{{- $envPort := $cfg.port -}}
+{{- if and $cfg.port (eq $role "sync") -}}
+{{- $envPort = sub (int $cfg.port) 1 -}}
+{{- end -}}
 - name: {{ $role }}
   image: {{ include "ultimate.image" $root }}
   imagePullPolicy: {{ $root.Values.image.pullPolicy }}
@@ -41,7 +52,7 @@ named `metrics` is a ServiceMonitor with nothing to scrape and an HPA pinned at 
       value: {{ $role | quote }}
     {{- if $cfg.port }}
     - name: PORT
-      value: {{ $cfg.port | quote }}
+      value: {{ $envPort | quote }}
     {{- end }}
     {{- if $scraped }}
     - name: METRICS_PORT

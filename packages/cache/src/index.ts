@@ -18,6 +18,7 @@ export {
   dependentsOfKind,
   graphSize,
   graphSnapshot,
+  isolateGraph,
   registerDependent,
   resetGraph,
   unregisterDependent,
@@ -26,6 +27,7 @@ export type { InvalidationEvent, InvalidationReport, Revalidator } from './inval
 export {
   invalidateTags,
   invalidateWireTags,
+  isolateTiers,
   recentInvalidations,
   registeredTiers,
   registerRevalidator,

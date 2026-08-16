@@ -50,8 +50,9 @@ weeks later.
 ## robots.txt is fail-closed
 
 Only the literal string `production` in `ULTIMATE_ENV` / `NODE_ENV` opts a deploy
-into indexing. A typo, an unset variable, or a branch deploy all resolve to
-`preview`, and preview emits:
+into indexing. The environment is `@ultimat3/core`'s `Environment` and its reader
+is core's — this package owns no second one. A branch deploy (`staging`), a
+laptop, a typo and an unset variable are all "not production", and each emits:
 
 ```
 User-agent: *

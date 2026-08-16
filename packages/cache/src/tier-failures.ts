@@ -37,6 +37,22 @@ export function resetTierFailures(): void {
 }
 
 /**
+ * `isolateDeclaredTags()`'s contract over this log — `tags.ts` carries the why. It lives here
+ * rather than in a test file because the log has a reader and no writer: from outside this module
+ * the entries `resetTierFailures()` drops cannot be put back at all.
+ *
+ *   const restoreFailures = isolateTierFailures();
+ *   afterAll(restoreFailures);
+ */
+export function isolateTierFailures(): () => void {
+  const captured = [...failureLog];
+  return () => {
+    failureLog.length = 0;
+    failureLog.push(...captured);
+  };
+}
+
+/**
  * Runs one tier call and absorbs its refusal. `undefined` back means the tier declined, which a
  * `get` already reads as a miss and a `set`/`del` as "that tier is unchanged" — so the caller
  * needs no branch. The entry a tier refused to hold expires by TTL, exactly as one an

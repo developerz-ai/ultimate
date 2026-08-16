@@ -65,7 +65,9 @@ bunx x deploy --image ghcr.io/you/myapp:1.2.3 --method compose
 
 Start Postgres with `wal_level=logical`, `max_replication_slots=8` and `max_wal_senders=8` so the `replicator` role can preflight rather than fail on its first change.
 
-> **The compose ceiling is one replica per role.** Both the framework's file and the scaffolded one declare a host port **and** `replicas` > 1 on `web` and `sync`. Two containers cannot bind one host port. Put a reverse proxy in front and drop the static publish, or set `replicas: 1`. `worker` publishes no port and scales freely.
+> **The compose ceiling is one replica of each serving role, declared** `As of 2026-08`. The framework's file and the scaffolded one both publish a host port on `web` and `sync` and both set `replicas: 1` — one host port has exactly one binder. `worker` publishes no port and scales freely.
+>
+> Two ways past it: delete their `ports:` lines and put a reverse proxy of your own on the compose network, which the service names resolve across every replica; or take the next rung, where the chart's per-role HPA does it. The framework ships neither proxy — one in `docker-compose.prod.yml` is a dependency every app inherits and a second answer to "how does traffic reach a role" beside the chart's Ingress.
 
 ## Rung 2 → 3: Kubernetes
 

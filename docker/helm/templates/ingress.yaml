@@ -17,7 +17,12 @@ spec:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
-          - path: /_sync
+          {{- /*
+          The path the sync node actually serves — `/_x/sync`, the one `createSyncNode` matches on
+          and 404s off. `/_sync` routed a path no client ever requests, so every websocket fell
+          through to the `/` rule below and reached `web`, which answers no upgrade.
+          */}}
+          - path: /_x/sync
             pathType: Prefix
             backend:
               service:

@@ -5,7 +5,7 @@
 
 import { type Clock, systemClock } from './clock';
 import { tryUseContext } from './context';
-import { DEFAULT_ENVIRONMENT, type Environment, resolveEnvironment } from './environment';
+import { DEFAULT_ENVIRONMENT, type Environment, tryResolveEnvironment } from './environment';
 import { isUltimateError, toUltimateError } from './errors';
 import { logger } from './logger';
 import type { Role } from './roles';
@@ -122,14 +122,11 @@ export function resetErrorReporting(): void {
 }
 
 function environmentNow(): Environment {
-  if (environment !== undefined) return environment;
-  try {
-    return resolveEnvironment();
-  } catch {
-    // A malformed `ULTIMATE_ENV` is its own error with its own code and its own fix. Failing to
-    // tag a report with an environment must never replace the error being reported.
-    return DEFAULT_ENVIRONMENT;
-  }
+  // A malformed `ULTIMATE_ENV` is its own error with its own code and its own fix. Failing to tag
+  // a report with an environment must never replace the error being reported — which is why the
+  // non-throwing resolver is core's, not a `try` around the throwing one here: two call sites
+  // catching the same throw is two places the policy can drift.
+  return environment ?? tryResolveEnvironment() ?? DEFAULT_ENVIRONMENT;
 }
 
 export interface ReportErrorOptions {

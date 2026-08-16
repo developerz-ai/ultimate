@@ -2,6 +2,10 @@
 # What `x deploy --method compose` runs. migrate runs to completion before anything serves.
 #
 #   IMAGE=ghcr.io/you/social-media-clone:1.2.3 x deploy --image ghcr.io/you/social-media-clone:1.2.3
+#
+# A published host port has exactly one binder, so `web` and `sync` run at 1 here. Compose is one
+# box; horizontal scaling of those two is the orchestrator's job (`docker/helm` in the framework
+# repo). To scale them on one box anyway, drop `ports:` and put your own proxy on this network.
 name: social-media-clone
 
 x-image: &image
@@ -37,7 +41,7 @@ services:
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
-    deploy: { replicas: 2 } # stateless: scales on RPS
+    deploy: { replicas: 1 } # stateless, scales on RPS — pinned by the published port
     ports: ['3000:3000']
 
   sync:
@@ -46,7 +50,8 @@ services:
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
-    deploy: { replicas: 1 } # scales on concurrent websockets; no sticky sessions
+    deploy: { replicas: 1 } # scales on concurrent websockets, no sticky sessions — pinned by the port
+    # The sync role binds PORT + 1. PORT is unset here, so it is 3000 and this listens on 3001.
     ports: ['3001:3001']
 
   worker:

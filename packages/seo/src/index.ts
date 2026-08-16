@@ -95,8 +95,8 @@ export {
   robotsContent,
   TITLE_MAX_LENGTH,
 } from './meta';
-export type { RobotsConfig, RobotsGroup, SeoEnvironment } from './robots';
-export { buildRobots, isIndexable, resolveEnvironment } from './robots';
+export type { RobotsConfig, RobotsGroup } from './robots';
+export { buildRobots, isIndexable } from './robots';
 export type { ChangeFreq, RenderMode, RouteBudget, RouteRecord, Surface } from './routes';
 export { expandRoute, indexableRoutes, isDynamic } from './routes';
 export type { BuildFeedOptions, Feed, FeedAuthor, FeedChannel, FeedItem } from './rss';

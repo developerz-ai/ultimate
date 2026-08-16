@@ -268,7 +268,15 @@ const describeLeak = (leak: RegistryLeak): string => {
 /** The placeholder is the cause's own sentence: it already names every file, in order. */
 const FILE_PLACEHOLDER = '<the file the cause names>';
 
-/** The edit, spelled as the lines to paste — the imports included, since neither call is global. */
+/**
+ * The edit, spelled as the lines to paste — the imports included, since neither call is global.
+ *
+ * Both repairs isolate; neither resets. `afterAll(resetTiers)` was the first spelling of the tier
+ * half and it is the bug wearing the fix's clothes: it drops the tiers, the revalidator and both
+ * logs a NEIGHBOUR registered, and the guard reports additions only, so the damage lands on an
+ * innocent file with nothing pointing back here. An error whose instruction causes the next defect
+ * is worse than no instruction.
+ */
 const repairFor = (leak: RegistryLeak): string => {
   const imports: string[] = [];
   const calls: string[] = [];
@@ -277,8 +285,8 @@ const repairFor = (leak: RegistryLeak): string => {
     calls.push('const restoreTags = isolateDeclaredTags(); afterAll(restoreTags);');
   }
   if (leak.tiers.length > 0) {
-    imports.push('resetTiers');
-    calls.push('afterAll(resetTiers);');
+    imports.push('isolateTiers');
+    calls.push('const restoreTiers = isolateTiers(); afterAll(restoreTiers);');
   }
   const file = renderFixLiteral(leak.file, FILE_PLACEHOLDER);
   return `in ${file} add: import { ${imports.join(', ')} } from '@ultimat3/cache'; ${calls.join(' ')}`;

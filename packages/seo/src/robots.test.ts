@@ -1,25 +1,37 @@
 import { describe, expect, test } from 'bun:test';
-import { buildRobots, isIndexable, resolveEnvironment } from './robots';
+import { buildRobots, isIndexable } from './robots';
 
 const BASE = { baseUrl: 'https://ultimate.dev' } as const;
 
-describe('resolveEnvironment', () => {
-  test('only the exact string "production" opts into indexing', () => {
-    expect(resolveEnvironment({ NODE_ENV: 'production' })).toBe('production');
-    expect(resolveEnvironment({ NODE_ENV: 'Production' })).toBe('preview');
-    expect(resolveEnvironment({})).toBe('preview');
-    expect(resolveEnvironment({ ULTIMATE_ENV: 'staging' })).toBe('preview');
-    expect(isIndexable('preview')).toBe(false);
-  });
+/** Pin both keys for the duration of `fn`: an assertion gated on ambient env stops asserting. */
+function withEnv(values: Record<string, string | undefined>, fn: () => void): void {
+  const original = new Map(Object.keys(values).map((key) => [key, process.env[key]]));
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    fn();
+  } finally {
+    for (const [key, value] of original) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
 
-  test('ULTIMATE_ENV wins over NODE_ENV', () => {
-    expect(resolveEnvironment({ ULTIMATE_ENV: 'preview', NODE_ENV: 'production' })).toBe('preview');
+describe('isIndexable', () => {
+  test('only production opts into indexing', () => {
+    expect(isIndexable('production')).toBe(true);
+    expect(isIndexable('staging')).toBe(false);
+    expect(isIndexable('development')).toBe(false);
+    expect(isIndexable('test')).toBe(false);
   });
 });
 
 describe('buildRobots', () => {
-  test('a preview deploy disallows everything and advertises no sitemap', () => {
-    const txt = buildRobots({ ...BASE, environment: 'preview', sitemaps: ['/sitemap.xml'] });
+  test('a branch deploy disallows everything and advertises no sitemap', () => {
+    const txt = buildRobots({ ...BASE, environment: 'staging', sitemaps: ['/sitemap.xml'] });
     expect(txt).toContain('User-agent: *');
     expect(txt).toContain('Disallow: /');
     expect(txt).not.toContain('Allow: /');
@@ -27,23 +39,25 @@ describe('buildRobots', () => {
   });
 
   test('the unsafe default is impossible: omitting environment never allows all', () => {
-    // buildRobots resolves the environment from process.env when omitted, so pin
-    // both vars for the duration of this test instead of guessing at ambient state —
-    // an assertion gated on the ambient env can silently stop asserting anything.
-    const originalUltimateEnv = process.env.ULTIMATE_ENV;
-    const originalNodeEnv = process.env.NODE_ENV;
-    process.env.ULTIMATE_ENV = 'preview';
-    process.env.NODE_ENV = 'preview';
-    try {
-      expect(resolveEnvironment()).toBe('preview');
+    withEnv({ ULTIMATE_ENV: 'staging', NODE_ENV: 'production' }, () => {
+      expect(buildRobots({ ...BASE, environment: undefined })).toContain('Disallow: /');
+    });
+  });
+
+  test('a typo in ULTIMATE_ENV disallows rather than throwing out of the render', () => {
+    // core's resolveEnvironment throws on this value; robots.txt must still answer, because
+    // nothing in a web container's boot path resolves the environment first.
+    withEnv({ ULTIMATE_ENV: 'prod', NODE_ENV: 'production' }, () => {
       const txt = buildRobots({ ...BASE, environment: undefined });
       expect(txt).toContain('Disallow: /');
-    } finally {
-      if (originalUltimateEnv === undefined) delete process.env.ULTIMATE_ENV;
-      else process.env.ULTIMATE_ENV = originalUltimateEnv;
-      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
-      else process.env.NODE_ENV = originalNodeEnv;
-    }
+      expect(txt).toContain('# environment: development');
+    });
+  });
+
+  test('an unset ULTIMATE_ENV still reads NODE_ENV=production', () => {
+    withEnv({ ULTIMATE_ENV: undefined, NODE_ENV: 'production' }, () => {
+      expect(buildRobots({ ...BASE, environment: undefined })).toContain('Allow: /');
+    });
   });
 
   test('production allows crawling and points at the sitemap', () => {

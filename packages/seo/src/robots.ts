@@ -1,10 +1,9 @@
 // robots.txt generation. Environment-aware, and the default is the safe one:
 // anything that is not explicitly production emits `Disallow: /`, because a
-// preview deploy that gets indexed outranks and cannibalises the real site.
+// branch deploy that gets indexed outranks and cannibalises the real site.
 
+import { DEFAULT_ENVIRONMENT, type Environment, tryResolveEnvironment } from '@ultimat3/core';
 import { absoluteUrl } from './xml';
-
-export type SeoEnvironment = 'production' | 'preview' | 'development' | 'test';
 
 export interface RobotsGroup {
   /** One or more user agents this group applies to. */
@@ -16,8 +15,8 @@ export interface RobotsGroup {
 
 export interface RobotsConfig {
   baseUrl: string;
-  /** Omitted means "resolve from the environment", which defaults to preview. */
-  environment?: SeoEnvironment | undefined;
+  /** Omitted means "resolve from the environment"; anything but `production` disallows all. */
+  environment?: Environment | undefined;
   groups?: readonly RobotsGroup[];
   /** Sitemap paths or absolute URLs. Only emitted in production. */
   sitemaps?: readonly string[];
@@ -26,21 +25,22 @@ export interface RobotsConfig {
 }
 
 /**
- * Fail-closed: only the exact string `production` opts a deploy into indexing.
- * A typo, an unset variable, or a branch deploy all resolve to `preview`.
+ * Fail-closed: only the exact string `production` opts a deploy into indexing. A branch deploy
+ * (`staging`), a laptop, a typo and an unset variable are all "not production" and all disallow.
  */
-export function resolveEnvironment(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): SeoEnvironment {
-  const raw = env['ULTIMATE_ENV'] ?? env['NODE_ENV'];
-  if (raw === 'production') return 'production';
-  if (raw === 'test') return 'test';
-  if (raw === 'development') return 'development';
-  return 'preview';
+export function isIndexable(environment: Environment): boolean {
+  return environment === 'production';
 }
 
-export function isIndexable(environment: SeoEnvironment): boolean {
-  return environment === 'production';
+/**
+ * `@ultimat3/core` owns the read of `ULTIMATE_ENV`; this module owns only what an unreadable one
+ * means for a crawler. A typo in that key throws there, and a `robots.txt` render can be the first
+ * thing in a web process to ask — nothing in the container's boot path resolves the environment
+ * unconditionally — so an unnameable deploy resolves to core's own default here. The body was
+ * already going to be `Disallow: /`; a 500 would only cost the operator the reason.
+ */
+function ambientEnvironment(): Environment {
+  return tryResolveEnvironment() ?? DEFAULT_ENVIRONMENT;
 }
 
 function agents(userAgent: string | readonly string[]): readonly string[] {
@@ -48,7 +48,7 @@ function agents(userAgent: string | readonly string[]): readonly string[] {
 }
 
 export function buildRobots(config: RobotsConfig): string {
-  const environment = config.environment ?? resolveEnvironment();
+  const environment = config.environment ?? ambientEnvironment();
   const lines: string[] = [`# environment: ${environment}`];
 
   if (!isIndexable(environment)) {

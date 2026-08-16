@@ -1,6 +1,14 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import type { CacheTier } from '@ultimat3/cache';
-import { declareTags, registerTier, resetDeclaredTags, resetTiers, tag } from '@ultimat3/cache';
+import {
+  declareTags,
+  isolateDeclaredTags,
+  isolateTiers,
+  registerTier,
+  resetDeclaredTags,
+  resetTiers,
+  tag,
+} from '@ultimat3/cache';
 import { createContext, userActor } from '@ultimat3/core';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -300,9 +308,19 @@ describe('cache invalidation after the handler settles', () => {
     };
   }
 
+  // Per-test reset is this describe's own; the restore is what the rest of the process is owed —
+  // a reset drops a neighbour's registrations, and the leak guard sees additions only.
+  const restoreTiers = isolateTiers();
+  const restoreTags = isolateDeclaredTags();
+
   afterEach(() => {
     resetTiers();
     resetDeclaredTags();
+  });
+
+  afterAll(() => {
+    restoreTiers();
+    restoreTags();
   });
 
   test('a bust that refuses does not fail the write it was meant to follow', async () => {

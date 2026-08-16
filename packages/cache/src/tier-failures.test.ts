@@ -2,15 +2,27 @@
 // `bestEffort` hands back the tier's answer untouched on success, absorbs every throw shape on
 // failure, and that the log it writes is bounded, newest-first and a copy.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
-import { resetTiers } from './invalidate';
+import { isolateTiers, resetTiers } from './invalidate';
 import type { TierFailure } from './tier-failures';
-import { bestEffort, recentTierFailures, resetTierFailures } from './tier-failures';
+import {
+  bestEffort,
+  isolateTierFailures,
+  recentTierFailures,
+  resetTierFailures,
+} from './tier-failures';
+
+// An empty log is what every assertion below counts from, so the per-test reset stays. The
+// `resetTiers()` further down is the destructive one: it drops a neighbouring file's tiers,
+// revalidator and both logs, and only this restores them.
+const restoreTiers = isolateTiers();
 
 beforeEach(() => {
   resetTierFailures();
 });
+
+afterAll(restoreTiers);
 
 describe('bestEffort', () => {
   test('returns the tier answer unchanged and records nothing when the call succeeds', async () => {
@@ -120,5 +132,18 @@ describe('resetTiers', () => {
     resetTiers();
 
     expect(recentTierFailures()).toEqual([]);
+  });
+});
+
+describe('isolateTierFailures', () => {
+  test('puts back exactly what it found, dropping only what was recorded after it', async () => {
+    await bestEffort('lru', 'set', 'neighbour', () => Promise.reject(new Error('theirs')));
+
+    const restore = isolateTierFailures();
+    await bestEffort('redis', 'set', 'mine', () => Promise.reject(new Error('mine')));
+    resetTierFailures();
+    restore();
+
+    expect(recentTierFailures().map((failure) => failure.key)).toEqual(['neighbour']);
   });
 });
