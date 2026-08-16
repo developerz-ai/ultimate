@@ -48,15 +48,34 @@ export interface LoggerOptions {
   readonly writer?: ((line: string, level: LogLevel) => void) | undefined;
 }
 
+/**
+ * LOWERCASE, always: `isRedactedKey` lowercases its lookup, so `apiKey`/`accessToken`/
+ * `refreshToken` sat here for three releases matching nothing — and those are the exact field
+ * names on `@ultimat3/auth`'s `OAuthTokens`. Matching is exact-key and never substring, so a
+ * spelling that is not in this set is not redacted: both the camel and the snake wire spelling of
+ * each credential is listed. Add through `redactKeys()` (which lowercases) rather than here.
+ */
 const redactedKeys = new Set<string>([
   'password',
   'token',
   'secret',
   'authorization',
   'cookie',
-  'apiKey',
-  'accessToken',
-  'refreshToken',
+  'set-cookie',
+  'apikey',
+  'api_key',
+  'accesstoken',
+  'access_token',
+  'refreshtoken',
+  'refresh_token',
+  'idtoken',
+  'id_token',
+  'sessiontoken',
+  'session_token',
+  'clientsecret',
+  'client_secret',
+  'privatekey',
+  'private_key',
 ]);
 
 /** Mark keys as secret everywhere. `defineEnv()` calls this for every `secret: true` var. */

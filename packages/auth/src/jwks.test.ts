@@ -180,6 +180,36 @@ describe('the JWKS cache', () => {
     expect(calls).toBe(2);
   });
 
+  // `verifyJwtSignature` reads `header.kid` out of the attacker-supplied token BEFORE any
+  // signature check, and `hooks.authenticate` funnels a bearer token through it — so this branch
+  // is chosen by an unauthenticated caller. It used to refetch on every miss, which made one
+  // forged token one outbound request to the IdP: the IdP blocks this app's egress and every real
+  // login fails until the IdP unblocks it. The framework's own limiter cannot help — `auth` is
+  // pipeline stage 6 and `rate-limit` is stage 7.
+  test('500 sequential unknown-kid tokens issue at most one outbound fetch', async () => {
+    const real = await rsaKeyPair();
+    const attacker = await rsaKeyPair();
+    const served = keySet([await publicJwk(real, 'k1')]);
+    const keys = createJwksClient({
+      provider: 'test-op',
+      jwksUri: 'https://op.test/jwks',
+      fetch: served.fetch,
+      clock,
+    });
+
+    // Warm the cache the ordinary way, so what is measured is the miss path alone.
+    expect(await verifyJwtSignature(await sign(real, 'k1', 'RS256', { sub: 'ada' }), keys)).toBe(
+      true,
+    );
+    const warm = served.calls;
+
+    const forged = await sign(attacker, 'not-a-real-kid', 'RS256', { sub: 'the-vp' });
+    for (let attempt = 0; attempt < 500; attempt += 1) {
+      expect(await codeOf(() => verifyJwtSignature(forged, keys))).toBe('X_OAUTH_TOKEN_INVALID');
+    }
+    expect(served.calls - warm).toBeLessThanOrEqual(1);
+  });
+
   test('a kid nothing in the set matches is a coded refusal, not a crash', async () => {
     const pair = await rsaKeyPair();
     const served = keySet([await publicJwk(pair, 'k1')]);

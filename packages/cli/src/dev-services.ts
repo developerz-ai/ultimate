@@ -4,6 +4,7 @@
 
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { safeUrlLabel } from './safe-url-label';
 
 export type ServiceMode = 'embedded' | 'external';
 
@@ -73,6 +74,20 @@ export function resolveServices(root: string, env: Env): DevServices {
         : { name: 'storage', mode: 'external', url: s3Endpoint, detail: 'S3_ENDPOINT' },
   };
 }
+
+/**
+ * The three service urls as a report may carry them, and the ONE place they become printable.
+ * `x dev --json` emitted `DATABASE_URL` and `NATS_URL` verbatim — passwords included — into a
+ * field that is printed to a terminal, piped into a log and scraped by a script, while the rule
+ * against it was already written three lines from the emitting code and applied only to mail and
+ * cdn. The bindings keep the real url because `dev-queue.ts` has to connect with it; only this
+ * projection is redacted, so a leak cannot come back as a caller forgetting to call a helper.
+ */
+export const reportedUrls = (services: DevServices): Record<ServiceBinding['name'], string> => ({
+  db: safeUrlLabel(services.db.url, services.db.name),
+  events: safeUrlLabel(services.events.url, services.events.name),
+  storage: safeUrlLabel(services.storage.url, services.storage.name),
+});
 
 export const describeServices = (services: DevServices): string =>
   [services.db, services.events, services.storage]

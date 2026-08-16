@@ -3,7 +3,7 @@
 // supplies only the app, the caller and the socket. A tool answered here would be a second answer
 // to a question the framework already answers.
 
-import { markListening, nanoid } from '@ultimat3/core';
+import { markListening, nanoid, timingSafeEqual } from '@ultimat3/core';
 import { mcpHttpRoute, serveStdio } from '@ultimat3/mcp';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
@@ -73,8 +73,14 @@ export function startMcpHttp(host: CliMcpServer, port: number): McpHttpServer {
   const token = nanoid(32);
   const route = mcpHttpRoute({
     server: host.server,
+    // `timingSafeEqual`, not `===`: this was the only secret comparison in the framework that
+    // short-circuited on the first differing character. Localhost and a per-process `nanoid(32)`
+    // make it hard to exploit and neither makes it correct — an exception nobody can point at is
+    // an exception the next transport copies.
     resolveToken: (candidate) =>
-      candidate === token ? { actor: host.caller.actor, scopes: DEV_TOOL_SCOPES } : null,
+      timingSafeEqual(candidate, token)
+        ? { actor: host.caller.actor, scopes: DEV_TOOL_SCOPES }
+        : null,
   });
   const handle = Bun.serve({
     port,

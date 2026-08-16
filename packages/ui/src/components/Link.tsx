@@ -4,6 +4,7 @@
 import type { JSX } from 'solid-js';
 import { cx } from '../cx';
 import styles from './Link.module.scss';
+import { linkTarget } from './link-target';
 
 export interface LinkProps {
   href: string;
@@ -20,12 +21,17 @@ export interface LinkProps {
 }
 
 export function Link(props: LinkProps): JSX.Element {
-  const isExternal = (): boolean => props.external === true || /^https?:\/\//.test(props.href);
+  // Both the href and the external verdict come from ONE decision (`link-target.ts`): a
+  // `javascript:` href used to be emitted verbatim AND classified internal, so it lost the
+  // hardening too. A refused URL emits no `href` — inert, and still renders its text.
+  const target = (): { href: string | undefined; external: boolean } =>
+    linkTarget(props.href, props.external);
+  const isExternal = (): boolean => target().external;
 
   return (
     <a
       id={props.id}
-      href={props.href}
+      href={target().href}
       target={isExternal() ? '_blank' : undefined}
       rel={isExternal() ? 'noopener noreferrer' : undefined}
       aria-current={props['aria-current']}

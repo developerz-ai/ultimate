@@ -10,13 +10,15 @@ import { assertSafeKey } from './path';
 
 export const DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
-export const IMAGE_CONTENT_TYPES = [
-  'image/png',
-  'image/jpeg',
-  'image/gif',
-  'image/webp',
-  'image/svg+xml',
-] as const;
+/**
+ * `image/svg+xml` is deliberately ABSENT, and this is the default `uploadPolicy()` allowlist. An
+ * SVG is a script document: served back from the app's own origin under its declared type it runs
+ * on that origin, and the sniffer below PROMOTES a `<svg` body to this type rather than refusing
+ * it — so every app taking the default was accepting stored XSS, cached by the asset route for a
+ * year. An app that genuinely serves user SVG declares it once, explicitly, in
+ * `uploadPolicy({ allowedContentTypes })`, having decided how it serves the bytes back.
+ */
+export const IMAGE_CONTENT_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
 
 export const DOCUMENT_CONTENT_TYPES = [
   'application/pdf',

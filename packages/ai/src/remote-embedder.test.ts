@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
 import { cosine } from './embeddings';
 import { RemoteEmbedder } from './remote-embedder';
 
@@ -151,5 +152,73 @@ describe('RemoteEmbedder', () => {
 
     await expect(keyless.embed(['a'])).rejects.toMatchObject({ code: 'X_AI_KEY_MISSING' });
     expect(calls).toHaveLength(0);
+  });
+});
+
+/**
+ * An outbound call with no deadline and no size cap is a worker that never finishes: the
+ * per-request deadline produces a `ctx.signal` this call never receives, and `response.json()`
+ * buffers whatever the endpoint sends. A hosted endpoint is a third party, and `baseUrl` is
+ * app config — "the provider is trustworthy" is not a bound.
+ */
+describe('RemoteEmbedder outbound safety', () => {
+  const codeOf = async (call: () => Promise<unknown>): Promise<string> => {
+    try {
+      await call();
+    } catch (error) {
+      return isUltimateError(error) ? error.code : `not-coded: ${String(error)}`;
+    }
+    return 'did-not-throw';
+  };
+
+  test('every request carries an AbortSignal', async () => {
+    let seen: unknown;
+    const impl = async (_input: unknown, init?: RequestInit): Promise<Response> => {
+      seen = init?.signal;
+      return embeddingsFor(['a'], 0);
+    };
+    const remote = new RemoteEmbedder({
+      name: 'voyage-3',
+      dimension: 2,
+      apiKey: 'key-1',
+      baseUrl: 'https://embeddings.test/v1',
+      fetch: impl as unknown as typeof fetch,
+    });
+    await remote.embed(['a']);
+    expect(seen).toBeInstanceOf(AbortSignal);
+  });
+
+  test('a deadline that expires is a coded transport failure, never a bare DOMException', async () => {
+    const impl = async (_input: unknown, init?: RequestInit): Promise<Response> =>
+      await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(init.signal?.reason ?? new Error('aborted'));
+        });
+      });
+    const remote = new RemoteEmbedder({
+      name: 'voyage-3',
+      dimension: 2,
+      apiKey: 'key-1',
+      baseUrl: 'https://embeddings.test/v1',
+      timeoutMs: 5,
+      fetch: impl as unknown as typeof fetch,
+    });
+    expect(await codeOf(() => remote.embed(['a']))).toBe('X_AI_PROVIDER_UNAVAILABLE');
+  });
+
+  test('a response body past the cap is refused rather than buffered', async () => {
+    const impl = async (): Promise<Response> =>
+      new Response(JSON.stringify({ data: [{ index: 0, embedding: new Array(4096).fill(1) }] }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    const remote = new RemoteEmbedder({
+      name: 'voyage-3',
+      dimension: 2,
+      apiKey: 'key-1',
+      baseUrl: 'https://embeddings.test/v1',
+      maxResponseBytes: 512,
+      fetch: impl as unknown as typeof fetch,
+    });
+    expect(await codeOf(() => remote.embed(['a']))).toBe('X_AI_PROVIDER_UNAVAILABLE');
   });
 });

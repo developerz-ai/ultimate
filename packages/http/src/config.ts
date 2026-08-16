@@ -1,5 +1,6 @@
 // The HTTP slice of `app.config.ts`. One resolver, so a value is either a locked
 // default or an explicit override — never "whatever the first caller passed".
+import { DEFAULT_ENVIRONMENT, tryResolveEnvironment } from '@ultimat3/core';
 import { assertCorsConfig, type CorsConfig, DEFAULT_CORS } from './cors';
 import { type CsrfConfig, DEFAULT_CSRF } from './csrf';
 import { trustProxyUnset } from './errors';
@@ -108,7 +109,12 @@ const env = (name: string): string | undefined => {
 };
 
 export const defineHttpConfig = (input: HttpConfigInput = {}): HttpConfig => {
-  const dev = input.dev ?? env('NODE_ENV') !== 'production';
+  // `ULTIMATE_ENV` is the framework's one environment key and `NODE_ENV` is only its fallback, so
+  // reading `NODE_ENV` alone made a deployment that declared production the documented way serve
+  // the dev overlay and a report-only CSP. Non-throwing and `?? DEFAULT_ENVIRONMENT`, the same
+  // expression `@ultimat3/policy`'s `traceByDefault` uses: a malformed `ULTIMATE_ENV` is its own
+  // error with its own fix and must never be raised for the first time by a config default.
+  const dev = input.dev ?? (tryResolveEnvironment() ?? DEFAULT_ENVIRONMENT) !== 'production';
   const cors = { ...DEFAULT_CORS, ...input.cors };
   // The one resolver is the one place a resolved combination can be judged: an override is merged
   // over defaults the author never restated, so `origins: ['*']` alone is what reaches this.

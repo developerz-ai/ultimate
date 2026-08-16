@@ -4,6 +4,7 @@
  * in an attribute is an injection.
  */
 
+import { safeUrl, URL_ATTRIBUTES } from '@ultimat3/core';
 import type { JsxProps } from './jsx';
 
 /** Elements that never carry children, so the writer must not emit a closing tag. */
@@ -81,7 +82,18 @@ export function attributePair(name: string, value: unknown): string | null {
     const style = styleValue(value);
     return style === null ? null : `style="${escapeAttribute(style)}"`;
   }
-  return `${attribute}="${escapeAttribute(String(value))}"`;
+  const text = String(value);
+  // Escaping makes a value inert inside the quotes; it cannot make a SCHEME inert, because
+  // `href="javascript:alert(1)"` never leaves them. One choke point for both, here, because this
+  // module is the single place injection is prevented and an href off a database row is the shape
+  // every app writes. A refused URL emits no attribute at all — an anchor with no `href` is inert
+  // and still renders its text, where a blanked one is a live link nobody checked.
+  if (URL_ATTRIBUTES.includes(attribute.toLowerCase())) {
+    const url = safeUrl(text, attribute.toLowerCase());
+    if (url === null) return null;
+    return `${attribute}="${escapeAttribute(url)}"`;
+  }
+  return `${attribute}="${escapeAttribute(text)}"`;
 }
 
 export function renderAttributes(props: JsxProps): string {

@@ -2,6 +2,7 @@
 // switch, so money is a Money widget and a timestamp is a DateTime widget with a zone in
 // every one of those places — there is no second place to get it wrong.
 
+import { safeUrl } from '@ultimat3/core';
 import { t } from '@ultimat3/i18n';
 import {
   Checkbox,
@@ -105,7 +106,7 @@ function readView(props: WidgetProps, field: AdminField): JSX.Element {
       return props.value === null ? (
         <span>{t('admin.value.empty')}</span>
       ) : (
-        <a href={props.value.url}>{props.value.name}</a>
+        <a href={safeUrl(props.value.url, 'href') ?? undefined}>{props.value.name}</a>
       );
     default:
       return <span>{String(props.value ?? '')}</span>;

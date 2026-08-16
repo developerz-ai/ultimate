@@ -115,6 +115,8 @@ export type { LinkProps } from './components/Link';
 export { Link } from './components/Link';
 export type { LocaleSwitcherProps } from './components/LocaleSwitcher';
 export { LocaleSwitcher, localeLabel } from './components/LocaleSwitcher';
+export type { LinkTarget } from './components/link-target';
+export { linkTarget } from './components/link-target';
 export type { MenuItem, MenuProps } from './components/Menu';
 export { Menu } from './components/Menu';
 export type { MoneyProps } from './components/Money';

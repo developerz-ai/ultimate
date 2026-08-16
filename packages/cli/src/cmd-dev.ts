@@ -30,7 +30,7 @@ import { DEV_ROLES, selectRoles, startRoles } from './dev-roles';
 import type { RunningServices } from './dev-runtime';
 import { cdnLabel, describeCdn, describeMail, mailLabel, startServices } from './dev-runtime';
 import type { DevServices } from './dev-services';
-import { describeServices, resolveServices } from './dev-services';
+import { describeServices, reportedUrls, resolveServices } from './dev-services';
 import { storageRoutes } from './dev-storage';
 import { createTraceRecorder } from './dev-traces';
 import { intFlagOr, PORT_RANGE } from './flag-number';
@@ -319,9 +319,10 @@ export const devCommand: CliCommand = {
         // at, and the one url here that must NOT be behind the ingress the app's own url is.
         metrics: `${server.running.metricsUrl}${METRICS_PATH}`,
         stateDir: server.services.stateDir,
-        db: server.services.db.url,
-        events: server.services.events.url,
-        storage: server.services.storage.url,
+        // Redacted, for the reason the mail and cdn lines below already give and this line did
+        // not: `DATABASE_URL`, `NATS_URL` and `S3_ENDPOINT` all carry a password, and this object
+        // is printed, logged and scraped. `reportedUrls` is the one projection that may be shown.
+        ...reportedUrls(server.services),
         // The selecting env key, never the credential behind it: `SMTP_URL` carries a password
         // and this line is printed, logged and scraped.
         mail: describeMail(server.runtime),

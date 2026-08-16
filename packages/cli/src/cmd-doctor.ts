@@ -4,7 +4,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { usesDevCursorSecret } from '@ultimat3/core';
+import { tryResolveEnvironment, usesDevCursorSecret } from '@ultimat3/core';
 import { STORAGE_SIGNING_SECRET_KEY, usesDevStorageSecret } from '@ultimat3/storage';
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import type { CliCommand, CommandContext } from './command';
@@ -172,9 +172,14 @@ export function probeFor(cwd: string, bunVersion: string, port: number): DoctorP
     port,
     devCursorSecret: usesDevCursorSecret(),
     devStorageSecret: usesDevStorageSecret(),
-    // `X_ENV` first, then `NODE_ENV`: the order `@ultimat3/admin`'s dev-server guard already
-    // reads them in, and a second order would be a second convention.
-    production: (Bun.env['X_ENV'] ?? Bun.env['NODE_ENV']) === 'production',
+    // `ULTIMATE_ENV`, through core — the one key that says which deploy this is, with `NODE_ENV`
+    // as its documented fallback. This read `X_ENV ?? NODE_ENV`, a spelling nothing else in the
+    // repo reads, so a deploy declaring production the framework's own way was told it was not
+    // production and skipped both secret findings; and the `??` short-circuited, so any non-empty
+    // `X_ENV` shadowed a real `NODE_ENV=production` too. The non-throwing variant because
+    // `ULTIMATE_ENV` is not in the env schema — nothing validates it at boot, and a diagnostic
+    // that crashes on a typo is the one thing worse than a diagnostic that misses.
+    production: tryResolveEnvironment() === 'production',
     exists: (relativePath) => (root === undefined ? false : existsSync(join(root, relativePath))),
     portFree,
     drift: async () => (root === undefined ? [] : checkSourceDrift(root)),

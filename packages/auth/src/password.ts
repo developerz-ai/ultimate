@@ -4,6 +4,7 @@
 // otherwise response time answers "is this email registered?" for free.
 
 import { passwordWeak } from './errors';
+import { kdfGate } from './kdf-gate';
 
 export interface PasswordParams {
   readonly algorithm: 'argon2id';
@@ -57,15 +58,24 @@ const COMMON_PASSWORDS: ReadonlySet<string> = new Set([
   'correcthorse',
 ]);
 
+/**
+ * Through `kdfGate()`, like every other KDF call here: 19 MiB of arena per hash and no per-source
+ * limiter that an IPv6 /64 cannot walk around means the ONLY thing bounding argon2 memory on this
+ * box is this gate. Past its queue it refuses with `X_OVERLOADED`, the same shed http's `admit`
+ * stage performs — a refusal that costs one comparison, not one arena.
+ */
 export async function hashPassword(
   password: string,
   params: PasswordParams = DEFAULT_PASSWORD_PARAMS,
 ): Promise<string> {
-  return await Bun.password.hash(password, {
-    algorithm: params.algorithm,
-    memoryCost: params.memoryCost,
-    timeCost: params.timeCost,
-  });
+  return await kdfGate().run(
+    async () =>
+      await Bun.password.hash(password, {
+        algorithm: params.algorithm,
+        memoryCost: params.memoryCost,
+        timeCost: params.timeCost,
+      }),
+  );
 }
 
 /** Reads the parameters back out of a PHC string. `null` means "not a hash we recognise". */
@@ -103,13 +113,15 @@ export interface VerifyPasswordInput {
  */
 export async function verifyPassword(input: VerifyPasswordInput): Promise<PasswordVerification> {
   const params = input.params ?? DEFAULT_PASSWORD_PARAMS;
-  if (input.hash === null) {
+  // Read into a local so the closure below narrows without a cast.
+  const hash = input.hash;
+  if (hash === null) {
     await hashPassword(input.password, params);
     return FAILED;
   }
-  const ok = await Bun.password.verify(input.password, input.hash);
+  const ok = await kdfGate().run(async () => await Bun.password.verify(input.password, hash));
   if (!ok) return FAILED;
-  return { ok: true, needsRehash: needsRehash(input.hash, params) };
+  return { ok: true, needsRehash: needsRehash(hash, params) };
 }
 
 export interface StrengthOptions {

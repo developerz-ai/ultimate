@@ -105,7 +105,13 @@ export type {
   McpRouteDescriptor,
   ResolvedToken,
 } from './transport-http';
-export { bearerToken, isAgentActor, MCP_RATE_LIMITS, mcpHttpRoute } from './transport-http';
+export {
+  bearerToken,
+  DEFAULT_MCP_BODY_LIMIT_BYTES,
+  isAgentActor,
+  MCP_RATE_LIMITS,
+  mcpHttpRoute,
+} from './transport-http';
 export type { StdioTransportInput } from './transport-stdio';
 export { serveStdio } from './transport-stdio';
 export type { ArgIssue, ArgValidation } from './validate-args';

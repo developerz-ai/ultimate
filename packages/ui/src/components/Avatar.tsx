@@ -2,6 +2,7 @@
 // empty alt (the name is rendered as text or the accessible label), so it can
 // never shift layout or duplicate the name to a screen reader.
 
+import { safeUrl } from '@ultimat3/core';
 import type { JSX } from 'solid-js';
 import { cx } from '../cx';
 import styles from './Avatar.module.scss';
@@ -48,7 +49,14 @@ export function Avatar(props: AvatarProps): JSX.Element {
           {initialsOf(props.name)}
         </span>
       ) : (
-        <img src={props.src} alt="" width={px()} height={px()} loading="lazy" decoding="async" />
+        <img
+          src={safeUrl(props.src, 'src') ?? undefined}
+          alt=""
+          width={px()}
+          height={px()}
+          loading="lazy"
+          decoding="async"
+        />
       )}
       <span class={styles['name']}>{props.name}</span>
     </span>

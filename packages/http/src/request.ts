@@ -3,6 +3,7 @@
 // context so they cannot drift from what the pipeline resolved.
 
 import type { Actor } from '@ultimat3/core';
+import { readWithinLimit } from '@ultimat3/core';
 import type { RequestContext } from './context';
 import { bodyInvalid, buildSkew } from './errors';
 import { readCookie } from './locale';
@@ -24,48 +25,6 @@ const parseQuery = (url: URL): QueryValues => {
     else out[key] = [existing, value];
   }
   return out;
-};
-
-/** What a body read produced: the bytes, or the running total at the moment it went over. */
-type CappedBody = { readonly bytes: Uint8Array } | { readonly over: number };
-
-/**
- * The body, read through the stream and abandoned the instant the running total passes `limit`.
- * `arrayBuffer()` materialises first and checks after, so a `transfer-encoding: chunked` request —
- * one with no `content-length` for the pre-check to read — allocated its whole payload before the
- * 413 it was going to get anyway. A declared length is a courtesy, not a guard.
- */
-const readWithinLimit = async (
-  body: ReadableStream<Uint8Array> | null,
-  limit: number,
-): Promise<CappedBody> => {
-  if (body === null) return { bytes: new Uint8Array(0) };
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > limit) {
-        // Cancelled rather than drained: the peer is told to stop sending, and nothing past the
-        // cap is ever held. Draining is how a rejected request still costs its full transfer.
-        await reader.cancel();
-        return { over: total };
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return { bytes };
 };
 
 export class UltimateRequest {

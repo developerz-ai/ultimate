@@ -156,6 +156,28 @@ export interface AssembledContext {
   readonly dropped: readonly string[];
 }
 
+const BLOCK_OPEN = '<document id=';
+const BLOCK_CLOSE = '</document>';
+
+/**
+ * One retrieved document, fenced and labelled with the id it came from. A bare separator was not
+ * a boundary: it is a string a document can simply contain, and the assembled text lands in the
+ * `user` message indistinguishable from the author's own instructions — while a tool RESULT
+ * carries provenance and this carried none. So the fence is neutralised inside the payload, the
+ * shape `cdata()` uses in `@ultimat3/seo`'s `xml.ts`: the marker is broken, never deleted, so the
+ * model still reads every word the document actually said.
+ *
+ * Influence only, and deliberately not sold as more: the actor is `ctx.actor` and tool dispatch is
+ * matched against `def.tools`, so retrieved text can persuade a model and can never authorise it.
+ */
+function documentBlock(id: string, text: string): string {
+  const label = id.replaceAll('"', "'").replaceAll('>', ')').replaceAll('<', '(');
+  const body = text
+    .replaceAll(BLOCK_CLOSE, '<\\/document>')
+    .replaceAll(BLOCK_OPEN, '<\\document id=');
+  return `${BLOCK_OPEN}"${label}">\n${body}\n${BLOCK_CLOSE}`;
+}
+
 /**
  * Fill a context window in rank order until the budget is reached. Skips oversized hits
  * rather than stopping, so one long chunk does not starve every shorter one behind it.
@@ -163,9 +185,10 @@ export interface AssembledContext {
 export function assembleContext(input: {
   readonly hits: readonly SearchHit[];
   readonly maxTokens: number;
+  /** Between BLOCKS, never inside one — the block fence is what separates documents. */
   readonly separator?: string;
 }): AssembledContext {
-  const separator = input.separator ?? '\n\n---\n\n';
+  const separator = input.separator ?? '\n\n';
   const separatorTokens = estimateChunkTokens(separator);
   const parts: string[] = [];
   const used: string[] = [];
@@ -173,12 +196,13 @@ export function assembleContext(input: {
   let tokens = 0;
 
   for (const hit of input.hits) {
-    const cost = estimateChunkTokens(hit.text) + (parts.length === 0 ? 0 : separatorTokens);
+    const block = documentBlock(hit.id, hit.text);
+    const cost = estimateChunkTokens(block) + (parts.length === 0 ? 0 : separatorTokens);
     if (tokens + cost > input.maxTokens) {
       dropped.push(hit.id);
       continue;
     }
-    parts.push(hit.text);
+    parts.push(block);
     used.push(hit.id);
     tokens += cost;
   }

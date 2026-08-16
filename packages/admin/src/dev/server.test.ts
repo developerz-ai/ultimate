@@ -46,6 +46,42 @@ describe('/_x refuses to exist in production', () => {
     expect(() => assertDevOnly({ role: 'production', env: 'development' })).toThrow();
     expect(() => assertDevOnly({ role: 'web', env: 'development' })).not.toThrow();
   });
+
+  // `ULTIMATE_ENV` is the framework's one environment key. This guard read `X_ENV`/`NODE_ENV`
+  // only, so an app declaring production the documented way mounted /_x — SQL, policy traces and
+  // caught mail — on the internet, and the `ROLE` half can never fire (`ROLES` is
+  // web|sync|worker|scheduler|replicator|migrate, never `production`).
+  test('ULTIMATE_ENV=production is refused with NODE_ENV unset', () => {
+    const previousUltimate = process.env['ULTIMATE_ENV'];
+    const previousNode = process.env['NODE_ENV'];
+    const previousRole = process.env['ROLE'];
+    try {
+      process.env['ULTIMATE_ENV'] = 'production';
+      delete process.env['NODE_ENV'];
+      delete process.env['ROLE'];
+      expect(() => assertDevOnly({})).toThrow(/X_DEV_DASHBOARD_IN_PROD/);
+
+      delete process.env['ULTIMATE_ENV'];
+      process.env['NODE_ENV'] = 'production';
+      expect(() => assertDevOnly({})).toThrow(/X_DEV_DASHBOARD_IN_PROD/);
+
+      // `ULTIMATE_ENV` is the one key and `NODE_ENV` only its fallback, so an operator who
+      // declares this deploy development has declared it — one precedence, everywhere.
+      process.env['ULTIMATE_ENV'] = 'development';
+      expect(() => assertDevOnly({})).not.toThrow();
+
+      delete process.env['ULTIMATE_ENV'];
+      delete process.env['NODE_ENV'];
+      expect(() => assertDevOnly({})).not.toThrow();
+    } finally {
+      if (previousUltimate === undefined) delete process.env['ULTIMATE_ENV'];
+      else process.env['ULTIMATE_ENV'] = previousUltimate;
+      if (previousNode === undefined) delete process.env['NODE_ENV'];
+      else process.env['NODE_ENV'] = previousNode;
+      if (previousRole === undefined) delete process.env['ROLE'];
+      else process.env['ROLE'] = previousRole;
+    }
+  });
 });
 
 describe('every panel is a rendering of its --json', () => {

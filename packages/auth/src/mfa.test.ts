@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { mfaRequired } from './errors';
 import {
   base32Decode,
   base32Encode,
@@ -90,5 +91,32 @@ describe('recovery codes', () => {
     const code = set.codes[0] as string;
     expect(redeemRecoveryCode(code.replaceAll('-', '').toLowerCase(), set.hashes)).toHaveLength(1);
     expect(redeemRecoveryCode('ZZZZ-ZZZZ-ZZZZ-ZZZZ', set.hashes)).toBeNull();
+  });
+});
+
+/**
+ * The error is the ONLY thing the framework hands an app author when a password is proven and a
+ * second factor is not — there is no completion route, no `completeMfa()` and no pending-MFA
+ * credential (`packages/auth/CLAUDE.md` carries the design constraint for the follow-up). So the
+ * `fix:` has to name things that exist, and the cause must not publish an internal user id: both
+ * `X_MFA_REQUIRED` surfaces (`oauth-route.ts`'s `publicBody`, http's problem document) serialise
+ * `cause` to an anonymous caller and neither serialises `meta`.
+ */
+describe('X_MFA_REQUIRED', () => {
+  test('the fix names no route this package does not mount', () => {
+    expect(mfaRequired('user-42').fix).not.toContain('/auth/mfa');
+  });
+
+  test('the fix names the exports that actually finish the second factor', () => {
+    const fix = mfaRequired('user-42').fix;
+    expect(fix).toContain('verifyTotp');
+    expect(fix).toContain('createSession');
+    expect(fix).toContain('mfaSatisfied');
+  });
+
+  test('the user id is meta, never the cause an anonymous caller reads back', () => {
+    const error = mfaRequired('user-42');
+    expect(error.cause).not.toContain('user-42');
+    expect(error.meta?.['userId']).toBe('user-42');
   });
 });

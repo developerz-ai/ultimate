@@ -55,6 +55,36 @@ describe('logger', () => {
     });
   });
 
+  /**
+   * `isRedactedKey` lowercases the lookup, so three of the eight shipped defaults were stored
+   * camelCase and matched nothing — and those three are the exact field names on `OAuthTokens`
+   * (`accessToken`, `refreshToken`, `apiKey`). One `logger.info('token exchange', { tokens })`
+   * wrote a live access token into the log store for the full retention.
+   */
+  test('every default redaction key actually matches the field it names', () => {
+    const { logger, lines } = capture();
+    logger.info('token exchange', {
+      apiKey: 'ak_live_1',
+      accessToken: 'at_live_1',
+      refreshToken: 'rt_live_1',
+      api_key: 'ak_live_2',
+      access_token: 'at_live_2',
+      refresh_token: 'rt_live_2',
+      client_secret: 'cs_live_1',
+      id_token: 'idt_live_1',
+      private_key: 'pk_live_1',
+      session_token: 'st_live_1',
+      'set-cookie': 'x_session=abc; HttpOnly',
+      keep: 'yes',
+    });
+    const line = lines[0] ?? {};
+    for (const [key, value] of Object.entries(line)) {
+      if (key === 'ts' || key === 'level' || key === 'msg' || key === 'keep') continue;
+      expect([key, value]).toEqual([key, REDACTED]);
+    }
+    expect(line['keep']).toBe('yes');
+  });
+
   test('serialises UltimateError with the --json shape', () => {
     const { logger, lines } = capture();
     logger.error('failed', {

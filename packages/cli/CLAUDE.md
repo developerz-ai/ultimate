@@ -470,6 +470,19 @@ Pixels are `@ultimat3/core`'s pipeline, only ever. This file picks two base path
 and `MEDIA_BASE_PATH` — and decides nothing else; a resize, a format table or a second cache key
 here is the drift the split exists to prevent.
 
+**`/media` and `/_storage` are one authz decision, not two.** Both serve objects off the app's only
+disk, so `/media/*key` declares what `dev-storage.ts` declares — `auth: 'required'` +
+`STORAGE_READ_PERMISSION` + `enforcedBy: 'handler'` — and calls the same two functions, in the same
+order: `authorizeStorageRead` then `assertReadableKey`. It shipped `auth: 'public'` with no policy
+and no tenant check while its twin required both, which made every tenant's uploads one URL away in
+production (`serve.ts` mounts it), and `?w=` made it an unauthenticated `put` besides. The tenant
+test lives in ONE function both routes call, and `storage-surfaces.test.ts` pins the pair against
+each other — every case names the verdict absolutely as well as comparing the two, because equality
+alone is satisfied by both surfaces failing open together. Cacheability follows the key, not the
+route: a tenant-scoped key takes `AUTHORIZED_OBJECT_CACHE` (`private, max-age=0`, varying on
+`authorization`/`cookie`), and only a key no tenant owns keeps `immutable`. A genuinely public image
+belongs under `apps/web/site/`, which is a static asset and never touches that disk.
+
 `ICON_SOURCE` lives here, not in `cmd-doctor.ts`, because this is the module that reads it: the
 diagnostic checks what `x dev` serves, so one constant cannot pass the check and serve nothing.
 It is a **PNG** — core decodes PNG and JPEG only, and the SVG this used to name could never

@@ -119,6 +119,26 @@ function parseQuality(raw: string): number {
 }
 
 /**
+ * A safe integer is not a servable width. `?w=99999999` clears every gate above and then asks the
+ * encoder for a row buffer nothing can allocate — and on a surface that CACHES its output, each
+ * distinct width mints a new stored object, so an unbounded `w` is unbounded writes as well as one
+ * bad allocation. 8192 is past every display this can legitimately serve (`DEFAULT_SRCSET_WIDTHS`
+ * tops out two orders below it).
+ *
+ * Hard, not configurable: the shape `packages/mcp/src/query-limits.ts:48-56` uses — a caller may
+ * narrow a request by asking for less, never widen it by asking for more.
+ */
+const MAX_IMAGE_WIDTH = 8192;
+
+function parseWidth(raw: string): number {
+  const width = parsePositiveInt(IMAGE_QUERY_KEYS.width, raw);
+  if (width > MAX_IMAGE_WIDTH) {
+    throw imageQueryInvalid(IMAGE_QUERY_KEYS.width, raw, `must be ${MAX_IMAGE_WIDTH} or less`);
+  }
+  return width;
+}
+
+/**
  * Naming no *real* format is deliberately not refused here: `image-driver.ts`'s
  * `requestedFormat` already owns "is this an encodable format", and throwing in two places
  * would give one bad URL two different error codes depending on which module ran first. This
@@ -143,7 +163,7 @@ export function parseImageQuery(params: URLSearchParams): ImageQuery | null {
   if (rawWidth === null && rawFormat === null && rawQuality === null) return null;
 
   return {
-    ...(rawWidth === null ? {} : { width: parsePositiveInt(IMAGE_QUERY_KEYS.width, rawWidth) }),
+    ...(rawWidth === null ? {} : { width: parseWidth(rawWidth) }),
     ...(rawFormat === null ? {} : { format: parseFormat(rawFormat) }),
     ...(rawQuality === null ? {} : { quality: parseQuality(rawQuality) }),
   };

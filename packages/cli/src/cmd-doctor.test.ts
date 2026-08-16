@@ -118,45 +118,64 @@ describe('unit · x doctor', () => {
 });
 
 // Every case above hands `runDoctor` the `production` boolean, so the one place that derives it
-// from the environment is the half nothing covered — and it decides whether the cursor finding
-// fires at all. Both variables are restored after each case: bun shares one process across test
-// files, and a leaked `X_ENV` would decide a later file's answer by load order.
+// from the environment is the half nothing covered — and it decides whether BOTH secret findings
+// fire at all. It read `X_ENV ?? NODE_ENV`, a spelling nothing else in the repo reads, so a deploy
+// that declared production the framework's own documented way (`ULTIMATE_ENV=production`) was told
+// it was not production and skipped the two checks standing between it and a published signing
+// key. All three variables are restored after each case: bun shares one process across test files,
+// and a leaked environment would decide a later file's answer by load order.
 describe('unit · x doctor · probeFor', () => {
-  const SAVED_X_ENV = Bun.env['X_ENV'];
-  const SAVED_NODE_ENV = Bun.env['NODE_ENV'];
+  type EnvKey = 'ULTIMATE_ENV' | 'X_ENV' | 'NODE_ENV';
+  const KEYS: readonly EnvKey[] = ['ULTIMATE_ENV', 'X_ENV', 'NODE_ENV'];
+  const SAVED = new Map(KEYS.map((key) => [key, Bun.env[key]]));
 
-  const setEnv = (key: 'X_ENV' | 'NODE_ENV', value: string | undefined): void => {
+  const setEnv = (key: EnvKey, value: string | undefined): void => {
     if (value === undefined) delete Bun.env[key];
     else Bun.env[key] = value;
   };
 
   afterEach(() => {
-    setEnv('X_ENV', SAVED_X_ENV);
-    setEnv('NODE_ENV', SAVED_NODE_ENV);
+    for (const key of KEYS) setEnv(key, SAVED.get(key));
   });
 
-  const production = (xEnv: string | undefined, nodeEnv: string | undefined): boolean => {
-    setEnv('X_ENV', xEnv);
-    setEnv('NODE_ENV', nodeEnv);
+  const production = (over: Partial<Record<EnvKey, string>>): boolean => {
+    for (const key of KEYS) setEnv(key, over[key]);
     return probeFor(import.meta.dir, '1.3.14', 3000).production;
   };
 
-  test('NODE_ENV=production alone is a production process', () => {
-    expect(production(undefined, 'production')).toBe(true);
+  test('ULTIMATE_ENV=production is a production process', () => {
+    expect(production({ ULTIMATE_ENV: 'production' })).toBe(true);
   });
 
-  test('X_ENV=production alone is a production process', () => {
-    expect(production('production', undefined)).toBe(true);
+  // Core's documented fallback, kept: every container image and platform sets it, and an app that
+  // never heard of `ULTIMATE_ENV` must still be diagnosed correctly.
+  test('NODE_ENV=production alone is a production process', () => {
+    expect(production({ NODE_ENV: 'production' })).toBe(true);
   });
 
   // The precedence that matters: a base image that bakes in `NODE_ENV=production` would otherwise
   // make `x doctor` report a forgeable cursor at every `x dev` inside it, and the developer who
-  // set `X_ENV=development` to say so would have been overruled by the image.
-  test('X_ENV overrides NODE_ENV rather than falling back to it', () => {
-    expect(production('development', 'production')).toBe(false);
+  // said so with the framework's own key would have been overruled by the image.
+  test('ULTIMATE_ENV overrides NODE_ENV rather than falling back to it', () => {
+    expect(production({ ULTIMATE_ENV: 'development', NODE_ENV: 'production' })).toBe(false);
   });
 
-  test('neither variable set is not production', () => {
-    expect(production(undefined, undefined)).toBe(false);
+  // `X_ENV` is a spelling nothing in this repo reads. It must not decide, and — this is the half
+  // that bit — it must not SHADOW: `X_ENV ?? NODE_ENV` short-circuited on any non-empty value, so
+  // one stale variable turned a real production deploy into "not production".
+  test('X_ENV decides nothing, and shadows nothing', () => {
+    expect(production({ X_ENV: 'production' })).toBe(false);
+    expect(production({ X_ENV: 'prod', NODE_ENV: 'production' })).toBe(true);
+  });
+
+  // `ULTIMATE_ENV` is not in the env schema, so nothing validates it at boot and `x doctor` can be
+  // its first reader. `tryResolveEnvironment` answers `undefined` rather than throwing — a typo
+  // must be a diagnostic that runs, not a diagnostic that crashes.
+  test('a misspelled ULTIMATE_ENV answers "not production" instead of throwing', () => {
+    expect(production({ ULTIMATE_ENV: 'prodcution' })).toBe(false);
+  });
+
+  test('no variable set is not production', () => {
+    expect(production({})).toBe(false);
   });
 });
