@@ -4,8 +4,8 @@ status: in_progress
 created_by: sebi
 worked_by: "claude (hive of 4 per PR, one checkout)"
 owner: sebi
-percent: 13
-current_focus: "07-security.md — PR #102 in flight; 05+10 merged as #101"
+percent: 27
+current_focus: "01+09+04 next (tiers 0-1, logic, projection). 05/10 = #101; 07 = #102/#103/#104, all merged"
 slices:
   - file: 05-gate-and-scripts.md
     tier: 0
@@ -19,8 +19,9 @@ slices:
     pr: 101
   - file: 07-security.md
     tier: 0
-    status: in_progress
-    percent: 0
+    status: done
+    percent: 100
+    prs: [102, 103, 104]
   - file: 01-tier01-bugs.md
     tier: 0
     status: not_started
