@@ -10,9 +10,14 @@ export const AI_ERROR_CODES = [
   'X_AI_BUDGET_EXCEEDED',
   'X_AI_GATEWAY_MISSING',
   'X_AI_PROMPT_VERSION',
+  'X_AI_MODEL_UNKNOWN',
+  'X_AI_PROMPT_SECRET',
   'X_LLM_OUTPUT_INVALID',
   'X_LLM_REFUSED',
   'X_LLM_TRUNCATED',
+  'X_LLM_STREAM_INVALID',
+  'X_AGENT_MAX_TURNS',
+  'X_AGENT_TOOL_UNEXPOSED',
   'X_EVAL_THRESHOLD',
   'X_EVAL_BASELINE_MISSING',
   'X_EVAL_BASELINE_INVALID',
@@ -32,9 +37,14 @@ export const AI_ERROR_TITLES: Readonly<Record<AiErrorCode, string>> = {
   X_AI_BUDGET_EXCEEDED: 'a model call would exceed its budget',
   X_AI_GATEWAY_MISSING: 'an llm() action ran with no gateway installed',
   X_AI_PROMPT_VERSION: 'prompt version or slots are wrong',
+  X_AI_MODEL_UNKNOWN: 'a model id nothing registered in the catalogue',
+  X_AI_PROMPT_SECRET: 'a Secret was about to be rendered into a prompt',
   X_LLM_OUTPUT_INVALID: 'structured output failed its schema on the answer and the repair turn',
   X_LLM_REFUSED: 'the model declined the request',
   X_LLM_TRUNCATED: 'the answer hit its maxTokens ceiling before it was complete',
+  X_LLM_STREAM_INVALID: 'a streamed answer failed its output schema, and a stream cannot repair',
+  X_AGENT_MAX_TURNS: 'an agent hit its turn ceiling without answering',
+  X_AGENT_TOOL_UNEXPOSED: 'an agent lists a tool that is not an MCP-exposed action',
   X_EVAL_THRESHOLD: 'an eval scored below its tolerance',
   X_EVAL_BASELINE_MISSING: 'an eval has no recorded baseline to gate against',
   X_EVAL_BASELINE_INVALID: 'a recorded baseline cannot be read',
@@ -109,6 +119,63 @@ export class AiGatewayMissingError extends UltimateError {
 }
 
 /**
+ * A model id nothing put in the catalogue. This is what replaced the closed `ModelId` union: the
+ * union made a company's own model id inexpressible, so the only way past `tsc` was to claim a
+ * Claude id — and then `costOf` priced an internal model at Anthropic list rates and the budget
+ * ledger reserved against a number belonging to a model nobody ran. A wrong id is still refused;
+ * it is refused HERE, at the first read of the spec, instead of by making a right one impossible.
+ */
+export class AiModelUnknownError extends UltimateError {
+  constructor(input: { model: string; registered: readonly string[] }) {
+    super({
+      code: 'X_AI_MODEL_UNKNOWN',
+      cause:
+        `model "${input.model}" has no registered spec, so nothing can price it ` +
+        `(registered: ${input.registered.length > 0 ? input.registered.join(', ') : 'none'})`,
+      // The `errors` gate blanks every interpolation, so the literal half alone has to name the
+      // call. Which ids ARE registered is a fact of the failure, and cause is where facts live.
+      fix: 'registerModel({ id, contextWindow, maxOutput, inputPerMillion, outputPerMillion, cacheMinimumTokens, reasoning }) at boot, before configureAi',
+      docs: docsFor('X_AI_MODEL_UNKNOWN'),
+      meta: { model: input.model },
+    });
+  }
+}
+
+/**
+ * A `Secret` reached a prompt variable. `Secret` redacts by VALUE, so this would not have leaked
+ * — it would have rendered `[redacted]` into the template and asked the model to reason about it,
+ * which is a prompt that reads fine and means something else. The same class of failure as an
+ * unfilled `{{slot}}`, and refused for the same reason: loudly, before a token is spent.
+ */
+export class AiPromptSecretError extends UltimateError {
+  constructor(input: { ref: string; keys: readonly string[] }) {
+    super({
+      code: 'X_AI_PROMPT_SECRET',
+      cause: `prompt "${input.ref}" was given a Secret in vars(): ${input.keys.join(', ')}`,
+      fix: 'drop the key from vars() and from the template, or revealSecret(value) in vars() if the model genuinely has to read it',
+      docs: docsFor('X_AI_PROMPT_SECRET'),
+    });
+  }
+}
+
+/**
+ * A streamed answer did not satisfy its `output` schema. Distinct from `X_LLM_OUTPUT_INVALID`
+ * because there is no repair turn to have failed: the consumer has already read the tokens, and
+ * replaying a second answer over the top is two answers to one question. So a stream gets one
+ * attempt, and the fix is either a looser schema or the non-streaming call that CAN repair.
+ */
+export class LlmStreamInvalidError extends UltimateError {
+  constructor(input: { prompt: string; issues: string }) {
+    super({
+      code: 'X_LLM_STREAM_INVALID',
+      cause: `streamed answer to prompt "${input.prompt}" failed its output schema: ${input.issues}`,
+      fix: 'call the action instead of .stream() when the answer must satisfy a structured schema — a stream has already delivered its tokens and cannot take a repair turn',
+      docs: docsFor('X_LLM_STREAM_INVALID'),
+    });
+  }
+}
+
+/**
  * The model's answer failed the action's `output` schema on the first turn AND on the repair
  * turn that followed. Two failures is a disagreement between the prompt and the schema, not a
  * bad roll — a third attempt only spends money, so this throws instead of looping.
@@ -122,6 +189,50 @@ export class LlmOutputInvalidError extends UltimateError {
         `${input.attempts} attempts: ${input.issues}`,
       fix: 'describe the output shape in the prompt template and bump its version, or widen `output` in the llm() declaration',
       docs: docsFor('X_LLM_OUTPUT_INVALID'),
+    });
+  }
+}
+
+/**
+ * An `agent()` ran out of turns with no answer. Never a partial one: the loop's whole contract is
+ * that it either satisfies `output` or says it did not, and a half-finished transcript returned as
+ * a result is a model's working notes presented as a decision.
+ *
+ * Reaching the ceiling almost always means the loop has no exit condition — a tool that answers
+ * the same thing every turn, or a prompt that never tells the model to finish. Raising the
+ * ceiling on that spends more money on the same non-answer, which is why the fix names the prompt
+ * before it names the number.
+ */
+export class AgentMaxTurnsError extends UltimateError {
+  constructor(input: { agent: string; turns: number; calls: number }) {
+    super({
+      code: 'X_AGENT_MAX_TURNS',
+      cause:
+        `agent "${input.agent}" used all ${input.turns} turns and ${input.calls} tool calls ` +
+        `without calling the respond tool`,
+      fix: 'tell the template when to stop and answer through the respond tool, then bump its version — raise maxTurns only once the run demonstrably converges',
+      docs: docsFor('X_AGENT_MAX_TURNS'),
+      meta: { agent: input.agent, turns: input.turns },
+    });
+  }
+}
+
+/**
+ * An `agent()` lists an action that is not an MCP-exposed tool. Refused at DECLARATION rather
+ * than filtered at the call, because a silently dropped tool is the worst of both: the
+ * declaration reads as if the model can call it, and the model is never offered it.
+ *
+ * `isMcpExposed` is the one predicate — an in-app agent and an external MCP client see exactly
+ * the same catalogue, which is what keeps "there is no second authz system" true of the catalogue
+ * too.
+ */
+export class AgentToolUnexposedError extends UltimateError {
+  constructor(input: { agent: string; tools: readonly string[] }) {
+    super({
+      code: 'X_AGENT_TOOL_UNEXPOSED',
+      cause: `agent "${input.agent}" lists tools no MCP surface exposes: ${input.tools.join(', ')}`,
+      fix: 'add mcp: { expose: true } to the action named in cause, or drop it from the agent tools list',
+      docs: docsFor('X_AGENT_TOOL_UNEXPOSED'),
     });
   }
 }
@@ -209,100 +320,15 @@ export class AiPromptRenderError extends UltimateError {
   }
 }
 
-/**
- * An eval scored further below its recorded baseline than its tolerance allows. The gate is the
- * DROP, not an absolute number — a model that got marginally worse everywhere is not the same
- * event as a prompt edit that broke one case, and only the second one is anybody's fault.
- *
- * This is a test failure, not a warning.
- */
-export class EvalThresholdError extends UltimateError {
-  constructor(input: {
-    eval: string;
-    score: number;
-    baseline: number;
-    tolerance: number;
-    promptVersion: string;
-    regressed: readonly string[];
-  }) {
-    super({
-      code: 'X_EVAL_THRESHOLD',
-      cause:
-        `eval "${input.eval}" scored ${input.score.toFixed(3)} against a recorded baseline of ` +
-        `${input.baseline.toFixed(3)} (tolerance ${input.tolerance.toFixed(3)}) on prompt ` +
-        `version ${input.promptVersion}; regressed: ${input.regressed.join(', ')}`,
-      fix: `x test ${input.eval} to see per-case scores, then fix the prompt — or ULTIMATE_EVAL_RECORD=1 x test eval to accept the new numbers as a reviewed diff`,
-      docs: docsFor('X_EVAL_THRESHOLD'),
-    });
-  }
-}
-
-/**
- * An eval declared a baseline that has never been recorded. Not a pass: an eval with nothing to
- * compare against gates on nothing, and a step that cannot fail is a step that is not running.
- */
-export class EvalBaselineMissingError extends UltimateError {
-  constructor(input: { eval: string; path: string; reason: string; fix?: string }) {
-    super({
-      code: 'X_EVAL_BASELINE_MISSING',
-      cause: `eval "${input.eval}" gates against ${input.path}, which ${input.reason}`,
-      fix: input.fix ?? `ULTIMATE_EVAL_RECORD=1 x test eval, then commit ${input.path}`,
-      docs: docsFor('X_EVAL_BASELINE_MISSING'),
-    });
-  }
-}
-
-/** A recorded baseline that cannot be read. Never treated as absent — that would erase a gate. */
-export class EvalBaselineInvalidError extends UltimateError {
-  constructor(input: { path: string; problem: string }) {
-    super({
-      code: 'X_EVAL_BASELINE_INVALID',
-      cause: `the recorded baseline ${input.path} ${input.problem}`,
-      fix: `ULTIMATE_EVAL_RECORD=1 x test eval to re-record ${input.path}`,
-      docs: docsFor('X_EVAL_BASELINE_INVALID'),
-    });
-  }
-}
-
-/**
- * A registered prompt that no eval names. An unevaluated prompt is untested code that costs
- * money and answers users, so the gate fails on it exactly like an untyped module.
- */
-export class EvalMissingError extends UltimateError {
-  constructor(input: { prompt: string; id: string }) {
-    super({
-      code: 'X_EVAL_MISSING',
-      cause: `prompt "${input.prompt}" has no eval`,
-      fix: `defineEval({ name: '${input.id}', prompt, cases, scorers, tolerance, baseline }) beside the prompt, then ULTIMATE_EVAL_RECORD=1 x test eval`,
-      docs: docsFor('X_EVAL_MISSING'),
-    });
-  }
-}
-
-/**
- * The gate ran with baseline recording switched on. Recording makes every eval write the numbers
- * it just measured and pass, so a `x verify` that inherited the flag reports green over scores
- * nothing compared — and rewrites the committed baselines on its way through, which is the half
- * a red step alone would not undo. Recording is a deliberate, reviewable diff, never a gate run.
- */
-export class EvalRecordingError extends UltimateError {
-  constructor(input: { env: string }) {
-    super({
-      code: 'X_EVAL_RECORDING',
-      cause: `${input.env} is set, so every eval would re-record its baseline instead of gating on it`,
-      fix: `env -u ${input.env} x verify`,
-      docs: docsFor('X_EVAL_RECORDING'),
-    });
-  }
-}
-
 /** A vector's length does not match the store's declared dimension. */
 export class VectorDimMismatchError extends UltimateError {
   constructor(input: { store: string; expected: number; received: number }) {
     super({
       code: 'X_VECTOR_DIM_MISMATCH',
       cause: `store "${input.store}" expects ${input.expected} dimensions, got ${input.received}`,
-      fix: 'use the same embedder that created the store, or x ai reindex to rebuild it',
+      // Not `x ai reindex`: that command is PLANNED and throws, so a fix line naming it sends an
+      // operator to a wall. A fix has to be performable today, which here means app code.
+      fix: 'use the same embedder that created the store, or re-embed every record at the new width and upsert it',
       docs: docsFor('X_VECTOR_DIM_MISMATCH'),
     });
   }
@@ -338,7 +364,7 @@ export class EmbedderDimMismatchError extends UltimateError {
       cause:
         `embedder "${input.embedder}" is declared with ${input.expected} dimensions but the ` +
         `provider returned ${input.received}`,
-      fix: `set dimension: ${input.received} on the embedder, then x ai reindex to rebuild the store`,
+      fix: `set dimension: ${input.received} on the embedder, then re-embed every record at that width and upsert it`,
       docs: docsFor('X_VECTOR_DIM_MISMATCH'),
     });
   }

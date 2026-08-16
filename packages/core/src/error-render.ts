@@ -189,3 +189,61 @@ export function renderMetaRecord(
   for (const key of metaKeys(meta)) out[key] = metaEntry(meta, key);
   return out;
 }
+
+/**
+ * The shape of a rejected value — **never its content**.
+ *
+ * WHY: `renderCauseValue` above is safe against THROWING, not against LEAKING. It is the right
+ * renderer for a value the framework itself built; it is the wrong one for a value a caller
+ * supplied, because a `cause` is not a private diagnostic — it is folded into an HTTP problem
+ * document AND written into the log line, and the logger redacts `fields` by key, so a value
+ * baked into a message string has no key left to redact. That is not hypothetical: it was
+ * reproduced this cycle that a validator echoing a rejected value wrote mistyped passwords to
+ * both the log index and the user's own network tab.
+ *
+ * So: type and length, which is what a format or type violation actually needs, and nothing else.
+ * There is no dev-only escape hatch on purpose — a flag is one misconfigured environment away
+ * from being the same breach.
+ *
+ * A deliberate, character-for-character duplicate of `describeValue` in
+ * `packages/schema/src/describe-value.ts`, for the reason `SCHEMA_ERROR_CODE_TITLES` is one:
+ * `@ultimat3/schema` is tier 0 alongside this package, so neither may import the other. Keep the
+ * two identical; changing one alone is the bug.
+ */
+export function describeValue(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  if (value === null) return 'null';
+  switch (typeof value) {
+    case 'string':
+      return countOf(value.length, 'string', 'character');
+    case 'number':
+      return describeNumber(value);
+    case 'boolean':
+      return 'a boolean';
+    case 'bigint':
+      return 'a bigint';
+    case 'symbol':
+      return 'a symbol';
+    case 'function':
+      return 'a function';
+    default:
+      break;
+  }
+  if (Array.isArray(value)) return countOf(value.length, 'array', 'item');
+  // `getTime()` rather than a value: an invalid Date is the one Date fact a caller can act on.
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? 'an invalid Date' : 'a Date';
+  return 'an object';
+}
+
+function describeNumber(value: number): string {
+  if (Number.isNaN(value)) return 'NaN';
+  if (value === Number.POSITIVE_INFINITY) return 'Infinity';
+  if (value === Number.NEGATIVE_INFINITY) return '-Infinity';
+  return 'a number';
+}
+
+function countOf(size: number, noun: string, unit: string): string {
+  if (size === 0) return `an empty ${noun}`;
+  const article = noun === 'array' ? 'an' : 'a';
+  return `${article} ${noun} of ${size} ${unit}${size === 1 ? '' : 's'}`;
+}

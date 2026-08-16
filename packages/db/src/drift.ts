@@ -17,6 +17,7 @@ import { type LedgerRow, type Migration, readLedger } from './migrate';
 export type DriftKind =
   | 'unexpected-column'
   | 'missing-column'
+  | 'changed-column'
   | 'unexpected-table'
   | 'missing-table'
   | 'unknown-schema'
@@ -55,6 +56,35 @@ function missingColumn(table: string, column: string): DriftDifference {
     column,
     cause: `table "${table}" is missing column "${column}" that migrations declare`,
     fix: 'x db migrate',
+  };
+}
+
+/**
+ * The column exists on both sides and one of them lets it be `NULL`.
+ *
+ * This is the finding the expand/contract flow needs and never had. `generate.ts` emits a `NOT
+ * NULL` add as nullable plus a `-- backfill "c", then: … set not null;` comment, because the
+ * strict version cannot succeed on a populated table — and phase 2 is a comment, so it is a thing
+ * a human has to remember. Nobody did, and `compareTable` compared columns by name and by type
+ * while `snapshotOf` had recorded `nullable` all along, so the column stayed nullable forever
+ * against an entity schema that said otherwise, with `ok: true` on every check. The first
+ * `undefined` write then lands as `NULL` and crashes three services away from the migration.
+ *
+ * `x db gen` is deliberately not the fix: it diffs types and indexes and has never emitted a
+ * `set not null`, so naming it would send a reader to a command that generates an empty migration.
+ */
+function changedColumn(table: string, column: string, liveNullable: boolean): DriftDifference {
+  const clause = liveNullable ? 'set not null' : 'drop not null';
+  return {
+    kind: 'changed-column',
+    table,
+    column,
+    cause: liveNullable
+      ? `table "${table}" allows NULL in column "${column}" that migrations declare not null`
+      : `table "${table}" forbids NULL in column "${column}" that migrations declare nullable`,
+    fix:
+      `alter table "${table}" alter column "${column}" ${clause};   # in a new migration` +
+      (liveNullable ? ' — backfill the existing NULLs first' : ''),
   };
 }
 
@@ -189,16 +219,40 @@ function compareForeignKeys(live: TableDescription, expected: TableDescription):
     .map((key) => missingForeignKey(live.name, key));
 }
 
+/**
+ * A primary key column is `NOT NULL` in the catalog whether or not anything declared it — Postgres
+ * adds the constraint with the key. Both sides are therefore read through the union of the two
+ * primary keys, or a table whose snapshot spells its key column nullable reports a difference
+ * against a database that is exactly right and cannot be anything else. The union, not one side:
+ * a key present on only one of them is a difference the *key* comparison owns, and reporting it
+ * again as a nullability change would be one fault with two findings.
+ */
+function keyColumnsOf(live: TableDescription, expected: TableDescription): ReadonlySet<string> {
+  return new Set([...live.primaryKey, ...expected.primaryKey]);
+}
+
 function compareTable(live: TableDescription, expected: TableDescription): DriftDifference[] {
   const differences: DriftDifference[] = [];
-  const expectedColumns = new Set(expected.columns.map((column) => column.name));
-  const liveColumns = new Set(live.columns.map((column) => column.name));
+  const expectedColumns = new Map(expected.columns.map((column) => [column.name, column]));
+  const liveColumns = new Map(live.columns.map((column) => [column.name, column]));
+  const keyColumns = keyColumnsOf(live, expected);
   for (const column of live.columns) {
     if (expectedColumns.has(column.name)) continue;
     differences.push(unexpectedColumn(live.name, column.name));
   }
   for (const column of expected.columns) {
-    if (!liveColumns.has(column.name)) differences.push(missingColumn(live.name, column.name));
+    const counterpart = liveColumns.get(column.name);
+    if (counterpart === undefined) {
+      differences.push(missingColumn(live.name, column.name));
+      continue;
+    }
+    // Nullability, not the type: the catalog and a snapshot spell types differently often enough
+    // that comparing them here would report drift on a correct database, and `x db gen`'s
+    // `retypeColumn` already owns that question where both sides are generated.
+    if (keyColumns.has(column.name)) continue;
+    if (column.nullable !== counterpart.nullable) {
+      differences.push(changedColumn(live.name, column.name, counterpart.nullable));
+    }
   }
   differences.push(...compareIndexes(live, expected));
   differences.push(...compareForeignKeys(live, expected));

@@ -9,7 +9,8 @@ import { ChannelHub } from './channel';
 import { InProcessTransport } from './fanout';
 import { LiveQueryRegistry } from './live-query';
 import { SocketRegistry } from './socket';
-import { createSyncNode, listenSyncNode, type SyncNode } from './sync-node';
+import { listenSyncNode } from './sync-listen';
+import { createSyncNode, type SyncNode } from './sync-node';
 import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 const BUILD_ID = 'build-1';

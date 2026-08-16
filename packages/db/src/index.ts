@@ -27,6 +27,7 @@ export {
   createPostgresClient,
   db,
   isReservable,
+  POOL_MAX_ENV,
   POOL_PROFILES,
   poolProfileFor,
   setDbClient,
@@ -60,13 +61,18 @@ export {
   dbDrift,
   dbNotImplemented,
   dbUnavailable,
+  driverError,
   identifierUnsafe,
+  migrateConcurrent,
   migrationConflict,
   migrationDestructive,
   migrationIrreversible,
   migrationSnapshotMissing,
   multipleStatements,
+  poolAcquireTimeout,
+  poolMaxInvalid,
   readonlyViolation,
+  serializationExhausted,
   sqlUnsafe,
 } from './errors';
 export { expectedQueryLoop, expectedQueryLoopReason } from './expected-loop';
@@ -104,6 +110,8 @@ export {
   isLedgerMissing,
   LEDGER_TABLE,
   MIGRATION_LOCK_KEY,
+  MIGRATION_LOCK_POLL_MS,
+  MIGRATION_LOCK_WAIT_MS,
   migrate,
   migrationChecksum,
   pendingMigrations,
@@ -140,6 +148,8 @@ export { parseSnapshot } from './snapshot-parse';
 export type { SqlFragment } from './sql';
 export { identifier, isSqlFragment, join, literal, raw, sql } from './sql';
 export { stripSqlNoise } from './sql-noise';
+export type { DbSqlStateCode } from './sqlstate';
+export { DB_SQLSTATE_CODES, isRetryableState, SQLSTATE, sqlState, sqlStateCode } from './sqlstate';
 export { statementFingerprint, statementKind, statementVerb } from './statement-shape';
 export { STATEMENT_ATTRIBUTE } from './statement-span';
 export { statementsOf } from './statement-split';

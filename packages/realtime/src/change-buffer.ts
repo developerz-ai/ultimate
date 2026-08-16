@@ -1,6 +1,17 @@
-// The bounded per-query change window that makes reconnect a delta instead of a refetch.
-// Lives on the `replicator` (one per DB), so a reconnecting client costs zero DB work while its
-// gap is inside the window. Outside it, `resumeFrom` takes one snapshot — never WAL traversal.
+// The bounded per-query change window that makes reconnect a delta instead of a refetch. Inside
+// the window a reconnecting client costs zero DB work; outside it, `resumeFrom` takes one bounded
+// snapshot — never WAL traversal.
+//
+// **It is per `sync` node, and a `qid` window can only be.** The header used to say it lives on the
+// replicator; it does not, and it could not — a patch is query-scoped, so producing one needs that
+// query's compiled shape, its matcher and its current window, none of which the replicator has (it
+// is entity-scoped by construction). The consequence is real and is not fixed here: a client that
+// reconnects onto a node that never served its `qid` finds no ring, `shouldResnapshot` answers
+// `out-of-window`, and it takes the snapshot path. What that costs is one *shared* read per
+// (query, node) — `fillWindow` joins every subscriber arriving during a read into it — and not one
+// read per client. Making the delta path work across nodes means an **entity**-keyed window every
+// node fills from the change stream it already subscribes to, which is a `ResumeSource` shape
+// change, not a placement change.
 
 import type { ResumeSource } from './cursor';
 import type { RowPatch } from './json';

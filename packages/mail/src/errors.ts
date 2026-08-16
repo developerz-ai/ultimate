@@ -66,7 +66,7 @@ export const templateUnknown = (mailId: string, known: readonly string[]): MailE
   new MailError({
     code: 'X_MAIL_TEMPLATE_UNKNOWN',
     cause: `no mail with id "${mailId}" is registered (have: ${known.join(', ') || 'none'})`,
-    fix: `x mail list --json   # then export defineMail({ id: '${mailId}', ... }) and import it`,
+    fix: `export defineMail({ id: '${mailId}', ... }) and import that module at boot — the import IS the registration`,
     meta: { mailId, known },
   });
 
@@ -86,7 +86,7 @@ export const mailDuplicate = (mailId: string): MailError =>
   new MailError({
     code: 'X_MAIL_DUPLICATE',
     cause: `mail id "${mailId}" is already registered by another defineMail() call`,
-    fix: `x mail list --json   # then rename one of the two defineMail({ id }) declarations`,
+    fix: `rename one of the two defineMail({ id: '${mailId}' }) declarations — an id is the key both surfaces address a template by`,
     meta: { mailId },
   });
 

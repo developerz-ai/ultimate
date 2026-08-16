@@ -104,6 +104,56 @@ describe('an explicitly declared tenant', () => {
   });
 });
 
+/**
+ * The failure this refuses is silent by construction: `assertRowTenant` leaves a row that names no
+ * tenant alone and delegates to the column's `NOT NULL`, so a nullable tenant column is a
+ * delegation with nothing behind it — the row lands with a null, no `org_id = $1` matches it, and
+ * it belongs to nobody for as long as the table exists.
+ */
+describe('a nullable tenant column', () => {
+  const nullableTenant = (build: () => unknown) => caught(build);
+
+  test('is refused at declaration, whichever of the three switches named it', () => {
+    // Declared by hand.
+    const declared = nullableTenant(() =>
+      entity('tenancy_test_nullable_declared', {
+        tenant: 'workspaceId',
+        columns: { id: uuid().primaryKey(), workspaceId: uuid().nullable(), title: text() },
+      }),
+    );
+    expect(declared).toBeUltimateError('X_INVARIANT_VIOLATED');
+    expect(String(declared?.cause)).toContain('workspaceId');
+    // The fix is one edit to the declaration, and names the backfill the edit needs.
+    expect(String(declared?.fix)).toContain('drop .nullable()');
+    expect(String(declared?.fix)).toContain('x db gen');
+
+    // Marked with `.tenant()` — the inference path, which used to skip the check entirely.
+    expect(
+      nullableTenant(() =>
+        entity('tenancy_test_nullable_marked', {
+          columns: { id: uuid().primaryKey(), workspaceId: uuid().nullable().tenant() },
+        }),
+      ),
+    ).toBeUltimateError('X_INVARIANT_VIOLATED');
+
+    // Named `orgId` and nothing else — the switch an entity cannot turn off by forgetting a call.
+    expect(
+      nullableTenant(() =>
+        entity('tenancy_test_nullable_named', {
+          columns: { id: uuid().primaryKey(), orgId: uuid().nullable() },
+        }),
+      ),
+    ).toBeUltimateError('X_INVARIANT_VIOLATED');
+  });
+
+  test('a nullable column that is NOT the tenant is untouched', () => {
+    const notes = entity('tenancy_test_nullable_other', {
+      columns: { id: uuid().primaryKey(), orgId: uuid(), body: text().nullable() },
+    });
+    expect(notes.$tenantColumn).toBe('orgId');
+  });
+});
+
 describe('assertScoped', () => {
   test('throws X_TENANCY_UNSCOPED for a scoped entity queried without an org', () => {
     expect(() => assertScoped('post', 'orgId', 'findMany', emptyPlan('post'))).toThrow(

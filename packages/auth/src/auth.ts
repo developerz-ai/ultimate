@@ -8,7 +8,7 @@ import { t } from '@ultimat3/schema';
 import type { AuthAdapter, AuthSession, AuthUser } from './adapter';
 import { mfaRequired, sessionUnknown } from './errors';
 import type { OAuthProviderId } from './oauth';
-import { OAUTH_PROVIDER_IDS } from './oauth';
+import { oauthProviderIds } from './oauth-registry';
 import {
   checkPasswordStrength,
   DEFAULT_PASSWORD_POLICY,
@@ -26,6 +26,8 @@ import {
   DEFAULT_AUTH_RATE_LIMIT,
   ipKey,
   loginFailed,
+  orgKey,
+  orgRateLimit,
 } from './rate-limit';
 import {
   createSession,
@@ -46,6 +48,8 @@ export const UserSchema = t.object({
   orgId: t.optional(t.uuid),
   roles: t.array(t.string),
   permissions: t.array(t.string),
+  scopes: t.array(t.string),
+  externalId: t.optional(t.string),
   mfaEnrolled: t.boolean,
   createdAt: t.date,
 });
@@ -64,7 +68,9 @@ export const SessionSchema = t.object({
 export const AccountSchema = t.object({
   id: t.uuid,
   userId: t.uuid,
-  provider: t.enum(['github', 'google', 'apple']),
+  // Any registered provider id, not the three built-ins: an app that registers its own OP has
+  // account rows carrying that id, and an enum of three would refuse to parse its own data.
+  provider: t.string,
   providerAccountId: t.string,
   expiresAt: t.optional(t.date),
   createdAt: t.date,
@@ -117,6 +123,11 @@ export interface AuthConfigInput {
    * same, or `defineAuth` refuses here rather than at 3am on the first spray.
    */
   readonly limiter?: AuthLimiter | undefined;
+  /**
+   * Where the per-TENANT counters live. Same rule as `limiter`, and a separate instance because
+   * it enforces a separate `maxAttempts` — `rateLimit.orgMaxAttempts`, which a whole org shares.
+   */
+  readonly orgLimiter?: AuthLimiter | undefined;
   readonly mfa?: Partial<AuthMfaPolicy> | undefined;
   readonly providers?: readonly OAuthProviderId[] | undefined;
   /** Defaults to `'verified-email'` — both halves proven. See `OAuthLinkPolicy`. */
@@ -130,6 +141,9 @@ export interface Auth {
   readonly password: PasswordPolicy;
   readonly rateLimit: AuthRateLimitPolicy;
   readonly limiter: AuthLimiter;
+  /** The tenant bucket's own policy — `rateLimit` with `orgMaxAttempts` as its `maxAttempts`. */
+  readonly orgRateLimit: AuthRateLimitPolicy;
+  readonly orgLimiter: AuthLimiter;
   readonly mfa: AuthMfaPolicy;
   readonly providers: readonly OAuthProviderId[];
   readonly link: OAuthLinkPolicy;
@@ -142,6 +156,14 @@ export function defineAuth(config: AuthConfigInput): Auth {
   const rateLimit: AuthRateLimitPolicy = { ...DEFAULT_AUTH_RATE_LIMIT, ...config.rateLimit };
   const limiter = config.limiter ?? createAuthLimiter(clock, rateLimit);
   assertAuthLimiterPolicy(rateLimit, limiter);
+  // The tenant bucket is a noisy-neighbour cap, not a credential-guessing allowance, so an app
+  // that declares `scope: 'shared'` for its LOCKOUT is not also required to ship a shared limiter
+  // for this one — per replica it approximates to `orgMaxAttempts × replicas`, which is a
+  // throughput ceiling and discloses nothing. An INJECTED org limiter is still compared, because
+  // then the app has made a claim about what it enforces and `Auth.orgRateLimit` reports it.
+  const orgLimits = orgRateLimit(rateLimit);
+  const orgLimiter = config.orgLimiter ?? createAuthLimiter(clock, orgLimits);
+  if (config.orgLimiter !== undefined) assertAuthLimiterPolicy(orgLimits, config.orgLimiter);
   return Object.freeze({
     adapter: config.adapter,
     clock,
@@ -149,8 +171,12 @@ export function defineAuth(config: AuthConfigInput): Auth {
     password,
     rateLimit,
     limiter,
+    // What the limiter in use actually enforces, not the derivation — the two differ in `scope`
+    // exactly when the app declared 'shared' and left this limiter to the default.
+    orgRateLimit: orgLimiter.policy,
+    orgLimiter,
     mfa: { issuer: config.mfa?.issuer ?? 'Ultimate', required: config.mfa?.required ?? false },
-    providers: config.providers ?? OAUTH_PROVIDER_IDS,
+    providers: config.providers ?? oauthProviderIds(),
     link: config.link ?? 'verified-email',
   });
 }
@@ -202,6 +228,12 @@ export async function login(auth: Auth, input: LoginInput): Promise<LoginResult>
   if (ip !== null) await auth.limiter.assertAllowed(ipKey(ip));
 
   const user = await auth.adapter.findUserByEmail(input.email.trim().toLowerCase());
+  // The tenant bucket can only be consulted once the address resolves to an org, which is still
+  // before the KDF runs — the expensive half of this function — so it costs one map lookup and
+  // caps a spray that per-IP and per-account buckets both let through.
+  const org = user?.orgId ?? null;
+  if (org !== null) await auth.orgLimiter.assertAllowed(orgKey(org));
+
   const usable = user !== null && user.disabledAt === null;
   const verification = await verifyPassword({
     hash: usable ? user.passwordHash : null,
@@ -212,11 +244,15 @@ export async function login(auth: Auth, input: LoginInput): Promise<LoginResult>
   if (!verification.ok || user === null) {
     await auth.limiter.recordFailure(account);
     if (ip !== null) await auth.limiter.recordFailure(ipKey(ip));
+    if (org !== null) await auth.orgLimiter.recordFailure(orgKey(org));
     throw loginFailed();
   }
 
   await auth.limiter.recordSuccess(account);
   if (ip !== null) await auth.limiter.recordSuccess(ipKey(ip));
+  // No `recordSuccess` on the tenant bucket, and that asymmetry is the point: one member signing
+  // in successfully must not clear the count a broken integration is running up beside them, or
+  // the tenant cap is cleared by exactly the traffic that proves the tenant is still in use.
 
   // Parameters were raised since this hash was written: upgrade it now, while we hold the
   // plaintext. This is the only moment it is possible without asking the user for anything.

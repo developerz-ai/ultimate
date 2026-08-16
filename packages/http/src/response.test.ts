@@ -41,7 +41,7 @@ describe('problem()', () => {
     expect(body['code']).toBe('X_BODY_INVALID');
     expect(body['cause']).toContain('title: required');
     expect(body['fix']).toBe(
-      'x schema show /posts --json   # then send a body matching the input schema',
+      'x routes --json   # find /posts, then send a body matching its input schema',
     );
     expect(body['docs']).toBe('https://ultimate.dev/errors/X_BODY_INVALID');
     expect(body['status']).toBe(422);

@@ -9,6 +9,7 @@
 
 import { systemClock } from '@ultimat3/core';
 import {
+  currentTx,
   type DbClient,
   db,
   type SqlFragment,
@@ -29,7 +30,8 @@ import { countsFrom, groupColumnOf, groupValue, MAX_GROUPS } from './count-by';
 import { cursorFor, seekFrom, valueAt } from './cursor';
 import type { Driver } from './database';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
-import { notFound } from './errors';
+import { notFound, repoClientPinned } from './errors';
+import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
 import { forgetPreloaded, tagSiblings } from './jit-preload';
 import { bindValues, decodeRow, type PhysicalRow } from './pg-row';
 import {
@@ -72,7 +74,22 @@ export const postgresRepo = <Row>(
   entity: EntityCore<Row>,
   config: PostgresDriverOptions = {},
 ): Repo<Row> => {
-  const client = (): DbClient => config.client ?? db();
+  /**
+   * The one place a connection is chosen, which is why the transaction guard is here and not on
+   * each method. Unpinned, `db()` answers with the open transaction when there is one — that is
+   * how a repository call inside `withTransaction` joins it without being told. Pinned, it cannot:
+   * `withTransaction` ran `BEGIN` on a connection IT reserved, and a statement sent straight to
+   * `config.client` takes a different connection out of the pool, so the write commits whatever
+   * the transaction decides and the read cannot see what the transaction has written. Refused
+   * rather than resolved — a `DbTx` does not name the client it was opened on, so this layer
+   * cannot even tell whether the two are the same database.
+   */
+  const client = (): DbClient => {
+    const pinned = config.client;
+    if (pinned === undefined) return db();
+    if (currentTx() !== undefined) throw repoClientPinned(entity.$name);
+    return pinned;
+  };
 
   /**
    * Every statement a repository call sends carries the entity and the operation that compiled it,
@@ -106,6 +123,10 @@ export const postgresRepo = <Row>(
    * Hard or soft, decided once so `delete(id)` and `deleteWhere(filter)` cannot drift apart. Soft
    * delete hides the row without losing it; the column's presence is the switch, and `shapeOf({})`
    * keeps the `deleted_at is null` clause so a second call cannot move an existing stamp forward.
+   *
+   * No `returning`: both callers send this through `execute()` and read a count, so the rows would
+   * be a whole tenant's table crossing the wire for nobody — the same cost `updateWhere` used to
+   * pay unconditionally, on the sibling path that looked like the one doing it right.
    */
   const removal = (plan: QueryPlan): SqlFragment =>
     entity.$softDelete
@@ -114,6 +135,7 @@ export const postgresRepo = <Row>(
           plan,
           new Map([[snake(SOFT_DELETE_COLUMN), systemClock.now()]]),
           shapeOf({}),
+          false,
         )
       : deleteStatement(entity, plan);
 
@@ -251,7 +273,9 @@ export const postgresRepo = <Row>(
       }
       const written = await attributed(op, () =>
         writing(() =>
-          client().one<PhysicalRow>(updateStatement(entity, plan, values, shapeOf(options ?? {}))),
+          client().one<PhysicalRow>(
+            updateStatement(entity, plan, values, shapeOf(options ?? {}), true),
+          ),
         ),
       );
       if (written === null) throw notFound(entity.$name, id);
@@ -291,13 +315,33 @@ export const postgresRepo = <Row>(
       const plan = updatePlan(entity, filter, patch, options, op);
       // The same move, filtered: one statement can hand away every row it matches.
       assertRowTenant(entity.$name, entity.$tenantColumn, op, patch);
+      const values = bindValues(entity, patch);
       // `shapeOf({})` keeps the `deleted_at is null` clause `update(id, patch)` already carries,
       // so a soft-deleted row is not silently patched back into shape.
-      const statement = updateStatement(entity, plan, bindValues(entity, patch), shapeOf({}));
-      // `query`, not `execute`, for the rows `returning *` already produces: the in-memory driver
-      // re-asserts every row it writes, and a JS-only invariant (`kind: 'assert'`, `sql: null`)
-      // has no CHECK for Postgres to have enforced. Inside `withTransaction` the throw takes the
-      // whole statement with it.
+      const shape = shapeOf({});
+      // The rows come back only when something here can still refuse them. A `check` or a `unique`
+      // invariant is a constraint Postgres enforced on the statement itself, so the answer is
+      // already a count; only a JS-only rule (`kind: 'assert'`, `sql: null`) has to be judged on
+      // the result. Unconditional, this was `returning *` on every filtered write in the framework
+      // — a GDPR sweep patching twelve million rows streamed all twelve million into the process,
+      // decoded each one, asserted nothing about any of them, and answered with a number.
+      // `deleteWhere` was the tell: same predicate, same table, `execute()` and a count.
+      if (!hasJsOnlyInvariant(entity.$invariants)) {
+        const statement = updateStatement(entity, plan, values, shape, false);
+        return attributed(op, () => writing(() => client().execute(statement)));
+      }
+      // Rows ARE needed, so how many is a memory bound rather than a detail — this is the one
+      // statement in the driver whose result size is the caller's filter and not a page. Counted
+      // BEFORE the write, because a refusal after `returning *` has already allocated the thing it
+      // is refusing; the count can drift by whatever a concurrent writer adds between the two,
+      // which moves a bound, never a decision.
+      const matched = await attributed(op, () =>
+        client().one<{ count: unknown }>(countStatement(entity, plan, shape)),
+      );
+      const rows = Number(matched?.count ?? 0);
+      if (rows > MAX_ASSERTED_ROWS) throw assertedRowsTooMany(entity.$name, op, rows);
+      const statement = updateStatement(entity, plan, values, shape, true);
+      // Inside `withTransaction` a failed assert takes the whole statement with it.
       const written = await attributed(op, () =>
         writing(() => client().query<PhysicalRow>(statement)),
       );

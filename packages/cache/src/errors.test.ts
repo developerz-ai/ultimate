@@ -15,6 +15,7 @@ import {
   CACHE_ERROR_TITLES,
   CACHE_OWNED_ERROR_CODES,
   CacheDriverUnavailableError,
+  CacheJitterInvalidError,
   CachePurgeFailedError,
   CacheTagUnknownError,
   CacheTooLargeError,
@@ -94,6 +95,19 @@ describe('CacheTooLargeError', () => {
     expect(err.cause).toContain('5000');
     expect(err.cause).toContain('lru');
     expect(err.cause).toContain('1000');
+    expect(EVERY_CODE).toContain(err.code);
+  });
+});
+
+describe('CacheJitterInvalidError', () => {
+  test('names the tier, the fraction, and a fix that edits the field it read', () => {
+    const err = new CacheJitterInvalidError({ tier: 'redis', jitterFraction: 1.5 });
+
+    expect(err.code).toBe('X_CACHE_JITTER_INVALID');
+    expect(err.cause).toContain('redis');
+    expect(err.cause).toContain('1.5');
+    expect(err.fix).toContain('cache.redis.jitterFraction');
+    expect(err.meta).toEqual({ tier: 'redis', jitterFraction: 1.5 });
     expect(EVERY_CODE).toContain(err.code);
   });
 });

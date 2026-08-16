@@ -212,8 +212,26 @@ export function throwIfAborted(ctx: Ctx = useContext()): void {
   });
 }
 
-// Every log line inside a request gets the ids for free.
+/**
+ * Every log line inside a request gets the ids for free.
+ *
+ * Deliberately bounded and deliberately non-PII: ids, kinds and the runtime role, never an email,
+ * a name or a token — a log store is not a place to discover you shipped one. What is here is
+ * exactly what an incident query needs: `orgId` to scope to a tenant, `actorId` to scope to a
+ * user, `role` to scope to a fleet, and `onBehalfOfId` so a line written under impersonation is
+ * never mistaken for the customer's own.
+ */
 setLoggerContextFields(() => {
   const ctx = storage.getStore();
-  return ctx === undefined ? undefined : { requestId: ctx.requestId, traceId: ctx.traceId };
+  if (ctx === undefined) return undefined;
+  const { actor } = ctx;
+  return {
+    requestId: ctx.requestId,
+    traceId: ctx.traceId,
+    role: ctx.role,
+    actorKind: actor.kind,
+    actorId: actor.id,
+    ...(actor.orgId === undefined ? {} : { orgId: actor.orgId }),
+    ...(actor.onBehalfOf === undefined ? {} : { onBehalfOfId: actor.onBehalfOf.actorId }),
+  };
 });

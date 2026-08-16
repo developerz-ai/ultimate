@@ -115,9 +115,13 @@ export class UltimateRequest {
     return this.ctx.requestId;
   }
 
-  /** Build id the client thinks it is running. See `assertBuild()`. */
+  /**
+   * Build id the CLIENT thinks it is running. See `assertBuild()`. Not `ctx.buildId`, which is
+   * core's meaning of the word — the build this PROCESS serves — and the one every other layer
+   * reads off the ambient context.
+   */
   get buildId(): string | null {
-    return this.ctx.buildId;
+    return this.ctx.clientBuildId;
   }
 
   header(name: string): string | null {
@@ -176,7 +180,7 @@ export class UltimateRequest {
    */
   assertBuild(): void {
     const server = this.ctx.config.buildId;
-    const client = this.ctx.buildId;
+    const client = this.ctx.clientBuildId;
     if (server === null || client === null || client === server) return;
     throw buildSkew(client, server);
   }

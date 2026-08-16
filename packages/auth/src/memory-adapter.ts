@@ -12,6 +12,7 @@ import type {
   CreateUserInput,
   SessionPatch,
   UserPatch,
+  UserQuery,
 } from './adapter';
 import { timingSafeEqual } from './tokens';
 
@@ -46,8 +47,10 @@ export class MemoryAdapter implements AuthAdapter {
       orgId: input.orgId,
       roles: [...input.roles],
       permissions: [],
+      scopes: [...(input.scopes ?? [])],
       mfaSecret: null,
       recoveryCodeHashes: [],
+      externalId: input.externalId ?? null,
       disabledAt: null,
       createdAt: input.createdAt,
     };
@@ -67,9 +70,28 @@ export class MemoryAdapter implements AuthAdapter {
       recoveryCodeHashes: patch.recoveryCodeHashes ?? user.recoveryCodeHashes,
       disabledAt: patch.disabledAt === undefined ? user.disabledAt : patch.disabledAt,
       roles: patch.roles ?? user.roles,
+      permissions: patch.permissions ?? user.permissions,
+      scopes: patch.scopes ?? user.scopes,
+      orgId: patch.orgId === undefined ? user.orgId : patch.orgId,
+      externalId: patch.externalId === undefined ? user.externalId : patch.externalId,
     };
     this.#users.set(id, next);
     return next;
+  }
+
+  async findUserByExternalId(externalId: string): Promise<AuthUser | null> {
+    for (const user of this.#users.values()) {
+      if (user.externalId === externalId) return user;
+    }
+    return null;
+  }
+
+  async listUsersByOrg(orgId: string, query?: UserQuery): Promise<readonly AuthUser[]> {
+    return [...this.#users.values()]
+      .filter((user) => user.orgId === orgId)
+      .filter((user) => query?.includeDisabled === true || user.disabledAt === null)
+      .filter((user) => query?.role === undefined || user.roles.includes(query.role))
+      .sort((a, b) => a.email.localeCompare(b.email));
   }
 
   async getSession(id: string): Promise<AuthSession | null> {
@@ -103,6 +125,32 @@ export class MemoryAdapter implements AuthAdapter {
     let killed = 0;
     for (const [id, session] of this.#sessions) {
       if (session.userId !== userId || id === keepSessionId) continue;
+      this.#sessions.delete(id);
+      killed += 1;
+    }
+    return killed;
+  }
+
+  async deleteSessionsForUser(userId: string): Promise<number> {
+    return this.#deleteSessionsWhere((session) => session.userId === userId);
+  }
+
+  /** Joins through the user map, which is what the Postgres adapter's subselect does. */
+  async deleteSessionsForOrg(orgId: string): Promise<number> {
+    const members = new Set(
+      [...this.#users.values()].filter((user) => user.orgId === orgId).map((user) => user.id),
+    );
+    return this.#deleteSessionsWhere((session) => members.has(session.userId));
+  }
+
+  async deleteSessionsCreatedBefore(before: Date): Promise<number> {
+    return this.#deleteSessionsWhere((session) => session.createdAt.getTime() < before.getTime());
+  }
+
+  #deleteSessionsWhere(matches: (session: AuthSession) => boolean): number {
+    let killed = 0;
+    for (const [id, session] of this.#sessions) {
+      if (!matches(session)) continue;
       this.#sessions.delete(id);
       killed += 1;
     }

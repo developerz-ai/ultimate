@@ -1,8 +1,10 @@
 // Roles are sugar over permissions: a role grants a set, and may inherit others.
 // Everything is expanded to a flat permission set before any policy runs, so the
 // evaluator never has to reason about hierarchy — and a cycle is caught here, once.
+// The per-actor flattening and its memo live in `grant-index.ts`; this file owns the map.
 import type { Actor as CoreActor } from '@ultimat3/core';
-import { type Permission, resourceOf } from './permissions';
+import { roleRedefined } from './errors';
+import { resourceOf } from './permissions';
 
 /**
  * The fields policy evaluation reads off an actor. `Actor` itself is core's; these
@@ -27,17 +29,81 @@ export interface RoleDef {
 export type RoleMap = Readonly<Record<string, RoleDef>>;
 
 let roleMap: RoleMap = {};
+let sites: Readonly<Record<string, string>> = {};
+let generation = 0;
 
+/**
+ * Bumped by every write to the map. `grant-index.ts` memoises a flattened grant set against
+ * it, the same shape `@ultimat3/entity`'s `relationMap()` uses against `registryGeneration()`:
+ * a memo that cannot be invalidated by a later `defineRoles()` is a stale-authz bug.
+ */
+export const roleMapGeneration = (): number => generation;
+
+/** Frames inside this file — never the answer to "who declared this role?". */
+const INTERNAL_FRAME = /declarationSite|defineRoles/;
+
+const declarationSite = (): string => {
+  // Not a throw: the stack is the only place the declaring module's name exists at this point,
+  // and `X_ROLE_REDEFINED` is unactionable without both sides of the collision.
+  const stack = new Error().stack;
+  if (stack === undefined) return 'unknown site';
+  const frames = stack.split('\n').slice(1);
+  const frame = frames.find((line) => !INTERNAL_FRAME.test(line)) ?? frames[0] ?? '';
+  return frame.trim() === '' ? 'unknown site' : frame.trim();
+};
+
+const sameList = (left: readonly string[], right: readonly string[]): boolean => {
+  if (left.length !== right.length) return false;
+  const sortedRight = [...right].sort();
+  return [...left].sort().every((value, index) => value === sortedRight[index]);
+};
+
+/**
+ * A re-declaration of an identical role is a no-op, not a collision. That is what keeps the
+ * `defineRoles({ ...roleDefinitions(), … })` spelling both tracked apps already use legal:
+ * the spread hands every earlier role straight back.
+ */
+const sameDefinition = (left: RoleDef, right: RoleDef): boolean =>
+  left === right ||
+  (left.description === right.description &&
+    sameList(left.grants, right.grants) &&
+    sameList(left.inherits ?? [], right.inherits ?? []));
+
+/**
+ * MERGES into the app's one role map, and refuses a role two modules define differently.
+ *
+ * It used to replace, which made the map import-order-dependent: a second `defineRoles()` in a
+ * new feature folder silently deleted the first module's roles, every `can()` still typechecked,
+ * and every request 403'd on whichever bundler ordering CI happened to pick.
+ */
 export const defineRoles = <const M extends RoleMap>(map: M): M => {
-  roleMap = map;
+  const site = declarationSite();
+  const merged: Record<string, RoleDef> = { ...roleMap };
+  const nextSites: Record<string, string> = { ...sites };
+  for (const [role, definition] of Object.entries(map)) {
+    const existing = merged[role];
+    if (existing !== undefined && !sameDefinition(existing, definition)) {
+      throw roleRedefined(role, sites[role] ?? 'unknown site', site);
+    }
+    merged[role] = definition;
+    nextSites[role] = nextSites[role] ?? site;
+  }
+  roleMap = merged;
+  sites = nextSites;
+  generation += 1;
   return map;
 };
 
 export const roleDefinitions = (): RoleMap => roleMap;
 
+/** Where each role was first declared. Read by `X_ROLE_REDEFINED`, and by nothing else. */
+export const roleDeclarationSites = (): Readonly<Record<string, string>> => sites;
+
 /** Test seam. */
 export const clearRoles = (): void => {
   roleMap = {};
+  sites = {};
+  generation += 1;
 };
 
 /**
@@ -68,22 +134,6 @@ export const grantMatches = (grant: string, wanted: string): boolean => {
   if (grant.endsWith(':*')) return resourceOf(grant) === resourceOf(wanted);
   return false;
 };
-
-export const actorPermissions = (
-  actor: Actor | null,
-  map: RoleMap = roleMap,
-): readonly string[] => {
-  if (actor === null) return [];
-  const direct = actor.permissions ?? [];
-  const fromRoles = expandRoles(actor.roles ?? [], map);
-  return [...new Set([...direct, ...fromRoles])].sort();
-};
-
-export const actorHas = (
-  actor: Actor | null,
-  permission: Permission,
-  map: RoleMap = roleMap,
-): boolean => actorPermissions(actor, map).some((grant) => grantMatches(grant, permission));
 
 /** For the `/_x` dashboard: which roles would satisfy a permission. */
 export const rolesGranting = (permission: string, map: RoleMap = roleMap): readonly string[] =>

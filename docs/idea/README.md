@@ -21,9 +21,10 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 | [`14-roadmap.md`](./14-roadmap.md) | 12 milestones, each ending in a working demo app + green `x verify`. Ship 0–5 before realtime. |
 | [`15-risks.md`](./15-risks.md) | Six risks, honestly sized. The sync engine is ~70% of the effort. |
 | [`16-app-targets.md`](./16-app-targets.md) | Web, mobile, desktop from one definition. A screen is a `route`, not a ninth primitive. **Design only.** |
-| [`17-scale-ladder.md`](./17-scale-ladder.md) | PaaS to distributed in five rungs, where climbing is config and drivers — never a rewrite. **Design only.** |
+| [`17-scale-ladder.md`](./17-scale-ladder.md) | PaaS to distributed in five rungs, where climbing is config and drivers — never a rewrite. **Rungs 0–2 are real** and 24 of the 26 seam rows are shipped; the doc names every place the invariant breaks today. |
 | [`18-build-vs-wrap.md`](./18-build-vs-wrap.md) | Own the integration layer, wrap the protocol layer. Verdicts: jobs BUILD, SMTP BUILD, NATS WRAP — adopted, `nats@2.29.3` at the transport seam. |
 | [`19-mechanism-not-convention.md`](./19-mechanism-not-convention.md) | Axiom 8. Mechanisms and structural conventions ship; business conventions never do. Tenancy ships, an org model does not — the app wraps. |
+| [`20-large-app-readiness.md`](./20-large-app-readiness.md) | The capability axis: what a very large app already gets, and whether a company can plug its own infrastructure in. The primitives are enterprise-grade; the dominant defect is a mechanism **built, exported, and never called by the boot** — the outbox, the scheduler watermark, the shared cache tier, WebSocket auth. |
 
 ## Reading paths
 
@@ -36,6 +37,7 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 | Operating it | `11` → `12` → `08` |
 | **Deploying and scaling** | `17` → `12` → `11`, then [`docs/ops/`](../ops/README.md) for the runbooks. Start at rung 0: a free PaaS plan, no card |
 | **Building for mobile or desktop** | `16` → `02` → `06`. Design only — no package, no build target, no gate step exists yet |
+| **Adopting it for a very large product** | `20` → `19` → `17`. `20` is the capability axis — what is built but uncalled, and which seams take your own drivers; `19` is the rule it scores against; `17` is the deployment one |
 
 ## The one-paragraph version
 

@@ -75,7 +75,7 @@ export class McpScopeDeniedError extends UltimateError {
     super({
       code: 'X_MCP_SCOPE_DENIED',
       cause: `tool "${input.name}" requires scope "${input.scope}", which this connection's token does not carry`,
-      fix: `x token grant ${input.scope}   # then reconnect: scopes are fixed for the life of a connection`,
+      fix: `reconnect with a token whose scopes include "${input.scope}" — the app's resolveToken(token) is what returns them — or drop "${input.scope}" from defineAppMcp({ scopes }); scopes are fixed for the life of a connection`,
       docs: docsFor('X_MCP_SCOPE_DENIED'),
     });
     this.scope = input.scope;

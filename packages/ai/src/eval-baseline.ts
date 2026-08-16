@@ -9,7 +9,7 @@
 // not a measurement.
 
 import { isAbsolute } from 'node:path';
-import { EvalBaselineInvalidError, EvalBaselineMissingError } from './errors';
+import { EvalBaselineInvalidError, EvalBaselineMissingError } from './eval-errors';
 
 export interface EvalBaseline {
   readonly eval: string;

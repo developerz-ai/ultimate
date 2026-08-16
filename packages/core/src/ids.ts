@@ -2,7 +2,7 @@
 // database indexes, cursors and log sorting all want time-ordered keys.
 
 import { type Clock, systemClock } from './clock';
-import { renderCauseValue } from './error-render';
+import { describeValue } from './error-render';
 import { UltimateError } from './errors';
 
 /** Nominal typing without a runtime cost. `Brand<string, 'post'>` never mixes with `'user'`. */
@@ -90,14 +90,20 @@ export function isUuid(value: unknown): boolean {
   return typeof value === 'string' && UUID_RE.test(value);
 }
 
+/** The actionable half of an id rejection: what was wanted. Carries no caller data, ever. */
+const UUID_SHAPE = '8-4-4-4-12 lowercase hex, version 7';
+
 /** Recover the generation instant from a v7 id — cheap debugging and cursor windows. */
 export function uuidTimestamp(id: string): Date {
   if (!isUuid(id)) {
     throw new UltimateError({
       code: 'X_ID_INVALID',
-      cause: `"${id}" is not a UUIDv7`,
+      // `describeValue`, never the id itself: this `cause` reaches the log index and the HTTP
+      // problem document, and the strings that arrive here wrong are session tokens and API keys
+      // as often as they are typos. The expected shape is the half that helps the reader.
+      cause: `expected a UUIDv7 (${UUID_SHAPE}), received ${describeValue(id)}`,
       fix: 'generate ids with uuid() from @ultimat3/core',
-      meta: { id },
+      meta: { received: describeValue(id) },
     });
   }
   return new Date(Number.parseInt(id.slice(0, 8) + id.slice(9, 13), 16));
@@ -121,9 +127,11 @@ export function parseId<K extends string>(kind: K, value: unknown): Id<K> {
   if (!isUuid(value)) {
     throw new UltimateError({
       code: 'X_ID_INVALID',
-      cause: `expected a ${kind} UUIDv7, received ${renderCauseValue(value)}`,
+      cause: `expected a ${kind} UUIDv7 (${UUID_SHAPE}), received ${describeValue(value)}`,
       fix: `pass an id produced by typedId<'${kind}'>()`,
-      meta: { kind, value },
+      // `received`, not `value`: `meta` rides into the problem document and the log line too, and
+      // redaction is by key — there is no key here that a redaction list could ever cover.
+      meta: { kind, received: describeValue(value) },
     });
   }
   return value as Id<K>;
@@ -136,6 +144,27 @@ export function traceId(): string {
 
 export function spanId(): string {
   return randomHex(8);
+}
+
+const TRACE_ID_RE = /^[0-9a-f]{32}$/;
+const SPAN_ID_RE = /^[0-9a-f]{16}$/;
+const ALL_ZERO = /^0+$/;
+
+/**
+ * The ONE definition of "is this a W3C trace id" — `traceparent` parsing, and any layer that
+ * accepts an id from outside, ask here rather than carrying a second regex.
+ *
+ * A dashed UUID is the failure this predicate exists to name: `uuid()` produces 36 characters with
+ * hyphens, every OTLP collector rejects it, and nothing downstream said so — the trace simply
+ * never appeared. Mint trace ids with `traceId()`, never `uuid()`. All-zero is invalid per the
+ * spec: it is the wire's spelling of "no trace", not a trace whose id happens to be zero.
+ */
+export function isTraceId(value: unknown): boolean {
+  return typeof value === 'string' && TRACE_ID_RE.test(value) && !ALL_ZERO.test(value);
+}
+
+export function isSpanId(value: unknown): boolean {
+  return typeof value === 'string' && SPAN_ID_RE.test(value) && !ALL_ZERO.test(value);
 }
 
 /** Test-only: reset the monotonic counter so a frozen clock produces a fresh sequence. */

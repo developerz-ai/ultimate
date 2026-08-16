@@ -10,7 +10,11 @@ Three tiers, one ladder. Same mutator shape at every rung — climbing is a conf
 | 2 | **Live queries** | `query({ live: true, sql })` | truth + change detection | a reactive result set | one replication slot + a matcher |
 | 3 | **Local-first** | the same `mutator` + `persist: true` on the query | truth + rebase | a durable local store, offline writes | IndexedDB store + rebase log |
 
-Tier 1 for presence, typing indicators, toasts, cursors. Tier 2 for "the list updates when someone else edits". Tier 3 for offline-capable apps.
+Tier 1 for presence, typing indicators, toasts, cursors. Tier 2 for "the list updates when someone else edits". Tier 3 for offline-capable apps, deferred to v2.
+
+**Tiers 1–2 became multi-tenant-safe in this branch, and were not before.** Until it, the socket upgrade hardcoded `actorId: null`, so there was no way to authenticate a WebSocket at all: every channel guard, live-query gate, presence entry and tenant cap ran correctly against an actor that was always anonymous. The idiomatic guard `actor?.orgId === segments[1]` therefore denied everyone, and the only way to ship was `hub.guard('org.>', () => true)` — which is what this repo's own benchmark server does. `createSyncNode({ authenticate })` closes it, and re-authorization on a timer closes the second half: a socket is no longer authorized forever once accepted.
+
+Two things stay **open**, and they are one plan rather than two: JetStream-backed durable fanout, and an **entity**-keyed resume window that would revive the delta path across nodes. Both are a `ResumeSource` shape change fed from the change stream every node already subscribes to, so "later" means one piece of work, not two.
 
 ## Same mutator at every rung
 
@@ -83,7 +87,7 @@ Solid signal patch — fine-grained, no re-render of the list
 | matcher | `replicator` | a change touching no registered query costs one predicate check |
 | fanout | NATS | subject = hash(query, params, tenant); no per-socket state on the bus |
 | socket | `sync` (stateless, no sticky sessions) | client re-subscribes anywhere; scales on connection count |
-| authz | `policy` on the `query` | evaluated at subscribe **and** re-checked on row delivery — a row that fails the policy is dropped, never sent |
+| authz | `policy` on the `query` | evaluated at subscribe **and** re-checked on row delivery — a row that fails the policy is dropped, never sent. True `As of 2026-08`, and newly so: the socket carries a real actor via `createSyncNode({ authenticate })`, and re-authorization runs on a timer, so a revoked role closes the socket instead of leaving it authorized for its lifetime |
 
 Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a delta instead of a refetch.
 
@@ -96,10 +100,10 @@ Mitigation, in order:
 | # | Mitigation | Detail |
 |---|---|---|
 | 1 | **Prototype before locking topology** | done `As of 2026-08`, on **one node over `InProcessTransport`**: 50k sockets, forced `sync` restart, all 50,000 reconnected, 49,981 of them consistent inside the window at p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path ([`14-roadmap.md`](./14-roadmap.md), [`scripts/bench/restart-bench.ts`](../../scripts/bench/restart-bench.ts)). Recovery is bounded by the `AcceptBudget`, not the matcher, so the topology below is frozen on a measured number — a **per-node** one. NATS fanout was not in the path |
-| 2 | **Bounded per-query change buffer** | the `replicator` keeps a ring buffer of recent changes per query-hash. Reconnect within the window = delta replay from the buffer, zero DB work |
+| 2 | **Bounded per-query change buffer** | a ring of recent patches per query hash, held **per `sync` node** — not on the `replicator`, and it could not be: a patch is query-scoped, so producing one needs that query's compiled shape, matcher and current window, none of which the entity-scoped replicator has. Reconnect within the window on the **same** node is delta replay, zero DB work. Reconnect onto a node that never served that `qid` finds no ring and takes the snapshot path — a real gap, at a smaller price than it sounds: `fillWindow` joins every subscriber arriving during a read, so the cost is one **shared** read per (query, node), not one per client ([`change-buffer.ts`](../../packages/realtime/src/change-buffer.ts)) |
 | 3 | **Snapshot fallback, not WAL replay** | outside the window the client gets a fresh snapshot at a current LSN. Cost is one bounded query, never history traversal |
 | 4 | **Jittered reconnect-with-backoff, server-directed** | draining `sync` nodes send a `reconnect` frame with a per-client delay so clients redistribute instead of stampeding ([`11-topology.md`](./11-topology.md)) |
-| 5 | **Per-tenant subscription caps** | a registered-query explosion is a load-shedding decision, made with a limit and a typed `X_LIVE_QUERY_LIMIT` error, not by falling over |
+| 5 | **Per-tenant subscription caps** | a registered-query explosion is a load-shedding decision, made with a limit and a typed `X_SUBSCRIPTION_LIMIT` error, not by falling over. **Reachable, not yet wired** `As of 2026-08`: the per-tenant cap reads `socket.actor`, which was hardcoded `null` at upgrade until authentication landed, so it could not fire at all; the boot does not pass a tenant cap yet. The per-socket cap does apply ([`subscription-book.ts`](../../packages/realtime/src/subscription-book.ts)) |
 | 6 | **Consider wrapping an existing protocol** | if the benchmark says our matcher is the bottleneck, adopting Zero's protocol beats inventing one ([`15-risks.md`](./15-risks.md)) |
 
 ## Why tier 2 covers ~90% of "realtime app"

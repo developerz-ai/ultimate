@@ -167,11 +167,50 @@ describe('the one TTL rule', () => {
 
   test('every entry therefore carries a finite expiry the stack can read', () => {
     const clock = fakeClock(1_000);
-    const cache = new LruCache({ maxBytes: 10_000, clock });
+    // `rng: () => 0` is the full lease: the TTL spread is on by default, so an exact expiry is
+    // only assertable with the roll pinned — see `assertTtl` in `tiers.ts`.
+    const cache = new LruCache({ maxBytes: 10_000, clock, rng: () => 0 });
     cache.set('k', 1, { ttlMs: 5_000 });
     expect(cache.get('k')?.expiresAt).toBe(6_000);
     clock.advance(5_000);
     expect(cache.get('k')).toBeUndefined();
+  });
+});
+
+describe('the TTL spread', () => {
+  // 40,000 keys warmed by one rolling restart share one lease and therefore one expiry instant.
+  // Five minutes later they all miss inside the same 30-second window.
+  test('a lease is shortened by up to jitterFraction, never lengthened', () => {
+    const clock = fakeClock(0);
+    const highest = new LruCache({ maxBytes: 10_000, clock, rng: () => 0 });
+    const lowest = new LruCache({ maxBytes: 10_000, clock, rng: () => 1 });
+    highest.set('k', 1, { ttlMs: 60_000 });
+    lowest.set('k', 1, { ttlMs: 60_000 });
+
+    expect(highest.get('k')?.expiresAt).toBe(60_000);
+    expect(lowest.get('k')?.expiresAt).toBe(57_000);
+  });
+
+  test('two keys written in the same millisecond do not expire in the same one', () => {
+    const clock = fakeClock(0);
+    const rolls = [0.1, 0.9];
+    let next = 0;
+    const cache = new LruCache({
+      maxBytes: 10_000,
+      clock,
+      rng: () => rolls[next++ % rolls.length] ?? 0,
+    });
+    cache.set('a', 1, { ttlMs: 60_000 });
+    cache.set('b', 1, { ttlMs: 60_000 });
+
+    expect(cache.get('a')?.expiresAt).not.toBe(cache.get('b')?.expiresAt);
+  });
+
+  test('jitterFraction: 0 turns the spread off for a test that needs an exact lease', () => {
+    const clock = fakeClock(0);
+    const cache = new LruCache({ maxBytes: 10_000, clock, jitterFraction: 0, rng: () => 1 });
+    cache.set('k', 1, { ttlMs: 60_000 });
+    expect(cache.get('k')?.expiresAt).toBe(60_000);
   });
 });
 

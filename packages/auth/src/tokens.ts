@@ -29,6 +29,23 @@ export function randomToken(byteLength = 32): string {
   return base64Url(randomBytes(byteLength));
 }
 
+/**
+ * The inverse of `base64Url`, for the segments of a JWT. Answers `null` rather than throwing
+ * because every caller is reading an attacker-supplied string — a `URIError` or an `InvalidCharacterError`
+ * escaping from here would turn a coded refusal into a 500, the same reason `readCookie` never throws.
+ */
+export function base64UrlBytes(segment: string): Uint8Array<ArrayBuffer> | null {
+  const padded = segment
+    .replaceAll('-', '+')
+    .replaceAll('_', '/')
+    .padEnd(Math.ceil(segment.length / 4) * 4, '=');
+  try {
+    return Uint8Array.from(atob(padded), (char) => char.charCodeAt(0));
+  } catch {
+    return null;
+  }
+}
+
 export function sha256Hex(value: string): string {
   return new Bun.CryptoHasher('sha256').update(value).digest('hex');
 }

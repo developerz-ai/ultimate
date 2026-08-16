@@ -21,11 +21,15 @@ export type {
 } from './client';
 /** `queryClient` is the map-wide read client; `queryClientMethodFor` is what `.client()` binds. */
 export { queryClient, queryClientMethodFor } from './client';
+/** The compat window a retirement gets. Versioning is two deployments, not a router feature. */
+export type { Deprecation, DeprecationField, DeprecationRender } from './deprecation';
+export { recordDeprecatedCall, renderDeprecation } from './deprecation';
 export type { QueryProblem } from './errors';
 export {
   CursorInvalidError,
   MatcherUnsupportedError,
   QueryDeniedError,
+  QueryDeprecationInvalidError,
   QueryDuplicateError,
   QueryForeignError,
   QueryInputInvalidError,
@@ -51,7 +55,8 @@ export { derivePath, toKebabCase, toToolName } from './naming';
  */
 export type { Page, PaginateArgs } from './pagination';
 export type { QueryPolicy, QuerySubject, QuerySurface } from './policy-gate';
-export { actorOf, guard, policyCapability } from './policy-gate';
+/** `policyCapability` is the display label; `policyPermissions` is what a report MATCHES on. */
+export { actorOf, guard, policyCapability, policyPermissions } from './policy-gate';
 export type {
   AnyQuery,
   Query,
@@ -61,6 +66,7 @@ export type {
   QueryFacade,
   QueryMcp,
   QueryOptions,
+  QueryRateLimit,
   SourceOptions,
 } from './query';
 export { describeQuery, isQuery, nameQuery, query, queryHash } from './query';

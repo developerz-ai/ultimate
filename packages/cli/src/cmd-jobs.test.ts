@@ -74,13 +74,13 @@ afterEach(() => {
 });
 
 describe('unit · x jobs spec', () => {
-  test('names all four subcommands, ls first, with every documented flag', () => {
-    expect(JOBS_SUBCOMMANDS).toEqual(['ls', 'show', 'retry', 'drain']);
+  test('names all five subcommands, ls first, with every documented flag', () => {
+    expect(JOBS_SUBCOMMANDS).toEqual(['ls', 'show', 'retry', 'cancel', 'drain']);
     expect(jobsCommand.spec.subcommands).toBe(JOBS_SUBCOMMANDS);
     expect(jobsCommand.spec.name).toBe('jobs');
     expect(jobsCommand.spec.requiresApp).toBe(true);
     expect(jobsCommand.spec.flags?.map((flag) => flag.name).sort()).toEqual(
-      ['dry-run', 'from-step', 'limit', 'name', 'queue', 'state', 'to'].sort(),
+      ['dry-run', 'from-step', 'limit', 'name', 'queue', 'reason', 'state', 'to'].sort(),
     );
   });
 });
@@ -209,6 +209,48 @@ describe('unit · x jobs show and retry rendering', () => {
     const result = await runJobs(driver, { subcommand: 'retry', positionals: [id] });
 
     expect(result.summary).toBe(msg('cli.jobs.retried', { id, state: 'ready' }));
+  });
+});
+
+describe('unit · x jobs cancel', () => {
+  test('a job past cancelling is refused, never silently reported as cancelled', async () => {
+    const driver = createMemoryDriver();
+    const id = await enqueue(driver, 'send-email');
+    await driver.claim({
+      queues: ['default'],
+      limit: 1,
+      workerId: 'w1',
+      visibilityTimeoutMs: 1000,
+    });
+    await driver.ack(id);
+
+    // The failure case: a `done` job has nothing to stop, and cancelling it would rewrite a
+    // terminal row an operator is reading as success — so there is no path where this command
+    // exits 0 over a job whose state it did not change.
+    await expect(runJobs(driver, { subcommand: 'cancel', positionals: [id] })).rejects.toThrow(
+      /X_JOB_NOT_CANCELLABLE/,
+    );
+  });
+
+  test('a live job is cancelled and the trace is rendered by the same projection show uses', async () => {
+    const driver = createMemoryDriver();
+    const id = await enqueue(driver, 'send-email');
+
+    const result = await runJobs(driver, {
+      subcommand: 'cancel',
+      positionals: [id],
+      flags: { reason: 'superseded by a newer charge' },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe(msg('cli.jobs.cancelled', { id, state: 'cancelled' }));
+    expect((result.data as { id: string; state: string }).state).toBe('cancelled');
+  });
+
+  test('a missing id names the invocation that works', async () => {
+    await expect(runJobs(createMemoryDriver(), { subcommand: 'cancel' })).rejects.toThrow(
+      BadFlagError,
+    );
   });
 });
 

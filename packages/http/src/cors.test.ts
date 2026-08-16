@@ -103,12 +103,20 @@ describe('assertCorsConfig()', () => {
   });
 
   test('defineHttpConfig is where an app meets that refusal', () => {
-    expect(() => defineHttpConfig({ cors: { origins: ['*'] } })).toThrow(HttpError);
+    expect(() =>
+      defineHttpConfig({ rateLimit: { scope: 'process' }, cors: { origins: ['*'] } }),
+    ).toThrow(HttpError);
     // Both legal spellings still resolve.
-    expect(defineHttpConfig({ cors: { origins: ['*'], credentials: false } }).cors.origins).toEqual(
-      ['*'],
-    );
-    expect(defineHttpConfig({ cors: { origins: ['https://a.test'] } }).cors.credentials).toBe(true);
+    expect(
+      defineHttpConfig({
+        rateLimit: { scope: 'process' },
+        cors: { origins: ['*'], credentials: false },
+      }).cors.origins,
+    ).toEqual(['*']);
+    expect(
+      defineHttpConfig({ rateLimit: { scope: 'process' }, cors: { origins: ['https://a.test'] } })
+        .cors.credentials,
+    ).toBe(true);
   });
 });
 

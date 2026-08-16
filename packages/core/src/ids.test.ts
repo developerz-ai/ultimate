@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from './clock';
+import type { UltimateError } from './errors';
 import {
+  isSpanId,
+  isTraceId,
   isUuid,
   nanoid,
   parseId,
+  randomHex,
   resetIdCounter,
   spanId,
   traceId,
@@ -124,5 +128,60 @@ describe('the monotonic counter seed', () => {
     }
     expect(Math.max(...seeds)).toBeGreaterThan(0x0ff);
     expect(Math.max(...seeds)).toBeLessThanOrEqual(0x3ff);
+  });
+});
+
+describe('W3C trace ids', () => {
+  test('a dashed UUID is NOT a trace id — the shape a collector silently rejects', () => {
+    expect(isTraceId(uuid())).toBe(false);
+    expect(isTraceId('0af7651916cd43dd-8448eb211c80319c')).toBe(false);
+  });
+
+  test('all-zero is invalid: the wire spells "no trace" that way', () => {
+    expect(isTraceId('0'.repeat(32))).toBe(false);
+    expect(isSpanId('0'.repeat(16))).toBe(false);
+  });
+
+  test('the generators produce what the predicates accept', () => {
+    expect(isTraceId(traceId())).toBe(true);
+    expect(isSpanId(spanId())).toBe(true);
+  });
+
+  test('rejects the wrong length, uppercase hex and a non-string', () => {
+    expect(isTraceId(randomHex(8))).toBe(false);
+    expect(isTraceId(traceId().toUpperCase())).toBe(false);
+    expect(isSpanId(42)).toBe(false);
+  });
+});
+
+describe('a rejected id never reaches the log index or the client', () => {
+  test('parseId does not echo the value it refused', () => {
+    const token = 'sk-live-9f2b7c4d';
+    let error: UltimateError | undefined;
+    try {
+      parseId('post', token);
+    } catch (thrown) {
+      error = thrown as UltimateError;
+    }
+    expect(error?.cause).not.toContain(token);
+    expect(JSON.stringify(error?.toJSON())).not.toContain(token);
+    expect(error?.cause).toBe(
+      'expected a post UUIDv7 (8-4-4-4-12 lowercase hex, version 7), received a string of 16 characters',
+    );
+  });
+
+  test('uuidTimestamp does not echo it either', () => {
+    const token = 'sk-live-9f2b7c4d';
+    let error: UltimateError | undefined;
+    try {
+      uuidTimestamp(token);
+    } catch (thrown) {
+      error = thrown as UltimateError;
+    }
+    expect(JSON.stringify(error?.toJSON())).not.toContain(token);
+  });
+
+  test('still names the shape that WOULD be accepted — the actionable half', () => {
+    expect(() => parseId('post', 'abc')).toThrow(/8-4-4-4-12 lowercase hex/);
   });
 });

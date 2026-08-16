@@ -5,7 +5,7 @@
 import type { BackfillProgress } from './backfill-inspect';
 import { backfillForRun } from './backfill-inspect';
 import type { JobDriver, JobFilter, JobRecord, QueueStats } from './driver';
-import { JobsNotImplementedError } from './errors';
+import { CancelUnsupportedError, JobNotCancellableError, JobsNotImplementedError } from './errors';
 import { registeredJobs } from './job';
 import { retrySchedule } from './retry';
 import type { Scheduler } from './scheduler';
@@ -69,6 +69,10 @@ export interface JobTrace {
   readonly runAt: string;
   readonly lastError: string | null;
   readonly tenantId: string | null;
+  /** W3C `traceparent` of the request that queued it — paste it into the trace viewer. */
+  readonly traceparent: string | null;
+  /** Actor id of whoever asked. Audit only: the body ran with system authority. */
+  readonly enqueuedBy: string | null;
   readonly steps: readonly StepTrace[];
   /** Remaining retry delays in ms, jitter excluded. */
   readonly retryDelaysMs: readonly number[];
@@ -124,6 +128,8 @@ export async function inspectJob(driver: JobDriver, jobId: string): Promise<JobT
     runAt: new Date(record.runAt).toISOString(),
     lastError: record.lastError ?? null,
     tenantId: record.tenantId ?? null,
+    traceparent: record.traceparent ?? null,
+    enqueuedBy: record.enqueuedBy ?? null,
     steps: steps.map(toStepTrace),
     retryDelaysMs: handle === undefined ? [] : [...retrySchedule(handle.retry)],
     backfill: backfill ?? null,
@@ -176,6 +182,31 @@ export async function retryFromStep(
     jobId,
     stepName === undefined ? undefined : { fromStep: stepName },
   );
+  return inspectJob(driver, jobId);
+}
+
+/**
+ * Stop a job from outside — the surface `x jobs cancel <id>` binds to. The hard half was already
+ * built: `execute.ts` cancels the attempt and `steps.ts` fences every write behind that signal.
+ * What was missing was anything that could TRIGGER it, so a runaway backfill against production
+ * left two options: scale the worker to zero (stopping every job) or `UPDATE x_jobs` by hand,
+ * which the worker's next ack overwrote because `SQL_ACK` had no state guard.
+ *
+ * Refuses loudly rather than answering "nothing happened": an operator cancelling a 40M-row sweep
+ * has to know whether they stopped it or missed it.
+ */
+export async function cancelJob(
+  driver: JobDriver,
+  jobId: string,
+  reason?: string,
+): Promise<JobTrace | undefined> {
+  const introspect = requireIntrospection(driver);
+  if (introspect.cancel === undefined) throw new CancelUnsupportedError({ driver: driver.name });
+  const record = await introspect.cancel(jobId, reason);
+  if (record === undefined) {
+    const current = await introspect.job(jobId);
+    throw new JobNotCancellableError({ jobId, state: current?.state ?? 'missing' });
+  }
   return inspectJob(driver, jobId);
 }
 

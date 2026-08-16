@@ -10,6 +10,7 @@ import { AuthError } from './errors';
 import { MemoryAdapter } from './memory-adapter';
 import type { PasswordParams } from './password';
 import { hashPassword } from './password';
+import { type AuthRateLimitPolicy, ORG_ATTEMPT_FACTOR } from './rate-limit';
 
 /** Same adapter, except `findUserById` answers "gone" — simulates a user row disappearing
  *  (hard delete, another process) without its session being cleaned up alongside it. Bound to
@@ -211,5 +212,84 @@ describe('logout', () => {
   test('a well-formed but unknown session id reports false', async () => {
     const auth = newAuth();
     expect(await logout(auth, 'unknown-id.unknown-secret')).toBe(false);
+  });
+});
+
+/**
+ * The failure case first: one tenant's misconfigured integration hammers login from 400 source
+ * addresses. Every per-IP bucket allows its own quota, the per-account buckets protect
+ * individuals, and nothing caps the TENANT — so the shared limiter saturates and every other
+ * tenant's logins slow down behind it.
+ */
+describe('the tenant bucket', () => {
+  const tenantAuth = (overrides: Partial<AuthRateLimitPolicy> = {}): Auth =>
+    defineAuth({
+      adapter: new MemoryAdapter(),
+      clock: frozenClock(1_700_000_000_000),
+      password: { minLength: 12, params: FAST_PARAMS },
+      rateLimit: { maxAttempts: 50, orgMaxAttempts: 3, ...overrides },
+    });
+
+  const member = async (auth: Auth, email: string): Promise<void> => {
+    await register(auth, { email, password: PASSWORD, orgId: 'org-1' });
+  };
+
+  test('a spray across many members from many addresses is capped by the org', async () => {
+    const auth = tenantAuth();
+    await member(auth, 'a@corp.test');
+    await member(auth, 'b@corp.test');
+    await member(auth, 'c@corp.test');
+    // Three different accounts, three different addresses: neither the account bucket
+    // (maxAttempts 50) nor the ip bucket sees more than one failure.
+    for (const [index, email] of ['a@corp.test', 'b@corp.test', 'c@corp.test'].entries()) {
+      const failure = await caught(() =>
+        login(auth, { email, password: 'wrong-password-entirely', ip: `203.0.113.${index}` }),
+      );
+      expect(failure?.code).toBe('X_UNAUTHENTICATED');
+    }
+    // The fourth attempt is refused by the tenant cap, before the KDF runs.
+    const locked = await caught(() =>
+      login(auth, { email: 'a@corp.test', password: PASSWORD, ip: '203.0.113.99' }),
+    );
+    expect(locked?.code).toBe('X_ACCOUNT_LOCKED');
+    expect(locked?.cause).toContain('org:org-1');
+  });
+
+  test('another tenant is unaffected by the first tenant being locked out', async () => {
+    const auth = tenantAuth();
+    await member(auth, 'a@corp.test');
+    await register(auth, { email: 'z@other.test', password: PASSWORD, orgId: 'org-2' });
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await caught(() => login(auth, { email: 'a@corp.test', password: 'no', ip: '198.51.100.1' }));
+    }
+    // org-1 is locked; org-2 signs in normally, which is the whole point of a per-tenant key.
+    expect(
+      (await caught(() => login(auth, { email: 'a@corp.test', password: PASSWORD })))?.code,
+    ).toBe('X_ACCOUNT_LOCKED');
+    const ok = await login(auth, { email: 'z@other.test', password: PASSWORD });
+    expect(ok.actor.orgId).toBe('org-2');
+  });
+
+  test('one member signing in does not clear the count a broken integration is running up', async () => {
+    const auth = tenantAuth();
+    await member(auth, 'a@corp.test');
+    await member(auth, 'b@corp.test');
+    await caught(() => login(auth, { email: 'a@corp.test', password: 'no' }));
+    await caught(() => login(auth, { email: 'a@corp.test', password: 'no' }));
+    // A success clears the ACCOUNT window — a legitimate user is not punished for a typo — and
+    // deliberately not the tenant one, or the traffic that proves the tenant is alive is also
+    // the traffic that resets its cap.
+    await login(auth, { email: 'b@corp.test', password: PASSWORD });
+    await caught(() => login(auth, { email: 'a@corp.test', password: 'no' }));
+    expect(
+      (await caught(() => login(auth, { email: 'b@corp.test', password: PASSWORD })))?.code,
+    ).toBe('X_ACCOUNT_LOCKED');
+  });
+
+  test('the tenant allowance defaults to a multiple of the individual one, never to it', () => {
+    const auth = defineAuth({ adapter: new MemoryAdapter(), rateLimit: { maxAttempts: 5 } });
+    // Five attempts shared by a whole tenant is a denial of service against that tenant.
+    expect(auth.orgRateLimit.maxAttempts).toBe(5 * ORG_ATTEMPT_FACTOR);
+    expect(auth.rateLimit.maxAttempts).toBe(5);
   });
 });

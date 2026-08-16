@@ -11,29 +11,50 @@
  * What the factory adds is the model half: the prompt is rendered from the parsed input, the
  * `output` schema is projected into a tool the model must answer through, a per-call budget is
  * reserved before a token is spent, and a near-duplicate prompt hits the semantic cache.
+ *
+ * `.stream()` is the same action over a different transport, and it is here rather than beside
+ * the gateway for one reason: everything that makes `llm()` worth using — policy, input parse,
+ * budget scope, semantic cache, span, `.tool()` — is lost the moment a feature has to reach past
+ * it to `aiGateway()` for tokens on a screen. `./llm-stream.ts` holds the plumbing and states the
+ * two decisions a stream forces (no repair turn, budget reserved exactly as before); what a
+ * streamed answer must satisfy is decided in this file, next to the non-streaming version of the
+ * same rules.
  */
 
-import type { Action, ActionMcp, ActionPolicy } from '@ultimat3/action';
+import type { Action, ActionMcp, ActionPolicy, InvokeOptions } from '@ultimat3/action';
 import { action } from '@ultimat3/action';
-import type { Ctx } from '@ultimat3/core';
+import type { Ctx, Span, SpanAttributes } from '@ultimat3/core';
 import { withSpan } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
-import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
+import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, toMcpInputSchema, validateAsync } from '@ultimat3/schema';
 import { parseDuration } from '@ultimat3/time';
 import type { BudgetLimits } from './budget';
 import { BudgetLedger, currentBudget, withBudget } from './budget';
 import { embedOne, fnv1a } from './embeddings';
-import { LlmOutputInvalidError, LlmRefusedError, LlmTruncatedError } from './errors';
+import {
+  LlmOutputInvalidError,
+  LlmRefusedError,
+  LlmStreamInvalidError,
+  LlmTruncatedError,
+} from './errors';
+import type { Gateway } from './gateway';
+import type { LlmSink, LlmStreamChunk } from './llm-stream';
+import { currentLlmSink, llmStream, streamOneTurn, withLlmSink } from './llm-stream';
 import type { ModelId } from './models';
 import { DEFAULT_MODEL, moreCapableThan } from './models';
 import type { Prompt, PromptVars } from './prompt';
 import type { AiMessage, GenerateRequest, GenerateResult } from './provider';
-import { aiEmbedder, aiGateway, semanticCacheFor } from './runtime';
+import { assertNoSecrets } from './redaction';
+import { aiEmbedder, aiGateway, aiRedactor, semanticCacheFor } from './runtime';
 import type { LlmTool } from './tools';
 
-/** The tool the model answers through. One name, so the reader never has to guess. */
-const RESPOND = 'respond';
+/**
+ * The tool the model answers through. One name, so the reader never has to guess — and shared
+ * with `agent()`, which offers the app's tools alongside it and needs the same name to tell an
+ * answer from a tool call.
+ */
+export const RESPOND = 'respond';
 
 /** Two attempts total: the answer, then one repair turn. See `LlmOutputInvalidError`. */
 const ATTEMPTS = 2;
@@ -105,19 +126,73 @@ export interface LlmDef<
   readonly maxTokens?: number;
 }
 
+/**
+ * An `action` with one extra way to be called. Every projection an action has, it has — `.tool()`,
+ * `.openapi()`, `.client()`, `.job()`, `.contract()` — plus a transport for the case an action's
+ * single return value cannot serve: text on a screen before the answer is finished.
+ */
+export interface LlmAction<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>
+  extends Action<TInput, TOutput> {
+  /**
+   * The same call, delivered as it arrives. Runs the action's policy, input parse, budget scope,
+   * semantic cache and span exactly as calling it would — the invocation IS an ordinary one,
+   * marked so the model half streams. Yields `text` and `thinking` increments, then one `done`
+   * carrying the value that satisfied `output`.
+   *
+   * Lazy: nothing is authorised or sent until the first pull. A streamed call offers the model no
+   * `respond` tool — a tool call arrives whole, so forcing one leaves nothing to stream — which
+   * means the answer is prose, and its JSON parse is what a non-string `output` validates.
+   * Abandoning the iterator stops delivery, never the call: the budget reservation is reconciled
+   * by the chain that opened it.
+   */
+  stream(
+    input: InferInput<TInput>,
+    opts?: InvokeOptions,
+  ): AsyncIterable<LlmStreamChunk<InferOutput<TOutput>>>;
+  /** Narrowed: a renamed twin of a model call is still a model call, and still streams. */
+  named(name: string): LlmAction<TInput, TOutput>;
+}
+
 export function llm<
   TInput extends StandardSchemaV1,
   TOutput extends StandardSchemaV1,
   V extends PromptVars,
->(def: LlmDef<TInput, TOutput, V>): Action<TInput, TOutput> {
+>(def: LlmDef<TInput, TOutput, V>): LlmAction<TInput, TOutput> {
   const respond = respondToolFor(def.output);
-  return action<TInput, TOutput>({
+  const built = action<TInput, TOutput>({
     input: def.input,
     output: def.output,
     policy: def.policy,
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
     handle: (args) => generate(def, respond, args),
   });
+  return streamable(built);
+}
+
+/**
+ * Attach `.stream()` to an action IN PLACE, rather than wrapping it. One object is the point:
+ * `nameAction` stamps a name onto the very object an app exported, `invoke` reads the declaration
+ * off it, and a wrapper would leave a second action the registry never saw.
+ *
+ * `named()` is re-narrowed for the same reason. `action()`'s `named` builds a fresh twin, which
+ * would silently be a model call that cannot stream — so the twin is passed back through here.
+ * The original is captured first, or the override would call itself.
+ */
+function streamable<TInput extends StandardSchemaV1, TOutput extends StandardSchemaV1>(
+  target: Action<TInput, TOutput>,
+): LlmAction<TInput, TOutput> {
+  const rename = target.named.bind(target);
+  const self: LlmAction<TInput, TOutput> = Object.assign(target, {
+    stream: (
+      input: InferInput<TInput>,
+      opts?: InvokeOptions,
+    ): AsyncIterable<LlmStreamChunk<InferOutput<TOutput>>> =>
+      // `self`, not `target`: the invocation has to be of the object that carries the name the
+      // audit record, the rate-limit key and the span are filed under.
+      llmStream<InferOutput<TOutput>>((sink) => withLlmSink(sink, () => self(input, opts ?? {}))),
+    named: (next: string): LlmAction<TInput, TOutput> => streamable(rename(next)),
+  });
+  return self;
 }
 
 async function generate<
@@ -134,13 +209,27 @@ async function generate<
   // export name it exists before registration and can never twin.
   const name = prompt.ref;
   const model = def.model ?? prompt.model ?? DEFAULT_MODEL;
-  const rendered = prompt.render(await def.vars({ input: args.input, ctx: args.ctx }));
+  // `vars()` is the one declared place a model call loads data, so it is the one place the
+  // framework can refuse a `Secret` and the one place an app's redactor can see the row before it
+  // leaves the process. Both run here, between the load and the request, and neither is optional
+  // in the sense that matters: the redactor may be absent, the Secret check never is.
+  const vars = await def.vars({ input: args.input, ctx: args.ctx });
+  assertNoSecrets(name, vars);
+  const redact = aiRedactor();
+  const rawPrompt = prompt.render(vars);
+  const rendered = redact(rawPrompt);
+  const system = prompt.system === undefined ? undefined : redact(prompt.system);
+  const redacted = rendered !== rawPrompt || system !== prompt.system;
 
   return withSpan('ai.llm', async (span) => {
     span.setAttributes({
       'llm.model': model,
       'llm.prompt': prompt.ref,
       'llm.prompt.hash': prompt.hash,
+      // Whether the installed redactor changed anything. Recorded because "we redact" is a claim
+      // an audit asks evidence for, and a redactor that silently stopped matching looks identical
+      // to one that had nothing to remove until this attribute separates them.
+      'llm.redacted': redacted,
     });
 
     // A cached answer is still data of unknown provenance, so it goes through the schema like
@@ -151,15 +240,18 @@ async function generate<
     span.setAttribute('llm.cache.hit', hit !== undefined);
     if (hit !== undefined) return hit.value;
 
-    const request: GenerateRequest = {
+    // No `tools` yet: the `respond` projection belongs to the non-streaming path alone. A tool
+    // call is emitted whole, so forcing the answer through one leaves a stream with nothing to
+    // deliver until it is already over.
+    const base: GenerateRequest = {
       model,
-      ...(prompt.system === undefined ? {} : { system: prompt.system }),
+      ...(system === undefined ? {} : { system }),
       messages: [{ role: 'user', content: rendered }],
       maxTokens: def.maxTokens ?? DEFAULT_MAX_TOKENS,
       ...(prompt.effort === undefined ? {} : { effort: prompt.effort }),
       ...(prompt.thinking === undefined ? {} : { thinking: prompt.thinking }),
-      tools: [respond],
     };
+    const request: GenerateRequest = { ...base, tools: [respond] };
 
     // A ledger derived from the ambient one, so a per-call budget can only TIGHTEN the actor
     // and org ceilings this call runs inside, never widen them. The gateway reserves against
@@ -168,18 +260,19 @@ async function generate<
       limitsOf(def.budget),
     );
     const gateway = aiGateway(name);
+    const sink = currentLlmSink();
 
     return withBudget(ledger, async () => {
+      if (sink !== undefined) {
+        const value = await streamedAnswer(def.output, name, gateway, base, sink, span);
+        await cache?.remember(value);
+        return value;
+      }
       let messages: readonly AiMessage[] = request.messages;
       let issues = 'no output';
       for (let attempt = 1; attempt <= ATTEMPTS; attempt += 1) {
         const result = await gateway.generate({ ...request, messages });
-        span.setAttributes({
-          'llm.attempts': attempt,
-          'llm.stop': result.stopReason,
-          'llm.tokens': result.usage.inputTokens + result.usage.outputTokens,
-          'llm.cost.minor': result.cost.minor,
-        });
+        span.setAttributes({ 'llm.attempts': attempt, ...answerAttributes(result) });
         // Branch on the stop reason BEFORE reading the answer. A refusal carries empty or partial
         // content, so parsing it first reports a schema disagreement — a cause that is wrong, a
         // fix that does not apply, and a repair turn spent buying the same refusal again.
@@ -217,6 +310,66 @@ async function generate<
   });
 }
 
+/**
+ * What one answered turn puts on the span. `llm.provider` is the half the LLM-gateway table
+ * called "a fallback is recorded in the span, never silent": fallback in this framework is across
+ * PROVIDERS serving one model, never across models, and until the gateway stamped the provider
+ * that answered, a fallback was exactly as silent as no fallback at all.
+ */
+export function answerAttributes(result: GenerateResult): SpanAttributes {
+  return {
+    'llm.stop': result.stopReason,
+    'llm.tokens': result.usage.inputTokens + result.usage.outputTokens,
+    'llm.cost.minor': result.cost.minor,
+    'llm.provider': result.provider ?? 'unknown',
+  };
+}
+
+/**
+ * One streamed turn, from the same declaration and under the same rules — with one difference
+ * that is forced rather than chosen: no repair turn. The tokens are already on the consumer's
+ * screen, so a second answer would be two answers to one question; a stream gets one attempt and
+ * `X_LLM_STREAM_INVALID` names the non-streaming call as the fix.
+ *
+ * The stop reason is still read BEFORE the answer, for the reason it always was: a refusal
+ * carries empty or partial content and parsing it first reports a schema disagreement that is not
+ * one. Truncation is the same call it is on the non-streaming path.
+ */
+async function streamedAnswer<TOutput extends StandardSchemaV1>(
+  output: TOutput,
+  name: string,
+  gateway: Gateway,
+  request: GenerateRequest,
+  sink: LlmSink,
+  span: Span,
+): Promise<InferOutput<TOutput>> {
+  const result = await streamOneTurn(gateway, request, sink);
+  span.setAttributes({ 'llm.attempts': 1, ...answerAttributes(result) });
+  if (result.stopReason === 'refusal') {
+    throw new LlmRefusedError({
+      prompt: name,
+      model: result.model,
+      alternative: moreCapableThan(result.model),
+      category: result.stopDetails?.category,
+      explanation: result.stopDetails?.explanation,
+    });
+  }
+  if (result.stopReason === 'max_tokens') {
+    throw new LlmTruncatedError({ prompt: name, maxTokens: request.maxTokens });
+  }
+  // Prose, and its JSON parse when it has one. Both, because a stream carries no `respond` tool
+  // to tell them apart: `output: t.string` is satisfied by the text itself, and an object schema
+  // by what the text parses to — trying only one of the two makes a legal declaration unusable.
+  const parsed = await accept(output, parseJsonish(result.text));
+  if (parsed !== undefined) return parsed.value;
+  const fallback = await validateAsync(output, result.text);
+  if (fallback.issues === undefined) return fallback.value;
+  throw new LlmStreamInvalidError({
+    prompt: name,
+    issues: formatIssues(fallback.issues).join('; '),
+  });
+}
+
 /** `undefined` for "does not fit". Wrapped so a legitimately falsy value is still a hit. */
 async function accept<TOutput extends StandardSchemaV1>(
   schema: TOutput,
@@ -247,7 +400,7 @@ function limitsOf(budget: LlmBudget | undefined): BudgetLimits {
  * a model and an agent are shown one shape, and a schema it cannot express throws HERE, at
  * declaration time, rather than degrading into a permissive node the model cannot satisfy.
  */
-function respondToolFor(output: StandardSchemaV1): LlmTool {
+export function respondToolFor(output: StandardSchemaV1): LlmTool {
   return {
     name: RESPOND,
     description: 'Return the result. Call this exactly once; do not answer in prose.',
@@ -279,7 +432,7 @@ function assistantEcho(result: GenerateResult): string | undefined {
  * The tool call if the model made one, otherwise the text parsed as JSON — a model that
  * answers in prose is a schema failure, not a crash, so it flows into the repair turn.
  */
-function structuredOutputOf(result: GenerateResult): unknown {
+export function structuredOutputOf(result: GenerateResult): unknown {
   const call = result.toolCalls.find((c) => c.name === RESPOND);
   if (call !== undefined) return call.input;
   return parseJsonish(result.text);

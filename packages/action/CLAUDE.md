@@ -25,7 +25,10 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `job-handle.ts` | shape `@ultimat3/jobs` consumes |
 | `contract-test.ts` | assertions `x g action` emits |
 | `sample-input.ts` | a value `input:` accepts, from its own IR — what makes the policy assertion reach a policy |
-| `idempotency.ts` | store interface + memory default |
+| `idempotency.ts` | the store SEAM: types, the installed-store slot, the scope declaration + `assertIdempotencyScope`, and `withIdempotency` — the replay-or-run gate |
+| `idempotency-memory.ts` | the process default: bounded, swept, `scope: 'process'` |
+| `idempotency-postgres.ts` | the SHARED store — one table, one `insert … on conflict` |
+| `deprecation.ts` | `Deprecation` + the RFC 9745/8594 render + the `deprecated_calls_total` counter |
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
 | `cache-gate.ts` | the post-commit bust — **the only** file that calls `invalidateTags` |
 | `audit.ts` | the audit seam: `AuditRecord`, `AuditSink`, the memory sink, the installed-sink store |
@@ -46,6 +49,12 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   author, and never reach the evaluation that had the row. `meta.policy` stays set — dropping
   it would read as "this action is unguarded" in `x routes` and the manifest. `http.test.ts`
   drives a row-level action over the real pipeline and counts the evaluations: exactly one.
+- **`toBucket` is `@ultimat3/http`'s, not this package's — moved 2026-08.** http owns `Bucket` and
+  the limiter maths, and `@ultimat3/query` needs the identical conversion while being the same
+  tier as this package, so a copy in either is a second answer to "what does this limit mean" for
+  the other. It is re-exported from `src/index.ts` so an action file still reaches it through one
+  import, and it raises http's `X_RATE_LIMIT_INVALID`; `X_ACTION_RATE_LIMIT_INVALID` is gone with
+  the copy. Never restore a local one.
 - **`rateLimit:` reaches the limiter, not only the spec.** `toRoute` sets `meta.rateLimit` (the
   bucket name) **and** `meta.rateLimitBucket` (`toBucket(name, def.rateLimit)`), and
   `@ultimat3/http`'s `withRouteBuckets` registers the second under the first. Until 2026-08 only
@@ -54,11 +63,77 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   same: looser in practice than what the author wrote, which is the dangerous direction. `toBucket`
   is the **only** conversion between `{ limit, windowMs }` and `{ capacity, refillPerSecond }`, and
   both projections that read the declaration call it, so the spec cannot publish a pair the limiter
-  refuses. `X_ACTION_RATE_LIMIT_INVALID` covers all three checks, and the third is the one that is
+  refuses. http's `X_RATE_LIMIT_INVALID` covers all three checks, and the third is the one that is
   easy to miss: the **computed** rate, not just the two declared halves. `windowMs: 0` is an
   infinite refill, and so is `{ limit: Number.MAX_VALUE, windowMs: 1 }` — two finite positive
   numbers whose division enforces nothing. `limit` must also be at least one whole token, or the
   first caller is already refused and the endpoint is closed rather than limited.
+- **Everything `withIdempotency`'s `run` throws is treated as possibly-committed.** `guard()` and
+  `validateInput` both run before the gate (`invoke.ts`), so by the time `run` is called the only
+  things left are the handler and `validateOutput` — and the second throws *after* the first has
+  committed. The reservation is therefore SETTLED as a failure and the retry replays it under the
+  first attempt's own code; `release()` is reserved for a pre-handler failure, of which this gate
+  has none. Releasing there is what turned a rounding change in an `output:` schema into a second
+  charge: `X_OUTPUT_INVALID` dropped the record and the client's automatic retry re-ran a handler
+  that had already taken the money. A `settle` that itself refuses leaves the record **in flight**
+  for the same reason — a 409 the caller can act on beats a silent re-run. A store with no `fail`
+  slot gets the same fail-closed treatment. `idempotency-failure.test.ts` drives the
+  post-commit-throw path first, because that is the one that shipped.
+- **Where the idempotency records live is DECLARED, and refused at registration.**
+  `IdempotencyStore.scope` says what a driver provides; `configureIdempotency({ scope })` says what
+  the deployment requires; `assertIdempotencyScope` compares them inside `registerAction` — the
+  funnel every registration path shares, and one that necessarily runs before a route is mounted.
+  `'shared'` over a per-process store, or over a store declaring **no** scope, is
+  `X_IDEMPOTENCY_NOT_SHARED` before the socket opens. The exact shape of `assertRateLimitScope`
+  and `assertRouteBuckets`, and for the same reason: what cannot be shown to hold is not assumed
+  to hold. The default is `'process'`, because one process is the only thing a framework can
+  promise without being told — nothing here reads an environment to guess a replica count.
+- **The memory store is bounded, and the eviction order is part of the guarantee.** A key is
+  caller-supplied, so its cardinality is the write rate: unbounded, 500 idempotent writes a second
+  is 43M immortal entries a day. Expired records go for free (past the window a record answers as
+  a missing one); past the cap, **`in-flight` records are the last to go** — one of those is the
+  reservation that stops a concurrent duplicate from running the handler twice. That is the mirror
+  of `memoryRateLimitStore` evicting the fullest bucket first; never swap either for an LRU.
+- **`postgresIdempotencyStore` is the shipped shared store, and it must be CALLED.** A mechanism
+  built and never wired is the defect this package has shipped twice. It takes a structural
+  `PgExecutor` — the same shape `@ultimat3/jobs`' pg driver declares, satisfied by `Bun.sql` and by
+  a Tx — so there is no `action -> db` package edge and the app wires it:
+  `setIdempotencyStore(postgresIdempotencyStore({ executor: Bun.sql }))` then
+  `configureIdempotency({ scope: 'shared' })`, at boot, before `registerActions()`.
+  `SQL_IDEMPOTENCY_TABLE` is applied the way `SQL_JOBS_TABLE` is. The reservation is ONE statement:
+  a returned row always means this caller owns it, because the `do update` fires only for a row
+  already outside the window.
+- **`deprecated:` is a compat WINDOW and versioning is deliberately not here.** One declaration,
+  four projections: `Deprecation`/`Sunset` headers on every response *including the failures* the
+  handler raises, a `rel="successor-version"` link derived through `derivePath` (never a second URL
+  derivation), `deprecated: true` in the OpenAPI operation, and `deprecated_calls_total`. The
+  headers are rendered ONCE at projection, so a date that cannot become one is
+  `X_ACTION_DEPRECATION_INVALID` at mount rather than on the first request — the rule `toBucket`
+  follows. Running two versions side by side is two deployments behind one ingress (axiom 7); a
+  path prefix, a second registry or a version router would all be a ninth thing to maintain.
+  `deprecation.ts` is TWINNED in `@ultimat3/query`, because both are tier 3 and the shared home is
+  `@ultimat3/http` if it ever grows one — the same compromise `naming.ts` is ported under.
+- **The span wraps `execute` whole, and carries attributes.** It used to wrap `def.handle` alone
+  and set nothing, so `def.row()` — the loader a row-level policy needs — ran inside no span at
+  all: a 2s p99 reported 40ms and the missing 1.96s read as framework overhead. Attributes are
+  chosen for bounded cardinality (surface, actor KIND, outcome, booleans) with one exception, the
+  namespaced idempotency key, which is the single fact that joins a retry to the call it retries —
+  and is never a metric label. `telemetry.test.ts` asserts the EXTENT structurally, by reading
+  `currentSpan()` from inside `row:` and the policy predicate, not by timing: the test clock is
+  frozen.
+- **`policyCapability` is a display label and `policyPermissions` is what a report matches on.**
+  A composite renders as `and(post:publish, org:administer)`, which equals no permission string,
+  so `x policy list` matching on `capability` reported every non-trivially-guarded action's
+  permissions as *unenforced* — real grants shown as dead. `ActionDescriptor.permissions` is the
+  flattened list from `@ultimat3/policy`'s `policyPermissions`, published beside `capability` and
+  never instead of it. A `not()` clause contributes its inner permissions: the grant still
+  participates in the decision, so omitting it would be the false statement.
+- **Both clients inject `traceparent`.** `@ultimat3/core`'s `traceparent()` existed with no caller
+  in the repo, so every Ultimate-to-Ultimate hop began a fresh root trace on the far side. It is
+  set BEFORE the caller's own headers so an explicit one still wins, and an incomplete span context
+  (`spanId: ''`, which `currentSpanContext()` answers when a request context exists but no span
+  does) sends nothing rather than `00-<trace>--01`. In a browser there is no ambient context, so
+  a cross-origin call acquires no CORS preflight it did not already have.
 - An action has no `.def`. Inside the package read it with `defOf(target)`; outside,
   read the lifted `.input`/`.output`/`.policy`/`.mcp` or `describe()`.
 - **`AnyAction` projects every surface, `client()` excepted.** The registry answers in the erased

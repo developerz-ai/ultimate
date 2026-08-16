@@ -12,6 +12,7 @@ import type {
   ClaimOptions,
   EnqueueRequest,
   EnqueueResult,
+  HeartbeatOptions,
   JobDriver,
   JobFilter,
   JobIntrospection,
@@ -21,6 +22,8 @@ import type {
 } from './driver';
 import { DEFAULT_QUEUE } from './driver';
 import { JobDuplicateError } from './errors';
+import type { LeaseStore } from './leases';
+import { createMemoryLeaseStore } from './leases';
 import type { StepStore } from './steps';
 import { createMemoryStepStore } from './steps';
 
@@ -29,6 +32,8 @@ export interface MemoryDriverOptions {
   readonly steps?: StepStore;
   /** Injectable for the same reason `steps` is: two drivers in one test sharing one ledger. */
   readonly backfills?: BackfillLedger;
+  /** Injectable so two drivers in one test can share one set of fleet slots. */
+  readonly leases?: LeaseStore;
 }
 
 const LIVE_STATES = new Set(['ready', 'delayed', 'running', 'suspended']);
@@ -37,11 +42,18 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): JobDriver
   const clock = options.clock ?? systemClock;
   const steps = options.steps ?? createMemoryStepStore();
   const backfills = options.backfills ?? createMemoryBackfillLedger(clock);
+  const leases =
+    options.leases ?? createMemoryLeaseStore(options.clock === undefined ? {} : { clock });
   const jobs = new Map<string, JobRecord>();
 
-  const liveByKey = (key: string): JobRecord | undefined => {
+  // Keyed by NAME and key, exactly as `x_jobs_name_idempotency_live_idx` is. A global key
+  // namespace let two unrelated jobs that derived the same natural key dedupe against each
+  // other: the second enqueue returned the first's id and its work never ran.
+  const liveByKey = (name: string, key: string): JobRecord | undefined => {
     for (const record of jobs.values()) {
-      if (record.idempotencyKey === key && LIVE_STATES.has(record.state)) return record;
+      if (record.name === name && record.idempotencyKey === key && LIVE_STATES.has(record.state)) {
+        return record;
+      }
     }
     return undefined;
   };
@@ -88,16 +100,28 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): JobDriver
       const next = jobs.get(jobId);
       return next ?? record;
     },
+    cancel(jobId, reason) {
+      const existing = jobs.get(jobId);
+      // `state !== 'done'`, mirroring `SQL_CANCEL`: a job that already finished has nothing to
+      // stop, and cancelling it would rewrite a terminal row an operator is reading as success.
+      if (existing === undefined || existing.state === 'done') return Promise.resolve(undefined);
+      update(jobId, {
+        state: 'cancelled',
+        ...(reason === undefined ? {} : { lastError: reason }),
+      });
+      return Promise.resolve(jobs.get(jobId));
+    },
   };
 
   return {
     name: 'memory',
     steps,
     backfills,
+    leases,
     introspect,
 
     enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
-      const existing = liveByKey(request.idempotencyKey);
+      const existing = liveByKey(request.name, request.idempotencyKey);
       if (existing !== undefined) {
         if (request.onConflict === 'error') {
           throw new JobDuplicateError({
@@ -125,6 +149,8 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): JobDriver
         createdAt: at,
         updatedAt: at,
         ...(request.tenantId === undefined ? {} : { tenantId: request.tenantId }),
+        ...(request.traceparent === undefined ? {} : { traceparent: request.traceparent }),
+        ...(request.enqueuedBy === undefined ? {} : { enqueuedBy: request.enqueuedBy }),
       };
       jobs.set(record.id, record);
       return Promise.resolve({ id: record.id, runId: record.runId, deduped: false });
@@ -162,14 +188,18 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): JobDriver
       return Promise.resolve(out);
     },
 
+    // Both settlements are FENCED on `running`, as `SQL_ACK`/`SQL_NACK` are: an ack from a worker
+    // whose job was cancelled — or whose lease lapsed and whose job another worker re-claimed —
+    // would otherwise overwrite a row it no longer owns.
     ack(jobId: string): Promise<void> {
+      if (jobs.get(jobId)?.state !== 'running') return Promise.resolve();
       update(jobId, { state: 'done' });
       return Promise.resolve();
     },
 
     nack(jobId: string, nackOptions: NackOptions): Promise<void> {
       const record = jobs.get(jobId);
-      if (record === undefined) return Promise.resolve();
+      if (record === undefined || record.state !== 'running') return Promise.resolve();
       const at = nowMs(clock);
       const counts = nackOptions.countsAsAttempt !== false;
       const patch: Partial<JobRecord> = {
@@ -183,9 +213,19 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): JobDriver
       return Promise.resolve();
     },
 
-    heartbeat(jobId: string, heartbeatOptions): Promise<void> {
+    heartbeat(jobId: string, heartbeatOptions: HeartbeatOptions): Promise<boolean> {
+      const record = jobs.get(jobId);
+      // The same predicate `SQL_HEARTBEAT` carries. `false` is how an external cancel reaches a
+      // job that is already running: the worker's next renewal misses and the attempt is aborted.
+      if (
+        record === undefined ||
+        record.state !== 'running' ||
+        (heartbeatOptions.workerId !== undefined && record.claimedBy !== heartbeatOptions.workerId)
+      ) {
+        return Promise.resolve(false);
+      }
       update(jobId, { visibleAt: nowMs(clock) + heartbeatOptions.visibilityTimeoutMs });
-      return Promise.resolve();
+      return Promise.resolve(true);
     },
 
     stats(): Promise<readonly QueueStats[]> {

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { frozenClock } from './clock';
 import { createContext, runWithContext } from './context';
+import { traceId as newTraceId, spanId, uuid } from './ids';
+import { alwaysOffSampler, alwaysOnSampler } from './sampler';
 import {
   configureTelemetry,
   currentSpan,
@@ -83,5 +85,73 @@ describe('telemetry', () => {
     expect(exporter.spans[0]?.context.traceId).toBe(outbound.context.traceId);
     expect(parseTraceparent('garbage')).toBeUndefined();
     expect(parseTraceparent(null)).toBeUndefined();
+  });
+});
+
+describe('sampling', () => {
+  test("an upstream's 'do not sample' is obeyed, not just forwarded", () => {
+    const exporter = memoryExporter();
+    configureTelemetry({ exporter });
+    withSpanContext(
+      { traceId: '0af7651916cd43dd8448eb211c80319c', spanId: 'b7ad6b7169203331', traceFlags: 0 },
+      'GET /posts',
+      (span) => {
+        span.setAttribute('http.route', '/posts');
+      },
+    );
+    expect(exporter.spans).toHaveLength(0);
+  });
+
+  test('an unsampled span still propagates the decision downstream', () => {
+    configureTelemetry({ sampler: alwaysOffSampler });
+    const span = startSpan('root');
+    expect(span.context.traceFlags).toBe(0);
+    expect(traceparent(span.context).endsWith('-00')).toBe(true);
+  });
+
+  test('a configured sampler overrides the env default', () => {
+    const exporter = memoryExporter();
+    configureTelemetry({ exporter, sampler: alwaysOffSampler });
+    startSpan('dropped').end();
+    expect(exporter.spans).toHaveLength(0);
+
+    configureTelemetry({ sampler: alwaysOnSampler });
+    startSpan('kept').end();
+    expect(exporter.spans.map((span) => span.name)).toEqual(['kept']);
+  });
+
+  test('a sampled parent keeps every child in the same trace exported', () => {
+    const exporter = memoryExporter();
+    configureTelemetry({ exporter, sampler: alwaysOnSampler });
+    withSpan('outer', () => {
+      withSpan('inner', () => undefined);
+    });
+    expect(exporter.spans.map((span) => span.name)).toEqual(['inner', 'outer']);
+  });
+
+  test('resetTelemetry drops a configured sampler', () => {
+    configureTelemetry({ sampler: alwaysOffSampler });
+    resetTelemetry();
+    expect(startSpan('root').context.traceFlags).toBe(1);
+  });
+});
+
+describe('traceparent', () => {
+  test('rejects an all-zero id even though the hex shape matches', () => {
+    expect(parseTraceparent(`00-${'0'.repeat(32)}-b7ad6b7169203331-01`)).toBeUndefined();
+    expect(
+      parseTraceparent(`00-0af7651916cd43dd8448eb211c80319c-${'0'.repeat(16)}-01`),
+    ).toBeUndefined();
+  });
+
+  test('rejects a header built from a UUID trace id', () => {
+    expect(
+      parseTraceparent(traceparent({ traceId: uuid(), spanId: spanId(), traceFlags: 1 })),
+    ).toBeUndefined();
+  });
+
+  test('round-trips the ids core mints', () => {
+    const context = { traceId: newTraceId(), spanId: spanId(), traceFlags: 1 };
+    expect(parseTraceparent(traceparent(context))).toEqual(context);
   });
 });

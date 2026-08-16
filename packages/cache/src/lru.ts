@@ -8,7 +8,14 @@ import { systemClock } from '@ultimat3/core';
 import { CacheTooLargeError } from './errors';
 import type { CacheTag } from './tags';
 import { serializeTag } from './tags';
-import type { CacheEntry, CacheSetOptions, CacheTier, TierInvalidation } from './tiers';
+import type {
+  CacheEntry,
+  CacheSetOptions,
+  CacheTier,
+  Rng,
+  TierInvalidation,
+  TtlJitter,
+} from './tiers';
 import { assertTtl, nowMs } from './tiers';
 
 export interface LruOptions {
@@ -17,6 +24,10 @@ export interface LruOptions {
   /** Applied when a `set` omits `ttlMs`. Default 60s — stale-by-default is safer here. */
   readonly defaultTtlMs?: number;
   readonly clock?: Clock;
+  /** TTL spread, in `[0, 1)`. Default `DEFAULT_TTL_JITTER_FRACTION`; `0` disables it. */
+  readonly jitterFraction?: number;
+  /** Injected so a jittered expiry is deterministic; `() => 0` is the full lease. */
+  readonly rng?: Rng;
 }
 
 interface LruNode {
@@ -77,6 +88,7 @@ export class LruCache {
   private readonly maxBytes: number;
   private readonly defaultTtlMs: number;
   private readonly clock: Clock;
+  private readonly jitter: TtlJitter;
   private head: LruNode | undefined;
   private tail: LruNode | undefined;
   private bytes = 0;
@@ -88,6 +100,10 @@ export class LruCache {
     this.maxBytes = options.maxBytes ?? 64 * 1024 * 1024;
     this.defaultTtlMs = options.defaultTtlMs ?? 60_000;
     this.clock = options.clock ?? systemClock;
+    this.jitter = {
+      ...(options.jitterFraction === undefined ? {} : { jitterFraction: options.jitterFraction }),
+      ...(options.rng === undefined ? {} : { rng: options.rng }),
+    };
   }
 
   get<T>(key: string): CacheEntry<T> | undefined {
@@ -114,7 +130,7 @@ export class LruCache {
 
     // Validate BEFORE evicting the entry being replaced: a rejected write must leave the cache
     // exactly as it found it, or `X_CACHE_TTL_INVALID` also silently drops a live, valid value.
-    const ttl = assertTtl(key, options.ttlMs ?? this.defaultTtlMs, 'lru');
+    const ttl = assertTtl(key, options.ttlMs ?? this.defaultTtlMs, 'lru', this.jitter);
     const existing = this.map.get(key);
     if (existing !== undefined) this.unlink(existing);
 

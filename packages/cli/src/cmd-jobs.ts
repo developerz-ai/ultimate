@@ -1,13 +1,14 @@
-// `x jobs ls|show|retry|drain` — introspect and recover the job queue, bound to `@ultimat3/jobs`'s
+// `x jobs ls|show|retry|cancel|drain` — introspect and recover the job queue, bound to
+// `@ultimat3/jobs`'s
 // own introspection so the CLI, `/_x` and MCP report identically. This file is CLI wiring only:
 // the driver-injected logic is `jobs-report.ts`, the `--json` shapes `jobs-json.ts`, the table
 // `jobs-table.ts`, and getting hold of the queue at all is `jobs-driver.ts` — shared with `x db`.
 
 import type { JobDriver } from '@ultimat3/jobs';
-import { createMemoryDriver, createNatsDriver, createRedisDriver } from '@ultimat3/jobs';
+import { cancelJob, createMemoryDriver, createNatsDriver, createRedisDriver } from '@ultimat3/jobs';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
-import { BadFlagError } from './errors';
+import { BadFlagError, JobUnknownError } from './errors';
 import { drainJobs } from './jobs-drain';
 import { withJobDriver } from './jobs-driver';
 import {
@@ -25,7 +26,7 @@ import { msg } from './messages';
 import type { CommandResult } from './output';
 import { flagBool, flagString } from './parse';
 
-export const JOBS_SUBCOMMANDS = ['ls', 'show', 'retry', 'drain'] as const;
+export const JOBS_SUBCOMMANDS = ['ls', 'show', 'retry', 'cancel', 'drain'] as const;
 
 const DRAIN_TARGETS = ['memory', 'redis', 'nats'] as const;
 
@@ -149,6 +150,26 @@ async function runRetry(driver: JobDriver, ctx: CommandContext): Promise<Command
 }
 
 /**
+ * There is no silent-success path here, and that is the whole reason this subcommand can exist as
+ * four lines: `cancelJob` throws `X_JOB_NOT_CANCELLABLE` for a job that has already finished and
+ * for a driver with no `cancel` at all, so an exit code of 0 means the job is genuinely stopped.
+ * The trace is rendered by the same projection `show` and `retry` use — one shape for one job.
+ */
+async function runCancel(driver: JobDriver, ctx: CommandContext): Promise<CommandResult> {
+  const id = requireIdPositional(ctx, 'cancel');
+  const trace = await cancelJob(driver, id, flagString(ctx.args, 'reason'));
+  // `cancelJob` re-reads the job after cancelling, so `undefined` would mean the row vanished
+  // between the two — reported as the same refusal rather than rendered as a success with no job.
+  if (trace === undefined) throw new JobUnknownError({ id, driver: driver.name });
+  return {
+    ok: true,
+    command: 'jobs',
+    summary: msg('cli.jobs.cancelled', { id: trace.id, state: trace.state }),
+    data: jobTraceToJson(trace),
+  };
+}
+
+/**
  * A skipped candidate is not an error — a job whose `runAt` has not arrived is unclaimable by
  * design — so it carries no `X_*` finding. It still fails the command: `x jobs drain` is run to
  * empty a driver, and a partial move that exited 0 would read as "the queue is clear".
@@ -193,9 +214,9 @@ async function runDrain(driver: JobDriver, ctx: CommandContext): Promise<Command
 export const jobsCommand: CliCommand = {
   spec: {
     name: 'jobs',
-    summary: 'list, show, retry and drain the job queue',
+    summary: 'list, show, retry, cancel and drain the job queue',
     usage:
-      'x jobs [ls|show <id>|retry <id>|drain --to <driver>] [--queue q] [--state s] [--limit n] [--from-step name] [--to driver] [--dry-run] [--json]',
+      'x jobs [ls|show <id>|retry <id>|cancel <id>|drain --to <driver>] [--queue q] [--state s] [--limit n] [--from-step name] [--reason text] [--to driver] [--dry-run] [--json]',
     requiresApp: true,
     subcommands: JOBS_SUBCOMMANDS,
     flags: [
@@ -204,6 +225,7 @@ export const jobsCommand: CliCommand = {
       { name: 'limit', type: 'string', summary: 'max rows to return' },
       { name: 'name', type: 'string', summary: 'filter by job name' },
       { name: 'from-step', type: 'string', summary: 'retry: drop this step so it re-executes' },
+      { name: 'reason', type: 'string', summary: 'cancel: why, recorded on the job' },
       { name: 'to', type: 'string', summary: 'drain target driver: memory, redis, nats' },
       { name: 'dry-run', type: 'boolean', summary: 'drain: report the plan, move nothing' },
     ],
@@ -214,6 +236,7 @@ export const jobsCommand: CliCommand = {
     return withJobDriver(root, ctx, (driver) => {
       if (sub === 'show') return runShow(driver, ctx);
       if (sub === 'retry') return runRetry(driver, ctx);
+      if (sub === 'cancel') return runCancel(driver, ctx);
       if (sub === 'drain') return runDrain(driver, ctx);
       return runLs(driver, ctx);
     });

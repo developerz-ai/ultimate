@@ -101,7 +101,12 @@ describe('devNotices is consulted on the overlay path and nowhere else', () => {
     };
     const pipeline = createPipeline({
       table: createRouter(routes),
-      config: defineHttpConfig({ dev: options.dev, buildId: null, hostname: '127.0.0.1' }),
+      config: defineHttpConfig({
+        rateLimit: { scope: 'process' },
+        dev: options.dev,
+        buildId: null,
+        hostname: '127.0.0.1',
+      }),
       hooks: found === undefined ? {} : { devNotices },
     });
     return { pipeline, calls: () => calls };

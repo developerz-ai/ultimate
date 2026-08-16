@@ -3,6 +3,9 @@
 // allowed. Adding a fifth surface means adding an adapter HERE and nothing else — no
 // new policy model, no second authz path, no per-surface exceptions.
 //
+// An adapter names its surface and does nothing else with it: the decision log is emitted
+// inside `evaluate()`, so the fifth adapter inherits it instead of having to remember it.
+//
 // The shapes are declared structurally rather than imported: `@ultimat3/http` is a
 // sibling tier, and jobs/realtime/mcp are higher tiers that import this package.
 
@@ -55,7 +58,7 @@ export const enforceHttp = <I, R = unknown>(
   policy: Policy<I, R>,
   args: EvaluateArgs<I, R>,
 ): HttpDenial | undefined => {
-  const evaluation = evaluate(policy, args);
+  const evaluation = evaluate(policy, args, { surface: 'http' });
   if (evaluation.allowed) return undefined;
   return {
     surface: 'http',
@@ -73,7 +76,7 @@ export const enforceLive = <I, R = unknown>(
   policy: Policy<I, R>,
   args: EvaluateArgs<I, R>,
 ): LiveDenial | undefined => {
-  const evaluation = evaluate(policy, args);
+  const evaluation = evaluate(policy, args, { surface: 'live' });
   if (evaluation.allowed) return undefined;
   return { surface: 'live', close: 4403, code: code(evaluation), reason: reason(evaluation) };
 };
@@ -82,7 +85,7 @@ export const enforceJob = <I, R = unknown>(
   policy: Policy<I, R>,
   args: EvaluateArgs<I, R>,
 ): JobDenial | undefined => {
-  const evaluation = evaluate(policy, args);
+  const evaluation = evaluate(policy, args, { surface: 'job' });
   if (evaluation.allowed) return undefined;
   return {
     surface: 'job',
@@ -97,7 +100,7 @@ export const enforceMcp = <I, R = unknown>(
   policy: Policy<I, R>,
   args: EvaluateArgs<I, R>,
 ): McpDenial | undefined => {
-  const evaluation = evaluate(policy, args);
+  const evaluation = evaluate(policy, args, { surface: 'mcp' });
   if (evaluation.allowed) return undefined;
   return {
     surface: 'mcp',

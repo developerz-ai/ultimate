@@ -14,8 +14,8 @@ import type {
 } from './generate';
 import { generateMigration } from './generate';
 import { introspect, type SchemaDescription } from './introspect';
-import { LEDGER_TABLE, type Migration, migrate, rollback } from './migrate';
-import { raw } from './sql';
+import { LEDGER_TABLE, MIGRATION_LOCK_KEY, type Migration, migrate, rollback } from './migrate';
+import { raw, sql } from './sql';
 
 const url = Bun.env['TEST_DATABASE_URL'];
 const hasPostgres = typeof url === 'string' && url.length > 0;
@@ -96,6 +96,33 @@ describe.skipIf(!hasPostgres)('live · postgres · migrate advisory lock', () =>
     expect(report.applied.map((applied) => applied.id)).toEqual([slowMigration.id]);
     expect(elapsedMs).toBeLessThan(3_000);
   }, 15_000);
+
+  test('a lock a wedged migrator will not give back fails the deploy instead of hanging it', async () => {
+    // The whole point of `pg_try_advisory_lock`: the previous `ROLE=migrate` pod is OOM-killed on
+    // a partition, its backend survives holding the lock, and `pg_advisory_lock` would have sat in
+    // one statement printing nothing while `helm upgrade --wait` blocked and `backoffLimit` never
+    // fired, because a job that never finishes never fails.
+    const wedged = freshClient();
+    using held = await wedged.reserve();
+    await held.execute(sql`select pg_advisory_lock(${MIGRATION_LOCK_KEY})`);
+
+    const started = performance.now();
+    const caught = (await migrate({
+      migrations: [slowMigration],
+      client: freshClient(),
+      lockWaitMs: 1_000,
+    }).catch((error: unknown) => error)) as { code: string; cause: string; fix: string };
+    const elapsedMs = performance.now() - started;
+
+    expect(caught.code).toBe('X_MIGRATE_CONCURRENT');
+    expect(caught.cause).toContain(String(MIGRATION_LOCK_KEY));
+    expect(caught.fix).toContain('pg_terminate_backend');
+    // Bounded, and bounded by *our* number: it refused rather than waiting on the server.
+    expect(elapsedMs).toBeGreaterThanOrEqual(950);
+    expect(elapsedMs).toBeLessThan(5_000);
+
+    await held.execute(sql`select pg_advisory_unlock(${MIGRATION_LOCK_KEY})`);
+  }, 20_000);
 });
 
 /**

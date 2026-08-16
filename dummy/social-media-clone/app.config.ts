@@ -59,8 +59,10 @@ export const config = defineConfig({
   // problem+json document — correct for an agent, and rendered as raw JSON text to a person.
   // Naming the page turns that into a 303 carrying `?next=`, and the page sends them back.
   auth: { signInPath: '/signin', afterSignInPath: '/dashboard' },
-  // Env KEYS, never the value: the same image deploys to every environment.
-  database: { urlEnv: 'DATABASE_URL', poolSize: 10 },
+  // Env KEYS, never the value: the same image deploys to every environment. The database URL is
+  // `DATABASE_URL` and the pool is sized by `DATABASE_POOL_MAX` — both read from the environment,
+  // because `config.database`'s `urlEnv`/`poolSize` were read by nothing and were deleted
+  // `As of 2026-08`.
   cache: { driver: 'memory', tiers: ['memo', 'lru'] },
   jobs: { driver: 'postgres', queues: ['social-media-clone-default'], concurrency: 4 },
   // In-process transport by default; set urlEnv and transport: 'nats' to scale past one node.

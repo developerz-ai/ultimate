@@ -132,11 +132,13 @@ class GatewayImpl implements Gateway {
     let settled = false;
     try {
       for await (const chunk of provider.stream(resolved)) {
-        if (chunk.type === 'done') {
-          settled = true;
-          await ledger?.record(chunk.result.usage, chunk.result.cost, reservation);
+        if (chunk.type !== 'done') {
+          yield chunk;
+          continue;
         }
-        yield chunk;
+        settled = true;
+        await ledger?.record(chunk.result.usage, chunk.result.cost, reservation);
+        yield { type: 'done', result: { ...chunk.result, provider: provider.name } };
       }
     } finally {
       // A stream that threw, or that its consumer abandoned, never reached `done` — so nothing
@@ -160,8 +162,16 @@ class GatewayImpl implements Gateway {
    * Try every provider that serves `model`, retrying each on a retryable failure with
    * exponential backoff plus full jitter (jitter matters: synchronised retries from N
    * workers reproduce the rate limit they are backing off from).
+   *
+   * Fallback here is across PROVIDERS serving one model, never across models — a silent model
+   * swap changes what answered, what it cost and which eval baseline the answer belongs to. The
+   * provider that did answer is stamped onto the result, so the fallback that DOES exist reaches
+   * the span instead of being invisible.
    */
-  private async attempt<T>(model: ModelId, call: (provider: Provider) => Promise<T>): Promise<T> {
+  private async attempt(
+    model: ModelId,
+    call: (provider: Provider) => Promise<GenerateResult>,
+  ): Promise<GenerateResult> {
     const candidates = this.config.providers.filter((p) => p.models.includes(model));
     const failures: string[] = [];
     if (candidates.length === 0) {
@@ -171,7 +181,7 @@ class GatewayImpl implements Gateway {
     for (const provider of candidates) {
       for (let attempt = 1; attempt <= this.retry.attempts; attempt += 1) {
         try {
-          return await call(provider);
+          return { ...(await call(provider)), provider: provider.name };
         } catch (error) {
           failures.push(`${provider.name}#${attempt}: ${messageOf(error)}`);
           if (!isRetryable(error) || attempt === this.retry.attempts) break;

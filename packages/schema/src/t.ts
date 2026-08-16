@@ -2,7 +2,7 @@
 // Every member delegates to the active provider, so `configureSchemaProvider()` takes effect
 // even for modules that captured `t` at import time.
 
-import type { AnySchema, Schema, Shape } from './builder';
+import type { AnySchema, Refinement, Schema, Shape } from './builder';
 import type { MoneyValue } from './money-value';
 import { schemaProvider } from './provider';
 import type { InferInput, InferOutput, StandardSchemaV1 } from './standard';
@@ -75,6 +75,28 @@ export const t: TNamespace = {
     ...members: S
   ): Schema<InferInput<S[number]>, InferOutput<S[number]>> {
     return provider().union(...members);
+  },
+  /**
+   * `t.discriminatedUnion('kind', postBody, pageBody)` — the blessed spelling for a tagged shape.
+   * A failure reports the branch `kind` named, so the caller reads one field error instead of
+   * every branch's reasons concatenated.
+   */
+  discriminatedUnion<S extends readonly [AnySchema, ...AnySchema[]]>(
+    discriminant: string,
+    ...members: S
+  ): Schema<InferInput<S[number]>, InferOutput<S[number]>> {
+    return provider().discriminatedUnion(discriminant, ...members);
+  },
+  /**
+   * `t.refine(range, { name: 'end-after-start', message: 'endDate must be after startDate', … })`
+   * — a cross-field rule declared ON the schema, so OpenAPI, the MCP tool schema and the form
+   * binding all state it instead of it living in a handler where no projection can see it.
+   *
+   * Delegates to the method for the reason `t.nullable` does: `refine` composes an existing
+   * schema rather than building one, so a swapped provider's schemas keep their own behaviour.
+   */
+  refine<In, Out>(schema: Schema<In, Out>, refinement: Refinement<Out>): Schema<In, Out> {
+    return schema.refine(refinement);
   },
   record<S extends AnySchema>(
     values: S,

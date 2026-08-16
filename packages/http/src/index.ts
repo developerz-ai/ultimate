@@ -15,8 +15,14 @@ export {
   useRequestHeader,
   useRequestHeaders,
 } from './context';
+export type { InboundCorrelation } from './correlation';
+export { readCorrelation } from './correlation';
 export type { CorsConfig } from './cors';
-export { corsHeaders, DEFAULT_CORS, preflight } from './cors';
+export { allowedOrigin, corsHeaders, DEFAULT_CORS, preflight } from './cors';
+export type { CsrfCheckInput, CsrfConfig, CsrfMode, CsrfVerdict } from './csrf';
+export { checkCsrf, DEFAULT_CSRF, selfOrigin } from './csrf';
+export type { Deadline } from './deadline';
+export { REQUEST_TIMEOUT_HEADER, resolveTimeoutMs, startDeadline } from './deadline';
 export type { ErrorFacts, ProblemDocument } from './error-map';
 export {
   appErrorStatus,
@@ -33,6 +39,8 @@ export type { HttpErrorCode } from './errors';
 export {
   bodyInvalid,
   buildSkew,
+  csrfBlocked,
+  draining,
   errorStatusInvalid,
   finalizeFailed,
   forbidden,
@@ -41,17 +49,32 @@ export {
   HttpError,
   methodNotAllowed,
   noRequest,
+  overloaded,
   pathInvalid,
   pipelineNoResponse,
   rateLimitBucketConflict,
   rateLimitBucketUnbound,
   rateLimited,
+  rateLimitInvalid,
   rateLimitNotShared,
+  rateLimitScopeUnset,
+  requestTimedOut,
   routeConflict,
   routeNotFound,
   serverNotStarted,
+  trustProxyUnset,
   unauthenticated,
 } from './errors';
+export type { ForwardedInput, ForwardedSplit } from './forwarded';
+export {
+  clientAddress,
+  clientUsedHttps,
+  FORWARDED_CLIENT_CERT,
+  FORWARDED_FOR,
+  FORWARDED_PROTO,
+  forwardedElement,
+  forwardedValue,
+} from './forwarded';
 export type { Authenticator, AuthzDecision, ServerHooks } from './hooks';
 export { configureAuthenticator, configuredAuthenticator, resetAuthenticator } from './hooks';
 export type { LocaleConfig, TimeZoneConfig } from './locale';
@@ -68,6 +91,8 @@ export { compose } from './middleware';
 export type { OverlayMeta, OverlayNotice } from './overlay';
 export { overlayResponse, renderOverlay, wantsOverlay } from './overlay';
 export { OVERLAY_STYLE } from './overlay-style';
+export type { PeerIdentity } from './peer-identity';
+export { peerIdentity } from './peer-identity';
 export type { HandleInit, Pipeline, PipelineDeps } from './pipeline';
 export { createPipeline, PIPELINE_STAGES } from './pipeline';
 export type {
@@ -75,6 +100,7 @@ export type {
   MemoryRateLimitStore,
   RateLimitConfig,
   RateLimitDecision,
+  RateLimitDeclaration,
   RateLimiter,
   RateLimitKeyParts,
   RateLimitScope,
@@ -87,6 +113,8 @@ export {
   DEFAULT_RATE_LIMIT,
   memoryRateLimitStore,
   rateLimitKey,
+  resolveRateLimitConfig,
+  toBucket,
 } from './rate-limit';
 export { assertRouteBuckets, withRouteBuckets } from './rate-limit-buckets';
 export { setRedirect, takeRedirect } from './redirect';
@@ -128,7 +156,7 @@ export type { SecurityConfig } from './security-headers';
 export { buildCsp, cspHashSource, DEFAULT_SECURITY, securityHeaders } from './security-headers';
 export type { LifecycleState, ServerHandle, ServerOptions } from './server';
 export { createServer } from './server';
-// The stage vocabulary comes from its declaration site, beside the twelve implementations it
+// The stage vocabulary comes from its declaration site, beside the fourteen implementations it
 // names; `PIPELINE_STAGES` — the ORDER — stays `pipeline.ts`'s.
 export type { Stage, StageDoc, StageName, StagePhase, StageRun } from './stages';
 export type { InferOutput, Schema, ValidationOutcome } from './validate';

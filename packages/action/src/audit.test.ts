@@ -12,7 +12,7 @@ import { t } from '@ultimat3/schema';
 import { action } from './action';
 import type { AuditRecord, AuditSink } from './audit';
 import { memoryAuditSink, resetAuditSink, setAuditSink } from './audit';
-import { MemoryIdempotencyStore } from './idempotency';
+import { MemoryIdempotencyStore } from './idempotency-memory';
 import * as surface from './index';
 import { invoke } from './invoke';
 import { mutator } from './mutator';

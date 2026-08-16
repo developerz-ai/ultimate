@@ -71,6 +71,27 @@ describe('entityRow', () => {
     );
   });
 
+  /**
+   * The pairing with `@ultimat3/entity`'s `parseMinor` is "echo what is provably numeric", and a
+   * WAL column matched by *name* proves nothing on its own: a `text` column called `note_minor`
+   * beside `note_currency` puts user content in a message no field-level redaction can reach.
+   */
+  test('a numeric amount is named, and content that is not a number is described instead', () => {
+    // Provably numeric: the amount is the fact that repairs the row, so it survives.
+    expect(() => entityRow({ price_minor: '19.90', price_currency: 'USD' })).toThrow(/19\.90/);
+    expect(() => entityRow({ price_minor: 19.9, price_currency: 'USD' })).toThrow(/19\.9/);
+
+    // Not a number: shape only, and the content appears nowhere in the message.
+    let thrown = '';
+    try {
+      entityRow({ note_minor: 'hunter2', note_currency: 'USD' });
+    } catch (error) {
+      thrown = String((error as { cause?: unknown }).cause ?? '');
+    }
+    expect(thrown).toContain('a string of 7 characters');
+    expect(thrown).not.toContain('hunter2');
+  });
+
   test('a lone minor column with no currency partner stays an ordinary column', () => {
     const physical: Record<string, JsonValue> = { price_minor: 500 };
     expect(entityRow(physical)).toEqual({ priceMinor: 500 });

@@ -18,7 +18,7 @@ afterAll(restoreFailures);
 
 /** Manual clock: `.now()` returns a `Date`, mirroring the real `Clock` contract. */
 function fakeClock(startMs: number): Clock {
-  return { now: () => new Date(startMs) };
+  return { now: () => new Date(startMs), monotonic: () => startMs };
 }
 
 /** A clock whose `.now()` returns raw epoch ms instead of a `Date`. */

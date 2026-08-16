@@ -20,6 +20,7 @@ import {
   migrate,
 } from '@ultimat3/db';
 import type { Route } from '@ultimat3/http';
+import { createIsrController } from '@ultimat3/render';
 import { apiRoutes } from './api-routes';
 import { loadSignInPath } from './app-auth';
 import { loadApp } from './app-load';
@@ -40,6 +41,8 @@ import { buildIslands } from './island-bundle';
 import { islandRoutes } from './island-routes';
 import { DEFAULT_METRICS_PORT } from './metrics-endpoint';
 import { readMigrations } from './migrations';
+import { startOtlpExport } from './otlp-export';
+import type { RuntimeOverrides } from './runtime-overrides';
 
 export const DEFAULT_PORT = 3000;
 
@@ -117,6 +120,16 @@ export interface ServeOptions {
   readonly port?: number;
   /** Overrides `METRICS_PORT`, on the same terms. */
   readonly metricsPort?: number;
+  /**
+   * The drivers this deployment supplies instead of the ones the environment would select.
+   *
+   * This field is why `apps/web/server.ts` can stay three lines and still run a custom queue, a
+   * shared ISR store or an app's own middleware. Before it there was nowhere to hand the framework
+   * a driver, so the only way was an ambient setter from an app module — which `loadApp` imports
+   * AFTER `startServices` has captured its own, giving a process that enqueues to one queue and
+   * claims from another. `startRoles` now refuses that split outright.
+   */
+  readonly runtime?: RuntimeOverrides;
 }
 
 export interface ServedApp {
@@ -158,7 +171,7 @@ export type StartedApp = ServedApp | MigratedApp;
  * is what fails on it.
  */
 export async function runMigrations(options: ServeOptions): Promise<MigratedApp> {
-  const queue = await startQueue(resolveServices(options.root, options.env));
+  const queue = await startQueue(resolveServices(options.root, options.env), options.runtime);
   try {
     const migrations = await readMigrations(options.root);
     const report = await migrate({
@@ -196,7 +209,11 @@ export async function runMigrations(options: ServeOptions): Promise<MigratedApp>
  */
 export async function serveApp(options: ServeOptions): Promise<ServedApp> {
   const role = options.role ?? roleFromEnv(options.env);
-  const runtime = await startServices(resolveServices(options.root, options.env), options.env);
+  const runtime = await startServices(
+    resolveServices(options.root, options.env),
+    options.env,
+    options.runtime,
+  );
   // Importing the app's modules IS the registration: every route, action and job below is
   // whatever this call put in the registries.
   await loadApp(options.root);
@@ -212,16 +229,34 @@ export async function serveApp(options: ServeOptions): Promise<ServedApp> {
   // Before the first socket opens: everything above this line fails loudly into the container's
   // own logs, everything below it is a served request, a claimed job or a routed frame.
   configureReporting(options.env, buildId);
+  // Beside error reporting, and for the same reason it is here: `OTEL_EXPORTER_OTLP_ENDPOINT` is
+  // in the shipped chart and nothing read it, so every deployment that configured a collector got
+  // an empty dashboard. `x dev` keeps its own recorder — the `/_x` timeline is a different sink
+  // with a different lifetime — so this is the production boot's alone (axiom 6).
+  const stopOtlp = startOtlpExport(options.env);
   // Built at boot rather than shipped prebuilt, so the container serves the same chunks `x dev`
   // does from the same source — the alternative is a second bundler invocation in the image build
   // whose output nothing compares against the one the dev loop proved.
   const islands = await buildIslands(options.root);
   const routes: readonly Route[] = [
     ...apiRoutes(),
-    ...assetRoutes({ root: options.root, storage: runtime.storage }),
+    ...assetRoutes({
+      root: options.root,
+      storage: runtime.storage,
+      ...(options.runtime?.images === undefined ? {} : { images: options.runtime.images }),
+    }),
     ...storageRoutes({ storage: runtime.storage }),
     ...islandRoutes(() => islands),
-    ...appRoutes({ buildId, resolveIsland: (file) => islands.resolverFor(file) }),
+    ...appRoutes({
+      buildId,
+      resolveIsland: (file) => islands.resolverFor(file),
+      // Only when a store was supplied. `createIsrController` defaults to a per-process memory
+      // store, so twelve replicas hold twelve of them and a purge tag regenerates one twelfth of
+      // the fleet while the other eleven keep serving the page it just invalidated.
+      ...(options.runtime?.isrStore === undefined
+        ? {}
+        : { isr: createIsrController({ buildId, store: options.runtime.isrStore }) }),
+    }),
   ];
   const port = options.port ?? portFromEnv(options.env);
   // An in-process caller asking for an ephemeral app port is a test, and a test that grabbed the
@@ -242,6 +277,7 @@ export async function serveApp(options: ServeOptions): Promise<ServedApp> {
     // guarded page with the problem document, rendered as raw JSON in the viewport.
     signInPath: await loadSignInPath(options.root),
     http: CONTAINER_BINDING,
+    ...(options.runtime === undefined ? {} : { overrides: options.runtime }),
   });
   return {
     kind: 'served',
@@ -253,6 +289,9 @@ export async function serveApp(options: ServeOptions): Promise<ServedApp> {
     async stop() {
       await running.stop();
       await runtime.stop();
+      // Last: the exporters outlive the roles they were recording, so the drain's own spans and
+      // the final counter snapshot still have somewhere to go.
+      stopOtlp();
     },
   };
 }

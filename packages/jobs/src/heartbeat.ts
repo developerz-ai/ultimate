@@ -7,6 +7,7 @@ import type { Clock } from '@ultimat3/core';
 import { logger, recordLeaseLost } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver } from './driver';
+import { LeaseLostError } from './errors';
 
 export interface LeaseHeartbeatOptions {
   /** Only `heartbeat` is used — a lease renews itself and settles nothing. */
@@ -23,6 +24,13 @@ export interface LeaseHeartbeat {
   renew(): Promise<void>;
   /** True once the lease lapsed: the queue may already have delivered this job again. */
   lost(): boolean;
+  /**
+   * Aborts when the lease is gone. The worker folds it into the `Ctx` it hands `executeJob`, so a
+   * job cancelled from outside — or one whose lease lapsed and whose row another worker
+   * re-claimed — stops at the next renewal instead of running to the end beside its replacement.
+   * `steps.ts` refuses every write past it, which is what unwinds a body that ignores the signal.
+   */
+  readonly signal: AbortSignal;
   /** Stop renewing. Idempotent. */
   stop(): void;
 }
@@ -42,6 +50,7 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
   let renewing = false;
   let lost = false;
   let timer: ReturnType<typeof setInterval> | undefined;
+  const gone = new AbortController();
 
   const stop = (): void => {
     if (timer !== undefined) clearInterval(timer);
@@ -55,7 +64,7 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
    * so a further renewal would extend a lease this process no longer holds — and a counter that
    * ticked once per interval would count intervals, not jobs.
    */
-  const reportLost = (error?: unknown): void => {
+  const reportLost = (error?: unknown, reason?: 'expired' | 'not-ours'): void => {
     if (lost) return;
     lost = true;
     stop();
@@ -66,11 +75,14 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
       queue: claimed.queue,
       attempt: claimed.attempt,
       visibilityTimeoutMs,
+      reason: reason ?? 'expired',
       ...(error === undefined
         ? {}
         : { error: error instanceof Error ? error.message : String(error) }),
     });
     recordLeaseLost(claimed.queue);
+    // Cancel LAST, so the loss is logged and counted before the body it unwinds starts throwing.
+    gone.abort(new LeaseLostError({ job: claimed.name, jobId: claimed.id }));
   };
 
   const renew = async (): Promise<void> => {
@@ -87,7 +99,18 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
     if (renewing) return;
     renewing = true;
     try {
-      await options.driver.heartbeat(claimed.id, { visibilityTimeoutMs });
+      const held = await options.driver.heartbeat(claimed.id, { visibilityTimeoutMs, workerId });
+      // The driver answered, and it said the row is not ours. That is a DIFFERENT fact from an
+      // expired window and the only one an operator can cause on purpose: `x jobs cancel` writes
+      // a terminal state, and the renewal that misses it is what tells this attempt to stop. It
+      // is not a failure of the queue, so it is reported once and the attempt is unwound.
+      // `=== false`, not `!held`: `heartbeat` only recently began answering, and a driver from
+      // before that — a hand-rolled one, a test double — resolves `undefined`. Reading that as a
+      // lost lease would cancel every job on every renewal. Only an explicit "no" is a no.
+      if (held === false) {
+        reportLost(undefined, 'not-ours');
+        return;
+      }
       // Asked again AFTER the call, because a renewal that SUCCEEDS late is still late: an
       // event-loop stall or a driver that answered at the end of a connect timeout can land this
       // past the window it was renewing, and `renewedAt = now()` there would restart the clock on
@@ -119,5 +142,5 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
     void renew();
   }, options.intervalMs);
 
-  return { renew, lost: () => lost, stop };
+  return { renew, lost: () => lost, signal: gone.signal, stop };
 }

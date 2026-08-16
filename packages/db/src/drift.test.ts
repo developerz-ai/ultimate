@@ -399,3 +399,59 @@ describe('isLedgerMissing', () => {
     expect(isLedgerMissing(undefined)).toBe(false);
   });
 });
+
+describe('nullability', () => {
+  const withNullable = (
+    base: TableDescription,
+    column: string,
+    nullable: boolean,
+  ): TableDescription => ({
+    ...base,
+    columns: base.columns.map((held) => (held.name === column ? { ...held, nullable } : held)),
+  });
+
+  const posts = table('posts', ['id', 'org_id']);
+
+  test('a column left nullable after a NOT NULL migration is drift, not a clean schema', () => {
+    // The expand/contract flow emits a NOT NULL add as nullable plus a comment saying "backfill,
+    // then set not null". Nobody runs phase 2, and until this compared nullability the check said
+    // `ok: true` while a later `undefined` write landed as NULL and crashed three services away.
+    const live = schema(withNullable(posts, 'org_id', true));
+    const expected = schema(withNullable(posts, 'org_id', false));
+
+    const report = diffSchema(live, expected);
+
+    expect(report.ok).toBe(false);
+    expect(report.differences[0]?.kind).toBe('changed-column');
+    expect(report.differences[0]?.column).toBe('org_id');
+    expect(report.differences[0]?.cause).toContain('allows NULL');
+    expect(report.differences[0]?.fix).toBe(
+      'alter table "posts" alter column "org_id" set not null;   # in a new migration' +
+        ' — backfill the existing NULLs first',
+    );
+  });
+
+  test('the other direction is drift too — a constraint no migration declares', () => {
+    const report = diffSchema(
+      schema(withNullable(posts, 'org_id', false)),
+      schema(withNullable(posts, 'org_id', true)),
+    );
+
+    expect(report.differences[0]?.kind).toBe('changed-column');
+    expect(report.differences[0]?.cause).toContain('forbids NULL');
+    expect(report.differences[0]?.fix).toContain('drop not null');
+  });
+
+  test('agreeing sides report nothing', () => {
+    expect(diffSchema(schema(posts), schema(posts)).ok).toBe(true);
+  });
+
+  test('a primary key column is never reported, because Postgres makes it NOT NULL itself', () => {
+    // The catalog always says `id` is NOT NULL; a snapshot spelling it nullable would otherwise
+    // put one finding on every table in a database that is exactly right.
+    const live = withNullable(posts, 'id', false);
+    const expected = withNullable(posts, 'id', true);
+
+    expect(diffSchema(schema(live), schema(expected)).ok).toBe(true);
+  });
+});

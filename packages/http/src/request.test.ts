@@ -17,7 +17,7 @@ const build = (
   configInput: HttpConfigInput = {},
 ) => {
   const url = new URL(urlString);
-  const config = defineHttpConfig(configInput);
+  const config = defineHttpConfig({ rateLimit: { scope: 'process' }, ...configInput });
   const ctx = createRequestContext({
     url,
     method: (requestInit.method ?? 'GET').toString(),
@@ -73,7 +73,9 @@ describe('getters', () => {
 
   test('method is uppercased, matching what createRequestContext already normalised', () => {
     const url = new URL('https://example.com/x');
-    const config = defineHttpConfig();
+    const config = defineHttpConfig({
+      rateLimit: { scope: 'process' },
+    });
     const ctx = createRequestContext({ url, method: 'get', role: 'web', config });
     const req = new UltimateRequest(new Request(url), ctx);
     expect(req.method).toBe('GET');
@@ -88,9 +90,9 @@ describe('getters', () => {
     expect(req.headers).not.toBe(ctx.headers);
   });
 
-  test('buildId reflects ctx.buildId once the client sends one', () => {
+  test('buildId reflects ctx.clientBuildId once the client sends one', () => {
     const { req, ctx } = build('https://example.com/x');
-    ctx.buildId = 'client-9';
+    ctx.clientBuildId = 'client-9';
     expect(req.buildId).toBe('client-9');
   });
 });
@@ -413,25 +415,25 @@ describe('body()', () => {
 describe('assertBuild()', () => {
   test('does nothing when the server has no buildId configured', () => {
     const { req, ctx } = build('https://example.com/x', {}, { buildId: null });
-    ctx.buildId = 'client-1';
+    ctx.clientBuildId = 'client-1';
     expect(() => req.assertBuild()).not.toThrow();
   });
 
   test('does nothing when the client sent no buildId', () => {
     const { req, ctx } = build('https://example.com/x', {}, { buildId: 'server-1' });
-    expect(ctx.buildId).toBeNull();
+    expect(ctx.clientBuildId).toBeNull();
     expect(() => req.assertBuild()).not.toThrow();
   });
 
   test('does nothing when client and server build ids match', () => {
     const { req, ctx } = build('https://example.com/x', {}, { buildId: 'server-1' });
-    ctx.buildId = 'server-1';
+    ctx.clientBuildId = 'server-1';
     expect(() => req.assertBuild()).not.toThrow();
   });
 
   test('throws X_BUILD_SKEW naming both ids when they differ', () => {
     const { req, ctx } = build('https://example.com/x', {}, { buildId: 'server-1' });
-    ctx.buildId = 'client-2';
+    ctx.clientBuildId = 'client-2';
     const error = captureSyncError(() => req.assertBuild());
     expect(error?.code).toBe('X_BUILD_SKEW');
     expect(error?.cause).toContain('client-2');

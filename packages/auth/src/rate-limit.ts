@@ -28,6 +28,17 @@ export interface AuthRateLimitPolicy {
   readonly maxAttempts: number;
   readonly windowMs: number;
   readonly lockoutMs: number;
+  /**
+   * The third bucket: failures inside `windowMs` against one TENANT, across every member and
+   * every source address. Per-IP buckets each grant their own quota and per-account buckets
+   * protect one person, so a misconfigured integration spraying one org's logins from 400
+   * addresses is capped by neither — it saturates the shared limiter and every other tenant's
+   * logins slow down behind it.
+   *
+   * A separate number and not `maxAttempts`, because a whole tenant sharing five attempts is a
+   * denial of service against that tenant. Defaults to `maxAttempts * ORG_ATTEMPT_FACTOR`.
+   */
+  readonly orgMaxAttempts?: number | undefined;
   /** Bound on the in-memory table. Defaults to `DEFAULT_MAX_AUTH_LIMIT_KEYS`. */
   readonly maxKeys?: number | undefined;
   /**
@@ -39,10 +50,14 @@ export interface AuthRateLimitPolicy {
   readonly scope: AuthLimiterScope;
 }
 
+/** One tenant is worth this many individuals' allowances before it is throttled as a tenant. */
+export const ORG_ATTEMPT_FACTOR = 20;
+
 export const DEFAULT_AUTH_RATE_LIMIT: AuthRateLimitPolicy = Object.freeze({
   maxAttempts: 5,
   windowMs: 15 * 60 * 1000,
   lockoutMs: 15 * 60 * 1000,
+  orgMaxAttempts: 5 * ORG_ATTEMPT_FACTOR,
   maxKeys: DEFAULT_MAX_AUTH_LIMIT_KEYS,
   // One process is the only thing this package can promise without being told.
   scope: 'process',
@@ -79,6 +94,25 @@ export interface MemoryAuthLimiter extends AuthLimiter {
 export const accountKey = (email: string): string => `account:${email.trim().toLowerCase()}`;
 
 export const ipKey = (ip: string): string => `ip:${ip}`;
+
+/**
+ * The tenant bucket's key shape, declared here even though the general noisy-neighbour case lives
+ * in `@ultimat3/http` and `@ultimat3/jobs`: three limiters that spell one tenant three ways cannot
+ * be read together during an incident.
+ */
+export const orgKey = (orgId: string): string => `org:${orgId}`;
+
+/**
+ * The policy the tenant limiter enforces — the same window and lockout, a wider allowance. One
+ * derivation, read by `defineAuth` when it builds the limiter and again when it checks an
+ * injected one, so the two cannot disagree about what was declared.
+ */
+export function orgRateLimit(policy: AuthRateLimitPolicy): AuthRateLimitPolicy {
+  return {
+    ...policy,
+    maxAttempts: policy.orgMaxAttempts ?? policy.maxAttempts * ORG_ATTEMPT_FACTOR,
+  };
+}
 
 interface Bucket {
   failures: number[];

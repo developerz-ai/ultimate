@@ -27,6 +27,17 @@ export type SchemaFormat =
   | 'locale'
   | 'cursor';
 
+/**
+ * A refinement as the IR carries it: the predicate's *declaration*, never the predicate. A closure
+ * cannot cross into OpenAPI or an MCP tool schema, so what ships is the name and the rule text —
+ * enough for a generated client to state the constraint and for a form to label the failure.
+ */
+export interface SchemaRefinement {
+  readonly name: string;
+  readonly message: string;
+  readonly path?: readonly string[] | undefined;
+}
+
 export interface SchemaNode {
   readonly kind: SchemaKind;
   readonly optional?: boolean | undefined;
@@ -54,7 +65,19 @@ export interface SchemaNode {
   readonly values?: readonly (string | number)[] | undefined;
   readonly literal?: string | number | boolean | null | undefined;
   readonly anyOf?: readonly SchemaNode[] | undefined;
+  /**
+   * The key a `union` dispatches on. Additive rather than a `'discriminatedUnion'` kind: every
+   * consumer that switches on `kind` — `json-schema.ts`, `coerce.ts`, `action`'s sample generator,
+   * the admin form generator — already handles `'union'` correctly, and a new kind would have
+   * fallen through each of their `default:` branches to an empty schema without failing anything.
+   */
+  readonly discriminant?: string | undefined;
   readonly valueNode?: SchemaNode | undefined;
+  /**
+   * Rules the structural fields cannot state. Carried beside `kind` rather than wrapping it for
+   * the reason `discriminant` is: a refined string must still read as a string everywhere.
+   */
+  readonly refinements?: readonly SchemaRefinement[] | undefined;
 }
 
 export function isSchemaNode(value: unknown): value is SchemaNode {

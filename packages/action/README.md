@@ -202,14 +202,82 @@ One declaration, three places it lands: the bucket the limiter runs on (named af
 registered by `@ultimat3/http`'s `withRouteBuckets` when the route is mounted), the
 `ratelimit-limit` header the caller reads, and `x-ultimate.rateLimit` in the OpenAPI operation.
 `toBucket` is the only conversion — `capacity: limit`, `refillPerSecond: limit / (windowMs / 1000)`
-— so the published numbers and the enforced ones cannot differ. An action that declares nothing
+— so the published numbers and the enforced ones cannot differ. It lives in `@ultimat3/http`,
+beside `Bucket` and the limiter maths, and is re-exported here: `@ultimat3/query` needs the same
+conversion and is the same tier, so a copy in either package would be a second answer for the
+other. A pair the limiter cannot run on is `X_RATE_LIMIT_INVALID`, at projection. An action that declares nothing
 stays on the `default` bucket. An app that also configures `http.rateLimit.buckets.<actionName>`
 with **different** numbers is `X_RATE_LIMIT_BUCKET_CONFLICT` at boot: neither source wins, because
 the loser would go on being read as enforced.
 
-`idempotent: true` + an `Idempotency-Key` header replays the first response
-(`x-ultimate-replayed: 1`); a duplicate still in flight, or a reused key with a new
-payload, is `X_IDEMPOTENCY_CONFLICT`. Store is swappable via `setIdempotencyStore()`.
+## `idempotent:` — and where its records live
+
+`idempotent: true` + an `Idempotency-Key` header replays the first **outcome**
+(`x-ultimate-replayed: 1`); a duplicate still in flight, or a reused key with a new payload, is
+`X_IDEMPOTENCY_CONFLICT`.
+
+**A failed first attempt is replayed too, not re-run.** `guard()` and the input parse both happen
+*before* the idempotency gate, so everything it can see throw is post-authorization and possibly
+post-commit: a handler that took the money and then failed its own `output:` schema is the case.
+The reservation is settled as a FAILURE and the retry re-throws it under the first attempt's own
+code. Releasing it there is what made idempotency the cause of a double charge.
+
+**Where the records live is declared, and refused at registration.** The default store is process
+memory — bounded, swept on a 24h window, and `scope: 'process'`. An app on more than one replica
+must say so and bring a store that can keep it, or the retry that lands on another replica finds
+no record and runs the handler again:
+
+```ts
+// boot, before registerActions()
+import {
+  configureIdempotency,
+  postgresIdempotencyStore,
+  setIdempotencyStore,
+} from '@ultimat3/action';
+
+setIdempotencyStore(postgresIdempotencyStore({ executor: Bun.sql }));
+configureIdempotency({ scope: 'shared' });
+```
+
+`configureIdempotency({ scope: 'shared' })` over a per-process store — or over a store that
+declares no scope at all — is `X_IDEMPOTENCY_NOT_SHARED` at `registerAction`, before the socket
+opens. The table is `SQL_IDEMPOTENCY_TABLE`, applied the way `SQL_JOBS_TABLE` is: `x db up` in
+development, the release-phase `ROLE=migrate` in production. `postgresIdempotencyStore(...)
+.purgeExpired()` is the sweep — Postgres forgets nothing on its own, so run it from a `task`.
+
+**A plain mutating `route` can use the same gate.** `withIdempotency`, `IDEMPOTENCY_HEADER`,
+`idempotencyKeyFor` and `getIdempotencyStore` are all public, so a route that is not an action
+reserves and replays through the one implementation rather than growing a second:
+
+```ts
+const key = req.header(IDEMPOTENCY_HEADER);
+const outcome = await withIdempotency(
+  getIdempotencyStore(),
+  idempotencyKeyFor('refundCharge', key),   // namespaced, or two routes share one caller's key
+  input,
+  () => refund(input),
+);
+```
+
+A `query` has none and never will: a read has nothing to be idempotent about.
+
+## `deprecated:` — a compat window, not a version
+
+```ts
+deprecated: { since: '2026-08-01T00:00:00Z', sunset: '2026-12-31T23:59:59Z', replacedBy: 'searchOrders' },
+```
+
+Four things at once: `Deprecation: @1754006400` (RFC 9745) and `Sunset: Wed, 31 Dec 2026 …`
+(RFC 8594) on **every** response including the failures, `link: </api/orders/search>;
+rel="successor-version"`, `deprecated: true` plus `x-ultimate.deprecation` in the OpenAPI
+operation, and a `deprecated_calls_total{primitive,name}` counter — which is the only way to
+answer "is anyone still calling it?" before deleting it. A date that cannot be rendered is
+`X_ACTION_DEPRECATION_INVALID` at projection, not on the first request.
+
+**Versioning itself is deliberately absent, and will stay absent.** Running `v1` and `v2` of one
+action side by side is two deployments behind one ingress — axiom 7's answer, costing this package
+no router feature, no path prefix and no second registry. What ships is the window: a date, a
+successor, and a number.
 
 ## Audit — the seam, not the row
 
@@ -337,9 +405,12 @@ never a pass — the assertion says which code got in the way and names `input:`
 | `X_ACTION_DUPLICATE` | two actions registered under one name | rename one export |
 | `X_ACTION_PATH_DUPLICATE` | two actions derive one HTTP path (`archiveOrder` / `archiveOrders`) | rename one export |
 | `X_ACTION_POLICY_MISSING` | registration without `policy:` | add `policy: can('…')` |
-| `X_ACTION_RATE_LIMIT_INVALID` | `rateLimit:` with a non-positive or non-finite half — `windowMs: 0` refills infinitely | make both positive, or delete the block |
+| `X_RATE_LIMIT_INVALID` | `rateLimit:` with a non-positive or non-finite half — `windowMs: 0` refills infinitely. Owned by `@ultimat3/http`, which owns the conversion | make both positive, or delete the block |
+| `X_ACTION_DEPRECATION_INVALID` | `deprecated:` with a `since`/`sunset` that is not a date | use an ISO-8601 instant |
 | `X_INPUT_INVALID` | input failed the Standard Schema | `x actions describe <name> --json` |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a new payload / still in flight | new key, or retry later |
+| `X_IDEMPOTENCY_NOT_SHARED` | `configureIdempotency({ scope: 'shared' })` over a per-process (or scope-less) store | install `postgresIdempotencyStore({ executor: Bun.sql })` at boot |
+| `X_IDEMPOTENCY_REPLAYED_FAILURE` | a retried key replays a first attempt that failed and carried no framework code of its own | read the first attempt, then send a fresh key |
 | `X_CONTRACT_DRIFT` | client/server build skew, missing spec entry | reload / `x verify --contract` |
 | `X_RPC_FAILED` | non-`problem+json` failure, or a body naming no `X_` code | check the gateway |
 | `X_ACTION_UNREGISTERED` | projected before `registerActions()` ran | register at boot |

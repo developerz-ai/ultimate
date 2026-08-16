@@ -6,10 +6,15 @@
  */
 
 import { isMcpExposed, isUltimateError } from '@ultimat3/core';
-import type { Bucket, Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
-import { json, problem, redirect, takeRedirect } from '@ultimat3/http';
+import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
+// `toBucket` is `@ultimat3/http`'s, not this package's: http owns `Bucket` and the limiter maths,
+// and `@ultimat3/query` needs the identical conversion while being the same tier as this one — so
+// a copy here would be a second answer to "what does this limit mean" for the read half.
+import { json, problem, redirect, takeRedirect, toBucket } from '@ultimat3/http';
 import type { ActionRateLimit, AnyAction } from './action';
-import { ActionRateLimitInvalidError } from './errors';
+import type { Deprecation } from './deprecation';
+import { applyHeaders, recordDeprecatedCall, renderDeprecation } from './deprecation';
+import { ActionDeprecationInvalidError } from './errors';
 import { actionName, defOf, invoke } from './invoke';
 import {
   derivePath,
@@ -23,7 +28,8 @@ import {
 import { policyCapability } from './policy-gate';
 import { tagKeys } from './tags';
 
-/** Matches `HttpConfig.buildIdHeader`; the pipeline reads it into `ctx.buildId`. */
+/** Matches `HttpConfig.buildIdHeader`; the pipeline reads it into `ctx.clientBuildId` — the
+ * CLIENT's claim, never `ctx.buildId`, which is the build this process serves. */
 export const BUILD_ID_HEADER = 'x-ultimate-build';
 export const IDEMPOTENCY_HEADER = 'idempotency-key';
 export const REPLAYED_HEADER = 'x-ultimate-replayed';
@@ -37,8 +43,12 @@ export function toRoute(target: AnyAction): Route {
   const name = actionName(target);
   const { path, resource } = derivePath(name);
   const def = defOf(target);
+  // Rendered ONCE, at projection: a date that cannot become a header is a mount-time refusal,
+  // not a surprise on the first request — the same rule `toBucket` follows for a rate limit.
+  const sunsetting = deprecationHeadersFor(name, def.deprecated);
 
   const handler = async (req: UltimateRequest): Promise<Response> => {
+    if (sunsetting !== undefined) recordDeprecatedCall('action', name);
     try {
       // The pipeline already parsed and size-capped the body; parsing it again here
       // would be a second, differently-behaved parser for the same bytes.
@@ -60,12 +70,18 @@ export function toRoute(target: AnyAction): Route {
       const to = takeRedirect(req.ctx);
       const response = to === undefined ? json(result) : redirect(to.location, to.status);
       if (key !== null) response.headers.set(REPLAYED_HEADER, replayed ? '1' : '0');
+      // On the failure path too, below: a client polling a deprecated endpoint that is currently
+      // 403ing still has to learn the endpoint is going away. Announcing it only on 200 hides the
+      // sunset from exactly the callers most likely to be stale.
+      if (sunsetting !== undefined) applyHeaders(response, sunsetting);
       return response;
     } catch (error) {
       // Framework errors carry their own code, status and fix line; anything else is
       // a bug and belongs to the server's error boundary, not to this route.
-      if (isUltimateError(error)) return problem(error);
-      throw error;
+      if (!isUltimateError(error)) throw error;
+      const response = problem(error);
+      if (sunsetting !== undefined) applyHeaders(response, sunsetting);
+      return response;
     }
   };
 
@@ -99,6 +115,9 @@ export interface OpenApiOperation {
   readonly operationId: string;
   readonly tags: readonly string[];
   readonly summary: string;
+  /** OpenAPI's own flag. Absent — not `false` — when nothing is deprecated, so the spec bytes
+   * of an app that deprecates nothing are unchanged and `x verify`'s contract diff stays quiet. */
+  readonly deprecated?: boolean;
   readonly parameters: readonly Record<string, unknown>[];
   readonly requestBody: Record<string, unknown>;
   readonly responses: Record<string, unknown>;
@@ -111,10 +130,12 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
   const def = defOf(target);
   const path = derivePath(name);
   const idempotent = def.idempotent === true;
+  const deprecation = deprecationMetaFor(name, def.deprecated);
   return {
     operationId: toOperationId(name),
     tags: [path.resource],
     summary: def.mcp?.description ?? name,
+    ...(deprecation === undefined ? {} : { deprecated: true }),
     parameters: idempotent ? [IDEMPOTENCY_PARAMETER] : [],
     requestBody: {
       required: true,
@@ -138,48 +159,40 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
       // catalog never listed — `isMcpExposed` is the same answer `toMcpTool` gives.
       mcpTool: isMcpExposed(def.mcp) ? toToolName(name) : null,
       rateLimit: rateLimitMeta(name, def.rateLimit),
+      // The dates as data, beside the boolean flag OpenAPI defines: `deprecated: true` says an
+      // operation is going away and nothing else, so a client that wants to plan the migration
+      // has to read the sunset out of prose. Absent, not null, for the same byte-stability
+      // reason `deprecated` is.
+      ...(deprecation === undefined ? {} : { deprecation }),
     },
   };
 }
 
 /**
- * `{ limit, windowMs }` as the limiter's own vocabulary: `limit` is the burst a caller may spend
- * at once, and the window is what refills it — `5 / 600_000ms` is 5 held, one back every two
- * minutes. The only conversion between the declaration and the enforcement, so the numbers
- * `toOpenApiOperation` publishes and the numbers `withRouteBuckets` registers cannot drift.
- *
- * **The COMPUTED rate is validated, not just the two declared halves.** The division is where a
- * pair that reads fine becomes one the limiter cannot run on, in both directions:
- * `{ limit: Number.MAX_VALUE, windowMs: 1 }` computes to `Infinity` — a bucket that never empties,
- * which is the same "declared a limit, enforced nothing" as `windowMs: 0` — and a tiny limit over
- * a huge window underflows to `0`, a bucket that never refills, so the endpoint is closed after
- * its first burst rather than limited. `capacity` is checked against the cost of one request for
- * the mirror reason: below one token, the first caller is already refused.
+ * The headers this action's `deprecated:` block renders to, or nothing. The successor's URL comes
+ * from `derivePath` — the same derivation the route and the client use, never a second one.
  */
-export function toBucket(name: string, limit: ActionRateLimit): Bucket {
-  const finite = (value: number): boolean => Number.isFinite(value);
-  const refuse = (reason: string): never => {
-    throw new ActionRateLimitInvalidError(name, limit, reason);
-  };
-  // A capacity under one token cannot admit a single request, so the endpoint is closed, not
-  // limited — a policy's job, never a rate limit's.
-  if (!finite(limit.limit) || limit.limit < 1) {
-    refuse('limit must be a finite number of at least 1 request');
-  }
-  if (!finite(limit.windowMs) || limit.windowMs <= 0) {
-    refuse('windowMs must be finite and greater than zero');
-  }
-  const refillPerSecond = limit.limit / (limit.windowMs / 1000);
-  // `<= 0` is kept though the two checks above make it unreachable today — with `limit >= 1` and a
-  // finite window the smallest rate is `1000 / MAX_VALUE`, ~5.6e-306, which is normal, not zero.
-  // It is the guard that has to move first if `limit >= 1` is ever relaxed: an underflow to 0 is a
-  // bucket that never refills, i.e. an endpoint closed after its first burst.
-  if (!finite(refillPerSecond) || refillPerSecond <= 0) {
-    refuse(
-      `the refill rate it computes to is ${refillPerSecond} per second, which is a bucket that never empties — nothing would be enforced`,
-    );
-  }
-  return { capacity: limit.limit, refillPerSecond };
+function deprecationHeadersFor(
+  name: string,
+  deprecated: Deprecation | undefined,
+): Readonly<Record<string, string>> | undefined {
+  if (deprecated === undefined) return undefined;
+  const successor =
+    deprecated.replacedBy === undefined ? undefined : derivePath(deprecated.replacedBy).path;
+  const rendered = renderDeprecation(deprecated, successor);
+  if (!rendered.ok) throw new ActionDeprecationInvalidError(name, rendered.field, rendered.value);
+  return rendered.headers;
+}
+
+/** The same declaration as spec data. Validated through the same render, so the two agree. */
+function deprecationMetaFor(
+  name: string,
+  deprecated: Deprecation | undefined,
+): Readonly<Record<string, string>> | undefined {
+  if (deprecated === undefined) return undefined;
+  const rendered = renderDeprecation(deprecated, undefined);
+  if (!rendered.ok) throw new ActionDeprecationInvalidError(name, rendered.field, rendered.value);
+  return rendered.meta;
 }
 
 function rateLimitMeta(

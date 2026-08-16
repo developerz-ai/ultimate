@@ -8,6 +8,7 @@ import { type Auth, defineAuth } from './auth';
 import { MemoryAdapter } from './memory-adapter';
 import type { OAuthFetch } from './oauth-exchange';
 import { oauthCallbackPath, oauthStartPath } from './oauth-paths';
+import { registerOAuthProvider } from './oauth-registry';
 import { oauthLogin } from './oauth-route';
 
 const NOW = new Date('2026-08-15T12:00:00.000Z');
@@ -214,7 +215,24 @@ describe('oauthLogin', () => {
   });
 
   test('the body an anonymous caller reads carries no meta and no stack', async () => {
-    // One provider enabled, so "what this app turned on" and "what Ultimate supports" are two
+    // A provider only this deployment knows about. Registering it here rather than relying on
+    // another test file is deliberate: the registry is process-wide, and a test that passes only
+    // because a sibling file ran first is a test that cannot fail on its own.
+    registerOAuthProvider({
+      id: 'acme-internal-sso',
+      authorizeUrl: 'https://sso.acme.test/authorize',
+      tokenUrl: 'https://sso.acme.test/token',
+      userInfoUrl: null,
+      userEmailsUrl: null,
+      issuers: ['https://sso.acme.test'],
+      jwksUri: 'https://sso.acme.test/keys',
+      scopes: ['openid', 'email'],
+      usesPkce: true,
+      usesNonce: true,
+      clientIdEnv: 'ACME_INTERNAL_SSO_CLIENT_ID',
+      clientSecretEnv: 'ACME_INTERNAL_SSO_CLIENT_SECRET',
+    });
+    // One provider enabled, so "what this app turned on" and "what ships built in" are two
     // different lists and the refusal can be held to naming the second.
     const login = oauthLogin(
       defineAuth({ adapter, clock: frozenClock(NOW), providers: ['github'] }),
@@ -229,9 +247,14 @@ describe('oauthLogin', () => {
     // developer — is not what goes on the wire. `meta.enabled` would have published the app's own
     // provider configuration to whoever typed a URL.
     expect(Object.keys(body).sort()).toEqual(['cause', 'code', 'docs', 'fix', 'title']);
-    // The framework's table, which is public, and never the app's: `google` is supported and NOT
-    // enabled here, so a fix that names it is reading the constant rather than the configuration.
-    expect(String(body['fix'])).toContain('Ultimate supports');
+    // The three BUILT-INS, which are a framework constant already in the public docs — never the
+    // app's `providers` and never the live registry. `google` is built in and NOT enabled here, so
+    // a fix that names it is reading the constant rather than this deployment's configuration.
     expect(String(body['fix'])).toContain("'google'");
+    // And the other half stays out of it. An app that registered an internal OP has put its own
+    // vocabulary into the registry; echoing it back names a system this stranger could not have
+    // known exists. The fix is still executable for that branch — it says how to register one.
+    expect(String(body['fix'])).not.toContain('acme-internal-sso');
+    expect(String(body['fix'])).toContain('registerOAuthProvider');
   });
 });

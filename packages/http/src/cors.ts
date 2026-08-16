@@ -36,7 +36,12 @@ export const assertCorsConfig = (config: CorsConfig): void => {
   }
 };
 
-const allowedOrigin = (config: CorsConfig, origin: string | null): string | null => {
+/**
+ * The one answer to "may this origin talk to us?". Exported for `csrf.ts`, which asks the same
+ * question about a *request* rather than a response — a second list of allowed origins would be
+ * a CORS policy and a CSRF policy that quietly disagree.
+ */
+export const allowedOrigin = (config: CorsConfig, origin: string | null): string | null => {
   if (origin === null) return null;
   if (config.origins.includes('*')) return config.credentials ? null : '*';
   return config.origins.includes(origin) ? origin : null;

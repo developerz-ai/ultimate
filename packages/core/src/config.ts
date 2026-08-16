@@ -40,13 +40,24 @@ export interface PwaConfig {
   readonly push: boolean;
 }
 
+/**
+ * Deliberately thin. `urlEnv`, `poolSize` and `schema` were removed 2026-08 because **nothing
+ * read them** — the only reader of any `config.database.*` field in the repo was this file's own
+ * validator, and each of the three was unfixable where it sat:
+ *
+ * - `poolSize` — `@ultimat3/db`'s `baseClient()` layers `DATABASE_POOL_MAX` over the role profile,
+ *   so the knob works; this was a second, non-functioning spelling of it.
+ * - `urlEnv` — `client.ts` reads `process.env['DATABASE_URL']` as a hardcoded literal, so a
+ *   different key here could not be honoured.
+ * - `schema` — nothing emits `SET search_path`.
+ *
+ * Wiring them instead would need a tier-0 → tier-1 read the tier table forbids. Deleting is axiom
+ * 3 applied to configuration: a value that produces neither a build error nor a runtime effect is
+ * worse than no field, because an SRE sets `poolSize: 3`, redeploys, and nothing changes.
+ */
 export interface DatabaseConfig {
   readonly driver: 'postgres';
-  /** Env key holding the connection string — never the string itself. */
-  readonly urlEnv: string;
-  readonly poolSize: number;
   readonly ssl: boolean;
-  readonly schema: string;
 }
 
 export interface CacheConfig {
@@ -176,13 +187,7 @@ function defaults(name: string): Omit<AppConfig, 'name'> {
       push: false,
     },
     roles: [...ROLES],
-    database: {
-      driver: 'postgres',
-      urlEnv: 'DATABASE_URL',
-      poolSize: 10,
-      ssl: false,
-      schema: 'public',
-    },
+    database: { driver: 'postgres', ssl: false },
     cache: { driver: 'memory', urlEnv: undefined, defaultTtlMs: 60_000, tiers: ['memo', 'lru'] },
     jobs: {
       driver: 'postgres',
@@ -223,7 +228,6 @@ function validate(config: AppConfig): void {
     issues.push(`defaultCurrency "${config.defaultCurrency}" is not a 3-letter ISO 4217 code`);
   }
   if (config.roles.length === 0) issues.push('roles must list at least one runtime role');
-  if (config.database.poolSize < 1) issues.push('database.poolSize must be >= 1');
   if (config.jobs.concurrency < 1) issues.push('jobs.concurrency must be >= 1');
   if (config.jobs.queues.length === 0) issues.push('jobs.queues must list at least one queue');
   if (config.realtime.transport !== 'memory' && config.realtime.urlEnv === undefined) {

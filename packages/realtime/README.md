@@ -58,6 +58,7 @@ frame handler is unchanged between rungs.
 | tier 3 | `MemoryLocalStore`, `createOpfsLocalStore`, `OfflineQueue`, `RebaseLog`, `reconcile`, `custom` |
 | wire | `PROTOCOL_VERSION`, `encode`, `decode`, `Frame` |
 | halves | `LiveClient` (client), `createSyncNode` / `listenSyncNode` (`sync` role) |
+| a socket's identity | `SyncAuthenticator`, `SyncGrant`, `GrantBook`, `sweepGrants`, `DEFAULT_REAUTH_INTERVAL_MS` |
 | hooks | `setLiveClient`, `useLive`, `useConnection`, `useMutation`, `useMutationQueue` |
 | the typed projection | `liveHookFor` — one query bound to one named hook |
 
@@ -105,6 +106,44 @@ after a module-level binding has already run. Binding a query with no `live: tru
 `X_QUERY_NOT_SUBSCRIBABLE`, thrown where the binding is written — a read that never patches has no
 subscription to hold, and the non-live read from a component is `query.client({ baseUrl })`.
 `type-pins.ts` fails the build if the hook ever widens either type.
+
+## Who a socket is
+
+`createSyncNode({ authenticate })` is the one place a websocket gets an identity. It runs on the
+upgrade **before** `server.upgrade`, so a refused credential never costs a socket, and the actor it
+resolves is what every policy downstream decides against — the topic guard, `authorize`, `visible`,
+the per-tenant subscription cap.
+
+```ts
+createSyncNode({
+  // From @ultimat3/auth, or anywhere else: `sync` imports no authenticator, exactly as it owns no
+  // mutation logic. `refresh` is yours too, so the framework retains no credential of its own.
+  authenticate: async (request) => {
+    const session = await sessionFrom(request);
+    return session === null
+      ? null
+      : { actor: session.actor, expiresAt: session.expiresAt, refresh: () => renew(session.token) };
+  },
+});
+```
+
+| The answer | What the node does |
+|---|---|
+| a `SyncGrant` | upgrades, and the socket carries `grant.actor` |
+| `null` | **401** `X_SOCKET_UNAUTHENTICATED` — a decision, and the client's own condition |
+| a throw | **503** `X_SOCKET_AUTH_UNAVAILABLE` — a failure, reported, and the client is told to retry |
+| the option is absent | upgrades **anonymous**, and `start()` warns: every policy on that node is being asked about `null` |
+
+`expiresAt` is the half a long-lived socket needs: the node re-decides an expired grant on an
+interval (`reauthenticateIntervalMs`, 30s), calling `refresh` and then `hub.onActorChange` +
+`registry.reauthorize` — so a revoked role drops the topics and subscriptions it no longer covers,
+and survivors are re-snapshotted under the new authority. No `refresh`, and an expired grant closes
+the socket with `1008`; the client re-dials with a fresh credential. A `refresh` that *raises* keeps
+the socket and retries next pass — a token service timing out is not a revocation.
+
+**Without `authenticate` this node is single-tenant.** Every actor is `null`, so
+`hub.guard('org.*.feed', ({ actor }) => actor?.orgId === …)` denies everyone and the only guard that
+lets anything through is one that reads no actor at all.
 
 Authz goes through `@ultimat3/query`'s `guard`, which is the only contact with `@ultimat3/policy`.
 One authz system, never two: `policy` is evaluated **once per subscriber**, never once per query.
@@ -174,14 +213,30 @@ injected `Scheduler`, so a test fires it by hand instead of sleeping.
 
 ### Limits, stated plainly
 
-- **The change window is per node.** A client that reconnects to a *different* `sync` node has no
-  window there and takes a snapshot. Making the window shared (replicator-side, request/reply) is
-  gated on the milestone-6 reconnect benchmark — 50k sockets, forced restart, measure
-  time-to-consistent — because that number decides the topology.
+- **The change window is per node, and a `qid` window can only be.** A client that reconnects to a
+  *different* `sync` node has no ring there and takes the snapshot path. It is not a placement bug:
+  a patch is query-scoped, and the replicator is entity-scoped — it holds no compiled shape, no
+  matcher and no window, so it cannot produce one. What the snapshot path costs is one **shared**
+  read per (query, node), not one per client. A cross-node delta needs an *entity*-keyed window each
+  node fills from the change stream it already subscribes to, which is a `ResumeSource` shape change.
+- **Fanout is at-most-once, and a gap is detected rather than assumed away.** The replicator stamps
+  every published change with `producer` + `seq`; a `sync` node that sees a skipped sequence
+  invalidates every window it holds and desyncs every subscriber, so the next change to each query
+  re-reads and re-snapshots. Both fields are optional on the bus, so a publisher that does not
+  sequence simply detects nothing. Durable replay (JetStream) is a separate decision — retention,
+  storage and replay window — and is deliberately not this mechanism.
+- **`desynced` has a reader.** A subscriber recorded as diverged — a dropped patch, a gate that
+  failed, a window that lost its tail — is served a fresh snapshot out of the shared window on the
+  next delivery, and only then is the mark cleared. A snapshot the socket refuses leaves it
+  diverged, which is the state it is actually in.
 - **A delta resume leaves the digest unverified** (`DIGEST_UNVERIFIED`). Only a snapshot re-establishes
   it. `verifyDigest()` is how a client detects drift and asks for a fresh one.
 - **Backpressure drops patch frames.** That is safe *only* because a re-snapshot is cheap: the drop
-  is recorded on the socket (`desynced`) and the next flush re-snapshots rather than diverging.
+  is recorded on the socket (`desynced`) and the next delivery re-snapshots rather than diverging.
+- **A full presence frame is capped** at `maxMembers` (256) and carries `total`, so a 5,000-person
+  room renders "and 4,744 others" instead of shipping 5,000 members to every joiner. The set itself
+  is never capped — the sweep differences it — and one node per topic runs that sweep, elected
+  through the shared store, rather than every node re-reading every room it has ever seen.
 - **Deliveries are serialized per query id, not per node.** A change is fanned out inside that
   query's own FIFO lane, so two changes off the bus cannot interleave: the window one of them
   writes is the window every subscriber's gate reads, and patch frames leave in lsn order. Every
@@ -267,10 +322,17 @@ injected `Scheduler`, so a test fires it by hand instead of sleeping.
 `X_PROTOCOL_VERSION` · `X_CURSOR_STALE` ·
 `X_REBASE_CONFLICT` · `X_TRANSPORT_UNAVAILABLE` · `X_TRANSPORT_PROTOCOL` ·
 `X_REPLICATION_FAILED` · `X_REPLICATION_PROTOCOL` · `X_REPLICATOR_SLOT_HELD` ·
-`X_LIVE_CLIENT_MISSING` · `X_LIVE_QUERY_UNKNOWN` · `X_NOT_IMPLEMENTED`
+`X_LIVE_CLIENT_MISSING` · `X_LIVE_QUERY_UNKNOWN` · `X_SOCKET_UNAUTHENTICATED` ·
+`X_SOCKET_AUTH_UNAVAILABLE` · `X_NOT_IMPLEMENTED`
 
 Topics deny by default: a topic with no matching guard is forbidden. An authz hole is not a config
 option someone forgot to set.
+
+An upgrade `authenticate` refuses is `X_SOCKET_UNAUTHENTICATED` (401) and one it *could not decide*
+is `X_SOCKET_AUTH_UNAVAILABLE` (503). Two codes, because the two have opposite instructions: the
+first is the client's credential and pages nobody, the second is this node's dependency and pages
+someone. Both are rendered as the error contract in the response body — there is no frame to carry
+one, because the client never got a socket.
 
 A `sid` belongs to the socket that chose it. A subscription is keyed by `(socket, sid)`, a drop
 frame is scoped to the socket that sent it, and reusing a sid the same socket already holds is

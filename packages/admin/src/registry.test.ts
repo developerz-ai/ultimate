@@ -170,7 +170,12 @@ describe('the derived admin reads and writes real rows', () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok && result.kind === 'invalid') {
-      expect(result.issues[0]?.message).toContain('archived');
+      // The entity's own enum, named back — that is what proves this went through `$parse` and
+      // not a second rule set the admin invented. Deliberately NOT the rejected value: a refusal
+      // reports the shape of what it got, never the content, because that message reaches the log
+      // store and the HTTP body, and this column is a text field a caller controls.
+      expect(result.issues[0]?.message).toContain('draft | published');
+      expect(result.issues[0]?.message).not.toContain('archived');
     }
     expect(store.size).toBe(0);
   });

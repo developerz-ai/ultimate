@@ -332,9 +332,11 @@ describe('updateWhere(), in both drivers', () => {
         { orgId: ORG },
       ),
     ).toBe(1);
+    // No `returning *`: `pg_test_invoices` declares no JS-only invariant, so Postgres already
+    // judged everything there is to judge and the answer is the count the command tag carries.
     expect(lastText()).toBe(
       'update "pg_test_invoices" set "paid" = $1 where "reference" = $2 and "org_id" = $3' +
-        ' and "deleted_at" is null returning *',
+        ' and "deleted_at" is null',
     );
     expect(lastValues()).toEqual([true, 'INV-1', ORG]);
 

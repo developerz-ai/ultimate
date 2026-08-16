@@ -10,6 +10,7 @@ import { isMcpExposed } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClientMethod, ClientOptions } from './client';
 import type { ContractTest, ContractTestOptions } from './contract-test';
+import type { Deprecation } from './deprecation';
 import { facadeFor } from './facade';
 import type { OpenApiOperation } from './http';
 import type { IdempotencyStore } from './idempotency';
@@ -19,7 +20,12 @@ import type { JsonSchemaObject } from './json-schema';
 import { jsonSchemaOf } from './json-schema';
 import type { McpToolDescriptor } from './mcp-tool';
 import { derivePath, toToolName } from './naming';
-import { type ActionPolicy, policyCapability, type Surface } from './policy-gate';
+import {
+  type ActionPolicy,
+  policyCapability,
+  policyPermissions,
+  type Surface,
+} from './policy-gate';
 import { tagKeys } from './tags';
 
 export interface ActionCache {
@@ -85,6 +91,19 @@ export interface ActionDef<
   readonly cache?: ActionCache;
   readonly mcp?: ActionMcp;
   readonly rateLimit?: ActionRateLimit;
+  /**
+   * On its way out. Declared here and projected everywhere at once: `Deprecation` and `Sunset`
+   * response headers (RFC 9745 / RFC 8594), a `rel="successor-version"` link when `replacedBy`
+   * names one, `deprecated: true` in the OpenAPI operation, and a
+   * `deprecated_calls_total{name}` counter — which is the only way to answer "is anyone
+   * still calling it?" before deleting it.
+   *
+   * **Versioning is deliberately NOT here.** Running `v1` and `v2` of one action side by side is
+   * two deployments behind one ingress, which is axiom 7's answer and costs this package no
+   * router feature; see the README. What ships is the compat WINDOW: a date, a successor, and a
+   * number.
+   */
+  readonly deprecated?: Deprecation;
   /** Marks the action safe to retry with an `Idempotency-Key`. */
   readonly idempotent?: boolean;
   /**
@@ -148,7 +167,14 @@ export interface ActionDescriptor {
   readonly resource: string;
   readonly method: 'POST';
   readonly path: string;
+  /** The policy's DISPLAY label. A composite renders as `and(a:b, c:d)` — never a permission. */
   readonly capability: string;
+  /**
+   * Every permission the policy tree references, flattened. This is the field a compliance
+   * report matches a grant against: `capability` is a label, so `x policy list` reported every
+   * composite-guarded action's permissions as unenforced — real grants shown as dead.
+   */
+  readonly permissions: readonly string[];
   readonly input: JsonSchemaObject;
   readonly output: JsonSchemaObject;
   readonly invalidates: readonly string[];
@@ -161,6 +187,8 @@ export interface ActionDescriptor {
   readonly audited: boolean;
   readonly mcp: McpDescriptorMeta;
   readonly rateLimit: ActionRateLimit | null;
+  /** Published so `x actions list --json` can answer "what is retiring, and when". */
+  readonly deprecated: Deprecation | null;
 }
 
 /**
@@ -175,6 +203,7 @@ export interface AnyActionDef {
   readonly cache?: ActionCache;
   readonly mcp?: ActionMcp;
   readonly rateLimit?: ActionRateLimit;
+  readonly deprecated?: Deprecation;
   readonly idempotent?: boolean;
   readonly audit?: boolean;
   row?(args: { readonly input: unknown; readonly ctx: Ctx }): unknown;
@@ -314,6 +343,8 @@ export function describeAction(target: AnyAction): ActionDescriptor {
     method: 'POST',
     path: path.path,
     capability: policyCapability(def.policy),
+    // The flattened list, beside the label and never instead of it: one is read, one is matched.
+    permissions: policyPermissions(def.policy),
     input: jsonSchemaOf(def.input),
     output: jsonSchemaOf(def.output),
     invalidates: tagKeys(def.cache?.invalidates ?? []),
@@ -329,5 +360,6 @@ export function describeAction(target: AnyAction): ActionDescriptor {
       description: mcp?.description ?? null,
     },
     rateLimit: def.rateLimit ?? null,
+    deprecated: def.deprecated ?? null,
   };
 }

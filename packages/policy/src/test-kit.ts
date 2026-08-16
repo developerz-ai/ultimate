@@ -39,12 +39,18 @@ export const policyMatrix = <I, R = unknown>(
   const rows = args.actors.map((entry): MatrixRow => {
     // Every field but the actor is forwarded verbatim: a matrix that dropped `row` would
     // report a row rule as denying everyone, and the table would lie.
-    const evaluation = evaluate(policy, {
-      input: args.input,
-      actor: entry.actor,
-      ...(args.row === undefined ? {} : { row: args.row }),
-      ...(args.ctx === undefined ? {} : { ctx: args.ctx }),
-    });
+    const evaluation = evaluate(
+      policy,
+      {
+        input: args.input,
+        actor: entry.actor,
+        ...(args.row === undefined ? {} : { row: args.row }),
+        ...(args.ctx === undefined ? {} : { ctx: args.ctx }),
+      },
+      // The `deciding` column IS the matrix; a production default that skips the trace would
+      // blank it, and `x policy explain` renders this table.
+      { trace: true },
+    );
     return {
       actor: entry.name,
       allowed: evaluation.allowed,

@@ -120,7 +120,29 @@ describe('the checks, over a repo', () => {
   });
 
   test('checkErrorFixes passes a repo whose fixes are all runnable', async () => {
+    // `x db migrate`, not the `x db status` this used to assert: the fixture's own fix cited a
+    // subcommand the CLI does not ship, which is precisely the condition the check now catches.
+    await write('packages/db/src/thing.ts', "throw new E({ fix: 'x db migrate --json' });\n");
+    expect(await checkErrorFixes(root)).toEqual([]);
+  });
+
+  test('a fix citing a command this build does not ship is a finding', async () => {
+    // The failure that shipped six times: the text rule sees a command and passes, and the reader
+    // gets X_CLI_UNKNOWN_COMMAND instead of the fix. Resolving it against the registry is the
+    // only thing that can tell the two apart.
     await write('packages/db/src/thing.ts', "throw new E({ fix: 'x db status --json' });\n");
+    const [finding] = await checkErrorFixes(root);
+    expect(finding?.code).toBe('X_ERROR_FIX_INVALID');
+    expect(finding?.cause).toContain('x db status');
+  });
+
+  test('a fix that names no command at all is still runnable', async () => {
+    // Axiom 4 asks for an executable instruction, not for a CLI invocation. A universal rule here
+    // would push an author into citing a command that does not really fix it.
+    await write(
+      'packages/db/src/thing.ts',
+      "throw new E({ fix: 'set OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318' });\n",
+    );
     expect(await checkErrorFixes(root)).toEqual([]);
   });
 

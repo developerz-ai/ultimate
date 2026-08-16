@@ -196,7 +196,10 @@ describe('outcome 2 — scope: named out loud, and decided before the policy', (
     const data = errorData(response);
     expect(data['code']).toBe('X_MCP_SCOPE_DENIED');
     expect(data['scope']).toBe('orders:write');
-    expect(data['fix']).toContain('x token grant orders:write');
+    // Not `x token grant`: that command is planned and exits X_NOT_IMPLEMENTED. The app's own
+    // `resolveToken` is what a token's scopes come from, so that is what the fix names.
+    expect(data['fix']).toContain('"orders:write"');
+    expect(data['fix']).toContain('resolveToken(token)');
     // Scope belongs to the connection, so the fix has to say the grant is not retroactive.
     expect(data['fix']).toContain('reconnect');
   });
@@ -210,7 +213,7 @@ describe('outcome 2 — scope: named out loud, and decided before the policy', (
     expect(lines[0]).toBe(
       "X_MCP_SCOPE_DENIED: the connection's token does not carry the tool's scope",
     );
-    expect(lines[2]).toContain('x token grant orders:write');
+    expect(lines[2]).toContain('"orders:write"');
   });
 
   test('the scope gate decides BEFORE the policy — the handler never runs', async () => {

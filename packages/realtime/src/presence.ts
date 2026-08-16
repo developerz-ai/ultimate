@@ -4,13 +4,22 @@
 // simply stop heartbeating and expire, and every other node already sees the same set. Ephemeral
 // state is never modelled as rows — that rule is what keeps presence off the write path entirely.
 
-import { type Clock, systemClock } from '@ultimat3/core';
+import { type Clock, systemClock, uuid } from '@ultimat3/core';
 import type { ChannelHub, Topic } from './channel';
 import type { Transport } from './fanout';
 import type { JsonObject } from './json';
 import { type Frame, PROTOCOL_VERSION, type PresenceMember } from './sync-protocol';
 
 export const PRESENCE_KEY_PREFIX = 'presence';
+/** Separate namespace: the sweep lease is one member per *node*, never one per participant. */
+export const PRESENCE_SWEEP_PREFIX = 'presence.sweep';
+
+/**
+ * Members carried on one full-set frame. A 5,000-avatar row is not a UI anyone renders, and the
+ * full set is 25M member deserializations across one all-hands join storm; the count rides along
+ * on the frame so a client can say "and 4,744 others" without ever holding them.
+ */
+export const DEFAULT_MAX_PRESENCE_MEMBERS = 256;
 
 export interface PresenceOptions {
   readonly transport: Transport;
@@ -19,6 +28,20 @@ export interface PresenceOptions {
   readonly clock?: Clock;
   /** Member TTL. Clients should heartbeat at ttl/3 so one lost beat is not a false leave. */
   readonly ttlMs?: number;
+  /** Members on a full-set frame. The set itself is never capped — only what is shipped. */
+  readonly maxMembers?: number;
+  /**
+   * This node's identity in the per-topic sweep election. Defaults to a fresh id per registry,
+   * which is what a `sync` node wants: an election between processes, never between rooms.
+   */
+  readonly nodeId?: string;
+}
+
+/** One full-set frame's worth of a room, and how big the room actually is. */
+export interface PresenceRoster {
+  readonly members: readonly PresenceMember[];
+  /** Members in the set, whatever was shipped. `total > members.length` means truncated. */
+  readonly total: number;
 }
 
 export interface PresenceInput {
@@ -34,6 +57,8 @@ export class PresenceRegistry {
   readonly #hub: ChannelHub | undefined;
   readonly #clock: Clock;
   readonly #ttlMs: number;
+  readonly #maxMembers: number;
+  readonly #nodeId: string;
   /** Diffing cache only — the truth is always `transport.shared`. Safe to lose. */
   readonly #seen = new Map<string, Set<string>>();
 
@@ -42,6 +67,8 @@ export class PresenceRegistry {
     this.#hub = options.hub;
     this.#clock = options.clock ?? systemClock;
     this.#ttlMs = options.ttlMs ?? 30_000;
+    this.#maxMembers = Math.max(1, options.maxMembers ?? DEFAULT_MAX_PRESENCE_MEMBERS);
+    this.#nodeId = options.nodeId ?? uuid();
   }
 
   get ttlMs(): number {
@@ -53,7 +80,7 @@ export class PresenceRegistry {
     return Math.max(1_000, Math.floor(this.#ttlMs / 3));
   }
 
-  async join(name: Topic, input: PresenceInput): Promise<readonly PresenceMember[]> {
+  async join(name: Topic, input: PresenceInput): Promise<PresenceRoster> {
     const member: PresenceMember = {
       id: input.id,
       actorId: input.actorId,
@@ -63,7 +90,7 @@ export class PresenceRegistry {
     await this.#write(name, member);
     this.#track(name).add(member.id);
     await this.#emit(name, 'join', [member]);
-    return await this.list(name);
+    return await this.roster(name);
   }
 
   /** `false` means the member had already expired: the caller must `join` again, not `heartbeat`. */
@@ -114,6 +141,15 @@ export class PresenceRegistry {
     return members;
   }
 
+  /**
+   * What a full-set frame carries. `list` stays the whole set because the sweep decides who left by
+   * differencing it — capping *that* would report every member past the cap as gone.
+   */
+  async roster(name: Topic): Promise<PresenceRoster> {
+    const members = await this.list(name);
+    return { members: members.slice(0, this.#maxMembers), total: members.length };
+  }
+
   /** Turns TTL expiry into explicit `leave` frames. Called on an interval by the `sync` node. */
   async sweep(name: Topic): Promise<readonly PresenceMember[]> {
     const live = await this.list(name);
@@ -144,17 +180,44 @@ export class PresenceRegistry {
   async sweepAll(): Promise<readonly PresenceMember[]> {
     const gone: PresenceMember[] = [];
     for (const name of [...this.#seen.keys()] as Topic[]) {
-      gone.push(...(await this.sweep(name)));
       // A room nobody is in is not a room. Without this the cache keeps one entry per topic ever
       // subscribed to, for the life of the process, and the sweep walks all of them forever.
+      if ((this.#seen.get(name)?.size ?? 0) === 0) {
+        this.#seen.delete(name);
+        continue;
+      }
+      if (!(await this.#claimSweep(name))) continue;
+      gone.push(...(await this.sweep(name)));
       if ((this.#seen.get(name)?.size ?? 0) === 0) this.#seen.delete(name);
     }
     return gone;
   }
 
+  /**
+   * One node per topic per pass reads the full member set. Every node sweeping every room it has
+   * ever seen is the same full-set read multiplied by the fleet — twenty nodes reading a
+   * 5,000-member set every ten seconds, forever, to produce twenty copies of one `leave` frame.
+   *
+   * The election needs no compare-and-set the shared store does not have: the lease key is a
+   * *keyed set*, so every node's claim is its own member and the winner is simply the lowest id
+   * every claimant can see. It is eventually consistent, and the worst case of two nodes reading
+   * different views is a duplicate `leave` for a member who has already gone — which is what a
+   * `leave` frame means anyway. What it never produces is nobody sweeping: a claim is re-put every
+   * pass, and a dead leader's expires within one TTL.
+   */
+  async #claimSweep(name: Topic): Promise<boolean> {
+    const key = `${PRESENCE_SWEEP_PREFIX}.${name}`;
+    await this.#transport.shared.put(key, this.#nodeId, '', this.#ttlMs);
+    const claimants = await this.#transport.shared.entries(key);
+    let leader = this.#nodeId;
+    for (const claimant of claimants) if (claimant.member < leader) leader = claimant.member;
+    return leader === this.#nodeId;
+  }
+
   /** Full-set frame for a client that just (re)connected — presence has no delta protocol. */
   async syncFrame(name: Topic): Promise<Frame> {
-    return presenceFrame(name, 'sync', await this.list(name));
+    const roster = await this.roster(name);
+    return presenceFrame(name, 'sync', roster.members, roster.total);
   }
 
   #key(name: Topic): string {
@@ -194,12 +257,19 @@ export class PresenceRegistry {
   }
 }
 
+/**
+ * `total` belongs to a **full set** and to nothing else: a `join`/`leave`/`update` frame carries the
+ * members that changed, so a count beside them would read as "and the rest were truncated". Absent
+ * is a defined answer — the client renders what it was sent.
+ */
 export function presenceFrame(
   name: Topic,
   op: 'join' | 'leave' | 'update' | 'sync',
   members: readonly PresenceMember[],
+  total?: number,
 ): Frame {
-  return { type: 'presence', v: PROTOCOL_VERSION, topic: name, op, members };
+  const base = { type: 'presence', v: PROTOCOL_VERSION, topic: name, op, members } as const;
+  return total === undefined ? base : { ...base, total };
 }
 
 function parseMember(id: string, value: string): PresenceMember | null {

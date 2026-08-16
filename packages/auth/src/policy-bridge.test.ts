@@ -20,8 +20,10 @@ const USER: AuthUser = {
   orgId: 'org-1',
   roles: ['editor'],
   permissions: ['posts:archive'],
+  scopes: ['tenancy:cross'],
   mfaSecret: null,
   recoveryCodeHashes: [],
+  externalId: null,
   disabledAt: null,
   createdAt: new Date(0),
 };
@@ -61,7 +63,11 @@ describe('actorFromUser', () => {
     expect(actor.orgId).toBe('org-1');
     expect(actor.roles).toEqual(['editor']);
     expect(actor.permissions).toEqual(['posts:archive']);
-    expect(actor.scopes).toEqual([]);
+    // The row's scopes reach `Actor.scopes`, which is the field `hasScope()` reads. Hardcoding
+    // `[]` here made `hasScope(actor, 'tenancy:cross')` unsatisfiable by any human, so the
+    // support surfaces gated on it could only be reached by a serviceActor minted in the handler
+    // — which throws the operator's identity away and makes the sweep unattributable.
+    expect(actor.scopes).toEqual(['tenancy:cross']);
   });
 
   test('an MFA-enrolled user with an unsatisfied session resolves to no roles/permissions', () => {
@@ -70,6 +76,8 @@ describe('actorFromUser', () => {
     const actor = actorFromUser(mfaUser, pendingSession);
     expect(actor.roles).toEqual([]);
     expect(actor.permissions).toEqual([]);
+    // Scopes go with them: a half-authenticated request must not hold `tenancy:cross` either.
+    expect(actor.scopes).toEqual([]);
     // Still a real, identified actor — not anonymous — so "finish MFA" routes stay reachable.
     expect(actor.kind).toBe('user');
     expect(actor.id).toBe('user-1');

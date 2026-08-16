@@ -3,10 +3,11 @@
 // matter which door the user came through. `completeOAuthLogin` is the blessed entry point;
 // the three steps under it are exported because a custom flow needs the seams, not a second path.
 
-import { ConfigInvalidError, uuid } from '@ultimat3/core';
+import { ConfigInvalidError, logger, uuid } from '@ultimat3/core';
 import type { AuthAccount, AuthUser } from './adapter';
 import type { Auth, LoginResult } from './auth';
 import {
+  authWriteFailed,
   emailVerifiedNotStored,
   mfaRequired,
   oauthAccountNotLinked,
@@ -27,20 +28,79 @@ import { resolveActor } from './policy-bridge';
 import { loginFailed } from './rate-limit';
 import { createSession, sessionCookie } from './session';
 
+/**
+ * What the IdP's answer entitles this identity to, in the app's own vocabulary. Which group maps
+ * to which role is business convention and never ships (axiom 8) — this is the seam it arrives
+ * through, and every field is independently optional so a seam that only knows the org says only
+ * that.
+ */
+export interface OAuthGrants {
+  readonly orgId?: string | null | undefined;
+  readonly roles?: readonly string[] | undefined;
+  readonly scopes?: readonly string[] | undefined;
+  /**
+   * The IdP's own stable id for this person, if the app has one. Deliberately NOT derived from
+   * `profile.providerAccountId`: `x_users.external_id` is unique across the table, and two
+   * different OPs are free to issue the same `sub`, so auto-filling it would make one tenant's
+   * google login collide with another's okta login. The app knows which id its provisioning
+   * system uses; the framework does not.
+   */
+  readonly externalId?: string | null | undefined;
+}
+
+/** Called once per callback, after the profile is proven and before the session is minted. */
+export type ResolveOAuthGrants = (profile: OAuthProfile) => Promise<OAuthGrants> | OAuthGrants;
+
 export interface OAuthSignInInput {
   readonly profile: OAuthProfile;
   readonly tokens: OAuthTokens;
   readonly ip?: string | null | undefined;
   readonly userAgent?: string | null | undefined;
-  /** Granted to a user this flow creates. An existing user's roles are never rewritten here. */
-  readonly roles?: readonly string[] | undefined;
-  readonly orgId?: string | null | undefined;
+  /**
+   * Authoritative on EVERY login, not only the first. The IdP is the source of truth for who is
+   * in which group, so a member removed from a group there has to lose the role here on their
+   * next sign-in — an apply-once-at-creation rule made "revoke in the IdP" a no-op, and left the
+   * first-time user with `roles: []`, `orgId: null` and an actor every `can()` denies.
+   *
+   * Absent means "the app has no opinion": the stored row is left exactly as it is.
+   */
+  readonly grants?: OAuthGrants | undefined;
 }
 
 async function userForAccount(auth: Auth, account: AuthAccount): Promise<AuthUser> {
   const user = await auth.adapter.findUserById(account.userId);
   if (user === null || user.disabledAt !== null) throw loginFailed();
   return user;
+}
+
+/**
+ * The grant seam applied to a row that already exists. Only the fields the seam actually returned
+ * are written, and only when they differ — an unconditional `updateUser` would make every SSO
+ * login a write, which is the same mistake `verifySession` used to make on every request.
+ */
+async function applyGrants(auth: Auth, user: AuthUser, grants: OAuthGrants): Promise<AuthUser> {
+  const same = (a: readonly string[] | undefined, b: readonly string[]): boolean =>
+    a === undefined || (a.length === b.length && a.every((one, index) => one === b[index]));
+  const unchanged = (declared: string | null | undefined, stored: string | null): boolean =>
+    declared === undefined || (declared ?? null) === stored;
+  if (
+    unchanged(grants.orgId, user.orgId) &&
+    unchanged(grants.externalId, user.externalId) &&
+    same(grants.roles, user.roles) &&
+    same(grants.scopes, user.scopes)
+  ) {
+    return user;
+  }
+  const patched = await auth.adapter.updateUser(user.id, {
+    ...(grants.orgId === undefined ? {} : { orgId: grants.orgId ?? null }),
+    ...(grants.roles === undefined ? {} : { roles: grants.roles }),
+    ...(grants.scopes === undefined ? {} : { scopes: grants.scopes }),
+    ...(grants.externalId === undefined ? {} : { externalId: grants.externalId ?? null }),
+  });
+  // Failing closed rather than signing in with the stale row: the whole point of the seam is that
+  // the session about to be minted carries what the IdP says today.
+  if (patched === null) throw authWriteFailed('updateUser', 'x_users');
+  return patched;
 }
 
 async function createUserFor(auth: Auth, input: OAuthSignInInput): Promise<AuthUser> {
@@ -55,14 +115,26 @@ async function createUserFor(auth: Auth, input: OAuthSignInInput): Promise<AuthU
       fix: `request the email scope for ${input.profile.provider} in beginOAuth(), then ${restartAt(input.profile.provider)}`,
     });
   }
+  const grants = input.grants ?? {};
+  if ((grants.roles ?? []).length === 0 && (grants.orgId ?? null) === null) {
+    // Not an error — an app may genuinely want a roleless account until somebody approves it —
+    // but silent is how "SSO works and the user can do nothing" survives to production. Every
+    // `can()` denies a roleless actor, and a tenant-scoped read throws before the query is built.
+    logger.warn('auth.oauth.user_created_without_grants', {
+      provider: input.profile.provider,
+      seam: 'oauthLogin(auth, { resolveGrants })',
+    });
+  }
   const created = await auth.adapter.createUser({
     id: uuid(auth.clock),
     email,
     // An OAuth-only account has no password to store, and must never be given a random one:
     // a hash nobody knows the input to is still a credential a reset flow could hand over.
     passwordHash: null,
-    orgId: input.orgId ?? null,
-    roles: input.roles ?? [],
+    orgId: grants.orgId ?? null,
+    roles: grants.roles ?? [],
+    scopes: grants.scopes ?? [],
+    externalId: grants.externalId ?? null,
     createdAt: auth.clock.now(),
   });
   if (!input.profile.emailVerified) return created;
@@ -138,7 +210,9 @@ export async function signInWithOAuth(auth: Auth, input: OAuthSignInInput): Prom
   }
 
   const linked = await auth.adapter.findAccount(provider, input.profile.providerAccountId);
-  const user = await resolveUser(auth, input, linked);
+  const resolved = await resolveUser(auth, input, linked);
+  const user =
+    input.grants === undefined ? resolved : await applyGrants(auth, resolved, input.grants);
   // Linked before the MFA gate on purpose: the second factor is finished on another request,
   // and that request must find the identity already attached. A re-link refreshes the tokens
   // and keeps the row's own identity — the provider account never changes hands.
@@ -173,8 +247,8 @@ export interface CompleteOAuthLoginInput {
   readonly timeoutMs?: number | undefined;
   readonly ip?: string | null | undefined;
   readonly userAgent?: string | null | undefined;
-  readonly roles?: readonly string[] | undefined;
-  readonly orgId?: string | null | undefined;
+  /** The app's grant seam. Called once, after the profile is proven. */
+  readonly resolveGrants?: ResolveOAuthGrants | undefined;
 }
 
 /** Callback → session, in one call: exchange, identify, sign in. */
@@ -193,12 +267,12 @@ export async function completeOAuthLogin(
     fetch: input.fetch,
     timeoutMs: input.timeoutMs,
   });
+  const grants = input.resolveGrants === undefined ? undefined : await input.resolveGrants(profile);
   return await signInWithOAuth(auth, {
     profile,
     tokens,
     ip: input.ip,
     userAgent: input.userAgent,
-    roles: input.roles,
-    orgId: input.orgId,
+    ...(grants === undefined ? {} : { grants }),
   });
 }

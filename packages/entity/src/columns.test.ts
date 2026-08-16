@@ -7,6 +7,7 @@ import {
   locale,
   money,
   narrowMoney,
+  newId,
   text,
   timestamp,
   tz,
@@ -217,5 +218,80 @@ describe('the chain', () => {
     expect(notes.$describe().indexes.map((index) => index.name)).toContain(
       'columns_test_notes_title_key',
     );
+  });
+});
+
+/**
+ * A column rejection is a PUBLIC surface: it becomes `X_INVARIANT_VIOLATED`'s `cause` and a
+ * `$view` issue, which `@ultimat3/http` returns to the caller and writes into the log line — and
+ * core's logger redacts by key, so a value already baked into a message has no key left to redact.
+ * Every builder here used to render the rejected value with `String(value)`.
+ */
+describe('a rejected value never appears in the refusal', () => {
+  const SECRET = 'sk-live-51H8xQ2eZvKYlo2C';
+  const PASSWORD = 'hunter2';
+
+  /** The message a builder produces for a value it refuses. */
+  const refusalFor = (parse: (value: unknown) => unknown, value: unknown): string => {
+    try {
+      parse(value);
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+    throw new Error('the column accepted a value the test needs it to refuse');
+  };
+
+  const REFUSALS: readonly (readonly [string, (value: unknown) => unknown])[] = [
+    ['uuid', uuid().$parse],
+    ['integer', integer().$parse],
+    ['timestamp', timestamp().$parse],
+    ['enumerated', enumerated(['draft', 'published']).$parse],
+    ['url', url().$parse],
+    ['tz', tz(['Europe/Madrid']).$parse],
+    ['locale', locale(['en', 'fr']).$parse],
+    ['money', money().$parse],
+  ];
+
+  test.each(REFUSALS)('%s reports the shape and not one character of the value', (_name, parse) => {
+    for (const value of [SECRET, PASSWORD]) {
+      const message = refusalFor(parse, value);
+      expect(message).not.toContain(value);
+      // A four-character prefix is not a redaction: `sk-l` already names the vendor, and `hunt`
+      // is most of a short password — a renderer that truncated instead of describing would pass
+      // the assertion above and still be the same breach.
+      expect(message).not.toContain(value.slice(0, 4));
+      // What replaced it is the length and the type, which is what a type violation needs.
+      expect(message).toContain(`a string of ${value.length} characters`);
+    }
+  });
+
+  test('a string column reports a length, so the rule that rejected it is still readable', () => {
+    // `text()` was already `typeof value`, which leaked nothing — but it also said nothing a
+    // caller could act on. One renderer for every builder, so a column cannot be the exception.
+    expect(refusalFor(text().$parse, 12345)).toEndWith(
+      'column.type: expected a string, got a number',
+    );
+    expect(refusalFor(boolean().$parse, PASSWORD)).toContain('a string of 7 characters');
+    expect(refusalFor(uuid().$parse, undefined)).toContain('got undefined');
+    expect(refusalFor(uuid().$parse, null)).toContain('got null');
+    expect(refusalFor(money().$parse, { minor: SECRET, currency: 'EUR' })).not.toContain('sk-l');
+  });
+
+  test('the value does not reach a $view issue either — the same message, one layer up', () => {
+    const accounts = entity('columns_test_accounts', {
+      columns: { id: uuid().primaryKey(), token: uuid() },
+    });
+    const view = accounts.$view(['id', 'token']);
+    const rendered = JSON.stringify(view['~standard'].validate({ id: newId(), token: SECRET }));
+    expect(rendered).not.toContain(SECRET);
+    expect(rendered).not.toContain('sk-l');
+
+    // And the two `expected an object` refusals one level out, where the whole row is the value:
+    // a POST body arriving as a JSON string is the widest thing this framework ever rejects.
+    expect(refusalFor(accounts.$parse, SECRET)).toBe(
+      'X_INVARIANT_VIOLATED: a domain invariant rejected this row — ' +
+        'columns_test_accounts.row: expected an object, got a string of 24 characters',
+    );
+    expect(JSON.stringify(view['~standard'].validate(SECRET))).not.toContain('sk-l');
   });
 });

@@ -5,7 +5,16 @@
 // Every collection is `readonly` and every field is a plain JSON value: the manifest must
 // round-trip through `JSON.stringify` without loss, because that is how it is stored.
 
-/** Bumped when the manifest SHAPE changes, not when an app's contents change. */
+/**
+ * Bumped when a reader built for the previous version would be WRONG, not merely incomplete:
+ * a field removed, retyped, or given a new meaning.
+ *
+ * Deliberately NOT bumped for a field that is only added. `isCompatible` is an equality check,
+ * so a bump rejects every `x.manifest.json` in existence at once — and `diffManifest` classifies
+ * a `manifestVersion` change as **breaking**, so a bump also demands a major version bump of
+ * every APP that regenerates its manifest against the new framework. Charging every app a major
+ * release for a field their readers never had to look at is a fix line that is not true.
+ */
 export const MANIFEST_VERSION = 1;
 
 export type JsonValue =
@@ -47,13 +56,32 @@ export interface EntityFact {
   readonly invariants: readonly string[];
 }
 
+/** A declared bucket as the author wrote it — `toBucket`'s input, never its converted output. */
+export interface RateLimitFact {
+  readonly limit: number;
+  readonly windowMs: number;
+}
+
 export interface ActionFact {
   readonly name: string;
   readonly input: JsonValue;
   readonly output: JsonValue;
-  /** Permission string the policy asserts, e.g. `post:publish`. */
+  /**
+   * The policy's DISPLAY label — `post:publish` for a bare `can()`, but
+   * `and(post:publish, org:administer)` for a composite. Read `permissions` to ask which grants a
+   * policy actually asserts; matching on this string reports every composite as enforcing nothing.
+   */
   readonly policy: string | null;
+  /** Every permission the policy asserts, flattened through the combinators, deduped and sorted. */
+  readonly permissions: readonly string[];
   readonly cacheInvalidates: readonly string[];
+  /**
+   * The declared rate limit; absent when the action declares none. A contract, not a tuning
+   * knob: a client written against 1000/minute is broken by 5/minute as surely as by a narrowed
+   * input, and the OpenAPI document already publishes the same pair as `x-ultimate.rateLimit` —
+   * the manifest is the copy the gate reads, so without it the tightening passes clean.
+   */
+  readonly rateLimit?: RateLimitFact;
   readonly mcp: { readonly expose: boolean; readonly description?: string };
   readonly mutator?: boolean;
 }
@@ -62,7 +90,10 @@ export interface QueryFact {
   readonly name: string;
   /** Optional: `QueryDescriptor` is schema-erased, so a live query may not expose one. */
   readonly input?: JsonValue;
+  /** The policy's DISPLAY label — see `ActionFact.policy`, and read `permissions` to match on. */
   readonly policy: string | null;
+  /** Every permission the policy asserts, flattened through the combinators, deduped and sorted. */
+  readonly permissions: readonly string[];
   readonly live: boolean;
   readonly cacheTags: readonly string[];
 }
@@ -116,7 +147,13 @@ export interface Manifest {
   readonly errorCodes: readonly ErrorCodeFact[];
 }
 
-/** Whether a reader built for `MANIFEST_VERSION` can consume `manifest`. */
+/**
+ * Whether a reader built for `MANIFEST_VERSION` can consume `manifest`.
+ *
+ * READABILITY, not completeness. An older file may simply lack a field this build publishes;
+ * that is a reader's `?? []`, not an incompatibility. See `MANIFEST_VERSION` for when the answer
+ * is allowed to become `false`.
+ */
 export function isCompatible(manifest: { manifestVersion: number }): boolean {
   return manifest.manifestVersion === MANIFEST_VERSION;
 }

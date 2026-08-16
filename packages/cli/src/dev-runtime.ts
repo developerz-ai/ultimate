@@ -5,32 +5,29 @@
 
 import { mkdirSync } from 'node:fs';
 import type { PurgeDriver } from '@ultimat3/cache';
-import {
-  createCdnTier,
-  isNoopPurgeDriver,
-  registerTier,
-  resetTiers,
-  selectPurgeDriver,
-} from '@ultimat3/cache';
+import { isNoopPurgeDriver, selectPurgeDriver } from '@ultimat3/cache';
 import { isLocal, resolveEnvironment } from '@ultimat3/core';
-import type { EventBus, JobDriver } from '@ultimat3/jobs';
-import { createMemoryEventBus, setEventBus } from '@ultimat3/jobs';
+import type { EventBus, JobDriver, OutboxStore } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
 import { isMemoryDriver, resetMailDriver, selectMailDriver, setMailDriver } from '@ultimat3/mail';
 import type { Transport, TransportSelection } from '@ultimat3/realtime';
 import { selectTransport } from '@ultimat3/realtime';
 import type { Storage } from '@ultimat3/storage';
 import { defineStorage, localDriver, s3Driver, usesDevStorageSecret } from '@ultimat3/storage';
+import { startCacheTiers } from './dev-cache';
 import type { DevDbClient } from './dev-queue';
 import { startQueue } from './dev-queue';
 import type { DevServices, Env } from './dev-services';
 import { LocalDiskUnsafeError, StorageUnwritableError } from './errors';
 import { msg } from './messages';
+import type { RuntimeOverrides } from './runtime-overrides';
 
 export interface RunningServices {
   readonly services: DevServices;
   readonly db: DevDbClient;
   readonly jobs: JobDriver;
+  /** The `x_outbox` store behind `handle.enqueue()`. A role starts the relay that drains it. */
+  readonly outbox: OutboxStore;
   readonly events: EventBus;
   readonly transport: Transport;
   readonly storage: Storage;
@@ -113,7 +110,10 @@ const FILE_SCHEME = 'file://';
  * mention of storage — the demo CrashLooped 22 times on it. A read-only filesystem is a normal way
  * to run a container, so this reports what to do instead of what went wrong.
  */
-export function startStorage(services: DevServices, env: Env): Storage {
+export function startStorage(services: DevServices, env: Env, override?: Storage): Storage {
+  // First arm, not a branch beside the two below: a host that handed the boot a `Storage` has
+  // already answered "which disk", and re-deriving one from `S3_ENDPOINT` would be a second answer.
+  if (override !== undefined) return override;
   const binding = services.storage;
 
   if (binding.mode === 'external') {
@@ -182,7 +182,11 @@ async function release(steps: readonly (() => void | Promise<void>)[]): Promise<
   return failures;
 }
 
-export async function startServices(services: DevServices, env: Env): Promise<RunningServices> {
+export async function startServices(
+  services: DevServices,
+  env: Env,
+  overrides?: RuntimeOverrides,
+): Promise<RunningServices> {
   // Before the queue: selection is pure — it parses `SMTP_URL` and builds a transport, it does
   // not dial. A typo'd credential must fail on the spot rather than after PGlite has started and
   // been unwound again, and it must fail at boot rather than on the first mail nobody receives.
@@ -196,49 +200,54 @@ export async function startServices(services: DevServices, env: Env): Promise<Ru
   // `@ultimat3/realtime`'s decision, and it is the same call a `ROLE=sync` container makes, so this
   // process cannot resolve the bus differently from the container it stands in for.
   const bus: TransportSelection = selectTransport(env);
-  const queue = await startQueue(services);
-  const { db, jobs } = queue;
+  const queue = await startQueue(services, overrides);
+  const { db, jobs, outbox, events } = queue;
   // Boot is a sequence of external resources, and every step after the first can reject — the
   // queue is already up, so from here an unwind must release it exactly like everything after it.
   const started: (() => void | Promise<void>)[] = [() => queue.stop()];
   try {
-    const events = createMemoryEventBus();
-    setEventBus(events);
     // Dialled here rather than at selection: an unreachable bus must fail at `x dev`, not on the
     // first change nobody receives, and the socket is a resource the unwind below has to release.
-    await bus.connect();
-    started.push(() => bus.transport.close());
-    const storage = startStorage(services, env);
+    // A supplied transport is already connected and is NOT closed here: whoever built it owns its
+    // socket, which is why the override skips both halves rather than only the dial.
+    let transport = overrides?.transport;
+    if (transport === undefined) {
+      await bus.connect();
+      started.push(() => bus.transport.close());
+      transport = bus.transport;
+    }
+    const storage = startStorage(services, env, overrides?.storage);
     // With no credential this is the memory driver: caught, not sent, so the `/_x` mail panel can
     // show what a template renders in every locale without a mailbox or a message escaping to a
     // real address. `SMTP_URL` or `RESEND_API_KEY` makes it a real transport instead — the same
     // "an unset variable means the embedded default" law the other three bindings follow.
-    const mail = selection.driver;
+    const mail = overrides?.mail ?? selection.driver;
     setMailDriver(mail);
     started.push(() => resetMailDriver());
-    // Registered only when a credential named a real edge. A noop tier would put a `cdn` line in
-    // every invalidation report claiming keys an edge that does not exist had accepted — and the
-    // `/_x` cache panel renders those reports, so the lie would be the thing an agent reads.
-    // Released with `resetTiers()`, which drops the whole registry: this boot is the only thing
-    // that registers one, and a tier left behind would purge for a process that has stopped.
-    const purging = !isNoopPurgeDriver(cdn.driver);
-    if (purging) {
-      registerTier(createCdnTier({ purge: cdn.driver }));
-      started.push(() => resetTiers());
-    }
+    const purge = overrides?.purge ?? cdn.driver;
+    // Every tier this process reads through, plus the cross-instance invalidation hop, in one
+    // call. The CDN tier used to be the only one registered here — so `createRedisTier`,
+    // `createLruTier` and `createMemoTier` shipped with no caller at all and every replica
+    // recomputed every cached read. Released with `resetTiers()`, which drops the whole registry:
+    // this boot is the only thing that registers one, and a tier left behind would purge for a
+    // process that has stopped.
+    started.push(startCacheTiers({ env, purge, transport }));
 
     return {
       services,
       db,
       jobs,
+      outbox,
       events,
-      transport: bus.transport,
+      transport,
       storage,
       mail,
       mailDetail: selection.detail,
-      transportDetail: bus.detail,
+      // The env key that selected the bus — or the honest answer that no env key did, because a
+      // boot line reading `NATS_URL` over a transport the host handed in is a lie a script parses.
+      transportDetail: overrides?.transport === undefined ? bus.detail : 'runtime override',
       presenceTtlMs: bus.presenceTtlMs,
-      purge: cdn.driver,
+      purge,
       purgeDetail: cdn.detail,
       // The same list the boot unwind uses, in the same reverse order, so a service added to the
       // boot is released by both paths — a second copy of these steps is how one of them came to

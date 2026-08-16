@@ -15,19 +15,26 @@ interface PostRow {
 }
 
 /**
- * Three permissions, three roles, two actions and two queries — each fact earning its place.
+ * Four permissions, three roles, two actions and two queries — each fact earning its place.
  *
- * `post:read` is declared but enforced by nothing: `archivePost`'s policy grants that permission
- * to its second clause, but the compound policy's own capability is `and(post:publish, post:read)`
- * — a different string — so `post:read` alone stays unenforced. `post:publish` is enforced by an
- * action AND a query at once, so the aggregation across declarations has something to aggregate.
+ * `archivePost` is guarded by a COMPOSITE, and that is the point of it: its display capability is
+ * the label `and(post:publish, post:read)`, which is not any permission, so a report that matched
+ * on the label counted this action as enforcing nothing and printed both of its permissions as
+ * dead grants. It enforces two, and the facts say so.
+ *
+ * `post:delete` is the control: declared, granted to `admin`, enforced by nothing at all. It is
+ * what a genuinely dead grant looks like, and it is what keeps `unenforced` a claim worth making
+ * now that a composite no longer lands in it by accident.
+ *
+ * `post:publish` is enforced by two actions AND a query, so the aggregation across declarations
+ * has something to aggregate.
  *
  * Registers only; the registries are process-global, so the caller clears them first.
  */
 export function registerPolicyFixture(): void {
-  definePermissions(['post:publish', 'post:read', 'feed:read'] as const);
+  definePermissions(['post:publish', 'post:read', 'post:delete', 'feed:read'] as const);
   defineRoles({
-    admin: { grants: ['post:publish', 'post:read', 'feed:read'] },
+    admin: { grants: ['post:publish', 'post:read', 'post:delete', 'feed:read'] },
     editor: { grants: ['post:publish', 'post:read'] },
     reader: { grants: ['post:read', 'feed:read'] },
   });

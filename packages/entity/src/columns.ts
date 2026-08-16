@@ -3,6 +3,7 @@
 // currency) are the bugs this file exists to make unreachable.
 
 import { uuid as uuidV7 } from '@ultimat3/core';
+import { describeValue } from '@ultimat3/schema';
 import { BARE, column, GENERATED_UUID, makeColumn, makeTimestamp } from './column';
 import { invariantViolated } from './errors';
 import type {
@@ -18,6 +19,23 @@ const reject = (rule: string, detail: string): never => {
   throw invariantViolated('column', rule, detail);
 };
 
+/**
+ * The rejected value, rendered as its SHAPE and never its content — `@ultimat3/schema`'s
+ * `describeValue`, the same renderer every builtin validator fails through, so a column and a
+ * schema describe one bad value the same way.
+ *
+ * WHY it is not `String(value)`: a column rejection is not a private diagnostic. It becomes
+ * `X_INVARIANT_VIOLATED`'s `cause` and a `$view` issue, which `@ultimat3/http` returns to the
+ * caller AND writes into the log line — and core's logger redacts by KEY, so a value baked into a
+ * message has no key left to redact. `text()` on a password field wrote the mistyped password to
+ * the central log index in cleartext and into the user's own network tab; a `uuid()` holding an
+ * API key surrogate does the same. A column is the worse half of that pair, because the value can
+ * arrive from the DATABASE — so the leak is not bounded by what someone just typed.
+ *
+ * `got` stays `got` and the "expected …" half is untouched: only what follows it changes.
+ */
+const got = (value: unknown): string => `got ${describeValue(value)}`;
+
 /** uuid v7: time-ordered, so a primary key index stays append-friendly. */
 export const newId = (): string => uuidV7();
 
@@ -26,7 +44,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const parseUuid = (value: unknown): string =>
   typeof value === 'string' && UUID.test(value)
     ? value
-    : reject('format', `expected a uuid, got ${String(value)}`);
+    : reject('format', `expected a uuid, ${got(value)}`);
 
 /**
  * The one place a brand is applied. A brand is a compile-time tag with no runtime witness, so
@@ -61,7 +79,7 @@ export const text = (options: TextOptions = {}): Column<string> =>
   column<string>(
     'text',
     (value) =>
-      typeof value === 'string' ? value : reject('type', `expected a string, got ${typeof value}`),
+      typeof value === 'string' ? value : reject('type', `expected a string, ${got(value)}`),
     options.max === undefined
       ? {}
       : { length: options.max, check: (name) => `char_length(${name}) <= ${options.max}` },
@@ -71,12 +89,12 @@ export const integer = (): Column<number> =>
   column<number>('integer', (value) =>
     typeof value === 'number' && Number.isSafeInteger(value)
       ? value
-      : reject('type', `expected a safe integer, got ${String(value)}`),
+      : reject('type', `expected a safe integer, ${got(value)}`),
   );
 
 export const boolean = (): Column<boolean> =>
   column<boolean>('boolean', (value) =>
-    typeof value === 'boolean' ? value : reject('type', `expected a boolean, got ${typeof value}`),
+    typeof value === 'boolean' ? value : reject('type', `expected a boolean, ${got(value)}`),
   );
 
 const parseInstant = (value: unknown): Date => {
@@ -85,7 +103,7 @@ const parseInstant = (value: unknown): Date => {
     const parsed = new Date(value);
     if (!Number.isNaN(parsed.getTime())) return parsed;
   }
-  return reject('format', `expected a UTC instant, got ${String(value)}`);
+  return reject('format', `expected a UTC instant, ${got(value)}`);
 };
 
 /** Always `timestamptz`. UTC storage is not a per-table decision. */
@@ -111,7 +129,7 @@ export const enumerated = <const V extends readonly string[]>(values: V): Column
     (value) =>
       typeof value === 'string' && allowed.has(value)
         ? value
-        : reject('enum', `expected one of ${values.join(' | ')}, got ${String(value)}`),
+        : reject('enum', `expected one of ${values.join(' | ')}, ${got(value)}`),
     { values, check: oneOf(values) },
   );
 };
@@ -132,7 +150,7 @@ export const url = (): Column<string> =>
           // fall through to the shared rejection so the error names the rule
         }
       }
-      return reject('format', `expected an absolute http(s) URL, got ${String(value)}`);
+      return reject('format', `expected an absolute http(s) URL, ${got(value)}`);
     },
     { check: (name) => `${name} ~ '^https?://'` },
   );
@@ -160,7 +178,7 @@ export const tz = <const Z extends readonly string[]>(zones: Z): Column<Z[number
     (value) =>
       typeof value === 'string' && allowed.has(value)
         ? value
-        : reject('iana-tz', `expected one of ${zones.join(' | ')}, got ${String(value)}`),
+        : reject('iana-tz', `expected one of ${zones.join(' | ')}, ${got(value)}`),
     { values: zones, check: oneOf(zones) },
   );
 };
@@ -177,7 +195,7 @@ export const locale = <const L extends readonly string[]>(locales: L): Column<L[
     (value) =>
       typeof value === 'string' && allowed.has(value)
         ? value
-        : reject('bcp-47', `expected one of ${locales.join(' | ')}, got ${String(value)}`),
+        : reject('bcp-47', `expected one of ${locales.join(' | ')}, ${got(value)}`),
     { values: locales, check: oneOf(locales) },
   );
 };
@@ -200,7 +218,7 @@ const parseMinor = (value: unknown): number => {
       ? Number(value)
       : value;
   if (typeof minor !== 'number' || !Number.isFinite(minor)) {
-    return reject('money-minor-units', `expected integer minor units, got ${String(value)}`);
+    return reject('money-minor-units', `expected integer minor units, ${got(value)}`);
   }
   if (!Number.isInteger(minor)) {
     return reject(
@@ -221,11 +239,11 @@ const parseMinor = (value: unknown): number => {
 const parseCurrency = (value: unknown): string =>
   typeof value === 'string' && /^[A-Z]{3}$/.test(value)
     ? value
-    : reject('iso-4217', `expected a 3-letter ISO-4217 code, got ${String(value)}`);
+    : reject('iso-4217', `expected a 3-letter ISO-4217 code, ${got(value)}`);
 
 const parseMoney = (value: unknown): MoneyValue => {
   if (typeof value !== 'object' || value === null) {
-    return reject('money', `expected { minor, currency }, got ${String(value)}`);
+    return reject('money', `expected { minor, currency }, ${got(value)}`);
   }
   const input: Partial<MoneyInput> = value;
   return { minor: parseMinor(input.minor), currency: parseCurrency(input.currency) };

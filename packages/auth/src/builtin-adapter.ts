@@ -14,6 +14,7 @@ import type {
   CreateUserInput,
   SessionPatch,
   UserPatch,
+  UserQuery,
 } from './adapter';
 import { authWriteFailed } from './errors';
 
@@ -54,8 +55,10 @@ const toUser = (row: Row): AuthUser => ({
   orgId: textOrNull(row, 'org_id'),
   roles: list(row, 'roles'),
   permissions: list(row, 'permissions'),
+  scopes: list(row, 'scopes'),
   mfaSecret: textOrNull(row, 'mfa_secret'),
   recoveryCodeHashes: list(row, 'recovery_code_hashes'),
+  externalId: textOrNull(row, 'external_id'),
   disabledAt: dateOrNull(row, 'disabled_at'),
   createdAt: date(row, 'created_at'),
 });
@@ -131,9 +134,11 @@ export class BuiltinAdapter implements AuthAdapter {
 
   async createUser(input: CreateUserInput): Promise<AuthUser> {
     const row = await this.#db.one<Row>(sql`
-      insert into x_users (id, email, password_hash, org_id, roles, created_at)
+      insert into x_users (id, email, password_hash, org_id, roles, scopes, external_id,
+                           created_at)
       values (${input.id}, ${input.email}, ${input.passwordHash}, ${input.orgId},
-              ${[...input.roles]}, ${input.createdAt})
+              ${[...input.roles]}, ${[...(input.scopes ?? [])]}, ${input.externalId ?? null},
+              ${input.createdAt})
       returning *`);
     // An empty `returning` means no row landed. A user fabricated from `{}` would travel back
     // out of `register()` as a successful registration with no identity in it.
@@ -155,10 +160,42 @@ export class BuiltinAdapter implements AuthAdapter {
         disabled_at = case when ${patch.disabledAt !== undefined}
           then ${patch.disabledAt ?? null} else disabled_at end,
         roles = case when ${patch.roles !== undefined}
-          then ${[...(patch.roles ?? [])]} else roles end
+          then ${[...(patch.roles ?? [])]} else roles end,
+        permissions = case when ${patch.permissions !== undefined}
+          then ${[...(patch.permissions ?? [])]} else permissions end,
+        scopes = case when ${patch.scopes !== undefined}
+          then ${[...(patch.scopes ?? [])]} else scopes end,
+        org_id = case when ${patch.orgId !== undefined}
+          then ${patch.orgId ?? null} else org_id end,
+        external_id = case when ${patch.externalId !== undefined}
+          then ${patch.externalId ?? null} else external_id end
       where id = ${id}
       returning *`);
     return row === null ? null : toUser(row);
+  }
+
+  async findUserByExternalId(externalId: string): Promise<AuthUser | null> {
+    const row = await this.#db.one<Row>(
+      sql`select * from x_users where external_id = ${externalId}`,
+    );
+    return row === null ? null : toUser(row);
+  }
+
+  /**
+   * One statement, and the two filters are conditional predicates rather than assembled SQL, for
+   * the reason `updateUser`'s columns are: the statement text stays constant and nothing is
+   * interpolated. Disabled members are excluded by default — an access review reads who can sign
+   * in today — and `includeDisabled` is what an offboarding audit passes.
+   */
+  async listUsersByOrg(orgId: string, query?: UserQuery): Promise<readonly AuthUser[]> {
+    const role = query?.role ?? null;
+    const rows = await this.#db.query<Row>(sql`
+      select * from x_users
+      where org_id = ${orgId}
+        and (${query?.includeDisabled === true} or disabled_at is null)
+        and (${role === null} or ${role} = any (roles))
+      order by email asc`);
+    return rows.map(toUser);
   }
 
   async getSession(id: string): Promise<AuthSession | null> {
@@ -199,6 +236,26 @@ export class BuiltinAdapter implements AuthAdapter {
     return await this.#db.execute(
       sql`delete from x_sessions where user_id = ${userId} and id <> ${keepSessionId}`,
     );
+  }
+
+  async deleteSessionsForUser(userId: string): Promise<number> {
+    return await this.#db.execute(sql`delete from x_sessions where user_id = ${userId}`);
+  }
+
+  /**
+   * Joins through `x_users` rather than reading an `org_id` off the session. The column does not
+   * exist on `x_sessions` and is not being added: a copy of the membership goes stale the moment
+   * somebody changes org, and a stale row means the 03:00 sweep leaves live exactly the sessions
+   * it was run to kill.
+   */
+  async deleteSessionsForOrg(orgId: string): Promise<number> {
+    return await this.#db.execute(sql`
+      delete from x_sessions
+      where user_id in (select id from x_users where org_id = ${orgId})`);
+  }
+
+  async deleteSessionsCreatedBefore(before: Date): Promise<number> {
+    return await this.#db.execute(sql`delete from x_sessions where created_at < ${before}`);
   }
 
   async listSessions(userId: string): Promise<readonly AuthSession[]> {

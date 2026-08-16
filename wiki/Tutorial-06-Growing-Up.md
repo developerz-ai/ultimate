@@ -51,7 +51,7 @@ cache: { driver: 'redis', tiers: ['memo', 'lru', 'shared'], urlEnv: 'REDIS_URL' 
 
 Read order is memo → LRU → shared → origin, and a tier is never consulted for a request whose `policy` has not already passed. Adding one changes where a value is found, never how it is asked for.
 
-> **Single-node Redis or Valkey only, `As of 2026-08`.** The tier-3 Lua invalidation script `DEL`s keys it never declared in `KEYS` — single-node Redis tolerates it, **Dragonfly and Redis Cluster reject it**, because a cluster cannot route a key it was not told about. On those, tag invalidation fails and entries live until their TTL. Use single-node Redis, or drop the shared tier.
+> **Any Redis-protocol server, `As of 2026-08`.** The tier-3 invalidation script used to `DEL` keys it never declared in `KEYS`, which Dragonfly and Redis Cluster reject. Fixed: the script touches only the buckets it was handed and returns the value keys for the client to drop one at a time, the buckets carry an `{entity}` hash tag, and `invalidateTags` issues one call per tag — so every key of a call co-slots. Redis, Valkey and Dragonfly all work. Clustered deployments are **unmeasured, not unsupported**: no test in the repo runs against a real cluster node.
 
 Detail: [Caching and invalidation](Caching-And-Invalidation).
 
@@ -93,7 +93,14 @@ Per-role HPAs target `rps`, `connections` and `queue_depth` — CPU is a lagging
 | custom Kubernetes over a managed chart | node pools with real taints, affinity to node-local storage, an ingress you control | wanting the chart to look impressive |
 | distributed SQL over one Postgres | multi-region **write** locality; surviving a zone loss with no manual failover | write throughput one Postgres has not actually failed to deliver |
 
-Observability is the part that is not optional here and the part the framework does least of: tracing is a seam with a no-op default exporter and **no OTLP exporter ships**. Wire it yourself. [`docs/ops/03-observability.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/03-observability.md) says what to scrape and what is missing.
+Observability is the part that is not optional here, and the framework's half is done `As of 2026-08` — but **the default exporter is still the no-op**, so it emits nothing until you say so. Two lines at boot:
+
+```ts
+configureTelemetry({ exporter: otlpSpanExporter() });   // OTEL_EXPORTER_OTLP_ENDPOINT
+configureMetrics({ exporter: otlpMetricExporter() });   // same endpoint, metrics signal
+```
+
+Point `OTEL_EXPORTER_OTLP_ENDPOINT` at your collector's **HTTP** receiver, `:4318` — `:4317` is gRPC and is refused with `X_OTLP_PROTOCOL_UNSUPPORTED`, permanently, because HTTP/2 plus protobuf is a dependency and a second wire format. Metrics also stay scrapeable at `METRICS_PORT` if you prefer an agent. [`docs/ops/03-observability.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/03-observability.md) says what to scrape, what to alert on, and what is still missing — no logs signal, and a rejected export is dropped rather than retried.
 
 ## The seams, so nothing surprises you
 
@@ -125,10 +132,12 @@ Named rather than left to be discovered:
 
 | Break | Rung |
 |---|---|
-| tier-3 cache invalidation on Dragonfly / Redis Cluster | 1 |
-| one replica per role under the shipped compose file | 2 |
+| tier-3 cache invalidation unmeasured against a real clustered cache node | 1 |
+| the two roles that publish a host port run at one replica under the shipped compose file | 2 |
 | no Helm chart in a scaffolded app | 3 |
-| no OTLP exporter; `/metrics` not on `ROLE=web`; `x logs` planned | 3–4 |
+| no OTLP **logs** signal, and a rejected export is dropped with a `warn` rather than retried — traces and metrics do export | 3–4 |
+| a custom-metrics adapter, which the chart's HPAs need and the framework never ships | 3–4 |
+| `x logs` planned — `X_NOT_IMPLEMENTED`, with `x dev` → the `/_x` timeline panel as its fix | any |
 | Redis and NATS **job** drivers throw `X_NOT_IMPLEMENTED` | any |
 | realtime tier 3 (local-first, `persist: true`), the plugin API, multi-region replication | v2 |
 

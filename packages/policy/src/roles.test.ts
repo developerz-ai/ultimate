@@ -3,15 +3,15 @@
 // cover the exports that only get indirect coverage there: `roleDefinitions()`,
 // `actorPermissions()`, `grantMatches()` called directly, and `rolesGranting()`.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { actorHas, actorPermissions } from './grant-index';
 import {
-  actorHas,
-  actorPermissions,
   clearRoles,
   defineRoles,
   expandRoles,
   grantMatches,
   type RoleMap,
   roleDefinitions,
+  roleMapGeneration,
   rolesGranting,
 } from './roles';
 
@@ -47,6 +47,50 @@ describe('defineRoles() / roleDefinitions()', () => {
     clearRoles();
     expect(roleDefinitions()).toEqual({});
     expect(expandRoles(['owner'])).toEqual([]);
+  });
+
+  // The regression: `defineRoles()` used to REPLACE. A second call in a new feature folder
+  // deleted the first module's roles, every `can()` still typechecked, and every request 403'd
+  // on whichever import order the bundler picked.
+  test('a second defineRoles() never deletes the first module’s roles', () => {
+    defineRoles({ viewer: { grants: ['post:read'] } });
+    defineRoles({ member: { grants: ['comment:write'] } });
+    expect(Object.keys(roleDefinitions()).sort()).toEqual(['member', 'viewer']);
+    expect(expandRoles(['viewer'])).toEqual(['post:read']);
+  });
+
+  test('redefining a role with different grants throws X_ROLE_REDEFINED, naming both sites', () => {
+    defineRoles({ member: { grants: ['comment:write'] } });
+    let thrown: unknown;
+    try {
+      defineRoles({ member: { grants: ['comment:write', 'post:delete'] } });
+    } catch (error) {
+      thrown = error;
+    }
+    const rendered = String(thrown);
+    expect(rendered).toContain('X_ROLE_REDEFINED');
+    expect(rendered).toContain('member');
+    expect(rendered).toContain('roles.test.ts');
+  });
+
+  // The spelling both tracked apps already use to work around the replace. It must stay legal.
+  test('re-declaring a role identically is a no-op, spread included', () => {
+    defineRoles({ viewer: { grants: ['post:read'] } });
+    expect(() =>
+      defineRoles({ ...roleDefinitions(), member: { grants: ['comment:write'] } }),
+    ).not.toThrow();
+    // Same content, a different object and a different grant order: still the same role.
+    expect(() => defineRoles({ viewer: { grants: ['post:read'] } })).not.toThrow();
+    expect(Object.keys(roleDefinitions()).sort()).toEqual(['member', 'viewer']);
+  });
+
+  test('roleMapGeneration() bumps on every write, so a memo cannot go stale', () => {
+    const start = roleMapGeneration();
+    defineRoles({ viewer: { grants: ['post:read'] } });
+    expect(roleMapGeneration()).toBeGreaterThan(start);
+    const afterDefine = roleMapGeneration();
+    clearRoles();
+    expect(roleMapGeneration()).toBeGreaterThan(afterDefine);
   });
 });
 
@@ -127,6 +171,8 @@ describe('rolesGranting()', () => {
   });
 
   test('a permission nothing grants returns an empty list', () => {
+    // `defineRoles()` merges, so the map has to be emptied to be narrowed.
+    clearRoles();
     defineRoles({ viewer: { grants: ['post:read'] } });
     expect(rolesGranting('billing:refund')).toEqual([]);
   });

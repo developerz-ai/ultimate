@@ -2,9 +2,13 @@
 // policy-args.test.ts exercise it end to end through `can()`/combinators. This file covers
 // the pure helpers `codeOf()`/`reasonOf()` directly, since nothing else asserts on them in
 // isolation from a full evaluation.
-import { describe, expect, test } from 'bun:test';
-import { codeOf, reasonOf } from './evaluate';
-import { ALLOWED, denied } from './policy';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { memoryDecisionSink, resetDecisionSink, setDecisionSink } from './decisions';
+import { codeOf, evaluate, reasonOf, resetPolicyTracing } from './evaluate';
+import { clearPermissions, definePermissions } from './permissions';
+import { ALLOWED, can, denied } from './policy';
+import { clearRoles, defineRoles } from './roles';
+import { testActor } from './test-kit';
 
 describe('reasonOf() / codeOf()', () => {
   test('an allowed decision has no reason and no code', () => {
@@ -26,5 +30,76 @@ describe('reasonOf() / codeOf()', () => {
   test('a non-default code round-trips through codeOf()', () => {
     const decision = denied('no actor for post:publish', 'X_UNAUTHENTICATED');
     expect(codeOf(decision)).toBe('X_UNAUTHENTICATED');
+  });
+});
+
+// A `TraceEntry[]` per evaluation is allocation on the one path with the least slack: a live
+// query evaluates policy per subscriber on every change event. Nobody reads it in production —
+// unless a decision sink is installed, which is the one thing that does.
+describe('the trace is opt-in in production', () => {
+  const declared = process.env['ULTIMATE_ENV'];
+
+  function inProduction(): void {
+    process.env['ULTIMATE_ENV'] = 'production';
+    resetPolicyTracing();
+  }
+
+  afterEach(() => {
+    if (declared === undefined) delete process.env['ULTIMATE_ENV'];
+    else process.env['ULTIMATE_ENV'] = declared;
+    resetPolicyTracing();
+    resetDecisionSink();
+    clearPermissions();
+    clearRoles();
+  });
+
+  function seed(): void {
+    definePermissions(['post:publish'] as const);
+    defineRoles({ editor: { grants: ['post:publish'] } });
+  }
+
+  test('production builds no trace and no deciding entry', () => {
+    seed();
+    inProduction();
+    const evaluation = evaluate(can('post:publish'), {
+      input: {},
+      actor: testActor('editor', { roles: ['editor'] }).actor,
+    });
+    expect(evaluation.allowed).toBe(true);
+    expect(evaluation.trace).toEqual([]);
+    expect(evaluation.deciding).toBeNull();
+  });
+
+  test('an installed decision sink turns it back on, in production', () => {
+    seed();
+    inProduction();
+    setDecisionSink(memoryDecisionSink());
+    const evaluation = evaluate(can('post:publish'), {
+      input: {},
+      actor: testActor('editor', { roles: ['editor'] }).actor,
+    });
+    expect(evaluation.deciding?.label).toBe('post:publish');
+  });
+
+  test('an explicit { trace: true } overrides the environment', () => {
+    seed();
+    inProduction();
+    const evaluation = evaluate(
+      can('post:publish'),
+      { input: {}, actor: testActor('editor', { roles: ['editor'] }).actor },
+      { trace: true },
+    );
+    expect(evaluation.trace).toHaveLength(1);
+  });
+
+  test('outside production the trace is on with nothing configured', () => {
+    seed();
+    process.env['ULTIMATE_ENV'] = 'development';
+    resetPolicyTracing();
+    const evaluation = evaluate(can('post:publish'), {
+      input: {},
+      actor: testActor('editor', { roles: ['editor'] }).actor,
+    });
+    expect(evaluation.trace).toHaveLength(1);
   });
 });

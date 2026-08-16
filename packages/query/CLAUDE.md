@@ -29,6 +29,8 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `source.ts` | `SqlSource` contract + `from()` in-memory reference |
 | `shape.ts` | shared read vocabulary (filters, ordering, seek keys) |
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
+| `deprecation.ts` | `Deprecation` + the RFC 9745/8594 render + the `deprecated_calls_total` counter — TWINNED in `@ultimat3/action` |
+| `deprecation.ts` | `Deprecation` + the RFC 9745/8594 render + the `deprecated_calls_total` counter — twinned with `@ultimat3/action`'s |
 
 ## Invariants
 
@@ -76,6 +78,35 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   would answer `X_BODY_INVALID` where every other surface answers `X_INPUT_INVALID` and prints
   its schema. For the same reason `meta.input` stays **absent** — the pipeline's body stage
   validates it against a body, and a GET has none, so declaring it fails every read on nothing.
+- **`rateLimit:` is declarable on a read, and `toQueryRoute` sets the NAME and the NUMBERS.**
+  `QueryDef` had neither until 2026-08, so every `GET /_x/query/*` fell through `bucketFor` to
+  `default` — 120 burst, 2/s per actor — and one authenticated caller could hold 120 cross-tenant
+  aggregates in flight and then 2/s indefinitely, from a single account, with no declaration able
+  to say otherwise. The conversion is `toBucket` from **`@ultimat3/http`**, never a copy here:
+  http owns `Bucket` and the maths, `@ultimat3/action` is the same tier as this package, and a
+  copy in either is a second answer for the other. The field is lifted onto the facade so
+  `toQueryRoute` reads it without `defOf`, exactly as `cache` and `mcp` are.
+- **`deprecated:` is a compat WINDOW; versioning is two deployments behind one ingress.** Headers
+  are rendered ONCE at projection, so an unparseable date is `X_QUERY_DEPRECATION_INVALID` at
+  mount and not on the first read. `deprecation.ts` is a TWIN of `@ultimat3/action`'s — both are
+  tier 3, so neither may import the other, and the shared home is `@ultimat3/http` if it grows
+  one. The same compromise `naming.ts` is ported under; keep the two files identical in behaviour.
+- **The span wraps the whole read, not `source.execute()`.** Parse, policy and `sql()`'s own
+  construction were outside every span, so a read whose cost was in building the source reported
+  milliseconds under a parent that reported seconds — a gap with no name. `readRows` holds the
+  span and `readRowsIn` is the body; attributes are bounded (surface, actor KIND, `live`,
+  `cached`, `fresh`) plus the row count, and never the input or an actor id — a read is keyed per
+  tenant and per cursor, so either would be unbounded. `telemetry.test.ts` asserts the extent
+  structurally through `currentSpan()`, because the test clock is frozen. `sourceFor` still has no
+  span of its own: adding one would double-span every read that goes through `readRows`.
+- **`policyCapability` is a display label and `policyPermissions` is what a report matches on.**
+  A composite renders as `or(feed:read, org:administer)`, which equals no permission string, so
+  `x policy list` matching on `capability` reported every non-trivially-guarded read's permissions
+  as unenforced. `QueryDescriptor.permissions` is the flattened list, published beside
+  `capability` and never instead of it.
+- **`client.ts` injects `traceparent`**, before the caller's own headers so an explicit one wins,
+  and sends nothing when the span context is incomplete — `00-<trace>--01` is a header every
+  collector drops. The twin of `@ultimat3/action`'s, ported for the same tier reason.
 - **A read is `no-store`, and its policy is `enforcedBy: 'handler'`.** The URL names no actor
   while the answer is scoped to one, so `public` would hand one reader's rows to the next caller
   of that URL; and `runQuery` is the read's one evaluation, deciding from the parsed input, so an
@@ -172,6 +203,44 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   the rows early instead left the pre-write entry standing, so "the one way to read past a write
   made earlier in the same request" ended at the single call that asked for it and the next plain
   read of that key got the stale answer back. Invalidation still drops tier entries only.
+- **A read can declare a `rateLimit:`, and `toQueryRoute` enforces it — added 2026-08.** `QueryDef`
+  had no such field and the route set no bucket, so **every** `GET /_x/query/*` fell through
+  `bucketFor` to `default` — 120 burst, 2/s per actor. One authenticated caller could hold 120
+  cross-tenant aggregates in flight and then 2/s indefinitely, from a single account, and the
+  declaration that would have throttled it did not exist in the type. `meta.rateLimit` (the name)
+  **and** `meta.rateLimitBucket` (the numbers) are both set, because a name nothing registers is
+  the same silent fall-through. The conversion is `toBucket` from **`@ultimat3/http`** — http owns
+  `Bucket` and the maths, and `@ultimat3/action` is this tier, so a copy here would be a second
+  answer for the write half. Never derive a bucket locally.
+- **`deprecated:` is a compat WINDOW; versioning is not here and will not be.** `Deprecation`
+  (RFC 9745, `@<unix seconds>`) and `Sunset` (RFC 8594, IMF-fixdate) on every answer including the
+  failures, a `rel="successor-version"` link built through `derivePath` — the same derivation
+  `client()` uses, never a second one — the dates on the descriptor, and
+  `deprecated_calls_total{primitive,name}`, which is the only way to answer "is anyone still
+  reading it?" before deleting the read. Rendered ONCE at projection, so a date that cannot become
+  a header is `X_QUERY_DEPRECATION_INVALID` at mount rather than on the first read. Running two
+  versions side by side is two deployments behind one ingress (axiom 7). `deprecation.ts` is a
+  twin of `@ultimat3/action`'s: both are tier 3, the shared home is `@ultimat3/http` if it ever
+  grows one, and this is the same compromise `naming.ts` is ported under.
+- **The span wraps the whole read, not `source.execute()`.** Wrapping the execution alone left the
+  input parse, the policy evaluation and `sql()`'s own construction outside every span, so a read
+  whose cost was in building the source reported milliseconds under a parent reporting seconds —
+  a gap with no name, which reads as framework overhead. Attributes are bounded: surface, actor
+  KIND, `live`, `cached`, `fresh`, and the row count. Never the input and never an actor id — a
+  read is keyed per tenant and per cursor, so either would be unbounded. `telemetry.test.ts`
+  asserts the EXTENT structurally, reading `currentSpan()` from inside the policy predicate and
+  `sql:`, because the test clock is frozen and a timing assertion would hang on it.
+- **`policyCapability` is a display label; `policyPermissions` is what a report matches on.** A
+  composite renders as `or(feed:read, org:administer)`, which equals no permission string, so
+  `x policy list` matching on `capability` reported every non-trivially-guarded read's permissions
+  as *unenforced*. `QueryDescriptor.permissions` is the flattened list from `@ultimat3/policy`,
+  published beside `capability` and never instead of it.
+- **`queryClient`/`client()` inject `traceparent`.** Core's `traceparent()` had no caller in the
+  repo, so a service-to-service read began a fresh root trace on the far side. Set BEFORE the
+  caller's own headers so an explicit one wins; an incomplete span context (`spanId: ''`) sends
+  nothing rather than a header every collector drops. In a browser there is no ambient context, so
+  a cross-origin read gains no CORS preflight it did not already have. The helper is twinned in
+  `@ultimat3/action`'s client for the same tier reason `naming.ts` is.
 - Authz goes through `enforce(surface, policy, { input, actor, ctx })` from
   `@ultimat3/policy`; a live denial keeps its 4403 close code on `QueryDeniedError.denial`.
   `policy-gate.ts` is the only file that imports the policy package.

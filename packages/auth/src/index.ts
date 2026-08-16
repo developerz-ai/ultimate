@@ -51,6 +51,8 @@ export {
 } from './auth';
 
 export { BuiltinAdapter } from './builtin-adapter';
+export type { AuthUserSummary } from './directory';
+export { describeUser, findUserByExternalId, listOrgUsers } from './directory';
 export type { AuthErrorCode, AuthThrowCode, OAuthExchangeFailure } from './errors';
 export {
   AUTH_BORROWED_ERROR_CODES,
@@ -70,6 +72,7 @@ export {
   oauthDenied,
   oauthExchangeFailed,
   oauthLinkingDisabled,
+  oauthProviderDuplicate,
   oauthProviderUnknown,
   oauthStateInvalid,
   oauthTokenInvalid,
@@ -88,6 +91,20 @@ export {
   idTokenEmailVerified,
   verifyIdToken,
 } from './id-token';
+export type {
+  IdTokenKeys,
+  JwksClientOptions,
+  JwksKeySource,
+  JwtAlgorithm,
+  JwtHeader,
+} from './jwks';
+export {
+  createJwksClient,
+  DEFAULT_JWKS_TTL_MS,
+  decodeJwtHeader,
+  providerJwks,
+  verifyJwtSignature,
+} from './jwks';
 
 export { MemoryAdapter } from './memory-adapter';
 export type {
@@ -121,14 +138,13 @@ export type {
   OAuthProviderId,
   PkcePair,
 } from './oauth';
+export { assertOAuthCallback, beginOAuth, createPkce, pkceChallenge } from './oauth';
 export {
-  assertOAuthCallback,
-  beginOAuth,
-  createPkce,
-  OAUTH_PROVIDER_IDS,
-  OAUTH_PROVIDERS,
-  pkceChallenge,
-} from './oauth';
+  APPLE_PROVIDER,
+  BUILTIN_OAUTH_PROVIDERS,
+  GITHUB_PROVIDER,
+  GOOGLE_PROVIDER,
+} from './oauth-builtins';
 export type { HandshakeCookieOptions, HandshakeSealOptions } from './oauth-cookie';
 export {
   clearHandshakeCookie,
@@ -141,6 +157,8 @@ export {
   readHandshakeCookie,
   sealHandshake,
 } from './oauth-cookie';
+export type { DiscoverOAuthProviderInput } from './oauth-discovery';
+export { discoverOAuthProvider, discoveryUrl } from './oauth-discovery';
 export type {
   OAuthClientCredentials,
   OAuthExchangeOptions,
@@ -148,7 +166,12 @@ export type {
   OAuthTokens,
 } from './oauth-exchange';
 export { exchangeOAuthCode, oauthCredentials } from './oauth-exchange';
-export type { CompleteOAuthLoginInput, OAuthSignInInput } from './oauth-login';
+export type {
+  CompleteOAuthLoginInput,
+  OAuthGrants,
+  OAuthSignInInput,
+  ResolveOAuthGrants,
+} from './oauth-login';
 export { completeOAuthLogin, signInWithOAuth } from './oauth-login';
 export {
   OAUTH_BASE_PATH,
@@ -159,6 +182,12 @@ export {
 } from './oauth-paths';
 export type { OAuthProfile, OAuthProfileOptions } from './oauth-profile';
 export { oauthProfile } from './oauth-profile';
+export {
+  hasOAuthProvider,
+  oauthProviderIds,
+  providerFor,
+  registerOAuthProvider,
+} from './oauth-registry';
 export type { AuthRouteDescriptor, OAuthLoginOptions, OAuthLoginRoutes } from './oauth-route';
 export { OAUTH_ROUTE_STATUS, oauthLogin } from './oauth-route';
 export type {
@@ -189,6 +218,8 @@ export {
   actorFromUser,
   resolveActor,
 } from './policy-bridge';
+export type { UpdatePrivilegesResult } from './privileges';
+export { updatePrivileges } from './privileges';
 export type {
   AuthLimiter,
   AuthLimiterScope,
@@ -203,7 +234,18 @@ export {
   DEFAULT_MAX_AUTH_LIMIT_KEYS,
   ipKey,
   loginFailed,
+  ORG_ATTEMPT_FACTOR,
+  orgKey,
+  orgRateLimit,
 } from './rate-limit';
+export type { DisabledUser } from './revocation';
+export {
+  disableUser,
+  enableUser,
+  revokeOrgSessions,
+  revokeSessionsCreatedBefore,
+  revokeUserSessions,
+} from './revocation';
 export type {
   CookieJar,
   CreateSessionInput,
@@ -219,6 +261,8 @@ export {
   clearSessionCookie,
   createSession,
   DEFAULT_SESSION_POLICY,
+  IDLE_SLIDE_DIVISOR,
+  idleSlideMs,
   listDevices,
   parseSessionToken,
   readCookie,
@@ -237,11 +281,18 @@ export {
   X_ACCOUNTS_TABLE,
   X_API_KEYS_TABLE,
   X_SESSIONS_TABLE,
+  X_USERS_MIGRATION_1_3,
   X_USERS_TABLE,
   X_VERIFICATIONS_TABLE,
 } from './tables';
-
-export { base64Url, matchesHash, randomToken, sha256Hex, timingSafeEqual } from './tokens';
+export {
+  base64Url,
+  base64UrlBytes,
+  matchesHash,
+  randomToken,
+  sha256Hex,
+  timingSafeEqual,
+} from './tokens';
 export type {
   ConsumeVerificationInput,
   IssuedVerification,
@@ -257,3 +308,9 @@ export {
   VERIFICATION_PURPOSES,
   VERIFICATION_TEMPLATES,
 } from './verify';
+export type {
+  VerifyWorkloadTokenInput,
+  WorkloadClaims,
+  WorkloadToken,
+} from './workload';
+export { verifyWorkloadToken } from './workload';

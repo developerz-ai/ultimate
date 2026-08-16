@@ -50,7 +50,10 @@ describe('errorParts', () => {
           parts = errorParts(value);
         }).not.toThrow();
         expect(parts?.code).toBe('X_INTERNAL');
-        expect(parts?.fix).toBe('x logs --json | tail -50');
+        // No command: `x logs` is planned and exits X_NOT_IMPLEMENTED, and nothing shipped can
+        // name a throw site the framework never saw typed. The fix is the throw-site edit.
+        expect(parts?.fix).toContain('throw an UltimateError subclass');
+        expect(parts?.fix).not.toContain('x logs');
         expect(parts?.cause.length).toBeGreaterThan(0);
       });
     }

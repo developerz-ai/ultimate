@@ -98,10 +98,28 @@ describe('createPostgresClient', () => {
     });
     await client.query(sql`select 1`);
 
-    expect(client.profile).toEqual({ max: 8, statementTimeoutMs: 120_000, idleTimeoutMs: 30_000 });
-    const url = new URL(pool.urls[0] ?? '');
-    expect(url.searchParams.get('options')).toBe('-c statement_timeout=120000');
-    expect(url.searchParams.get('application_name')).toBe('ultimate-worker');
+    expect(client.profile).toEqual({
+      max: 8,
+      statementTimeoutMs: 120_000,
+      idleTimeoutMs: 30_000,
+      lockTimeoutMs: 0,
+      acquireTimeoutMs: 10_000,
+    });
+    // The RAW query string, not `searchParams.get()`. `.get()` decodes `+` back to a space, so the
+    // old assertion passed on the working encoding AND on a broken one — a test that cannot fail.
+    // `+` is what `URLSearchParams` emits and what `Bun.SQL` parses back to a space: measured, bun
+    // 1.3.14 against Postgres 17, `select current_setting('statement_timeout')` answers `120s`.
+    // `client.live.test.ts` is that measurement, kept as a test.
+    expect(pool.urls[0]).toEndWith(
+      '?options=-c+statement_timeout%3D120000&application_name=ultimate-worker',
+    );
+  });
+
+  test('a role with no statement timeout sets no options at all', async () => {
+    const pool = installFakeSql();
+    await createPostgresClient({ url: TEST_URL, role: 'migrate' }).query(sql`select 1`);
+
+    expect(pool.urls[0]).not.toContain('statement_timeout');
   });
 });
 
@@ -141,6 +159,24 @@ describe('reserve', () => {
 
     expect(caught).toBeInstanceOf(DbError);
     expect((caught as DbError).code).toBe('X_DB_UNAVAILABLE');
+  });
+
+  test('a server error carrying a SQLSTATE is typed by what the server said, not as unreachable', async () => {
+    // The funnel is the only place a driver failure is wrapped, so this is where the classification
+    // has to happen — a `23505` reported as X_DB_UNAVAILABLE pages on-call for a raced signup.
+    const source = Object.assign(new DriverFailure('duplicate key'), {
+      code: 'ERR_POSTGRES_SERVER_ERROR',
+      errno: '23505',
+      constraint: 'users_email_key',
+    });
+    installFakeSql({ statementError: source });
+    const connection = await createPostgresClient({ url: TEST_URL }).reserve();
+
+    const caught = (await rejection(connection.execute(sql`insert into users`))) as DbError;
+
+    expect(caught.code).toBe('X_DB_UNIQUE_VIOLATION');
+    expect(caught.fix).toContain('users_email_key');
+    expect(caught.sourceError).toBe(source);
   });
 
   // `withTransaction` releases in a `finally` and disposal fires on that same scope, so two

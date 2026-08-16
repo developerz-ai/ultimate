@@ -5,6 +5,7 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { integer, text, timestamp, uuid } from './columns';
 import { entity } from './entity';
+import { MAX_PAGE_SIZE } from './plan';
 import { tableFor } from './query';
 import { clearRegistry } from './registry';
 import { memoryRepo } from './repo';
@@ -76,6 +77,21 @@ describe('the plan a chain describes', () => {
 
   test('the default page is bounded — an unbounded read is not expressible', () => {
     expect(table.plan().limit).toBe(50);
+  });
+
+  /**
+   * The failure case: `limit(rows)` used to be `next({ limit: rows })` and nothing else, so an
+   * action taking `pageSize` as input and passing it through bound whatever a client sent. The
+   * refusal lands on the chain, where the author wrote the number — not one statement later, and
+   * not after Postgres has already answered with five million rows.
+   */
+  test('a page size that would be a production incident is refused on the chain', () => {
+    for (const rows of [5_000_000, MAX_PAGE_SIZE + 1, 0, -1, 2.5, Number.NaN]) {
+      expect(() => table.limit(rows)).toThrow(/X_INVARIANT_VIOLATED|whole number of rows/);
+    }
+    // And the legal range still builds, ceiling included.
+    expect(table.limit(MAX_PAGE_SIZE).plan().limit).toBe(MAX_PAGE_SIZE);
+    expect(table.limit(1).plan().limit).toBe(1);
   });
 
   test('there is no offset on the builder, and there never will be', () => {

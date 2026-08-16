@@ -303,6 +303,29 @@ export class RoleUnknownError extends UltimateError {
 }
 
 /**
+ * The enqueue side and the claim side are looking at two different queues.
+ *
+ * `startServices` builds the drivers and captures them; `loadApp` imports the app's modules after
+ * it, and a module calling `setJobDriver()` at import time moves the ambient slot without touching
+ * the captured object. The worker then claims from what was captured while every
+ * `handle.enqueue()` publishes to what is ambient — jobs that are accepted, acknowledged, visible
+ * in `/_x` and never run. Refused at boot, because the alternative is a deployment that only ever
+ * looks healthy.
+ */
+export class RuntimeDriverSplitError extends UltimateError {
+  constructor(input: { driver: string; ambient: string; captured: string }) {
+    super({
+      code: 'X_RUNTIME_DRIVER_SPLIT',
+      // Both names are printed even when they are the same string — two `memory` drivers are two
+      // queues, and "they match" is exactly the reading that makes this bug invisible.
+      cause: `an app module installed a ${input.driver} driver (ambient: "${input.ambient}") that is not the object this boot captured ("${input.captured}"), so enqueues and claims would use different queues`,
+      fix: `pass the driver to the boot instead of installing it from an app module: runRole({ root, env, runtime: { ${input.driver}: yourDriver } })`,
+      docs: docsFor('X_RUNTIME_DRIVER_SPLIT'),
+    });
+  }
+}
+
+/**
  * Every PaaS injects `PORT` and expects the process to bind exactly it. Defaulting past a value
  * that will not parse is how a deploy comes up on 3000, fails the platform's health probe, and
  * reports nothing an operator can act on.

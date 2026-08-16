@@ -4,13 +4,26 @@
 // driver applies is worse than none: the test passes and production leaks another tenant's rows.
 
 import type { EntityCore } from './entity';
-import { invariantViolated, patchEmpty, writeUnfiltered } from './errors';
+import { EntityError, invariantViolated, patchEmpty, writeUnfiltered } from './errors';
 import type { FindManyArgs, RepoOptions } from './repo';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
 import { scopedPlan } from './tenancy';
 
 /** A page is bounded by default; an unbounded read is a production incident waiting for traffic. */
 export const DEFAULT_PAGE_SIZE = 50;
+
+/**
+ * And a page the caller DID bound is bounded too. The default above only covers a read nobody
+ * sized; `limit(input.pageSize)` on a number that arrived over the wire is the same incident with
+ * an argument in front of it — the statement binds it, the server answers with every row, and the
+ * driver allocates and decodes all of them before the handler sees one. So the ceiling is a memory
+ * bound, not a preference, and it lives here rather than in either driver because both read one
+ * number or they stop meaning the same thing.
+ *
+ * Above `DEFAULT_BACKFILL_BATCH` (1,000) by an order of magnitude on purpose: a sweep declaring a
+ * wider batch is a tuning decision, and only a page nobody could have meant is refused.
+ */
+export const MAX_PAGE_SIZE = 10_000;
 
 /** Id-addressed operations need exactly one key. A composite key is addressed by every column. */
 export const singleKeyOf = <Row>(entity: EntityCore<Row>, operation: string): string => {
@@ -49,7 +62,28 @@ export const totalOrder = <Row>(
     .map((property) => ({ column: property, direction: 'asc' as const })),
 ];
 
+/**
+ * What a page size has to be before a statement carries it: rows, whole, at least one and at most
+ * `MAX_PAGE_SIZE`. The three refusals `assertBatchable` already applies to `inBatches(size)`, and
+ * deliberately the same code and the same voice — `limit(0)` and `inBatches(0)` are one mistake in
+ * two calls, and two codes would make a caller decide which to catch.
+ *
+ * Called from `limit()` on the chain, so the refusal lands on the line the author wrote, AND from
+ * `planFor` below, so `findMany({ limit })` straight at the repository — a generated client, a
+ * query, a third-party driver's caller — cannot route around it. One function, so the two can
+ * never disagree about what a page may be.
+ */
+export const assertPageSize = (entityName: string, rows: number): void => {
+  if (Number.isSafeInteger(rows) && rows >= 1 && rows <= MAX_PAGE_SIZE) return;
+  throw new EntityError({
+    code: 'X_INVARIANT_VIOLATED',
+    cause: `${entityName}.limit(${String(rows)}) — a page is a whole number of rows, at least one and at most ${MAX_PAGE_SIZE}`,
+    fix: `${entityName}.limit(${DEFAULT_PAGE_SIZE})   # or, to visit every row the filter matches, ${entityName}.inBatches(1000) — one page per statement, and never a table in memory`,
+  });
+};
+
 export const planFor = <Row>(entity: EntityCore<Row>, args: FindManyArgs): QueryPlan => {
+  if (args.limit !== undefined) assertPageSize(entity.$name, args.limit);
   const scoped =
     args.orgId === undefined || entity.$tenantColumn === null
       ? []

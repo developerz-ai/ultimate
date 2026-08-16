@@ -1,6 +1,15 @@
 // Concurrency and rate limits, enforced at claim time. Multi-tenant reality: one org's
 // 50k-row import must not consume every worker slot, so the tenant key comes from the
 // actor's `orgId` and is carried on the queue row — never re-derived from the payload.
+//
+// **Every count in this file is PER PROCESS.** Three `Map`s in one heap: twenty worker pods with
+// `perTenant: 2` run forty concurrent jobs for that tenant, and `ratePerTenant`'s window is lost
+// on every deploy, so a rolling restart hands every tenant a fresh full allowance. That is a
+// deliberate design and not a defect — it is the fast path, decided with no round trip, and it is
+// what keeps ONE pod from starving its own queues. It is not a fleet ceiling and never was; the
+// docstrings below say so where they used to say the opposite. The fleet gate is
+// `JobDriver.leases` (`leases.ts`), which counts slots in a row every replica can see, and it is
+// what `job.concurrency` is enforced with.
 
 import type { Clock } from '@ultimat3/core';
 import { systemClock } from '@ultimat3/core';
@@ -12,13 +21,21 @@ export interface RateLimit {
 }
 
 export interface LimitConfig {
-  /** Max concurrent runs per tenant, across every queue. */
+  /** Max concurrent runs per tenant IN THIS PROCESS, across every queue. */
   readonly perTenant?: number;
-  /** Max concurrent runs per queue, across every tenant. */
+  /** Max concurrent runs per queue IN THIS PROCESS, across every tenant. */
   readonly perQueue?: number;
-  /** Fleet-wide ceiling for this worker process. */
+  /**
+   * Ceiling on concurrent runs IN THIS PROCESS. Not fleet-wide — the doc line here said
+   * "fleet-wide ceiling for this worker process", which is two different numbers in one sentence
+   * and the code always meant the second. Multiply by your replica count to get the fleet's.
+   */
   readonly global?: number;
-  /** Starts per tenant per window — protects downstream APIs, not just CPU. */
+  /**
+   * Starts per tenant per window, IN THIS PROCESS — protects downstream APIs, not just CPU. The
+   * window is in memory, so a deploy resets it: a rolling restart grants every tenant a full
+   * fresh allowance. Size it for a per-pod budget, never for a partner's contractual rate.
+   */
   readonly ratePerTenant?: RateLimit;
 }
 

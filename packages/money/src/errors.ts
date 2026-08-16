@@ -153,7 +153,10 @@ export function currencyUnknown(currency: string): MoneyError {
   return new MoneyError({
     code: 'X_CURRENCY_UNKNOWN',
     cause: `"${currency}" is not an ISO-4217 code in the currency table`,
-    fix: `x money add-currency ${currency.toUpperCase().slice(0, 3) || 'XXX'} --exponent 2`,
+    // The table is a closed ISO-4217 constant with no registration point, so there is no command
+    // and no config line to name — the only thing a caller can do is pass a code that is in it.
+    // The lookup is exact and case-sensitive, which is what makes 'usd' the common arrival here.
+    fix: `pass a code currencyCodes() lists, uppercased — assertCurrency('${currency.toUpperCase().slice(0, 3) || 'XXX'}')`,
   });
 }
 

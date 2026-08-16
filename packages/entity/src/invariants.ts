@@ -7,7 +7,7 @@
 // callback the typed column proxy once, so a rule is written against property keys (`c.likeCount`)
 // and `entity()` alone resolves them to physical names. A physical name is never typed twice.
 
-import { invariantViolated } from './errors';
+import { EntityError, invariantViolated } from './errors';
 import type { Expr, Resolve, Row } from './expr';
 
 /** `assert` is a rule only the app can run — a JS predicate with no SQL translation. */
@@ -91,6 +91,43 @@ export const invariantsToSql = <T>(table: string, invariants: readonly Invariant
     .map((inv) => toSql(table, inv))
     .filter((statement): statement is string => statement !== null)
     .join('\n');
+
+/**
+ * Whether any rule here can only be judged in the app. This is what decides whether a FILTERED
+ * write has to read back the rows it wrote: a `check` or a `unique` is a constraint Postgres
+ * already enforced on the statement, so nothing has to come back to prove it, while an `assert`
+ * (`sql: null`) has no CHECK and can only be judged on the result. Read from `$invariants` and
+ * never from a flag, exactly as `uniqueTargets` (`bulk-write.ts`) reads the same list to classify
+ * a conflict target — one declaration, two questions.
+ */
+export const hasJsOnlyInvariant = <T>(invariants: readonly Invariant<T>[]): boolean =>
+  invariants.some((inv) => inv.kind === 'assert' && inv.sql === null);
+
+/**
+ * How many rows a filtered write may bring back to be judged. Only the case above needs any: with
+ * every rule expressible as a constraint the answer is a count, and `returning *` there is a whole
+ * table streamed into a process sized for one request — a tenant-wide
+ * `updateWhere({ orgId }, { marketingOptIn: false })` over twelve million rows is the shape of it.
+ * Past this the call is refused rather than answered, because the cheap form of the same sweep is
+ * already in the vocabulary: `inBatches(size)` reads one page per statement and judges one page at
+ * a time.
+ */
+export const MAX_ASSERTED_ROWS = 50_000;
+
+/**
+ * Not `invariantViolated`: its fix opens `x entity explain`, which describes a rule the author did
+ * not break — the rule is fine, the blast radius is not. What repairs this is one edit to the call.
+ */
+export const assertedRowsTooMany = (
+  entityName: string,
+  operation: string,
+  matched: number,
+): EntityError =>
+  new EntityError({
+    code: 'X_INVARIANT_VIOLATED',
+    cause: `${entityName}.${operation}() matches ${matched} rows and ${entityName} declares an invariant only the app can judge, so every one of them would be read back — past ${MAX_ASSERTED_ROWS} that is the whole table in memory`,
+    fix: `for await (const rows of ${entityName}.where(filter).inBatches(1000)) { … }   # one page per statement, judged one page at a time`,
+  });
 
 /** Runs on every write. Reports every violation at once so one round trip fixes all. */
 export const assertInvariants = <T>(

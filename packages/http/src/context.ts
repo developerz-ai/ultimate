@@ -4,9 +4,15 @@
 import {
   type Actor,
   anonymousActor,
+  type Clock,
   type Ctx,
   isAnonymous,
+  type Logger,
+  traceId as newTraceId,
   type Role,
+  logger as rootLogger,
+  type ServiceBag,
+  systemClock,
   useContext,
   uuid,
 } from '@ultimat3/core';
@@ -14,11 +20,23 @@ import type { HttpConfig } from './config';
 import { noRequest } from './errors';
 import type { AuthzDecision } from './hooks';
 import { readCookie } from './locale';
+import type { PeerIdentity } from './peer-identity';
 import type { RateLimitDecision } from './rate-limit';
 import type { CacheHint, RedirectIntent } from './response';
 import type { Route, RouteParams } from './router';
 
-export interface RequestContext {
+/**
+ * The per-request context, and — through `asCtx` — core's `Ctx` itself. Every member `Ctx`
+ * declares is declared here and SET by `createRequestContext`, because `asCtx` used to be
+ * `as unknown as Ctx` over an object missing five of them (`clock`, `now`, `logger`, `signal`,
+ * `services`). The assertion type-checked and every reader threw at runtime: `ctx.now()` in
+ * `@ultimat3/action`'s audit trail, `useService()`, `throwIfAborted()`. The cast is gone, so
+ * a member core adds is a build error in this file until it is set. The `extends` is what makes
+ * that true rather than aspirational — and it carries `CtxServices`' index signature, which is
+ * what an app augments for `ctx.posts`; `noPropertyAccessFromIndexSignature` keeps `ctx.typo` a
+ * build error all the same.
+ */
+export interface RequestContext extends Ctx {
   /** `performance.now()` at accept time; used for the server-timing header. */
   readonly startedAt: number;
   readonly url: URL;
@@ -27,6 +45,13 @@ export interface RequestContext {
   readonly config: HttpConfig;
   readonly ip: string | null;
   readonly https: boolean;
+  /**
+   * What the mesh's proxy asserted about the peer's certificate, or `null` — for an untrusted
+   * deployment, a missing header and a chain shorter than declared alike. Never an actor:
+   * `hooks.authenticate` is the one place an identity becomes `ctx.actor`, through
+   * `verifyWorkloadToken()` -> `actorFromService()` in `@ultimat3/auth`.
+   */
+  readonly peer: PeerIdentity | null;
   /** Response headers accumulated by stages before a Response exists. */
   readonly headers: Headers;
   /**
@@ -38,11 +63,28 @@ export interface RequestContext {
    */
   readonly requestHeaders: Headers;
 
+  // --- core's `Ctx`, in full. Set at construction, never by a stage: `asCtx` publishes THIS
+  // object through core's ALS, so anything absent here is `undefined` in every handler.
+  /**
+   * The build of the APP this process serves — core's meaning of the word, and what a job and a
+   * request must agree on. NOT what the client claims to be running: that is `clientBuildId`,
+   * and the two shared this name until `asCtx` was checked, which published the caller's header
+   * to every `ctx.buildId` reader in the framework.
+   */
+  readonly buildId: string;
+  readonly clock: Clock;
+  now(): Date;
+  /** Request-scoped: a child of the root logger carrying `requestId` and `traceId`. */
+  readonly logger: Logger;
+  /** Aborted when the caller goes away or the request deadline passes. See `deadline.ts`. */
+  readonly signal: AbortSignal;
+  readonly services: ServiceBag;
+
   // Mutable slots, each filled by exactly one pipeline stage. Kept mutable (and
   // documented) rather than rebuilt per stage so a stage list stays a flat array.
-  /** Set by the `request-id` stage; seeded so a crash before it still correlates. */
+  /** Resolved from the inbound headers before the context exists (`correlation.ts`). */
   requestId: string;
-  /** Set by the `trace` stage from an inbound `traceparent`, if any. */
+  /** W3C trace id, continued from an inbound `traceparent` — 32 hex, never a UUID. */
   traceId: string;
   parentSpanId: string | null;
   params: RouteParams;
@@ -55,7 +97,8 @@ export interface RequestContext {
   actor: Actor;
   locale: string;
   tz: string;
-  buildId: string | null;
+  /** What the CLIENT says it is running, from `config.buildIdHeader`. `assertBuild()` reads it. */
+  clientBuildId: string | null;
   input: unknown;
   authz: AuthzDecision | undefined;
   rateLimit: RateLimitDecision | undefined;
@@ -79,46 +122,84 @@ export interface RequestContextInit {
   readonly config: HttpConfig;
   readonly requestId?: string;
   readonly traceId?: string;
+  /** The caller's span id, from an inbound `traceparent`. Resolved before this call. */
+  readonly parentSpanId?: string | null;
   readonly ip?: string | null;
   readonly https?: boolean;
+  readonly peer?: PeerIdentity | null;
   /** The inbound headers. Absent means "not an HTTP request" and reads as empty. */
   readonly requestHeaders?: HeadersInit;
+  readonly clock?: Clock;
+  readonly logger?: Logger;
+  /** The deadline/disconnect signal. Absent means a request nothing can cancel. */
+  readonly signal?: AbortSignal;
+  readonly services?: ServiceBag;
 }
 
-export const createRequestContext = (init: RequestContextInit): RequestContext => ({
-  requestId: init.requestId ?? uuid(),
-  traceId: init.traceId ?? uuid(),
-  startedAt: performance.now(),
-  url: init.url,
-  method: init.method.toUpperCase(),
-  role: init.role,
-  config: init.config,
-  ip: init.ip ?? null,
-  https: init.https ?? init.url.protocol === 'https:',
-  headers: new Headers(),
-  requestHeaders: new Headers(init.requestHeaders),
-  parentSpanId: null,
-  params: {},
-  route: undefined,
-  actor: anonymousActor(),
-  locale: init.config.locale.default,
-  tz: init.config.tz.default,
-  buildId: null,
-  input: undefined,
-  authz: undefined,
-  rateLimit: undefined,
-  cache: undefined,
-  redirect: undefined,
-  response: undefined,
-  error: undefined,
-});
+/**
+ * One signal for every context built without one, so "no cancellation here" costs no allocation
+ * and `ctx.signal.aborted` is still a read rather than a `TypeError`. The same shape core uses.
+ */
+const NEVER_ABORTED: AbortSignal = new AbortController().signal;
+
+export const createRequestContext = (init: RequestContextInit): RequestContext => {
+  const clock = init.clock ?? systemClock;
+  const requestId = init.requestId ?? uuid(clock);
+  // core's `traceId()`, never `uuid()`: a dashed UUIDv7 is not a 32-hex W3C trace id, and a
+  // collector rejects the span that carries one — while the log lines beside it, which quote the
+  // same field, look fine. Two ids for one request that cannot be joined.
+  const traceId = init.traceId ?? newTraceId();
+  return {
+    requestId,
+    traceId,
+    parentSpanId: init.parentSpanId ?? null,
+    startedAt: performance.now(),
+    url: init.url,
+    method: init.method.toUpperCase(),
+    role: init.role,
+    config: init.config,
+    ip: init.ip ?? null,
+    https: init.https ?? init.url.protocol === 'https:',
+    peer: init.peer ?? null,
+    headers: new Headers(),
+    requestHeaders: new Headers(init.requestHeaders),
+    // The build this PROCESS serves, resolved the way core resolves it. The client's claim goes
+    // to `clientBuildId` below, where only `assertBuild()` reads it.
+    buildId: init.config.buildId ?? 'dev',
+    clock,
+    now: () => clock.now(),
+    // A child, so `ctx.logger` carries the ids even where core's ALS injector cannot see the
+    // context — a callback that outlived the request scope, a logger passed to a driver.
+    logger: (init.logger ?? rootLogger).child({ requestId, traceId }),
+    signal: init.signal ?? NEVER_ABORTED,
+    // Frozen and explicit. `defineService` factories are NOT installed here: core does not
+    // export the installer, so the honest answer for a service nothing passed is
+    // `X_SERVICE_MISSING` from `useService()` — which is what it exists to raise — rather than
+    // the `TypeError: undefined is not an object` a missing bag produced.
+    services: Object.freeze({ ...(init.services ?? {}) }),
+    params: {},
+    route: undefined,
+    actor: anonymousActor(),
+    locale: init.config.locale.default,
+    tz: init.config.tz.default,
+    clientBuildId: null,
+    input: undefined,
+    authz: undefined,
+    rateLimit: undefined,
+    cache: undefined,
+    redirect: undefined,
+    response: undefined,
+    error: undefined,
+  };
+};
 
 /**
- * `Ctx` is owned by `@ultimat3/core` and grows service handles by module
- * augmentation. This is the single adapter between the HTTP request context and
- * core's ALS payload, so a change to `Ctx` touches one line of this package.
+ * The single adapter between the HTTP request context and core's ALS payload. It is a WIDENING
+ * the compiler checks, not an assertion: `as unknown as Ctx` here shipped a context missing
+ * `clock`, `now`, `logger`, `signal` and `services`, so `ctx.now()` threw on every audited
+ * action served over HTTP. Never reintroduce a cast — the type error IS the enforcement.
  */
-export const asCtx = (ctx: RequestContext): Ctx => ctx as unknown as Ctx;
+export const asCtx = (ctx: RequestContext): Ctx => ctx;
 
 /** Read the ambient request context. Throws outside a request via core's ALS. */
 export const useRequestContext = (): RequestContext => useContext() as unknown as RequestContext;

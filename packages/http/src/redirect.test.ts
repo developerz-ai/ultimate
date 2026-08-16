@@ -7,7 +7,9 @@ import { defineHttpConfig } from './config';
 import { asCtx, createRequestContext } from './context';
 import { setRedirect, takeRedirect } from './redirect';
 
-const config = defineHttpConfig();
+const config = defineHttpConfig({
+  rateLimit: { scope: 'process' },
+});
 
 const context = () =>
   createRequestContext({

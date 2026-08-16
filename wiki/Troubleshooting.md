@@ -87,12 +87,11 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 | `X_TRANSPORT_PROTOCOL` | nats-server older than 2.11, started without `-js`, or something other than NATS on the port | presence needs batch direct get and per-message TTL — run `nats:2.11-alpine` or newer with `-js` |
 | Live query rejected at build | unbounded — missing `orderBy` or `limit` | add both. An unbounded result has no bounded change buffer and no bounded reconnect snapshot |
 | Live query rejected for non-determinism | `now()` / `random()` in the `sql` | move it to `input`; the same `(input, row)` must always yield the same membership answer |
-| `X_SUBSCRIPTION_LIMIT` | a socket or tenant hit its cap | raise `realtime.limits.perSocket`, or unsubscribe unused live queries |
-| `X_LIVE_QUERY_LIMIT` | too many distinct live queries per tenant | raise `realtime.limits.perTenantQueries`, or narrow the query set |
-| `X_CURSOR_STALE` | resume cursor outside the change buffer window | widen `realtime.changeBuffer`, or pass `'snapshot'` to `resumeFrom()` so the fallback re-snapshots |
+| `X_SUBSCRIPTION_LIMIT` | a socket or tenant hit its cap — the error names which | raise `maxPerSocket` on the `LiveQueryRegistry` (default 128), or unsubscribe unused live queries. Not an `app.config.ts` field → [Configuration](Configuration) |
+| `X_CURSOR_STALE` | resume cursor outside the change buffer window — or a reconnect that landed on a `sync` node which never served that `qid`, since the ring is per node | raise `capacity` on `new RingChangeBuffer({ capacity })` (default 1024), or pass `'snapshot'` to `resumeFrom()` so the fallback re-snapshots. Not an `app.config.ts` field → [Configuration](Configuration) |
 | `X_TOPIC_FORBIDDEN` | tier-1 topic guard denied the actor | fix the topic scope; the cause names actor + topic, never the topic's data |
 | Reconnect storm after a deploy | drain was truncated by SIGKILL, so no `reconnect` frame was sent | set `stop_grace_period` / `terminationGracePeriodSeconds` >= `DRAIN_TIMEOUT` ([Deployment](Deployment)) |
-| Reconnects still spiky with a clean drain | `realtime.drain.window` pinned too small | use `'auto'` — the server sizes the jitter window from live connection count |
+| Reconnects still spiky with a clean drain | not a config field — `realtime.drain.*` does not exist. A draining node sends a `reconnect` frame carrying a per-client `afterMs`; if clients still stampede, they are reconnecting on their own `backoffDelay()` because no frame reached them | confirm the drain path actually ran — a `SIGKILL` sends no frame, which is the case the 50k benchmark measures → [Configuration](Configuration) |
 | A row appeared that the user shouldn't see | not possible via the framework path — policy is re-checked per delivered row. Suspect an unscoped predicate | `X_TENANCY_UNSCOPED`; tenant scope comes from `ctx`, never from `input` |
 | `sync` never becomes ready | replication feed lag over threshold, or NATS not subscribed | check the `replicator` first — it owns the slot |
 

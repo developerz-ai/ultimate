@@ -9,7 +9,9 @@ type, a JSON Schema, an OpenAPI body, an MCP tool `inputSchema` and HTTP query c
 | the blessed `t` namespace | `t.ts` |
 | builtin validators behind `t` | `validators.ts` |
 | the introspectable IR every generator walks | `node.ts` |
-| `Schema` factory, `Infer` machinery | `builder.ts` |
+| `Schema` factory, `Infer` machinery, `.refine()` | `builder.ts` |
+| how a rejected value is described — its shape, never its content | `describe-value.ts` |
+| a union routed by one literal key | `discriminated-union.ts` |
 | `configureSchemaProvider()` — the swap point | `provider.ts` |
 | schema → JSON Schema (OpenAPI + MCP) | `json-schema.ts` |
 | HTTP-boundary coercion, kept out of validation | `coerce.ts` |
@@ -36,13 +38,53 @@ type PublishPost = Infer<typeof publishPost>;
 
 | Value schemas | Factories | Methods |
 |---|---|---|
-| `string` `number` `boolean` `date` `uuid` `email` `url` | `object` `array` `enum` `literal` `union` `record` `optional` `nullable` | `.default(v)` `.optional()` `.nullable()` `.describe(s)` |
+| `string` `number` `boolean` `date` `uuid` `email` `url` | `object` `array` `enum` `literal` `union` `discriminatedUnion` `record` `optional` `nullable` `refine` | `.default(v)` `.optional()` `.nullable()` `.describe(s)` `.refine(r)` |
 | `money` `timezone` `locale` `slug` `cursor` | `object(...).extend/.pick/.omit` | `string.min/.max/.pattern`, `number.min/.max/.int` |
 
 `nullable` is a value the row holds; `optional` is the caller omitting the key. Both ship as a
 namespace member (`t.nullable`) and a free function (`nullableSchema`) — symmetrically.
 
 Unknown object keys are **dropped**, never forwarded — an action cannot be mass-assigned.
+
+### Cross-field rules live on the schema
+
+A rule the IR cannot state structurally still belongs to the schema, or it moves into a handler and
+disappears from `openapi.json`, the MCP tool schema, the typed client and every form binding at
+once — axiom 2 broken for every such rule in the product.
+
+```ts
+const booking = t.object({ startDate: t.date, endDate: t.date }).refine({
+  name: 'end-after-start',                       // stable id → `x-ultimate-refinements`
+  message: 'endDate must be after startDate',    // the rule, never the value
+  path: ['endDate'],                             // which field the issue lands on
+  check: (value) => value.endDate > value.startDate,
+});
+```
+
+The predicate runs on the **parsed** output and only after the shape passed, so it compares coerced
+values and never defends against a type the schema already refused. What ships in the IR is the
+declaration, not the closure: `node.refinements`, projected as an `x-ultimate-refinements`
+extension **and** appended to `description`, which is the only field an LLM reading a tool schema
+is guaranteed to see. `.refine()` returns a plain `Schema`, so refining after `extend`/`pick`/`omit`
+— which rebuild from the shape and would drop the rule — is a type error rather than a comment.
+
+### `discriminatedUnion` names the branch it judged
+
+```ts
+const body = t.discriminatedUnion(
+  'kind',
+  t.object({ kind: t.literal('post'), slug: t.slug }),
+  t.object({ kind: t.literal('page'), title: t.string.min(3) }),
+);
+```
+
+`t.union` reports every member's reasons at once, so one bad field in a `post` body arrives as N
+contradictory complaints naming fields the caller never sent. This routes on `kind` first and
+reports that branch's issues only. A member with no literal (or enum) at the discriminant, or two
+members claiming one tag, is `X_SCHEMA_DISCRIMINANT_INVALID` **where the union is built** — a
+branch nothing can route to is wrong for every input, not for one request. The node stays
+`kind: 'union'` with a `discriminant` beside it, so every existing IR consumer keeps working, and
+JSON Schema gains `discriminator: { propertyName }`.
 
 **You rarely import this package.** `action`, `query`, `jobs` and `entity` each re-export the same
 `t`, so an authoring file imports its primitive and nothing else. Import `@ultimat3/schema` directly
@@ -57,9 +99,17 @@ parse(t.object({ postId: t.uuid, notify: t.boolean }), { postId: 'abc', notify: 
 
 ```text
 X_VALIDATION_FAILED: value did not match its schema
-  cause: postId: expected a uuid, received "abc"; notify: expected a boolean, received "yes"
+  cause: postId: expected a uuid, received a string of 3 characters; notify: expected a boolean, received a string of 3 characters
   fix:   send input with the field(s) named in cause corrected to the expected type
 ```
+
+**An issue message names the shape of the rejected value, never its content**, and `received` on
+the issue is empty for the same reason. `@ultimat3/http` folds these messages into
+`X_BODY_INVALID`'s `cause`, which is returned to the caller *and* written to the log line — where
+the logger redacts by key and a value baked into a string has no key left to redact. Echoing the
+value meant a password-strength rule wrote every mistyped password to the central log index in
+cleartext. There is no dev-only escape hatch: a flag is one misconfigured environment away from
+being the same breach. `describe-value.ts` owns the rule and `describe-value.test.ts` enforces it.
 
 `error.issues` is `{ path, expected, received, message }[]` with paths like `items[0].price`;
 `formatIssues()` renders one line per issue for the dev overlay. `validate()` never throws and

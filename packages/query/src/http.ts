@@ -7,8 +7,11 @@
 
 import { isUltimateError } from '@ultimat3/core';
 import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
-import { json, problem } from '@ultimat3/http';
+import { json, problem, toBucket } from '@ultimat3/http';
 import { coerceQuery } from '@ultimat3/schema';
+import type { Deprecation } from './deprecation';
+import { applyHeaders, recordDeprecatedCall, renderDeprecation } from './deprecation';
+import { QueryDeprecationInvalidError } from './errors';
 import { derivePath } from './naming';
 import { policyCapability } from './policy-gate';
 import type { AnyQuery } from './query';
@@ -23,8 +26,12 @@ import { tagKeys } from './tags';
  */
 export function toQueryRoute(target: AnyQuery): Route {
   const name = queryName(target);
+  // Rendered ONCE, at projection: a date that cannot become a header is a mount-time refusal,
+  // not a surprise on the first read.
+  const sunsetting = deprecationHeadersFor(name, target.deprecated);
 
   const handler = async (request: UltimateRequest): Promise<Response> => {
+    if (sunsetting !== undefined) recordDeprecatedCall('query', name);
     try {
       // Coerced, then validated — two different jobs, and only the first one belongs to a
       // wire. A search string is characters, so `t.number` and `t.boolean` need the HTTP
@@ -34,12 +41,18 @@ export function toQueryRoute(target: AnyQuery): Route {
       // surface answers `X_INPUT_INVALID` with the line that prints its schema. `runQuery`
       // is the one that decides, exactly as it does for a direct server call.
       const input = coerceQuery(target.input, request.queryRaw());
-      return json(await runQuery(target, input, { surface: 'http' }));
+      const response = json(await runQuery(target, input, { surface: 'http' }));
+      // On the failure path too, below: a client polling a deprecated read that is currently
+      // 403ing still has to learn the read is going away.
+      if (sunsetting !== undefined) applyHeaders(response, sunsetting);
+      return response;
     } catch (error) {
       // Framework errors carry their own code, status and fix line; anything else is
       // a bug and belongs to the server's error boundary, not to this route.
-      if (isUltimateError(error)) return problem(error);
-      throw error;
+      if (!isUltimateError(error)) throw error;
+      const response = problem(error);
+      if (sunsetting !== undefined) applyHeaders(response, sunsetting);
+      return response;
     }
   };
 
@@ -65,8 +78,32 @@ export function toQueryRoute(target: AnyQuery): Route {
     // ride along so a purge can still name the read the tier keys by.
     cache: { mode: 'no-store', tags: tagKeys(target.cache?.tags ?? []) },
     tags: ['query'],
+    // Name AND numbers, exactly as an action's route sets them — the name alone selects a bucket
+    // the limiter's table never held, so `bucketFor` falls through to `default` (120 burst, 2/s)
+    // and a read declaring 5 runs on 120. `withRouteBuckets` registers the pair at construction.
+    // `toBucket` is `@ultimat3/http`'s: the limiter owns the maths, and a copy here would be a
+    // second conversion able to publish numbers the limiter refuses.
+    ...(target.rateLimit === undefined
+      ? {}
+      : { rateLimit: name, rateLimitBucket: toBucket(name, target.rateLimit) }),
     ...(target.mcp?.description === undefined ? {} : { description: target.mcp.description }),
   };
 
   return { method: 'GET', path: derivePath(name), handler, meta };
+}
+
+/**
+ * The headers this read's `deprecated:` block renders to, or nothing. The successor's URL comes
+ * from `derivePath` — the same derivation `client()` uses, never a second one.
+ */
+function deprecationHeadersFor(
+  name: string,
+  deprecated: Deprecation | undefined,
+): Readonly<Record<string, string>> | undefined {
+  if (deprecated === undefined) return undefined;
+  const successor =
+    deprecated.replacedBy === undefined ? undefined : derivePath(deprecated.replacedBy);
+  const rendered = renderDeprecation(deprecated, successor);
+  if (!rendered.ok) throw new QueryDeprecationInvalidError(name, rendered.field, rendered.value);
+  return rendered.headers;
 }

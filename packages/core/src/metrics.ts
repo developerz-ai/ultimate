@@ -4,6 +4,7 @@
 
 import { type Clock, systemClock } from './clock';
 import { type CodedErrorInit, UltimateError } from './errors';
+import { logger } from './logger';
 import { type SpanResource, serviceResource } from './telemetry';
 
 export class MetricNameInvalidError extends UltimateError {
@@ -22,12 +23,21 @@ export class MetricValueInvalidError extends UltimateError {
   }
 }
 
+export class MetricCardinalityError extends UltimateError {
+  static readonly code = 'X_METRIC_CARDINALITY';
+  override readonly name = 'MetricCardinalityError';
+  constructor(init: CodedErrorInit) {
+    super({ ...init, code: MetricCardinalityError.code });
+  }
+}
+
 export type MetricKind = 'counter' | 'gauge' | 'histogram';
 
 /**
  * Narrower than a span attribute on purpose: metric attributes become time-series labels, every
  * distinct combination is a stored series, and an array label has no meaning in any exposition
- * format. Keep the cardinality low — a user id here is an outage.
+ * format. Keep the cardinality low — a user id here is an outage, and `maxSeries` is the ceiling
+ * that makes "keep it low" a mechanism instead of this sentence.
  */
 export type MetricAttributeValue = string | number | boolean;
 
@@ -93,6 +103,11 @@ export interface Histogram {
 export interface InstrumentOptions {
   readonly unit?: string | undefined;
   readonly description?: string | undefined;
+  /**
+   * Distinct label sets this instrument may store. Past it every new set folds into one overflow
+   * series. Defaults to `DEFAULT_MAX_SERIES`; the first declaration of a name wins.
+   */
+  readonly maxSeries?: number | undefined;
 }
 
 export interface GaugeOptions extends InstrumentOptions {
@@ -104,6 +119,23 @@ export interface HistogramOptions extends InstrumentOptions {
   /** Explicit bucket boundaries, ascending. Defaults to the OTel latency-in-seconds set. */
   readonly bounds?: readonly number[] | undefined;
 }
+
+/**
+ * The per-instrument series ceiling. 2000 is roomy for a bounded label set — every route pattern
+ * times every status class times every method — and small enough that the process notices an
+ * unbounded one long before the scrape body does.
+ */
+export const DEFAULT_MAX_SERIES = 2000;
+
+/**
+ * The label the folded series carries. OTel's own cardinality-limit spelling, deliberately NOT
+ * `__overflow`: Prometheus treats `__`-prefixed labels as internal and strips them during
+ * relabeling, so an overflow series named that way would merge back into the unlabelled series
+ * and the drop would be invisible in exactly the place it has to be visible.
+ */
+export const OVERFLOW_ATTRIBUTE = 'otel_metric_overflow';
+
+const OVERFLOW_ATTRIBUTES: MetricAttributes = Object.freeze({ [OVERFLOW_ATTRIBUTE]: true });
 
 /** OTel's default explicit bucket boundaries for a duration histogram, in seconds. */
 export const DEFAULT_HISTOGRAM_BOUNDS: readonly number[] = Object.freeze([
@@ -127,7 +159,7 @@ export interface MemoryMetricExporter extends MetricExporter {
   reset(): void;
 }
 
-/** For tests and for `x metrics --json`. */
+/** For tests: assert an export tick without a collector. `metricsText()` is the shipped read. */
 export function memoryMetricExporter(): MemoryMetricExporter {
   const collections: MetricCollection[] = [];
   return {
@@ -161,6 +193,9 @@ interface Instrument {
   readonly series: Map<string, Series>;
   readonly bounds: readonly number[];
   readonly observe: (() => number) | undefined;
+  readonly maxSeries: number;
+  /** Reported once. A cardinality blow-up is one bug, not one log line per call. */
+  overflowed: boolean;
 }
 
 const instruments = new Map<string, Instrument>();
@@ -184,7 +219,10 @@ export function resetMetrics(): void {
   exporter = noopMetricExporter;
   clock = systemClock;
   enabled = true;
-  for (const instrument of instruments.values()) instrument.series.clear();
+  for (const instrument of instruments.values()) {
+    instrument.series.clear();
+    instrument.overflowed = false;
+  }
 }
 
 /** Stable series key: attribute order must not create a second series for one label set. */
@@ -227,6 +265,14 @@ function declare(name: string, kind: MetricKind, options: GaugeOptions & Histogr
     }
     return existing;
   }
+  const maxSeries = options.maxSeries ?? DEFAULT_MAX_SERIES;
+  if (!Number.isInteger(maxSeries) || maxSeries < 1) {
+    throw new MetricCardinalityError({
+      cause: `${name} declared maxSeries ${String(maxSeries)}, which is not a positive integer`,
+      fix: `pass a positive integer: counter('${name}', { maxSeries: ${DEFAULT_MAX_SERIES} })`,
+      meta: { metric: name, maxSeries: String(maxSeries) },
+    });
+  }
   const instrument: Instrument = {
     descriptor: {
       name,
@@ -237,15 +283,32 @@ function declare(name: string, kind: MetricKind, options: GaugeOptions & Histogr
     series: new Map<string, Series>(),
     bounds: options.bounds ?? DEFAULT_HISTOGRAM_BOUNDS,
     observe: options.observe,
+    maxSeries,
+    overflowed: false,
   };
   instruments.set(name, instrument);
   return instrument;
 }
 
-function seriesFor(instrument: Instrument, attributes: MetricAttributes): Series {
-  const key = seriesKey(attributes);
-  const found = instrument.series.get(key);
-  if (found !== undefined) return found;
+/**
+ * Reported through the logger rather than thrown: the call site is `orderCounter.add(1, …)` deep
+ * inside a request, and killing that request would turn a metrics bug into a user-visible outage
+ * — which is the same trade `finite()` does NOT make, because a NaN is a caller bug at one call
+ * site while this is a design bug the whole instrument shares.
+ */
+function reportOverflow(instrument: Instrument): void {
+  if (instrument.overflowed) return;
+  instrument.overflowed = true;
+  const { name, kind } = instrument.descriptor;
+  const error = new MetricCardinalityError({
+    cause: `${name} reached its ceiling of ${instrument.maxSeries} label set(s); every further label set folds into one ${OVERFLOW_ATTRIBUTE}="true" series`,
+    fix: `drop the unbounded label from the ${name} call site (an id, a path, an email is never a label), or raise it deliberately: ${kind}('${name}', { maxSeries: ${instrument.maxSeries * 2} })`,
+    meta: { metric: name, maxSeries: instrument.maxSeries },
+  });
+  logger.error(error.format(), { code: error.code, metric: name });
+}
+
+function createSeries(instrument: Instrument, key: string, attributes: MetricAttributes): Series {
   const created: Series = {
     attributes,
     value: 0,
@@ -256,6 +319,25 @@ function seriesFor(instrument: Instrument, attributes: MetricAttributes): Series
   };
   instrument.series.set(key, created);
   return created;
+}
+
+const OVERFLOW_KEY = seriesKey(OVERFLOW_ATTRIBUTES);
+
+function seriesFor(instrument: Instrument, attributes: MetricAttributes): Series {
+  const key = seriesKey(attributes);
+  const found = instrument.series.get(key);
+  if (found !== undefined) return found;
+  if (instrument.series.size >= instrument.maxSeries) {
+    reportOverflow(instrument);
+    // Created directly rather than through this function again: the overflow series is the ONE
+    // allocation the ceiling does not apply to, and routing it back through the check is an
+    // infinite recursion the first time the cap is hit.
+    return (
+      instrument.series.get(OVERFLOW_KEY) ??
+      createSeries(instrument, OVERFLOW_KEY, OVERFLOW_ATTRIBUTES)
+    );
+  }
+  return createSeries(instrument, key, attributes);
 }
 
 /** Monotonic sum. A negative `add` is a bug in the caller, never a silent decrement. */

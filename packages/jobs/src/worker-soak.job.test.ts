@@ -58,9 +58,9 @@ function chaosDriver(base: JobDriver): ChaosDriver {
       for (const claim of claimed) owner.set(claim.id, options.workerId);
       return claimed;
     },
-    async heartbeat(jobId, heartbeatOptions): Promise<void> {
+    async heartbeat(jobId, heartbeatOptions): Promise<boolean> {
       if (dead.has(owner.get(jobId) ?? '')) throw severed();
-      await base.heartbeat(jobId, heartbeatOptions);
+      return base.heartbeat(jobId, heartbeatOptions);
     },
     async ack(jobId: string): Promise<void> {
       if (dead.has(owner.get(jobId) ?? '')) throw severed();

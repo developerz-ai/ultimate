@@ -6,13 +6,14 @@
 import { logger } from '@ultimat3/core';
 import { oauthExchangeFailed, restartAt } from './errors';
 import { idTokenEmailVerified, isVerifiedFlag } from './id-token';
-import { OAUTH_PROVIDERS, type OAuthProviderId } from './oauth';
+import type { OAuthProviderId } from './oauth';
 import {
   OAUTH_USER_AGENT,
   type OAuthFetch,
   type OAuthTokens,
   providerDetail,
 } from './oauth-exchange';
+import { providerFor } from './oauth-registry';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -108,7 +109,7 @@ async function fromUserInfo(
   tokens: OAuthTokens,
   options: OAuthProfileOptions,
 ): Promise<OAuthProfile> {
-  const config = OAUTH_PROVIDERS[provider];
+  const config = providerFor(provider);
   const url = config.userInfoUrl;
   if (url === null) {
     throw oauthExchangeFailed({
@@ -186,7 +187,7 @@ export async function oauthProfile(
   if (claims === null) return await fromUserInfo(provider, tokens, options);
 
   const email = stringOrNull(claims.email);
-  const userInfoUrl = OAUTH_PROVIDERS[provider].userInfoUrl;
+  const userInfoUrl = providerFor(provider).userInfoUrl;
   if (email === null && userInfoUrl !== null) {
     const profile = await fromUserInfo(provider, tokens, options);
     // Two surfaces, one identity — or this is not that identity. Overwriting the subject and

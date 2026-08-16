@@ -8,7 +8,7 @@ import { systemClock } from '@ultimat3/core';
 import type { BatchIterator } from './batch';
 import { assertBatchable, batchIterator } from './batch';
 import type { EntityCore } from './entity';
-import { DEFAULT_PAGE_SIZE, namedColumns } from './plan';
+import { assertPageSize, DEFAULT_PAGE_SIZE, namedColumns } from './plan';
 import type { RelatedTables } from './preload';
 import { preloaded } from './preload';
 import type { Relation } from './relations';
@@ -204,7 +204,14 @@ const builder = <Source, Row>(
     orderBy: (column, direction = 'asc') =>
       next({ orderBy: [...state.orderBy, { column, direction }] }),
 
-    limit: (rows) => next({ limit: rows }),
+    // Judged on the chain, like `inBatches(size)` and for the same reason: the number is the
+    // author's own text, and a page size that arrived as action input is exactly the one nobody
+    // sized. `planFor` applies the identical guard, so a caller reaching the repository directly
+    // cannot go round it.
+    limit: (rows) => {
+      assertPageSize(entity.$name, rows);
+      return next({ limit: rows });
+    },
 
     after: (cursor) => next({ cursor }),
 

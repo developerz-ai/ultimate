@@ -20,12 +20,12 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | New code | add to `STORAGE_ERROR_CODES` **and** `STORAGE_ERROR_TITLES` |
 | Keys | every driver method starts with `assertSafeKey()`. No exceptions, no sanitising. `META_DIR` (`.meta`) is a reserved first segment on every driver — see below |
 | Time | take a `Clock`; never `Date.now()` |
-| Bytes | `Uint8Array \| ReadableStream \| Blob`. Never a base64 string |
+| Bytes | `Uint8Array \| ReadableStream \| Blob`. Never a base64 string, never unbounded — `toBytes(body, limit)` |
 | Exports | explicit in `src/index.ts`; no `export *` |
 
 | File | Owns |
 |---|---|
-| `driver.ts` | `StorageDriver` contract + `toBytes`/`sha256Base64`/`etagOf` |
+| `driver.ts` | `StorageDriver` contract (8 methods) + bounded `toBytes`/`sha256Base64`/`etagOf` |
 | `driver-local.ts` | dev default over `Bun.file`, `.meta/` sidecars, `Bun.Glob` listing |
 | `driver-s3.ts` | `Bun.S3Client`, built lazily (import must never open a socket) |
 | `path.ts` | key validation + `META_DIR` + `scopedKey`/`isWithinOrg`/`isTenantScoped` tenant boundary |
@@ -36,7 +36,7 @@ Tier 1. Object storage: named disks, safe keys, signed URLs, sniffed uploads.
 | `storage.ts` | `defineStorage` + module-level `storage()` / `disk()` |
 | `grant.ts` | `grantUpload` — the ONE way a presigned PUT is minted; the client never names a key |
 | `accept.ts` | `acceptSignedUpload` / `readSignedObject` — the two decisions a `/_storage` route is made of |
-| `attachment.ts` | `pending/` → row promotion, the entity key convention, and `sweepOrphans` |
+| `attachment.ts` | `pending/` → row promotion, the `quarantine/` segment, and `sweepOrphans` |
 | `upload-client.ts` | the browser half: grant → PUT with progress → key. No `Bun.*`, no `node:` |
 
 ```bash
@@ -45,6 +45,34 @@ bun run typecheck
 ```
 
 Gotchas:
+- **`delete()` is idempotent for an ABSENT key and for nothing else.** Both drivers used to end in
+  `.catch(() => undefined)`, so a denied `s3:DeleteObject`, a `SlowDown`, an expired credential and
+  a read-only mount all resolved as success — and `sweepOrphans` returned them as deleted, which
+  is a GDPR erasure report certifying data that is still in the bucket. The s3 driver classifies
+  structurally (`code` in `NoSuchKey`/`NotFound`/`ENOENT`, or a 404 `statusCode`/`status`; an
+  `S3Error` is a plain `Error` with those fields and every read of one can throw), the local
+  driver on `ENOENT`. Everything else is `X_STORAGE_DELETE_FAILED`, whose `fix` the DRIVER
+  supplies — the command that reproduces the refusal differs per disk.
+- **`toBytes` takes a `ByteLimit`, and there is no unbounded variant.** `put()` buffers, so the
+  ceiling is what keeps a route piping a 4GB body into `disk.put()` from being an OOM kill rather
+  than a refusal. `Uint8Array`/`Blob` are refused on their declared length; a `ReadableStream` is
+  read chunk-by-chunk and **cancelled** past the line, so at most one chunk over is ever held.
+  Default `maxPutBytes` is `DEFAULT_MAX_UPLOAD_BYTES` — one constant, imported by both drivers
+  from `upload.ts`, because the server-side ceiling and the upload ceiling are the same fact.
+- **`serverSideEncryption` is declared and refused by BOTH drivers.** Bun exposes `acl`,
+  `storageClass` and `type` and nothing for `x-amz-server-side-encryption*`, and a POSIX file is
+  not encrypted at all. Refusing on the dev disk too is deliberate: a `put()` that works in `x dev`
+  and throws in production is two rules. Lifecycle, storage classes and replication stay out
+  entirely — bucket-side, terraform's, axiom 7.
+- **Quarantine is `pending/quarantine/`, INSIDE the pending prefix.** So `sweepOrphans` collects a
+  never-scanned upload with no second prefix to walk, and `isPendingKey` stays true for it.
+  `promoteAttachment` refuses a quarantined key (`X_STORAGE_QUARANTINED`); `releaseQuarantine` is
+  the app's scan verdict, and returns the ordinary pending key promotion accepts. Ultimate ships
+  no scanner — axiom 8, and `application/zip` is an accepted OOXML container by design.
+- **`StorageListEntry` vs `StorageObject`.** A listing's `contentType` is optional; a `get()`'s is
+  not. `ListObjectsV2` returns no Content-Type, and the s3 driver used to invent
+  `application/octet-stream` while the local driver read the truth from its sidecar — two drivers
+  disagreeing about one object. The local `list()` now omits it too when there is no sidecar.
 - **`META_DIR` lives in `path.ts`, not in `driver-local.ts`.** The sidecar namespace overlapped the
   object namespace: `put('a/b', png)` writes `<root>/.meta/a/b.json`, and `.meta/a/b.json` was
   itself a legal key, so an uploader could rewrite another object's recorded `contentType` to

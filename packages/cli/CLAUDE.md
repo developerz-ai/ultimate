@@ -93,7 +93,23 @@ a shallow spread keeps one of them.
 |---|---|
 | `ts-scan.ts` | the strings a `fix:` can evaluate to, the `X_*` codes a file declares, and the ones it says it borrows |
 | `error-contract.ts` | the rules, the two checks that turn them into findings, and `collectDeclaredCodes` |
+| `fix-command.ts` | resolving an `x <command>` a `fix:` cites against the registry |
 | `source-files.ts` | which files are shipped source — shared with `filesize`, never a second list |
+
+**A `fix:` may not cite a command this build does not ship.** Six shipped fix lines named
+`x db status`, `x logs tail`, `x trace`, `x metrics`, `x auth whoami` and `x ai prompts`, and every
+one passed — the text rule checks that a fix NAMES a command, never that the registry holds it.
+`fix-command.ts` resolves the citation, and a PLANNED command fails too: `x logs` parses, `x help`
+lists it, and running it hands the reader `X_NOT_IMPLEMENTED` instead of the fix.
+
+The rule is **conditional, and that is load-bearing**: *if* a fix cites `x <command>`, it must
+resolve. It does not require every fix to name one — `set OTEL_EXPORTER_OTLP_ENDPOINT=…` and
+`counter('orders_total', { maxSeries: 4000 })` are executable and correctly cite nothing, and a
+universal rule would push an author into citing a command that does not really fix it. A second
+word is judged as a subcommand only when the spec declares subcommands, or `x new my-app` reports
+`my-app` as one. The registry arrives through `await import('./registry')` — `registry → cmd-verify
+→ error-contract` closes a cycle back to the caller, and the precedent for the break is
+`cmd-build.ts`.
 
 `collectDeclaredCodes` is the only answer to "which codes exist, and where is each declared?" — one
 walk, one entry per code, the owning registry preferred over any throw site and over a registry
@@ -271,8 +287,13 @@ hand-written layout and `readMigrations` skips it — read as a migration it sor
 |---|---|
 | `api-routes.ts` | the app's API over HTTP: every registered action AND every registered query |
 | `dev-services.ts` | resolve which service each binding points at — embedded or external |
-| `dev-queue.ts` | the db + queue pair alone, and the one place that takes `db()` and `jobDriver()` back |
+| `dev-queue.ts` | the db + queue pair alone, and the one place that takes every ambient accessor back |
 | `dev-runtime.ts` | start the rest on top of it and install the remaining accessors (storage, mail, transport) |
+| `dev-cache.ts` | which cache tiers this process reads through, and the cross-instance invalidation hop |
+| `dev-sync.ts` | the `sync` role: its live-query registry, who is dialling it, and the socket it owns |
+| `runtime-overrides.ts` | the one field a host hands the framework a driver through |
+| `sync-authenticator.ts` | the app's HTTP authenticator, seen as the sync node's |
+| `otlp-export.ts` | the exporters `OTEL_EXPORTER_OTLP_ENDPOINT` switches on, and their drain hooks |
 | `dev-render.ts` | one HTTP route per registered `route`, through render's own mode function |
 | `style-csp.ts` | the `style-src` sha256 of every inline `<style>` the web role serves |
 | `dev-assets.ts` | the image pipeline's only HTTP surface: `/icons/*` and `/media/*` |
@@ -307,6 +328,64 @@ boots clean, reports healthy, and refuses every valid session. A warning and not
 The roles live in `@ultimat3/core` (`ROLES`, `isRole`), never in a second list here. A dev-only
 driver, a dev-only authorizer or a dev-only queue is the bug this design exists to prevent — the
 only thing dev changes is which driver is behind an interface.
+
+### `RuntimeOverrides` is the only way to hand the framework a driver
+
+`ServeOptions` was `{ root, env, role?, port?, metricsPort? }`, so the ONLY way an app could
+install a driver was an ambient setter at module scope — and `loadApp` imports the app's modules
+*after* `startServices` has captured its own. The slot moved and the capture did not: every
+`handle.enqueue()` went to the app's queue while the worker claimed from Postgres, and `/_x` read
+the ambient one, so the dashboard agreed with the enqueue side and disagreed with reality.
+
+Every field REPLACES the env-selected default rather than sitting beside it — `overrides?.x ?? <the
+env switch>`, one expression, one answer (axiom 1). A field nothing consumes is not there: the
+entity `Driver` in particular, because `@ultimat3/entity` exposes no installer for one
+(`database(entities, { driver })` is the app's own call), and a slot the boot cannot honour is the
+class of defect this seam exists to end.
+
+**The split is refused, not reconciled.** `assertOneJobDriver` runs first in `startRoles` and
+throws `X_RUNTIME_DRIVER_SPLIT` when `jobDriver()` is not the object this process serves. Reading
+through the accessor instead would make the split invisible rather than impossible — and the app
+would still have installed a driver the boot never saw, with no outbox store bound to it and no
+relay draining it.
+
+### What the boot now calls that nothing called before
+
+| Mechanism | Where | Was |
+|---|---|---|
+| the transactional outbox | `dev-queue.ts` installs the store + facade, `worker` runs the relay | staged rows nothing published |
+| the durable scheduler | `pgSchedulerState` + `createPgLeaseLeader` in `startRoles` | a watermark forgotten on restart, and every replica its own leader |
+| the Postgres event bus | `dev-queue.ts` | `step.waitForEvent` forgot every correlation on restart |
+| the shared idempotency store | `dev-queue.ts` | a retry on another replica charged the card twice |
+| the cache tiers | `dev-cache.ts` | only the CDN tier was registered; memo, LRU and Redis had zero callers |
+| WebSocket authentication | `dev-sync.ts` | `actorId: null` on every socket — realtime was single-tenant by wiring |
+| OTLP export | `otlp-export.ts` | the chart set the variable and no code read it |
+
+`createPgLeaseLeader`, never `createPgLeader`: the latter's `pg_try_advisory_lock` is
+session-scoped and the grant dies when the connection returns to the pool, so every node reads
+itself as leader and a rolling update double-fires every task.
+
+The relay runs on `worker` and only `worker` — the role that exists wherever jobs run at all.
+Duplicating it is safe (publish-then-mark is at-least-once and the idempotency key collapses the
+repeat) but pointless.
+
+`SQL_IDEMPOTENCY_TABLE` is applied beside `SQL_JOBS_TABLE`, and the store is installed by the boot
+rather than by the app, even though `@ultimat3/action` documents
+`postgresIdempotencyStore({ executor: Bun.sql })`: **`Bun.sql` has no `.query(text, values)`** — it
+is a tagged template whose positional form is `unsafe` — so that line does not satisfy `PgExecutor`,
+and a second executor would open a second pool against a URL this boot already resolved. The app
+owes only the declaration, `configureIdempotency({ scope: 'shared' })`, which `x new` names in
+`apps/web/server.ts`.
+
+The per-TENANT subscription cap is deliberately unset, and **both halves of it are**:
+`assertCapacity` returns early unless `maxPerTenant` AND `tenantOf` are given, so passing one arms
+nothing — and no default is defensible when one tenant is a person and the next is five thousand
+seats. The per-socket 128 stands because a socket is one browser tab.
+
+`trustProxy` is read from `TRUSTED_PROXY_HOPS` in `startWeb`, the way `PORT` and `ROLE` are read: it
+is a fact about the deployment, not an app config choice, and one image runs behind an ingress in
+one cluster and behind nothing on a laptop. Without it `ctx.ip` is the ingress's socket address on
+every request, so the limiter keys the whole fleet's anonymous traffic into one bucket.
 
 ### `island-bundle.ts` is the bundler half of `hydrate`
 

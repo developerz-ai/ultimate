@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { MemoryBudgetStore } from './budget';
 import { createGateway } from './gateway';
-import { MODEL_IDS } from './models';
+import { ANTHROPIC_MODEL_IDS } from './models';
 import type { GenerateRequest, GenerateResult, Provider, StreamChunk } from './provider';
 import { costOf, EchoProvider } from './provider';
 
@@ -12,7 +12,7 @@ describe('budgets refuse rather than truncate', () => {
     let calls = 0;
     const counting: Provider = {
       name: 'counting',
-      models: MODEL_IDS,
+      models: ANTHROPIC_MODEL_IDS,
       async generate(request) {
         calls += 1;
         return echo.generate(request);
@@ -104,7 +104,7 @@ describe('routing and retries', () => {
   test('a retryable failure falls through to a healthy provider', async () => {
     const flaky: Provider = {
       name: 'flaky',
-      models: MODEL_IDS,
+      models: ANTHROPIC_MODEL_IDS,
       async generate(): Promise<GenerateResult> {
         throw Object.assign(new Error('rate limited'), { status: 429 });
       },
@@ -129,7 +129,7 @@ describe('routing and retries', () => {
     let attempts = 0;
     const broken: Provider = {
       name: 'broken',
-      models: MODEL_IDS,
+      models: ANTHROPIC_MODEL_IDS,
       async generate(): Promise<GenerateResult> {
         attempts += 1;
         throw Object.assign(new Error('bad request'), { status: 400 });
@@ -154,7 +154,7 @@ describe('routing and retries', () => {
     let calls = 0;
     const counting: Provider = {
       name: 'counting',
-      models: MODEL_IDS,
+      models: ANTHROPIC_MODEL_IDS,
       async generate(request: GenerateRequest) {
         calls += 1;
         return echo.generate(request);
@@ -176,7 +176,7 @@ describe('routing and retries', () => {
     let calls = 0;
     const refusing: Provider = {
       name: 'refusing',
-      models: MODEL_IDS,
+      models: ANTHROPIC_MODEL_IDS,
       async generate(request: GenerateRequest) {
         calls += 1;
         return { ...(await echo.generate(request)), stopReason: 'refusal' as const };

@@ -38,12 +38,15 @@ describe('pg queue SQL', () => {
     expect(SQL_CLAIM).toContain('attempt    = j.attempt + 1');
   });
 
-  test('idempotency is enforced by a partial unique index over live states only', () => {
+  test('idempotency is enforced per JOB by a partial unique index over live states only', () => {
+    // `(name, idempotency_key)`. A global key namespace was silent data loss: two jobs deriving
+    // the same natural key deduped against each other and the second one never ran.
     expect(SQL_JOBS_TABLE).toContain(
-      'create unique index if not exists x_jobs_idempotency_live_idx',
+      'create unique index if not exists x_jobs_name_idempotency_live_idx',
     );
+    expect(SQL_JOBS_TABLE).toContain('on x_jobs (name, idempotency_key)');
     expect(SQL_JOBS_TABLE).toContain("where state in ('ready', 'delayed', 'running', 'suspended')");
-    expect(SQL_ENQUEUE).toContain('on conflict (idempotency_key)');
+    expect(SQL_ENQUEUE).toContain('on conflict (name, idempotency_key)');
     expect(SQL_ENQUEUE).toContain('do nothing');
   });
 

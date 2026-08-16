@@ -2,8 +2,9 @@
 // fixes the situation — `X_DB_DRIFT` is the flagship and its rendering is byte-for-byte
 // pinned by the framework contract, so change its strings only with the contract.
 
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, renderThrowable, stringField, UltimateError } from '@ultimat3/core';
 import { DESTRUCTIVE_CAUSE, DESTRUCTIVE_MARKER, type DestructiveStatement } from './destructive';
+import { type DbSqlStateCode, sqlState, sqlStateCode } from './sqlstate';
 
 /**
  * Codes this package declares and owns. `X_DB_DRIFT` is db's: it is a statement about migrations
@@ -11,18 +12,29 @@ import { DESTRUCTIVE_CAUSE, DESTRUCTIVE_MARKER, type DestructiveStatement } from
  */
 export const DB_OWNED_ERROR_CODES = [
   'X_DB_UNAVAILABLE',
+  'X_DB_UNIQUE_VIOLATION',
+  'X_DB_FOREIGN_KEY_VIOLATION',
+  'X_DB_SERIALIZATION_FAILURE',
+  'X_DB_STATEMENT_TIMEOUT',
+  'X_DB_LOCK_TIMEOUT',
+  'X_DB_POOL_EXHAUSTED',
   'X_DB_DRIFT',
   'X_MIGRATION_CONFLICT',
   'X_MIGRATION_IRREVERSIBLE',
   'X_MIGRATION_DESTRUCTIVE',
   'X_MIGRATION_SNAPSHOT_MISSING',
+  'X_MIGRATE_CONCURRENT',
   'X_SQL_UNSAFE',
   'X_BRANCH_EXISTS',
   'X_READONLY_VIOLATION',
 ] as const;
 
-/** `X_NOT_IMPLEMENTED` is `@ultimat3/core`'s. Never titled here, never registered here. */
-export const DB_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED'] as const;
+/**
+ * `@ultimat3/core`'s. Never titled here, never registered here. `X_ENV_MISSING` is core's word for
+ * "a variable this process was given is missing or invalid", and `DATABASE_POOL_MAX` is one — a
+ * db-local code for it would be a second answer to a question core already answers.
+ */
+export const DB_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED', 'X_ENV_MISSING'] as const;
 
 /** Every code db can throw: the ones it owns plus the ones it borrows. */
 export const DB_ERROR_CODES = [...DB_OWNED_ERROR_CODES, ...DB_BORROWED_ERROR_CODES] as const;
@@ -32,8 +44,15 @@ export type DbErrorCode = (typeof DB_ERROR_CODES)[number];
 
 export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
   X_DB_UNAVAILABLE: 'cannot reach the database',
+  X_DB_UNIQUE_VIOLATION: 'a unique constraint rejected the row',
+  X_DB_FOREIGN_KEY_VIOLATION: 'a foreign key constraint rejected the row',
+  X_DB_SERIALIZATION_FAILURE: 'the transaction lost a serialization race',
+  X_DB_STATEMENT_TIMEOUT: 'the statement ran past its statement_timeout',
+  X_DB_LOCK_TIMEOUT: 'the statement waited past its lock_timeout',
+  X_DB_POOL_EXHAUSTED: 'no connection was available',
   X_DB_DRIFT: 'schema differs from migrations',
   X_MIGRATION_CONFLICT: 'the migration ledger disagrees with this build',
+  X_MIGRATE_CONCURRENT: 'another migrator holds the migration lock',
   X_MIGRATION_IRREVERSIBLE: 'this migration cannot be reversed without data loss',
   X_MIGRATION_DESTRUCTIVE: 'this migration destroys data and does not say so',
   X_MIGRATION_SNAPSHOT_MISSING: 'the newest migration records no schema snapshot',
@@ -84,6 +103,133 @@ export const dbUnavailable = (detail: string, sourceError?: unknown): DbError =>
     cause: detail,
     fix: 'set DATABASE_URL to a reachable Postgres url, or run `x dev` to use the embedded PGlite',
     sourceError,
+  });
+
+/**
+ * One `fix:` per classified SQLSTATE, written once. Every one names a command that exists or an
+ * edit the reader can make — a `23505` telling an operator the database is unreachable is the
+ * failure this table exists to end.
+ *
+ * `X_DB_UNIQUE_VIOLATION`'s and `X_DB_FOREIGN_KEY_VIOLATION`'s take the constraint the server
+ * named, so the fix points at the one index or key that refused the row rather than at the idea
+ * of one; `driverError` substitutes the placeholder when the driver reported none.
+ */
+const SQLSTATE_FIXES: Readonly<Record<DbSqlStateCode, string>> = Object.freeze({
+  X_DB_UNIQUE_VIOLATION:
+    'upsertAll(rows, { onConflict: [...] }) over the columns {constraint} covers — ' +
+    'or catch X_DB_UNIQUE_VIOLATION and answer 409, which is what a raced signup is',
+  X_DB_FOREIGN_KEY_VIOLATION:
+    'insert the row {constraint} points at first, in the same withTransaction(...) — ' +
+    'or drop the write, because the parent it names is gone',
+  X_DB_SERIALIZATION_FAILURE:
+    'withTransaction(fn, { retry: 3 })   # fn re-runs from the top, so it must be idempotent',
+  X_DB_STATEMENT_TIMEOUT:
+    'add the index this statement needs to the entity (indexes: [...]), then: x db gen "add index"',
+  X_DB_LOCK_TIMEOUT:
+    `psql "$DATABASE_URL" -c "select pid, state, query from pg_stat_activity where state <> 'idle'"` +
+    '   # end the blocker, then re-run the statement',
+  X_DB_POOL_EXHAUSTED:
+    'set DATABASE_POOL_MAX below max_connections / replicas (per-role default: POOL_PROFILES), ' +
+    'or cut the replica count',
+});
+
+/** Substituted into a fix when the driver named no constraint — `{constraint}`'s stand-in. */
+const UNNAMED_CONSTRAINT = 'the constraint named in cause';
+
+/**
+ * Every driver failure, typed by what the server actually said. The SQLSTATE has always been on
+ * the error — `isLedgerMissing` proved the read worked — and nothing exposed it, so a `23505`
+ * unique violation, a `40001` serialization failure and a `57014` timeout all reached the caller
+ * as `X_DB_UNAVAILABLE`, whose fix is "set DATABASE_URL to a reachable Postgres url". Two clicks
+ * racing a signup paged on-call for an outage that never happened.
+ *
+ * `X_DB_UNAVAILABLE` stays the answer for everything the table does not classify, including every
+ * failure that never reached a server: that code's meaning is unchanged, its fix is finally only
+ * given where it is true, and a new SQLSTATE arrives as a new row here rather than as a new
+ * `catch` at a call site.
+ */
+export const driverError = (detail: string, sourceError: unknown): DbError => {
+  const code = sqlStateCode(sourceError);
+  if (code === undefined) return dbUnavailable(detail, sourceError);
+  const state = sqlState(sourceError);
+  const constraint = stringField(sourceError, 'constraint');
+  return new DbError({
+    code,
+    cause: `${detail}: ${renderThrowable(sourceError)} [SQLSTATE ${state ?? '?????'}]`,
+    fix: SQLSTATE_FIXES[code].replace('{constraint}', constraint ?? UNNAMED_CONSTRAINT),
+    meta: {
+      sqlState: state,
+      ...(constraint === undefined ? {} : { constraint }),
+    },
+    sourceError,
+  });
+};
+
+/**
+ * The pool answered nothing inside `acquireTimeoutMs`. Distinct from the server's own `53300` and
+ * deliberately the same code: to a caller both mean "there was no connection for this unit of
+ * work", and a second code would split one runbook in two. Queueing forever instead turns
+ * exhaustion into a hang — `/readyz` joins the queue, the kubelet kills the pod, and the next pod
+ * inherits the same saturated database.
+ */
+export const poolAcquireTimeout = (waitedMs: number, max: number): DbError =>
+  new DbError({
+    code: 'X_DB_POOL_EXHAUSTED',
+    cause: `no connection came free within ${waitedMs}ms; every one of the pool's ${max} is in use`,
+    fix: SQLSTATE_FIXES.X_DB_POOL_EXHAUSTED,
+    meta: { waitedMs, max },
+  });
+
+/**
+ * `DATABASE_POOL_MAX` is the one pool knob an operator can reach without a rebuild, so a typo in it
+ * must refuse at boot rather than silently fall back to the role default — a fleet that ignored the
+ * value it was given is the failure the variable exists to prevent.
+ */
+export const poolMaxInvalid = (received: string): DbError =>
+  new DbError({
+    code: 'X_ENV_MISSING',
+    cause: `DATABASE_POOL_MAX is ${JSON.stringify(received)}, which is not a positive integer`,
+    fix: 'DATABASE_POOL_MAX=20   # a whole number of connections per process, or unset it',
+    meta: { received },
+  });
+
+/**
+ * `withTransaction(fn, { retry: n })` re-ran `fn` from the top `n` times and lost the race every
+ * time. The last driver error is kept as `sourceError` so the SQLSTATE survives, and the cause
+ * names the count because "it failed again" and "it failed 4 times in a row" are different
+ * problems: the second one is contention the application has to reduce, not a retry to add.
+ */
+export const serializationExhausted = (attempts: number, sourceError: unknown): DbError =>
+  new DbError({
+    code: 'X_DB_SERIALIZATION_FAILURE',
+    cause:
+      `the transaction lost its serialization race on all ${attempts} attempts: ` +
+      renderThrowable(sourceError),
+    fix:
+      'raise the retry budget — withTransaction(fn, { retry: 8 }) — or cut the contention: ' +
+      "narrow what the transaction reads, or drop to isolation: 'repeatable read'",
+    meta: { attempts },
+    sourceError,
+  });
+
+/**
+ * The migration advisory lock was still held when the wait ran out. `pg_advisory_lock` blocks with
+ * no timeout, so a migrator wedged on a partition — or OOM-killed with its backend still alive —
+ * left `helm upgrade --wait` sitting inside one statement, printing nothing, with the job never
+ * failing so `backoffLimit` never fired. A bounded `pg_try_advisory_lock` poll turns that into an
+ * exit code.
+ */
+export const migrateConcurrent = (lockKey: number, waitedMs: number): DbError =>
+  new DbError({
+    code: 'X_MIGRATE_CONCURRENT',
+    cause:
+      `another session still holds pg_advisory_lock(${lockKey}) after waiting ${waitedMs}ms, ` +
+      'so this migrator refused rather than block a deploy forever',
+    fix:
+      'psql "$DATABASE_URL" -c "select pid, application_name, state from pg_stat_activity ' +
+      "join pg_locks using (pid) where locktype = 'advisory'\"" +
+      '   # pg_terminate_backend(pid) the wedged migrator, then: x db migrate',
+    meta: { lockKey, waitedMs },
   });
 
 /** The contract's pinned wording. Mirror of `@ultimat3/entity`'s `dbDrift()` — keep in sync. */

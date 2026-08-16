@@ -66,8 +66,10 @@ describe('BuiltinAdapter — users', () => {
       orgId: null,
       roles: ['editor'],
       permissions: [],
+      scopes: [],
       mfaSecret: null,
       recoveryCodeHashes: [],
+      externalId: null,
       disabledAt: null,
       createdAt: new Date('2026-01-02T03:04:05.000Z'),
     });
@@ -96,6 +98,8 @@ describe('BuiltinAdapter — users', () => {
       passwordHash: 'hash',
       orgId: null,
       roles: ['owner'],
+      scopes: ['tenancy:cross'],
+      externalId: 'okta|00u1',
       createdAt: new Date('2026-01-02T03:04:05.000Z'),
     });
     expect(lastText()).toStartWith('insert into x_users');
@@ -106,6 +110,8 @@ describe('BuiltinAdapter — users', () => {
       'hash',
       null,
       ['owner'],
+      ['tenancy:cross'],
+      'okta|00u1',
       new Date('2026-01-02T03:04:05.000Z'),
     ]);
     expect(user.roles).toEqual(['owner']);
@@ -142,9 +148,9 @@ describe('BuiltinAdapter — users', () => {
     expect(lastText()).toContain('disabled_at = case when $9 then $10 else disabled_at end');
     expect(lastValues().slice(8, 10)).toEqual([true, new Date('2026-03-01T00:00:00.000Z')]);
     // Only `disabledAt` was set: every other `!== undefined` flag binds false.
-    const untouchedFlags = [0, 2, 4, 6, 10].map((index) => lastValues()[index]);
-    expect(untouchedFlags).toEqual([false, false, false, false, false]);
-    expect(lastValues()[12]).toBe(ID);
+    const untouchedFlags = [0, 2, 4, 6, 10, 12, 14, 16, 18].map((index) => lastValues()[index]);
+    expect(untouchedFlags).toEqual([false, false, false, false, false, false, false, false, false]);
+    expect(lastValues()[20]).toBe(ID);
     expect(user?.disabledAt).toEqual(new Date('2026-03-01T00:00:00.000Z'));
   });
 

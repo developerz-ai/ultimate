@@ -2,7 +2,8 @@
 //
 // Three classes, and the classification is the whole value:
 //   breaking  — an existing consumer stops working (a removal, a tightened input, a changed
-//               output, a new or changed policy on something that already shipped)
+//               output, a new or changed policy, a newly REQUIRED permission, a tightened rate
+//               limit — anything that already shipped and now refuses a caller it served)
 //   additive  — a new capability; nothing that worked stops working
 //   internal  — visible in the file but not in the contract (a description, a cache tag, the
 //               buildId itself)
@@ -11,7 +12,7 @@
 
 import { isMcpExposed } from '@ultimat3/core';
 import { canonical } from './build';
-import type { ActionFact, JobFact, Manifest, QueryFact, RouteFact } from './schema';
+import type { ActionFact, JobFact, Manifest, QueryFact, RateLimitFact, RouteFact } from './schema';
 
 export type ChangeKind = 'breaking' | 'additive' | 'internal';
 
@@ -106,6 +107,8 @@ function diffActions(
         detail: `mcp exposure ${String(exposed)} -> ${String(nextExposed)}`,
       });
     }
+    changes.push(...diffPermissions(path, action, next));
+    changes.push(...diffRateLimit(path, action, next));
     if (canonical(action.cacheInvalidates) !== canonical(next.cacheInvalidates)) {
       changes.push({
         kind: 'internal',
@@ -147,6 +150,7 @@ function diffQueries(
         detail: `policy ${query.policy ?? 'none'} -> ${next.policy ?? 'none'}`,
       });
     }
+    changes.push(...diffPermissions(path, query, next));
     if (query.live !== next.live) {
       // Losing live-ness breaks subscribers; gaining it breaks nobody.
       changes.push({
@@ -163,6 +167,146 @@ function diffQueries(
   }
   return changes;
 }
+
+/**
+ * The permissions an operation REQUIRES, and the direction each move points.
+ *
+ * Gaining one is breaking: every caller holding yesterday's grant set is refused by an operation
+ * that served them, and the failure arrives at runtime as a 403 with nothing in the build that
+ * said so. Losing one is additive — nothing that worked stops working — but it is still reported,
+ * because a grant quietly dropped from an operation is a widening of access a reviewer has to see.
+ *
+ * Matched on `permissions`, never `policy`: `policy` is a display label, and a composite's label
+ * (`and(post:publish, org:administer)`) equals no permission, so a rule reading it would call
+ * every non-trivially-guarded operation unchanged while both of its real grants moved.
+ */
+function diffPermissions(
+  path: string,
+  before: ActionFact | QueryFact,
+  after: ActionFact | QueryFact,
+): readonly ManifestChange[] {
+  const declared = readPermissions(before);
+  const next = readPermissions(after);
+  // Absence is no evidence, on either side. Unlike `mcp.expose` there is no value to fold it
+  // into: `[]` asserts "this operation requires nothing", so reading an absent field as `[]`
+  // would report every permission of every operation as newly required the first time an app
+  // diffs against a manifest written before the field existed — a wall of false breakings for
+  // an upgrade that changed no authorization at all.
+  if (declared === undefined || next === undefined) return [];
+
+  const changes: ManifestChange[] = [];
+  const declaredSet = new Set(declared);
+  const nextSet = new Set(next);
+  for (const permission of next) {
+    if (!declaredSet.has(permission)) {
+      changes.push({
+        kind: 'breaking',
+        path: `${path}.permissions.${permission}`,
+        detail: 'now required; callers granted the old set are refused',
+      });
+    }
+  }
+  for (const permission of declared) {
+    if (!nextSet.has(permission)) {
+      changes.push({
+        kind: 'additive',
+        path: `${path}.permissions.${permission}`,
+        detail: 'no longer required; access widened',
+      });
+    }
+  }
+  return changes;
+}
+
+/** The list as the FILE carries it, or `undefined` when it carries nothing this can compare. */
+function readPermissions(fact: ActionFact | QueryFact): readonly string[] | undefined {
+  const value: unknown = fact.permissions;
+  if (!Array.isArray(value)) return undefined;
+  return value.every((entry) => typeof entry === 'string')
+    ? (value as readonly string[])
+    : undefined;
+}
+
+/** No declaration at all, a declaration, or one this reader cannot make sense of. */
+type RateLimitReading = RateLimitFact | 'none' | 'unreadable';
+
+/**
+ * A tightened limit refuses a caller the old pair served, which is the definition of breaking —
+ * and it is the one contract change that leaves every schema in the manifest untouched, so
+ * nothing else here can see it. Introducing a limit where there was none is the same event at
+ * its extreme: a client that was never throttled now can be.
+ */
+function diffRateLimit(
+  path: string,
+  before: ActionFact,
+  after: ActionFact,
+): readonly ManifestChange[] {
+  const declared = readRateLimit(before);
+  const next = readRateLimit(after);
+  if (declared === 'unreadable' || next === 'unreadable') return [];
+  const at = `${path}.rateLimit`;
+
+  if (declared === 'none') {
+    if (next === 'none') return [];
+    return [
+      {
+        kind: 'breaking',
+        path: at,
+        detail: `rate limit introduced (${render(next)}); an unthrottled caller can now be refused`,
+      },
+    ];
+  }
+  if (next === 'none') {
+    return [{ kind: 'additive', path: at, detail: `rate limit removed (was ${render(declared)})` }];
+  }
+  if (tighter(declared, next)) {
+    return [
+      {
+        kind: 'breaking',
+        path: at,
+        detail: `rate limit tightened ${render(declared)} -> ${render(next)}; callers at the old rate are refused`,
+      },
+    ];
+  }
+  if (tighter(next, declared)) {
+    return [
+      {
+        kind: 'additive',
+        path: at,
+        detail: `rate limit loosened ${render(declared)} -> ${render(next)}`,
+      },
+    ];
+  }
+  return [];
+}
+
+/**
+ * Both halves, because either one alone refuses somebody: `limit` is the burst a caller may
+ * spend at once and `limit / windowMs` is the rate it refills at, so a larger burst on a slower
+ * refill still turns away a client the old pair served. Cross-multiplied rather than divided —
+ * both windows are positive, and an exact integer comparison cannot invent a change out of a
+ * rounding difference in a file that is diffed on every build.
+ */
+const tighter = (from: RateLimitFact, to: RateLimitFact): boolean =>
+  to.limit < from.limit || to.limit * from.windowMs < from.limit * to.windowMs;
+
+const render = (limit: RateLimitFact): string => `${limit.limit}/${limit.windowMs}ms`;
+
+function readRateLimit(fact: ActionFact): RateLimitReading {
+  const value: unknown = fact.rateLimit;
+  if (value === undefined || value === null) return 'none';
+  if (typeof value !== 'object') return 'unreadable';
+  const record = value as Record<string, unknown>;
+  const limit = record['limit'];
+  const windowMs = record['windowMs'];
+  // The same two conditions `toBucket` enforces at mount: a non-positive window is an infinite
+  // refill and a sub-token limit closes the endpoint, so neither describes a limit to compare.
+  if (!positive(limit) || !positive(windowMs)) return 'unreadable';
+  return { limit, windowMs };
+}
+
+const positive = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0;
 
 function diffRoutes(
   before: readonly RouteFact[],

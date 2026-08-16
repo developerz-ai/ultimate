@@ -195,7 +195,7 @@ Mitigations, all mandatory:
 | 3 | `resumeFrom` LSN | reconnect is a buffer delta, not a resubscribe-and-refetch |
 | 4 | Stateless `sync`, no sticky sessions | the LB redistributes clients across remaining nodes |
 | 5 | Client backoff is a floor, not the mechanism | a socket lost without a frame still backs off exponentially with jitter. `LiveClient` arms **one** timer per closed socket — the node's `afterMs` when a frame assigned one, otherwise `backoffDelay()` — and the timer calls `connect()`; `close()` cancels it |
-| 6 | Per-tenant subscription caps | a registered-query explosion is a load-shedding decision with `X_LIVE_QUERY_LIMIT`, not a fall-over |
+| 6 | Per-tenant subscription caps | a registered-query explosion is a load-shedding decision with `X_SUBSCRIPTION_LIMIT`, not a fall-over. `assertCapacity` checks the per-socket scope always, and the per-tenant scope only when both `maxPerTenant` and `tenantOf` are supplied — the boot supplies neither `As of 2026-08` |
 | 7 | Snapshot admission control | snapshot regeneration is queued with a concurrency cap; excess clients get a jittered retry frame |
 
 Drain sequencing across roles: [`13-topology-runtime.md`](./13-topology-runtime.md).
@@ -241,7 +241,7 @@ Requirements this places on `mutator.local`: pure function of `(tx, input)` — 
 
 | Code | Meaning | Fix |
 |---|---|---|
-| `X_LIVE_QUERY_LIMIT` | per-tenant registered-subscription cap reached | raise `realtime.maxSubsPerTenant` or reduce subscriptions |
+| `X_SUBSCRIPTION_LIMIT` | a per-socket or per-tenant subscription cap was reached; the error carries the scope, the id and the limit | raise `maxPerSocket` / `maxPerTenant` on the `LiveQueryRegistry`, or reduce subscriptions. Neither is an `app.config.ts` field |
 | `X_LIVE_REPLICA_IDENTITY` | `live: true` on a table without `REPLICA IDENTITY FULL` | `x db gen "replica identity for <table>"` |
 | `X_QUERY_UNBOUNDED` | live query missing total order + `limit` | add `orderBy` tiebreak and `limit` |
 | `X_REPLICATOR_SLOT_HELD` | a second replicator found the advisory lock held | scale `replicator` to 1 per database |

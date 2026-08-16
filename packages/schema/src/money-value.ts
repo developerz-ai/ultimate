@@ -3,7 +3,8 @@
 // — `@ultimat3/money`'s `Money`, `@ultimat3/entity`'s `MoneyValue` — so it earns a file a reader
 // can open by name instead of scrolling to.
 
-import { expected, fail, failWith, isPlainObject, makeSchema, pass, type Schema } from './builder';
+import { fail, failWith, isPlainObject, makeSchema, pass, type Schema } from './builder';
+import { expected } from './describe-value';
 import type { StandardIssue } from './standard';
 
 const CURRENCY_RE = /^[A-Z]{3}$/;

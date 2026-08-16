@@ -4,6 +4,7 @@
  * compile error in a Solid component — not a 404 at runtime.
  */
 import type { UltimateError } from '@ultimat3/core';
+import { currentSpanContext, traceparent } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { Action } from './action';
 import { ContractDriftError, RemoteActionError, RpcFailedError } from './errors';
@@ -96,6 +97,10 @@ async function call(
 ): Promise<unknown> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
+    // Before the caller's headers, so an explicit `traceparent` still wins. Without this a
+    // service-to-service hop started a fresh root trace on the other side, which makes "which of
+    // my downstreams is slow" unanswerable across every Ultimate-to-Ultimate call.
+    ...traceHeaders(),
     ...options.headers,
   };
   if (options.buildId !== undefined) headers[BUILD_ID_HEADER] = options.buildId;
@@ -115,6 +120,27 @@ async function call(
   if (response.status === 204) return undefined;
   const body: unknown = await response.json();
   return body;
+}
+
+/** A `traceparent` is `00-<32 hex>-<16 hex>-<2 hex>`, and nothing else may be sent as one. */
+const TRACE_ID = /^[0-9a-f]{32}$/;
+const SPAN_ID = /^[0-9a-f]{16}$/;
+
+/**
+ * The current trace, as the W3C header — or nothing at all. `currentSpanContext()` answers with
+ * an empty `spanId` when a request context exists but no span is active, and `00-<trace>--01` is
+ * a header every collector drops, so an incomplete context sends none. In a browser there is no
+ * ambient context and this is always empty, which is also what keeps a cross-origin GET from
+ * acquiring a CORS preflight it did not have.
+ *
+ * `@ultimat3/query`'s client carries the twin of this function: both are tier 3, so neither may
+ * import the other.
+ */
+function traceHeaders(): Record<string, string> {
+  const context = currentSpanContext();
+  if (context === undefined) return {};
+  if (!TRACE_ID.test(context.traceId) || !SPAN_ID.test(context.spanId)) return {};
+  return { traceparent: traceparent(context) };
 }
 
 /**

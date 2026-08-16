@@ -38,7 +38,8 @@ const answer = await ai.scope({ actorKey: actor.id, orgKey: actor.orgId }, async
 | A control the model lacks is **refused**, never dropped | a declaration reading `effort: 'max'` that quietly runs at the default is the failure nobody can see |
 | A control nobody asked for is **omitted**, never defaulted | a default sent as a request is indistinguishable on the wire from one that was declared |
 | A refusal is `X_LLM_REFUSED`, not a schema failure | it is a 200 with no answer in it, and a repair turn buys the same refusal again |
-| The refusal's `alternative` is only ever a **more capable** model | `MODEL_IDS` is ordered most-capable-first and `moreCapableThan` walks it upward; retrying a refusal on a weaker model is the one retry that cannot help, so an unbeatable model gets no suggestion at all |
+| The refusal's `alternative` is only ever a **more capable** model | registration order is most-capable-first and `moreCapableThan` walks it upward; retrying a refusal on a weaker model is the one retry that cannot help, so an unbeatable model gets no suggestion at all |
+| Fallback is across **providers serving one model**, never across models | a silent model swap changes what answered, what it cost and which eval baseline the answer belongs to; the gateway stamps `result.provider`, and `llm()` puts it on the span as `llm.provider`, so the fallback that does exist is never silent |
 | The repair turn replays the tool call's arguments, never an empty `text` | an answer through the `respond` tool leaves `text` empty, and an empty text block is a 400 — the repair came back as `X_AI_PROVIDER_UNAVAILABLE` |
 | `reserve()` **debits** the estimate and takes a turn | three concurrent calls otherwise read the same `spent()`, all pass, and all three record against a ceiling only one of them fitted; `record` reconciles and `release` gives it back |
 | A refusal is never cached | a cached one keeps serving a classifier decision after the prompt was fixed |
@@ -83,7 +84,36 @@ Vectors are L2-normalised on arrival, so `cosine` stays a dot product. A width o
 declared `dimension` is `X_VECTOR_DIM_MISMATCH` **before** anything reaches a store — a store
 half-written at the wrong width has no error to report, only worse answers.
 
-Models, `As of 2026-08`:
+## The model catalogue is open
+
+`ModelId` is a **`string`**, and the catalogue is a registry. Your own gateway, Bedrock, Azure,
+Vertex, a fine-tune, a negotiated rate — all expressible, none needing a fork.
+
+```ts
+registerModel({
+  id: 'llama-internal-70b',
+  contextWindow: 128_000,
+  maxOutput: 8_192,
+  inputPerMillion:  { minor: 20, currency: 'USD' },   // YOUR price, integer minor units
+  outputPerMillion: { minor: 40, currency: 'USD' },
+  cacheMinimumTokens: 0,
+  reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
+});
+
+configureAi({ gateway: createGateway({ providers: [new InternalGatewayProvider()] }) });
+```
+
+**The three built-ins register through this same call.** There is one way to put a model in the
+catalogue, and the default path is the app's path. Re-registering an id replaces its spec and keeps
+its rung — which is how a negotiated enterprise rate is expressed, and why there is no second
+`overrideModel` call. An id nothing registered is `X_AI_MODEL_UNKNOWN` at the first read, naming
+the registered set; that check is what replaced the closed union, so a wrong id is still caught
+without making a right one inexpressible.
+
+Registration order is the capability ladder, most capable first — `moreCapableThan` is its only
+reader, and `X_LLM_REFUSED`'s fix line the only thing that acts on it.
+
+Built in, `As of 2026-08`:
 
 | Model | Context | Max output | Input / MTok | Output / MTok | `effort` | adaptive thinking |
 |---|---|---|---|---|---|---|
@@ -93,6 +123,8 @@ Models, `As of 2026-08`:
 
 The last two columns are data on the spec, not prose: `body()` builds the reasoning half from
 them, so a downgrade for price cannot become a request the provider rejects.
+`AnthropicProvider.models` is its own list, never the registry's — your internal model is not
+routed to Anthropic.
 
 ## `llm()` — a model call, declared as an action
 
@@ -127,7 +159,73 @@ summarize.contract();    // the contract tests
 | `budget` | reserved against the worst case **before** the provider is reached — nothing spent, nothing truncated |
 | `cache.semantic` | one store per scope, keyed by embedding; a prompt version bump reaches a different store, so the bump *is* the invalidation |
 | `policy` | the same object every surface evaluates — an MCP call and an HTTP call are denied identically |
-| `vars` | the one declared place a model call loads data, so a reader can see what was sent |
+| `vars` | the one declared place a model call loads data, so a reader can see what was sent — and the one place a redactor sees it, and where a `Secret` is refused |
+
+### Streaming is the same action
+
+```ts
+for await (const chunk of summarize.stream({ postId }, { ctx })) {
+  if (chunk.type === 'text') write(chunk.text);
+  if (chunk.type === 'done') save(chunk.value);   // validated against `output`
+}
+```
+
+Policy, input parse, budget scope, semantic cache, span, audit and `.tool()` all still apply: the
+invocation is an ordinary one, marked so the model half streams. Two consequences worth knowing:
+
+| Decision | Why |
+|---|---|
+| the `done` chunk carries the validated value; text increments are **unvalidated** | a schema cannot be checked until the last token has landed |
+| **no repair turn** — a bad shape is `X_LLM_STREAM_INVALID` | the consumer has already read the tokens; a second answer over the top is two answers to one question. The fix names the non-streaming call |
+| the budget is reserved **before the first token** and reconciled at `done` | unchanged from `generate()`; a stream that throws or is abandoned releases in a `finally` |
+| no `respond` tool is offered | a tool call is emitted whole, so forcing one leaves nothing to stream — the answer is prose, and its JSON parse is what a non-string `output` validates |
+| lazy | nothing is authorised, budgeted or sent until the first pull |
+
+## `agent()` — the tool loop, also an action
+
+The second half of "no ninth primitive": a tool-using run is still one server-authoritative
+operation with an input schema, an output schema and a policy.
+
+```ts
+export const support = agent({
+  input:  t.object({ orderId: t.string }),
+  output: t.object({ answer: t.string }),
+  prompt: supportPrompt,
+  vars:   ({ input }) => ({ orderId: input.orderId }),
+  tools:  [lookupOrder, issueRefund],          // actions, each mcp.expose
+  maxTurns: 6,
+  maxToolResultChars: 4_000,
+  budget: { tokensPerRun: 200_000, costPerCall: { minor: 50, currency: 'USD' } },
+  policy: can('order:support'),
+});
+```
+
+| Rule | Why |
+|---|---|
+| the actor is **`ctx.actor`**, read once, never from the model | this is the mistake a hand-rolled loop ships, and the reason the loop belongs in the framework |
+| a tool that is not `mcp: { expose: true }` is `X_AGENT_TOOL_UNEXPOSED` **at declaration** | a silently dropped tool reads as offered and is not; `isMcpExposed` is the one predicate, so an in-app agent and an external MCP client see the same catalogue |
+| running out of turns is `X_AGENT_MAX_TURNS`, never a partial answer | a half-finished transcript returned as a result is working notes presented as a decision |
+| `budget.tokensPerRun` caps the **whole run** | a single call is bounded by `maxTokens`; a loop is bounded by nothing until this is set |
+| a tool result is truncated, and says so | the transcript IS the request, so an untruncated result is re-billed once per remaining turn |
+| **no semantic cache** | similar prompts do not have similar answers once the answer depends on what `lookupOrder` returned this second |
+
+## Redaction: one declared seam
+
+`vars()` is the one place a model call loads data, so it is the one place anything can sit between
+the row and a third-party endpoint.
+
+```ts
+configureAi({ gateway, redact: (text) => scrubPatientIdentifiers(text) });
+```
+
+The redactor sees the whole rendered prompt and the system prompt — template as well as values,
+because a redactor shown only the values cannot tell a name in a data slot from the same name in an
+instruction. Whether it changed anything is on the span as `llm.redacted`.
+
+**What** to remove is yours: a PII classifier is a model choice, so the framework ships the seam
+and not the classifier. The one rule it does enforce, redactor or not: a `Secret` among the
+variables is `X_AI_PROMPT_SECRET`. Not a leak — `Secret` renders `[redacted]` by value — but a
+prompt that reads fine, means something else, and costs full price.
 
 The gateway is ambient, installed once at boot — a declaration is evaluated at module scope,
 long before a provider exists:
@@ -269,7 +367,12 @@ identically. The actor comes from the request context, never from the model.
 | `X_AI_BUDGET_EXCEEDED` | refused pre-flight, naming the scope and what remains |
 | `X_AI_GATEWAY_MISSING` | an `llm()` action ran before `configureAi` |
 | `X_AI_PROMPT_VERSION` | version drift, or a render missing a declared variable |
+| `X_AI_MODEL_UNKNOWN` | a model id nothing called `registerModel` for; names the registered set |
+| `X_AI_PROMPT_SECRET` | `vars()` returned a `Secret`, which would render `[redacted]` into the prompt |
 | `X_LLM_OUTPUT_INVALID` | the model failed its `output` schema on the answer and on the repair turn |
+| `X_LLM_STREAM_INVALID` | a streamed answer failed its schema, and a stream cannot take a repair turn |
+| `X_AGENT_MAX_TURNS` | an `agent()` used every turn without answering |
+| `X_AGENT_TOOL_UNEXPOSED` | an `agent()` lists an action no MCP surface exposes |
 | `X_EVAL_THRESHOLD` | an eval scored below its bar |
 | `X_VECTOR_DIM_MISMATCH` | a vector's length disagrees with the store |
 | `X_VECTOR_SCOPE_WIDENED` | a derived vector scope tried to leave the tenant it was bound to |

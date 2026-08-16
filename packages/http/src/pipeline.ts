@@ -6,10 +6,14 @@
 import { recordRequest, runWithContext, withSpan } from '@ultimat3/core';
 import { defineHttpConfig, type HttpConfig } from './config';
 import { asCtx, createRequestContext, elapsedMs, type RequestContext } from './context';
+import { readCorrelation } from './correlation';
+import { type Deadline, startDeadline } from './deadline';
 import { pipelineNoResponse } from './errors';
 import { recoverWith, runFinalize } from './finalize';
+import { clientAddress, clientUsedHttps } from './forwarded';
 import type { ServerHooks } from './hooks';
 import type { Middleware } from './middleware';
+import { peerIdentity } from './peer-identity';
 import { assertRateLimitScope, createRateLimiter, type RateLimiter } from './rate-limit';
 import { assertRouteBuckets, withRouteBuckets } from './rate-limit-buckets';
 import { UltimateRequest } from './request';
@@ -27,12 +31,17 @@ export const PIPELINE_STAGES: readonly StageDoc[] = [
   {
     name: 'request-id',
     phase: 'request',
-    why: 'first: every log line, span, error body and problem document quotes it, so it must exist before anything can fail',
+    why: 'first: every log line, span, error body and problem document quotes it, so it must be on the response before anything can fail',
+  },
+  {
+    name: 'admit',
+    phase: 'request',
+    why: 'second, and before every other stage does any work: a draining process answers 503 here rather than accepting work it will abandon, and past maxInflight a request is shed with Retry-After before it can queue behind the pool that is already the bottleneck',
   },
   {
     name: 'trace',
     phase: 'request',
-    why: 'before any I/O: a span started later would silently exclude auth and DB latency from the trace',
+    why: 'publishes the trace id the root span already carries — the span is started before stage 1, from the inbound traceparent, because one started here would exclude every stage above it and could not adopt the caller as its parent',
   },
   {
     name: 'context',
@@ -53,6 +62,11 @@ export const PIPELINE_STAGES: readonly StageDoc[] = [
     name: 'rate-limit',
     phase: 'request',
     why: 'before the body is read: a limited request must never make the server allocate its payload',
+  },
+  {
+    name: 'csrf',
+    phase: 'request',
+    why: 'after auth so it only judges a caller holding an AMBIENT credential — a bearer token and an anonymous call are both exempt — and before body so a forged write never makes the server allocate its payload. CORS cannot cover this: application/x-www-form-urlencoded is a simple content type, so a cross-site form post is sent and executed and only the RESPONSE is withheld',
   },
   {
     name: 'body',
@@ -141,17 +155,34 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
   const terminal = stages.find((stage) => stage.phase === 'terminal');
   const recovered = recoverWith(stages.find((stage) => stage.phase === 'recover'));
 
-  const execute = async (request: UltimateRequest, ctx: RequestContext): Promise<Response> => {
-    try {
-      for (const stage of requestStages) {
-        const short = await stage.run(request, ctx);
-        if (short !== undefined) {
-          ctx.response = short;
-          break;
-        }
+  const runStages = async (request: UltimateRequest, ctx: RequestContext): Promise<void> => {
+    for (const stage of requestStages) {
+      const short = await stage.run(request, ctx);
+      if (short !== undefined) {
+        ctx.response = short;
+        return;
       }
-      if (ctx.response === undefined && terminal !== undefined) {
-        ctx.response = (await terminal.run(request, ctx)) ?? new Response(null, { status: 204 });
+    }
+    if (ctx.response === undefined && terminal !== undefined) {
+      ctx.response = (await terminal.run(request, ctx)) ?? new Response(null, { status: 204 });
+    }
+  };
+
+  const execute = async (
+    request: UltimateRequest,
+    ctx: RequestContext,
+    deadline: Deadline,
+  ): Promise<Response> => {
+    try {
+      const work = runStages(request, ctx);
+      if (deadline.expired === undefined) await work;
+      else {
+        // The abort is the cooperative half and app code that reads `ctx.signal` unwinds on its
+        // own; this race is the half that answers the SOCKET when it does not. `work` keeps its
+        // own handler either way — a rejection arriving after the deadline already won is still
+        // a rejection, and an unhandled one takes the process down.
+        void work.catch(() => undefined);
+        await Promise.race([work, deadline.expired]);
       }
     } catch (error) {
       ctx.error = error;
@@ -169,12 +200,39 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
     config,
     async handle(raw, init) {
       const url = new URL(raw.url);
+      // Before the context and before the span, in this order on purpose. `startSpan` resolves
+      // its parent from `currentSpanContext()`, which reads `ctx.traceId` — so a `traceparent`
+      // parsed by a stage arrived one frame too late, every time: the caller's trace was
+      // discarded and the root span kept an id the logs beside it never mentioned.
+      const correlation = readCorrelation(raw.headers, config);
+      const deadline = startDeadline({
+        headers: raw.headers,
+        config,
+        method: raw.method.toUpperCase(),
+        pathname: url.pathname,
+      });
+      const forwarded = {
+        headers: raw.headers,
+        config,
+        socketAddress: init.ip ?? null,
+        urlProtocol: url.protocol,
+      };
       const ctx = createRequestContext({
         url,
         method: raw.method,
         role: init.role,
         config,
-        ip: init.ip ?? null,
+        requestId: correlation.requestId,
+        traceId: correlation.traceId,
+        parentSpanId: correlation.parentSpanId,
+        // Resolved here, not in `server.ts`: `pipeline.fetch()` is the supported way to test a
+        // route and it must take the identical path a socket does.
+        ip: clientAddress(forwarded),
+        https: clientUsedHttps(forwarded),
+        // The mesh's assertion about the caller's certificate, read at the SAME hop index as the
+        // address — an identity from an untrusted hop authenticates, which is worse than none.
+        peer: peerIdentity(forwarded),
+        signal: deadline.signal,
         // The context is what app code reaches through core's ALS; without the inbound headers
         // on it, a cookie the server itself set could never be read back on the next request,
         // and `ctx.session` had no way to exist.
@@ -194,7 +252,7 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
             // the caller either way.
             let status = 500;
             try {
-              const response = await execute(request, ctx);
+              const response = await execute(request, ctx, deadline);
               status = response.status;
               // The root span of every request carried no attributes at all, so an exporter got a
               // name and a duration and nothing to correlate: which request, which outcome. These
@@ -218,9 +276,19 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
                 status,
                 durationMs: elapsedMs(ctx),
               });
+              // A live timer keeps the event loop from going idle, so a process that answered
+              // every request would still refuse to exit for the length of one timeout.
+              deadline.clear();
             }
           },
-          { kind: 'server' },
+          {
+            kind: 'server',
+            // Explicit, and the whole point of parsing `traceparent` up here: without it
+            // `startSpan` falls back to `currentSpanContext()` — the context's own traceId, with
+            // an empty spanId — which produces a root span with no parent and a trace the caller
+            // never heard of.
+            ...(correlation.parent === undefined ? {} : { parent: correlation.parent }),
+          },
         ),
       );
     },

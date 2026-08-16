@@ -41,6 +41,7 @@ describe('stripBasePath', () => {
 describe('defineHttpConfig', () => {
   test('echoes every explicit top-level field', () => {
     const config = defineHttpConfig({
+      rateLimit: { scope: 'process' },
       port: 4321,
       hostname: 'localhost',
       basePath: '/api',
@@ -64,17 +65,21 @@ describe('defineHttpConfig', () => {
   });
 
   test('defaults not overridden by env: basePath, buildIdHeader, trustProxy, bodyLimitBytes, drainTimeoutMs', () => {
-    const config = defineHttpConfig({ dev: false });
+    const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false });
 
     expect(config.basePath).toBe('/');
     expect(config.buildIdHeader).toBe('x-ultimate-build');
-    expect(config.trustProxy).toBe(true);
+    // `false`, and it USED to be `true`: trusting x-forwarded-* and x-request-id is a claim
+    // about the deployment, and a direct caller could otherwise choose its own request id.
+    expect(config.trustProxy).toBe(false);
+    expect(config.trustedProxyHops).toBe(0);
     expect(config.bodyLimitBytes).toBe(1_048_576);
     expect(config.drainTimeoutMs).toBe(15_000);
   });
 
   test('locale merges input over DEFAULT_LOCALE_CONFIG', () => {
     const config = defineHttpConfig({
+      rateLimit: { scope: 'process' },
       dev: false,
       locale: { default: 'de' },
     });
@@ -86,6 +91,7 @@ describe('defineHttpConfig', () => {
 
   test('tz merges input over DEFAULT_TZ_CONFIG', () => {
     const config = defineHttpConfig({
+      rateLimit: { scope: 'process' },
       dev: false,
       tz: { default: 'America/New_York' },
     });
@@ -97,6 +103,7 @@ describe('defineHttpConfig', () => {
 
   test('cors merges input over DEFAULT_CORS, leaving other fields intact', () => {
     const config = defineHttpConfig({
+      rateLimit: { scope: 'process' },
       dev: false,
       cors: { credentials: false },
     });
@@ -112,7 +119,7 @@ describe('defineHttpConfig', () => {
   test('rateLimit merges input over DEFAULT_RATE_LIMIT', () => {
     const config = defineHttpConfig({
       dev: false,
-      rateLimit: { enabled: false },
+      rateLimit: { scope: 'process', enabled: false },
     });
 
     expect(config.rateLimit.enabled).toBe(false);
@@ -122,6 +129,7 @@ describe('defineHttpConfig', () => {
 
   test('security merges input over DEFAULT_SECURITY, leaving other fields intact', () => {
     const config = defineHttpConfig({
+      rateLimit: { scope: 'process' },
       dev: false,
       security: { referrerPolicy: 'no-referrer' },
     });
@@ -135,17 +143,18 @@ describe('defineHttpConfig', () => {
   });
 
   test('security.csp.reportOnly follows the resolved dev flag when not overridden (dev: true)', () => {
-    const config = defineHttpConfig({ dev: true });
+    const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: true });
     expect(config.security.csp.reportOnly).toBe(true);
   });
 
   test('security.csp.reportOnly follows the resolved dev flag when not overridden (dev: false)', () => {
-    const config = defineHttpConfig({ dev: false });
+    const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false });
     expect(config.security.csp.reportOnly).toBe(false);
   });
 
   test('an explicit security.csp.reportOnly wins over the dev flag', () => {
     const config = defineHttpConfig({
+      rateLimit: { scope: 'process' },
       dev: true,
       security: { csp: { reportOnly: false } },
     });
@@ -154,6 +163,7 @@ describe('defineHttpConfig', () => {
 
   test('security.csp.extend and reportUri still merge from DEFAULT_SECURITY.csp when not overridden', () => {
     const config = defineHttpConfig({
+      rateLimit: { scope: 'process' },
       dev: true,
       security: { csp: { reportOnly: false } },
     });

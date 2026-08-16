@@ -2,11 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import {
   actorFact,
   actorLabel,
+  actorOrigin,
   agentActor,
   anonymousActor,
   hasRole,
   hasScope,
   isAnonymous,
+  serviceActor,
   userActor,
   withFacts,
 } from './actor';
@@ -86,6 +88,34 @@ describe('actor facts', () => {
         expect(read()).toBeUndefined();
       });
       expect(read()).toBe('paid');
+    });
+  });
+});
+
+describe('actorLabel under impersonation', () => {
+  test('a refund issued while impersonating does NOT read as the customer', () => {
+    const customer = userActor({
+      id: 'cust-99',
+      orgId: 'org-3',
+      onBehalfOf: { actorId: 'eng-7', actorKind: 'service' },
+    });
+    expect(actorLabel(customer)).toBe('service:eng-7→user:cust-99@org-3');
+  });
+
+  test('an actor acting for themselves renders unchanged — absence is a statement', () => {
+    expect(actorLabel(userActor({ id: 'u1', orgId: 'org-3' }))).toBe('user:u1@org-3');
+    expect(actorLabel(userActor({ id: 'u1' }))).toBe('user:u1');
+  });
+
+  test('the origin is frozen with the actor, so it cannot be edited under a policy', () => {
+    const actor = userActor({ id: 'u1', onBehalfOf: { actorId: 'eng-7', actorKind: 'service' } });
+    expect(Object.isFrozen(actor.onBehalfOf)).toBe(true);
+  });
+
+  test('actorOrigin is the tuple to stamp onto whoever they impersonate', () => {
+    expect(actorOrigin(serviceActor({ id: 'eng-7', orgId: 'org-1' }))).toEqual({
+      actorId: 'eng-7',
+      actorKind: 'service',
     });
   });
 });

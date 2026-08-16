@@ -10,6 +10,9 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_JOB_MAX_ATTEMPTS',
   'X_DRIVER_UNAVAILABLE',
   'X_IDEMPOTENCY_REQUIRED',
+  'X_JOB_CONCURRENCY_UNENFORCEABLE',
+  'X_JOB_LEASE_LOST',
+  'X_JOB_NOT_CANCELLABLE',
   'X_OUTBOX_NO_TX',
   'X_BACKFILL_PENDING',
   'X_BACKFILL_APPLIED',
@@ -40,6 +43,9 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
   X_JOB_MAX_ATTEMPTS: 'the job exhausted its retries',
   X_DRIVER_UNAVAILABLE: 'the queue driver is unreachable',
   X_IDEMPOTENCY_REQUIRED: 'the job has no idempotencyKey',
+  X_JOB_CONCURRENCY_UNENFORCEABLE: 'job.concurrency is declared and cannot be enforced',
+  X_JOB_LEASE_LOST: 'the queue took this job back mid-run',
+  X_JOB_NOT_CANCELLABLE: 'the job cannot be cancelled',
   X_OUTBOX_NO_TX: 'enqueue outside a transaction',
   X_BACKFILL_PENDING: 'a declared backfill has never completed',
   X_BACKFILL_APPLIED: 'the ledger already holds a completed pass',
@@ -175,6 +181,71 @@ export class IdempotencyRequiredError extends UltimateError {
       cause: `job "${input.job}" has no idempotencyKey — at-least-once delivery would run it twice`,
       fix: `add idempotencyKey: (input) => \`${input.job}:\${input.id}\` to the job definition`,
       docs: docsFor('X_IDEMPOTENCY_REQUIRED'),
+    });
+  }
+}
+
+/**
+ * The queue took this job back while it was still running: `x jobs cancel` wrote a terminal state,
+ * or this worker's lease lapsed and another one re-claimed the row. Its own code and not
+ * `X_ABORTED`, because the response is different — `X_ABORTED` is "your deadline passed, make the
+ * work smaller", this is "somebody else owns this run now, stop writing to it".
+ */
+export class LeaseLostError extends UltimateError {
+  constructor(input: { job: string; jobId: string }) {
+    super({
+      code: 'X_JOB_LEASE_LOST',
+      cause: `job "${input.job}" (${input.jobId}) is no longer claimed by this worker — it was cancelled, or its visibility lease lapsed and the queue re-delivered it`,
+      fix: `x jobs show ${input.jobId} --json`,
+      docs: docsFor('X_JOB_LEASE_LOST'),
+    });
+  }
+}
+
+/**
+ * `x jobs cancel` reached a job that already finished. Not a failure of the command — the work is
+ * done — but never a silent success either: an operator cancelling a runaway pass has to know
+ * whether they stopped it or missed it.
+ */
+export class JobNotCancellableError extends UltimateError {
+  constructor(input: { jobId: string; state: string }) {
+    super({
+      code: 'X_JOB_NOT_CANCELLABLE',
+      cause:
+        input.state === 'missing'
+          ? `no job ${input.jobId} exists in this queue`
+          : `job ${input.jobId} is "${input.state}" and only a job that has not finished can be cancelled`,
+      fix: `x jobs ls --state running --json`,
+      docs: docsFor('X_JOB_NOT_CANCELLABLE'),
+    });
+  }
+}
+
+/** The driver has no `introspect.cancel`. The redis/nats stubs, and any hand-rolled driver. */
+export class CancelUnsupportedError extends UltimateError {
+  constructor(input: { driver: string }) {
+    super({
+      code: 'X_JOB_NOT_CANCELLABLE',
+      cause: `the "${input.driver}" jobs driver cannot cancel a single job`,
+      fix: "set jobs: { driver: 'postgres' } in app.config.ts, then: x jobs cancel <id> --json",
+      docs: docsFor('X_JOB_NOT_CANCELLABLE'),
+    });
+  }
+}
+
+/**
+ * `job.concurrency` is declared and this driver has no `leases`, so the cap is per PROCESS and the
+ * fleet runs `concurrency x replicas`. Thrown at worker start rather than logged, because a
+ * documented guarantee that silently does nothing is exactly what axiom 3 exists to refuse — the
+ * worker refuses to start instead of running with the wrong number.
+ */
+export class ConcurrencyUnenforceableError extends UltimateError {
+  constructor(input: { driver: string; jobs: readonly string[] }) {
+    super({
+      code: 'X_JOB_CONCURRENCY_UNENFORCEABLE',
+      cause: `${input.jobs.join(', ')} declare concurrency and the "${input.driver}" jobs driver has no lease store, so the cap would hold per process and the fleet would run concurrency x replicas`,
+      fix: `remove concurrency from job("${input.jobs[0] ?? 'the job'}"), or set jobs: { driver: 'postgres' } in app.config.ts`,
+      docs: docsFor('X_JOB_CONCURRENCY_UNENFORCEABLE'),
     });
   }
 }

@@ -237,7 +237,11 @@ describe('the overlay under the policy the same response sends', () => {
       role: 'web',
       // `dev` turns the overlay on; `reportOnly: false` is what an app that wants CSP violations
       // to actually block in development sets, and it is the only way this assertion can fail.
-      config: defineHttpConfig({ dev: true, security: { csp: { reportOnly: false } } }),
+      config: defineHttpConfig({
+        rateLimit: { scope: 'process' },
+        dev: true,
+        security: { csp: { reportOnly: false } },
+      }),
     });
 
   test('every inline style in the rendered overlay is covered by the response CSP', async () => {

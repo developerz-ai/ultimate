@@ -23,7 +23,9 @@ import {
   useRequestHeaders,
 } from './context';
 
-const config = defineHttpConfig();
+const config = defineHttpConfig({
+  rateLimit: { scope: 'process' },
+});
 
 describe('createRequestContext', () => {
   test('builds the defaults for a plain https request', () => {
@@ -42,7 +44,9 @@ describe('createRequestContext', () => {
     expect(ctx.tz).toBe(config.tz.default);
     expect(ctx.params).toEqual({});
     expect(ctx.route).toBeUndefined();
-    expect(ctx.buildId).toBeNull();
+    // Core's meaning: the build this PROCESS serves. The CLIENT's claim is `clientBuildId`.
+    expect(ctx.buildId).toBe('dev');
+    expect(ctx.clientBuildId).toBeNull();
     expect(ctx.input).toBeUndefined();
     expect(ctx.authz).toBeUndefined();
     expect(ctx.rateLimit).toBeUndefined();

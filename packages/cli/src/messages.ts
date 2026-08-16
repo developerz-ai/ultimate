@@ -87,6 +87,7 @@ const CATALOG = {
   'cli.i18n.synced': 'synced {locale} from {from} — {added} key(s) added, {total} total',
   'cli.i18n.unused': '{count} key(s) defined in {locale} and never used:',
   'cli.jobs.backfillNoCursor': 'no cursor yet',
+  'cli.jobs.cancelled': 'job {id} cancelled — {state}',
   'cli.jobs.backfillRow': '{name} — {rows} row(s) so far, cursor {cursor}',
   'cli.jobs.backfills': '{count} backfill(s) in flight:',
   'cli.jobs.deadLetters': '{count} dead letter(s):',

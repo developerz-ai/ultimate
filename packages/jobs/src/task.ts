@@ -5,6 +5,18 @@
 // `tz` is required by the type. A cron without a timezone is a bug waiting for March: `0 3 *
 // * *` in a DST-observing zone runs twice or zero times on the switch day, and "the nightly
 // digest went out at 2am and again at 3am" is not a mystery anyone should have to debug.
+//
+// **The framework's DST answer, `As of 2026-08`: ONE occurrence per calendar day, at the first
+// valid instant.** Pinned against a real zone in `scheduler-dst.test.ts`, both transitions:
+//
+//   FALL BACK — the repeated wall-clock hour yields ONE occurrence, the first (CEST) instant. It
+//   has to: `scheduler.ts`'s `dispatch` keys the idempotency key on `occurrenceMs`, and the two
+//   instants of a repeated 02:00 genuinely differ, so two occurrences would be two keys and the
+//   nightly digest would go out twice — the exact failure a required `tz` exists to prevent.
+//   Nothing downstream could catch it.
+//   SPRING FORWARD — the missing hour SHIFTS forward (02:00 fires at 03:00), never skips. A
+//   skipped day is a billing run that silently never happened, which is worse than one an hour
+//   late, and `catchUp` cannot recover an occurrence that was never an occurrence.
 
 import { assert } from '@ultimat3/core';
 import { isValidTimeZone } from '@ultimat3/time';

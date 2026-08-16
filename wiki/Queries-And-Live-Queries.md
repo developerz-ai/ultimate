@@ -222,8 +222,7 @@ Load shedding is a decision with a typed error, not a fall-over.
 
 | Code | Trigger | Fix |
 |---|---|---|
-| `X_LIVE_QUERY_LIMIT` | a tenant registered more distinct live queries than the cap | raise `realtime.limits.perTenantQueries` in `app.config.ts`, or narrow the query set |
-| `X_SUBSCRIPTION_LIMIT` | a socket or tenant reached the subscription cap | `raise realtime.limits.perSocket in app.config.ts, or unsubscribe unused live queries` |
+| `X_SUBSCRIPTION_LIMIT` | a socket or tenant reached the subscription cap; the error names which scope refused | `raise maxPerSocket on the LiveQueryRegistry (default 128), or unsubscribe unused live queries` — a constructor option, not an `app.config.ts` field |
 | `X_CURSOR_STALE` | resume cursor outside the change buffer and no snapshot path supplied | `pass 'snapshot' to resumeFrom() so the fallback path can re-snapshot instead of failing` |
 | `X_TRANSPORT_UNAVAILABLE` | the fanout bus is unreachable | `x doctor transport` |
 

@@ -14,6 +14,7 @@ import {
   objectSchema,
   optionalSchema,
   recordSchema,
+  refineSchema,
   unionSchema,
 } from './validators';
 
@@ -122,7 +123,7 @@ describe('enumSchema / builtinT.enumerated', () => {
     const schema = enumSchema(['draft', 'published']);
     const result = validate(schema, 'archived');
     expect(result.issues?.[0]?.message).toBe(
-      'expected one of draft | published, received "archived"',
+      'expected one of draft | published, received a string of 8 characters',
     );
   });
 
@@ -221,6 +222,33 @@ describe('recordSchema', () => {
       expect(Object.getPrototypeOf(result.value)).toBe(null);
       expect(result.value).toEqual({ a: 1 });
     }
+  });
+});
+
+describe('refineSchema', () => {
+  test('refuses a value the shape accepts but the rule does not', () => {
+    const lines = refineSchema(
+      objectSchema({ total: builtinT.number.int(), paid: builtinT.number.int() }),
+      {
+        name: 'paid-within-total',
+        message: 'paid must not exceed total',
+        path: ['paid'],
+        check: (value) => value.paid <= value.total,
+      },
+    );
+    expect(validate(lines, { total: 100, paid: 40 }).issues).toBeUndefined();
+    const issues = validate(lines, { total: 100, paid: 4000 }).issues ?? [];
+    expect(issues[0]?.message).toBe('paid must not exceed total');
+    expect(issues[0]?.path).toEqual(['paid']);
+    // The rule states itself; it never states the amount that broke it.
+    expect(issues[0]?.message).not.toContain('4000');
+  });
+
+  test('is the free-function spelling of the method, node included', () => {
+    const rule = { name: 'even', message: 'must be even', check: (v: number) => v % 2 === 0 };
+    expect(refineSchema(builtinT.number, rule).node.refinements).toEqual(
+      builtinT.number.refine(rule).node.refinements,
+    );
   });
 });
 
@@ -383,7 +411,7 @@ describe('builtinT.date', () => {
     // throws a RangeError for an invalid Date — this asserts the fixed, graceful behavior.
     const result = validate(builtinT.date, new Date('not-a-date'));
     expect(result.issues).toBeDefined();
-    expect(result.issues?.[0]?.message).toContain('Invalid Date');
+    expect(result.issues?.[0]?.message).toContain('invalid Date');
   });
 
   test('rejects a string that produces NaN when parsed', () => {

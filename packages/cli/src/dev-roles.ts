@@ -10,26 +10,25 @@ import type { Role } from '@ultimat3/core';
 import { createContext, isRole, logger, ROLES } from '@ultimat3/core';
 import type { Route, ServerHandle, ServerHooks } from '@ultimat3/http';
 import { configuredAuthenticator, createServer, defineHttpConfig } from '@ultimat3/http';
-import type { Scheduler, Worker } from '@ultimat3/jobs';
-import { createScheduler, createWorker } from '@ultimat3/jobs';
-import { listQueries } from '@ultimat3/query';
+import type { OutboxRelay, Scheduler, Worker } from '@ultimat3/jobs';
 import {
-  ChannelHub,
-  createSyncNode,
-  LiveQueryRegistry,
-  listenSyncNode,
-  liveQueryDefinition,
-  PresenceRegistry,
-  RingChangeBuffer,
-  SocketRegistry,
-} from '@ultimat3/realtime';
+  createOutboxRelay,
+  createPgLeaseLeader,
+  createScheduler,
+  createWorker,
+  jobDriver,
+  pgSchedulerState,
+} from '@ultimat3/jobs';
 import { devHooks } from './dev-hooks';
+import { pgExecutorFor } from './dev-queue';
 import type { RunningReplicator } from './dev-replicator';
 import { startReplicator } from './dev-replicator';
 import type { RunningServices } from './dev-runtime';
 import type { Env } from './dev-services';
-import { BadFlagError } from './errors';
+import { startSync } from './dev-sync';
+import { BadFlagError, PortInvalidError, RuntimeDriverSplitError } from './errors';
 import { DEFAULT_METRICS_PORT, startMetricsEndpoint } from './metrics-endpoint';
+import type { RuntimeOverrides } from './runtime-overrides';
 import { inlineStyleSources } from './style-csp';
 
 /** The roles `x dev` starts when `--role` names none, in boot order. */
@@ -83,6 +82,12 @@ export interface StartRolesOptions {
    * 9090 would fail the next one to run beside it.
    */
   readonly metricsPort?: number;
+  /**
+   * What the host substituted for a boot decision. Read here for the three seams that are not
+   * services — the rate-limit store, the middleware chain and the sync authenticator — while the
+   * drivers themselves arrive already resolved on `runtime`.
+   */
+  readonly overrides?: RuntimeOverrides;
 }
 
 export interface WebBinding {
@@ -165,19 +170,61 @@ function warnIfUnauthenticatable(routes: readonly Route[]): void {
   );
 }
 
+/**
+ * How many proxies append to `x-forwarded-for` between the client and this process, or `null`
+ * when nothing in front of it is trusted.
+ *
+ * Read from the environment and not from `app.config.ts`, for the reason `PORT` and `ROLE` are: it
+ * is a fact about the DEPLOYMENT — one image runs behind an ingress in one cluster and behind
+ * nothing on a laptop — and an app that hardcoded it would be wrong in one of the two. `x dev`
+ * sets neither and gets `trustProxy: false`, which is correct: there is no proxy.
+ *
+ * Without this seam a container behind an ingress reads `ctx.ip` as the ingress's own socket
+ * address on every request, so the rate limiter keys the entire fleet's anonymous traffic into ONE
+ * bucket and a single scanner 429s every real signup.
+ */
+export function trustedHopsFromEnv(env: Env): number | null {
+  const raw = env['TRUSTED_PROXY_HOPS']?.trim();
+  if (raw === undefined || raw === '') return null;
+  const hops = Number(raw);
+  // A malformed count is refused rather than defaulted: reading the header at the wrong index is
+  // trusting a value the client typed, which is the failure trusting a proxy exists to avoid.
+  if (!Number.isInteger(hops) || hops < 1 || hops > 16) {
+    throw new PortInvalidError({ value: raw, name: 'TRUSTED_PROXY_HOPS' });
+  }
+  return hops;
+}
+
 function startWeb(options: StartRolesOptions): ServerHandle {
   warnIfUnauthenticatable(options.routes);
   const binding = options.http ?? DEV_BINDING;
+  const hops = trustedHopsFromEnv(options.env);
+  const store = options.overrides?.rateLimitStore;
   return createServer({
     routes: options.routes,
     role: 'web',
     hooks: devHooks(options.devNotices === undefined ? {} : { devNotices: options.devNotices }),
+    // Both seams `createServer` already had and `startRoles` passed neither of, so an app's own
+    // middleware could not reach the pipeline any process the framework boots actually runs.
+    ...(options.overrides?.middleware === undefined
+      ? {}
+      : { middleware: options.overrides.middleware }),
+    ...(store === undefined ? {} : { rateLimitStore: store }),
     config: defineHttpConfig({
       port: options.port,
       dev: binding.dev,
       buildId: options.buildId,
       hostname: binding.hostname,
       signInPath: options.signInPath ?? null,
+      // One declaration, never half of one: `defineHttpConfig` refuses `trustProxy` without hops.
+      ...(hops === null ? {} : { trustProxy: true, trustedProxyHops: hops }),
+      // `scope` is mandatory since @ultimat3/http made an undeclared limiter a boot error: the
+      // old `'process'` default meant the shipped chart's three `web` replicas enforced
+      // `login: { limit: 5 }` as fifteen attempts, with `x verify` green. It is DERIVED from the
+      // store rather than hardcoded — a deployment that hands `runtime.rateLimitStore` a shared
+      // store is declaring the fleet-wide numbers, and `assertRateLimitScope` then holds the two
+      // halves together instead of a literal here quietly contradicting the store beside it.
+      rateLimit: { scope: store?.scope ?? 'process' },
       // Hashes, never `'unsafe-inline'`: a `render: 'static'` page is a file on disk, so
       // nothing can stamp a per-response nonce into it, but its body is fixed and a hash is a
       // function of that body. Read after `loadApp` — importing the app IS what registered them.
@@ -189,75 +236,31 @@ function startWeb(options: StartRolesOptions): ServerHandle {
 }
 
 /**
- * Every read the app declared `live: true` becomes a subscribable query on this node, through
- * `@ultimat3/realtime`'s own bridge. A registry with nothing in it answers every live `subscribe`
- * with "no live query registered", which is a working socket serving no reads — and it is what
- * kept the row gate that decides per subscriber from ever running outside a unit test.
+ * The one moment the boot can still see both answers.
  *
- * The context is the node's, and it carries no actor: it supplies the services and the clock the
- * shared read needs, never an authority. Who may subscribe, and which rows they see, is decided
- * per socket at subscribe time and again for every row of every delivery.
- */
-function registerLiveQueries(options: StartRolesOptions): LiveQueryRegistry {
-  const registry = new LiveQueryRegistry({
-    source: new RingChangeBuffer(),
-    // A withheld row is a metric, never a frame and never an error: telling a client "there is a
-    // row you may not see" is the leak the gate exists to prevent.
-    onRowDenied: (event) => logger.debug('live.rows_denied', { ...event }),
-  });
-  const ctx = createContext({ role: 'sync', buildId: options.buildId });
-  for (const target of listQueries()) {
-    if (target.isLive) registry.register(liveQueryDefinition(target, { ctx }));
-  }
-  return registry;
-}
-
-/**
- * The sync role owns its own socket: websockets and the request pipeline drain differently.
+ * `startServices` captures the drivers it built; `loadApp` imports the app's modules after it, and
+ * a module calling `setJobDriver()` at import time moves the ambient slot and leaves the capture
+ * alone. From here on the two are indistinguishable at every call site: `handle.enqueue()` reads
+ * the ambient one, `createWorker` claims from the captured one, and `/_x` reads the ambient one —
+ * so the dashboard agrees with the enqueue side and disagrees with reality.
  *
- * Port 0 is passed straight through rather than incremented — `+ 1` would ask the kernel for
- * port 1 instead of an ephemeral one — and the reported url is the listener's own bound address,
- * never a string built from the port that was requested.
+ * Refused, not reconciled. Reading through the accessor would make the split invisible instead of
+ * impossible, and the app would still have installed a driver the boot never saw — no outbox store
+ * bound to it, no relay draining it. The fix line names the field that does work.
  */
-async function startSync(
-  options: StartRolesOptions,
-): Promise<{ url: string; stop: () => Promise<void> }> {
-  const sockets = new SocketRegistry();
-  const hub = new ChannelHub({ transport: options.runtime.transport, sockets });
-  const node = createSyncNode({
-    hub,
-    registry: registerLiveQueries(options),
-    transport: options.runtime.transport,
-    buildId: options.buildId,
-    sockets,
-    // Tier 1 is presence, and without a registry the node answers a topic subscribe with no member
-    // list at all — the KV bucket the transport just created would hold nothing and every `sync`
-    // container would run a presence-less protocol. It reads and writes `transport.shared`, so it
-    // is exactly as multi-node as the transport behind it: in-process here, the bucket under NATS.
-    presence: new PresenceRegistry({
-      transport: options.runtime.transport,
-      hub,
-      ttlMs: options.runtime.presenceTtlMs,
-    }),
+function assertOneJobDriver(runtime: RunningServices): void {
+  const ambient = jobDriver();
+  if (ambient === undefined || ambient === runtime.jobs) return;
+  throw new RuntimeDriverSplitError({
+    driver: 'jobs',
+    ambient: ambient.name,
+    captured: runtime.jobs.name,
   });
-  await node.start();
-  try {
-    const listener = listenSyncNode(node, { port: options.port === 0 ? 0 : options.port + 1 });
-    return {
-      url: listener.url,
-      stop: async () => {
-        listener.stop();
-        await node.stop();
-      },
-    };
-  } catch (error) {
-    await node.stop();
-    throw error;
-  }
 }
 
 export async function startRoles(options: StartRolesOptions): Promise<RunningRoles> {
   const selected = options.roles;
+  assertOneJobDriver(options.runtime);
   // Roles bind sockets in order, so a role that fails to start has to release the ones before it.
   // Without this a failed `sync` leaves the web server bound and unreachable by any caller.
   const started: (() => Promise<void>)[] = [];
@@ -286,8 +289,39 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     worker?.start();
     if (worker !== null) started.push(() => worker.stop('x dev stopped'));
 
+    // The half of the transactional outbox that makes a staged row a running job. Without it
+    // `handle.enqueue()` inside a transaction writes to `x_outbox` and nothing ever reads it back
+    // — every enqueue in a request handler silently becomes a job that never runs.
+    //
+    // On `worker`, and on `worker` alone: it is the role that exists wherever jobs run at all, and
+    // a relay is safe to duplicate (publish-then-mark is at-least-once and the idempotency key
+    // collapses the repeat) but pointless to spread. A deployment with no `worker` has no one to
+    // run the jobs either way.
+    const relay: OutboxRelay | null = selected.includes('worker')
+      ? createOutboxRelay({ store: options.runtime.outbox, driver: options.runtime.jobs })
+      : null;
+    relay?.start();
+    if (relay !== null) {
+      started.push(async () => {
+        relay.stop();
+      });
+    }
+
+    // `state` and `leader`, not the defaults. `createMemorySchedulerState` forgets every watermark
+    // on restart, so a rolling deploy re-fires or skips whatever was due across it, and
+    // `soleLeader()` makes every replica the leader — three `scheduler` pods, three of every task.
+    //
+    // `createPgLeaseLeader` and NOT `createPgLeader`: the latter's `pg_try_advisory_lock` is
+    // SESSION-scoped, and the session ends the moment the connection goes back to the pool, so
+    // every node reads itself as leader anyway. An expiring row is correct on the executor this
+    // package is actually handed.
+    const executor = pgExecutorFor(options.runtime.db);
     const scheduler = selected.includes('scheduler')
-      ? createScheduler({ driver: options.runtime.jobs })
+      ? createScheduler({
+          driver: options.runtime.jobs,
+          state: pgSchedulerState(executor),
+          leader: createPgLeaseLeader({ executor }),
+        })
       : null;
     scheduler?.start();
     if (scheduler !== null) started.push(() => scheduler.stop());
@@ -317,6 +351,8 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
         // Reverse boot order, so the slot is released before the bus it published to closes.
         await replicator?.stop();
         await scheduler?.stop();
+        // Before the worker, so nothing publishes into a queue whose consumer has already gone.
+        relay?.stop();
         await worker?.stop('x dev stopped');
         await sync?.stop();
         await server?.stop();

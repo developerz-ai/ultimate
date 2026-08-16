@@ -14,14 +14,18 @@ to skip.
 | typed request (params, query, body) | `request.ts` |
 | response constructors + `problem()` | `response.ts` |
 | code → status, `factsOf()` | `error-map.ts` |
-| token-bucket limiting | `rate-limit.ts` |
+| token-bucket limiting, `toBucket` | `rate-limit.ts` |
 | CORS, CSP/HSTS | `cors.ts`, `security-headers.ts` |
+| CSRF (origin proof for a credentialed write) | `csrf.ts` |
+| the request deadline and `ctx.signal` | `deadline.ts` |
+| the caller's real address behind a proxy | `forwarded.ts` |
+| the inbound request id and trace, read before the span | `correlation.ts` |
 | dev error overlay | `overlay.ts` |
 
 ## The pipeline is the guarantee
 
 ```
-request-id → trace → context → locale → auth → rate-limit → body → authz
+request-id → admit → trace → context → locale → auth → rate-limit → csrf → body → authz
            → handler → cache-headers → (error-map) → response
 ```
 
@@ -30,7 +34,10 @@ asserts the order; `/_x` renders it. Ordering rules worth restating:
 
 | Rule | Reason |
 |---|---|
+| admit second | a draining or saturated process refuses before any work — no route match, no auth, no body |
 | auth before rate-limit | limiter keys per actor/tenant, not per NAT address |
+| csrf after auth | only a caller holding an AMBIENT credential can be forged into; bearer and anonymous are exempt |
+| csrf before body | a forged write never makes the server allocate its payload |
 | rate-limit before body | a limited request never allocates its payload |
 | body before authz | policies take parsed input as their subject |
 | cache-headers before response | a directive can never drop a security header |
@@ -48,6 +55,12 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | `rateLimit.scope: 'shared'` on a per-process store | `X_RATE_LIMIT_NOT_SHARED` at `createServer`, because N replicas each holding their own counters enforce N × every configured number |
 | a route's own bucket and a configured bucket of that name disagreeing | `X_RATE_LIMIT_BUCKET_CONFLICT` at `createServer`, because the loser would be a number someone read and nothing applied |
 | an injected limiter that does not hold a bucket a route declares | `X_RATE_LIMIT_BUCKET_UNBOUND` at `createPipeline`, because the name would fall through to `default` — measured at 120 burst for a route declaring 5 |
+| a config that never declared `rateLimit.scope` | `X_RATE_LIMIT_SCOPE_UNSET` at `defineHttpConfig`. **Breaking, `As of 2026-08`**: `'process'` used to be the default, so "nobody asked" and "the app said one replica" were the same value while the chart runs three |
+| `trustProxy: true` with no `trustedProxyHops` | `X_TRUST_PROXY_UNSET` at `defineHttpConfig`. **Breaking, `As of 2026-08`**: `trustProxy` now defaults to `false`, and `x-forwarded-for` is read at `entries.length - hops` — never at `[0]`, which is whatever the client typed |
+| a credentialed unsafe method that cannot be shown to be same-origin | `X_CSRF_BLOCKED` (403). `sec-fetch-site: same-origin`, `Origin` equal to this app, or an `Origin` in `cors.origins` — anything else is refused before the body is read |
+| a request past `requestTimeoutMs` (30s) | `ctx.signal` aborts and the socket is answered `X_TIMEOUT` (504); a caller may shorten the deadline with `x-request-timeout-ms`, never lengthen it |
+| a request while the process is draining | `X_DRAINING` (503) + `retry-after`, which is what `isDraining()` was always documented to do here and had no reader for |
+| a request past `maxInflight` (1000) | `X_OVERLOADED` (503) + `retry-after`, shed in the `admit` stage before any work |
 
 `handle()` resolves to a Response, always — a stage that throws after the handler, or while
 rendering another stage's throw, degrades to `X_PIPELINE_FINALIZE_FAILED` (500, the stage named in
@@ -71,9 +84,16 @@ createServer({
 
 | Declared | Store | Result |
 |---|---|---|
-| `'process'` (default) | any | boots; the limit is per replica, which is what was asked for |
+| nothing | any | `X_RATE_LIMIT_SCOPE_UNSET` at `defineHttpConfig` — **breaking, `As of 2026-08`** |
+| `'process'` | any | boots; the limit is per replica, which is what was asked for |
 | `'shared'` | `scope: 'shared'` | boots; one bucket for the fleet |
 | `'shared'` | `scope: 'process'`, or `enabled: false` | `X_RATE_LIMIT_NOT_SHARED` at boot |
+
+There is no default. `'process'` used to be one, which made "the app never said" and "the app
+said one replica" the same value while `docker/helm/values.yaml` runs three — and
+`X_RATE_LIMIT_NOT_SHARED` only fires on a `'shared'` declaration, so the silent case was exactly
+the one nobody declared. A limiter with `enabled: false` owes no declaration: nothing is enforced,
+so nothing can be wrong.
 
 `rateLimitStore` feeds the `PipelineDeps.limiter` seam rather than sitting beside it: the bucket
 maths stays in `createRateLimiter`, so every driver agrees on the numbers. **No shared store ships
@@ -95,7 +115,9 @@ declaring `limit: 5` ran on 120 burst, and the number reached the OpenAPI docume
 | numbers | different numbers | `X_RATE_LIMIT_BUCKET_CONFLICT` at boot |
 
 Neither source wins a disagreement, because whichever lost would stay a number an author read and
-nothing enforced. `@ultimat3/action`'s `toBucket` is the one conversion from a declaration's
+nothing enforced. `toBucket` — in **this** package, beside `Bucket` and the maths it validates, because `action` and
+`query` are the same tier and can never import each other — is the one conversion from a
+declaration's
 `{ limit, windowMs }` to a bucket's `{ capacity, refillPerSecond }`, and it refuses a pair the
 limiter could not run on — including one whose two halves look fine and whose **division** does
 not, like `{ limit: Number.MAX_VALUE, windowMs: 1 }` computing to an infinite refill.

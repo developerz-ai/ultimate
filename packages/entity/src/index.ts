@@ -46,6 +46,7 @@ export {
   nPlusOneWrite,
   patchEmpty,
   preloadUnknownRelation,
+  repoClientPinned,
   tenancyActorMismatch,
   tenancyActorOrgRequired,
   tenancyRowMismatch,

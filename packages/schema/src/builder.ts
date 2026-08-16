@@ -2,7 +2,7 @@
 // that turns a check function plus an IR node into a Standard-Schema-conforming object.
 
 import { ValidationFailedError, type ValidationIssue } from './errors';
-import type { SchemaNode } from './node';
+import type { SchemaNode, SchemaRefinement } from './node';
 import {
   formatPath,
   type InferInput,
@@ -42,26 +42,28 @@ export function failWith(issues: readonly StandardIssue[]): CheckErr {
   return { ok: false, issues };
 }
 
-/** `expected uuid, received "abc"` — the message an agent can act on without guessing. */
 /** An object with own keys — not null, not an array. The gate every object-ish check opens with. */
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function expected(what: string, value: unknown): string {
-  return `expected ${what}, received ${describeValue(value)}`;
-}
-
-export function describeValue(value: unknown): string {
-  if (value === undefined) return 'undefined';
-  if (value === null) return 'null';
-  if (typeof value === 'string') return JSON.stringify(value);
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) return `array(${value.length})`;
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? 'Date(Invalid Date)' : `Date(${value.toISOString()})`;
-  }
-  return typeof value;
+/**
+ * A rule the IR cannot state structurally — `endDate > startDate`, `total === sum(lines)`. It
+ * lives on the schema rather than in a handler so it reaches OpenAPI, the MCP tool schema, the
+ * typed client and the form binding from the one declaration, like every other constraint.
+ *
+ * `message` is authored by the developer and rendered verbatim, so it must state the RULE and
+ * never the value — see `describe-value.ts` for why an issue message is a public surface.
+ */
+export interface Refinement<Out> {
+  /** Stable machine id, kebab-case: `end-after-start`. Projected as `x-ultimate-refinements`. */
+  readonly name: string;
+  /** The rule as a sentence, e.g. `endDate must be after startDate`. Never interpolate a value. */
+  readonly message: string;
+  /** Runs on the PARSED output, so a cross-field rule compares coerced values, not raw input. */
+  readonly check: (value: Out) => boolean;
+  /** Which field the issue is reported against. Absent reports it against the object itself. */
+  readonly path?: readonly string[] | undefined;
 }
 
 export interface Schema<In = unknown, Out = In> extends StandardSchemaV1<In, Out> {
@@ -78,6 +80,12 @@ export interface Schema<In = unknown, Out = In> extends StandardSchemaV1<In, Out
   nullable(): Schema<In | null, Out | null>;
   default(value: Out): Schema<In | undefined, Out>;
   describe(description: string): Schema<In, Out>;
+  /**
+   * Attach a cross-field rule. Returns a plain `Schema` on purpose — `extend`/`pick`/`omit`
+   * rebuild from the shape and would silently drop the refinement, so refining last is a type
+   * error to get wrong rather than a comment asking you not to.
+   */
+  refine(refinement: Refinement<Out>): Schema<In, Out>;
 }
 
 /** The general constraint for "some schema". Methods are bivariant, so this is a real supertype. */
@@ -155,6 +163,25 @@ export function makeSchema<In, Out>(node: SchemaNode, check: Check<Out>): Schema
     },
     describe(description: string): Schema<In, Out> {
       return makeSchema<In, Out>({ ...node, description }, check);
+    },
+    refine(refinement: Refinement<Out>): Schema<In, Out> {
+      const declared: SchemaRefinement = {
+        name: refinement.name,
+        message: refinement.message,
+        ...(refinement.path === undefined ? {} : { path: [...refinement.path] }),
+      };
+      return makeSchema<In, Out>(
+        { ...node, refinements: [...(node.refinements ?? []), declared] },
+        (value, path) => {
+          // Shape first: a predicate written against `Out` must never be handed an unparsed
+          // value, or every refinement grows a defensive typeof the schema already performed.
+          const result = check(value, path);
+          if (!result.ok) return result;
+          return refinement.check(result.value)
+            ? result
+            : fail([...path, ...(refinement.path ?? [])], refinement.message);
+        },
+      );
     },
   };
   return schema;

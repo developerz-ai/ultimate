@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Tx } from '@ultimat3/entity';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import type { EnqueueRequest, JobDriver } from './driver';
 import { createMemoryDriver } from './driver-memory';
 import { OutboxNoTxError } from './errors';
 import type { JobHandle } from './job';
@@ -248,6 +249,45 @@ describe('the relay loop', () => {
     expect(store.claims).toBeGreaterThanOrEqual(2);
     expect(((await driver.introspect?.list()) ?? []).length).toBe(1);
     expect(await store.pendingCount()).toBe(0);
+  });
+
+  test('a failed publish STOPS the batch — later rows never overtake it', async () => {
+    // `claim()` returns rows in `staged_at` order, and the loop used to log and continue: an app
+    // that stages `createInvoice` then `chargeCard` in one transaction could have the charge run
+    // first. Order per queue was in the comment and not in the code.
+    const store = createMemoryOutboxStore();
+    const tx = fakeTx();
+    const published: string[] = [];
+    const driver: Pick<JobDriver, 'enqueue'> = {
+      enqueue(request: EnqueueRequest) {
+        if (request.idempotencyKey.endsWith('first')) {
+          return Promise.reject(new Error('pool timeout'));
+        }
+        published.push(request.idempotencyKey);
+        return Promise.resolve({ id: 'x', runId: 'r', deduped: false });
+      },
+    };
+
+    for (const key of ['first', 'second', 'third']) {
+      await store.stage(tx, {
+        id: `row-${key}`,
+        job: 'notify',
+        queue: 'default',
+        input: {},
+        idempotencyKey: `notify:${key}`,
+        maxAttempts: 1,
+        runAt: 0,
+        stagedAt: ['first', 'second', 'third'].indexOf(key),
+      });
+    }
+    await store.commit(tx);
+
+    const relay = createOutboxRelay({ store, driver: driver as JobDriver });
+    expect(await relay.tick()).toBe(0);
+
+    // Nothing overtook the wedged row, and all three are still pending for the next pass.
+    expect(published).toEqual([]);
+    expect(await store.pendingCount()).toBe(3);
   });
 });
 

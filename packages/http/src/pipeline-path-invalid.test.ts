@@ -24,7 +24,7 @@ const routes: readonly Route[] = [
   },
 ];
 
-const config = defineHttpConfig({ dev: false });
+const config = defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false });
 const pipeline = () => createPipeline({ table: createRouter(routes), config, hooks: {} });
 const get = (path: string) => new Request(`http://localhost${path}`);
 

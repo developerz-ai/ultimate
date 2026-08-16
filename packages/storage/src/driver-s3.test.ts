@@ -1,135 +1,15 @@
 // Single responsibility: pins the s3 driver's request/response contract against an injected
-// fake `S3ClientLike` — key guard, stat mapping, list paging, presign options, lazy client.
+// fake `S3ClientLike` — key guard, stat mapping, copy, list paging, presign options, lazy client.
 // WHY a fake and not a bucket: the driver's only job is translating Bun's S3 surface into
 // StorageObject/StorageError, so that translation must break here, offline, not in CI or prod.
+// What `put()` refuses lives in `driver-s3-put.test.ts`; the fake both drive is the fixture.
 
 import { describe, expect, test } from 'bun:test';
-import { ConfigInvalidError, EnvMissingError, InternalError } from '@ultimat3/core';
-import { sha256Base64 } from './driver';
-import {
-  type S3ClientLike,
-  type S3FileLike,
-  type S3ListEntryLike,
-  type S3ListResultLike,
-  type S3StatLike,
-  s3Driver,
-} from './driver-s3';
-import { isStorageError, objectNotFound } from './errors';
+import { ConfigInvalidError, EnvMissingError } from '@ultimat3/core';
+import { type S3ListEntryLike, s3Driver } from './driver-s3';
+import { bytesOf, catchError, codeOf, FakeS3Client, textOf } from './driver-s3-fixture';
+import type { StorageError } from './errors';
 import { META_DIR, scopedKey } from './path';
-
-/** The driver's private `DRIVER_NAME`; the fake reports failures against the same disk. */
-const FAKE_DISK = 's3';
-
-interface FakeObject {
-  bytes: Uint8Array;
-  type?: string | undefined;
-  etag?: string | undefined;
-  lastModified?: string | Date | undefined;
-}
-
-interface PresignCall {
-  key: string;
-  options: {
-    method?: string | undefined;
-    expiresIn?: number | undefined;
-    type?: string | undefined;
-  };
-}
-
-interface ListCall {
-  prefix?: string | undefined;
-  maxKeys?: number | undefined;
-  continuationToken?: string | undefined;
-}
-
-/** In-memory stand-in for `Bun.S3Client`, driven through `S3ClientLike` — no socket, ever. */
-class FakeS3Client implements S3ClientLike {
-  readonly store = new Map<string, FakeObject>();
-  readonly fileCalls: string[] = [];
-  readonly presignCalls: PresignCall[] = [];
-  readonly listCalls: ListCall[] = [];
-  listResult: S3ListResultLike = { contents: [] };
-  failDeleteFor: string | undefined;
-
-  file(key: string): S3FileLike {
-    this.fileCalls.push(key);
-    const store = this.store;
-    const client = this;
-    return {
-      async write(data, options) {
-        const bytes = data instanceof Uint8Array ? data : new Uint8Array(await data.arrayBuffer());
-        store.set(key, { bytes, type: options?.type });
-        return bytes.byteLength;
-      },
-      async arrayBuffer() {
-        const entry = store.get(key);
-        // Reads the way the provider does: a GET on a key that is not there is a 404, and the
-        // driver is expected to have gated it behind exists() before ever getting here.
-        if (entry === undefined) throw objectNotFound(FAKE_DISK, key);
-        return new Uint8Array(entry.bytes).buffer;
-      },
-      async exists() {
-        return store.has(key);
-      },
-      async delete() {
-        // Deliberately NOT a StorageError: the driver's catch-all has to swallow a rejection
-        // it never authored, which is the only kind a real provider hands back.
-        if (client.failDeleteFor === key) {
-          throw new InternalError({
-            cause: `the fake s3 provider rejected DELETE ${key}`,
-            fix: 'clear failDeleteFor on the fake client to let the delete through',
-          });
-        }
-        store.delete(key);
-      },
-      stream() {
-        const entry = store.get(key);
-        const bytes = entry?.bytes ?? new Uint8Array();
-        return new ReadableStream<Uint8Array>({
-          start(controller) {
-            controller.enqueue(bytes);
-            controller.close();
-          },
-        });
-      },
-      async stat(): Promise<S3StatLike> {
-        const entry = store.get(key);
-        if (entry === undefined) throw objectNotFound(FAKE_DISK, key);
-        return {
-          size: entry.bytes.byteLength,
-          type: entry.type,
-          etag: entry.etag,
-          lastModified: entry.lastModified,
-        };
-      },
-      presign(options) {
-        client.presignCalls.push({ key, options });
-        return `https://fake.example/${key}?signed`;
-      },
-    };
-  }
-
-  async list(input: ListCall): Promise<S3ListResultLike> {
-    this.listCalls.push(input);
-    return this.listResult;
-  }
-}
-
-const bytesOf = (text: string): Uint8Array => new TextEncoder().encode(text);
-const textOf = (bytes: Uint8Array): string => new TextDecoder().decode(bytes);
-
-function codeOf(caught: unknown): string {
-  return isStorageError(caught) ? caught.code : `not-a-storage-error: ${String(caught)}`;
-}
-
-async function catchError(fn: () => Promise<unknown>): Promise<unknown> {
-  try {
-    await fn();
-    return undefined;
-  } catch (error) {
-    return error;
-  }
-}
 
 describe('s3Driver', () => {
   describe('put / get / exists / delete / stream', () => {
@@ -191,60 +71,67 @@ describe('s3Driver', () => {
       expect(codeOf(caught)).toBe('X_STORAGE_NOT_FOUND');
     });
 
-    test('delete swallows a rejecting file().delete()', async () => {
+    test('delete SURFACES a refused delete as X_STORAGE_DELETE_FAILED', async () => {
+      // The failure that matters, and the one that shipped wrong: `.catch(() => undefined)` made
+      // a denied `s3:DeleteObject` indistinguishable from a completed one, so an erasure sweep
+      // reported 200 objects deleted that were all still in the bucket.
       const fake = new FakeS3Client();
       fake.store.set('org/org-1/c.txt', { bytes: bytesOf('c') });
       fake.failDeleteFor = 'org/org-1/c.txt';
       const driver = s3Driver({ bucket: 'b', client: fake });
 
-      // Must not throw even though the fake's delete() rejects.
-      await driver.delete('org/org-1/c.txt');
-      // The rejection was swallowed before removing the entry, so it is still present —
-      // proof the promise really did reject rather than resolving silently.
+      const caught = await catchError(() => driver.delete('org/org-1/c.txt'));
+      expect(codeOf(caught)).toBe('X_STORAGE_DELETE_FAILED');
+      const error = caught as StorageError;
+      // The provider's own words reach the cause, and the fix names an executable command.
+      expect(error.cause).toContain('AccessDenied');
+      expect(error.fix).toContain('s3:DeleteObject');
+      expect(error.fix).toContain('aws s3api delete-object --bucket b --key org/org-1/c.txt');
+      // Still there: the refusal was real, and the driver did not pretend otherwise.
       expect(fake.store.has('org/org-1/c.txt')).toBe(true);
     });
-  });
 
-  describe('put: checksum', () => {
-    test('a correct checksum passes', async () => {
+    test('delete stays idempotent for the ABSENT key, and only that one', async () => {
       const fake = new FakeS3Client();
+      fake.absentDeleteFor = 'org/org-1/gone.txt';
       const driver = s3Driver({ bucket: 'b', client: fake });
-      const bytes = bytesOf('checksum-me');
-      const checksum = sha256Base64(bytes);
-
-      const put = await driver.put('org/org-1/d.txt', bytes, { checksum });
-      expect(put.size).toBe(bytes.byteLength);
-    });
-
-    test('a mismatched checksum throws checksumMismatch (X_STORAGE_CHECKSUM_MISMATCH)', async () => {
-      const fake = new FakeS3Client();
-      const driver = s3Driver({ bucket: 'b', client: fake });
-      const caught = await catchError(() =>
-        driver.put('org/org-1/e.txt', bytesOf('checksum-me'), { checksum: 'not-the-hash' }),
-      );
-      expect(codeOf(caught)).toBe('X_STORAGE_CHECKSUM_MISMATCH');
-      // The write must never have happened.
-      expect(fake.store.has('org/org-1/e.txt')).toBe(false);
+      // A provider that answers NoSuchKey/404 is reporting the desired state, not a failure.
+      await driver.delete('org/org-1/gone.txt');
     });
   });
 
-  describe('put: metadata / cacheControl not implemented', () => {
-    test('metadata throws storageNotImplemented (X_NOT_IMPLEMENTED)', async () => {
+  describe('copy', () => {
+    test('moves bytes without reading them into this process, and keeps the content type', async () => {
       const fake = new FakeS3Client();
       const driver = s3Driver({ bucket: 'b', client: fake });
-      const caught = await catchError(() =>
-        driver.put('org/org-1/f.txt', bytesOf('x'), { metadata: { owner: 'a' } }),
-      );
-      expect(codeOf(caught)).toBe('X_NOT_IMPLEMENTED');
+      await driver.put('org/org-1/from.png', bytesOf('pixels'), { contentType: 'image/png' });
+
+      const copied = await driver.copy('org/org-1/from.png', 'org/org-1/to.png');
+      expect(copied.key).toBe('org/org-1/to.png');
+      expect(copied.contentType).toBe('image/png');
+      expect(textOf(fake.store.get('org/org-1/to.png')?.bytes ?? new Uint8Array())).toBe('pixels');
+      // Non-destructive: a move is copy + delete, and the caller owns the second half.
+      expect(fake.store.has('org/org-1/from.png')).toBe(true);
     });
 
-    test('cacheControl throws storageNotImplemented (X_NOT_IMPLEMENTED)', async () => {
+    test('copy of a missing source is X_STORAGE_NOT_FOUND, and writes nothing', async () => {
       const fake = new FakeS3Client();
       const driver = s3Driver({ bucket: 'b', client: fake });
-      const caught = await catchError(() =>
-        driver.put('org/org-1/g.txt', bytesOf('x'), { cacheControl: 'no-cache' }),
+      const caught = await catchError(() => driver.copy('org/org-1/nope.png', 'org/org-1/to.png'));
+      expect(codeOf(caught)).toBe('X_STORAGE_NOT_FOUND');
+      expect(fake.store.has('org/org-1/to.png')).toBe(false);
+    });
+
+    test('both arguments go through assertSafeKey', async () => {
+      const fake = new FakeS3Client();
+      const driver = s3Driver({ bucket: 'b', client: fake });
+      expect(codeOf(await catchError(() => driver.copy('../x', 'org/org-1/to.png')))).toBe(
+        'X_STORAGE_PATH_UNSAFE',
       );
-      expect(codeOf(caught)).toBe('X_NOT_IMPLEMENTED');
+      expect(codeOf(await catchError(() => driver.copy('org/org-1/from.png', '../x')))).toBe(
+        'X_STORAGE_PATH_UNSAFE',
+      );
+      expect(fake.fileCalls).toEqual([]);
     });
   });
 
@@ -318,22 +205,24 @@ describe('s3Driver', () => {
       const driver = s3Driver({ bucket: 'b', client: fake });
 
       const page = await driver.list({ prefix: 'org/org-1/' });
+      // No `contentType` at all. ListObjectsV2 does not return one, and the driver used to fill
+      // in `application/octet-stream` — indistinguishable from an object that really is one,
+      // while the local driver reported the truth. Absent is the honest answer.
       expect(page.objects).toEqual([
         {
           key: 'org/org-1/a.txt',
           size: 3,
-          contentType: 'application/octet-stream',
           etag: 'etag-a',
           lastModified: new Date('2026-01-01T00:00:00.000Z'),
         },
         {
           key: 'org/org-1/b.txt',
           size: 0,
-          contentType: 'application/octet-stream',
           etag: '',
           lastModified: new Date(0),
         },
       ]);
+      expect(page.objects[0]?.contentType).toBeUndefined();
     });
 
     test('uses DEFAULT_LIST_LIMIT when no limit is given, and forwards prefix/cursor', async () => {

@@ -27,6 +27,8 @@ export function facadeFor<TInput extends StandardSchemaV1, TRow extends object>(
     policy: def.policy,
     ...(def.cache === undefined ? {} : { cache: def.cache }),
     ...(def.mcp === undefined ? {} : { mcp: def.mcp }),
+    ...(def.rateLimit === undefined ? {} : { rateLimit: def.rateLimit }),
+    ...(def.deprecated === undefined ? {} : { deprecated: def.deprecated }),
     // `.as()` is impersonation on the one read path: `runQuery` keeps the
     // surrounding context whole and swaps only the actor.
     as: (actor, input, options) => runQuery(self(), input, { ...options, actor }),

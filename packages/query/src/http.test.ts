@@ -5,7 +5,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
 import { userActor } from '@ultimat3/core';
-import { createServer } from '@ultimat3/http';
+import type { HttpConfig } from '@ultimat3/http';
+import { createServer, defineHttpConfig } from '@ultimat3/http';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { FetchLike } from './client';
@@ -53,9 +54,17 @@ function feed(evaluations: { count: number }) {
   }).named('orgFeed');
 }
 
+/**
+ * Every server here runs as ONE process, said out loud: `defineHttpConfig` refuses to guess a
+ * rate-limit scope (`X_RATE_LIMIT_SCOPE_UNSET`), because the number of replicas is the one thing
+ * only the app knows and a wrong guess enforces every bucket N times over.
+ */
+const oneProcess = (): HttpConfig => defineHttpConfig({ rateLimit: { scope: 'process' } });
+
 function serve(target: AnyQuery, actor: Actor | null) {
   return createServer({
     routes: [toQueryRoute(target)],
+    config: oneProcess(),
     // No `authorize` hook, on purpose: a query route must not need one. Wiring a second opinion
     // is how a host grows a second authz system, and the pipeline 403s any route that declares a
     // policy without one unless `enforcedBy: 'handler'` stands the stage down.
@@ -193,7 +202,7 @@ describe('a query read over the pipeline', () => {
         throw new TypeError('sql is not a function');
       },
     }).named('brokenFeed');
-    const server = createServer({ routes: [toQueryRoute(broken)] });
+    const server = createServer({ routes: [toQueryRoute(broken)], config: oneProcess() });
     const response = await server.fetch(
       new Request(`http://dev.test/_x/query/broken-feed?orgId=${ORG}`),
     );

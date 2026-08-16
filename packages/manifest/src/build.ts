@@ -60,10 +60,15 @@ export function buildManifest(sources: ManifestSources): Manifest {
 
   // Derived, never declared twice: the permission list IS the set of policy permissions
   // plus anything an action asserts. Two lists that must agree eventually disagree.
+  //
+  // Read from `permissions`, never from `policy`. `policy` is a policy's LABEL — for a composite
+  // it renders `and(post:publish, org:administer)`, which is not a permission and matches no
+  // grant, so deriving from it published one fictional entry per composite rule and dropped the
+  // real ones. Every non-trivial rule in a real app is a composite.
   const permissions = unique([
     ...policies.map((p) => p.permission),
-    ...actions.map((a) => a.policy).filter((p): p is string => p !== null),
-    ...queries.map((q) => q.policy).filter((p): p is string => p !== null),
+    ...actions.flatMap((a) => a.permissions),
+    ...queries.flatMap((q) => q.permissions),
   ]);
 
   const body = {
@@ -128,13 +133,17 @@ const normalizeEntity = (entity: EntityFact): EntityFact => ({
   invariants: [...entity.invariants].sort(),
 });
 
+// `permissions` is sorted here as well as by its producer: `ManifestSources` is a public input,
+// so a caller assembling facts by hand must not be able to make two builds of one program differ.
 const normalizeAction = (action: ActionFact): ActionFact => ({
   ...action,
+  permissions: [...action.permissions].sort(),
   cacheInvalidates: [...action.cacheInvalidates].sort(),
 });
 
 const normalizeQuery = (query: QueryFact): QueryFact => ({
   ...query,
+  permissions: [...query.permissions].sort(),
   cacheTags: [...query.cacheTags].sort(),
 });
 

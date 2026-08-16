@@ -48,7 +48,10 @@ export function errorParts(error: unknown): ErrorParts {
     code: 'X_INTERNAL',
     title: 'unexpected internal framework error',
     cause: message,
-    fix: 'x logs --json | tail -50',
+    // No command can name a throw site the framework never saw typed. The one repair is at the
+    // throw itself, which is also the repo's own rule — never a bare Error — so the fix says that
+    // rather than sending the reader to a log that holds the same message this screen already has.
+    fix: 'throw an UltimateError subclass where this failed — new UltimateError({ code, cause, fix }) — so this screen renders that code and its fix instead of X_INTERNAL',
     docs: 'https://ultimate.dev/errors/X_INTERNAL',
   };
 }

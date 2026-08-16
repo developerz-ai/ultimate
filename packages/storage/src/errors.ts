@@ -2,7 +2,7 @@
 // rejected upload must tell the caller which constraint fired and where that constraint is
 // configured, or the caller retries the same bytes forever.
 
-import { errorDocsUrl, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { errorDocsUrl, registerErrorCodes, renderThrowable, UltimateError } from '@ultimat3/core';
 
 /** Codes this package declares and owns. */
 export const STORAGE_OWNED_ERROR_CODES = [
@@ -16,6 +16,8 @@ export const STORAGE_OWNED_ERROR_CODES = [
   'X_STORAGE_URL_EXPIRED',
   'X_STORAGE_ORG_MISMATCH',
   'X_STORAGE_UPLOAD_FAILED',
+  'X_STORAGE_DELETE_FAILED',
+  'X_STORAGE_QUARANTINED',
 ] as const;
 
 /**
@@ -47,6 +49,8 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_URL_EXPIRED: 'signed URL is past its expiry',
   X_STORAGE_ORG_MISMATCH: 'object key belongs to another org',
   X_STORAGE_UPLOAD_FAILED: 'the signed upload was refused',
+  X_STORAGE_DELETE_FAILED: 'the object could not be deleted',
+  X_STORAGE_QUARANTINED: 'the object is still in quarantine',
 };
 
 // One unconditional call, so a second package claiming one of storage's codes throws
@@ -123,6 +127,33 @@ export const tooLarge = (key: string, bytes: number, maxBytes: number): StorageE
     meta: { key, bytes, maxBytes },
   });
 
+/**
+ * The SERVER-side `put()` ceiling — a different fact from the policy limit `tooLarge` reports.
+ * `put()` buffers, so a body past the ceiling is heap growth whose size the sender chooses: the
+ * pod is OOM-killed and the caller sees a dropped connection instead of a refusal. Same CODE as
+ * the policy limit, because it is the same answer to the same question (413, "too big"), and a
+ * different `fix`, because raising `uploadPolicy` does not raise this one.
+ *
+ * `bytes` is what the disk had measured when it stopped, which for a stream is a floor rather
+ * than the body's real length — the point of stopping is not reading the rest.
+ */
+export const putTooLarge = (
+  disk: string,
+  key: string,
+  bytes: number,
+  maxBytes: number,
+): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_TOO_LARGE',
+    cause: `"${key}" measured ${bytes}B against the ${disk} disk's put ceiling of ${maxBytes}B, and put() buffers the whole body`,
+    fix:
+      `send it direct with grantUpload({ disk, orgId, request }) instead of put(), or raise the ceiling: ` +
+      (disk === 's3'
+        ? `s3Driver({ bucket, maxPutBytes: ${bytes} })`
+        : `localDriver({ root, maxPutBytes: ${bytes} })`),
+    meta: { disk, key, bytes, maxBytes },
+  });
+
 /** The declared type is not on the allowlist at all. */
 export const contentTypeNotAllowed = (
   key: string,
@@ -173,6 +204,43 @@ export const signedUrlExpired = (key: string, detail: string): StorageError =>
     cause: `the signed request for "${key}" ${detail}`,
     fix: 'call grantUpload({ disk, orgId, request, expiresInMs }) again — a longer expiresInMs widens the window the signature grants',
     meta: { key, detail },
+  });
+
+/**
+ * A delete the provider REFUSED — a denied `s3:DeleteObject`, a throttle, an expired credential,
+ * a read-only mount. Deleting an absent key stays idempotent and never reaches here; everything
+ * else does, because the alternative shipped for a year: `.catch(() => undefined)` turned 200
+ * denied deletes into 200 successes, and an erasure sweep reported data gone that was still there.
+ *
+ * The `fix` is the driver's, not this factory's: the executable command that reproduces the
+ * refusal with the provider's own words differs per disk, and a generic one is a round trip.
+ */
+export const deleteFailed = (
+  disk: string,
+  key: string,
+  error: unknown,
+  fix: string,
+): StorageError => {
+  const reason = renderThrowable(error);
+  return new StorageError({
+    code: 'X_STORAGE_DELETE_FAILED',
+    cause: `disk "${disk}" refused DELETE "${key}": ${reason}`,
+    fix,
+    meta: { disk, key, reason },
+  });
+};
+
+/**
+ * A key still under the quarantine prefix. The framework never scans bytes — that is the app's
+ * job — so the only thing it can enforce is that nothing leaves quarantine without the app
+ * saying so, which is what `promoteAttachment` refusing this key means.
+ */
+export const quarantined = (key: string, orgId: string): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_QUARANTINED',
+    cause: `"${key}" is still under the quarantine prefix, so nothing has cleared it for use`,
+    fix: `scan the bytes, then releaseQuarantine({ disk, key: '${key}', orgId: '${orgId}' }) — promote the key it returns`,
+    meta: { key, orgId },
   });
 
 /** The key is well-formed and unforged, and still belongs to somebody else. */

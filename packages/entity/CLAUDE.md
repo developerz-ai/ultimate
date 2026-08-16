@@ -163,6 +163,30 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   derivation falls back to the `in` form. **`expectedQueryLoop` is the only way to declare a loop
   deliberate**, and it silences the count upstream; there is no flag on these errors and no fix
   that turns the warning off.
+- **A page is bounded whether or not the caller bounded it.** `DEFAULT_PAGE_SIZE` (50) answers the
+  read nobody sized; `MAX_PAGE_SIZE` (10,000), beside it in `plan.ts` so both drivers read one
+  number, answers the read they did. `limit(rows)` was `next({ limit: rows })` and nothing else —
+  no integer check, no positivity check, no ceiling — so an action taking `pageSize` as input and
+  passing it through bound whatever a client sent, and one request could ask for five million rows.
+  `assertPageSize` is `assertBatchable`'s three refusals in the other call, deliberately under the
+  same code (`X_INVARIANT_VIOLATED`) because `limit(0)` and `inBatches(0)` are one mistake in two
+  places. Called from **both** `limit()` on the chain (so the refusal lands on the line the author
+  wrote) and `planFor` (so `findMany({ limit })` straight at the repository cannot route around it),
+  and `MAX_PAGE_SIZE` bounds `inBatches(size)` too — a batch IS a page, so the ceiling belongs to
+  the range and not to one of the two calls.
+- **A repository pinned to its own client refuses to run inside a transaction**
+  (`X_REPO_CLIENT_PINNED`), `As of 2026-08`. `client()` in `pg-driver.ts` is the one place a
+  connection is chosen, which is why the guard is there and not on each method. Unpinned, `db()`
+  answers with the open transaction — that is how a call inside `withTransaction` joins it.
+  Pinned through `postgresDriver({ client })` it cannot: `withTransaction` ran `BEGIN` on a
+  connection it reserved, and a statement sent straight to `config.client` takes a different one
+  out of the pool, so the write commits whatever the transaction decides and survives its rollback
+  while the read misses what the transaction wrote — silent both ways. **Refused, not resolved**:
+  a `DbTx` does not name the client it was opened on, so this layer cannot tell whether the open
+  transaction is even on the same database, and on a sharded app it is not. Joining it instead
+  would be the same guess with the worse outcome. The `fix` names `setDbClient(client)` plus an
+  unpinned repository, because `db()` resolving `currentTx()` first is the only path a repository
+  joins a transaction through.
 - **Cursor pagination only.** OFFSET is wrong under concurrent writes: an insert before the
   offset shifts every later page, so a client silently skips and repeats rows. No `offset` on
   `FindManyArgs` or the builder; the primary key is always the last sort key, so the order is
@@ -321,6 +345,21 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
     `update(id, patch)` does, so a deleted row is never patched back into shape.
   - both return a count, never `void`: a filtered write that silently matches nothing is
     indistinguishable from one that worked.
+  - **the rows come back only when something here can still refuse them**, `As of 2026-08`.
+    `updateWhere` ended its statement in `returning *` unconditionally and looped `$assert` over
+    the result, on every entity — including the ones whose every rule is a CHECK Postgres already
+    enforced on the statement, where the loop judges nothing. A tenant-wide sweep
+    (`updateWhere({ orgId }, { marketingOptIn: false })`, twelve million rows) therefore streamed
+    the whole table into a process sized for one request, and `deleteWhere` beside it was a count,
+    which is what made the failure look arbitrary. `hasJsOnlyInvariant($invariants)`
+    (`invariants.ts`, reading the same list `uniqueTargets` classifies a conflict target from) is
+    the switch: no `assert` rule, no `returning *`, `execute()` and the command tag. When rows ARE
+    needed the match is **counted first** and refused past `MAX_ASSERTED_ROWS` (50,000) naming
+    `inBatches(1000)` — a refusal issued after `returning *` is already holding what it refuses.
+    `updateStatement`'s `returning` is a required parameter with no default for the same reason:
+    the three callers want three answers and the wrong one is invisible in the result. The soft
+    delete inside `removal()` passes `false` too — both its callers read a count through
+    `execute()`, so its rows were never readable by anyone.
 - **`touch()` in `query.ts` is the ONE place `onUpdateNow()` columns are stamped**, for
   `update(id, patch)` and `updateWhere(filter, patch)` alike — a second copy is how one of them
   ends up writing a stale `updatedAt`. It returns an empty patch untouched, so whether
@@ -411,7 +450,14 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   reaches through `readPlan`, so both drivers and every read, write and count pass one derivation.
   `tenant: 'orgId'` declares the column; omitted, inference still applies (`.tenant()`, else a
   column named `orgId`), so silence never means unscoped. Never make the declaration the only
-  switch. Five rules, none optional. **A caller-supplied `orgId` is an assertion, never the
+  switch. **And the column may not be nullable** — refused in `resolveTenantColumn`, at
+  declaration, on all three paths and not just the declared one, `As of 2026-08`. `.tenant()` sets
+  `{ tenant: true, index: true }` and said nothing about nullability, so `uuid().nullable().tenant()`
+  was legal — while `assertRowTenant` returns early on a row that names no tenant and explicitly
+  delegates to the column's `NOT NULL`. On a nullable column that delegation has nothing behind it:
+  the row lands with a null tenant, no `org_id = $1` matches it, and it is invisible to every
+  tenant-scoped read — never exported, never swept on offboarding, owned by nobody for as long as
+  the table exists. Five rules, none optional. **A caller-supplied `orgId` is an assertion, never the
   authority**: equal to the actor's it is a restatement (one predicate, not two), different from it
   — which is what an `orgId` taken from action input looks like — it is `X_TENANCY_ACTOR_MISMATCH`
   with both values in the cause. **Refused, never overridden**: rewriting the predicate to the
@@ -466,6 +512,22 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   hand-writes a view schema imports one package. Never wrap, spread or re-declare it: `t` delegates
   to `schemaProvider()` on every access, and a copy would freeze the provider at import time.
   `index.test.ts` asserts identity.
+- **A rejected column value is rendered as its SHAPE, never its content** — `got(value)` in
+  `columns.ts`, one line over `@ultimat3/schema`'s `describeValue`, `As of 2026-08`. Every builder
+  used to say `got ${String(value)}`, and a column rejection is not a private diagnostic: it
+  becomes `X_INVARIANT_VIOLATED`'s `cause` and a `$view` issue, which `@ultimat3/http` folds into
+  `X_BODY_INVALID` — returned to the caller AND written into the log line, where core's logger
+  redacts by KEY and a value already baked into a message has no key left to redact. `text()` on a
+  password field wrote the mistyped password to the log index in cleartext and into the user's own
+  network tab. **A column is the worse half of that pair**: the value can arrive from the DATABASE,
+  so the leak is not bounded by what somebody just typed. The renderer is schema's rather than a
+  local copy, so a column and a schema describe one bad value the same way; `columns.test.ts` pins
+  it with a secret-looking value and checks that not even its four-character prefix survives — a
+  truncating "helpful" renderer would still name the vendor. **Two echoes are deliberate and both
+  are provably numeric by the branch that reaches them**: `parseMinor`'s float message and its
+  ±2^53 message, where the value is a `number`, a `bigint` or a digits-only string, the amount is
+  the only fact that repairs the row, and `@ultimat3/realtime` renders the same value the same way
+  for the same reason. Changing either means changing both.
 - Never throw a bare `Error` — use `errors.ts`.
 - Tests restore the process-global registry in `afterAll` (`clearRegistry()`): a leaked registry
   breaks an unrelated package's tests, as it did in `@ultimat3/policy`.

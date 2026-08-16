@@ -7,6 +7,7 @@
 import type { ActionDescriptor, AnyAction } from './action';
 import { isAction, nameAction } from './action';
 import { ActionDuplicateError, ActionPathDuplicateError, ActionPolicyMissingError } from './errors';
+import { assertIdempotencyScope } from './idempotency';
 import { derivePath } from './naming';
 
 const registry = new Map<string, AnyAction>();
@@ -25,6 +26,11 @@ const paths = new Map<string, string>();
  * "use the return value instead" rule to forget.
  */
 export function registerAction<A extends AnyAction>(name: string, target: A): A {
+  // Boot, never the first request, and here rather than in `registerActions` because this is the
+  // funnel every registration path goes through — and it necessarily runs before a route is
+  // mounted. A no-op unless the app declared `scope: 'shared'`, which is the only case where the
+  // framework has been told something it can check. See `assertRateLimitScope`, its twin.
+  assertIdempotencyScope();
   const seated = registry.get(name);
   if (seated !== undefined) {
     // Re-registering the SAME object under the SAME name is one registration seen twice, not a

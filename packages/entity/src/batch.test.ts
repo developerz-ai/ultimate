@@ -11,6 +11,7 @@ import { database } from './database';
 import { entity } from './entity';
 import { EntityError } from './errors';
 import { postgresRepo } from './pg-driver';
+import { MAX_PAGE_SIZE } from './plan';
 import { tableFor } from './query';
 import { clearRegistry } from './registry';
 import { memoryRepo, type Repo } from './repo';
@@ -299,7 +300,9 @@ describe('refused on the chain, not one batch later', () => {
     table = tableFor(posts, counted.repo);
   });
 
-  test.each([0, -1, 2.5, Number.NaN, Number.POSITIVE_INFINITY])(
+  // `MAX_PAGE_SIZE + 1` joins the list because a batch IS a page: `planFor` would refuse it one
+  // statement in, in `limit()`'s voice, for an author who never wrote a `limit()`.
+  test.each([0, -1, 2.5, Number.NaN, Number.POSITIVE_INFINITY, MAX_PAGE_SIZE + 1])(
     'inBatches(%p) is a refusal, not a statement',
     (size) => {
       expect(caught(() => feed().inBatches(size))).toBeUltimateError('X_INVARIANT_VIOLATED');

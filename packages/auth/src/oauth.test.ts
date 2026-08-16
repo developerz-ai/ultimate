@@ -1,12 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { AuthError } from './errors';
-import {
-  assertOAuthCallback,
-  beginOAuth,
-  OAUTH_PROVIDERS,
-  type OAuthHandshake,
-  pkceChallenge,
-} from './oauth';
+import { assertOAuthCallback, beginOAuth, type OAuthHandshake, pkceChallenge } from './oauth';
+import { BUILTIN_OAUTH_PROVIDERS } from './oauth-builtins';
 
 const handshake = (): OAuthHandshake =>
   beginOAuth({
@@ -88,13 +83,13 @@ describe('oauth', () => {
   });
 
   test('every shipped provider that issues an id token declares its issuers', () => {
-    for (const provider of Object.values(OAUTH_PROVIDERS)) {
+    for (const provider of BUILTIN_OAUTH_PROVIDERS) {
       expect(provider.issuers.length > 0).toBe(provider.usesNonce);
     }
   });
 
   test('every shipped provider requires PKCE and declares its env vars', () => {
-    for (const provider of Object.values(OAUTH_PROVIDERS)) {
+    for (const provider of BUILTIN_OAUTH_PROVIDERS) {
       expect(provider.usesPkce).toBe(true);
       expect(provider.clientIdEnv.endsWith('_CLIENT_ID')).toBe(true);
       expect(provider.clientSecretEnv.endsWith('_CLIENT_SECRET')).toBe(true);

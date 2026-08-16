@@ -7,6 +7,7 @@ export {
   CACHE_ERROR_CODES,
   CACHE_ERROR_TITLES,
   CacheDriverUnavailableError,
+  CacheJitterInvalidError,
   CachePurgeFailedError,
   CacheTagUnknownError,
   CacheTooLargeError,
@@ -23,13 +24,20 @@ export {
   resetGraph,
   unregisterDependent,
 } from './graph';
-export type { InvalidationEvent, InvalidationReport, Revalidator } from './invalidate';
+export type {
+  InvalidationBroadcast,
+  InvalidationEvent,
+  InvalidationReport,
+  Revalidator,
+} from './invalidate';
 export {
   invalidateTags,
   invalidateWireTags,
   isolateTiers,
+  receiveInvalidationBroadcast,
   recentInvalidations,
   registeredTiers,
+  registerInvalidationBroadcast,
   registerRevalidator,
   registerTier,
   resetTiers,
@@ -51,7 +59,12 @@ export { FASTLY_API_URL, FASTLY_MAX_KEYS_PER_REQUEST, fastlyPurgeDriver } from '
 export type { PurgeFetch } from './purge-http';
 export { DEFAULT_PURGE_TIMEOUT_MS } from './purge-http';
 export type { RedisLike, RedisTierOptions } from './redis';
-export { createRedisTier, REDIS_INVALIDATE_SCRIPT } from './redis';
+export {
+  createRedisTier,
+  namespaceFor,
+  REDIS_INVALIDATE_SCRIPT,
+  REDIS_TAG_MEMBER_SCRIPT,
+} from './redis';
 export type {
   Embedding,
   SemanticCache,
@@ -60,6 +73,8 @@ export type {
   SemanticRememberOptions,
 } from './semantic';
 export { cosineSimilarity, createMemorySemanticCache } from './semantic';
+export type { SingleFlight } from './single-flight';
+export { createSingleFlight } from './single-flight';
 export type { CacheTag, CacheTagRegistry, TagFactory } from './tags';
 export {
   assertKnownTags,
@@ -83,7 +98,17 @@ export type {
   CacheStack,
   CacheStackOptions,
   CacheTier,
+  Rng,
   TierInvalidation,
   TierName,
+  TtlJitter,
 } from './tiers';
-export { assertTtl, createCacheStack, isExpired, nowMs, sortTiers, TIER_ORDER } from './tiers';
+export {
+  assertTtl,
+  createCacheStack,
+  DEFAULT_TTL_JITTER_FRACTION,
+  isExpired,
+  nowMs,
+  sortTiers,
+  TIER_ORDER,
+} from './tiers';

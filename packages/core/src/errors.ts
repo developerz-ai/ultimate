@@ -4,6 +4,7 @@
 
 import { describeErrorCode } from './error-codes';
 import { isThrownError, renderCauseValue, renderMetaRecord, renderThrowable } from './error-render';
+import { DEFAULT_ERROR_RETRY, type ErrorRetry, isErrorRetry, retryFor } from './error-retry';
 
 /**
  * Structural brand. `instanceof` is unreliable across duplicated module instances and across
@@ -21,6 +22,12 @@ export interface UltimateErrorInit {
   readonly fix: string;
   readonly docs?: string | undefined;
   readonly meta?: Readonly<Record<string, unknown>> | undefined;
+  /**
+   * Overrides the code's registered classification for this one throw — the same code can be
+   * transient at one call site and permanent at another. Defaults to `retryFor(code)`, which
+   * defaults to `terminal`.
+   */
+  readonly retry?: ErrorRetry | undefined;
   /** The underlying thrown value, when this error wraps one. */
   readonly sourceError?: unknown;
 }
@@ -31,6 +38,8 @@ export interface UltimateErrorJSON {
   readonly cause: string;
   readonly fix: string;
   readonly docs: string;
+  /** Whether a client may try again. Always present — a client never has to infer it. */
+  readonly retry: ErrorRetry;
   readonly meta?: Readonly<Record<string, unknown>> | undefined;
   readonly stack?: string | undefined;
 }
@@ -49,6 +58,7 @@ export class UltimateError extends Error {
   declare readonly cause: string;
   readonly fix: string;
   readonly docs: string;
+  readonly retry: ErrorRetry;
   readonly meta: Readonly<Record<string, unknown>> | undefined;
   readonly sourceError: unknown;
 
@@ -64,6 +74,7 @@ export class UltimateError extends Error {
     this.title = described.title;
     this.fix = init.fix;
     this.docs = init.docs ?? described.docs;
+    this.retry = init.retry ?? retryFor(init.code);
     this.meta = init.meta;
     this.sourceError = init.sourceError;
   }
@@ -97,6 +108,7 @@ export class UltimateError extends Error {
       cause: this.cause,
       fix: this.fix,
       docs: this.docs,
+      retry: this.retry,
       meta: renderMetaRecord(this.meta),
       stack: this.stack,
     };
@@ -167,6 +179,19 @@ export function toUltimateError(value: unknown, fix?: string): UltimateError {
     fix: fix ?? 'fix the underlying failure named in cause, then re-run',
     sourceError: value,
   });
+}
+
+/**
+ * May a client try this again? The one question a retry loop asks, answered from the error rather
+ * than from a status code — `X_DB_DRIFT` and `X_TENANCY_UNSCOPED` are both 500s and neither is
+ * worth a second attempt. A value that is not an Ultimate error is `terminal`: fail closed.
+ */
+export function errorRetry(value: unknown): ErrorRetry {
+  if (!isUltimateError(value)) return DEFAULT_ERROR_RETRY;
+  // Read defensively: the brand is duck-typed across duplicated module instances, so a value from
+  // an older copy of this package can satisfy the guard without carrying the field.
+  const retry: unknown = value.retry;
+  return isErrorRetry(retry) ? retry : DEFAULT_ERROR_RETRY;
 }
 
 /** Render any caught value with the 3-line contract, so CLI output never varies. */

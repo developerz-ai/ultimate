@@ -1,17 +1,32 @@
-// The blessed models: limits, prices, and the reasoning controls each one's request surface
-// actually accepts. Apart from ./provider because those controls are NOT uniform across the
-// catalogue — one body sent to all three is a guaranteed 400 on the oldest, and a downgrade for
-// price is not a licence to send a body the provider rejects. As of 2026-08.
+// The model catalogue: an OPEN registry of limits, prices and the reasoning controls each model's
+// request surface actually accepts. Open because a company's own gateway serves ids this package
+// has never heard of — a closed union made them untypeable, so the only way past `tsc` was to
+// claim a Claude id and be billed Anthropic list prices for a model nobody ran. As of 2026-08.
 
 import type { Money } from '@ultimat3/money';
-import { AiRequestInvalidError } from './errors';
+import { AiModelUnknownError, AiRequestInvalidError } from './errors';
 
 /**
- * Blessed models. Opus 5 is the default; the others are explicit downgrades. IDs are exact alias
- * strings — never append a date suffix.
+ * A model id. A plain `string`, deliberately: the routing seam (`Provider`, `createGateway`) has
+ * always been open, and a closed union over it meant the VOCABULARY was not — `models:
+ * ['llama-internal-70b']` did not typecheck, so `costOf` charged Anthropic prices for a model the
+ * company does not use and the budget ledger reserved against the wrong number.
+ *
+ * What replaces the union as the guard is `modelSpec()`: an id nothing registered is
+ * `X_AI_MODEL_UNKNOWN` at the first read, naming the registered set. A wrong id is still caught —
+ * at the call, with a fix line, rather than by making a correct id inexpressible.
  */
-export const MODEL_IDS = ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-4-5'] as const;
-export type ModelId = (typeof MODEL_IDS)[number];
+export type ModelId = string;
+
+/**
+ * The models `AnthropicProvider` serves, in ladder order (most capable first). Its OWN list, not
+ * the registry's: an app that registers an internal model must not have it routed to Anthropic.
+ */
+export const ANTHROPIC_MODEL_IDS = [
+  'claude-opus-5',
+  'claude-sonnet-5',
+  'claude-haiku-4-5',
+] as const;
 
 export const DEFAULT_MODEL: ModelId = 'claude-opus-5';
 
@@ -63,49 +78,79 @@ export interface ModelSpec {
  */
 const usd = (minor: number): Money => ({ minor, currency: 'USD' });
 
-export const MODELS: Readonly<Record<ModelId, ModelSpec>> = {
-  // $5 / $25 per MTok.
-  'claude-opus-5': {
-    id: 'claude-opus-5',
-    contextWindow: 1_000_000,
-    maxOutput: 128_000,
-    inputPerMillion: usd(500),
-    outputPerMillion: usd(2_500),
-    cacheMinimumTokens: 512,
-    // Thinking is on by default here, and switching it OFF is legal only at `high` or below.
-    reasoning: { effort: true, adaptive: true, disableThinkingUpTo: 'high' },
-  },
-  // $3 / $15 per MTok. The introductory rate is deliberately NOT modelled: a price that lapses on
-  // a date makes every recorded cost depend on when it was read, and a budget that under-reports
-  // spend after the lapse is a budget that is not one. List price over-reserves, which is safe.
-  'claude-sonnet-5': {
-    id: 'claude-sonnet-5',
-    contextWindow: 1_000_000,
-    maxOutput: 128_000,
-    inputPerMillion: usd(300),
-    outputPerMillion: usd(1_500),
-    cacheMinimumTokens: 1_024,
-    reasoning: { effort: true, adaptive: true, disableThinkingUpTo: undefined },
-  },
-  // $1 / $5 per MTok. Pre-4.6, so it has neither knob: an `output_config.effort` or an adaptive
-  // `thinking` block sent here is a 400 on every request, which is what made the cheap tier
-  // uncallable while the request body was one shape for the whole catalogue.
-  'claude-haiku-4-5': {
-    id: 'claude-haiku-4-5',
-    contextWindow: 200_000,
-    maxOutput: 64_000,
-    inputPerMillion: usd(100),
-    outputPerMillion: usd(500),
-    cacheMinimumTokens: 4_096,
-    reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
-  },
-};
+/**
+ * Insertion order IS the capability ladder, most capable first — `moreCapableThan` is its only
+ * reader, exactly as it was when the ladder was a literal tuple. A `Map` because re-registering
+ * an id REPLACES its spec in place without moving its rung, which is what makes a negotiated
+ * enterprise rate expressible: one call, same id, new prices, same position in the ladder.
+ */
+const registry = new Map<ModelId, ModelSpec>();
+
+/**
+ * Add a model to the catalogue, or restate one that is already in it. **The three built-ins
+ * register through this same call**, at the bottom of this file — so the default path is the
+ * app's path and there is exactly one way to put a model in the catalogue.
+ *
+ * Re-registering an id replaces its spec and keeps its rung. That is deliberate and it is the
+ * negotiated-rate mechanism: an app whose contract prices `claude-opus-5` below list registers it
+ * again with its own `inputPerMillion`/`outputPerMillion`, and every `costOf`, every budget
+ * reservation and every recorded cost is that number from then on. Boot registers after this
+ * module is imported, so the app always wins.
+ *
+ * A model appended after the built-ins is the LEAST capable rung, because that is what appending
+ * to a most-capable-first list means. An app that wants its own ladder registers its whole
+ * catalogue in the order it wants, re-registering the built-in ids it keeps.
+ */
+export function registerModel(spec: ModelSpec): ModelSpec {
+  registry.set(spec.id, spec);
+  return spec;
+}
+
+/** Every registered id, in ladder order. */
+export function modelIds(): readonly ModelId[] {
+  return [...registry.keys()];
+}
+
+/** Every registered spec, in ladder order. Consumed by `x manifest` and by doctor-style checks. */
+export function registeredModels(): readonly ModelSpec[] {
+  return [...registry.values()];
+}
+
+export function isModelRegistered(id: ModelId): boolean {
+  return registry.has(id);
+}
+
+/**
+ * The spec behind an id. The ONE read path, and the guard the closed union used to be: an
+ * unregistered id throws here — at the pricing, request-building and streaming seams that all
+ * call it — rather than silently pricing a foreign model at somebody else's rates.
+ */
+export function modelSpec(id: ModelId): ModelSpec {
+  const spec = registry.get(id);
+  if (spec === undefined) throw new AiModelUnknownError({ model: id, registered: modelIds() });
+  return spec;
+}
+
+/**
+ * Refuse an unregistered id without needing its spec. For a boot-time or `x doctor`-style check
+ * AFTER registration has run; every request path reads `modelSpec` instead, and a declaration
+ * cannot check at all — an `llm()` is evaluated at module scope, before boot registers anything.
+ */
+export function assertModel(id: ModelId): void {
+  modelSpec(id);
+}
+
+/** Test-only reset back to the built-in catalogue. Module state otherwise leaks between files. */
+export function resetModels(): void {
+  registry.clear();
+  registerBuiltInModels();
+}
 
 const rankOf = (effort: Effort): number => EFFORTS.indexOf(effort);
 
 /**
- * The blessed model one rung ABOVE `model`, or `undefined` when it is already the most capable
- * one this catalogue holds. `MODEL_IDS` is ordered most-capable-first — "the others are explicit
+ * The model one rung ABOVE `model`, or `undefined` when it is already the most capable one the
+ * registry holds. Registration order is most-capable-first — "the others are explicit
  * downgrades" — so the ladder needs no second list to walk.
  *
  * A refusal is only worth retrying UPWARD. `MODEL_IDS.find((id) => id !== refused)` answered a
@@ -113,8 +158,9 @@ const rankOf = (effort: Effort): number => EFFORTS.indexOf(effort);
  * the fix line told an operator to buy the same refusal from a weaker model.
  */
 export function moreCapableThan(model: ModelId): ModelId | undefined {
-  const at = MODEL_IDS.indexOf(model);
-  return at <= 0 ? undefined : MODEL_IDS[at - 1];
+  const ids = modelIds();
+  const at = ids.indexOf(model);
+  return at <= 0 ? undefined : ids[at - 1];
 }
 
 /**
@@ -131,7 +177,7 @@ export function reasoningBody(
   effort: Effort | undefined,
   thinking: ThinkingMode | undefined,
 ): Record<string, unknown> {
-  const rules = MODELS[model].reasoning;
+  const rules = modelSpec(model).reasoning;
   const body: Record<string, unknown> = {};
 
   if (effort !== undefined && !rules.effort) {
@@ -179,3 +225,48 @@ function assertDisableAllowed(model: ModelId, rules: ModelReasoning, effort: Eff
     fix: `set effort: '${cap}' in definePrompt alongside thinking: 'disabled', or drop thinking from it`,
   });
 }
+
+/**
+ * The blessed models. Opus 5 is the default; the others are explicit downgrades. IDs are exact
+ * alias strings — never append a date suffix. Registered through the public `registerModel`, in
+ * ladder order, so nothing about the built-in path is a private door an app cannot use.
+ */
+function registerBuiltInModels(): void {
+  // $5 / $25 per MTok.
+  registerModel({
+    id: 'claude-opus-5',
+    contextWindow: 1_000_000,
+    maxOutput: 128_000,
+    inputPerMillion: usd(500),
+    outputPerMillion: usd(2_500),
+    cacheMinimumTokens: 512,
+    // Thinking is on by default here, and switching it OFF is legal only at `high` or below.
+    reasoning: { effort: true, adaptive: true, disableThinkingUpTo: 'high' },
+  });
+  // $3 / $15 per MTok. The introductory rate is deliberately NOT modelled: a price that lapses on
+  // a date makes every recorded cost depend on when it was read, and a budget that under-reports
+  // spend after the lapse is a budget that is not one. List price over-reserves, which is safe.
+  registerModel({
+    id: 'claude-sonnet-5',
+    contextWindow: 1_000_000,
+    maxOutput: 128_000,
+    inputPerMillion: usd(300),
+    outputPerMillion: usd(1_500),
+    cacheMinimumTokens: 1_024,
+    reasoning: { effort: true, adaptive: true, disableThinkingUpTo: undefined },
+  });
+  // $1 / $5 per MTok. Pre-4.6, so it has neither knob: an `output_config.effort` or an adaptive
+  // `thinking` block sent here is a 400 on every request, which is what made the cheap tier
+  // uncallable while the request body was one shape for the whole catalogue.
+  registerModel({
+    id: 'claude-haiku-4-5',
+    contextWindow: 200_000,
+    maxOutput: 64_000,
+    inputPerMillion: usd(100),
+    outputPerMillion: usd(500),
+    cacheMinimumTokens: 4_096,
+    reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
+  });
+}
+
+registerBuiltInModels();

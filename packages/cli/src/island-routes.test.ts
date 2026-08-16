@@ -37,7 +37,7 @@ const serve = (bundle: IslandBundle): ReturnType<typeof createServer> =>
       }),
     ],
     role: 'web',
-    config: defineHttpConfig({ dev: true, buildId: BUILD_ID }),
+    config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
   });
 
 beforeEach(async () => {

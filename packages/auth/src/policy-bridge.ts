@@ -38,12 +38,18 @@ const withPermissions = (actor: Actor, permissions: readonly string[]): PolicyAc
 });
 
 /**
- * A human. Roles come from the row and are expanded to permissions by policy; scopes stay
- * empty because a browser session is not scope-limited — the role set is the limit.
+ * A human. Roles come from the row and are expanded to permissions by policy; scopes come from
+ * the row too, and they are almost always empty.
+ *
+ * `scopes: []` used to be hardcoded here, which made a scope a thing no human could ever hold —
+ * so `hasScope(actor, 'tenancy:cross')`, whose own reasons name "an admin surface listing every
+ * org" and "support tooling", could only ever be satisfied by minting a `serviceActor` inside the
+ * handler. That discards the operator's identity and makes the sweep unattributable, which is the
+ * exact property the scope's required reason string exists to preserve.
  *
  * A session that has not satisfied an enrolled second factor resolves to an actor with no
- * roles and no permissions rather than an error, so a half-authenticated request can still
- * reach the "finish MFA" route and nothing else. Login throws `X_MFA_REQUIRED` separately.
+ * roles, no permissions and no scopes rather than an error, so a half-authenticated request can
+ * still reach the "finish MFA" route and nothing else. Login throws `X_MFA_REQUIRED` separately.
  */
 export function actorFromUser(user: AuthUser, session: AuthSession): PolicyActor {
   const mfaPending = user.mfaSecret !== null && !session.mfaSatisfied;
@@ -52,7 +58,7 @@ export function actorFromUser(user: AuthUser, session: AuthSession): PolicyActor
       id: user.id,
       orgId: user.orgId ?? undefined,
       roles: mfaPending ? [] : user.roles,
-      scopes: [],
+      scopes: mfaPending ? [] : user.scopes,
     }),
     mfaPending ? [] : user.permissions,
   );

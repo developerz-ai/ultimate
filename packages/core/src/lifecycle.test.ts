@@ -10,7 +10,9 @@ import {
   lifecycleState,
   markReady,
   onShutdown,
+  readinessCheckCount,
   readyzPayload,
+  registerReadinessCheck,
   resetLifecycle,
   shutdownHookCount,
 } from './lifecycle';
@@ -149,5 +151,67 @@ describe('lifecycle', () => {
 
     expect(closed).toBe(1);
     expect(lines.some((line) => line.includes('shutdown hook failed'))).toBe(true);
+  });
+});
+
+describe('readiness checks', () => {
+  test('a bound-but-unusable process is NOT ready — the rolling-deploy 500s', () => {
+    let poolOpen = false;
+    registerReadinessCheck('postgres', () => poolOpen);
+    markReady();
+    expect(readyzPayload().status).toBe(503);
+    expect(readyzPayload().body.checks).toEqual({ postgres: 'failing' });
+
+    poolOpen = true;
+    expect(readyzPayload().status).toBe(200);
+    expect(readyzPayload().body.checks).toEqual({ postgres: 'ok' });
+  });
+
+  test('names every check, so an alert can key on the failing one', () => {
+    registerReadinessCheck('postgres', () => true);
+    registerReadinessCheck('redis', () => false);
+    markReady();
+    expect(readyzPayload().body.checks).toEqual({ postgres: 'ok', redis: 'failing' });
+  });
+
+  test('liveness ignores the checks — a database outage must not restart the fleet', () => {
+    registerReadinessCheck('postgres', () => false);
+    markReady();
+    expect(healthzPayload().status).toBe(200);
+    expect(readyzPayload().status).toBe(503);
+  });
+
+  test('a check that throws is failing, never an unhandled error', () => {
+    registerReadinessCheck('boom', () => {
+      throw new Error('pool closed');
+    });
+    markReady();
+    expect(readyzPayload().body.checks).toEqual({ boom: 'failing' });
+  });
+
+  test('markReady still means bound: readiness starts from checks, not from state alone', () => {
+    registerReadinessCheck('postgres', () => true);
+    expect(readyzPayload().status).toBe(503);
+    expect(lifecycleState()).toBe('starting');
+    markReady();
+    expect(readyzPayload().status).toBe(200);
+  });
+
+  test('the registration returns its unregister, and a duplicate name is refused', () => {
+    const off = registerReadinessCheck('postgres', () => true);
+    expect(() => registerReadinessCheck('postgres', () => true)).toThrow(
+      /X_READINESS_CHECK_DUPLICATE/,
+    );
+    off();
+    expect(readinessCheckCount()).toBe(0);
+    registerReadinessCheck('postgres', () => true);
+    expect(readinessCheckCount()).toBe(1);
+  });
+
+  test('a drained process is not ready even when every check passes', async () => {
+    registerReadinessCheck('postgres', () => true);
+    markReady();
+    await drain('SIGTERM');
+    expect(readyzPayload().status).toBe(503);
   });
 });

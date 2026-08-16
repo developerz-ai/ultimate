@@ -77,7 +77,7 @@ if (import.meta.main) {
     () =>
       Bun.serve({
         port,
-        fetch(request, bunServer) {
+        async fetch(request, bunServer) {
           const url = new URL(request.url);
           if (url.pathname === '/bench/ready') {
             return Response.json({ ready: node.ready, sockets: node.sockets.count });
@@ -88,7 +88,11 @@ if (import.meta.main) {
             void hub.publish(BENCH_TOPIC, { seq });
             return Response.json({ seq });
           }
-          return node.fetch(request, bunServer) ?? new Response('not found', { status: 404 });
+          // Awaited, not `??`-defaulted: `node.fetch` is async now — the credential is decided
+          // before `server.upgrade`, so a refused one never costs a websocket — and a promise is
+          // never nullish, so the old fallback was dead code that turned every non-upgrade path
+          // into a 200 with a `[object Promise]` body.
+          return await node.fetch(request, bunServer);
         },
         websocket: node.websocket,
       }),

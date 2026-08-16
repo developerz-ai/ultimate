@@ -161,7 +161,7 @@ describe('toProblem', () => {
     expect(document.type).toBe('https://ultimate.dev/errors/X_BODY_INVALID');
     expect(document.detail).toContain('title: required');
     expect(document.code).toBe('X_BODY_INVALID');
-    expect(document.fix).toContain('x schema show');
+    expect(document.fix).toContain('x routes --json');
     expect(document.instance).toBe('/posts');
     expect(document.requestId).toBe('req-1');
   });
@@ -206,5 +206,25 @@ describe('factsOf over a throwable it does not control', () => {
   test('a throwable carrying its own strings is untouched', () => {
     expect(factsOf({ code: 'X_INTERNAL', cause: 'a', fix: 'b' }).cause).toBe('a');
     expect(factsOf(new TypeError('x is not a function')).cause).toBe('x is not a function');
+  });
+});
+
+describe('the fix line every uncoded throwable gets', () => {
+  // Axiom 4, on the path where the reader has the least context. It used to name
+  // `x logs tail --json`, which is in `PLANNED_COMMANDS` and exits `X_NOT_IMPLEMENTED` — so the
+  // one instruction an unhandled `TypeError` gave the reader failed when they ran it. The
+  // `errors` verify step checks that a fix NAMES a command, never that the command exists.
+  test('names a command this build ships, not a planned one', () => {
+    const facts = factsOf(new TypeError('undefined is not a function'));
+    expect(facts.fix).not.toContain('x logs');
+    expect(facts.fix).toContain('x errors explain X_INTERNAL --json');
+  });
+});
+
+describe('storage states the caller can act on', () => {
+  // The object exists and the request is well formed; the STATE is wrong, and the app's scanner
+  // is what clears it. 500 read as "the server broke" for a workflow working as built.
+  test('a quarantined object is a 409, not the 500 it fell through to', () => {
+    expect(statusFor('X_STORAGE_QUARANTINED')).toBe(409);
   });
 });

@@ -2,8 +2,9 @@
 // object be evaluated in an HTTP request, a job, a live query and an MCP tool without
 // any of them re-implementing the rule — one authz system, never two.
 import type { Ctx } from '@ultimat3/core';
+import { actorHas } from './grant-index';
 import { assertPermission, type KnownPermission, type Permission } from './permissions';
-import { type Actor, actorHas } from './roles';
+import type { Actor } from './roles';
 
 export type PolicyDecision =
   | { readonly allowed: true }
@@ -141,6 +142,22 @@ export const deny = <I = unknown, R = unknown>(
   },
 });
 
+/**
+ * Every permission a policy tree references, deduped and sorted. This is the list a compliance
+ * report has to read: `label` renders a composite as `and(post:publish, org:administer)`, which
+ * is a sentence, not a permission — matching a grant against it reports every non-trivial rule's
+ * permissions as unenforced.
+ *
+ * A `not()` clause contributes its inner permissions too. The grant still decides the outcome,
+ * so "nothing references this permission" would be the false statement, not this one.
+ */
+export const policyPermissions = <I = unknown, R = unknown>(
+  policy: Policy<I, R>,
+): readonly Permission[] => policy.permissions;
+
+const flatten = (children: readonly { readonly permissions: readonly Permission[] }[]) =>
+  [...new Set(children.flatMap((child) => child.permissions))].sort();
+
 // Combinators hand `args` to every child untouched — `row` included. A clause that rewrote
 // the args would be the second authz shape all over again.
 const combined = <I, R>(
@@ -151,7 +168,7 @@ const combined = <I, R>(
 ): Policy<I, R> => ({
   kind,
   label,
-  permissions: children.flatMap((child) => child.permissions),
+  permissions: flatten(children),
   children,
   run(args, recorder, depth = 0) {
     return record(recorder, this, depth, decide(args, recorder, depth + 1));
@@ -190,8 +207,19 @@ export const or = <I, R = unknown>(...policies: readonly Policy<I, R>[]): Policy
     },
   );
 
+/**
+ * Inverts a decision about an actor's grants — and only that.
+ *
+ * `X_UNAUTHENTICATED` is propagated, never inverted. "There is no actor" is not a fact about
+ * this actor's permissions, so flipping it makes `not(can('order:internal'))` read as *allow
+ * everyone who is not internal, anonymous callers first*. That is how a "public unless internal"
+ * route becomes a public internal route: the mistake is invisible in `and(can(…), not(can(…)))`
+ * because the first clause carries the authentication, and it ships the moment someone simplifies.
+ */
 export const not = <I, R = unknown>(policy: Policy<I, R>): Policy<I, R> =>
   combined('not', `not(${policy.label})`, [policy], (args, recorder, depth) => {
     const decision = policy.run(args, recorder, depth);
-    return decision.allowed ? denied(`not(${policy.label}) — inner clause allowed`) : ALLOWED;
+    if (decision.allowed) return denied(`not(${policy.label}) — inner clause allowed`);
+    if (decision.code === 'X_UNAUTHENTICATED') return decision;
+    return ALLOWED;
   });

@@ -48,13 +48,22 @@ describe('unit · x policy · listPolicy', () => {
     registerPolicyFixture();
     expect(listPolicy().rows).toEqual([
       { permission: 'feed:read', roles: ['admin', 'reader'], actions: [], queries: ['postFeed'] },
+      // Declared, granted, enforced by nothing: what a dead grant actually looks like.
+      { permission: 'post:delete', roles: ['admin'], actions: [], queries: [] },
       {
         permission: 'post:publish',
         roles: ['admin', 'editor'],
-        actions: ['publishPost'],
+        // `archivePost` is guarded by `and(post:publish, post:read)`. Matching on the display
+        // label reported it as enforcing NEITHER, so both of its permissions read as dead.
+        actions: ['archivePost', 'publishPost'],
         queries: ['publishedPosts'],
       },
-      { permission: 'post:read', roles: ['admin', 'editor', 'reader'], actions: [], queries: [] },
+      {
+        permission: 'post:read',
+        roles: ['admin', 'editor', 'reader'],
+        actions: ['archivePost'],
+        queries: [],
+      },
     ]);
   });
 
@@ -62,8 +71,9 @@ describe('unit · x policy · listPolicy', () => {
     registerPolicyFixture();
     const facts = listPolicy();
     expect(facts.roleCount).toBe(3);
-    expect(facts.enforcedCount).toBe(2);
-    expect(facts.unenforced).toEqual(['post:read']);
+    // Three of four: the composite's two count, and only the grant nothing references does not.
+    expect(facts.enforcedCount).toBe(3);
+    expect(facts.unenforced).toEqual(['post:delete']);
   });
 
   test('an app with nothing declared answers empty facts, not a throw', () => {
@@ -78,6 +88,8 @@ describe('unit · x policy · explainPolicy', () => {
     expect(explanation?.kind).toBe('permission');
     expect(explanation?.grantingRoles).toEqual(['admin', 'editor']);
     expect(explanation?.declarations.map((d) => [d.name, d.kind])).toEqual([
+      // The composite is here because it references the permission, not because its label is one.
+      ['archivePost', 'action'],
       ['publishPost', 'action'],
       ['publishedPosts', 'query'],
     ]);
@@ -85,14 +97,16 @@ describe('unit · x policy · explainPolicy', () => {
 
   test('every declaration matrix carries one row per role plus anonymous, in that order', () => {
     registerPolicyFixture();
-    const rows = explainPolicy('post:publish')?.declarations[0]?.rows ?? [];
+    // `declarations[1]` is `publishPost`, the simple `can()` one: `archivePost` now sorts ahead
+    // of it, because a composite is a real enforcer of this permission.
+    const rows = explainPolicy('post:publish')?.declarations[1]?.rows ?? [];
     expect(rows.map((r) => r.actor)).toEqual(['anonymous', 'admin', 'editor', 'reader']);
     expect(rows.map((r) => r.allowed)).toEqual([false, true, true, false]);
   });
 
   test('the deciding clause and reason for a simple can() policy name the permission itself', () => {
     registerPolicyFixture();
-    const rows = explainPolicy('post:publish')?.declarations[0]?.rows ?? [];
+    const rows = explainPolicy('post:publish')?.declarations[1]?.rows ?? [];
     expect(rows.find((r) => r.actor === 'anonymous')).toMatchObject({
       deciding: 'post:publish',
       reason: 'no actor for post:publish',
@@ -140,11 +154,14 @@ describe('unit · x policy · explainPolicy', () => {
     expect(byPath?.declarations[0]?.name).toBe('publishPost');
   });
 
-  test('grantingRoles for a single declaration comes from its own capability, not the subject text', () => {
+  test('grantingRoles for a single declaration is the union over its permissions, not its label', () => {
     registerPolicyFixture();
     expect(explainPolicy('postFeed')?.grantingRoles).toEqual(['admin', 'reader']);
-    // no role grants the literal compound label "and(post:publish, post:read)"
-    expect(explainPolicy('archivePost')?.grantingRoles).toEqual([]);
+    // `rolesGranting('and(post:publish, post:read)')` is a lookup that can only ever answer
+    // nothing, so a composite-guarded action reported NO granting roles — which reads as "nobody
+    // can do this" about an action every role in the app can at least attempt. The union over
+    // `post:publish` and `post:read` is who can reach it, deduped and sorted.
+    expect(explainPolicy('archivePost')?.grantingRoles).toEqual(['admin', 'editor', 'reader']);
   });
 
   test('an unknown subject resolves to undefined, not a throw', () => {
@@ -210,6 +227,7 @@ describe('unit · x policy · knownPolicySubjects', () => {
     registerPolicyFixture();
     expect(knownPolicySubjects()).toEqual([
       'feed:read',
+      'post:delete',
       'post:publish',
       'post:read',
       'archivePost',

@@ -108,7 +108,7 @@ One typed entry point for model calls — provider-agnostic, observable, cached,
 
 ```ts
 export const summarize = llm({
-  model: 'claude-sonnet-4-5',
+  model: 'claude-sonnet-5',
   input:  t.object({ postId: t.uuid }),
   output: t.object({ summary: t.string, tags: t.string.array() }),
   prompt: summarizePrompt,                       // versioned artifact
@@ -121,13 +121,15 @@ export const summarize = llm({
 | Feature | Behavior |
 |---|---|
 | Structured output | `output` schema drives tool-use/JSON mode; a parse failure retries once, then throws `X_LLM_OUTPUT_INVALID` |
-| Streaming | first-class, wired to Solid signals and `stream` routes |
+| Streaming | `.stream()` on the returned action; policy, budget, cache and span unchanged; the `done` chunk carries the validated value |
 | Cost + token accounting | per call, per tenant, per prompt version; exceeding `budget` throws before spending |
 | Retries | typed on provider errors; rate limits back off, content refusals do not retry |
 | Caching | semantic cache from [Caching and invalidation](Caching-And-Invalidation) |
 | Tracing | one OTel span per call with model, tokens, cache hit, prompt version |
-| Fallback | ordered model list; a fallback is recorded in the span, never silent |
+| Fallback | ordered provider list per model; the provider that answered is on the span as `llm.provider`, never silent. A refusal names a more capable model for the declaration to adopt — models are never swapped at runtime |
 | Money | `Money = { minor, currency }` — never a float → [Money](Money) |
+
+**A stream is the same action over a different transport, with one difference that is forced rather than chosen: there is no repair turn.** The non-streaming call retries once on a parse failure; a stream cannot, because the tokens are already on the reader's screen and a second answer is two answers to one question. So a stream yields **unvalidated** text increments plus one final `done` carrying the value that did satisfy `output`, and a schema disagreement is `X_LLM_STREAM_INVALID` naming the non-streaming call as the fix. A structured schema wants the non-streaming call.
 
 Long or multi-call chains are `job`s with steps, so a model call that fails on step 4 retries step 4 only. See [Jobs and workflows](Jobs-And-Workflows).
 

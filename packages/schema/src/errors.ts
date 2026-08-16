@@ -20,6 +20,9 @@ export const SCHEMA_ERROR_CODES: Readonly<Record<string, SchemaErrorCodeDeclarat
   Object.freeze({
     X_VALIDATION_FAILED: { title: 'value did not match its schema' },
     X_SCHEMA_UNSUPPORTED: { title: 'the active schema provider cannot do this' },
+    X_SCHEMA_DISCRIMINANT_INVALID: {
+      title: 'a discriminated union member can never be dispatched to',
+    },
   });
 
 /**
@@ -124,6 +127,20 @@ export class ValidationFailedError extends SchemaError {
     return formatIssues(this.issues)
       .map((line) => `  ${line}`)
       .join('\n');
+  }
+}
+
+/**
+ * Thrown where the union is BUILT, not where a value is parsed: a member no tag can route to is
+ * wrong for every input, so the first import of the authoring file is the earliest honest place
+ * to say so — never a request that quietly took the wrong branch.
+ */
+export class DiscriminantInvalidError extends SchemaError {
+  static readonly code = 'X_SCHEMA_DISCRIMINANT_INVALID';
+  override readonly name = 'DiscriminantInvalidError';
+
+  constructor(init: Omit<SchemaErrorInit, 'code'>) {
+    super({ ...init, code: DiscriminantInvalidError.code });
   }
 }
 

@@ -12,11 +12,32 @@ import { randomToken, sha256Hex, timingSafeEqual } from './tokens';
 export interface SessionPolicy {
   /** Hard ceiling from creation. Never extended. */
   readonly absoluteTtlMs: number;
-  /** Measured from `lastSeenAt`, refreshed on every verified request. */
+  /** Measured from `lastSeenAt`, refreshed at most once per `idleSlideMs`. */
   readonly idleTtlMs: number;
+  /**
+   * How stale `lastSeenAt` may get before a verified request writes it forward. Absent means
+   * `idleTtlMs / IDLE_SLIDE_DIVISOR`, derived rather than a constant so an app that shortens
+   * `idleTtlMs` does not silently get a slide longer than its own idle window — which would
+   * pin every session to its creation time and expire it on the dot.
+   *
+   * It exists because `verifySession` used to write on EVERY authenticated request: one request
+   * was a SELECT, an `UPDATE … RETURNING *` and a second SELECT, before the app's own first
+   * query. At 20k rps that is 20k writes a second on one hot table, autovacuum falls behind, and
+   * the incident reads as "the database is slow" rather than "authentication is a write path".
+   * The trade is bounded: idle expiry is now precise to within one `idleSlideMs`.
+   */
+  readonly idleSlideMs?: number | undefined;
   readonly cookieName: string;
   /** Mint a new session id whenever roles/scopes change — closes session fixation. */
   readonly rotateOnPrivilegeChange: boolean;
+}
+
+/** 20 → roughly 5% of the idle window, so the write rate falls ~20× and the drift stays small. */
+export const IDLE_SLIDE_DIVISOR = 20;
+
+/** The resolved slide, wherever it is read. One derivation, so the two readers cannot disagree. */
+export function idleSlideMs(policy: SessionPolicy): number {
+  return Math.max(0, policy.idleSlideMs ?? Math.floor(policy.idleTtlMs / IDLE_SLIDE_DIVISOR));
 }
 
 export const DEFAULT_SESSION_POLICY: SessionPolicy = Object.freeze({
@@ -134,10 +155,18 @@ export async function verifySession(
     throw sessionExpired(expiry.absoluteExpired ? 'absolute' : 'idle', session.id);
   }
 
+  const ip = observed?.ip ?? session.ip;
+  const userAgent = observed?.userAgent ?? session.userAgent;
+  // The window slides only when it has actually moved. A second request inside the slide issues
+  // no write at all — the read path stays a read — while a changed address or user agent is
+  // written immediately, because that is the row a device list and an incident review read.
+  const stale = now.getTime() - session.lastSeenAt.getTime() >= idleSlideMs(runtime.policy);
+  if (!stale && ip === session.ip && userAgent === session.userAgent) return session;
+
   const touched = await runtime.store.updateSession(session.id, {
-    lastSeenAt: now,
-    ip: observed?.ip ?? session.ip,
-    userAgent: observed?.userAgent ?? session.userAgent,
+    lastSeenAt: stale ? now : session.lastSeenAt,
+    ip,
+    userAgent,
   });
   return touched ?? session;
 }

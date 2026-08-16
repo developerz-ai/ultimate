@@ -37,22 +37,34 @@ const CORE_CODE_TITLES = {
   X_ENVIRONMENT_INVALID: 'ULTIMATE_ENV is not a known environment',
   X_ERROR_CODE_DUPLICATE: 'error code registered twice',
   X_ERROR_REPORTER_DSN_INVALID: 'the error monitor DSN is malformed',
+  X_ERROR_RETRY_INVALID: 'error retry classification is unknown or already claimed',
   X_ID_INVALID: 'value is not a valid id',
   X_IMAGE_DECODE_FAILED: 'image bytes are malformed, truncated or internally inconsistent',
   X_IMAGE_TOO_LARGE: 'image exceeds the pipeline pixel ceiling',
   X_IMAGE_UNSUPPORTED: 'the built-in image pipeline cannot read or write this format',
   X_INTERNAL: 'unexpected internal framework error',
   X_INVARIANT: 'invariant violated',
+  X_METRIC_CARDINALITY:
+    'a metric exceeded its series ceiling and is folding into one overflow series',
   X_METRIC_NAME_INVALID: 'metric name is malformed or already declared with another kind',
   X_METRIC_VALUE_INVALID: 'metric value is not recordable',
   X_NO_CONTEXT: 'no request context is active',
   X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
+  X_OTLP_ENDPOINT_INVALID: 'the OTLP collector endpoint is missing or malformed',
+  X_OTLP_PROTOCOL_UNSUPPORTED: 'the OTLP protocol requested is not OTLP/HTTP JSON',
+  X_READINESS_CHECK_DUPLICATE: 'a readiness check name is registered twice',
   X_REGISTRAR_CONFLICT: 'two different registrars are loaded for one primitive kind',
   X_REGISTRAR_MISSING: 'no registrar is loaded for a primitive kind',
   X_ROLE_INVALID: 'ROLE is not a known runtime role',
   X_SERVICE_DUPLICATE: 'a service name is registered twice',
   X_SERVICE_MISSING: 'service is not registered on the request context',
   X_SHUTDOWN_TIMEOUT: 'graceful shutdown exceeded its deadline',
+  X_TELEMETRY_SAMPLER_ARG_INVALID: 'the trace sampling ratio is not a number between 0 and 1',
+  // Core's, though core does not throw it — the twin of `X_ABORTED`, and `@ultimat3/http` already
+  // calls it "borrowed (core's concept)" in `HTTP_BORROWED_ERROR_CODES`. A deadline that expired
+  // and a caller that went away are one pair of facts, so they are titled and classified in one
+  // place rather than by whichever package happened to raise one first.
+  X_TIMEOUT: 'operation exceeded its deadline',
   X_UNREACHABLE: 'unreachable branch was reached',
 } as const;
 

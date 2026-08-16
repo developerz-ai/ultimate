@@ -1,8 +1,9 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { evaluate, explain, renderTrace } from './evaluate';
+import { actorHas } from './grant-index';
 import { clearPermissions, definePermissions } from './permissions';
-import { allow, and, can, deny, not, or } from './policy';
-import { actorHas, clearRoles, defineRoles, expandRoles } from './roles';
+import { allow, and, can, deny, not, or, policyPermissions } from './policy';
+import { clearRoles, defineRoles, expandRoles } from './roles';
 import { testActor } from './test-kit';
 
 interface PostInput {
@@ -102,10 +103,38 @@ describe('composition', () => {
     expect(evaluate(policy, { input, actor: viewer }).allowed).toBe(false);
   });
 
+  // The security case, first: `can()` denies a null actor with X_UNAUTHENTICATED, and `not()`
+  // used to invert that into an ALLOW. `and(can(a), not(can(b)))` hid it — the first clause
+  // carried the authentication — right up until someone simplified to `not(can(b))` for a
+  // "public unless internal" route and shipped an anonymous door into the internal one.
+  test('not() refuses an anonymous caller instead of inverting the denial', () => {
+    const evaluation = evaluate(not(canPublish), { input, actor: null });
+    expect(evaluation.allowed).toBe(false);
+    expect(evaluation.decision.allowed ? '' : evaluation.decision.code).toBe('X_UNAUTHENTICATED');
+  });
+
+  test('not() refuses an anonymous caller through every wrapping combinator', () => {
+    expect(evaluate(not(not(canPublish)), { input, actor: null }).allowed).toBe(false);
+    expect(evaluate(and(allow<PostInput>(), not(canPublish)), { input, actor: null }).allowed).toBe(
+      false,
+    );
+  });
+
   test('not() inverts, and double negation is identity', () => {
     expect(evaluate(not(canPublish), { input, actor: viewer }).allowed).toBe(true);
     expect(evaluate(not(canPublish), { input, actor: editor }).allowed).toBe(false);
     expect(evaluate(not(not(canPublish)), { input, actor: editor }).allowed).toBe(true);
+  });
+
+  test('permissions flatten through every combinator, deduped and sorted', () => {
+    const policy = and(
+      canPublish,
+      or(can<PostInput>('post:delete'), canPublish),
+      not(can<PostInput>('org:admin')),
+    );
+    expect(policyPermissions(policy)).toEqual(['org:admin', 'post:delete', 'post:publish']);
+    // The bug this closes: `label` is a sentence, never a permission.
+    expect(policy.label).not.toBe('post:publish');
   });
 
   test('allow() and deny() are terminal and say so in the trace', () => {

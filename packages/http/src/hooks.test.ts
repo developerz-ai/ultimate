@@ -14,7 +14,12 @@ import { UltimateRequest } from './request';
 import { text } from './response';
 import type { Route } from './router';
 
-const config = defineHttpConfig({ dev: false, buildId: null, hostname: '127.0.0.1' });
+const config = defineHttpConfig({
+  rateLimit: { scope: 'process' },
+  dev: false,
+  buildId: null,
+  hostname: '127.0.0.1',
+});
 
 const ctx = createRequestContext({
   url: new URL('http://x.test/posts'),

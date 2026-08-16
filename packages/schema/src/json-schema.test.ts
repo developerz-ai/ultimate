@@ -74,6 +74,33 @@ describe('toJsonSchema', () => {
     });
   });
 
+  test('a refinement reaches the projection twice: as prose and as an extension', () => {
+    // The axiom-2 break this closes: the rule used to live in the handler, so `openapi.json`,
+    // the MCP tool schema and the typed client all described a schema that accepts what the
+    // server rejects. Both halves ship — the extension for code generators, the description for
+    // an LLM reading a tool schema, which is the only field it is guaranteed to be shown.
+    const range = t
+      .object({ startDate: t.date, endDate: t.date })
+      .refine({
+        name: 'end-after-start',
+        message: 'endDate must be after startDate',
+        path: ['endDate'],
+        check: (value) => value.endDate > value.startDate,
+      })
+      .describe('a closed date range');
+    const json = toJsonSchema(range, { includeDialect: false });
+    expect(json.description).toBe('a closed date range — endDate must be after startDate');
+    expect(json['x-ultimate-refinements']).toEqual([
+      { name: 'end-after-start', message: 'endDate must be after startDate', path: ['endDate'] },
+    ]);
+  });
+
+  test('an unrefined schema gains no new keys — nothing already generated moves', () => {
+    const json = toJsonSchema(t.object({ id: t.uuid }), { includeDialect: false });
+    expect('x-ultimate-refinements' in json).toBe(false);
+    expect('discriminator' in json).toBe(false);
+  });
+
   test('a provider that cannot introspect fails loudly with a fix line', () => {
     configureSchemaProvider({ vendor: 'zod', t: builtinT });
     expect(() => toJsonSchema({ notASchema: true })).toThrow(/X_SCHEMA_UNSUPPORTED/);

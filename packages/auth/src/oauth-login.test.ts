@@ -1,52 +1,21 @@
+// `signInWithOAuth`: one profile turned into a user, an account link and a session — and every
+// refusal on the way. The callback that produces the profile is `oauth-login-callback.test.ts`
+// and the grant seam applied to the result is `oauth-login-grants.test.ts`.
+
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import type { AuthUser } from './adapter';
 import { type Auth, defineAuth } from './auth';
-import type { IdTokenClaims } from './id-token';
-import { unsignedJwt } from './id-token-fixture';
 import { MemoryAdapter } from './memory-adapter';
-import { beginOAuth, type OAuthHandshake } from './oauth';
-import type { OAuthFetch, OAuthTokens } from './oauth-exchange';
-import { completeOAuthLogin, signInWithOAuth } from './oauth-login';
-import type { OAuthProfile } from './oauth-profile';
-
-const NOW = new Date('2026-08-09T12:00:00.000Z');
-const credentials = { clientId: 'client-id', clientSecret: 'client-secret' };
+import { signInWithOAuth } from './oauth-login';
+import { codeOf, freshAuth, NOW, profile, tokens } from './oauth-login-fixture';
 
 let adapter: MemoryAdapter;
 let auth: Auth;
 
 beforeEach(() => {
-  adapter = new MemoryAdapter();
-  auth = defineAuth({ adapter, clock: frozenClock(NOW), providers: ['github', 'google'] });
+  ({ adapter, auth } = freshAuth());
 });
-
-const profile = (overrides: Partial<OAuthProfile> = {}): OAuthProfile => ({
-  provider: 'github',
-  providerAccountId: '583231',
-  email: 'ada@example.com',
-  emailVerified: true,
-  name: 'Ada Lovelace',
-  ...overrides,
-});
-
-const tokens = (overrides: Partial<OAuthTokens> = {}): OAuthTokens => ({
-  accessToken: 'gho_first',
-  refreshToken: null,
-  expiresAt: null,
-  idToken: null,
-  claims: null,
-  ...overrides,
-});
-
-const codeOf = async (call: Promise<unknown>): Promise<string> => {
-  try {
-    await call;
-  } catch (error) {
-    return isUltimateError(error) ? error.code : `not-an-UltimateError: ${String(error)}`;
-  }
-  return 'did-not-throw';
-};
 
 /**
  * Accepts the new row and loses every patch — the shape of an `AuthAdapter` whose `updateUser`
@@ -323,97 +292,16 @@ describe('signInWithOAuth', () => {
     await expect(denied).rejects.toThrow(/defineAuth/);
   });
 
-  test('roles and org are applied to a user this flow creates', async () => {
+  test('the grant seam is applied to a user this flow creates', async () => {
     const result = await signInWithOAuth(auth, {
       profile: profile(),
       tokens: tokens(),
-      roles: ['reader'],
-      orgId: 'org-1',
+      grants: { roles: ['reader'], orgId: 'org-1' },
       ip: '203.0.113.7',
       userAgent: 'Mozilla/5.0',
     });
     expect(result.actor.roles).toEqual(['reader']);
     expect(result.actor.orgId).toBe('org-1');
     expect(result.session.ip).toBe('203.0.113.7');
-  });
-});
-
-const googleIdToken = (handshake: OAuthHandshake): string => {
-  const claims: IdTokenClaims = {
-    iss: 'https://accounts.google.com',
-    aud: 'client-id',
-    sub: 'google-sub',
-    exp: Math.floor(NOW.getTime() / 1000) + 3600,
-    nonce: handshake.nonce,
-    email: 'ada@example.com',
-    email_verified: true,
-    name: 'Ada Lovelace',
-  };
-  return unsignedJwt(claims);
-};
-
-const json = (body: unknown): Response =>
-  new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
-
-describe('completeOAuthLogin', () => {
-  test('a GitHub callback reaches a session in one call', async () => {
-    const handshake = beginOAuth({
-      provider: 'github',
-      clientId: 'client-id',
-      redirectUri: 'https://app.test/auth/callback',
-    });
-    // Every endpoint answered by name: a catch-all `return` handed a plausible email list to any
-    // url the flow asked for, so a call to a fourth endpoint would have passed unnoticed.
-    const urls: string[] = [];
-    const fetch: OAuthFetch = async (url) => {
-      urls.push(url);
-      if (url === 'https://github.com/login/oauth/access_token') {
-        return json({ access_token: 'gho_token', token_type: 'bearer' });
-      }
-      if (url === 'https://api.github.com/user') return json({ id: 583231, login: 'octocat' });
-      if (url === 'https://api.github.com/user/emails') {
-        return json([{ email: 'ada@example.com', primary: true, verified: true }]);
-      }
-      return expect.unreachable(`unexpected endpoint: ${url}`);
-    };
-
-    const result = await completeOAuthLogin(auth, {
-      handshake,
-      callback: { state: handshake.state, code: 'the-code' },
-      credentials,
-      fetch,
-    });
-
-    expect(urls).toEqual([
-      'https://github.com/login/oauth/access_token',
-      'https://api.github.com/user',
-      'https://api.github.com/user/emails',
-    ]);
-    expect(result.actor.kind).toBe('user');
-    expect((await adapter.findUserByEmail('ada@example.com'))?.id).toBe(result.actor.id);
-    expect((await adapter.findAccount('github', '583231'))?.accessToken).toBe('gho_token');
-  });
-
-  test('a Google callback identifies from the id token alone', async () => {
-    const handshake = beginOAuth({
-      provider: 'google',
-      clientId: 'client-id',
-      redirectUri: 'https://app.test/auth/callback',
-    });
-    const urls: string[] = [];
-    const fetch: OAuthFetch = async (url) => {
-      urls.push(url);
-      return json({ access_token: 'ya29.token', id_token: googleIdToken(handshake) });
-    };
-
-    const result = await completeOAuthLogin(auth, {
-      handshake,
-      callback: { state: handshake.state, code: 'the-code' },
-      credentials,
-      fetch,
-    });
-
-    expect(urls).toEqual(['https://oauth2.googleapis.com/token']);
-    expect((await adapter.findAccount('google', 'google-sub'))?.userId).toBe(result.actor.id);
   });
 });

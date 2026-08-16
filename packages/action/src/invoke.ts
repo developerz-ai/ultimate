@@ -14,6 +14,7 @@ import type { Ctx } from '@ultimat3/core';
 import {
   anonymousActor,
   createContext,
+  isUltimateError,
   runWithContext,
   tryUseContext,
   useContext,
@@ -148,7 +149,55 @@ async function core(
   return value;
 }
 
+/**
+ * The span covers the WHOLE invocation, not just `handle`. Wrapping the handler alone reported
+ * 40ms for an action whose p99 was 2s, because `def.row()` — the loader a row-level policy needs
+ * — ran outside it, along with the input parse and `guard()`. The 1.96s was inside no span at
+ * all, so the only reading available was "framework overhead" and the only fix was hand
+ * instrumentation. One span, one extent, and the attributes that make it answerable.
+ *
+ * Attributes are chosen for bounded cardinality — surface, actor KIND, outcome, booleans — with
+ * one exception: the namespaced idempotency key, which is the single fact that joins a retry to
+ * the call it is retrying and is what a trace is for. It is never a metric label.
+ */
 async function execute(
+  def: AnyActionDef,
+  name: string,
+  raw: unknown,
+  ctx: Ctx,
+  options: InvokeOptions,
+  trace: InvokeTrace,
+): Promise<unknown> {
+  return withSpan(`action.${name}`, async (span) => {
+    span.setAttributes({
+      'ultimate.primitive': 'action',
+      'ultimate.action': name,
+      'ultimate.surface': options.surface ?? 'server',
+      'ultimate.actor.kind': ctx.actor.kind,
+      'ultimate.idempotent': def.idempotent === true,
+    });
+    try {
+      const value = await perform(def, name, raw, ctx, options, trace);
+      span.setAttributes({
+        'ultimate.outcome': 'allowed',
+        'ultimate.idempotency.replayed': trace.replayed,
+      });
+      if (trace.idempotencyKey !== null) {
+        span.setAttribute('ultimate.idempotency.key', trace.idempotencyKey);
+      }
+      return value;
+    } catch (error) {
+      // The same two words the audit record uses, from the same function: a denial and a failure
+      // are different questions, and a trace that called both "error" cannot separate them.
+      span.setAttribute('ultimate.outcome', auditOutcomeFor(error));
+      if (isUltimateError(error)) span.setAttribute('ultimate.error.code', error.code);
+      throw error;
+    }
+  });
+}
+
+/** The invocation itself, unwrapped: parse, load the row, guard, run, parse, bust. */
+async function perform(
   def: AnyActionDef,
   name: string,
   raw: unknown,
@@ -170,12 +219,11 @@ async function execute(
     options.surface ?? 'server',
   );
 
-  // Output parsing sits inside `run` so a replayed idempotent response is the
-  // parsed value too — one shape on the wire, first call and every retry.
+  // Output parsing sits inside `run` so a replayed idempotent response is the parsed value too —
+  // one shape on the wire, first call and every retry. No span of its own: `execute` above holds
+  // the one that covers this invocation, and a second here would only re-time its tail.
   const run = async (): Promise<unknown> => {
-    const produced = await withSpan(`action.${name}`, () =>
-      Promise.resolve(def.handle({ input, ctx })),
-    );
+    const produced = await Promise.resolve(def.handle({ input, ctx }));
     return validateOutput(def.output, produced, name);
   };
 

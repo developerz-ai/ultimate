@@ -5,11 +5,13 @@ import {
   collectMetrics,
   configureMetrics,
   counter,
+  DEFAULT_MAX_SERIES,
   exportMetrics,
   gauge,
   type HistogramPoint,
   histogram,
   memoryMetricExporter,
+  OVERFLOW_ATTRIBUTE,
   resetMetrics,
 } from './metrics';
 
@@ -135,5 +137,61 @@ describe('export', () => {
     configureMetrics({ enabled: false });
     counter('test_disabled_total').add(5);
     expect(pointsOf('test_disabled_total')).toEqual([]);
+  });
+});
+
+describe('cardinality ceiling', () => {
+  test('an unbounded label does NOT create an unbounded number of series', () => {
+    const orders = counter('test_cardinality_orders_total', { maxSeries: 3 });
+    for (let index = 0; index < 500; index += 1) {
+      orders.add(1, { orderId: `order-${index}` });
+    }
+    const points = pointsOf('test_cardinality_orders_total');
+    expect(points).toHaveLength(4);
+    const overflow = points.find((point) => point.attributes[OVERFLOW_ATTRIBUTE] === true);
+    expect(overflow?.value).toBe(497);
+  });
+
+  test('the label is Prometheus-safe — a `__`-prefixed one is stripped on scrape', () => {
+    expect(OVERFLOW_ATTRIBUTE.startsWith('__')).toBe(false);
+  });
+
+  test('a series already known keeps counting past the ceiling', () => {
+    const hits = counter('test_cardinality_hits_total', { maxSeries: 1 });
+    hits.add(1, { route: '/a' });
+    hits.add(1, { route: '/b' });
+    hits.add(1, { route: '/a' });
+    const points = pointsOf('test_cardinality_hits_total');
+    expect(points.find((point) => point.attributes['route'] === '/a')?.value).toBe(2);
+    expect(points.find((point) => point.attributes[OVERFLOW_ATTRIBUTE] === true)?.value).toBe(1);
+  });
+
+  test('gauges and histograms fold too', () => {
+    const depth = gauge('test_cardinality_depth', { maxSeries: 1 });
+    depth.record(5, { queue: 'a' });
+    depth.record(9, { queue: 'b' });
+    expect(pointsOf('test_cardinality_depth')).toHaveLength(2);
+
+    const latency = histogram('test_cardinality_latency_seconds', { maxSeries: 1 });
+    latency.record(0.1, { route: '/a' });
+    latency.record(0.2, { route: '/b' });
+    expect(pointsOf('test_cardinality_latency_seconds')).toHaveLength(2);
+  });
+
+  test('the default is generous enough that a bounded label set never trips it', () => {
+    expect(DEFAULT_MAX_SERIES).toBeGreaterThanOrEqual(1000);
+    const bounded = counter('test_cardinality_bounded_total');
+    for (let index = 0; index < 200; index += 1) bounded.add(1, { route: `/r${index}` });
+    expect(pointsOf('test_cardinality_bounded_total')).toHaveLength(200);
+  });
+
+  test('refuses a maxSeries that is not a positive integer', () => {
+    let code = 'no-throw';
+    try {
+      counter('test_cardinality_bad_total', { maxSeries: 0 });
+    } catch (thrown) {
+      code = isUltimateError(thrown) ? (thrown as UltimateError).code : 'not-ultimate';
+    }
+    expect(code).toBe('X_METRIC_CARDINALITY');
   });
 });
