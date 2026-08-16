@@ -203,6 +203,9 @@ export {
   scanFixes,
   stripComments,
 } from './ts-scan';
+// The one spelling rule for a `references` entry. Exported because the two gate scripts ask the
+// same question this package's `package-shape` step does, and three answers is a duplicate entry.
+export { normalizeReferencePath } from './tsconfig-references';
 export type { VerifyFloor } from './verify-floor';
 export {
   floorProblemFindings,

@@ -54,8 +54,9 @@ One list, in cost order, defined once in `cmd-verify.ts` — the framework repo'
 passed. Never bails early: an agent fixing three things needs all three findings from one run.
 There is no `--only` and no `--skip`; the exit code is non-zero if any step fails.
 
-A committed `x.verify.json` is the floor: it names the steps this repo has already proved it can
-run, and a step it names that reports nothing is `X_VERIFY_SUITE_VANISHED` rather than a skip.
+A committed `x.verify.json` is the floor, `As of 2026-08`: it names the steps this repo has already
+proved it can run, and a step it names that reports nothing is `X_VERIFY_SUITE_VANISHED` rather
+than a skip.
 "Nothing" is both ways a suite disappears — no files at all, and every test in the files it found
 skipping itself, which is read back out of `bun test`'s own summary. `x new` writes one.
 

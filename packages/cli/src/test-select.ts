@@ -9,7 +9,7 @@ import { BadFlagError } from './errors';
 import type { ParsedArgs } from './parse';
 import { flagString, nearest } from './parse';
 import type { TestType } from './verify-tests';
-import { TEST_TYPES, typeFiltersOf } from './verify-tests';
+import { ownerOf, TEST_TYPES } from './verify-tests';
 
 export interface TestFile {
   readonly path: string;
@@ -42,8 +42,8 @@ const IGNORED = ['/dist/', '/build/', '/node_modules/', '/examples/', '/dummy/']
 
 /**
  * File size stands in for duration: cheap to read, and it correlates far better than file count.
- * `type`, when given, narrows to exactly the files verify-tests.ts would run for that suite — see
- * `belongsToType` below, the one place that rule is decided.
+ * `type`, when given, narrows to exactly the files verify-tests.ts would run for that suite — one
+ * owner per path, decided by `ownerOf` there and never a second time here.
  */
 export async function discoverTests(
   root: string,
@@ -78,35 +78,20 @@ export function sampleFiles(files: readonly TestFile[], sample: number): readonl
   return [...files].sort(bySizeThenPath).slice(0, sample);
 }
 
-type TypeFilter = readonly [Exclude<TestType, 'unit'>, readonly string[]];
-
-let cachedFilters: readonly TypeFilter[] | undefined;
-
 /**
- * verify-tests.ts owns the one definition of what a file's test type is; `typeFiltersOf` is that
- * table's own accessor. Re-declaring the suffixes here would be a second definition, and the two
- * would drift the first time a suite's naming rule changed.
+ * verify-tests.ts owns the one definition of what a file's test type is, and `ownerOf` IS that
+ * definition — one owner per path, `unit` for anything no typed rule claims. Re-deciding it here
+ * would be a second answer, and the two would disagree the first time a suite's naming rule
+ * changed: a file both of them claimed would run in two steps of one gate.
  *
- * Built lazily, and that is load-bearing: verify-tests.ts imports this module (the gate's test
- * steps select their files through `discoverTests`), so the two form a cycle. A module-scope
- * `const` reading `TEST_TYPES` evaluates during import, inside the other module's temporal dead
- * zone, and whichever side is imported first dies with "Cannot access 'TEST_TYPES' before
- * initialization" — measured by `bun run manifest`, which imports the CLI and took the crash.
+ * Asked lazily, and that is load-bearing: verify-tests.ts imports this module (the gate's test
+ * steps select their files through `discoverTests`), so the two form a cycle. Anything here that
+ * READ that module at import time would evaluate inside its temporal dead zone, and whichever side
+ * is imported first dies with "Cannot access 'TEST_TYPES' before initialization" — measured by
+ * `bun run manifest`, which imports the CLI and took the crash.
  */
-const typeFilters = (): readonly TypeFilter[] => {
-  cachedFilters ??= TEST_TYPES.filter(
-    (type): type is Exclude<TestType, 'unit'> => type !== 'unit',
-  ).map((type) => [type, typeFiltersOf(type)] as const);
-  return cachedFilters;
-};
-
-const matchesAny = (path: string, filters: readonly string[]): boolean =>
-  filters.some((filter) => path.includes(filter));
-
-/** unit is everything the five typed suites do not claim, so no file falls between two types. */
 export function belongsToType(path: string, type: TestType): boolean {
-  if (type === 'unit') return typeFilters().every(([, filters]) => !matchesAny(path, filters));
-  return typeFilters().some(([typed, filters]) => typed === type && matchesAny(path, filters));
+  return ownerOf(path) === type;
 }
 
 /**

@@ -2,15 +2,25 @@
 // which compiles referenced projects and nothing else — so a package no reference names is a
 // package the gate's `typecheck` step reports green over without having read a line of it.
 
-import { existsSync } from 'node:fs';
+// Bun ships no equivalent: `join` builds the host-separator path from the scan root to the config.
+// Nothing else here is `node:` — the read is `Bun.file`, and its rejection is also the answer for a
+// root that has no `tsconfig.json` at all, so an `existsSync` ahead of it was a second question
+// with one answer.
 import { join } from 'node:path';
 import { docsFor } from './error-codes';
 import type { Finding } from './output';
 
 const ROOT_TSCONFIG = 'tsconfig.json';
 
-/** `./packages/cli`, `packages/cli/` and `packages/cli` are one project; the JSON allows all three. */
-const normalize = (path: string): string => path.replace(/^\.\//, '').replace(/\/+$/, '');
+/**
+ * `./packages/cli`, `packages/cli/` and `packages/cli` are one project; the JSON allows all three.
+ * Exported because "is this project already referenced?" is asked in three places — here,
+ * `scripts/new-package.ts` when it adds an entry, and `scripts/reference-app-gate.ts` when it
+ * checks an app — and a spelling one of them treats as a match and another does not is how the
+ * scaffolder appends a duplicate entry the check already considered present.
+ */
+export const normalizeReferencePath = (path: string): string =>
+  path.replace(/^\.\//, '').replace(/\/+$/, '');
 
 /**
  * `undefined` means "this root does not use project references" — a different repo shape, not an
@@ -19,9 +29,7 @@ const normalize = (path: string): string => path.replace(/^\.\//, '').replace(/\
  * worse. A tsconfig that will not parse is `typecheck`'s to report, with tsc's own message.
  */
 async function referencedPaths(root: string): Promise<ReadonlySet<string> | undefined> {
-  const path = join(root, ROOT_TSCONFIG);
-  if (!existsSync(path)) return undefined;
-  const payload: unknown = await Bun.file(path)
+  const payload: unknown = await Bun.file(join(root, ROOT_TSCONFIG))
     .json()
     .catch(() => undefined);
   const references =
@@ -35,7 +43,7 @@ async function referencedPaths(root: string): Promise<ReadonlySet<string> | unde
         typeof entry === 'object' && entry !== null
           ? (entry as { path?: unknown }).path
           : undefined;
-      return typeof value === 'string' ? [normalize(value)] : [];
+      return typeof value === 'string' ? [normalizeReferencePath(value)] : [];
     }),
   );
 }

@@ -47,6 +47,15 @@ export interface BootedHarness {
   close(): Promise<void>;
 }
 
+export interface HarnessDeps {
+  /**
+   * How this harness gets a database. A parameter for the reason `TemplateDbDeps.connect` is one:
+   * the rejection path below drops what it acquired, and the PGlite fallback's `drop` is a no-op,
+   * so proving it needs an injected handle rather than a server.
+   */
+  readonly acquire: (config: TemplateDbConfig) => Promise<WorkerDatabase>;
+}
+
 /**
  * The lifecycle `describeApp` and `testApp` are the two idiomatic wrappers around. Exported from
  * this module but deliberately NOT from `src/index.ts`: those two are the ways an app boots, and a
@@ -54,7 +63,10 @@ export interface BootedHarness {
  * the teardown contract — a rejecting `close` must still drop the cloned database — cannot be
  * asserted through a wrapper that rethrows into the test's own result.
  */
-export async function bootApp(options: AppOptions): Promise<BootedHarness> {
+export async function bootApp(
+  options: AppOptions,
+  deps: Partial<HarnessDeps> = {},
+): Promise<BootedHarness> {
   // Captured, never assumed. The preload already sealed the network and installed determinism for
   // the whole process, so `sealNetwork()` here is a no-op and an unconditional teardown would hand
   // the real `fetch`, the real `Date` and the real `Math.random` to every later FILE in the run —
@@ -73,9 +85,34 @@ export async function bootApp(options: AppOptions): Promise<BootedHarness> {
   sealNetwork();
   for (const host of options.allowHosts ?? []) allowHost(host);
 
-  const db = await acquireWorkerDatabase(options.db ?? {});
-  if (options.seed !== undefined) await options.seed(db.url);
-  const app = await options.boot({ databaseUrl: db.url });
+  // What `close` puts back, named once: the boot has to run it too, and two copies of this list is
+  // how one of them ends up missing the allow-list.
+  const restoreProcessState = (): void => {
+    resetNetwork();
+    if (!sealedBefore) unsealNetwork();
+    restoreCapturedDeterminism(determinism);
+  };
+
+  let db: WorkerDatabase | undefined;
+  let app: BootedApp;
+  try {
+    db = await (deps.acquire ?? acquireWorkerDatabase)(options.db ?? {});
+    if (options.seed !== undefined) await options.seed(db.url);
+    app = await options.boot({ databaseUrl: db.url });
+  } catch (error) {
+    // A boot that rejects returns no `BootedHarness`, so nothing can ever call the `close` below —
+    // the same leak that block exists to prevent, one function earlier. A failing `seed` stranded
+    // its clone and left the clock, the seal and the allow-list this boot installed to every later
+    // FILE in the run; `bun test` is one process.
+    try {
+      await db?.drop();
+    } catch {
+      // The boot's own failure is what the caller must see, and there is no handle to report a
+      // second one through — the same "first failure wins" rule `close` runs by.
+    }
+    restoreProcessState();
+    throw error;
+  }
 
   const handle: AppHandle = {
     db,
@@ -104,9 +141,7 @@ export async function bootApp(options: AppOptions): Promise<BootedHarness> {
       } catch (error) {
         failure ??= { error };
       }
-      resetNetwork();
-      if (!sealedBefore) unsealNetwork();
-      restoreCapturedDeterminism(determinism);
+      restoreProcessState();
       if (failure !== undefined) throw failure.error;
     },
   };

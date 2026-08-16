@@ -56,9 +56,13 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --json   # restore the suite, or drop its name from x.verify.json in the commit that says why',
   X_FILE_TOO_LONG: 'x verify --json   # the finding names the file to split',
   X_PACKAGE_SHAPE: 'bun run verify --json   # every finding carries its own new-package.ts command',
-  // The finding names the exact `{ "path": … }` entry; this is the run that proves it took, and
-  // the one that reports the type errors the package had been hiding while nothing built it.
-  X_PACKAGE_UNREFERENCED: 'bunx tsc -b --pretty false',
+  // NOT `bunx tsc -b`: an unreferenced package is one `tsc -b` skips by definition, so it exits 0
+  // while the finding stands — a fix that runs clean and changes nothing is the failure axiom 4
+  // exists to prevent. The gate is what re-emits the finding, whose own `fix:` carries the exact
+  // `{ "path": … }` entry; the `tsc -b` that then reports the type errors the package had been
+  // hiding is a step of the same run.
+  X_PACKAGE_UNREFERENCED:
+    'x verify --json   # the package-shape finding carries the tsconfig.json entry to add',
   X_RELEASE_VERSION_SKEW: 'bun run scripts/release.ts --bump patch --dry-run --json',
   // Two real remedies and the command cannot know which one this deployment wants, so it names
   // the one that inspects the binding rather than guessing between a volume and a bucket.

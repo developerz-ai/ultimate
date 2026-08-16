@@ -69,6 +69,16 @@ describe('referencesApp', () => {
         JSON.stringify({ references: [null, { path: './examples/dummy' }] }),
       );
       expect(await referencesApp(dir, './examples/dummy')).toBe(true);
+
+      // One project, three legal spellings — the same rule `package-shape`'s build-graph check
+      // reads by. A `===` here reported an app as outside `tsc -b` while the CLI read it as in.
+      for (const spelling of ['examples/dummy', 'examples/dummy/', './examples/dummy/']) {
+        await Bun.write(
+          join(dir, ROOT_TSCONFIG),
+          JSON.stringify({ references: [{ path: spelling }] }),
+        );
+        expect(await referencesApp(dir, './examples/dummy')).toBe(true);
+      }
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

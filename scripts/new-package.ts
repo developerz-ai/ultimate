@@ -8,6 +8,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { normalizeReferencePath } from '@ultimat3/cli';
 import { frameworkVersion } from '@ultimat3/core';
 import { flagString, parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
@@ -196,12 +197,15 @@ export function withPackageReference(source: string, name: string): string | und
   if (!Array.isArray(references)) return undefined;
   const path = `./packages/${name}`;
   // Read defensively: a malformed entry is something to sort past, never something to crash on.
+  // Normalized through the CLI's own rule, never a `===` on the canonical spelling: `packages/jobs`
+  // and `./packages/jobs/` are the same project to `tsc` and to `checkRootReferences`, so comparing
+  // raw text here appended a second entry for a package the gate already reads as referenced.
   const pathOf = (entry: unknown): string => {
     if (typeof entry !== 'object' || entry === null) return '';
     const value = (entry as { path?: unknown }).path;
-    return typeof value === 'string' ? value : '';
+    return typeof value === 'string' ? normalizeReferencePath(value) : '';
   };
-  if (references.some((entry) => pathOf(entry) === path)) return source;
+  if (references.some((entry) => pathOf(entry) === normalizeReferencePath(path))) return source;
   // Code-unit order, not `localeCompare`: a locale that ignores `-` and `/` would order
   // `create-ultimate` against `core` differently from the file this is rewriting.
   const next = [...references, { path }].sort((a, b) => (pathOf(a) < pathOf(b) ? -1 : 1));

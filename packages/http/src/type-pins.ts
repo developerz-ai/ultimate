@@ -1,8 +1,7 @@
 // Compile-time pins for the shapes this package declares but never constructs. Source, not a
 // `.test.ts`, on purpose: `tsconfig.json` excludes `src/**/*.test.ts`, so `tsc -b` never reads a
-// test file and a type-level claim written there can never fail. This module emits nothing and
-// exports nothing anybody imports — a regression is a build error, the only enforcement that
-// counts (axiom 3).
+// test file and a claim written there can never fail. Nothing here emits or is imported — a
+// regression is a build error, the only enforcement that counts (axiom 3).
 
 import type { AuthzDecision } from './hooks';
 
@@ -16,6 +15,18 @@ type Assert<T extends true> = T;
  */
 export type _AuthzAllowNeedsNothingElse = Assert<
   { allowed: true } extends AuthzDecision ? true : false
+>;
+
+/**
+ * And carries nothing else, which the assignability pin above cannot say: an optional field added
+ * to the allow branch leaves `{ allowed: true }` assignable, so the claim in that comment would
+ * have gone on compiling while an allow grew somewhere to put a reason. `never` is wrapped in a
+ * tuple because a bare `never` on the left of `extends` short-circuits the conditional.
+ */
+type AuthzAllow = Extract<AuthzDecision, { allowed: true }>;
+
+export type _AuthzAllowCarriesNothingElse = Assert<
+  [Exclude<keyof AuthzAllow, 'allowed'>] extends [never] ? true : false
 >;
 
 /**

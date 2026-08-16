@@ -14,7 +14,13 @@
 // equivalent, and both must be absolute so the subprocess's cwd cannot change what runs.
 import { join } from 'node:path';
 import type { Runner } from '@ultimat3/cli';
-import { exec, readVerifyFloor, VERIFY_FLOOR_FILE, VERIFY_STEP_NAMES } from '@ultimat3/cli';
+import {
+  exec,
+  normalizeReferencePath,
+  readVerifyFloor,
+  VERIFY_FLOOR_FILE,
+  VERIFY_STEP_NAMES,
+} from '@ultimat3/cli';
 import { flagString, parseScriptArgs } from './lib/args';
 import type { GatedApp } from './lib/gated-apps';
 import { GATED_APPS, PINS_FILE } from './lib/gated-apps';
@@ -284,12 +290,14 @@ export const referencesApp = async (root: string, entry: string): Promise<boolea
   if (!Array.isArray(references)) return false;
   // A malformed entry (`null`, a bare string, a number) is a non-reference, not a crash: reading
   // `.path` off it without this guard throws before the real entries ever get a chance to match.
-  return references.some(
-    (ref) =>
-      typeof ref === 'object' &&
-      ref !== null &&
-      (ref as { readonly path?: unknown }).path === entry,
-  );
+  // Compared through the CLI's own spelling rule, so `./examples/dummy`, `examples/dummy` and
+  // `examples/dummy/` answer the same here as they do in `package-shape`'s build-graph check.
+  const wanted = normalizeReferencePath(entry);
+  return references.some((ref) => {
+    if (typeof ref !== 'object' || ref === null) return false;
+    const path = (ref as { readonly path?: unknown }).path;
+    return typeof path === 'string' && normalizeReferencePath(path) === wanted;
+  });
 };
 
 /** The step table, so a CI reader sees the whole gate and not only what this check rejected. */

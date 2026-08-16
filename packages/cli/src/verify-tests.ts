@@ -1,7 +1,7 @@
 // One gate step per test type, so every type reports on its own line. A test's type is its
-// filename suffix — `*.contract.test.ts`, `*.live.test.ts`, `*.job.test.ts`, `*.e2e.test.ts` (or
-// any file under an `e2e/` directory), `*.eval.test.ts`. Everything else is a unit test, which is
-// why the unit step is the only one that selects by exclusion.
+// filename suffix — `*.contract.test.ts`, `*.live.test.ts`, `*.job.test.ts`, `*.e2e.test.ts`,
+// `*.eval.test.ts` — and only then the `e2e/` directory it sits in, which is why `OWNERSHIP` below
+// is an ordered list. Everything else is a unit test, the only step that selects by exclusion.
 //
 // `eval` carries one rule beyond its suite — every prompt must have an eval — so it is the only
 // step here that can fail with no test file of its own.
@@ -24,47 +24,67 @@ export const TEST_TYPES = ['unit', 'contract', 'live', 'job', 'e2e', 'eval'] as 
 
 export type TestType = (typeof TEST_TYPES)[number];
 
-interface TestSuite {
-  readonly summary: string;
-  /**
-   * Substrings `bun test` matches against each file path — a file matching ANY of them is this
-   * type, which is exactly how bun reads more than one positional filter (measured: `.contract.
-   * test.` + `.job.test.` runs the union of both suites, never the intersection). A list rather
-   * than one string because `e2e` is two rules and the bare word `e2e` was neither: it matched any
-   * path holding those three characters anywhere, so a future `src/e2e-helpers.test.ts` would join
-   * the e2e step and leave the unit step, which selects by exclusion.
-   */
-  readonly filters: readonly string[];
-}
+type TypedTest = Exclude<TestType, 'unit'>;
 
 const TYPED_SUFFIXES = '{contract,live,job,e2e,eval}';
 
-const SUITES: Readonly<Record<Exclude<TestType, 'unit'>, TestSuite>> = {
-  contract: {
-    summary: 'action/query schemas, policy denials, emitted OpenAPI and MCP shapes',
-    filters: ['.contract.test.'],
-  },
-  live: {
-    summary: 'live-query snapshots, incremental patches, reconnect deltas',
-    filters: ['.live.test.'],
-  },
-  job: {
-    summary: 'step replay, idempotency dedupe, retry/backoff, outbox atomicity',
-    filters: ['.job.test.'],
-  },
-  e2e: {
-    // `e2e/`, not `/e2e/`: bun matches a filter against the cwd-relative path and answers
-    // `Test filter "/e2e/" had no matches` for the anchored form (bun 1.3.14). The trailing slash
-    // is the boundary this can express, and it is the same string `belongsToType` tests with, so
-    // the step's argv and the file list can never disagree about what an e2e test is.
-    summary: 'the built output, incl. offline and SW update',
-    filters: ['e2e/', '.e2e.test.'],
-  },
-  eval: {
-    summary: 'LLM output scored against thresholds',
-    filters: ['.eval.test.'],
-  },
+const SUMMARIES: Readonly<Record<TypedTest, string>> = {
+  contract: 'action/query schemas, policy denials, emitted OpenAPI and MCP shapes',
+  live: 'live-query snapshots, incremental patches, reconnect deltas',
+  job: 'step replay, idempotency dedupe, retry/backoff, outbox atomicity',
+  e2e: 'the built output, incl. offline and SW update',
+  eval: 'LLM output scored against thresholds',
 };
+
+/**
+ * Every rule that decides a file's type, MOST SPECIFIC FIRST: the first entry a path matches owns
+ * it, and no later entry may claim it. Each is a substring `bun test` matches against a file path,
+ * which is exactly how bun reads more than one positional filter (measured: `.contract.test.` +
+ * `.job.test.` runs the union of both suites, never the intersection).
+ *
+ * A FILENAME declares a type; a DIRECTORY only fills in for a filename that declares none — which
+ * is why the one directory rule is last. Ownership had no order at all until 2026-08, so
+ * `packages/app/e2e/payment.contract.test.ts` matched `.contract.test.` AND `e2e/`: the `contract`
+ * step selected it by name while the `e2e` step's argv selected it by directory, and one test ran
+ * twice in one gate. The bare word `e2e` was worse still — it matched any path holding those three
+ * characters anywhere, so `src/e2e-helpers.test.ts` joined the e2e step and left the unit step,
+ * which selects by exclusion.
+ */
+const OWNERSHIP = [
+  ['contract', '.contract.test.'],
+  ['live', '.live.test.'],
+  ['job', '.job.test.'],
+  ['e2e', '.e2e.test.'],
+  ['eval', '.eval.test.'],
+  // `e2e/`, not `/e2e/`: bun matches a filter against the cwd-relative path and answers
+  // `Test filter "/e2e/" had no matches` for the anchored form (bun 1.3.14). The trailing slash
+  // is the boundary this can express, and it is the same string `ownerOf` ranks last, so the
+  // step's argv and the file list can never disagree about what an e2e test is.
+  ['e2e', 'e2e/'],
+] as const satisfies readonly (readonly [TypedTest, string])[];
+
+/** The types whose filename rule outranks the `e2e/` directory — e2e's own never does. */
+const OUTRANKING_E2E: readonly TypedTest[] = [
+  ...new Set(OWNERSHIP.filter(([type]) => type !== 'e2e').map(([type]) => type)),
+];
+
+/**
+ * The one suite a path belongs to, and `unit` when no rule claims it — the single definition of a
+ * file's type, which both `x test <type>` and the gate's own steps select through. Exactly one
+ * owner is the point: two owners is a file two steps run, and a test that runs twice in one gate
+ * proves nothing the first run did not.
+ */
+export const ownerOf = (path: string): TestType =>
+  OWNERSHIP.find(([, filter]) => path.includes(filter))?.[0] ?? 'unit';
+
+/**
+ * Paths a suite's own filters match but the suite does NOT own, as `--path-ignore-patterns`. Only
+ * `e2e` has any, for the reason above. It has to be said in the argv and not only in `ownerOf`:
+ * bun has no "match this and not that" filter, and a serial step runs the argv rather than a file
+ * list — so exclusivity that lived only in the file list would still have run the file twice.
+ */
+const disownedBy = (type: TypedTest): readonly string[] =>
+  type === 'e2e' ? [`**/e2e/**/*.{${OUTRANKING_E2E.join(',')}}.test.*`] : [];
 
 /**
  * Which types run across worker processes, and why the other two cannot.
@@ -116,7 +136,7 @@ const ignoreFlags = (patterns: readonly string[]): readonly string[] =>
  * `x test <type>` and the gate's `<type>` step can never disagree about what a contract test is.
  */
 export const typeFiltersOf = (type: Exclude<TestType, 'unit'>): readonly string[] =>
-  SUITES[type].filters;
+  OWNERSHIP.filter(([owner]) => owner === type).map(([, filter]) => filter);
 
 /** Unit is everything the typed suites do not claim, so no test can fall between two steps. */
 export const testStepCommand = (type: TestType): readonly string[] =>
@@ -126,7 +146,12 @@ export const testStepCommand = (type: TestType): readonly string[] =>
         'test',
         ...ignoreFlags([...NEVER_A_TEST, '**/e2e/**', `**/*.${TYPED_SUFFIXES}.test.*`]),
       ]
-    : ['bun', 'test', ...ignoreFlags(NEVER_A_TEST), ...SUITES[type].filters];
+    : [
+        'bun',
+        'test',
+        ...ignoreFlags([...NEVER_A_TEST, ...disownedBy(type)]),
+        ...typeFiltersOf(type),
+      ];
 
 /**
  * Whether a step applies and what it runs are now one question with one answer: the file list.
@@ -188,7 +213,7 @@ const isApp = (root: string): boolean => existsSync(join(root, APP_CONFIG_FILE))
  */
 const evalStep: VerifyStep = {
   name: 'eval',
-  summary: SUITES.eval.summary,
+  summary: SUMMARIES.eval,
   applies: async (ctx) => isApp(ctx.root) || (await filesFor(ctx.root, 'eval')).length > 0,
   async run(ctx) {
     // First, and instead of the suite: under recording every eval writes the numbers it just
@@ -220,7 +245,7 @@ const stepFor = (type: TestType): VerifyStep => {
   if (type === 'eval') return evalStep;
   return {
     name: type,
-    summary: SUITES[type].summary,
+    summary: SUMMARIES[type],
     applies: async (ctx) => (await filesFor(ctx.root, type)).length > 0,
     run: (ctx) => runType(ctx, type),
   };

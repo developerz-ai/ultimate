@@ -5,9 +5,10 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isDeterminismInstalled, seededRandom } from './determinism';
-import type { AppOptions, BootedApp } from './harness';
+import type { AppOptions, BootedApp, HarnessDeps } from './harness';
 import { bootApp, describeApp, testApp } from './harness';
 import { isNetworkSealed, requestedUrls } from './sealed-network';
+import type { WorkerDatabase } from './template-db';
 import { testName } from './test-types';
 
 // Sampled at module scope, which is after the preload installed determinism and sealed the
@@ -229,5 +230,102 @@ describe(testName('unit', 'a teardown that throws'), () => {
     expect(dropped).toBe(true);
     expect(isNetworkSealed()).toBe(true);
     expect(isDeterminismInstalled()).toBe(true);
+  });
+});
+
+// The mirror image of the block above, and the half the teardown fix left open: a boot that rejects
+// hands back no `BootedHarness`, so no caller can ever reach `close()`. Whatever the boot already
+// changed — the clone, the allow-list, the clock — is the boot's own to put back, or one
+// `ultimate_test_template_wN` leaks per failing seed and the next FILE in the process inherits a
+// clock that reads 2031.
+describe(testName('unit', 'a boot that throws'), () => {
+  /**
+   * `acquireWorkerDatabase`'s PGlite fallback answers a handle whose `drop` is a no-op, so the real
+   * one can never prove the rejection path called it. Injected for the reason `TemplateDbDeps`
+   * injects `connect`: the claim is about the harness, and it needs no server to make.
+   */
+  const acquireInto = (record: { dropped: boolean }): HarnessDeps['acquire'] => {
+    return async () =>
+      ({
+        kind: 'pglite',
+        worker: 0,
+        database: 'harness_reject',
+        url: 'pglite://memory/harness_reject',
+        drop: async () => {
+          record.dropped = true;
+        },
+      }) satisfies WorkerDatabase;
+  };
+
+  const NEVER_BOOTS: AppOptions['boot'] = async () => {
+    throw new Error('the app refused to boot');
+  };
+
+  test('a rejecting seed drops the clone and restores the seal, the clock and the allow-list', async () => {
+    const record = { dropped: false };
+    const before = Date.now();
+
+    await expect(
+      bootApp(
+        {
+          boot: NEVER_BOOTS,
+          seed: async () => {
+            throw new Error('the seed hit a constraint');
+          },
+          allowHosts: [`127.0.0.1:${CLOSED_PORT}`],
+          now: '2031-06-01T00:00:00.000Z',
+        },
+        { acquire: acquireInto(record) },
+      ),
+      // The seed's own failure, never the drop's and never a wrapper: it is the only line that says
+      // what went wrong.
+    ).rejects.toThrow('the seed hit a constraint');
+
+    expect(record.dropped).toBe(true);
+    expect(isNetworkSealed()).toBe(true);
+    expect(isDeterminismInstalled()).toBe(true);
+    expect(Date.now()).toBe(before);
+    expect(await failureCode(`http://127.0.0.1:${CLOSED_PORT}/x`)).toBe('X_TEST_NETWORK_SEALED');
+  });
+
+  test('a rejecting boot drops the clone the seed already ran against', async () => {
+    const record = { dropped: false };
+    let seededUrl: string | undefined;
+
+    await expect(
+      bootApp(
+        {
+          boot: NEVER_BOOTS,
+          seed: async (url) => {
+            seededUrl = url;
+          },
+        },
+        { acquire: acquireInto(record) },
+      ),
+    ).rejects.toThrow('the app refused to boot');
+
+    expect(seededUrl).toBe('pglite://memory/harness_reject');
+    expect(record.dropped).toBe(true);
+    expect(isNetworkSealed()).toBe(true);
+    expect(isDeterminismInstalled()).toBe(true);
+  });
+
+  test('a drop that also fails does not replace the reason the boot failed', async () => {
+    await expect(
+      bootApp(
+        { boot: NEVER_BOOTS },
+        {
+          acquire: async () => ({
+            kind: 'pglite',
+            worker: 0,
+            database: 'harness_reject',
+            url: 'pglite://memory/harness_reject',
+            drop: async () => {
+              throw new Error('the clone would not drop');
+            },
+          }),
+        },
+      ),
+    ).rejects.toThrow('the app refused to boot');
   });
 });

@@ -16,8 +16,12 @@ import { tag } from './tags';
 const url = Bun.env['TEST_REDIS_URL'];
 const hasRedis = typeof url === 'string' && url.length > 0;
 
-/** One namespace per process: a shared server survives two runs at once, and a run that died. */
-const PREFIX = `xlive-${process.pid}`;
+/**
+ * One namespace per run: a shared server survives two runs at once, and a run that died. Not
+ * `process.pid` — a Node compatibility global, and one two containers against one Redis can hand
+ * out twice. `crypto.randomUUID` is a web standard Bun implements, so nothing here is `node:`.
+ */
+const PREFIX = `xlive-${crypto.randomUUID()}`;
 
 type LiveClient = RedisLike & { close(): void };
 

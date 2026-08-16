@@ -13,9 +13,11 @@ import { belongsToType } from './test-select';
 import { SHARD_COMMAND_PREFIX } from './test-shards';
 import type { VerifyContext, VerifyStep } from './verify-step';
 import {
+  ownerOf,
   resetTestDiscovery,
   SERIAL_TYPES,
   TEST_STEPS,
+  TEST_TYPES,
   testStepCommand,
   typeFiltersOf,
 } from './verify-tests';
@@ -146,12 +148,49 @@ describe('unit · a type claims a file by a boundary, never a bare substring', (
     // `e2e/` and not `/e2e/`: bun matches a filter against the cwd-relative path and answers
     // `Test filter "/e2e/" had no matches` for the anchored form — measured on bun 1.3.14. The
     // step's argv and `belongsToType` must stay one predicate, so this is the form both use.
-    expect([...typeFiltersOf('e2e')]).toEqual(['e2e/', '.e2e.test.']);
+    expect([...typeFiltersOf('e2e')]).toEqual(['.e2e.test.', 'e2e/']);
     const command = testStepCommand('e2e');
     expect(command.slice(0, 2)).toEqual(['bun', 'test']);
     for (const filter of typeFiltersOf('e2e')) expect(command).toContain(filter);
     for (const type of ['contract', 'live', 'job', 'eval'] as const) {
       expect([...typeFiltersOf(type)]).toEqual([`.${type}.test.`]);
+    }
+  });
+
+  // Two rules can match one path, and until 2026-08 both claimed it: the `contract` step selected
+  // `e2e/payment.contract.test.ts` by name while the `e2e` step's argv selected it by directory, so
+  // one test ran twice in one gate — and a second run proves nothing the first did not.
+  test('a typed filename inside e2e/ belongs to its NAME, and only to it', () => {
+    const path = 'packages/app/e2e/payment.contract.test.ts';
+    expect(ownerOf(path)).toBe('contract');
+    expect(belongsToType(path, 'contract')).toBe(true);
+    expect(belongsToType(path, 'e2e')).toBe(false);
+    // The directory still decides for a filename that declares nothing.
+    expect(ownerOf('packages/app/e2e/boot.test.ts')).toBe('e2e');
+  });
+
+  test('the e2e step is told to skip the files its directory filter does not own', () => {
+    // The file list is only half of it: `e2e` is SERIAL, so what it actually runs is this argv —
+    // exclusivity that lived only in `ownerOf` would still have handed bun the file.
+    expect(testStepCommand('e2e')).toContain(
+      '--path-ignore-patterns=**/e2e/**/*.{contract,live,job,eval}.test.*',
+    );
+    // e2e's own suffix is never disowned by its own step.
+    expect(testStepCommand('e2e').join(' ')).not.toContain('e2e}.test.*');
+  });
+
+  test('no path has two owners', () => {
+    const paths = [
+      'packages/app/e2e/payment.contract.test.ts',
+      'packages/app/e2e/feed.live.test.ts',
+      'packages/app/e2e/boot.test.ts',
+      'packages/app/src/boot.e2e.test.ts',
+      'packages/app/src/prompt.eval.test.ts',
+      'packages/app/src/e2e-helpers.test.ts',
+      'packages/app/src/plain.test.ts',
+    ];
+    for (const path of paths) {
+      expect(TEST_TYPES.filter((type) => belongsToType(path, type))).toEqual([ownerOf(path)]);
     }
   });
 });

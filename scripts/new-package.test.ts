@@ -71,6 +71,16 @@ describe('unit · a scaffolded package joins the root build graph', () => {
     expect(withPackageReference(source, 'core')).toBe(source);
   });
 
+  // `checkRootReferences` reads all three spellings as one project, so a `===` on the canonical
+  // one appended a second entry for a package the gate already reports as referenced — two rows
+  // for one project, and a scaffolder that "fixed" a finding nobody had.
+  test('an entry spelled another legal way is still the same project', () => {
+    for (const spelling of ['packages/core', './packages/core/', 'packages/core/']) {
+      const source = root(spelling);
+      expect(withPackageReference(source, 'core')).toBe(source);
+    }
+  });
+
   test('a root config this cannot parse is returned untouched, never half-rewritten', () => {
     expect(withPackageReference('{ "references": [ // a comment\n]}', 'jobs')).toBeUndefined();
     expect(withPackageReference(JSON.stringify({ files: [] }), 'jobs')).toBeUndefined();
