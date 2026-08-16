@@ -114,6 +114,9 @@ export {
   registerModel,
   resetModels,
 } from './models';
+export { OPENAI_MODEL_IDS, registerOpenAiModels } from './openai-models';
+export type { OpenAiProviderInput } from './openai-provider';
+export { openAiProvider } from './openai-provider';
 export type { PgVectorStoreInput } from './pg-vector';
 export { PgVectorStore } from './pg-vector';
 export type {

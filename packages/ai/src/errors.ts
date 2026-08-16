@@ -427,13 +427,23 @@ export class AiRequestInvalidError extends UltimateError {
 export class AiTransportError extends UltimateError {
   readonly status: number | undefined;
 
-  constructor(input: { provider: string; status?: number | undefined; detail: string }) {
+  constructor(input: {
+    provider: string;
+    status?: number | undefined;
+    detail: string;
+    /**
+     * The env var holding THIS provider's key. Passed on the HTTP path, where a 401 has one fix:
+     * a hardcoded `ANTHROPIC_API_KEY` was the whole fix line, so an OpenAI-format endpoint
+     * rejecting a key sent an operator to set a variable it never reads.
+     */
+    envVar?: string | undefined;
+  }) {
     super({
       code: 'X_AI_PROVIDER_UNAVAILABLE',
       cause: `provider "${input.provider}" ${
         input.status === undefined ? 'failed' : `returned ${input.status}`
       }: ${input.detail}`,
-      fix: fixForStatus(input.status),
+      fix: fixForStatus(input.status, input.envVar),
       docs: docsFor('X_AI_PROVIDER_UNAVAILABLE'),
       meta: { provider: input.provider, status: input.status },
     });
@@ -441,9 +451,11 @@ export class AiTransportError extends UltimateError {
   }
 }
 
-function fixForStatus(status: number | undefined): string {
+function fixForStatus(status: number | undefined, envVar: string | undefined): string {
   if (status === 401 || status === 403) {
-    return 'export ANTHROPIC_API_KEY=<key> with a key that is active for this model';
+    return envVar === undefined
+      ? 'export the API key env var of the provider named in cause, with a key that is active for this model'
+      : `export ${envVar}=<key> with a key that is active for this model`;
   }
   if (status === 429) {
     return 'lower concurrency or raise the provider rate limit; the gateway already backs off';

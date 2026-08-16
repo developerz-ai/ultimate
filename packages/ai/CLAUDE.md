@@ -19,6 +19,11 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 | `provider.ts` | `Provider` interface, the request half, the money arithmetic, Anthropic + Echo |
 | `wire.ts` | the response half: `usage` / `stop_reason` shapes, and the SSE `MessageStream` |
 | `sse.ts` | Server-Sent Events framing — protocol only, knows nothing about Anthropic |
+| `openai-provider.ts` | `openAiProvider()` — the socket, the credential and the errors for any endpoint speaking the OpenAI chat-completions FORMAT |
+| `openai-messages.ts` | the format mapping's request half: `AiMessage` blocks → OpenAI messages, `LlmTool` → functions, `tool_choice` |
+| `openai-body.ts` | one chat-completions body, and the per-model reasoning mapping |
+| `openai-wire.ts` | its response half: one completion, and `ChatCompletionStream` (fragmented tool calls, trailing usage, `[DONE]`) |
+| `openai-models.ts` | the OpenAI-format price rows, registered through the same `registerModel` |
 | `gateway.ts` | routing, retries, cache, budget wiring |
 | `budget.ts` | token ledgers per request/actor/org, ALS carrier |
 | `prompt.ts` | `definePrompt`, content hashing, version registry |
@@ -118,6 +123,55 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
   for every adaptive-capable model — harmless on the wire, since adaptive is the server default,
   but it made a defaulted control indistinguishable from a declared one, which is the whole
   distinction this rule draws.
+- **`openAiProvider()` is a FORMAT, not a vendor — decided 2026-08.** Azure OpenAI, vLLM, Ollama,
+  LiteLLM, OpenRouter, Together and most company gateways speak the OpenAI chat-completions wire
+  format, so one provider plus `baseUrl` is what makes "point Ultimate at our internal gateway"
+  real. Never add a second class per vendor: `baseUrl`, `auth` and `headers` are the differences.
+  - **Structured output is the `respond` tool, never `response_format`.** `llm()` already projects
+    `output` into one tool and reads the answer out of `toolCalls`; `json_schema` + `strict` would
+    be a SECOND structured-output path (axiom 1), would need the provider to synthesise a
+    `respond` call out of a content string, and is the one feature most OpenAI-*compatible* servers
+    do not implement. Forcing the function is what buys the reliability instead: `tool_choice`
+    names the tool when the request offers **exactly one**, which is precisely `llm()`'s shape and
+    never `agent()`'s — forcing a name inside a tool loop decides the model's next step for it.
+  - **`strict: true` is derived from the schema, never forwarded.** `LlmTool.strict` is `true` on
+    every projection; on this wire the server CHECKS it, and one optional field (a key in
+    `properties` absent from `required`) is a 400. `satisfiesStrictMode` is the gate, recursive
+    because the server's check is.
+  - `max_completion_tokens`, never `max_tokens`: the old field is rejected outright by every
+    current reasoning model. No `temperature`/`top_p`, same rule as the Anthropic body.
+  - **`stream_options: { include_usage: true }` on every streamed request, and an ESTIMATE when
+    usage never arrives.** Usage comes once, in a trailing chunk with an empty `choices` array, and
+    only when that field was sent — a compatible server that ignores it would otherwise leave the
+    budget reconciling a real call against zero, refunding the whole reservation. Zero is wrong by
+    all of it; an estimate is wrong by a few percent in the safe direction.
+  - `prompt_tokens` INCLUDES the cached prefix here, where Anthropic's `input_tokens` excludes it.
+    Subtract `prompt_tokens_details.cached_tokens` out of the input count or the cached half is
+    billed twice — once at the input rate, once at the cache rate.
+  - Tool-call deltas are merged by `tool_calls[].index`. The id and the name arrive on the FIRST
+    fragment and on no other, so merging by array position builds one call per chunk and keeps only
+    the last slice of arguments. The call is emitted whole at the finish reason — there is no
+    per-block stop event in this format.
+  - `isComplete()` accepts `[DONE]` **or** a finish reason: plenty of servers in the family close
+    the socket straight after the finish chunk, and a finish reason is the model saying why it
+    stopped, which a cut connection cannot produce.
+  - `role: 'system'`, not `developer` — the newer role is OpenAI's alone and every other server in
+    the family knows only `system`.
+  - **Only three models are priced** (`gpt-5.6-sol` / `-terra` / `-luna`, list price read
+    2026-08-16). `gpt-4o` and the `o1` family cache at 0.5x input where `costOf` assumes 0.1x, and
+    the `pro` tiers publish no cached rate — a wrong price is worse than a missing one, because
+    `costOf` answers confidently either way and `X_AI_MODEL_UNKNOWN` at least says so.
+  - The specs register at module scope, like the Anthropic three — so a suite that calls
+    `resetModels()` drops them. `registerOpenAiModels()` is exported for exactly that, and every
+    `openai-*.test.ts` calls it in `beforeEach`.
+  - **No new `X_*` code.** A non-2xx and an in-band `error` object are `AiTransportError`, a missing
+    key is `X_AI_KEY_MISSING`, a control the endpoint has not got is `X_AI_REQUEST_INVALID` — the
+    failures are the same failures, and a second code per provider would be a vocabulary that grows
+    with the driver list. What DID change: `AiTransportError` now takes the provider's `envVar`,
+    because the 401 fix line was a hardcoded `ANTHROPIC_API_KEY` for every provider in the package.
+  - The key is revealed as late as possible, never stored on the instance, and scrubbed out of the
+    error `detail` — a proxy echoing request headers into its 4xx body is the one path by which a
+    key reaches an error, and an error reaches a log index, a span and a problem document.
 - Model IDs are exact aliases. Never append a date suffix.
 - **No fix line may name `x ai`.** That command is PLANNED and throws (`packages/cli/src/cmd-planned.ts`),
   so a fix citing `x ai reindex` sends an operator to a wall — an axiom-4 violation. Two shipped;

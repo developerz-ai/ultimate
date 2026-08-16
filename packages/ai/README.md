@@ -126,6 +126,74 @@ them, so a downgrade for price cannot become a request the provider rejects.
 `AnthropicProvider.models` is its own list, never the registry's — your internal model is not
 routed to Anthropic.
 
+## The OpenAI **format** — Azure, vLLM, Ollama, your own gateway
+
+`openAiProvider()` speaks the OpenAI chat-completions **wire format**, not one vendor. Azure
+OpenAI, vLLM, Ollama, LiteLLM, OpenRouter, Together and most self-hosted company gateways serve
+that format, so "point Ultimate at our internal model gateway" is a `baseUrl` and a `models` list.
+
+```ts
+import { openAiProvider, OPENAI_MODEL_IDS, createGateway, configureAi } from '@ultimat3/ai';
+
+// OpenAI itself. `apiKey` takes a `Secret`; OPENAI_API_KEY is read when it is omitted.
+openAiProvider({ apiKey: env.OPENAI_API_KEY, models: [...OPENAI_MODEL_IDS] });
+
+// Azure OpenAI — the deployment URL as written, api-version query and all. `models` are
+// DEPLOYMENT names on Azure, and the key rides in `api-key`, not `Authorization`.
+openAiProvider({
+  apiKey: env.AZURE_OPENAI_KEY,
+  auth: 'api-key',
+  baseUrl: 'https://acme.openai.azure.com/openai/deployments/prod?api-version=2026-05-01',
+  models: ['prod'],
+});
+
+// vLLM / your own gateway, on the cluster. Register the model first — nothing can price an id
+// the catalogue has never heard of.
+openAiProvider({
+  apiKey: env.GATEWAY_TOKEN,
+  baseUrl: 'https://llm.acme.internal/v1',
+  models: ['llama-internal-70b'],
+  name: 'acme-gateway',            // what `result.provider` and `llm.provider` will say
+  headers: { 'x-team': 'platform' },
+});
+
+// Ollama, on a laptop. The key is required and ignored, exactly as Ollama's own docs have it.
+openAiProvider({ apiKey: 'ollama', baseUrl: 'http://localhost:11434/v1', models: ['qwen3'] });
+```
+
+Priced built-ins — list price from `developers.openai.com/api/docs/pricing`, read **2026-08-16**:
+
+| Model | Context | Max output | Input / MTok | Output / MTok | `reasoning_effort` |
+|---|---|---|---|---|---|
+| `gpt-5.6-sol` | 1.05M | 128K | $5 | $30 | yes |
+| `gpt-5.6-terra` | 1.05M | 128K | $2 | $12 | yes |
+| `gpt-5.6-luna` | 1.05M | 128K | $0.20 | $1.20 | yes |
+
+Three, and no more, on purpose: `gpt-4o` and the `o1` family cache at **0.5x** input where `costOf`
+assumes 0.1x, and the `pro` tiers publish no cached rate at all. A wrong price is worse than a
+missing one — `costOf` answers confidently either way, and the missing entry says so with
+`X_AI_MODEL_UNKNOWN`. Register those yourself, at the rate your own contract names.
+
+| Rule | Why |
+|---|---|
+| **Structured output is the `respond` tool**, never `response_format` | `llm()` already projects `output` into one tool and reads the answer out of the tool call; `json_schema` + `strict` would be a second structured-output path (axiom 1) and is the one feature most OpenAI-*compatible* servers do not implement |
+| `tool_choice` is forced when the request offers **exactly one** tool | one tool is nothing to choose between, and that is precisely `llm()`'s shape. A tool loop (`agent()`) is never forced — that would decide the model's next step for it |
+| `strict: true` is claimed only when the schema **can keep the promise** | on this wire `strict` is checked by the server: one optional field and the request is a 400. The flag is derived from the projected schema, never forwarded |
+| `max_completion_tokens`, never `max_tokens` | the old field is rejected outright by every current reasoning model |
+| `stream_options: { include_usage: true }` on every streamed call | without it the final chunk carries no `usage`, and the budget reconciles a real call against nothing |
+| Usage absent anyway → **estimated**, never zero | a compatible server that ignores `stream_options` would otherwise refund the whole reservation |
+| `prompt_tokens` minus `cached_tokens` is the input count | this format counts the cached prefix inside `prompt_tokens`; Anthropic's excludes it, and reporting it as-is bills the cached half twice |
+| Tool-call deltas are merged by `tool_calls[].index` | id and name arrive on the first fragment only — merging by array position builds one call per chunk |
+| A tool call is emitted **whole**, at the finish reason | there is no per-block stop event here, and a fragment is not an argument list |
+| `role: 'system'`, not `developer` | every other server in the family knows only `system`, and OpenAI accepts it |
+| A refusal (`message.refusal`, or `finish_reason: 'content_filter'`) is `X_LLM_REFUSED` | it is a 200 with no answer in it, exactly as on the Anthropic path |
+| The API key is revealed as late as possible, and scrubbed out of error detail | a proxy that echoes request headers into its 4xx body is the one path by which a key reaches a log index |
+
+`thinking` maps onto the one field this format has: `'disabled'` is `reasoning_effort: 'none'`,
+`effort` is `reasoning_effort` as written, and asking for both is `X_AI_REQUEST_INVALID` rather
+than a silent pick. A model registered with `reasoning: { effort: false }` refuses both locally, so
+a llama behind vLLM never gets a field it would reject.
+
 ## `llm()` — a model call, declared as an action
 
 Not a ninth primitive. A model call has an input schema, an output schema and a policy, which

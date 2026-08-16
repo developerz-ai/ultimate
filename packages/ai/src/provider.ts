@@ -302,14 +302,19 @@ export class AnthropicProvider implements Provider {
         provider: this.name,
         status: response.status,
         detail: await detailOf(response),
+        envVar: API_KEY_ENV,
       });
     }
     return response;
   }
 }
 
-/** The provider's own message, when it sent one — it names the offending field, we name the fix. */
-async function detailOf(response: Response): Promise<string> {
+/**
+ * The provider's own message, when it sent one — it names the offending field, we name the fix.
+ * Exported because the OpenAI-format endpoints report a failure in the same `{ error: { message } }`
+ * envelope, and two copies of this would be two behaviours to keep in step.
+ */
+export async function detailOf(response: Response): Promise<string> {
   const body = await response.text().catch(() => '');
   try {
     const parsed: unknown = JSON.parse(body);

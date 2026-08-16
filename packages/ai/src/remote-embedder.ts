@@ -75,6 +75,7 @@ export class RemoteEmbedder implements Embedder {
         provider: this.name,
         status: response.status,
         detail: (await response.text().catch(() => '')).slice(0, DETAIL_LIMIT),
+        envVar: API_KEY_ENV,
       });
     }
     return this.decode((await response.json()) as unknown, texts.length);
