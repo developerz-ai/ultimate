@@ -46,7 +46,16 @@ export interface ChannelHubOptions {
   readonly transport: Transport;
   readonly sockets: SocketRegistry;
   readonly maxTopicsPerSocket?: number;
+  /**
+   * Distinct topics this node will bridge at once. Each one is a live transport subscription, and
+   * `topic()` admits any `[A-Za-z0-9_-]+` segment — so even a guard as tight as `org.<myorg>.>`
+   * admits unbounded distinct names inside one tenant, and a per-socket cap bounds nothing.
+   */
+  readonly maxTopicsPerNode?: number;
 }
+
+/** Distinct topics one node bridges before `X_SUBSCRIPTION_LIMIT`. */
+export const DEFAULT_MAX_TOPICS_PER_NODE = 10_000;
 
 /**
  * Deny by default: a topic with no matching guard is forbidden. An authz hole must be a typed
@@ -58,12 +67,24 @@ export class ChannelHub {
   readonly #guards: Array<{ pattern: string; guard: TopicGuard }> = [];
   readonly #bridges = new Map<string, { sub: TransportSubscription; refs: number }>();
   readonly #maxTopicsPerSocket: number;
+  readonly #maxTopicsPerNode: number;
   #sequence = 0n;
 
   constructor(options: ChannelHubOptions) {
     this.#transport = options.transport;
     this.#sockets = options.sockets;
     this.#maxTopicsPerSocket = options.maxTopicsPerSocket ?? 64;
+    this.#maxTopicsPerNode = options.maxTopicsPerNode ?? DEFAULT_MAX_TOPICS_PER_NODE;
+  }
+
+  /** Sockets this node will deliver `name` to. The metric the fanout reads. */
+  subscriberCount(name: Topic): number {
+    return this.#sockets.subscriberCount(name);
+  }
+
+  /** Distinct topics bridged from this node — one live transport subscription each. */
+  get topicCount(): number {
+    return this.#bridges.size;
   }
 
   /** `pattern` uses NATS wildcards: `org.*.cursors`, `org.>`. First registered match wins. */
@@ -81,14 +102,27 @@ export class ChannelHub {
         limit: this.#maxTopicsPerSocket,
       });
     }
+    // Refused before the guard runs and before a transport subscription is opened: a node that is
+    // out of topics has nothing to decide, and the answer must not depend on who asked.
+    if (!this.#bridges.has(name) && this.#bridges.size >= this.#maxTopicsPerNode) {
+      throw new SubscriptionLimitError({
+        scope: 'node',
+        id: 'topics',
+        limit: this.#maxTopicsPerNode,
+        knob: 'maxTopicsPerNode',
+      });
+    }
     await this.#authorize(socket.actor, name);
     await this.#bridge(name);
-    socket.subscribeTopic(name);
+    // Through the registry, never `socket.subscribeTopic` directly: membership and the index the
+    // fanout reads are one fact, and two call sites for one fact is the drift that makes an index
+    // wrong. The registry owns it because it is the only thing that sees a socket die.
+    this.#sockets.joinTopic(socket, name);
   }
 
   unsubscribe(socket: SyncSocket, name: Topic): void {
     if (!socket.topics.has(name)) return;
-    socket.unsubscribeTopic(name);
+    this.#sockets.leaveTopic(socket, name);
     this.#release(name);
   }
 

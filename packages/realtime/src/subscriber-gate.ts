@@ -6,7 +6,7 @@
 import type { Actor } from '@ultimat3/core';
 import { isPolicyDenial } from './errors';
 import type { JsonValue, Row, RowPatch } from './json';
-import type { LiveQueryDefinition } from './live-query';
+import type { LiveQueryDefinition } from './live-contract';
 
 /**
  * Who a decision is being made for. Every policy call in the live pipeline takes one, which is the

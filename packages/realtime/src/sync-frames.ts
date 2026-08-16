@@ -4,6 +4,7 @@
 
 import type { ChannelHub } from './channel';
 import { topic as makeTopic } from './channel';
+import { FrameRateLimitError } from './errors';
 import type { JsonValue, Row } from './json';
 import type { LiveQueryRegistry } from './live-query';
 import { type PresenceRegistry, presenceFrame } from './presence';
@@ -33,6 +34,14 @@ export function createFrameRouter(options: FrameRouterOptions): FrameRouter {
   const presence = options.presence;
 
   return async function routeFrame(socket: SyncSocket, frame: Frame): Promise<void> {
+    // Before `touch()` and before every amplifier below it: a frame this node refuses to route
+    // must not also renew the idle window that would otherwise close a flooding socket.
+    if (!socket.frameBudget.tryAccept()) {
+      throw new FrameRateLimitError({
+        socketId: socket.id,
+        perSecond: socket.frameBudget.perSecond,
+      });
+    }
     socket.touch();
     switch (frame.type) {
       case 'hello': {

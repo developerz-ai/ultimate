@@ -1,11 +1,11 @@
 // Who holds which subscription, and the composite identity that makes that answerable. A `sid`
 // is CLIENT data — unique only to the socket that chose it — so every lookup here takes the
 // owner too, and the per-socket and per-tenant caps are answered from this book because it is
-// the only thing that knows what exists.
+// the only thing that knows what exists. Every question it answers is indexed, never scanned.
 
 import type { Actor } from '@ultimat3/core';
 import { SubscriptionLimitError } from './errors';
-import type { LiveSubscription } from './live-query';
+import type { LiveSubscription } from './live-contract';
 import type { SyncSocket } from './socket';
 
 /**
@@ -33,9 +33,32 @@ export const DEFAULT_MAX_PER_SOCKET = 128;
  * nothing and that entry's matcher and shared window were pinned for the process's life, fanning
  * every change out to a dead socket. A `drop` frame from B likewise ended A's stream with no
  * error either side.
+ *
+ * **Two secondary indexes, because both of this book's sweeps run once per socket.** `ofSocket`
+ * copied the node's whole map and filtered it, so a teardown or a re-auth pass cost
+ * `sockets x subscriptions` — 100,000 entries measured at 17.7s of blocking work, with no
+ * attacker capability required: a deploy, a network blip or a batch of grants expiring together
+ * is the trigger. The per-tenant cap walked the same map on every subscribe FRAME (7.96 ms each
+ * at that size), which is one authenticated socket consuming the node. Both are `Map` reads now,
+ * maintained in `add`/`delete` — the shape `lru.ts` and `presence.ts` already use.
  */
 export class SubscriptionBook {
   readonly #bySid = new Map<string, LiveSubscription>();
+  /** socket id -> its sids. The drop list on close, the retry list on re-auth. */
+  readonly #bySocket = new Map<string, Set<string>>();
+  /** tenant -> live subscriptions held by its sockets. The per-tenant cap's whole answer. */
+  readonly #perTenant = new Map<string, number>();
+  /**
+   * The tenant each socket's subscriptions were counted under. Remembered rather than re-derived,
+   * because `socket.actor` is replaced by a re-auth: deriving it again at `delete` time would
+   * decrement a tenant that was never incremented and leave the old one counting forever.
+   */
+  readonly #tenantOfSocket = new Map<string, string>();
+  readonly #caps: SubscriptionCaps;
+
+  constructor(caps: SubscriptionCaps = {}) {
+    this.#caps = caps;
+  }
 
   get(socketId: string, sid: string): LiveSubscription | undefined {
     return this.#bySid.get(subscriptionKey(socketId, sid));
@@ -46,11 +69,31 @@ export class SubscriptionBook {
   }
 
   add(subscription: LiveSubscription): void {
-    this.#bySid.set(subscriptionKey(subscription.socket.id, subscription.sid), subscription);
+    const socketId = subscription.socket.id;
+    const key = subscriptionKey(socketId, subscription.sid);
+    // A re-add is the one thing that could double-count a tenant, so it is refused here rather
+    // than relied on not to happen: `subscribe` already answers `X_SUBSCRIPTION_ID_TAKEN`.
+    if (this.#bySid.has(key)) return;
+    this.#bySid.set(key, subscription);
+    const sids = this.#bySocket.get(socketId);
+    if (sids) sids.add(subscription.sid);
+    else this.#bySocket.set(socketId, new Set([subscription.sid]));
+    const tenant = this.#tenantFor(subscription.socket);
+    if (tenant === null) return;
+    this.#tenantOfSocket.set(socketId, tenant);
+    this.#perTenant.set(tenant, (this.#perTenant.get(tenant) ?? 0) + 1);
   }
 
   delete(socketId: string, sid: string): void {
-    this.#bySid.delete(subscriptionKey(socketId, sid));
+    if (!this.#bySid.delete(subscriptionKey(socketId, sid))) return;
+    const sids = this.#bySocket.get(socketId);
+    sids?.delete(sid);
+    const empty = sids === undefined || sids.size === 0;
+    if (empty) this.#bySocket.delete(socketId);
+    const tenant = this.#tenantOfSocket.get(socketId);
+    if (tenant === undefined) return;
+    this.#bump(tenant, -1);
+    if (empty) this.#tenantOfSocket.delete(socketId);
   }
 
   /** A copy, because every caller mutates the book while walking it. */
@@ -60,27 +103,74 @@ export class SubscriptionBook {
 
   /** One socket's subscriptions — the drop list when it closes, the retry list when it reauths. */
   ofSocket(socketId: string): readonly LiveSubscription[] {
-    return this.all().filter((subscription) => subscription.socket.id === socketId);
+    const sids = this.#bySocket.get(socketId);
+    if (!sids) return [];
+    const out: LiveSubscription[] = [];
+    for (const sid of sids) {
+      const subscription = this.#bySid.get(subscriptionKey(socketId, sid));
+      if (subscription) out.push(subscription);
+    }
+    return out;
+  }
+
+  /** Live subscriptions counted against one tenant. The metric the cap reads. */
+  tenantCount(tenant: string): number {
+    return this.#perTenant.get(tenant) ?? 0;
+  }
+
+  /**
+   * A re-auth moved this socket to another tenant, so its subscriptions move with it. Without
+   * this the count the cap reads drifts from the book for the rest of the process — one tenant
+   * refused for subscriptions it does not hold, another admitted past its cap.
+   */
+  retenant(socket: SyncSocket): void {
+    const held = this.#bySocket.get(socket.id)?.size ?? 0;
+    const before = this.#tenantOfSocket.get(socket.id) ?? null;
+    const after = this.#caps.tenantOf?.(socket.actor) ?? null;
+    if (before === after) return;
+    if (before !== null) this.#bump(before, -held);
+    if (after === null) this.#tenantOfSocket.delete(socket.id);
+    else {
+      this.#tenantOfSocket.set(socket.id, after);
+      if (held > 0) this.#perTenant.set(after, (this.#perTenant.get(after) ?? 0) + held);
+    }
   }
 
   /**
    * Refuse a subscribe that would exceed a cap. Load shedding, not a crash: both scopes throw
    * `X_SUBSCRIPTION_LIMIT` naming which one refused, so the fix line points at one knob.
    */
-  assertCapacity(socket: SyncSocket, caps: SubscriptionCaps): void {
-    const perSocket = caps.maxPerSocket ?? DEFAULT_MAX_PER_SOCKET;
+  assertCapacity(socket: SyncSocket): void {
+    const perSocket = this.#caps.maxPerSocket ?? DEFAULT_MAX_PER_SOCKET;
     if (socket.queries.size >= perSocket) {
-      throw new SubscriptionLimitError({ scope: 'socket', id: socket.id, limit: perSocket });
+      throw new SubscriptionLimitError({
+        scope: 'socket',
+        id: socket.id,
+        limit: perSocket,
+        knob: 'maxPerSocket',
+      });
     }
-    const perTenant = caps.maxPerTenant;
-    const tenant = caps.tenantOf?.(socket.actor) ?? null;
+    const perTenant = this.#caps.maxPerTenant;
+    const tenant = this.#tenantFor(socket);
     if (perTenant === undefined || tenant === null) return;
-    let count = 0;
-    for (const subscription of this.#bySid.values()) {
-      if ((caps.tenantOf?.(subscription.socket.actor) ?? null) === tenant) count += 1;
+    if (this.tenantCount(tenant) >= perTenant) {
+      throw new SubscriptionLimitError({
+        scope: 'tenant',
+        id: tenant,
+        limit: perTenant,
+        knob: 'maxPerTenant',
+      });
     }
-    if (count >= perTenant) {
-      throw new SubscriptionLimitError({ scope: 'tenant', id: tenant, limit: perTenant });
-    }
+  }
+
+  /** The tenant this socket's subscriptions are counted under: the remembered one, or the actor's. */
+  #tenantFor(socket: SyncSocket): string | null {
+    return this.#tenantOfSocket.get(socket.id) ?? this.#caps.tenantOf?.(socket.actor) ?? null;
+  }
+
+  #bump(tenant: string, by: number): void {
+    const next = (this.#perTenant.get(tenant) ?? 0) + by;
+    if (next > 0) this.#perTenant.set(tenant, next);
+    else this.#perTenant.delete(tenant);
   }
 }

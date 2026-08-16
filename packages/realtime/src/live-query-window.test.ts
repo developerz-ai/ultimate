@@ -9,12 +9,8 @@ import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
 import { makeCursor, type ResumeSource } from './cursor';
 import type { JsonValue, Row, RowPatch } from './json';
-import {
-  type LiveQueryDefinition,
-  LiveQueryRegistry,
-  qidOf,
-  type SnapshotResult,
-} from './live-query';
+import { type LiveQueryDefinition, qidOf, type SnapshotResult } from './live-contract';
+import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
 import { SyncSocket, type WsLike } from './socket';
 import { decode, type Frame } from './sync-protocol';

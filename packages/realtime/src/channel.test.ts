@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { type Actor, userActor } from '@ultimat3/core';
 import { ChannelHub, topic } from './channel';
-import { TopicForbiddenError } from './errors';
+import { SubscriptionLimitError, TopicForbiddenError } from './errors';
 import { InProcessTransport } from './fanout';
 import { SocketRegistry, SyncSocket, type WsLike } from './socket';
 import { decode, type Frame } from './sync-protocol';
@@ -113,5 +113,89 @@ describe('channels', () => {
     expect(ws.topics.has(name)).toBe(false);
     await hub.publish(name, { x: 1, y: 1 });
     expect(ws.frames).toHaveLength(0);
+  });
+});
+
+/** A socket's topic set that records being asked — the scan this suite refuses is `has` calls. */
+class CountingSet extends Set<string> {
+  asked = 0;
+  override has(value: string): boolean {
+    this.asked += 1;
+    return super.has(value);
+  }
+}
+
+describe('what a channel costs the node', () => {
+  const openTo = 'org.*.cursors';
+
+  test('delivery reads a per-topic index instead of scanning every socket', async () => {
+    const { hub, sockets } = harness();
+    hub.guard(openTo, () => true);
+    const subscriber = connect(sockets, actor('alice'));
+    const name = topic('org', 'o1', 'cursors');
+    await hub.subscribe(subscriber.socket, name);
+    // Sockets on this node that are not on this topic. Asked, one message with one legitimate
+    // subscriber costs every socket the node holds — 50,000 of them at the repo's own benchmark
+    // scale. The count is the assertion, not the clock: a scan is a scan at any size.
+    const bystanders = Array.from({ length: 200 }, () => {
+      const one = connect(sockets, actor('bob'));
+      const counting = new CountingSet();
+      Object.defineProperty(one.socket, 'topics', { value: counting });
+      return counting;
+    });
+
+    for (let i = 0; i < 10; i += 1) await hub.publish(name, { x: i, y: i });
+
+    expect(subscriber.ws.frames).toHaveLength(10);
+    expect(bystanders.reduce((total, one) => total + one.asked, 0)).toBe(0);
+  });
+
+  test('a socket that closed stops being delivered to and leaves the index', async () => {
+    const { hub, sockets } = harness();
+    hub.guard(openTo, () => true);
+    const name = topic('org', 'o1', 'cursors');
+    const { socket, ws } = connect(sockets, actor('alice'));
+    await hub.subscribe(socket, name);
+    socket.close();
+    await hub.publish(name, { x: 1, y: 1 });
+    expect(ws.frames).toHaveLength(0);
+    expect(hub.subscriberCount(name)).toBe(0);
+  });
+
+  test('unsubscribing removes only that socket from the topic', async () => {
+    const { hub, sockets } = harness();
+    hub.guard(openTo, () => true);
+    const name = topic('org', 'o1', 'cursors');
+    const stays = connect(sockets, actor('alice'));
+    const goes = connect(sockets, actor('bob'));
+    await hub.subscribe(stays.socket, name);
+    await hub.subscribe(goes.socket, name);
+    hub.unsubscribe(goes.socket, name);
+    expect(hub.subscriberCount(name)).toBe(1);
+    await hub.publish(name, { x: 1, y: 1 });
+    expect(stays.ws.frames).toHaveLength(1);
+    expect(goes.ws.frames).toHaveLength(0);
+  });
+
+  test('distinct topics are capped per NODE, not only per socket', async () => {
+    const transport = new InProcessTransport();
+    const sockets = new SocketRegistry();
+    const hub = new ChannelHub({ transport, sockets, maxTopicsPerNode: 2 });
+    hub.guard('org.>', () => true);
+    // Each distinct topic is one live transport subscription, and `topic()` admits any name
+    // inside a tenant's own prefix — so a per-socket cap bounds nothing node-wide.
+    const first = connect(sockets, actor('alice'));
+    const second = connect(sockets, actor('bob'));
+    await hub.subscribe(first.socket, topic('org', 'o1', 'a'));
+    await hub.subscribe(second.socket, topic('org', 'o1', 'b'));
+    await expect(hub.subscribe(first.socket, topic('org', 'o1', 'c'))).rejects.toThrow(
+      SubscriptionLimitError,
+    );
+    // A topic that already exists is free: the cap bounds the bridge, not the subscriber.
+    await expect(hub.subscribe(first.socket, topic('org', 'o1', 'b'))).resolves.toBeUndefined();
+    // And a released topic gives its slot back.
+    hub.unsubscribe(first.socket, topic('org', 'o1', 'a'));
+    hub.unsubscribe(second.socket, topic('org', 'o1', 'a'));
+    await expect(hub.subscribe(first.socket, topic('org', 'o1', 'c'))).resolves.toBeUndefined();
   });
 });

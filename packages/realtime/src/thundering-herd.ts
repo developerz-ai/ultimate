@@ -147,6 +147,11 @@ export class AcceptBudget {
     return Math.floor(this.#tokens);
   }
 
+  /** The sustained rate this bucket was built with — what a refusal has to name to be actionable. */
+  get perSecond(): number {
+    return this.#perSecond;
+  }
+
   #refill(): void {
     const now = this.#clock.monotonic();
     const elapsed = now - this.#lastRefill;

@@ -1,0 +1,199 @@
+// What one socket may cost this node. The accept budget spends a token per UPGRADE and nothing
+// else was bounded after that: an authenticated socket could drive unlimited frames into a DB
+// read and a fleet-wide publish, and unlimited sockets could be held open at 500/s.
+
+import { describe, expect, test } from 'bun:test';
+import { type Actor, frozenClock, userActor } from '@ultimat3/core';
+import { RingChangeBuffer } from './change-buffer';
+import { ChannelHub } from './channel';
+import { InProcessTransport } from './fanout';
+import type { LiveQueryDefinition } from './live-contract';
+import { LiveQueryRegistry } from './live-query';
+import { SocketRegistry, SyncSocket, type WsLike } from './socket';
+import { createFrameRouter } from './sync-frames';
+import {
+  createSyncNode,
+  DEFAULT_MAX_CONNECTIONS,
+  DEFAULT_MAX_FRAME_BYTES,
+  type SyncNode,
+  type UpgradeTarget,
+  type WsData,
+} from './sync-node';
+import { decode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
+
+const BUILD_ID = 'build-1';
+const alice: Actor = userActor({ id: 'alice', orgId: 'o1' });
+
+class FakeWs implements WsLike {
+  readonly frames: Frame[] = [];
+  data!: WsData;
+  send(raw: string): number {
+    this.frames.push(decode(raw));
+    return raw.length;
+  }
+  close(): void {}
+  subscribe(): void {}
+  unsubscribe(): void {}
+  getBufferedAmount(): number {
+    return 0;
+  }
+}
+
+/** Counts the reads a subscribe frame reaches — the amplifier the budget exists to keep shut. */
+let reads = 0;
+const feed: LiveQueryDefinition = {
+  name: 'feed',
+  entities: ['posts'],
+  async snapshot() {
+    reads += 1;
+    return { rows: [], lsn: '' };
+  },
+  visible: () => true,
+  matcher: () => ({ entities: ['posts'], match: () => ({ patches: [], refill: false }) }),
+};
+
+function harness(options: { maxFramesPerSecond?: number; frameBurst?: number } = {}): {
+  socket: SyncSocket;
+  ws: FakeWs;
+  route: (frame: Frame) => Promise<void>;
+} {
+  const clock = frozenClock(0);
+  const transport = new InProcessTransport();
+  const sockets = new SocketRegistry({ clock });
+  const registry = new LiveQueryRegistry({ source: new RingChangeBuffer(), clock });
+  registry.register(feed);
+  const ws = new FakeWs();
+  const socket = new SyncSocket({
+    ws,
+    clientBuildId: BUILD_ID,
+    serverBuildId: BUILD_ID,
+    actor: alice,
+    clock,
+    ...options,
+  });
+  sockets.add(socket);
+  const route = createFrameRouter({
+    hub: new ChannelHub({ transport, sockets }),
+    registry,
+    buildId: BUILD_ID,
+  });
+  return { socket, ws, route: (frame) => route(socket, frame) };
+}
+
+function subscribe(sid: string): Frame {
+  return {
+    type: 'subscribe',
+    v: PROTOCOL_VERSION,
+    op: 'add',
+    sid,
+    target: { kind: 'query', qid: 'feed', input: { page: sid }, cursor: null },
+  };
+}
+
+function upgradeTarget(): UpgradeTarget {
+  return { upgrade: () => true };
+}
+
+function node(options: { maxConnections?: number } = {}): {
+  sync: SyncNode;
+  sockets: SocketRegistry;
+} {
+  const transport = new InProcessTransport();
+  const sockets = new SocketRegistry();
+  const sync = createSyncNode({
+    hub: new ChannelHub({ transport, sockets }),
+    registry: new LiveQueryRegistry({ source: new RingChangeBuffer() }),
+    transport,
+    buildId: BUILD_ID,
+    sockets,
+    ...options,
+  });
+  return { sync, sockets };
+}
+
+describe('the per-socket frame budget', () => {
+  test('refuses the frame past the burst and never reaches the read behind it', async () => {
+    reads = 0;
+    const { route, socket } = harness({ maxFramesPerSecond: 5, frameBurst: 5 });
+    for (let i = 0; i < 5; i += 1) await route(subscribe(`s${i}`));
+    expect(reads).toBe(5);
+
+    // The clock is frozen, so the bucket never refills: frame 6 is the one over the budget.
+    await expect(route(subscribe('s5'))).rejects.toMatchObject({
+      code: 'X_FRAME_RATE_LIMIT',
+    });
+    // Not one byte of the amplifier ran — no read, no subscription, no presence write.
+    expect(reads).toBe(5);
+    expect(socket.queries.size).toBe(5);
+  });
+
+  test('a refused frame does not touch the socket, so a flood cannot hold it open', async () => {
+    const { route, socket } = harness({ maxFramesPerSecond: 1, frameBurst: 1 });
+    await route({
+      type: 'hello',
+      v: PROTOCOL_VERSION,
+      buildId: BUILD_ID,
+      sessionId: null,
+      actorId: null,
+      resume: [],
+    });
+    const touchedAt = socket.lastSeenAt;
+    await expect(
+      route({
+        type: 'hello',
+        v: PROTOCOL_VERSION,
+        buildId: BUILD_ID,
+        sessionId: null,
+        actorId: null,
+        resume: [],
+      }),
+    ).rejects.toMatchObject({ code: 'X_FRAME_RATE_LIMIT' });
+    expect(socket.lastSeenAt).toBe(touchedAt);
+  });
+
+  test('the default burst admits a client subscribing its whole per-socket cap at once', () => {
+    const { socket } = harness();
+    expect(socket.frameBudget.tokens).toBeGreaterThanOrEqual(128);
+  });
+});
+
+describe('the connection ceiling', () => {
+  test('answers 503 with a retry-after-ms once the node is full', async () => {
+    const { sync, sockets } = node({ maxConnections: 2 });
+    await sync.start();
+    for (const id of ['a', 'b']) {
+      sockets.add(
+        new SyncSocket({
+          ws: new FakeWs(),
+          id,
+          clientBuildId: BUILD_ID,
+          serverBuildId: BUILD_ID,
+        }),
+      );
+    }
+    const response = await sync.fetch(new Request('http://node.test/_x/sync'), upgradeTarget());
+    expect(response?.status).toBe(503);
+    expect(Number(response?.headers.get('retry-after-ms'))).toBeGreaterThan(0);
+    await sync.stop();
+  });
+
+  test('admits the upgrade while there is room', async () => {
+    const { sync } = node({ maxConnections: 2 });
+    await sync.start();
+    const response = await sync.fetch(new Request('http://node.test/_x/sync'), upgradeTarget());
+    expect(response).toBeUndefined();
+    await sync.stop();
+  });
+
+  test('the default ceiling clears the benchmarked 50,000 sockets', () => {
+    expect(DEFAULT_MAX_CONNECTIONS).toBeGreaterThanOrEqual(50_000);
+  });
+});
+
+describe('the inbound frame size cap', () => {
+  test('is declared on the websocket handler, so every host that mounts it inherits one', () => {
+    const { sync } = node();
+    expect(sync.websocket.maxPayloadLength).toBe(DEFAULT_MAX_FRAME_BYTES);
+    expect(DEFAULT_MAX_FRAME_BYTES).toBeLessThan(16 * 1024 * 1024);
+  });
+});

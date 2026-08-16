@@ -76,6 +76,19 @@ describe('parsePgUrl', () => {
     }
   });
 
+  /**
+   * The rejected value is a connection URL, so it carries the database password — and an error is
+   * the one value that is rendered everywhere: a log line, `--json`, an agent's transcript, a
+   * ticket. Name the variable that has to change, the way `driver-smtp.ts:68` does.
+   */
+  test('a malformed URL is refused without echoing the credential in it', () => {
+    const error = thrown(() => parsePgUrl('postgres://alice:hunter2@:not-a-port/db'));
+    expect(error).toBeInstanceOf(ReplicationFailedError);
+    const rendered = JSON.stringify(error);
+    expect(rendered).not.toContain('hunter2');
+    expect(rendered).toContain('DATABASE_URL');
+  });
+
   test('an unknown sslmode is refused', () => {
     const error = thrown(() => parsePgUrl('postgres://db.example.test/db?sslmode=verify-full'));
     expect(error).toBeInstanceOf(ReplicationFailedError);

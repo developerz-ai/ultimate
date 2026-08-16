@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "650d896022c39ad25a6e650b723a4ae24281f7a49b46732cc3f2202c75ab1cad",
+  "buildId": "00642dcfa2a3cfbae4e21ecd579ec81f0e3f44bc413e7fdc54048f43f00680d6",
   "tiers": {
     "0": [
       "core",
@@ -859,6 +859,11 @@
       "code": "X_FORBIDDEN",
       "owner": "policy",
       "at": "packages/policy/src/errors.ts"
+    },
+    {
+      "code": "X_FRAME_RATE_LIMIT",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
     },
     {
       "code": "X_GENERATE_CONFLICT",

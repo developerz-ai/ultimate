@@ -69,6 +69,12 @@ export interface ResumeSource {
   /** Patches strictly after `lsn`, or `null` when the gap is not covered by the retained window. */
   since(qid: string, lsn: string): RowPatch[] | null;
   headLsn(qid: string): string | null;
+  /**
+   * The last subscriber of this query went away, so nothing will ever resume from its retained
+   * patches. Optional because a source may retain nothing; the registry calls it when it drops
+   * the entry, which is the only moment anything knows the window is unreachable.
+   */
+  forget?(qid: string): void;
 }
 
 export type ResumeResult<R extends Row = Row> =

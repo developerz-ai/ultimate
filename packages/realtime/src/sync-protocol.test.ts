@@ -4,6 +4,7 @@ import {
   decode,
   encode,
   FRAME_KINDS,
+  FRAME_LIMITS,
   type Frame,
   type FrameKind,
   PROTOCOL_VERSION,
@@ -154,6 +155,101 @@ describe('sync-protocol', () => {
   test('decode accepts the binary form Bun hands a WS handler', () => {
     const bytes = new TextEncoder().encode(encode(fixtures.ack));
     expect(decode(bytes)).toEqual(fixtures.ack);
+  });
+});
+
+/**
+ * Every array and every nested value one authenticated socket can put on the wire. The decoder
+ * enforced no size at all: a `cursor.ids` of ten million strings was consumed raw by
+ * `live-query.ts` (`new Set(args.cursor.ids)`), and `input` of arbitrary depth reached
+ * `canonicalJson`, which is recursive — a stack overflow on the frame path, in the process, from
+ * one frame.
+ */
+describe('the decoder refuses what it cannot afford', () => {
+  const cursorOf = (ids: readonly string[]): Record<string, unknown> => ({
+    qid: 'q1',
+    lsn: '1',
+    digest: 'd',
+    ids,
+    count: ids.length,
+    at: 0,
+  });
+
+  test('a cursor carrying more ids than a cursor can hold is refused by code', () => {
+    const ids = Array.from({ length: FRAME_LIMITS.cursorIds + 1 }, (_, i) => `row-${i}`);
+    const frame = JSON.stringify({
+      ...fixtures.subscribe,
+      target: { kind: 'query', qid: 'feed', input: null, cursor: cursorOf(ids) },
+    });
+    expect(() => decode(frame)).toThrow(ProtocolVersionError);
+    expect(() => decode(frame)).toThrow(/cursor\.ids/);
+    // The limit the server itself writes still decodes: a cap below what this node produces
+    // would refuse its own cursors on the next reconnect.
+    const atLimit = Array.from({ length: FRAME_LIMITS.cursorIds }, (_, i) => `row-${i}`);
+    expect(() =>
+      decode(
+        JSON.stringify({
+          ...fixtures.subscribe,
+          target: { kind: 'query', qid: 'feed', input: null, cursor: cursorOf(atLimit) },
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  test('an oversized resume list, patch list and row list are each refused', () => {
+    const many = (length: number, value: unknown): unknown[] => Array.from({ length }, () => value);
+    expect(() =>
+      decode(
+        JSON.stringify({ ...fixtures.hello, resume: many(FRAME_LIMITS.resume + 1, cursorOf([])) }),
+      ),
+    ).toThrow(/resume/);
+    expect(() =>
+      decode(
+        JSON.stringify({
+          ...fixtures.patch,
+          patches: many(FRAME_LIMITS.patches + 1, { op: 'insert', id: 'p1', row: {}, lsn: '1' }),
+        }),
+      ),
+    ).toThrow(/patches/);
+    expect(() =>
+      decode(
+        JSON.stringify({ ...fixtures.snapshot, rows: many(FRAME_LIMITS.rows + 1, { id: 'p1' }) }),
+      ),
+    ).toThrow(/rows/);
+  });
+
+  test('a deeply nested input is refused by code, not by a stack overflow', () => {
+    let deep: unknown = 'bottom';
+    for (let i = 0; i < FRAME_LIMITS.inputDepth + 5; i += 1) deep = { next: deep };
+    const frame = JSON.stringify({ ...fixtures.mutate, input: deep });
+    expect(() => decode(frame)).toThrow(ProtocolVersionError);
+    expect(() => decode(frame)).toThrow(/nested/);
+  });
+
+  test('a wide input is refused by the same walk', () => {
+    const wide: Record<string, unknown> = {};
+    for (let i = 0; i <= FRAME_LIMITS.inputNodes; i += 1) wide[`k${i}`] = i;
+    expect(() =>
+      decode(
+        JSON.stringify({
+          ...fixtures.subscribe,
+          target: { kind: 'query', qid: 'feed', input: wide, cursor: null },
+        }),
+      ),
+    ).toThrow(ProtocolVersionError);
+  });
+
+  test('an input a real client sends still decodes unchanged', () => {
+    const input = { orgId: 'o1', filter: { tags: ['a', 'b'], since: { lsn: '7' } } };
+    const decoded = decode(
+      JSON.stringify({
+        ...fixtures.subscribe,
+        target: { kind: 'query', qid: 'feed', input, cursor: null },
+      }),
+    );
+    expect(
+      decoded.type === 'subscribe' && decoded.target.kind === 'query' && decoded.target.input,
+    ).toEqual(input);
   });
 });
 
