@@ -16,6 +16,15 @@ none ever will — "the server's timezone" is not an answer to "what time is it 
 No `date-fns-tz`, no tzdata table. Zone math is derived from `Intl.DateTimeFormat` +
 `formatToParts`, which is exact in Bun and always current with the runtime's tzdata.
 
+**One zone is one key.** `Intl` accepts every casing of an IANA name, so `canonicalTimeZone(z)`
+answers the canonical spelling (or `undefined`), and `assertTimeZone` / `resolveTimeZone` both
+return it. Anything reading a zone off a request header should canonicalize before caching on it:
+4,096 casings of `Europe/Berlin` used to mint 4,096 permanent `Intl.DateTimeFormat`s, 31 MB.
+
+Every value this package hands back is its own object: `instant(date)` copies rather than branding
+the caller's `Date`, and `epoch()` is a function — the `EPOCH` constant it replaces was one shared
+mutable `Date` that a single `setUTCFullYear` corrupted for the whole process.
+
 ## Use
 
 ```ts
@@ -73,12 +82,19 @@ change, and a job scheduled inside the gap runs at the first existing local time
 being skipped. `describeCron(expr, locale, phrases)` renders the dashboard summary — month and
 weekday names from `Intl`, every connective word **required** from the caller's `t('time.cron.*')`,
 because tier 1 cannot reach `t()` and a built-in default would ship English to every locale. A
-long clock-time list is capped and the remainder counted with `andMore`, never silently cut.
+long clock-time list is capped and the remainder counted with `andMore`, never silently cut. A
+6-field expression whose seconds field says something a 5-field one cannot is **declined** with
+`X_CRON_NOT_DESCRIBABLE` rather than summarised: `CronPhrases` has no seconds vocabulary, so a
+ten-second step used to render as "every minute".
 
 ## Business days
 
 The weekend is configuration. `WEEKEND_SAT_SUN`, `WEEKEND_FRI_SAT` (much of the Gulf),
 `WEEKEND_SUN_ONLY`, plus a holiday list of local `YYYY-MM-DD` dates.
+
+`businessDaysBetween(from, to, calendar)` counts `[from, to)` — half-open, on **local calendar
+days**, the same interval `daysBetween` measures. `from`'s own day counts, `to`'s does not, and
+neither endpoint's wall-clock time is part of the question.
 
 ## Errors
 
@@ -91,6 +107,8 @@ The weekend is configuration. `WEEKEND_SAT_SUN`, `WEEKEND_FRI_SAT` (much of the 
 | `X_DST_NONEXISTENT` | gap hit with `gap: 'throw'` |
 | `X_INSTANT_INVALID` | unparseable timestamp |
 | `X_LOCALE_INVALID` | a tag `Intl` cannot parse (`en_US`, `''`) reached `describeCron` |
+| `X_CRON_NOT_DESCRIBABLE` | a valid 6-field cron whose seconds field `CronPhrases` has no words for |
+| `X_SCHEDULE_INVALID` | a wall-clock field out of range: `slot.hour`, `slot.minute`, `slot.second`, `slot.weekday` |
 
 ## Why it exists
 

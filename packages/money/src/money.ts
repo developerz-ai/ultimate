@@ -6,7 +6,7 @@
 import { isMoneyScale, type MoneyValue } from '@ultimat3/schema';
 import { assertCurrency, type CurrencyCode, exponentOf } from './currency';
 import { decimalNotNumeric, decimalTooPrecise, moneyNotInteger } from './errors';
-import { type RoundingMode, roundToInteger } from './rounding';
+import { type RoundingMode, roundRatio } from './rounding';
 import { assertScale, commonScale, minorAt, moneyScale } from './scale';
 
 /**
@@ -33,9 +33,15 @@ const DECIMAL = /^([+-])?(\d+)(?:\.(\d+))?$/;
 export function money(minor: number, currency: string, scale?: number): Money {
   const code = assertCurrency(currency);
   if (!Number.isSafeInteger(minor)) throw moneyNotInteger(minor, code);
-  if (scale === undefined) return { minor, currency: code };
+  // `-0` is one amount with two identities: `JSON.stringify` writes `0` while `Object.is` and any
+  // keyed `Map` see something else, so a ledger reconciles against a value its own wire format
+  // cannot reproduce. Normalised here because this is the one place canonical form is decided.
+  const value = minor === 0 ? 0 : minor;
+  if (scale === undefined) return { minor: value, currency: code };
   assertScale(scale);
-  return scale === exponentOf(code) ? { minor, currency: code } : { minor, currency: code, scale };
+  return scale === exponentOf(code)
+    ? { minor: value, currency: code }
+    : { minor: value, currency: code, scale };
 }
 
 export function zero(currency: string): Money {
@@ -80,9 +86,15 @@ export function fromDecimal(
   } else {
     const mode = options.rounding;
     if (mode === undefined) throw decimalTooPrecise(value, code, exponent);
-    const kept = Number(`${integerPart}${fractionPart.slice(0, exponent)}`);
-    const remainder = Number(`0.${fractionPart.slice(exponent)}`);
-    minor = roundToInteger(kept + remainder, mode);
+    // The exact fraction the digits spell, never a float: `Number('0.4999999999999999999')` is
+    // exactly 0.5, so the float path showed `half-up` a tie the written decimal does not have and
+    // billed 101 for an amount that owes 100. Same `roundRatio` multiply/divide/convert use.
+    const dropped = fractionPart.slice(exponent);
+    minor = roundRatio(
+      BigInt(`${integerPart}${fractionPart}`),
+      10n ** BigInt(dropped.length),
+      mode,
+    );
   }
 
   return money(negative ? -minor : minor, code, options.scale);

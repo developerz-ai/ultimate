@@ -5,7 +5,8 @@
  */
 
 import { type Ctx, useContext } from '@ultimat3/core';
-import { isValidTimeZone, type TimeZone, UTC } from './zones';
+import { canonicalTimeZone } from './zone-canonical';
+import { type TimeZone, UTC } from './zones';
 
 /** Header a client sets from `Intl.DateTimeFormat().resolvedOptions().timeZone`. */
 export const TIMEZONE_HEADER = 'x-timezone';
@@ -46,8 +47,12 @@ export function timeConfig(): TimeConfig {
 }
 
 /**
- * First valid IANA name wins. An invalid value is skipped, never thrown: a stale
- * `x-timezone` header from an old client must not fail the request.
+ * First valid IANA name wins, **canonicalized**. An invalid value is skipped, never thrown: a
+ * stale `x-timezone` header from an old client must not fail the request.
+ *
+ * The canonical spelling is what leaves this function, because `Intl` accepts every casing:
+ * `x-timezone: eUrOpE/bErLiN` used to travel the whole request as its own distinct zone string,
+ * and every formatter cache it reached kept a permanent entry for it.
  */
 export function resolveTimeZone(
   sources: TimeZoneSources,
@@ -57,7 +62,8 @@ export function resolveTimeZone(
   for (const name of order) {
     const candidate = sources[name];
     if (candidate === undefined || candidate === null || candidate === '') continue;
-    if (isValidTimeZone(candidate)) return { zone: candidate, source: name };
+    const zone = canonicalTimeZone(candidate);
+    if (zone !== undefined) return { zone, source: name };
   }
   return { zone: defaultZone, source: 'default' };
 }

@@ -4,7 +4,7 @@
  */
 
 import type { Instant } from './instant';
-import { addDaysInZone, isoDateInZone, toZoned } from './zoned';
+import { addDaysInZone, daysBetween, isoDateInZone, toZoned } from './zoned';
 import type { TimeZone } from './zones';
 
 /** ISO weekday numbers: 1 = Monday … 7 = Sunday. */
@@ -68,8 +68,15 @@ export function nextBusinessDay(at: Instant, calendar: BusinessCalendar): Instan
 }
 
 /**
- * Business days in `[from, to)`, counted on local calendar days. Order-independent:
- * a reversed range returns a negative count.
+ * Business days in `[from, to)` — **half-open, and counted on local calendar days**: `from`'s own
+ * day counts, `to`'s does not, and the wall-clock time of either endpoint is not part of the
+ * question. It is exactly the interval `daysBetween` measures, minus the weekends and holidays
+ * in it, so the two functions can never disagree about how long a span is.
+ *
+ * The loop used to advance an *instant* one local day at a time and stop on
+ * `cursor.getTime() > end.getTime()`, which made the last day depend on whether `to`'s clock time
+ * had passed `from`'s: `Mon 09:00 → Fri 10:00` answered 4 and `Mon 09:00 → Fri 08:00` answered 3
+ * for the same calendar span. Order-independent: a reversed range returns a negative count.
  */
 export function businessDaysBetween(
   from: Instant,
@@ -79,12 +86,14 @@ export function businessDaysBetween(
   const sign = to.getTime() < from.getTime() ? -1 : 1;
   const start = sign === 1 ? from : to;
   const end = sign === 1 ? to : from;
+  // `daysBetween` is the day count of the same half-open interval, so it is also the exact number
+  // of iterations — the loop cannot run away on a calendar `addDaysInZone` handles oddly.
+  const days = daysBetween(start, end, calendar.zone);
   let cursor = start;
   let count = 0;
-  while (isoDateInZone(cursor, calendar.zone) !== isoDateInZone(end, calendar.zone)) {
-    cursor = addDaysInZone(cursor, 1, calendar.zone);
-    if (cursor.getTime() > end.getTime()) break;
+  for (let index = 0; index < days; index += 1) {
     if (isBusinessDay(cursor, calendar)) count += 1;
+    cursor = addDaysInZone(cursor, 1, calendar.zone);
   }
   return sign * count;
 }

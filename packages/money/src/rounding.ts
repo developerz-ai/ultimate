@@ -30,17 +30,26 @@ export function roundToInteger(value: number, mode: RoundingMode = DEFAULT_ROUND
 
   switch (mode) {
     case 'down':
-      return sign * floor;
+      return signed(sign, floor);
     case 'up':
-      return sign * (fraction > 0 ? floor + 1 : floor);
+      return signed(sign, fraction > 0 ? floor + 1 : floor);
     case 'half-up':
-      return sign * (fraction >= 0.5 ? floor + 1 : floor);
+      return signed(sign, fraction >= 0.5 ? floor + 1 : floor);
     case 'half-even': {
-      if (fraction > 0.5) return sign * (floor + 1);
-      if (fraction < 0.5) return sign * floor;
-      return sign * (floor % 2 === 0 ? floor : floor + 1);
+      if (fraction > 0.5) return signed(sign, floor + 1);
+      if (fraction < 0.5) return signed(sign, floor);
+      return signed(sign, floor % 2 === 0 ? floor : floor + 1);
     }
   }
+}
+
+/**
+ * `sign * magnitude`, except that a magnitude of zero stays `0`. `-1 * 0` is `-0`, which
+ * `JSON.stringify` writes as `0` while `Object.is` and any keyed `Map` see a different value —
+ * so a refund rounding to nothing produced an amount its own wire format cannot reproduce.
+ */
+function signed(sign: number, magnitude: number): number {
+  return magnitude === 0 ? 0 : sign * magnitude;
 }
 
 /**

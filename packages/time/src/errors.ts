@@ -14,6 +14,7 @@ export const TIME_ERROR_CODES = [
   'X_INSTANT_INVALID',
   'X_SCHEDULE_INVALID',
   'X_LOCALE_INVALID',
+  'X_CRON_NOT_DESCRIBABLE',
 ] as const;
 
 export type TimeErrorCode = (typeof TIME_ERROR_CODES)[number];
@@ -27,6 +28,7 @@ export const TIME_ERROR_TITLES: Readonly<Record<TimeErrorCode, string>> = {
   X_INSTANT_INVALID: 'not a parseable instant',
   X_SCHEDULE_INVALID: 'a wall-clock field is out of range',
   X_LOCALE_INVALID: 'not a well-formed BCP 47 tag',
+  X_CRON_NOT_DESCRIBABLE: 'a valid cron expression describeCron has no vocabulary for',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -74,6 +76,22 @@ export function cronInvalid(expression: string, reason: string): TimeError {
     code: 'X_CRON_INVALID',
     cause: `cron "${expression}": ${reason}`,
     fix: "use 5 fields (m h dom mon dow) or 6 with seconds, e.g. '0 3 * * *' for 03:00 daily, '*/15 * * * *' every 15 minutes, '0 9 * * MON-FRI' weekday mornings",
+  });
+}
+
+/**
+ * The expression parses and schedules correctly — `describeCron` just cannot put it into words.
+ * Separate from `X_CRON_INVALID`, which is a typo: this one is a valid schedule, and telling the
+ * caller to fix their cron would be telling them to break a working task.
+ */
+export function cronNotDescribable(cron: {
+  source: string;
+  seconds: readonly number[];
+}): TimeError {
+  return new TimeError({
+    code: 'X_CRON_NOT_DESCRIBABLE',
+    cause: `cron "${cron.source}" fires on second ${cron.seconds.join(',')}, and CronPhrases has no seconds vocabulary`,
+    fix: `render the real runs instead of a summary — nextCronOccurrences('${cron.source}', zone, from, 3) — or, if second-level precision is not wanted, describe the 5-field schedule describeCron('${cron.source.split(/\s+/).slice(1).join(' ')}', locale, phrases)`,
   });
 }
 

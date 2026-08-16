@@ -419,6 +419,7 @@ Seven codes because each sends the reader somewhere different. Full walkthrough:
 | `X_DST_AMBIGUOUS` | the local time occurs twice | a fall-back overlap | pass `{ overlap: 'first' }` or `{ overlap: 'second' }` |
 | `X_DST_NONEXISTENT` | the local time does not exist | a spring-forward gap | pass `{ gap: 'next' }` or `{ gap: 'previous' }` |
 | `X_LOCALE_INVALID` | not a well-formed BCP 47 tag | `en_US`, `''`, or a raw `Accept-Language` value reaching `describeCron` | pass `en`, `en-GB`, `de-DE` — screen header input with `Intl.DateTimeFormat.supportedLocalesOf([tag])` |
+| `X_CRON_NOT_DESCRIBABLE` | a valid cron expression `describeCron` has no vocabulary for | a 6-field expression whose seconds field says something a 5-field one cannot (`*/10 * * * * *`, `30 0 3 * * *`) — `CronPhrases` has no seconds phrase, so the summary would be wrong | render the real runs with `nextCronOccurrences(expr, zone, from, 3)`, or describe the 5-field schedule the `fix:` line prints — never a summary that drops the seconds |
 
 ## Mail
 

@@ -56,6 +56,22 @@ describe('describeCron', () => {
     expect(describeCron('0,30 9 * * *', 'en', EN)).not.toContain('more');
   });
 
+  test('a seconds field it has no vocabulary for is declined, never summarised wrong', () => {
+    // `*/10 * * * * *` rendered as "every minute" and `30 0 3 * * *` rendered identically to
+    // `0 3 * * *`. `CronPhrases` has no seconds phrase, and a summary that is wrong is worse
+    // than one that declines.
+    const error = errorOf(() => describeCron('*/10 * * * * *', 'en', EN));
+    expect(error.code).toBe('X_CRON_NOT_DESCRIBABLE');
+    expect(String(error.cause)).toContain('*/10');
+    expect(String(error.fix)).toContain('nextCronOccurrences');
+    expect(errorOf(() => describeCron('30 0 3 * * *', 'en', EN)).code).toBe(
+      'X_CRON_NOT_DESCRIBABLE',
+    );
+    // A 6-field expression whose seconds field says nothing a 5-field one does not still reads.
+    expect(describeCron('0 0 3 * * *', 'en', EN)).toBe('at 03:00 every day');
+    expect(describeCron('0 3 * * *', 'en', EN)).toBe('at 03:00 every day');
+  });
+
   test('a malformed locale tag fails as X_LOCALE_INVALID, not a bare RangeError', () => {
     const error = errorOf(() => describeCron('0 3 * * *', 'en_US', EN));
     expect(error.code).toBe('X_LOCALE_INVALID');

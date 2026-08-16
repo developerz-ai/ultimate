@@ -63,3 +63,45 @@ describe('addBusinessDays', () => {
     expect(businessDaysBetween(monday, nextMonday, { zone: BERLIN })).toBe(5);
   });
 });
+
+describe('businessDaysBetween counts [from, to)', () => {
+  const UTC_CAL = { zone: 'UTC' };
+  const monday09 = fromIso('2026-03-02T09:00:00Z');
+
+  test('the wall-clock time of either endpoint is not part of the question', () => {
+    // Comparing INSTANTS made the final day depend on whether `to`'s clock time had passed
+    // `from`'s: the same calendar span answered 4 or 3.
+    expect(businessDaysBetween(monday09, fromIso('2026-03-06T10:00:00Z'), UTC_CAL)).toBe(4);
+    expect(businessDaysBetween(monday09, fromIso('2026-03-06T08:00:00Z'), UTC_CAL)).toBe(4);
+    expect(businessDaysBetween(monday09, fromIso('2026-03-06T23:59:59Z'), UTC_CAL)).toBe(4);
+  });
+
+  test('half-open: `from`s own day counts, `to`s does not', () => {
+    // The same interval `daysBetween` counts, so business days are days minus the weekend.
+    expect(businessDaysBetween(monday09, monday09, UTC_CAL)).toBe(0);
+    // Mon → Tue is Monday alone.
+    expect(businessDaysBetween(monday09, fromIso('2026-03-03T09:00:00Z'), UTC_CAL)).toBe(1);
+    // Sat → Mon is nothing at all: the interval holds only Saturday and Sunday.
+    expect(
+      businessDaysBetween(
+        fromIso('2026-03-07T09:00:00Z'),
+        fromIso('2026-03-09T09:00:00Z'),
+        UTC_CAL,
+      ),
+    ).toBe(0);
+  });
+
+  test('a holiday inside the interval is not a business day', () => {
+    expect(
+      businessDaysBetween(monday09, fromIso('2026-03-06T09:00:00Z'), {
+        zone: 'UTC',
+        holidays: ['2026-03-03'],
+      }),
+    ).toBe(3);
+  });
+
+  test('a reversed range is the same count, negated', () => {
+    const friday = fromIso('2026-03-06T10:00:00Z');
+    expect(businessDaysBetween(friday, monday09, UTC_CAL)).toBe(-4);
+  });
+});

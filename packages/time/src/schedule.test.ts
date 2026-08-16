@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { fromIso, toIso } from './instant';
-import { nextLocalSlot, nextLocalSlots } from './schedule';
+import { nextLocalSlot, nextLocalSlots, nextWeeklySlot } from './schedule';
 import { toZoned } from './zoned';
 
 const BERLIN = 'Europe/Berlin';
@@ -39,3 +39,39 @@ describe('nextLocalSlot', () => {
     expect(next.getTime()).toBeGreaterThan(now.getTime());
   });
 });
+
+describe('nextWeeklySlot', () => {
+  test('finds the weekday', () => {
+    // 2026-03-14 is a Saturday; ISO 3 is Wednesday.
+    const at = nextWeeklySlot(
+      { zone: BERLIN, hour: 9, weekday: 3 },
+      fromIso('2026-03-14T08:00:00Z'),
+    );
+    expect(toZoned(at, BERLIN)).toMatchObject({ day: 18, hour: 9, weekday: 3 });
+  });
+
+  test('a weekday out of range names the weekday, not the zone', () => {
+    // Falling out of the search loop reported X_TIMEZONE_INVALID against `Europe/Berlin` — a zone
+    // that is perfectly valid — with a fix line about IANA names that fixes nothing.
+    const error = errorOf(() =>
+      nextWeeklySlot({ zone: BERLIN, hour: 9, weekday: 9 }, fromIso('2026-03-14T08:00:00Z')),
+    );
+    expect(error.code).toBe('X_SCHEDULE_INVALID');
+    expect(String(error.cause)).toContain('slot.weekday');
+    expect(String(error.cause)).toContain('9');
+    expect(
+      errorOf(() =>
+        nextWeeklySlot({ zone: BERLIN, hour: 9, weekday: 0 }, fromIso('2026-03-14T08:00:00Z')),
+      ).code,
+    ).toBe('X_SCHEDULE_INVALID');
+  });
+});
+
+function errorOf(run: () => unknown): { code?: unknown; cause?: unknown } {
+  try {
+    run();
+  } catch (error) {
+    return error as { code?: unknown; cause?: unknown };
+  }
+  return { code: 'no-throw', cause: 'no-throw' };
+}

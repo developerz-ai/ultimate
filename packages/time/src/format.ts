@@ -5,6 +5,7 @@
  */
 
 import { differenceMs, type Instant } from './instant';
+import { cachedFormatter } from './intl-cache';
 import { assertTimeZone, type TimeZone } from './zones';
 
 export type DateTimeStyle = 'short' | 'medium' | 'long' | 'full';
@@ -165,11 +166,12 @@ export function ordinal(value: number, locale = 'en'): string {
 
 const cache = new Map<string, Intl.DateTimeFormat>();
 
+/**
+ * Bounded, and keyed on a zone `assertTimeZone` has already canonicalized — `locale` still comes
+ * straight off `Accept-Language`, where an unknown `-u-` extension value is a distinct string
+ * every time, so only the bound keeps this key space finite.
+ */
 function formatterFor(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
   const key = `${locale}|${JSON.stringify(options)}`;
-  const cached = cache.get(key);
-  if (cached !== undefined) return cached;
-  const formatter = new Intl.DateTimeFormat(locale, options);
-  cache.set(key, formatter);
-  return formatter;
+  return cachedFormatter(cache, key, () => new Intl.DateTimeFormat(locale, options));
 }

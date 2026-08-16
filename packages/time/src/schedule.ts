@@ -25,9 +25,9 @@ export interface LocalSlot {
  * gap, `{ gap: 'next' }` picks the first existing local time instead of skipping the day.
  */
 /** Wall-clock fields are never wrapped or clamped — a shifted schedule beats no schedule. */
-function assertWallField(field: string, value: number, max: number): void {
-  if (!Number.isInteger(value) || value < 0 || value > max) {
-    throw scheduleInvalid(field, value, `an integer 0-${String(max)}`);
+function assertWallField(field: string, value: number, max: number, min = 0): void {
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw scheduleInvalid(field, value, `an integer ${String(min)}-${String(max)}`);
   }
 }
 
@@ -80,11 +80,16 @@ export interface WeeklySlot extends LocalSlot {
 
 /** Next `weekday` at the local time, strictly after `after`. */
 export function nextWeeklySlot(slot: WeeklySlot, after: Instant): Instant {
+  // Checked BEFORE the search, not after it. Falling out of the loop reported X_TIMEZONE_INVALID
+  // naming a zone that is perfectly valid, with a fix line about IANA identifiers that fixes
+  // nothing — the field the caller got wrong is `weekday`, and an error has to say so.
+  assertWallField('slot.weekday', slot.weekday, 7, 1);
   let cursor = after;
   for (let index = 0; index < 8; index += 1) {
     const candidate = nextLocalSlot(slot, cursor);
     if (toZoned(candidate, slot.zone).weekday === slot.weekday) return candidate;
     cursor = candidate;
   }
+  // Seven local days always contain every ISO weekday; reaching here means the zone data is broken.
   throw timezoneInvalid(slot.zone);
 }

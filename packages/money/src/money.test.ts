@@ -39,6 +39,26 @@ describe('fromDecimal', () => {
     expect(fromDecimal('184467440737.09', 'USD').minor).toBe(18446744073709);
   });
 
+  test('the rounded path is exact too — the tie is the decimal string, never a float', () => {
+    // `Number('0.4999999999999999999')` collapses to exactly 0.5, so a float round saw a tie the
+    // written decimal does not have. This is the entry point every user-typed price goes through.
+    expect(fromDecimal('1.0049999999999999999', 'EUR', { rounding: 'half-up' }).minor).toBe(100);
+    expect(fromDecimal('1.0250000000000000001', 'EUR', { rounding: 'half-even' }).minor).toBe(103);
+    expect(fromDecimal('-1.0049999999999999999', 'EUR', { rounding: 'half-up' }).minor).toBe(-100);
+    // The real ties still resolve by mode, in both directions.
+    expect(fromDecimal('1.025', 'EUR', { rounding: 'half-even' }).minor).toBe(102);
+    expect(fromDecimal('1.035', 'EUR', { rounding: 'half-even' }).minor).toBe(104);
+    expect(fromDecimal('1.005', 'EUR', { rounding: 'half-up' }).minor).toBe(101);
+  });
+
+  test('a negative amount rounding to nothing is 0, never -0', () => {
+    // `-0` survives `Object.is` and a `Map` key while `JSON.stringify` writes `0`, so a ledger
+    // holds two values one wire format cannot tell apart.
+    const rounded = fromDecimal('-0.001', 'EUR', { rounding: 'down' });
+    expect(Object.is(rounded.minor, -0)).toBe(false);
+    expect(Object.is(money(-0, 'EUR').minor, -0)).toBe(false);
+  });
+
   test('excess precision throws unless rounding is explicit', () => {
     expect(codeOf(() => fromDecimal('12.999', 'EUR'))).toBe('X_MONEY_NOT_INTEGER');
     expect(fromDecimal('12.999', 'EUR', { rounding: 'half-up' }).minor).toBe(1300);

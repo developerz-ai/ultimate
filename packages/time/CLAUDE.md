@@ -7,8 +7,10 @@
 
 | File | Single responsibility |
 |---|---|
-| `instant.ts` | the UTC `Instant` brand, ISO/epoch conversion, `now(clock)` |
+| `instant.ts` | the UTC `Instant` brand, ISO/epoch conversion, `now(clock)`, `epoch()` |
 | `zones.ts` | IANA validation, `offsetAt` (minutes east), zone labels |
+| `zone-canonical.ts` | one zone, one key: `canonicalTimeZone` — the casing/alias collapse every cache keys on |
+| `intl-cache.ts` | the one bounded FIFO every `Intl` formatter cache in this package uses |
 | `zoned.ts` | `toZoned` / `fromZoned` + gap and overlap policies. Everything depends on this. |
 | `format.ts` | `Intl` rendering. Every function takes `locale` **and** `zone`. |
 | `duration.ts` | `'2h30m'` ⇄ ms |
@@ -23,6 +25,20 @@
 ## Rules
 
 - Never format without an explicit `timeZone`. No ambient default, no `toLocaleString()`.
+- **Never cache an `Intl` formatter on a raw caller string.** A zone and a locale both arrive from
+  a request header, so the key must be canonical (`canonicalTimeZone`) and the cache must be
+  bounded (`cachedFormatter`, `intl-cache.ts`). An unbounded `Map` keyed on `x-timezone` grew
+  31 MB for 4,096 casings of one zone name, and the casing space of a 13-letter zone is 2^12.
+- **Never hand back the caller's own `Date`, and never export a shared one.** `Instant` is a
+  branded `Date` and a `Date` cannot be frozen — `Object.freeze` does not close `setTime`, the
+  value is in an internal slot. So `instant()` copies and `epoch()` is a function, not a constant.
+- **`businessDaysBetween` is `[from, to)` on local calendar dates** — the interval `daysBetween`
+  measures, so the two can never disagree. Comparing instants made the answer depend on the
+  endpoints' time of day. A new day-counting function states its interval in its header.
+- **`describeCron` declines what it cannot say.** `CronPhrases` is the caller's vocabulary and has
+  no seconds phrase, so a 6-field expression with a non-trivial seconds field is
+  `X_CRON_NOT_DESCRIBABLE`. Adding a required field to `CronPhrases` would break every caller
+  (`packages/cli/src/cmd-tasks.ts` builds one) to describe a schedule almost nobody writes.
 - Never add `86_400_000` to cross a day boundary — use `addDaysInZone` / `fromZoned`.
 - Never take the clock from `Date.now()`; accept a `Clock` (`now(clock)`).
 - Cron and schedules iterate the **local wall clock**, then convert once with `fromZoned`.
