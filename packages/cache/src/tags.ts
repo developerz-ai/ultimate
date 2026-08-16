@@ -96,6 +96,24 @@ export function resetDeclaredTags(): void {
 }
 
 /**
+ * Test seam, and the one `resetDeclaredTags()` cannot be: `declareTags` is additive and
+ * process-wide, so a suite that declares a fixture entity flips `assertKnownTags` on for every
+ * LATER file in the same `bun test` process — and those files fail with X_CACHE_TAG_UNKNOWN for a
+ * reason nothing in them explains. Resetting instead would drop what a neighbour declared, so this
+ * puts back exactly what it found:
+ *
+ *   const restoreTags = isolateDeclaredTags();
+ *   afterAll(restoreTags);
+ */
+export function isolateDeclaredTags(): () => void {
+  const captured = knownTags();
+  return () => {
+    declared.clear();
+    for (const name of captured) declared.add(name);
+  };
+}
+
+/**
  * Validation is skipped while nothing is declared — `x dev` boots before the manifest
  * exists, and a hard failure there would be worse than a late one. Once any entity has
  * declared itself, an undeclared tag is a typo and fails loudly.

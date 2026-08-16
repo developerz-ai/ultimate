@@ -3,6 +3,7 @@
 // overlay and `--json`. Never throw a bare Error anywhere in the framework.
 
 import { describeErrorCode } from './error-codes';
+import { isThrownError, renderCauseValue, renderMetaRecord, renderThrowable } from './error-render';
 
 /**
  * Structural brand. `instanceof` is unreliable across duplicated module instances and across
@@ -82,6 +83,13 @@ export class UltimateError extends Error {
     return lines.join('\n');
   }
 
+  /**
+   * `meta` is the only field here the framework does not build itself — `parseId` puts the value
+   * it rejected straight in — so it goes through `renderMetaRecord`, which returns a record that
+   * serialises unchanged and degrades only the keys that would have thrown. `--json` on every
+   * error is a promise this method keeps; a `meta` that throws breaks it one layer past the
+   * constructor.
+   */
   toJSON(): UltimateErrorJSON {
     return {
       code: this.code,
@@ -89,7 +97,7 @@ export class UltimateError extends Error {
       cause: this.cause,
       fix: this.fix,
       docs: this.docs,
-      meta: this.meta,
+      meta: renderMetaRecord(this.meta),
       stack: this.stack,
     };
   }
@@ -139,13 +147,21 @@ export function notImplemented(feature: string, fix: string): never {
   throw new NotImplementedError({ cause: `${feature} is not implemented by this driver`, fix });
 }
 
-/** Normalise anything caught into an `UltimateError` without losing the original. */
+/**
+ * Normalise anything caught into an `UltimateError` without losing the original.
+ *
+ * `renderCauseValue`, not `String(value)`: this is the framework's universal normaliser — the CLI's
+ * every catch, `formatError`, the HTTP 500 path — and `String()` runs the value's own `toString`,
+ * so a thrown object could make the wrapper throw and take both errors with it.
+ */
 export function toUltimateError(value: unknown, fix?: string): UltimateError {
   if (isUltimateError(value)) return value;
-  const cause =
-    value instanceof Error
-      ? `${value.name}: ${value.message}`
-      : `non-error value thrown: ${String(value)}`;
+  // `isThrownError` / `renderThrowable`, not `instanceof` and `.message` directly: a `Proxy` traps
+  // `getPrototypeOf` and a subclass can put a getter on `message`, so both reads throw where this
+  // function is the last thing standing between a caught value and a surface that must answer.
+  const cause = isThrownError(value)
+    ? renderThrowable(value)
+    : `non-error value thrown: ${renderCauseValue(value)}`;
   return new InternalError({
     cause,
     fix: fix ?? 'fix the underlying failure named in cause, then re-run',

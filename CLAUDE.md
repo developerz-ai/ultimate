@@ -71,6 +71,7 @@ Milestone detail: [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md).
 | test (one file) | `bun test packages/core/src/errors.test.ts` |
 | test (one name) | `bun test -t 'formats the fix line'` |
 | import boundaries | `bun run boundaries` |
+| unsafe error rendering | `bun run error-render` — a step of the gate's `errors` check, standalone. Refuses an `unknown` reaching a `cause:`/`fix:` through `${x}`, `JSON.stringify(x)` or `String(x)`; all three throw on real app values, and the bug shipped three times before it was mechanised |
 | regenerate manifest | `bun run manifest` |
 | list workspaces | `bun run workspaces:list` |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |

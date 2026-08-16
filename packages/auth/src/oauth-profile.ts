@@ -4,7 +4,7 @@
 // decides whether this login may attach itself to an existing account by address.
 
 import { logger } from '@ultimat3/core';
-import { oauthExchangeFailed } from './errors';
+import { oauthExchangeFailed, restartAt } from './errors';
 import { idTokenEmailVerified, isVerifiedFlag } from './id-token';
 import { OAUTH_PROVIDERS, type OAuthProviderId } from './oauth';
 import {
@@ -115,7 +115,7 @@ async function fromUserInfo(
       provider,
       stage: 'userinfo',
       detail: `${provider} publishes no userinfo endpoint and its id token carried no identity`,
-      fix: `request the "email" scope for ${provider} in beginOAuth(), then restart the flow`,
+      fix: `request the "email" scope for ${provider} in beginOAuth(), then ${restartAt(provider)}`,
     });
   }
 
@@ -126,7 +126,7 @@ async function fromUserInfo(
       stage: 'userinfo',
       detail: result.detail,
       status: result.status,
-      fix: `confirm the ${provider} app still grants ${config.scopes.join(' ')}, then restart the flow`,
+      fix: `confirm the ${provider} app still grants ${config.scopes.join(' ')}, then ${restartAt(provider)}`,
     });
   }
   if (!isRecord(result.body)) {
@@ -148,7 +148,7 @@ async function fromUserInfo(
       provider,
       stage: 'userinfo',
       detail: 'the profile carried no stable account id',
-      fix: `confirm the ${provider} app requests ${config.scopes.join(' ')} and restart the flow`,
+      fix: `confirm the ${provider} app requests ${config.scopes.join(' ')}, then ${restartAt(provider)}`,
     });
   }
 

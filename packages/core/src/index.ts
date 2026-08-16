@@ -125,6 +125,14 @@ export {
   registerErrorCodes,
   resetErrorCodes,
 } from './error-codes';
+export {
+  isThrownError,
+  MAX_RENDERED_LENGTH,
+  renderCauseValue,
+  renderFixLiteral,
+  renderThrowable,
+  stringField,
+} from './error-render';
 export type {
   ErrorReport,
   ErrorReporter,

@@ -4,6 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { describeErrorCode, hasErrorCode } from '@ultimat3/core';
 import {
+  invalidBrandTokenError,
   invalidThemeError,
   invalidValueError,
   runtimeMissingError,
@@ -74,5 +75,65 @@ describe('invalidValueError', () => {
     expect(err.cause).toContain('<Money>');
     expect(err.cause).toContain('a finite Money value');
     expect(err.fix).toContain('a finite Money value');
+  });
+});
+
+// Every one of these three factories takes the offending value as `unknown` and puts it in the
+// `cause`: a `defineTheme()` override, a `data-theme` attribute or a stored preference, and
+// whatever a formatting component was handed. `JSON.stringify` throws on a bigint and on a cycle
+// and RUNS the value's own `toJSON`, so the refusal was replaced by the value's own throw and
+// `X_UI_INVALID_VALUE` never reached the caller who could act on it.
+describe('a value ui does not control still produces the refusal', () => {
+  const hostile = (): ReadonlyMap<string, unknown> => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic['self'] = cyclic;
+    return new Map<string, unknown>([
+      ['a bigint', 12n],
+      ['a cycle', cyclic],
+      [
+        'a hostile toJSON',
+        {
+          toJSON: () => {
+            throw new Error('gotcha');
+          },
+        },
+      ],
+    ]);
+  };
+
+  for (const [label, value] of hostile()) {
+    test(`invalidThemeError refuses ${label}`, () => {
+      let error: UiError | undefined;
+      expect(() => {
+        error = invalidThemeError(value);
+      }).not.toThrow();
+      expect(error?.code).toBe(UI_ERROR_CODES.themeInvalid);
+    });
+
+    test(`invalidValueError refuses ${label}`, () => {
+      let error: UiError | undefined;
+      expect(() => {
+        error = invalidValueError('Money', value, 'a Money value');
+      }).not.toThrow();
+      expect(error?.code).toBe(UI_ERROR_CODES.invalidValue);
+      expect(error?.cause).toStartWith('<Money> received ');
+    });
+
+    test(`invalidBrandTokenError refuses ${label}`, () => {
+      let error: UiError | undefined;
+      expect(() => {
+        error = invalidBrandTokenError('colors.light', 'accent', value, 'three 0-255 channels');
+      }).not.toThrow();
+      expect(error?.code).toBe(UI_ERROR_CODES.invalidValue);
+    });
+  }
+
+  test('a renderable value reads exactly as it did', () => {
+    expect(invalidThemeError('dusk').cause).toBe(
+      'theme must be "light" or "dark", received "dusk"',
+    );
+    expect(invalidValueError('Money', 3, 'a Money value').cause).toBe(
+      '<Money> received 3, which is not a Money value',
+    );
   });
 });

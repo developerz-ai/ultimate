@@ -15,7 +15,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./preload": "./src/preload.ts"
+    "./preload": "./src/preload.ts",
+    "./registry-isolation": "./src/registry-isolation.ts"
   },
   "files": [
     "src",
@@ -32,6 +33,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@ultimat3/cache": "1.2.0",
     "@ultimat3/core": "1.2.0",
     "@ultimat3/db": "1.2.0",
     "@ultimat3/entity": "1.2.0",

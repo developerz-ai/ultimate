@@ -172,3 +172,39 @@ describe('toProblem', () => {
     expect(document.cause).toContain('actor does not own post');
   });
 });
+
+// `factsOf` is the framework's universal normaliser: `pipeline.ts` hands it every throwable a
+// request produced, including whatever an app's handler threw. The last fallback rendered that
+// value with `String()`, which runs its own `toString` — so the throwable that reached the 500
+// path took the 500 renderer with it and the server had nothing left to answer with.
+describe('factsOf over a throwable it does not control', () => {
+  const hostile = (): ReadonlyMap<string, unknown> =>
+    new Map<string, unknown>([
+      [
+        'a hostile toString',
+        {
+          toString: () => {
+            throw new Error('gotcha');
+          },
+        },
+      ],
+      ['a null-prototype object', Object.create(null)],
+    ]);
+
+  for (const [label, value] of hostile()) {
+    test(`still answers X_INTERNAL for ${label}`, () => {
+      let facts: ReturnType<typeof factsOf> | undefined;
+      expect(() => {
+        facts = factsOf(value);
+      }).not.toThrow();
+      expect(facts?.code).toBe('X_INTERNAL');
+      expect(facts?.status).toBe(500);
+      expect(facts?.cause.length).toBeGreaterThan(0);
+    });
+  }
+
+  test('a throwable carrying its own strings is untouched', () => {
+    expect(factsOf({ code: 'X_INTERNAL', cause: 'a', fix: 'b' }).cause).toBe('a');
+    expect(factsOf(new TypeError('x is not a function')).cause).toBe('x is not a function');
+  });
+});

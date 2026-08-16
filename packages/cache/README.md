@@ -89,6 +89,18 @@ declare module '@ultimat3/cache' {
 }
 ```
 
+`declareTags()` takes the manifest's entity names at boot and is **additive and process-wide** —
+once anything is declared, an undeclared tag is `X_CACHE_TAG_UNKNOWN`. A test that declares its own
+fixture entity therefore turns validation on for every later file in the same `bun test` process.
+`isolateDeclaredTags()` is the seam for that: it captures the set and returns the function that puts
+exactly that set back, so a suite cannot drop what a neighbour declared.
+
+```ts
+const restoreTags = isolateDeclaredTags();
+declareTags(['fixture']);
+afterAll(restoreTags);
+```
+
 ## Invalidating
 
 ```ts

@@ -93,6 +93,23 @@ describe('unit · output', () => {
     expect(finding.fix).toBe('x doctor --json');
   });
 
+  test('a value whose fields throw when read still reaches the terminal', () => {
+    // This is the last renderer before the terminal, and the SHAPE PROBE was the unguarded read:
+    // `typeof value.code === 'string'` calls a getter on a value the framework did not build, so
+    // the report was lost one line before the total renderer that was meant to save it.
+    const trapped = Object.defineProperty(new Error('boom'), 'code', {
+      get: () => {
+        throw new Error('gotcha');
+      },
+      enumerable: true,
+    });
+
+    expect(isUltimateErrorShape(trapped)).toBe(false);
+    const finding = findingFrom(trapped);
+    expect(finding.code).toBe('X_CLI_UNEXPECTED');
+    expect(finding.cause).toBe('Error: boom');
+  });
+
   test('a failed result exits non-zero', () => {
     expect(exitCodeFor(failing)).toBe(1);
     expect(exitCodeFor({ ok: true, command: 'verify', summary: 'ok' })).toBe(0);

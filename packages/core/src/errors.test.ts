@@ -86,7 +86,124 @@ describe('UltimateError', () => {
     expect(wrapped.code).toBe('X_INTERNAL');
     expect(wrapped.cause).toBe('TypeError: nope');
     expect(wrapped.sourceError).toBe(original);
-    expect(formatError('boom')).toContain('non-error value thrown: boom');
+    expect(formatError('boom')).toContain('non-error value thrown: "boom"');
+  });
+
+  test('toUltimateError survives a value that fights being rendered', () => {
+    // This function is the framework's universal normaliser — `formatError`, every CLI catch, the
+    // HTTP pipeline's 500 path. If it throws while describing what was thrown, the process loses
+    // BOTH errors and the surface that called it has nothing to answer with.
+    const hostile = {
+      toString: () => {
+        throw new Error('gotcha');
+      },
+    };
+    const wrapped = toUltimateError(hostile);
+    expect(wrapped.code).toBe('X_INTERNAL');
+    expect(wrapped.sourceError).toBe(hostile);
+    expect(wrapped.cause).toContain('non-error value thrown');
+  });
+
+  // `--json` on every error is a house rule, and `toJSON()` is the whole of it. `meta` is the one
+  // field on it that carries values the framework does not control — `parseId` puts the rejected
+  // value straight in — so a bigint, a cycle or a hostile `toJSON` in there threw at RENDER time,
+  // one surface past the constructor the renderers already guard.
+  describe('toJSON over a meta the framework does not control', () => {
+    const withMeta = (meta: Readonly<Record<string, unknown>>): UltimateError =>
+      new UltimateError({ code: 'X_ID_INVALID', cause: 'c', fix: 'f', meta });
+
+    const unrenderable = (): ReadonlyMap<string, unknown> => {
+      const cyclic: Record<string, unknown> = {};
+      cyclic['self'] = cyclic;
+      return new Map<string, unknown>([
+        ['a bigint', 10n],
+        ['a cycle', cyclic],
+        [
+          'a hostile toJSON',
+          {
+            toJSON: () => {
+              throw new Error('gotcha');
+            },
+          },
+        ],
+      ]);
+    };
+
+    for (const [label, value] of unrenderable()) {
+      test(`serialises with ${label} in meta instead of throwing`, () => {
+        const error = withMeta({ kind: 'post', value });
+        let json = '';
+        expect(() => {
+          json = JSON.stringify(error);
+        }).not.toThrow();
+        expect(json).toContain('X_ID_INVALID');
+        // The keys BESIDE the broken one survive: one value nobody can render must not cost the
+        // reader the rest of the record.
+        expect(JSON.parse(json).meta.kind).toBe('post');
+      });
+    }
+
+    test('passes a meta that serialises through untouched, value identity included', () => {
+      // `meta` is machine-read. Describing a value that renders today would be a worse bug than
+      // the throw, so the pass-through is the property under test, not a nice-to-have.
+      const value = { id: 7, nested: { at: [1, 2] } };
+      const error = withMeta({ kind: 'post', value });
+      expect(error.toJSON().meta).toEqual({ kind: 'post', value });
+      expect((error.toJSON().meta as Record<string, unknown>)['value']).toBe(value);
+      expect(JSON.parse(JSON.stringify(error)).meta).toEqual({ kind: 'post', value });
+    });
+
+    test('a meta whose own toJSON is a function does not throw one layer out', () => {
+      // The subtle half of the same bug: `JSON.stringify(fn)` answers `undefined` rather than
+      // throwing, so the probe called a function renderable and copied it through — and a `toJSON`
+      // key is then INVOKED while serialising the record around it, at `--json` time.
+      const error = withMeta({
+        kind: 'post',
+        toJSON: () => {
+          throw new Error('gotcha');
+        },
+      });
+
+      let json = '';
+      expect(() => {
+        json = JSON.stringify(error);
+      }).not.toThrow();
+      expect(JSON.parse(json).meta.kind).toBe('post');
+    });
+
+    test('a record that cannot be enumerated at all still renders the error', () => {
+      const error = withMeta(
+        new Proxy(
+          {},
+          {
+            ownKeys: () => {
+              throw new Error('gotcha');
+            },
+          },
+        ),
+      );
+      expect(() => JSON.stringify(error)).not.toThrow();
+      expect(JSON.parse(JSON.stringify(error)).code).toBe('X_ID_INVALID');
+    });
+
+    test('an unreadable key degrades alone', () => {
+      const error = withMeta(
+        Object.defineProperty({ kind: 'post' }, 'value', {
+          enumerable: true,
+          get: () => {
+            throw new Error('gotcha');
+          },
+        }),
+      );
+      expect(() => JSON.stringify(error)).not.toThrow();
+      expect(JSON.parse(JSON.stringify(error)).meta.kind).toBe('post');
+    });
+
+    test('no meta stays absent rather than becoming an empty object', () => {
+      expect(new UltimateError({ code: 'X_ID_INVALID', cause: 'c', fix: 'f' }).toJSON().meta).toBe(
+        undefined,
+      );
+    });
   });
 
   test('notImplemented always carries a fix line', () => {

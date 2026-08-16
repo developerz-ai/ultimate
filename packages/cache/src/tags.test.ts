@@ -7,6 +7,7 @@ import { CacheTagUnknownError } from './errors';
 import {
   assertKnownTags,
   declareTags,
+  isolateDeclaredTags,
   knownTags,
   parseTag,
   resetDeclaredTags,
@@ -131,6 +132,31 @@ describe('declareTags / knownTags / resetDeclaredTags', () => {
     declareTags(['post']);
     resetDeclaredTags();
     expect(knownTags()).toEqual([]);
+  });
+});
+
+describe('isolateDeclaredTags', () => {
+  test('puts back exactly what it found, dropping only what was declared after it', () => {
+    declareTags(['neighbour']);
+
+    const restore = isolateDeclaredTags();
+    declareTags(['mine']);
+    expect(knownTags()).toEqual(['mine', 'neighbour']);
+    restore();
+
+    // The neighbour's declaration survives — which is what `resetDeclaredTags()` cannot promise
+    // and why a suite reaches for this instead.
+    expect(knownTags()).toEqual(['neighbour']);
+  });
+
+  test('restores a declaration a later reset dropped', () => {
+    declareTags(['neighbour']);
+    const restore = isolateDeclaredTags();
+
+    resetDeclaredTags();
+    restore();
+
+    expect(knownTags()).toEqual(['neighbour']);
   });
 });
 

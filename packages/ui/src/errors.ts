@@ -1,7 +1,7 @@
 // @ultimat3/ui error codes. Every throw carries a stable code, the cause, and
 // the exact fix — identical in the terminal, the browser overlay, and `--json`.
 
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, renderCauseValue, UltimateError } from '@ultimat3/core';
 
 export const UI_ERROR_CODES = {
   tokenUnknown: 'X_TOKEN_UNKNOWN',
@@ -66,7 +66,8 @@ export function invalidBrandTokenError(
 ): UiError {
   return new UiError({
     code: UI_ERROR_CODES.invalidValue,
-    cause: `defineTheme() override ${scope}.${name} is ${JSON.stringify(value)}, which is not ${expected}`,
+    // The override is the app's own object, so the value is unparsed app data at this point.
+    cause: `defineTheme() override ${scope}.${name} is ${renderCauseValue(value)}, which is not ${expected}`,
     fix: `pass ${expected} to defineTheme(), e.g. defineTheme({ colors: { light: { accent: '31 110 178' } } })`,
   });
 }
@@ -75,7 +76,7 @@ export function invalidBrandTokenError(
 export function invalidThemeError(value: unknown): UiError {
   return new UiError({
     code: UI_ERROR_CODES.themeInvalid,
-    cause: `theme must be "light" or "dark", received ${JSON.stringify(value)}`,
+    cause: `theme must be "light" or "dark", received ${renderCauseValue(value)}`,
     fix: "call setTheme('light') or setTheme('dark'), or clearTheme() to follow the OS",
   });
 }
@@ -124,7 +125,7 @@ export function invalidGlyphError(found: string, expected: string): UiError {
 export function invalidValueError(kind: string, value: unknown, expected: string): UiError {
   return new UiError({
     code: UI_ERROR_CODES.invalidValue,
-    cause: `<${kind}> received ${JSON.stringify(value)}, which is not ${expected}`,
+    cause: `<${kind}> received ${renderCauseValue(value)}, which is not ${expected}`,
     fix: `pass ${expected} — parse or validate the value in the loader, not in the component`,
   });
 }

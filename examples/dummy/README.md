@@ -80,6 +80,7 @@ apps/web/app/<feature>/{entity,repo,service,actions,mutator,live,jobs,policy,ui}
 | **Money** | [`packages/core/src/billing.ts`](packages/core/src/billing.ts) | integer minor units, USD + EUR, arithmetic never leaves minor units, `Intl` only at the edge |
 | **Offline** | [`apps/web/app/posts/mutator.ts`](apps/web/app/posts/mutator.ts) | `likePost` queues offline and reconciles; feed reads from the persisted store; [`site/offline/page.tsx`](apps/web/site/offline/page.tsx) is the required fallback |
 | **Realtime** | [`apps/web/app/feed/page.tsx`](apps/web/app/feed/page.tsx) | tier 3 — `useLiveFeed()` (bound once with `liveHookFor`) is a Solid signal, patched per row |
+| **Auth** | [`apps/web/app/auth/login.ts`](apps/web/app/auth/login.ts) | "log in with GitHub" is `defineAuth` + `oauthLogin`, ~12 lines; the round trip — 302 with an S256 challenge, a forged `state` refused, a session `authenticate()` resolves — is asserted in [`login.test.ts`](apps/web/app/auth/login.test.ts) against a stubbed provider, because no client id exists in CI. **Not yet reachable in a browser:** see the gotcha in [`CLAUDE.md`](CLAUDE.md) |
 | **AI-first** | [`packages/mcp/src/tools.ts`](packages/mcp/src/tools.ts) | every exposed action is an MCP tool with the *same* policy; admin ships its own MCP surface |
 | **Admin** | [`apps/admin/src/index.ts`](apps/admin/src/index.ts) | the whole dashboard, 20 lines of `defineAdmin` |
 | **Prompts** | [`apps/web/app/posts/prompts`](apps/web/app/posts/prompts) | versioned `.md` artifact + typed slots + a scored eval |

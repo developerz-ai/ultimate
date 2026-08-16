@@ -5,7 +5,7 @@
 
 import type { Clock } from '@ultimat3/core';
 import { EnvMissingError, systemClock } from '@ultimat3/core';
-import { oauthExchangeFailed } from './errors';
+import { oauthExchangeFailed, restartAt } from './errors';
 import { type IdTokenClaims, verifyIdToken } from './id-token';
 import {
   assertOAuthCallback,
@@ -97,7 +97,7 @@ function fixForStatus(provider: OAuthProviderId, status: number): string {
     return `set ${clientIdEnv} and ${clientSecretEnv} to the current values in the ${provider} app settings`;
   }
   if (status === 400) {
-    return `register this exact redirect_uri in the ${provider} app settings, then restart the flow`;
+    return `register this exact redirect_uri in the ${provider} app settings, then ${restartAt(provider)}`;
   }
   return `retry; if it persists, check the ${provider} status page before changing anything`;
 }
@@ -166,7 +166,7 @@ async function postForm(
       detail: typeof description === 'string' && description !== '' ? description : error,
       fix:
         error === 'bad_verification_code' || error === 'invalid_grant'
-          ? 'restart the flow — an authorization code is single-use and short-lived'
+          ? `${restartAt(provider)} — an authorization code is single-use and short-lived`
           : fixForStatus(provider, 400),
     });
   }
@@ -193,7 +193,9 @@ export async function exchangeOAuthCode(
     client_id: options.credentials.clientId,
     client_secret: options.credentials.clientSecret,
   });
-  if (provider.usesPkce) body.set('code_verifier', handshake.verifier);
+  // Unconditional: PKCE is not provider-dependent, and `OAuthProvider.usesPkce` is the type-level
+  // statement of that — there is no configuration in which this line is skipped.
+  body.set('code_verifier', handshake.verifier);
 
   const payload = await postForm(handshake.provider, body, options);
   const accessToken = payload['access_token'];

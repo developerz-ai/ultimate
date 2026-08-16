@@ -287,3 +287,33 @@ describe('HTTP_ERROR_TITLES', () => {
     expect(Object.keys(HTTP_ERROR_TITLES).sort()).toEqual([...OWNED_CODES].sort());
   });
 });
+
+// A finalize stage throws whatever the app's code threw, so `cause` here renders a value this
+// package does not control. `String()` runs its `toString`, and the throw it raises replaces
+// `X_PIPELINE_FINALIZE_FAILED` — leaving `finalize.ts`'s guard, whose whole promise is that
+// `handle()` resolves to a Response, with nothing to resolve to.
+describe('finalizeFailed over a throwable it does not control', () => {
+  const hostile = (): ReadonlyMap<string, unknown> =>
+    new Map<string, unknown>([
+      [
+        'a hostile toString',
+        {
+          toString: () => {
+            throw new Error('gotcha');
+          },
+        },
+      ],
+      ['a null-prototype object', Object.assign(Object.create(null), { detail: 'sealed' })],
+    ]);
+
+  for (const [label, value] of hostile()) {
+    test(`still names the stage for ${label}`, () => {
+      let error: HttpError | undefined;
+      expect(() => {
+        error = finalizeFailed('response', value);
+      }).not.toThrow();
+      expect(error?.code).toBe('X_PIPELINE_FINALIZE_FAILED');
+      expect(error?.cause).toContain('"response"');
+    });
+  }
+});

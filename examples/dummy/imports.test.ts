@@ -13,10 +13,20 @@
  * a module that fails either half is a module the toolchain cannot see.
  */
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { isolateDeclaredTags } from '@ultimat3/cache';
 import { Glob } from 'bun';
 
 const APP_ROOT = new URL('.', import.meta.url).pathname.replace(/\/$/, '');
+
+/**
+ * Importing every module of the app declares the app's cache tags — `packages/db/src/tags.ts` calls
+ * `declareTags` at module scope — and `entity()` runs once per module, so the declaration cannot
+ * happen twice. Left standing, this file's side effect decides what every later file in the same
+ * `bun test` process validates tags against, which is state no reader of those files can see.
+ */
+const restoreTags = isolateDeclaredTags();
+afterAll(restoreTags);
 
 /**
  * Test files are excluded: importing one from inside another registers its cases twice. They are

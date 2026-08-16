@@ -11,6 +11,8 @@ import {
   mfaRequired,
   oauthAccountNotLinked,
   oauthExchangeFailed,
+  oauthLinkingDisabled,
+  restartAt,
 } from './errors';
 import type { OAuthCallback, OAuthHandshake } from './oauth';
 import {
@@ -50,7 +52,7 @@ async function createUserFor(auth: Auth, input: OAuthSignInInput): Promise<AuthU
       provider: input.profile.provider,
       stage: 'userinfo',
       detail: 'the provider returned an identity with no email address',
-      fix: `request the email scope for ${input.profile.provider} in beginOAuth(), then restart the flow`,
+      fix: `request the email scope for ${input.profile.provider} in beginOAuth(), then ${restartAt(input.profile.provider)}`,
     });
   }
   const created = await auth.adapter.createUser({
@@ -79,6 +81,9 @@ async function createUserFor(auth: Auth, input: OAuthSignInInput): Promise<AuthU
  * An address alone is not proof of ownership on either side. Attaching a provider identity to a
  * local account that never verified its own email hands the login to whoever registered that
  * address first, so both halves must have proven it before they are treated as one person.
+ *
+ * `auth.link` is the app's one say in that. `'never'` skips the address step entirely and refuses
+ * a collision; `'verified-email'` — the default — is the both-halves-proven rule below.
  */
 async function resolveUser(
   auth: Auth,
@@ -94,6 +99,12 @@ async function resolveUser(
   if (existing.disabledAt !== null) throw loginFailed();
   // The provider did not vouch for the address, so nothing here proves the two are one person.
   if (!emailVerified) throw loginFailed();
+  // Only past that line is the caller known to own the address, which is what makes naming the
+  // collision safe. Refusing `'never'` any earlier answered an UNVERIFIED provider address with a
+  // distinct code and a `meta.email` where `'verified-email'` answers `loginFailed()` — so the
+  // strict policy confirmed an account exists at an address its caller never proved. `disabledAt`
+  // above is generic and reveals nothing, which is why it can be asked first.
+  if (auth.link === 'never') throw oauthLinkingDisabled(provider, email);
   // It did vouch, and the local account never did: say so, because this caller owns the address.
   if (existing.emailVerifiedAt === null) throw oauthAccountNotLinked(provider, email);
   return existing;

@@ -23,6 +23,7 @@
     "test:watch": "bun test --watch --path-ignore-patterns='**/dist/**' --path-ignore-patterns='**/examples/**' --path-ignore-patterns='**/dummy/**'",
     "verify": "bun run scripts/verify.ts",
     "boundaries": "bun run scripts/boundaries.ts",
+    "error-render": "bun run scripts/error-render.ts",
     "manifest": "bun run scripts/manifest.ts",
     "workspaces:list": "bun run scripts/list-workspaces.ts",
     "x": "bun run packages/cli/src/bin.ts"

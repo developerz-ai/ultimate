@@ -7,7 +7,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | Deps | `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/db`. No external deps. |
 | Never import | `@ultimat3/policy`, `@ultimat3/http` (tier 2 consumers), `@ultimat3/mail` (sideways) |
 | Policy seam | `PolicyActorFields` in `policy-bridge.ts` mirrors policy's shape structurally |
-| Http seam | `RequestLike` / `CookieJar` in `session.ts`; http binds to them, not the reverse |
+| Http seam | `RequestLike` / `CookieJar` in `session.ts` and `AuthRouteDescriptor` in `oauth-route.ts`; http binds to them, not the reverse |
 | Mail seam | injected `MailSender` port in `verify.ts`; the app wires `@ultimat3/mail`'s `send` |
 | Better Auth | binds through `AuthAdapter`. It is an adapter, never a dependency. |
 | Errors | `AuthError` from `errors.ts`; never `throw new Error` |
@@ -38,7 +38,9 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   enforces", so an injected limiter may not quietly enforce something else. Nothing here reads the
   environment to guess a replica count. `defineAuth({ limiter })` is the one install point.
 - Absolute and idle expiry are two separate computations in `sessionExpiry()`. Do not fold them.
-- PKCE is not provider-dependent. `usesPkce: false` is not a valid provider config.
+- PKCE is not provider-dependent. `OAuthProvider.usesPkce` is the literal `true`, not `boolean`,
+  so `usesPkce: false` is a type error rather than a comment — and there is no
+  `if (provider.usesPkce)` branch left anywhere for it to have been false in.
 - The code flow carries `nonce` inside the id token, not on the redirect. `assertOAuthCallback`
   checks an echoed one when present and never requires it; `verifyIdToken` is the real gate.
 - The handshake crosses two requests, so it is sealed (`sealHandshake`), never handed over in a
@@ -59,7 +61,27 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `decodeURIComponent('%')` is a bare `URIError`, which would escape every coded path in this
   package — the raw value goes to the signature or hash check, which is the readable refusal.
 - A token endpoint's HTTP 200 is not success — GitHub reports a dead code that way. Read `error`.
-- Link by address only when the provider **and** the local account both verified it.
+- Link by address only when the provider **and** the local account both verified it. That is
+  `link: 'verified-email'`, the default; `'never'` is the only other value and there is
+  deliberately no "link on any provider address" — it is account takeover at a sloppy
+  provider, so it is unrepresentable rather than discouraged. An app that wants it wraps
+  `signInWithOAuth`.
+- **The OAuth route paths are not configurable.** `oauth-paths.ts` imports nothing and is
+  read by both `errors.ts` and `oauth-route.ts`, so a `fix:` line naming
+  `GET /auth/oauth/<provider>` cannot outlive the route again — which is exactly what it did
+  through 1.2.0, when the library functions shipped with no route to mount them in. Every
+  "start over" fix is built from `restartAt(provider)`.
+- The routes are **descriptors** (`mcpHttpRoute()`'s category), never mounted handlers:
+  `@ultimat3/http` is tier 2 like this package and `defineRoute` is tier 4 and renders a
+  page, so neither is importable here. A bare `Request` in, a `Response` out.
+- The callback answers failure as **coded JSON**, and the success hop redirects to a fixed
+  `successPath` — never `?next=`. `nextAfterSignIn` in `@ultimat3/http` is the one
+  implementation of the open-redirect check and a second copy is one that drifts.
+- The handshake cookie is cleared on **every** callback outcome, success and failure alike:
+  the code it authorised is spent either way.
+- Refresh is **not implemented**. `AuthAccount` persists `refreshToken` and `expiresAt`, and
+  nothing reads them yet — the session is the framework's own credential and does not depend
+  on the provider token.
 - id token signatures are not checked: it is read only where it arrived over TLS straight from
   the token endpoint (OIDC Core 3.1.3.7). Never parse one that reached the browser.
 - An api key's scopes are the agent actor's scopes. Never union them with the owner's roles.
@@ -81,6 +103,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `id-token-fixture.ts` | the one string-input JWT builder the OAuth tests share. Off `index.ts` |
 | `oauth-profile.ts` | claims or userinfo → one `OAuthProfile` |
 | `oauth-login.ts` | profile → account link → session. `completeOAuthLogin` is the entry point |
+| `oauth-paths.ts` | the one declaration of where the two routes live. Imports nothing |
+| `oauth-route.ts` | `oauthLogin(auth)` — the redirect out and the callback back |
 
 ```bash
 bun test packages/auth

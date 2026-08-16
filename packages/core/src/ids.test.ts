@@ -58,6 +58,42 @@ describe('branded ids', () => {
     expect(parseId('post', id)).toBe(id);
     expect(() => parseId('post', 'abc')).toThrow(/X_ID_INVALID/);
   });
+
+  // The refusal is the whole product of this function, and it may not be lost to its own
+  // formatting: a caller that catches a TypeError instead of X_ID_INVALID matches nothing on
+  // `error.code`, and an HTTP surface answers 500 where a 400 belonged. Every value here is one
+  // an app can hand `parseId` — the id came off a job payload, a test fixture or a cache key.
+  const hostile = new Map<string, unknown>([
+    ['a bigint', 10n],
+    ['a symbol', Symbol('post')],
+    [
+      'a hostile toJSON',
+      {
+        toJSON: () => {
+          throw new Error('gotcha');
+        },
+      },
+    ],
+    [
+      'a throwing getter',
+      Object.defineProperty({}, 'id', {
+        enumerable: true,
+        get: () => {
+          throw new Error('gotcha');
+        },
+      }),
+    ],
+  ]);
+
+  const cyclic: Record<string, unknown> = {};
+  cyclic['self'] = cyclic;
+  hostile.set('a cycle', cyclic);
+
+  for (const [label, value] of hostile) {
+    test(`parseId refuses ${label} with X_ID_INVALID, not a formatting throw`, () => {
+      expect(() => parseId('post', value)).toThrow(/X_ID_INVALID/);
+    });
+  }
 });
 
 describe('nanoid and trace ids', () => {

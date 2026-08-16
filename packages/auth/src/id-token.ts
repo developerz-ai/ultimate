@@ -4,7 +4,7 @@
 // 3.1.3.7 exempts — a token that reaches the browser instead must never be parsed here.
 
 import type { Clock } from '@ultimat3/core';
-import { oauthStateInvalid, oauthTokenInvalid } from './errors';
+import { oauthStateInvalid, oauthTokenInvalid, restartAt } from './errors';
 import { OAUTH_PROVIDERS, type OAuthProvider, type OAuthProviderId } from './oauth';
 import { timingSafeEqual } from './tokens';
 
@@ -149,7 +149,7 @@ export function verifyIdToken(input: VerifyIdTokenInput): IdTokenClaims {
     throw oauthTokenInvalid(
       provider.id,
       'the token is already expired',
-      "sync this host's clock (`timedatectl status`), then restart the flow",
+      `sync this host's clock (\`timedatectl status\`), then ${restartAt(provider.id)}`,
     );
   }
 

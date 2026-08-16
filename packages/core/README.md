@@ -6,6 +6,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | Owns | Module |
 |---|---|
 | `UltimateError`, the 3-line rendering, `--json` shape | `errors.ts` |
+| rendering an app's value into a `cause` / `fix` without throwing | `error-render.ts` |
 | code → `{ title, docs }` registry, `registerErrorCodes()` | `error-codes.ts` |
 | `Result<T, E>` for boundaries where throwing is wrong | `result.ts` |
 | request context on `AsyncLocalStorage` | `context.ts` |
@@ -65,6 +66,46 @@ Registering a code twice throws `X_ERROR_CODE_DUPLICATE`.
 
 `isUltimateError()` is duck-typed on `Symbol.for('ultimate.error')`, not `instanceof` — that is
 how `@ultimat3/schema` (tier 0, cannot import core) still produces matching errors.
+
+### A value you did not produce goes through the renderer
+
+An error factory may never throw while formatting its own message: the caller then catches a
+`TypeError` instead of the refusal, `error.code === 'X_…'` matches nothing, and an HTTP surface
+answers 500 where the mapped status belonged. `JSON.stringify` throws on a bigint and on a cycle
+and RUNS any `toJSON` the value carries; `` `${value}` `` throws on a symbol and on a hostile
+`toString`. Both are reachable from app data.
+
+```ts
+cause: `expected a ${kind} UUIDv7, received ${renderCauseValue(value)}`,
+fix: `pass an id produced by typedId<${renderFixLiteral(kind, '<kind>')}>()`,
+```
+
+| Helper | For | Degrades to |
+|---|---|---|
+| `renderCauseValue(value)` | a `cause`, which only has to describe | `a object that cannot be rendered` |
+| `renderFixLiteral(value, placeholder)` | a `fix`, which has to parse and run | the placeholder you name |
+| `renderThrowable(value)` | a caught value: an `Error`'s own words, anything else rendered | `renderCauseValue(value)` |
+| `isThrownError(value)` | `value instanceof Error` where the test itself may throw | `false` |
+| `stringField(value, key)` | one string field off a caught value | `undefined` |
+
+The last two are the READ side, and the reason they exist is that the renderers above them were
+being reached past an unguarded probe. `catch (error)` hands you a value the framework did not
+build: `error instanceof Error` runs a `Proxy`'s `getPrototypeOf` trap, and
+`typeof error.code === 'string'` — the structural check every surface uses to recognise an
+`UltimateError` that crossed a worker, a subprocess or a socket — is a getter call. Either one
+throws one line *before* the total renderer that was meant to make the path safe.
+
+```ts
+const code = stringField(error, 'code') ?? 'X_TRANSPORT_UNAVAILABLE';
+const cause = stringField(error, 'cause') ?? renderThrowable(error);
+```
+
+`stringField` answers `undefined` for absent, wrong type and threw, because all three mean the
+same thing to the caller: this value did not supply the field, so use the default.
+
+Enforced, not documented: `x verify`'s `errors` step fails with `X_ERROR_RENDER_UNSAFE` when a
+parameter typed `unknown` reaches a `cause:` or `fix:` through `JSON.stringify`, `String()` or a
+bare interpolation (`scripts/error-render.ts`).
 
 ## Context
 

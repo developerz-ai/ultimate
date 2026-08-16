@@ -5,6 +5,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { renderThrowable } from '@ultimat3/core';
 import type { Manifest } from '@ultimat3/manifest';
 import {
   AGENTS_MD_FILENAME,
@@ -343,7 +344,10 @@ function verifySummary(input: {
 }
 
 function findingOf(error: unknown, step: string): Finding {
-  const cause = error instanceof Error ? error.message : String(error);
+  // A step may throw anything, including an Error that fights being read: `instanceof` runs a
+  // Proxy's `getPrototypeOf` trap and `.message` runs a getter, so a hostile throw would take the
+  // gate's own report down with it — the one message that may never be lost.
+  const cause = renderThrowable(error);
   return {
     code: 'X_VERIFY_FAILED',
     cause: `step "${step}" threw: ${cause}`,

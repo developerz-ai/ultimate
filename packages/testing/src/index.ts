@@ -44,6 +44,7 @@ export {
   NetworkOfflineError,
   NetworkSealedError,
   NondeterministicError,
+  RegistryLeakError,
   TESTING_ERROR_CODES,
   TESTING_ERROR_TITLES,
   TestDatabaseUnavailableError,
@@ -96,6 +97,14 @@ export type { AppHandle, AppOptions, BootedApp } from './harness';
 export { describeApp, testApp } from './harness';
 export type { MatcherResult } from './matchers';
 export { matchersInstalled, recordSteps } from './matchers';
+// `isolateEntityRegistry` is deliberately NOT here — it is `@ultimat3/testing/registry-isolation`.
+// This barrel is what a `packages/core` test imports for `expect` alone, and a static re-export
+// evaluates the module it names: that one would load `@ultimat3/entity` and its process-global
+// registry into every test in the framework. Every other package this harness touches is imported
+// dynamically inside the fixture that needs it; a helper that must stay synchronous cannot do that,
+// so it gets its own entry point instead.
+export type { RegistryLeak, RegistrySample } from './registry-leak-guard';
+export { installRegistryLeakGuard, leakBetween, sampleRegistries } from './registry-leak-guard';
 export type { MockRoute, NetworkState } from './sealed-network';
 // `setNetworkState` is deliberately not here: it is the offline gate's one writer, and a test that
 // called it directly would bypass the `network` fixture's disposal and leave the whole process

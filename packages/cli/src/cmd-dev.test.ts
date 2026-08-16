@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resetRegistry as resetActions } from '@ultimat3/action';
-import { declareTags, invalidateTags, tag } from '@ultimat3/cache';
+import { declareTags, invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
 import { createContext, logger, runWithContext } from '@ultimat3/core';
 import { statementObserver } from '@ultimat3/db';
 import { clearRegistry as clearEntities } from '@ultimat3/entity';
@@ -114,10 +114,24 @@ beforeAll(async () => {
   server = await startDev({ root: ROOT, port: 0, env: {}, roles: ['web', 'worker', 'scheduler'] });
 }, BOOT_TIMEOUT_MS);
 
+/**
+ * The tenth registry, and the one `resetRegistries()` must NOT hold: `declareTags` is additive
+ * and process-wide, so the `devfixture` this file declares turned on tag validation for every
+ * later file — `packages/query`'s read-cache suite then failed X_CACHE_TAG_UNKNOWN on `post`.
+ * A reset would drop a neighbour's declarations too; this puts back exactly what was found.
+ */
+const restoreTags = isolateDeclaredTags();
+
+// The restores go in the `finally`: a rejected `stop()` or `rm()` would otherwise skip them and
+// hand every later file in this process a registry this file filled — the exact leak above.
 afterAll(async () => {
-  await server?.stop();
-  await rm(ROOT, { recursive: true, force: true });
-  resetRegistries();
+  try {
+    await server?.stop();
+    await rm(ROOT, { recursive: true, force: true });
+  } finally {
+    resetRegistries();
+    restoreTags();
+  }
 }, BOOT_TIMEOUT_MS);
 
 const fetchDev = (path: string, init?: RequestInit): Promise<Response> => {

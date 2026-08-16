@@ -9,6 +9,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { renderCauseValue, renderThrowable } from '@ultimat3/core';
 import { fixProblem } from './error-contract';
 import type { Finding } from './output';
 import type { HostCheck } from './verify-step';
@@ -39,13 +40,16 @@ const isGuard = (value: unknown): value is Guard =>
 const CODE = /^X_[A-Z0-9_]+$/;
 
 /**
- * A value named in a cause, without ever throwing to name it. `JSON.stringify` refuses a BigInt
- * and a template literal refuses a symbol — and the one thing this validator may never do is fail
- * while it is explaining a failure, because then a bug in an app's guard reaches its author as a
- * stack trace out of framework internals.
+ * A value named in a cause, without ever throwing to name it — the one thing this validator may
+ * never do is fail while it is explaining a failure, because then a bug in an app's guard reaches
+ * its author as a stack trace out of framework internals. The rendering itself is
+ * `@ultimat3/core`'s `renderCauseValue`: the local copy this used to hold called `String(value)` on
+ * an unnarrowed `unknown`, so a guard returning an object with a throwing `toString` destroyed the
+ * refusal — the case a scan over `String(` cannot see, because the call is one helper away.
+ * The `typeof` prefix stays: "object null" and "number 42" say what a bare literal does not.
  */
 const shown = (value: unknown): string =>
-  typeof value === 'string' ? `"${value}"` : `${typeof value} ${String(value)}`;
+  typeof value === 'string' ? `"${value}"` : `${typeof value} ${renderCauseValue(value)}`;
 
 /**
  * Why a returned value is not a finding, or `undefined` when it is one. The `fix:` half is
@@ -121,8 +125,8 @@ const findingInvalid = (path: string, cause: string): Finding => ({
   at: path,
 });
 
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
+/** Same reason as `shown`: an app's guard may throw a value that fights every way of reading it. */
+const messageOf = (error: unknown): string => renderThrowable(error);
 
 /** One guard: import it, run it, and hold what it returns to the contract. Never throws. */
 async function runGuard(root: string, path: string): Promise<readonly Finding[]> {

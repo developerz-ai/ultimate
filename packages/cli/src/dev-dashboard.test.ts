@@ -2,13 +2,13 @@
 // that describe this process, and a route per panel. The bug these pin is the one the mount
 // replaced — a CLI that re-implemented four JSON endpoints of its own next to the real ones.
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DevPanel } from '@ultimat3/admin/dev';
 import { DEV_PANELS, panelPayload, staticDevSources, timelinePanel } from '@ultimat3/admin/dev';
-import { declareTags, invalidateTags, tag } from '@ultimat3/cache';
+import { declareTags, invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
 import {
   configureTelemetry,
   createContext,
@@ -45,6 +45,10 @@ const binding = (name: ServiceBinding['name'], url: string): ServiceBinding => (
   url,
   detail: 'fixture',
 });
+
+/** Captured before this file declares `dashboardfixture`; see the cache-log test below. */
+const restoreTags = isolateDeclaredTags();
+afterAll(restoreTags);
 
 const SERVICES: DevServices = {
   db: binding('db', 'pglite:///tmp/pgdata'),
@@ -365,9 +369,11 @@ describe('unit · x dev mounts the dashboard', () => {
   });
 
   test('the cache log is the report invalidateTags already built, not a second record of it', async () => {
-    // `declareTags` is additive and the log is process-global, so this asserts on the delta
-    // rather than resetting either — a reset here would wipe whatever a neighbouring file is
-    // mid-way through asserting.
+    // The log is process-global, so this asserts on the delta rather than resetting it — a reset
+    // here would wipe whatever a neighbouring file is mid-way through asserting. `declareTags` is
+    // additive and equally global, and leaving it set turned tag validation on for every file that
+    // ran after this one; `restoreTags` in the afterAll below undoes it without touching a
+    // neighbour's declarations.
     declareTags(['dashboardfixture']);
     const before = (await devSources(inputFor()).invalidations()).length;
     const report = await invalidateTags([tag('dashboardfixture', 'p_1')]);

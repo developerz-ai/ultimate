@@ -8,6 +8,7 @@
 import { installDeterminism } from '../packages/testing/src/determinism';
 import { registerFrameworkFixtures } from '../packages/testing/src/framework-fixtures';
 import '../packages/testing/src/matchers';
+import { installRegistryLeakGuard } from '../packages/testing/src/registry-leak-guard';
 import { sealNetwork } from '../packages/testing/src/sealed-network';
 
 const seed = Number.parseInt(Bun.env['ULTIMATE_TEST_SEED'] ?? '', 10);
@@ -19,6 +20,10 @@ installDeterminism({
 });
 
 registerFrameworkFixtures();
+
+// `bun run test` runs every package in ONE process, so a file that leaves a process-global
+// registry dirty fails a later file in another package. The guard names the file that leaked.
+installRegistryLeakGuard();
 
 // Opt-out is an env var, not an API, so no test file can quietly unseal the network for itself.
 if (Bun.env['ULTIMATE_TEST_ALLOW_NET'] !== '1') sealNetwork();

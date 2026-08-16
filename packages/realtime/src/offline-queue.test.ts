@@ -67,3 +67,49 @@ describe('offline queue', () => {
     expect(reopened.nextSeq).toBe(4);
   });
 });
+
+// `drain` stops at the first failure and records it — the queue's whole ordering guarantee. The
+// failure it records is whatever the sender threw, which is app code, so rendering it with
+// `String()` ran that value's own `toString`: the throw escaped `drain` itself, the mutation was
+// left `inflight` and the caller got no `DrainReport` to decide a retry from.
+describe('a sender that throws a value the queue cannot render', () => {
+  const hostile = (): ReadonlyMap<string, unknown> =>
+    new Map<string, unknown>([
+      [
+        'a hostile toString',
+        {
+          toString: () => {
+            throw new Error('gotcha');
+          },
+        },
+      ],
+      ['a null-prototype object', Object.create(null)],
+    ]);
+
+  for (const [label, value] of hostile()) {
+    test(`still stops at the failing mutation for ${label}`, async () => {
+      const { queue } = await seeded();
+      const report = await queue.drain(async (mutation: QueuedMutation) => {
+        if (mutation.key === 'like:p2') throw value;
+      });
+      expect(report.sent).toBe(1);
+      expect(report.stoppedAt).toBe('like:p2');
+      const failed = queue.find('like:p2');
+      expect(failed?.status).toBe('pending');
+      expect(failed?.error?.code).toBe('X_TRANSPORT_UNAVAILABLE');
+      expect(failed?.error?.cause.length).toBeGreaterThan(0);
+    });
+  }
+
+  test('a thrown error carrying the contract keeps the code it named', async () => {
+    const { queue } = await seeded();
+    await queue.drain(async () => {
+      throw { code: 'X_POLICY_DENIED', cause: 'not yours', fix: 'ask an owner' };
+    });
+    expect(queue.find('like:p1')?.error).toEqual({
+      code: 'X_POLICY_DENIED',
+      cause: 'not yours',
+      fix: 'ask an owner',
+    });
+  });
+});

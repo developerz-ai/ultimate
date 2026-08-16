@@ -2,6 +2,7 @@
 // database indexes, cursors and log sorting all want time-ordered keys.
 
 import { type Clock, systemClock } from './clock';
+import { renderCauseValue } from './error-render';
 import { UltimateError } from './errors';
 
 /** Nominal typing without a runtime cost. `Brand<string, 'post'>` never mixes with `'user'`. */
@@ -120,7 +121,7 @@ export function parseId<K extends string>(kind: K, value: unknown): Id<K> {
   if (!isUuid(value)) {
     throw new UltimateError({
       code: 'X_ID_INVALID',
-      cause: `expected a ${kind} UUIDv7, received ${JSON.stringify(value)}`,
+      cause: `expected a ${kind} UUIDv7, received ${renderCauseValue(value)}`,
       fix: `pass an id produced by typedId<'${kind}'>()`,
       meta: { kind, value },
     });

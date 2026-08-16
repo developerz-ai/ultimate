@@ -5,6 +5,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { renderCauseValue } from '@ultimat3/core';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated } from './source-files';
 
@@ -61,7 +62,10 @@ export const SEMVER = /^\d+\.\d+\.\d+(?:[-+][\w.-]+)*$/;
 
 export const badVersionFinding = (dir: string, found: unknown): Finding => ({
   code: 'X_PACKAGE_SHAPE',
-  cause: `packages/${dir}/package.json has no semver "version" (found ${JSON.stringify(found)})`,
+  // `found` is whatever the manifest's `version` parsed to — an app's JSON, not the gate's value.
+  // Bare `JSON.stringify` throws on a bigint and a cycle and runs any `toJSON`, which would replace
+  // this finding with a TypeError from inside the gate.
+  cause: `packages/${dir}/package.json has no semver "version" (found ${renderCauseValue(found)})`,
   fix: `set a semver "version" in packages/${dir}/package.json, then: bun run verify`,
   docs: docs('X_PACKAGE_SHAPE'),
   at: `packages/${dir}/package.json`,
