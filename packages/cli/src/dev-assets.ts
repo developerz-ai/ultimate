@@ -1,20 +1,28 @@
 // Projecting the framework's one image pipeline onto the routes `x dev` serves. Three packages
 // declare what an image is — `@ultimat3/seo` a variant URL, `@ultimat3/storage` a variant key,
 // `@ultimat3/pwa` the icons a web manifest promises — and `@ultimat3/core`'s pipeline owns every
-// pixel, so this file picks the two base paths they hang off and decides nothing else.
+// pixel, so this file picks the two base paths they hang off and decides nothing else. The one
+// thing it does NOT decide is who may read a stored object: `/media` borrows that whole answer
+// from `dev-storage.ts`, because the same bytes are reachable through both.
 
 // `join` is `node:`-only by necessity: Bun exposes no path-join primitive, and `ICON_SOURCE` is
 // app-root-relative, so resolving it against the root is string work no `Bun.file` overload does.
 import { join } from 'node:path';
 import { probeImage } from '@ultimat3/core';
-import type { Route, UltimateRequest } from '@ultimat3/http';
+import type { CacheHint, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import { applyCacheHeaders } from '@ultimat3/http';
 import type { IconPlan } from '@ultimat3/pwa';
 import { BuiltinImagePipeline, PwaIconMissingError, planIcons } from '@ultimat3/pwa';
 import type { ImageQuery, ImageTransformDriver } from '@ultimat3/seo';
 import { builtinImageDriver, parseImageQuery } from '@ultimat3/seo';
 import type { ImageFormat, ImageTransform, Storage } from '@ultimat3/storage';
-import { IMAGE_FORMATS, variantKey } from '@ultimat3/storage';
+import { IMAGE_FORMATS, isTenantScoped, variantKey } from '@ultimat3/storage';
+import {
+  AUTHORIZED_OBJECT_CACHE,
+  assertReadableKey,
+  authorizeStorageRead,
+  STORAGE_READ_PERMISSION,
+} from './dev-storage';
 
 /**
  * The one source image every generated icon derives from. `x new` scaffolds it, `x doctor` checks
@@ -26,21 +34,40 @@ export const ICON_SOURCE = 'apps/web/site/icon.png';
 /** Where `planIcons` writes, and therefore the paths the generated web manifest names. */
 export const ICON_BASE_PATH = '/icons';
 
-/** Storage-backed images. `responsiveImage({ src: '/media/<key>' })` mints its variants under it. */
+/**
+ * Storage-backed images. `responsiveImage({ src: '/media/<key>' })` mints its variants under it.
+ * Guarded exactly as `/_storage` is — an object reachable through two URLs must not be reachable
+ * on two different terms — so a `src` under this path needs a signed-in reader holding
+ * `storage:read`. A genuinely public image belongs in `apps/web/site/`, which is served as a
+ * static asset and never touches a disk holding another tenant's uploads.
+ */
 export const MEDIA_BASE_PATH = '/media';
 
 /**
- * Variants are content-addressed by `variantKey`, so a URL that answers once answers forever with
- * the same bytes — the immutable hint is a fact about the key, not an optimism about the source.
+ * A generated icon and a content-addressed variant answer forever with the same bytes, so the
+ * immutable hint is a fact about the key. It is NOT a fact about this route — see `mediaCache`.
  */
-const imageResponse = (bytes: Uint8Array, contentType: string): Response =>
+const IMMUTABLE_IMAGE: CacheHint = { mode: 'immutable' };
+
+const imageResponse = (bytes: Uint8Array, contentType: string, cache: CacheHint): Response =>
   applyCacheHeaders(
     // Copied, not passed through: a `Uint8Array<ArrayBufferLike>` may be backed by a
     // `SharedArrayBuffer`, which `Response` does not accept, and copying is what makes that true
     // by construction rather than by a cast that would only silence it.
     new Response(new Uint8Array(bytes), { headers: { 'content-type': contentType } }),
-    { mode: 'immutable' },
+    cache,
   );
+
+/**
+ * Immutable is a claim about the KEY, and a tenant-scoped key names one org's private object: a
+ * CDN or shared proxy that stores it under a public URL for a year hands it to every other tenant,
+ * which is the cross-tenant read one hop removed. `/media` declared `public, max-age=31536000,
+ * immutable` for exactly those keys until this branch. Applied in the handler rather than declared
+ * in `meta.cache` because the posture is decided by the key, which no route declaration can see —
+ * the pipeline's `cache-headers` stage only fills a `cache-control` a handler did not set.
+ */
+const mediaCache = (key: string): CacheHint =>
+  isTenantScoped(key) ? AUTHORIZED_OBJECT_CACHE : IMMUTABLE_IMAGE;
 
 const isImageFormat = (value: string): value is ImageFormat =>
   (IMAGE_FORMATS as readonly string[]).includes(value);
@@ -75,9 +102,13 @@ async function transformedVariant(
     query.format !== undefined && isImageFormat(query.format) ? query.format : undefined;
   const cacheable = query.format === undefined || format !== undefined;
   const cached = cacheable ? variantKey(key, storageTransform(query, format)) : undefined;
+  // The SOURCE key decides the posture, not the variant's: `variantKey` keeps the source's prefix,
+  // so a variant of `org/<id>/…` is one org's object too, and reading the hint off the derived key
+  // would be a second answer to a question the source already settled.
+  const cache = mediaCache(key);
   if (cached !== undefined && (await disk.exists(cached))) {
     const hit = await disk.get(cached);
-    return imageResponse(hit.bytes, hit.object.contentType);
+    return imageResponse(hit.bytes, hit.object.contentType, cache);
   }
 
   const source = await disk.get(key);
@@ -98,20 +129,29 @@ async function transformedVariant(
   if (cached !== undefined) {
     await disk.put(cached, variant.bytes, { contentType: variant.contentType });
   }
-  return imageResponse(variant.bytes, variant.contentType);
+  return imageResponse(variant.bytes, variant.contentType, cache);
 }
 
+/**
+ * Authorized before a key is parsed and before a disk is touched — the same two calls, in the same
+ * order, that `/_storage` makes. This route made NEITHER: it was `auth: 'public'` with no policy
+ * and handed the raw client-supplied key to `disk().get`, so every object on the app's only disk
+ * was one unauthenticated URL away, and `?w=` made it an unauthenticated `put` besides.
+ */
 async function mediaResponse(
   request: UltimateRequest,
+  ctx: RequestContext,
   storage: Storage,
   images: ImageTransformDriver | undefined,
 ): Promise<Response> {
-  const key = request.params['key'] ?? '';
+  const requested = request.params['key'] ?? '';
+  authorizeStorageRead({ disk: storage.defaultDisk, key: requested }, ctx);
+  const key = assertReadableKey(requested, ctx.actor);
   const query = parseImageQuery(request.url.searchParams);
   if (query !== null) return transformedVariant(storage, key, query, images);
   // No transform asked for: the object itself, still under the storage key's own safety checks.
   const read = await storage.disk().get(key);
-  return imageResponse(read.bytes, read.object.contentType);
+  return imageResponse(read.bytes, read.object.contentType, mediaCache(key));
 }
 
 /**
@@ -176,14 +216,27 @@ export function assetRoutes(options: AssetRoutesOptions): readonly Route[] {
     path: entry.outputPath,
     meta: { name: `assets.icon.${entry.spec.filename}`, auth: 'public', tags: ['assets'] },
     handler: async (request: UltimateRequest): Promise<Response> =>
-      imageResponse(await render(plan, request.pathname), 'image/png'),
+      imageResponse(await render(plan, request.pathname), 'image/png', IMMUTABLE_IMAGE),
   }));
+  // The icons above are genuinely public — they are rendered from a file committed in the app, and
+  // an install prompt fetches them before anyone has signed in. `/media` is the opposite: it serves
+  // whatever is on the app's only disk, which is every tenant's uploads, so it takes `/_storage`'s
+  // declaration verbatim. `enforcedBy: 'handler'` for the reason that route gives — the `authz`
+  // stage resolves a policy from `@ultimat3/render`'s page table, which this route is not in.
+  // `cache` declares the conservative posture; `mediaCache` narrows or widens it per key.
   routes.push({
     method: 'GET',
     path: `${MEDIA_BASE_PATH}/*key`,
-    meta: { name: 'assets.media', auth: 'public', tags: ['assets'] },
-    handler: async (request: UltimateRequest): Promise<Response> =>
-      mediaResponse(request, options.storage, options.images),
+    meta: {
+      name: 'assets.media',
+      auth: 'required',
+      policy: STORAGE_READ_PERMISSION,
+      enforcedBy: 'handler',
+      cache: AUTHORIZED_OBJECT_CACHE,
+      tags: ['assets'],
+    },
+    handler: async (request: UltimateRequest, ctx: RequestContext): Promise<Response> =>
+      mediaResponse(request, ctx, options.storage, options.images),
   });
 
   return routes;

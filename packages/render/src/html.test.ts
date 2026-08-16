@@ -49,6 +49,42 @@ describe('attributePair', () => {
   });
 });
 
+/**
+ * The escaper makes a value inert INSIDE an attribute; it cannot make a scheme inert, because
+ * `href="javascript:alert(1)"` needs no quote to break out of. This module declares itself the one
+ * place injection is prevented, so the scheme check belongs at the same choke point — `href` off a
+ * database row is the shape every app writes.
+ */
+describe('attributePair refuses a dangerous URL scheme', () => {
+  test('javascript: is dropped rather than emitted, in every URL-bearing attribute', () => {
+    expect(attributePair('href', 'javascript:alert(1)')).toBeNull();
+    expect(attributePair('src', 'javascript:alert(1)')).toBeNull();
+    expect(attributePair('action', 'javascript:alert(1)')).toBeNull();
+    expect(attributePair('formAction', 'javascript:alert(1)')).toBeNull();
+    expect(attributePair('formaction', 'javascript:alert(1)')).toBeNull();
+  });
+
+  test('a control character a browser strips cannot smuggle the scheme past the check', () => {
+    expect(attributePair('href', 'java\tscript:alert(1)')).toBeNull();
+  });
+
+  test('an ordinary link, a relative path and a data:image src are untouched', () => {
+    expect(attributePair('href', '/posts/1')).toBe('href="/posts/1"');
+    expect(attributePair('href', 'https://ultimate.dev')).toBe('href="https://ultimate.dev"');
+    expect(attributePair('src', 'data:image/webp;base64,AAA')).toBe(
+      'src="data:image/webp;base64,AAA"',
+    );
+  });
+
+  test('the guard is scoped to URL attributes — a colon in ordinary text still renders', () => {
+    expect(attributePair('title', 'javascript:alert(1)')).toBe('title="javascript:alert(1)"');
+  });
+
+  test('a refused href is absent from the rendered attribute list, not blanked', () => {
+    expect(renderAttributes({ href: 'javascript:alert(1)', id: 'a' })).toBe(' id="a"');
+  });
+});
+
 describe('styleValue', () => {
   test('camelCase becomes the CSS property', () => {
     expect(styleValue({ marginTop: '1rem', color: 'red' })).toBe('margin-top:1rem;color:red');

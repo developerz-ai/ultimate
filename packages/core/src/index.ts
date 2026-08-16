@@ -470,6 +470,8 @@ export {
 } from './listeners';
 export type { McpExposureDeclaration } from './mcp-exposure';
 export { isMcpExposed } from './mcp-exposure';
+export type { CappedBody } from './read-capped';
+export { readWithinLimit } from './read-capped';
 export type { ModuleRegistrar, PrimitiveKind, RegisteredPrimitive } from './registrar';
 export {
   hasPrimitiveRegistrar,
@@ -482,6 +484,7 @@ export type { Err, Ok, Result } from './result';
 export { err, isErr, isOk, map, mapErr, ok, tryCatch, unwrap, unwrapOr } from './result';
 export type { ResolveRoleOptions, Role, RoleInfo, ScalingSignal } from './roles';
 export { DEFAULT_ROLE, isRole, ROLE_INFO, ROLES, resolveRole } from './roles';
+export { safeUrl, URL_ATTRIBUTES } from './safe-url';
 export type { ServiceFactory } from './service';
 export { defineService, resetServices } from './service';
 export { timingSafeEqual } from './timing-safe-equal';

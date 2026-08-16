@@ -136,6 +136,30 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 - Rotate the session id on any privilege change (`rotateSession`), never patch the row.
   `updatePrivileges` in `privileges.ts` is the caller that makes that rule exist — it had none
   until 1.3.0, and `SessionPolicy.rotateOnPrivilegeChange` was a flag nothing read.
+- **Every argon2 call goes through `kdfGate()`, and that is the only thing bounding its memory.**
+  19 MiB of arena per hash at the OWASP floor, and both existing gates are per-SOURCE (`ipKey(ip)`,
+  5 attempts; `@ultimat3/http`'s `auth` bucket, 10 per `route|ip:`) so a spray rotating an IPv6 /64
+  mints a fresh key every attempt — and both cap ATTEMPTS, not concurrent WORK. The only backstop
+  left was `http.maxInflight` (1000), about 19 GB of arenas queued. `kdf-gate.ts` bounds the width
+  (8) and the waiting queue (64) and refuses past it with `X_OVERLOADED`, borrowed from http and
+  listed in `AUTH_BORROWED_ERROR_CODES` — this package cannot import http, and a shed is a shed
+  whichever layer performs it. `configureKdfGate()` is the ONE install point and is deliberately
+  not a `defineAuth` key: the ceiling is a property of the machine, not of the app's auth policy.
+- **MFA has a first leg and no second one, and the second one is not a route you can just add.**
+  `login()` and `completeOAuthLogin()` throw `X_MFA_REQUIRED` before any session exists; nothing is
+  written, so the only value handed over is a user id in `meta`. A `POST /auth/mfa/verify
+  { userId, code }` built on that is **unauthenticated by construction** — nothing binds it to a
+  completed first factor, so it converts MFA from a second factor into the only factor. That is why
+  the `fix:` now tells an app author to finish the flow itself (`verifyTotp` → `createSession({
+  mfaSatisfied: true })`) rather than naming a route, and why no route was added under a bug fix.
+  The framework's own second leg needs three things landing together, and fewer is worse than none:
+  a **sealed pending-MFA credential** built like `sealHandshake` (`oauth-cookie.ts`) — server-clock
+  expiry, one cookie, bound to the user id the first factor proved and to nothing the client says;
+  the completion shipped as an `AuthRouteDescriptor` the way `oauthLogin()` was (`oauth-route.ts`),
+  with its path declared in `oauth-paths.ts`'s style so the `fix:` and the mount cannot drift; and
+  `auth.limiter` around `verifyTotp` — today it is wired only into `login`, so a six-digit code
+  would be the one credential in this package with no lockout. `TotpReplayGuard` is already built
+  and must be the completion's, not a second one.
 - SAML is out of scope permanently: XML-DSig canonicalisation has no Bun native and would need a
   real dependency. Put an OIDC-speaking bridge in front and register that.
 
@@ -166,6 +190,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `oauth-login-fixture.ts` | the adapter, clock and profile the three `oauth-login*` suites share. Off `index.ts` |
 | `oauth-paths.ts` | the one declaration of where the two routes live. Imports nothing |
 | `oauth-route.ts` | `oauthLogin(auth)` — the redirect out and the callback back |
+| `kdf-gate.ts` | the one bound on concurrent argon2 work, and the `X_OVERLOADED` past it |
 
 ```bash
 bun test packages/auth

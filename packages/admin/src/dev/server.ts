@@ -4,6 +4,7 @@
 
 // Type-only, so it is erased and the 46-component barrel stays out of the mount graph — the
 // values arrive through the dynamic `import()` in `devShellStyle()`, same reason as `data.ts`.
+import { DEFAULT_ENVIRONMENT, tryResolveEnvironment } from '@ultimat3/core';
 import { t } from '@ultimat3/i18n';
 import type { ColorRole } from '@ultimat3/ui';
 import { DevDashboardInProdError } from '../errors';
@@ -37,7 +38,7 @@ export const DEV_BASE_PATH = '/_x';
 export interface DevDashboardOptions {
   /** `ROLE` for this process. Defaults to `process.env.ROLE`. */
   readonly role?: string;
-  /** `NODE_ENV` (or `X_ENV`). Defaults to the environment. */
+  /** An explicit environment name. Defaults to `ULTIMATE_ENV`, else `NODE_ENV`, else development. */
   readonly env?: string;
   readonly basePath?: string;
   readonly sources?: DevSources;
@@ -50,15 +51,20 @@ const envOf = (name: string): string | undefined => {
 };
 
 /**
- * One rule: anything that says "production" refuses. Checked against both the framework's
- * `ROLE`-adjacent env and `NODE_ENV`, since a container may set only one of them.
+ * One rule: anything that says "production" refuses. The environment has ONE reader —
+ * `tryResolveEnvironment()`, which is `ULTIMATE_ENV` else `NODE_ENV` — because this guard used to
+ * read `X_ENV`/`NODE_ENV` and never the framework's own key, so an app declaring production the
+ * documented way mounted /_x on the internet. Non-throwing: a malformed `ULTIMATE_ENV` is its own
+ * error with its own fix and must not be raised for the first time by a mount guard.
+ * The `role` half survives only for an explicit `devDashboard({ role })` — no shipped `ROLE`
+ * value is `production`.
  */
 export function assertDevOnly(input: {
   role?: string | undefined;
   env?: string | undefined;
 }): void {
   const role = input.role ?? envOf('ROLE') ?? 'dev';
-  const env = input.env ?? envOf('X_ENV') ?? envOf('NODE_ENV') ?? 'development';
+  const env = input.env ?? tryResolveEnvironment() ?? DEFAULT_ENVIRONMENT;
   if (env === 'production' || env === 'prod' || role === 'production' || role === 'prod') {
     throw new DevDashboardInProdError({ role, env });
   }

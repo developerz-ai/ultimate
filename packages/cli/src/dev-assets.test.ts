@@ -9,13 +9,15 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createRaster, encodeImage, probeImage } from '@ultimat3/core';
+import { createRaster, encodeImage, probeImage, userActor } from '@ultimat3/core';
 import type { Route } from '@ultimat3/http';
 import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
+import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
 import { responsiveImage } from '@ultimat3/seo';
 import type { Storage } from '@ultimat3/storage';
-import { defineStorage, localDriver, variantKey } from '@ultimat3/storage';
+import { defineStorage, localDriver, resetStorage, variantKey } from '@ultimat3/storage';
 import { assetRoutes, ICON_SOURCE, MEDIA_BASE_PATH } from './dev-assets';
+import { STORAGE_READ_PERMISSION } from './dev-storage';
 
 const SOURCE_KEY = 'covers/hero.png';
 
@@ -39,6 +41,10 @@ const call = async (routes: readonly Route[], path: string): Promise<Response> =
   const config = defineHttpConfig({ rateLimit: { scope: 'process' } });
   const ctx = createRequestContext({ url, method: 'GET', role: 'web', config });
   ctx.params = params(route.path, url.pathname);
+  // `/media` is `auth: 'required'` + `storage:read` — the icons are not, and pass regardless. The
+  // guard itself is proved across both storage surfaces in `storage-surfaces.test.ts`; these cases
+  // are about the pipeline behind it, so they call as a reader who may.
+  ctx.actor = userActor({ id: 'u-1', roles: ['member'], orgId: 'org-1' });
   return route.handler(new UltimateRequest(new Request(url), ctx), ctx);
 };
 
@@ -58,9 +64,14 @@ beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'x-assets-'));
   storage = defineStorage({ disks: { local: localDriver({ root: join(root, '.storage') }) } });
   await storage.disk().put(SOURCE_KEY, png(1200, 600), { contentType: 'image/png' });
+  definePermissions([STORAGE_READ_PERMISSION]);
+  defineRoles({ member: { grants: [STORAGE_READ_PERMISSION] } });
 });
 
 afterEach(() => {
+  clearPermissions();
+  clearRoles();
+  resetStorage();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -71,6 +82,22 @@ describe('unit · dev assets · pwa icons', () => {
     expect(paths).toContain('/icons/icon-192.png');
     expect(paths).toContain('/icons/icon-maskable-512.png');
     expect(paths).toContain('/icons/apple-touch-icon.png');
+  });
+
+  test('an icon stays public while /media is not', () => {
+    const routes = assetRoutes({ root, storage });
+    // An install prompt fetches these before anyone signs in, and they are rendered from a file
+    // committed in the app — so `public` here is a fact, not the oversight it was one route down.
+    const icon = routes.find((route) => route.path === '/icons/icon-192.png');
+    expect(icon?.meta.auth).toBe('public');
+    expect(icon?.meta.policy).toBeUndefined();
+
+    const media = routes.find((route) => route.path === `${MEDIA_BASE_PATH}/*key`);
+    expect(media?.meta).toMatchObject({
+      auth: 'required',
+      policy: STORAGE_READ_PERMISSION,
+      enforcedBy: 'handler',
+    });
   });
 
   test('an icon route answers with a square PNG of that entry size', async () => {

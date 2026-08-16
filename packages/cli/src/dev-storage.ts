@@ -5,7 +5,7 @@
 
 import { actorOf } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
-import type { RequestContext, Route, UltimateRequest } from '@ultimat3/http';
+import type { CacheHint, RequestContext, Route, UltimateRequest } from '@ultimat3/http';
 import { asCtx, unauthenticated } from '@ultimat3/http';
 import type { KnownPermission } from '@ultimat3/policy';
 import { can, codeOf, evaluate, forbidden, reasonOf } from '@ultimat3/policy';
@@ -40,6 +40,20 @@ export const STORAGE_READ_PERMISSION = 'storage:read';
  */
 const READ_PERMISSION = STORAGE_READ_PERMISSION as unknown as KnownPermission;
 
+/**
+ * The cache posture of a response that was authorized for ONE actor, named once so the two routes
+ * that serve stored bytes cannot declare different ones — which they did: `/media` answered
+ * `public, max-age=31536000, immutable` for the same object this route marks private, so a CDN held
+ * one tenant's file under a public key for a year. Revalidation costs a request and no bytes, which
+ * is the trade an authorized response wants: the bytes never change under a key, but the actor's
+ * permission to read them can be revoked. `vary` names the two headers that carry an identity.
+ */
+export const AUTHORIZED_OBJECT_CACHE: CacheHint = {
+  mode: 'private',
+  maxAgeSeconds: 0,
+  vary: ['authorization', 'cookie'],
+};
+
 /** What the rule decides about. The key IS the object's identity, so this is the whole subject. */
 export interface StorageReadInput {
   readonly disk: string;
@@ -73,25 +87,38 @@ export function authorizeStorageRead(input: StorageReadInput, ctx: RequestContex
 }
 
 /**
- * Everything between the decision and the bytes, in the order that discloses least: a key that
- * could escape its prefix is refused before any disk sees it, a key inside another tenant's prefix
- * is 404 (never 403 — `error-map.ts` maps `X_STORAGE_ORG_MISMATCH` there so a refusal cannot
- * confirm that a key exists), and an unknown disk is the same 404 rather than
- * `X_STORAGE_DISK_UNKNOWN`, whose cause lists every configured disk name.
+ * The key half of the read decision, in the order that discloses least: a key that could escape its
+ * prefix is refused before any tenant is named, and a key inside another tenant's prefix is 404
+ * (never 403 — `error-map.ts` maps `X_STORAGE_ORG_MISMATCH` there so a refusal cannot confirm that
+ * a key exists).
+ *
+ * Split out of `readStorageObject` because `/media/*key` (`dev-assets.ts`) has to make the same
+ * decision and made none at all: it passed a client-supplied key straight to `disk().get`, so every
+ * object on the app's only disk was one unauthenticated URL away. A second copy of this test is how
+ * one of the two surfaces would drift back — `storage-surfaces.test.ts` is what holds them level.
+ */
+export function assertReadableKey(key: string, actor: Actor): string {
+  const safe = assertSafeKey(key);
+  // An actor with no org is inside no org, so every tenant-scoped key is somebody else's. Checked
+  // before `isWithinOrg`, which reads an empty org as a malformed key and would blame the caller's
+  // URL for the actor's missing claim.
+  const orgId = actor.orgId ?? '';
+  if (isTenantScoped(safe) && (orgId === '' || !isWithinOrg(safe, orgId))) {
+    throw orgMismatch(safe, orgId);
+  }
+  return safe;
+}
+
+/**
+ * Everything between the decision and the bytes. An unknown disk is the same 404 the foreign-tenant
+ * case answers, rather than `X_STORAGE_DISK_UNKNOWN`, whose cause lists every configured disk name.
  */
 export async function readStorageObject(
   storage: Storage,
   input: StorageReadInput,
   actor: Actor,
 ): Promise<StorageRead> {
-  const key = assertSafeKey(input.key);
-  // An actor with no org is inside no org, so every tenant-scoped key is somebody else's. Checked
-  // before `isWithinOrg`, which reads an empty org as a malformed key and would blame the caller's
-  // URL for the actor's missing claim.
-  const orgId = actor.orgId ?? '';
-  if (isTenantScoped(key) && (orgId === '' || !isWithinOrg(key, orgId))) {
-    throw orgMismatch(key, orgId);
-  }
+  const key = assertReadableKey(input.key, actor);
   if (!storage.diskNames.includes(input.disk)) throw objectNotFound(input.disk, key);
   return storage.disk(input.disk).get(key);
 }
@@ -202,7 +229,7 @@ export function storageRoutes(options: StorageRoutesOptions): readonly Route[] {
         auth: 'required',
         policy: STORAGE_READ_PERMISSION,
         enforcedBy: 'handler',
-        cache: { mode: 'private', maxAgeSeconds: 0, vary: ['authorization', 'cookie'] },
+        cache: AUTHORIZED_OBJECT_CACHE,
         tags: ['storage'],
       },
       handler: async (request: UltimateRequest, ctx: RequestContext): Promise<Response> => {

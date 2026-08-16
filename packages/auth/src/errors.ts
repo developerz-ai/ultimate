@@ -39,11 +39,15 @@ export const AUTH_OWNED_ERROR_CODES = [
 // oauth-cookie.ts and oauth-exchange.ts refuse on a missing secret, oauth-login.ts on a bad
 // config. An undeclared borrow is a code the manifest cannot attribute to the package that throws
 // it, so `x errors` could not point a reader at this file.
+// `X_OVERLOADED` is `@ultimat3/http`'s, borrowed rather than re-declared: this package is the
+// same tier and can never import http, but a refusal to start 19 MiB of argon2 work IS load
+// shedding and must read as the same thing to a client (503 + Retry-After) whichever layer shed it.
 export const AUTH_BORROWED_ERROR_CODES = [
   'X_FORBIDDEN',
   'X_NOT_IMPLEMENTED',
   'X_ENV_MISSING',
   'X_CONFIG_INVALID',
+  'X_OVERLOADED',
 ] as const;
 
 /** Every code auth can throw: the ones it owns plus the ones it borrows. */
@@ -137,11 +141,37 @@ export const sessionUnknown = (): AuthError =>
     fix: 'sign in again to mint a fresh session — listDevices(auth.sessions, userId) lists the sessions still live for a user',
   });
 
+/**
+ * Shed BEFORE the KDF runs, the same decision `@ultimat3/http`'s `admit` stage makes for a whole
+ * request. `retryAfterSeconds` rides in `meta` because this package cannot reach an HTTP header;
+ * the host reads it onto `Retry-After`.
+ */
+export const kdfOverloaded = (active: number, queued: number): AuthError =>
+  new AuthError({
+    code: 'X_OVERLOADED',
+    cause: `${active} password hashes are already running and ${queued} more are queued`,
+    fix: 'retry after the Retry-After header; widen the ceiling with configureKdfGate({ maxConcurrent, maxQueued }) only if the box has the memory — every argon2id hash holds ~19 MiB while it runs',
+    meta: { active, queued, retryAfterSeconds: 1 },
+  });
+
+/**
+ * The second leg is the APP's, and this line says so — it named `POST /auth/mfa/verify` for a
+ * release while no such route, no `completeMfa()` and no pending-MFA credential existed anywhere,
+ * the same dead-`fix:` defect `oauth-paths.ts` exists to stop. Shipping that route from here would
+ * be worse than saying nothing: the only correlation value this error carries is a user id, so the
+ * route would be unauthenticated by construction and MFA would become the ONLY factor. The design
+ * constraint for the real second leg is in `packages/auth/CLAUDE.md`.
+ *
+ * `userId` is `meta`, never `cause`: both surfaces that render this code to an anonymous caller
+ * (`oauth-route.ts`'s `publicBody`, `@ultimat3/http`'s problem document) publish `cause` and drop
+ * `meta`, and a user id handed to whoever typed the URL is what feeds the attack above.
+ */
 export const mfaRequired = (userId: string): AuthError =>
   new AuthError({
     code: 'X_MFA_REQUIRED',
-    cause: `user ${userId} has TOTP enrolled and this session has not satisfied it`,
-    fix: 'POST /auth/mfa/verify { code } with the 6-digit code, then retry',
+    cause: 'this account has TOTP enrolled and the second factor has not been satisfied',
+    fix: 'no second-factor route ships yet — catch X_MFA_REQUIRED in your sign-in handler, check the code with verifyTotp({ secret: user.mfaSecret, code, at }), then mint the session with createSession(auth.sessions, { userId, mfaSatisfied: true })',
+    meta: { userId },
   });
 
 /**

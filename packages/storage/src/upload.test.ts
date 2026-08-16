@@ -141,3 +141,36 @@ describe('validateUpload', () => {
     expect(code).toBe('X_STORAGE_CHECKSUM_MISMATCH');
   });
 });
+
+/**
+ * An SVG is a script document that a browser executes when it is served back as `image/svg+xml`
+ * from the app's own origin — so it was stored XSS on every app that took the default policy,
+ * with the sniffer PROMOTING `<svg` to the allowed type rather than refusing it. An app that
+ * genuinely serves user SVG says so, once, in `allowedContentTypes`.
+ */
+describe('the default upload policy', () => {
+  test('does not allow image/svg+xml', () => {
+    expect(uploadPolicy().allowedContentTypes).not.toContain('image/svg+xml');
+  });
+
+  test('refuses a sniffed SVG under the default policy, with the code that says why', () => {
+    const svg = bytesOf('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>');
+    expect(
+      codeOf(() =>
+        validateUpload(
+          { key: 'a/logo.svg', declaredContentType: 'image/svg+xml', bytes: svg },
+          uploadPolicy(),
+        ),
+      ),
+    ).toBe('X_STORAGE_TYPE_REJECTED');
+  });
+
+  test('an app that wants SVG opts in explicitly and still gets it', () => {
+    const svg = bytesOf('<svg xmlns="http://www.w3.org/2000/svg"/>');
+    const validated = validateUpload(
+      { key: 'a/logo.svg', declaredContentType: 'image/svg+xml', bytes: svg },
+      uploadPolicy({ allowedContentTypes: ['image/svg+xml'] }),
+    );
+    expect(validated.contentType).toBe('image/svg+xml');
+  });
+});

@@ -67,6 +67,7 @@ export {
   authWriteFailed,
   emailVerifiedNotStored,
   forbidden,
+  kdfOverloaded,
   mfaRequired,
   oauthAccountNotLinked,
   oauthDenied,
@@ -105,7 +106,14 @@ export {
   providerJwks,
   verifyJwtSignature,
 } from './jwks';
-
+export type { KdfGate, KdfLimits } from './kdf-gate';
+export {
+  configureKdfGate,
+  createKdfGate,
+  DEFAULT_KDF_LIMITS,
+  kdfGate,
+  resetKdfGate,
+} from './kdf-gate';
 export { MemoryAdapter } from './memory-adapter';
 export type {
   EnrolTotpInput,

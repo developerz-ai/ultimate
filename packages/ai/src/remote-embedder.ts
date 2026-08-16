@@ -6,6 +6,7 @@
 // vendor: `baseUrl` selects the provider and nothing else changes. A second class per vendor
 // would be a second thing to learn for a difference that does not exist on the wire.
 
+import { readWithinLimit } from '@ultimat3/core';
 import type { Embedder } from './embeddings';
 import { normalize } from './embeddings';
 import { AiKeyMissingError, AiTransportError, EmbedderDimMismatchError } from './errors';
@@ -15,6 +16,14 @@ const DEFAULT_BASE_URL = 'https://api.voyageai.com/v1';
 /** Providers cap a batch around 128 inputs; 96 leaves headroom for long texts. */
 const DEFAULT_BATCH_SIZE = 96;
 const DETAIL_LIMIT = 300;
+/**
+ * A hosted endpoint is a third party and `baseUrl` is app config, so neither its latency nor its
+ * response size is ours to assume. 30s is longer than any healthy embedding batch and shorter than
+ * a job lease; 32 MiB is an order of magnitude past the worst legitimate batch (96 inputs x 3072
+ * dimensions of JSON floats is under 4 MiB), so nothing real hits it and nothing unreal is held.
+ */
+const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 
 export interface RemoteEmbedderInput {
   /** The provider's model id. Doubles as the embedder name, so a store records what wrote it. */
@@ -30,6 +39,10 @@ export interface RemoteEmbedderInput {
   readonly baseUrl?: string;
   /** Inputs per request. Larger calls are split; the provider's own cap is not the caller's. */
   readonly batchSize?: number;
+  /** Deadline for ONE batch request. Defaults to 30s; `AbortSignal.timeout` enforces it. */
+  readonly timeoutMs?: number;
+  /** Bytes this process will hold of one response. Defaults to 32 MiB. */
+  readonly maxResponseBytes?: number;
   /** Injectable so a test can assert the request body without a network. Defaults to `fetch`. */
   readonly fetch?: typeof fetch;
 }
@@ -65,11 +78,26 @@ export class RemoteEmbedder implements Embedder {
       throw new AiKeyMissingError({ provider: this.name, envVar: API_KEY_ENV });
     }
     const doFetch = this.config.fetch ?? fetch;
-    const response = await doFetch(`${this.config.baseUrl ?? DEFAULT_BASE_URL}/embeddings`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model: this.name, input: texts }),
-    });
+    const timeoutMs = this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const url = `${this.config.baseUrl ?? DEFAULT_BASE_URL}/embeddings`;
+    let response: Response;
+    try {
+      response = await doFetch(url, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ model: this.name, input: texts }),
+        // Without this the call has no deadline at all: the per-request budget produces a
+        // `ctx.signal` that never reaches here, so a provider that accepts the connection and
+        // never answers holds a worker for as long as the socket stays open.
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      throw new AiTransportError({
+        provider: this.name,
+        detail: `${error instanceof Error ? error.message : 'the request failed before a response'} — no answer within ${timeoutMs}ms (deadline, egress, DNS or TLS)`,
+        envVar: API_KEY_ENV,
+      });
+    }
     if (!response.ok) {
       throw new AiTransportError({
         provider: this.name,
@@ -78,7 +106,25 @@ export class RemoteEmbedder implements Embedder {
         envVar: API_KEY_ENV,
       });
     }
-    return this.decode((await response.json()) as unknown, texts.length);
+    // Read through core's counting reader rather than `response.json()`: a body is buffered whole
+    // before anything measures it otherwise, and a `content-length` a remote wrote is not a bound.
+    const maxBytes = this.config.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+    const read = await readWithinLimit(response.body, maxBytes);
+    if ('over' in read) {
+      throw new AiTransportError({
+        provider: this.name,
+        status: response.status,
+        detail: `response body is at least ${read.over} bytes, limit is ${maxBytes}`,
+        envVar: API_KEY_ENV,
+      });
+    }
+    let payload: unknown;
+    try {
+      payload = JSON.parse(new TextDecoder().decode(read.bytes));
+    } catch {
+      throw this.malformed('the response body is not valid JSON');
+    }
+    return this.decode(payload, texts.length);
   }
 
   private decode(payload: unknown, expected: number): readonly Float32Array[] {

@@ -13,10 +13,19 @@
 //     refuse what a human would be allowed.
 
 import type { Actor } from '@ultimat3/core';
+import { readWithinLimit } from '@ultimat3/core';
 import type { McpCaller, McpRole, McpVerbClass } from './registry';
 import type { McpServer } from './server';
 import type { JsonRpcResponse } from './wire';
 import { errorResponse, INVALID_REQUEST, PARSE_ERROR } from './wire';
+
+/**
+ * The same 1 MiB `@ultimat3/http`'s `bodyLimitBytes` defaults to. This descriptor is driven from a
+ * bare `Request` and never passes through that pipeline, so without a cap here Bun's 128 MiB
+ * default was the only ceiling — and `x mcp serve` and `createServer` both pass no
+ * `maxRequestBodySize`.
+ */
+export const DEFAULT_MCP_BODY_LIMIT_BYTES = 1_048_576;
 
 /** Requests per minute per token, by class. Reads are cheap; a write may run migrations. */
 export const MCP_RATE_LIMITS: Readonly<Record<McpVerbClass, number>> = {
@@ -40,6 +49,8 @@ export interface McpHttpTransportInput {
   resolveToken(token: string): Promise<ResolvedToken | null> | ResolvedToken | null;
   /** Route path. Overridable so an app can mount a second, app-scoped surface. */
   readonly path?: string;
+  /** Bytes this transport will hold for one request. Defaults to `DEFAULT_MCP_BODY_LIMIT_BYTES`. */
+  readonly bodyLimitBytes?: number | undefined;
 }
 
 export interface McpRouteDescriptor {
@@ -55,6 +66,7 @@ const JSON_HEADERS = { 'content-type': 'application/json' } as const;
 
 export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
   const { server } = input;
+  const bodyLimitBytes = input.bodyLimitBytes ?? DEFAULT_MCP_BODY_LIMIT_BYTES;
 
   return {
     method: 'POST',
@@ -74,9 +86,25 @@ export function mcpHttpRoute(input: McpHttpTransportInput): McpRouteDescriptor {
       if (resolved === null) return unauthorized();
       if (!isAgentActor(resolved.actor)) return notAnAgent();
 
+      // Read through the counting reader, never `request.json()`: the cap has to be enforced
+      // WHILE the bytes arrive, or a `transfer-encoding: chunked` payload is materialised in full
+      // before anything measures it. Core owns the reader so this and `UltimateRequest.#read`
+      // cannot drift.
+      const read = await readWithinLimit(request.body, bodyLimitBytes);
+      if ('over' in read) {
+        return json(
+          errorResponse(
+            null,
+            INVALID_REQUEST,
+            `request body is at least ${read.over} bytes, limit is ${bodyLimitBytes}`,
+          ),
+          413,
+        );
+      }
+
       let body: unknown;
       try {
-        body = await request.json();
+        body = JSON.parse(new TextDecoder().decode(read.bytes));
       } catch {
         return json(errorResponse(null, PARSE_ERROR, 'request body is not valid JSON'), 400);
       }

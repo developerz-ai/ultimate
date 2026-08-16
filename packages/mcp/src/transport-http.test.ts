@@ -5,7 +5,13 @@ import { describe, expect, test } from 'bun:test';
 import { agentActor, userActor } from '@ultimat3/core';
 import { textResult } from './registry';
 import { createMcpServer } from './server';
-import { bearerToken, isAgentActor, MCP_RATE_LIMITS, mcpHttpRoute } from './transport-http';
+import {
+  bearerToken,
+  DEFAULT_MCP_BODY_LIMIT_BYTES,
+  isAgentActor,
+  MCP_RATE_LIMITS,
+  mcpHttpRoute,
+} from './transport-http';
 
 const server = createMcpServer({
   tools: [
@@ -226,5 +232,50 @@ describe('an unauthenticated caller learns nothing about its own request', () =>
     const res = await route.handle(malformed({ authorization: 'Bearer t' }));
     expect(res.status).toBe(400);
     expect(await res.text()).toContain('not valid JSON');
+  });
+});
+
+/**
+ * `await request.json()` on a bare `Request` is governed by Bun's 128 MiB default and by nothing
+ * else: this descriptor never passes through `@ultimat3/http`'s pipeline, so `bodyLimitBytes` and
+ * the counting reader that enforces it were both absent. An app mounting `defineAppMcp`'s route
+ * inherits that with a real token behind it.
+ */
+describe('mcpHttpRoute.handle: the body is capped while it is read', () => {
+  const authorized = {
+    server,
+    resolveToken: () => ({ actor: agentActor({ id: 'a' }), scopes: new Set(['dev:read']) }),
+  };
+
+  test('the default cap is the same 1 MiB @ultimat3/http declares', () => {
+    expect(DEFAULT_MCP_BODY_LIMIT_BYTES).toBe(1_048_576);
+  });
+
+  test('a body over the cap is 413 and is never parsed', async () => {
+    const route = mcpHttpRoute({ ...authorized, bodyLimitBytes: 1024 });
+    const oversized = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { pad: 'x'.repeat(4096) },
+    });
+    const res = await route.handle(
+      new Request('http://local/mcp', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer t' },
+        body: oversized,
+      }),
+    );
+    expect(res.status).toBe(413);
+    const payload = await res.json();
+    expect(payload.error.message).toContain('1024');
+  });
+
+  test('a body under the cap still answers normally', async () => {
+    const route = mcpHttpRoute({ ...authorized, bodyLimitBytes: 1024 });
+    const res = await route.handle(
+      request({ jsonrpc: '2.0', id: 1, method: 'initialize' }, { authorization: 'Bearer t' }),
+    );
+    expect(res.status).toBe(200);
   });
 });

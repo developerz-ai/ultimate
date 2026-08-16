@@ -105,6 +105,10 @@ export function createJwksClient(options: JwksClientOptions): JwksKeySource {
   const ttlMs = options.ttlMs ?? DEFAULT_JWKS_TTL_MS;
   let keys = new Map<string, CryptoKey>();
   let fetchedAtMs = Number.NEGATIVE_INFINITY;
+  // When the last UNKNOWN-`kid` refresh ran, tracked apart from `fetchedAtMs` because that field
+  // is reset by every fetch, ordinary ones included — so gating the early refresh on it would let
+  // an attacker's own refresh authorise the next one.
+  let lastMissRefreshMs = Number.NEGATIVE_INFINITY;
   let inflight: Promise<Map<string, CryptoKey>> | null = null;
 
   const fetchKeys = async (): Promise<Map<string, CryptoKey>> => {
@@ -172,10 +176,22 @@ export function createJwksClient(options: JwksClientOptions): JwksKeySource {
 
   return {
     async keyFor(kid, alg) {
-      const staleAtMs = fetchedAtMs + ttlMs;
+      const nowMs = clock.now().getTime();
       let current = keys;
       const known = lookup(current, kid, alg) !== null;
-      if (!known || clock.now().getTime() >= staleAtMs) current = await load();
+      const stale = nowMs >= fetchedAtMs + ttlMs;
+      // A `kid` is read out of the attacker-supplied JWT header BEFORE any signature check
+      // (`verifyJwtSignature`), and `hooks.authenticate` funnels a bearer token through it — so an
+      // unauthenticated caller picks this branch. Unrated, one forged token was one outbound
+      // request to the IdP, which then blocks this app's egress and takes every real login with
+      // it, on the IdP's unblock timeline rather than a restart; and the framework's own limiter
+      // cannot shed it, because `auth` is pipeline stage 6 and `rate-limit` is stage 7. So the
+      // early refresh is rate-limited by the same TTL as the ordinary one — which is what the
+      // docstring above always promised. Set BEFORE the await so concurrent callers that pass the
+      // gate together still coalesce into the one `inflight` fetch.
+      const earlyRefresh = !known && !stale && nowMs >= lastMissRefreshMs + ttlMs;
+      if (earlyRefresh) lastMissRefreshMs = nowMs;
+      if (stale || earlyRefresh) current = await load();
       const key = lookup(current, kid, alg);
       if (key === null) {
         throw oauthTokenInvalid(

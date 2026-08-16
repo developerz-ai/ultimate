@@ -99,7 +99,11 @@ export async function buildSignedUrl(input: SignedUrlInput): Promise<string> {
     method: input.method ?? 'GET',
     expiresAt: clock.now().getTime() + (input.expiresInMs ?? DEFAULT_SIGNED_URL_TTL_MS),
     maxBytes: input.maxBytes,
-    contentType: input.contentType,
+    // An empty string is not a content type, and `canonicalRequest` renders it and `undefined`
+    // identically — so minting one would produce a URL indistinguishable from an unconstrained
+    // one while `acceptSignedUpload`'s `unconstrained` refusal (which tests `undefined`) stayed
+    // silent. One spelling for "no content type", here and at the parse below.
+    contentType: input.contentType === '' ? undefined : input.contentType,
   };
   const params = new URLSearchParams();
   params.set(SIGNED_URL_PARAMS.method, constraints.method);
@@ -162,12 +166,16 @@ function parseConstraints(url: URL, base: string): SignedUrlConstraints | Signed
   if (maxBytes !== undefined && (!Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
     return 'malformed';
   }
+  const rawContentType = url.searchParams.get(SIGNED_URL_PARAMS.contentType);
+  // An EMPTY `x-ct` is malformed, never "no content type": absent and empty share one canonical
+  // string, so accepting it let `&x-ct=` be appended to a URL signed with none and still verify.
+  if (rawContentType === '') return 'malformed';
   return {
     key,
     method,
     expiresAt,
     maxBytes,
-    contentType: url.searchParams.get(SIGNED_URL_PARAMS.contentType) ?? undefined,
+    contentType: rawContentType ?? undefined,
   };
 }
 

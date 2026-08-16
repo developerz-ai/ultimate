@@ -38,6 +38,7 @@ import {
   sessionCookie,
   verifySession,
 } from './session';
+import { sha256Hex, timingSafeEqual } from './tokens';
 
 // The projections safe to hand to a client or an MCP tool: no password hash, no TOTP secret,
 // no token hash. The private columns live in `adapter.ts` and never leave the server.
@@ -262,8 +263,10 @@ export async function login(auth: Auth, input: LoginInput): Promise<LoginResult>
     });
   }
 
-  // Password proven, second factor not. The client finishes at POST /auth/mfa/verify, which is
-  // what mints the session — no half-authenticated session is written here.
+  // Password proven, second factor not. No half-authenticated session is written here and nothing
+  // is persisted to correlate the two legs — finishing MFA is the app's, and `X_MFA_REQUIRED`'s
+  // `fix:` is the instruction. The framework's own second leg is blocked on a sealed pending-MFA
+  // credential; the constraint is written down in `packages/auth/CLAUDE.md`.
   if (user.mfaSecret !== null) throw mfaRequired(user.id);
 
   const issued = await createSession(auth.sessions, {
@@ -295,8 +298,17 @@ export async function authenticate(auth: Auth, token: string | null): Promise<Po
   return resolveActor({ kind: 'user', user, session });
 }
 
+/**
+ * The SECRET half is checked before the row is deleted, exactly as `verifySession` checks it. The
+ * id half is not a credential — it is in a device list, in a log line and in an audit row — so
+ * deleting on it alone made "sign this person out" an unauthenticated write for anyone who had
+ * ever seen one. Constant-time, and `false` for every failure, so it stays a poor oracle too.
+ */
 export async function logout(auth: Auth, token: string): Promise<boolean> {
   const parsed = parseSessionToken(token);
   if (parsed === null) return false;
+  const session = await auth.adapter.getSession(parsed.id);
+  if (session === null) return false;
+  if (!timingSafeEqual(sha256Hex(parsed.secret), session.tokenHash)) return false;
   return await auth.adapter.deleteSession(parsed.id);
 }

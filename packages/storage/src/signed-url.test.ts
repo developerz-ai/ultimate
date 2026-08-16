@@ -115,3 +115,47 @@ describe('verifySignedUrl', () => {
     expect((await verifySignedUrl({ url: absolute, secret: SECRET, clock })).ok).toBe(true);
   });
 });
+
+/**
+ * Absent and empty rendered to the SAME canonical string (`contentType ?? ''`), so appending
+ * `&x-ct=` to a URL signed with no content type verified — and `acceptSignedUpload`'s
+ * `unconstrained` refusal only fires on `undefined`, so the appended empty type turned a PUT that
+ * bounds nothing into one that claims to bound something. Defence in depth, closed at the parse.
+ */
+describe('an empty content type is never the same as none', () => {
+  const unconstrained = async (clock: ReturnType<typeof frozenClock>): Promise<string> =>
+    await buildSignedUrl({
+      secret: SECRET,
+      key: KEY,
+      method: 'PUT',
+      expiresInMs: 60_000,
+      clock,
+    });
+
+  test('appending &x-ct= to a URL signed with no content type does not verify', async () => {
+    const clock = frozenClock(START);
+    const url = await unconstrained(clock);
+    expect((await verifySignedUrl({ url, secret: SECRET, clock })).ok).toBe(true);
+
+    const forged = `${url}&x-ct=`;
+    const verified = await verifySignedUrl({ url: forged, secret: SECRET, clock });
+    expect(verified.ok).toBe(false);
+    expect(verified.ok ? '' : verified.reason).toBe('malformed');
+  });
+
+  test('signing an empty content type mints a URL that carries none at all', async () => {
+    const clock = frozenClock(START);
+    const url = await buildSignedUrl({
+      secret: SECRET,
+      key: KEY,
+      method: 'PUT',
+      expiresInMs: 60_000,
+      contentType: '',
+      clock,
+    });
+    expect(url).not.toContain('x-ct=');
+    const verified = await verifySignedUrl({ url, secret: SECRET, clock });
+    expect(verified.ok).toBe(true);
+    expect(verified.ok ? verified.constraints.contentType : 'set').toBeUndefined();
+  });
+});

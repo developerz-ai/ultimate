@@ -171,3 +171,62 @@ describe('defineHttpConfig', () => {
     expect(config.security.csp.reportUri).toBe(DEFAULT_SECURITY.csp.reportUri);
   });
 });
+
+/**
+ * The one reader in this package of "is this production?". It used to be `NODE_ENV` alone, so a
+ * deployment declaring production the framework's own documented way (`ULTIMATE_ENV`) served the
+ * dev error overlay — absolute paths, module layout, internal causes — to any anonymous request
+ * that provoked a 5xx, with the CSP report-only and therefore enforcing nothing.
+ */
+describe('dev is decided by ULTIMATE_ENV, not NODE_ENV alone', () => {
+  const withEnv = <T>(values: Record<string, string | undefined>, run: () => T): T => {
+    const previous = new Map<string, string | undefined>();
+    for (const [key, value] of Object.entries(values)) {
+      previous.set(key, process.env[key]);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    try {
+      return run();
+    } finally {
+      for (const [key, value] of previous) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  };
+
+  test('ULTIMATE_ENV=production with NODE_ENV unset is production', () => {
+    const config = withEnv({ ULTIMATE_ENV: 'production', NODE_ENV: undefined }, () =>
+      defineHttpConfig({ rateLimit: { scope: 'process' } }),
+    );
+    expect(config.dev).toBe(false);
+    expect(config.security.csp.reportOnly).toBe(false);
+  });
+
+  test('ULTIMATE_ENV wins over NODE_ENV in both directions', () => {
+    const overridden = withEnv({ ULTIMATE_ENV: 'production', NODE_ENV: 'development' }, () =>
+      defineHttpConfig({ rateLimit: { scope: 'process' } }),
+    );
+    expect(overridden.dev).toBe(false);
+
+    const relaxed = withEnv({ ULTIMATE_ENV: 'development', NODE_ENV: 'production' }, () =>
+      defineHttpConfig({ rateLimit: { scope: 'process' } }),
+    );
+    expect(relaxed.dev).toBe(true);
+  });
+
+  test('NODE_ENV=production still decides when ULTIMATE_ENV is unset', () => {
+    const config = withEnv({ ULTIMATE_ENV: undefined, NODE_ENV: 'production' }, () =>
+      defineHttpConfig({ rateLimit: { scope: 'process' } }),
+    );
+    expect(config.dev).toBe(false);
+  });
+
+  test('an explicit dev still wins over the environment', () => {
+    const config = withEnv({ ULTIMATE_ENV: 'production', NODE_ENV: undefined }, () =>
+      defineHttpConfig({ rateLimit: { scope: 'process' }, dev: true }),
+    );
+    expect(config.dev).toBe(true);
+  });
+});

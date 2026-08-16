@@ -6,6 +6,7 @@ import { cx } from '../cx';
 import { UI_KEYS } from '../i18n-keys';
 import { useUi } from '../theme/context';
 import styles from './Breadcrumb.module.scss';
+import { linkTarget } from './link-target';
 
 export interface BreadcrumbItem {
   /** Already-translated label. */
@@ -36,7 +37,7 @@ export function Breadcrumb(props: BreadcrumbProps): JSX.Element {
                 {item.label}
               </span>
             ) : (
-              <a class={styles['link']} href={item.href}>
+              <a class={styles['link']} href={linkTarget(item.href).href}>
                 {item.label}
               </a>
             )}

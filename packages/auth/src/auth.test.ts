@@ -213,6 +213,20 @@ describe('logout', () => {
     const auth = newAuth();
     expect(await logout(auth, 'unknown-id.unknown-secret')).toBe(false);
   });
+
+  // The id half of a session token is not a credential — the secret half is, and `verifySession`
+  // has always checked it. Deleting on the id alone made "sign this person out" reachable by
+  // anyone who ever saw an id, and an id reaches a device list and a log line the token never does.
+  test('the right session id with the wrong secret deletes nothing', async () => {
+    const auth = newAuth();
+    await register(auth, { email: EMAIL, password: PASSWORD });
+    const logged = await login(auth, { email: EMAIL, password: PASSWORD });
+
+    expect(await logout(auth, `${logged.session.id}.not-the-secret`)).toBe(false);
+    expect(await auth.adapter.getSession(logged.session.id)).not.toBeNull();
+    // The real token still works afterwards, so the refusal did not consume the session either.
+    expect(await logout(auth, logged.token)).toBe(true);
+  });
 });
 
 /**

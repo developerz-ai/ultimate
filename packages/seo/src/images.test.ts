@@ -139,3 +139,17 @@ describe('parseImageQuery', () => {
     });
   });
 });
+
+describe('the width ceiling', () => {
+  test('a width past the ceiling is refused, not handed to the encoder', () => {
+    // A safe integer is not a servable width: this clears the digits test and the safe-integer
+    // gate, and on a caching surface each distinct width also mints a stored object.
+    expect(() => parseImageQuery(new URLSearchParams('w=99999999'))).toThrow(/8192 or less/);
+    expect(() => parseImageQuery(new URLSearchParams('w=8193'))).toThrow(/8192 or less/);
+  });
+
+  test('the ceiling itself, and everything under it, still parses', () => {
+    expect(parseImageQuery(new URLSearchParams('w=8192'))).toEqual({ width: 8192 });
+    expect(parseImageQuery(new URLSearchParams('w=1920'))).toEqual({ width: 1920 });
+  });
+});

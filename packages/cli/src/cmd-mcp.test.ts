@@ -161,6 +161,23 @@ describe('unit · x mcp serve --transport http', () => {
 
   test('a wrong token is 401 too — the catalog stays invisible', async () => {
     expect((await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, 'nope')).status).toBe(401);
+    // Same length, and a correct prefix: the two shapes a `===` short-circuit answers faster on.
+    const sameLength = `${data.token.slice(0, -1)}${data.token.endsWith('a') ? 'b' : 'a'}`;
+    expect((await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, sameLength)).status).toBe(
+      401,
+    );
+    expect(
+      (await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, data.token.slice(0, 8))).status,
+    ).toBe(401);
+  });
+
+  // A source assertion, because a timing difference is not something a test on a shared runner can
+  // measure honestly. Every other secret comparison in the framework goes through core's
+  // `timingSafeEqual`; this was the one exception, and an exception nothing checks comes back.
+  test('the bearer token is compared with core’s timingSafeEqual, never ===', async () => {
+    const source = await Bun.file(join(import.meta.dir, 'cmd-mcp.ts')).text();
+    expect(source).toContain('timingSafeEqual(candidate, token)');
+    expect(source).not.toMatch(/candidate\s*===\s*token/);
   });
 
   test('the minted token answers initialize', async () => {
