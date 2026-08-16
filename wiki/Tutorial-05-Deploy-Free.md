@@ -171,7 +171,9 @@ bunx x deploy --image myapp:dev --dry-run
 
 Migrate to completion, then the serving roles. `--dry-run` prints the plan and runs nothing.
 
-**Known gap.** The shipped `docker-compose.prod.yml` gives `web` both `ports: ['3000:3000']` and `deploy: { replicas: 2 }`; `sync` has the same shape. Two processes cannot bind one host port. Either drop the static publish and put a reverse proxy in front, or set `replicas: 1`. `worker` publishes no port and scales freely.
+**One replica each for `web` and `sync`, and the file says so** `As of 2026-08`. Both publish a host port, one host port has exactly one binder, so both are `replicas: 1`. Leave them there — this tutorial's rung is one box. `worker` publishes no port and scales freely, so `deploy: { replicas: 4 }` on it is the knob you actually have here.
+
+Scaling the two serving roles is the next rung, and it is not an edit to this file: put a reverse proxy of your own on the compose network and drop their `ports:` lines, or move to the chart's per-role HPA → [6 · Growing up](Tutorial-06-Growing-Up).
 
 ## What is not there yet
 

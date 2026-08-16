@@ -10,6 +10,30 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **`docker-compose.prod.yml` no longer publishes a host port and asks for three binders of it.**
+  `web` shipped `ports: ['3000:3000']` beside `deploy: { replicas: 3 }` and `sync` had the same
+  shape — one host port has exactly one binder, so the second container dies on
+  `Bind for 0.0.0.0:3000 failed: port is already allocated`, reproduced with Docker rather than
+  reasoned about. Both roles are `replicas: 1` in all four files now: the framework's, both tracked
+  apps', and the one `x new` writes. That makes the rung-1 ceiling **declared** rather than
+  discovered at the second container — it is not lifted, and each file's header names the two ways
+  up: delete the `ports:` lines and put your own reverse proxy on the compose network, or climb to
+  `docker/helm`, which already carries a per-role HPA and an Ingress. The framework ships neither
+  proxy; one in the compose file is a dependency every app inherits and a second answer to "how
+  does traffic reach a role" beside the chart's Ingress. `docs/ops/README.md` carries the table.
+
+- **`sync`'s `PORT` named a port the process never opens, in compose and in the chart.** The role
+  binds `PORT + 1`, so `PORT: 3001` opened 3002 while the compose file published 3001 — a mapping
+  to a socket nothing in the container ever bound. Compose now sets `PORT: 3000` and publishes
+  `3001:3001`. The chart had the worse half of the same defect: `roles.sync.port` was rendered into
+  **both** `PORT` and `containerPort`, so the readiness probe polled a socket nobody bound and the
+  rollout never completed. `_helpers.tpl` derives the env as `port - 1` for that one role, so
+  `values.yaml` still holds one number — the port the role listens on — and the two cannot drift.
+
+- **The chart's Ingress routed `/_sync`; the sync node serves `/_x/sync`.** Every websocket fell
+  through to the `/` rule and reached `web`, which answers no upgrade. The path is now the one
+  `createSyncNode` matches on.
+
 - **A typed client is not a thenable.** `rpc` and `queryClient` are `Proxy` objects that answer any string property with a call method, `then` included — so `await client`, `Promise.resolve(client)` and returning one from an `async` function each read `then`, got a function back, and were resolved by calling it: a POST to an action named `then`, or a GET of `/_x/query/then`, with the await settling on that response instead of the client. Both proxies now answer `undefined` for `then` — the one name the language reserves at this seam — and both test files pin `await client === client` with a fetch that counts its calls. The symbol assertion that stood there covered `Symbol.toPrimitive` and `Symbol.iterator` and could not have caught a plain string key.
 
 - **The digest's window is calendar arithmetic at both ends, and its slots come from the occurrence.** Two defects in `examples/dummy`'s nightly digest, both of them a day of milliseconds standing in for a day. The delivery loaded `slotAt - 86_400_000`, while consecutive 09:00 slots are 23 hours apart on spring-forward and 25 on autumn-back: in Madrid on 2026-03-29 the window opened an hour *before* the previous digest closed and mailed that hour's posts twice, and an autumn transition left an hour that reached no digest at all. It now opens at `previousDigestAt(slotAt, zone)` — new in `@postly/core`, the mirror of `nextDigestAt` and the same `fromZoned` arithmetic — and the `postly.digestPreview` MCP tool, which promises "the same window", was computing the old one. The fan-out's slots were derived from `ctx.now()`, which runs on every attempt while only the enqueues already stored replay: an attempt taken after a zone's 09:00 had passed rolled that zone into tomorrow, so groups the first attempt had not reached were enqueued as a *different* digest — a next-day `slotAt` and `localDate` under a step name carrying no date to catch it. The base is now midnight UTC of `input.runDate`, the occurrence the task fired for, identical on every attempt.
@@ -43,6 +67,33 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`scripts/stdout-truncation.test.ts` no longer asserts a race.** The premise case measured a naive `process.stdout.write` against a reader draining concurrently, and on a fast runner the whole payload landed by luck — a flaky gate step. It now writes past any kernel buffer and reads nothing until the child has exited, so what `process.exit()` discarded was genuinely discarded.
 
 ### Changed
+
+- **BREAKING — one `resolveEnvironment`, and it is `@ultimat3/core`'s.** The name existed in
+  `@ultimat3/core` and `@ultimat3/seo` with different parameters and different return unions — an
+  axiom-1 violation the 1.1.0 notes named and deferred, because unifying two shipped public APIs is
+  a major. This is the major. `@ultimat3/seo` now exports neither `resolveEnvironment` nor the type
+  `SeoEnvironment`; `ULTIMATE_ENV` has exactly one reader, and the seo package owns only what an
+  unreadable environment means for a crawler.
+
+  | Was | Now |
+  |---|---|
+  | `import { resolveEnvironment } from '@ultimat3/seo'` | `import { resolveEnvironment } from '@ultimat3/core'` — an options object, `resolveEnvironment({ env })`, never a positional env record, and it **throws** `X_ENVIRONMENT_INVALID` on a typo'd `ULTIMATE_ENV` instead of failing closed |
+  | a caller that must answer rather than fail | `tryResolveEnvironment()`, and supply your own fallback — `tryResolveEnvironment() ?? DEFAULT_ENVIRONMENT` |
+  | `import type { SeoEnvironment } from '@ultimat3/seo'` | `import type { Environment } from '@ultimat3/core'` |
+  | `buildRobots({ environment: 'preview' })` | `buildRobots({ environment: 'staging' })` |
+  | `isIndexable('preview')` | `isIndexable('staging')` |
+
+  `isIndexable()` and `RobotsConfig.environment` take `Environment`, so `'staging'` is accepted and
+  `'preview'` is a compile error. **No `robots.txt` body changes**: neither spelling was ever
+  indexable, and only the `# environment:` comment line moves.
+
+  `tryResolveEnvironment()` is new in `@ultimat3/core` and exists for one reason worth stating.
+  `ULTIMATE_ENV` is **not** in the env schema, so nothing validates it at boot and nothing in a web
+  container's boot path resolves the environment unconditionally — a `robots.txt` render is
+  routinely its first reader. A typo would otherwise 500 the one response whose body was already
+  going to be `Disallow: /`. It resolves identically to `resolveEnvironment()` for every other
+  input and returns `undefined` for exactly the one case that throws, so the key still has one
+  reader and only the failure policy differs. It names no fallback of its own; the caller does.
 
 - **BREAKING — the NATS wire client is `nats@2.29.3`, behind the transport seam that did not
   move.** `@ultimat3/realtime` hand-rolled the protocol: `nats-protocol.ts`, `nats-commands.ts`,
@@ -1004,9 +1055,9 @@ Not fixed, and each one hit by actually running the command. Full list in [Known
 ### Known gaps
 
 - `x build --target binary` compiles but crashes at import: `FRAMEWORK_VERSION` reads `package.json` at module scope and a single-file executable has none.
-- `docker-compose.prod.yml` declares a host port and `replicas: 3` together — two processes cannot bind one port. This is the rung-1 ceiling.
-- The shared cache tier's Lua invalidation `DEL`s keys it never declared in `KEYS`, so it fails on Dragonfly and on Redis Cluster.
-- `resolveEnvironment` now exists in both `core` and `seo` with different return types.
+- `docker-compose.prod.yml` declares a host port and `replicas: 3` together — two processes cannot bind one port. This is the rung-1 ceiling. **Closed in [Unreleased]**: `web` and `sync` are `replicas: 1` in all four files, and the ceiling is declared with the two ways up named.
+- The shared cache tier's Lua invalidation `DEL`s keys it never declared in `KEYS`, so it fails on Dragonfly and on Redis Cluster. **Closed in [Unreleased]**.
+- `resolveEnvironment` now exists in both `core` and `seo` with different return types. **Closed in [Unreleased]**, as a breaking change: `@ultimat3/seo` exports neither it nor `SeoEnvironment`.
 
 ## [1.0.0] - 2026-08-10
 

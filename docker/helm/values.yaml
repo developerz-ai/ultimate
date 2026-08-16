@@ -48,6 +48,9 @@ migrate:
     limits: { memory: 512Mi }
 
 # Each role scales on the signal that actually predicts its saturation.
+#
+# `port` is the port the role LISTENS on, not the value of `PORT`. They differ for `sync`, which
+# binds `PORT + 1`; the chart derives the env from this number so there is only ever one to move.
 roles:
   web:
     enabled: true

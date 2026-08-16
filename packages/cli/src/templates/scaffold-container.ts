@@ -91,6 +91,11 @@ const composeProd = (
 # What \`x deploy --method compose\` runs. migrate runs to completion before anything serves.
 #
 #   IMAGE=ghcr.io/you/${app.kebab}:1.2.3 x deploy --image ghcr.io/you/${app.kebab}:1.2.3
+#
+# A published host port has exactly one binder, so \`web\` and \`sync\` run at 1 here. Compose is one
+# box; horizontal scaling of those two belongs to an orchestrator (copy \`docker/helm\` from the
+# framework repo). To scale them on one box anyway, drop \`ports:\` and put your own proxy on this
+# network — the service name resolves to every replica over the compose DNS round robin.
 name: ${app.kebab}
 
 x-image: &image
@@ -140,7 +145,7 @@ services:
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
-    deploy: { replicas: 2 } # stateless: scales on RPS
+    deploy: { replicas: 1 } # stateless, scales on RPS — pinned by the published port
     ports: ['3000:3000']
 
   sync:
@@ -149,7 +154,8 @@ services:
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
-    deploy: { replicas: 1 } # scales on concurrent websockets; no sticky sessions
+    deploy: { replicas: 1 } # scales on concurrent websockets, no sticky sessions — pinned by the port
+    # The sync role binds PORT + 1. PORT is unset here, so it is 3000 and this listens on 3001.
     ports: ['3001:3001']
 
   worker:
@@ -203,6 +209,11 @@ docker run -p 3000:3000 -e DATABASE_URL=postgres://... ${app.kebab}:dev
 docker compose -f docker/docker-compose.prod.yml up -d      # db → migrate → the rest
 x deploy --image ${app.kebab}:dev --dry-run --json           # the same plan, printed
 \`\`\`
+
+\`web\` and \`sync\` publish a host port, so both sit at \`replicas: 1\`: one host port has exactly one
+binder, and a second container dies on \`port is already allocated\`. \`worker\` publishes nothing and
+scales freely. To scale the two serving roles on one box, delete their \`ports:\` lines and put your
+own proxy on the compose network. To scale them properly, use an orchestrator — see below.
 
 ## The other two build targets
 

@@ -116,8 +116,9 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   the deployment requires; `assertRateLimitScope` compares them once, inside `createPipeline` —
   the one construction path `createServer`, the tests and any embedder all share. `'shared'` over
   a per-process store is `X_RATE_LIMIT_NOT_SHARED` before the socket opens, because the failure it
-  replaces is silent: `docker-compose.prod.yml` runs `web` at `replicas: 3`, so every configured
-  bucket was being enforced three times over with a green `x verify`. Nothing here reads the
+  replaces is silent: the limiter's counters are **per process**, and `docker/helm/values.yaml`
+  runs `roles.web.replicas: 3` before its HPA has said anything, so every configured bucket was
+  being enforced three times over with a green `x verify`. Nothing here reads the
   environment to guess a replica count — an app that scales is the only thing that knows. The
   supported way to install one is `createServer({ rateLimitStore })`, which builds the limiter
   through `createRateLimiter` and hands it to the `PipelineDeps.limiter` seam that already

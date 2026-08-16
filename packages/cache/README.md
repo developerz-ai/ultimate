@@ -92,14 +92,7 @@ declare module '@ultimat3/cache' {
 `declareTags()` takes the manifest's entity names at boot and is **additive and process-wide** —
 once anything is declared, an undeclared tag is `X_CACHE_TAG_UNKNOWN`. A test that declares its own
 fixture entity therefore turns validation on for every later file in the same `bun test` process.
-`isolateDeclaredTags()` is the seam for that: it captures the set and returns the function that puts
-exactly that set back, so a suite cannot drop what a neighbour declared.
-
-```ts
-const restoreTags = isolateDeclaredTags();
-declareTags(['fixture']);
-afterAll(restoreTags);
-```
+`isolateDeclaredTags()` is the seam for that — see [Test seams](#test-seams).
 
 ## Invalidating
 
@@ -134,6 +127,31 @@ Every report is also kept: `recentInvalidations()` hands back the last 100, newe
 one naming the span that triggered it. That is the log the `/_x` cache panel renders — "did it
 actually clear?" is answerable without a log dive because the one fan-out path retained the
 answer, not because a second recorder was wired next to it.
+
+## Test seams
+
+Every registry here is process-global and `bun test` is one process, so a suite undoes its own
+registrations with an `isolate*()` — **capture and restore, never a reset**:
+
+```ts
+const restoreTags = isolateDeclaredTags();
+declareTags(['fixture']);
+afterAll(restoreTags);
+```
+
+| Helper | Puts back |
+|---|---|
+| `isolateDeclaredTags()` | the declared-tag set |
+| `isolateGraph()` | every tag → dependent edge, across all three indexes |
+| `isolateTiers()` | everything `resetTiers()` drops: the tier registry in registration order, the revalidator, `recentInvalidations()` and `recentTierFailures()` |
+
+Each returns the function that puts back **exactly what it found**, so a per-test `resetGraph()` or
+`resetTierFailures()` is still fine — pair it with the module-scope isolate and the process gets its
+baseline back. A reset alone is not a substitute: it drops what a neighbouring file registered, and
+`@ultimat3/testing`'s leak guard compares its samples for *additions*, so the loss is invisible to
+it and surfaces as a failure in an innocent file. That is the one leak no mechanism catches for you.
+The last two live in the modules that own the state because a test file cannot reach it: the
+revalidator has no reader, and neither log has a writer.
 
 ## CDN
 

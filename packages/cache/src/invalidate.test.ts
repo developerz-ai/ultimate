@@ -2,11 +2,12 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { systemClock, withSpan } from '@ultimat3/core';
 import { createCdnTier } from './cdn';
 import { CacheDriverUnavailableError, CacheTagUnknownError } from './errors';
-import { dependentsOfKind, graphSnapshot, registerDependent, resetGraph } from './graph';
+import { dependentsOfKind, isolateGraph, registerDependent, resetGraph } from './graph';
 import type { InvalidationEvent } from './invalidate';
 import {
   invalidateTags,
   invalidateWireTags,
+  isolateTiers,
   recentInvalidations,
   registeredTiers,
   registerRevalidator,
@@ -16,14 +17,8 @@ import {
 import { createLruTier } from './lru';
 import type { RedisLike } from './redis';
 import { createRedisTier } from './redis';
-import {
-  declareTags,
-  isolateDeclaredTags,
-  knownTags,
-  parseTag,
-  resetDeclaredTags,
-  tag,
-} from './tags';
+import { declareTags, isolateDeclaredTags, knownTags, resetDeclaredTags, tag } from './tags';
+import { bestEffort, recentTierFailures } from './tier-failures';
 import type { CacheTier, TierInvalidation } from './tiers';
 
 function fakeRedis(): RedisLike & { readonly sent: string[][] } {
@@ -133,26 +128,14 @@ function clearRegistries(): void {
 }
 
 /**
- * Capture-and-restore, never a bare reset — the shape `isolateDeclaredTags()` already sets for the
- * declared tags, extended to the two registries that have no such helper. `clearRegistries()` is
- * this file's per-test isolation, but running it LAST would delete the tiers, graph edges and
- * declarations a NEIGHBOURING file registered; the leak guard reports additions only, so that loss
- * surfaces as a failure in an innocent file with nothing in it to explain the missing state.
- *
- * What cannot be put back is what has no reader: the revalidator, the invalidation log and the
- * swallowed-failure log are write-only from out here, so `resetTiers()` still drops all three.
+ * `clearRegistries()` is this file's per-test isolation; running it LAST would take a NEIGHBOURING
+ * file's tiers, graph edges and declarations with it. One restore per registry, each from the
+ * module that owns the state.
  */
 function isolateRegistries(): () => void {
-  const tiers = registeredTiers();
-  const graph = graphSnapshot();
-  const restoreTags = isolateDeclaredTags();
+  const restores = [isolateTiers(), isolateGraph(), isolateDeclaredTags()];
   return () => {
-    clearRegistries();
-    for (const tier of tiers) registerTier(tier);
-    for (const entry of graph) {
-      for (const dependent of entry.dependents) registerDependent([parseTag(entry.tag)], dependent);
-    }
-    restoreTags();
+    for (const restore of restores) restore();
   };
 }
 
@@ -405,5 +388,31 @@ describe('the suite baseline this file hands back', () => {
     expect(registeredTiers().map((entry) => entry.name)).toEqual(['cdn']);
     expect(dependentsOfKind([tag('post', '9')], 'isr-route')).toEqual(['/neighbour']);
     expect(knownTags()).toContain('neighbour');
+  });
+
+  test('the revalidator and both logs come back too — the three a test file cannot restore', async () => {
+    const revalidated: string[] = [];
+    registerRevalidator((path) => {
+      revalidated.push(path);
+    });
+    registerTier(createLruTier({ maxBytes: 1_000, defaultTtlMs: 3_600_000 }));
+    registerDependent([tag('post')], { kind: 'isr-route', id: '/neighbour' });
+    await invalidateTags([tag('post')]);
+    await bestEffort('redis', 'get', 'k', () => Promise.reject(new Error('neighbour boom')));
+
+    const restore = isolateRegistries();
+    clearRegistries();
+    // `resetTiers()` really did drop all three, so the restore below is doing the work.
+    expect(recentInvalidations()).toEqual([]);
+    expect(recentTierFailures()).toEqual([]);
+    restore();
+
+    expect(recentInvalidations().map((event) => event.tags)).toEqual([['post']]);
+    expect(recentTierFailures()[0]?.message).toBe('neighbour boom');
+
+    // The revalidator has no reader anywhere, so the only proof it is back is that it runs.
+    revalidated.length = 0;
+    await invalidateTags([tag('post')]);
+    expect(revalidated).toEqual(['/neighbour']);
   });
 });

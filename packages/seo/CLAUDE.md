@@ -12,7 +12,13 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
 
 - **Enforced, not documented.** Every check has an `assert*` that throws a coded `SeoError`, and a `--json`-shaped report the CLI prints. A check that only returns a boolean does not exist.
 - **Errors name the file, not the URL.** `RouteRecord.file` is in every cause and every fix; an agent must be able to open the source without guessing.
-- **Fail closed.** `resolveEnvironment()` returns `preview` for anything that is not literally `production`. Never invert that default.
+- **Fail closed, and core reads the key.** `isIndexable()` is `environment === 'production'` and
+  nothing else — `staging`, a laptop, a typo and an unset variable all disallow. `ULTIMATE_ENV` has
+  exactly one reader and it is `@ultimat3/core`'s (`Environment`, `tryResolveEnvironment`); this
+  package owns only what an *unnameable* environment means, which is core's `DEFAULT_ENVIRONMENT`
+  and never a throw — nothing in a web container's boot path resolves the environment
+  unconditionally, so a `robots.txt` render is routinely the first reader and it must answer.
+  Never invert that default and never re-read the key here.
 - **Required schema.org fields are required in the input type.** Runtime `required()` only catches empty strings from a CMS; the type is the primary gate.
 - **No ambient defaults for meta.** A missing description is an error, never a fallback string.
 - **`builtinImageDriver({ read })` takes its reader.** `TransformRequest.src` is a string, and

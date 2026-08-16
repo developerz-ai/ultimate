@@ -37,9 +37,20 @@ guess. Every failure mode in [`06-runbooks.md`](./06-runbooks.md) happened to so
 | — | you need a migration to gate traffic rather than race it |
 
 Rung 1's real ceiling, `As of 2026-08`: the shipped prod compose publishes static host ports
-(`3000:3000`, `3001:3001`) for `web` and `sync`. Two processes cannot bind one host port, so those
-roles are effectively single-instance on one box unless you drop the static publish and put a
-reverse proxy in front. `worker` has no published port and scales freely.
+(`3000:3000`, `3001:3001`) for `web` and `sync`. Two processes cannot bind one host port, so both
+services declare `replicas: 1` — the file says what it does, rather than declaring 3 and starting 1.
+`worker` has no published port and scales freely.
+
+Two ways past it, in order of cost:
+
+| Want | Do |
+|---|---|
+| more `web`/`sync` on the same box | delete their `ports:` lines, add a reverse proxy of your choosing to the compose file, point it at the service names — compose DNS resolves each to every replica |
+| more `web`/`sync`, full stop | climb to rung 2; `docker/helm` already carries a per-role HPA and an ingress |
+
+The framework ships neither proxy. A proxy image in `docker-compose.prod.yml` would be a dependency
+every app inherits and a second answer to "how does traffic reach a role" beside the chart's
+Ingress — [`../idea/18-build-vs-wrap.md`](../idea/18-build-vs-wrap.md)'s bar, not cleared.
 
 **Do not skip rungs to look serious.** A Kubernetes cluster you run for one app is a second product
 to maintain. The operator whose scars fill these docs runs many apps on one cluster — that is what
@@ -62,7 +73,7 @@ pays for the control plane.
 |---|---|
 | [`docker/Dockerfile`](../../docker/Dockerfile) | **this repo's own** image: multi-stage → `distroless/cc-debian12:nonroot`, one compiled binary, no shell, ~80MB |
 | the Dockerfile `x new` writes you | **not the same image.** `oven/bun:1.3-alpine`, `ENTRYPOINT ["bun", "apps/web/server.ts"]`, user `bun`, measured 194MB. Harden against *this* one — the uid and the shell differ, so the `runAsUser: 65532` baseline below does not transfer unchanged |
-| [`docker/docker-compose.prod.yml`](../../docker/docker-compose.prod.yml) | one service per role, `migrate` gates `web` via `service_completed_successfully` |
+| [`docker/docker-compose.prod.yml`](../../docker/docker-compose.prod.yml) | one service per role, `migrate` gates `web` via `service_completed_successfully`; `web` and `sync` at `replicas: 1`, `worker` free |
 | [`docker/helm/`](../../docker/helm/) | per-role Deployments, per-role HPAs, a `pre-install,pre-upgrade` migrate Job, an optional Ingress |
 | `/healthz` and `/readyz` on every role | shipped — [`packages/core/src/lifecycle.ts`](../../packages/core/src/lifecycle.ts) |
 | SIGTERM drain on every role | shipped — see [`../architecture/13-topology-runtime.md`](../architecture/13-topology-runtime.md) |

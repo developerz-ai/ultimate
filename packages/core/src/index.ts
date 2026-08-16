@@ -107,6 +107,7 @@ export {
   isLocal,
   isProduction,
   resolveEnvironment,
+  tryResolveEnvironment,
 } from './environment';
 export type {
   CoreErrorCode,

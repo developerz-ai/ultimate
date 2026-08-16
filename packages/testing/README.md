@@ -249,7 +249,9 @@ as the file's environment and the run would have gone green. The guard appends t
 file's own source in its load handler instead — the one place a file's identity and its evaluation
 boundary are both known.
 
-The fix is `isolateDeclaredTags()` (`@ultimat3/cache`) or `afterAll(resetTiers)`, never a loosened
-assertion in the file that paid for it. A leak fails a one-file run exactly as it fails the suite —
+The fix is `isolateDeclaredTags()` or `isolateTiers()` (both `@ultimat3/cache`), never a loosened
+assertion in the file that paid for it — and never a **reset**. A reset drops what a neighbour
+registered, and this guard reports additions only, so the damage lands on an innocent file with
+nothing pointing back. A leak fails a one-file run exactly as it fails the suite —
 each file is judged against its own baseline — which is what makes the `bun test <file>` in the fix
 line reproduce it.

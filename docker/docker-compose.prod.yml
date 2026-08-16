@@ -3,6 +3,12 @@
 #
 #   docker compose -f docker/docker-compose.prod.yml run --rm migrate
 #   docker compose -f docker/docker-compose.prod.yml up -d web sync worker scheduler
+#
+# A published host port has exactly one binder, so the two roles that publish one run at
+# `replicas: 1` here. That is the rung, not a defect: Compose is one box (docs/ops/README.md), and
+# the horizontal scaling of `web` and `sync` lives in docker/helm with an HPA per role. To scale
+# them on one box anyway, delete the `ports:` line and put your own proxy on this network — the
+# service name resolves to every replica over the compose DNS round robin.
 
 name: ultimate
 
@@ -32,7 +38,8 @@ services:
     # listing this step last would only look like "after". `service_healthy` is what makes it true.
     depends_on: { web: { condition: service_healthy } }
 
-  # Scales on RPS. Stateless, behind a CDN.
+  # Scales on RPS. Stateless, behind a CDN — and pinned to 1 because it publishes 3000, which a
+  # second replica cannot also bind. See the header for the two ways to scale it.
   web:
     <<: *common
     environment: { ROLE: web, PORT: 3000 }
@@ -42,15 +49,17 @@ services:
       test: ['CMD', '/app/x', 'doctor', '--json']
       interval: 15s
     deploy:
-      replicas: 3
+      replicas: 1
 
-  # Scales on concurrent websockets. No sticky sessions.
+  # Scales on concurrent websockets. No sticky sessions, and pinned to 1 for the same reason as web.
+  # PORT is the WEB port even here: the sync role binds PORT + 1, so 3000 is a listener on 3001.
+  # Naming 3001 would bind 3002 and publish a port nothing in the container ever opened.
   sync:
     <<: *common
-    environment: { ROLE: sync, PORT: 3001 }
+    environment: { ROLE: sync, PORT: 3000 }
     ports: ['3001:3001']
     deploy:
-      replicas: 2
+      replicas: 1
 
   # Scales on queue depth.
   worker:

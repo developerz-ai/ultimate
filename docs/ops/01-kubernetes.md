@@ -43,7 +43,7 @@ there is one environment, and it hides the object a reviewer needs to see.
 | Role | Kubernetes shape | Replicas | Probes |
 |---|---|---|---|
 | `web` | Deployment + Service + Ingress | HPA on request rate | `/readyz` readiness, `/healthz` liveness on `:3000` |
-| `sync` | Deployment + Service, routed at `/_sync` | HPA on connections per pod | same, on `:3001` |
+| `sync` | Deployment + Service, routed at `/_x/sync` | HPA on connections per pod | same, on `:3001` |
 | `worker` | Deployment, no Service | HPA on queue depth | `/healthz` only |
 | `scheduler` | Deployment, `replicas: 1` | fixed — leader election is a Postgres advisory lock | `/healthz` only |
 | `migrate` | Job, run-once before any serving role | 1 | none |
@@ -52,6 +52,12 @@ there is one environment, and it hides the object a reviewer needs to see.
 `scheduler` and `replicator` refuse to run degraded: a process that cannot take its advisory lock
 reports `/readyz` false rather than doing half the work. A second replica is harmless and idle — it
 is also wasted money, so leave both at 1.
+
+**`PORT` is the web port, and `sync` binds `PORT + 1`.** A sync pod given `PORT=3001` opens 3002,
+so its `containerPort`, its Service `targetPort` and both probes point at a socket nobody bound and
+the rollout never completes. Give the sync workload `PORT=3000` and a `containerPort` of 3001. The
+chart derives this (`_helpers.tpl`); a hand-written manifest set does not, so put it in the
+role's own env and never in the shared `configmap.yml` — one `PORT` for both roles is the bug.
 
 **Confirm the container's start command before first deploy.** `x` dispatches on argv — `ROLE`
 selects behaviour *within* a serving command, it does not by itself turn a container into a server.

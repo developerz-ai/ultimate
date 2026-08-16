@@ -5,6 +5,7 @@ import {
   isLocal,
   isProduction,
   resolveEnvironment,
+  tryResolveEnvironment,
 } from './environment';
 import { isUltimateError, type UltimateError } from './errors';
 
@@ -45,6 +46,27 @@ describe('resolveEnvironment', () => {
     expect(isLocal({ env: { ULTIMATE_ENV: 'staging' } })).toBe(false);
     expect(isLocal({ env: { ULTIMATE_ENV: 'development' } })).toBe(true);
     expect(isLocal({ env: { NODE_ENV: 'test' } })).toBe(true);
+  });
+
+  test('tryResolveEnvironment answers identically wherever resolveEnvironment answers', () => {
+    for (const env of [
+      { ULTIMATE_ENV: 'staging', NODE_ENV: 'production' },
+      { NODE_ENV: 'production' },
+      { NODE_ENV: 'ci' },
+      { ULTIMATE_ENV: '' },
+      {},
+    ]) {
+      expect(tryResolveEnvironment({ env })).toBe(resolveEnvironment({ env }));
+    }
+    expect(tryResolveEnvironment({ env: {}, fallback: 'staging' })).toBe('staging');
+  });
+
+  test('tryResolveEnvironment reports a typo as undefined instead of throwing', () => {
+    expect(tryResolveEnvironment({ env: { ULTIMATE_ENV: 'prod' } })).toBeUndefined();
+    // NODE_ENV is nobody's key to police, so an unknown one is not the undefined case.
+    expect(tryResolveEnvironment({ env: { ULTIMATE_ENV: 'prod', NODE_ENV: 'production' } })).toBe(
+      undefined,
+    );
   });
 
   test('the key has exactly one spelling', () => {

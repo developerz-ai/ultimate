@@ -35,6 +35,22 @@ export interface ResolveEnvironmentOptions {
   readonly fallback?: Environment | undefined;
 }
 
+/** One read of the two keys, so the throwing and the non-throwing entry point cannot disagree. */
+type EnvironmentRead =
+  | { readonly ok: true; readonly environment: Environment }
+  | { readonly ok: false; readonly declared: string };
+
+function readEnvironment(options?: ResolveEnvironmentOptions): EnvironmentRead {
+  const source = options?.env ?? (process.env as Record<string, string | undefined>);
+  const declared = source[ENVIRONMENT_KEY];
+  if (declared !== undefined && declared !== '') {
+    return isEnvironment(declared) ? { ok: true, environment: declared } : { ok: false, declared };
+  }
+  const inherited = source['NODE_ENV'];
+  if (isEnvironment(inherited)) return { ok: true, environment: inherited };
+  return { ok: true, environment: options?.fallback ?? DEFAULT_ENVIRONMENT };
+}
+
 /**
  * `ULTIMATE_ENV`, else `NODE_ENV`, else `development`.
  *
@@ -43,19 +59,29 @@ export interface ResolveEnvironmentOptions {
  * it is not ours to police, and CI images set it to values ("ci", "qa") that must not stop a boot.
  */
 export function resolveEnvironment(options?: ResolveEnvironmentOptions): Environment {
-  const source = options?.env ?? (process.env as Record<string, string | undefined>);
-  const declared = source[ENVIRONMENT_KEY];
-  if (declared !== undefined && declared !== '') {
-    if (isEnvironment(declared)) return declared;
-    throw new EnvironmentInvalidError({
-      cause: `${ENVIRONMENT_KEY}="${declared}" is not one of ${ENVIRONMENTS.join(' | ')}`,
-      fix: `export ${ENVIRONMENT_KEY}=${ENVIRONMENTS.join('|')} — one of those exact values`,
-      meta: { key: ENVIRONMENT_KEY, received: declared, allowed: ENVIRONMENTS },
-    });
-  }
-  const inherited = source['NODE_ENV'];
-  if (isEnvironment(inherited)) return inherited;
-  return options?.fallback ?? DEFAULT_ENVIRONMENT;
+  const read = readEnvironment(options);
+  if (read.ok) return read.environment;
+  throw new EnvironmentInvalidError({
+    cause: `${ENVIRONMENT_KEY}="${read.declared}" is not one of ${ENVIRONMENTS.join(' | ')}`,
+    fix: `export ${ENVIRONMENT_KEY}=${ENVIRONMENTS.join('|')} — one of those exact values`,
+    meta: { key: ENVIRONMENT_KEY, received: read.declared, allowed: ENVIRONMENTS },
+  });
+}
+
+/**
+ * The same resolution for a caller that must answer rather than fail — a response being rendered,
+ * a report being tagged. `undefined` means exactly one thing: `ULTIMATE_ENV` is set to something
+ * that is not an environment, the one case `resolveEnvironment` throws on. Every other input
+ * answers identically, so the key still has one reader and only the failure policy differs.
+ *
+ * The caller names its own fallback (`?? DEFAULT_ENVIRONMENT`) rather than getting one here: a
+ * process that cannot say which deploy it is has a policy about that, and it is never this file's.
+ */
+export function tryResolveEnvironment(
+  options?: ResolveEnvironmentOptions,
+): Environment | undefined {
+  const read = readEnvironment(options);
+  return read.ok ? read.environment : undefined;
 }
 
 /** The one production test. Anything that is not literally `production` is not production. */

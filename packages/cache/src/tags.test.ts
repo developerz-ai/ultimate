@@ -2,7 +2,7 @@
 // every tier and every CDN parses: one drifted separator and a purge matches nothing, silently.
 // These tests pin that form, the match semantics fan-out depends on, and the unknown-tag refusal.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { CacheTagUnknownError } from './errors';
 import {
   assertKnownTags,
@@ -19,11 +19,16 @@ import {
   tagsIntersect,
 } from './tags';
 
-// `declared` is module-level global state — never let one test's declarations leak
-// into the next, whether it ran in this file or another one sharing the process.
+// The empty registry is this file's subject — `assertKnownTags` is a no-op until something is
+// declared — so the per-test reset stays. What it cannot do is hand the process back what it
+// found: taken at module scope, restored last, so a neighbour's declarations outlive the resets.
+const restoreTags = isolateDeclaredTags();
+
 afterEach(() => {
   resetDeclaredTags();
 });
+
+afterAll(restoreTags);
 
 describe('tag()', () => {
   test('produces a collection tag with no id', () => {

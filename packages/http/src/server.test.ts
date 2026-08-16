@@ -72,9 +72,9 @@ describe('createServer', () => {
 
 /**
  * A limit configured once must be enforced once, not once per process. Two handles stand in for
- * two replicas of one deployment: `docker-compose.prod.yml` ships `web` at `replicas: 3`, so a
- * limiter each replica keeps to itself multiplies every configured number by the replica count
- * and nothing says so.
+ * two replicas of one deployment: `docker/helm/values.yaml` ships `roles.web.replicas: 3`, and the
+ * limiter's counters live in the process — so a limiter each replica keeps to itself multiplies
+ * every configured number by the replica count and nothing says so.
  */
 describe('rate limiting across replicas', () => {
   /** The memory store held by both handles: one process standing in for a shared tier. */

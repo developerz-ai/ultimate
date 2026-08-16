@@ -3,12 +3,18 @@
 // later reader the same round trip. Order, write-back, expiry and the refusal of a single tier
 // are the four things pinned.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
 import { createLruTier } from './lru';
-import { recentTierFailures, resetTierFailures } from './tier-failures';
+import { isolateTierFailures, recentTierFailures, resetTierFailures } from './tier-failures';
 import type { CacheEntry, CacheSetOptions, CacheTier } from './tiers';
 import { createCacheStack, isExpired, nowMs, sortTiers, TIER_ORDER } from './tiers';
+
+// The refusal suite below resets the swallowed-failure log per test; this hands back whatever a
+// neighbouring file had recorded in it.
+const restoreFailures = isolateTierFailures();
+
+afterAll(restoreFailures);
 
 /** Manual clock: `.now()` returns a `Date`, mirroring the real `Clock` contract. */
 function fakeClock(startMs: number): Clock {

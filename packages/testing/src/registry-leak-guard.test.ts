@@ -77,7 +77,11 @@ describe('RegistryLeakError', () => {
     expect(error.cause).toContain('devfixture');
     expect(error.cause).toContain('lru');
     expect(error.fix).toContain('isolateDeclaredTags()');
-    expect(error.fix).toContain('resetTiers');
+    // `isolateTiers`, never `resetTiers`: a fix that clears the registry drops what a NEIGHBOUR
+    // registered, and the guard reports additions only — so the repair this line pins would have
+    // caused a second leak the guard cannot see.
+    expect(error.fix).toContain('isolateTiers()');
+    expect(error.fix).not.toContain('resetTiers');
     expect(error.fix).toContain('packages/cli/src/cmd-dev.test.ts');
     // Axiom 4: the fix ends in something the reader runs, not in a description of the edit.
     expect(error.fix).toContain('bun test "packages/cli/src/cmd-dev.test.ts"');

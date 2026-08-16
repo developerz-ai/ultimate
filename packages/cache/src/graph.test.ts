@@ -2,21 +2,28 @@
 // fails to return is a stale read in a tier nobody was watching, and one it keeps after
 // `unregisterDependent` purges what never changed. Both directions are asserted here.
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
   dependentsOf,
   dependentsOfKind,
   graphSize,
   graphSnapshot,
+  isolateGraph,
   registerDependent,
   resetGraph,
   unregisterDependent,
 } from './graph';
 import { tag } from './tags';
 
+// An empty graph is this file's premise, so the per-test reset stays — and the edges a neighbouring
+// file registered come back at the end, which no amount of resetting can do.
+const restoreGraph = isolateGraph();
+
 beforeEach(() => {
   resetGraph();
 });
+
+afterAll(restoreGraph);
 
 describe('registerDependent / dependentsOf', () => {
   test('a dependent shows up for every tag it was registered under', () => {
@@ -132,6 +139,37 @@ describe('resetGraph', () => {
 
     expect(graphSnapshot()).toEqual([]);
     expect(graphSize()).toEqual({ tags: 0, dependents: 0 });
+  });
+});
+
+describe('isolateGraph', () => {
+  test('puts back exactly what it found, dropping only what was registered after it', () => {
+    const neighbour = { kind: 'isr-route' as const, id: '/neighbour' };
+    const mine = { kind: 'cache-key' as const, id: 'mine' };
+    registerDependent([tag('post'), tag('post', '1')], neighbour);
+
+    const restore = isolateGraph();
+    registerDependent([tag('user')], mine);
+    resetGraph();
+    restore();
+
+    // Every index is back, not just the one `dependentsOf` reads: `graphSize` counts `byTag` and
+    // `dependents`, and `unregisterDependent` walking to zero proves `tagsByDependent` too.
+    expect(dependentsOf([tag('post')])).toEqual([neighbour]);
+    expect(dependentsOf([tag('user')])).toEqual([]);
+    expect(graphSize()).toEqual({ tags: 2, dependents: 1 });
+    unregisterDependent(neighbour);
+    expect(graphSize()).toEqual({ tags: 0, dependents: 0 });
+  });
+
+  test('the captured baseline is a copy: a later registration cannot edit it', () => {
+    registerDependent([tag('post')], { kind: 'cache-key', id: 'a' });
+    const restore = isolateGraph();
+
+    registerDependent([tag('post')], { kind: 'cache-key', id: 'b' });
+    restore();
+
+    expect(dependentsOf([tag('post')])).toEqual([{ kind: 'cache-key', id: 'a' }]);
   });
 });
 

@@ -124,6 +124,19 @@ is tier 2 like this package, so auth may not import it, and `defineRoute` is tie
 a rendered page. A bare `Request` in, a `Response` out: drivable from a test, mountable by any
 router that can match a `:param`.
 
+**The `Bun.serve` above is library usage, not app usage.** An Ultimate app's server is `runRole`
+(`apps/web/server.ts` is three lines that call it), and `As of 2026-08` `ServeOptions` has no
+routes seam — the route list is built inside `serveApp` and closed. So a second `Bun.serve` in an
+app does not extend that server, it stands beside it: on its own socket, outside the pipeline, and
+therefore outside `configureAuthenticator`, the rate limiter, the security headers and the
+SIGTERM drain. A login flow is the last surface that should be the one running unthrottled and
+unheadered.
+
+Until the seam exists, an app serving these descriptors serves them itself and pays for all of
+that itself — a second port to publish and health-check, its own throttle in front of `callback`,
+its own security headers, and a drain that does not strand a handshake mid-flight. There is no
+mounting API to call today; do not write one, and do not read this section as promising one.
+
 **The paths are not configurable.** `X_OAUTH_STATE_INVALID` has always told the caller to restart
 at `GET /auth/oauth/<provider>`; it now quotes `oauthStartPath()`, the same declaration the mount
 reads. A movable base path is that sentence going stale again.

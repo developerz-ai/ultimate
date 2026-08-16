@@ -30,6 +30,17 @@ Tier 1. Tagged caching + THE invalidation graph.
   against a registry it never saw — the cross-file X_CACHE_TAG_UNKNOWN `packages/query`'s read-cache
   suite used to fail with. A reset would drop a neighbour's declarations instead of only your own;
   `@ultimat3/testing`'s leak guard fails the file that leaks either the tag set or the tier registry.
+- **Every process-global registry here has that same seam, and a test file uses it: `isolateGraph()`
+  (`graph.ts`), `isolateTiers()` (`invalidate.ts`), `isolateTierFailures()` (`tier-failures.ts`).**
+  A per-test `resetGraph()` / `resetTierFailures()` stays where an empty registry is the subject —
+  pair it with the module-scope isolate and an `afterAll(restore)`. The leak guard reports
+  *additions* only, so a file that DELETES a neighbour's registrations is invisible to it and lands
+  as a failure in an innocent file: a reset in a test file is the one leak nothing catches for you.
+  The last two exist in the owning module because a test file cannot reach the state — the
+  revalidator has no reader and neither log has a writer, so `resetTiers()` is unrecoverable from
+  outside. `isolateTierFailures` is deliberately off `index.ts`, same as `resetTierFailures`:
+  nothing outside this package can clear that log except through `resetTiers()`, which
+  `isolateTiers()` already covers.
 - Clocks are injected (`LruOptions.clock`, `CacheStackOptions.clock`); read them through `nowMs()`.
 - **`ttlMs` is positive and finite, and `assertTtl` (in `tiers.ts`) is the one place that says so.**
   Every tier calls it before it writes. `0` used to be "never expires" here and `EX 1` in `redis.ts`,

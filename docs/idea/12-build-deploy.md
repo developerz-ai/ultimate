@@ -65,9 +65,11 @@ x-app: &app
 
 services:
   migrate:    { <<: *app, environment: { ROLE: migrate },    restart: 'no' }
-  web:        { <<: *app, environment: { ROLE: web },        deploy: { replicas: 3 },
+  web:        { <<: *app, environment: { ROLE: web },        ports: ['3000:3000'],
+                deploy: { replicas: 1 },
                 depends_on: { migrate: { condition: service_completed_successfully } } }
-  sync:       { <<: *app, environment: { ROLE: sync },       deploy: { replicas: 2 } }
+  sync:       { <<: *app, environment: { ROLE: sync, PORT: 3000 }, ports: ['3001:3001'],
+                deploy: { replicas: 1 } }
   worker:     { <<: *app, environment: { ROLE: worker, WORKER_QUEUES: 'default,integrations' },
                 deploy: { replicas: 4 } }
   scheduler:  { <<: *app, environment: { ROLE: scheduler },  deploy: { replicas: 1 } }
@@ -81,7 +83,10 @@ services:
 | `stop_grace_period` >= `DRAIN_TIMEOUT` | otherwise SIGKILL truncates the drain and the reconnect fanout ([`11-topology.md`](./11-topology.md)) |
 | Health probes from `/readyz` | never from a TCP check — a process can accept sockets while unable to serve |
 
-**Both shipped compose files declare a host port and `replicas` > 1 on `web`** — [`docker/docker-compose.prod.yml`](../../docker/docker-compose.prod.yml) at `ports: ['3000:3000']` with `replicas: 3`, and the scaffolded copy at `replicas: 2`. Two containers cannot bind one host port, so the second replica fails to start. Compose without a proxy in front is a **one-replica** rung; scale a role there by moving to a proxy or to the chart, not by raising the number ([`17-scale-ladder.md`](./17-scale-ladder.md)). `As of 2026-08` this is unfixed in both files.
+| A role that publishes a host port at `replicas: 1` | one host port has exactly one binder — the second replica dies with `Bind for 0.0.0.0:3000 failed: port is already allocated` |
+| `sync` at `PORT: 3000` while publishing `3001` | the role binds `PORT + 1`, so `PORT: 3001` opens 3002 and publishes a socket nothing listens on |
+
+**Compose without a proxy in front is a one-replica rung**, and every file now declares that ceiling rather than violating it — the framework's, both tracked apps', and the one `x new` scaffolds, `As of 2026-08`. Scale a role here by putting a proxy on the network and deleting the `ports:` line, or by climbing to the chart's per-role HPA ([`17-scale-ladder.md`](./17-scale-ladder.md)). The framework ships neither proxy: it would be a second answer to "how does traffic reach a role", beside the chart's Ingress.
 
 `x deploy --method compose --image <ref>` runs the plan against this file — migrate first, then the serving roles — and `--dry-run --json` prints it without running anything. It is a plain compose file you can read, diff, and run by hand.
 

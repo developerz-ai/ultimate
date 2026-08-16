@@ -8,7 +8,7 @@ import { currentSpan, logger, systemClock, withSpan } from '@ultimat3/core';
 import { dependentsOfKind } from './graph';
 import type { CacheTag } from './tags';
 import { assertKnownTags, parseTag, serializeTags } from './tags';
-import { resetTierFailures } from './tier-failures';
+import { isolateTierFailures, resetTierFailures } from './tier-failures';
 import type { CacheTier, TierInvalidation } from './tiers';
 import { sortTiers } from './tiers';
 
@@ -96,6 +96,33 @@ export function resetTiers(): void {
   revalidator = undefined;
   invalidationLog.length = 0;
   resetTierFailures();
+}
+
+/**
+ * `isolateDeclaredTags()`'s contract over everything `resetTiers()` drops — `tags.ts` carries the
+ * why. It must live here because three of the four pieces are unreachable from a test file: the
+ * revalidator has no reader, and neither log has a writer, so a suite that reset them could put
+ * back only the tier registry:
+ *
+ *   const restoreTiers = isolateTiers();
+ *   afterAll(restoreTiers);
+ *
+ * Registration order is kept, not `sortTiers()`'s: `registeredTiers()` normalises on read, so
+ * restoring the sorted list would hand the process back a registry it never had.
+ */
+export function isolateTiers(): () => void {
+  const capturedTiers = [...registry];
+  const capturedRevalidator = revalidator;
+  const capturedLog = [...invalidationLog];
+  const restoreFailures = isolateTierFailures();
+
+  return () => {
+    resetTiers();
+    registry.push(...capturedTiers);
+    revalidator = capturedRevalidator;
+    invalidationLog.push(...capturedLog);
+    restoreFailures();
+  };
 }
 
 export function registerRevalidator(next: Revalidator): void {

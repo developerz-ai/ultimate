@@ -193,10 +193,16 @@ Loading `.env` is **Bun's**, not ours. `envFileCandidates()` states what it does
 ## One environment, one key
 
 ```ts
-resolveEnvironment();   // 'development' | 'test' | 'staging' | 'production'
-isProduction();         // exact; nothing else counts
-isLocal();              // development or test — never staging
+resolveEnvironment();      // 'development' | 'test' | 'staging' | 'production'
+tryResolveEnvironment();   // the same, `undefined` instead of a throw for an unrecognised value
+isProduction();            // exact; nothing else counts
+isLocal();                 // development or test — never staging
 ```
+
+`tryResolveEnvironment` is for a caller that must *answer* rather than fail — a `robots.txt` render
+is the case: `ULTIMATE_ENV` is not in the env schema, so nothing validates it at boot, and a typo
+would otherwise 500 the one response whose body was already going to be `Disallow: /`. It names no
+fallback of its own; the caller does.
 
 `ULTIMATE_ENV` is the key, `NODE_ENV` the fallback (platforms already set it). Values are
 `NODE_ENV`'s spellings plus `staging` — `prod` and `dev` are typos, not aliases, and
