@@ -49,21 +49,15 @@ describe('AuthzDecision', () => {
     expect(describeDecision(decision)).toBe('allowed');
   });
 
-  test('narrows to the denied branch and exposes reason/code', () => {
+  test('narrows to the denied branch', () => {
     const decision: AuthzDecision = { allowed: false, reason: 'no policy', code: 'X_FORBIDDEN' };
     expect(describeDecision(decision)).toBe('denied: no policy');
-    if (!decision.allowed) {
-      expect(decision.reason).toBe('no policy');
-      expect(decision.code).toBe('X_FORBIDDEN');
-    }
   });
 
-  test('code is optional on a denial', () => {
-    const decision: AuthzDecision = { allowed: false, reason: 'rate limited' };
-    if (!decision.allowed) {
-      expect(decision.code).toBeUndefined();
-    }
-  });
+  // What a denial's shape MAY leave out — `code` is optional, `reason` is not — is a claim about
+  // the type, and it lives in `type-pins.ts`. Asserted here it read as coverage while running no
+  // production code: the `if (!decision.allowed)` guard is statically true over a literal the test
+  // wrote three lines above, and `tsconfig.json` excludes tests, so nothing checked the type either.
 });
 
 describe('ServerHooks', () => {

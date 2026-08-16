@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { checkEvalBaselines, checkEvalCoverage, checkEvalRecording } from './app-evals';
 import { APP_CONFIG_FILE } from './app-root';
+import { countsOf } from './test-counts';
 import type { TestFile } from './test-select';
 import { discoverTests } from './test-select';
 import { defaultWorkers } from './test-workers';
@@ -25,8 +26,15 @@ export type TestType = (typeof TEST_TYPES)[number];
 
 interface TestSuite {
   readonly summary: string;
-  /** Substring `bun test` matches against each file path. */
-  readonly filter: string;
+  /**
+   * Substrings `bun test` matches against each file path — a file matching ANY of them is this
+   * type, which is exactly how bun reads more than one positional filter (measured: `.contract.
+   * test.` + `.job.test.` runs the union of both suites, never the intersection). A list rather
+   * than one string because `e2e` is two rules and the bare word `e2e` was neither: it matched any
+   * path holding those three characters anywhere, so a future `src/e2e-helpers.test.ts` would join
+   * the e2e step and leave the unit step, which selects by exclusion.
+   */
+  readonly filters: readonly string[];
 }
 
 const TYPED_SUFFIXES = '{contract,live,job,e2e,eval}';
@@ -34,23 +42,27 @@ const TYPED_SUFFIXES = '{contract,live,job,e2e,eval}';
 const SUITES: Readonly<Record<Exclude<TestType, 'unit'>, TestSuite>> = {
   contract: {
     summary: 'action/query schemas, policy denials, emitted OpenAPI and MCP shapes',
-    filter: '.contract.test.',
+    filters: ['.contract.test.'],
   },
   live: {
     summary: 'live-query snapshots, incremental patches, reconnect deltas',
-    filter: '.live.test.',
+    filters: ['.live.test.'],
   },
   job: {
     summary: 'step replay, idempotency dedupe, retry/backoff, outbox atomicity',
-    filter: '.job.test.',
+    filters: ['.job.test.'],
   },
   e2e: {
+    // `e2e/`, not `/e2e/`: bun matches a filter against the cwd-relative path and answers
+    // `Test filter "/e2e/" had no matches` for the anchored form (bun 1.3.14). The trailing slash
+    // is the boundary this can express, and it is the same string `belongsToType` tests with, so
+    // the step's argv and the file list can never disagree about what an e2e test is.
     summary: 'the built output, incl. offline and SW update',
-    filter: 'e2e',
+    filters: ['e2e/', '.e2e.test.'],
   },
   eval: {
     summary: 'LLM output scored against thresholds',
-    filter: '.eval.test.',
+    filters: ['.eval.test.'],
   },
 };
 
@@ -100,10 +112,11 @@ const ignoreFlags = (patterns: readonly string[]): readonly string[] =>
   patterns.map((pattern) => `--path-ignore-patterns=${pattern}`);
 
 /**
- * The substring that decides a file's type — the same one the step's `bun test` runs with, so
+ * The substrings that decide a file's type — the same ones the step's `bun test` runs with, so
  * `x test <type>` and the gate's `<type>` step can never disagree about what a contract test is.
  */
-export const typeFilterOf = (type: Exclude<TestType, 'unit'>): string => SUITES[type].filter;
+export const typeFiltersOf = (type: Exclude<TestType, 'unit'>): readonly string[] =>
+  SUITES[type].filters;
 
 /** Unit is everything the typed suites do not claim, so no test can fall between two steps. */
 export const testStepCommand = (type: TestType): readonly string[] =>
@@ -113,7 +126,7 @@ export const testStepCommand = (type: TestType): readonly string[] =>
         'test',
         ...ignoreFlags([...NEVER_A_TEST, '**/e2e/**', `**/*.${TYPED_SUFFIXES}.test.*`]),
       ]
-    : ['bun', 'test', ...ignoreFlags(NEVER_A_TEST), SUITES[type].filter];
+    : ['bun', 'test', ...ignoreFlags(NEVER_A_TEST), ...SUITES[type].filters];
 
 /**
  * Whether a step applies and what it runs are now one question with one answer: the file list.
@@ -148,6 +161,7 @@ const runSerial = async (ctx: VerifyContext, type: TestType): Promise<StepOutcom
       fix: command.join(' '),
     }),
     workers: 1,
+    tests: countsOf([result]),
   };
 };
 

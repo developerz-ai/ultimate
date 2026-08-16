@@ -116,20 +116,29 @@ const SRC = import.meta.dir;
 const PRELOAD = join(SRC, 'preload.ts');
 const CACHE = join(SRC, '..', '..', 'cache', 'src', 'index.ts');
 
-/** Absolute specifiers: the fixture lives in a temp dir with no `node_modules` to resolve through. */
+/**
+ * Absolute specifiers: the fixture lives in a temp dir with no `node_modules` to resolve through.
+ *
+ * Each fixture asserts on the registry the guard samples, never `expect(1).toBe(1)`: a tautology
+ * would keep the child green even if `declareTags` stopped declaring — and then the outer test
+ * would be asserting that the guard reports a leak nothing actually left.
+ */
 const LEAKY = `import { expect, test } from 'bun:test';
-import { declareTags } from '${CACHE}';
+import { declareTags, knownTags } from '${CACHE}';
 
 test('declares a fixture entity and never puts it back', () => {
   declareTags(['leakyfixture']);
-  expect(1).toBe(1);
+  expect(knownTags()).toContain('leakyfixture');
 });
 `;
 
 const CLEAN = `import { expect, test } from 'bun:test';
+import { knownTags } from '${CACHE}';
+
+const atLoad = [...knownTags()];
 
 test('touches no registry', () => {
-  expect(1).toBe(1);
+  expect([...knownTags()]).toEqual(atLoad);
 });
 `;
 
@@ -141,14 +150,14 @@ test('touches no registry', () => {
  * the ordering is the runtime's, not something a unit test can stand in for.
  */
 const BEFORE_ALL_LEAKY = `import { beforeAll, expect, test } from 'bun:test';
-import { declareTags } from '${CACHE}';
+import { declareTags, knownTags } from '${CACHE}';
 
 beforeAll(() => {
   declareTags(['bootfixture']);
 });
 
 test('everything the beforeAll set up works', () => {
-  expect(1).toBe(1);
+  expect(knownTags()).toContain('bootfixture');
 });
 `;
 

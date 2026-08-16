@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "2889451661d7ae9d3b1573924bd6366f4d9d8ad847ca5579fba550c3f950b292",
+  "buildId": "0d671bec5061bd235df5028b3d89843bd8daaf46580d46261f7092a3b14197d8",
   "tiers": {
     "0": [
       "core",
@@ -1326,6 +1326,11 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_PACKAGE_UNREFERENCED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_PASSWORD_WEAK",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
@@ -1501,6 +1506,11 @@
       "at": "packages/realtime/src/errors.ts"
     },
     {
+      "code": "X_REFERENCE_APP_NO_FLOOR",
+      "owner": "scripts",
+      "at": "scripts/reference-app-gate.ts"
+    },
+    {
       "code": "X_REFERENCE_APP_PIN_STALE",
       "owner": "scripts",
       "at": "scripts/reference-app-gate.ts"
@@ -1644,6 +1654,11 @@
       "code": "X_RUNTIME_DRIVER_SPLIT",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SCAFFOLD_GATE_RED",
+      "owner": "scripts",
+      "at": "scripts/scaffold-gate.ts"
     },
     {
       "code": "X_SCAFFOLD_OVERRIDES_EMPTY",

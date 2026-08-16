@@ -23,16 +23,21 @@ export {
 // `test` is OURS (fixture-injecting); everything else passes through. Re-exported so an app
 // test has one import line, and so `expect` carries this package's matchers already installed.
 export { afterAll, afterEach, beforeAll, beforeEach, describe, expect } from 'bun:test';
-export type { DeterminismOptions } from './determinism';
+export type { DeterminismOptions, DeterminismSnapshot } from './determinism';
+// `captureDeterminism` + `restoreCapturedDeterminism` are the pair a NESTED install needs;
+// `restoreDeterminism` uninstalls outright and hands the real clock and the real `Math.random`
+// back to every later file in the process, which is only ever what the process itself wants.
 export {
   advanceClock,
   assertDeterministic,
+  captureDeterminism,
   DEFAULT_NOW,
   DEFAULT_SEED,
   frozenClock,
   frozenNow,
   installDeterminism,
   isDeterminismInstalled,
+  restoreCapturedDeterminism,
   restoreDeterminism,
   seededRandom,
   seededUuid,

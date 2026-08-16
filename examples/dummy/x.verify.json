@@ -1,0 +1,20 @@
+{
+  "steps": [
+    "typecheck",
+    "lint",
+    "boundaries",
+    "filesize",
+    "package-shape",
+    "errors",
+    "unit",
+    "contract",
+    "live",
+    "job",
+    "e2e",
+    "eval",
+    "drift",
+    "contract-diff",
+    "budgets",
+    "manifest"
+  ]
+}

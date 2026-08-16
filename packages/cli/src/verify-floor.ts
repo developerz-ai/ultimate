@@ -97,6 +97,25 @@ export const vanishedSuiteFinding = (step: string): Finding => ({
 });
 
 /**
+ * The second way a suite vanishes, and the reason this is the same code rather than a new one: a
+ * step whose files are all still there and whose every test skipped itself found exactly as much
+ * for the floor to stand on as a step with no files — nothing. `applies` cannot see it, because
+ * `describe.skipIf` is decided inside the run, so this is read back out of what bun reported.
+ *
+ * The fix names the suite's own command first: what an author has to change is the environment the
+ * tests skip without (`TEST_DATABASE_URL` for `live`), and running the type alone is how they find
+ * out which one. Dropping the step from the floor stays the alternative, behind the `#`, because
+ * either can be the right answer and neither may be performed by the gate on its own ratchet.
+ */
+export const skippedSuiteFinding = (step: string, skipped: number): Finding => ({
+  code: 'X_VERIFY_SUITE_VANISHED',
+  cause: `${VERIFY_FLOOR_FILE} requires the ${step} step and all ${skipped} test(s) it found skipped themselves, so nothing ran`,
+  fix: `x test ${step} --json   # then set what the suite skips without, or drop "${step}" from ${VERIFY_FLOOR_FILE} in the commit that says why`,
+  docs: docsFor('X_VERIFY_SUITE_VANISHED'),
+  at: VERIFY_FLOOR_FILE,
+});
+
+/**
  * The floor file's own integrity, as findings. `X_CONFIG_INVALID` rather than a second code of this
  * package's own: a committed file the framework reads and cannot use is exactly what core already
  * named, and a floor that enforces nothing is not a vanished suite.

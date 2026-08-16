@@ -211,6 +211,50 @@ describe('unit · x verify', () => {
       });
     });
 
+    // The other way a suite vanishes: every file is still there and every test in them skips
+    // itself. `applies` is `files.length > 0`, so the step runs, reports green, and the floor is
+    // satisfied by a run that asserted nothing — measured on this repo as `live: 4 pass, 114 skip`
+    // with no TEST_DATABASE_URL. Zero non-skipped tests is the same "nothing to check" the code
+    // already names, so it is the same code and not a second one.
+    const allSkipped: VerifyStep = {
+      name: 'live',
+      summary: 'every test skipped itself',
+      run: async () => ({ ok: true, findings: [], tests: { ran: 0, skipped: 118 } }),
+    };
+
+    test('a floor step whose suite ran zero non-skipped tests is a failure, not a pass', async () => {
+      await withFloor('{"steps":["typecheck","live"]}', async (root) => {
+        const result = await runVerify([...green, allSkipped], { ...ctx, root });
+        expect(result.ok).toBe(false);
+        expect(result.data).toMatchObject({ failed: ['live'], skipped: [] });
+        const live = result.steps?.find((step) => step.name === 'live');
+        expect(live?.findings[0]?.code).toBe('X_VERIFY_SUITE_VANISHED');
+        expect(live?.findings[0]?.cause).toContain('118');
+        expect(live?.findings[0]?.fix).toContain('x test live');
+      });
+    });
+
+    test('a floor step that ran even one non-skipped test is green', async () => {
+      const thin: VerifyStep = {
+        ...allSkipped,
+        run: async () => ({ ok: true, findings: [], tests: { ran: 1, skipped: 117 } }),
+      };
+      await withFloor('{"steps":["typecheck","live"]}', async (root) => {
+        const result = await runVerify([...green, thin], { ...ctx, root });
+        expect(result.ok).toBe(true);
+        expect(result.steps?.find((step) => step.name === 'live')?.findings).toEqual([]);
+      });
+    });
+
+    // The floor is the claim; without one there is nothing to be measured against, and a repo that
+    // never committed one is not ratcheted in either direction.
+    test('with no floor, an all-skipped suite stays the honest pass it was', async () => {
+      await withFloor(undefined, async (root) => {
+        const result = await runVerify([...green, allSkipped], { ...ctx, root });
+        expect(result.ok).toBe(true);
+      });
+    });
+
     test('a floor is silent about steps that do apply', async () => {
       await withFloor('{"steps":["typecheck"]}', async (root) => {
         const result = await runVerify(green, { ...ctx, root });

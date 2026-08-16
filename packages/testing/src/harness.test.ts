@@ -1,19 +1,22 @@
 // A fake `boot` proves the harness lifecycle contract without a real server behind it. The
-// determinism and seal it installs are process-global and bun shares one process across files, so
-// the trailing `afterAll` puts them back: without it every file loaded after this one silently
-// loses its frozen clock and sealed network — a load-order flake, not a failure.
+// determinism and the seal it installs are process-global and bun shares one process across files,
+// so the last describe below asserts the teardown put back exactly what it found — this file used
+// to repair that by hand in an `afterAll`, which fixed the leak here and nowhere else.
 
-import { afterAll, describe, expect, test } from 'bun:test';
-import { installDeterminism, seededRandom } from './determinism';
+import { describe, expect, test } from 'bun:test';
+import { isDeterminismInstalled, seededRandom } from './determinism';
 import type { AppOptions, BootedApp } from './harness';
-import { describeApp, testApp } from './harness';
-import { sealNetwork } from './sealed-network';
+import { bootApp, describeApp, testApp } from './harness';
+import { isNetworkSealed, requestedUrls } from './sealed-network';
 import { testName } from './test-types';
 
-afterAll(() => {
-  installDeterminism();
-  sealNetwork();
-});
+// Sampled at module scope, which is after the preload installed determinism and sealed the
+// network and before any boot below has run: these three ARE the process state the harness must
+// leave behind. `Math.random` by identity, because `installDeterminism` swaps in a fresh
+// generator — an equal value would pass against a re-seeded one.
+const RANDOM_BEFORE = Math.random;
+const NOW_BEFORE = Date.now();
+const SEALED_BEFORE = isNetworkSealed();
 
 interface Recorder {
   readonly sequence: string[];
@@ -172,5 +175,59 @@ describe(testName('unit', 'testApp'), () => {
 
   test('close() already ran once the isolated test finished', () => {
     expect(rec.closed).toBe(true);
+  });
+});
+
+// Registered last on purpose: bun runs describes in declaration order, so by the time these run
+// every boot above has been torn down. `bun test` is ONE process, so what these assert about this
+// file is what the next FILE inherits — an unsealed `fetch` here is real egress there.
+describe(testName('unit', 'teardown restores the process state it found'), () => {
+  test('the preload owns the seal, and a booted app hands it back sealed', () => {
+    expect(SEALED_BEFORE).toBe(true);
+    expect(isNetworkSealed()).toBe(true);
+  });
+
+  test('the frozen clock and the seeded RNG survive every boot above', () => {
+    expect(isDeterminismInstalled()).toBe(true);
+    // Not just "frozen": the same instant. A boot declaring `now: '2030-…'` restores the clock it
+    // found rather than re-freezing at the default.
+    expect(Date.now()).toBe(NOW_BEFORE);
+    expect(Math.random).toBe(RANDOM_BEFORE);
+  });
+
+  test('the allow-list a boot added is gone again', async () => {
+    // `allowHosts` above let 127.0.0.1:59431 through. Nothing may inherit that.
+    await expect(fetch(`http://127.0.0.1:${CLOSED_PORT}/x`)).rejects.toBeUltimateError(
+      'X_TEST_NETWORK_SEALED',
+    );
+    expect(requestedUrls()).toContain(`http://127.0.0.1:${CLOSED_PORT}/x`);
+  });
+});
+
+// A rejecting `close` is the case `describeApp`/`testApp` cannot express: both rethrow it into the
+// test's own result, so the assertion has to sit beside the lifecycle itself.
+describe(testName('unit', 'a teardown that throws'), () => {
+  test('still drops the cloned database and still restores the process state', async () => {
+    let dropped = false;
+    const booted = await bootApp({
+      boot: async () => ({
+        fetch: () => new Response('ok'),
+        close: async () => {
+          throw new Error('the app refused to close');
+        },
+      }),
+    });
+    // `acquireWorkerDatabase` answers a PGlite handle with no TEST_DATABASE_URL, whose `drop` is a
+    // no-op — so the flag, not the database, is what proves the call was reached.
+    const handle = booted.handle as { db: { drop: () => Promise<void> } };
+    handle.db.drop = async () => {
+      dropped = true;
+    };
+
+    await expect(booted.close()).rejects.toThrow('the app refused to close');
+
+    expect(dropped).toBe(true);
+    expect(isNetworkSealed()).toBe(true);
+    expect(isDeterminismInstalled()).toBe(true);
   });
 });

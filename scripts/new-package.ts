@@ -170,6 +170,44 @@ describe('unit · @ultimat3/${name} errors', () => {
   ];
 }
 
+/** The root solution config, which is also the one file this scaffolder edits rather than writes. */
+export const ROOT_TSCONFIG = 'tsconfig.json';
+
+/**
+ * The root `references` array with `packages/<name>` in it, or `undefined` when the file is not a
+ * config this can rewrite. A scaffolded package used to land with its own `tsconfig.json` and no
+ * entry here, so `tsc -b` — the `typecheck` step — never compiled it: the package shipped, and the
+ * only thing that would have said so was a human remembering.
+ *
+ * Sorted and re-serialised at 2-space indent, which is what the file already is, so scaffolding
+ * shows up as one added entry and never as a reformat. Returned rather than written, so the
+ * decision is testable without a repo on disk.
+ */
+export function withPackageReference(source: string, name: string): string | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return undefined;
+  const config = parsed as { references?: unknown };
+  const references = config.references;
+  if (!Array.isArray(references)) return undefined;
+  const path = `./packages/${name}`;
+  // Read defensively: a malformed entry is something to sort past, never something to crash on.
+  const pathOf = (entry: unknown): string => {
+    if (typeof entry !== 'object' || entry === null) return '';
+    const value = (entry as { path?: unknown }).path;
+    return typeof value === 'string' ? value : '';
+  };
+  if (references.some((entry) => pathOf(entry) === path)) return source;
+  // Code-unit order, not `localeCompare`: a locale that ignores `-` and `/` would order
+  // `create-ultimate` against `core` differently from the file this is rewriting.
+  const next = [...references, { path }].sort((a, b) => (pathOf(a) < pathOf(b) ? -1 : 1));
+  return `${JSON.stringify({ ...config, references: next }, null, 2)}\n`;
+}
+
 export const TIER_NUMBERS: readonly number[] = Object.keys(TIERS)
   .map(Number)
   .sort((a, b) => a - b);
@@ -280,13 +318,42 @@ if (import.meta.main) {
     if (existsSync(join(dir, file.path))) continue;
     await Bun.write(join(dir, file.path), file.contents);
   }
+
+  // The build graph is part of the scaffold, not a follow-up: a package outside the root
+  // `references` is a package `tsc -b` never compiles, and the `typecheck` step is `tsc -b`.
+  const rootConfig = join(root, ROOT_TSCONFIG);
+  const before = await Bun.file(rootConfig).text();
+  const after = withPackageReference(before, name);
+  if (after === undefined) {
+    report(
+      {
+        ok: false,
+        script: 'new-package',
+        summary: `packages/${name} was written, but ${ROOT_TSCONFIG} could not be rewritten`,
+        findings: [
+          {
+            code: 'X_GENERATE_CONFLICT',
+            cause: `${ROOT_TSCONFIG} does not read as a solution config with a "references" array, so packages/${name} is outside the build graph`,
+            fix: `add { "path": "./packages/${name}" } to the "references" array in ${ROOT_TSCONFIG}`,
+            at: ROOT_TSCONFIG,
+          },
+        ],
+      },
+      args.json,
+    );
+  }
+  if (after !== before) await Bun.write(rootConfig, after);
+
   report(
     {
       ok: true,
       script: 'new-package',
       summary: `packages/${name} scaffolded at tier ${tier}`,
-      lines: files.map((file) => `  + packages/${name}/${file.path}`),
-      data: { name, tier, files: files.map((file) => file.path) },
+      lines: [
+        ...files.map((file) => `  + packages/${name}/${file.path}`),
+        ...(after === before ? [] : [`  ~ ${ROOT_TSCONFIG} references ./packages/${name}`]),
+      ],
+      data: { name, tier, files: files.map((file) => file.path), referenced: true },
     },
     args.json,
   );

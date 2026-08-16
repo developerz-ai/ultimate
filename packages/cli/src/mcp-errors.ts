@@ -56,6 +56,9 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
     'x verify --json   # restore the suite, or drop its name from x.verify.json in the commit that says why',
   X_FILE_TOO_LONG: 'x verify --json   # the finding names the file to split',
   X_PACKAGE_SHAPE: 'bun run verify --json   # every finding carries its own new-package.ts command',
+  // The finding names the exact `{ "path": … }` entry; this is the run that proves it took, and
+  // the one that reports the type errors the package had been hiding while nothing built it.
+  X_PACKAGE_UNREFERENCED: 'bunx tsc -b --pretty false',
   X_RELEASE_VERSION_SKEW: 'bun run scripts/release.ts --bump patch --dry-run --json',
   // Two real remedies and the command cannot know which one this deployment wants, so it names
   // the one that inspects the binding rather than guessing between a volume and a bucket.

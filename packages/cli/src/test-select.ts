@@ -9,7 +9,7 @@ import { BadFlagError } from './errors';
 import type { ParsedArgs } from './parse';
 import { flagString, nearest } from './parse';
 import type { TestType } from './verify-tests';
-import { TEST_TYPES, typeFilterOf } from './verify-tests';
+import { TEST_TYPES, typeFiltersOf } from './verify-tests';
 
 export interface TestFile {
   readonly path: string;
@@ -78,12 +78,12 @@ export function sampleFiles(files: readonly TestFile[], sample: number): readonl
   return [...files].sort(bySizeThenPath).slice(0, sample);
 }
 
-type TypeFilter = readonly [Exclude<TestType, 'unit'>, string];
+type TypeFilter = readonly [Exclude<TestType, 'unit'>, readonly string[]];
 
 let cachedFilters: readonly TypeFilter[] | undefined;
 
 /**
- * verify-tests.ts owns the one definition of what a file's test type is; `typeFilterOf` is that
+ * verify-tests.ts owns the one definition of what a file's test type is; `typeFiltersOf` is that
  * table's own accessor. Re-declaring the suffixes here would be a second definition, and the two
  * would drift the first time a suite's naming rule changed.
  *
@@ -96,14 +96,17 @@ let cachedFilters: readonly TypeFilter[] | undefined;
 const typeFilters = (): readonly TypeFilter[] => {
   cachedFilters ??= TEST_TYPES.filter(
     (type): type is Exclude<TestType, 'unit'> => type !== 'unit',
-  ).map((type) => [type, typeFilterOf(type)] as const);
+  ).map((type) => [type, typeFiltersOf(type)] as const);
   return cachedFilters;
 };
 
+const matchesAny = (path: string, filters: readonly string[]): boolean =>
+  filters.some((filter) => path.includes(filter));
+
 /** unit is everything the five typed suites do not claim, so no file falls between two types. */
 export function belongsToType(path: string, type: TestType): boolean {
-  if (type === 'unit') return typeFilters().every(([, filter]) => !path.includes(filter));
-  return typeFilters().some(([typed, filter]) => typed === type && path.includes(filter));
+  if (type === 'unit') return typeFilters().every(([, filters]) => !matchesAny(path, filters));
+  return typeFilters().some(([typed, filters]) => typed === type && matchesAny(path, filters));
 }
 
 /**

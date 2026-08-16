@@ -130,11 +130,19 @@ export async function acquireWorkerDatabase(
   try {
     await admin.exec(lockSql(template));
     try {
-      await admin.exec(createTemplateSql(template));
+      try {
+        await admin.exec(createTemplateSql(template));
+      } catch (error) {
+        // Tolerated for the CREATE alone: "already exists" means another worker got here first, or
+        // a Postgres that outlives one run still holds last run's template.
+        if (!alreadyExists(error)) throw error;
+      }
+      // Outside that tolerance on purpose, and unconditional. A template found rather than created
+      // is not a migrated one — skipping here clones the first run's schema forever, on every
+      // server that is not a fresh CI container. Migrations are idempotent and the advisory lock
+      // serialises them, so a failure here is a real failure and `alreadyExists` (a substring match
+      // on the message) would read `relation "x_jobs" already exists` as success.
       if (config.migrate !== undefined) await config.migrate(urlFor(adminUrl, template));
-    } catch (error) {
-      // "already exists" means another worker migrated it first — the lock made that safe.
-      if (!alreadyExists(error)) throw error;
     } finally {
       await admin.exec(unlockSql(template));
     }

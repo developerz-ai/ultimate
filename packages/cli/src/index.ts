@@ -187,6 +187,8 @@ export {
   isVendored,
   SOURCE_GLOBS,
 } from './source-files';
+export type { TestCounts } from './test-counts';
+export { countsOf } from './test-counts';
 export type { TestFile } from './test-select';
 export { belongsToType, discoverTests, sampleFiles } from './test-select';
 export type { ReproduceOptions, RunShardsOptions, Shard } from './test-shards';
@@ -207,6 +209,7 @@ export {
   floorRequires,
   parseVerifyFloor,
   readVerifyFloor,
+  skippedSuiteFinding,
   VERIFY_FLOOR_FILE,
   vanishedSuiteFinding,
 } from './verify-floor';
@@ -219,7 +222,7 @@ export type {
 } from './verify-step';
 export { VERIFY_STEP_NAMES } from './verify-step';
 export type { TestType } from './verify-tests';
-export { TEST_STEPS, TEST_TYPES, testStepCommand, typeFilterOf } from './verify-tests';
+export { TEST_STEPS, TEST_TYPES, testStepCommand, typeFiltersOf } from './verify-tests';
 export type { ManifestFacts, PackageShapeOptions } from './workspace-checks';
 export {
   checkFileSizes,

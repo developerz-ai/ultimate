@@ -84,6 +84,15 @@ Tier 1. Tagged caching + THE invalidation graph.
   treats a key with no TTL as infinite, so a fresh bucket would stay immortal, which is the bug.
   `SREM`-on-`del` is deliberately not done: `del(key)` does not know the key's tags without a read,
   and a bounded bucket lease already bounds the growth.
+- **A fake cannot run Lua, so it must never pretend to.** Both fakes used to mirror
+  `INVALIDATE_SCRIPT` and `TAG_MEMBER_SCRIPT` in TypeScript and match on the exported constant's
+  identity — so gutting either script to `return 1` / `return {}` left all 517 tests in `cache` +
+  `query` green, with the entire shared-tier invalidation path proving nothing. The fakes are
+  recorders now: the wire traffic is what a unit test asserts, and a test whose path READS a
+  script's reply states it with `answerEval(script, reply)` — an unprogrammed `EVAL` throws rather
+  than answering `[]`, which is exactly what the gutted script returns. **Every claim about what a
+  script DOES belongs in `redis.live.test.ts`** (`describe.skipIf(!TEST_REDIS_URL)`), which is the
+  only place either one is executed.
 - **The Redis namespace carries the build id by default** (`namespaceFor`, `appVersion()`). Two
   builds sharing one Redis otherwise read each other's payloads through a `JSON.parse` that does
   not validate. `buildId: null` opts out. The layout is wire-visible: changing it is a cold cache.

@@ -14,7 +14,7 @@
 // equivalent, and both must be absolute so the subprocess's cwd cannot change what runs.
 import { join } from 'node:path';
 import type { Runner } from '@ultimat3/cli';
-import { exec, VERIFY_STEP_NAMES } from '@ultimat3/cli';
+import { exec, readVerifyFloor, VERIFY_FLOOR_FILE, VERIFY_STEP_NAMES } from '@ultimat3/cli';
 import { flagString, parseScriptArgs } from './lib/args';
 import type { GatedApp } from './lib/gated-apps';
 import { GATED_APPS, PINS_FILE } from './lib/gated-apps';
@@ -180,7 +180,14 @@ export const gateFindings = (input: GateInput): readonly Finding[] => {
     });
   }
 
-  const stale = Object.keys(expectedRed).filter((name) => !red.includes(name));
+  // A pinned step that came back SKIPPED is still pinned, never stale. "Not red" and "passes" were
+  // the same branch, so deleting the suite behind a pinned step reported it as repaired and handed
+  // over an `--unpin` line — after which the step is neither red nor pinned and the gate is green
+  // over a suite that no longer exists. `floorFindings` is the half that says so out loud.
+  const skipped = steps.filter((step) => step.skipped).map((step) => step.name);
+  const stale = Object.keys(expectedRed).filter(
+    (name) => !(red.includes(name) || skipped.includes(name)),
+  );
   if (stale.length > 0) {
     findings.push({
       code: 'X_REFERENCE_APP_PIN_STALE',
@@ -201,6 +208,68 @@ export const gateFindings = (input: GateInput): readonly Finding[] => {
       cause: `${app.dir} typechecks but is not a project the root ${ROOT_TSCONFIG} references`,
       fix: `add { "path": "${app.reference}" } to the "references" array in ${ROOT_TSCONFIG}`,
       at: ROOT_TSCONFIG,
+    });
+  }
+  return findings;
+};
+
+export interface FloorInput {
+  readonly app: GatedApp;
+  readonly steps: readonly GateStep[];
+  /** The step names the app's committed `x.verify.json` holds; `undefined` when it commits none. */
+  readonly floor: readonly string[] | undefined;
+}
+
+/**
+ * The suite floor, judged from OUTSIDE the app. `x verify` already turns a floor-named step that
+ * finds nothing into a failure — but only for a floor that exists, and neither tracked app had one,
+ * so deleting a whole `contract`/`live`/`job`/`e2e` suite turned its step from red-and-pinned into
+ * skipped-and-green: not a regression, not a stale pin, and both gates stayed green over a suite
+ * that had ceased to exist. Two rules, mirror images, and the pair is what makes the floor a
+ * ratchet rather than a note:
+ *
+ *   - a step this run PROVED applies that the floor does not name — the floor is behind, and every
+ *     step it omits is one whose deletion nothing would catch;
+ *   - a step the floor names that this run SKIPPED — the suite is gone, or the floor drops the line
+ *     in the commit that says why.
+ *
+ * Pure, like `gateFindings`: the caller reads the file.
+ */
+export const floorFindings = (input: FloorInput): readonly Finding[] => {
+  const { app, steps, floor } = input;
+  if (steps.length === 0) return [];
+  const applied = steps.filter((step) => !step.skipped).map((step) => step.name);
+  const floorPath = `${app.dir}/${VERIFY_FLOOR_FILE}`;
+  if (floor === undefined || floor.length === 0) {
+    return [
+      {
+        code: 'X_REFERENCE_APP_NO_FLOOR',
+        cause:
+          `${app.dir} commits no usable ${VERIFY_FLOOR_FILE}, so a deleted suite turns its step ` +
+          'from red into skipped and neither this gate nor the app’s own reports it',
+        fix: `write ${floorPath} as {"steps":${JSON.stringify(applied)}}`,
+        at: floorPath,
+      },
+    ];
+  }
+  const findings: Finding[] = [];
+  const missing = applied.filter((name) => !floor.includes(name));
+  if (missing.length > 0) {
+    findings.push({
+      code: 'X_REFERENCE_APP_NO_FLOOR',
+      cause: `${app.dir} ran ${missing.join(', ')} and its ${VERIFY_FLOOR_FILE} does not name ${missing.length === 1 ? 'it' : 'them'}, so deleting ${missing.length === 1 ? 'that suite' : 'those suites'} would read as a skip`,
+      fix: `add ${missing.map((name) => `"${name}"`).join(', ')} to the "steps" array in ${floorPath}`,
+      at: floorPath,
+    });
+  }
+  const vanished = steps.filter((step) => step.skipped && floor.includes(step.name));
+  if (vanished.length > 0) {
+    const names = vanished.map((step) => step.name);
+    findings.push({
+      code: 'X_REFERENCE_APP_REGRESSED',
+      cause: `${names.join(', ')} ran for ${app.dir} when its ${VERIFY_FLOOR_FILE} was written and now ${names.length === 1 ? 'finds' : 'find'} nothing to check`,
+      fix: reproduce(app),
+      at: floorPath,
     });
   }
   return findings;
@@ -350,6 +419,10 @@ if (import.meta.main) {
     const steps = await runAppGate(root, exec, app.dir);
     const referenced = await referencesApp(root, app.reference);
     findings.push(...gateFindings({ app, steps, referenced, declaredSteps: VERIFY_STEP_NAMES }));
+    // Read here rather than inside `gateFindings` for the same reason `referenced` is: the decision
+    // stays pure and testable, and the one thing that touches the disk is this loop.
+    const floor = await readVerifyFloor(join(root, app.dir));
+    findings.push(...floorFindings({ app, steps: steps ?? [], floor: floor?.steps }));
     const red = steps === undefined ? [] : redSteps(steps);
     const total = steps?.length ?? 0;
     tallies.push(tally(app, red, total));

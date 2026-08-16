@@ -5,10 +5,12 @@ import { runInNewContext } from 'node:vm';
 import {
   advanceClock,
   assertDeterministic,
+  captureDeterminism,
   frozenClock,
   frozenNow,
   installDeterminism,
   isDeterminismInstalled,
+  restoreCapturedDeterminism,
   seededRandom,
   seededUuid,
   setFrozenClock,
@@ -96,6 +98,34 @@ describe('unit · determinism', () => {
     const value = uuid();
     expect(value).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(seededUuid(7)()).toBe(value);
+  });
+
+  // The pair a nested scope must use. `restoreDeterminism()` uninstalls, which in a process the
+  // preload installed once is not a restore at all — it is the real clock and the real
+  // `Math.random` handed to every later test FILE in the run.
+  test('capture/restore puts back the instant and the generator, not the defaults', () => {
+    // The outermost snapshot is this test taking its own advice: the file shares a process with
+    // every file after it, so the clock it borrows goes back where it was.
+    const outermost = captureDeterminism();
+    try {
+      setFrozenClock('2026-03-03T00:00:00.000Z');
+      const snapshot = captureDeterminism();
+      const outerSequence = [Math.random(), Math.random()];
+
+      installDeterminism({ seed: 4242, now: '2031-09-09T00:00:00.000Z' });
+      expect(new Date().toISOString()).toBe('2031-09-09T00:00:00.000Z');
+      expect(Math.random()).toBe(seededRandom(4242)());
+
+      restoreCapturedDeterminism(snapshot);
+      expect(isDeterminismInstalled()).toBe(true);
+      expect(new Date().toISOString()).toBe('2026-03-03T00:00:00.000Z');
+      // By identity, so the outer generator resumes where it was rather than restarting: an equal
+      // sequence from a re-seeded copy would make two nested scopes draw the same "random" values.
+      expect(Math.random).toBe(snapshot.random);
+      expect([Math.random(), Math.random()]).not.toEqual(outerSequence);
+    } finally {
+      restoreCapturedDeterminism(outermost);
+    }
   });
 
   test('assertDeterministic fails a body that changes between runs', async () => {

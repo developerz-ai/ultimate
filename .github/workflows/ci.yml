@@ -57,10 +57,25 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+      # The shared cache tier's two Lua scripts are the only thing in the framework a real Redis
+      # answers differently from a fake: `EVAL` enforces the KEYS declaration, and the invalidation
+      # script `DEL`d keys it never declared. Asserting the script TEXT cannot catch a script the
+      # server rejects, so without this container that path is proved by nothing.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     env:
       TEST_DATABASE_URL: postgres://ultimate:ultimate@localhost:5432/postgres
       TEST_REPLICATION_URL: postgres://ultimate:ultimate@localhost:5433/postgres
       TEST_NATS_URL: nats://localhost:4222
+      # Absent on a laptop, so `packages/cache/src/redis.live.test.ts` skips there and measures here.
+      TEST_REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v7
         with:
@@ -173,14 +188,16 @@ jobs:
         # Retried once: the race above is intermittent, and a clean second install is always
         # idempotent — see the job comment for why the first can fail even on a good scaffold.
         run: bun install --linker=hoisted || bun install --linker=hoisted
-      - name: x verify (demoapp)
-        working-directory: ${{ runner.temp }}/demoapp
-        # Advisory: `x new --example`'s entity.ts carries the same pinned TS18048 gap
-        # scaffold-typecheck.ts's KNOWN_GAPS documents — `invariant()`'s generic key type falling
-        # back to `string` — which needs a breaking change to a shipped primitive to close, so a
-        # major version, not a fix this job can wait on. Everything else in the 17-step table is
-        # real signal: a new red step here is not that gap and should be read as a regression.
-        # (reference-app-verify above blocks on a per-step ratchet instead; a scaffolded app has
-        # nowhere to keep one, since it is built fresh in a temp dir on every run.)
-        continue-on-error: true
-        run: bun run verify
+      # BLOCKING, on a one-step ratchet. `continue-on-error: true` used to make all 17 steps
+      # advisory over a waiver written for exactly one of them: `x new --example`'s entity.ts
+      # carries the pinned TS18048 gap scaffold-typecheck.ts's KNOWN_GAPS documents —
+      # `invariant()`'s generic key type falling back to `string` — which needs a breaking change to
+      # a shipped primitive, so a major version rather than a fix this job can wait on. Every other
+      # step is real signal, and the day `typecheck` goes green the waiver itself is the finding, so
+      # it can only shrink. `scripts/scaffold-gate.ts` runs the app's own `verify` script and reads
+      # its `--json` step table; the pins for the tracked apps live in scripts/lib/gated-apps.ts,
+      # and a scaffolded app has nowhere to keep one because it is built fresh on every run.
+      - name: x verify (demoapp), against the ratchet
+        run: >-
+          bun run scripts/scaffold-gate.ts "${{ runner.temp }}/demoapp"
+          --allow-red typecheck
