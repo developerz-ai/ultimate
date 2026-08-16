@@ -151,5 +151,11 @@ cross-linked, and the rule is **fix once, cite both**. The ones to watch:
 - **Deletions in 08 will conflict** with patches to the same files in 01–03. That is why 08 lands
   after the bug slices, and why anything it deletes should not be patched first — check 08 before
   fixing a Low.
-- Slice 15's source agent was still running when this plan was written; treat that slice as the one
-  most likely to need a second pass.
+- **Driver parity is the largest single class of defect** and slice 15 carries it: 15 top findings
+  plus 27 more where two implementations of one interface answer one call differently. Every one
+  passes the suite, because the suite runs the memory side. The fix that matters is not the 42
+  patches — it is extending the `*-parity.test.ts` pattern the repo already has for jobs to cache
+  tiers, storage drivers, auth adapters, ai providers, vector stores and mail transports.
+- Two sub-audits inside slice 15 did not finish: the systematic `wiki/CLI-Reference.md`-vs-real-CLI
+  diff and the header-comment survey over a 150-file sample. The eight lying headers listed there are
+  a floor from incidental discovery, not a survey — re-run both if you want that ground closed.
