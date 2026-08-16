@@ -15,7 +15,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./preload": "./src/preload.ts"
+    "./preload": "./src/preload.ts",
+    "./registry-isolation": "./src/registry-isolation.ts"
   },
   "files": [
     "src",

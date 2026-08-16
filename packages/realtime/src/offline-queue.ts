@@ -6,7 +6,7 @@
 //      already queued (double click, replay after a crash) collapses onto the existing entry and
 //      never gets a new sequence number.
 
-import { renderCauseValue } from '@ultimat3/core';
+import { renderThrowable, stringField } from '@ultimat3/core';
 import type { JsonValue } from './json';
 import { type Frame, PROTOCOL_VERSION, type WireError } from './sync-protocol';
 
@@ -198,12 +198,15 @@ export function mutateFrame(mutation: QueuedMutation): Frame {
 }
 
 function toQueueError(error: unknown): WireError {
-  const shape = error as { code?: unknown; cause?: unknown; fix?: unknown } | null;
   return {
-    code: typeof shape?.code === 'string' ? shape.code : 'X_TRANSPORT_UNAVAILABLE',
+    // `stringField`, not `shape?.code`: the sender is a transport the app supplied, so the probe
+    // for "did it throw a coded error" is itself a property read on an app value. A getter that
+    // throws escaped `drain`'s catch through the probe rather than the render — the same contract
+    // break one line earlier than the one the comment below records.
+    code: stringField(error, 'code') ?? 'X_TRANSPORT_UNAVAILABLE',
     // Whatever the sender threw. `String()` here escaped `drain`'s own catch, so the queue's
     // stop-at-the-first-failure contract broke on the failure it exists to record.
-    cause: typeof shape?.cause === 'string' ? shape.cause : renderCauseValue(error),
-    fix: typeof shape?.fix === 'string' ? shape.fix : 'the queue retries on the next reconnect',
+    cause: stringField(error, 'cause') ?? renderThrowable(error),
+    fix: stringField(error, 'fix') ?? 'the queue retries on the next reconnect',
   };
 }

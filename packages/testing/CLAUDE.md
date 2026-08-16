@@ -7,7 +7,8 @@ inside the fixture factories only**, so a test that never destructures `mail` ne
 package and a `packages/core` test never loads the entity registry. `entity` is a dependency for
 exactly one call: `nPlusOne()`, so the strict fixture reports the error `x dev` reports, with the
 `fix:` the schema's own relations spell. A second N+1 code owned here would be a second answer to
-one condition.
+one condition. The one static `entity` import is `registry-isolation.ts`, which is why that module
+is its own entry point and not part of the barrel.
 
 | Rule | Detail |
 |---|---|
@@ -33,9 +34,11 @@ one condition.
 | One seam for drivers | a driver registers over a declaration with `defineFixtures` — merges, last wins. Never a second registration mechanism |
 | A driver arrives whole | `defineFixtures` holds every name `Fixtures` declares to its declared type, so a half-built `page` is a compile error at the registration, not a missing method three awaits later |
 | Registry hygiene | the fixture registry is process-global; a test that clears it snapshots with `fixtureSnapshot()` and hands it back in `afterAll` |
-| Leaks are the file's, not the next file's | `installRegistryLeakGuard()` runs from the preload and fails the run naming the FILE that left cache tags declared or a cache tier registered after its last test (`X_TEST_REGISTRY_LEAK`). `bun test` is one process, so without it the failure lands on an innocent suite in another package. Baseline is taken at the file's first `beforeEach`, so what a file's MODULE graph declares is its environment and what its TESTS install is its own to undo |
+| Leaks are the file's, not the next file's | `installRegistryLeakGuard()` runs from the preload and fails the run naming the FILE that left cache tags declared or a cache tier registered after its last test (`X_TEST_REGISTRY_LEAK`). `bun test` is one process, so without it the failure lands on an innocent suite in another package. What a file's MODULE graph declares is its environment; what the file installs after that is its own to undo |
+| The baseline is not a hook | measured on Bun 1.3.14 the order is onLoad → module eval → file `beforeAll` → describe `beforeAll` → preload `beforeEach`, so a preload hook cannot sample before the file's own `beforeAll` — a `declareTags()` there read as environment and the run went green. The load handler appends the sample to the file's source instead: after evaluation, before any hook the file registers. It is also the only signal carrying file identity, which `bun:test` hooks do not |
 | Guarded state is boot state | only the two registries whose honest invariant is "clean when the file ends" — `declareTags` and `registerTier` are boot installs. `entity()`, `job()` and `defineRoute()` register at MODULE scope, which is how an app declares itself, so a filled registry there is idiomatic and unguarded |
 | An empty registry is a premise you state | a test whose subject is "nothing is declared" — `x db gen` with nothing to generate — calls `isolateEntityRegistry()` and restores in a `finally`. Inheriting it means the test passes until a neighbouring file imports an entity |
+| That one helper is off the barrel | `@ultimat3/testing/registry-isolation`, its own entry point. It is the only module here that value-imports `@ultimat3/entity` — the restore is handed back synchronously, so it cannot be a dynamic import inside the call — and a static re-export from `src/index.ts` would load the entity registry into every test that imports this package for `expect` |
 | Fixture teardown | a fixture that installs process-global state (the ambient job or mail driver) implements `Symbol.dispose` / `Symbol.asyncDispose` and restores what was there; `fixtureTest` disposes in reverse build order even when the body throws |
 | Building one by hand | `createRunJobs()` outside `fixtureTest` is not disposed for you — reset the driver in `afterEach`, or the next file in the process inherits your queue |
 | Factory strategy | an association is built with the strategy that asked for it: `build()` never reaches a database, `create()` writes the parent first. Never a third strategy |
@@ -46,4 +49,5 @@ one condition.
 
 Commands: `bun test`, `bunx tsc --noEmit -p tsconfig.json`.
 
-Entry points: `.` (the API) and `./preload` (side effects for bunfig).
+Entry points: `.` (the API), `./preload` (side effects for bunfig) and `./registry-isolation`
+(`isolateEntityRegistry()`, kept off `.` because it loads `@ultimat3/entity`).

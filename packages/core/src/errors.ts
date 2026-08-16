@@ -3,7 +3,7 @@
 // overlay and `--json`. Never throw a bare Error anywhere in the framework.
 
 import { describeErrorCode } from './error-codes';
-import { renderCauseValue, renderMetaRecord } from './error-render';
+import { isThrownError, renderCauseValue, renderMetaRecord, renderThrowable } from './error-render';
 
 /**
  * Structural brand. `instanceof` is unreliable across duplicated module instances and across
@@ -156,10 +156,12 @@ export function notImplemented(feature: string, fix: string): never {
  */
 export function toUltimateError(value: unknown, fix?: string): UltimateError {
   if (isUltimateError(value)) return value;
-  const cause =
-    value instanceof Error
-      ? `${value.name}: ${value.message}`
-      : `non-error value thrown: ${renderCauseValue(value)}`;
+  // `isThrownError` / `renderThrowable`, not `instanceof` and `.message` directly: a `Proxy` traps
+  // `getPrototypeOf` and a subclass can put a getter on `message`, so both reads throw where this
+  // function is the last thing standing between a caught value and a surface that must answer.
+  const cause = isThrownError(value)
+    ? renderThrowable(value)
+    : `non-error value thrown: ${renderCauseValue(value)}`;
   return new InternalError({
     cause,
     fix: fix ?? 'fix the underlying failure named in cause, then re-run',

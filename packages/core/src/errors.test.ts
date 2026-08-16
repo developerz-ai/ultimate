@@ -153,6 +153,24 @@ describe('UltimateError', () => {
       expect(JSON.parse(JSON.stringify(error)).meta).toEqual({ kind: 'post', value });
     });
 
+    test('a meta whose own toJSON is a function does not throw one layer out', () => {
+      // The subtle half of the same bug: `JSON.stringify(fn)` answers `undefined` rather than
+      // throwing, so the probe called a function renderable and copied it through — and a `toJSON`
+      // key is then INVOKED while serialising the record around it, at `--json` time.
+      const error = withMeta({
+        kind: 'post',
+        toJSON: () => {
+          throw new Error('gotcha');
+        },
+      });
+
+      let json = '';
+      expect(() => {
+        json = JSON.stringify(error);
+      }).not.toThrow();
+      expect(JSON.parse(json).meta.kind).toBe('post');
+    });
+
     test('a record that cannot be enumerated at all still renders the error', () => {
       const error = withMeta(
         new Proxy(

@@ -160,7 +160,7 @@ export {
 export type { OAuthProfile, OAuthProfileOptions } from './oauth-profile';
 export { oauthProfile } from './oauth-profile';
 export type { AuthRouteDescriptor, OAuthLoginOptions, OAuthLoginRoutes } from './oauth-route';
-export { oauthLogin } from './oauth-route';
+export { OAUTH_ROUTE_STATUS, oauthLogin } from './oauth-route';
 export type {
   PasswordParams,
   PasswordPolicy,

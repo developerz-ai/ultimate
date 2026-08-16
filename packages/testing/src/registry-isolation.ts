@@ -3,6 +3,11 @@
 // declares its domain by importing it — so a test asserting on the WHOLE registry inherits every
 // entity any earlier file in the same `bun test` process imported, and its premise becomes
 // whatever ran before it rather than what it declared.
+//
+// Its OWN entry point (`@ultimat3/testing/registry-isolation`), off the barrel: the value import
+// below is static because the restore has to be handed back synchronously, so re-exporting this
+// from `src/index.ts` would load the entity registry into every test that imports the harness for
+// `expect`. One import line is worth less than a tier-0 test that stays tier-0.
 
 import { clearRegistry, registerEntity, registeredEntities } from '@ultimat3/entity';
 

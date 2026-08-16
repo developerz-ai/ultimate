@@ -1,3 +1,8 @@
+// The floor under `x verify`'s errors step: the three shapes that shipped must be reported, a value
+// already routed through a total renderer must not be, and the mask must survive an escaped
+// delimiter — a template whose end is read wrong is a `${…}` nobody checks. A false positive here
+// is a rule an agent learns to skip; a miss is the bug that shipped three times.
+
 import { describe, expect, test } from 'bun:test';
 import { checkFile, maskToCode, topLevelSegments, unsafeRenderFindingFor } from './error-render';
 
@@ -129,8 +134,38 @@ describe('the mask and the scope', () => {
 
   test('a parameter list does not close a segment, so a factory keeps its parameters', () => {
     const source = `export const f = (value: unknown): E => new E({ cause: \`\${value}\` });`;
-    expect(topLevelSegments(maskToCode(source).code).length).toBeGreaterThan(0);
+    // The whole factory is the first segment: cutting at the `)` that ends the parameter list
+    // would put `value: unknown` in a different scope from the `cause:` that renders it. Asserting
+    // a count instead would assert nothing — a trailing segment is pushed for every input.
+    expect(topLevelSegments(maskToCode(source).code)[0]).toEqual({ start: 0, end: source.length });
     expect(scan(source)).toHaveLength(1);
+  });
+
+  test('an escaped backtick does not close a template, so a later substitution is still read', () => {
+    const source = `
+      export const f = (value: unknown): E =>
+        new E({ cause: \`a \\\` tick, then \${value}\`, fix: 'x' });
+    `;
+    const found = scan(source);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.kind).toBe('interpolation');
+    expect(found[0]?.binding).toBe('value');
+  });
+
+  test('a backtick inside a substitution string does not close the template around it', () => {
+    const found = scan(`
+      export const f = (value: unknown): E =>
+        new E({ cause: \`\${tick('\\\`')} then \${value}\`, fix: 'x' });
+    `);
+    expect(found.map((one) => one.kind)).toEqual(['interpolation']);
+  });
+
+  test('an escaped quote inside a substitution does not swallow the substitutions after it', () => {
+    const found = scan(`
+      export const f = (value: unknown): E =>
+        new E({ cause: \`\${label('a\\'b')} then \${value}\`, fix: 'x' });
+    `);
+    expect(found.map((one) => one.binding)).toEqual(['value']);
   });
 
   test('a later declaration does not leak into an earlier segment', () => {

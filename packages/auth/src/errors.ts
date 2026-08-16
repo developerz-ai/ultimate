@@ -3,7 +3,12 @@
 // factories here are deliberately coarse — `rate-limit.ts` owns the single login failure
 // every credential path must throw, and nothing else describes *why* a credential failed.
 
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import {
+  registerErrorCodes,
+  renderCauseValue,
+  renderFixLiteral,
+  UltimateError,
+} from '@ultimat3/core';
 import { oauthStartPath } from './oauth-paths';
 
 /** Codes this package declares and owns. `X_UNAUTHENTICATED` is auth's; http only borrows it. */
@@ -159,7 +164,13 @@ export const oauthDenied = (
 ): AuthError =>
   new AuthError({
     code: 'X_OAUTH_DENIED',
-    cause: `${provider} declined the authorization: ${reason}${description === null ? '' : ` (${description})`}`,
+    // `reason` and `description` are query parameters off the callback URL — whatever the browser
+    // was redirected with, newlines and quotes included. `renderCauseValue` renders them as JSON
+    // string literals, so a forged `error_description` cannot forge a second log line or break the
+    // sentence around it. Both are already `string` by type: this is escaping, not throw-safety.
+    cause: `${provider} declined the authorization: ${renderCauseValue(reason)}${
+      description === null ? '' : ` (${renderCauseValue(description)})`
+    }`,
     fix: `${restartAt(provider)} and approve the ${provider} consent screen`,
     meta: { provider, reason },
   });
@@ -168,13 +179,23 @@ export const oauthDenied = (
  * A URL segment naming a provider that is not in `OAUTH_PROVIDERS`, or is but was left out of
  * `defineAuth({ providers })`. One refusal for both: which of the two it is describes the app's
  * configuration to an unauthenticated caller, and the fix is the same sentence either way.
+ *
+ * `supported` is the framework's own provider table — a constant already in the docs — never the
+ * app's enabled set. Naming what this deployment turned on would hand the configuration back to
+ * the anonymous caller the shared refusal exists to keep it from, and it is what left the fix
+ * unrunnable for the branch that matters: a segment Ultimate has never heard of cannot be added
+ * to `providers` at all, so "add it" was an instruction that could not be followed.
+ *
+ * The segment itself is a URL path the caller typed, so it goes through `renderCauseValue` in the
+ * sentence and `renderFixLiteral` in the command — a fix has to parse after a hostile value lands
+ * in it.
  */
-export const oauthProviderUnknown = (provider: string, enabled: readonly string[]): AuthError =>
+export const oauthProviderUnknown = (provider: string, supported: readonly string[]): AuthError =>
   new AuthError({
     code: 'X_OAUTH_PROVIDER_UNKNOWN',
-    cause: `no oauth provider is mounted at ${oauthStartPath(provider)}`,
-    fix: `add '${provider}' to defineAuth({ providers: [...] }) — currently ${enabled.length === 0 ? 'none are enabled' : enabled.join(', ')}`,
-    meta: { provider, enabled: [...enabled] },
+    cause: `no oauth provider is mounted at ${renderCauseValue(oauthStartPath(provider))}`,
+    fix: `add ${renderFixLiteral(provider, '<provider>')} to defineAuth({ providers: [...] }) — Ultimate supports ${supported.map((id) => `'${id}'`).join(', ')}`,
+    meta: { provider },
   });
 
 export interface OAuthExchangeFailure {

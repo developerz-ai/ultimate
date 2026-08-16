@@ -5,15 +5,16 @@
 // files in a child process and reading what it reports.
 
 import { describe, expect, test } from 'bun:test';
+// `node:` by necessity, all four: Bun writes files (`Bun.write` even creates the parent) but
+// exposes no primitive that MAKES a uniquely named directory, no recursive REMOVE, no temp-dir
+// location and no path join. The fixtures must live outside the checkout — a `.test.ts` inside it
+// would be collected by the repo's own `bun test` — so a real temp dir is the requirement, and
+// leaving one behind per run is not an option.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-  leakBetween,
-  RegistryLeakError,
-  type RegistrySample,
-  sampleRegistries,
-} from './registry-leak-guard';
+import { RegistryLeakError } from './errors';
+import { leakBetween, type RegistrySample, sampleRegistries } from './registry-leak-guard';
 
 const sample = (tags: readonly string[], tiers: readonly string[]): RegistrySample => ({
   tags,
@@ -78,6 +79,20 @@ describe('RegistryLeakError', () => {
     expect(error.fix).toContain('isolateDeclaredTags()');
     expect(error.fix).toContain('resetTiers');
     expect(error.fix).toContain('packages/cli/src/cmd-dev.test.ts');
+    // Axiom 4: the fix ends in something the reader runs, not in a description of the edit.
+    expect(error.fix).toContain('bun test "packages/cli/src/cmd-dev.test.ts"');
+  });
+
+  // The path arrives from `Bun.plugin`'s `onLoad` and the names from the app's own `declareTags`,
+  // so both are uncontrolled — and a fix that a quote in one of them splits in half is not a fix.
+  test('renders the uncontrolled path and names, quoted where the fix has to parse', () => {
+    const error = new RegistryLeakError({
+      leaks: [{ file: 'a file" with a quote.test.ts', tags: ['fixture"tag'], tiers: [] }],
+    });
+
+    expect(error.cause).toContain(String.raw`"a file\" with a quote.test.ts"`);
+    expect(error.cause).toContain(String.raw`["fixture\"tag"]`);
+    expect(error.fix).toContain(String.raw`bun test "a file\" with a quote.test.ts"`);
   });
 
   test('one error carries every leaker, because the run ends once', () => {
@@ -114,31 +129,69 @@ test('touches no registry', () => {
 });
 `;
 
+/**
+ * The hole the baseline used to have. A preload's `beforeEach` runs AFTER the file's own
+ * `beforeAll` (onLoad → module eval → file `beforeAll` → describe `beforeAll` → preload
+ * `beforeEach`), so a boot install written here was sampled as the file's environment and the run
+ * went green. Only a real child process can prove it: `bun:test` hooks carry no file identity, and
+ * the ordering is the runtime's, not something a unit test can stand in for.
+ */
+const BEFORE_ALL_LEAKY = `import { beforeAll, expect, test } from 'bun:test';
+import { declareTags } from '${CACHE}';
+
+beforeAll(() => {
+  declareTags(['bootfixture']);
+});
+
+test('everything the beforeAll set up works', () => {
+  expect(1).toBe(1);
+});
+`;
+
+/** One real `bun test`, its own temp dir: the cross-file half is only observable in a child. */
+const runFixtures = async (
+  files: Readonly<Record<string, string>>,
+): Promise<{ readonly output: string; readonly exitCode: number }> => {
+  const dir = await mkdtemp(join(tmpdir(), 'x-leak-guard-'));
+  try {
+    for (const [name, source] of Object.entries(files)) await Bun.write(join(dir, name), source);
+    const run = Bun.spawnSync({
+      cmd: ['bun', 'test', '--preload', PRELOAD, '.'],
+      cwd: dir,
+      env: { ...process.env, ULTIMATE_TEST_ALLOW_NET: '1' },
+    });
+    return { output: `${run.stdout.toString()}${run.stderr.toString()}`, exitCode: run.exitCode };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+};
+
 describe('the guard, across files, in one process', () => {
   test('a run whose files all pass still fails, naming the file that leaked', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'x-leak-guard-'));
-    try {
-      await Bun.write(join(dir, 'leaky.test.ts'), LEAKY);
-      await Bun.write(join(dir, 'clean.test.ts'), CLEAN);
+    const { output, exitCode } = await runFixtures({
+      'leaky.test.ts': LEAKY,
+      'clean.test.ts': CLEAN,
+    });
 
-      const run = Bun.spawnSync({
-        cmd: ['bun', 'test', '--preload', PRELOAD, '.'],
-        cwd: dir,
-        env: { ...process.env, ULTIMATE_TEST_ALLOW_NET: '1' },
-      });
-      const output = `${run.stdout.toString()}${run.stderr.toString()}`;
+    // Both tests pass — which is the point: nothing in either file is wrong on its own, and
+    // before the guard this run was green while the next package's suite paid for it.
+    expect(output).toContain('2 pass');
+    expect(exitCode).not.toBe(0);
+    expect(output).toContain('X_TEST_REGISTRY_LEAK');
+    expect(output).toContain('leaky.test.ts');
+    expect(output).toContain('leakyfixture');
+    // Attribution is the whole asset: the clean file must not be named. The quote is part of the
+    // match — the cause renders the path — and bun prints both filenames on its own regardless.
+    expect(output).not.toContain('clean.test.ts" left');
+  }, 30_000);
 
-      // Both tests pass — which is the point: nothing in either file is wrong on its own, and
-      // before the guard this run was green while the next package's suite paid for it.
-      expect(output).toContain('2 pass');
-      expect(run.exitCode).not.toBe(0);
-      expect(output).toContain('X_TEST_REGISTRY_LEAK');
-      expect(output).toContain('leaky.test.ts');
-      expect(output).toContain('leakyfixture');
-      // Attribution is the whole asset: the clean file must not be named.
-      expect(output).not.toContain('clean.test.ts left');
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
+  test('a beforeAll that declares and never undoes is the file’s leak too', async () => {
+    const { output, exitCode } = await runFixtures({ 'boot.test.ts': BEFORE_ALL_LEAKY });
+
+    expect(output).toContain('1 pass');
+    expect(exitCode).not.toBe(0);
+    expect(output).toContain('X_TEST_REGISTRY_LEAK');
+    expect(output).toContain('boot.test.ts');
+    expect(output).toContain('bootfixture');
   }, 30_000);
 });

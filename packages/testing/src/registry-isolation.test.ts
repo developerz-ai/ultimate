@@ -30,11 +30,17 @@ describe('isolateEntityRegistry', () => {
     expect([...entityNames()]).toEqual(before);
   });
 
+  // `finally`, not a trailing call: a throw from `entity()` or from the assertion above it would
+  // otherwise leave the process's registry cleared for every file after this one — the exact bug
+  // this helper exists to prevent, written by its own test.
   test('an entity declared inside the isolation does not survive it', () => {
     const restore = isolateEntityRegistry();
-    entity('registry_isolation_temporary', { columns: { id: uuid().primaryKey() } });
-    expect(entityNames()).toEqual(['registry_isolation_temporary']);
-    restore();
+    try {
+      entity('registry_isolation_temporary', { columns: { id: uuid().primaryKey() } });
+      expect(entityNames()).toEqual(['registry_isolation_temporary']);
+    } finally {
+      restore();
+    }
 
     expect(entityNames()).not.toContain('registry_isolation_temporary');
   });

@@ -96,12 +96,15 @@ async function resolveUser(
   if (email === null) return await createUserFor(auth, input);
   const existing = await auth.adapter.findUserByEmail(email);
   if (existing === null) return await createUserFor(auth, input);
-  // Checked before `disabledAt`: under `'never'` this identity is not that user at all, so its
-  // login state is not this caller's business and answering from it would be an oracle.
-  if (auth.link === 'never') throw oauthLinkingDisabled(provider, email);
   if (existing.disabledAt !== null) throw loginFailed();
   // The provider did not vouch for the address, so nothing here proves the two are one person.
   if (!emailVerified) throw loginFailed();
+  // Only past that line is the caller known to own the address, which is what makes naming the
+  // collision safe. Refusing `'never'` any earlier answered an UNVERIFIED provider address with a
+  // distinct code and a `meta.email` where `'verified-email'` answers `loginFailed()` — so the
+  // strict policy confirmed an account exists at an address its caller never proved. `disabledAt`
+  // above is generic and reveals nothing, which is why it can be asked first.
+  if (auth.link === 'never') throw oauthLinkingDisabled(provider, email);
   // It did vouch, and the local account never did: say so, because this caller owns the address.
   if (existing.emailVerifiedAt === null) throw oauthAccountNotLinked(provider, email);
   return existing;

@@ -157,6 +157,40 @@ describe('signInWithOAuth', () => {
     expect(isUltimateError(error) && error.cause).not.toContain('ada@example.com');
   });
 
+  test("link: 'never' answers an UNVERIFIED address exactly as the default policy does", async () => {
+    // The oracle this ordering closes: a provider that does not verify addresses is enough to ask
+    // "does an account exist here?", and a distinct code, cause and `meta.email` would answer it.
+    // `loginFailed()` is the one answer every credential failure gives, so the strict policy may
+    // not be the one that talks.
+    const strict = defineAuth({
+      adapter,
+      clock: frozenClock(NOW),
+      providers: ['github'],
+      link: 'never',
+    });
+    await adapter.createUser({
+      id: 'user-1',
+      email: 'ada@example.com',
+      passwordHash: 'argon2id$…',
+      orgId: null,
+      roles: [],
+      createdAt: NOW,
+    });
+
+    const denied = signInWithOAuth(strict, {
+      profile: profile({ emailVerified: false }),
+      tokens: tokens(),
+    });
+
+    expect(await codeOf(denied)).toBe('X_UNAUTHENTICATED');
+    const error = await denied.catch((thrown: unknown) => thrown);
+    // The generic failure, not the linking one: same code, and a cause that names neither the
+    // address nor the policy.
+    expect(isUltimateError(error) && error.cause).not.toContain("link: 'never'");
+    expect(isUltimateError(error) && error.meta?.['email']).toBeUndefined();
+    expect(await adapter.findAccount('github', '583231')).toBeNull();
+  });
+
   test("'verified-email' is the default, so an app that says nothing gets the strict rule", () => {
     expect(defineAuth({ adapter, clock: frozenClock(NOW) }).link).toBe('verified-email');
   });

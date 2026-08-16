@@ -2,12 +2,13 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { systemClock, withSpan } from '@ultimat3/core';
 import { createCdnTier } from './cdn';
 import { CacheDriverUnavailableError, CacheTagUnknownError } from './errors';
-import { registerDependent, resetGraph } from './graph';
+import { dependentsOfKind, graphSnapshot, registerDependent, resetGraph } from './graph';
 import type { InvalidationEvent } from './invalidate';
 import {
   invalidateTags,
   invalidateWireTags,
   recentInvalidations,
+  registeredTiers,
   registerRevalidator,
   registerTier,
   resetTiers,
@@ -15,7 +16,14 @@ import {
 import { createLruTier } from './lru';
 import type { RedisLike } from './redis';
 import { createRedisTier } from './redis';
-import { declareTags, resetDeclaredTags, tag } from './tags';
+import {
+  declareTags,
+  isolateDeclaredTags,
+  knownTags,
+  parseTag,
+  resetDeclaredTags,
+  tag,
+} from './tags';
 import type { CacheTier, TierInvalidation } from './tiers';
 
 function fakeRedis(): RedisLike & { readonly sent: string[][] } {
@@ -124,11 +132,38 @@ function clearRegistries(): void {
   resetDeclaredTags();
 }
 
+/**
+ * Capture-and-restore, never a bare reset — the shape `isolateDeclaredTags()` already sets for the
+ * declared tags, extended to the two registries that have no such helper. `clearRegistries()` is
+ * this file's per-test isolation, but running it LAST would delete the tiers, graph edges and
+ * declarations a NEIGHBOURING file registered; the leak guard reports additions only, so that loss
+ * surfaces as a failure in an innocent file with nothing in it to explain the missing state.
+ *
+ * What cannot be put back is what has no reader: the revalidator, the invalidation log and the
+ * swallowed-failure log are write-only from out here, so `resetTiers()` still drops all three.
+ */
+function isolateRegistries(): () => void {
+  const tiers = registeredTiers();
+  const graph = graphSnapshot();
+  const restoreTags = isolateDeclaredTags();
+  return () => {
+    clearRegistries();
+    for (const tier of tiers) registerTier(tier);
+    for (const entry of graph) {
+      for (const dependent of entry.dependents) registerDependent([parseTag(entry.tag)], dependent);
+    }
+    restoreTags();
+  };
+}
+
+// Taken at module scope, so the baseline is whatever was registered before this file's first test.
+const restoreRegistries = isolateRegistries();
+
 beforeEach(clearRegistries);
 
 // The tiers this file registers are process-wide: without this the LAST test's tier stayed in the
 // registry for every file that ran after it in the same `bun test` process.
-afterAll(clearRegistries);
+afterAll(restoreRegistries);
 
 describe('invalidateTags fan-out', () => {
   test('reaches every registered tier and reports what each one dropped', async () => {
@@ -353,5 +388,22 @@ describe('recentInvalidations log', () => {
 
     const [event] = recentInvalidations();
     expect(event?.at).toBe(before);
+  });
+});
+
+describe('the suite baseline this file hands back', () => {
+  test("a neighbour's tier, graph edge and declared tag all survive this file's cleanup", () => {
+    // Stand-ins for whatever an earlier file in the same `bun test` process left registered.
+    registerTier(cdnSpy());
+    registerDependent([tag('post', '9')], { kind: 'isr-route', id: '/neighbour' });
+    declareTags(['neighbour']);
+
+    const restore = isolateRegistries();
+    clearRegistries();
+    restore();
+
+    expect(registeredTiers().map((entry) => entry.name)).toEqual(['cdn']);
+    expect(dependentsOfKind([tag('post', '9')], 'isr-route')).toEqual(['/neighbour']);
+    expect(knownTags()).toContain('neighbour');
   });
 });

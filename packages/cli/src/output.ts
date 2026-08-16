@@ -2,7 +2,7 @@
 // and the JSON renderer are projections of it, so `--json` can never drift from the terminal
 // output (axiom 4). The human renderer owns the canonical 3-line error format.
 
-import { renderCauseValue } from '@ultimat3/core';
+import { renderThrowable, stringField } from '@ultimat3/core';
 import { msg } from './messages';
 
 export interface Finding {
@@ -62,36 +62,39 @@ export interface UltimateErrorShape {
   readonly message: string;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
 /**
  * Structural check, deliberately not `instanceof`: an error may cross a subprocess or worker
  * boundary and arrive as a plain object, and the renderer must still produce the fix line.
+ *
+ * Every field goes through core's `stringField`, because the value is a caught throwable and the
+ * probe itself is a property read: a getter that throws, or a `Proxy` trapping `get`, raised HERE
+ * — one line before the total renderer below, in the function whose whole job is deciding what the
+ * terminal shows.
  */
 export function isUltimateErrorShape(value: unknown): value is UltimateErrorShape {
-  if (!isRecord(value)) return false;
   return (
-    typeof value['code'] === 'string' &&
-    value['code'].startsWith('X_') &&
-    typeof value['cause'] === 'string' &&
-    typeof value['fix'] === 'string'
+    stringField(value, 'code')?.startsWith('X_') === true &&
+    stringField(value, 'cause') !== undefined &&
+    stringField(value, 'fix') !== undefined
   );
 }
 
 export function findingFrom(value: unknown): Finding {
-  if (isUltimateErrorShape(value)) {
-    const docs = value.docs;
-    return docs === undefined
-      ? { code: value.code, cause: value.cause, fix: value.fix }
-      : { code: value.code, cause: value.cause, fix: value.fix, docs };
+  // Read once and carry the values, rather than narrowing and reading the same properties again:
+  // a getter is a function, and nothing promises it answers the same way twice.
+  const code = stringField(value, 'code');
+  const cause = stringField(value, 'cause');
+  const fix = stringField(value, 'fix');
+  if (code?.startsWith('X_') === true && cause !== undefined && fix !== undefined) {
+    const docs = stringField(value, 'docs');
+    return docs === undefined ? { code, cause, fix } : { code, cause, fix, docs };
   }
-  // This is the LAST renderer between a thrown value and the terminal: `String()` on a hostile
-  // `toString` here loses the whole report, not one line of it.
-  const cause = value instanceof Error ? value.message : renderCauseValue(value);
+  // This is the LAST renderer between a thrown value and the terminal: a hostile `toString`, a
+  // throwing `message` getter or a trapped `instanceof` here loses the whole report, not one line
+  // of it. `renderThrowable` is total on all three.
   return {
     code: 'X_CLI_UNEXPECTED',
-    cause,
+    cause: renderThrowable(value),
     fix: 'x doctor --json',
     docs: 'https://ultimate.dev/errors/X_CLI_UNEXPECTED',
   };

@@ -167,6 +167,21 @@ describe('toWireError over a throwable it does not control', () => {
     });
   }
 
+  test('a throwable whose fields throw when read still gets a frame', () => {
+    // The PROBE was the unguarded read, not the render: `typeof shape?.code === 'string'` calls a
+    // getter on a mutator's value, so the socket got nothing for a reason no fallback could catch.
+    const trapped = new Proxy(new Error('boom'), {
+      get: () => {
+        throw new Error('gotcha');
+      },
+    });
+
+    const wire = toWireError(trapped);
+    expect(wire.code).toBe('X_PROTOCOL_VERSION');
+    expect(wire.fix).toBe('x doctor realtime');
+    expect(wire.cause.length).toBeGreaterThan(0);
+  });
+
   test('a throwable carrying the contract keeps every field it named', () => {
     expect(
       toWireError({ code: 'X_TOPIC_FORBIDDEN', cause: 'no guard', fix: 'declare one' }),

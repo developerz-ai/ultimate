@@ -122,11 +122,16 @@ beforeAll(async () => {
  */
 const restoreTags = isolateDeclaredTags();
 
+// The restores go in the `finally`: a rejected `stop()` or `rm()` would otherwise skip them and
+// hand every later file in this process a registry this file filled — the exact leak above.
 afterAll(async () => {
-  await server?.stop();
-  await rm(ROOT, { recursive: true, force: true });
-  resetRegistries();
-  restoreTags();
+  try {
+    await server?.stop();
+    await rm(ROOT, { recursive: true, force: true });
+  } finally {
+    resetRegistries();
+    restoreTags();
+  }
 }, BOOT_TIMEOUT_MS);
 
 const fetchDev = (path: string, init?: RequestInit): Promise<Response> => {

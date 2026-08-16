@@ -22,7 +22,7 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 | `fixture-drivers.ts` | the five it declares but a driver must build — `page` `budget` `signIn` `deploy` `subscribe` |
 | `framework-fixtures.ts` | registers both sets; the app registers only what it owns |
 | `registry-leak-guard.ts` | fails the run naming the FILE that left a process-global registry dirty |
-| `registry-isolation.ts` | `isolateEntityRegistry()` — an empty entity registry, and the process's back after |
+| `registry-isolation.ts` | `isolateEntityRegistry()` — an empty entity registry, and the process's back after. Its own entry point (`@ultimat3/testing/registry-isolation`), never the barrel: it value-imports `@ultimat3/entity`, and the barrel is what a tier-0 test imports for `expect` |
 | `preload.ts` | the bunfig preload that installs all of the above |
 
 ## Install
@@ -206,7 +206,7 @@ and `JEST_WORKER_ID` itself, so that precedence is load-bearing rather than defe
 
 ## Sealed network
 
-```
+```text
 X_TEST_NETWORK_SEALED
   cause: POST https://api.stripe.com/v1/charges was not mocked (allowed hosts: none)
   fix:   mockFetch('https://api.stripe.com/v1/charges', () => new Response('{}')) — or allowHost('api.stripe.com') if it must be real
@@ -230,14 +230,26 @@ file sees, and the failure lands on an innocent suite in another package: `bun t
 packages/cli` failed five tests in `query`, all of them installed by `cli`, while either package
 alone was green.
 
-The preload installs the guard. It samples the cache tag set and the cache tier registry at each
-file's first `beforeEach` — after the file's module graph has evaluated, so an app's own boot
-declarations are its environment — and reports what the file's tests added and did not put back:
+The preload installs the guard. It samples the cache tag set and the cache tier registry once per
+file, at the end of that file's module evaluation — so an app's own boot declarations are its
+environment — and reports what the file added after that and did not put back:
 
-```
+```text
 X_TEST_REGISTRY_LEAK: a test file left a process-global registry dirty —
-packages/cli/src/cmd-dev.test.ts left cache tags declared (devfixture) after its last test
+"packages/cli/src/cmd-dev.test.ts" left cache tags declared ["devfixture"] after its last test
+  fix: in "packages/cli/src/cmd-dev.test.ts" add: import { isolateDeclaredTags } from
+       '@ultimat3/cache'; const restoreTags = isolateDeclaredTags(); afterAll(restoreTags);
+       — then re-run: bun test "packages/cli/src/cmd-dev.test.ts"
 ```
+
+The baseline is not a `beforeEach`: a file's own `beforeAll` runs **before** a preload's
+`beforeEach` (onLoad → module eval → file `beforeAll` → describe `beforeAll` → preload
+`beforeEach`, measured on Bun 1.3.14), so a `declareTags()` in `beforeAll` would have been sampled
+as the file's environment and the run would have gone green. The guard appends the sample to the
+file's own source in its load handler instead — the one place a file's identity and its evaluation
+boundary are both known.
 
 The fix is `isolateDeclaredTags()` (`@ultimat3/cache`) or `afterAll(resetTiers)`, never a loosened
-assertion in the file that paid for it.
+assertion in the file that paid for it. A leak fails a one-file run exactly as it fails the suite —
+each file is judged against its own baseline — which is what makes the `bun test <file>` in the fix
+line reproduce it.

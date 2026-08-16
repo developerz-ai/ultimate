@@ -48,6 +48,24 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   // it, and because a missing row made a typo'd uuid a 500: the caller was told the server broke,
   // and the `error-map` stage reported the caller's mistake to the on-call monitor.
   X_INPUT_INVALID: 400,
+  // @ultimat3/auth — every one of these is reachable from a request: the OAuth route descriptors
+  // are mounted by the app, and `authenticate` throws the session codes inside the pipeline. Without
+  // a row each fell to 500, so a user pressing Cancel on a consent screen paged the on-call and a
+  // provider this app never enabled read as an outage. `packages/auth/src/oauth-route.ts` answers
+  // from this table's values when its descriptors are driven OUTSIDE a pipeline; the pin that keeps
+  // the two identical is `scripts/oauth-route-status.test.ts`, since auth is this tier and cannot
+  // import this package.
+  X_SESSION_EXPIRED: 401,
+  X_MFA_REQUIRED: 401,
+  X_ACCOUNT_LOCKED: 429,
+  X_API_KEY_INVALID: 401,
+  X_OAUTH_STATE_INVALID: 400,
+  X_OAUTH_TOKEN_INVALID: 400,
+  X_OAUTH_PROVIDER_UNKNOWN: 404,
+  X_OAUTH_DENIED: 403,
+  // 502, not 500: the conversation that failed is with the provider's server, and the on-call
+  // question "is it us or them?" is the one a status is read for.
+  X_OAUTH_EXCHANGE_FAILED: 502,
   // @ultimat3/entity
   X_NOT_FOUND: 404,
   X_ENTITY_DUPLICATE: 409,

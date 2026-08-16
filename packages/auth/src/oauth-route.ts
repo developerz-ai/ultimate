@@ -8,7 +8,7 @@
 // is tier 4 and describes a rendered page. A bare `Request` in, a `Response` out, drivable from
 // a test and mountable by any router that can match a `:param`.
 
-import { type Clock, isUltimateError } from '@ultimat3/core';
+import { type Clock, isUltimateError, renderThrowable, type UltimateError } from '@ultimat3/core';
 import type { Auth, LoginResult } from './auth';
 import { oauthDenied, oauthExchangeFailed, oauthProviderUnknown } from './errors';
 import { beginOAuth, OAUTH_PROVIDERS, type OAuthProviderId } from './oauth';
@@ -68,8 +68,14 @@ export interface OAuthLoginOptions {
   readonly env?: Readonly<Record<string, string | undefined>> | undefined;
 }
 
-/** HTTP status per code. Everything else is the provider's fault until proven otherwise. */
-const STATUS: Readonly<Record<string, number>> = {
+/**
+ * HTTP status per code, for a descriptor driven OUTSIDE a pipeline — a bare `Request` in, a
+ * `Response` out, which is the whole point of a descriptor. `@ultimat3/http`'s `error-map.ts` OWNS
+ * these numbers and is where a new one is declared; this package is the same tier and can never
+ * import it, so the table is a copy the pin `scripts/oauth-route-status.test.ts` holds identical to
+ * `statusFor()`. Everything absent is the provider's fault until proven otherwise: 502.
+ */
+export const OAUTH_ROUTE_STATUS: Readonly<Record<string, number>> = {
   X_OAUTH_PROVIDER_UNKNOWN: 404,
   X_OAUTH_DENIED: 403,
   X_OAUTH_STATE_INVALID: 400,
@@ -80,6 +86,20 @@ const STATUS: Readonly<Record<string, number>> = {
   X_ENV_MISSING: 500,
   X_CONFIG_INVALID: 500,
 };
+
+/**
+ * What an anonymous caller is allowed to read. `UltimateError.toJSON()` carries `meta` and `stack`
+ * — a developer's fields — and BOTH legs of this flow are public by definition, so serialising it
+ * whole published a stack trace and whatever a factory put in `meta` to whoever typed the URL. Four
+ * fields, the same four on every code: no per-code judgement about which `meta` key is safe today.
+ */
+const publicBody = (coded: UltimateError): Record<string, string> => ({
+  code: coded.code,
+  title: coded.title,
+  cause: coded.cause,
+  fix: coded.fix,
+  docs: coded.docs,
+});
 
 /**
  * Failure is JSON, never a redirect to a login page carrying `?error=`. A callback is the one
@@ -93,14 +113,17 @@ function problem(error: unknown, extraCookies: readonly string[]): Response {
     : oauthExchangeFailed({
         provider: 'oauth',
         stage: 'token',
-        detail: error instanceof Error ? error.message : 'the callback failed before a response',
+        // `renderThrowable`, never `error.message`: the throw came from an adapter or a `fetch`
+        // this package does not own, and a getter on `message` — or a `Proxy` trapping
+        // `getPrototypeOf` — would make the callback's last answer throw instead of send.
+        detail: renderThrowable(error),
         fix: 'throw an UltimateError from the AuthAdapter or OAuthFetch that failed — the factories are in packages/auth/src/errors.ts',
       });
   const headers = new Headers({ 'content-type': 'application/json; charset=utf-8' });
   for (const cookie of extraCookies) headers.append('set-cookie', cookie);
-  return new Response(JSON.stringify(coded.toJSON()), {
+  return new Response(JSON.stringify(publicBody(coded)), {
     // 502 is the default: an uncoded throw on this path came out of the provider conversation.
-    status: STATUS[coded.code] ?? 502,
+    status: OAUTH_ROUTE_STATUS[coded.code] ?? 502,
     headers,
   });
 }
@@ -116,13 +139,17 @@ function providerSegment(request: Request, leg: 'start' | 'callback'): string {
  * Both halves of "is this a provider", in one refusal. An unknown segment and a known provider
  * the app left out of `defineAuth({ providers })` are the same 404 on purpose — telling an
  * anonymous caller which of the two it hit describes the app's configuration for free.
+ *
+ * The refusal names the providers ULTIMATE supports, never the ones this app enabled: the first
+ * is a framework constant already in the docs, the second is the configuration the shared refusal
+ * exists to keep quiet. It is also the half that makes the fix executable for either branch — a
+ * segment Ultimate has never heard of cannot be added to `providers` at all.
  */
 function assertEnabled(auth: Auth, segment: string): OAuthProviderId {
-  if (!Object.hasOwn(OAUTH_PROVIDERS, segment)) {
-    throw oauthProviderUnknown(segment, auth.providers);
-  }
+  const supported = Object.keys(OAUTH_PROVIDERS);
+  if (!Object.hasOwn(OAUTH_PROVIDERS, segment)) throw oauthProviderUnknown(segment, supported);
   const provider = segment as OAuthProviderId;
-  if (!auth.providers.includes(provider)) throw oauthProviderUnknown(segment, auth.providers);
+  if (!auth.providers.includes(provider)) throw oauthProviderUnknown(segment, supported);
   return provider;
 }
 

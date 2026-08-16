@@ -16,6 +16,11 @@
 // value that is `unknown` by inference rather than by annotation; and a renderer that is on the
 // allowlist by NAME but is not actually total. It is a floor, not a proof.
 //
+// One more it cannot see, and this one is fixable elsewhere: a value interpolated AFTER a template
+// nested inside a `${…}` (`` `${keys.map((k) => `\`${k}\``)} ${value}` ``). `maskLiterals` reads the
+// inner backtick as the outer template's closing delimiter, so the mask this file reads is already
+// wrong there — the fix belongs in `@ultimat3/cli`'s `ts-scan.ts`, not here.
+//
 //   bun run scripts/error-render.ts [--json]
 
 import { maskLiterals } from '@ultimat3/cli';
@@ -63,6 +68,33 @@ const CLOSERS = new Set([')', ']', '}']);
 const QUOTES = new Set(["'", '"', '`']);
 
 /**
+ * The template's own closing backtick, read off the MASK rather than the source. In the source, an
+ * escaped `` \` ``, a backtick inside `'…'` and a backtick in a comment are all just backticks, and
+ * `indexOf` stops at the first one — so the scan ends the template early, skips every `${…}` after
+ * it, and then reads the REAL closing backtick as the next opener, desynchronised for the rest of
+ * the file. The mask has already blanked all three, which is the whole reason it exists.
+ */
+function closingBacktick(mask: readonly string[], from: number): number {
+  for (let i = from; i < mask.length; i += 1) if (mask[i] === '`') return i;
+  return -1;
+}
+
+/**
+ * The matching quote of the literal opening at `from`, honouring `\'` — the same escape rule the
+ * mask applies. Inside a `${…}` the mask is still blank, so this one has to read the source; an
+ * `indexOf` here ends the literal at the escaped quote, and the substitution that ends in the
+ * wrong place takes every later `${…}` in the template with it.
+ */
+function closingQuote(source: string, from: number): number {
+  const quote = source[from];
+  for (let i = from + 1; i < source.length; i += 1) {
+    if (source[i] === '\\') i += 1;
+    else if (source[i] === quote) return i;
+  }
+  return -1;
+}
+
+/**
  * Source with comments and every literal's TEXT blanked, but a template's `${…}` expressions left
  * as code — which is neither of the two masks `@ultimat3/cli` ships. `stripComments` would read
  * the word `version` inside `"version"` as the binding of that name; `maskLiterals` blanks the
@@ -77,7 +109,7 @@ export function maskToCode(source: string): CodeMask {
   const substitutions: Range[] = [];
   for (let i = 0; i < source.length; i += 1) {
     if (source[i] !== '`' || out[i] !== '`') continue;
-    const close = source.indexOf('`', i + 1);
+    const close = closingBacktick(out, i + 1);
     const end = close === -1 ? source.length : close;
     for (let j = i + 1; j < end - 1; j += 1) {
       if (source[j] !== '$' || source[j + 1] !== '{') continue;
@@ -86,7 +118,7 @@ export function maskToCode(source: string): CodeMask {
       for (; k < end && depth > 0; k += 1) {
         const ch = source[k] as string;
         if (QUOTES.has(ch)) {
-          const quote = source.indexOf(ch, k + 1);
+          const quote = closingQuote(source, k);
           k = quote === -1 ? end : quote;
         } else if (ch === '{') depth += 1;
         else if (ch === '}') depth -= 1;

@@ -39,13 +39,23 @@ export function postlyAuth(seams: PostlyAuthSeams = {}): Auth {
 }
 
 /**
+ * The seams a caller may drive, which is every option except the destination. `successPath` is
+ * Postly's to keep, so a caller cannot name one at all — unrepresentable rather than checked, and
+ * a build error rather than a review comment.
+ */
+export type PostlyLoginOptions = Omit<OAuthLoginOptions, 'successPath'>;
+
+/**
  * The two legs of the login as route descriptors — `start.path` is `/auth/oauth/:provider` and
  * `callback.path` is `/auth/oauth/:provider/callback`, the one declaration every `X_OAUTH_*` fix
  * line quotes. `options` carries the seams the framework already injects (credentials, the token
  * endpoint's `fetch`, the handshake secret), so a test drives THIS login and not a copy of it.
+ *
+ * `successPath` is applied AFTER the spread: the seams exist to reach the provider, never to move
+ * the landing path, and a spread that ran the other way handed the destination back to the caller.
  */
-export const postlyLogin = (auth: Auth, options: OAuthLoginOptions = {}): OAuthLoginRoutes =>
-  oauthLogin(auth, { successPath: AFTER_SIGN_IN, ...options });
+export const postlyLogin = (auth: Auth, options: PostlyLoginOptions = {}): OAuthLoginRoutes =>
+  oauthLogin(auth, { ...options, successPath: AFTER_SIGN_IN });
 
 /** Postly's own, built once: the app has one boot and therefore one identity resolver. */
 export const auth = postlyAuth();

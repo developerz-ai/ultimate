@@ -3,9 +3,9 @@
 // that leaves a process-global registry dirty changes what every file after it sees, and the
 // failure lands on an innocent suite in another package. This names the file that leaked.
 
-import { afterAll, beforeEach } from 'bun:test';
+import { afterAll } from 'bun:test';
 import { knownTags, registeredTiers } from '@ultimat3/cache';
-import { UltimateError } from '@ultimat3/core';
+import { RegistryLeakError } from './errors';
 
 /**
  * What is guarded, and why only these two. Both are BOOT installs — `declareTags` takes the
@@ -47,42 +47,30 @@ export function leakBetween(
   return { file, tags, tiers };
 }
 
-const describeLeak = (leak: RegistryLeak): string => {
-  const left = [
-    ...(leak.tags.length > 0 ? [`cache tags declared (${leak.tags.join(', ')})`] : []),
-    ...(leak.tiers.length > 0 ? [`cache tiers registered (${leak.tiers.join(', ')})`] : []),
-  ];
-  return `${leak.file} left ${left.join(' and ')} after its last test`;
-};
-
-const fixFor = (leak: RegistryLeak): string => {
-  const calls = [
-    ...(leak.tags.length > 0 ? ['const restore = isolateDeclaredTags(); afterAll(restore)'] : []),
-    ...(leak.tiers.length > 0 ? ['afterAll(resetTiers)'] : []),
-  ];
-  return `${calls.join(' and ')} in ${leak.file}`;
-};
-
-/**
- * One error for every leaker in the run, not one per file: the run has already finished by the
- * time the last file can be judged, and two throws would report the second as an unhandled one.
- */
-export class RegistryLeakError extends UltimateError {
-  constructor(input: { readonly leaks: readonly RegistryLeak[] }) {
-    super({
-      code: 'X_TEST_REGISTRY_LEAK',
-      cause: input.leaks.map(describeLeak).join('; '),
-      fix: input.leaks.map(fixFor).join('; '),
-      docs: 'https://ultimate.dev/errors/X_TEST_REGISTRY_LEAK',
-    });
-  }
-}
-
 /** `Bun.file(path).text()` answers an absolute path; the message wants the one a reader types. */
 const repoRelative = (path: string): string => {
   const root = `${process.cwd()}/`;
   return path.startsWith(root) ? path.slice(root.length) : path;
 };
+
+/**
+ * The one point at which a file's baseline is honest, and the reason it is not a hook. Measured on
+ * Bun 1.3.14 with a `Bun.plugin` load handler and hooks at every scope, the order is:
+ *
+ *   onLoad → module eval → file `beforeAll` → describe `beforeAll` → preload `beforeEach` → test
+ *
+ * A preload's `beforeEach` therefore runs AFTER the file's own `beforeAll`, so a `declareTags()`
+ * there landed in the baseline and the file read clean — a false green in the guard whose entire
+ * job is catching false greens. Appending the sample to the file's own source is what puts it
+ * after module evaluation (its environment) and before the first hook the file registers (its own
+ * doing). `bun:test` hooks carry no file identity; this loader does.
+ */
+const BASELINE_HOOK = '__ultimateRegistryLeakBaseline';
+
+/** Appended, never prepended: an `import` is hoisted and would sample before the graph evaluates. */
+const SAMPLE_BASELINE = `\n;globalThis[${JSON.stringify(BASELINE_HOOK)}]?.();\n`;
+
+const hookHost = globalThis as typeof globalThis & { [BASELINE_HOOK]?: () => void };
 
 let installed = false;
 
@@ -109,6 +97,15 @@ export function installRegistryLeakGuard(): void {
     current = undefined;
   };
 
+  // Called by the statement appended below, once per test file, from that file's own module scope:
+  // everything the file's MODULE graph registered is its environment — importing an app module is
+  // how an app declares its tags — and everything after this point is the file's own to undo.
+  hookHost[BASELINE_HOOK] = () => {
+    if (pending === undefined) return;
+    current = { file: pending, before: sampleRegistries() };
+    pending = undefined;
+  };
+
   // The only signal Bun gives a preload for "a new test file starts": its hooks carry no file. A
   // load handler MUST answer with contents — one that answers `undefined` makes Bun load nothing
   // for the file and the run reports zero tests, silently.
@@ -119,21 +116,11 @@ export function installRegistryLeakGuard(): void {
         close();
         pending = repoRelative(args.path);
         return {
-          contents: await Bun.file(args.path).text(),
+          contents: `${await Bun.file(args.path).text()}${SAMPLE_BASELINE}`,
           loader: args.path.endsWith('tsx') ? 'tsx' : 'ts',
         };
       });
     },
-  });
-
-  // The baseline is taken here rather than in the load handler on purpose: everything a file's
-  // MODULE graph registers is its environment — importing an app module is how an app declares its
-  // tags — and the first `beforeEach` is the earliest point at which that graph has finished
-  // evaluating. What the guard judges is what the file's TESTS install.
-  beforeEach(() => {
-    if (pending === undefined) return;
-    current = { file: pending, before: sampleRegistries() };
-    pending = undefined;
   });
 
   afterAll(() => {

@@ -9,7 +9,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { renderCauseValue } from '@ultimat3/core';
+import { renderCauseValue, renderThrowable } from '@ultimat3/core';
 import { fixProblem } from './error-contract';
 import type { Finding } from './output';
 import type { HostCheck } from './verify-step';
@@ -125,9 +125,8 @@ const findingInvalid = (path: string, cause: string): Finding => ({
   at: path,
 });
 
-/** Same reason as `shown`: an app's guard may throw a value whose `toString` throws in turn. */
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : renderCauseValue(error);
+/** Same reason as `shown`: an app's guard may throw a value that fights every way of reading it. */
+const messageOf = (error: unknown): string => renderThrowable(error);
 
 /** One guard: import it, run it, and hold what it returns to the contract. Never throws. */
 async function runGuard(root: string, path: string): Promise<readonly Finding[]> {

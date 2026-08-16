@@ -4,17 +4,52 @@
 // matches nothing — the last message that may be lost to its own rendering.
 
 /**
+ * The cap on a rendered cause, in characters. A cause is READ — one log line, one `--json` field,
+ * one terminal paragraph — and the value it describes is the app's, so it can be a megabyte of
+ * request body. `JSON.stringify` has neither an output limit nor a streaming mode, so without a
+ * bound the whole of that value became the error's `message`, its log line and its `--json` field,
+ * and stayed there for the life of the error. Past every real cause in this repo, short of
+ * anything that costs.
+ */
+export const MAX_RENDERED_LENGTH = 512;
+
+/** The last guard: whatever survived the bounded walk still ends at the cap, ellipsis included. */
+const truncate = (text: string): string =>
+  text.length <= MAX_RENDERED_LENGTH ? text : `${text.slice(0, MAX_RENDERED_LENGTH - 1)}…`;
+
+/**
+ * `JSON.stringify` with a budget. The replacer runs before each value is serialised, so a long
+ * string is cut and the entries past the budget are dropped BEFORE they are written — the point
+ * being that the bound is on what gets allocated, not on a full serialisation trimmed afterwards.
+ * Dropping degrades exactly as the language already does: an object key disappears, an array slot
+ * becomes `null`.
+ */
+const boundedJson = (value: unknown): string | undefined => {
+  let spent = 0;
+  return JSON.stringify(value, (_key, entry: unknown) => {
+    if (spent > MAX_RENDERED_LENGTH) return undefined;
+    if (typeof entry !== 'string') {
+      spent += 1;
+      return entry;
+    }
+    spent += entry.length;
+    return entry.length > MAX_RENDERED_LENGTH ? `${entry.slice(0, MAX_RENDERED_LENGTH)}…` : entry;
+  });
+};
+
+/**
  * A value from an app, rendered for a `cause`. `JSON.stringify` raises a `TypeError` on a bigint
  * and on a cyclic structure, RUNS any `toJSON` the value carries and reads every enumerable
  * getter — so building the message can raise INSTEAD of the refusal. The caller then catches a
  * `TypeError` where a validation denial belongs, catching by code finds nothing, and an HTTP
  * surface answers 500 rather than the mapped status.
  *
- * A cause DESCRIBES, so degrading to a type name costs a reader nothing they needed. Template
- * interpolation is avoided for the same reason: `` `${symbol}` `` throws where `String(symbol)`
- * does not. Lifted from `@ultimat3/entity`'s `renderValue` — the spelling two independent fixes
- * converged on — including its `a ${typeof value}` fallback for the values `JSON.stringify`
- * answers `undefined` for: a function's source is neither bounded nor a thing a reader wants.
+ * A cause DESCRIBES, so degrading to a type name — or to a bounded prefix — costs a reader nothing
+ * they needed. Template interpolation is avoided for the same reason: `` `${symbol}` `` throws
+ * where `String(symbol)` does not. Lifted from `@ultimat3/entity`'s `renderValue` — the spelling
+ * two independent fixes converged on — including its `a ${typeof value}` fallback for the values
+ * `JSON.stringify` answers `undefined` for: a function's source is neither bounded nor a thing a
+ * reader wants.
  *
  * Text for a `fix:` goes through `renderFixLiteral` instead, because a fix has to parse.
  */
@@ -23,9 +58,67 @@ export function renderCauseValue(value: unknown): string {
   if (typeof value === 'bigint') return `${value}n`;
   if (typeof value === 'symbol') return String(value);
   try {
-    return JSON.stringify(value) ?? `a ${typeof value}`;
+    return truncate(boundedJson(value) ?? `a ${typeof value}`);
   } catch {
     return `a ${typeof value} that cannot be rendered`;
+  }
+}
+
+/**
+ * `value instanceof Error`, made total. The test itself can throw: a `Proxy`'s `getPrototypeOf`
+ * trap runs during `instanceof`, and the one place this question is asked is a `catch` block that
+ * has nothing left to answer with if it does.
+ */
+export function isThrownError(value: unknown): value is Error {
+  try {
+    return value instanceof Error;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A caught value as text: an `Error`'s own words where it has them, `renderCauseValue` everywhere
+ * else. `.name` and `.message` are ordinary property reads, so a subclass with a getter — or a
+ * `Proxy` — makes the read throw exactly where the catch block cannot afford it.
+ *
+ * One helper because the framework spelled `error instanceof Error ? error.message : …` in seven
+ * places, each carrying the same hole: `toUltimateError`, `@ultimat3/http`'s `finalizeFailed`,
+ * `@ultimat3/auth`'s OAuth callback, three CLI reporters and `@ultimat3/realtime`'s wire error.
+ */
+export function renderThrowable(value: unknown): string {
+  try {
+    if (value instanceof Error) {
+      const name = typeof value.name === 'string' ? value.name : 'Error';
+      const message = value.message;
+      return truncate(
+        `${name}: ${typeof message === 'string' ? message : renderCauseValue(message)}`,
+      );
+    }
+  } catch {
+    // The value fought being read, which is the case this function exists for: render it whole.
+  }
+  return renderCauseValue(value);
+}
+
+/**
+ * One string field off a value that may fight being read. An `UltimateError` crossing a worker,
+ * a subprocess or a WebSocket arrives as a plain object, so every surface that re-renders one asks
+ * structurally — `typeof value.code === 'string'` — and that read is a getter call, or a `Proxy`'s
+ * `get` trap, on a value the framework did not build. It throws in the one place with nothing left
+ * to answer with: the catch block deciding what the caller sees. The renderers above are total and
+ * were still reached past three of these reads.
+ *
+ * `undefined` covers absent, wrong type and threw, because each one means the same thing to every
+ * caller: this value did not supply the field, so use the default.
+ */
+export function stringField(value: unknown, key: string): string | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  try {
+    const held = (value as Record<string, unknown>)[key];
+    return typeof held === 'string' ? held : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -65,7 +158,11 @@ const metaKeys = (meta: Readonly<Record<string, unknown>>): readonly string[] =>
 const metaEntry = (meta: Readonly<Record<string, unknown>>, key: string): unknown => {
   try {
     const value = meta[key];
-    return canRender(value) ? value : renderCauseValue(value);
+    // A function passes `canRender` — `JSON.stringify(fn)` answers `undefined` rather than
+    // throwing — but copying one into the record moves the throw one layer out instead of removing
+    // it: a `meta` carrying an enumerable `toJSON` is INVOKED when `--json` serialises the error
+    // around it, which is the render this whole file exists to keep alive. Rendered, never copied.
+    return canRender(value) && typeof value !== 'function' ? value : renderCauseValue(value);
   } catch {
     return 'a value that cannot be read';
   }

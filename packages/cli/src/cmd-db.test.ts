@@ -17,7 +17,10 @@ import {
   resetJobs,
   setJobDriver,
 } from '@ultimat3/jobs';
-import { isolateEntityRegistry } from '@ultimat3/testing';
+// Its own entry point, not the barrel: this helper is the one thing in `@ultimat3/testing` that
+// value-imports `@ultimat3/entity`, and off the barrel it loaded the entity registry into every
+// test that wanted the general harness.
+import { isolateEntityRegistry } from '@ultimat3/testing/registry-isolation';
 import { branchDatabaseName, branchSql, DB_SUBCOMMANDS, dbCommand, driftFindings } from './cmd-db';
 import type { CommandContext } from './command';
 import { BadFlagError } from './errors';

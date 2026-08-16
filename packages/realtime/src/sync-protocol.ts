@@ -2,7 +2,7 @@
 // offline mutation drain are frames in the same union. Moving a route from tier 2 to tier 3 is a
 // config flag (`persist: true`), never a new protocol — that promise is enforced here.
 
-import { renderCauseValue } from '@ultimat3/core';
+import { renderThrowable, stringField } from '@ultimat3/core';
 import type { LiveCursor } from './cursor';
 import { ProtocolVersionError } from './errors';
 import {
@@ -273,16 +273,17 @@ export function decode(raw: string | Uint8Array): Frame {
 
 /** Project any thrown value onto the wire without losing the error contract's three fields. */
 export function toWireError(error: unknown): WireError {
-  const shape = error as { code?: unknown; cause?: unknown; fix?: unknown; docs?: unknown } | null;
-  const code = typeof shape?.code === 'string' ? shape.code : 'X_PROTOCOL_VERSION';
   // The throwable is an app mutator's, a live query's or a policy's, so its `toString` is the
   // app's too: `String()` here raised inside the handler's catch and the socket got no frame at
   // all, which a reconnect cannot repair because the same call throws the same way.
-  const cause = typeof shape?.cause === 'string' ? shape.cause : renderCauseValue(error);
-  const fix = typeof shape?.fix === 'string' ? shape.fix : 'x doctor realtime';
-  return typeof shape?.docs === 'string'
-    ? { code, cause, fix, docs: shape.docs }
-    : { code, cause, fix };
+  // `renderThrowable` keeps an Error's own words without trusting `instanceof` or `.message`, and
+  // `stringField` makes the four probes above it as total as the fallback they choose between —
+  // `shape?.code` was a raw property read on that same app value.
+  const code = stringField(error, 'code') ?? 'X_PROTOCOL_VERSION';
+  const cause = stringField(error, 'cause') ?? renderThrowable(error);
+  const fix = stringField(error, 'fix') ?? 'x doctor realtime';
+  const docs = stringField(error, 'docs');
+  return docs === undefined ? { code, cause, fix } : { code, cause, fix, docs };
 }
 
 function fail(detail: string): ProtocolVersionError {

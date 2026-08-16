@@ -1,6 +1,15 @@
 // The X_* codes owned by @ultimat3/testing. A test failure has to be as actionable as a runtime
 // failure — the fix line here is the mock to add, the service to start, or the seed to freeze.
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import {
+  registerErrorCodes,
+  renderCauseValue,
+  renderFixLiteral,
+  UltimateError,
+} from '@ultimat3/core';
+// Type-only, so the cycle with the guard that throws it is erased at build: the code is declared
+// here because this file is the package's code registry, and the shape it reports lives with the
+// sampler that produces it.
+import type { RegistryLeak } from './registry-leak-guard';
 
 export const TESTING_ERROR_CODES = [
   'X_TEST_NETWORK_SEALED',
@@ -238,6 +247,57 @@ export class NetworkRaceError extends UltimateError {
       cause: 'sealed network lost its original fetch mid-request',
       fix: 'do not call unsealNetwork() while a request from the same test is still in flight',
       docs: docsFor('X_TEST_NETWORK_RACE'),
+    });
+  }
+}
+
+/**
+ * Every value in this message is uncontrolled: the path arrives from `Bun.plugin`'s `onLoad`, and
+ * the names are whatever the app under test passed to `declareTags()` / `registerTier()`. So the
+ * sentence renders them (bounded, never throwing while describing a leak) and the command quotes
+ * them (a fix has to parse after a path with a space or a quote in it lands in the middle of it).
+ */
+const describeLeak = (leak: RegistryLeak): string => {
+  const left = [
+    ...(leak.tags.length > 0 ? [`cache tags declared ${renderCauseValue(leak.tags)}`] : []),
+    ...(leak.tiers.length > 0 ? [`cache tiers registered ${renderCauseValue(leak.tiers)}`] : []),
+  ];
+  return `${renderCauseValue(leak.file)} left ${left.join(' and ')} after its last test`;
+};
+
+/** The placeholder is the cause's own sentence: it already names every file, in order. */
+const FILE_PLACEHOLDER = '<the file the cause names>';
+
+/** The edit, spelled as the lines to paste — the imports included, since neither call is global. */
+const repairFor = (leak: RegistryLeak): string => {
+  const imports: string[] = [];
+  const calls: string[] = [];
+  if (leak.tags.length > 0) {
+    imports.push('isolateDeclaredTags');
+    calls.push('const restoreTags = isolateDeclaredTags(); afterAll(restoreTags);');
+  }
+  if (leak.tiers.length > 0) {
+    imports.push('resetTiers');
+    calls.push('afterAll(resetTiers);');
+  }
+  const file = renderFixLiteral(leak.file, FILE_PLACEHOLDER);
+  return `in ${file} add: import { ${imports.join(', ')} } from '@ultimat3/cache'; ${calls.join(' ')}`;
+};
+
+/**
+ * One error for every leaker in the run, not one per file: the run has already finished by the
+ * time the last file can be judged, and two throws would report the second as an unhandled one.
+ * The trailing command reproduces the failure on its own — the guard judges each file against its
+ * own baseline, so one leaking file fails a one-file run exactly as it failed the whole suite.
+ */
+export class RegistryLeakError extends UltimateError {
+  constructor(input: { readonly leaks: readonly RegistryLeak[] }) {
+    const files = input.leaks.map((leak) => renderFixLiteral(leak.file, FILE_PLACEHOLDER));
+    super({
+      code: 'X_TEST_REGISTRY_LEAK',
+      cause: input.leaks.map(describeLeak).join('; '),
+      fix: `${input.leaks.map(repairFor).join('; ')} — then re-run: bun test ${files.join(' ')}`,
+      docs: docsFor('X_TEST_REGISTRY_LEAK'),
     });
   }
 }

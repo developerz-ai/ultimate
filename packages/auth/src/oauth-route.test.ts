@@ -1,5 +1,9 @@
+// The two OAuth route descriptors driven as HTTP: a forged state, a declined consent and an
+// unknown provider each answer with their own code and status, the body an anonymous caller reads
+// carries no developer diagnostics, and the handshake cookie is cleared on every outcome.
+
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { frozenClock, isUltimateError } from '@ultimat3/core';
+import { frozenClock } from '@ultimat3/core';
 import { type Auth, defineAuth } from './auth';
 import { MemoryAdapter } from './memory-adapter';
 import type { OAuthFetch } from './oauth-exchange';
@@ -47,7 +51,9 @@ const cookiePair = (setCookie: string): string => setCookie.slice(0, setCookie.i
 
 const bodyOf = async (response: Response): Promise<Record<string, unknown>> => {
   const parsed: unknown = await response.json();
-  if (typeof parsed !== 'object' || parsed === null) throw new Error('body was not an object');
+  // Asserted, never thrown: a bare `Error` has no code and no fix, and this file has no more
+  // licence to throw one than the package it drives.
+  expect(parsed).toBeObject();
   return parsed as Record<string, unknown>;
 };
 
@@ -200,6 +206,32 @@ describe('oauthLogin', () => {
     expect(done.status).toBe(502);
     const body = await bodyOf(done);
     expect(body['code']).toBe('X_OAUTH_EXCHANGE_FAILED');
-    expect(isUltimateError(body)).toBe(false);
+    // The contract's three fields, and no stack: what makes it debuggable is the fix line, and
+    // what makes it publishable is that nothing else rides along.
+    expect(body['cause']).toBeString();
+    expect(body['fix']).toBeString();
+    expect(body).not.toContainKey('stack');
+  });
+
+  test('the body an anonymous caller reads carries no meta and no stack', async () => {
+    // One provider enabled, so "what this app turned on" and "what Ultimate supports" are two
+    // different lists and the refusal can be held to naming the second.
+    const login = oauthLogin(
+      defineAuth({ adapter, clock: frozenClock(NOW), providers: ['github'] }),
+      { credentials, secret: SECRET, baseUrl: 'https://app.test' },
+    );
+
+    const body = await bodyOf(
+      await login.start.handle(new Request('https://app.test/auth/oauth/apple')),
+    );
+
+    // Both legs are public by definition, so `toJSON()` — which carries `meta` and `stack` for a
+    // developer — is not what goes on the wire. `meta.enabled` would have published the app's own
+    // provider configuration to whoever typed a URL.
+    expect(Object.keys(body).sort()).toEqual(['cause', 'code', 'docs', 'fix', 'title']);
+    // The framework's table, which is public, and never the app's: `google` is supported and NOT
+    // enabled here, so a fix that names it is reading the constant rather than the configuration.
+    expect(String(body['fix'])).toContain('Ultimate supports');
+    expect(String(body['fix'])).toContain("'google'");
   });
 });
