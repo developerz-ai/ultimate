@@ -8,6 +8,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+## 2.0.0 - 2026-08-17
+
+**The first major.** 33 entries below are marked `BREAKING —`, and each one changes a surface semver covers: a primitive field, an export, a CLI flag, an `app.config.ts` key, or a tier edge. Semver applies from 1.0.0, so none of them could ship as a minor. Read [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading), then the `BREAKING —` entries in order — **no codemod ships with this release**, so each one is a manual edit, and the entry names it.
+
+All 29 workspaces move together — 28 `@ultimat3/*` plus the unscoped `create-ultimate`, one version, one commit, one tag. Publication is not in lockstep: **`@ultimat3/flags` is still not on the registry**, and its first publish is a manual bootstrap by an npm org member ([PUBLISHING.md](PUBLISHING.md), step 1) because a trusted publisher cannot attach to a package that does not exist. The workflow's publish list is derived from `scripts/list-workspaces.ts`, so no package can be silently absent from a release again.
+
 ### Fixed
 
 - **An unregistered currency arriving over HTTP answered 500 and paged the on-call.**
@@ -2606,10 +2612,10 @@ Not fixed, and each one hit by actually running the command. Full list in [Known
 
 ### Known gaps
 
-- `x build --target binary` compiles but crashes at import: `FRAMEWORK_VERSION` reads `package.json` at module scope and a single-file executable has none.
-- `docker-compose.prod.yml` declares a host port and `replicas: 3` together — two processes cannot bind one port. This is the rung-1 ceiling. **Closed in [Unreleased]**: `web` and `sync` are `replicas: 1` in all four files, and the ceiling is declared with the two ways up named.
-- The shared cache tier's Lua invalidation `DEL`s keys it never declared in `KEYS`, so it fails on Dragonfly and on Redis Cluster. **Closed in [Unreleased]**.
-- `resolveEnvironment` now exists in both `core` and `seo` with different return types. **Closed in [Unreleased]**, as a breaking change: `@ultimat3/seo` exports neither it nor `SeoEnvironment`.
+- `x build --target binary` compiles but crashes at import: `FRAMEWORK_VERSION` reads `package.json` at module scope and a single-file executable has none. **Closed in 2.0.0**: the read is lazy, `x build` and `docker/Dockerfile` both pass `--define ULTIMATE_FRAMEWORK_VERSION`, and the image build ends in `/out/app --version`.
+- `docker-compose.prod.yml` declares a host port and `replicas: 3` together — two processes cannot bind one port. This is the rung-1 ceiling. **Closed in 2.0.0**: `web` and `sync` are `replicas: 1` in all four files, and the ceiling is declared with the two ways up named.
+- The shared cache tier's Lua invalidation `DEL`s keys it never declared in `KEYS`, so it fails on Dragonfly and on Redis Cluster. **Closed in 2.0.0**.
+- `resolveEnvironment` now exists in both `core` and `seo` with different return types. **Closed in 2.0.0**, as a breaking change: `@ultimat3/seo` exports neither it nor `SeoEnvironment`.
 
 ## [1.0.0] - 2026-08-10
 

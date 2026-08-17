@@ -1,4 +1,11 @@
-**Ultimate** — v1.2.0 `As of 2026-08`. Stable API, semver from here. MIT licensed.
+<!--
+  markdownlint MD041 (first line must be a top-level heading) does not apply here and is not
+  suppressed anywhere, because nothing in this repo runs markdownlint. This file is a PARTIAL:
+  the GitHub wiki renders it under every page, so a heading here is a heading on all 46 of
+  them. No heading, deliberately. Reported 2026-08; rejected on those grounds.
+-->
+
+**Ultimate** — v2.0.0 `As of 2026-08`. Stable API, semver from here. MIT licensed.
 
 This footer is the **only** page that stamps a version. It renders under every wiki page, so one release bumps one line; a stamp on a second page is 40 hand-copies of one fact, and every one of them goes stale on the next tag.
 

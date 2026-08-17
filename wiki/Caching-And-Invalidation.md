@@ -81,7 +81,7 @@ export const publishPost = action({
 
 Fan-out runs **after the handler resolves, in the same call** — `bustAfterCommit` awaits `invalidateTags()` directly (`packages/action/src/cache-gate.ts`), never through the outbox `As of 2026-08`. A handler that throws never reaches it, so a rolled-back write never purges; a process that dies between the commit and the fan-out leaves those entries until their TTL.
 
-> **Tier 3 invalidation is slot-local on `main`, and was not through 1.2.0.** The Lua script `DEL`ed keys it never declared in `KEYS`, which single-node Redis tolerates and **Dragonfly and Redis Cluster reject** — a cluster cannot route a key it was not told about. The script now returns the member list and the tier deletes the value keys client-side, one key per `DEL`, so every delete is slot-local. On 1.2.0 and earlier: use single-node Redis, or drop the shared tier → [Known gaps](Known-Gaps).
+> **Tier 3 invalidation is slot-local as of 2.0.0, and was not through 1.2.0.** The Lua script `DEL`ed keys it never declared in `KEYS`, which single-node Redis tolerates and **Dragonfly and Redis Cluster reject** — a cluster cannot route a key it was not told about. The script now returns the member list and the tier deletes the value keys client-side, one key per `DEL`, so every delete is slot-local. On 1.2.0 and earlier: use single-node Redis, or drop the shared tier → [Known gaps](Known-Gaps).
 
 There is exactly one fan-out entry point in the implementation (`invalidateTags()`); no caller reaches a tier directly. Tier failures are collected into an invalidation report — **a cache tier may never fail a business write.**
 

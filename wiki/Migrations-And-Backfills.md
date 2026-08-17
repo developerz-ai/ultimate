@@ -14,7 +14,7 @@ One engine per concern. A **migration** changes the shape of a table — schema,
 
 ## Migrations: one engine, one ledger
 
-**This page documents `main`, not a published release** — see [Known gaps → `x db gen` / `x db migrate`](Known-Gaps), which carries the 1.1.0 workaround. Which published version first shipped the fix cannot be read off `CHANGELOG.md`: it has sections for `[Unreleased]` and `[1.0.0]` and none for 1.1.0 or 1.2.0, so everything since 1.0.0 is filed as unreleased whether it shipped or not.
+**This page documents the code at 2.0.0, which is not yet on npm** — the registry's latest is 1.2.0, so take [Known gaps → `x db gen` / `x db migrate`](Known-Gaps) and its 1.1.0/1.2.0 workarounds until the publish lands. `CHANGELOG.md` names the release each fix shipped in.
 
 `x db gen` and the `ROLE=migrate` release-phase container run the **same** engine — `packages/db`'s `migrate()`/`generateMigration()` — not two. **In 1.1.0** they did not: `x db gen`'s subcommands shelled out to `bunx drizzle-kit`, a second schema engine with its own journal, declared in no `package.json` and fetched unpinned at run time, which is why a 1.1.0 scaffold's own `bin/setup` fails. That shelling-out is gone from current source — `cmd-db.ts` calls `generateAppMigration` and `runMigrations` from `@ultimat3/db`/`@ultimat3/cli` directly, and the only remaining mention of `drizzle-kit` anywhere is a file header comment recording the history.
 
@@ -73,7 +73,7 @@ nothing, exactly as a removed index does ([Known gaps](Known-Gaps)).
 The sidecar is written through `snapshotJson()`, not `JSON.stringify(value, null, 2)`. Biome
 collapses a short array onto one line and `JSON.stringify` never does, so an app whose `lint` step
 read that directory failed `x verify` on a file no author typed — *Formatter would have printed the
-following content* — as `X_LINT_FAILED`. Two fixes, both on `main`, unreleased: the serialiser is a
+following content* — as `X_LINT_FAILED`. Two fixes, both in 2.0.0: the serialiser is a
 fixed point of Biome 2.5.5 at `lineWidth: 100`, and `x new`'s `biome.json` excludes
 `**/migrations`, the glob this repo's own config already carried.
 

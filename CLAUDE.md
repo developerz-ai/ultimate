@@ -12,8 +12,11 @@ This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x`
 
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
-**Status:** 1.2.0, `As of 2026-08`. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` —
-29 in all — **versioned** in lockstep: one version, one commit, one tag. Publication is not in
+**Status:** 2.0.0, `As of 2026-08`. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` —
+29 in all — **versioned** in lockstep: one version, one commit, one tag. That is the rule; for 2.0.0
+the version and the commit are done and the tag and the publish are not — nothing at 2.0.0 is on
+npm, where the latest is still 1.2.0. 2.0.0 is the **first major**: the 2.0.0 section of [`CHANGELOG.md`](CHANGELOG.md) carries 33 entries marked
+`BREAKING —` and ships no codemod, so each one is a manual edit its own entry names. Publication is not in
 lockstep and the repo said it was until 2026-08: **`@ultimat3/flags` has never been published** —
 the registry answers 404, not a stale version — so 28 of the 29 are on npm. It is not opting out
 (`packages/flags/package.json` declares the same `publishConfig` as the rest) and nothing in the
@@ -54,13 +57,13 @@ Open: roadmap milestone 11's two-platform deploy proof — 1.1.0 gave a scaffold
 deployable artifact (`packages/cli/src/serve.ts`; `x new` writes `apps/web/server.ts`,
 `prerender.ts`, a Dockerfile and `docker-compose.prod.yml`; `ROLE=migrate` runs release-phase
 migrations), but the demo app on Compose **and** K8s from one image with an invisible rolling
-restart is still not demonstrated — and until this branch the chart could not have demonstrated it,
+restart is still not demonstrated — and until 2.0.0 the chart could not have demonstrated it,
 because `sync`'s readiness probe polled a port the process never opened. Of the four known gaps
-named in [`CHANGELOG.md`](CHANGELOG.md), **all four are now closed**, `As of 2026-08`:
+named in [`CHANGELOG.md`](CHANGELOG.md), **all four are closed in 2.0.0**, `As of 2026-08`:
 
 | Gap | State |
 |---|---|
-| `x build --target binary` compiled and crashed at import | **fixed, and now proven** — the version read is lazy and `x build` passes `--define ULTIMATE_FRAMEWORK_VERSION`. `docker/Dockerfile` passes it too as of this branch; it had not, so the target was fixed everywhere except in the artifact the framework ships. The image build now ends in `/out/app --version`, so a binary that cannot answer fails the build rather than the first command an operator runs |
+| `x build --target binary` compiled and crashed at import | **fixed, and now proven** — the version read is lazy and `x build` passes `--define ULTIMATE_FRAMEWORK_VERSION`. `docker/Dockerfile` passes it too as of 2.0.0; it had not, so the target was fixed everywhere except in the artifact the framework ships. The image build now ends in `/out/app --version`, so a binary that cannot answer fails the build rather than the first command an operator runs |
 | the shared cache tier's Lua invalidation `DEL`s keys it never declares in `KEYS` | **fixed** — the script returns the member list and the tier deletes value keys client-side, one key per `DEL`, so it is slot-local on Redis Cluster and Dragonfly |
 | `docker-compose.prod.yml` pairs a published host port with `replicas` above 1 | **fixed** — a published host port has exactly one binder (reproduced: the second replica dies with `Bind for 0.0.0.0:3000 failed: port is already allocated`), so `web` and `sync` declare `replicas: 1` in all four files — framework, both tracked apps, and `x new`'s scaffold. Scaling either is the reverse proxy you add or the chart's per-role HPA, both named in the file header: Compose is the ladder's single-node rung and the box is the availability story |
 | `resolveEnvironment` exists in both `core` and `seo` with different return types | **fixed** — seo's is deleted; core's is the one reader of `ULTIMATE_ENV`, and `'preview'` is now core's `'staging'`. The half that was not obvious: `ULTIMATE_ENV` is **not in the env schema**, so nothing validates it at boot and a `robots.txt` render can be its first reader — hence `tryResolveEnvironment()` in core, which answers `undefined` rather than throwing, instead of a second resolver in seo |

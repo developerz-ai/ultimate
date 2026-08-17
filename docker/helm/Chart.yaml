@@ -6,11 +6,11 @@ type: application
 # (values.yaml `image.tag: ""`), so 0.0.1 named a tag that has never existed for any release — a
 # fresh `helm install` with the shipped values pulled `ultimate-app:0.0.1` and got ImagePullBackOff.
 #
-# Nothing rewrites these on release yet: `scripts/release.ts` walks workspace package.json files and
-# a chart is not a workspace. Until it does, this is a hand-kept number, which is the same defect
-# class as the publish list in .github/workflows/release.yml — reported, not left silent.
-version: 1.2.0
-appVersion: "1.2.0"
+# `scripts/release.ts` rewrites both on every release through `setChartVersions` — a chart is not a
+# workspace, so the manifest loop cannot reach it and the script writes it by path instead. Never
+# hand-edit them: the chart moving on its own is how `appVersion` named an image tag nobody pushed.
+version: 2.0.0
+appVersion: "2.0.0"
 kubeVersion: ">=1.27.0-0"
 keywords: [bun, postgres, solidjs, ultimate]
 home: https://ultimate.dev

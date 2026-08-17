@@ -7,7 +7,17 @@ wrapping and exporting your own factory. No fork, no monkey-patch, no plugin API
 wait for.
 
 Everything downstream treats the result identically — registry, manifest, projections, admin,
-MCP, `x verify`. Verified against 1.2.0.
+MCP, `x verify`.
+
+**Re-run against 2.0.0** `As of 2026-08`: every fenced example on this page compiles under the
+repository's own `tsconfig.base.json` (`strict`, `exactOptionalPropertyTypes`,
+`noUncheckedIndexedAccess`, `verbatimModuleSyntax`), and both compile errors quoted under
+[Two caveats](#two-caveats) are `tsc`'s verbatim words at that setting. The `tenantEntity` example
+was executed as well — `getEntity('invoices').describe()` answers columns `id, memo, orgId,
+createdAt`, one index `invoices_org_id_idx` on `org_id`, `orgScoped: true`, and
+`invoices.$tenantColumn` is `'orgId'`. What was **not** re-run: the manifest, admin and MCP
+projections over a factory-built primitive — those rest on the registry facts in
+[Why nothing downstream notices](#why-nothing-downstream-notices), not on a run.
 
 Put the factory in a surface both `app/` and `api/` may import — `apps/web/shared/base/` in the
 generated layout ([Project layout](Project-Layout)).

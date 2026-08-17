@@ -41,7 +41,7 @@ Why Ultimate exists, what it locks down, and what it refuses to build. Read [`00
 
 ## The one-paragraph version
 
-Bun-only, opinionated, full-stack. Postgres with no ORM, SolidJS 2, SCSS modules + tokens, Standard Schema behind a dependency-free builtin provider, Better Auth. Eight primitives — `entity policy action mutator query job route task` — and nothing else ships. One `action` declaration projects to an HTTP route, an OpenAPI operation, a typed client function, a job handle, an MCP tool, and a test scaffold, all sharing **one** authz system. Realtime is a three-rung ladder with the same mutator shape at every rung. Jobs are durable steps enqueued through a transactional outbox. Caching is four tiers behind one tag graph. `site/` cannot import `app/` — build error. SEO, budgets, migration drift, and import boundaries are build failures, not guidelines. `x verify` green means shippable. Deploy target = anything that runs containers.
+Bun-only, opinionated, full-stack. Postgres with no ORM, SolidJS pinned at `1.9.14` (the stable line — [`01-stack.md`](./01-stack.md)), SCSS modules + tokens, Standard Schema behind a dependency-free builtin provider, Better Auth. Eight primitives — `entity policy action mutator query job route task` — and nothing else ships. One `action` declaration projects to an HTTP route, an OpenAPI operation, a typed client function, a job handle, an MCP tool, and a test scaffold, all sharing **one** authz system. Realtime is a three-rung ladder with the same mutator shape at every rung. Jobs are durable steps enqueued through a transactional outbox. Caching is four tiers behind one tag graph. `site/` cannot import `app/` — build error. SEO, budgets, migration drift, and import boundaries are build failures, not guidelines. `x verify` green means shippable. Deploy target = anything that runs containers.
 
 ## The axioms, in one table
 
@@ -60,7 +60,16 @@ Consequences of each in [`00-thesis.md`](./00-thesis.md); axiom 8 in full in [`1
 
 ## Status
 
-`As of 2026-08`: **1.2.0, shipped.** 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — versioned in lockstep and published over OIDC trusted publishing. `@ultimat3/flags` has never reached npm and still needs its one-time manual bootstrap ([#84](https://github.com/developerz-ai/ultimate/issues/84)), so the registry is not yet in lockstep with the repo. Docs `00`–`15`, `18` and `19` describe what exists; `16` and `17` are design only and say so in every claim.
+`As of 2026-08`: **2.0.0 in the repository, not on npm.** Two different facts, and the second one is not done.
+
+| Fact | State |
+|---|---|
+| Versioned | 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — at 2.0.0 in lockstep, one commit. The first major: 33 changelog entries marked `BREAKING —`, no codemod |
+| Tagged | **no**. No git tag has been cut for it |
+| Published | **no**. Nothing at 2.0.0 is on the registry. `npm view @ultimat3/core version` answers `1.2.0`, and that is what `bunx create-ultimate myapp` installs today |
+| Blocked on | `@ultimat3/flags` has never reached npm at any version ([#84](https://github.com/developerz-ai/ultimate/issues/84)). It is tier 1 and in the derived publish list, so a release run aborts on it with `core` and `schema` already published irreversibly — four human steps in the npm and GitHub UIs come first, and [`PUBLISHING.md`](../../PUBLISHING.md) records that none is done |
+
+Docs `00`–`15`, `18` and `19` describe what exists; `16` and `17` are design only and say so in every claim.
 
 Milestone order and the "done when" bar for each live in [`14-roadmap.md`](./14-roadmap.md); the honest accounting of what could kill the project is in [`15-risks.md`](./15-risks.md) — read it before the roadmap, not after.
 

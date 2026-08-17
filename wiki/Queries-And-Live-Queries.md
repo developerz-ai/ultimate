@@ -2,7 +2,7 @@
 
 A `query` is a read. `live: true` makes it subscribable. Never writes, never enqueues, never sends mail.
 
-`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Tiers 1–2 of [Realtime](Realtime) ship in v1; `persist: true` (tier 3, local-first) lands in v2.
+`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Tiers 1–2 of [Realtime](Realtime) ship; `persist: true` (tier 3, local-first) is not in 2.0.0.
 
 ## The canonical shape
 
@@ -23,7 +23,7 @@ export const liveFeed = query({
 | `input` | yes | Standard Schema; `t` re-exported from `@ultimat3/query`, so a query file imports one package. The shipped provider is `@ultimat3/schema`'s dependency-free builtin — ArkType, Zod and Valibot are optional swaps behind `configureSchemaProvider`, and no adapter ships. Parsed before `policy`, before `sql`. Becomes the GET query string, the client hook argument, and the MCP tool's JSON Schema |
 | `policy` | yes | `can('<perm>')`, optionally with a predicate over `{ input, actor }`. Evaluated at HTTP call, client hook, subscribe, **and per delivered row** |
 | `live` | no — default `false` | registers the query with the incremental matcher. Requires a deterministic, bounded `sql` |
-| `persist` | no — default `false` | tier 3. Swaps the client result store from memory to IndexedDB and makes the mutator queue durable. Implies `live: true`. v2 |
+| `persist` | no — default `false` | tier 3. Swaps the client result store from memory to IndexedDB and makes the mutator queue durable. Implies `live: true`. Not in 2.0.0 |
 | `sql` | yes | `(input) => SqlSource`. `from()` (`@ultimat3/query`) wraps an already-resolved `@ultimat3/entity` repo call and restates `where`/`orderBy`/`limit` for the matcher to read back; `select`/`preload` happen inside that repo call, before `from()` ever sees a row. No ORM in the graph. SQL-transparent: `toSQL()` prints the statement verbatim so an agent can read it and self-correct |
 | `mcp` | no — default not exposed | `{ expose: true, description }` makes the read an MCP tool. Opt-in, unlike an action: a read hands rows to an agent, so silence exposes nothing |
 | `mcp.visibleTo` | no | roles that may see the projected tool; a caller whose role is not named gets ToolNotFound, never Forbidden — the policy still decides every call |
