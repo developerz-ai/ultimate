@@ -23,7 +23,7 @@
     "@electric-sql/pglite": "^0.5.4",
     "@types/bun": "^1.3.14",
     "@ultimat3/testing": "^1.2.0",
-    "typescript": "^6.0.3"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@ultimat3/action": "^1.2.0",
