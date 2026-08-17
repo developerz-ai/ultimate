@@ -5,6 +5,7 @@
  * there is no way to mount an action without them.
  */
 
+import { tagKeys } from '@ultimat3/cache';
 import { isMcpExposed, isUltimateError } from '@ultimat3/core';
 import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 // `toBucket` is `@ultimat3/http`'s, not this package's: http owns `Bucket` and the limiter maths,
@@ -26,7 +27,6 @@ import {
   toToolName,
 } from './naming';
 import { policyCapability } from './policy-gate';
-import { tagKeys } from './tags';
 
 /** Matches `HttpConfig.buildIdHeader`; the pipeline reads it into `ctx.clientBuildId` — the
  * CLIENT's claim, never `ctx.buildId`, which is the build this process serves. */

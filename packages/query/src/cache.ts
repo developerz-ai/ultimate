@@ -1,17 +1,22 @@
 /**
  * The read path: a per-request memo (`readOnce` — same query twice in one render costs one
  * execution, whether the second read follows the first or races it) and, for a query that
- * declares `cache:`, the fill through the tier `read-cache.ts` owns (`readThrough`). Every read
- * gets the memo; the tier is the half a query opts into.
+ * declares `cache:`, the fill through `@ultimat3/cache`'s registered tiers (`readThrough`). Every
+ * read gets the memo; the ladder is the half a query opts into.
  */
 
-import type { CacheTag } from '@ultimat3/cache';
-import { bestEffort, nowMs, sampleFence } from '@ultimat3/cache';
+import type { CacheStack, CacheTag, CacheTier } from '@ultimat3/cache';
+import { createCacheStack, registeredTiers, tagKeys } from '@ultimat3/cache';
 import type { Actor, Clock, Ctx } from '@ultimat3/core';
 import { assertNever } from '@ultimat3/core';
-import { getReadCache } from './read-cache';
 import { fingerprint } from './stable';
-import { tagKeys } from './tags';
+
+/**
+ * A `cache:` block with no `ttlMs`. Tag invalidation is the primary eviction, so this is the
+ * backstop for the read whose tags never fire — one number, the same 60s `@ultimat3/cache`'s
+ * LRU tier defaults to.
+ */
+export const DEFAULT_READ_CACHE_TTL_MS = 60_000;
 
 /**
  * Request-scoped memo. Keyed by ctx identity so it dies with the request.
@@ -141,7 +146,33 @@ async function publish<T>(
 }
 
 /**
- * Memo first, then the tier, then the source — what a query with `cache:` reads through.
+ * One stack per (registry, clock) — never one per read.
+ *
+ * `createCacheStack` owns a single-flight map, so a stack built per call joins nothing and the
+ * cross-request stampede guard would be a no-op. Keyed on the clock because the stack's expiry
+ * decision and the tiers' own have to agree: a tier registered with a frozen clock under a stack
+ * reading the wall clock calls every entry expired, which is the shape that made the old read
+ * tier undrivable by a test.
+ */
+const stacks = new WeakMap<Clock, { tiers: readonly CacheTier[]; stack: CacheStack }>();
+
+const sameTiers = (a: readonly CacheTier[], b: readonly CacheTier[]): boolean =>
+  a.length === b.length && a.every((tier, index) => tier === b[index]);
+
+function stackFor(clock: Clock): CacheStack {
+  const tiers = registeredTiers();
+  const held = stacks.get(clock);
+  // Rebuilt whenever the registry changes — a boot that registers the shared tier after the first
+  // read, and `resetTiers()` between suites. Compared element-wise by identity: a tier object is
+  // registered once and never mutated, so two equal lists are the same ladder.
+  if (held !== undefined && sameTiers(held.tiers, tiers)) return held.stack;
+  const stack = createCacheStack(tiers, { clock });
+  stacks.set(clock, { tiers, stack });
+  return stack;
+}
+
+/**
+ * Memo first, then the tier ladder, then the source — what a query with `cache:` reads through.
  *
  * `tags` is what the written entry is dropped by; an entry stored without them is reachable
  * only by its key and can therefore only expire.
@@ -156,39 +187,24 @@ export function readThrough<T>(
   return readOnce(ctx, key, () => fill(ctx.clock, key, ttlMs, tags, run));
 }
 
-/** The read itself — tier, then the source. Runs once per key per request; the rest join it. */
-async function fill<T>(
+/**
+ * The read itself, through the tiers `@ultimat3/cache` has registered and no store of this
+ * package's own. Runs once per key per request; the rest join it at the memo above.
+ *
+ * Everything this used to do by hand — the fence sampled before the load, `bestEffort` around
+ * every tier call, the expiry — is `createCacheStack`'s, which is the point: there was one read
+ * cache too many, and the one that lived here was in no registry, so `invalidateTags` could not
+ * reach it. A relative `ttlMs` and never an absolute expiry: the tier's own clock decides when
+ * the entry dies, so a tier registered with a frozen clock is drivable end to end.
+ */
+function fill<T>(
   clock: Clock,
   key: string,
   ttlMs: number | null,
   tags: readonly CacheTag[],
   run: () => Promise<T>,
 ): Promise<T> {
-  // Read per call, never captured: `setReadCache` after the first read has to be honoured, and a
-  // module-level binding here would be a second handle on a tier the seam exists to swap.
-  const tier = getReadCache();
-  // A tier that refuses is a tier that did not answer, never a failed business read — the rule
-  // `@ultimat3/cache` keeps for its own ladder, kept here through the same helper so one Redis
-  // outage degrades the cache instead of 500-ing every `cache:` query. The label is `query-read`
-  // and not a `TierName`: this seam is not a rung of that ladder, and `sortTiers` would place a
-  // name it does not know ahead of the request memo.
-  const cached = await bestEffort('query-read', 'get', key, () => tier.get(key));
-  if (cached !== undefined) return cached.value as T;
-
-  // Sampled BEFORE the load and asked before the write. The read below is about to answer with
-  // rows it read in the past: a mutator committing in between busts a key that is not in the tier
-  // yet, so the drop is a no-op reporting `errors: []`, and publishing afterwards serves the
-  // pre-write rows for the whole TTL. `@ultimat3/cache`'s fence is the one mechanism for this —
-  // no `cover()`, because every joiner of this key joins the same in-flight read under the same
-  // scope, so there are no tags the sample missed.
-  const fence = sampleFence({ key, tags });
-  const value = await run();
-  // The request's own clock, never `Date.now()`: every other reading of "now" on this path is
-  // injected, and an expiry decided by the wall clock is one no test can drive.
-  const expiresAt = ttlMs === null ? null : nowMs(clock) + ttlMs;
-  // Answered either way — the rows ARE this request's answer. Only publishing is refused.
-  if (fence.isValid()) {
-    await bestEffort('query-read', 'set', key, () => tier.set(key, { value, expiresAt, tags }));
-  }
-  return value;
+  // `null` is "the caller named none", never "never": every tier refuses a non-positive `ttlMs`
+  // and none has an immortal entry to offer, so omitting it falls to the tier's own default.
+  return stackFor(clock).read(key, run, { ...(ttlMs === null ? {} : { ttlMs }), tags });
 }

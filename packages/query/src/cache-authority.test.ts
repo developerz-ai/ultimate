@@ -3,29 +3,44 @@
 // name, input and tags are not automatically reaching for the same entry.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { declareTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
+import {
+  createLruTier,
+  declareTags,
+  isolateDeclaredTags,
+  isolateTiers,
+  registerTier,
+  resetTiers,
+  tag,
+} from '@ultimat3/cache';
 import { createContext, userActor } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { cacheKeyFor, readAuthority } from './cache';
 import { query } from './query';
 import { runQuery } from './read';
-import { getReadCache, MemoryReadCache, setReadCache } from './read-cache';
 import { from } from './source';
 
-const original = getReadCache();
+let restore: (() => void) | undefined;
 
 /** The `cache:` fixtures below tag `post`, and the graph validates a tag against the registry. */
 const restoreTags = isolateDeclaredTags();
 declareTags(['post']);
 
-/** Fresh tier per test: the module default is a process-wide singleton other files share. */
+/**
+ * A fresh registry per test. The read tier is `@ultimat3/cache`'s registered ladder now, and that
+ * registry is process-global — `isolateTiers()` puts back exactly what it found, so a neighbouring
+ * suite's tiers survive.
+ */
 beforeEach(() => {
-  setReadCache(new MemoryReadCache());
+  restore?.();
+  restore = isolateTiers();
+  resetTiers();
+  registerTier(createLruTier());
 });
 
 afterAll(() => {
-  setReadCache(original);
+  restore?.();
+  restore = undefined;
   restoreTags();
 });
 

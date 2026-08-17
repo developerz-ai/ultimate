@@ -3,7 +3,7 @@
 // shipped: a boot that registers only the CDN tier and leaves every cached read to be recomputed.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { CacheTag, CacheTier, PurgeDriver } from '@ultimat3/cache';
+import type { PurgeDriver } from '@ultimat3/cache';
 import {
   declareTags,
   invalidateTags,
@@ -12,9 +12,10 @@ import {
   noopPurgeDriver,
   registeredTiers,
 } from '@ultimat3/cache';
-import { getReadCache, MemoryReadCache } from '@ultimat3/query';
+import { createContext } from '@ultimat3/core';
+import { readThrough } from '@ultimat3/query';
 import { InProcessTransport } from '@ultimat3/realtime';
-import { CACHE_INVALIDATE_SUBJECT, startCacheTiers, tierReadCache } from './dev-cache';
+import { CACHE_INVALIDATE_SUBJECT, startCacheTiers } from './dev-cache';
 
 let release: (() => Promise<void>) | undefined;
 let restore: (() => void) | undefined;
@@ -86,24 +87,19 @@ describe('which tiers a boot registers', () => {
 
 describe("the read tier an action's cache.invalidates has to reach", () => {
   /**
-   * The failure this pins: `invalidateTags` fans out to REGISTERED tiers, the read tier a `cache:`
-   * query fills through is `@ultimat3/query`'s own seam, and on a boot with no `REDIS_URL` that
-   * seam was left as the module-default `MemoryReadCache` — an object in no registry, which
-   * nothing in the framework called `invalidateQueryTags` on. Every `cache:` read on every
-   * non-Redis deployment therefore served pre-write rows for the whole TTL while the invalidation
-   * report said `errors: []`.
+   * The failure this pins, end to end and through the real read path. `invalidateTags` fans out to
+   * REGISTERED tiers; the tier a `cache:` query filled used to be `@ultimat3/query`'s own private
+   * `ReadCache`, and on a boot with no `REDIS_URL` that seam was left as a module-default
+   * `MemoryReadCache` — an object in no registry. Every `cache:` read on every non-Redis
+   * deployment therefore served pre-write rows for the whole TTL while the report said
+   * `errors: []`. This boot installs no read tier at all now, so there is nothing to leave unwired:
+   * `readThrough` fills what `startCacheTiers` registered.
    */
-  const fillReadCache = async (): Promise<string> => {
-    const key = 'query:feed:fingerprint:post';
-    await getReadCache().set(key, {
-      value: ['pre-write'],
-      expiresAt: Date.now() + 60_000,
-      tags: [{ entity: 'post' }],
-    });
-    return key;
+  const cachedRead = (answer: string): (() => Promise<string>) => {
+    return async () => answer;
   };
 
-  test('with no REDIS_URL an invalidateTags fan-out drops the read entry', async () => {
+  test('a cache: read filled by this boot is dropped by an invalidateTags fan-out', async () => {
     restore = isolateTiers();
     declareTags(['post']);
     release = startCacheTiers({
@@ -111,15 +107,21 @@ describe("the read tier an action's cache.invalidates has to reach", () => {
       purge: noopPurgeDriver(),
       transport: new InProcessTransport(),
     });
-    const key = await fillReadCache();
-    expect(await getReadCache().get(key)).toBeDefined();
+    const key = 'query:feed:actor:fingerprint:post';
+    const read = (answer: string): Promise<string> =>
+      readThrough(createContext({}), key, 60_000, cachedRead(answer), [{ entity: 'post' }]);
+
+    expect(await read('pre-write')).toBe('pre-write');
+    // A second request: the per-request memo is a different object, so only the registered ladder
+    // can be what answers with the first read's rows.
+    expect(await read('post-write')).toBe('pre-write');
 
     await invalidateTags([{ entity: 'post' }]);
 
-    expect(await getReadCache().get(key)).toBeUndefined();
+    expect(await read('post-write')).toBe('post-write');
   });
 
-  test('the release puts the process back on an unwired read cache', async () => {
+  test('the release leaves no tier behind, so a stopped process caches for nobody', async () => {
     restore = isolateTiers();
     const stop = startCacheTiers({
       env: {},
@@ -127,7 +129,18 @@ describe("the read tier an action's cache.invalidates has to reach", () => {
       transport: new InProcessTransport(),
     });
     await stop();
-    expect(getReadCache()).toBeInstanceOf(MemoryReadCache);
+
+    expect(registeredTiers()).toEqual([]);
+    // And the read path degrades to "no cache" rather than to a private store nothing can reach.
+    const key = 'query:feed:actor:after-release';
+    let executed = 0;
+    const run = async (): Promise<number> => {
+      executed += 1;
+      return executed;
+    };
+    await readThrough(createContext({}), key, 60_000, run, []);
+    await readThrough(createContext({}), key, 60_000, run, []);
+    expect(executed).toBe(2);
   });
 });
 
@@ -174,68 +187,5 @@ describe('cross-instance invalidation', () => {
     await transport.publish(CACHE_INVALIDATE_SUBJECT, '{"not":"an array"}');
     await Bun.sleep(10);
     expect(registeredTiers().length).toBeGreaterThan(0);
-  });
-});
-
-describe('one tier, seen as the query read cache', () => {
-  const fakeTier = (): CacheTier & { readonly writes: Map<string, unknown> } => {
-    const writes = new Map<string, unknown>();
-    const expiries = new Map<string, number>();
-    const deleted: string[] = [];
-    return {
-      name: 'redis',
-      writes,
-      async get<T>(key: string) {
-        if (!writes.has(key)) return undefined;
-        const expiresAt = expiries.get(key);
-        return {
-          value: writes.get(key) as T,
-          tags: [] as readonly CacheTag[],
-          ...(expiresAt === undefined ? {} : { expiresAt }),
-        };
-      },
-      async set<T>(key: string, value: T, options?: { ttlMs?: number }) {
-        writes.set(key, value);
-        if (options?.ttlMs !== undefined) expiries.set(key, Date.now() + options.ttlMs);
-      },
-      async del(key: string) {
-        writes.delete(key);
-        deleted.push(key);
-      },
-      async invalidateTags(tags: readonly CacheTag[]) {
-        return { tier: 'redis' as const, keys: tags.map((tag) => tag.entity) };
-      },
-    };
-  };
-
-  test('a miss is undefined and a hit carries the tier’s own remaining lease', async () => {
-    const tier = fakeTier();
-    const cache = tierReadCache(tier);
-    expect(await cache.get('a')).toBeUndefined();
-    await cache.set('a', { value: 1, expiresAt: Date.now() + 60_000 });
-    const hit = await cache.get('a');
-    expect(hit?.value).toEqual(1);
-    // Not `null`: discarding the expiry promotes a key one second from expiry as fresh.
-    expect(hit?.expiresAt).toBeGreaterThan(Date.now());
-  });
-
-  test('an entry already stale on arrival is a drop, never a write the tier would refuse', async () => {
-    const tier = fakeTier();
-    const cache = tierReadCache(tier);
-    // Every tier refuses a non-positive `ttlMs` with X_CACHE_TTL_INVALID, so a naive
-    // `expiresAt - now` would turn a late write into a thrown error inside a read.
-    await cache.set('a', { value: 1, expiresAt: Date.now() - 1 });
-    expect(tier.writes.has('a')).toBe(false);
-  });
-
-  test('a null expiry falls to the tier’s own default rather than meaning "never"', async () => {
-    const tier = fakeTier();
-    await tierReadCache(tier).set('a', { value: 1, expiresAt: null });
-    expect(tier.writes.get('a')).toEqual(1);
-  });
-
-  test('invalidateTags answers the keys the tier dropped', async () => {
-    const cache = tierReadCache(fakeTier());
-    expect(await cache.invalidateTags?.([{ entity: 'post' }])).toEqual(['post']);
   });
 });

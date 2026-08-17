@@ -84,7 +84,7 @@ export {
   unauthenticated,
 } from './errors';
 
-export { currentActor, requireActor, requireRole, requireScope } from './guards';
+export { currentActor, requireActor } from './guards';
 export type { IdTokenClaims, VerifyIdTokenInput } from './id-token';
 export {
   decodeIdToken,

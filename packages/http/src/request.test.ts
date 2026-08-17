@@ -3,7 +3,9 @@
 // pin the parse and the refusal together: every rejection has to arrive as an HttpError
 // carrying a code and a cause, never as a raw throw from the runtime.
 import { describe, expect, test } from 'bun:test';
+import { localeConfig } from '@ultimat3/i18n';
 import { t } from '@ultimat3/schema';
+import { timeConfig } from '@ultimat3/time';
 import { defineHttpConfig, type HttpConfigInput } from './config';
 import { createRequestContext } from './context';
 import { HttpError } from './errors';
@@ -55,7 +57,7 @@ const captureSyncError = (run: () => unknown): HttpError | undefined => {
 
 describe('getters', () => {
   test('delegate to ctx and raw for a plain GET', () => {
-    const { req, ctx, config, raw, url } = build('https://example.com/posts/1?x=1');
+    const { req, ctx, raw, url } = build('https://example.com/posts/1?x=1');
     ctx.params = { id: '1' };
 
     expect(req.method).toBe('GET');
@@ -64,8 +66,8 @@ describe('getters', () => {
     expect(req.headers).toBe(raw.headers);
     expect(req.params).toEqual({ id: '1' });
     expect(req.actor).toEqual(ctx.actor);
-    expect(req.locale).toBe(config.locale.default);
-    expect(req.tz).toBe(config.tz.default);
+    expect(req.locale).toBe(localeConfig().fallback);
+    expect(req.tz).toBe(timeConfig().defaultZone);
     expect(req.requestId).toBe(ctx.requestId);
     expect(req.buildId).toBeNull();
   });

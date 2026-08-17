@@ -53,8 +53,8 @@ const serve = (): ReturnType<typeof createServer> =>
     config: defineHttpConfig({ dev: true, buildId: BUILD_ID, rateLimit: { scope: 'process' } }),
   });
 
-const get = async (path: string): Promise<Response> =>
-  serve().fetch(new Request(`http://dev.test${path}`));
+const get = async (path: string, headers: Record<string, string> = {}): Promise<Response> =>
+  serve().fetch(new Request(`http://dev.test${path}`, { headers }));
 
 afterEach(() => {
   clearRoutes();
@@ -151,6 +151,23 @@ describe('unit · x dev renders the app routes', () => {
     expect(body).toContain('<style>');
     expect(body).toContain('color:red');
     expect(body).not.toContain('color:blue');
+  });
+
+  // `<html lang>` was the literal `'en'` on every document this file emits, while the pipeline's
+  // `locale` stage had negotiated the real one a stage earlier. A screen reader and `hreflang`
+  // both read that attribute, so the constant was wrong for every non-English request.
+  test("`<html lang>` is the request's negotiated locale, never a constant", async () => {
+    register({ file: 'apps/web/site/page.tsx', render: 'static' });
+    register({ file: 'apps/web/app/feed/page.tsx', render: 'stream' });
+
+    expect(await (await get('/', { 'accept-language': 'de-DE,de;q=0.9' })).text()).toContain(
+      '<html lang="de">',
+    );
+    expect(await (await get('/feed', { 'accept-language': 'ja' })).text()).toContain(
+      '<html lang="ja">',
+    );
+    // No preference is the app's configured fallback, which is where `'en'` legitimately comes from.
+    expect(await (await get('/')).text()).toContain('<html lang="en">');
   });
 
   test('a streamed page flushes the component in its first chunk', async () => {

@@ -378,18 +378,19 @@ at one offset — line comment, block comment, literal, quoted identifier, dolla
 a splitter that disagreed with a guard about where a literal ends is a `;` sent as data or a
 `delete` read as prose. Two rules it owns. **Source order, never a sequence of replacements**:
 `stripSqlNoise` blanked comments before literals, so the `--` in `select '--'; delete from posts`
-read as a comment and erased the `delete` before `inspectStatement()` saw it — a mutating fragment
-through `readOnly(client, { seal: false })`. **A `$tag$` needs separating from the identifier before
+read as a comment and erased the `delete` with it — every reader downstream then judged a SELECT
+where a mutating statement stood. **A `$tag$` needs separating from the identifier before
 it**: `$` is legal in a name after the first character, so `foo$tag$` is one identifier and
 `select foo$tag$; select 2;` is two statements — read as a body opener it went out as one send.
 The run before the delimiter is walked to its start rather than one character being read, because
 `$1$tag$` is a bound parameter followed by a real delimiter and a run opening with a digit or a `$`
 cannot be an identifier at all.
 
-`sql-noise.ts` holds `stripSqlNoise` alone, for the three guards that share it — `readonly.ts`,
-`readonly-query.ts`, `destructive.ts`. It lives apart from all of them because `errors.ts` names the
-rail's wording and the rail reads SQL text: leaving the blanker in `readonly.ts` would have put the
-error registry, which registers codes at module evaluation, inside an import cycle.
+`sql-noise.ts` holds `stripSqlNoise` alone, for the two readers that share it —
+`readonly-query.ts`'s cursorable check and `destructive.ts`. It stays its own module rather than
+moving into either: `errors.ts` names the destructive rail's wording and the rail reads SQL text,
+so a blanker living beside a guard puts the error registry, which registers codes at module
+evaluation, inside an import cycle. Its own test is the regression suite for all of them.
 
 `runningAppVersion()` delegates to `@ultimat3/core`'s `appVersion()` and keeps its explicit
 override — `x_migrations.app_version` and `@ultimat3/jobs`' `x_backfills.app_version` are two
@@ -482,8 +483,21 @@ a presence guard would turn "a second package claims one of db's codes" from an
 `X_ERROR_CODE_DUPLICATE` at import into whichever module loaded first deciding the title. Entity
 borrows `X_DB_DRIFT` and declares no title for it, for the same reason.
 
-`readOnly()` is the regex-gated client for any caller that cannot open its own transaction. The
-MCP `db.query` tool does not use it — it goes through `readOnlyQuery()`, which is stronger.
+**This package owns no "is this SQL a write?" lexer, `As of 2026-08`, and must not grow one back.**
+`readonly.ts` held one — `inspectStatement`/`assertReadOnly`/`readOnly(client)`, a regex-gated
+`DbClient` wrapper on the public API — with **zero callers** in the framework or in either tracked
+app. It was the weakest of the three the framework had shipped — a 22-word list matched with `\b…\b`
+against blanked text, so it judges statement keywords and nothing else: `select pg_sleep(60)`,
+`select pg_read_file('/etc/passwd')`, `select pg_advisory_lock(1)`, `select set_config(…)` and any
+writing function call all read as reads, because `_` is a word character and the keyword never
+stands alone. `@ultimat3/mcp`'s guard refuses each by called-function prefix. And it was the copy an
+app author would find first, because it was the one on a public API. Deleted
+with `readonlyViolation()` and `X_READONLY_VIOLATION`. The two layers that remain are the ones the
+server enforces or a real parser decides: `readOnlyQuery()` (`BEGIN READ ONLY` + statement timeout,
+layer 2) under `ensureReadOnlyRole()` (a `NOLOGIN` SELECT-only role, layer 1), with
+`@ultimat3/mcp`'s `assertReadOnlyQuery` as layer 3. `errors.test.ts` pins `DB_OWNED_ERROR_CODES`,
+so re-adding the code is a failing test; a second keyword list is not something a test can see, so
+it is this line's job to refuse it.
 
 **`readOnlyQuery` takes ONE statement**, refused through `statementsOf` before the transaction
 opens (`X_SQL_UNSAFE`, `multipleStatements`). This is not a second mutating-keyword scan — it is a

@@ -91,7 +91,6 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_MIGRATION_DESTRUCTIVE',
     'X_MIGRATION_IRREVERSIBLE',
     'X_MIGRATION_SNAPSHOT_MISSING',
-    'X_READONLY_VIOLATION',
     'X_SQL_UNSAFE',
   ],
   // tier 1 — flag declaration and evaluation faults, raised at registration or at an evaluation
@@ -116,10 +115,9 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_MONEY_SCALE_INVALID',
     'X_RATE_MISSING',
   ],
-  // tier 1 — SEO budget and metadata rules, enforced by the build and by `x verify`.
+  // tier 1 — SEO metadata rules. The budget half was retired in 1.3.0 — `@ultimat3/render`'s X_BUDGET_EXCEEDED is the one a build raises.
   seo: [
     'X_LD_INVALID',
-    'X_SEO_BUDGET_EXCEEDED',
     'X_SEO_CANONICAL_MISMATCH',
     'X_SEO_DUPLICATE_META',
     'X_SEO_META_MISSING',

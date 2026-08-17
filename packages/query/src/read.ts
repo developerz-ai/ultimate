@@ -19,11 +19,17 @@ import {
 } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { formatPath, validateAsync } from '@ultimat3/schema';
-import { cacheKeyFor, readAuthority, readFresh, readOnce, readThrough } from './cache';
+import {
+  cacheKeyFor,
+  DEFAULT_READ_CACHE_TTL_MS,
+  readAuthority,
+  readFresh,
+  readOnce,
+  readThrough,
+} from './cache';
 import { QueryForeignError, QueryInputInvalidError, QueryUnregisteredError } from './errors';
 import { actorOf, guard } from './policy-gate';
 import type { AnyQuery, AnyQueryDef, Query, QueryOptions, SourceOptions } from './query';
-import { DEFAULT_READ_CACHE_TTL_MS } from './read-cache';
 import type { SqlSource } from './source';
 
 /**

@@ -1,0 +1,87 @@
+// One URL, one gate. `adminRouteFor` is the lookup a host uses when it serves an admin URL from
+// its own page file, and these assertions are what stop that host from typing the permission a
+// second time — the shape the deployed demo shipped on five pages until 1.2.0.
+
+import { afterAll, describe, expect, test } from 'bun:test';
+import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
+import { defineAdmin } from './admin';
+import { type AdminActor, staticAuthz } from './authz';
+import type { AdminCustomPage } from './pages';
+import { adminRouteConfig, adminRouteFor } from './routes';
+
+const post = entity('admin_routes_post', {
+  columns: { id: uuid().primaryKey(), title: text({ max: 120 }) },
+});
+
+afterAll(clearRegistry);
+
+const auth = {
+  actor: (): AdminActor | null => null,
+  authz: staticAuthz(['admin:read', 'ops:read']),
+};
+
+const ops: AdminCustomPage = {
+  path: '/ops',
+  titleKey: 'admin.ops.title',
+  permissions: ['ops:read'],
+  component: () => 'ops-body',
+};
+
+const app = defineAdmin({
+  entities: [post],
+  resources: { admin_routes_post: { path: '/posts' } },
+  pages: [ops],
+  auth,
+});
+
+describe('adminRouteFor — the gate a mount reads instead of restating', () => {
+  test('a generated view answers with the table’s own coarse permission', () => {
+    const route = adminRouteFor(app, '/admin/posts');
+    expect(route.permissions).toEqual(['admin:read', 'admin_routes_post:read']);
+    expect(route.policy.permission).toBe('admin:read');
+  });
+
+  test('a jobs route answers the job pair, not an entity one', () => {
+    expect(adminRouteFor(app, '/admin/jobs').permissions).toEqual(['admin:read', 'job:read']);
+  });
+
+  test('a custom page answers with its guarded component', () => {
+    const route = adminRouteFor(app, '/admin/ops');
+    expect(route.component).not.toBeNull();
+    expect(route.permissions).toEqual(['admin:read', 'ops:read']);
+  });
+
+  test('`policy` IS the object the route config carries — a mount cannot read a different gate', () => {
+    const route = adminRouteFor(app, '/admin/posts');
+    expect(route.config.policy).toBe(route.policy);
+    // `permissions[0]` is the RECEIVED side: it is `string | undefined` under
+    // `noUncheckedIndexedAccess`, and only the received side of `toBe` accepts that.
+    expect(route.permissions[0]).toBe(route.policy.permission);
+  });
+
+  test('an undeclared path is refused, and the fix names the declaration that would fix it', () => {
+    let code: string | undefined;
+    let fix: string | undefined;
+    try {
+      adminRouteFor(app, '/admin/reconcile');
+    } catch (error) {
+      const thrown = error as { code?: string; fix?: string };
+      code = thrown.code;
+      fix = thrown.fix;
+    }
+    expect(code).toBe('X_ADMIN_PAGE_PATH_INVALID');
+    expect(fix).toContain('pages:');
+    // The paths that WOULD have worked, so the reader does not go looking for them.
+    expect(fix).toContain('/admin/posts');
+  });
+});
+
+describe('adminRouteConfig composes the gate exactly once', () => {
+  test('every route in the table carries a policy identical to its first permission', () => {
+    for (const route of app.routes) {
+      const config = adminRouteConfig(route);
+      expect(route.permissions[0]).toBe(config.policy.permission);
+      expect(config.config.policy).toEqual(config.policy);
+    }
+  });
+});

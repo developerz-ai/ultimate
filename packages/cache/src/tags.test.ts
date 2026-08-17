@@ -14,6 +14,7 @@ import {
   serializeTag,
   serializeTags,
   tag,
+  tagKeys,
   tagMatches,
   tagsFor,
   tagsIntersect,
@@ -77,6 +78,35 @@ describe('serializeTags', () => {
       'post:1',
       'user:9',
     ]);
+  });
+});
+
+/**
+ * The identity form, and the reason it is not `serializeTags`. `@ultimat3/action` and
+ * `@ultimat3/query` build a descriptor field and a read-cache key out of it, so two declaration
+ * orders of one tag set must be one string — otherwise two callers of one read fill two entries
+ * and an action's `invalidates` reaches whichever of them it happens to name.
+ */
+describe('tagKeys', () => {
+  test('is sorted, so declaration order cannot become two cache keys', () => {
+    expect(tagKeys([tag('user', '9'), tag('post'), tag('post', '1')])).toEqual([
+      'post',
+      'post:1',
+      'user:9',
+    ]);
+    expect(tagKeys([tag('post', '1'), tag('user', '9'), tag('post')])).toEqual(
+      tagKeys([tag('user', '9'), tag('post'), tag('post', '1')]),
+    );
+  });
+
+  test('is de-duplicated, so declaring one tag twice is one key', () => {
+    expect(tagKeys([tag('post'), tag('post'), tag('post', '1')])).toEqual(['post', 'post:1']);
+  });
+
+  test('is NOT serializeTags: that one keeps declaration order and its duplicates', () => {
+    const declared = [tag('user', '9'), tag('post'), tag('post')];
+    expect(serializeTags(declared)).toEqual(['user:9', 'post', 'post']);
+    expect(tagKeys(declared)).toEqual(['post', 'user:9']);
   });
 });
 

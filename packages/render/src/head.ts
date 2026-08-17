@@ -29,7 +29,13 @@ export type LdRenderer = (meta: RouteMeta) => string | null;
 export interface HeadRenderers {
   /** `@ultimat3/seo`'s `renderMeta`, adapted to `HeadTag[]`. */
   readonly renderMeta: MetaRenderer;
-  /** `@ultimat3/seo`'s `renderLd`, returning the JSON-LD body or null. */
+  /**
+   * A host's own JSON-LD body, or null. Deliberately unbound by `seoRenderers()` — `renderMeta`
+   * already emits `meta.ld` as one script per node, and a second source for the same tags is how
+   * a document ends up with two copies of its graph. It never was `@ultimat3/seo`'s `renderLd`
+   * either: that took nodes and returned a `HeadTag`, so it could not satisfy this signature. It
+   * was deleted in 1.3.0 for being that second source.
+   */
   readonly renderLd?: LdRenderer;
 }
 

@@ -199,10 +199,11 @@ like it worked, so it refuses instead and names the fix.
 The mirror image is just as loud: a **DOM** with no registered runtime is the "my theme toggle
 does nothing" bug, and `solid()` still throws there. No DOM, no reactivity to lose.
 
-Server-side, set the locale and zone the way every other package reads them — through the
-request context (`attachLocale` / `attachTimeZone`, which `@ultimat3/http` already calls per
-request, and `withChildContext({ locale, tz })` for a subtree). There is no second ambient store
-in this package.
+Server-side, the locale and zone are `ctx.locale` and `ctx.tz` — **core's own fields**, written
+once per request by `@ultimat3/http`'s `locale` stage and read back by `currentLocale()` /
+`currentTimeZone()`. `withChildContext({ locale, tz })` scopes a subtree. There is no second
+ambient store, here or anywhere: `@ultimat3/time` used to keep its own `ctx['timeZone']` that
+nothing ever wrote, so every server-rendered date was UTC however the request arrived.
 
 ## Example
 

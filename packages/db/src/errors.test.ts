@@ -6,6 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   DB_ERROR_TITLES,
+  DB_OWNED_ERROR_CODES,
   driverError,
   migrateConcurrent,
   poolAcquireTimeout,
@@ -13,6 +14,37 @@ import {
   serializationExhausted,
 } from './errors';
 import { DB_SQLSTATE_CODES } from './sqlstate';
+
+describe('DB_OWNED_ERROR_CODES', () => {
+  test('is exactly the set this package declares and can throw', () => {
+    // A code is a shipped promise: `x errors explain` answers from this registry and
+    // `wiki/Error-Codes.md` carries its row, so one arriving or leaving is a deliberate edit here.
+    // No `X_READONLY_VIOLATION`: it was thrown only by `readOnly()`, a regex-gated client wrapper
+    // with zero callers whose keyword list was materially weaker than the guard the one real
+    // consumer uses (`@ultimat3/mcp`'s parse guard, over `readOnlyQuery`'s `BEGIN READ ONLY`).
+    expect([...DB_OWNED_ERROR_CODES].sort()).toEqual([
+      'X_BRANCH_EXISTS',
+      'X_DB_DRIFT',
+      'X_DB_FOREIGN_KEY_VIOLATION',
+      'X_DB_LOCK_TIMEOUT',
+      'X_DB_POOL_EXHAUSTED',
+      'X_DB_SERIALIZATION_FAILURE',
+      'X_DB_STATEMENT_TIMEOUT',
+      'X_DB_UNAVAILABLE',
+      'X_DB_UNIQUE_VIOLATION',
+      'X_MIGRATE_CONCURRENT',
+      'X_MIGRATION_CONFLICT',
+      'X_MIGRATION_DESTRUCTIVE',
+      'X_MIGRATION_IRREVERSIBLE',
+      'X_MIGRATION_SNAPSHOT_MISSING',
+      'X_SQL_UNSAFE',
+    ]);
+  });
+
+  test('every owned code carries a title', () => {
+    expect([...DB_OWNED_ERROR_CODES].sort()).toEqual([...Object.keys(DB_ERROR_TITLES)].sort());
+  });
+});
 
 const serverError = (state: string, extra: Record<string, unknown> = {}): unknown =>
   Object.assign(new Error('duplicate key value violates unique constraint "users_email_key"'), {

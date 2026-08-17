@@ -37,7 +37,12 @@ Imported by every package that renders a string.
 - `Translator<TCatalog = Catalog>` must keep defaulting to `string` keys: `@ultimat3/ui` and
   `@ultimat3/mail` take a bare `Translator`. `has()` and `raw()` stay `string` — they are probes.
 - Nothing here formats a number, date or money. That is `@ultimat3/money` / `@ultimat3/time`.
-- `Ctx` fields are read structurally (core cannot depend on `Locale`); one cast, in `context.ts`.
+- **The ambient locale IS `Ctx.locale`**, core's own declared field — this package writes no context
+  field of its own and publishes no writer. `createContext({ locale })` and
+  `withChildContext({ locale })` are the only ways in, `currentLocale()` the only way out.
+  `attachLocale`/`localeOf` existed until 1.3.0 with zero callers; `@ultimat3/time` had the same
+  pair over a field name (`ctx['timeZone']`) that disagreed with core's `tz`, which is what made
+  every server-rendered date UTC. Never reintroduce either half.
 - Adding a framework string: `catalogs/en.json`, feature-namespaced, then use `t('ns.key')`.
 - **`catalogs/en.json` is gated in both directions**, on `x verify`'s `boundaries` step via
   `scripts/i18n-catalog.ts`. A `t('literal')` in `packages/*/src` with no entry is

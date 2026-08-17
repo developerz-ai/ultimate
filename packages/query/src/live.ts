@@ -6,6 +6,7 @@
  * and it runs that read (`execute`), so the shared window and the matcher over it
  * come from one build of one `(query, input)` rather than two that agree by luck.
  */
+import { tagKeys } from '@ultimat3/cache';
 import type { Ctx } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { Patch } from './matcher';
@@ -17,7 +18,6 @@ import { queryHash } from './query';
 import { queryName, sourceFor } from './read';
 import type { QueryShape, SeekKey } from './shape';
 import { seekKeyOf } from './shape';
-import { tagKeys } from './tags';
 
 /**
  * Reconnect state. Deliberately tiny — an id, a sort key and a version — because

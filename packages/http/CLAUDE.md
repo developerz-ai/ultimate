@@ -4,7 +4,15 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 
 ## Boundary
 
-- May import: `@ultimat3/core`, `@ultimat3/schema`. Nothing else, ever.
+- May import: `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`, `@ultimat3/time` — tiers 0
+  and 1, which is the whole rule. There is no extra restriction here; the line used to read
+  "core, schema. Nothing else, ever", stated no reason, and was stricter than the tier table.
+  **What it bought was three re-implementations.** `locale.ts` carried its own `negotiateLocale`,
+  `isValidTimeZone` and `resolveTimeZone`, and each disagreed with its owner about the same
+  request: an app shipping `{ en, fr }` resolved `ctx.locale` to `'en'` forever, a switcher writing
+  the documented `LOCALE_COOKIE` (`x_locale`) was read by nothing because this package spelled it
+  `x-locale`, and `x-timezone: +01:00` — a fixed offset with no DST rules — became `ctx.tz` and
+  threw four packages later. Adding a tier-1 import is cheaper than a fourth divergence.
 - May NOT import `@ultimat3/policy` or `@ultimat3/entity` — same tier. Authz and auth
   come in via `ServerHooks` (`hooks.ts`), declared structurally.
 - `@ultimat3/action` (tier 3) is what wires policy into `hooks.authorize`.
@@ -131,6 +139,16 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   `PipelineDeps`. Adding a stage means an entry in **both** `PIPELINE_STAGES` and the
   `Record<StageName, StageRun>` table; the record type is what makes forgetting one a build error.
 - Never add a stage to `PIPELINE_STAGES` without a `why` and a test.
+- **The `locale` stage decides WHERE, the owners decide WHAT.** It reads a header and a cookie and
+  hands the raw strings to `@ultimat3/i18n`'s `resolveLocale` and `@ultimat3/time`'s
+  `resolveTimeZone`; it must never negotiate, validate or canonicalize one itself. The two answers
+  land on `ctx.locale` and `ctx.tz` — **core's own declared fields, the framework's only ambient
+  store for either** — so `currentLocale()` and `currentTimeZone()` answer for this request once
+  `pipeline.ts` publishes the context into the ALS. `@ultimat3/time` kept a second store
+  (`ctx['timeZone']`) with zero writers until 1.3.0, and the whole cost was silent: every
+  `@ultimat3/ui` server render formatted its dates in UTC however the request arrived. A default
+  for either value is `configureTime({ defaultZone })` / `defineCatalogs({ default })`, never a
+  third copy in `HttpConfig`.
 - **`toBucket` lives here, not in `@ultimat3/action`.** `action` and `query` are the same tier and
   can never import each other, so the only conversion between `{ limit, windowMs }` and a `Bucket`
   sitting in one of them is why a `query` could not declare a rate limit at all. It is beside
@@ -256,6 +274,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `peer-identity.ts` | Envoy XFCC -> `ctx.peer`, on that same trust rule |
 | `deadline.ts` | the per-request `AbortController`, the timer and `X_TIMEOUT` |
 | `csrf.ts` | the origin proof an unsafe method from a credentialed browser must carry |
+| `locale.ts` | WHERE the request's locale and zone are read from — header and cookie NAMES only, plus `readCookie`. It negotiates nothing |
 | `rate-limit-buckets.ts` | the one point routes and config meet: a route's own bucket, registered or refused |
 
 ## Commands

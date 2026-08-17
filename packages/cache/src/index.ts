@@ -88,6 +88,7 @@ export {
   serializeTag,
   serializeTags,
   tag,
+  tagKeys,
   tagMatches,
   tagsFor,
   tagsIntersect,

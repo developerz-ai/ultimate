@@ -11,6 +11,8 @@ import {
   userActor,
   uuid,
 } from '@ultimat3/core';
+import { localeConfig } from '@ultimat3/i18n';
+import { timeConfig } from '@ultimat3/time';
 import { defineHttpConfig } from './config';
 import {
   actorView,
@@ -40,8 +42,8 @@ describe('createRequestContext', () => {
     expect(ctx.https).toBe(true);
     expect(isAnonymous(ctx.actor)).toBe(true);
     expect(ctx.actor).toEqual(anonymousActor());
-    expect(ctx.locale).toBe(config.locale.default);
-    expect(ctx.tz).toBe(config.tz.default);
+    expect(ctx.locale).toBe(localeConfig().fallback);
+    expect(ctx.tz).toBe(timeConfig().defaultZone);
     expect(ctx.params).toEqual({});
     expect(ctx.route).toBeUndefined();
     // Core's meaning: the build this PROCESS serves. The CLIENT's claim is `clientBuildId`.

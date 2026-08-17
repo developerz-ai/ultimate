@@ -3,7 +3,7 @@
  * No call site passes a locale by hand — `t()` here is the ambient translator.
  */
 
-import { type Ctx, useContext } from '@ultimat3/core';
+import { tryUseContext } from '@ultimat3/core';
 import { type Catalog, mergeCatalogs } from './catalog';
 import {
   DEFAULT_LOCALE,
@@ -18,9 +18,6 @@ import { createTranslator, type TranslateVars, type Translator } from './transla
 
 /** The cookie an explicit language switcher writes. */
 export const LOCALE_COOKIE = 'x_locale';
-
-/** Field name on the ALS context. Core owns `Ctx`; it stays a plain string there. */
-const CTX_LOCALE = 'locale';
 
 export interface LocaleSources {
   /** Raw `Accept-Language` header value. */
@@ -114,20 +111,16 @@ export function localeCookieOf(cookieHeader?: string | null): string | undefined
   return undefined;
 }
 
-/** The HTTP layer calls this once per request, before any render. */
-export function attachLocale(ctx: Ctx, locale: Locale): Locale {
-  writeContextField(ctx, CTX_LOCALE, locale);
-  return locale;
-}
-
-export function localeOf(ctx: Ctx): Locale {
-  return readField(ctx, CTX_LOCALE) ?? config.fallback;
-}
-
-/** Ambient locale for the in-flight request; the configured fallback outside one. */
+/**
+ * Ambient locale for the in-flight request; the configured fallback outside one.
+ *
+ * The store is **`Ctx.locale`**, core's own declared field, so `createContext({ locale })` and
+ * `withChildContext({ locale })` are the only writers and this package publishes no second one.
+ * `@ultimat3/time`'s `currentTimeZone()` is the same shape over `Ctx.tz`, deliberately.
+ */
 export function currentLocale(): Locale {
-  const ctx = tryContext();
-  return (ctx === undefined ? undefined : readField(ctx, CTX_LOCALE)) ?? config.fallback;
+  const locale = tryUseContext()?.locale;
+  return locale === undefined || locale === '' ? config.fallback : locale;
 }
 
 export function currentDirection(): Direction {
@@ -184,26 +177,4 @@ export function t(key: string, vars?: TranslateVars): string {
 export function resetCatalogs(): void {
   registry.clear();
   translators.clear();
-}
-
-function tryContext(): Ctx | undefined {
-  try {
-    return useContext();
-  } catch {
-    // Outside a request scope (boot, a CLI command, a worker tick) — no ambient locale.
-    return undefined;
-  }
-}
-
-/**
- * `Ctx` is owned by core (tier 0) and cannot reference i18n's `Locale`, so the field is
- * read structurally. One place, one cast, validated on the way out.
- */
-function readField(ctx: Ctx, field: string): string | undefined {
-  const value = (ctx as unknown as Record<string, unknown>)[field];
-  return typeof value === 'string' && value !== '' ? value : undefined;
-}
-
-function writeContextField(ctx: Ctx, field: string, value: string): void {
-  (ctx as unknown as Record<string, unknown>)[field] = value;
 }

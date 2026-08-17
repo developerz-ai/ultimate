@@ -81,24 +81,30 @@ describe('defineHttpConfig', () => {
     const config = defineHttpConfig({
       rateLimit: { scope: 'process' },
       dev: false,
-      locale: { default: 'de' },
+      locale: { cookie: 'lang' },
     });
 
-    expect(config.locale.default).toBe('de');
-    expect(config.locale.supported).toEqual(DEFAULT_LOCALE_CONFIG.supported);
-    expect(config.locale.cookie).toBe(DEFAULT_LOCALE_CONFIG.cookie);
+    expect(config.locale.cookie).toBe('lang');
+  });
+
+  // The supported set and the fallback belong to `defineCatalogs()`, the zone default to
+  // `configureTime()`. This config holds WHERE to read a request's choice from, never what the
+  // choice may be — a second declaration here is what let an app ship `{ en, fr }` and resolve
+  // `ctx.locale` to `'en'` forever.
+  test('holds header and cookie names only, never a supported set or a default', () => {
+    expect(Object.keys(DEFAULT_LOCALE_CONFIG).sort()).toEqual(['cookie']);
+    expect(Object.keys(DEFAULT_TZ_CONFIG).sort()).toEqual(['cookie', 'header']);
   });
 
   test('tz merges input over DEFAULT_TZ_CONFIG', () => {
     const config = defineHttpConfig({
       rateLimit: { scope: 'process' },
       dev: false,
-      tz: { default: 'America/New_York' },
+      tz: { cookie: 'zone' },
     });
 
-    expect(config.tz.default).toBe('America/New_York');
+    expect(config.tz.cookie).toBe('zone');
     expect(config.tz.header).toBe(DEFAULT_TZ_CONFIG.header);
-    expect(config.tz.cookie).toBe(DEFAULT_TZ_CONFIG.cookie);
   });
 
   test('cors merges input over DEFAULT_CORS, leaving other fields intact', () => {

@@ -21,11 +21,18 @@
 | `cron-describe.ts` | `describeCron` — `Intl` names, phrases injected. `CronPhrases` is required. |
 | `schedule.ts` | `nextLocalSlot` — "09:00 local tomorrow" |
 | `business.ts` | weekends as config, holidays as local dates |
-| `context.ts` | request timezone via ALS |
+| `context.ts` | request timezone: which source wins, and reading core's `Ctx.tz` back off the ALS |
 
 ## Rules
 
 - Never format without an explicit `timeZone`. No ambient default, no `toLocaleString()`.
+- **The ambient zone IS `Ctx.tz`**, core's own declared field. This package publishes no writer and
+  no field of its own: `createContext({ tz })` and `withChildContext({ tz })` are the way in,
+  `currentTimeZone()` the way out. It kept `attachTimeZone`/`timeZoneOf` over `ctx['timeZone']`
+  until 1.3.0 — a second ambient store, with **zero** writers, while `@ultimat3/http` wrote `tz` —
+  so `currentTimeZone()` answered `UTC` for every request and every `@ultimat3/ui` server render
+  formatted in UTC regardless of the zone the caller sent. Two ambient defaults is the worst
+  possible version of the rule above. Never reintroduce either half.
 - **Never cache an `Intl` formatter on a raw caller string.** A zone and a locale both arrive from
   a request header, so the key must be canonical (`canonicalTimeZone` for a zone, `canonicalLocale`
   for a locale) and the cache must be bounded (`cachedFormatter`, `intl-cache.ts`). An unbounded

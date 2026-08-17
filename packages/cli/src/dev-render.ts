@@ -10,6 +10,7 @@
 import type { Ctx } from '@ultimat3/core';
 import type { RouteMeta as HttpRouteMeta, Route, RouteParams } from '@ultimat3/http';
 import { asCtx, html, stream } from '@ultimat3/http';
+import { currentLocale } from '@ultimat3/i18n';
 import type {
   IslandCollector,
   IsrController,
@@ -61,7 +62,14 @@ export interface DevRouteData extends Record<string, unknown> {
   readonly params: RouteParams;
 }
 
-const LANG = 'en';
+/**
+ * `<html lang>` is the request's own locale, never a constant: the `locale` stage negotiated it
+ * one stage before this handler and published it on the context, so a hardcoded `'en'` shipped
+ * every document mislabelled — wrong for a screen reader, wrong for `hreflang`, wrong for a CDN
+ * keying on `content-language`. Outside a request (`x build`'s prerender) it is the app's own
+ * configured fallback, which is the only defensible answer there.
+ */
+const lang = (): string => currentLocale();
 
 const headFor = async (entry: RouteEntry, ctx: DevRouteData, data: RouteData): Promise<string> =>
   renderHead(
@@ -153,7 +161,7 @@ async function documentFrom(
     routeBody(entry, ctx, data, islands),
   ]);
   return (
-    `<!doctype html><html lang="${LANG}"><head>${head}${styleTag(entry)}</head>` +
+    `<!doctype html><html lang="${lang()}"><head>${head}${styleTag(entry)}</head>` +
     `<body>${body}${hydrateRuntime(islands.directives)}</body></html>`
   );
 }
@@ -190,7 +198,7 @@ async function resultFor(
         buildId: options.buildId,
         head: (await headFor(entry, request, data)) + styleTag(entry),
         chunks: [],
-        lang: LANG,
+        lang: lang(),
       });
     case 'stream': {
       // The shell IS the component: nothing can yet mark a subtree as a hole. Solid's `Suspense`
@@ -205,7 +213,7 @@ async function resultFor(
       ]);
       return streamResult(
         {
-          head: `<!doctype html><html lang="${LANG}"><head>${head}${styleTag(entry)}</head><body>`,
+          head: `<!doctype html><html lang="${lang()}"><head>${head}${styleTag(entry)}</head><body>`,
           // The runtime rides the first flush, with the shell it boots. A later chunk would leave
           // the window between flush one and the close with inert islands and no listeners on
           // them — which is exactly the first-click-lost failure `interaction` replay exists for.

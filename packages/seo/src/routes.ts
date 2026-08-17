@@ -11,18 +11,6 @@ export type Surface = 'site' | 'app' | 'api';
 
 export type ChangeFreq = 'always' | 'hourly' | 'daily' | 'weekly' | 'monthly' | 'yearly' | 'never';
 
-export interface RouteBudget {
-  /** Byte budgets accept `'40kb'` or a raw number of bytes. */
-  js?: string | number;
-  css?: string | number;
-  /** Milliseconds. */
-  lcp?: number;
-  /** Unitless layout-shift score. */
-  cls?: number;
-  /** Milliseconds. */
-  inp?: number;
-}
-
 export interface RouteRecord {
   /** URL pattern, e.g. `/blog/:slug`. */
   path: string;
@@ -33,7 +21,6 @@ export interface RouteRecord {
   meta?: RouteMeta;
   /** Concrete paths for a dynamic route, from `defineRoute({ prerender })`. */
   prerender?: () => readonly string[] | Promise<readonly string[]>;
-  budget?: RouteBudget;
   /** Keep out of the sitemap and emit `noindex`. */
   noindex?: boolean;
   lastmod?: string;

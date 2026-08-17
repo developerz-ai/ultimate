@@ -78,14 +78,7 @@ export {
 export type { Authenticator, AuthzDecision, ServerHooks } from './hooks';
 export { configureAuthenticator, configuredAuthenticator, resetAuthenticator } from './hooks';
 export type { LocaleConfig, TimeZoneConfig } from './locale';
-export {
-  DEFAULT_LOCALE_CONFIG,
-  DEFAULT_TZ_CONFIG,
-  isValidTimeZone,
-  negotiateLocale,
-  readCookie,
-  resolveTimeZone,
-} from './locale';
+export { DEFAULT_LOCALE_CONFIG, DEFAULT_TZ_CONFIG, readCookie } from './locale';
 export type { Middleware } from './middleware';
 export { compose } from './middleware';
 export type { OverlayMeta, OverlayNotice } from './overlay';

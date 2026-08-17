@@ -32,6 +32,8 @@
   },
   "dependencies": {
     "@ultimat3/core": "1.2.0",
-    "@ultimat3/schema": "1.2.0"
+    "@ultimat3/i18n": "1.2.0",
+    "@ultimat3/schema": "1.2.0",
+    "@ultimat3/time": "1.2.0"
   }
 }

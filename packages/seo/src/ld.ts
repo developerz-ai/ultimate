@@ -4,7 +4,6 @@
 // type system cannot (a value read from a CMS).
 
 import { ldInvalid } from './errors';
-import type { HeadTag } from './meta';
 
 export type JsonLd = Readonly<Record<string, unknown>>;
 
@@ -310,16 +309,3 @@ export const ld = {
   SoftwareApplication,
   WebSite,
 } as const;
-
-/** One `<script type="application/ld+json">` holding a @graph of every node. */
-export function renderLd(nodes: readonly JsonLd[]): HeadTag {
-  const payload =
-    nodes.length === 1
-      ? nodes[0]
-      : { '@context': LD_CONTEXT, '@graph': nodes.map(({ '@context': _drop, ...rest }) => rest) };
-  return {
-    tag: 'script',
-    attrs: { type: 'application/ld+json' },
-    text: JSON.stringify(payload),
-  };
-}

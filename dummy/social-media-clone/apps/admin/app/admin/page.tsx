@@ -6,6 +6,7 @@
 // `admin:read` without `admin:write`, decided per operation by `policy.ts` — one decision that both
 // declines to render a control and refuses the call behind it.
 
+import { adminRouteFor } from '@ultimat3/admin';
 import { t } from '@ultimat3/i18n';
 import { defineRoute } from '@ultimat3/render';
 import { currentAdminActor } from './actor';
@@ -14,13 +15,16 @@ import { resourceScreen, visibleNavFor } from './screen';
 import { AdminShell, ResourceView } from './views';
 import styles from './views.module.scss';
 
+const route = adminRouteFor(admin, admin.basePath);
+
 export const config = defineRoute({
   render: 'ssr',
   hydrate: 'never',
   offline: 'network-only',
   // Auth is a policy, never a route-local flag. It also earns `private, no-store` from
-  // `ssrHeaders` — an operator's rows must never be shared-cacheable.
-  policy: { permission: 'admin:read' },
+  // `ssrHeaders` — an operator's rows must never be shared-cacheable. The permission itself is
+  // read from the admin route table rather than typed here: one URL, one declaration.
+  policy: route.policy,
   budget: { js: '0kb', lcp: 3000 },
   meta: () => ({ title: t('admin.home.title'), description: t('admin.home.description') }),
 });

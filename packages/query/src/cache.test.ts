@@ -1,6 +1,6 @@
 // Single responsibility: tests for the read path's one guarantee — a key is read once per
-// request. The tier it fills through is `read-cache.test.ts`; what is proved here is how many
-// times the read path reaches for it. Three questions about a fill that are NOT this file's:
+// request. WHERE it fills is `read-tier.test.ts`; what is proved here is how many
+// times the read path reaches for the ladder. Three questions about a fill that are NOT this file's:
 // who an entry may be served to (`cache-authority.test.ts`), whether it may be written at all
 // (`cache-fence.test.ts`), and what happens when the tier refuses (`cache-degraded.test.ts`).
 // Concurrency is the half that used to be missing: the memo holds the read *in flight*,
@@ -9,37 +9,54 @@
 // because a promise-keyed memo can hold a rejection forever if nobody evicts it.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import type { CacheTag } from '@ultimat3/cache';
+import type { CacheSetOptions, CacheTag, CacheTier } from '@ultimat3/cache';
+import { isolateTiers, registerTier, resetTiers } from '@ultimat3/cache';
 import { createContext, frozenClock } from '@ultimat3/core';
 import { readFresh, readOnce, readThrough, requestMemo } from './cache';
-import type { ReadCache, ReadCacheEntry } from './read-cache';
-import { getReadCache, MemoryReadCache, setReadCache } from './read-cache';
 
-/** Counts the tier round trips a read costs, so "one round trip" is a number, not a claim. */
-class CountingCache implements ReadCache {
-  gets = 0;
-  sets = 0;
-  readonly writes: ReadCacheEntry[] = [];
-  readonly #entries = new MemoryReadCache();
+interface Written {
+  readonly value: unknown;
+  readonly ttlMs: number | undefined;
+  readonly tags: readonly CacheTag[];
+}
 
-  async get(key: string): Promise<ReadCacheEntry | undefined> {
-    this.gets += 1;
-    return await this.#entries.get(key);
-  }
-
-  async set(key: string, entry: ReadCacheEntry): Promise<void> {
-    this.sets += 1;
-    this.writes.push(entry);
-    await this.#entries.set(key, entry);
-  }
-
-  async delete(key: string): Promise<void> {
-    await this.#entries.delete(key);
-  }
-
-  async invalidateTags(tags: readonly CacheTag[]): Promise<readonly string[]> {
-    return await this.#entries.invalidateTags(tags);
-  }
+/**
+ * Counts the tier round trips a read costs, so "one round trip" is a number, not a claim.
+ *
+ * It records the RELATIVE `ttlMs` it was handed, because that is now the whole of what the read
+ * path decides: the absolute expiry is the tier's, computed with the tier's own clock. The read
+ * path computing one itself is the `Date.now()` bug this migration deleted.
+ */
+function countingTier(): CacheTier & {
+  gets: number;
+  sets: number;
+  readonly writes: Written[];
+} {
+  const entries = new Map<string, { value: unknown; tags: readonly CacheTag[] }>();
+  return {
+    name: 'lru',
+    gets: 0,
+    sets: 0,
+    writes: [],
+    async get<T>(key: string) {
+      this.gets += 1;
+      const held = entries.get(key);
+      return held === undefined ? undefined : { value: held.value as T, tags: held.tags };
+    },
+    async set<T>(key: string, value: T, options?: CacheSetOptions) {
+      this.sets += 1;
+      this.writes.push({ value, ttlMs: options?.ttlMs, tags: options?.tags ?? [] });
+      entries.set(key, { value, tags: options?.tags ?? [] });
+    },
+    async del(key: string) {
+      entries.delete(key);
+    },
+    async invalidateTags() {
+      const keys = [...entries.keys()];
+      entries.clear();
+      return { tier: 'lru' as const, keys };
+    },
+  };
 }
 
 /** A source that hangs until released, so a second reader is provably concurrent with the first. */
@@ -51,16 +68,20 @@ function gate(): { readonly wait: Promise<void>; readonly open: () => void } {
   return { wait, open };
 }
 
-const original = getReadCache();
-let tier = new CountingCache();
+let restore: (() => void) | undefined;
+let tier = countingTier();
 
 beforeEach(() => {
-  tier = new CountingCache();
-  setReadCache(tier);
+  restore?.();
+  restore = isolateTiers();
+  resetTiers();
+  tier = countingTier();
+  registerTier(tier);
 });
 
 afterAll(() => {
-  setReadCache(original);
+  restore?.();
+  restore = undefined;
 });
 
 describe('requestMemo', () => {
@@ -264,7 +285,7 @@ describe('readThrough', () => {
   });
 
   test('serves a tier hit without touching the source, and does not write it back', async () => {
-    await tier.set('k', { value: 'cached', expiresAt: null });
+    await tier.set('k', 'cached');
     const ctx = createContext({});
     let calls = 0;
     const run = async (): Promise<string> => {
@@ -277,32 +298,29 @@ describe('readThrough', () => {
     expect(tier.sets).toBe(1);
   });
 
-  test('writes the tier with an absolute expiry, or none at all', async () => {
+  // A RELATIVE lease, and never an absolute expiry: the tier's own clock turns it into one.
+  // A `null` ttl is "the caller named none" and reaches the tier as an omission, which is how a
+  // tier is asked for its own default — it is not, and has never been, "never expires".
+  test('hands the tier a relative lease, or none at all', async () => {
     const run = async (): Promise<string> => 'rows';
 
-    // The clock reads once, before the writes. Recomputing `Date.now()` for the assertion asserts
-    // that no millisecond ticked across two awaits, which is the test machine's business.
-    const before = Date.now();
     await readThrough(createContext({}), 'ttl', 60_000, run);
     await readThrough(createContext({}), 'forever', null, run);
-    const after = Date.now();
 
     const [ttl, forever] = tier.writes;
-    expect(ttl?.value).toBe('rows');
-    expect(ttl?.expiresAt).toBeGreaterThanOrEqual(before + 60_000);
-    expect(ttl?.expiresAt).toBeLessThanOrEqual(after + 60_000);
-    expect(forever).toEqual({ value: 'rows', expiresAt: null, tags: [] });
+    expect(ttl).toEqual({ value: 'rows', ttlMs: 60_000, tags: [] });
+    expect(forever).toEqual({ value: 'rows', ttlMs: undefined, tags: [] });
     expect(tier.writes).toHaveLength(2);
   });
 
-  // `Date.now()` in a package that is handed a `Clock` on every read: a test could not decide the
-  // expiry it asserts, and a read served under an injected clock wrote an entry under another one.
-  test("dates the entry by the request's own clock, never the wall clock", async () => {
+  // The read path reads no clock at all now. `read-tier.test.ts` is where a frozen clock is
+  // driven end to end through a real tier; this only pins that nothing here re-derives one.
+  test('reads no clock of its own, so an injected one cannot be bypassed', async () => {
     const ctx = createContext({ clock: frozenClock(1_000) });
 
     await readThrough(ctx, 'k', 60_000, async () => 'rows');
 
-    expect(tier.writes[0]?.expiresAt).toBe(61_000);
+    expect(tier.writes[0]).toEqual({ value: 'rows', ttlMs: 60_000, tags: [] });
   });
 
   test('fails every reader that joined the read, having run the source once', async () => {

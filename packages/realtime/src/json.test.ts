@@ -49,6 +49,48 @@ describe('canonicalJson', () => {
     expect(canonicalJson(null)).toBe('null');
     expect(canonicalJson('null')).toBe('"null"');
   });
+
+  /**
+   * A qid is `stableDigest(canonicalJson(input))`, and a qid HIT hands the joiner the existing
+   * entry — the first subscriber's compiled source, matcher and seated row window. So two inputs
+   * that canonicalise to one string are two clients served out of one window. `JSON.stringify`
+   * folds `NaN` and `±Infinity` onto `null` and spells `-0` as `"0"`, which is the whole of what
+   * these pin.
+   */
+  test('the four values `JSON.stringify` folds onto `null` are four canonical forms', () => {
+    const forms = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, null].map((n) =>
+      canonicalJson({ limit: n }),
+    );
+    expect(new Set(forms).size).toBe(4);
+  });
+
+  /**
+   * `-0` is the one of the four a client can put on the wire: `JSON.parse('{"a":-0}')` answers
+   * `-0`, while `NaN` and `±Infinity` have no JSON spelling at all and can only arrive from a
+   * caller that builds `input` in JS — `useLive(feed, () => ({ limit: Number.parseInt(raw) }))`
+   * with an unparseable `raw`, or a row column in the client's identity map.
+   */
+  test('-0 and 0 are two subscriptions, so they are two canonical forms', () => {
+    expect(canonicalJson({ limit: -0 })).not.toBe(canonicalJson({ limit: 0 }));
+  });
+
+  test('a bare token cannot collide with the string that spells it', () => {
+    const pairs = [
+      [Number.NaN, 'NaN'],
+      [Number.POSITIVE_INFINITY, 'Infinity'],
+      [Number.NEGATIVE_INFINITY, '-Infinity'],
+      [-0, '-0'],
+    ] as const;
+    for (const [number, text] of pairs) {
+      expect(canonicalJson({ limit: number })).not.toBe(canonicalJson({ limit: text }));
+    }
+  });
+
+  test('an ordinary input is unchanged, so no live subscription re-keyed', () => {
+    expect(canonicalJson({ orgId: 'org-a', limit: 50, ratio: 1.5, ok: true, tail: null })).toBe(
+      '{"limit":50,"ok":true,"orgId":"org-a","ratio":1.5,"tail":null}',
+    );
+  });
 });
 
 describe('changedColumns is what an update patch carries', () => {

@@ -14,7 +14,6 @@ export const SEO_ERROR_CODES = {
   metaTooLong: 'X_SEO_META_TOO_LONG',
   canonicalMismatch: 'X_SEO_CANONICAL_MISMATCH',
   ldInvalid: 'X_LD_INVALID',
-  budgetExceeded: 'X_SEO_BUDGET_EXCEEDED',
   sitemapTooLarge: 'X_SITEMAP_TOO_LARGE',
   imageQueryInvalid: 'X_IMAGE_QUERY_INVALID',
 } as const;
@@ -23,9 +22,10 @@ export type SeoErrorCode = (typeof SEO_ERROR_CODES)[keyof typeof SEO_ERROR_CODES
 
 /**
  * Every code here is seo's own, so the registration is unconditional and atomic — a collision must
- * surface as X_ERROR_CODE_DUPLICATE, never as a first-writer-wins title. `X_SEO_BUDGET_EXCEEDED` is
- * namespaced for exactly that reason: `X_BUDGET_EXCEEDED` is `@ultimat3/render`'s, seo is tier 1
- * and cannot import render, so sharing the code left the meaning up to import order.
+ * surface as X_ERROR_CODE_DUPLICATE, never as a first-writer-wins title. A performance budget is
+ * deliberately not among them: `@ultimat3/render` owns `X_BUDGET_EXCEEDED` and `@ultimat3/cli`'s
+ * `checkBudgets` is the gate that throws it, so seo naming the same condition was a second code
+ * for one fault whose only thrower was its own test. `errors.test.ts` pins the set.
  * `X_NOT_IMPLEMENTED` and `X_IMAGE_UNSUPPORTED` are core's; `SeoError` throws them, untitled here.
  */
 registerErrorCodes({
@@ -34,7 +34,6 @@ registerErrorCodes({
   X_SEO_META_TOO_LONG: { title: 'title or description exceeds what search results render' },
   X_SEO_CANONICAL_MISMATCH: { title: 'canonical URL does not match the route path' },
   X_LD_INVALID: { title: 'JSON-LD node is missing a required schema.org field' },
-  X_SEO_BUDGET_EXCEEDED: { title: 'route exceeded its performance budget' },
   X_SITEMAP_TOO_LARGE: { title: 'sitemap exceeds the 50,000-entry protocol limit' },
   X_IMAGE_QUERY_INVALID: { title: 'an image transform query parameter is present but unusable' },
 });
@@ -103,22 +102,6 @@ export function ldInvalid(type: string, field: string, hint: string): SeoError {
     cause: `ld.${type}() received an empty or missing "${field}" (${hint})`,
     fix: `provide a non-empty ${field} to ld.${type}(); it is required by schema.org`,
     meta: { type, field },
-  });
-}
-
-export function budgetExceeded(
-  route: string,
-  file: string,
-  metric: string,
-  limit: number,
-  actual: number,
-  unit: string,
-): SeoError {
-  return new SeoError({
-    code: SEO_ERROR_CODES.budgetExceeded,
-    cause: `${route} (${file}) ${metric} is ${actual}${unit}, budget is ${limit}${unit}`,
-    fix: `trim ${route} until ${metric} is under ${limit}${unit}, or raise budget.${metric} to at least ${actual}${unit} in ${file}`,
-    meta: { route, file, metric, limit, actual, unit },
   });
 }
 

@@ -200,10 +200,11 @@ with it, and a driver whose default differs cannot re-open the divergence.
 
 ## Caching
 
-Request memo (same read twice in one render ⇒ one round trip), then the tier behind
-`ReadCache`. Keys are `query:<name>:<authority>:<input fingerprint>:<tags>`. An action's
-`cache.invalidates` and a query's `cache.tags` meet in the one graph owned by
-`@ultimat3/cache`.
+Request memo (same read twice in one render ⇒ one round trip), then the tier ladder
+`@ultimat3/cache` has registered — `createCacheStack(registeredTiers())`, read down and promoted
+up. Keys are `query:<name>:<authority>:<input fingerprint>:<tags>`. An action's `cache.invalidates`
+and a query's `cache.tags` meet in the one graph owned by `@ultimat3/cache`, because there is one
+registry and this package holds no store of its own.
 
 **The authority is who the read was answered for, and it is not optional.** `sql(input, ctx)` is
 handed the context and `@ultimat3/entity` derives every tenant predicate from `ctx.actor.orgId`,
@@ -222,31 +223,31 @@ is a written statement about the rows, one `grep` away — the same shape `unenf
 skipped policy. `readAuthority(actor, scope)` is the only producer of the component, and it is a
 required positional argument of `cacheKeyFor`, because an optional one is one a call site forgets.
 
-**The fill is fenced and best-effort.** `fill` samples `@ultimat3/cache`'s fence
-(`sampleFence({ key, tags })`) immediately before it runs the source and asks it before it writes,
-so a bust that lands mid-read cannot be republished for the whole TTL — the caller still gets the
-rows it read, because those are its answer; only publishing is refused. Both tier calls go through
-`bestEffort('query-read', …)`: a Redis refusal is a miss, not a failed business read, and it shows
-up in `recentTierFailures()` under the `query-read` label. This `fill` is the live read-through
-path — `createCacheStack` has no production caller.
+**The fill is fenced, best-effort and single-flighted, and none of that is written here.**
+`createCacheStack` samples `@ultimat3/cache`'s fence immediately before it runs the source and
+re-asks it per rung before each write, so a bust that lands mid-read cannot be republished for the
+whole TTL — the caller still gets the rows it read, because those are its answer; only publishing is
+refused. Every tier call goes through `bestEffort`, so a Redis refusal is a miss rather than a
+failed business read and shows up in `recentTierFailures()` under the name of the tier that
+refused. Concurrent misses of one key share one `load()`. `@ultimat3/query` used to carry its own
+copy of the first two and none of the third.
 
 `cache.ttlMs` is refused at `query()` unless it is positive and finite
 (`X_QUERY_CACHE_TTL_INVALID`): every tier refuses such a lease, so `ttlMs: Infinity` used to make
 one read fail permanently at run time with a cause about a cache key.
 
 An entry is written with the read's `cache.tags`, so a row bust (`post:1`) drops the lists that
-held the row, exactly as `tagMatches` defines it. The framework's boot installs a read cache over
-an object it also registers as a `CacheTier` — the shared tier seen through `tierReadCache`, or
-the `lru` tier's own `LruCache` — so a single `invalidateTags` reaches it. `invalidateQueryTags(tags)`
-is for a host that installs a `ReadCache` of its own: registered nowhere, it is reachable by no
-fan-out, and that hop is the only thing that drops it.
+held the row, exactly as `tagMatches` defines it — and `invalidateTags(tags)`, the call an action's
+`cache.invalidates` makes, is the whole of what drops it. There is nothing to install and nothing
+to wire: a `cache:` read fills the registered tiers, so a process that registered none reads
+uncached rather than filling a store no fan-out can see.
 
-The default `MemoryReadCache` is **bounded** — `@ultimat3/cache`'s byte-budgeted `LruCache`,
-`DEFAULT_READ_CACHE_MAX_BYTES` (32 MiB), tunable per instance — and a `cache:` block that omits
-`ttlMs` gets `DEFAULT_READ_CACHE_TTL_MS` (60s) rather than immortality. Tags are the primary
-eviction; the TTL is the backstop for the read whose tags never fire. A `null` expiry means the
-caller named none, never "never": `@ultimat3/cache`'s tiers refuse a non-positive `ttlMs` and have
-no immortal entry to offer, so the tier's own default applies.
+A `cache:` block that omits `ttlMs` gets `DEFAULT_READ_CACHE_TTL_MS` (60s) rather than immortality.
+Tags are the primary eviction; the TTL is the backstop for the read whose tags never fire. The
+lease handed to the ladder is **relative** — the tier's own clock turns it into an expiry, so a
+tier registered with a frozen clock is drivable end to end — and omitting it is how a tier is asked
+for its own default. `@ultimat3/cache`'s tiers refuse a non-positive `ttlMs` and have no immortal
+entry to offer, so there is no "never" to spell.
 
 The memo entry is the read **in flight**, not its value, so "twice" covers reads that race as
 well as reads that follow: five holes rendering concurrently share one execution and one tier
