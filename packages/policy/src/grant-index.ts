@@ -56,10 +56,16 @@ const indexFor = (actor: Actor, map: RoleMap): GrantIndex => {
   return index;
 };
 
+/**
+ * A COPY, per call. `readonly string[]` is compile-time only, so handing back `index.sorted` —
+ * which is the per-actor authz cache itself — let any caller `push` a grant into it through a
+ * widened reference and hold it for the life of that request. The list is small (an actor's own
+ * grants) and this is not on `actorHas`'s path, which reads the `Set` and copies nothing.
+ */
 export const actorPermissions = (
   actor: Actor | null,
   map: RoleMap = roleDefinitions(),
-): readonly string[] => (actor === null ? [] : indexFor(actor, map).sorted);
+): readonly string[] => (actor === null ? [] : [...indexFor(actor, map).sorted]);
 
 export const actorHas = (
   actor: Actor | null,

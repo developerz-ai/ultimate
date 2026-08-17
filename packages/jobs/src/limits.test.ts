@@ -79,6 +79,31 @@ describe('createLimiter', () => {
     expect(limiter.inFlight()).toBe(0);
   });
 
+  // `blockedBy` reads `{queue, tenantId}` as ONE key (`${queue}\0${tenant}`); `inFlight` used to
+  // drop the queue whenever a tenant was present, so the same key asked two questions of two
+  // functions and the second answered "this tenant, everywhere".
+  test('inFlight answers the key it was given, not the widest part of it', () => {
+    const limiter = createLimiter({});
+    limiter.tryAcquire({ queue: 'mail', tenantId: 'org-1' });
+    limiter.tryAcquire({ queue: 'import', tenantId: 'org-1' });
+    limiter.tryAcquire({ queue: 'mail', tenantId: 'org-2' });
+
+    expect(limiter.inFlight()).toBe(3);
+    expect(limiter.inFlight({ queue: 'mail' })).toBe(2);
+    expect(limiter.inFlight({ queue: 'mail', tenantId: 'org-1' })).toBe(1);
+    expect(limiter.inFlight({ queue: 'import', tenantId: 'org-1' })).toBe(1);
+    expect(limiter.inFlight({ queue: 'export', tenantId: 'org-1' })).toBe(0);
+  });
+
+  test('a released composite slot is dropped, never left at zero', () => {
+    const limiter = createLimiter({});
+    const lease = limiter.tryAcquire({ queue: 'mail', tenantId: 'org-1' });
+    expect(limiter.inFlight({ queue: 'mail', tenantId: 'org-1' })).toBe(1);
+    lease?.release();
+    lease?.release();
+    expect(limiter.inFlight({ queue: 'mail', tenantId: 'org-1' })).toBe(0);
+  });
+
   test('the per-queue cap applies across tenants and the global cap across queues', () => {
     const limiter = createLimiter({ perQueue: 1, global: 2 });
     expect(limiter.tryAcquire({ queue: 'mail', tenantId: 'org-1' })).toBeDefined();

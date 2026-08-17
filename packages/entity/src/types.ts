@@ -51,6 +51,12 @@ export type { MoneyValue };
 export interface MoneyInput {
   readonly minor: bigint | number;
   readonly currency: string;
+  /**
+   * Carried through the write, never invented: `undefined` means the currency's own minor unit and
+   * `0` means whole units, and the two must not collapse. `null` is accepted because that is what
+   * the `<name>_scale` column holds for an amount that declared none.
+   */
+  readonly scale?: number | null;
 }
 
 /**

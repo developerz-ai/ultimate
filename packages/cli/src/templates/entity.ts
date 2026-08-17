@@ -28,8 +28,9 @@ export const ${name.camel} = entity('${table}', {
     id: uuid().primaryKey(),
     orgId: uuid(),
     title: text({ max: 200 }),
-    // One property, two physical columns: price_minor bigint + price_currency char(3).
-    // Money is integer minor units plus an ISO code, never a float.
+    // One property, three physical columns: price_minor bigint + price_currency char(3) +
+    // the nullable price_scale integer. Money is integer minor units plus an ISO code, never a
+    // float; the scale is what lets an amount name a sub-cent value, and NULL is not 0.
     price: money(),
     // Always timestamptz. Stored UTC; formatted at the edge with an explicit IANA time zone.
     createdAt: timestamp().defaultNow(),
@@ -77,10 +78,13 @@ export async function listByOrg(orgId: string, limit = 50): Promise<readonly ${n
 }
 
 export async function insert(row: Omit<${name.pascal}, 'id' | 'createdAt'>): Promise<${name.pascal}> {
-  // Money is two physical columns — integer minor units plus the ISO code, never a float.
+  // Money is three physical columns — integer minor units, the ISO code, and the scale, never a
+  // float. \`scale ?? null\`: an amount at the currency's own minor unit carries no scale at all,
+  // and writing \`0\` for it would claim whole units — a 100x reinterpretation of the price.
   const created = await db().one<${name.pascal}>(sql\`
-    insert into ${table} (id, org_id, title, price_minor, price_currency)
-    values (\${newId()}, \${row.orgId}, \${row.title}, \${row.price.minor}, \${row.price.currency})
+    insert into ${table} (id, org_id, title, price_minor, price_currency, price_scale)
+    values (\${newId()}, \${row.orgId}, \${row.title}, \${row.price.minor}, \${row.price.currency},
+            \${row.price.scale ?? null})
     returning *\`);
   if (created === null) throw dbDrift('${table}', 'id');
   return created;
@@ -120,10 +124,12 @@ unitTest('${name.camel} describes itself for the manifest', () => {
   // a column added below reaches every one of them without a second declaration.
   const described = ${name.camel}.$describe();
   expect(described.orgScoped).toBe(true);
-  // One \`price\` property, two physical columns: integer minor units plus the ISO code. The
-  // description is where that shows, and it is what fails here if money ever becomes a float.
+  // One \`price\` property, three physical columns: integer minor units, the ISO code, and the
+  // nullable scale. The description is where that shows, and it is what fails here if money ever
+  // becomes a float — or if a migration forgets the scale column and unscales every sub-cent row.
   expect(described.columns.map((column) => column.column)).toContain('price_minor');
   expect(described.columns.map((column) => column.column)).toContain('price_currency');
+  expect(described.columns.map((column) => column.column)).toContain('price_scale');
   expect(described.invariants.map((rule) => rule.name)).toContain('${snake}_price_non_negative');
 });
 

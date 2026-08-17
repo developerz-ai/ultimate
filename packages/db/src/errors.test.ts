@@ -41,6 +41,16 @@ describe('driverError', () => {
     expect(error.meta).toMatchObject({ sqlState: '23505', constraint: 'users_email_key' });
   });
 
+  test('a constraint holding a $ pattern lands verbatim, never expanded into the fix', () => {
+    // `$` is legal in a Postgres identifier, and `String.replace` expands `$&` / `$`` / `$'` / `$$`
+    // inside a REPLACEMENT literal — so the server's own name spliced the matched placeholder back
+    // into the line an author is meant to paste.
+    const named = 'posts_$&_$`_$$_key';
+    const error = driverError('insert', serverError('23505', { constraint: named }));
+    expect(error.fix).toContain(named);
+    expect(error.fix).not.toContain('{constraint}');
+  });
+
   test('a driver that named no constraint still produces a fix that reads', () => {
     const error = driverError('insert', serverError('23505'));
 

@@ -23,6 +23,8 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `live.ts` | `LiveQuery` descriptor + cursor arithmetic |
 | `matcher.ts` | change event → minimal patch, or `X_MATCHER_UNSUPPORTED` |
 | `pagination.ts` | `paginate()` over core's cursor codec — no offset, ever |
+| `cursor-value.ts` | what a sort value becomes inside a cursor, and what it becomes again |
+| `input-shape.ts` | what a read's `input:` may be, given that its route is a query STRING |
 | `sql.ts` | `explain()` / `describeSql()` |
 | `cache.ts` | the read path: the request memo, and the fill through the tier |
 | `read-cache.ts` | the tier itself — the `ReadCache` seam, the bounded `MemoryReadCache` default, `invalidateQueryTags` |
@@ -184,6 +186,57 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   database returned it, while `positionFor` places the patch by id and the resume re-read seeks by
   id: the client then renders an order no re-read answers. Never reach for `seek(null, limit)`
   instead — a live query need not carry a limit, and inventing one is a window nobody asked for.
+- **A sort value carries its own TYPE through the cursor** (`cursor-value.ts`, `As of 2026-08`).
+  The codec is JSON, so `paginate()` putting raw column values in meant a `Date` went out and an
+  ISO STRING came back: `isAfterKey` compared `"1769904000000"` against `"2026-02-01T…"` through
+  `compareValues`' string branch and **page two came back empty** — and a `bigint` sort key was a
+  bare `TypeError` out of `JSON.stringify`, with no code and no fix. `@ultimat3/entity`'s
+  `cursor.ts` solves the same problem by reading the column's declared kind; a `query` has no
+  column kinds — `QueryShape.orderBy` is a name and a direction — so the value is TAGGED instead
+  (`{ $x: 'date' | 'bigint', v }`) and `reviveSortKey` is total without knowing which read minted
+  it. `undefined` encodes as `null`, because SQL has one absence and dropping the key would shift
+  every later one a position left. Anything JSON cannot carry and this cannot tag — an object, an
+  array, `NaN`, `±Infinity` — is `X_CURSOR_VALUE_UNSUPPORTED` where the cursor is MINTED, never
+  `X_CURSOR_INVALID`: the mistake is the read's own `orderBy` and no retry repairs it.
+- **`compareValues` orders numbers and bigints in ONE order, because Postgres does.** The numeric
+  fast path was `typeof === 'number'` on both sides, so an `int8` fell to
+  `String(left) < String(right)`: `compareValues(9n, 10n)` answered `1` and a sort came out
+  `["10", "100", "9"]`. `bigint` is the physical type of every `<p>_minor` column and
+  `@ultimat3/entity`'s `count-by.ts` lists it as groupable, so the in-memory source, the live
+  matcher and the seek fallback ALL disagreed with the database on any bigint-ordered read.
+  `shape-order.test.ts` is the pin: one case per `ColumnKind`, each asserting the order Postgres
+  returns, plus the NULL rule and the cursor round trip. The kind list is spelled out rather than
+  imported — `tsconfig.json` excludes `*.test.ts`, so a `satisfies Record<ColumnKind, …>` written
+  in a test is a type assertion `tsc` never reads; a runtime count is the enforceable half.
+- **A read's `input:` must survive a query STRING, and `query()` refuses one that cannot**
+  (`input-shape.ts`, `X_QUERY_INPUT_UNENCODABLE`, `As of 2026-08`). `client.ts` encoded a nested
+  member as `JSON.stringify(item)` and skipped a `null`, while `coerceQuery` has no inverse for
+  either — `case 'object'` hands the raw value back untouched — so the typed client type-checked
+  calls the server's own route then rejected, which is the exact failure `client.ts`'s header
+  claims to prevent. **The declaration is the fix, not the encoder**: teaching `coerceQuery` to
+  `JSON.parse` a string would make the ONE HTTP-boundary decoder invent structure for every
+  surface that shares it — forms and route params included — against that file's own rule that it
+  never invents data, and a `null` sentinel would be a reserved string colliding with the value
+  `"null"`. Refused: a structural member (`object`, `record`, `money`, or an array/union of one),
+  a REQUIRED nullable member, and a top-level input that is not an object. A schema
+  `tryIntrospect` cannot read is left alone, or `configureSchemaProvider` would be unusable.
+- **A move OUT of a full window is a `refill`, never an `add`** (`matcher.ts`). `insert()` places a
+  moved row among the `limit - 1` rows the client still holds, so its position can never reach
+  `shape.limit` and the `position >= shape.limit` bail is unreachable on that path — the row was
+  re-inserted INSIDE the window. Proven with `limit: 3`, window `[a:1, b:2, c:3]` and a server also
+  holding `d:4, e:5`: moving `a` to `99` rendered `[b, c, a:99]` where the true window is
+  `[b, c, d]`. Only the server can answer the tail, and whether the moved row is still in the
+  window is its answer too.
+- **A page is bounded whether or not the caller bounded it.** `paginate` asserts `first` is a whole
+  number of rows in `1…MAX_PAGE_SIZE` (10,000) before anything else — `args.first + 1` bound
+  whatever an action's input or a route parameter carried, so one request could ask for five
+  million rows. The constant is a TWIN of `@ultimat3/entity`'s, under the same tier compromise
+  `naming.ts` and `deprecation.ts` are ported under.
+- **A fingerprint is an identity, so two different inputs may not share one** (`stable.ts`).
+  `NaN`, `±Infinity` and JSON `null` all encoded as `'null'`, and `String(-0)` is `"0"` — so four
+  distinct inputs shared one read-cache entry and one cursor scope. They are bare tokens now
+  (`NaN`, `Infinity`, `-Infinity`, `-0`), which the `string` branch cannot spell because it always
+  quotes. Ordinary numbers are byte-identical, so no existing cursor scope moved.
 - The cursor codec is `@ultimat3/core`'s (`encodeCursor` / `decodeCursor` / `configureCursorSigning`).
   This package supplies only the scope a cursor is bound to — `queryHash(name, input)` — and never
   signs, encodes or parses one itself. An unverified or foreign cursor is `X_CURSOR_INVALID`, thrown

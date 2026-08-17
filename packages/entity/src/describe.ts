@@ -6,7 +6,7 @@
 // physical columns that back it.
 
 import { referenceBinding, snake } from './column';
-import { currencyCheck } from './columns';
+import { currencyCheck, scaleCheck } from './columns';
 import type { Invariant } from './invariants';
 import type { ColumnDescription, EntityDescription, ReferenceDescription } from './registry';
 import type { AnyColumn, ColumnMeta, IndexDef } from './types';
@@ -80,6 +80,18 @@ const describeColumn = <Row>(
         kind: 'char',
         check: currencyCheck(currency),
         ...shared,
+      },
+      // Always nullable, whatever the property's own nullability: NULL is how a row says "the
+      // currency's own minor unit", which is every amount written before the column existed and
+      // every ordinary price after it. A NOT NULL here would demand a scale on values that have
+      // none, and `0` is not that value — it means whole units.
+      {
+        property: `${property}Scale`,
+        column: `${physical}_scale`,
+        kind: 'integer',
+        check: scaleCheck(`${physical}_scale`),
+        ...shared,
+        notNull: false,
       },
     ];
   }

@@ -85,6 +85,10 @@ CREATE TABLE IF NOT EXISTS posts (
   title varchar(200) NOT NULL,
   price_minor integer NOT NULL DEFAULT 0,
   price_currency char(3) NOT NULL DEFAULT 'USD',
+  -- The third column of one \`money()\` property. Always nullable: NULL is "the currency's own
+  -- minor unit", which is every ordinary price, and \`0\` is a different value — whole units.
+  -- The CHECK is the one \`describeColumn\` emits, so this table and a generated one agree.
+  price_scale integer CHECK (price_scale is null or (price_scale >= 0 and price_scale <= 15)),
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS posts_org_created_idx ON posts (org_id, created_at);

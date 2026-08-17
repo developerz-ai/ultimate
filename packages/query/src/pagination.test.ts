@@ -297,3 +297,29 @@ describe('a paged read is ordered totally', () => {
     expect(second.hasNextPage).toBe(false);
   });
 });
+
+/**
+ * `first` reaches `paginate` straight from an action's input or a route parameter, and
+ * `args.first + 1` bound whatever arrived. `@ultimat3/entity` refuses the same three shapes on
+ * `limit(rows)`; a read that goes through this file had no ceiling at all.
+ */
+describe('a page is bounded whether or not the caller bounded it', () => {
+  beforeEach(() => {
+    resetRegistry();
+    configureCursorSigning('test-secret');
+  });
+
+  test('a size that is not a whole number of rows in range is refused before any read', async () => {
+    const feed = registerQuery('boundedFeed', defineFeed());
+    for (const first of [0, -1, 1.5, Number.NaN, 10_001, Number.POSITIVE_INFINITY]) {
+      await expect(paginate(feed, { orgId: ORG }, { first, ctx })).rejects.toBeUltimateError(
+        'X_INVARIANT',
+      );
+    }
+  });
+
+  test('the ceiling itself still pages', async () => {
+    const feed = registerQuery('boundedFeedMax', defineFeed());
+    expect((await paginate(feed, { orgId: ORG }, { first: 10_000, ctx })).rows).toHaveLength(4);
+  });
+});

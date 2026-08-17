@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { AnySchema } from '@ultimat3/schema';
 import { t } from '@ultimat3/schema';
-import { sampleInput } from './sample-input';
+import { sampleGaps, sampleInput } from './sample-input';
 
 const accepts = (schema: AnySchema): boolean =>
   schema.safeParse(sampleInput(schema)).issues === undefined;
@@ -103,5 +103,42 @@ describe('sampleInput', () => {
     const digits = t.string.pattern(/^\d+$/);
     expect(sampleInput(digits)).toBe('sample');
     expect(accepts(digits)).toBe(false);
+  });
+});
+
+// `pattern` IS in the IR (`SchemaNode.pattern`), so "cannot be constructed" is knowable BEFORE the
+// sample is handed to `invoke`. Without this the only report was `X_INPUT_INVALID` surfacing from
+// the action's own parse, which reads as the action being wrong when the action is fine.
+describe('sampleGaps', () => {
+  test('names the dotted path of every field whose pattern the sample cannot satisfy', () => {
+    const schema = t.object({
+      orderRef: t.string.pattern(/^ORD-\d{4}$/),
+      note: t.string,
+      nested: t.object({ code: t.string.pattern(/^\d+$/) }),
+    });
+
+    expect(sampleGaps(schema)).toEqual(['orderRef', 'nested.code']);
+  });
+
+  test('a pattern the default sample already satisfies is not a gap', () => {
+    // `t.slug` and `t.cursor` carry patterns `'sample'` matches, so nothing is owed here.
+    expect(sampleGaps(t.object({ handle: t.string.pattern(/^[a-z]+$/) }))).toEqual([]);
+    expect(sampleGaps(t.object({ slug: t.slug, cursor: t.cursor }))).toEqual([]);
+  });
+
+  test('the root itself is nameable when the schema is a bare string', () => {
+    expect(sampleGaps(t.string.pattern(/^\d+$/))).toEqual(['(the input)']);
+  });
+
+  test('an optional field is not sampled, so its pattern is not a gap', () => {
+    const schema = t.object({ ref: t.string.pattern(/^ORD-\d{4}$/).optional() });
+    expect(sampleGaps(schema)).toEqual([]);
+  });
+
+  test('a schema with no IR owes nothing — there is nothing to be missing', () => {
+    const foreign = {
+      '~standard': { version: 1 as const, vendor: 'other', validate: () => ({ value: 1 }) },
+    };
+    expect(sampleGaps(foreign)).toEqual([]);
   });
 });

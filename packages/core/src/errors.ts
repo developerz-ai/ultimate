@@ -116,7 +116,14 @@ export class UltimateError extends Error {
 }
 
 export function isUltimateError(value: unknown): value is UltimateError {
-  return typeof value === 'object' && value !== null && ULTIMATE_ERROR_BRAND in value;
+  // TOTAL, like `isThrownError`: `in` runs a `Proxy`'s `has` trap, and every caller asks this
+  // question inside a `catch` block that has nothing left to answer with if the probe itself
+  // throws. `false` is the honest answer for a value that refuses to be examined.
+  try {
+    return typeof value === 'object' && value !== null && ULTIMATE_ERROR_BRAND in value;
+  } catch {
+    return false;
+  }
 }
 
 /** Init for a subclass that owns its code. */

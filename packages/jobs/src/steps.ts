@@ -223,6 +223,24 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
     trace(used, name);
   };
 
+  /**
+   * The one-argument `sleep('1h')` derives its step name from the duration, so a poll loop —
+   * `for (…) { await step.sleep('1h') }`, the form the docs show — minted `sleep:1h` twice and
+   * died with `X_STEP_DUPLICATE` on iteration 2. The occurrence ORDINAL disambiguates them, the
+   * way `backfill()`'s `batch:<index>` does: the body re-runs from the top on every replay, so
+   * the same sequence of calls mints the same sequence of names.
+   *
+   * The FIRST occurrence keeps the bare `sleep:1h`, so a run already suspended on one resumes
+   * across this change instead of re-sleeping under a new key.
+   */
+  const sleepOrdinals = new Map<string, number>();
+  const derivedSleepName = (duration: string): string => {
+    const base = `sleep:${duration}`;
+    const occurrence = (sleepOrdinals.get(base) ?? 0) + 1;
+    sleepOrdinals.set(base, occurrence);
+    return occurrence === 1 ? base : `${base}#${occurrence}`;
+  };
+
   const cancelled = (): boolean => runSignal.aborted;
 
   /**
@@ -300,7 +318,7 @@ export function createStepRunner(options: StepRunnerOptions): StepRunner {
 
   async function sleep(a: string | DurationInput, b?: DurationInput): Promise<void> {
     // `sleep('3d')` — the duration doubles as the step name, which stays deterministic.
-    const name = b === undefined ? `sleep:${String(a)}` : String(a);
+    const name = b === undefined ? derivedSleepName(String(a)) : String(a);
     const duration = b === undefined ? (a as DurationInput) : b;
     claimName(name);
 

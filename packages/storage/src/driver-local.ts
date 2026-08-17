@@ -80,9 +80,14 @@ interface Sidecar {
   readonly metadata?: Readonly<Record<string, string>> | undefined;
 }
 
+// `!Array.isArray` is the load-bearing clause, matching `isPlainObject` in
+// `@ultimat3/schema`'s `builder.ts`: `typeof [] === 'object'` and every value of `['a','b']` is a
+// string, so an array in the `metadata` slot was handed back through `head()`/`get()` as object
+// metadata — against a `Record<string, string>` every reader downstream is typed on.
 const isStringRecord = (value: unknown): value is Readonly<Record<string, string>> =>
   typeof value === 'object' &&
   value !== null &&
+  !Array.isArray(value) &&
   Object.values(value as Record<string, unknown>).every((entry) => typeof entry === 'string');
 
 function parseSidecar(raw: unknown): Sidecar | undefined {

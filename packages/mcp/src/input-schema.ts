@@ -34,6 +34,7 @@ function narrow(source: RichJsonSchema): JsonSchema {
     ...(source.maximum === undefined ? {} : { maximum: source.maximum }),
     ...(source.minLength === undefined ? {} : { minLength: source.minLength }),
     ...(source.maxLength === undefined ? {} : { maxLength: source.maxLength }),
+    ...(source.pattern === undefined ? {} : { pattern: source.pattern }),
     ...(source.anyOf === undefined ? {} : { anyOf: source.anyOf.map(narrow) }),
   };
 }

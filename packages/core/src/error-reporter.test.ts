@@ -129,6 +129,51 @@ describe('reportError', () => {
     ).not.toThrow();
   });
 
+  test('a reporter that throws a HOSTILE value never reaches the caller either', () => {
+    // The catch that makes "never throws" true rendered the failure with
+    // `failure instanceof Error ? failure.message : String(failure)` — two property operations on
+    // a value from outside the framework, so the swallowed failure escaped through its own log
+    // line and became the second failure this function exists to prevent.
+    configureErrorReporting({
+      reporter: {
+        report(): never {
+          throw new Proxy(new Error('monitor is down'), {
+            getPrototypeOf(): never {
+              throw new TypeError('proxy trap');
+            },
+          });
+        },
+      },
+    });
+
+    expect(() =>
+      reportError(new InternalError({ cause: 'boom', fix: 'x doctor --json' }), { source: 'http' }),
+    ).not.toThrow();
+  });
+
+  test('a thrown value whose stack cannot be read still produces a report', () => {
+    const reporter = install();
+    const hostile = new Proxy(
+      {},
+      {
+        get(): never {
+          throw new TypeError('get trap');
+        },
+        has(): never {
+          throw new TypeError('has trap');
+        },
+        getPrototypeOf(): never {
+          throw new TypeError('getPrototypeOf trap');
+        },
+      },
+    );
+
+    expect(() => reportError(hostile, { source: 'job' })).not.toThrow();
+    const report = reporter.events[0] as ErrorReport;
+    expect(report.code).toBe('X_INTERNAL');
+    expect(typeof report.stack === 'string' || report.stack === undefined).toBe(true);
+  });
+
   test('enabled: false silences it, and the default reporter is the no-op', () => {
     const reporter = install();
     configureErrorReporting({ enabled: false });

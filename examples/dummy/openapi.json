@@ -165,8 +165,15 @@
             "type": "string"
           },
           "coverUrl": {
-            "format": "uri",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uri",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "excerpt": {
             "maxLength": 200,
@@ -186,8 +193,15 @@
             "type": "string"
           },
           "publishedAt": {
-            "format": "date-time",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "slug": {
             "maxLength": 80,
@@ -447,8 +461,15 @@
             "type": "string"
           },
           "coverUrl": {
-            "format": "uri",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uri",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "excerpt": {
             "maxLength": 200,
@@ -468,8 +489,15 @@
             "type": "string"
           },
           "publishedAt": {
-            "format": "date-time",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "slug": {
             "maxLength": 80,
@@ -518,8 +546,15 @@
         "additionalProperties": false,
         "properties": {
           "url": {
-            "minLength": 1,
-            "type": "string"
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -604,8 +639,15 @@
             "type": "string"
           },
           "coverUrl": {
-            "format": "uri",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uri",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "excerpt": {
             "maxLength": 200,
@@ -625,8 +667,15 @@
             "type": "string"
           },
           "publishedAt": {
-            "format": "date-time",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "slug": {
             "maxLength": 80,

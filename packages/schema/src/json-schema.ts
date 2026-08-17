@@ -6,7 +6,15 @@ import { MAX_MONEY_SCALE } from './money-value';
 import { requiredKeys, type SchemaNode, type SchemaRefinement } from './node';
 import { introspect } from './provider';
 
-export type JsonSchemaType = 'string' | 'number' | 'integer' | 'boolean' | 'object' | 'array';
+export type JsonSchemaType =
+  | 'string'
+  | 'number'
+  | 'integer'
+  | 'boolean'
+  | 'object'
+  | 'array'
+  /** Only ever emitted as the second branch of a nullable field's `anyOf` — see `annotate`. */
+  | 'null';
 
 /** OpenAPI 3.1's tagged-union hint. `propertyName` alone: the branches here are inline, not `$ref`. */
 export interface JsonSchemaDiscriminator {
@@ -99,12 +107,26 @@ function convert(node: SchemaNode): JsonSchema {
   ].filter((part): part is string => part !== undefined);
   const described = notes.length === 0 ? undefined : notes.join(' — ');
 
-  const annotate = (schema: JsonSchema): JsonSchema => ({
-    ...schema,
+  const annotations: JsonSchema = {
     ...(described === undefined ? {} : { description: described }),
     ...(node.hasDefault === true ? { default: node.default } : {}),
     ...(refinements.length === 0 ? {} : { 'x-ultimate-refinements': refinements }),
-  });
+  };
+
+  /**
+   * `null` is a VALUE the field holds, so it joins the type union rather than the annotations —
+   * `{ anyOf: [<converted>, { type: 'null' }] }`, which is how OpenAPI 3.1 / JSON Schema 2020-12
+   * spell it (3.0's `nullable: true` keyword is gone). Dropping it published a contract every
+   * surface at once disagreed with: OpenAPI bodies, MCP `inputSchema`, `respondToolFor` and the
+   * typed client all forbade a `null` the action's own `output:` validator returns.
+   *
+   * The annotations stay OUTSIDE the `anyOf` — they describe the field, not one branch of it —
+   * and `requiredKeys` is untouched, because nullable is not optional: the key is still sent.
+   */
+  const annotate = (schema: JsonSchema): JsonSchema =>
+    node.nullable === true
+      ? { anyOf: [schema, { type: 'null' }], ...annotations }
+      : { ...schema, ...annotations };
 
   switch (node.kind) {
     case 'string':

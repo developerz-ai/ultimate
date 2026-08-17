@@ -11,7 +11,7 @@ import { ActionDeniedError, ContractDriftError } from './errors';
 import { actionName, invoke } from './invoke';
 import { derivePath } from './naming';
 import { buildOpenApi } from './openapi';
-import { sampleInput } from './sample-input';
+import { describeSampleGap, sampleGaps, sampleInput } from './sample-input';
 
 export interface ContractTest {
   readonly name: string;
@@ -22,9 +22,10 @@ export interface ContractTestOptions {
   /** Value the input schema must reject. `null` fails every object schema. */
   readonly garbage?: unknown;
   /**
-   * Input for the policy assertion. Omitted means one synthesized from `input:` itself — pass
-   * it when the schema carries a constraint the IR does not (a bare `pattern`, a provider
-   * refinement), or when the action's `row:` loader needs an id that resolves.
+   * Input for the policy assertion. Omitted means one synthesized from `input:` itself — pass it
+   * when the schema carries a `pattern` (named for you, before the invocation, by
+   * `assertSampleable`), a provider refinement the IR does not carry, or a `row:` loader that
+   * needs an id which resolves.
    */
   readonly input?: unknown;
   readonly ctx?: Ctx;
@@ -58,8 +59,12 @@ export function contractTestsFor(
     {
       name: `${name}: policy denies an anonymous actor`,
       run: async () => {
-        const input = 'input' in options ? options.input : sampleInput(target.input);
-        await expectDenied(target, name, input, ctx);
+        if ('input' in options) {
+          await expectDenied(target, name, options.input, ctx);
+          return;
+        }
+        assertSampleable(target, name);
+        await expectDenied(target, name, sampleInput(target.input), ctx);
       },
     },
     {
@@ -76,6 +81,24 @@ export function contractTestsFor(
       },
     },
   ];
+}
+
+/**
+ * A `pattern` cannot be inverted, so the framework cannot build a payload for
+ * `t.string.pattern(...)` — but the pattern IS in the IR, so it knows that BEFORE it invokes.
+ * Reporting it here rather than letting `X_INPUT_INVALID` surface out of the action's own parse
+ * is the difference between an instruction and a misattribution: the action is correct, `input:`
+ * is correct, and the only thing that can supply the value is the author. The `fix:` is therefore
+ * the exact call to paste, not an edit to the declaration.
+ */
+function assertSampleable(target: AnyAction, name: string): void {
+  const gaps = sampleGaps(target.input);
+  if (gaps.length === 0) return;
+  const described = gaps.map((path) => describeSampleGap(target.input, path)).join(', ');
+  throw new ContractDriftError(
+    `${name}: no value can be synthesized for ${described}, so the denial would be unproven`,
+    `contractTestsFor(${name}, { input: { … } })   # x actions describe ${name} --json prints the schema`,
+  );
 }
 
 /**

@@ -143,6 +143,42 @@ describe('step.sleep', () => {
     await runner.step.sleep('30s').catch(() => undefined);
     expect((await store.get('run-6', 'sleep:30s'))?.wakeAt).toBe(T0 + 30_000);
   });
+
+  // `for (…) { await step.sleep('1h') }` — a poll loop, and the documented one-argument form —
+  // used to mint `sleep:1h` twice and die with X_STEP_DUPLICATE on iteration 2. The first
+  // occurrence keeps the bare name so a run already suspended on it resumes across this change.
+  test('repeating the single-argument form in a loop mints one name per occurrence', async () => {
+    const clock = fakeClock(T0);
+    // The body a poll loop is: three identical sleeps. Each attempt replays it from the top,
+    // which is what makes the ordinal deterministic — and what made the old derived name collide.
+    const body = async (): Promise<void> => {
+      const runner = createStepRunner({ runId: 'run-7', jobName: 'j', store, clock });
+      for (let i = 0; i < 3; i += 1) await runner.step.sleep('1h');
+    };
+
+    // Attempt 1 suspends on the first sleep; two more wake-ups carry it through the rest.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const outcome = await body().catch((error: unknown) => error);
+      expect(isStepSuspension(outcome)).toBe(true);
+      clock.advance(3_600_000);
+    }
+    await body();
+
+    expect((await store.get('run-7', 'sleep:1h'))?.status).toBe('completed');
+    expect((await store.get('run-7', 'sleep:1h#2'))?.status).toBe('completed');
+    expect((await store.get('run-7', 'sleep:1h#3'))?.status).toBe('completed');
+  });
+
+  test('the ordinal is per duration, so two different sleeps do not share a counter', async () => {
+    const clock = fakeClock(T0);
+    const runner = createStepRunner({ runId: 'run-8', jobName: 'j', store, clock });
+
+    await runner.step.sleep('1h').catch(() => undefined);
+    await runner.step.sleep('2h').catch(() => undefined);
+
+    expect(await store.get('run-8', 'sleep:1h')).toBeDefined();
+    expect(await store.get('run-8', 'sleep:2h')).toBeDefined();
+  });
 });
 
 describe('step.waitForEvent', () => {

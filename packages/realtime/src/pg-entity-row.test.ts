@@ -92,6 +92,82 @@ describe('entityRow', () => {
     expect(thrown).not.toContain('hunter2');
   });
 
+  test('a scale column folds into the money property rather than beside it', () => {
+    const physical: Record<string, JsonValue> = {
+      id: '1',
+      price_minor: 2,
+      price_currency: 'USD',
+      price_scale: 6,
+    };
+    expect(entityRow(physical)).toEqual({
+      id: '1',
+      price: { minor: 2, currency: 'USD', scale: 6 },
+    });
+  });
+
+  test('a NULL scale is consumed and produces no scale key — NULL is not 0', () => {
+    // `0` means whole units; NULL means the currency's own minor unit. A `scale: 0` here would
+    // be a 100x reinterpretation of every ordinary price.
+    const folded = entityRow({ price_minor: 1990, price_currency: 'USD', price_scale: null });
+    expect(folded).toEqual({ price: { minor: 1990, currency: 'USD' } });
+    expect(Object.hasOwn(folded['price'] as object, 'scale')).toBe(false);
+  });
+
+  test('an absent scale column produces no scale key either', () => {
+    const folded = entityRow({ price_minor: 1990, price_currency: 'USD' });
+    expect(Object.hasOwn(folded['price'] as object, 'scale')).toBe(false);
+  });
+
+  test('scale is a number whatever the column type decoded to', () => {
+    expect(entityRow({ price_minor: 2, price_currency: 'USD', price_scale: '6' })).toEqual({
+      price: { minor: 2, currency: 'USD', scale: 6 },
+    });
+  });
+
+  test('a scale that is not a whole number of decimal places is X_REPLICATION_PROTOCOL', () => {
+    expect(() => entityRow({ price_minor: 2, price_currency: 'USD', price_scale: 6.5 })).toThrow(
+      /X_REPLICATION_PROTOCOL/,
+    );
+    expect(() => entityRow({ price_minor: 2, price_currency: 'USD', price_scale: 6.5 })).toThrow(
+      /price_scale/,
+    );
+  });
+
+  test('a scale that is not a number at all is described, never echoed', () => {
+    let thrown = '';
+    try {
+      entityRow({ note_minor: 5, note_currency: 'USD', note_scale: 'hunter2' });
+    } catch (error) {
+      thrown = String((error as { cause?: unknown }).cause ?? '');
+    }
+    expect(thrown).toContain('a string of 7 characters');
+    expect(thrown).not.toContain('hunter2');
+  });
+
+  test('a lone scale column with no money pair stays an ordinary column', () => {
+    expect(entityRow({ price_scale: 6 })).toEqual({ priceScale: 6 });
+    expect(entityRow({ price_minor: 500, price_scale: 6 })).toEqual({
+      priceMinor: 500,
+      priceScale: 6,
+    });
+  });
+
+  test('scale arriving first still folds at its (earlier) position', () => {
+    const physical: Record<string, JsonValue> = {
+      id: '1',
+      price_scale: 6,
+      price_minor: 2,
+      price_currency: 'USD',
+      name: 'widget',
+    };
+    expect(Object.keys(entityRow(physical))).toEqual(['id', 'price', 'name']);
+    expect(entityRow(physical)).toEqual({
+      id: '1',
+      price: { minor: 2, currency: 'USD', scale: 6 },
+      name: 'widget',
+    });
+  });
+
   test('a lone minor column with no currency partner stays an ordinary column', () => {
     const physical: Record<string, JsonValue> = { price_minor: 500 };
     expect(entityRow(physical)).toEqual({ priceMinor: 500 });

@@ -116,9 +116,14 @@ describe('money', () => {
       'code',
       'monthly_minor',
       'monthly_currency',
+      'monthly_scale',
     ]);
     expect(columns[1]?.kind).toBe('bigint');
     expect(columns[2]?.kind).toBe('char');
+    // The scale column, and nullable: absent means the currency's own minor unit, which is what
+    // every amount written before the column existed carries.
+    expect(columns[3]?.kind).toBe('integer');
+    expect(columns[3]?.notNull).toBe(false);
   });
 
   test('emits a database CHECK so psql cannot write a bad currency either', () => {

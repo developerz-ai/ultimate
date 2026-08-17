@@ -66,11 +66,12 @@ describe('the columns a batch writes', () => {
     expect(namedProperties(items, [stray])).toEqual(['sku']);
   });
 
-  test('money is two physical columns, expanded in place and snake_cased', () => {
+  test('money is three physical columns, expanded in place and snake_cased', () => {
     expect(insertColumns(items, ['id', 'unitPrice', 'quantity'])).toEqual([
       'id',
       'unit_price_minor',
       'unit_price_currency',
+      'unit_price_scale',
       'quantity',
     ]);
   });
@@ -80,7 +81,7 @@ describe('the columns a batch writes', () => {
       { ...item, serial: null, unitPrice: { minor: 1234, currency: 'EUR' } },
     ]);
     expect(properties).toHaveLength(6);
-    expect(insertColumns(items, properties)).toHaveLength(7);
+    expect(insertColumns(items, properties)).toHaveLength(8);
   });
 
   test('a property the entity does not declare contributes no column', () => {

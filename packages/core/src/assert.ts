@@ -1,6 +1,7 @@
 // Single responsibility: compile-time-backed runtime assertions. Exhaustive switches and
 // invariants both fail with a real error code, never a bare Error.
 
+import { renderCauseValue } from './error-render';
 import { UltimateError } from './errors';
 
 export interface InvariantOptions {
@@ -15,7 +16,10 @@ export interface InvariantOptions {
 export function assertNever(value: never, fix?: string): never {
   throw new UltimateError({
     code: 'X_UNREACHABLE',
-    cause: `unhandled variant: ${JSON.stringify(value) ?? String(value)}`,
+    // `JSON.stringify` raises on a bigint and on a cycle, and `String()` raises on a symbol, so
+    // the cause threw BEFORE `X_UNREACHABLE` existed: the caller caught a TypeError where a coded
+    // refusal belongs, and catching by code found nothing.
+    cause: `unhandled variant: ${renderCauseValue(value)}`,
     fix: fix ?? 'add a case for the variant named in cause',
     meta: { value },
   });

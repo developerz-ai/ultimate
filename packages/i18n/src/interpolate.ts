@@ -65,15 +65,27 @@ export function pluralCategory(count: number, locale: string): Intl.LDMLPluralRu
 /**
  * Candidate keys for a plural lookup, most specific first.
  *
- * `items` + count 3 in `pl` → `items_many`, `items_plural`, `items_other`, `items`.
- * `items` + count 1 in `pl` → `items_one`, `items`.
+ * `items` + count 5 in `pl` → `items_many`, `items_plural`, `items_other`, `items`, `items_one`.
+ * `items` + count 1 in `pl` → `items_one`, `items`, `items_plural`, `items_other`.
  * `_plural` is the two-form authoring shortcut from the house style; the `_<category>`
  * suffixes are what a 3+ form locale needs.
+ *
+ * Both chains END on the same four candidates — `key`, `_one`, `_plural`, `_other` — because those
+ * are exactly what `Translator.has()` answers true for, and `has()` is what a caller GUARDS a
+ * render with (`packages/mail/src/render.ts:48`). A chain narrower than `has()` puts ⟦key⟧ into
+ * copy a guard had just promised was renderable. Only the ORDER differs by category, and that is
+ * the point: for `one` the bare key is the singular half of the two-form shortcut, so it outranks
+ * the plural forms; everywhere else it is the last-resort singular.
  */
 export function pluralKeyCandidates(key: string, count: number, locale: string): string[] {
   const category = pluralCategory(count, locale);
-  if (category === 'one') return [`${key}_one`, key];
-  return [`${key}_${category}`, `${key}_plural`, `${key}_other`, key];
+  const chain =
+    category === 'one'
+      ? [`${key}_one`, key, `${key}_plural`, `${key}_other`]
+      : [`${key}_${category}`, `${key}_plural`, `${key}_other`, key, `${key}_one`];
+  // `other` names itself twice without this — the duplicate is harmless and was the tell that the
+  // list had never been exercised.
+  return [...new Set(chain)];
 }
 
 /** First candidate that exists, per the caller's `has` predicate; falls back to `key`. */

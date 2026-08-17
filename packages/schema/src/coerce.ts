@@ -15,6 +15,15 @@ function numeric(raw: unknown): number | undefined {
   return Number.isFinite(value) ? value : undefined;
 }
 
+/** A truthy/falsy query-string spelling as a boolean, or the raw value when it is neither. */
+function booleanish(raw: unknown): unknown {
+  if (typeof raw !== 'string') return raw;
+  const lowered = raw.toLowerCase();
+  if (TRUE_VALUES.has(lowered)) return true;
+  if (FALSE_VALUES.has(lowered)) return false;
+  return raw;
+}
+
 export type QuerySource =
   | URLSearchParams
   | Readonly<Record<string, string | readonly string[] | undefined>>;
@@ -32,11 +41,17 @@ export function coerceNode(node: SchemaNode, raw: unknown): unknown {
       const value = Number(raw);
       return raw.trim() !== '' && Number.isFinite(value) ? value : raw;
     }
-    case 'boolean': {
+    case 'boolean':
+      return booleanish(raw);
+    case 'literal': {
+      // Toward the literal's OWN type, because `literalSchema` compares with `===`: without this
+      // a numeric or boolean `t.literal` was unsatisfiable over its own GET route — `t.literal(2)`
+      // received `"2"` and the endpoint 400d on every request — while the identical declaration
+      // worked over an action's JSON body and over MCP. A string literal needs nothing, which is
+      // exactly why the gap read as arbitrary.
       if (typeof raw !== 'string') return raw;
-      const lowered = raw.toLowerCase();
-      if (TRUE_VALUES.has(lowered)) return true;
-      if (FALSE_VALUES.has(lowered)) return false;
+      if (typeof node.literal === 'number') return numeric(raw) ?? raw;
+      if (typeof node.literal === 'boolean') return booleanish(raw);
       return raw;
     }
     case 'date': {
@@ -51,7 +66,11 @@ export function coerceNode(node: SchemaNode, raw: unknown): unknown {
     }
     case 'record': {
       if (typeof raw !== 'object' || node.valueNode === undefined) return raw;
-      const out: Record<string, unknown> = {};
+      // A null prototype for the reason `recordSchema` uses one: on a `{}` literal, assigning
+      // `out['__proto__']` hits the `Object.prototype` SETTER and the key vanishes, so the
+      // record validator's deliberate refusal of it never ran — the key was reported absent
+      // rather than rejected, on the one path (HTTP query) where it is caller-controlled.
+      const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
       for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
         out[key] = coerceNode(node.valueNode, value);
       }

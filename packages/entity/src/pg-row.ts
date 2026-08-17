@@ -14,10 +14,18 @@ export type PhysicalRow = Readonly<Record<string, unknown>>;
 
 const MONEY_PARTS = new Set(['minor', 'currency']);
 
-/** `price` -> `price_minor`, `price_currency`. Everything else is one snake_case column. */
+/**
+ * `price` -> `price_minor`, `price_currency`, `price_scale`. Everything else is one snake_case
+ * column.
+ *
+ * The scale column is nullable and is the only one of the three an amount may omit: `null` means
+ * "the currency's own minor unit", which is every row written before the column existed. It is NOT
+ * addressable as a predicate or a sort key (`MONEY_PARTS` below, and `cursor.ts`'s copy) — a scale
+ * says which units `minor` counts, so ordering or filtering by it compares two different questions.
+ */
 export const columnsOf = (property: string, column: AnyColumn): readonly string[] =>
   column.$meta.kind === 'money'
-    ? [`${snake(property)}_minor`, `${snake(property)}_currency`]
+    ? [`${snake(property)}_minor`, `${snake(property)}_currency`, `${snake(property)}_scale`]
     : [snake(property)];
 
 /**
@@ -75,14 +83,25 @@ export const bindValues = <Row>(
     const money = value as MoneyValue | null | undefined;
     bound.set(`${snake(property)}_minor`, money?.minor ?? null);
     bound.set(`${snake(property)}_currency`, money?.currency ?? null);
+    // `?? null` and not `!== undefined`: an amount at the currency's own scale carries no key at
+    // all, and that absence is what the nullable column stores. A `0` written here for it would
+    // claim whole units — a 100x reinterpretation of every ordinary price.
+    bound.set(`${snake(property)}_scale`, money?.scale ?? null);
   }
   return bound;
 };
 
-const moneyOf = (source: PhysicalRow, minor: string, currency: string): unknown => {
+const moneyOf = (source: PhysicalRow, minor: string, currency: string, scale: string): unknown => {
   const amount = source[minor];
   if (amount === null || amount === undefined) return null;
-  return { minor: amount, currency: String(source[currency] ?? '').trim() };
+  // A column the projection left out is absent, not null — and absent must read as "no scale"
+  // exactly as a stored NULL does, so both take the same branch.
+  const declared = source[scale];
+  return {
+    minor: amount,
+    currency: String(source[currency] ?? '').trim(),
+    ...(declared === null || declared === undefined ? {} : { scale: declared }),
+  };
 };
 
 /**
@@ -92,9 +111,12 @@ const moneyOf = (source: PhysicalRow, minor: string, currency: string): unknown 
 export const decodeRow = <Row>(entity: EntityCore<Row>, source: PhysicalRow): Row => {
   const row: Record<string, unknown> = {};
   for (const [property, column] of Object.entries(entity.$columns)) {
-    const [head, tail] = columnsOf(property, column);
+    const [head, currency, scale] = columnsOf(property, column);
     if (head === undefined || !(head in source)) continue;
-    const value = tail === undefined ? source[head] : moneyOf(source, head, tail);
+    const value =
+      currency === undefined || scale === undefined
+        ? source[head]
+        : moneyOf(source, head, currency, scale);
     if (value !== null && value !== undefined) {
       row[property] = column.$parse(value);
       continue;

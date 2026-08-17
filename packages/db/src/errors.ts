@@ -156,7 +156,11 @@ export const driverError = (detail: string, sourceError: unknown): DbError => {
   return new DbError({
     code,
     cause: `${detail}: ${renderThrowable(sourceError)} [SQLSTATE ${state ?? '?????'}]`,
-    fix: SQLSTATE_FIXES[code].replace('{constraint}', constraint ?? UNNAMED_CONSTRAINT),
+    // A FUNCTION as the replacement, never the string: `String.replace` expands `$&`, `` $` ``,
+    // `$'` and `$$` inside a replacement literal, and a constraint name is the server's, not
+    // ours — `$` is legal in a Postgres identifier, so `posts_$&_key` would splice the matched
+    // `{constraint}` back into the fix line an author is meant to paste.
+    fix: SQLSTATE_FIXES[code].replace('{constraint}', () => constraint ?? UNNAMED_CONSTRAINT),
     meta: {
       sqlState: state,
       ...(constraint === undefined ? {} : { constraint }),

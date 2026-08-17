@@ -139,6 +139,36 @@ describe('sentryErrorReporter', () => {
     expect(headers['content-type']).toBe('application/x-sentry-envelope');
   });
 
+  test('a rejection that fights being READ raises no unhandled rejection', async () => {
+    // Fire-and-forget delivery: the `.catch` is the only thing between a monitor outage and an
+    // unhandled rejection, which takes the process with it on Bun. Rendering the rejection with
+    // `failure instanceof Error ? failure.message : String(failure)` threw inside that catch.
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      const reporter = sentryErrorReporter({
+        dsn: 'https://abc123@errors.example.com/42',
+        fetch: (() =>
+          Promise.reject(
+            new Proxy(new Error('ECONNREFUSED'), {
+              getPrototypeOf(): never {
+                throw new TypeError('proxy trap');
+              },
+            }),
+          )) as unknown as typeof globalThis.fetch,
+      });
+      reporter.report(report());
+      // Two turns: one for the rejection, one for the `.catch` handler's own outcome.
+      await Bun.sleep(1);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+    expect(unhandled).toEqual([]);
+  });
+
   test('a monitor that refuses the connection never reaches the caller', () => {
     const reporter = sentryErrorReporter({
       dsn: 'https://abc123@errors.example.com/42',

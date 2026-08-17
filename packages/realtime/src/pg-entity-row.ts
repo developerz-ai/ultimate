@@ -1,7 +1,9 @@
 // Physical Postgres row -> entity-row shaping: snake_case columns become camelCase properties,
-// and a `<p>_minor` / `<p>_currency` column pair folds into one `<p>: Money`-shaped property.
-// The inverse of the camelCasing here is `@ultimat3/entity`'s `column.ts#snake` — not imported
-// (a tier-3 package may not reach across to tier-2), so the round trip is pinned by a test instead.
+// and the `<p>_minor` / `<p>_currency` / `<p>_scale` columns fold into one `<p>: Money`-shaped
+// property. The inverse of the camelCasing here is `@ultimat3/entity`'s `column.ts#snake`, and
+// the fold is its `pg-row.ts#moneyOf` — neither is imported (this package declares no dependency
+// on tier 2), so both are pinned by a test instead: `pg-entity-row-parity.test.ts` reads one
+// physical row through both surfaces and asserts one object.
 
 import { describeValue } from '@ultimat3/core';
 import { ReplicationProtocolError } from './errors';
@@ -18,18 +20,24 @@ function capitalize(part: string): string {
   return part.charAt(0).toUpperCase() + part.slice(1);
 }
 
-interface MoneyPair {
+interface FoldedMoney {
   readonly property: string;
-  readonly minorKey: string;
-  readonly currencyKey: string;
-  readonly minor: number;
-  readonly currency: string;
+  /** The physical columns the fold consumed, in declaration order — named together on a collision. */
+  readonly columns: readonly string[];
+  readonly value: JsonObject;
 }
 
-/** `price_minor` / `price_currency` -> `price`; any other column name has no money prefix. */
+/**
+ * `price_minor` / `price_currency` / `price_scale` -> `price`; any other column name has no money
+ * prefix. The scale column is matched here for the same reason the other two are: unmatched, it
+ * survived the fold as a physical `priceScale` property beside `price`, so one row read live and
+ * the same row read through a repository reported two different shapes — and the sub-cent amount
+ * the scale names was delivered to every subscriber unscaled.
+ */
 function moneyPrefix(column: string): string | null {
   if (column.endsWith('_minor')) return column.slice(0, -'_minor'.length);
   if (column.endsWith('_currency')) return column.slice(0, -'_currency'.length);
+  if (column.endsWith('_scale')) return column.slice(0, -'_scale'.length);
   return null;
 }
 
@@ -46,8 +54,33 @@ function moneyMinor(column: string, value: number | string): number {
   if (Number.isSafeInteger(minor)) return minor;
   throw new ReplicationProtocolError({
     stage: 'value',
-    detail: `column "${column}" carries ${shownMinor(value)}, which is not a whole number of minor units`,
+    detail: `column "${column}" carries ${shownNumber(value)}, which is not a whole number of minor units`,
     fix: `store ${column} as a bigint inside ±2^53 — Money.minor is a number, never a float or a bigint`,
+  });
+}
+
+/**
+ * `MoneyValue.scale` is a whole, non-negative count of decimal places, so that — and only that —
+ * is what this decoder refuses: a fractional or negative scale is not a value the shape can carry
+ * at all, exactly as an out-of-range `minor` is not.
+ *
+ * The `0…MAX_MONEY_SCALE` CEILING is `@ultimat3/schema`'s and is deliberately not restated here:
+ * it is enforced at both ends of this column already — the CHECK `@ultimat3/entity`'s
+ * `describeColumn` emits on `<p>_scale`, and `parseScale` on the repository read — and this
+ * package declares no `@ultimat3/schema` dependency, so a copy of the bound here would be a
+ * second declaration that can drift from the one that decides.
+ *
+ * `/^\d+$/` and not `Number(value)`: `Number('')` is 0, and 0 means whole units — the one value
+ * an empty column must never decode to. The same guard `parseScale` uses.
+ */
+function moneyScale(column: string, value: JsonValue): number {
+  const digits = typeof value === 'string' && /^\d+$/.test(value);
+  const scale = typeof value === 'number' ? value : digits ? Number(value) : Number.NaN;
+  if (Number.isSafeInteger(scale) && scale >= 0) return scale;
+  throw new ReplicationProtocolError({
+    stage: 'value',
+    detail: `column "${column}" carries ${shownNumber(value)}, which is not a whole number of decimal places`,
+    fix: `store ${column} as a non-negative integer, or null for the currency's own minor unit`,
   });
 }
 
@@ -64,23 +97,31 @@ function moneyMinor(column: string, value: number | string): number {
  * and it reaches the log store and the operator alike.
  *
  * So the amount survives when its content is a number (a float, an out-of-range integer, or a
- * string that *is* one), and everything else is reported as shape.
+ * string that *is* one), and everything else is reported as shape. The scale column is matched by
+ * name the same way and carries the same risk, so it renders through here too.
  */
-function shownMinor(value: number | string): string {
+function shownNumber(value: JsonValue): string {
   if (typeof value === 'number') return `"${value}"`;
+  if (typeof value !== 'string') return describeValue(value);
   const numeric = value.trim() !== '' && Number.isFinite(Number(value));
   return numeric ? `"${value}"` : describeValue(value);
 }
 
 /**
- * `name` is one half of a `<p>_minor` / `<p>_currency` pair, or null if it is not part of one.
- * Both halves must be present *and* typed like money — a null currency (an unset money value) is
- * not "half a pair", it simply is not a pair, so both columns fall through as ordinary values.
+ * `name` is part of a `<p>_minor` / `<p>_currency` (/ `<p>_scale`) group, or null if it is not.
+ * The first two must be present *and* typed like money — a null currency (an unset money value) is
+ * not "half a pair", it simply is not a pair, so every column falls through as an ordinary value.
+ *
+ * The scale column is the one member that may be absent or NULL, and both mean the same thing:
+ * "the currency's own minor unit". Neither produces a `scale` key, because `undefined` and `0` are
+ * different values — `0` claims whole units, a 100x reinterpretation of an ordinary price — which
+ * is exactly the rule `moneyOf` follows on the repository side. What it may NOT do is survive as a
+ * column of its own: the fold consumes it whenever the group folds.
  */
-function moneyPairAt(
+function foldMoney(
   physical: Readonly<Record<string, JsonValue>>,
   name: string,
-): MoneyPair | null {
+): FoldedMoney | null {
   const prefix = moneyPrefix(name);
   if (prefix === null) return null;
 
@@ -90,16 +131,21 @@ function moneyPairAt(
 
   const minor = physical[minorKey];
   const currency = physical[currencyKey];
-  if ((typeof minor === 'number' || typeof minor === 'string') && typeof currency === 'string') {
-    return {
-      property: camel(prefix),
-      minorKey,
-      currencyKey,
+  if (!(typeof minor === 'number' || typeof minor === 'string') || typeof currency !== 'string') {
+    return null;
+  }
+
+  const scaleKey = `${prefix}_scale`;
+  const scale = Object.hasOwn(physical, scaleKey) ? physical[scaleKey] : undefined;
+  return {
+    property: camel(prefix),
+    columns: scale === undefined ? [minorKey, currencyKey] : [minorKey, currencyKey, scaleKey],
+    value: {
       minor: moneyMinor(minorKey, minor),
       currency,
-    };
-  }
-  return null;
+      ...(scale === undefined || scale === null ? {} : { scale: moneyScale(scaleKey, scale) }),
+    },
+  };
 }
 
 /**
@@ -122,12 +168,13 @@ function claim(taken: Map<string, string>, property: string, column: string): vo
 /**
  * A physical postgres row -> the row shape the rest of the pipeline is written against.
  * Two things are not one-to-one and both live here: the column is snake_case while the entity
- * property is camelCase, and money is one property over the two columns `<p>_minor`/`<p>_currency`.
+ * property is camelCase, and money is one property over the columns `<p>_minor`/`<p>_currency`
+ * and the nullable `<p>_scale`.
  */
 export function entityRow(physical: Readonly<Record<string, JsonValue>>): JsonObject {
   const row: JsonObject = {};
-  // Column order in is key order out; a folded money property lands wherever its earlier half
-  // (whichever of _minor/_currency the source happened to emit first) would otherwise have sat.
+  // Column order in is key order out; a folded money property lands wherever its earliest member
+  // (whichever of the three the source happened to emit first) would otherwise have sat.
   const consumed = new Set<string>();
   // Which column produced each property, so a collision names both sides rather than losing one.
   const taken = new Map<string, string>();
@@ -135,12 +182,11 @@ export function entityRow(physical: Readonly<Record<string, JsonValue>>): JsonOb
   for (const name of Object.keys(physical)) {
     if (consumed.has(name)) continue;
 
-    const money = moneyPairAt(physical, name);
+    const money = foldMoney(physical, name);
     if (money !== null) {
-      claim(taken, money.property, `${money.minorKey}/${money.currencyKey}`);
-      row[money.property] = { minor: money.minor, currency: money.currency };
-      consumed.add(money.minorKey);
-      consumed.add(money.currencyKey);
+      claim(taken, money.property, money.columns.join('/'));
+      row[money.property] = money.value;
+      for (const column of money.columns) consumed.add(column);
       continue;
     }
 

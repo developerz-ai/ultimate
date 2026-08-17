@@ -5,6 +5,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { type Clock, systemClock } from './clock';
 import { tryUseContext } from './context';
+import { renderThrowable } from './error-render';
 import { isUltimateError } from './errors';
 import { isSpanId, isTraceId, spanId as newSpanId, traceId as newTraceId } from './ids';
 import { defaultSampler, resetDefaultSampler, type Sampler } from './sampler';
@@ -214,7 +215,12 @@ export function startSpan(name: string, options?: StartSpanOptions): Span {
     },
     recordError(error) {
       const code = isUltimateError(error) ? error.code : 'X_INTERNAL';
-      const message = error instanceof Error ? error.message : String(error);
+      // `renderThrowable`, never `error instanceof Error ? error.message : String(error)`: both
+      // halves are property reads on a value the framework did not build, and this runs inside
+      // `withSpan`'s catch — around `cache.invalidate`, `db.<verb>` and every HTTP and job span.
+      // A throw here substitutes the tracer's own TypeError for the caller's real failure and
+      // leaves the span it was annotating unended.
+      const message = renderThrowable(error);
       events.push({
         name: 'exception',
         at: clock.now().getTime(),

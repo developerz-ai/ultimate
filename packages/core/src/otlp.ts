@@ -2,6 +2,7 @@
 // an operator already sets, header parsing, the OTLP/JSON value encoding, and one POST that never
 // throws. A serialisation, not a vendor (axiom 7), exactly as `metrics-text.ts` is to Prometheus.
 
+import { renderThrowable } from './error-render';
 import { type CodedErrorInit, UltimateError } from './errors';
 import { logger } from './logger';
 import type { AttributeValue, SpanResource } from './telemetry';
@@ -208,7 +209,9 @@ export async function postOtlp(options: OtlpPostOptions): Promise<void> {
   } catch (failure) {
     logger.warn('otlp export failed', {
       url: options.url,
-      error: failure instanceof Error ? failure.message : String(failure),
+      // `renderThrowable`: the read that renders a caught value must not itself throw, or the
+      // export failure this catch exists to swallow escapes as an unhandled rejection.
+      error: renderThrowable(failure),
     });
   }
 }

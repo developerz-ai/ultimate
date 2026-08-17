@@ -26,8 +26,17 @@ describe('defineEnv', () => {
     expect(error.code).toBe('X_ENV_MISSING');
     // Three problems, one throw — no restart-and-discover loop.
     expect(error.cause).toContain('DATABASE_URL is missing');
-    expect(error.cause).toContain('PORT="not-a-port" is not an integer port 1-65535');
-    expect(error.cause).toContain('REGION="qa" is not one of us | eu');
+    // The SHAPE of the rejected value, never its content: this cause is the boot log line and the
+    // `--json` field, and a value baked into a string has no key left to redact. The scaffold's
+    // own DATABASE_URL is not `secret: true`, so a malformed one wrote its password here.
+    expect(error.cause).toContain(
+      'PORT is not an integer port 1-65535 (received a string of 10 characters)',
+    );
+    expect(error.cause).toContain(
+      'REGION is not one of us | eu (received a string of 2 characters)',
+    );
+    expect(error.cause).not.toContain('not-a-port');
+    expect(error.cause).not.toContain('"qa"');
     expect(error.fix).toBe(
       'add DATABASE_URL PORT REGION to .env (copy .env.example), then run: x env check',
     );

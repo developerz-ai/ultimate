@@ -53,6 +53,37 @@ describe('assertNever', () => {
     expect(error.cause).toContain('unhandled variant:');
   });
 
+  test('a value JSON.stringify REFUSES still produces X_UNREACHABLE, not a TypeError', () => {
+    // `JSON.stringify(10n)` raises a TypeError, so the cause threw before the error it was for
+    // existed: the caller caught a TypeError where a coded refusal belongs, and catching by code
+    // found nothing.
+    let caught: unknown;
+    try {
+      assertNever(10n as unknown as never);
+    } catch (thrown) {
+      caught = thrown;
+    }
+    expect(isUltimateError(caught)).toBe(true);
+    expect((caught as UltimateError).code).toBe('X_UNREACHABLE');
+    expect((caught as UltimateError).cause).toContain('10n');
+  });
+
+  test('a value that fights being read is still described, never rethrown', () => {
+    const hostile = {
+      get kind(): never {
+        throw new Error('getter');
+      },
+    };
+    let caught: unknown;
+    try {
+      assertNever(hostile as unknown as never);
+    } catch (thrown) {
+      caught = thrown;
+    }
+    expect(isUltimateError(caught)).toBe(true);
+    expect((caught as UltimateError).code).toBe('X_UNREACHABLE');
+  });
+
   test('a custom fix argument is used verbatim instead of the generic default', () => {
     let caught: unknown;
     try {

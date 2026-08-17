@@ -220,9 +220,13 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
       const ttlMs = assertTtl(key, setOptions?.ttlMs ?? defaultTtlMs, 'redis', jitter);
       const payload: StoredEntry = { v: value, t: tags.map(serializeTag) };
       const stored = valueKey(key);
-      const ttlSeconds = Math.max(1, Math.ceil(ttlMs / 1000));
-      const bucketTtlSeconds = String(ttlSeconds + TAG_TTL_GRACE_SECONDS);
-      await conn().send('SET', [stored, JSON.stringify(payload), 'EX', String(ttlSeconds)]);
+      // `PX`, not `EX`: the value's lease is spent in the milliseconds it was validated and
+      // jittered in. `Math.ceil(ttlMs / 1000)` honoured a 1,001ms lease as 2s — rounding toward
+      // STALENESS, the opposite of what the jitter beside it protects, and a disagreement with
+      // the LRU tier about when the same entry dies. The BUCKET keeps whole seconds and keeps
+      // rounding up: a tag set has to outlive every member it holds.
+      const bucketTtlSeconds = String(Math.max(1, Math.ceil(ttlMs / 1000)) + TAG_TTL_GRACE_SECONDS);
+      await conn().send('SET', [stored, JSON.stringify(payload), 'PX', String(Math.ceil(ttlMs))]);
       for (const owned of tags) {
         for (const bucket of tagKeysFor(owned)) {
           await conn().send('EVAL', [TAG_MEMBER_SCRIPT, '1', bucket, stored, bucketTtlSeconds]);

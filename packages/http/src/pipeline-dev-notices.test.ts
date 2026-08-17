@@ -122,8 +122,13 @@ describe('devNotices is consulted on the overlay path and nowhere else', () => {
     expect(calls()).toBe(1);
     expect(body).toContain('<h2>notices</h2>');
     expect(body).toContain('<dt>X_N_PLUS_ONE_QUERY</dt>');
-    // Verbatim: a `fix:` is copied and run, so the overlay may not reflow or re-quote one.
-    expect(body).toContain(`<code>${notice.fix}</code>`);
+    // Verbatim once the browser has decoded it: a `fix:` is copied and run, so the overlay may
+    // reflow nothing and re-quote nothing. HTML entities are not a reflow — `&#39;` is pasted as
+    // `'` — and the escape set has to be complete, `"` (already) and `'` alike, or the next
+    // single-quoted attribute someone writes here inherits a hole.
+    expect(body).toContain(
+      `<code>db.posts.preload(&#39;author&#39;)   # one statement for the whole page</code>`,
+    );
   });
 
   test('a production process never asks — not once, not even on the error path', async () => {

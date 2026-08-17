@@ -3,6 +3,7 @@
 // is documented and several self-hostable monitors ingest it. Nothing here names a host, a project
 // or an organisation — the DSN is the app's own typed env, passed in at wiring time.
 
+import { renderThrowable } from './error-render';
 import type { ErrorReport, ErrorReporter, ErrorSeverity } from './error-reporter';
 import { type CodedErrorInit, UltimateError } from './errors';
 import { traceId } from './ids';
@@ -164,7 +165,9 @@ export function sentryErrorReporter(options: SentryReporterOptions): ErrorReport
       }).catch((failure: unknown) => {
         logger.warn('error reporter delivery failed', {
           url: dsn.envelopeUrl,
-          error: failure instanceof Error ? failure.message : String(failure),
+          // `renderThrowable`: this is the `.catch` that keeps a monitor outage from becoming a
+          // second failure, so rendering the rejection may not raise one of its own.
+          error: renderThrowable(failure),
         });
       });
     },

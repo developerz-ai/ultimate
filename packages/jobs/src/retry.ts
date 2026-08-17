@@ -48,7 +48,12 @@ export function backoffDelayMs(policy: RetryPolicy, attempt: number, random?: Ra
   else raw = base * 2 ** (step - 1);
 
   const capped = Math.min(raw, cap);
-  if (policy.jitter !== true) return Math.round(capped);
+  // `?? DEFAULT_RETRY.jitter`, like every other option above. It read `!== true`, so an omitted
+  // `jitter` meant OFF while the field's own doc says "Equal jitter … by default" — a burst of
+  // failures then retried in lockstep, which is the thundering herd the default exists to break.
+  // Masked for jobs declared through `job()` (it merges the defaults) and live for every direct
+  // caller of this exported function, `retrySchedule` included.
+  if ((policy.jitter ?? DEFAULT_RETRY.jitter) !== true) return Math.round(capped);
   const roll = (random ?? Math.random)();
   return Math.round(capped / 2 + (capped / 2) * roll);
 }

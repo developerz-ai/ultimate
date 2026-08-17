@@ -426,6 +426,29 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   and an equality prefix is `>= v and < v + 1ms`: what `date_trunc('milliseconds', …)` would say,
   spelled as a half-open range so the column stays bare and the index still range-scans. The memory
   driver stores millisecond `Date`s, so the two drivers agree without a second rule.
+- **`MoneyValue.scale` PERSISTS, in a third physical column — decided 2026-08.** `<p>_scale integer
+  null`, through `columnsOf` / `bindValues` / `moneyOf` / `parseMoney` / `describeColumn`. Until
+  this branch the entity layer silently dropped it on **both** write and read: `parseMoney` rebuilt
+  the value as `{ minor, currency }`, `bindValues` wrote two columns and `columnsOf` declared two,
+  so `money().$parse({ minor: 2, currency: 'USD', scale: 6 })` — $0.000002 — was stored and read
+  back as $0.02. A silent 10,000x reinterpretation, with no error anywhere, of a field the type
+  system (`type-pins.ts` asserts `MoneyValue` is exactly `minor | currency | scale`), the wire
+  schema (`t.money` validates and preserves it) and `@ultimat3/money` all carry. **The rejected
+  alternative was making `parseMoney` refuse a scaled value**: `scale` exists precisely so a
+  sub-cent amount can be named — the $0.00016 model call that rounded up to a whole cent and
+  reported 62x the real spend — so refusing it at the persistence layer would delete the feature at
+  the one layer that has to keep it. Rules, none optional. **`null` is not `0`**: the column holds
+  NULL for "the currency's own minor unit", which is every amount written before the column
+  existed, and it decodes to an ABSENT key — `0` means whole units and would be a 100x error on
+  every ordinary price, so `bindValues` writes `money?.scale ?? null` and `moneyOf` omits the key
+  rather than defaulting it. **Always nullable, whatever the property is**: a NOT NULL there would
+  demand a scale on values that have none. **The bound is `@ultimat3/schema`'s** — `parseScale`
+  calls `isMoneyScale`, never a restated `0…15`, and `scaleCheck` emits the matching CHECK so a
+  psql session cannot write a scale the app would refuse to read. **`scale` is not addressable**:
+  `MONEY_PARTS` in `pg-row.ts` and in `cursor.ts` still hold `minor` and `currency` only, because a
+  scale says which units `minor` counts — ordering or filtering by it compares two different
+  questions. Existing tables need `alter table <t> add column <p>_scale integer` (see the migration
+  note in the PR); every existing row's NULL already means what it always meant.
 - **Money is a `bigint` + `char(3)` column pair, and a `number` + `char(3)` VALUE.** A float throws.
   Never one column, never an implied single currency — and never two declarations of the shape.
   `MoneyValue` is re-exported from `@ultimat3/schema`, which is also what `@ultimat3/money`'s
@@ -486,6 +509,21 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `$view`, never `view`; no free `view(entity, keys)` either — one way to write a projection.
 - **Invariants run twice**: in the app on write AND as a Postgres CHECK/UNIQUE via `toSql()`. An
   untranslatable JS predicate reports `kind: 'assert'`, `sql: null` — never a pretend CHECK.
+- **And the two halves must AGREE, term by term** (`expr.ts`). A rule the app accepts and the CHECK
+  refuses is not a stricter database: the write comes back as a raw constraint error instead of
+  `X_INVARIANT_VIOLATED`, which is the framework's own invariant bypassed on the way out. Two
+  divergences closed 2026-08, both proven. **`matches(/…/i)` compiles to `~*`** — `toSql` emitted
+  `~ <pattern.source>` and nothing else, so `c.slug.matches(/^[A-Z]+$/i)` approved `'abc'` in the
+  app while the CHECK refused it; every other flag is REFUSED at declaration (`matchOperator`),
+  never dropped, because `m` and `s` change what the pattern matches and `g` makes `pattern.test`
+  stateful so even `holds` stops being a function of the row. **`minLength` counts code points** —
+  `[...value].length`, because `char_length('👍')` is 1 and `'👍'.length` is 2. Code points, not
+  graphemes: agreeing with Postgres is the point, not agreeing with a human's idea of a letter.
+- **`$parse` tells absence from `null`** (`entity.ts`). `input[property] ?? defaultValue(...)` read
+  an explicit `null` as absence and wrote the column's declared default straight back, so a
+  nullable-and-defaulted column could not be cleared at all — `{ status: null }` reported success
+  and stored `'draft'`. It is `raw === undefined ? defaultValue(...) : raw`: a present `undefined`
+  is still absence, which is what a spread of an omitted optional key produces.
 - **`invariants` is ONE callback, and `InvariantColumns<C>` is a mapped type.** `invariants: (c) =>
   [invariant(name, expr)]`, never an array of `(c) => …` builders: a per-element builder is a call
   TypeScript checks before `entity()`'s `C` is fixed, so `C` fell back to its constraint and `c`
@@ -553,7 +591,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `count-by.ts` | what a grouped count is made of — the groupable kinds, the group bound, the key's decoding, the order |
 | `jit-preload.ts` | a page's foreign key values → one `in` statement for the whole `for … of` loop |
 | `preload.ts` | the relation `preload()` names → one related-rows statement → attached to the page |
-| `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is two columns) |
+| `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is three columns) |
 | `registry.ts` | duplicate detection, `describeEntities()` for the manifest, `references()` per entry |
 | `relations.ts` | `relationMap()`/`relationsFor()`/`relationNamed()` — the FKs as a named `belongsTo`/`hasMany` map |
 | `n-plus-one.ts` | a repeated statement → the error whose `fix` is the preload or bulk call that ends it |

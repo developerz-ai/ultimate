@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { isStorageError, uploadFailed } from './errors';
 import type { UploadGrant, UploadRequest } from './grant';
 import type { SignedPutInput, UploadProgress, UploadSource } from './upload-client';
-import { uploadFile } from './upload-client';
+import { uploadFile, xhrSignedPut } from './upload-client';
 
 const GRANT: UploadGrant = {
   key: 'org/org-1/pending/u-1.png',
@@ -90,5 +90,144 @@ describe('uploadFile', () => {
       },
     });
     expect(ticks.map((tick) => tick.ratio)).toEqual([0.5, 1]);
+  });
+});
+
+/**
+ * The XHR transport, against a fake `XMLHttpRequest`. Bun has none, which is exactly why this half
+ * shipped untested — and both defects here are things only a test with a real `AbortSignal` sees.
+ */
+class FakeXhr {
+  static built: FakeXhr[] = [];
+  static sends = 0;
+
+  status = 200;
+  responseText = '';
+  aborted = false;
+  readonly upload = { addEventListener: (): void => undefined };
+  private readonly listeners = new Map<string, () => void>();
+
+  constructor() {
+    FakeXhr.built.push(this);
+  }
+
+  open(): void {}
+  setRequestHeader(): void {}
+  addEventListener(type: string, handler: () => void): void {
+    this.listeners.set(type, handler);
+  }
+  send(): void {
+    FakeXhr.sends += 1;
+  }
+  abort(): void {
+    this.aborted = true;
+    this.fire('abort');
+  }
+  fire(type: string): void {
+    this.listeners.get(type)?.();
+  }
+}
+
+/** A real `AbortSignal` that counts what was hung on it — the leak is invisible any other way. */
+function countingSignal(): {
+  signal: AbortSignal;
+  controller: AbortController;
+  counts: { added: number; removed: number };
+} {
+  const controller = new AbortController();
+  const { signal } = controller;
+  const counts = { added: 0, removed: 0 };
+  const add = signal.addEventListener.bind(signal);
+  const remove = signal.removeEventListener.bind(signal);
+  Object.defineProperty(signal, 'addEventListener', {
+    value: (...args: Parameters<typeof add>) => {
+      counts.added += 1;
+      return add(...args);
+    },
+  });
+  Object.defineProperty(signal, 'removeEventListener', {
+    value: (...args: Parameters<typeof remove>) => {
+      counts.removed += 1;
+      return remove(...args);
+    },
+  });
+  return { signal, controller, counts };
+}
+
+describe('xhrSignedPut', () => {
+  const withFakeXhr = async (run: () => Promise<void>): Promise<void> => {
+    const globals = globalThis as { XMLHttpRequest?: unknown };
+    const original = globals.XMLHttpRequest;
+    globals.XMLHttpRequest = FakeXhr;
+    FakeXhr.built = [];
+    FakeXhr.sends = 0;
+    try {
+      await run();
+    } finally {
+      if (original === undefined) delete globals.XMLHttpRequest;
+      else globals.XMLHttpRequest = original;
+    }
+  };
+
+  const put = (signal: AbortSignal): Promise<void> =>
+    xhrSignedPut({
+      url: GRANT.url,
+      contentType: GRANT.contentType,
+      body: fileOf(4),
+      signal,
+    });
+
+  // Per spec, adding an `abort` listener to an ALREADY-aborted signal never fires it — so the
+  // whole body went up for a caller who had already given up.
+  test('an already-aborted signal refuses before a byte is sent', async () => {
+    await withFakeXhr(async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      expect(await codeOf(() => put(controller.signal))).toBe('X_STORAGE_UPLOAD_FAILED');
+      expect(FakeXhr.sends).toBe(0);
+    });
+  });
+
+  // One `AbortSignal` per picker session, one upload per file: the listener was never removed, so
+  // every completed upload left one behind for the signal's whole life.
+  test('a reused signal ends with no listener left behind', async () => {
+    await withFakeXhr(async () => {
+      const { signal, counts } = countingSignal();
+
+      for (let i = 0; i < 3; i += 1) {
+        const settled = put(signal);
+        FakeXhr.built[i]?.fire('load');
+        await settled;
+      }
+
+      expect(counts.added).toBe(3);
+      expect(counts.removed).toBe(3);
+    });
+  });
+
+  test('a failure path releases the listener too', async () => {
+    await withFakeXhr(async () => {
+      const { signal, counts } = countingSignal();
+
+      const settled = put(signal);
+      FakeXhr.built[0]?.fire('error');
+      expect(await codeOf(() => settled)).toBe('X_STORAGE_UPLOAD_FAILED');
+
+      expect(counts.removed).toBe(counts.added);
+    });
+  });
+
+  test('aborting mid-flight still aborts the request', async () => {
+    await withFakeXhr(async () => {
+      const { signal, controller, counts } = countingSignal();
+
+      const settled = put(signal);
+      controller.abort();
+
+      expect(await codeOf(() => settled)).toBe('X_STORAGE_UPLOAD_FAILED');
+      expect(FakeXhr.built[0]?.aborted).toBe(true);
+      expect(counts.removed).toBe(counts.added);
+    });
   });
 });

@@ -6,12 +6,27 @@ import { factsOf, renderErrorLines, toProblem } from './error-map';
 import { OVERLAY_STYLE } from './overlay-style';
 import { html } from './response';
 
+// `'` is escaped even though every attribute below is double-quoted: the escape set is what the
+// next author reads as the guarantee, and a single-quoted attribute written later would inherit a
+// hole nothing here would have flagged.
 const escapeHtml = (value: string): string =>
   value
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+/**
+ * An `href` is a SCHEME decision, not an escaping one: `javascript:alert(1)` survives every entity
+ * replacement intact and becomes a link the agent debugging this page clicks. A `docs` value comes
+ * from whichever package raised the error, so anything that is not plainly http(s) renders as text.
+ */
+const docsLink = (value: string): string => {
+  const protocol = URL.parse(value)?.protocol;
+  const safe = protocol === 'https:' || protocol === 'http:';
+  return safe ? `<a href="${escapeHtml(value)}">${escapeHtml(value)}</a>` : escapeHtml(value);
+};
 
 /**
  * A non-fatal finding rendered next to the error: the same code/cause/fix contract, from a
@@ -39,11 +54,7 @@ export interface OverlayMeta {
 const noticeRow = (notice: OverlayNotice): string =>
   `<dt>${escapeHtml(notice.code)}</dt><dd>${escapeHtml(notice.cause)}<br><code>${escapeHtml(
     notice.fix,
-  )}</code>${
-    notice.docs === undefined
-      ? ''
-      : `<br><a href="${escapeHtml(notice.docs)}">${escapeHtml(notice.docs)}</a>`
-  }</dd>`;
+  )}</code>${notice.docs === undefined ? '' : `<br>${docsLink(notice.docs)}`}</dd>`;
 
 /**
  * Nothing at all when there is nothing to report — not an empty card. A request with no findings
@@ -76,7 +87,7 @@ export const renderOverlay = (error: unknown, meta: OverlayMeta = {}): string =>
     <dl>
       <dt>cause</dt><dd>${escapeHtml(facts.cause)}</dd>
       <dt>fix</dt><dd><code>${escapeHtml(facts.fix)}</code></dd>
-      <dt>docs</dt><dd><a href="${escapeHtml(facts.docs)}">${escapeHtml(facts.docs)}</a></dd>
+      <dt>docs</dt><dd>${docsLink(facts.docs)}</dd>
       ${where === '' ? '' : `<dt>route</dt><dd>${escapeHtml(where)}</dd>`}
       ${meta.requestId === undefined ? '' : `<dt>request</dt><dd>${escapeHtml(meta.requestId)}</dd>`}
       ${

@@ -77,6 +77,33 @@ const walk = (row: Row, path: readonly string[]): unknown =>
 const literal = (value: unknown): string =>
   typeof value === 'string' ? `'${value.replaceAll("'", "''")}'` : String(value);
 
+/**
+ * The Postgres operator a `RegExp`'s flags mean — the second half of "one declaration, two
+ * enforcement points". `toSql` used to emit `~ <pattern.source>` and nothing else, so
+ * `c.slug.matches(/^[A-Z]+$/i)` approved `'abc'` in the app (`pattern.test`, flags intact) while
+ * the CHECK it generated was case-SENSITIVE and refused the same row — the app's own invariant
+ * bypassed, and the write coming back as a raw constraint error rather than
+ * `X_INVARIANT_VIOLATED`.
+ *
+ * `i` is the one flag with an operator (`~*`). Every other flag is REFUSED rather than dropped:
+ * `m` and `s` change what the pattern matches, `g` makes `pattern.test` stateful across calls so
+ * even `holds` stops being a function of the row, and `u`/`v`/`y`/`d` have no POSIX equivalent at
+ * all. A CHECK quietly missing a flag is the same disagreement one character along.
+ */
+const matchOperator = (pattern: RegExp): string => {
+  const flags = pattern.flags.replaceAll('i', '');
+  if (flags !== '') {
+    throw invariantViolated(
+      'invariant',
+      'matches',
+      `/${pattern.source}/${pattern.flags} carries the flag${flags.length === 1 ? '' : 's'} ` +
+        `"${flags}", which Postgres has no operator for — drop it and fold the behaviour into ` +
+        `the pattern, or pass a function instead: matches((value) => /${pattern.source}/${pattern.flags}.test(value)), which is app-only and reports sql: null`,
+    );
+  }
+  return pattern.ignoreCase ? '~*' : '~';
+};
+
 const check = (
   paths: readonly (readonly string[])[],
   message: string,
@@ -110,7 +137,12 @@ const expr = (term: Term): ColumnExpr => {
       one(
         `${term.label} must be at least ${length} character${length === 1 ? '' : 's'}`,
         (resolve) => `char_length(${term.sql(resolve)}) >= ${length}`,
-        (value) => typeof value === 'string' && value.length >= length,
+        // `[...value].length`, never `value.length`: JS counts UTF-16 code units and
+        // `char_length()` counts CHARACTERS, so `'👍'` was 2 here and 1 in Postgres — the app
+        // approved a row the CHECK then refused, which reaches the caller as a raw constraint
+        // error instead of `X_INVARIANT_VIOLATED`. Code points, not graphemes: that is what
+        // Postgres counts, and agreeing with the database is the whole point of this file.
+        (value) => typeof value === 'string' && [...value].length >= length,
       ),
 
     contains: (value) =>
@@ -120,15 +152,22 @@ const expr = (term: Term): ColumnExpr => {
         (actual) => typeof actual === 'string' && actual.includes(value),
       ),
 
-    matches: (pattern) =>
-      one(
+    matches: (pattern) => {
+      // Read at DECLARATION, not inside `toSql`: an unsupported flag is the author's mistake and
+      // the entity file is where it is repaired, so the refusal lands on the line that wrote it
+      // rather than during migration generation, where the entity name is all anyone would see.
+      const emitted =
+        pattern instanceof RegExp
+          ? `${matchOperator(pattern)} ${literal(pattern.source)}`
+          : undefined;
+      return one(
         `${term.label} must match ${pattern instanceof RegExp ? pattern.source : pattern.name || 'the rule'}`,
-        (resolve) =>
-          pattern instanceof RegExp ? `${term.sql(resolve)} ~ ${literal(pattern.source)}` : null,
+        (resolve) => (emitted === undefined ? null : `${term.sql(resolve)} ${emitted}`),
         (value) =>
           typeof value === 'string' &&
           (pattern instanceof RegExp ? pattern.test(value) : pattern(value)),
-      ),
+      );
+    },
 
     atLeast: (bound) =>
       one(

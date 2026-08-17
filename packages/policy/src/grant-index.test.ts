@@ -70,6 +70,22 @@ describe('the per-actor grant index', () => {
     expect(actorPermissions(actor)).toEqual(['audit:read', 'post:publish']);
   });
 
+  // `readonly string[]` is a compile-time claim and nothing else. The memoised array WAS the
+  // per-actor authz cache, so a `push` through a widened reference granted a permission for the
+  // life of that request — to `actorHas` too, since a caller may hand the mutated list back.
+  test('the returned list cannot be pushed into the memo', () => {
+    definePermissions(['post:publish'] as const);
+    defineRoles({ editor: { grants: ['post:publish'] } });
+    const actor = testActor('e', { roles: ['editor'] }).actor;
+
+    const first = actorPermissions(actor);
+    (first as string[]).push('org:administer');
+
+    expect(actorPermissions(actor)).toEqual(['post:publish']);
+    // And a second read is not the same object either, or the next caller inherits this one.
+    expect(actorPermissions(actor)).not.toBe(first);
+  });
+
   test('an explicit map override is never answered from the global map’s entry', () => {
     defineRoles({ local: { grants: ['x:y'] } });
     const actor = testActor('u', { roles: ['local'] }).actor;

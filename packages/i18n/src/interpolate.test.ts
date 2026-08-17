@@ -65,8 +65,35 @@ describe('plural selection', () => {
       'items_plural',
       'items_other',
       'items',
+      'items_one',
     ]);
-    expect(pluralKeyCandidates('items', 1, 'ru')).toEqual(['items_one', 'items']);
+    // `one` keeps the BARE key second — in the two-form shortcut it is the singular — but still
+    // ends on the same set every other category probes, because `Translator.has()` promises all
+    // four. A shorter chain is one function in this package promising a string the other refuses.
+    expect(pluralKeyCandidates('items', 1, 'ru')).toEqual([
+      'items_one',
+      'items',
+      'items_plural',
+      'items_other',
+    ]);
+  });
+
+  test('never probes the same candidate twice', () => {
+    // `other` used to emit `items_other` at both the category slot and the fallback slot.
+    for (const [count, locale] of [
+      [0, 'en'],
+      [1, 'en'],
+      [5, 'ru'],
+      [2, 'ar'],
+    ] as const) {
+      const candidates = pluralKeyCandidates('items', count, locale);
+      expect(candidates).toEqual([...new Set(candidates)]);
+    }
+  });
+
+  test('a `one` count still resolves when only the plural forms are authored', () => {
+    const otherOnly = new Set(['items_other', 'items_plural']);
+    expect(selectPluralKey('items', 1, 'en', (key) => otherOnly.has(key))).toBe('items_plural');
   });
 
   test('falls back through the candidate list', () => {

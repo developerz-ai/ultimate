@@ -41,6 +41,22 @@ describe('renderMeta', () => {
     expect(applyTitleTemplate('Ultimate', '%s — Ultimate')).toBe('Ultimate');
   });
 
+  // The containment was inverted — `template.includes(title)` only ever answers true for the
+  // exact-equality case above, so every title that MENTIONS the brand got it a second time and
+  // `validate.ts` then measured the doubled string against TITLE_MAX_LENGTH.
+  test('a title that already contains the brand is left alone, not just one that equals it', () => {
+    expect(applyTitleTemplate('About Ultimate', '%s — Ultimate')).toBe('About Ultimate');
+    expect(applyTitleTemplate('Ultimate for teams', '%s — Ultimate')).toBe('Ultimate for teams');
+    expect(applyTitleTemplate('Why we built Ultimate', '%s | Ultimate')).toBe(
+      'Why we built Ultimate',
+    );
+  });
+
+  test('a title that only shares a word with the template is still branded', () => {
+    expect(applyTitleTemplate('Ship it', '%s | Ultimate')).toBe('Ship it | Ultimate');
+    expect(applyTitleTemplate('Pricing', '%s — Ultimate')).toBe('Pricing — Ultimate');
+  });
+
   test('absolutises canonical, og:url and alternates against the base URL', () => {
     const tags = renderMeta(META, { baseUrl: 'https://ultimate.dev' });
     const canonical = tags.find((tag) => tag.attrs['rel'] === 'canonical');

@@ -202,3 +202,87 @@ describe('a change enters and leaves the set on SQL NULL semantics', () => {
     expect(match('feed', scored, [], insert({ id: 'z', orgId: ORG, score: 9 }))).toHaveLength(1);
   });
 });
+
+/**
+ * A row that moves past the end of a FULL window. `insert()` places it among the `limit - 1` rows
+ * the client still holds, so its position can never reach `shape.limit` and the `position >=
+ * shape.limit` bail is unreachable on this path — the row was re-inserted INSIDE the window and
+ * the client rendered a tail the server does not serve.
+ */
+describe('a move out of a full window is the server tail, not an add', () => {
+  const ranked: QueryShape = {
+    entity: 'posts',
+    filters: [{ column: 'orgId', op: '=', value: ORG }],
+    orderBy: [{ column: 'score', direction: 'asc' }],
+    limit: 3,
+    unsupported: [],
+  };
+
+  const window: readonly Post[] = [
+    { id: 'a', orgId: ORG, score: 1 },
+    { id: 'b', orgId: ORG, score: 2 },
+    { id: 'c', orgId: ORG, score: 3 },
+  ];
+
+  const moved = (row: Post, before: Post): ChangeEvent<Post> => ({
+    entity: 'posts',
+    op: 'update',
+    row,
+    before,
+  });
+
+  test('sorting past every row the client holds asks the server for the tail', () => {
+    // The server also holds `d: 4` and `e: 5`, which this client has never seen: the true window
+    // after the move is `[b, c, d]`, and only a refill can say so.
+    const patches = match(
+      'feed',
+      ranked,
+      window,
+      moved({ id: 'a', orgId: ORG, score: 99 }, { id: 'a', orgId: ORG, score: 1 }),
+    );
+    expect(patches).toEqual([
+      { kind: 'remove', position: 0, id: 'a' },
+      { kind: 'refill', from: 2 },
+    ]);
+  });
+
+  test('a move that lands inside the window is still an add — nothing left the window', () => {
+    const patches = match(
+      'feed',
+      ranked,
+      window,
+      moved({ id: 'a', orgId: ORG, score: 2.5 }, { id: 'a', orgId: ORG, score: 1 }),
+    );
+    expect(patches).toEqual([
+      { kind: 'remove', position: 0, id: 'a' },
+      { kind: 'add', position: 1, row: { id: 'a', orgId: ORG, score: 2.5 } },
+    ]);
+  });
+
+  test('a window that was never full appends the row itself — there is no tail to ask for', () => {
+    const partial = window.slice(0, 2);
+    const patches = match(
+      'feed',
+      ranked,
+      partial,
+      moved({ id: 'a', orgId: ORG, score: 99 }, { id: 'a', orgId: ORG, score: 1 }),
+    );
+    expect(patches).toEqual([
+      { kind: 'remove', position: 0, id: 'a' },
+      { kind: 'add', position: 1, row: { id: 'a', orgId: ORG, score: 99 } },
+    ]);
+  });
+
+  test('an unlimited window has no server tail either', () => {
+    const patches = match(
+      'feed',
+      { ...ranked, limit: null },
+      window,
+      moved({ id: 'a', orgId: ORG, score: 99 }, { id: 'a', orgId: ORG, score: 1 }),
+    );
+    expect(patches).toEqual([
+      { kind: 'remove', position: 0, id: 'a' },
+      { kind: 'add', position: 2, row: { id: 'a', orgId: ORG, score: 99 } },
+    ]);
+  });
+});

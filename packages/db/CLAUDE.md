@@ -462,8 +462,10 @@ tool legitimately show `x_users` — only drift wants the whole namespace gone.
 
 The `X_DB_DRIFT` rendering in `drift.ts` and the title in `DB_ERROR_TITLES` are pinned by the
 framework contract and duplicated in `@ultimat3/entity`. Change them together or not at all.
-`errors.ts` guards `registerErrorCodes` with `hasErrorCode` because `X_NOT_IMPLEMENTED` is core's
-and `X_DB_DRIFT` is also declared by entity — registering twice throws at import.
+`errors.ts` registers `DB_ERROR_TITLES` **unconditionally**, in one call, and that is deliberate:
+a presence guard would turn "a second package claims one of db's codes" from an
+`X_ERROR_CODE_DUPLICATE` at import into whichever module loaded first deciding the title. Entity
+borrows `X_DB_DRIFT` and declares no title for it, for the same reason.
 
 `readOnly()` is the regex-gated client for any caller that cannot open its own transaction. The
 MCP `db.query` tool does not use it — it goes through `readOnlyQuery()`, which is stronger.

@@ -2,6 +2,7 @@
 // is reported in ONE error — an agent should never have to restart the process six times to
 // discover six missing variables.
 
+import { describeValue } from './error-render';
 import { EnvMissingError } from './errors';
 import { REDACTED, redactKeys } from './logger';
 import { type Role, resolveRole } from './roles';
@@ -213,18 +214,28 @@ export function defineEnv<const S extends EnvSchema>(schema: S, options?: EnvOpt
   }
 
   if (!report.ok) {
-    const cause = report.issues
+    // The SHAPE of a rejected value, never its content. `secret: true` masks by declaration
+    // (`:193`), but the leak is the variable nobody declared secret: the scaffold's own
+    // `DATABASE_URL` is not marked, so a malformed `postgres://user:pw@host/db` wrote its
+    // password into this `cause` — which is the boot log line AND the `--json` field, where no
+    // key is left to redact it by. The value itself still has a printer: `x env check`, through
+    // `maskedEnvValues`. `checkEnv().values` and `EnvCheckReport.issues` are untouched.
+    const described = report.issues.map((issue) => ({
+      ...issue,
+      received: issue.received === undefined ? undefined : describeValue(issue.received),
+    }));
+    const cause = described
       .map((issue) =>
         issue.reason === 'missing'
           ? `${issue.key} is missing (expected ${issue.expected})`
-          : `${issue.key}="${issue.received ?? ''}" is not ${issue.expected}`,
+          : `${issue.key} is not ${issue.expected} (received ${issue.received ?? 'undefined'})`,
       )
       .join('; ');
     const keys = report.issues.map((issue) => issue.key).join(' ');
     throw new EnvMissingError({
       cause,
       fix: `add ${keys} to .env (copy .env.example), then run: x env check`,
-      meta: { issues: report.issues },
+      meta: { issues: described },
     });
   }
 

@@ -85,6 +85,58 @@ describe('logger', () => {
     expect(line['keep']).toBe('yes');
   });
 
+  /**
+   * A log line must never REPLACE the event it describes. `lifecycle.ts` logs the value a
+   * shutdown hook threw and the value a readiness check threw — both caught, both arbitrary — so
+   * a logger that throws while rendering one escapes `runPhase`'s catch, rejects the drain
+   * promise, and `installSignalHandlers` never reaches `process.exit(0)`: SIGTERM hangs.
+   */
+  describe('a hostile field costs the field, never the line', () => {
+    test('a bigint renders instead of throwing', () => {
+      const { logger, lines } = capture();
+      expect(() => logger.info('usage', { total: 10n, plan: 'pro' })).not.toThrow();
+      expect(lines[0]).toMatchObject({ total: '10n', plan: 'pro' });
+    });
+
+    test('a throwing getter costs its own key and nothing beside it', () => {
+      const { logger, lines } = capture();
+      const hostile = {
+        keep: 'yes',
+        get boom(): never {
+          throw new Error('getter');
+        },
+      };
+      expect(() => logger.info('hook failed', { error: hostile })).not.toThrow();
+      expect(lines[0]?.['error']).toEqual({ keep: 'yes', boom: 'a value that cannot be read' });
+    });
+
+    test('a value that refuses to be enumerated still leaves a line', () => {
+      const { logger, lines } = capture();
+      const proxy = new Proxy(
+        {},
+        {
+          ownKeys(): never {
+            throw new TypeError('ownKeys trap');
+          },
+        },
+      );
+      expect(() => logger.error('shutdown hook failed', { error: proxy })).not.toThrow();
+      expect(lines[0]?.['msg']).toBe('shutdown hook failed');
+    });
+
+    test('an invalid Date does not take the line with it', () => {
+      const { logger, lines } = capture();
+      expect(() => logger.info('scheduled', { at: new Date('nope') })).not.toThrow();
+      expect(lines[0]?.['at']).toBe('an invalid Date');
+    });
+
+    test('a top-level bigint field is still redacted by key', () => {
+      const { logger, lines } = capture();
+      logger.info('exchange', { token: 1n });
+      expect(lines[0]?.['token']).toBe(REDACTED);
+    });
+  });
+
   test('serialises UltimateError with the --json shape', () => {
     const { logger, lines } = capture();
     logger.error('failed', {

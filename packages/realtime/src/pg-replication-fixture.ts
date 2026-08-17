@@ -289,6 +289,9 @@ export const POST_COLUMNS: readonly FixtureColumn[] = [
   { name: 'org_id' },
   { name: 'price_minor' },
   { name: 'price_currency' },
+  // Money is THREE physical columns since `MoneyValue.scale` began to persist. A fixture carrying
+  // only two proves the fold against a table shape no `money()` entity produces any more.
+  { name: 'price_scale' },
 ];
 
 export interface Started {

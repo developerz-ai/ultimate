@@ -114,8 +114,13 @@ export async function dropBranch(
       select pg_terminate_backend(pid) from pg_stat_activity where datname = ${branch}
     `);
   }
-  const affected = await client.execute(sql`drop database if exists ${identifier(branch)}`);
-  return affected >= 0;
+  // Asked BEFORE the statement, because `drop database if exists` answers with the same command
+  // tag either way and `execute` counts no rows for it: `affected >= 0` was `true` by
+  // construction, so the boolean could not tell a branch that was dropped from a name that was
+  // never a database — which is the one question a reaper or a preview teardown asks it.
+  const existed = await exists(client, branch);
+  await client.execute(sql`drop database if exists ${identifier(branch)}`);
+  return existed;
 }
 
 export interface ReapOptions extends DropBranchOptions {
