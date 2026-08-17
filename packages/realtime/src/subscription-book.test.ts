@@ -126,6 +126,60 @@ describe('the subscription book', () => {
     expect(book.ofSocket('s').length).toBe(1);
   });
 
+  test('a reserved slot counts against both caps before anything is added', () => {
+    const book = new SubscriptionBook({ maxPerSocket: 2, maxPerTenant: 2, tenantOf });
+    const socket = socketFor('s', userActor({ id: 'u', orgId: 'o1' }));
+
+    const first = book.reserve(socket, '1');
+    const second = book.reserve(socket, '2');
+
+    // Nothing has been added yet — a subscribe is three awaits from holding anything — and this is
+    // exactly the window N frames from one WebSocket write arrive in.
+    expect(book.ofSocket('s')).toEqual([]);
+    expect(() => book.reserve(socket, '3')).toThrow(/socket s reached the subscription cap of 2/);
+
+    first.release();
+    expect(() => book.reserve(socket, '3')).not.toThrow();
+    second.release();
+  });
+
+  test('releasing twice gives back one slot, not two', () => {
+    const book = new SubscriptionBook({ maxPerSocket: 1 });
+    const socket = socketFor('s');
+    const slot = book.reserve(socket, '1');
+    slot.release();
+    slot.release();
+
+    book.reserve(socket, '2');
+    expect(() => book.reserve(socket, '3')).toThrow(SubscriptionLimitError);
+  });
+
+  test('a sid already claimed is refused, so two frames cannot both attach it', () => {
+    const book = new SubscriptionBook();
+    const socket = socketFor('s');
+    book.reserve(socket, 'S');
+
+    expect(() => book.reserve(socket, 'S')).toThrow(/X_SUBSCRIPTION_ID_TAKEN/);
+    // Another socket's identical sid is a different subscription — the composite key holds here too.
+    expect(() => book.reserve(socketFor('other'), 'S')).not.toThrow();
+  });
+
+  test('a release gives the slot back to the tenant that took it, not the one a re-auth moved to', () => {
+    const book = new SubscriptionBook({ maxPerTenant: 1, tenantOf });
+    const socket = socketFor('s', userActor({ id: 'u', orgId: 'o1' }));
+    const slot = book.reserve(socket, '1');
+
+    // The grant was renewed mid-read and this socket now belongs to another org.
+    socket.actor = userActor({ id: 'u', orgId: 'o2' });
+    book.retenant(socket);
+    slot.release();
+
+    // Derived again at release time, this would have decremented o2 — which never took a slot —
+    // and left o1 counting a subscription that does not exist for the rest of the process.
+    const other = socketFor('t', userActor({ id: 'v', orgId: 'o1' }));
+    expect(() => book.reserve(other, '1')).not.toThrow();
+  });
+
   // The regression this file exists for. `ofSocket` copied the whole node's map on every call, so
   // one mass event — a deploy, a network blip, grants expiring together — cost
   // sockets x subscriptions: 100,000 entries measured at 17.7 SECONDS of blocking main-thread work

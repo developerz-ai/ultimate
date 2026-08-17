@@ -28,7 +28,6 @@ const fixtures: Record<FrameKind, Frame> = {
     buildId: 'build-1',
     sessionId: null,
     actorId: 'alice',
-    resume: [cursor],
   },
   subscribe: {
     type: 'subscribe',
@@ -146,6 +145,20 @@ describe('sync-protocol', () => {
     expect('total' in decoded).toBe(false);
   });
 
+  /**
+   * `hello.resume` was written by every client and read by nothing: the node answered `resume: []`
+   * and decided resume per subscription off the `subscribe` frame instead, so a reconnect shipped
+   * each cursor twice. Removing it is only safe while a client one deploy behind still decodes —
+   * the whitelist is what makes that true, and this is the test that says so. Re-adding a `resume`
+   * to the hello case fails on `'resume' in decoded`.
+   */
+  test('a hello from a client one deploy behind decodes, and its resume list is dropped', () => {
+    const legacy = JSON.stringify({ ...fixtures.hello, resume: [cursor] });
+    const decoded = decode(legacy);
+    expect(decoded).toEqual(fixtures.hello);
+    expect('resume' in decoded).toBe(false);
+  });
+
   test('a non-numeric presence total is a malformed frame, never a count a UI would render', () => {
     expect(() => decode(JSON.stringify({ ...fixtures.presence, total: 'lots' }))).toThrow(
       ProtocolVersionError,
@@ -196,13 +209,8 @@ describe('the decoder refuses what it cannot afford', () => {
     ).not.toThrow();
   });
 
-  test('an oversized resume list, patch list and row list are each refused', () => {
+  test('an oversized patch list and row list are each refused', () => {
     const many = (length: number, value: unknown): unknown[] => Array.from({ length }, () => value);
-    expect(() =>
-      decode(
-        JSON.stringify({ ...fixtures.hello, resume: many(FRAME_LIMITS.resume + 1, cursorOf([])) }),
-      ),
-    ).toThrow(/resume/);
     expect(() =>
       decode(
         JSON.stringify({

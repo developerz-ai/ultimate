@@ -10,6 +10,303 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **A subscribe cap was checked before the registration that grows the count, so one batch of
+  frames walked past every one of them.** `LiveQueryRegistry.subscribe` called `assertCapacity` at
+  the top and attached the subscription three awaits later; `ChannelHub.subscribe` read
+  `socket.topics.size` and the bridge table and acted after two. `sync-node.message` dispatches
+  every frame as `void (async () => routeFrame(…))()`, so one WebSocket write carrying N subscribe
+  frames is N concurrent reads of a count nothing has grown yet — `maxPerSocket`, `maxPerTenant`,
+  `maxTopicsPerSocket` and `maxTopicsPerNode` bounded nothing, in the ordinary case, with no
+  attacker required. Each is now a **reservation** taken synchronously before the first await:
+  `SubscriptionBook.reserve(socket, sid)` decides the sid claim and both live-query caps in one
+  step, `ChannelHub` decides both topic caps and the node's bridge slot in another, and every path
+  gives the slot back in a `finally` where a second release is a no-op. The tenant is captured at
+  reservation and never re-derived — a re-auth can `retenant` a socket while its snapshot read is
+  in flight, and the release has to credit the tenant that took the slot.
+
+  Inbound frames now also run in **per-key FIFO lanes** (`frame-lanes.ts`: `mutate` is one lane per
+  socket, `subscribe` is `sub:<sid>` or `topic:<name>`, every other kind is unlaned, and a lane
+  exists only while work is queued on it because a lane keyed by a client-chosen sid that outlived
+  its work is an unbounded map one socket can grow). The lane is deliberately never the whole
+  socket: the slowest frame is a subscribe's snapshot read, the DB round trip every reconnecting
+  client pays once per live query, and a global lane puts every other frame behind it during the
+  restart storm this package is measured on. **The lane is not what closes the cap hole** — N
+  sequential subscribes still pass a check-then-act cap N times, and the per-tenant cap spans
+  sockets where no lane can see it at all. The reservation is what closes it.
+
+- **Two concurrent subscribes to one topic opened two transport subscriptions, and the orphan
+  outlived `hub.close()`.** `#bridge` looked the topic up before its `await` and wrote the result
+  after it, so the second open replaced the first in the table and the first became unreachable —
+  by `#release`, by a socket dying, by `close()`, by anything — delivering every message on that
+  topic twice for the life of the node. A bridge is now `{ sub: Promise<TransportSubscription> |
+  null; refs }` published into the table **before** it is awaited, so a second subscriber joins the
+  in-flight open instead of starting one, and a bridge released while it is still opening is
+  unsubscribed when the handle lands (`unsubscribeWhenOpen`) rather than dropped on the floor.
+
+  Two more from the same window. A socket that closed mid-`subscribe` stranded its `QueryEntry`
+  for the process lifetime: `SocketRegistry.remove` reports a connection that has already gone, so
+  nothing called `close()` on the object, `socket.closed` stayed false, and the attach three awaits
+  later had no way to learn the socket was torn down while it read. `remove()` closes the socket it
+  drops, and the attach is `#attachUnlessGone`. And `startRead` cleared `entry.stale` on the way in
+  and never put it back, so a snapshot that **rejected** — the pool exhausted by the same incident
+  that invalidated the window — left the entry unmarked over rows it is known to have missed a
+  change on; nothing re-read, and `#resnapshot` then served every desynced subscriber out of that
+  divergent window and cleared their marks. `readSnapshot` restores the mark when the read does not
+  answer.
+
+- **A reconnected client was subscribed to its channels in name only, and every committed mutation
+  was replayed forever.** Seven defects on the client half of the protocol, all of them on the
+  reconnect path this package is measured on.
+
+  | Defect | Consequence |
+  |---|---|
+  | `onOpen` replayed registrations and never `#topics` | topic membership is state on the node's socket and `hello` carries none of it, so `client.subscribe(topic, …)` was dead from the first reconnect onward — handler still installed, presence membership swept, no frame ever arriving |
+  | `onOpen` carried no `#socket !== socket` guard, which `onMessage` and `onClose` both had | a replaced socket opening late marked the connection up and replayed every subscription onto the current one |
+  | a `patch` frame did not advance `registration.cursor` | `cursor.at` froze at the last snapshot, so `shouldResnapshot`'s lag check answered "re-snapshot" for every client connected longer than `maxLagMs` — the delta resume the retained window exists for, dead exactly during the deploy storm it was built for |
+  | a successful `ack` retired nothing | the journal row and the rebase-log entry both stayed, and `reconcile`'s `candidate.seq >= (entry?.seq ?? 0)` (`rebase.ts:112`) reads a key the log no longer holds as **everything in the log** — so a later rebase replayed mutations the server had already applied, over rows that had moved on. `commitAccepted` drops both; the row itself is left exactly as the optimistic twin wrote it, because an accepted write must not flicker |
+  | a refused `ack` rolled nothing back | the denied write stayed on screen forever. `rollbackMutation` (new in `rebase.ts`) undoes it and every write made after it, newest first, then replays the others without it — sound only because `local` is pure — and drops the intent rather than retrying it, because a denial is a decision about that intent |
+  | `drain()` marked a mutation `acked` when `send()` returned | a browser `WebSocket.send` on a CLOSING socket discards the frame and returns normally, so every in-flight mutation was lost on exactly the socket death the durable queue exists to survive. A drained mutation is now `inflight` until an `ack`/`fail` settles it or `requeueInflight()` returns it |
+  | `connect()` reported the state of the socket it was replacing | a `useLive` opened in that window sent a subscribe frame ahead of `hello` and a second one for the same sid when `onOpen` replayed it (`X_SUBSCRIPTION_ID_TAKEN`), and a `connect` callback that threw — mixed content, a URL the page may not open — left the client reporting itself online with no socket and no armed timer |
+
+  Alongside them: `drain()` is one pass at a time, chained rather than joined, because two
+  overlapping passes read one entry as sendable and put one key on the wire twice while a later
+  pass can overtake the one in front of it; a terminally `failed` key no longer collapses a
+  re-enqueue onto itself, since nothing retries a denial and collapsing made an explicit
+  idempotency key unusable for the rest of the session; `useLive` opens in `offline` rather than
+  `loading` when there is no socket, because `loading` is a promise that rows are on their way;
+  every fire-and-forget promise goes through `#detach`, which reports to the client's own `onError`
+  instead of becoming a `window.onerror`; and `setLiveClient` releases the previous registration's
+  queue listener, which leaked one listener per hot reload and per test case.
+
+- **A `sync` node accepted websocket upgrades between SIGTERM and close, and a failed frame acked
+  something no client could look up.** The shutdown hook was registered with no phase, so both
+  halves landed in `close` and `fetch` went on upgrading new sockets onto a process that was going
+  away. There are two phases now: `accept` calls the new `SyncNode.stopAccepting()` — `/readyz`
+  answers 503, a late upgrade is shed with `retry-after-ms`, and **every socket the node holds
+  keeps its patch stream**, because a draining node still owes its clients their patches and
+  `stop()` is what releases the change subscription carrying them — and `close` is `drain()` then
+  `stop()`. `listenSyncNode` unregisters both.
+
+  The failure ack named `ws.data.socketId`. A client resolves `ack.ref` through
+  `queue.fail(ref)`, which looks a mutation up by its idempotency key, so a socket id named a key
+  no queue holds and the whole rollback path was inert end to end. `ackRefOf(frame, socketId)`
+  answers the mutation key for a `mutate`, the sid for a `subscribe`, and the socket id only for a
+  frame that could not be decoded — where there is nothing else true to say. Two more: the `rebase`
+  frame is now sent **before** its `ack`, since the ack is the receipt that retires the client's
+  rebase entry and a rebase landing after it has no entry left to read the mutator's conflict
+  strategy off (every merge silently becoming `server-wins`); and a topic guard that **fails** on
+  the re-auth pass keeps the topic instead of dropping it — `catch { unsubscribe }` reported a store
+  that timed out as a revoked grant, on every topic of every re-authenticated socket on the node,
+  silently, with the client never told to resubscribe. Only a denial unsubscribes; anything else
+  counts `hub.guardFailures` and logs `channel.guard_failed`. The initial `subscribe` is
+  deliberately not split that way: there is no subscription to keep, so a raising guard refuses that
+  subscribe and the client hears about it.
+
+- **`t.nullable(x)` produced a JSON Schema that rejects `null`, and a scaled `Money` round-tripped
+  as unscaled.** `json-schema.ts` set `nullable: true`, a keyword no JSON Schema draft after
+  OpenAPI 3.0 defines, so the generated OpenAPI, an MCP client and a contract test each saw
+  `{ type: 'string' }` and rejected the one value the declaration exists to permit. It is
+  `{ anyOf: [<converted>, { type: 'null' }] }` now, annotations hoisted outside the `anyOf` because
+  they describe the field and not one branch of it, and `requiredKeys` is untouched — nullable is
+  not optional. Four more on the same projection seam:
+
+  | Defect | Fix |
+  |---|---|
+  | `.default(value)` stored one object and handed the same reference to every parse that omitted the field, so a handler's mutation became the next request's starting value | cloned per parse through `structuredClone`; a default that cannot be cloned is refused at the first import of the authoring file as `X_SCHEMA_DEFAULT_UNSHAREABLE` |
+  | a `Money` with an explicit `scale` was written to a column recording minor units only, so six decimal places read back at two — a 10,000× error on the read path, the mirror of the conversion bug #105 fixed on the compute path | scale persists as a third physical column, `<p>_scale`; `pg-row.ts`, `describe.ts`, `realtime`'s logical-decoding row decoder and both scaffold templates fold it back the same way, and `pg-entity-row-parity.test.ts` pins the replication decoder against the query decoder, which had already drifted |
+  | a cursor is JSON, so a `Date` became a string and a `bigint` threw — a read ordered by `createdAt` resumed at a position no comparison could reproduce, and pages repeated or skipped | values are tagged (`{ $x: 'date' \| 'bigint', v }`) and revived; a sort value that is neither scalar nor one of those two is refused where the cursor is minted, `X_CURSOR_VALUE_UNSUPPORTED`, because the mistake is the read's own `orderBy` and no retry repairs it |
+  | a query is served as `GET /_x/query/<name>`, so its input is characters — the typed client encoded a nested object as JSON text with no inverse in `coerceQuery`, and a required `t.nullable(...)` member was skipped entirely | `X_QUERY_INPUT_UNENCODABLE` raises at `query()`, in the file that declared it, rather than at the first request that hits it |
+
+  Also, each with a failing test written first: `logger.ts` threw inside the writer on a value
+  `JSON.stringify` refuses — a `bigint`, a circular reference, a throwing getter — losing the line
+  it was writing and, on a `console` writer, the ones after it, so serialisation is total now;
+  `cache/graph.ts` walked every registered dependency per invalidation and reads a `byEntity` index
+  instead; and `mcp/cross-surface.test.ts` pins `action`'s `mcpSchemaOf` against `mcp`'s
+  `toWireSchema`, which had already diverged once on `pattern` — the two live either side of a tier
+  line and cannot share a home below tier 4 today, so the guard is the honest fix until one exists.
+
+- **`convert()` derived the decimal shift from the currency's exponent instead of the amount's own
+  scale, and then dropped the scale.** `convert(money(1_000_000, 'USD', 6), 'EUR', { rate: 1 })` —
+  $1.00 in micros — answered `{ minor: 1000000, currency: 'EUR' }`, EUR 10,000.00 for an expected
+  EUR 1.00. That is precisely the failure `scale` was introduced to prevent, and it violates the
+  package's own written rule: never `exponentOf(amount.currency)` for a value's own precision. The
+  shipped derivation is `resultScale = amount.scale ?? exponentOf(target)`, which leaves every
+  unscaled conversion byte-identical.
+
+  `fromDecimal` rounded through a float — the one thing `@ultimat3/money` says it never does — so
+  `Number('0.4999…9')` collapsed to exactly 0.5 and `roundToInteger` saw a tie the exact decimal
+  does not have: `fromDecimal('1.0049999999999999999', 'EUR', { rounding: 'half-up' })` answered
+  101 where the exact answer is 100, and `'1.0250000000000000001'` under `half-even` answered 102
+  where it is 103. It is the entry point every user-typed price goes through, and `roundRatio` —
+  exact over bigints — already existed for `multiply`/`divide`/`convert`. It uses it now.
+
+  In `@ultimat3/time`: two `Intl` formatter caches were unbounded `Map`s keyed on the raw
+  zone/locale string while `isValidTimeZone` accepts every casing of an IANA name, so
+  `x-timezone: eUrOpE/bErLiN` minted a permanent formatter per casing — unbounded memory keyed on
+  a request header, measured at 31.4 MB for 4,096 casings. Both share one bounded FIFO now, and
+  `canonicalTimeZone` (exported) plus an internal `canonicalLocale()` collapse spellings so one
+  zone and one locale are one key each. `businessDaysBetween` depended on the time of day —
+  `Mon 09:00 → Fri 10:00` was 4 and `Mon 09:00 → Fri 08:00` was 3 for the same calendar span — and
+  now compares local dates over a stated `[from, to)`, returning `0` and never `-0` for an empty
+  reversed interval. `describeCron` ignored the seconds field, rendering `*/10 * * * * *` as "every
+  minute", and refuses what it cannot describe with the new `X_CRON_NOT_DESCRIBABLE`: a summary
+  that is wrong is worse than one that declines, and `CronPhrases` is a public interface built
+  outside the package, so adding a phrase is a cross-package change. `observesDst` probed with
+  `setUTCMonth(+n)`, which rolls over at month end, so its twelve probes were not twelve distinct
+  months — fixed with **no test**, because a search of all 445 IANA zones × month-end days × 7
+  months in 2026 found zero cases where the answer differs, and a test that cannot fail is not a
+  test.
+
+- **A deployment that declared production the framework's own documented way served the dev error
+  overlay and a report-only CSP.** `http/config.ts` read `NODE_ENV` alone while `core/environment.ts`
+  makes `ULTIMATE_ENV` the one environment key with `NODE_ENV` as its fallback. Proven: with
+  `NODE_ENV` unset and `ULTIMATE_ENV=production`, `dev` is true and `csp.reportOnly` is true — so
+  any unauthenticated request with `Accept: text/html` provoking a 5xx gets absolute filesystem
+  paths, module layout and internal cause strings, and the app's CSP is not enforced at all,
+  un-mitigating every XSS elsewhere. The shipped container path sets `NODE_ENV=production`, which is
+  why it had not bitten; a binary artifact, a PaaS rung of the documented ops ladder, or a Helm
+  `env:` override following the documented key all reach it. `ULTIMATE_ENV` is the single signal now
+  in `http/config.ts`, `admin/dev/server.ts` and `cli/cmd-doctor.ts` — the last of which also
+  silently skipped `X_CURSOR_SECRET_DEV` and `X_STORAGE_SECRET_DEV`, leaving the published
+  `DEV_SIGNING_SECRET` usable to mint signed uploads. `X_ENV` was a spelling nothing else read, and
+  its `??` short-circuit made `X_ENV=prod` answer "not production" outright.
+
+  Six surfaces that trusted their input, in the same sweep:
+
+  | Surface | What it trusted |
+  |---|---|
+  | JWKS cache | an unknown `kid` short-circuited before the TTL was consulted, so a forged token issued one outbound fetch per attempt — measured at 500 attempts, 500 fetches. Unauthenticated: `kid` is read out of the attacker-supplied header before any signature check, and auth is pipeline stage 6 while rate-limit is stage 7, so the framework's own limiter never saw it. The damage lands on the IdP, and recovery waits on *their* unblock timeline |
+  | log redaction | three of eight default keys were inert — the literal `Set` stored `apiKey`/`accessToken`/`refreshToken` in camelCase while the lookup lowercases, and those are the exact field names on `OAuthTokens` |
+  | uploads | `image/svg+xml` left the default allowlist |
+  | links | nothing in `render`/`ui`/`admin` checked a URL scheme, and `isExternal()` tests `/^https?:/`, so a `javascript:` href was additionally treated as internal and got no `rel="noopener"`. `safeUrl` lives in `@ultimat3/core`, not `render`: `ui` may not import `render`, so the Link/Avatar/Breadcrumb half — the half the finding names — would have been unreachable or a second implementation. The `timing-safe-equal` precedent |
+  | argon2id | both existing limits are per-source and bound memory rather than work, so an attacker rotating an IPv6 /64 could queue ~19 GB of arenas. A concurrency gate now bounds the work |
+  | the MCP transport, the remote embedder, RAG context | the transport reads through core's counting reader instead of Bun's 128 MiB default (`readWithinLimit`, moved down to core rather than duplicated); the embedder got a deadline and a response cap; RAG context is fenced, id-labelled blocks instead of a separator a document can contain |
+
+  MFA's error named a route that does not exist — there is no handler, no `completeMfa` export and
+  no pending-MFA state — and **the second leg is not shipped here**: the only correlation value
+  handed over is the user id, so the natural implementation is unauthenticated by construction and
+  would turn MFA from a second factor into the only factor. The `fix:` and the wiki row describe
+  what an app must actually do, the user id moved from `cause` to `meta` (both public surfaces
+  publish `cause` and drop `meta`, which also closes `oauth-route.ts`'s 401 leaking internal user
+  ids), and `packages/auth/CLAUDE.md` carries the design constraint for the real fix.
+  `acceptSignedUpload` stays deliberately unmounted for a recorded reason: the HMAC secret is
+  closure-private in `localDriver`, so a CLI-side route would re-derive it from env — a second
+  resolution of one secret, wrong for any app passing `signingSecret` explicitly, leaving the route
+  verifying against the published `DEV_SIGNING_SECRET` while the driver signs with the real one. A
+  mounted route accepting forged grants is worse than a 404. And `x dev` stopped printing
+  `DATABASE_URL`, `NATS_URL` and `S3_ENDPOINT` with their credentials.
+
+- **One mass event blocked a `sync` node for 17.7 seconds.** `ofSocket()` copied the node's entire
+  subscription map on every call and both callers run once **per socket** — every WebSocket close,
+  every revoked grant, and the 30-second grant sweep. No attacker capability required: the trigger
+  is a deploy, a network blip, or a batch of grants whose `expiresAt` expire together. Measured at
+  2,000 sockets × 50 subscriptions: 17.7s of blocking main-thread work per sweep, during which the
+  node answers no heartbeat, no patch and no accept — a routine reconnect storm becomes a
+  self-sustaining outage. A `#bySocket` secondary index makes it sub-millisecond, the shape
+  `lru.ts` and `presence.ts` already use. Three more capacity gaps beside it:
+
+  | Gap | What shipped |
+  |---|---|
+  | `AcceptBudget` spends one token per **upgrade**; after the socket was open, `message()` spawned an unawaited task per frame with no ceiling | one authenticated socket — the cheapest foothold there is — reached three amplifiers, the worst a per-tenant walk measured at 7.96 ms/frame at 100k subscriptions, so ~155 frames/s consumed the node. That walk is O(1) off the same index, and every socket carries its own token bucket checked at the top of the frame router, before the frame touches anything (`X_FRAME_RATE_LIMIT`) |
+  | the frame decoder enforced no size cap on any array or payload, and `Bun.serve` was called with no `maxPayloadLength` | `FRAME_LIMITS` are hard ceilings a caller may narrow and never widen, the `query-limits.ts` shape. `CURSOR_ID_LIMIT` had applied only where the **server** builds a cursor, so a client-supplied one was consumed raw, and `canonicalJson` recurses, so a deeply nested `input` was a stack overflow on the frame path — `input` is walked iteratively for exactly that reason |
+  | nothing bounded the concurrent socket **count** | the audit credited a 120-second idle sweep, and that premise was wrong in the dangerous direction: `SocketRegistry.sweepIdle()` has no production caller anywhere, and the only idle enforcement is Bun's ping timeout, which a client answering pings never trips. `maxConnections` is the ceiling, and the accept **rate** and the socket **count** are two different attacks — 500 accepts/s held open with one keepalive each is 1.8M sockets an hour |
+
+  Plus a node-wide entry cap (a `qid` derives from client-chosen input, so distinct inputs mint
+  distinct matchers and row windows), a **byte** budget on the change buffer where an entry-count
+  budget retained up to 4.19M whole rows, `forget(qid)` finally called from `unsubscribe` — which
+  had no caller at all — and a replication URL that no longer echoes its password into a coded
+  error. Both audit measurements reproduced within 12%: 17.7s against a claimed 15.8s, and
+  7.96 ms/frame against 6.45. Every new ceiling is a constructor option whose default clears this
+  repo's own measured 50,000-socket bench with margin, because a default that refuses a proven
+  workload is an outage the framework caused. `X_SUBSCRIPTION_LIMIT`'s `fix:` named
+  `realtime.limits.perSocket in app.config.ts`, a field that does not exist — and that
+  `docs/architecture/07-realtime-internals.md` says outright does not exist — and now names the
+  constructor options that do.
+
+- **The tenancy guard was inert on the job surface: the same write, the same actor, naming another
+  org, was refused over HTTP and accepted through the queue.** An explicit `ctx` was honoured as a
+  parameter and never installed as the **ambient** context — `runWithContext` appeared nowhere in
+  `packages/jobs` — and `@ultimat3/entity`'s guard derives from the ambient one, so `actorTenant`
+  was undefined, `scopedPlan` derived no predicate, `verifyScope` returned early, and a
+  caller-named tenant was accepted unchecked. Reachable by any app routing user input into a job,
+  which is the framework's own documented instruction.
+
+  ```text
+  HTTP surface, write naming another org -> X_TENANCY_ACTOR_MISMATCH
+  JOB  surface, write naming another org -> ACCEPTED
+  rows now visible to org-B: 1
+  ```
+
+  Installing the context fails **closed** — the worker context carries no actor — so the fix could
+  not land alone, which is why `tenant` is now a required field on `job()` and `backfill()`; the
+  migration is below under *Changed*. The design choice is recorded in `packages/jobs/CLAUDE.md`:
+  jobs declare their tenant rather than a boot-supplied service actor, because one identity shared
+  by every job **is** the cross-tenant read the declaration exists to prevent, and it would move the
+  decision into deployment config where no reviewer sees it. Also fixed here: a run was acting as
+  two tenants, because `executeJob` built its context as `Object.freeze({ ...ctx, actor: runActor })`
+  and a registered service closes over the ctx it was built for — so the body received
+  `ctx.<service>` bound to the **worker's** org while every ambient repository call used the
+  **job's**. `withChildContext` already existed for exactly this and rebuilds managed factories
+  against the new actor. `createLimiter` silently meant "no cap" for a non-finite `maxTenants`
+  (`Math.floor(NaN)` is `NaN`, `Math.floor(Infinity)` is `Infinity`, and both make `size >
+  maxTenants` false in either branch) and is refused now, the `createPacer`-refusing-`rate: 0`
+  precedent; jobs' four per-tenant limiter maps gained the sweep and cap `http`'s limiter already
+  had, having grown one permanent entry per org on a never-restarting worker.
+
+- **The gate did not check what it claimed: `scripts/` compiled nowhere and two Lua scripts had
+  never run.** `bun run typecheck` is `tsc -b`, which builds only referenced projects, and
+  `scripts/tsconfig.json` set `composite: false` with no root `references` entry naming it — so
+  `verify.ts`, `boundaries.ts`, `manifest.ts`, `reference-app-gate.ts`, `release.ts`, `roadmap.ts`
+  and `error-render.ts` were typechecked by nothing. Proven by probe: `export const probe: number =
+  'nope'` under `scripts/` passed `tsc -b` with exit 0. The project is composite and referenced now,
+  and the 7 real errors it was hiding are fixed — one of them a live bug, `bun run workspaces:list`
+  printing "may import 0-NaN" for all 29 workspaces because `allowedTiersFor` was handed a directory
+  name where a tier number was required. `X_PACKAGE_UNREFERENCED` fails a package the root
+  `tsconfig.json` does not reference, so the hole cannot reopen.
+
+  The Redis tier's two Lua scripts had never executed: both fakes matched on the exported constant's
+  identity and then applied their own TypeScript copy of what the script was supposed to do, so the
+  tests asserted the fake against itself. Gutting `REDIS_INVALIDATE_SCRIPT` to `return {}` survived
+  all 517 tests in `cache` + `query` — and that script is the shared tier's entire invalidation
+  path, so every Redis deployment would have served pre-write rows until TTL with the bust reading
+  as clean. `packages/cache/src/redis.live.test.ts` runs behind `TEST_REDIS_URL`, green against a
+  real server and red under both mutations, and the fakes now throw on an `EVAL` they cannot run.
+
+  `describeApp`'s teardown unsealed the network and restored the real clock for every later test
+  file in the process — it restored state it never captured, so every file after the first
+  `describeApp` ran with real `fetch` (unmocked egress), a real `Date` and a real `Math.random`. The
+  framework's own suite survived only because `harness.test.ts` hand-patched it in an `afterAll`
+  whose comment admitted the leak; that hand-patch is deleted and teardown captures what it takes,
+  in a `finally`. `bootApp()` had the same defect in its own new code: a rejecting
+  `acquireWorkerDatabase`/seed/boot returns no `BootedHarness`, so no caller can reach `close()` —
+  init is its own teardown now, and a drop that throws does not replace the boot's failure.
+
+  Also: a floor step whose suite runs zero non-skipped tests is a finding rather than a pass (`live`
+  was reporting green over 4 of 118 tests); both tracked apps commit an `x.verify.json` and `x new`
+  scaffolds one, with `X_REFERENCE_APP_NO_FLOOR` refusing a gated app that ships none; a pinned step
+  that turns *skipped* is still pinned rather than a stale pin; type-only imports no longer dodge
+  the tier check; test-suite ownership is exclusive again (`e2e` matched both `e2e/` and
+  `.e2e.test.`, so `e2e/payment.contract.test.ts` would have run twice — latent, since every file
+  under an `e2e/` directory today is `*.e2e.test.ts`); `scaffold-smoke` lost `continue-on-error` and
+  blocks on its own ratchet (`X_SCAFFOLD_GATE_RED`), whose first blocking run proved the blanket
+  waiver stale — it was justified by one pinned `typecheck` gap that now **passes**, while covering
+  `lint`, `errors` and `budgets`; and `timing-safe-equal`'s branch-free property is pinned by source
+  shape. Three audit premises were falsified and recorded rather than fixed: every test shard
+  already runs `--isolate` (the real divergence was one flag missing from the root `test` script),
+  `source-files.ts` already listed `scripts/**`, and `/e2e/` is not expressible as a bun filter —
+  bun 1.3.14 answers "had no matches", and the working form is `e2e/`.
+
+- **The one flaky test in this repo asserted a sleep ordering as a fact.** Core's `stays isolated
+  across concurrent async tasks` asserted that three tasks sleeping 30ms, 5ms and 15ms observe in
+  exactly the order b, c, a — under load a 5ms sleep overshoots a 15ms one, and one unit shard
+  failed and passed on retry across three separate PRs before it was caught. The assertion is the
+  observed **set** now, which still catches a leak as a duplicate or a wrong id, proven by mutation;
+  the property the test exists for, each task seeing its own ambient context, is asserted separately
+  and was never at risk. It falsifies the audit's own "verified sound — do not fix" note that there
+  is no wall-clock flakiness because the preload freezes `Date` and seeds `Math.random`: `Bun.sleep`
+  is a real timer, and three byte-identical runs on an idle machine is the evidence that misses a
+  load-dependent race.
+
 - **`docker-compose.prod.yml` no longer publishes a host port and asks for three binders of it.**
   `web` shipped `ports: ['3000:3000']` beside `deploy: { replicas: 3 }` and `sync` had the same
   shape — one host port has exactly one binder, so the second container dies on
@@ -67,6 +364,105 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`scripts/stdout-truncation.test.ts` no longer asserts a race.** The premise case measured a naive `process.stdout.write` against a reader draining concurrently, and on a fast runner the whole payload landed by luck — a flaky gate step. It now writes past any kernel buffer and reads nothing until the child has exited, so what `process.exit()` discarded was genuinely discarded.
 
 ### Changed
+
+- **BREAKING — `hello` carries no cursors: `HelloFrame.resume` and `FRAME_LIMITS.resume` are
+  deleted.** The field was filled by every client on open and read by nobody — the node replied
+  `resume: []` and decided resume per subscription from the `subscribe` frame — so every reconnect
+  shipped each cursor twice, up to `CURSOR_ID_LIMIT` (512) ids per subscription, during the exact
+  restart storm `thundering-herd.ts` exists to bound.
+
+  | Was | Now |
+  |---|---|
+  | `{ type: 'hello', v, buildId, sessionId, actorId, resume: [...cursors] }` | `{ type: 'hello', v, buildId, sessionId, actorId }` — drop the key; a cursor rides its own `subscribe` frame, which is where resume was always decided |
+  | `FRAME_LIMITS.resume` (256) | gone. `FRAME_LIMITS` still carries `cursorIds`, `patches`, `rows`, `members`, `inputDepth` and `inputNodes` |
+
+  Wiring the field would have been the wrong half of the choice: a cursor's `qid` is
+  `qidOf(name, input)`, a digest, so a node reading a resume list cannot resolve the query name,
+  cannot run `definition.authorize` and cannot build the entry the retained window hangs off — it
+  could only ever restate, unauthorized, what `subscribe` decides with the input in hand. Two places
+  deciding one thing is what axiom 1 refuses.
+
+  **`PROTOCOL_VERSION` was deliberately not bumped**, and that is the same rule `snapshot.entity`
+  followed: `decode` builds a whitelist, so a new node drops an old client's `resume` and an old
+  node reads a new client's omission as the empty list it always received. Both skews are readable,
+  and bumping would refuse every in-flight client on a rolling deploy to buy nothing — the version
+  guards incompatibility, not novelty. Removing a field something *does* read is the opposite case
+  and bumps.
+
+- **BREAKING — three more `@ultimat3/realtime` surfaces moved, each because the old behaviour was
+  unsound.** All three are described above under *Fixed*; this is what a caller has to change.
+
+  | Was | Now |
+  |---|---|
+  | `qidOf(name, input)` = `<name>:<fnv1a 32-bit>` | `<name>:<first 16 hex of SHA-256>`. A `qid` is a **sharing** key — a hit hands back the existing entry and the seated window, carrying the first subscriber's input and rows — and input is client-chosen, so 32 bits is a collision found offline in seconds and one client served out of another's window. A rolling deploy across the change costs one bounded snapshot per subscription: a cursor minted under the old format names a ring entry the new node never held, so the resume falls back rather than silently mismatching. `fnv1a` is unchanged and still the cursor's result-set digest, where a collision costs a missed re-sort |
+  | `queue.drain(send)` marked each mutation `acked` when `send` resolved, and `DrainReport.remaining` counted `pending` + `inflight` | a drained mutation stays `inflight` until the server settles it with `ack`/`fail` or `requeueInflight()` returns it. `remaining` is now what is still **sendable**, so a UI rendering "unsynced" should read `pending()`, which is unchanged and still counts both. Read `status === 'acked'` after a drain and you will now read `'inflight'` |
+  | `SyncNode` had one teardown, `stop()` | `SyncNode` also declares `stopAccepting()`, called by the SIGTERM `accept` phase. Additive for a `createSyncNode` caller; a **breaking** change for anything implementing the `SyncNode` interface structurally. `SyncNode.websocket` also no longer carries `publishToSelf`: this node never publishes to a Bun native topic, and a flag configuring a mechanism nothing uses reads as a live one |
+
+  `SyncSocket.subscribeTopic`/`unsubscribeTopic` no longer call Bun's `ws.subscribe`/`ws.unsubscribe`
+  either. Every channel message is one filtered `send` per socket through `SocketRegistry.deliver`,
+  because a native publish cannot be refused per socket, cannot report the frame it dropped and
+  cannot mark a subscriber desynced. `WsLike.subscribe`/`unsubscribe` stay **declared and unused** —
+  the interface is structural and a tracked app implements it, so deleting the members is a separate
+  breaking edit to every implementer.
+
+- **BREAKING — what a value becomes when it leaves the process.** Four projection changes from the
+  same slice, all of them a contract that was wrong rather than a preference that changed.
+
+  | Was | Now |
+  |---|---|
+  | `t.nullable(x)` emitted `{ …converted, nullable: true }` | `{ anyOf: [<converted>, { type: 'null' }], …annotations }`. `nullable` is an OpenAPI 3.0 keyword no later draft defines, so every validating consumer rejected `null`. OpenAPI 3.1 accepts the new shape unchanged; a hand-written consumer reading `schema.nullable` reads `schema.anyOf` instead |
+  | `.default(value)` accepted any value | a default `structuredClone` refuses — a function, a class instance, a `Proxy` — now throws `X_SCHEMA_DEFAULT_UNSHAREABLE` at the **first import of the file that declares it**. Pass a plain value, or a factory the handler calls |
+  | `query({ input })` accepted any schema | an input that cannot survive a query string is refused at `query()` with `X_QUERY_INPUT_UNENCODABLE`, in the declaring file. A read is `GET /_x/query/<name>`, so its input is characters: flatten the nested object, or make it an `action` |
+  | a `money()` property was two physical columns | three: `<p>_minor`, `<p>_currency` and the new `<p>_scale` (`integer`, nullable, `CHECK` 0–15). **Every existing app needs a migration** — without the column, every read of that table names a column it does not have: `alter table "<t>" add column "<p>_scale" integer check (<p>_scale is null or (<p>_scale >= 0 and <p>_scale <= 15));`, which is byte-for-byte what `generateMigration`'s `columnClause` emits. `NULL` is the right value for every existing row: it means "the currency's own minor unit", which is what those rows always meant, where `0` would mean whole units. `examples/dummy/packages/db/migrations/0002_money_scale.sql` is the worked example, hand-written because `x db gen` answers `X_MIGRATION_SNAPSHOT_MISSING` in an app whose `0001` records no snapshot |
+
+- **BREAKING — `EPOCH` is removed from `@ultimat3/time`; call `epoch()`.** It was one shared mutable
+  `Date` exported from a tier-1 package, so any consumer calling `EPOCH.setUTCFullYear(...)`
+  corrupted it for every other consumer in the process, permanently and silently. A `Date` cannot be
+  frozen — `Object.freeze` does not close `setTime`, verified — so the constant could not be fixed in
+  place, and keeping both spellings is the second path axiom 1 forbids. Zero in-repo callers.
+
+  ```ts
+  import { EPOCH } from '@ultimat3/time';   // before
+  import { epoch } from '@ultimat3/time';   // after — call it: epoch()
+  ```
+
+  `instant()` also returned the caller's own object and now does not. `describeCron` is the other
+  behaviour change worth stating: it ignored the seconds field entirely, so it now **refuses** a
+  6-field expression with `X_CRON_NOT_DESCRIBABLE` where it used to return a wrong sentence. No
+  tracked app or package declares a 6-field cron today.
+
+- **BREAKING — `job()` and `backfill()` require a `tenant`.** The guard behind it is above under *Fixed*:
+  installing the ambient context fails closed, so the field cannot be optional.
+
+  ```ts
+  export const notifySubscribers = job({
+    input: t.object({ postId: t.uuid, orgId: t.uuid }),
+    idempotencyKey: ({ postId }) => `notify:${postId}`,
+    // The one new line: the org this body runs under, derived from the payload the author
+    // already had to pass. `tenant: 'none'` is the other legal answer — see below.
+    tenant: ({ orgId }) => orgId,
+    retry: { attempts: 5, backoff: 'exponential' },
+    async run({ input, ctx }) {
+      await ctx.posts.byId(input.postId);
+    },
+  });
+  ```
+
+  `tenant: 'none'` means the opposite thing on each side of the factory, and both meanings are in
+  the `fix:` line and the wiki row. On a `job()` it declares the body touches no tenant-scoped
+  table, because every scoped read then fails closed with `X_TENANCY_ACTOR_ORG_REQUIRED`. On a
+  `backfill()` — which forwards `tenant` to `job()` verbatim — it is how a sweep declares it spans
+  every tenant, and `backfillPass` opens the bounded `crossTenant` scope for it, never the author:
+  minted on the pass's own actor, only for a `'none'` sweep, only on an explicit enqueue. An app
+  author holding a lazy `ReadBuilder` cannot wrap an iteration that has not started, which is why
+  the capability lives there. A definition with no `tenant` is `X_JOB_TENANT_REQUIRED` at
+  declaration.
+
+  In the same slice, and breaking on the read primitive: `sourceFor(target, input, { ctx, enforce:
+  false })` — a bare boolean policy bypass, exported and reachable from app code — is now
+  `sourceFor(target, input, { ctx, unenforced: 'explain returns no rows' })`. The reason is required, a blank one is refused before the source is
+  built, and one `query.policy.unenforced` audit line is written at `debug`. It could not be made
+  internal as the audit suggested: the CLI's own query template emits it into every scaffolded test.
 
 - **BREAKING — one `resolveEnvironment`, and it is `@ultimat3/core`'s.** The name existed in
   `@ultimat3/core` and `@ultimat3/seo` with different parameters and different return unions — an
@@ -176,9 +572,73 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
   The defect it fixes is below under *Fixed*: read at module scope, the version resolved before `main` in every process that imported core, so `x build --target binary` produced an executable that threw at import. Resolution order is manifest → build define → throw, and the throw is unchanged in the case it was written for: a manifest that exists and declares no semver is still a broken publish, still `X_INVARIANT`, define or no define. The value is resolved once and cached, so a call site pays one `existsSync` for the process.
 
-- **`x verify` counts skips apart from passes, and names them.** A step with nothing to check here is recorded green so the run continues, and the summary counted it among the passes — so a repo whose `job` and `eval` suites do not exist printed the same `all 17 steps passed` as a repo where both ran. The line is now `12 of 17 steps passed in 53224ms — 5 skipped: job, eval, drift, contract-diff, budgets` in this repo, and `14 of 17 steps passed in 11153ms — 3 skipped: e2e, contract-diff, roadmap` in the scaffolded app of [tutorial 2](https://github.com/developerz-ai/ultimate/wiki/Tutorial-02-First-Feature); `all {n} steps passed` survives only when nothing was skipped. `--json` gains `data.skipped`, the list of names beside `data.failed` (`steps[].skipped` is unchanged). Exit codes are untouched: a skipped step is still not a failure — it is now just impossible to mistake one for a passing one.
+- **`x verify` counts skips apart from passes, and names them.** A step with nothing to check here is recorded green so the run continues, and the summary counted it among the passes — so a repo whose `job` and `eval` suites do not exist printed the same `all 17 steps passed` as a repo where both ran. The line is now `14 of 17 steps passed — 3 skipped: drift, contract-diff, budgets` in this repo — the three correctly inapplicable at a non-app root, and the count every run in this sweep reported — and `14 of 17 steps passed in 11153ms — 3 skipped: e2e, contract-diff, roadmap` in the scaffolded app of [tutorial 2](https://github.com/developerz-ai/ultimate/wiki/Tutorial-02-First-Feature); `all {n} steps passed` survives only when nothing was skipped. `--json` gains `data.skipped`, the list of names beside `data.failed` (`steps[].skipped` is unchanged). Exit codes are untouched: a skipped step is still not a failure — it is now just impossible to mistake one for a passing one.
 
 ### Added
+
+- **`channel_frames_dropped_total` — the only trace a lost channel message leaves.** Tier 1 is **at
+  most once** and always was: a topic has no cursor, no `desynced` mark and no re-snapshot, so a
+  frame `SyncSocket.send` refuses under backpressure is gone. `SocketRegistry.deliver` and the
+  channel hub above it both discarded the `false` that said so, which made the loss invisible.
+  Three readers of one event now: the counter (a data-loss series, not a saturation one — alert on
+  any non-zero rate), the log line `channel.frames_dropped` at `warn` carrying
+  `{ topic, dropped, total }`, and `SocketRegistry.droppedChannelFrames` for a test or a bench that
+  cannot scrape. **No attributes on the series**: a topic is client-chosen — `topic()` admits any
+  `[A-Za-z0-9_-]+` segment — so a per-topic label is unbounded series one socket can mint, and the
+  topic goes in the log line where cardinality is somebody else's index. Node-wide and cumulative,
+  because a socket past `maxDroppedFrames` is closed and removed and a per-socket count leaves
+  exactly when loss is worst; distinct from `SyncSocket.droppedFrames`, which counts every frame
+  kind one connection lost and dies with it. Declared in `packages/realtime/src/socket.ts` rather
+  than core's `runtime-metrics.ts`: that file is the series every Ultimate process emits and the
+  chart scales on, and this one exists only where channels do. Repair is not shipped and would need
+  a per-topic sequence on the wire — a channel's `lsn` is the publishing hub's own per-node counter,
+  so a client cannot tell a gap from a message that arrived via another node. **Anything that must
+  arrive belongs on a live query.**
+
+- **The client beats, because only the client can end a half-open socket.** A dead TCP connection
+  that fires no `close` is invisible to a browser, and the client had no heartbeat at all — so a
+  subscribed client was swept out of every presence room within one 30s TTL while still reporting
+  itself online. `new LiveClient({ …, heartbeatMs })` defaults to `DEFAULT_HEARTBEAT_MS` (15s) and
+  `0` disables the pass; **it is on by default**, so a fake socket in a test now sees the beat.
+
+  | Property | Behaviour |
+  |---|---|
+  | One beat | a `hello` — byte-identical to the opening frame, since it has no resume list to leave out — plus one subscribe frame per topic held |
+  | Why the topics | on the node, repeating the subscribe frame **is** the presence heartbeat; presence has no frame of its own in either direction |
+  | Silence | nothing received for **two** intervals ⇒ close `4000` (private-use, so it is distinguishable in a log) and arm the reconnect. Judged from the last frame of any kind, since the point is that bytes still cross |
+  | Not a deploy check | `socket.skewed` compares the build id recorded at the upgrade against the node's, both fixed for the socket's life, so every `hello` on one socket answers the same forever. `update-available` reaches a client on the socket it opens against the **new** node |
+  | Not an interval | one armed tick that re-arms itself, on the same injected `Scheduler` the reconnect uses — a client is either beating on a live socket or backing off toward a new one, never both |
+
+  The 15s is **restated** from `realtime.heartbeatMs`, not read: that is server config and this is
+  browser code. `realtime.heartbeatMs` is read by nothing today — see *Known gaps*.
+
+- **`createSyncNode({ maxBufferedBytes, maxDroppedFrames })`.** Both existed on `SyncSocket` and the
+  node constructs every socket it holds, so unforwarded they were reachable only by abandoning
+  `createSyncNode` — a ceiling on the one loss nothing replays, with no way to move it. Forwarded
+  the way `maxFramesPerSecond`/`frameBurst` already are, so an unset option keeps `SyncSocket`'s own
+  default rather than overwriting it with `undefined`. In the same pass, a `SubscriptionLimitError`
+  names its knob at every throw site (`maxTopicsPerSocket`, `maxTopicsPerNode`, `maxEntries`,
+  `maxPerSocket`, `maxPerTenant`): the default was `maxPerSocket`/`maxPerTenant`, which are
+  `LiveQueryRegistry`'s, so the channel hub's per-socket **topic** cap told an operator to move a
+  number in a different constructor that would not have helped — a fix line naming the wrong setting
+  is worse than none, because it is an instruction that runs and changes nothing.
+
+- **A delivery benchmark, because the one we had measured reachability.** The 50,000-client figure
+  was published as "time-to-consistent" and never measured consistency: the harness recorded
+  `lastSeenSeq` and read it nowhere, so a patch the node dropped was invisible to it by
+  construction. It times each client's **first** channel patch after the kill — reconnect *and*
+  resubscribe *and* one delivery. **The timings are unchanged and still stand**; only the name was
+  wrong, and every doc that quoted it now says reachability.
+
+  `scripts/bench/restart-bench-seq.ts` is the second number: every client counts holes in a probe
+  sequence, per connection. 10,000 clients, a probe every 200ms, all 10,000 reconnected —
+  **1,666,882 patches received, 0 lost**, no gap, no duplicate, no rewind on any client
+  (`scripts/bench/results/10k-restart-seq.json`, `As of 2026-08`). `BenchReport` gains `seq` and
+  `probeIntervalMs`; a result file written before this has no `seq` key at all, because that run did
+  not measure it. Two limits stated in the report's own notes: the zero is a **lower bound** — a
+  hole is only visible between two messages one connection received, so a patch lost before a
+  connection's first or after its last is uncounted — and it is **not evidence about 50,000**. That
+  run predates the counter and carries no delivery number.
 
 - **`queryClient` — the map-wide typed read client, the mirror of `rpc`.** `@ultimat3/query` shipped
   `.client({ baseUrl })`, which needs the query object — so the one surface that most needs a typed
@@ -336,12 +796,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   {
     "steps": [
       "typecheck", "lint", "boundaries", "filesize", "package-shape", "errors",
-      "unit", "contract", "live", "e2e", "manifest", "roadmap"
+      "unit", "contract", "live", "job", "e2e", "eval", "manifest", "roadmap"
     ]
   }
   ```
 
-  A step named there that reports nothing to check is recorded **failed and not skipped**, with `X_VERIFY_SUITE_VANISHED` and both edits that resolve it — so it lands in the failure count, in `data.failed`, and in every step table another gate parses. Not a breaking change for an existing app: a repo that commits no floor is not ratcheted and behaves exactly as before. A floor naming a step the gate does not run enforces nothing and is refused by the `manifest` step (`X_CONFIG_INVALID`), because a typo covering no suite is the same false green. This repo's own floor pins 12 of 17; `job`, `eval`, `drift`, `contract-diff` and `budgets` are the honest skips.
+  A step named there that reports nothing to check is recorded **failed and not skipped**, with `X_VERIFY_SUITE_VANISHED` and both edits that resolve it — so it lands in the failure count, in `data.failed`, and in every step table another gate parses. Not a breaking change for an existing app: a repo that commits no floor is not ratcheted and behaves exactly as before. A floor naming a step the gate does not run enforces nothing and is refused by the `manifest` step (`X_CONFIG_INVALID`), because a typo covering no suite is the same false green. This repo's own floor pins 14 of 17; `drift`, `contract-diff` and `budgets` are the honest skips, and they are the three every run of the gate in this sweep reported.
 - **`setStatementObserver()` — the seam a statement-level diagnostic installs into.** `@ultimat3/db` emits no span, no counter and no log for a statement, so nothing above it can count one: the dev timeline's `repeatedSql` groups span names and has never seen a repository read, which makes an N+1 invisible by construction. The seam is one process-wide observer, the `setDbClient` shape, with a `StatementEvent` carrying `{ text, values, durationMs, rows, error?, attribution?, expected? }`:
 
   ```ts
@@ -997,6 +1457,35 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - `KNOWN_GAPS` in the scaffold typecheck gate is **empty**: every file `x new` and `x g` write now compiles with no diagnostic to excuse.
 - **One `timingSafeEqual`, not two.** `@ultimat3/auth`'s `tokens.ts` and `@ultimat3/storage`'s `signed-url.ts` carried byte-identical constant-time string comparisons — the kind of duplication that drifts silently, since a fix to one copy's branch-free XOR loop would say nothing about the other. The implementation now lives in `@ultimat3/core` (`timingSafeEqual`), tier 0 and reachable from both; each package re-exports it so every existing `from '@ultimat3/auth'` and `from '@ultimat3/storage'` import keeps working unchanged.
 - **`@ultimat3/schema`'s error codes render their real titles in every process, not just the CLI's.** `X_VALIDATION_FAILED` and `X_SCHEMA_UNSUPPORTED` were exported as data from `SCHEMA_ERROR_CODES` and registered nowhere except `@ultimat3/cli`'s `error-catalog.ts` — a process that never loads the CLI (a worker, a job runner, a plain script importing `@ultimat3/schema` on its own) rendered the humanised fallback (`X_VALIDATION_FAILED: validation failed`) instead of the authored title. `@ultimat3/core` now registers both at import time (`schema-error-codes.ts`) — every process gets them just by importing core, which is unconditional. Schema is tier 0 alongside core and cannot register its own codes or have core import it back to read them, so the titles are a deliberate, tested duplicate: `schema-error-codes-pin.test.ts` (in `@ultimat3/cli`, a package that may import both) pins core's copy equal to schema's own declarations. `error-catalog.ts`'s CLI-only registration is gone — it is now redundant with what core already does for every process.
+
+### Known gaps
+
+Found in this sweep, not closed. Full list in [Known gaps](https://github.com/developerz-ai/ultimate/wiki/Known-Gaps).
+
+- **No test file in `packages/` is typechecked.** All 29 package `tsconfig.json`s carry
+  `"exclude": ["src/**/*.test.ts"]`, so `bun run typecheck` — a `tsc -b` — reads none of them and
+  the gate's `typecheck` step reports green over every one. Measured `As of 2026-08`: dropping the
+  exclusion surfaces **282 errors across 110 files in 24 packages** (worst: `entity` 60, `cli` 55,
+  `render` 36), overwhelmingly mechanical — `TS4111` index-signature access, `TS2345`/`TS2769`
+  argument and overload mismatches, `TS2379` under `exactOptionalPropertyTypes`. `packages/*/e2e/**`
+  is in no package's `include` either, so those three directories compile nowhere at all. `scripts/`
+  is exempt as of this sweep: it has no such `exclude`, so its tests do typecheck. Nothing to work
+  around at runtime — the tests run, they are simply not compiler-checked.
+- **Live queries need `REPLICA IDENTITY FULL` and nothing sets it.** No generator emits
+  `ALTER TABLE … REPLICA IDENTITY FULL`, no `x verify` step checks it, and `X_LIVE_REPLICA_IDENTITY`
+  — the code `docs/architecture/07-realtime-internals.md` documented for it until this sweep —
+  exists in neither the source nor the manifest. Postgres replicates only the key columns on a
+  delete without it, so "did this row leave the result set" is decided from a partial row. An app
+  running live queries against a real slot writes it into the migration itself, one line per table.
+  Per axiom 3 this is a convention, not a rule, until a check exists.
+- **`realtime.heartbeatMs` is read by nothing.** The key is declared in `RealtimeConfig`
+  (`packages/core/src/config.ts:84`) with a default of 15 000 (`:205`) and no code anywhere reads
+  it. The client heartbeat shipped in this release with its own `DEFAULT_HEARTBEAT_MS`, deliberately
+  the same 15 000, kept equal by hand because browser code cannot read server config. Setting the
+  config key changes no behaviour today; set the client's `heartbeatMs` option instead. Two honest
+  closes, neither taken: delete the key so the client option is the only knob, or have the `sync`
+  role size `PresenceRegistry`'s TTL from it so the server value governs the sweep the client beats
+  against.
 
 ## 1.2.0
 

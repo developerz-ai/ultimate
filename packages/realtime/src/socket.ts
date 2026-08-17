@@ -5,7 +5,16 @@
 // anything richer (row caches, per-socket buffers) belongs in the transport or the change buffer,
 // never here. `sync` is stateless: nothing on this object survives a restart, and nothing needs to.
 
-import { type Actor, type Clock, recordConnection, systemClock, uuid } from '@ultimat3/core';
+import {
+  type Actor,
+  type Clock,
+  type Counter,
+  counter,
+  logger,
+  recordConnection,
+  systemClock,
+  uuid,
+} from '@ultimat3/core';
 import { encode, type Frame } from './sync-protocol';
 import { AcceptBudget } from './thundering-herd';
 
@@ -19,7 +28,16 @@ export const CLOSE = {
   drain: 4002,
 } as const;
 
-/** The slice of Bun's `ServerWebSocket` this package uses. Structural, so tests need no server. */
+/**
+ * The slice of Bun's `ServerWebSocket` this package uses. Structural, so tests need no server.
+ *
+ * `subscribe`/`unsubscribe` are Bun's native pub/sub and this package does NOT use them: nothing
+ * here publishes to a native topic, and nothing will — a native publish cannot be refused per
+ * socket, cannot report the frame it dropped and cannot mark a subscriber desynced, which is
+ * exactly what `SocketRegistry.deliver` and `SyncSocket.send` exist to do. They are still declared
+ * because `WsLike` is the slice of Bun's own object, and an app already implements it; deleting
+ * them is a separate, breaking edit to every implementer.
+ */
 export interface WsLike {
   send(data: string): number;
   close(code?: number, reason?: string): void;
@@ -54,6 +72,23 @@ export interface SyncSocketOptions {
  */
 export const DEFAULT_MAX_FRAMES_PER_SECOND = 64;
 export const DEFAULT_FRAME_BURST = 256;
+
+/**
+ * Channel frames this process dropped under backpressure. A DATA-LOSS counter, not a saturation
+ * one: the live-query path repairs a dropped patch (the subscriber is marked desynced and the next
+ * change re-snapshots it), and a channel has no cursor, no mark and no re-snapshot — so this is the
+ * only trace a lost channel message leaves anywhere.
+ *
+ * Declared here rather than in `@ultimat3/core`'s `runtime-metrics.ts` because that file is the
+ * series EVERY Ultimate process emits and the deploy chart scales on; this one exists only where
+ * channels do. **No attributes**: a topic is client-chosen (`topic()` admits any
+ * `[A-Za-z0-9_-]+` segment), so a per-topic label is an unbounded series count one socket can mint
+ * — the topic goes in the log line, where cardinality is somebody else's index.
+ */
+const channelFramesDropped: Counter = counter('channel_frames_dropped_total', {
+  unit: '{frame}',
+  description: 'Channel frames dropped by socket backpressure — unrecoverable, nothing replays one',
+});
 
 export function actorIdOf(actor: Actor | null): string | null {
   return actor === null ? null : actor.id;
@@ -148,14 +183,18 @@ export class SyncSocket {
     this.desynced.delete(sid);
   }
 
+  /**
+   * This socket's own membership, and nothing else. It used to also call Bun's `ws.subscribe`,
+   * which built a second per-topic index nothing ever published to — the fanout is
+   * `SocketRegistry.deliver`, one filtered `send` per socket, because that is the only path that
+   * can count a dropped frame or close a socket that is drowning in them.
+   */
   subscribeTopic(topic: string): void {
     this.topics.add(topic);
-    this.#ws.subscribe(topic);
   }
 
   unsubscribeTopic(topic: string): void {
     this.topics.delete(topic);
-    this.#ws.unsubscribe(topic);
   }
 
   touch(): void {
@@ -193,6 +232,7 @@ export class SocketRegistry {
   readonly #byTopic = new Map<string, Set<SyncSocket>>();
   readonly #clock: Clock;
   readonly #idleTimeoutMs: number;
+  #droppedChannelFrames = 0;
 
   constructor(options: SocketRegistryOptions = {}) {
     this.#clock = options.clock ?? systemClock;
@@ -219,7 +259,13 @@ export class SocketRegistry {
     // `Map.delete` answers "was it actually there", so a double close cannot decrement twice.
     if (!this.#sockets.delete(id)) return;
     recordConnection(-1);
-    if (socket) for (const name of socket.topics) this.#dropFrom(name, socket);
+    if (!socket) return;
+    // Leaving this table IS the close, whoever noticed first. Bun's `close` callback reports a
+    // connection that has already gone, so nothing called `close()` on this object and
+    // `socket.closed` stayed false — leaving a subscribe still awaiting its snapshot read with no
+    // way to tell that the socket it is about to attach to was torn down while it read.
+    socket.close(CLOSE.goingAway, 'connection closed');
+    for (const name of socket.topics) this.#dropFrom(name, socket);
   }
 
   /**
@@ -281,15 +327,37 @@ export class SocketRegistry {
     const members = this.#byTopic.get(topic);
     if (!members) return 0;
     let sent = 0;
+    let dropped = 0;
     for (const socket of members) {
       if (socket.closed) {
         members.delete(socket);
         continue;
       }
       if (socket.send(frame)) sent += 1;
+      else dropped += 1;
     }
     if (members.size === 0) this.#byTopic.delete(topic);
+    if (dropped > 0) {
+      this.#droppedChannelFrames += dropped;
+      // Two readers, one event, one spelling: the series an operator alerts on and the line that
+      // says which topic it was. `deliver` ignored `send`'s answer and so did the hub above it, so
+      // until both existed a lost channel message left no trace at all.
+      channelFramesDropped.add(dropped);
+      logger.warn('channel.frames_dropped', { topic, dropped, total: this.#droppedChannelFrames });
+    }
     return sent;
+  }
+
+  /**
+   * Channel frames backpressure refused since boot, node-wide and cumulative — the in-process read
+   * of `channel_frames_dropped_total`, for a test or a benchmark that cannot scrape.
+   *
+   * Node-wide on purpose: a socket past `maxDroppedFrames` is closed and removed, so a per-socket
+   * count leaves with the socket exactly when loss is worst. Distinct from `SyncSocket.droppedFrames`,
+   * which counts every kind of frame one connection lost, channel and live-query patch alike.
+   */
+  get droppedChannelFrames(): number {
+    return this.#droppedChannelFrames;
   }
 
   #dropFrom(topic: string, socket: SyncSocket): void {

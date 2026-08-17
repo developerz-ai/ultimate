@@ -95,7 +95,7 @@ Server behavior on a stale build ID:
 | Asset within retention | serve it |
 | Asset outside retention | `410 Gone` + `X-Ultimate-Build-Current`; the SW serves the fallback and flips `AppUpdateAvailable` |
 | Action / query | executed if the contract is compatible; otherwise `X_BUILD_SKEW` with a `fix:` line |
-| WS handshake | accepted, then a `build-stale` frame → signal flips. The socket is **not** killed |
+| WS handshake | accepted, then an `update-available` frame carrying the server's `buildId` → signal flips. The socket is **not** killed |
 
 Full detail: [PWA and offline](PWA-And-Offline).
 

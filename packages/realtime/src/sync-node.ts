@@ -22,8 +22,8 @@ import type { PresenceRegistry } from './presence';
 import { CHANGE_SUBJECT_PREFIX, parseEnvelope, SeqGapDetector } from './replicator';
 import { CLOSE, SocketRegistry, SyncSocket, type WsLike } from './socket';
 import { GrantBook, type SyncAuthenticator, type SyncGrant, sweepGrants } from './sync-auth';
-import { createFrameRouter, type MutationHandler } from './sync-frames';
-import { decode, PROTOCOL_VERSION, toWireError } from './sync-protocol';
+import { ackRefOf, createFrameRouter, type MutationHandler } from './sync-frames';
+import { decode, type Frame, PROTOCOL_VERSION, toWireError } from './sync-protocol';
 import { AcceptBudget, drainPlan, type Rng, reconnectFrame } from './thundering-herd';
 
 /**
@@ -77,6 +77,13 @@ export interface SyncNodeOptions {
   readonly maxFramesPerSecond?: number;
   /** Burst allowance on that rate, per socket. */
   readonly frameBurst?: number;
+  /**
+   * When a socket starts dropping frames, and how many drops close it. On `SyncSocket` too, but
+   * this node builds every socket it holds — so unforwarded they were reachable only by abandoning
+   * `createSyncNode`, and a dropped channel frame is the one loss nothing replays.
+   */
+  readonly maxBufferedBytes?: number;
+  readonly maxDroppedFrames?: number;
   readonly onMutate?: MutationHandler;
   /**
    * Who is dialling. Injected for the same reason `onMutate` is: `sync` owns no business logic and
@@ -106,6 +113,14 @@ export interface SyncNode {
   readonly sockets: SocketRegistry;
   readonly ready: boolean;
   start(): Promise<void>;
+  /**
+   * Refuse new connections, keep every one this node holds. The SIGTERM `accept` phase calls it —
+   * `/readyz` answers 503 so the load balancer stops routing here, and an upgrade arriving in the
+   * meantime is shed with a retry delay instead of landing on a process that is going away. It is
+   * NOT `stop()`: a draining node still owes its clients their patches, and `stop()` releases the
+   * change subscription that carries them.
+   */
+  stopAccepting(): void;
   stop(): Promise<void>;
   /**
    * Async because `authenticate` is: the credential is decided *before* `server.upgrade`, so a
@@ -118,7 +133,6 @@ export interface SyncNode {
     backpressureLimit: number;
     /** Inbound ceiling. Declared here so every host that mounts this handler inherits it. */
     maxPayloadLength: number;
-    publishToSelf: boolean;
     sendPings: boolean;
     open(ws: SyncWs): void;
     message(ws: SyncWs, message: string | Uint8Array): void;
@@ -295,6 +309,10 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       logger.info('sync node ready', { buildId: options.buildId, path });
     },
 
+    stopAccepting(): void {
+      ready = false;
+    },
+
     async stop(): Promise<void> {
       ready = false;
       release();
@@ -358,8 +376,11 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     websocket: {
       idleTimeout: 120,
       backpressureLimit: 1024 * 1024,
+      // No `publishToSelf`: this node never publishes to a native topic. Every channel frame is
+      // one filtered `send` per socket through `SocketRegistry.deliver`, which is the only path
+      // that can count the frame it dropped — a flag configuring a mechanism nothing uses reads
+      // as a live one to the next person who has to decide how delivery works.
       maxPayloadLength: options.maxFrameBytes ?? DEFAULT_MAX_FRAME_BYTES,
-      publishToSelf: false,
       sendPings: true,
 
       open(ws: SyncWs): void {
@@ -377,6 +398,12 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
             ? {}
             : { maxFramesPerSecond: options.maxFramesPerSecond }),
           ...(options.frameBurst === undefined ? {} : { frameBurst: options.frameBurst }),
+          ...(options.maxBufferedBytes === undefined
+            ? {}
+            : { maxBufferedBytes: options.maxBufferedBytes }),
+          ...(options.maxDroppedFrames === undefined
+            ? {}
+            : { maxDroppedFrames: options.maxDroppedFrames }),
         });
         sockets.add(socket);
       },
@@ -385,8 +412,13 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
         const socket = sockets.get(ws.data.socketId);
         if (!socket) return;
         void (async () => {
+          // Decoded into a binding the failure path can read: an ack has to name the thing that
+          // failed — the mutation key the client's queue holds, the sid its subscription holds —
+          // and a frame that could not be decoded is the one case where there is nothing to name.
+          let frame: Frame | null = null;
           try {
-            await routeFrame(socket, decode(message));
+            frame = decode(message);
+            await routeFrame(socket, frame);
           } catch (error) {
             // The ack frame tells the client what it did wrong; the monitor only hears about what
             // this node did wrong. Same rule the HTTP pipeline applies at `status >= 500`.
@@ -399,7 +431,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
             socket.send({
               type: 'ack',
               v: PROTOCOL_VERSION,
-              ref: ws.data.socketId,
+              ref: ackRefOf(frame, ws.data.socketId),
               lsn: null,
               error: toWireError(error),
             });

@@ -102,7 +102,7 @@ Server behaviour on a stale build ID:
 | Asset still within retention | serve it |
 | Asset outside retention | `410 Gone` + `X-Ultimate-Build-Current`, SW serves the fallback and flips `AppUpdateAvailable` |
 | Action / query | executed if the contract is compatible; `X_BUILD_SKEW` with a `fix:` line if the input schema changed incompatibly |
-| WS handshake | accepted, then a `build-stale` frame → signal flips; the socket is not killed |
+| WS handshake | accepted, then an `update-available` frame → signal flips; the socket is not killed |
 
 ## Opt-in capabilities
 

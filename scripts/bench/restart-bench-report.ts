@@ -1,6 +1,8 @@
 // Percentile math and the on-disk report shape for the 50k-socket forced-restart benchmark.
 // Kept separate from the orchestrator so the numbers can be unit-tested without booting a server.
 
+import type { SeqSummary } from './restart-bench-seq';
+
 export function percentile(sortedAsc: readonly number[], p: number): number | null {
   if (sortedAsc.length === 0) return null;
   const rank = Math.min(sortedAsc.length - 1, Math.ceil((p / 100) * sortedAsc.length) - 1);
@@ -36,7 +38,15 @@ export interface BenchReport {
   readonly workers: number;
   readonly acceptBudget: { readonly perSecond: number; readonly burst: number };
   readonly restartGapMs: number;
+  /** How often the consistency probe published. `seq`'s resolution: a sparser probe sees less. */
+  readonly probeIntervalMs: number;
   readonly ramp: PhaseSummary;
   readonly restart: PhaseSummary;
+  /**
+   * Delivery accounting. `ramp`/`restart` time the FIRST patch on a socket, which is reachability;
+   * this is the only field that says whether anything was lost after that. A result file written
+   * before 2026-08 has no `seq` key at all — that run did not measure it.
+   */
+  readonly seq: SeqSummary;
   readonly notes: readonly string[];
 }

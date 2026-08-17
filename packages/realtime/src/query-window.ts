@@ -115,13 +115,33 @@ function startRead(entry: QueryEntry): Promise<SnapshotResult> {
   // Cleared here rather than when the read lands: the read about to be issued is the one that
   // answers the staleness, so a second caller must join it instead of forcing another.
   entry.stale = false;
-  const reading = entry.definition.snapshot({ input: entry.input });
+  const reading = readSnapshot(entry);
   entry.reading = reading;
   const done = (): void => {
     if (entry.reading === reading) entry.reading = null;
   };
   void reading.then(done, done);
   return reading;
+}
+
+/**
+ * The definition's read, with the staleness put back when it does not answer.
+ *
+ * Clearing the mark on the way in and never restoring it was the gap repair happening once and
+ * never again: the snapshot that was going to replace an invalidated window rejects — the pool is
+ * exhausted by the same incident that caused the gap — and the entry is left unmarked over rows it
+ * is known to have missed a change on. Nothing re-reads, `#resnapshot` serves every desynced
+ * subscriber out of that divergent window and clears their marks, and the divergence `stale` exists
+ * to prevent is now permanent and silent. `async` so a definition that throws synchronously takes
+ * the same path as one that rejects.
+ */
+async function readSnapshot(entry: QueryEntry): Promise<SnapshotResult> {
+  try {
+    return await entry.definition.snapshot({ input: entry.input });
+  } catch (error) {
+    entry.stale = true;
+    throw error;
+  }
 }
 
 export function orgIdOf(input: JsonValue): string | null {

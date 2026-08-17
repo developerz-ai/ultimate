@@ -5,8 +5,9 @@
 // a timer nobody awaits, and that `close()` cancels it. The scheduler is injected, so nothing sleeps.
 
 import { describe, expect, test } from 'bun:test';
+import { topic } from './channel';
 import { feed, harness } from './client-harness-fixture';
-import type { Row } from './json';
+import type { JsonObject, Row } from './json';
 import { PROTOCOL_VERSION } from './sync-protocol';
 
 describe('LiveClient reconnect', () => {
@@ -73,6 +74,57 @@ describe('LiveClient reconnect', () => {
 
     const kinds = sockets[1]?.frames().map((frame) => frame.type) ?? [];
     expect(kinds).toEqual(['hello', 'subscribe']);
+  });
+
+  // Topic membership lives on the node's socket and the `hello` frame carries none of it, so a
+  // handler this client still holds is a channel that went silent at the first reconnect — with
+  // `useConnection().online` true and no error anywhere. Presence goes with it: subscribing IS
+  // joining the room, so a subscription never re-sent is a member the sweep removes.
+  test('channel subscriptions are re-established too, not just the live queries', () => {
+    const { client, timers, sockets } = harness();
+    client.connect();
+    sockets[0]?.open();
+    client.useLive<Row>(feed, { orgId: 'o1' });
+    const seen: JsonObject[] = [];
+    const cursors = topic('org', 'o1', 'cursors');
+    client.subscribe(cursors, (message) => {
+      seen.push(message);
+    });
+
+    sockets[0]?.close(1006);
+    timers.fire();
+    sockets[1]?.open();
+
+    const kinds = sockets[1]?.frames().map((frame) => frame.type) ?? [];
+    expect(kinds).toEqual(['hello', 'subscribe', 'subscribe']);
+    const topics = (sockets[1]?.frames() ?? []).filter(
+      (frame) => frame.type === 'subscribe' && frame.target.kind === 'topic',
+    );
+    expect(topics).toHaveLength(1);
+
+    // And the handler is actually reachable on the new socket, which is what the app sees.
+    sockets[1]?.deliver({
+      type: 'patch',
+      v: PROTOCOL_VERSION,
+      sid: cursors,
+      lsn: '',
+      patches: [{ op: 'insert', id: 'm1', row: { at: 4 }, lsn: '' }],
+    });
+    expect(seen).toEqual([{ at: 4 }]);
+  });
+
+  test('an unsubscribed topic is not resurrected by the reconnect', () => {
+    const { client, timers, sockets } = harness();
+    client.connect();
+    sockets[0]?.open();
+    const unsubscribe = client.subscribe(topic('org', 'o1', 'cursors'), () => {});
+    unsubscribe();
+
+    sockets[0]?.close(1006);
+    timers.fire();
+    sockets[1]?.open();
+
+    expect(sockets[1]?.frames().map((frame) => frame.type)).toEqual(['hello']);
   });
 
   test('a server-assigned delay survives the close it triggers', () => {

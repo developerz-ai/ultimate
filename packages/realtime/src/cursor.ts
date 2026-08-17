@@ -7,7 +7,7 @@ import { type Clock, systemClock } from '@ultimat3/core';
 import { CursorStaleError } from './errors';
 import { canonicalJson, fnv1a, type Row, type RowPatch } from './json';
 
-/** Ids are bounded so a cursor stays small enough to ship in a `hello` frame. */
+/** Ids are bounded so a cursor stays small enough to ship on every `subscribe` frame. */
 export const CURSOR_ID_LIMIT = 512;
 
 /** A digest of `''` means "not verified at this lsn" — set on every delta resume. */

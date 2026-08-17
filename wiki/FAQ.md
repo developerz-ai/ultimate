@@ -22,7 +22,7 @@ All 28 packages, implemented and tested — not skeletons. The eight primitives,
 
 ### What is left after 1.1.0?
 
-**One thing: milestone 11's two-platform deploy proof** — the demo app on Compose **and** K8s from one image, with a rolling restart invisible to connected clients. The other item that was open at 1.0.0, the **50k-socket forced-restart benchmark**, is measured and committed at 1.1.0: 50,000 sockets, forced `sync` restart, time-to-consistent p50 54.0s / p90 105.5s, on one node ([Realtime](Realtime)). Milestone 11 lands when it is demonstrated, not on a date — publishing a date is how roadmaps become fiction. Everything in milestones 0–10 is shipped and gated. Scope cuts come off the back, never the middle (M4's budgets). The open defects 1.1.0 shipped with are listed on [Known gaps](Known-Gaps).
+**One thing: milestone 11's two-platform deploy proof** — the demo app on Compose **and** K8s from one image, with a rolling restart invisible to connected clients. The other item that was open at 1.0.0, the **50k-socket forced-restart benchmark**, is measured and committed at 1.1.0: 50,000 sockets, forced `sync` restart, first patch on the reconnected socket at p50 54.0s / p90 105.5s, on one node ([Realtime](Realtime)). Milestone 11 lands when it is demonstrated, not on a date — publishing a date is how roadmaps become fiction. Everything in milestones 0–10 is shipped and gated. Scope cuts come off the back, never the middle (M4's budgets). The open defects 1.1.0 shipped with are listed on [Known gaps](Known-Gaps).
 
 ## The stack
 
@@ -104,7 +104,7 @@ Yes. `realtime.tier: 1` with `transport: 'memory'` is the default, and a tier-1 
 
 ### What happens if the sync engine doesn't work out?
 
-It is roughly **70% of total effort** and the single largest risk. Tiers 1–2 shipped in milestone 6 and are under semver; tier 3 local-first is v2. The reconnect benchmark that gated topology — 50k sockets, a forced `sync` restart, time-to-consistent and DB load — **is measured at 1.1.0**: all 50,000 reconnected, 49,981 consistent, p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path ([Realtime](Realtime)). It was run on **one** node, so multi-node fanout is still unproven. If the incremental matcher turns out to be the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback.
+It is roughly **70% of total effort** and the single largest risk. Tiers 1–2 shipped in milestone 6 and are under semver; tier 3 local-first is v2. The reconnect benchmark that gated topology — 50k sockets, a forced `sync` restart, recovery time and DB load — **is measured at 1.1.0**: all 50,000 reconnected, 49,981 received a channel patch inside the window, p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path ([Realtime](Realtime)). That is **reachability** — first patch on the reconnected socket — not consistency; the delivery half is a separate 10,000-client run, **1,666,882 patches received, 0 lost**, `As of 2026-08` the only run that counts lost patches at all. Both were run on **one** node, so multi-node fanout is still unproven. If the incremental matcher turns out to be the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback.
 
 ### Why ship realtime last if it's the differentiator?
 

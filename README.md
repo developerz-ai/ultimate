@@ -44,11 +44,12 @@ are the difference between an agent that ships and one that thrashes.
 
 | What was measured | The result |
 |---|---|
-| **Realtime restart recovery** | 50,000 real WebSocket clients against **one** `sync` node, `SIGKILL`ed with no drain — no `reconnect` frame sent, so every client recovers on its own backoff. All 50,000 reconnected; **49,981** received a channel patch inside the window. Time-to-consistent p50 **54.0s**, p90 **105.5s**, max 145.7s |
+| **Realtime reachability** | 50,000 real WebSocket clients against **one** `sync` node, `SIGKILL`ed with no drain — no `reconnect` frame sent, so every client recovers on its own backoff. All 50,000 reconnected; **49,981** received a channel patch inside the window. Time to first patch on the reconnected socket: p50 **54.0s**, p90 **105.5s**, max 145.7s. It times reconnect + resubscribe + one delivery, and nothing after it — it was called "time-to-consistent" until 2026-08, and it could not see a lost patch |
+| **Realtime delivery** | 10,000 clients, same forced restart, a probe every 200ms: **1,666,882 channel patches received, 0 lost** — every client's sequence dense across its connection, no gap, no duplicate, no rewind. `As of 2026-08` the only run with delivery accounting; the 50,000-client result predates the counter and has none |
 | **The DB-load half** | **156,851** connect attempts shed by the shipped `AcceptBudget` (500/s, burst 2000) before reaching any query or snapshot path. Recovery is bounded by admission control, not by the matcher |
-| **What it is not** | one node, in-process transport — the run never crossed NATS. Per-node recovery, **not** a multi-node result, and not a throughput or latency-under-load figure |
+| **What it is not** | one node, in-process transport — neither run crossed NATS, and neither subscribes to a live query, so no cursor, snapshot or gap-repair path is under test. Per-node recovery, **not** a multi-node result, and not a throughput or latency-under-load figure |
 
-Reproduce it: `bun run scripts/bench/restart-bench.ts --clients 50000` — the committed report and the run's own transcript are in [`scripts/bench/results/`](scripts/bench/results/).
+Reproduce it: `bun run scripts/bench/restart-bench.ts --clients 10000 --probe-interval-ms 200` — the committed report and the run's own transcript are in [`scripts/bench/results/`](scripts/bench/results/).
 
 **Not claimed at 1.1.0:**
 
@@ -244,7 +245,7 @@ The same app code on one PaaS dyno and on a replicated cluster. Climbing is a dr
 | 3 | Kubernetes, per-role HPAs, logical replication for the change feed | none, plus config |
 | 4 | distributed SQL (YugabyteDB), JetStream R3, metrics and traces wired end to end | none for the datastore swap — with named incompatibilities |
 
-**This is the design, not a demonstration.** `As of 2026-08` exactly one point on it is measured — the 50k restart above, at one node. Rung 4 has never been run. [`17-scale-ladder.md`](docs/idea/17-scale-ladder.md) states rung by rung what is real today and what is intent, and names the places the invariant currently breaks. Fintech, agent platforms, multi-tenant dashboards: that is what the architecture is *for*, and nobody's production traffic has tested the claim yet.
+**This is the design, not a demonstration.** `As of 2026-08` exactly one rung is measured — rung 1, the single node, by the two runs above: 50k for reachability, 10k for delivery. Rung 4 has never been run. [`17-scale-ladder.md`](docs/idea/17-scale-ladder.md) states rung by rung what is real today and what is intent, and names the places the invariant currently breaks. Fintech, agent platforms, multi-tenant dashboards: that is what the architecture is *for*, and nobody's production traffic has tested the claim yet.
 
 → [The scale ladder](docs/idea/17-scale-ladder.md) · [Running it for real](docs/ops/README.md) · [Mobile and desktop targets](docs/idea/16-app-targets.md)
 

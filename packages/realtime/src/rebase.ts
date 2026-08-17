@@ -130,6 +130,48 @@ export function reconcile<T extends TableMap = TableMap>(
   return { strategy: strategyName(strategy), rolledBack, reapplied, winner };
 }
 
+export interface RollbackResult {
+  readonly rolledBack: readonly string[];
+  readonly reapplied: readonly string[];
+}
+
+/**
+ * The other half of `reconcile`: the server **refused** a mutation, so there is no server truth to
+ * land — only an optimistic write to take back. Same shape as a reconcile, and for the same reason:
+ * the writes made after it may depend on it, so everything from its sequence onward is undone
+ * newest-first and then replayed without it. Replay is deterministic because `local` is pure.
+ *
+ * Idempotent for a key the log does not hold: a denial can arrive twice, and tier 2 records nothing
+ * to undo in the first place.
+ */
+export function rollbackMutation<T extends TableMap = TableMap>(args: {
+  store: LocalStore<T>;
+  log: RebaseLog<T>;
+  key: string;
+}): RollbackResult {
+  const { store, log, key } = args;
+  const entry = log.get(key);
+  if (!entry) return { rolledBack: [], reapplied: [] };
+
+  const affected = log.pending().filter((candidate) => candidate.seq >= entry.seq);
+  const rolledBack: string[] = [];
+  for (const candidate of [...affected].reverse()) {
+    store.rollback(candidate.key);
+    rolledBack.push(candidate.key);
+  }
+  // Dropped, never retried: a denial is a decision about this intent, so replaying it on the next
+  // reconcile would put the write the server refused back on the screen.
+  log.drop(key);
+
+  const reapplied: string[] = [];
+  for (const candidate of affected) {
+    if (candidate.key === key) continue;
+    store.apply(candidate.key, (tx) => candidate.apply(tx));
+    reapplied.push(candidate.key);
+  }
+  return { rolledBack, reapplied };
+}
+
 function land<T extends TableMap>(
   store: LocalStore<T>,
   ack: ServerAck,

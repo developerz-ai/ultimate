@@ -58,6 +58,16 @@ export function canonicalJson(value: JsonValue): string {
   return `{${parts.join(',')}}`;
 }
 
+/**
+ * SHA-256, first 16 hex characters. For the hashes that are also SHARING keys — a `qid` decides
+ * which subscribers are served from one window, and it is derived from input a client chooses, so
+ * the 32 bits `fnv1a` answers are a collision anyone can find offline in seconds. Same primitive
+ * and same width `@ultimat3/entity`'s `planScope` already chose for a cursor's scope.
+ */
+export function stableDigest(text: string): string {
+  return new Bun.CryptoHasher('sha256').update(text).digest('hex').slice(0, 16);
+}
+
 /** FNV-1a, 32-bit, hex. Not cryptographic — it identifies and detects drift, it does not protect. */
 export function fnv1a(text: string): string {
   let hash = 0x811c9dc5;

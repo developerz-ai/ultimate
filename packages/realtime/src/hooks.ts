@@ -15,26 +15,34 @@ interface Registered {
   /** Read to subscribe, bumped to invalidate: `OfflineQueue` stores plain arrays, not signals. */
   readonly version: () => number;
   readonly bump: () => void;
+  /** Drops this registration's queue listener. The client outlives the registration. */
+  readonly release: () => void;
 }
 
 let registered: Registered | null = null;
 
 /** Register once, in the app entry, before the first render. One app, one socket, one client. */
 export function setLiveClient(client: LiveClient): void {
+  // The previous registration's listener goes with it. The client outlives `setLiveClient` — a hot
+  // reload, a test's next case, an app that re-registers after signing in — so a discarded
+  // unsubscribe is a listener nothing can reach, bumping a signal nothing renders, once per
+  // registration this process ever made.
+  registered?.release();
   const [version, setVersion] = client.signal<number>(0);
   const bump = (): void => {
     setVersion(version() + 1);
   };
-  registered = { client, version, bump };
   // Closes the gap a direct call can't: a reconnect drains automatically inside `connect()`, and
   // an ack/fail frame arrives asynchronously inside `#onFrame` — neither is awaited by any hook, so
   // this is the only path that reaches them. The direct `bump()` calls below stay too: they fire at
   // the earliest possible moment for the call that made them, and a redundant bump is harmless.
-  client.onQueueChange(bump);
+  const release = client.onQueueChange(bump);
+  registered = { client, version, bump, release };
 }
 
 /** For tests: drop the registration so cases stay independent. */
 export function clearLiveClient(): void {
+  registered?.release();
   registered = null;
 }
 

@@ -285,6 +285,103 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   one. A stale window is replaced in the lane (`refillWindowInLane`) — `fillWindow` takes the
   entry's own lane and a lane is not reentrant.
 - Deny by default on topics. No guard = `X_TOPIC_FORBIDDEN`.
+- **A guard that FAILS is not a guard that denied — the hub's copy of the rule the row gate already
+  follows.** On `onActorChange` (the re-auth pass) only a denial unsubscribes; anything else keeps
+  the topic, increments `guardFailures` and logs `channel.guard_failed`. A guard is app code and may
+  reach a database, so `catch { unsubscribe }` reported a store that timed out as a revoked grant —
+  every topic on every re-authenticated socket on the node, silently, with the client never told to
+  resubscribe. The initial `subscribe` is deliberately NOT split: there is no subscription to keep,
+  so a raising guard refuses that subscribe and the client hears about it.
+- **The `rebase` frame goes out BEFORE its `ack`, and an `ack` refers to what failed.** The ack is
+  the receipt and the receipt retires the client's journal row and rebase-log entry, so a rebase
+  landing after it has no entry to read `conflict` off — every merge silently becomes `server-wins`
+  — and no sequence to decide which later optimistic writes to replay. Two frames on one socket:
+  the order is the only coordination there is. `ackRefOf` answers the mutation key for a `mutate`
+  and the sid for a `subscribe`; the socket id is only for a frame that could not be decoded, since
+  `queue.fail(ref)` looks up by idempotency key and a socket id names a key no queue holds.
+- **Inbound frames run in a lane, and the lane is NEVER the socket.** `sync-node.message` dispatches
+  every frame as `void (async () => routeFrame(…))()`, so nothing upstream orders them. A global
+  per-socket lane would put every frame behind the slowest one, and the slowest one is a subscribe's
+  snapshot read — a DB round trip every reconnecting client pays once per live query, which is the
+  restart storm this framework is measured on. `mutate` is one lane per socket, `subscribe` is
+  `sub:<sid>` or `topic:<name>`, everything else is unlaned (`frame-lanes.ts`). A lane exists only
+  while work is queued on it: keyed by a client-chosen sid, a lane that outlived its work is an
+  unbounded map one socket grows at will.
+- **A cap is a RESERVATION taken before the first await, never a check.** A lane makes concurrent
+  frames sequential and N sequential subscribes still pass a check-then-act cap N times — and the
+  per-tenant cap spans sockets, where no lane can see it at all. `SubscriptionBook.reserve(socket,
+  sid)` decides the sid claim, `maxPerSocket` and `maxPerTenant` in one synchronous step;
+  `ChannelHub.subscribe` does the same for `maxTopicsPerSocket`, `maxTopicsPerNode` and the node's
+  bridge slot, before the guard is awaited. The tenant is captured, not re-derived — a re-auth may
+  `retenant` the socket while the read is in flight, and the release has to give the slot back to
+  the tenant that took it. Released in a `finally`, and releasing twice is a no-op.
+- **Bun's native pub/sub is deleted, not wired.** Nothing here publishes to a native topic and
+  nothing will: a native publish cannot be refused per socket, cannot report the frame it dropped
+  and cannot mark a subscriber desynced. `SocketRegistry.deliver` is the one fanout path.
+  `WsLike.subscribe`/`unsubscribe` stay declared and unused — a tracked app implements the
+  interface structurally, so removing the members is that app's typecheck failure — and the
+  declaration says so, because a member that looks live is one someone will call.
+- **A dropped channel frame is counted in three places and repaired in none.** The series
+  `channel_frames_dropped_total` (no attributes — a topic is client-chosen, so a per-topic label is
+  unbounded series one socket can mint), the log `channel.frames_dropped` with `{ topic, dropped,
+  total }`, and `SocketRegistry.droppedChannelFrames` for a test or a bench that cannot scrape.
+  Node-wide because a socket past `maxDroppedFrames` is closed and removed — a per-socket count
+  leaves exactly when loss is worst — and distinct from `SyncSocket.droppedFrames`, which counts
+  every frame kind and dies with its socket. Repair needs a per-topic sequence on the wire: a
+  channel's lsn is the publishing hub's own per-node counter, so a client cannot tell a gap from a
+  message that came via another node. Declared in `socket.ts`, not core's `runtime-metrics.ts`:
+  that file is the series every process emits, this one exists only where channels do.
+- **`qidOf` is `stableDigest` (SHA-256, 16 hex) and never `fnv1a`.** The qid is a *sharing* key —
+  a hit hands back the existing entry and the seated window, carrying the first subscriber's input
+  and rows — and input is client-chosen, so 32 bits is a collision found offline in seconds and one
+  client served out of another's window. `fnv1a` stays the cursor's result-set digest, where a
+  collision costs a missed re-sort.
+- **Refusing new sockets and draining the ones you have are two shutdown phases.** `stopAccepting()`
+  is the `accept` phase: `ready = false`, `/readyz` 503, a late upgrade shed with `retry-after-ms`,
+  and every socket untouched — a draining node still owes its clients their patches, and `stop()` is
+  what releases the change subscription carrying them. `drain()` + `stop()` are the `close` phase.
+  Registered with no phase, both landed in `close` and the node upgraded new websockets until the
+  very end. `listenSyncNode` unregisters both on `stop()`.
+- **A client `send` that returned is not an acknowledgement.** A browser `WebSocket.send` on a
+  CLOSING socket discards the frame and returns normally, so a drained mutation is `inflight` until
+  the server settles it or `requeueInflight` returns it. Only `pending` is sendable, `drain()` is one
+  chained pass at a time (two overlapping passes put one key on the wire twice, and a later pass can
+  overtake the one ahead of it), and backpressure over `MAX_BUFFERED_BYTES` declines rather than
+  fails — the mutation stays pending and the pass stops instead of reordering the ones behind it.
+- **A reconnect replays registrations AND topics, and every socket handler carries the identity
+  guard.** A reconnect is one `hello` plus one frame per thing this client holds: a `subscribe` per
+  registration, carrying that registration's cursor, and a `subscribe` per topic. Topic membership
+  is state on the node's socket, so a channel is silent from the first reconnect while its handler
+  is still installed — and its presence membership is swept — unless every one is re-announced.
+  `onOpen` needed the `#socket !== socket` guard `onMessage` and `onClose` already had: a replaced
+  socket opening late marked the connection up and replayed every subscription onto the current one.
+- **`hello` carries NO cursors, and `HelloFrame.resume` is deleted (2026-08).** It was filled by
+  every client on open and read by nobody — the node replied `resume: []` and decided resume per
+  subscription from the `subscribe` frame — so every reconnect shipped each cursor twice, up to 512
+  ids each, in the restart storm this package is measured on. Wiring it was the wrong half of the
+  choice: a cursor's `qid` is `` `${name}:${stableDigest(input)}` ``, so a node reading a resume list
+  recovers the query **name** — it is the plaintext prefix — but never the `input`, which is the half
+  every decision needs. Without it `definition.authorize({ actor, input })` cannot run and no entry
+  can be built; the qid names a window but not a decision, and the retained window holds pre-policy
+  patches, so answering from it at `hello` time means answering before the per-subscriber
+  authorization pass, for a subscription that does not exist yet. It could only ever restate,
+  unauthorized, what `subscribe` decides with the input in hand — and it could not even save the
+  bytes, because the cursor still has to ride its `subscribe`. Two places deciding one thing is what axiom 1 refuses. **`PROTOCOL_VERSION` did NOT
+  move**, same rule as `snapshot.entity`: `decode` is a whitelist, so a new node drops an old
+  client's `resume` and an old node reads a new client's omission as the empty list it always got.
+  The one deploy of skew costs nothing in either direction.
+- **The client beats, because only the client can end a half-open socket.** `heartbeatMs` (default
+  `DEFAULT_HEARTBEAT_MS`, 15s; `0` disables) sends a `hello` — byte-identical to the opening one,
+  since the frame has no resume list to leave out — plus one subscribe frame per topic, which is the
+  node's presence heartbeat. It is **not** how a deploy is noticed: `socket.skewed` compares the
+  build id recorded at the upgrade against this node's, both fixed for the socket's life, so every
+  `hello` on one socket answers the same forever and `update-available` reaches a client on the
+  socket it opens against the *new* node. Two silent windows and the client closes with `4000` and
+  arms the reconnect. It is one
+  self-re-arming tick on the injected `Scheduler`, not an interval: a client is either beating on a
+  live socket or backing off toward a new one, never both. The 15s is restated from
+  `realtime.heartbeatMs` rather than read — that is server config and this is browser code — and
+  `realtime.heartbeatMs` is read by nothing today.
 - **Every question a hot path asks is indexed, never scanned.** `SubscriptionBook` keeps
   `#bySocket` and a per-tenant count beside `#bySid`, and `SocketRegistry` keeps `#byTopic` beside
   the socket table. Both replaced a walk of the whole node that ran once per socket or once per
@@ -305,6 +402,19 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `max` so a new array field on a new frame cannot ship without someone choosing its size.
   `input` is walked ITERATIVELY: the thing being refused is a stack overflow in `canonicalJson`, so
   a recursive check would be the same crash one frame earlier.
+- **Every ceiling on a socket `sync` builds is reachable from `createSyncNode`.** The node
+  constructs every `SyncSocket` it holds, so a `SyncSocketOptions` the node does not forward is a
+  number an operator can only change by abandoning `createSyncNode` — which is what
+  `maxBufferedBytes` and `maxDroppedFrames` were until 2026-08. Forwarded the same way
+  `maxFramesPerSecond`/`frameBurst` already are (`...(x === undefined ? {} : { x })`, so an unset
+  option keeps `SyncSocket`'s own default rather than overwriting it with `undefined`).
+- **A `SubscriptionLimitError` names the knob, never the default.** `knob` defaults to
+  `maxPerSocket`/`maxPerTenant`, which are `LiveQueryRegistry`'s — so the channel hub's per-socket
+  *topic* cap, thrown without one, told an operator to move a number in a different constructor
+  that would not have helped. Every throw site passes `knob` explicitly (`maxTopicsPerSocket`,
+  `maxTopicsPerNode`, `maxEntries`, `maxPerSocket`, `maxPerTenant`); `channel.test.ts` asserts the
+  two hub ones against the option names, because a fix line naming the wrong setting is worse than
+  no fix line — it is an instruction that runs and changes nothing.
 - **Retained memory is bounded by BYTES.** `RingChangeBuffer` keeps the patch-count cap as a
   *replay* bound (what a delta resume costs to fold) and adds the byte budgets as the memory one —
   `packages/cache/src/lru.ts:1-2` states why: 4,096 queries x 1,024 patches is 4.19M retained rows
@@ -370,6 +480,12 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `query-hook.ts` | the typed projection: one declared query bound to one named hook |
 | `type-pins.ts` | compile-time assertions `tsc` checks — the hook's input type, its row type, the `Query` seam |
 | `window-lock.ts` | one FIFO lane per query id — the only thing that orders a fanout |
+| `frame-lanes.ts` | the order one socket's INBOUND frames are applied in, and the lane key each kind belongs to. `WindowLock` again, keyed differently — and it bounds no cap |
+| `live-fanout.ts` | what one change does inside one entry's lane: match, fold, one policy pass per subscriber, and the re-snapshot that repairs a desynced one |
+| `client-mutations.ts` | the outbound mutation path — the optimistic twin, the rebase entry, the queue entry, and the sender the drain hands each frame to |
+| `client-heartbeat.ts` | when to beat and when to give up. A policy, which is why it is not in `client.ts`'s connection lifecycle |
+| `client-topics.ts` | the client's channel book, and the one membership frame its two callers (`subscribe`, the reconnect replay) must never spell differently |
+| `client-contract.ts` | the client's injected shapes — `ClientSocket`, `LiveClientOptions`, `LiveHandle` — declared apart from the class that consumes them |
 | `policy-gate.ts` | the only authz seam |
 | `subscriber-gate.ts` | the per-subscriber pass of a definition's row policy, and its two counters — `rowsDenied` and `gateFailures`. Evaluates no policy of its own |
 | `live-contract.ts` | what a live query IS: `qidOf`, `LiveQueryDefinition`, `SnapshotResult`, `LiveSubscription`. Four modules need the shape and none of them needs the registry that runs it |
@@ -387,5 +503,8 @@ Changing a frame shape means adding a fixture to `sync-protocol.test.ts` — the
 fails if a kind has no fixture — and bumping `PROTOCOL_VERSION` **when the change makes an old
 frame unreadable in either direction**. An *additive optional* field (`snapshot.entity`, 2026-08)
 is not that: `decode` builds a whitelist, so an old client drops it and a new client reads its
-absence as a defined answer. Bumping for one refuses every in-flight client on a rolling deploy
-and buys nothing — the version guards incompatibility, not novelty.
+absence as a defined answer. Neither is *removing a field nothing read* (`hello.resume`, 2026-08):
+the same whitelist drops an old client's copy, and a new client's omission decodes to what the
+field always held. Bumping for either refuses every in-flight client on a rolling deploy and buys
+nothing — the version guards incompatibility, not novelty. Removing a field something *does* read
+is the opposite case and bumps.

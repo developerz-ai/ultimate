@@ -21,12 +21,21 @@
 // the number this script trusts is the system under test's, not the load generator's. Once ramped,
 // SIGKILL the server process (a crash, not a drain — no `reconnect` frame is ever sent) and start a
 // fresh one on the same port after a fixed boot gap. Every surviving client's own `backoffDelay` is
-// the only thing driving recovery. "Time to consistent" is measured per client as first receipt of
-// a channel patch (proof of reconnect *and* resubscribe *and* delivery) after the kill.
+// the only thing driving recovery.
+//
+// TWO numbers, and they answer different questions. `restart.consistent` times each client's FIRST
+// channel patch after the kill — reconnect *and* resubscribe *and* one delivery, which is
+// REACHABILITY. It cannot see a lost patch, and a channel topic is the one subscription with no
+// repair: `SyncSocket.send` drops a frame under backpressure and returns false, `SocketRegistry
+// .deliver` and `ChannelHub`'s bridge both discard that answer, and there is no cursor, no
+// `desynced` mark and no re-snapshot behind it. So `seq` is the second number
+// (restart-bench-seq.ts): every client counts holes in the probe sequence it received on each
+// connection, and `seq.missing` is what a lost channel frame looks like.
 
 import { cpus } from 'node:os';
 import type { ClientStats } from './restart-bench-client';
 import { type BenchReport, type PhaseSummary, summarizeDurations } from './restart-bench-report';
+import { summarizeSeq } from './restart-bench-seq';
 
 interface Args {
   readonly clients: number;
@@ -318,19 +327,41 @@ async function main(): Promise<void> {
     consistentOf: (s) => s.patchAfterOpenAt,
   });
 
+  // Summed across the whole swarm, not per phase: the probe publishes only after the kill, so
+  // every message counted here belongs to the restart window by construction.
+  const seqSummary = summarizeSeq(stats.map((s) => s.seq));
+  console.error(
+    `[bench] delivery: ${seqSummary.received} probe messages received by ` +
+      `${seqSummary.observers}/${args.clients} clients; ${seqSummary.missing} lost in ` +
+      `${seqSummary.gapEvents} gaps on ${seqSummary.clientsWithGaps} clients ` +
+      `(${seqSummary.duplicates} duplicates, ${seqSummary.rewinds} publisher rewinds, ` +
+      `${seqSummary.malformed} malformed)`,
+  );
+
   const report: BenchReport = {
     measuredAt: new Date().toISOString(),
     clients: args.clients,
     workers: args.workers,
     acceptBudget: { perSecond: 500, burst: 2000 },
     restartGapMs: args.restartGapMs,
+    probeIntervalMs: args.probeIntervalMs,
     ramp,
     restart,
+    seq: seqSummary,
     notes: [
       'ramp is throttled by the same AcceptBudget the restart recovery is measured under',
       'readiness (ramp done / restart consistent) is read from the server’s own socket count, ' +
         'not the load generator’s self-report',
-      'time-to-consistent = first channel patch received after the kill (reconnect + resubscribe + delivery)',
+      'restart.consistent times the FIRST channel patch on the reconnected socket: reconnect + ' +
+        'resubscribe + one delivery. That is REACHABILITY, not consistency — a channel topic has ' +
+        'no cursor and no re-snapshot, so a patch dropped by backpressure is unrecoverable and a ' +
+        'first-delivery timer cannot see one',
+      'seq is the delivery half: each client counts holes in the probe sequence it received while ' +
+        'subscribed, per connection. seq.missing = 0 means no client observed a lost channel frame',
+      'seq.missing is a LOWER BOUND — a hole is only visible between two messages one connection ' +
+        'received, so anything lost before the first or after the last is not counted',
+      'seq.rewinds, not seq.missing, is where a publisher restart lands: the probe counter resets ' +
+        'to zero per server process, and the epoch resets on every socket open',
       'the consistency probe only publishes after the kill, so ramp.consistent is empty by ' +
         'construction — the ramp measures acceptance, the restart measures recovery',
       'DB load proxy: shedAttempts is the count of connect attempts the AcceptBudget refused before ' +

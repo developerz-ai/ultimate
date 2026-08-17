@@ -3,11 +3,12 @@
 // every piece of the client a frame may touch, so the blast radius of a new frame kind is a
 // reviewable list rather than "whatever the router could reach through `this`".
 
+import { advance } from './cursor';
 import type { JsonObject, JsonValue } from './json';
 import type { Registration, RowWindows } from './live-rows';
 import type { LocalStore, TableMap } from './local-store';
 import type { OfflineQueue } from './offline-queue';
-import { type RebaseLog, reconcile } from './rebase';
+import { type RebaseLog, reconcile, rollbackMutation } from './rebase';
 import type { Frame, PresenceMember } from './sync-protocol';
 
 /** Declared with the window it projects; re-exported here because the router is what writes it. */
@@ -26,12 +27,45 @@ export interface ClientFrameTarget<T extends TableMap = TableMap> {
   readonly queue: OfflineQueue | undefined;
   readonly store: LocalStore<T> | undefined;
   readonly log: RebaseLog<T> | undefined;
+  /** The client's clock. A cursor carries `at`, and nothing here may read `Date.now()`. */
+  now(): number;
   /** A newer build is live; the app decides when to reload. */
   setUpdate(buildId: string | null): void;
   /** The node assigned this socket its own delay before closing it. */
   scheduleReconnect(afterMs: number | null): void;
   closeSocket(code: number, reason: string): void;
   notifyQueueChange(): void;
+  /** Where a promise nobody awaits reports its failure. The client's `onError`, never a swallow. */
+  detach(work: Promise<unknown>): void;
+}
+
+/**
+ * The server refused a mutation: undo its optimistic half. Tier 2 has neither a store nor a log,
+ * so there is nothing optimistic to undo and the queue entry is the whole record.
+ */
+function rollbackFailed<T extends TableMap>(key: string, target: ClientFrameTarget<T>): void {
+  const store = target.store;
+  const log = target.log;
+  if (!store || !log) return;
+  // One batch for the whole undo: the rollback and every mutator replayed behind it are one
+  // frame's worth of change, so a live window holding those rows renders once.
+  store.identity.batch(() => {
+    rollbackMutation({ store, log, key });
+  });
+}
+
+/**
+ * The server took it, so the write is no longer optimistic: the journal goes (there is nothing to
+ * roll back TO any more — this write is what the server has) and the rebase entry goes with it, or
+ * every later reconcile replays a mutation the server already applied, over rows that have moved
+ * on. The row itself stays exactly as the twin left it — an accepted write does not flicker.
+ *
+ * Both calls are no-ops for a key nothing holds, which is what makes this safe as the tail of the
+ * `rebase` + `ack` pair: the rebase in front of it has already reconciled and dropped the same key.
+ */
+function commitAccepted<T extends TableMap>(key: string, target: ClientFrameTarget<T>): void {
+  target.store?.commit(key);
+  target.log?.drop(key);
 }
 
 /** Presence members cross the topic channel as plain JSON, like every other channel message. */
@@ -56,6 +90,16 @@ export function applyFrame<T extends TableMap>(frame: Frame, target: ClientFrame
       const registration = target.registration(frame.sid);
       if (registration) {
         target.windows.patch(registration, frame.patches);
+        // The cursor moves with the patches, not only with a snapshot. Left behind, `cursor.at`
+        // froze at the last snapshot and `shouldResnapshot`'s lag check answered "re-snapshot" for
+        // every client connected longer than `maxLagMs` — the delta resume the retained change
+        // window exists for, dead exactly during the deploy storm it was built for. An empty lsn
+        // is a tier-1 channel frame's, so it never rewinds one.
+        if (registration.cursor && frame.lsn !== '') {
+          const next = advance(registration.cursor, frame.patches, frame.lsn, target.now());
+          registration.cursor = next;
+          registration.setCursor(next);
+        }
         registration.setState('live');
         return;
       }
@@ -70,11 +114,17 @@ export function applyFrame<T extends TableMap>(frame: Frame, target: ClientFrame
     }
     case 'ack': {
       const queue = target.queue;
+      // A refused mutation is not a mutation: its optimistic twin has to come off the screen, and
+      // its rebase entry has to leave the log, or a denied write stays rendered forever and every
+      // later reconcile replays it. `ref` is the mutation key — the same key the `mutate` frame
+      // carried — which is what makes both halves reachable from one frame.
+      if (frame.error) rollbackFailed(frame.ref, target);
+      else commitAccepted(frame.ref, target);
       // `ack`/`fail` mutate the queue synchronously and persist asynchronously; chaining rather
       // than notifying right after the call keeps this correct even if that ordering ever
       // changes, and it still fires exactly once the persisted write actually lands.
       const settled = frame.error ? queue?.fail(frame.ref, frame.error) : queue?.ack(frame.ref);
-      void settled?.then(() => target.notifyQueueChange());
+      if (settled) target.detach(settled.then(() => target.notifyQueueChange()));
       return;
     }
     case 'rebase': {

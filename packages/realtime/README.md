@@ -6,7 +6,7 @@ Three tiers, one ladder, one protocol. Climbing a rung is a config change, never
 
 | Tier | What it gives you | What it costs you |
 |---|---|---|
-| **1 — channels** | `publish`/`subscribe` on typed topics, presence, cursors, typing indicators | ~0. Pub/sub over Bun's native WS. No DB, no replication slot |
+| **1 — channels** | `publish`/`subscribe` on typed topics, presence, cursors, typing indicators | ~0. One filtered `send` per subscribed socket — no DB, no replication slot. **At most once**: a frame backpressure drops is counted, never replayed |
 | **2 — live queries** | the list updates when someone else edits; your own click feels instant | one change feed + a matcher per query id + a bounded change window |
 | **3 — local-first** | writes that survive being offline | a durable local store, a rebase log, client-side migrations, a conflict story per mutator |
 
@@ -166,8 +166,17 @@ wire.
 | distinct `(query, input)` pairs per node | 10,000 | `new LiveQueryRegistry({ maxEntries })` | `X_SUBSCRIPTION_LIMIT` |
 | channel topics per socket | 64 | `new ChannelHub({ maxTopicsPerSocket })` | `X_SUBSCRIPTION_LIMIT` |
 | distinct channel topics per node | 10,000 | `new ChannelHub({ maxTopicsPerNode })` | `X_SUBSCRIPTION_LIMIT` |
+| outbound bytes buffered on one socket | 1 MiB | `createSyncNode({ maxBufferedBytes })` | the frame is dropped and `send` answers `false` |
+| dropped frames before that socket is closed | 32 | `createSyncNode({ maxDroppedFrames })` | close `1013` (`overloaded`), reason `backpressure` |
 | retained patch bytes per node | 64 MiB | `new RingChangeBuffer({ maxBytes, maxBytesPerQuery })` | eviction, then a re-snapshot on resume |
 | array lengths and `input` nesting in a frame | `FRAME_LIMITS` | none — a hard ceiling | `X_PROTOCOL_VERSION` |
+
+**Every one of those is taken as a reservation, not checked.** A subscribe holds nothing until three
+awaits later, so `SubscriptionBook.reserve(socket, sid)` and `ChannelHub`'s bridge reservation decide
+the sid claim and all four subscription caps **synchronously, before the first `await`**, against a
+count that already includes the subscribes still in flight. One WebSocket write carrying N subscribe
+frames used to pass every cap N times — the ordinary case, no attacker required. The slot is given
+back in a `finally`, and releasing twice is a no-op.
 
 The accept budget bounds the accept **rate**; `maxConnections` bounds the **count**, and they are
 two different attacks — 500 accepts/s held open with one keepalive each is 1.8M sockets an hour.
@@ -175,8 +184,8 @@ The frame budget is per socket and checked at the top of the frame router, befor
 can reach: a subscribe frame is a database read, a presence write and a fleet-wide publish, and one
 authenticated socket is the cheapest foothold there is.
 
-`FRAME_LIMITS` is the wire's own hard ceiling — array lengths (`cursor.ids`, `resume`, `patches`,
-`rows`, `members`) plus the depth and node count of a client-supplied `input`. It is not an option:
+`FRAME_LIMITS` is the wire's own hard ceiling — array lengths (`cursor.ids`, `patches`, `rows`,
+`members`) plus the depth and node count of a client-supplied `input`. It is not an option:
 `input` reaches `canonicalJson`, which recurses, so an unbounded one is a stack overflow in the
 process rather than a slow query.
 
@@ -236,10 +245,48 @@ sends a `reconnect` frame carrying that delay — clients redistribute instead o
 because refusing without one just moves the herd next door.
 
 The client dials itself back. A closed socket arms one timer — the node's delay when a `reconnect`
-frame assigned one, otherwise `backoffDelay()` — and that timer calls `connect()`, which re-sends
-`hello` with every cursor and re-subscribes every registration. `reconnectAt` is what a component
-renders while it waits; `close()` cancels it, and `connect()` starts over. The timer comes from an
-injected `Scheduler`, so a test fires it by hand instead of sleeping.
+frame assigned one, otherwise `backoffDelay()` — and that timer calls `connect()`, which re-subscribes
+every registration **and re-announces every topic**. Topic membership is state on the node's socket
+and `hello` carries none of it, so without that half a channel goes silent from the first reconnect
+onwards while its handler is still installed — and its presence membership is swept, because
+subscribing to a topic *is* joining the room. `reconnectAt` is what a component renders while it
+waits; `close()` cancels it, and `connect()` starts over. The timer comes from an injected
+`Scheduler`, so a test fires it by hand instead of sleeping.
+
+### Liveness: `heartbeatMs`
+
+A half-open socket — the TCP connection is dead and no `close` ever fires — is invisible to the
+browser. The client is the only thing that can end one.
+
+```ts
+new LiveClient({ signal, connect, buildId, heartbeatMs: 15_000 }); // 0 disables the pass
+```
+
+| Property | Behaviour |
+|---|---|
+| Default | `DEFAULT_HEARTBEAT_MS`, 15s. The same number as the server's `realtime.heartbeatMs`, restated rather than read: that is server config and this is browser code |
+| One beat | a `hello` — which carries no cursors at all; `HelloFrame` has no resume list, so a beat and an opening frame are byte-identical — plus one subscribe frame per topic held |
+| Why the topics | on the node, repeating the subscribe frame **is** the presence heartbeat; presence has no frame of its own in either direction |
+| Not a deploy check | `update-available` answers a skew between the build id recorded at the upgrade and the node's own, and neither can change on an open socket — so every `hello` on one socket answers the same forever. A client hears about a deploy on the socket it opens against the **new** node |
+| Silence | nothing received for **two** intervals ⇒ close `4000` (a private-use code, so it is distinguishable in a log) and arm the reconnect. Judged from the last frame of any kind, since the point is that bytes still cross |
+| Not an interval | one armed tick, re-armed by itself, on the same injected `Scheduler` the reconnect uses — a client is either beating on a live socket or backing off toward a new one, never both |
+
+`realtime.heartbeatMs` in `app.config.ts` is **read by nothing** `As of 2026-08`; this option is the
+only knob that changes behaviour.
+
+### A `send` that returned is not an acknowledgement
+
+`WebSocket.send` on a CLOSING socket discards the frame and returns normally, so a drained mutation
+is `inflight` — never `acked` — until the server settles it with an `ack`/`fail` frame, or a lost
+connection returns it to `pending`. Only `pending` entries are sendable, so nothing is put on the
+wire twice by a reconnect that raced an ack.
+
+| Rule | Consequence |
+|---|---|
+| `drain()` is **one pass at a time**, chained rather than joined | two overlapping passes read the same entry as sendable and put one key on the wire twice; a later pass could also overtake the one in front of it, which is the ordering guarantee gone. A caller that enqueued mid-pass gets a pass *behind* it, not that pass's promise |
+| A pass stops at the first refusal | continuing past a failure is how a sync engine reorders a user's intent |
+| Backpressure **declines**, it does not fail | over `MAX_BUFFERED_BYTES` (1 MiB, the node's `backpressureLimit` at the other end of the same socket) the sender throws `X_TRANSPORT_UNAVAILABLE`, the mutation stays pending and the next drain resumes there. `ClientSocket.bufferedAmount` is optional; a socket that does not report it is treated as never backed up |
+| Delivery is therefore at least once | every mutation carries an idempotency key — the `key` argument, or `<mutator>:<uuid>` — and the resend carries the same one |
 
 ### Limits, stated plainly
 
@@ -259,10 +306,65 @@ injected `Scheduler`, so a test fires it by hand instead of sleeping.
   failed, a window that lost its tail — is served a fresh snapshot out of the shared window on the
   next delivery, and only then is the mark cleared. A snapshot the socket refuses leaves it
   diverged, which is the state it is actually in.
+- **The client's cursor advances on every patch, not only on a snapshot.** Left behind, `cursor.at`
+  froze at the last snapshot and `shouldResnapshot`'s lag check answered "re-snapshot" for every
+  client connected longer than `maxLagMs` — the delta resume the retained window exists for, dead
+  exactly during the deploy storm it was built for.
+- **An accepted mutation is committed, not merely acknowledged.** The `ack` drops the journal row
+  and the rebase-log entry — there is nothing to roll back *to* any more, and a later reconcile
+  would otherwise replay a write the server already applied over rows that have moved on. The row
+  itself stays exactly as the optimistic twin left it: an accepted write does not flicker.
+- **A refused mutation is rolled back, not retried.** An `ack` carrying an error undoes that
+  mutation's optimistic write *and* every write made after it — newest first — then replays the
+  others without it, which is sound only because `local` is pure. The refused intent is dropped from
+  the rebase log rather than retried: a denial is a decision about that intent, and replaying it
+  would put the write the server refused back on the screen. Idempotent for a key the log does not
+  hold, because a denial can arrive twice and tier 2 records nothing to undo.
 - **A delta resume leaves the digest unverified** (`DIGEST_UNVERIFIED`). Only a snapshot re-establishes
   it. `verifyDigest()` is how a client detects drift and asks for a fresh one.
 - **Backpressure drops patch frames.** That is safe *only* because a re-snapshot is cheap: the drop
   is recorded on the socket (`desynced`) and the next delivery re-snapshots rather than diverging.
+- **A dropped CHANNEL frame is not safe, and is not repaired.** A topic has no cursor, no mark and
+  no re-snapshot, so tier 1 is **at most once**. Every refusal is counted — the series
+  `channel_frames_dropped_total` (no labels: a topic is client-chosen, so a per-topic label is
+  unbounded series one socket can mint), the log line `channel.frames_dropped` at `warn` carrying
+  `{ topic, dropped, total }`, and `node.sockets.droppedChannelFrames` for a test or a benchmark
+  that cannot scrape. Node-wide and cumulative, because a socket past `maxDroppedFrames` is closed
+  and removed — a per-socket count leaves exactly when loss is worst. Distinct from
+  `SyncSocket.droppedFrames`, which counts every kind of frame one connection lost and dies with it.
+  Repair would need a per-topic sequence on the wire: a channel's `lsn` is the publishing hub's own
+  per-node counter, so a client cannot tell a gap from a message that arrived via another node.
+  **Anything that must arrive belongs on a live query.**
+- **Bun's native WS pub/sub is not used.** `subscribeTopic` does not call `ws.subscribe` and the
+  websocket config declares no `publishToSelf`; every channel message is one filtered `send` per
+  socket through `SocketRegistry.deliver`, reading a per-topic index rather than walking the socket
+  table. A native publish cannot be refused per socket, cannot report the frame it dropped and
+  cannot mark a subscriber desynced — which is to say it cannot do any of the three things above.
+  `WsLike.subscribe`/`unsubscribe` stay **declared and unused**: the interface is structural and a
+  tracked app implements it, so deleting the members breaks that app's typecheck.
+- **Inbound frames are ordered per `mutate`-socket and per subscription, never per socket.** A
+  global per-socket lane puts every frame behind the slowest one, and the slowest one is a
+  subscribe's snapshot read — the round trip every reconnecting client pays in a restart storm.
+  `mutate` is one lane per socket; `subscribe` is one lane per sid, or per topic name; `hello` and
+  the server-authored kinds are unlaned. A lane exists only while work is queued on it, because a
+  lane keyed by a client-chosen sid that outlived its work is an unbounded map one socket can grow.
+- **`qid` is `<name>:<first 16 hex of SHA-256(canonicalJson(input))>`** — 64 bits `As of 2026-08`,
+  where it was a 32-bit FNV-1a. It is a *sharing* key: a hit is answered with the existing entry and
+  the seated window, both holding the first subscriber's input and rows, and input is client-chosen,
+  so a collision is one client served out of another's window. A rolling deploy across that change
+  costs one bounded snapshot per subscription — a cursor minted under the old format names a ring
+  entry the new node never held, so the resume falls back correctly rather than silently.
+- **A topic guard that *fails* keeps the topic.** On the re-auth pass, only a denial
+  (`X_TOPIC_FORBIDDEN`, or a policy denial) unsubscribes; anything else increments `hub.guardFailures`
+  and logs `channel.guard_failed`. `catch { unsubscribe }` reported a store that timed out as a
+  revoked grant — every topic on every re-authenticated socket, silently, with the client never told
+  to resubscribe. The initial `subscribe` is deliberately not split that way: there is no
+  subscription to keep, so a guard that raises refuses that subscribe and the client hears about it.
+- **A `sync` node shuts down in two phases.** The `accept` phase calls `stopAccepting()`: `/readyz`
+  answers 503 and a late upgrade is shed with `retry-after-ms`, while **every socket the node holds
+  keeps its patch stream**. The `close` phase is `drain()` then `stop()`. Registered with no phase it
+  all landed in `close`, and until that ran the node went on upgrading new websockets onto a process
+  that was going away. Both hooks are unregistered by the listener's `stop()`.
 - **A full presence frame is capped** at `maxMembers` (256) and carries `total`, so a 5,000-person
   room renders "and 4,744 others" instead of shipping 5,000 members to every joiner. The set itself
   is never capped — the sweep differences it — and one node per topic runs that sweep, elected

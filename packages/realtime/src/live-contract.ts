@@ -4,13 +4,22 @@
 
 import type { Actor } from '@ultimat3/core';
 import type { LiveCursor } from './cursor';
-import { canonicalJson, fnv1a, type JsonValue, type Row } from './json';
+import { canonicalJson, type JsonValue, type Row, stableDigest } from './json';
 import type { IncrementalMatcher } from './matcher-bridge';
 import type { SyncSocket } from './socket';
 
-/** `qid` = hash(query name, input). Fanout subjects and change windows are keyed by it. */
+/**
+ * `qid` = hash(query name, input). Fanout subjects and change windows are keyed by it.
+ *
+ * The hash is a **sharing** key, which is why it is `stableDigest` and not `fnv1a`: `#entryFor`
+ * answers a hit with the EXISTING entry and `liveQueryDefinition` answers with the seated
+ * `SharedWindow`, both carrying the first subscriber's input, compiled source and rows. Input is
+ * client-chosen, so a second input colliding with the first passes `authorize` against its own
+ * arguments and is then served out of somebody else's window — and 32 bits is a collision found
+ * offline in seconds.
+ */
 export function qidOf(name: string, input: JsonValue): string {
-  return `${name}:${fnv1a(canonicalJson(input))}`;
+  return `${name}:${stableDigest(canonicalJson(input))}`;
 }
 
 export interface SnapshotResult<R extends Row = Row> {

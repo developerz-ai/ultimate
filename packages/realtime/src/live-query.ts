@@ -9,28 +9,22 @@
 import { type Actor, type Clock, systemClock, uuid } from '@ultimat3/core';
 import type { ChangeEvent } from './changefeed';
 import {
-  advance,
   type LiveCursor,
   makeCursor,
   type ReconnectBudget,
   type ResumeSource,
   resumeFrom,
 } from './cursor';
-import {
-  isPolicyDenial,
-  LiveQueryUnknownError,
-  SubscriptionIdTakenError,
-  SubscriptionLimitError,
-} from './errors';
-import type { JsonValue, Row, RowPatch } from './json';
+import { isPolicyDenial, LiveQueryUnknownError, SubscriptionLimitError } from './errors';
+import type { JsonValue } from './json';
 import {
   type LiveQueryDefinition,
   type LiveSubscription,
   qidOf,
   type SnapshotResult,
 } from './live-contract';
-import { applyToWindow, bridgeChange } from './matcher-bridge';
-import { createEntry, fillWindow, type QueryEntry, refillWindowInLane } from './query-window';
+import { type FanoutDeps, fanoutChange, snapshotFrame } from './live-fanout';
+import { createEntry, fillWindow, type QueryEntry } from './query-window';
 import type { SyncSocket } from './socket';
 import { type Subscriber, SubscriberGate, type SubscriberGateOptions } from './subscriber-gate';
 import { SubscriptionBook, subscriptionKey } from './subscription-book';
@@ -67,6 +61,8 @@ export class LiveQueryRegistry {
   readonly #clock: Clock;
   readonly #gate: SubscriberGate;
   readonly #maxEntries: number;
+  /** What one lane needs, and nothing this class holds beyond it. */
+  readonly #fanout: FanoutDeps;
   #staleChanges = 0;
 
   constructor(options: LiveQueryRegistryOptions) {
@@ -76,6 +72,7 @@ export class LiveQueryRegistry {
     this.#maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
     // The book owns the caps because it is the only thing that can answer them in O(1).
     this.#book = new SubscriptionBook(options);
+    this.#fanout = { gate: this.#gate, source: options.source, clock: this.#clock };
   }
 
   /** `live.rows_denied` for this node: rows a subscriber's policy refused since boot. */
@@ -149,25 +146,43 @@ export class LiveQueryRegistry {
     // matched, and one string in it names nothing. Reporting it as `X_PROTOCOL_VERSION` handed the
     // client "x build && redeploy the client" for a typo no rebuild changes.
     if (!definition) throw new LiveQueryUnknownError({ name: args.name });
-    this.#book.assertCapacity(args.socket);
+    const sid = args.sid ?? uuid();
+    // Everything this subscribe can be refused for, decided in one synchronous step BEFORE the
+    // first await — the caps and the sid both. Read at the top and acted on three awaits later,
+    // they were bypassed by the ordinary case: one WebSocket write carrying N subscribe frames,
+    // dispatched concurrently, N of them reading a count nothing had grown yet.
+    const slot = this.#book.reserve(args.socket, sid);
+    try {
+      return await this.#subscribeReserved(definition, sid, args);
+    } finally {
+      // After the attach on every path, so the slot is only ever given back to a count that has
+      // already grown — or, on a failure, to one that never will.
+      slot.release();
+    }
+  }
+
+  async #subscribeReserved(
+    definition: LiveQueryDefinition,
+    sid: string,
+    args: {
+      socket: SyncSocket;
+      name: string;
+      input: JsonValue;
+      cursor?: LiveCursor | null;
+    },
+  ): Promise<{ subscription: LiveSubscription; frame: Frame }> {
     await definition.authorize?.({ actor: args.socket.actor, input: args.input });
     // After this subscriber's own decision, never before it: resolving a shape for a caller who
     // may not subscribe is work an unauthorized client gets to schedule.
     await definition.prepare?.(args.input);
 
     const qid = qidOf(args.name, args.input);
-    const sid = args.sid ?? uuid();
-    // Before the entry is built: a sid this socket already holds would overwrite that
-    // subscription's slot and strand it inside its query entry, where nothing could reach it
-    // again. The client picked the id, so the client is the one told to pick another.
-    if (this.#book.has(args.socket.id, sid)) {
-      throw new SubscriptionIdTakenError({ sid, socketId: args.socket.id });
-    }
     const entry = this.#entryFor(qid, definition, args.input);
     const now = this.#clock.now().getTime();
 
     if (args.cursor) {
-      const resumed = await resumeFrom(args.cursor, {
+      const cursor = args.cursor;
+      const resumed = await resumeFrom(cursor, {
         source: this.#options.source,
         ...(this.#options.budget ? { budget: this.#options.budget } : {}),
         clock: this.#clock,
@@ -186,15 +201,15 @@ export class LiveQueryRegistry {
           entry,
           { sid, actor: args.socket.actor },
           resumed.patches,
-          new Set(args.cursor.ids),
+          new Set(cursor.ids),
         );
-        const subscription = this.#attach(entry, args.socket, sid, resumed.cursor);
+        const subscription = this.#attachUnlessGone(entry, args.socket, sid, resumed.cursor);
         return {
           subscription,
           frame: { type: 'patch', v: PROTOCOL_VERSION, sid, patches, lsn: resumed.cursor.lsn },
         };
       }
-      const subscription = this.#attach(entry, args.socket, sid, resumed.cursor);
+      const subscription = this.#attachUnlessGone(entry, args.socket, sid, resumed.cursor);
       return {
         subscription,
         frame: snapshotFrame(entry, sid, resumed.rows, resumed.cursor),
@@ -203,7 +218,7 @@ export class LiveQueryRegistry {
 
     const fresh = await this.#read(entry, { sid, actor: args.socket.actor });
     const cursor = makeCursor(qid, fresh.lsn, fresh.rows, now);
-    const subscription = this.#attach(entry, args.socket, sid, cursor);
+    const subscription = this.#attachUnlessGone(entry, args.socket, sid, cursor);
     return { subscription, frame: snapshotFrame(entry, sid, fresh.rows, cursor) };
   }
 
@@ -290,7 +305,9 @@ export class LiveQueryRegistry {
   async deliver(change: ChangeEvent): Promise<number> {
     const lanes = [...this.#entries.values()].map(async (entry) => {
       try {
-        return await entry.lock.run(() => this.#fanout(entry, change));
+        const result = await entry.lock.run(() => fanoutChange(this.#fanout, entry, change));
+        this.#staleChanges += result.stale;
+        return result.sent;
       } catch (error) {
         // The window advanced under a fanout that did not finish, so every subscriber of this one
         // query id now holds a cursor below the change and no later flush would correct them:
@@ -314,108 +331,15 @@ export class LiveQueryRegistry {
     return sent;
   }
 
-  /**
-   * One change, one query id, inside that entry's lane — so the window this mutates at the top is
-   * still the window every subscriber's gate reads at the bottom, and the patches reach the
-   * retained buffer in the order the client will be asked to fold them.
-   */
-  async #fanout(entry: QueryEntry, change: ChangeEvent): Promise<number> {
-    // A window that missed a change must be replaced before it is patched again, and it can only be
-    // replaced here — a fanout holds this entry's lane, and `fillWindow` takes the same one.
-    if (entry.stale) await refillWindowInLane(entry);
-    // The consume-side twin of the replicator's own duplicate guard, which had none. `entry.lsn =
-    // change.lsn` was unconditional, so a change the window already holds — a redelivery, or one
-    // that arrived behind the snapshot that already included it — rewound every subscriber's cursor
-    // to it and asked them to fold state they had already folded over newer rows.
-    if (entry.lsn !== '' && change.lsn <= entry.lsn) {
-      this.#staleChanges += 1;
-      return 0;
-    }
-    const result = bridgeChange(entry.shape, entry.matcher, change, entry.rows);
-    if (!result) return 0;
-    entry.lsn = change.lsn;
-    entry.rows = applyToWindow(entry.rows, result.patches);
-    // The window lost its tail, so what it holds is a guess — the next delivery re-reads it rather
-    // than patching a guess, and every subscriber below is re-snapshotted out of what that returns.
-    if (result.refill) entry.stale = true;
-    // The retained window holds the pre-policy patch; resume re-filters it per subscriber.
-    for (const patch of result.patches) this.#options.source.append(entry.qid, patch);
-
-    let sent = 0;
-    for (const subscription of entry.subscribers.values()) {
-      // `desynced` had four writers and no reader: a subscriber whose patch was dropped by
-      // backpressure, whose gate failed, or whose window lost its tail was recorded as diverged and
-      // then served the next patch as if nothing had happened — permanently and silently stale on a
-      // healthy socket. A marked subscriber is re-snapshotted out of the shared window instead, at
-      // the cost of one frame and no DB read, and only then is the mark cleared.
-      if (subscription.socket.desynced.has(subscription.sid)) {
-        if (await this.#resnapshot(entry, subscription)) sent += 1;
-        continue;
-      }
-      if (result.refill) {
-        // The window lost its tail: guessing is how a sync engine silently diverges.
-        subscription.socket.markDesynced(subscription.sid);
-        continue;
-      }
-      const who: Subscriber = { sid: subscription.sid, actor: subscription.socket.actor };
-      let allowed: readonly RowPatch[];
-      try {
-        allowed = await this.#gate.filterPatches(
-          entry,
-          who,
-          result.patches,
-          new Set(subscription.cursor.ids),
-        );
-      } catch {
-        // Already counted and reported as a gate failure. Degrade this one subscriber the way a
-        // lost window tail degrades them — desynced, re-snapshotted on the next flush — because
-        // rejecting here would abandon the fanout to every other subscriber over one actor's
-        // broken rule, and delivering the patches anyway would be the leak.
-        subscription.socket.markDesynced(subscription.sid);
-        continue;
-      }
-      if (allowed.length === 0) continue;
-      const frame: Frame = {
-        type: 'patch',
-        v: PROTOCOL_VERSION,
-        sid: subscription.sid,
-        patches: allowed,
-        lsn: change.lsn,
-      };
-      if (subscription.socket.send(frame)) {
-        subscription.cursor = advance(subscription.cursor, allowed, change.lsn, change.at);
-        sent += 1;
-      } else {
-        subscription.socket.markDesynced(subscription.sid);
-      }
-    }
-    return sent;
-  }
-
-  /**
-   * The repair for one diverged subscriber, out of the window the lane is already holding — no DB
-   * read, one frame. Its cursor is rebuilt from what this subscriber may actually see, exactly as
-   * `subscribe` does, because a cursor over the pre-policy window would claim ids the client was
-   * never sent. The mark is cleared only on a frame that left: a send refused by backpressure keeps
-   * the subscriber diverged, which is the state it is actually in.
-   */
-  async #resnapshot(entry: QueryEntry, subscription: LiveSubscription): Promise<boolean> {
-    const who: Subscriber = { sid: subscription.sid, actor: subscription.socket.actor };
-    let rows: readonly Row[];
-    try {
-      rows = await this.#gate.filterRows(entry, who, entry.rows);
-    } catch {
-      // Counted and reported as a gate failure already. It stays desynced: a subscriber whose rule
-      // cannot decide is not one to serve rows to, and the next change tries again.
-      return false;
-    }
-    const cursor = makeCursor(entry.qid, entry.lsn, rows, this.#clock.now().getTime());
-    if (!subscription.socket.send(snapshotFrame(entry, subscription.sid, rows, cursor))) {
-      return false;
-    }
-    subscription.cursor = cursor;
-    subscription.socket.clearDesynced(subscription.sid);
-    return true;
+  #attachUnlessGone(
+    entry: QueryEntry,
+    socket: SyncSocket,
+    sid: string,
+    cursor: LiveCursor,
+  ): LiveSubscription {
+    const subscription = this.#attach(entry, socket, sid, cursor);
+    if (socket.closed) this.unsubscribe(socket.id, sid);
+    return subscription;
   }
 
   #attach(
@@ -469,15 +393,4 @@ export class LiveQueryRegistry {
     const window = await fillWindow(entry);
     return { rows: await this.#gate.filterRows(entry, who, window.rows), lsn: window.lsn };
   }
-}
-
-/** The one place a snapshot frame is built, so the identity scope cannot be told to one caller only. */
-function snapshotFrame(
-  entry: QueryEntry,
-  sid: string,
-  rows: readonly Row[],
-  cursor: LiveCursor,
-): Frame {
-  const base = { type: 'snapshot', v: PROTOCOL_VERSION, sid, rows, cursor } as const;
-  return entry.rowEntity === null ? base : { ...base, entity: entry.rowEntity };
 }
