@@ -237,8 +237,10 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   (`As of 2026-08`). The same three readers that fail-opened on exposure also *derived* the name:
   `toToolName` snake_cased it for `toMcpTool`, for `x-ultimate.mcpTool` and for
   `describeAction().mcp.tool`, while `@ultimat3/mcp` has only ever served
-  `primitive.mcp?.name ?? primitive.name`. So `examples/dummy/openapi.json` published ten tool
-  names — `publish_post`, `create_post`, … — that `tools/call` answers not-found for, and the
+  `primitive.mcp?.name ?? primitive.name`. So nine of the ten tool names
+  `examples/dummy/openapi.json` published — `publish_post`, `create_post`, … — were names
+  `tools/call` answers not-found for; the tenth, `summarize`, is single-word and so was already
+  its own snake_case form, which is why a count of the wrong names is not a count of the rows. The
   DESCRIPTOR said the same: `x actions describe --json`, `x actions list --json`, the
   `actions.describe` dev MCP tool and the `/_x` Routes panel all read `.mcp.tool`. **Not the app
   manifest** — `ActionFact.mcp` is `{ expose, description? }` and `packages/manifest/src/sources.ts`

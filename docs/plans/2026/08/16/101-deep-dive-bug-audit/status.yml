@@ -49,7 +49,7 @@ slices:
     pr: 106
     note: >
       percent is #106's own scope, not the slice's entry list. Re-derived against the code
-      2026-08: seven entries closed or void, THREE still open — `.job()` has no consumer
+      2026-08: six entries closed or void and one mostly closed, THREE still open — `.job()` has no consumer
       (action/job-handle.ts:16), the query client encodes what coerceQuery cannot decode
       (query/client.ts:151, reproduced), coerceInput is exported with no caller
       (schema/coerce.ts:149) — plus all five enforcement gaps. The slice file carries a status

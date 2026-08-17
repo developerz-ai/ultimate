@@ -147,8 +147,12 @@ An action that was never handed to `defineApi` has no export name, and is
 **The tool name is the export name, verbatim** — `publishPost`, never `publish_post`. This server
 answers `tools/call` for that name and no other, so every surface that PUBLISHES a name has to
 publish the same one: `action.tool()`, `query.tool()`, `x-ultimate.mcpTool` in `openapi.json`, and
-`ActionDescriptor.mcp.tool`. The three action publishers snake_cased it until 2026-08, so an agent
-reading the spec called a tool the catalog never contained and got ToolNotFound.
+`ActionDescriptor.mcp.tool`. The projection reads `primitive.mcp?.name ?? primitive.name`, so the
+export name is the **default** and `mcp.name` is an explicit override — unreachable from `action()`
+or `query()`, whose declarations carry no `name` field, and available only to a hand-authored
+`ProjectablePrimitive` passed to `defineAppMcp`'s `tools:`. The three action publishers snake_cased
+the name `As of 2026-08`, so an agent reading the spec called a tool the catalog never contained and
+got ToolNotFound.
 `src/cross-surface.test.ts` is what makes a fourth spelling a failing test rather than a note.
 
 A hand-written tool's `policy` is a permission, evaluated through the same `guard()` an

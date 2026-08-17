@@ -2,7 +2,7 @@
  * Projection 5: an action as durable work — its input schema, a payload-derived
  * idempotency key, and an `invoke` that runs the action's one execution path under
  * `surface: 'job'`, so a queued run gets the same validation and policy evaluation
- * as the HTTP call. What consumes it: see `ActionJobHandle`.
+ * as the HTTP call. Nothing in the framework consumes it — an app bridges it into `job()`.
  */
 import type { Ctx } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';

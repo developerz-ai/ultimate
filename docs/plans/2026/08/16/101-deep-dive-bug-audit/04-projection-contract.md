@@ -153,7 +153,7 @@ something already correct, so a closed one says so and a void one is struck.
   `toWireSchema`, whose `narrow()` allow-list omitted `pattern`, `x-ultimate-refinements` and
   `discriminator`. Proven at the time, same schema through both:
 
-  ```
+  ```text
   action .tool():  "orderRef": { "type":"string","minLength":1,"maxLength":8,"pattern":"^ORD-\\d{4}$" }
   mcp server:      "orderRef": { "type":"string","minLength":1,"maxLength":8 }
   ```
