@@ -241,3 +241,37 @@ describe('the inbound frame size cap', () => {
     expect(DEFAULT_MAX_FRAME_BYTES).toBeLessThan(16 * 1024 * 1024);
   });
 });
+
+// Bun's `backpressureLimit` and `SyncSocket`'s own check on `getBufferedAmount` are two ends of one
+// socket's one buffer. Asserted through behaviour, not by comparing the two constants: they are one
+// declaration now, so an equality between them is a test that cannot fail.
+describe('the outbound buffer ceiling', () => {
+  const frame: Frame = { type: 'update-available', v: PROTOCOL_VERSION, buildId: BUILD_ID };
+  const socketAt = (buffered: number): SyncSocket | undefined => {
+    const { sync, sockets } = node();
+    const ws = new FakeWs();
+    ws.data = { socketId: 'sock-1', clientBuildId: BUILD_ID };
+    ws.buffered = buffered;
+    sync.websocket.open(ws);
+    return sockets.get('sock-1');
+  };
+
+  test('refuses a frame the runtime would have dropped, so the subscriber is marked', () => {
+    const { sync } = node();
+    // One byte past Bun's limit. If our own ceiling were the higher of the two, the runtime would
+    // discard this frame with nothing desynced — the silent divergence the mark exists to prevent.
+    const socket = socketAt(sync.websocket.backpressureLimit + 1);
+
+    expect(socket?.send(frame)).toBe(false);
+    expect(socket?.droppedFrames).toBe(1);
+  });
+
+  test('and still writes below it, so our check is not the tighter of the two either', () => {
+    const { sync } = node();
+    // A socket the runtime would happily write must not be one this node has already given up on.
+    const socket = socketAt(sync.websocket.backpressureLimit - 1);
+
+    expect(socket?.send(frame)).toBe(true);
+    expect(socket?.droppedFrames).toBe(0);
+  });
+});

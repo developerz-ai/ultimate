@@ -272,6 +272,14 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   clears it. A snapshot the socket refuses leaves the mark, which is the state it is in. Four
   writers and no reader was a subscription that stayed permanently and silently stale on a healthy
   socket, with the server knowing and the client not.
+- **`result.refill` is checked BEFORE the mark, because a repair out of a guessed window clears it.**
+  The word "fresh" above is load-bearing: when the matcher lost the window's tail, `entry.rows` is a
+  guess, and the same fanout that refuses to send a *patch* derived from it was resnapshotting every
+  already-desynced subscriber out of it — and clearing the one mark that would have made the next
+  change re-read. That subscriber is then recorded as repaired against rows nothing trusts and gets
+  a patch, not the snapshot it is still owed, from the refilled window. A lost tail degrades every
+  subscriber the same way, whatever each was holding, and they are all repaired on the next change
+  after `refillWindowInLane` has replaced the window. `live-fanout.test.ts` pins both halves.
 - **A change the window already holds is refused on the way in.** The replicator guarded duplicates
   and out-of-order on the *publish* side; `entry.lsn = change.lsn` was unconditional on the
   *consume* side, so a redelivery rewound every subscriber's cursor. `change.lsn <= entry.lsn` is
@@ -284,6 +292,15 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   nothing rather than crying gap, and a *new* producer restarts the count rather than reading as
   one. A stale window is replaced in the lane (`refillWindowInLane`) — `fillWindow` takes the
   entry's own lane and a lane is not reentrant.
+- **A hub that closed opens nothing, and `#open` is the only thing that can enforce it.** `close()`
+  walks `#bridges` and then clears it, which reaches every bridge that is open and none that is
+  still opening: a reservation an in-flight `subscribe` has taken is `sub === null`, so
+  `unsubscribeWhenOpen` does nothing to it and `clear()` drops the entry. The transport then hands a
+  live subscription to a `Bridge` nothing can name — `#release` looks the topic up, misses and
+  returns — and its handler keeps calling `deliver` for the life of the process. The same orphan the
+  `Bridge` comment describes, one state earlier. So `close()` sets `#closed` **before** the walk and
+  `#open` closes its own subscription when it lands after one, dropping the entry with it so a
+  second post-close subscribe opens and closes its own rather than double-unsubscribing this handle.
 - Deny by default on topics. No guard = `X_TOPIC_FORBIDDEN`.
 - **A guard that FAILS is not a guard that denied — the hub's copy of the rule the row gate already
   follows.** On `onActorChange` (the re-auth pass) only a denial unsubscribes; anything else keeps
@@ -342,12 +359,29 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   what releases the change subscription carrying them. `drain()` + `stop()` are the `close` phase.
   Registered with no phase, both landed in `close` and the node upgraded new websockets until the
   very end. `listenSyncNode` unregisters both on `stop()`.
+- **Readiness is asked twice, because `authenticate` is app code with an await in it.** A request
+  that passed the check at the top of `handleUpgrade` can be parked in a token service when SIGTERM
+  lands, and the `accept` phase is over by the time it reaches `server.upgrade` — one more socket on
+  a node the load balancer has already stopped routing to, so nothing takes it over. `ready` and the
+  socket count are therefore **functions** on `UpgradeDeps`, not values read once. The recheck sheds
+  with the same 503 + `retry-after-ms` and takes no second `tryAccept()`: that budget was spent.
 - **A client `send` that returned is not an acknowledgement.** A browser `WebSocket.send` on a
   CLOSING socket discards the frame and returns normally, so a drained mutation is `inflight` until
   the server settles it or `requeueInflight` returns it. Only `pending` is sendable, `drain()` is one
   chained pass at a time (two overlapping passes put one key on the wire twice, and a later pass can
   overtake the one ahead of it), and backpressure over `MAX_BUFFERED_BYTES` declines rather than
   fails — the mutation stays pending and the pass stops instead of reordering the ones behind it.
+- **The lane orders passes; it does not order a socket death, so the queue carries an epoch.**
+  `requeueInflight` is not a pass and cannot reach into one parked at `await send(...)`: it hands
+  back what was on the dead socket, the parked pass resumes and marks everything *behind* that
+  mutation `inflight` for a connection that is gone. `#sendable` excludes `inflight`, so the next
+  drain skips them, no ack ever arrives and the writes are lost — invariant 3 inverted. `#epoch` is
+  bumped before the requeue scan and read at the top of every `#pass` iteration; a pass whose epoch
+  went stale returns and leaves the rest `pending` for the connection that arms the next one.
+- **`#persist` hands the store a SNAPSHOT, never the live entries.** `QueueStore.save` is a durable
+  write (OPFS, IndexedDB) and may await before it reads. Given the array itself, a store that
+  resolves after the next pass has moved on persists a status that was never true when it was
+  called — and `inflight` is the one a reload cannot recover from.
 - **A reconnect replays registrations AND topics, and every socket handler carries the identity
   guard.** A reconnect is one `hello` plus one frame per thing this client holds: a `subscribe` per
   registration, carrying that registration's cursor, and a `subscribe` per topic. Topic membership
@@ -408,6 +442,14 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `maxBufferedBytes` and `maxDroppedFrames` were until 2026-08. Forwarded the same way
   `maxFramesPerSecond`/`frameBurst` already are (`...(x === undefined ? {} : { x })`, so an unset
   option keeps `SyncSocket`'s own default rather than overwriting it with `undefined`).
+- **One socket's buffer has one number on the server and a separate one in the browser.**
+  `DEFAULT_MAX_BUFFERED_BYTES` (`socket.ts`) is both `SyncSocket`'s send-side ceiling and the
+  `backpressureLimit` `sync-node.ts` hands Bun — two spellings of one buffer on one side, and the
+  runtime's limit set lower means our check never fires and a frame is dropped with nothing marked
+  desynced. `client-mutations.ts`'s `MAX_BUFFERED_BYTES` is deliberately *not* imported from it:
+  that is browser code and `socket.ts` is the node's registry, its metrics and its close codes.
+  `sync-limits.test.ts` pins the server pair through behaviour, not by comparing two constants that
+  are now one declaration — an equality between them is a test that cannot fail.
 - **A `SubscriptionLimitError` names the knob, never the default.** `knob` defaults to
   `maxPerSocket`/`maxPerTenant`, which are `LiveQueryRegistry`'s — so the channel hub's per-socket
   *topic* cap, thrown without one, told an operator to move a number in a different constructor
@@ -448,6 +490,14 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `parseScale`, never restated here.
 - Never a bare `Error`. Never `any`. Never `Date.now()` — take a `Clock` (`clock.now()` is a `Date`;
   use `monotonic()` for durations).
+- **A test fixture standing in for a FOREIGN error extends `Error` on purpose, and that is not the
+  bare-`Error` rule being broken.** `PoolTimeout`, `Denied`, `MutationFailed` and `ThirdPartySdkError`
+  (nine sites across `realtime`, `db` and `ai`) simulate a driver, a policy library or an app's
+  `onMutate` — values this package did not construct and must handle anyway. `isPolicyDenial`,
+  `stringField` and `renderThrowable` all exist *because* such values arrive; rebuilt as
+  `UltimateError`s the fixture would prove the framework handles its own errors, which is the
+  "equality satisfied by both sides failing open together" failure the row-parity test names. The
+  rule governs what this package **throws**, never what a test hands it.
 
 ## Map
 
@@ -469,6 +519,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `client.ts` / `sync-node.ts` | the two halves — connection lifecycle, subscriptions, mutations |
 | `sync-auth.ts` | what a socket's identity IS (`SyncGrant`), the book that holds one per socket, and the pass that re-decides an expired one |
 | `sync-frames.ts` | what a RECEIVED frame does to server state — the node's inbound surface, and the mirror of `client-frames.ts` |
+| `sync-upgrade.ts` | the node's HTTP surface: `/healthz`, `/readyz`, load shedding, and the authenticated upgrade — `WsData` and `UpgradeTarget` are declared with the decision that builds them |
 | `sync-listen.ts` | binding a node to `Bun.serve` and to the shutdown hook — the only `Bun.serve` in the package |
 | `query-window.ts` | the shared pre-policy window per query id: built once, read once for N subscribers, and replaced when it is known to be wrong |
 | `client-frames.ts` | what a RECEIVED frame does to client state, and `ClientFrameTarget` — the only inbound surface the client exposes. The mirror of `sync-frames.ts` |
@@ -489,6 +540,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `policy-gate.ts` | the only authz seam |
 | `subscriber-gate.ts` | the per-subscriber pass of a definition's row policy, and its two counters — `rowsDenied` and `gateFailures`. Evaluates no policy of its own |
 | `live-contract.ts` | what a live query IS: `qidOf`, `LiveQueryDefinition`, `SnapshotResult`, `LiveSubscription`. Four modules need the shape and none of them needs the registry that runs it |
+| `json.ts` | the wire's value types, `canonicalJson`, and the two hashes — `stableDigest` (sharing keys) and `fnv1a` (drift). Tested in `json.test.ts`, beside the declarations: a `qidOf` test proves the qid, not the primitive under it |
 | `live-definition.ts` | the only bridge from a declared `query({ live: true })` to a registrable definition — and `policy-gate.ts`'s only caller |
 | `matcher-bridge.ts` | the only `@ultimat3/query` matcher seam |
 

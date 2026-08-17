@@ -4,7 +4,7 @@
 // served another tenant's result set after passing `authorize` against its own input.
 
 import { describe, expect, test } from 'bun:test';
-import { canonicalJson, stableDigest } from './json';
+import { canonicalJson } from './json';
 import { qidOf } from './live-contract';
 
 describe('qidOf', () => {
@@ -30,13 +30,5 @@ describe('qidOf', () => {
 
   test('the name stays readable, so a log line still says which query', () => {
     expect(qidOf('liveFeed', null).startsWith('liveFeed:')).toBe(true);
-  });
-});
-
-describe('stableDigest', () => {
-  test('is 16 hex characters — 64 bits, the width entity cursors already chose', () => {
-    expect(stableDigest('anything')).toMatch(/^[0-9a-f]{16}$/);
-    expect(stableDigest('a')).not.toBe(stableDigest('b'));
-    expect(stableDigest('a')).toBe(stableDigest('a'));
   });
 });

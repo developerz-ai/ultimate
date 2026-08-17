@@ -72,6 +72,14 @@ export interface SyncSocketOptions {
  */
 export const DEFAULT_MAX_FRAMES_PER_SECOND = 64;
 export const DEFAULT_FRAME_BURST = 256;
+/**
+ * Queued-but-unwritten bytes on one server socket before `send` declines and marks the subscriber
+ * desynced. `sync-node.ts` hands the same number to Bun as `backpressureLimit` rather than spelling
+ * it again: they are one socket's one buffer, and a check the runtime's own limit fires before is a
+ * check that never runs. The client half (`client-mutations.ts`) is deliberately its own constant —
+ * it is browser code, and importing this file would pull the node's socket registry into the tab.
+ */
+export const DEFAULT_MAX_BUFFERED_BYTES = 1024 * 1024;
 
 /**
  * Channel frames this process dropped under backpressure. A DATA-LOSS counter, not a saturation
@@ -135,7 +143,7 @@ export class SyncSocket {
     this.clientBuildId = options.clientBuildId;
     this.serverBuildId = options.serverBuildId;
     this.actor = options.actor ?? null;
-    this.#maxBufferedBytes = options.maxBufferedBytes ?? 1024 * 1024;
+    this.#maxBufferedBytes = options.maxBufferedBytes ?? DEFAULT_MAX_BUFFERED_BYTES;
     this.#maxDroppedFrames = options.maxDroppedFrames ?? 32;
     this.frameBudget = new AcceptBudget({
       perSecond: options.maxFramesPerSecond ?? DEFAULT_MAX_FRAMES_PER_SECOND,

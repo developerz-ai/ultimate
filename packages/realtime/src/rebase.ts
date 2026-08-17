@@ -108,26 +108,55 @@ export function reconcile<T extends TableMap = TableMap>(
   const table = store.table(ack.entity);
   const local = table.get(ack.id);
 
-  // Everything at or after the acked sequence is optimistic and must be undone newest-first.
-  const affected = log.pending().filter((candidate) => candidate.seq >= (entry?.seq ?? 0));
-  const rolledBack: string[] = [];
-  for (const candidate of [...affected].reverse()) {
-    store.rollback(candidate.key);
-    rolledBack.push(candidate.key);
-  }
+  const { affected, rolledBack } = undoFrom(store, log, entry?.seq ?? 0);
 
   const base = store.table(ack.entity).get(ack.id);
   const winner = land(store, ack, strategy, { local, base }, options);
   log.drop(ack.key);
 
+  return {
+    strategy: strategyName(strategy),
+    rolledBack,
+    reapplied: replayExcept(store, affected, ack.key),
+    winner,
+  };
+}
+
+/**
+ * Everything at or after `from` is optimistic, so it is undone newest-first — and `reconcile` and
+ * `rollbackMutation` are one rule with different middles, not two. Spelled twice, the next change
+ * to the replay order has to be made twice, and the half that is missed diverges silently.
+ */
+function undoFrom<T extends TableMap>(
+  store: LocalStore<T>,
+  log: RebaseLog<T>,
+  from: number,
+): { affected: readonly RebaseEntry<T>[]; rolledBack: string[] } {
+  const affected = log.pending().filter((candidate) => candidate.seq >= from);
+  const rolledBack: string[] = [];
+  for (const candidate of [...affected].reverse()) {
+    store.rollback(candidate.key);
+    rolledBack.push(candidate.key);
+  }
+  return { affected, rolledBack };
+}
+
+/**
+ * The other half: replay in sequence order, skipping the one the server has now settled. `local` is
+ * pure, which is what makes replaying it deterministic and therefore safe to do at all.
+ */
+function replayExcept<T extends TableMap>(
+  store: LocalStore<T>,
+  affected: readonly RebaseEntry<T>[],
+  settled: string,
+): string[] {
   const reapplied: string[] = [];
   for (const candidate of affected) {
-    if (candidate.key === ack.key) continue;
+    if (candidate.key === settled) continue;
     store.apply(candidate.key, (tx) => candidate.apply(tx));
     reapplied.push(candidate.key);
   }
-
-  return { strategy: strategyName(strategy), rolledBack, reapplied, winner };
+  return reapplied;
 }
 
 export interface RollbackResult {
@@ -153,23 +182,12 @@ export function rollbackMutation<T extends TableMap = TableMap>(args: {
   const entry = log.get(key);
   if (!entry) return { rolledBack: [], reapplied: [] };
 
-  const affected = log.pending().filter((candidate) => candidate.seq >= entry.seq);
-  const rolledBack: string[] = [];
-  for (const candidate of [...affected].reverse()) {
-    store.rollback(candidate.key);
-    rolledBack.push(candidate.key);
-  }
-  // Dropped, never retried: a denial is a decision about this intent, so replaying it on the next
+  const { affected, rolledBack } = undoFrom(store, log, entry.seq);
+  // The one thing that differs from `reconcile`'s middle: there is no server truth to land. Dropped
+  // and never retried — a denial is a decision about this intent, so replaying it on the next
   // reconcile would put the write the server refused back on the screen.
   log.drop(key);
-
-  const reapplied: string[] = [];
-  for (const candidate of affected) {
-    if (candidate.key === key) continue;
-    store.apply(candidate.key, (tx) => candidate.apply(tx));
-    reapplied.push(candidate.key);
-  }
-  return { rolledBack, reapplied };
+  return { rolledBack, reapplied: replayExcept(store, affected, key) };
 }
 
 function land<T extends TableMap>(

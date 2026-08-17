@@ -1,10 +1,6 @@
-// The forced-restart benchmark's seq accounting, driven end to end: a few dozen REAL WebSocket
-// clients (`runClient`, the same code the 50k swarm runs) against a real `sync` node, restarted
-// under them. Proves the counter reads zero when every frame arrives, still reads zero across a
-// node restart, and reads the exact hole when the publisher skips one.
-//
-// `.live.` because it binds a port and drives real reconnect timers: the gate runs that suite
-// serially, so it never competes with a sharded unit worker for either.
+// The seq counter driven end to end: real WebSocket clients against a real `sync` node, restarted
+// under them. `.live.` because it binds a port and drives real reconnect timers, and the gate runs
+// that suite serially — a sharded unit worker would race it for both.
 
 import { describe, expect, test } from 'bun:test';
 import {

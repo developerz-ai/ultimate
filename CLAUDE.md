@@ -13,7 +13,11 @@ This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x`
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
 **Status:** 1.2.0, `As of 2026-08`. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` —
-29 in all — on npm in lockstep: one version, one commit, one tag. 1.1.0 was the first
+29 in all — **versioned** in lockstep: one version, one commit, one tag. Publication is not in
+lockstep and the repo said it was until 2026-08: **`@ultimat3/flags` has never been published** —
+the registry answers 404, not a stale version — so 28 of the 29 are on npm. It is not opting out
+(`packages/flags/package.json` declares the same `publishConfig` as the rest) and nothing in the
+repo notices, because every consumer resolves it through the workspace. 1.1.0 was the first
 release published by [`.github/workflows/release.yml`](.github/workflows/release.yml) over OIDC
 trusted publishing, provenance attached; 1.0.0 was the manual bootstrap. Semver
 applies — a breaking change to a documented API needs a major, and the eight primitive shapes, the
@@ -32,8 +36,10 @@ The timings are unchanged and still stand; only the name was wrong.
 
 **Delivery, 10,000 clients:** the same harness, now counting holes in the probe sequence each client
 receives, per connection ([`scripts/bench/restart-bench-seq.ts`](scripts/bench/restart-bench-seq.ts)).
-10,000 clients, a probe every 200ms, all 10,000 reconnected: **1,666,882 patches received, 0 lost** —
-no gap, no duplicate, no rewind on any client. It needs its own counter because a channel topic has
+10,000 clients, a probe every 200ms, all 10,000 reconnected: **1,666,882 patches received, 0 observed
+sequence gaps** — no gap, no duplicate, no rewind on any client. A **lower bound**, not a proof of
+zero loss: a hole is only visible between two frames one connection received, so anything lost before
+a connection's first message or after its last is invisible, as is a connection that received nothing. It needs its own counter because a channel topic has
 no cursor and no re-snapshot: a frame `SyncSocket.send` drops under backpressure is unrecoverable,
 and `SocketRegistry.deliver` and `ChannelHub`'s bridge both discard the `false` that would have said
 so. `As of 2026-08` this is the only run with delivery accounting — the 50,000-client result predates

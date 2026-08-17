@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { MemoryQueueStore, OfflineQueue, type QueuedMutation } from './offline-queue';
+import {
+  MemoryQueueStore,
+  type MutationStatus,
+  OfflineQueue,
+  type QueuedMutation,
+  type QueueStore,
+} from './offline-queue';
 
 async function seeded(): Promise<{ queue: OfflineQueue; store: MemoryQueueStore }> {
   const store = new MemoryQueueStore();
@@ -178,6 +184,104 @@ describe('offline queue', () => {
     const reopened = await OfflineQueue.open(store);
     expect(reopened.pending().map((mutation) => mutation.key)).toEqual(['like:p2', 'like:p3']);
     expect(reopened.nextSeq).toBe(4);
+  });
+});
+
+/** A promise the test resolves by hand. Never a sleep: a lost connection is not a duration. */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+// A connection dies while a pass is parked inside `send`. `requeueInflight` hands back everything
+// that was on the dead socket, but it cannot reach into the parked pass — which resumes and claims
+// the mutations behind it for a socket that is gone. `#sendable` excludes `inflight`, so nothing
+// ever sends them again and no ack ever settles them: the loss the third invariant exists to stop.
+describe('a connection lost while a drain pass is parked', () => {
+  test('leaves nothing inflight, so the next connection can still send it', async () => {
+    const { queue } = await seeded();
+    const parked = deferred();
+    const sent: string[] = [];
+
+    const pass = queue.drain(async (mutation) => {
+      sent.push(mutation.key);
+      // The first frame reached a socket that dies before it answers; the rest never leave.
+      if (mutation.key === 'like:p1') await parked.promise;
+    });
+
+    await Promise.resolve();
+    expect(await queue.requeueInflight()).toBe(1);
+    parked.resolve();
+    await pass;
+
+    expect(sent).toEqual(['like:p1']);
+    expect(queue.all().map((mutation) => mutation.status)).toEqual([
+      'pending',
+      'pending',
+      'pending',
+    ]);
+  });
+
+  test('and the pass the next connection arms resends all of them, in order', async () => {
+    const { queue } = await seeded();
+    const parked = deferred();
+
+    const first = queue.drain(async (mutation) => {
+      if (mutation.key === 'like:p1') await parked.promise;
+    });
+    await Promise.resolve();
+    await queue.requeueInflight();
+    parked.resolve();
+    await first;
+
+    const resent: string[] = [];
+    const report = await queue.drain(async (mutation) => {
+      resent.push(mutation.key);
+    });
+
+    expect(resent).toEqual(['like:p1', 'like:p2', 'like:p3']);
+    expect(report.sent).toBe(3);
+  });
+});
+
+// A durable store may await before it reads. Handed the live entry array, one that resolves after
+// the next pass has moved on persists statuses that were never true together — and `inflight` is
+// the one a reload can never recover from, because `#sendable` skips it.
+describe('what a durable store is handed', () => {
+  test('is a snapshot of the queue as it was, not the array the next pass mutates', async () => {
+    const store = new MemoryQueueStore();
+    const slow = deferred();
+    // The one write that is held open — `enqueue`'s, made with the entry still `pending`. What it
+    // reads when it finally resumes is what lands on disk.
+    const held: Record<'atCall' | 'afterAwait', MutationStatus[]> = { atCall: [], afterAwait: [] };
+    let first = true;
+    const observing: QueueStore = {
+      load: () => store.load(),
+      save: async (state) => {
+        if (first) {
+          first = false;
+          held.atCall = state.mutations.map((mutation) => mutation.status);
+          await slow.promise;
+          held.afterAwait = state.mutations.map((mutation) => mutation.status);
+        }
+        await store.save(state);
+      },
+    };
+
+    const queue = await OfflineQueue.open(observing);
+    const enqueued = queue.enqueue({ key: 'like:p1', name: 'likePost', input: { postId: 'p1' } });
+    await Promise.resolve();
+    // A pass runs and marks the entry `inflight` while that write is still suspended inside `save`.
+    const drained = queue.drain(async () => undefined);
+    await Promise.resolve();
+    slow.resolve();
+    await Promise.all([enqueued, drained]);
+
+    expect(held.atCall).toEqual(['pending']);
+    expect(held.afterAwait).toEqual(held.atCall);
   });
 });
 

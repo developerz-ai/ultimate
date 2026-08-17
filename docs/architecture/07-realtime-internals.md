@@ -224,7 +224,7 @@ Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a
 
 Reconnect handshake — the real frames, `As of 2026-08`. There is no `resume` frame and no `reset` frame:
 
-```
+```text
 client → { type: 'hello', v, buildId, sessionId: null, actorId }
 server → { type: 'hello', v, buildId, sessionId: <socket id>, actorId }
        → { type: 'update-available', buildId } when the socket is build-skewed

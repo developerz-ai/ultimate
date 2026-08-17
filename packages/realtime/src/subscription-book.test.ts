@@ -143,6 +143,28 @@ describe('the subscription book', () => {
     second.release();
   });
 
+  test('the tenant cap counts reservations ACROSS sockets, where no lane can see them', () => {
+    // `maxPerSocket` is deliberately out of reach here: one socket claiming three would refuse at
+    // the socket cap first, and the tenant counter would never have been the thing that decided.
+    const book = new SubscriptionBook({ maxPerSocket: 10, maxPerTenant: 2, tenantOf });
+    const one = socketFor('s1', userActor({ id: 'u1', orgId: 'o1' }));
+    const two = socketFor('s2', userActor({ id: 'u2', orgId: 'o1' }));
+    const other = socketFor('s3', userActor({ id: 'u3', orgId: 'o2' }));
+
+    const first = book.reserve(one, '1');
+    book.reserve(two, '1');
+
+    // Two sockets, one tenant, two slots — and the third is refused for the TENANT, on a socket
+    // that has claimed one of its ten. A per-socket check would have admitted it.
+    expect(() => book.reserve(two, '2')).toThrow(/tenant o1 reached the subscription cap of 2/);
+    expect(() => book.reserve(one, '2')).toThrow(SubscriptionLimitError);
+    // …and another tenant is untouched by it.
+    expect(() => book.reserve(other, '1')).not.toThrow();
+
+    first.release();
+    expect(() => book.reserve(one, '2')).not.toThrow();
+  });
+
   test('releasing twice gives back one slot, not two', () => {
     const book = new SubscriptionBook({ maxPerSocket: 1 });
     const socket = socketFor('s');

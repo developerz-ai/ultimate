@@ -1,10 +1,7 @@
-// Sequence accounting for the forced-restart benchmark: how many probe messages a client was sent
-// versus how many it received, per connection. Separate from the client so the arithmetic that
-// decides "this frame was lost" can be tested without a socket, and so the orchestrator can sum it.
-//
-// Why it exists: a channel topic has no cursor and no re-snapshot, so a patch dropped by
-// backpressure (`SyncSocket.send` returns false; `SocketRegistry.deliver` and `ChannelHub`'s bridge
-// both discard that answer) is gone for good. A first-delivery timer cannot see one.
+// Sequence accounting for the forced-restart benchmark: holes in the probe stream, per connection.
+// Its own file so the arithmetic that decides "this frame was lost" is testable without a socket.
+// A channel topic has no cursor and no re-snapshot, so a frame dropped under backpressure is gone
+// for good — and a first-delivery timer, which is all this bench had, cannot see one.
 
 /**
  * One client's accounting, summed across every connection it holds. Plain JSON on purpose: it

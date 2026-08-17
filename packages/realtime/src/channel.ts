@@ -90,6 +90,8 @@ export class ChannelHub {
   readonly #maxTopicsPerNode: number;
   #guardFailures = 0;
   #sequence = 0n;
+  /** Set by `close()`. Read by `#open`, which is the only thing that can reach a late subscription. */
+  #closed = false;
 
   constructor(options: ChannelHubOptions) {
     this.#transport = options.transport;
@@ -222,6 +224,13 @@ export class ChannelHub {
   }
 
   async close(): Promise<void> {
+    // Set BEFORE the table is walked, because the table is not the whole story: a reservation an
+    // in-flight `subscribe` has not opened yet is `sub === null`, so `unsubscribeWhenOpen` does
+    // nothing to it and `clear()` drops the entry. That open then lands on a `Bridge` nothing can
+    // name — `#release` looks the topic up, misses and returns — and its handler keeps calling
+    // `deliver` for the life of the process. The same orphan the `Bridge` comment describes, one
+    // state earlier, so the open that creates the subscription has to be the thing that closes it.
+    this.#closed = true;
     for (const bridge of this.#bridges.values()) unsubscribeWhenOpen(bridge);
     this.#bridges.clear();
   }
@@ -281,6 +290,14 @@ export class ChannelHub {
       this.#sockets.deliver(name, decode(payload));
     });
     await bridge.sub;
+    // The hub shut down while the transport was answering. `close()` either never saw this bridge
+    // or saw it with nothing to close, so this is the last reference to the subscription: it closes
+    // here or never. The entry goes with it, so a second post-close subscribe opens and closes its
+    // own rather than double-unsubscribing this one's handle.
+    if (this.#closed) {
+      unsubscribeWhenOpen(bridge);
+      if (this.#bridges.get(name) === bridge) this.#bridges.delete(name);
+    }
   }
 
   #release(name: Topic): void {

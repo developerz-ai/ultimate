@@ -159,6 +159,31 @@ describe('one topic is one transport subscription, however many sockets arrive a
     expect(hub.topicCount).toBe(0);
   });
 
+  test('close() reaches a bridge whose transport subscription is still opening', async () => {
+    const transport = new SlowTransport();
+    const sockets = new SocketRegistry();
+    const hub = new ChannelHub({ transport, sockets });
+    hub.guard('org.>', () => true);
+    const name = topic('org', 'o1', 'cursors');
+    const alice = connect(sockets, actor('alice'));
+
+    // Not awaited: `#reserve` has run, so the topic holds a slot, but `sub` is still `null` and the
+    // guard has not answered. That is the one state `close()` cannot see into.
+    const subscribing = hub.subscribe(alice.socket, name);
+    expect(hub.topicCount).toBe(1);
+    await hub.close();
+    transport.gate.resolve();
+    await subscribing;
+    await Promise.resolve();
+
+    // The open landed on a bridge `#bridges.clear()` had already dropped, so nothing could name it:
+    // `#release` looks the topic up, misses and returns, and the handler keeps delivering into a
+    // hub that is gone for the life of the process.
+    expect(transport.live).toBe(0);
+    await hub.publish(name, { x: 1, y: 1 });
+    expect(alice.ws.frames).toHaveLength(0);
+  });
+
   test('a guard that denies one of two concurrent subscribers leaves the bridge to the other', async () => {
     const transport = new SlowTransport();
     const sockets = new SocketRegistry();

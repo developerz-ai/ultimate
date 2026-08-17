@@ -12,8 +12,11 @@ import type { RebaseLog } from './rebase';
 import { encode, type Frame } from './sync-protocol';
 
 /**
- * Queued bytes past which the drain stops rather than adds. Mirrors the node's own
- * `backpressureLimit` — the same number at both ends of one socket.
+ * Queued bytes past which the drain stops rather than adds. The same number the node uses at its
+ * end of the socket (`DEFAULT_MAX_BUFFERED_BYTES`), and deliberately NOT imported from it: this is
+ * browser code, and `socket.ts` is the node's socket registry, its metrics and its close codes —
+ * one import pulls the whole server half into the tab's bundle to read an integer. The node's two
+ * spellings were merged because they configure one buffer on one side; these are two sides.
  */
 export const MAX_BUFFERED_BYTES = 1024 * 1024;
 

@@ -287,6 +287,8 @@ wire twice by a reconnect that raced an ack.
 | A pass stops at the first refusal | continuing past a failure is how a sync engine reorders a user's intent |
 | Backpressure **declines**, it does not fail | over `MAX_BUFFERED_BYTES` (1 MiB, the node's `backpressureLimit` at the other end of the same socket) the sender throws `X_TRANSPORT_UNAVAILABLE`, the mutation stays pending and the next drain resumes there. `ClientSocket.bufferedAmount` is optional; a socket that does not report it is treated as never backed up |
 | Delivery is therefore at least once | every mutation carries an idempotency key — the `key` argument, or `<mutator>:<uuid>` — and the resend carries the same one |
+| A lost connection **cancels the pass it interrupted** | the lane orders passes against each other, but a socket death is not a pass and cannot reach one parked inside `send`. `requeueInflight()` bumps a connection epoch; a pass whose epoch went stale returns and leaves the rest `pending`. Without it the parked pass resumed and marked everything behind it `inflight` for a dead socket — never re-sent (`inflight` is not sendable) and never acked |
+| The store is handed a **snapshot**, never the live entries | `QueueStore.save` is a durable write and may await before it reads; given the array itself it persists a status that was never true when it was called |
 
 ### Limits, stated plainly
 

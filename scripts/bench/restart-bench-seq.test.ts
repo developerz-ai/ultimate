@@ -1,3 +1,6 @@
+// The seq accumulator's arithmetic, with no socket in the way: what counts as a hole, and why a
+// publisher whose counter restarts per process is a rewind rather than mass loss.
+
 import { describe, expect, test } from 'bun:test';
 import {
   beginSeqEpoch,

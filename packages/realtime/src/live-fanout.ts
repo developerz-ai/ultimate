@@ -56,6 +56,16 @@ export async function fanoutChange(
 
   let sent = 0;
   for (const subscription of entry.subscribers.values()) {
+    if (result.refill) {
+      // The window lost its tail: guessing is how a sync engine silently diverges. Checked BEFORE
+      // the mark, because a repair reads `entry.rows` — which this fanout has just declared a
+      // guess — and then CLEARS the mark. A subscriber already diverged would be recorded as
+      // repaired against rows nothing trusts, and the next change, having refilled the window,
+      // sends it a patch instead of the snapshot it is still owed. A lost tail degrades every
+      // subscriber the same way, whatever each was holding.
+      subscription.socket.markDesynced(subscription.sid);
+      continue;
+    }
     // `desynced` had four writers and no reader: a subscriber whose patch was dropped by
     // backpressure, whose gate failed, or whose window lost its tail was recorded as diverged and
     // then served the next patch as if nothing had happened — permanently and silently stale on a
@@ -63,11 +73,6 @@ export async function fanoutChange(
     // the cost of one frame and no DB read, and only then is the mark cleared.
     if (subscription.socket.desynced.has(subscription.sid)) {
       if (await resnapshot(deps, entry, subscription)) sent += 1;
-      continue;
-    }
-    if (result.refill) {
-      // The window lost its tail: guessing is how a sync engine silently diverges.
-      subscription.socket.markDesynced(subscription.sid);
       continue;
     }
     const who: Subscriber = { sid: subscription.sid, actor: subscription.socket.actor };

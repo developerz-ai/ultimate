@@ -183,7 +183,7 @@ A dead TCP connection that was never closed fires no `close` event. Only the cli
 
 **A reconnect re-announces everything, one frame at a time.** `hello`, then one `subscribe` per registration carrying that registration's cursor, then one per topic. `hello` itself carries **neither** cursors nor topic membership — resume is decided per subscription, by the frame that also names the query and its input, and topic membership is state on the node's socket. Without the topic half a channel stayed silent from the first reconnect onwards while its handler was still installed, and its presence membership was swept.
 
-**A `send` that returned is not an acknowledgement.** A browser `WebSocket.send` on a closing socket discards the frame and returns normally, so a drained mutation stays `inflight` until the server answers `ack`/`fail` — a lost connection puts it back to `pending` and the next drain resends it. Delivery is therefore **at least once**, and the idempotency key is what makes the resend safe: every mutation carries one — the `key` argument to `client.mutate`, or `<mutator>:<uuid>` when none is passed — and the resend carries the same one.
+**A `send` that returned is not an acknowledgement.** A browser `WebSocket.send` on a closing socket discards the frame and returns normally, so a drained mutation stays `inflight` until the server answers `ack`/`fail` — a lost connection puts it back to `pending` and the next drain resends it. **A drain pass parked when the socket dies abandons the rest of its queue** rather than marking it `inflight` on a connection that cannot answer: losing the connection bumps a drain epoch, and the parked pass checks it before claiming each remaining mutation. Without that, everything queued behind the parked one was marked `inflight` on a dead socket, and nothing ever moved it back — the queue stalled until the tab was reloaded. Delivery is therefore **at least once**, and the idempotency key is what makes the resend safe: every mutation carries one — the `key` argument to `client.mutate`, or `<mutator>:<uuid>` when none is passed — and the resend carries the same one.
 
 ## The reconnect risk
 
@@ -242,18 +242,26 @@ Per client, the **first channel patch received on the reconnected socket**: reco
 
 ### Delivery — 10,000 clients
 
-Every client counts holes in the probe sequence it received, per connection. A hole is a channel frame that was published to a subscriber and never arrived.
+Every client counts **observed sequence gaps** in the probe stream it received, per connection. An observed gap is a break between two frames one connection actually received — the publisher numbers every probe, so a missing number *between* two arrivals is a frame that was published to a subscriber and never came.
 
 | Restart-phase result | Value |
 |---|---|
 | Reconnected | **10,000 / 10,000** |
 | Patches received | **1,666,882** |
-| Patches lost | **0** — 0 gap events, 0 duplicates, 0 publisher rewinds, 0 malformed |
-| Clients that saw a gap | **0 / 10,000** |
+| Observed sequence gaps | **0** — 0 gap events, 0 missing frames, 0 duplicates, 0 publisher rewinds, 0 malformed |
+| Clients that observed a gap | **0 / 10,000** |
 | Time to first patch, p50 / p90 / max | 10.9s / 22.3s / 43.5s |
 | Connect attempts shed before any query path | 33,424 |
 
-**Lower bound, not a proof of zero loss.** A hole is only visible between two messages one connection received — anything lost before a connection's first message or after its last is invisible, as is a connection that received nothing at all.
+**Zero observed gaps is a lower bound on loss, not a proof of zero loss.** The counter can only see a hole with a received frame on each side of it, so three losses are invisible to it by construction:
+
+| Invisible to the counter | Why |
+|---|---|
+| frames lost before a connection's first arrival | there is no lower anchor to measure the gap from |
+| frames lost after a connection's last arrival | there is no upper anchor, and the connection may simply have ended |
+| every frame, on a connection that received nothing at all | no anchors, so the connection contributes no sequence to check |
+
+So the honest claim is **"no client observed a lost channel frame"**, not "no channel frame was lost". Every other statement of this result on the wiki is shorthand for this paragraph.
 
 **Not evidence about 50,000.** The 50,000-client run predates the counter and carries no delivery number; `As of 2026-08` the 10,000-client run is the only one with delivery accounting, and it does not extrapolate.
 

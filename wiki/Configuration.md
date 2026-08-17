@@ -107,7 +107,7 @@ At runtime the transport is chosen by `NATS_URL` rather than by this field — t
 | `maxEntries` | same | `10000` | distinct `(query, input)` pairs this node will hold — a `qid` derives from client-chosen input, so each one is a matcher and a row window. Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `node` |
 | `maxTopicsPerSocket` | `new ChannelHub({ … })` | `64` | channel topics one socket may join. Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `socket` |
 | `maxTopicsPerNode` | same | `10000` | distinct topics this node bridges, one transport subscription each. Exceeded → `X_SUBSCRIPTION_LIMIT`, scope `node` |
-| `maxBufferedBytes` | `createSyncNode({ … })` | `1 MiB` | outbound bytes queued on one socket before this node starts **dropping** its frames. A live-query patch is re-snapshotted; a channel frame is lost → [Realtime](Realtime) |
+| `maxBufferedBytes` | `createSyncNode({ … })` | `1 MiB`, exported as `DEFAULT_MAX_BUFFERED_BYTES` | outbound bytes queued on one socket before this node starts **dropping** its frames. A live-query patch is re-snapshotted; a channel frame is lost → [Realtime](Realtime) |
 | `maxDroppedFrames` | same | `32` | drops one socket may take before it is closed with `1013` (`overloaded`), reason `backpressure` |
 | `capacity` | `new RingChangeBuffer({ … })` | `1024` | retained patches per query hash; a reconnect inside the window is a delta, not a snapshot |
 | `maxQueries` | same | `4096` | retained query hashes, least-recently-written dropped first |
