@@ -47,8 +47,9 @@ export const GATED_APPS: readonly GatedApp[] = [
         '(`SpaceStep`, `DateTimeFormatter`) plus a Date/Instant brand mismatch on every toZoned ' +
         'call in packages/core/src/digest-schedule.ts. The count moved 136 → 137 with ' +
         'previousDigestAt and its digestPreview caller, which are two more instances of those ' +
-        'same two classes, not new ones; 137 → 138 is the TS 7 bump, and it introduced no new ' +
-        "error CLASS — the breakdown is still TS2339/TS2322/TS2345. Still the data-substrate work's to close",
+        'same two classes, not new ones. 137 → 138 is the TS 7 bump alone, and it added no new ' +
+        'class either — the WHOLE file breaks down as TS2339 ×68, TS2322 ×30, TS2345 ×29 and a ' +
+        "tail of 11, which is the same set the lines above describe. Still the data-substrate work's to close",
       live:
         'X_TEST_FIXTURE_UNAVAILABLE on all 5 tests: `subscribe` is declared by @ultimat3/testing’s ' +
         'preload and nothing in the repo drives it — fixture-drivers.ts registers ' +
