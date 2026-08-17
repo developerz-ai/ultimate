@@ -41,11 +41,14 @@ export {
   currencyInfo,
   exponentOf,
   isValidCurrency,
+  registerCurrency,
   scaleOf,
 } from './currency';
 export {
   allocationInvalid,
+  currencyDeclarationInvalid,
   currencyMismatch,
+  currencyRedefined,
   currencyRequired,
   currencyUnknown,
   decimalNotNumeric,

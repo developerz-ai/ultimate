@@ -53,6 +53,15 @@ bound. Adding it to the type means adding it in three more places in the same ch
 `properties`, `json-schema.ts` (optional, never `required`, or a generated client refuses a value
 this validator accepts) and `coerce.ts` (a query string carries it as text like everything else).
 
+`MoneyValue.currency` is bounded by `isCurrencyCode`, `isMoneyScale`'s twin, over
+`CURRENCY_CODE_PATTERN` — the pattern **source**, exported because the two projections that cannot
+call a predicate need the string: `json-schema.ts`'s published `pattern` and `@ultimat3/entity`'s
+Postgres `~` CHECK (`currencyCheck`). It was four copies of `^[A-Z]{3}$` across three packages,
+each individually correct, and only a psql session would have seen them diverge. Keep the pattern
+inside the syntax ECMAScript, JSON Schema and POSIX ERE spell identically — anchors, a literal
+class, a bounded repetition. `@ultimat3/entity`'s `currency-check.live.test.ts` is what proves a
+real server still reads it the way the predicate does; a `\d` or a lookahead is where that stops.
+
 `t` delegates through `schemaProvider()` on every property access — that is what makes
 `configureSchemaProvider()` work for modules that already imported `t`. Do not cache members.
 

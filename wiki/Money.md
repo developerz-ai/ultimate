@@ -7,7 +7,7 @@ export interface Money {
 }
 ```
 
-Integer minor units + ISO-4217 alphabetic code. Never a float, never a `number` in a column, never a currency-less amount.
+Integer minor units + a three-letter uppercase code — the 53 ISO-4217 rows the framework ships, plus whatever the app registers. Never a float, never a `number` in a column, never a currency-less amount.
 
 **One declaration, three names.** `@ultimat3/schema`'s `MoneyValue` is the type; `@ultimat3/money`'s `Money` and `@ultimat3/entity`'s `MoneyValue` are aliases of it, not restatements of its shape. It lives at tier 0 because that is the only tier every package may import. A row a `money()` column decodes therefore *is* a `Money` — pass it to `add()`, `formatMoney()` or `<Money>` with no conversion and no cast.
 
@@ -33,7 +33,7 @@ Two columns per amount. No JSON blob, no `numeric` amount, no float.
 | Column | Type | Notes |
 |---|---|---|
 | `<name>_minor` | `bigint` (`integer` under 2^31 minor units) | the integer count. `NOT NULL` |
-| `<name>_currency` | `char(3)` | uppercase ISO-4217. `NOT NULL`, `CHECK` against the currency table |
+| `<name>_currency` | `char(3)` | uppercase three-letter code. `NOT NULL`, `CHECK (<name>_currency ~ '^[A-Z]{3}$')` — the shape, not the table |
 
 | Rejected storage | Why |
 |---|---|
@@ -78,7 +78,7 @@ Allowed, total, and typed. `As of 2026-08` the package ships the currency table,
 | `{ minor: 19.99, currency: 'USD' }` | throws `X_MONEY_NOT_INTEGER`; fix names `fromDecimal` |
 | `fromDecimal('19.999', 'USD')` with no `rounding` | throws — more fraction digits than USD has minor units |
 | `convert(m, 'EUR')` with no rate | throws `X_RATE_MISSING`. There is no default rate provider, because a wrong rate is worse than a missing one |
-| An unknown ISO code | throws `X_CURRENCY_UNKNOWN`. The table is 53 codes, hardcoded — use one of `currencyCodes()`. `x money add-currency` is **planned** and its `--exponent` dies at the parser |
+| A code this process does not know | throws `X_CURRENCY_UNKNOWN` — use one `currencyCodes()` lists, or add it with `registerCurrency({ code, exponent, name })` |
 | `allocate(m, [0, 0])` or a negative ratio | throws `X_ALLOCATION_INVALID` |
 
 Total across a currency boundary requires a conversion first. Silent coercion is how a marketplace bills in the wrong currency for a quarter.
@@ -98,7 +98,7 @@ Explicit, always. Tax, interest, and VAT rules each name one in law.
 
 ## Currency exponents
 
-The exponent table is data, not an assumption. `As of 2026-07`, ~54 codes.
+The exponent table is data, not an assumption. `As of 2026-08` it ships **53 ISO-4217 rows** ([`packages/money/src/currency.ts:21`](https://github.com/developerz-ai/ultimate/blob/main/packages/money/src/currency.ts)).
 
 | Currency | Exponent | `minor: 1000` means |
 |---|---|---|
@@ -107,6 +107,50 @@ The exponent table is data, not an assumption. `As of 2026-07`, ~54 codes.
 | `KWD`, `BHD`, `JOD`, `OMR`, `TND` | 3 | 1.000 |
 
 `exponentOf(currency)` and `scaleOf(currency)` derive from the table. A hardcoded `/ 100` is wrong in nine of the codes above.
+
+## Registering a currency
+
+`As of 2026-08` the table is open, and it is opened by a call — not by config, not by a fork. 53 of roughly 180 ISO codes is a *convention*, and axiom 8 says an app encodes its own by calling a function.
+
+```ts
+import { money, registerCurrency, toDecimalString } from '@ultimat3/money';
+
+// Once at boot, before any XBT amount is built.
+registerCurrency({ code: 'XBT', exponent: 8, name: 'Bitcoin' });
+
+const dust = money(1, 'XBT');
+toDecimalString(dust); // '0.00000001'
+```
+
+A local currency, a scrip, a loyalty point, a token — anything the shipped rows do not carry.
+
+| Rule | Detail |
+|---|---|
+| Refused, never defaulted | no exponent is guessable, so a bad declaration throws `X_CURRENCY_INVALID` rather than assuming 2 — a silent 2 reads `1.23456789 XBT` as `1.23` and shifts a stored `minor` by a power of ten |
+| One code, one declaration | a second, *different* declaration of a code already in force throws `X_CURRENCY_REDEFINED`. An identical one returns the row in force, so a module imported twice is not a crash |
+| A shipped ISO row is closed | `registerCurrency({ code: 'USD', exponent: 3, … })` throws `X_CURRENCY_REDEFINED`; registrations live beside `CURRENCIES`, never over it |
+| Before the first amount | `money()`, `fromDecimal()` and every arithmetic call resolve the exponent at the call, so an amount built before the registration throws `X_CURRENCY_UNKNOWN` |
+| Per process, not per row | a registration is in-memory. Every process that reads an amount in that currency must make the same call — the DB `CHECK` is `^[A-Z]{3}$`, so the row is already writable without it |
+
+| Enumeration | Answers |
+|---|---|
+| `CURRENCIES` | the 53 rows this package ships. A constant, the same in every process |
+| `currencyCodes()` | every code *this process* accepts, registrations included, sorted. The list `X_CURRENCY_UNKNOWN`'s fix names |
+| `isValidCurrency(code)` | whether this process accepts it, without throwing |
+
+### Why the table opened
+
+Three layers already treated the currency set as open, and only arithmetic disagreed. All three now read one declaration — `CURRENCY_CODE_PATTERN = '^[A-Z]{3}$'` in `packages/schema/src/money-value.ts`.
+
+| Layer | What it accepts | Where |
+|---|---|---|
+| the boundary | `isCurrencyCode` in `moneySchema` | `@ultimat3/schema`, `money-value.ts` |
+| storage | `parseCurrency`, and the Postgres `CHECK` `currencyCheck()` emits | `@ultimat3/entity`, `columns.ts` |
+| the published contract | `currency: { type: 'string', pattern: … }` in the generated OpenAPI | `@ultimat3/schema`, `json-schema.ts` |
+
+So an app could already take `GHS` over HTTP, validate it, write it to Postgres and read it back — and `add()` was the only thing that refused it. The set was never closed; one package disagreed with the boundary, the storage layer and the contract it publishes. `CurrencyCode` is `string`, not a union, and the table had zero consumers outside `packages/money/` — nothing depended on it being total.
+
+The pattern stays inside the syntax ECMAScript, JSON Schema and POSIX ERE spell identically. A `\d`, a lookahead or a non-greedy quantifier would make the Postgres `CHECK` stop meaning what `isCurrencyCode` means, and a real server is the first thing that would say so.
 
 ## Formatting
 
@@ -156,8 +200,10 @@ See [MCP and AI](MCP-And-AI).
 | Code | Cause | Fix |
 |---|---|---|
 | `X_MONEY_NOT_INTEGER` | `minor` is not a safe integer, or a decimal string is more precise than the currency | `fromDecimal(...)`, or pass an explicit rounding mode |
-| `X_CURRENCY_UNKNOWN` | code is not in the ISO-4217 table | pick one of `currencyCodes()` — 53 codes, hardcoded at [`packages/money/src/currency.ts:19`](https://github.com/developerz-ai/ultimate/blob/main/packages/money/src/currency.ts), with no registration call and no `app.config.ts` field. Adding one is a framework change |
+| `X_CURRENCY_UNKNOWN` | the code is neither a shipped ISO row nor registered by this process | pick one `currencyCodes()` lists, or declare it at boot with `registerCurrency({ code, exponent, name })` |
 | `X_CURRENCY_MISMATCH` | combining two currencies — an `X_INVARIANT`-class violation | `convert(...)` first, then combine |
+| `X_CURRENCY_INVALID` | a `registerCurrency` declaration that cannot become a currency — bad code shape, an exponent outside `0…15`, or an empty name | fix the declaration: three A–Z letters, a whole exponent, a non-empty name |
+| `X_CURRENCY_REDEFINED` | one code registered twice with different meanings | keep one `registerCurrency` call and delete the other |
 | `X_ALLOCATION_INVALID` | non-positive part count, or ratios that are non-finite, negative, or all zero | pass valid ratios |
 | `X_RATE_MISSING` | no rate registered for the pair | register a `RateProvider` covering it |
 
@@ -172,4 +218,5 @@ Full list: [Error codes](Error-Codes).
 - A non-integer multiplier requires an explicit rounding mode.
 - `allocate` distributes the remainder; the parts always sum to the whole.
 - Exponents come from the currency table, never from `100`.
+- A currency the shipped rows lack is `registerCurrency({ code, exponent, name })` at boot, never a fork of the table.
 - Format at the edge with an explicit locale and currency → [I18n](I18n).

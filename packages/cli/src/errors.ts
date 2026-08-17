@@ -58,14 +58,18 @@ export class MissingPositionalError extends UltimateError {
  * subcommand is one — a second code for "you left out an argument" is the synonym the registry
  * exists to prevent. Its own class because the cause must not name a flag: the parser answered
  * `subcommands[0]` before this existed, so `x db` ran `gen` and wrote a migration file nobody asked
- * for. `--help` is the fix because which of six was meant is exactly what the caller did not say.
+ * for. Help is the fix because which of six was meant is exactly what the caller did not say.
+ *
+ * `x help <command>`, never `x <command> --help`: the parser resolves the subcommand AFTER the
+ * flag loop, so `x db --help` throws THIS error again — a fix line that reproduces its own
+ * failure, verbatim, forever. `x help db` prints the subcommand list and the flags.
  */
 export class MissingSubcommandError extends UltimateError {
   constructor(input: { command: string; known: readonly string[] }) {
     super({
       code: 'X_CLI_BAD_FLAG',
       cause: `"x ${input.command}" takes a subcommand and got none (one of: ${input.known.join(', ')})`,
-      fix: `x ${input.command} --help`,
+      fix: `x help ${input.command}`,
       docs: docsFor('X_CLI_BAD_FLAG'),
     });
   }

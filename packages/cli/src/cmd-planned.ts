@@ -34,7 +34,7 @@ export const PLANNED_COMMANDS: readonly PlannedCommand[] = [
     name: 'branch',
     summary: 'copy-on-write branch environments with a preview URL',
     usage: 'x branch [<name>|rm <name>] [--json]',
-    fix: 'x db branch ls --json   # the database half, shipped today',
+    fix: 'x db branch ls --json   # the database half: ls, create <name>, drop <name>',
   },
   {
     name: 'status',
@@ -69,12 +69,18 @@ export const PLANNED_COMMANDS: readonly PlannedCommand[] = [
     subcommands: ['eval', 'cache', 'reindex'],
     fix: 'x test eval --json   # every eval, scored against its committed baseline',
   },
+  // `registerCurrency()` ships `As of 2026-08`, and this row is deliberately NOT deleted with it.
+  // What is planned is a GENERATOR — the one thing a process that exits can contribute, since a
+  // registration has to land in the app's own source to survive the run — and a generator that
+  // emits the one call is not a second path any more than `x g route` is a second way to declare a
+  // route (axiom 1). The whole table is shaped this way: `x status` beside `x doctor`, `x cache`
+  // beside the `/_x` panel. What changed is only that the `fix:` is now true.
   {
     name: 'money',
     summary: 'extend the currency table',
     usage: 'x money add-currency <ISO> --exponent <n> [--json]',
     subcommands: ['add-currency'],
-    fix: 'x manifest --json   # currencies ship in @ultimat3/money; add yours in app.config.ts',
+    fix: "x errors explain X_CURRENCY_UNKNOWN --json   # extend it in code: registerCurrency({ code: 'GHS', exponent: 2, name: 'Ghana Cedi' }) at boot",
   },
   {
     name: 'config',
@@ -121,7 +127,9 @@ export function plannedSubcommand(command: string, subcommand: string): CliNotIm
   );
   return new CliNotImplementedError({
     feature: `x ${command} ${subcommand}`,
-    fix: planned?.fix ?? `x ${command} --help`,
+    // `x help <command>`, not `x <command> --help`: for a command that declares subcommands and no
+    // default, the latter is refused by the parser before help is ever rendered.
+    fix: planned?.fix ?? `x help ${command}`,
   });
 }
 

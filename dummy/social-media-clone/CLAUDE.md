@@ -64,7 +64,7 @@ or a line in `docs/gotchas.md` — **never a bare `TODO`**.
 ## Commands
 
 `x dev` · `x verify` · `x g resource|action|mutator|query|job|route|policy|entity|task` ·
-`x db gen "<msg>"` / `x db migrate` / `x db branch <name>` · `x jobs ls|show|retry|drain` ·
+`x db gen "<msg>"` / `x db migrate` / `x db branch ls|create <name>|drop <name>` · `x jobs ls|show|retry|drain` ·
 `x routes` / `x actions` / `x queries` / `x entities` / `x policy` / `x tasks` ·
 `x errors explain <X_CODE>` · `x doctor` · `bun run scripts/help.ts`
 

@@ -43,7 +43,12 @@ export type {
 } from './json-schema';
 export { nodeToJsonSchema, toJsonSchema, toMcpInputSchema } from './json-schema';
 export type { MoneyValue } from './money-value';
-export { isMoneyScale, MAX_MONEY_SCALE } from './money-value';
+export {
+  CURRENCY_CODE_PATTERN,
+  isCurrencyCode,
+  isMoneyScale,
+  MAX_MONEY_SCALE,
+} from './money-value';
 export type { SchemaFormat, SchemaKind, SchemaNode, SchemaRefinement } from './node';
 export { isSchemaNode, nodeOf, requiredKeys } from './node';
 export type { SchemaProvider } from './provider';

@@ -2,6 +2,10 @@
 // and that command may not exist. Six shipped fix lines named `x db status`, `x logs tail`,
 // `x trace`, `x metrics`, `x auth whoami` and `x ai prompts` — every one of them passed the
 // `errors` step, because the step checks that a fix NAMES a command, never that the build ships it.
+//
+// It reads THREE words for the same reason it reads two: `x db branch ls --json` shipped as a fix
+// while `x db branch` had no `ls`, because a rule stopping at the subcommand never saw the word
+// that decided what ran.
 
 import type { CommandSpec } from './parse';
 import { GLOBAL_FLAGS } from './parse';
@@ -18,7 +22,14 @@ import { GLOBAL_FLAGS } from './parse';
  */
 // Digits are part of a name, not a boundary: `x i18n check` read through `[a-z-]*` alone cites
 // `x i`, which is not a command — a false finding on three of the framework's own fix lines.
-const CITATION = /(?:^|[\s;|&("'`])x\s+([a-z][a-z\d-]*)(?:\s+([a-z][a-z\d-]*))?/g;
+//
+// The THIRD slot also matches a `<placeholder>`, and only the third. A slot with a closed set is a
+// slot where the reader has nothing to substitute, so `x db branch <name>` — two shipped fix lines
+// in `@ultimat3/mcp` — is `X_CLI_UNKNOWN_COMMAND` when run and resolved clean while a placeholder
+// was invisible to the reader. Second and fourth slots are open positionals (`x new my-app`,
+// `x db branch drop <name>`), where a placeholder is exactly right.
+const CITATION =
+  /(?:^|[\s;|&("'`])x\s+([a-z][a-z\d-]*)(?:\s+([a-z][a-z\d-]*))?(?:\s+([a-z][a-z\d-]*|<[^>]*>))?/g;
 
 /**
  * A long flag, `--` stripped. `--no-<name>` is the parser's negation of a boolean, so it resolves
@@ -38,6 +49,8 @@ const ARGUMENT_END = /[;|&#`'"]/;
 export interface FixCitation {
   readonly command: string;
   readonly sub: string | undefined;
+  /** The bare word after `sub`. Judged only against a declared `subcommandPositionals` set. */
+  readonly positional: string | undefined;
   /** Long flags written after it, in order, `--` and any `no-` stripped. */
   readonly flags: readonly string[];
 }
@@ -65,6 +78,7 @@ export function fixCitations(fix: string): readonly FixCitation[] {
     return {
       command: match[1] as string,
       sub: match[2],
+      positional: match[3],
       flags: [...args.matchAll(FLAG)].map((flag) => flag[1] as string),
     };
   });
@@ -143,10 +157,27 @@ function wordFault(
 }
 
 /**
- * Why a citation does not resolve, or `undefined` when it does. FOUR levels, because the drift is
+ * The third word, judged ONLY where the subcommand declares a closed set. `x jobs show <id>` and
+ * `x db gen "add publish_at"` take open positionals, so a universal third-word rule would report
+ * findings about working invocations — the same conditionality `wordFault` applies to the second.
+ */
+function positionalFault(spec: CommandSpec, sub: string, word: string): CitationFault | undefined {
+  const choices = spec.subcommandPositionals?.[sub];
+  if (choices === undefined || choices.includes(word)) return undefined;
+  // A placeholder is judged the same as a wrong word, and deliberately: there is nothing the
+  // reader could substitute that would make `x db branch <name>` run, because the slot is a verb.
+  return {
+    subject: `x ${spec.name} ${sub} ${word}`,
+    reason: `and ${spec.name} ${sub} takes one of ${choices.join(', ')}`,
+  };
+}
+
+/**
+ * Why a citation does not resolve, or `undefined` when it does. FIVE levels, because the drift is
  * mostly BELOW the command name: `x db query` names a real command and an unreal subcommand,
- * `x env check --fix` names both and an unreal flag, and `x test summarize` names a first
- * positional that is not a `TestType`. A rule stopping at the command name accepted all three.
+ * `x env check --fix` names both and an unreal flag, `x test summarize` names a first positional
+ * that is not a `TestType`, and `x db branch ls` named a real subcommand and a third word that
+ * `x db branch` read as a branch NAME. A rule stopping at the command name accepted all four.
  *
  * The planned check is the one the whole thing exists for: a PLANNED command is in the registry and
  * parses, so a resolution that only asked "is this a known name" would accept `x logs tail` — the
@@ -178,6 +209,10 @@ export function citationFault(
   if (citation.sub !== undefined) {
     const fault = wordFault(spec, citation.sub, catalog, rules);
     if (fault !== undefined) return fault;
+    if (citation.positional !== undefined) {
+      const deeper = positionalFault(spec, citation.sub, citation.positional);
+      if (deeper !== undefined) return deeper;
+    }
   }
   if (planned) return undefined;
   const declared = declaredFlags(spec);

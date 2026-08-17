@@ -1,10 +1,12 @@
 /**
- * The ISO-4217 minor-unit exponent table. Every scale in the package derives from here —
- * a hardcoded `/ 100` is a bug in JPY (0 digits) and in KWD (3 digits).
- * As of 2026-07.
+ * The minor-unit exponent table: the ISO-4217 rows Ultimate ships, plus the rows an app registers.
+ * Every scale in the package derives from here — a hardcoded `/ 100` is a bug in JPY (0 digits)
+ * and in KWD (3 digits). As of 2026-08.
  */
 
-import { currencyUnknown } from './errors';
+import { renderCauseValue } from '@ultimat3/core';
+import { isCurrencyCode, isMoneyScale, MAX_MONEY_SCALE } from '@ultimat3/schema';
+import { currencyDeclarationInvalid, currencyRedefined, currencyUnknown } from './errors';
 
 /** Uppercase ISO-4217 alphabetic code. */
 export type CurrencyCode = string;
@@ -76,15 +78,82 @@ const BY_CODE: ReadonlyMap<string, CurrencyInfo> = new Map(
   TABLE.map((info) => [info.code, info] as const),
 );
 
+/**
+ * What the app added. Separate from `BY_CODE` so a shipped ISO row can never be overwritten and
+ * `CURRENCIES` keeps meaning exactly what it meant: the constant this package ships.
+ */
+const REGISTERED = new Map<string, CurrencyInfo>();
+
+/**
+ * The ISO-4217 rows Ultimate ships — a constant, the same in every process.
+ *
+ * Not the same question as `currencyCodes()`, which answers for *this* process and includes
+ * whatever the app registered. That is why one is a value and the other is a call.
+ */
 export const CURRENCIES: readonly CurrencyInfo[] = TABLE;
 
+/**
+ * Declare a currency the shipped ISO rows do not carry — a local currency, a scrip, a loyalty
+ * point, a token. Call it once, at boot, before any amount in that currency is built.
+ *
+ * The 53 shipped rows are a *convention* — one useful subset of ISO-4217 — and axiom 8 says an app
+ * encodes its own by calling a function, never by forking the package. The rest of the framework
+ * already agreed: `@ultimat3/schema`'s `moneySchema`, the published OpenAPI contract and
+ * `@ultimat3/entity`'s `char(3)` CHECK all accept any `^[A-Z]{3}$`, so an app could take an
+ * unregistered code over HTTP and store it, and only arithmetic would refuse it afterwards.
+ *
+ * Returns the row now in force, so the identical second call is a no-op rather than a crash — a
+ * module imported twice must not take the process down.
+ */
+export function registerCurrency(info: CurrencyInfo): CurrencyInfo {
+  const { code, exponent, name } = info;
+  // `isCurrencyCode`, imported for the same reason `isMoneyScale` below is: this is the bound
+  // `moneySchema`, the published OpenAPI `pattern` and `@ultimat3/entity`'s CHECK all apply, and a
+  // registration accepting a code any of them refuses would put a row in a table the app cannot
+  // read back. It also carries the `typeof` half, so an untyped caller's symbol is a refusal here
+  // rather than a `TypeError` from `.test()`. Not taste either:
+  // `Intl.NumberFormat({ style: 'currency', currency })` throws a `RangeError` on anything else,
+  // so a registration that skipped the shape would format nothing.
+  if (!isCurrencyCode(code)) {
+    throw currencyDeclarationInvalid(
+      // `renderCauseValue`, not `String(code)`: the signature says `string` but nothing stops an
+      // untyped caller passing a symbol, and `String()` raises on one — the validator would then
+      // throw a TypeError instead of the coded refusal it exists to produce.
+      `a currency code must be three uppercase letters, got ${renderCauseValue(code)}`,
+      'XBT',
+    );
+  }
+  // `isMoneyScale`, imported rather than restated: an exponent past MAX_MONEY_SCALE names a
+  // decimal place `minor` could not count in, and one bound with two declarations is one bound
+  // that drifts. It also rejects a non-integer, so a 2.5 cannot round itself into the table.
+  if (!isMoneyScale(exponent)) {
+    throw currencyDeclarationInvalid(
+      `${code} needs a whole number of decimal places between 0 and ${MAX_MONEY_SCALE} — an exponent decides what a stored minor counts, so there is no safe default`,
+      code,
+    );
+  }
+  if (typeof name !== 'string' || name.trim() === '') {
+    throw currencyDeclarationInvalid(`${code} needs a non-empty name`, code);
+  }
+
+  const existing = BY_CODE.get(code) ?? REGISTERED.get(code);
+  if (existing !== undefined) {
+    if (existing.exponent === exponent && existing.name === name) return existing;
+    throw currencyRedefined(code, existing, { exponent, name });
+  }
+
+  const row: CurrencyInfo = Object.freeze({ code, exponent, name });
+  REGISTERED.set(code, row);
+  return row;
+}
+
 export function isValidCurrency(currency: string): boolean {
-  return BY_CODE.has(currency);
+  return BY_CODE.has(currency) || REGISTERED.has(currency);
 }
 
 /** Loud lookup: an unknown code is a data bug, not a formatting quirk. */
 export function currencyInfo(currency: string): CurrencyInfo {
-  const info = BY_CODE.get(currency);
+  const info = BY_CODE.get(currency) ?? REGISTERED.get(currency);
   if (info === undefined) throw currencyUnknown(currency);
   return info;
 }
@@ -103,6 +172,14 @@ export function scaleOf(currency: string): number {
   return 10 ** exponentOf(currency);
 }
 
+/**
+ * Every code this process accepts — the shipped rows plus whatever the app registered. Sorted, so
+ * two processes with the same registrations print the same list.
+ *
+ * This is the one enumeration `X_CURRENCY_UNKNOWN`'s fix line points at, so it has to include the
+ * registered rows: a fix that named a list the accepted code is missing from would be the same
+ * dead end that error used to hand back.
+ */
 export function currencyCodes(): CurrencyCode[] {
-  return TABLE.map((info) => info.code);
+  return [...TABLE.map((info) => info.code), ...REGISTERED.keys()].sort();
 }

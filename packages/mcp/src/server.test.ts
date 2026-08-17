@@ -190,7 +190,17 @@ describe('a framework error reaches the model in the shape the terminal prints',
     },
   };
 
-  const guarded = createMcpServer({ tools: [throwing, untitled] });
+  /** A foreign object carrying a code and no `fix` at all — the substituted-fix branch. */
+  const unfixed: AnyMcpTool = {
+    name: 'orders.reopen',
+    description: 'throws a coded object with no fix',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    async handle(): Promise<McpToolResult> {
+      throw { code: 'X_FOREIGN', cause: 'a package that is not core threw' };
+    },
+  };
+
+  const guarded = createMcpServer({ tools: [throwing, untitled, unfixed] });
 
   const textOf = async (name: string): Promise<string> => {
     const response = await guarded.handle(
@@ -213,5 +223,17 @@ describe('a framework error reaches the model in the shape the terminal prints',
     expect(await textOf('orders.void')).toBe(
       'X_FOREIGN\n  cause: a package that is not core threw\n  fix:   x doctor',
     );
+  });
+
+  // The substituted fix is the one line in this rendering nobody wrote for the reader, so it is
+  // the one most likely to be a shrug. `see docs` is the phrase the repo's own fix rule bans —
+  // it survived only because BANNED_PHRASES spells it `see the docs`, one article longer.
+  test('a coded object with no fix is given a runnable one, never a shrug', async () => {
+    const text = await textOf('orders.reopen');
+
+    expect(text).toBe(
+      'X_FOREIGN\n  cause: a package that is not core threw\n  fix:   x errors explain X_FOREIGN',
+    );
+    expect(text).not.toContain('see docs');
   });
 });

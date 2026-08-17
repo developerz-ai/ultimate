@@ -249,7 +249,10 @@ function asFrameworkError(error: unknown): FrameworkError | undefined {
     code: e.code,
     title: typeof e.title === 'string' ? e.title : '',
     cause: typeof e.cause === 'string' ? e.cause : 'unknown',
-    fix: typeof e.fix === 'string' ? e.fix : 'see docs',
+    // A substituted fix is still a fix an agent will act on, so it has to be runnable. `see docs`
+    // named no docs and no command; `e.code` is already narrowed to an `X_` string by the guard
+    // above, so the substitute is the one command that explains exactly this code.
+    fix: typeof e.fix === 'string' ? e.fix : `x errors explain ${e.code}`,
   };
 }
 

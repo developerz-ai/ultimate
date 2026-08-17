@@ -3,7 +3,13 @@
 // currency) are the bugs this file exists to make unreachable.
 
 import { uuid as uuidV7 } from '@ultimat3/core';
-import { describeValue, isMoneyScale, MAX_MONEY_SCALE } from '@ultimat3/schema';
+import {
+  CURRENCY_CODE_PATTERN,
+  describeValue,
+  isCurrencyCode,
+  isMoneyScale,
+  MAX_MONEY_SCALE,
+} from '@ultimat3/schema';
 import { BARE, column, GENERATED_UUID, makeColumn, makeTimestamp } from './column';
 import { invariantViolated } from './errors';
 import type {
@@ -236,8 +242,14 @@ const parseMinor = (value: unknown): number => {
   return minor;
 };
 
+/**
+ * The bound is `@ultimat3/schema`'s, imported rather than restated — the same rule `parseScale`
+ * below follows for `isMoneyScale`. This column, `moneySchema`, the OpenAPI `pattern` and the
+ * CHECK at the bottom of this file are four projections of one declaration; each was individually
+ * correct and would have drifted silently, since only a psql session sees the disagreement.
+ */
 const parseCurrency = (value: unknown): string =>
-  typeof value === 'string' && /^[A-Z]{3}$/.test(value)
+  isCurrencyCode(value)
     ? value
     : reject('iso-4217', `expected a 3-letter ISO-4217 code, ${got(value)}`);
 
@@ -314,8 +326,20 @@ export const narrowMoney = <Row>(columns: ColumnMap, row: Row): Row => {
   return (narrowed ?? row) as Row;
 };
 
-/** The CHECK that stops a psql session writing a currency the app would refuse. */
-export const currencyCheck = (currencyColumn: string): string => `${currencyColumn} ~ '^[A-Z]{3}$'`;
+/**
+ * The CHECK that stops a psql session writing a currency the app would refuse — the app's own
+ * bound, projected into SQL rather than restated in it.
+ *
+ * SQL cannot call `isCurrencyCode`, so what crosses is `CURRENCY_CODE_PATTERN`, the pattern source
+ * that predicate is built from — the same move `scaleCheck` below already makes with
+ * `MAX_MONEY_SCALE`. It holds because the pattern is deliberately kept to the syntax ECMAScript
+ * and POSIX ERE spell identically (see its declaration); the one thing a TypeScript test cannot
+ * prove is that a real server reads it the same way, which is what
+ * `currency-check.live.test.ts` sends to Postgres. Quoting is not a concern and must not become
+ * one: this is a compile-time constant from tier 0, never a value.
+ */
+export const currencyCheck = (currencyColumn: string): string =>
+  `${currencyColumn} ~ '${CURRENCY_CODE_PATTERN}'`;
 
 /**
  * The same for the scale column: `parseScale` refuses anything outside `0…MAX_MONEY_SCALE`, and a

@@ -167,22 +167,16 @@ pgvector in the same Postgres. No second datastore.
 
 ## Branch environments
 
-```
-x branch feat-new-billing
-  ✓ database    myapp_feat_new_billing   (copy-on-write from dev template, 340ms)
-  ✓ build       build id 8f2a1c…
-  ✓ preview     http://feat-new-billing.localhost:3000
-  ✓ mcp         ws://localhost:9229/feat-new-billing
-```
+The database half ships as `x db branch ls | create <name> | drop <name>`. `x branch` — the one command that also builds, routes and scopes a socket — is **planned** and exits `X_NOT_IMPLEMENTED`.
 
-| Property | Detail |
-|---|---|
-| DB | `CREATE DATABASE ... TEMPLATE` copy-on-write clone — cheap, isolated, disposable |
-| Migrations | `db.migrate` applies here, never to the shared dev DB |
-| Preview URL | routed by subdomain; same image, `ROLE=web` |
-| **Build ID scopes the SW** | the branch gets its own SW scope and cache namespace, so a preview can never poison prod cache ([`08-pwa-offline.md`](./08-pwa-offline.md)) |
-| Teardown | `x branch rm feat-new-billing`, or automatic on branch delete |
-| Agent use | an agent can migrate, seed, test, and browse a preview without risking anything shared |
+| Property | Detail | `As of 2026-08` |
+|---|---|---|
+| DB | `CREATE DATABASE "<source>_branch_<name>" TEMPLATE "<source>"` copy-on-write clone — cheap, isolated, disposable. Embedded: a copied `pgdata-<name>` directory | **shipped** |
+| Migrations | `db.migrate` applies here, never to the shared dev DB | **shipped** |
+| Preview URL | `http://<name>.localhost:<PORT>`, reported on `data.preview` | **computed**, routed by nothing |
+| Teardown | `x db branch drop <name>` — only what `x db branch ls` shows | **shipped** |
+| **Build ID scopes the SW** | the branch gets its own SW scope and cache namespace, so a preview can never poison prod cache ([`08-pwa-offline.md`](./08-pwa-offline.md)) | **planned** |
+| Agent use | an agent can migrate, seed, test, and browse a preview without risking anything shared | |
 
 ## `--json` everywhere
 

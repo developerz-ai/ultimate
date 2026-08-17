@@ -136,7 +136,7 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 | `X_FORBIDDEN` from a `tools/call` | the tool was invoked and its policy refused this input — the same denial the HTTP route returns for the same call | grant the human the permission — an agent can never exceed the human it acts for |
 | Dev MCP server not reachable | `x dev` not running, or you pointed at prod | default socket is `mcp.devSocket` (`ws://localhost:9229`). The dev server is **never** bound in `ROLE=web` |
 | `X_MCP_QUERY_REJECTED` | `db.query` was not given exactly one read-only statement | send a single **read-only** `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — a data-modifying CTE is not a read. MCP has no arbitrary-write path: change data by calling an action exposed with `mcp: { expose: true }`, change schema with `db.migrate` on a branch database |
-| `X_MCP_NOT_BRANCH_DB` | `db.migrate` was aimed at a database that is not a branch | `x db branch <name>`, then retry `db.migrate` |
+| `X_MCP_NOT_BRANCH_DB` | `db.migrate` was aimed at a database that is not a branch | `x db branch create <name>`, then retry `db.migrate` |
 | `X_LLM_OUTPUT_INVALID` | structured output failed its schema twice | tighten the prompt or loosen the schema; the retry already happened once |
 | Prompt change had no effect | semantic cache hit | bump the prompt version — editing a prompt requires it. (`x ai cache --json` is **planned**; `x test eval --json` is the shipped command) |
 | `x verify` fails on a prompt | no evals file | an unevaluated prompt is untested code. Add `<prompt>.evals.ts` |

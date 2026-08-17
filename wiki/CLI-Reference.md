@@ -5,7 +5,7 @@ The binary is `x`. One command registry — a command that is not in it does not
 ```bash
 x help                 # the catalogue
 x help <command>       # usage for one command
-x <command> --help     # the same thing
+x <command> --help     # the same thing, except on db and mcp — see Subcommands below
 x version              # CLI version
 ```
 
@@ -17,7 +17,7 @@ x version              # CLI version
 | App detection | most commands walk up for `app.config.ts` and fail with `X_NOT_IN_APP` if there is none. The exceptions: `new`, `test`, `doctor`, `errors`, `help`, `version` |
 | Flags | long form only, `--flag value` or `--flag=value`. Booleans negate as `--no-<flag>` |
 | Global flags | `--json` / `-j`, `--help` / `-h`, `--cwd <dir>`, `--verbose` — accepted by every command |
-| Subcommands | when a command has them and none is given, **the first is the default**: `x actions` is `x actions list` |
+| Subcommands | when a command has them, its default is **declared**, never positional: `x actions` is `x actions list` because that command sets `defaultSubcommand: 'list'`. A command with no defensible default declares none and refuses the bare form with `X_CLI_BAD_FLAG` — exactly `db` and `mcp`, pinned by `parse.test.ts`. Those two are also the two where `--help` does not work: the subcommand is resolved before the flag loop, so `x db --help` raises that same error. Use `x help db`. The parser answered `subcommands[0]` until 1.2.0, which is why `x db` used to run the migration **generator** |
 | Passthrough | a bare `--` sends everything after it to the underlying tool untouched |
 | `--json` shape | `{ ok, command, summary, steps?, findings?, data? }`. Findings are `{ code, cause, fix, docs?, at? }` |
 
@@ -221,7 +221,8 @@ The synopsis above is `GENERATORS` in `packages/cli/src/cmd-generate.ts`, which 
 ## x db
 
 ```bash
-x db gen "add publish_at" | migrate | reset | studio | branch <name>
+x db gen "add publish_at" | migrate | reset | studio
+     | branch ls | branch create <name> | branch drop <name>
      | backfill --list [--name n] [--status s] [--limit n] [--json]
      | backfill --pending [--json]
      | backfill <name>|--all [--write] [--force] [--json]
@@ -233,12 +234,23 @@ x db gen "add publish_at" | migrate | reset | studio | branch <name>
 | `migrate` | apply pending migrations, then verify the result | literally `ROLE=migrate`'s own `runMigrations` — which ends by diffing the live schema against the ledger it just wrote, on the connection it already holds. A difference is `X_DB_DRIFT` and a non-zero exit |
 | `reset` | delete the embedded data directory, then migrate | **embedded database only** — against an external Postgres it exits `X_NOT_IMPLEMENTED` and tells you to drop and recreate it yourself |
 | `studio` | — | **planned**: exits `X_NOT_IMPLEMENTED` pointing at the `/_x` db panel. It used to shell out to `bunx drizzle-kit studio`; one subcommand is not worth a second schema engine |
-| `branch <name>` | `CREATE DATABASE … TEMPLATE` copy-on-write clone (PGlite: a copied data directory) | the isolation an agent should use before migrating |
+| `branch ls` | every branch of this database: name, location, created-at, size | the drop path only touches what this lists |
+| `branch create <name>` | `CREATE DATABASE … TEMPLATE` copy-on-write clone (PGlite: a copied data directory) | the isolation an agent should use before migrating. An existing name is `X_BRANCH_EXISTS`, never an overwrite |
+| `branch drop <name>` | delete that branch database (PGlite: its `pgdata-<name>` directory) | a name `ls` does not show is refused with `X_DB_BRANCH_FAILED` naming what it *would* have touched — that is the whole guard, and it is why there is no `--force` |
 | `backfill --list` | print the `x_backfills` ledger — one row per `backfill()` pass, newest first | what has already been swept |
 | `backfill --pending` | every backfill the app **declared**, minus the ones that completed | the alarm: a sweep merged and never enqueued had no ledger row and was invisible everywhere. **Non-zero exit** when anything is unswept, so a cron reads the code and not the table |
 | `backfill <name>` / `backfill --all` | gate one sweep (or every pending one) and enqueue it | **dry run by default** — `--write` is never implied. `--write` enqueues; the workers perform the pass, because the queue is a job's execution surface. `--all` isolates per name and continues past a failure, exiting non-zero naming each |
 
 A bare `x db backfill` is `X_CLI_BAD_FLAG` naming a shape that works: the four answer four different questions, and defaulting to one of them is the ambiguity axiom 1 refuses.
+
+**`branch` requires a verb, and the verb set is closed.** The first argument *was* the branch name, so `x db branch ls` cloned a database called `ls` instead of listing anything — and every verb is itself a legal branch name, which is why verb-first is the only shape where a name cannot be read as a subcommand. `As of 2026-08` a bare name is refused: a word outside `ls`, `create` and `drop` is `X_CLI_UNKNOWN_COMMAND`, and its `fix:` hands the caller's own word back inside the command that still creates it.
+
+Two more facts about the set, both `As of 2026-08`:
+
+| Fact | Why |
+|---|---|
+| an external `create` runs through `@ultimat3/db`, not `psql` | `createBranch()` writes the marker comment `ls` finds branches by. The `psql` shell-out wrote the database and no marker, so every branch the CLI made was invisible to the only lister the framework has |
+| there is no `reap` verb | `reapBranches()` is a `task` — a nightly sweep with an app-chosen max age. A CLI verb would be a second path to one job, and no default max age is defensible |
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
@@ -780,13 +792,13 @@ The table is `PLANNED_COMMANDS` in `packages/cli/src/cmd-planned.ts`; `cmd-plann
 | Command | Purpose | `fix:` today |
 |---|---|---|
 | `x cache [graph\|bust <tag>\|clear\|stats]` | what a write evicts; targeted eviction | `x dev` → the `/_x` cache panel |
-| `x branch [<name>\|rm <name>]` | copy-on-write database + preview URL + scoped MCP socket | `x db branch <name>` |
+| `x branch [<name>\|rm <name>]` | copy-on-write database + preview URL + scoped MCP socket | `x db branch create <name>` — and `x db branch ls` / `x db branch drop <name>` for the other two halves |
 | `x status` | role health and the build-ID distribution of connected clients | `x doctor --json` |
 | `x upgrade [--dry-run]` | move every `@ultimat3/*` in lockstep, run codemods, then `x verify` | `bun update --latest && x verify` |
 | `x logs tail` | structured logs and spans, filterable | `x dev` → the `/_x` timeline panel |
 | `x token [create --scopes <s>\|grant <scope>]` | MCP tokens and scopes | `x mcp serve --help` |
 | `x ai [eval <name>\|cache\|reindex]` | eval scores, cache hit rate and tokens saved, vector reindex | `x test eval --json` |
-| `x money add-currency <ISO> --exponent <n>` | extend the currency table | `x manifest --json` |
+| `x money add-currency <ISO> --exponent <n>` | extend the currency table | `registerCurrency({ code, exponent, name })` from `@ultimat3/money`, once at boot — shipped `As of 2026-08`, and it is what this command promised |
 | `x config show` | the resolved configuration, defaults included | `x manifest --json` |
 
 **Call them flagless.** A planned command's spec declares no command-specific flags, so `x money add-currency USD --exponent 2` and `x upgrade --dry-run` fail at the *parser* with `X_CLI_BAD_FLAG` — an unknown flag — instead of the honest `X_NOT_IMPLEMENTED`. Only the bare form reaches the real message. [Known gaps](Known-Gaps).

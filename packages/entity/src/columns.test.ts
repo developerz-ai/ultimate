@@ -1,7 +1,8 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { t } from '@ultimat3/schema';
+import { CURRENCY_CODE_PATTERN, isCurrencyCode, t } from '@ultimat3/schema';
 import {
   boolean,
+  currencyCheck,
   enumerated,
   integer,
   locale,
@@ -22,6 +23,27 @@ afterAll(() => {
   // The registry is process-global; a leaked entity breaks an unrelated package's tests.
   clearRegistry();
 });
+
+/** The corpus every projection of the currency bound is compared against — the same list
+ * `@ultimat3/schema`'s `money-value.test.ts` runs the predicate over, and the one
+ * `currency-check.live.test.ts` sends to a real Postgres. */
+const CURRENCY_CASES: readonly (readonly [string, boolean])[] = [
+  ['USD', true],
+  ['EUR', true],
+  ['XBT', true],
+  ['AAA', true],
+  ['ZZZ', true],
+  ['usd', false],
+  ['UsD', false],
+  ['US', false],
+  ['USDD', false],
+  ['US1', false],
+  ['US_', false],
+  ['US ', false],
+  [' US', false],
+  ['', false],
+  ['USD\n', false],
+];
 
 describe('money', () => {
   const price = money();
@@ -132,6 +154,26 @@ describe('money', () => {
     });
     const currency = plans.$describe().columns.find((column) => column.column === 'price_currency');
     expect(currency?.check).toBe("price_currency ~ '^[A-Z]{3}$'");
+  });
+
+  test('the CHECK and the column parse answer the SAME currency bound', () => {
+    // The bound has three projections and only one declaration: `isCurrencyCode` (tier 0), this
+    // column's parse, and the CHECK a psql session hits. The CHECK is SQL and cannot call the
+    // predicate, so what is shared is `CURRENCY_CODE_PATTERN` — and this test is what says the
+    // emitted SQL still carries that pattern and still means what the predicate means. A copy
+    // pasted back into either place is a failing test, not a review comment.
+    const emitted = currencyCheck('price_currency');
+    const pattern = /^price_currency ~ '(?<source>.*)'$/.exec(emitted)?.groups?.['source'];
+    expect(pattern).toBe(CURRENCY_CODE_PATTERN);
+    const check = new RegExp(pattern ?? '(?!)');
+
+    for (const [value, accepted] of CURRENCY_CASES) {
+      expect([value, isCurrencyCode(value)]).toEqual([value, accepted]);
+      expect([value, check.test(value)]).toEqual([value, accepted]);
+      const parse = (): MoneyValue => price.$parse({ minor: 1n, currency: value });
+      if (accepted) expect(parse().currency).toBe(value);
+      else expect(parse).toThrow(/iso-4217/);
+    }
   });
 });
 

@@ -966,6 +966,51 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Changed
 
+- **BREAKING — `x db branch` takes a verb, and `x db branch <name>` no longer creates anything.**
+  The argument *was* the branch name and `cmd-db.ts` fell through to it, so `x db branch ls` — the
+  `fix:` line the planned `x branch` command hands out — cloned the database into one called `ls`.
+  A stray database is not a typo an agent can see: it is a copy of production-shaped data with a
+  name nobody will recognise a week later.
+
+  | Was | Now |
+  |---|---|
+  | `x db branch feat-new-billing` | `x db branch create feat-new-billing` |
+  | — | `x db branch ls` — name, location, created-at, size |
+  | `dropBranch('<name>', { force: true })` from code only | `x db branch drop <name>` |
+  | `import { branchSql } from '@ultimat3/cli'` | **removed** — it was the SQL text the `psql` shell-out ran |
+
+  Every verb is itself a legal branch name, so verb-first is the only shape where a name cannot be
+  read as a subcommand. A word outside `ls`/`create`/`drop` is `X_CLI_UNKNOWN_COMMAND`, and its
+  `fix:` hands the caller's own word back inside the command that still creates it — so the one
+  migration this breaks tells you what to type. `subcommandPositionals` in the registry now declares
+  the verb set, so a `fix:` line or a wiki page naming a fourth verb fails the gate rather than the
+  reader — including one that writes a `<placeholder>` where a verb belongs.
+
+  **`drop` has no confirmation flag, deliberately**: it may only remove what `ls` shows, so the typo
+  is impossible rather than the keystroke tedious. Externally that is a database carrying the
+  `comment on database` marker `createBranch()` writes; embedded, a `pgdata-<name>` directory. The
+  shared database this session is connected to is in neither set. A flag would also have broken a
+  shipped instruction — `packages/db/src/errors.ts:326` already hands out
+  `x db branch drop <branch>` with nothing on it.
+
+  **`branchSql` went because `create` did.** An external clone now runs through `@ultimat3/db`'s
+  `createBranch()` on one `role: 'migrate'` client rather than shelling out to `psql`, and that is
+  what makes `ls` work at all: the old path wrote the database and no marker comment, so every
+  branch the CLI made was invisible to the only lister the framework has. A second place spelling
+  `CREATE DATABASE … TEMPLATE` would be two answers to what a branch is. Branches created by the
+  old path carry no marker and are listed and dropped by neither — [Known gaps](wiki/Known-Gaps.md)
+  carries the `psql` line that removes one.
+
+  There is deliberately **no `reap` verb**: `reapBranches()` is a `task`, its max age is an app
+  decision, and a CLI verb would be a second path to one job.
+
+- **`x db --help` and `x mcp --help` now tell you what does work.** `MissingSubcommandError`'s
+  `fix:` was `x <command> --help` — which throws `MissingSubcommandError` again, because the
+  subcommand is resolved before the flag loop ever sees `--help`. A fix line that reproduces its own
+  failure, forever, on the only two commands that raise it. It now reads `x help <command>`.
+  `--help` is unchanged and still works everywhere else: `db` and `mcp` are exactly the commands
+  that declare no `defaultSubcommand`, and `parse.test.ts` pins that pair.
+
 - **BREAKING — an MCP tool is named by the export name, verbatim, on every surface. `snake_case`
   tool names are gone, and so is `toToolName`.** One primitive was reachable under one name and
   published under another. The served name has only ever been the export name —
@@ -1392,6 +1437,36 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`x verify` counts skips apart from passes, and names them.** A step with nothing to check here is recorded green so the run continues, and the summary counted it among the passes — so a repo whose `job` and `eval` suites do not exist printed the same `all 17 steps passed` as a repo where both ran. The line is now `14 of 17 steps passed — 3 skipped: drift, contract-diff, budgets` in this repo — the three correctly inapplicable at a non-app root, and the count every run in this sweep reported — and `14 of 17 steps passed in 11153ms — 3 skipped: e2e, contract-diff, roadmap` in the scaffolded app of [tutorial 2](https://github.com/developerz-ai/ultimate/wiki/Tutorial-02-First-Feature); `all {n} steps passed` survives only when nothing was skipped. `--json` gains `data.skipped`, the list of names beside `data.failed` (`steps[].skipped` is unchanged). Exit codes are untouched: a skipped step is still not a failure — it is now just impossible to mistake one for a passing one.
 
 ### Added
+
+- **The currency table is open, and it is opened by a call.**
+  `registerCurrency({ code, exponent, name })` declares a currency the shipped ISO-4217 rows do not
+  carry — a local currency, a scrip, a loyalty point, a token — once at boot. `CURRENCIES` still
+  means the 53 rows this package ships; `currencyCodes()` now answers for *this process*,
+  registrations included, which is the one list `X_CURRENCY_UNKNOWN`'s fix line names.
+
+  Not a preference. **Three layers already treated the currency set as open**, independently:
+  `@ultimat3/schema`'s `moneySchema`, `@ultimat3/entity`'s `parseCurrency` and the Postgres `CHECK`
+  `currencyCheck()` emits, and the **published OpenAPI contract** all accept any `^[A-Z]{3}$`. An app
+  could therefore take `GHS` over HTTP, validate it, write it to Postgres and read it back — and only
+  `@ultimat3/money`'s arithmetic refused it. The table was never a closed set; it was one package
+  disagreeing with the boundary, the storage layer and the contract the framework publishes.
+  `CurrencyCode` is `string`, not a union, and the table had **zero consumers outside
+  `packages/money/`**, so nothing depended on it being total. Those three restatements are now one
+  exported `CURRENCY_CODE_PATTERN` in `packages/schema/src/money-value.ts`, deliberately held to the
+  syntax ECMAScript, JSON Schema and POSIX ERE spell identically — a `\d` or a lookahead would make
+  the SQL `CHECK` stop meaning what `isCurrencyCode` means.
+
+  A registration is refused, never defaulted: no exponent is guessable, and a silent 2 reads
+  `1.23456789 XBT` as `1.23`, shifting every stored `minor` by a power of ten. Two new codes,
+  both documented in [`wiki/Error-Codes.md`](wiki/Error-Codes.md) — **`X_CURRENCY_INVALID`** for a
+  declaration that cannot become a currency (code shape, an exponent outside `0…15`, an empty name)
+  and **`X_CURRENCY_REDEFINED`** for one code declared twice with different meanings, a shipped ISO
+  row included. An *identical* second call returns the row in force rather than throwing, so a module
+  imported twice is not a process death.
+
+  Additive, not breaking: an app that registers nothing sees the same 53 rows and the same
+  behaviour. `x money add-currency` stays **planned**; `wiki/CLI-Reference.md`'s row for it now names
+  the shipped call instead of `x manifest --json`.
 
 - **Eight claims the repo made about itself, now enforced.** Each one was true when written and
   checked by nothing, which is the state axiom 3 exists to refuse. All ride existing `verify` steps

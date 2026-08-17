@@ -419,10 +419,10 @@ X_MIGRATION_DESTRUCTIVE: this migration destroys data and does not say so
 
 ## Branch DBs for agents
 
-The shipped command is `x db branch <name>` — one argument, the branch name. `x branch` (no `db`) is **planned** and exits `X_NOT_IMPLEMENTED`; the build and MCP-socket halves of the design below are what it will add.
+The shipped command is `x db branch`, and it takes a verb from a closed set — `ls`, `create <name>`, `drop <name>`. `x branch` (no `db`) is **planned** and exits `X_NOT_IMPLEMENTED`; the build and MCP-socket halves of the design below are what it will add.
 
 ```bash
-x db branch feat-new-billing --json
+x db branch create feat-new-billing --json
 ```
 
 ```json
@@ -436,7 +436,8 @@ x db branch feat-new-billing --json
 | Mechanism | `CREATE DATABASE "<source>_branch_<name>" TEMPLATE "<source>"` — Postgres file-copies, cheap, isolated, disposable. On the embedded database it is `branchPglite()`, a data-directory copy | **shipped** |
 | Writes | the MCP `db.migrate` tool applies **only** in a branch DB, never the shared dev DB (`X_MCP_NOT_BRANCH_DB`) | **shipped** |
 | Preview URL | reported in `data.preview`, subdomain-routed off `PORT` | **the URL is computed**; nothing routes that subdomain for you |
-| Teardown | no CLI subcommand. `dropBranch('<name>', { force: true })` from `@ultimat3/db`, or `psql "$DATABASE_URL" -c 'DROP DATABASE "…"'`. `listBranches()` is the read | API only |
+| Listing | `x db branch ls` — name, location, created-at, size, over either database. `listBranches()` is the same read in code | **shipped** |
+| Teardown | `x db branch drop <name>`. It may only drop what `ls` shows — an external branch carries the marker comment `createBranch` writes, an embedded one is a `pgdata-<name>` directory — so the shared database this session is connected to is not in the set, and there is no `--force` to get it wrong with. `dropBranch('<name>', { force: true })` is the same operation from `@ultimat3/db` | **shipped** |
 | Build + scoped MCP socket | a per-branch build id scoping the service worker, and `ws://localhost:9229/<branch>` | **planned**, part of `x branch` |
 
 The same clone mechanism powers test parallelism: each worker gets its own `ultimate_test_template_w<N>` cloned from the migrated template `ultimate_test_template`, typically 100–400ms. Never mock the database — clone it.

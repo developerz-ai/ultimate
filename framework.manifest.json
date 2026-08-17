@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "3b5f85fefb3c64371b5eee0792014481edc25ce1f9073e9783e2da41bfa062f4",
+  "buildId": "70577482982394e64fd9f4692e51c08b325a760f2d034e58707c6a96721cd2f7",
   "tiers": {
     "0": [
       "core",
@@ -621,7 +621,17 @@
       "at": "packages/http/src/errors.ts"
     },
     {
+      "code": "X_CURRENCY_INVALID",
+      "owner": "money",
+      "at": "packages/money/src/errors.ts"
+    },
+    {
       "code": "X_CURRENCY_MISMATCH",
+      "owner": "money",
+      "at": "packages/money/src/errors.ts"
+    },
+    {
+      "code": "X_CURRENCY_REDEFINED",
       "owner": "money",
       "at": "packages/money/src/errors.ts"
     },

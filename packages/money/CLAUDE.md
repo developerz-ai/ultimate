@@ -24,7 +24,7 @@ shape is still additive and this is still a minor version.
 | File | Single responsibility |
 |---|---|
 | `money.ts` | the value type + constructors (`money`, `fromDecimal`, `toDecimalString`) |
-| `currency.ts` | ISO-4217 table + minor-unit exponent. Every natural scale derives from here. |
+| `currency.ts` | the currency table — the ISO-4217 rows shipped, the rows an app registers, and the minor-unit exponent every natural scale derives from |
 | `scale.ts` | what decimal place a value's `minor` counts (`moneyScale`), which scales are legal (`assertScale`), and the exact bigint widening every comparison starts with (`minorAt`) |
 | `rescale.ts` | moving between scales: widening exact, lossy narrowing only with a named mode |
 | `arithmetic.ts` | add/subtract/multiply/compare, refuses mixed currencies |
@@ -82,7 +82,32 @@ shape is still additive and this is still a minor version.
 - **One place decides a sign.** `formatMoney` is `formatMoneyParts` joined, and `accounting`
   reaches `Intl` as `currencySign` — so the locale places the minus and picks the parenthesised
   form, and a UI styling the parts cannot render a different format from the label beside it.
-- Adding a currency: one row in `currency.ts` with its correct exponent, plus a format test.
+- **The table is open, and it is opened by a call.** `registerCurrency({ code, exponent, name })` is
+  how an app adds a currency the shipped rows do not carry — axiom 8: 53 of ~180 ISO codes is a
+  *convention*, and a convention an app cannot extend is a fork waiting to happen. The rest of the
+  framework already treated the set as open — `@ultimat3/schema`'s `moneySchema`, the published
+  OpenAPI `pattern` and `@ultimat3/entity`'s `char(3)` CHECK all accept any `^[A-Z]{3}$` — so an
+  unregistered code could arrive over HTTP and reach a row, and only arithmetic refused it.
+- **What a well-formed code IS lives in `packages/schema/src/money-value.ts`, and nothing here
+  restates it.** `CURRENCY_CODE_PATTERN` is the pattern *source* — a string, because the two
+  projections that cannot call a predicate need it: the published OpenAPI `pattern` and
+  `@ultimat3/entity`'s Postgres `~` CHECK — and `isCurrencyCode` is the predicate over it,
+  `isMoneyScale`'s twin, taking `unknown` because every caller is a boundary. `registerCurrency`
+  imports it for exactly the reason `assertScale` imports `isMoneyScale`, and `currency.test.ts`
+  asserts the shipped table through it rather than through a local regex. Never write
+  `/^[A-Z]{3}$/` in this package: it was seven copies across the repo, each individually correct,
+  and the only place a divergence would have surfaced is a psql session or a generated client.
+- **A registration is refused, never defaulted.** No exponent is guessable: a silent 2 reads
+  `1.23456789 XBT` as `1.23` and a stored `minor` shifts by a power of ten. Bad shape, bad exponent
+  or an empty name is `X_CURRENCY_INVALID`; a second declaration of one code is
+  `X_CURRENCY_REDEFINED`, and an **identical** one is a no-op so a twice-imported module is not a
+  crash. A shipped ISO row cannot be redefined at all.
+- **Two enumerations, two questions.** `CURRENCIES` is the constant this package ships;
+  `currencyCodes()` is what this process accepts, registrations included, and it is the list
+  `X_CURRENCY_UNKNOWN`'s fix line names — so it must include them or that fix is the dead end it
+  used to be.
+- Adding a currency to the *shipped* rows: one row in `currency.ts` with its correct exponent, plus
+  a format test. An app never needs this — that is what `registerCurrency` is for.
 
 ## Commands
 

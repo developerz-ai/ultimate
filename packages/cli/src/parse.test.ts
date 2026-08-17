@@ -35,7 +35,10 @@ describe('unit · parseArgs', () => {
     const error = thrownBy(() => parseArgs(['db'], SPECS));
     expect(error.code).toBe('X_CLI_BAD_FLAG');
     expect(error.cause).toContain('gen, migrate, branch');
-    expect(error.fix).toBe('x db --help');
+    // `x help db`, not `x db --help`: the subcommand is resolved AFTER the flag loop, so the
+    // latter throws this same error again — a fix line that reproduces its own failure.
+    expect(error.fix).toBe('x help db');
+    expect(thrownBy(() => parseArgs(['db', '--help'], SPECS)).code).toBe('X_CLI_BAD_FLAG');
   });
 
   test('a declared default subcommand is the one that answers a bare invocation', () => {

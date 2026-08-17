@@ -175,7 +175,7 @@ describe('db.migrate refuses anything but a branch database', () => {
     const failure = tool('db.migrate').handle({}, caller);
     await expect(failure).rejects.toMatchObject({
       code: 'X_MCP_NOT_BRANCH_DB',
-      fix: 'x db branch <name>, then retry db.migrate',
+      fix: 'x db branch create <name>, then retry db.migrate',
     });
     expect(ran).toEqual([]);
   });

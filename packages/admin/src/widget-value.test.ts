@@ -1,6 +1,29 @@
 import { describe, expect, test } from 'bun:test';
+import { isCurrencyCode } from '@ultimat3/schema';
 import type { AdminField } from './fields';
 import { widgetProps } from './widget-value';
+
+/** The corpus `@ultimat3/schema`'s `money-value.test.ts` and `@ultimat3/entity`'s `columns.test.ts`
+ * run their own projection against — one list, compared to by each, never to each other's
+ * behaviour. `USD\n` is here for the reason it is there: `$` is end-of-input in ECMAScript and
+ * end-of-line in PCRE, so a bound copied through a third dialect would accept it. */
+const CURRENCY_CASES: readonly (readonly [string, boolean])[] = [
+  ['USD', true],
+  ['EUR', true],
+  ['XBT', true],
+  ['AAA', true],
+  ['ZZZ', true],
+  ['usd', false],
+  ['UsD', false],
+  ['US', false],
+  ['USDD', false],
+  ['US1', false],
+  ['US_', false],
+  ['US ', false],
+  [' US', false],
+  ['', false],
+  ['USD\n', false],
+];
 
 const field = (over: Partial<AdminField>): AdminField => ({
   entity: 'invoice',
@@ -70,6 +93,19 @@ describe('money never renders as a float', () => {
 
   test('a missing ISO currency is refused', () => {
     expect(() => widgetProps(field({}), { minor: 100 }, ctx)).toThrow(/ISO-4217/);
+  });
+
+  test('the widget accepts exactly the codes isCurrencyCode accepts', () => {
+    // The bound has one declaration (`CURRENCY_CODE_PATTERN`, tier 0) and this widget is one of
+    // its readers, not a fourth copy. A local `/^[A-Z]{3}$/` here is only wrong once it drifts —
+    // and the only place that would have shown up is a row the app stored and the admin then
+    // refused to render, so the comparison is a test rather than a review comment.
+    for (const [value, accepted] of CURRENCY_CASES) {
+      expect([value, isCurrencyCode(value)]).toEqual([value, accepted]);
+      const render = (): unknown => widgetProps(field({}), { minor: 100, currency: value }, ctx);
+      if (accepted) expect(render()).toMatchObject({ value: { minor: 100, currency: value } });
+      else expect(render).toThrow(/ISO-4217/);
+    }
   });
 });
 

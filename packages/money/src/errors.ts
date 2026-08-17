@@ -10,6 +10,8 @@ export const MONEY_ERROR_CODES = [
   'X_MONEY_NOT_INTEGER',
   'X_CURRENCY_UNKNOWN',
   'X_CURRENCY_MISMATCH',
+  'X_CURRENCY_INVALID',
+  'X_CURRENCY_REDEFINED',
   'X_ALLOCATION_INVALID',
   'X_RATE_MISSING',
   'X_MONEY_SCALE_INVALID',
@@ -21,6 +23,8 @@ export const MONEY_ERROR_TITLES: Readonly<Record<MoneyErrorCode, string>> = {
   X_MONEY_NOT_INTEGER: 'a Money.minor value that is not an integer',
   X_CURRENCY_UNKNOWN: 'currency code not in the currency table',
   X_CURRENCY_MISMATCH: 'two Money values in different currencies',
+  X_CURRENCY_INVALID: 'a registerCurrency declaration that cannot become a currency',
+  X_CURRENCY_REDEFINED: 'one currency code registered twice with different meanings',
   X_ALLOCATION_INVALID: 'split ratios or part count are unusable',
   X_RATE_MISSING: 'no FX rate for the pair',
   X_MONEY_SCALE_INVALID: 'a Money.scale that is not a usable decimal exponent',
@@ -150,13 +154,46 @@ export function decimalNotNumeric(value: string, currency: string): MoneyError {
 }
 
 export function currencyUnknown(currency: string): MoneyError {
+  const upper = currency.toUpperCase().slice(0, 3) || 'XXX';
+  // Two arrivals, one code, so the fix names both doors. The lookup is exact and case-sensitive,
+  // which is what makes 'usd' the common one; the other is a currency the shipped ISO rows do not
+  // carry, and since 1.2.0 that is a call the app makes rather than a fork of this package.
   return new MoneyError({
     code: 'X_CURRENCY_UNKNOWN',
-    cause: `"${currency}" is not an ISO-4217 code in the currency table`,
-    // The table is a closed ISO-4217 constant with no registration point, so there is no command
-    // and no config line to name — the only thing a caller can do is pass a code that is in it.
-    // The lookup is exact and case-sensitive, which is what makes 'usd' the common arrival here.
-    fix: `pass a code currencyCodes() lists, uppercased — assertCurrency('${currency.toUpperCase().slice(0, 3) || 'XXX'}')`,
+    cause: `"${currency}" is not a currency this process knows — not in the shipped ISO-4217 rows, and not registered by the app`,
+    fix: `pass a code currencyCodes() lists, uppercased — assertCurrency('${upper}') — or declare it once at boot: registerCurrency({ code: '${upper}', exponent: 2, name: '${upper}' })`,
+  });
+}
+
+/**
+ * A `registerCurrency` declaration that could not become a currency. Never echoes the rejected
+ * value back into the `fix:` — `decimalTooPrecise` shipped that shape once, and an instruction
+ * that raises the error it is answering is not an instruction.
+ */
+export function currencyDeclarationInvalid(reason: string, exampleCode: string): MoneyError {
+  return new MoneyError({
+    code: 'X_CURRENCY_INVALID',
+    cause: reason,
+    fix: `registerCurrency({ code: '${exampleCode}', exponent: 2, name: '${exampleCode}' }) — three A–Z letters, a whole exponent from 0 to ${MAX_MONEY_SCALE}, and a non-empty name`,
+  });
+}
+
+/**
+ * One code, one declaration. The exponent is the dangerous half: it decides what a stored `minor`
+ * counts, so accepting a second one silently reinterprets every amount already written in that
+ * currency by a power of ten. The name matters for a smaller reason that is still a bug —
+ * `currencyInfo(code).name` is rendered, and two registrations would make it depend on import
+ * order.
+ */
+export function currencyRedefined(
+  code: string,
+  existing: { readonly exponent: number; readonly name: string },
+  attempted: { readonly exponent: number; readonly name: string },
+): MoneyError {
+  return new MoneyError({
+    code: 'X_CURRENCY_REDEFINED',
+    cause: `${code} is already registered as "${existing.name}" with exponent ${existing.exponent}; refusing to redefine it as "${attempted.name}" with exponent ${attempted.exponent}`,
+    fix: `keep one registerCurrency({ code: '${code}', exponent: ${existing.exponent}, name: '${existing.name}' }) call and delete the other — to change a live exponent you must migrate every stored ${code} amount, because each one shifts by a power of ten`,
   });
 }
 

@@ -45,6 +45,9 @@
       "path": "../render"
     },
     {
+      "path": "../schema"
+    },
+    {
       "path": "../ui"
     }
   ]

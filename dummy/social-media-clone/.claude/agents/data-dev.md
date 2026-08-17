@@ -35,8 +35,9 @@ to fake a derivation.
 - Seeds are deterministic: `id('user:ada')` is a stable UUID v5 of the label and every timestamp is
   a literal. Same rows, same ids, every run.
 
-**Commands**, from the app root: `x db gen "<msg>"` · `x db migrate` · `x db branch <name>` for
-anything destructive · `x entities list --json` · `bunx x test unit --filter <text>`.
+**Commands**, from the app root: `x db gen "<msg>"` · `x db migrate` · `x db branch create <name>`
+for anything destructive (`x db branch ls` to see them, `x db branch drop <name>` to clean up —
+`drop` only removes what `ls` shows) · `x entities list --json` · `bunx x test unit --filter <text>`.
 
 Scope every command to the files you edited. Concurrency 1. **Run no git commands** and never
 `git stash`. Never hand-write a connection string — the harness provisions one.

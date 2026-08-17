@@ -37,6 +37,29 @@ add(price, money(500, 'USD'));               // throws X_CURRENCY_MISMATCH
 `fromDecimal` scales by it (`'1.234'` KWD → 1234), `toDecimalString` reverses it, and
 `formatMoney` sets the fraction digits from it. Hardcoding `/ 100` is a JPY bug and a KWD bug.
 
+## A currency the shipped rows do not carry
+
+53 ISO-4217 rows ship. They are a *convention* — one useful subset — so an app adds its own with a
+call rather than a fork: a local currency, a scrip, a loyalty point, a token.
+
+```ts
+registerCurrency({ code: 'XBT', exponent: 8, name: 'Bitcoin' });
+fromDecimal('1.23456789', 'XBT');            // { minor: 123456789, currency: 'XBT' }
+```
+
+Once, at boot, before the first amount in that currency is built. The rules, each a refusal:
+
+| Rule | Refusal |
+|---|---|
+| three A–Z letters — `Intl` throws a `RangeError` on anything else | `X_CURRENCY_INVALID` |
+| a whole exponent from 0 to `MAX_MONEY_SCALE` — there is no safe default, and a silent 2 is the corrupted maths this package exists to prevent | `X_CURRENCY_INVALID` |
+| a non-empty name | `X_CURRENCY_INVALID` |
+| one code, one declaration — a second exponent reinterprets every stored amount by a power of ten, and a second name makes `currencyInfo().name` depend on import order. An **identical** re-registration is a no-op, so a module imported twice is not a crash | `X_CURRENCY_REDEFINED` |
+| a shipped ISO row is not the app's to redefine | `X_CURRENCY_REDEFINED` |
+
+`CURRENCIES` stays the shipped constant; `currencyCodes()` answers for *this* process, registrations
+included. That is why one is a value and the other is a call.
+
 ## Sub-cent amounts carry a scale
 
 `money(2, 'USD', 6)` is $0.000002 — `minor` counting 10⁻⁶ instead of the currency's own 10⁻².

@@ -303,7 +303,14 @@ always on the error and nothing read it, so a `23505` from two clicks racing a s
 
 ```bash
 x db migrate --json
-x db drift --json
 x db gen "add publish_at"
+x db branch ls --json
 x db branch create feature_x
+x db branch drop feature_x
 ```
+
+**Drift has no subcommand of its own.** The database half runs *inside* `x db migrate`, which calls
+`checkDrift()` on the connection it already holds and exits non-zero on a difference; the source
+half is the `drift` step of `x verify`, which hashes entity source against what `x db gen` recorded
+and opens no database. Two questions, two owners, and no `drift` subcommand under `x db` — the
+`DB_SUBCOMMANDS` set is `gen`, `migrate`, `reset`, `studio`, `branch`, `backfill`.

@@ -36,6 +36,16 @@ export interface CommandSpec {
    * constant the command validates against, never a second literal.
    */
   readonly positionalChoices?: readonly string[];
+  /**
+   * The same closed set, one level down: the set a named SUBCOMMAND's first positional must come
+   * from. `positionalChoices` cannot express it, because `fix-command.ts` only consults that field
+   * where a command declares NO subcommands — so `x db branch ls` resolved as command +
+   * subcommand and nothing ever looked at `ls`. That is how a shipped `fix:` told an agent to run
+   * a listing while `x db branch` read `ls` as a branch name and created a database from it.
+   * Declarative only, exactly like `positionalChoices`: the command still refuses an unknown word
+   * itself, and this is declared from the SAME constant it validates against.
+   */
+  readonly subcommandPositionals?: Readonly<Record<string, readonly string[]>>;
   readonly flags?: readonly FlagSpec[];
   /** Command needs an app root (`app.config.ts`) — the dispatcher enforces it. */
   readonly requiresApp?: boolean;
