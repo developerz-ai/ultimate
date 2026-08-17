@@ -50,13 +50,21 @@ and its reset — and `apps/web/shared/global.ts` is the one-line side-effect im
 the module graph, which is what makes the framework's boot scan load it once for both surfaces. No
 other stylesheet in the app emits top-level CSS: every module is its own Sass compilation, so a
 second emitter would duplicate the `:root` block. A document that carries none is
-`X_STYLES_GLOBAL_MISSING` from the gate's `budgets` step. `/signin`, `/signup` and `/signout` are mounted by
-the wrapped Better Auth integration, so they are in the route table without living in `site/`.
+`X_STYLES_GLOBAL_MISSING` from the gate's `budgets` step. **There is no `/signin`, `/signup` or
+`/signout`** — this file claimed all three were mounted "by the wrapped Better Auth integration"
+until 2026-08, which contradicted its own gotcha twelve lines down: `app/auth/login.ts`'s two route
+descriptors are declared, tested and **not served**, and there is no Better Auth wrapper in this
+repo. The route table is exactly `site/` + `app/` + `api/`, and `site/page.tsx`'s CTA points at
+`/pricing` because that is the funnel that exists.
 
-`apps/web/shared/actor.ts` is the app half of the actor — org, orgs, member row, request clock —
-read through `useActor()`. Core's `Actor` (id, roles, scopes, tenant) is the framework half and
-stays that: `useCan('post:publish')` is how a component asks about a permission, and the row-level
-half of any rule is decided by the server, never in the browser.
+`apps/web/shared/actor.ts` is the app half of the actor — the member row, their org, the request
+clock — read through `useActor()`. It rides on core's own `ActorFacts` seam, on the SAME actor
+every policy reads (`memberOf`, `@postly/core`), and `postlyActor()` is the one constructor for a
+signed-in Postly actor. It was a `ctx.session` service nothing registered until 2026-08, which is
+to say every `app/` render was a `TypeError`; an actor nobody resolved facts for is now
+`X_ACTOR_UNRESOLVED`. Never a second answer to "who is calling". `useCan('post:publish')` is how a
+component asks about a permission, and the row-level half of any rule is decided by the server,
+never in the browser.
 
 `imports.test.ts` at the app root loads every module and checks every named import against what
 the packages actually export. Both halves matter: Bun's test runner links lazily, so a symbol that
@@ -139,7 +147,11 @@ Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live
   runtime `TypeError` rather than a build error — `ctx.storage.ensureBucket()` shipped that way
   until it was deleted for `app/orgs/avatar.ts`, which calls `@ultimat3/storage`'s real surface.
   `ctx.auth` and `ctx.billing` are still undeclared and still unimplemented; they are the two
-  remaining instances, not a pattern to copy.
+  remaining instances, not a pattern to copy. **A service that IS declared and still unregistered
+  is worse**, because the type checks: `ctx.session` and `ctx.channel` were both, and both are
+  gone as of 2026-08 — the member row moved onto the actor's facts, and the channel publish that
+  dead-lettered `notifySubscribers` on every run is deleted, because a `ChannelHub` is built by the
+  socket process and no seam hands one to an app.
 - Uploads are `grantUpload` wrapped in an app `action` — the app owns the policy, the framework
   owns the key and the signature. Nothing here builds an object key by hand.
 - `app/auth/login.ts` is the whole of "log in with GitHub" — `defineAuth` + `oauthLogin`, and the

@@ -5,10 +5,13 @@
  */
 
 import { useT } from '@postly/i18n';
+import { derivePath } from '@ultimat3/action';
+import type { KnownPermission } from '@ultimat3/policy';
 import { defineRoute } from '@ultimat3/render';
 import { Button, DateTime, Stack, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
+import type { Api } from '../../../api';
 import { useActor, useCan } from '../../../shared/actor';
 import { client, queries } from '../../../shared/client';
 import { oneRow } from '../../../shared/rows';
@@ -18,8 +21,24 @@ import { useViewer } from '../../viewer-context';
 import { LikeButton } from '../ui/like-button';
 import styles from './page.module.scss';
 
+/**
+ * The action the comment form posts to, named once and checked by the compiler — the same rule
+ * `site/pricing/page.tsx` follows, and `import type` keeps `app/`'s runtime edge into `api/`
+ * absent. `createComment` → `POST /api/comments/create`; this file said `/_x/action/create-comment`
+ * until 2026-08, a path `derivePath` has never minted and nothing mounts.
+ */
+const COMMENT_ACTION = 'createComment' satisfies keyof Api['actions'];
+const COMMENT_ENDPOINT = derivePath(COMMENT_ACTION).path;
+
 export const config = defineRoute({
   render: 'ssr',
+  /**
+   * A post — including a draft — is org-only, so the route declares the gate. Without a `policy`
+   * the route registers as `auth: 'public'` and the render skips its gated branch, which is a
+   * per-member page with no `vary: cookie` on it. The row-level half stays with `postRead`, which
+   * `postById` evaluates against the org this page reads under.
+   */
+  policy: { permission: 'post:read' satisfies KnownPermission },
   offline: 'network-only',
   hydrate: 'interaction',
   budget: { js: '40kb', lcp: 2000 },
@@ -126,7 +145,7 @@ export function Page(props: { readonly data: PostPage }): JSX.Element {
         </Show>
 
         {/* Native form posting to the action's generated route: it works before hydration. */}
-        <form class={styles.form} method="post" action="/_x/action/create-comment">
+        <form class={styles.form} method="post" action={COMMENT_ENDPOINT}>
           <input type="hidden" name="postId" value={props.data.id} />
           {/* `postRead` decides on the org, so it travels in the input — including on the
               pre-hydration path, which would otherwise fail the action's own schema. */}

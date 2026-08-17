@@ -10,11 +10,19 @@
 
 import { contractTest, expect, test } from '@ultimat3/testing';
 import { createComment, createPost, publishPost } from './actions';
+import { notifySubscribers } from './jobs';
 
 const ORG = '00000000-0000-4000-8000-000000000002';
 const NOT_A_UUID = 'not-a-uuid';
 
-test('publishPost round-trips its schema and applies the default', async ({ seed, actorFor }) => {
+// `runJobs` is what makes the default observable rather than incidental: `notify` defaults to
+// true, so this invocation enqueues the fanout, and a process with no queue driver installed
+// answers the enqueue with `X_DRIVER_UNAVAILABLE` — the action's own write never lands.
+test('publishPost round-trips its schema and applies the default', async ({
+  seed,
+  actorFor,
+  runJobs,
+}) => {
   const { draft, author } = await seed('dev').pick({
     draft: 'post:draft-money',
     author: 'member:bruno',
@@ -28,6 +36,7 @@ test('publishPost round-trips its schema and applies the default', async ({ seed
   expect(published.status).toBe('published');
   expect(published.publishedAt).not.toBeNull();
   // `notify` defaults to true, so the fanout job exists — in the same transaction as the write.
+  expect(await runJobs.depth(notifySubscribers)).toBe(1);
   expect(publishPost.input.parse({ postId: draft.id, orgId: draft.orgId })).toEqual({
     postId: draft.id,
     orgId: draft.orgId,

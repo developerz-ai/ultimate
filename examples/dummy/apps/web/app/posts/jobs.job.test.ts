@@ -67,7 +67,15 @@ interface Reads {
 
 const noReads = (): Reads => ({ posts: 0, recipients: 0, orgs: 0 });
 
-/** The three services the job reads, and nothing else: a stub that answered more would hide a read. */
+/**
+ * The three services the job reads, and nothing else: a stub that answered more would hide a read.
+ *
+ * There is deliberately no `channel` here, and its absence is the assertion. This bag used to
+ * carry one, which made the suite green over a capability the app does not have: nothing ever
+ * registered `ctx.channel`, a `ChannelHub` is built by the socket process and no seam hands one to
+ * an app, so every real run of this job dead-lettered on a `TypeError` while the test passed. A
+ * stub for a service nobody registers proves the stub works.
+ */
 const contextFor = (reads: Reads): Ctx =>
   createContext({
     role: 'worker',
@@ -88,7 +96,6 @@ const contextFor = (reads: Reads): Ctx =>
           return Promise.resolve(Array.from({ length: RECIPIENTS }, (_, n) => member(n + 1)));
         },
       },
-      channel: () => ({ publish: () => Promise.resolve() }),
     },
   });
 
@@ -158,7 +165,6 @@ test('the send loop is one step per recipient, named for the recipient', async (
 
   expect(runner.usedNames()).toEqual([
     'load-post',
-    'announce',
     'load-recipients',
     'load-org',
     `send:${id(1)}`,
@@ -187,7 +193,6 @@ test('a blip on the third recipient re-sends the third, not the first two', asyn
     // two recipients it never reached: four mails in total, not six.
     expect(retry.replayedNames()).toEqual([
       'load-post',
-      'announce',
       'load-recipients',
       'load-org',
       `send:${id(1)}`,

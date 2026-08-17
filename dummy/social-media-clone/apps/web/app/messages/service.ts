@@ -35,20 +35,37 @@ export interface Thread {
   readonly messages: readonly Message[];
 }
 
-/** Every thread the viewer is in, most recently active first. */
+/**
+ * Every thread the viewer is in, most recently active first.
+ *
+ * The members and the names are read for the WHOLE list, not per thread. This loop used to make
+ * three round trips per conversation — members, latest message, names — so a 50-thread list was
+ * ~152 statements to render one screen, and every one of them waited for the one before it. Only
+ * `latestMessage` is still per thread: "the newest row per group" is not something the query
+ * builder can express in one statement, and reading N messages across every thread to find them
+ * would be one chatty conversation's page and nothing else's.
+ */
 export const threadsFor = async (viewerId: string): Promise<readonly ThreadSummary[]> => {
   const memberships = await repo.membershipsOf(viewerId);
-  const conversations = await repo.conversationsByIds(
-    memberships.map((membership) => membership.conversationId),
+  const conversationIds = memberships.map((membership) => membership.conversationId);
+  const [conversations, membersByConversation] = await Promise.all([
+    repo.conversationsByIds(conversationIds),
+    repo.membersOfMany(conversationIds),
+  ]);
+  const otherIdsOf = (conversationId: string): readonly string[] =>
+    (membersByConversation.get(conversationId) ?? [])
+      .map((row) => row.userId)
+      .filter((id) => id !== viewerId);
+  // One name lookup for the whole screen, from the members the call above already resolved.
+  const names = await repo.displayNamesOf(
+    conversations.flatMap((conversation) => otherIdsOf(conversation.id)),
   );
   const summaries: ThreadSummary[] = [];
   for (const conversation of conversations) {
     const membership = memberships.find((row) => row.conversationId === conversation.id);
     if (membership === undefined) continue;
-    const members = await repo.membersOf(conversation.id);
     const latest = await repo.latestMessage(conversation.id);
-    const otherIds = members.map((row) => row.userId).filter((id) => id !== viewerId);
-    const names = await repo.displayNamesOf(otherIds);
+    const otherIds = otherIdsOf(conversation.id);
     summaries.push({
       conversationId: conversation.id,
       kind: conversation.kind,

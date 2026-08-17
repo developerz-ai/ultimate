@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "834838ba19f3f7b0",
+  "buildId": "233752146b6ddcb7",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -2281,6 +2281,10 @@
     "es"
   ],
   "errorCodes": [
+    {
+      "code": "X_ACTOR_UNRESOLVED",
+      "package": "apps/web"
+    },
     {
       "code": "X_ORG_NOT_A_MEMBER",
       "package": "apps/web"

@@ -115,3 +115,17 @@
   font-size: t.text('sm');
   color: t.role('fg-muted');
 }
+
+// The card an actor may not read. Same shape as the generated screens' refusal so a denial looks
+// the same everywhere in the dashboard — one decision, one way of saying it was made.
+.refusal {
+  @include t.padding-block(t.space(4));
+  @include t.padding-inline(t.space(4));
+
+  margin: 0;
+  font-size: t.text('sm');
+  border-inline-start: 3px solid t.role('danger');
+  border-radius: t.radius('md');
+  background: t.role('bg-soft');
+  color: t.role('fg');
+}

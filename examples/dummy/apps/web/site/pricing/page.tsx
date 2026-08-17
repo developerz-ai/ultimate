@@ -40,6 +40,14 @@ const CONTACT_ACTION = 'contactSales' satisfies keyof Api['actions'];
 const CONTACT_ENDPOINT = derivePath(CONTACT_ACTION).path;
 
 /**
+ * The fragment every plan card links to. Named once because it is two things at a distance — the
+ * `id` on the form and the `href` on each card — and a fragment that names nothing is a link that
+ * silently does nothing. It targets the form INSIDE the `<details>`, not the `<details>` itself:
+ * a browser expands a closed disclosure to reveal a fragment target within it.
+ */
+const CONTACT_FORM_ID = 'contact';
+
+/**
  * The page's one island. `props` are the exact keys the browser gets: JSON, already translated,
  * and nothing else — a callback cannot cross this seam, which is why the island calls the action
  * itself rather than being handed an `onSubmit`. Timing is the route's `hydrate`, never declared
@@ -122,7 +130,12 @@ export function Page(props: { readonly query: { currency?: string } }): JSX.Elem
                 seats={PLAN_CATALOG[code].seats}
                 withDescription
               />
-              <a class={styles.cta} href={`/signup?plan=${code}&currency=${currency()}`}>
+              {/*
+                The enquiry below, not `/signup?plan=…`: nothing serves a signup route, so the
+                query string carried a plan to a 404. The form is on this page and names the same
+                plan list, so the fragment is a target that exists with scripting off.
+              */}
+              <a class={styles.cta} href={`#${CONTACT_FORM_ID}`}>
                 {t('site.pricing.cta', { plan: t(`plans.${code}.name`) })}
               </a>
             </li>
@@ -146,7 +159,12 @@ export function Page(props: { readonly query: { currency?: string } }): JSX.Elem
       >
         <details class={styles.contact}>
           <summary class={styles.contactTrigger}>{t('site.pricing.contact.open')}</summary>
-          <form class={styles.contactForm} method="post" action={CONTACT_ENDPOINT}>
+          <form
+            class={styles.contactForm}
+            id={CONTACT_FORM_ID}
+            method="post"
+            action={CONTACT_ENDPOINT}
+          >
             <p class={styles.contactIntro}>{t('site.pricing.contact.intro')}</p>
 
             <label class={styles.contactField}>

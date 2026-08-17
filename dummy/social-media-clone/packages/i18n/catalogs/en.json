@@ -51,7 +51,16 @@
       "deniedBy": "denied —"
     },
     "actions": {
-      "none": "No action on this resource is available to you."
+      "none": "No action on this resource is available to you.",
+      "column": "Actions",
+      "confirm": {
+        "label": "Type {token} to confirm"
+      }
+    },
+    "cell": {
+      "empty": "—",
+      "yes": "Yes",
+      "no": "No"
     },
     "denied": {
       "body": "Refused. {permission} was not granted to this actor ({reason}). The same decision declines to render the control and refuses the call behind it."

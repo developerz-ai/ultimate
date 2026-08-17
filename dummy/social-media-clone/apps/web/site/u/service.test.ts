@@ -5,7 +5,7 @@
 // friends-only post appears on an anonymous page, it just appears.
 
 import { expect, test } from 'bun:test';
-import { seedDemo } from '@social-media-clone/db';
+import { db, seedDemo } from '@social-media-clone/db';
 import { userId } from '@social-media-clone/domain';
 import { seedId } from '@ultimat3/entity';
 import type { Actor } from '../../shared/actor';
@@ -67,4 +67,20 @@ test('a soft-deleted post is on nobody profile, its author included', async () =
 
 test('an unknown handle is null, not an empty profile', async () => {
   expect(await publicProfile(null, 'nobody')).toBeNull();
+});
+
+test('a SUSPENDED account has no public profile — the same answer as a handle nobody holds', async () => {
+  // The admin's one lever is `suspended: true`, and until 2026-08 it stopped the account acting and
+  // left its profile, bio and posts served to anonymous readers. Restored in a `finally`: the seed
+  // is shared with every test in this file and the next.
+  await db.users.update(idOf('user:kenji'), { suspended: true });
+  try {
+    expect(await publicProfile(null, 'kenji')).toBeNull();
+    // Not even to a friend, and not to the account itself: suspension is not a visibility rule with
+    // an audience, it is the account being switched off.
+    expect(await publicProfile(actor(idOf('user:user'), [idOf('user:kenji')]), 'kenji')).toBeNull();
+  } finally {
+    await db.users.update(idOf('user:kenji'), { suspended: false });
+  }
+  expect(await publicProfile(null, 'kenji')).not.toBeNull();
 });

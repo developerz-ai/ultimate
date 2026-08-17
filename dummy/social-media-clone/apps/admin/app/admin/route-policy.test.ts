@@ -78,6 +78,33 @@ test('every admin page declares the gate the admin route table declares, and no 
   }
 });
 
+/**
+ * A page nobody can find is a page that does not exist. `/admin/jobs` had a file, a route and a
+ * gate, and no sidebar entry anywhere — `pages:` builds a nav item for a custom page and the
+ * framework's BUILT-IN routes (jobs, audit, search) get none, so serving one from this app means
+ * declaring its link here. The dashboard root is the exception: it is the brand link.
+ */
+test('every admin page this app serves is reachable from the sidebar', () => {
+  const items = admin.nav.flatMap((group) => group.items);
+  const unreachable = Object.keys(MOUNTS)
+    .filter((file) => file !== 'page.tsx')
+    .map((file) => urlOf(file).slice(admin.basePath.length))
+    .filter((href) => !items.some((item) => item.href === href));
+  expect(unreachable).toEqual([]);
+});
+
+test('a sidebar link is gated by the permissions of the URL it opens, never a second list', () => {
+  for (const item of admin.nav.flatMap((group) => group.items)) {
+    // A resource item carries none: its gate is its own `list` operation, applied by `visibleNav`.
+    if (item.permissions === undefined) continue;
+    const route = adminRouteFor(admin, `${admin.basePath}${item.href}`);
+    expect({ href: item.href, permissions: item.permissions }).toEqual({
+      href: item.href,
+      permissions: route.permissions,
+    });
+  }
+});
+
 test('the gate is the coarse half of the pair the table states — never a permission of its own', () => {
   for (const file of Object.keys(MOUNTS)) {
     const route = adminRouteFor(admin, urlOf(file));

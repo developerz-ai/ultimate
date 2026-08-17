@@ -6,8 +6,12 @@
 // a database nobody reads. Seeding here means the demo shows the same content on every boot, which
 // is also what makes the hourly reset a no-op rather than a special case.
 //
-// A real deployment against Postgres seeds through `ROLE=migrate` instead — the rows are already
-// there, and this call finds them and does nothing.
+// It is a REPLAY, on every role and every restart: web, sync, worker and scheduler each run this on
+// the way up, against one shared Postgres once `DATABASE_URL` is set. `seedDemo` is therefore an
+// upsert per row (packages/db/src/seed.ts), not an insert — the claim "the rows are already there
+// and this call does nothing" lived here while the call was a plain insert, which is `23505` on the
+// second container to boot. `ROLE=migrate` applies migrations and does NOT seed: the framework's
+// release phase runs no app code.
 
 import { seedDemo } from '@social-media-clone/db';
 

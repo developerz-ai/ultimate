@@ -18,7 +18,7 @@ x verify      # the gate: typecheck, lint, boundaries, tests, drift, budgets
 | `apps/web/app` | authed, streaming, realtime |
 | `apps/web/api` | actions only |
 | `apps/web/shared` | tokens, primitives, actor type — a leaf |
-| `apps/admin` | generated admin dashboard, MCP on |
+| `apps/admin` | generated admin dashboard: `app/admin` screens, `api` the one write door, `shared` its leaf |
 | `packages/*` | domain, db, i18n, ui, mcp |
 | `app.config.ts` | the one config file |
 | `x.manifest.json` | generated facts: routes, actions, jobs, policies |

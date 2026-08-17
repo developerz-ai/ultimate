@@ -30,7 +30,13 @@ beforeAll(async () => {
   // answer to "what is in this app", and the one that goes stale.
   const loaded = await loadApp(ROOT);
   expect(loaded.findings).toEqual([]);
-});
+  // `loadApp` walks this app's whole module graph — ~2.7s alone, and the four contract files
+  // that do it run while every other suite competes for the same cores, so the 5000ms bun
+  // gives a hook is a coin flip rather than a budget. Booting the app IS the fixture here,
+  // so the timeout is what moves. Raised across all four together: they share one cost, and
+  // raising the one seen failing only relocates the failure to whichever shard the others
+  // land in.
+}, 30_000);
 
 contractTest('the app declares gated routes at all — an empty table proves nothing', () => {
   expect(gatedRoutes().length).toBeGreaterThan(0);

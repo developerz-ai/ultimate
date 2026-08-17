@@ -31,6 +31,33 @@ export const threadRowOf = async (conversationId: string): Promise<ThreadRow> =>
 export const membersOf = (conversationId: string): Promise<readonly Participant[]> =>
   db.participants.where({ conversationId }).orderBy('userId').limit(MEMBERS_MAX).all();
 
+/**
+ * The members of many conversations, grouped — one statement for a whole thread list.
+ *
+ * `threadsFor` asked `membersOf` once per conversation, so a list of 50 threads was 50 statements
+ * before it had rendered a single name. Bounded by the same two caps the per-thread calls carry:
+ * at most `THREADS_MAX` conversations, at most `MEMBERS_MAX` rows each.
+ */
+export const membersOfMany = async (
+  conversationIds: readonly string[],
+): Promise<ReadonlyMap<string, readonly Participant[]>> => {
+  const ids = [...new Set(conversationIds)].slice(0, THREADS_MAX);
+  const grouped = new Map<string, Participant[]>();
+  if (ids.length === 0) return grouped;
+  const rows = await db.participants
+    .andWhere('conversationId', 'in', ids)
+    .orderBy('conversationId')
+    .orderBy('userId')
+    .limit(ids.length * MEMBERS_MAX)
+    .all();
+  for (const row of rows) {
+    const bucket = grouped.get(row.conversationId);
+    if (bucket === undefined) grouped.set(row.conversationId, [row]);
+    else bucket.push(row);
+  }
+  return grouped;
+};
+
 export const membershipsOf = (userId: string): Promise<readonly Participant[]> =>
   db.participants.where({ userId }).orderBy('conversationId').limit(THREADS_MAX).all();
 
@@ -66,17 +93,29 @@ export const threadPage = (
     .all();
 
 /**
+ * The ceiling on one name lookup: everyone in every thread of one list. The bound that matters is
+ * the caller's own — its ids come from `membersOf` (≤ MEMBERS_MAX) over `membershipsOf`
+ * (≤ THREADS_MAX) — and this is the worst case those two allow.
+ */
+const NAMES_MAX = THREADS_MAX * MEMBERS_MAX;
+
+/**
  * Display names for a set of ids. A screen never renders a bare uuid at a person: the id is the
  * authorization fact, the name is what a reader is owed.
+ *
+ * Bounded by how many ids were asked about, not by `MEMBERS_MAX`: a thread list unions the members
+ * of up to 50 conversations into one call, and a fixed 100 answered for the first hundred and left
+ * the rest nameless — `otherNames` drops a name it cannot find, silently.
  */
 export const displayNamesOf = async (
   ids: readonly string[],
 ): Promise<ReadonlyMap<string, string>> => {
-  if (ids.length === 0) return new Map();
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Map();
   const rows = await db.users
-    .andWhere('id', 'in', [...ids])
+    .andWhere('id', 'in', unique)
     .orderBy('id')
-    .limit(MEMBERS_MAX)
+    .limit(Math.min(unique.length, NAMES_MAX))
     .all();
   return new Map(rows.map((user) => [user.id, user.displayName]));
 };
@@ -97,5 +136,17 @@ export interface NewMessage {
  */
 export const insertMessage = (message: NewMessage): Promise<Message> => db.messages.insert(message);
 
-export const addParticipant = (conversationId: string, userId: string): Promise<Participant> =>
-  db.participants.insert({ conversationId, userId });
+/**
+ * Adding someone who is already in the thread is a no-op, not a collision: `onMatch: 'nothing'`
+ * rather than `update`, because the stored row carries `joinedAt` and `lastReadAt` and re-adding a
+ * member must not move either — it would mark a read thread unread. The composite key is why this
+ * cannot be `insert`: an insert on an existing pair overwrites in memory and is `23505` on Postgres.
+ */
+export const addParticipant = async (conversationId: string, userId: string): Promise<void> => {
+  // `void`: `onMatch: 'nothing'` omits a row it left alone, so returning "the row, unless it was
+  // already there" would mean a second read for a value no caller uses.
+  await db.participants.upsertAll([{ conversationId, userId }], {
+    onConflict: ['conversationId', 'userId'],
+    onMatch: 'nothing',
+  });
+};

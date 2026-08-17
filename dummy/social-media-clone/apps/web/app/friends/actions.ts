@@ -80,10 +80,11 @@ export const blockUser = action({
 });
 
 /**
- * Declared in full — permission, policy, row loader and all — even though its handler cannot
- * succeed: the UI decides whether to render an "Unblock" control from `blockDelete` with this same
- * row, and one decision has to both render the button and answer the call. The refusal names the
- * framework change that makes it work; see `X_BLOCK_REMOVE_UNSUPPORTED`.
+ * The mirror of `blockUser`. The UI decides whether to render an "Unblock" control from
+ * `blockDelete` with this same row, and one decision both renders the button and answers the call.
+ *
+ * The output is the PAIR, not whether a row went: the action is idempotent, so a second submit —
+ * a double click, a retry, a queued MCP call — has to answer the same document as the first.
  */
 export const unblockUser = action({
   input: t.object({ userId: t.uuid }),
@@ -94,5 +95,8 @@ export const unblockUser = action({
     return row === null ? null : { blockerId: row.blockerId, blockedId: row.blockedId };
   },
   mcp: { expose: true, description: 'Lift a block this user placed' },
-  handle: ({ input }) => unblockPerson(input.userId),
+  handle: async ({ input, ctx }) => {
+    await unblockPerson(ctx.actor.id, input.userId);
+    return { blockerId: ctx.actor.id, blockedId: input.userId };
+  },
 });

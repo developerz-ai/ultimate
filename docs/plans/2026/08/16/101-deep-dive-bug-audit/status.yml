@@ -4,7 +4,7 @@ status: in_progress
 created_by: sebi
 worked_by: "claude (hive of 4 per PR, one checkout)"
 owner: sebi
-percent: 97
+percent: 99
 current_focus: >
   02 and 06 are DONE across three PRs — realtime #107, cache/query/jobs/core/db #110, http/action
   #112. auth and entity needed nothing: every finding naming them was already closed by #104 and
@@ -17,7 +17,8 @@ current_focus: >
   splitting a package's entry points is boundary surgery and does not belong in a deletion wave.
   15 lands as #117 at 85% — the identity-function consolidation (fnv1a, sha256_16, canonicalJson)
   needs @ultimat3/core and must resolve query's missing document/hash split FIRST, or it publishes
-  bare NaN tokens into a document surface. Next: 12 (both tracked apps), then 13 (docs drift).
+  bare NaN tokens into a document surface. 12 lands as #118 — two pins deleted, three pin texts rewritten from false causes, and both apps
+  improved on the ratchet (10->11 and 14->15 passing). Next: 13 (docs drift), the last slice.
 slices:
   - file: 05-gate-and-scripts.md
     tier: 0
@@ -62,7 +63,7 @@ slices:
   - file: 03-tier45-bugs.md
     tier: 4
     status: done
-    percent: 97
+    percent: 99
     pr: 113
   - file: 11-deploy-ci.md
     tier: 5
@@ -81,8 +82,9 @@ slices:
     pr: 116
   - file: 12-tracked-apps.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: done
+    percent: 90
+    pr: 118
   - file: 15-dead-code-drift.md
     tier: 0
     status: done
@@ -439,6 +441,62 @@ evidence:
          accept path (which does not exist) or a post-upload object.size check in promoteAttachment."
       - "Wiring the /_x panel to recentTierFailures, in cli/src/dev-dashboard.ts."
     new_codes: [X_MAIL_CREDENTIAL_MISSING, X_STORAGE_LIST_FAILED]
+  - pr: 118
+    slices: ['12']
+    gate: "14 of 17 passed, 3 skipped; app gate every pin holds — examples/dummy 10/17 -> 11/17
+           (7 pins -> 6), social-media-clone 14/17 -> 15/17 (3 pins -> 2)"
+    falsified:
+      - "examples/dummy pinned contract, live and job with ONE stated cause — an unscoped repo —
+         and it was WRONG FOR ALL THREE. The repo scopes correctly. Real causes: the seed fixture
+         wrote into a PRIVATE DRIVER nothing else in the process could read, so every action's row
+         loader saw an empty table; and the actor factory minted a USER id where this app's identity
+         is the MEMBERSHIP, so an actor owned nothing it wrote and the policy denied an author their
+         own draft."
+      - "posts/actions.ts claimed the rule compares the org 'before it reads the row at all'. It
+         does not — invoke.ts awaits the row loader THEN calls the guard. That inverted comment about
+         ORDERING is why three investigations went to the wrong file."
+      - "Flipping the demo's driver was necessary and nowhere near sufficient: the committed
+         migration created ZERO TABLES (five lines, all comments), and the REGENERATED one could not
+         apply either — x db gen emits create table in entity-registration order with foreign keys
+         inline, so `blocks references users` came first. FRAMEWORK BUG, unfixed and reported."
+      - "/admin/jobs was NOT missing a route — defineAdmin builds it for every app; only the NAV
+         ITEM was missing, and adminNav() never derives from built-in routes."
+      - "repo.ts CANNOT call decideOperation — admin.ts imports it, so the gate went at the caller.
+         And there is no leak today: every role carries media:read beside job:read."
+      - "Fixing the packages/mcp upward import does NOT turn boundaries green — measured before and
+         after, the same 3 findings. readAppSources globs only apps/*/{site,app,api,shared}/**, so
+         AN APP'S OWN packages/ ARE OUTSIDE THE BOUNDARY CHECK ENTIRELY. Framework gap."
+      - "The offline-page fix is a HARD PRECONDITION, not a closer: x build --target static now
+         completes and weighs 3 of 8, but the other 5 fail for reasons no app can reach (APP_URL
+         unset; the app/ shell rendering outside a request). budgets stays pinned with corrected text."
+      - "config.ai.mcp is read by NOTHING and packages/mcp has zero importers — the demo serves NO
+         MCP ENDPOINT AT ALL."
+    decided:
+      - "Two pins DELETED (examples/dummy:contract, now 14/14; social-media-clone:drift, now green)
+         and three REWRITTEN from false causes to real ones. A pin whose stated cause is wrong is
+         worse than no pin: it is a documented claim nothing verifies, inside the gate itself."
+      - "Production without DATABASE_URL now REFUSES rather than serving four disconnected in-memory
+         worlds. Precedent: startStorage's LocalDiskUnsafeError."
+      - "DECLINED an island for the offline queue count: the string is a CLDR plural and island props
+         cross the seam ALREADY TRANSLATED, so a count only the browser knows cannot be
+         pre-translated. Used the hasLiveClient() guard the update banner already uses."
+      - "DECLINED sync:true on a production send so a test could observe a step failure — it is
+         documented 'tests and CLI one-shots only', and this is the REFERENCE app. Retargeted the
+         assertion at the mail job's retry, where the retry actually happens."
+      - "DECLINED branching examples/dummy's driver on DATABASE_URL: its harness reaches the app's
+         store THROUGH defaultDriver() precisely because the client names none."
+    deferred:
+      - "x db gen emits no topological sort, so a first migration with foreign keys cannot apply.
+         Same generator drops non-timestamp column defaults, so the database does not enforce what
+         the entity declares."
+      - "An app's own packages/ are never boundary-checked (cli/src/app-boundaries.ts)."
+      - "The memory driver ignores includeDeleted on writes while pg-driver honours it — a soft-
+         deleted row is addressable on Postgres and not in memory."
+      - "registerErrorStatus is called nowhere in the demo app, so every app code answers 500 —
+         including X_CREDENTIALS_INVALID, which should be 401."
+      - "No app seam installs channel guards; the hub is built by the socket process and never asks
+         the app. Both apps document the same gap independently."
+    new_codes: [X_ACTOR_UNRESOLVED, X_ADMIN_ACTION_UNKNOWN, X_ADMIN_ACTION_REFUSED]
 notes: >
   Slice order in this file is execution order, not tier order — 05 and 10 land first because the gate
   does not yet mean what it says, and 08 lands late because it is mostly deletions that would collide

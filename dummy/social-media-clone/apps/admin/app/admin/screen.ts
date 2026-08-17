@@ -15,6 +15,7 @@ import {
   type NavGroup,
   permissionsForOperation,
 } from '@ultimat3/admin';
+import { localeConfig, t } from '@ultimat3/i18n';
 import { currentAdminActor } from './actor';
 import { admin, adminCtxForRequest } from './admin';
 
@@ -22,6 +23,16 @@ import { admin, adminCtxForRequest } from './admin';
 export interface ScreenColumn {
   readonly name: string;
   readonly labelKey: string;
+}
+
+/**
+ * One table row: what it prints, and WHICH row it is. The id is here because an action form has to
+ * name its subject — a toolbar button with no id is a control that cannot act, which is what this
+ * screen shipped until 2026-08.
+ */
+export interface ResourceRow {
+  readonly id: string;
+  readonly cells: readonly string[];
 }
 
 /** One row of an operation matrix: the decision the dashboard renders AND the call obeys. */
@@ -38,7 +49,7 @@ export interface ResourceScreen {
   /** Non-null when the actor may not even list this resource; the table is absent, not empty. */
   readonly denial: AdminDecision | null;
   readonly columns: readonly ScreenColumn[];
-  readonly rows: readonly (readonly string[])[];
+  readonly rows: readonly ResourceRow[];
   /** Only the buttons this actor may press. A denied action never reaches this array. */
   readonly buttons: readonly AdminActionButton[];
   readonly matrix: readonly OperationDecision[];
@@ -49,17 +60,22 @@ export interface ResourceScreen {
  * A timestamp never renders without an explicit IANA zone — there is no ambient default here or
  * anywhere else, and a server formatting in its own zone tells a reader in another one the wrong
  * day. The actor's zone when the request has one, UTC when it does not.
+ *
+ * The LOCALE is the actor's too. It was the literal `'en'` until 2026-08, beside a `timeZone` read
+ * off the actor — so an operator whose dashboard was otherwise translated read every date in
+ * American order. Same for `—`, `yes` and `no`: three user-facing strings that never went through
+ * `t()` and therefore had no translation to be missing.
  */
-const cell = (value: unknown, timeZone: string): string => {
-  if (value === null || value === undefined) return '—';
+const cell = (value: unknown, locale: string, timeZone: string): string => {
+  if (value === null || value === undefined) return t('admin.cell.empty');
   if (value instanceof Date) {
-    return new Intl.DateTimeFormat('en', {
+    return new Intl.DateTimeFormat(locale, {
       dateStyle: 'medium',
       timeStyle: 'short',
       timeZone,
     }).format(value);
   }
-  if (typeof value === 'boolean') return value ? 'yes' : 'no';
+  if (typeof value === 'boolean') return t(value ? 'admin.cell.yes' : 'admin.cell.no');
   const text = String(value);
   return text.length > 72 ? `${text.slice(0, 71)}…` : text;
 };
@@ -82,7 +98,11 @@ export const operationMatrix = (name: string): readonly OperationDecision[] => {
 export const resourceScreen = async (name: string, limit = 25): Promise<ResourceScreen> => {
   const resource = admin.resource(name);
   const ctx = adminCtxForRequest();
-  const timeZone = currentAdminActor().actor?.timeZone ?? 'UTC';
+  const { actor } = currentAdminActor();
+  const timeZone = actor?.timeZone ?? 'UTC';
+  // The app's declared default, read back off the framework — never a second literal beside the
+  // one in `app.config.ts`.
+  const locale = actor?.locale ?? localeConfig().fallback;
   const matrix = operationMatrix(name);
   const columns = resource.listFields.map((field) => ({
     name: field.name,
@@ -114,7 +134,10 @@ export const resourceScreen = async (name: string, limit = 25): Promise<Resource
     titleKey: resource.titleKey,
     denial: null,
     columns,
-    rows: page.page.rows.map((row) => columns.map((column) => cell(row[column.name], timeZone))),
+    rows: page.page.rows.map((row) => ({
+      id: String(row[resource.idField] ?? ''),
+      cells: columns.map((column) => cell(row[column.name], locale, timeZone)),
+    })),
     buttons,
     matrix,
     total: page.page.rows.length,

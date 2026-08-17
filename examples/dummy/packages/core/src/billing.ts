@@ -6,7 +6,16 @@
 
 import { type BillingCurrency, isUpgrade, type PlanCode, priceOf, seatLimit } from '@postly/domain';
 import { isNegative, type Money, multiply, subtract, zero } from '@ultimat3/money';
-import { addMs, fromZoned, type Instant, type TimeZone, toZoned } from '@ultimat3/time';
+import {
+  addMs,
+  assertTimeZone,
+  daysBetween,
+  fromZoned,
+  type Instant,
+  instant,
+  type TimeZone,
+  toZoned,
+} from '@ultimat3/time';
 import { NotAnUpgrade, SeatsExceeded } from './errors';
 
 export type UpgradeQuoteInput = {
@@ -66,6 +75,32 @@ export const endOfBillingPeriod = (at: Instant, zone: TimeZone, periodOffset = 0
     zone,
   );
   return addMs(nextPeriodStart, -1);
+};
+
+/** The two numbers `quoteUpgrade` prorates against, read off the calendar rather than assumed. */
+export type BillingPeriod = Pick<UpgradeQuoteInput, 'daysRemaining' | 'daysInCycle'>;
+
+/**
+ * The real period `at` falls in, in whole LOCAL days: what is left of it, and how long it is.
+ *
+ * Every caller of `quoteUpgrade` needs both, and every caller that made them up got them wrong —
+ * `packages/mcp/src/tools.ts` quoted `daysRemaining: 15, daysInCycle: 30` for every org on every
+ * day, so a quote taken on the 2nd of February charged half a month. A month is 28–31 days and a
+ * local day is 23, 24 or 25 hours, so neither number is a constant and neither is a subtraction of
+ * milliseconds: `daysBetween` counts local day boundaries crossed, which is why March in a DST
+ * zone is 31 days and not 30.96.
+ *
+ * `at` and `zone` are the loose shapes a caller has (`ctx.now()`, `ctx.tz`) and are branded here,
+ * once — an unusable zone is `X_TIMEZONE_INVALID` from `assertTimeZone`, never a silent UTC.
+ */
+export const billingPeriodAt = (at: Date, zone: string): BillingPeriod => {
+  const from = instant(at);
+  const tz = assertTimeZone(zone);
+  const end = endOfBillingPeriod(from, tz);
+  return {
+    daysRemaining: daysBetween(from, end, tz),
+    daysInCycle: daysBetween(endOfBillingPeriod(from, tz, -1), end, tz),
+  };
 };
 
 /** Called before an invite is written, not after — the seat limit is a plan promise, not advice. */

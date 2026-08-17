@@ -18,6 +18,7 @@ import '@social-media-clone/i18n';
 import { seedDemo } from '@social-media-clone/db';
 import { createContext, runWithContext, userActor } from '@ultimat3/core';
 import { renderComponent } from '@ultimat3/render';
+import { ADMIN_ACTION_ROUTE } from '../../shared/action-route';
 
 const FILE = 'apps/admin/app/admin/page.tsx';
 
@@ -59,8 +60,11 @@ test('the read-only operator sees the seeded rows and no write control', async (
   // The matrix, rendered — the same decision, on screen.
   expect(html).toContain('admin:read + users:read');
   expect(html).toContain('admin:write + users:write');
-  // No control they cannot press.
+  // No control they cannot press — and no FORM either. The label alone is a weak assertion: the
+  // page shipped a `<button>` with no handler and no form for a release, which reads as a control
+  // and acts as nothing.
   expect(html).not.toContain('Suspend user');
+  expect(html).not.toContain(ADMIN_ACTION_ROUTE);
   expect(html).toContain('No action on this resource is available to you.');
 });
 
@@ -77,4 +81,20 @@ test('an operator who holds the write grant DOES get the control — same templa
   const html = await render(['operator']);
   expect(html).toContain('Suspend user');
   expect(html).toContain('demo/ada/tenancy-cover.jpg');
+});
+
+test('the control is a form submit at the action route, naming the action and the row', async () => {
+  const html = await render(['operator']);
+
+  // A `<form method="post">` and a `type="submit"`, because nothing here hydrates: a `type="button"`
+  // on a page with `hydrate: 'never'` is markup that can never do anything, which is what this
+  // toolbar was. The target is the constant `runAdminAction` derives, never a typed-in path.
+  expect(html).toContain(`method="post" action="${ADMIN_ACTION_ROUTE}"`);
+  expect(html).toContain('<button type="submit"');
+  expect(html).toContain('name="name" value="user.suspend"');
+
+  // The SUBJECT. A toolbar button carried no row id at all, so even a wired one could not have
+  // named what it acted on — every form here posts the id of its own row.
+  const [, first = ''] = /name="id" value="([^"]+)"/.exec(html) ?? [];
+  expect(first).toMatch(/^[0-9a-f-]{36}$/);
 });

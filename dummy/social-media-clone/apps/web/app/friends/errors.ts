@@ -62,26 +62,9 @@ export class FriendRequestNotFoundError extends UltimateError {
  * the handler runs, from the actor's own resolved block set — so a second check in the service
  * would be a second copy of that rule, and the two would drift the first time either changed.
  *
- * What follows is not an app rule at all.
- *
- * Not an app rule — a framework hole, reported where it bites rather than swallowed. `Table.delete`
- * is id-addressed and `singleKeyOf` refuses a composite primary key, so **no row in `blocks` can
- * ever be removed** through the typed handle. Named loudly so the day the entity package grows a
- * `deleteWhere`, the pinning test in `repo.test.ts` fails and points here.
+ * Neither is LIFTING one, as of 2026-08. `X_BLOCK_REMOVE_UNSUPPORTED` lived here and said
+ * "@ultimat3/entity has no delete for a composite primary key — add deleteWhere(filter) to
+ * packages/entity/src/query.ts". That call had already landed (query.ts:116), so the error was
+ * instructing its reader to write code that was already in the tree. `unblockPerson` calls it, and
+ * removing a block that is not there is `0` rows and a successful call, not a failure code.
  */
-export class BlockRemoveUnsupportedError extends UltimateError {
-  static readonly code = 'X_BLOCK_REMOVE_UNSUPPORTED';
-  override readonly name = 'BlockRemoveUnsupportedError';
-  constructor(userId: string) {
-    super({
-      code: BlockRemoveUnsupportedError.code,
-      cause:
-        `unblocking ${userId} has to delete the blocks row (blockerId, blockedId), and ` +
-        '@ultimat3/entity has no delete for a composite primary key: Table.delete(id) routes ' +
-        'through singleKeyOf(), which throws X_INVARIANT_VIOLATED for a two-column key',
-      fix: 'add deleteWhere(filter) to packages/entity/src/query.ts and packages/entity/src/repo.ts, then call db.blocks.deleteWhere({ blockerId, blockedId })',
-      docs: docs(BlockRemoveUnsupportedError.code),
-      meta: { userId },
-    });
-  }
-}

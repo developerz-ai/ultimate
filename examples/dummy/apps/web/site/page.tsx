@@ -55,7 +55,14 @@ export function Page(): JSX.Element {
           <h1>{t('site.hero.title')}</h1>
           <p class={styles.subtitle}>{t('site.hero.subtitle')}</p>
           <div class={styles.ctas}>
-            <a class={styles.primary} href="/signup">
+            {/*
+              `/pricing`, not `/signup`: there is no signup route in this app and no route table
+              entry for one — the sign-in surface is `app/auth/login.ts`'s two descriptors, which
+              are declared, tested and NOT served (see the app's CLAUDE.md). A CTA on the one page
+              a crawler indexes must land somewhere that exists, and `/pricing` is where the free
+              plan and the one conversion this app can actually complete both live.
+            */}
+            <a class={styles.primary} href="/pricing">
               {t('site.hero.ctaPrimary')}
             </a>
             <a class={styles.secondary} href="/blog">

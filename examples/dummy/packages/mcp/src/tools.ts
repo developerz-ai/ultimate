@@ -15,6 +15,7 @@
  */
 
 import {
+  billingPeriodAt,
   localDateIn,
   nextDigestAt,
   previousDigestAt,
@@ -90,12 +91,15 @@ export const mcp = defineAppMcp({
       destructive: false,
       async handle({ input, ctx }) {
         const org = await ctx.orgs.byId(ctx.actor.orgId);
+        // The real period, off the calendar. It quoted `15` of `30` for every org on every day
+        // until 2026-08, so a quote taken on the 2nd of February charged half a month — and no
+        // month is 30 days in a zone that moves its clocks. The zone is the request's (`ctx.tz`),
+        // which is the only one this app has: an org row carries no billing zone.
         return quoteUpgrade({
           from: org.planCode,
           to: input.plan,
           currency: org.billingCurrency,
-          daysRemaining: 15,
-          daysInCycle: 30,
+          ...billingPeriodAt(ctx.now(), ctx.tz),
         });
       },
     },

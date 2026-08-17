@@ -10,6 +10,56 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **The deployed demo had no persistence, and its own comment said it did.** `client.ts` exported an
+  unconditional `memoryDriver()` under a comment claiming *"in production `DATABASE_URL` selects the
+  Postgres driver."* It did not — and the shape is worse than "data is lost on redeploy": the app
+  runs `web`, `sync`, `worker` and `scheduler` as **separate containers**, so four processes held
+  four disconnected worlds and a job's write was never visible to the web role, even at one replica
+  each.
+
+  Flipping the driver was necessary and nowhere near sufficient. **The committed migration created
+  zero tables** — five lines, all comments — so the branch alone would have taken the demo from "no
+  persistence" to "does not boot". And the regenerated one could not apply either: `x db gen` emits
+  `create table` in entity-registration order with foreign keys inline, so `blocks references users`
+  came first and Postgres answered `relation "users" does not exist`. That generator bug is
+  **unfixed and reported** — every app that generates a first migration with foreign keys hits it.
+
+  Three writes had to become upserts with it. An insert on an existing key overwrites **only** in
+  the memory driver; on Postgres every re-block, every answered friend request and every re-opened
+  decline was a unique violation.
+
+- **Three test suites failed for reasons the pin file did not name, and one fixture was lying
+  green.** `examples/dummy`'s `contract`, `live` and `job` steps were pinned with a single stated
+  cause — an unscoped repo — that was wrong for all three. The repo scopes correctly. What was
+  actually wrong: the seed fixture wrote into a **private driver** nothing else in the process could
+  read, so every action's row loader saw an empty table; and the actor factory minted a **user** id
+  where this app's identity is the *membership*, so an actor owned nothing it wrote and the policy
+  denied an author their own draft. `contract` is now green.
+
+  A fixture in the job suite stood in for a service the app has never registered — `channel` — over
+  a job that dead-lettered on a `TypeError` on every real run. Its file already carried the rule it
+  broke, four lines above: *"the three services the job reads, and nothing else: a stub that
+  answered more would hide a read."*
+
+- **Every control in the demo's admin toolbar did nothing.** The buttons had no handler and no
+  enclosing form on a `hydrate: 'never'` page, while `invokeAdminAction` and its siblings had zero
+  callers. They are now form posts to a real action — and the test that let them ship asserted only
+  that a label was absent for a read-only actor, which a dead button satisfies as easily as a live
+  one.
+
+- **A suspended account kept a public profile.** Suspension stopped the account *acting* and left
+  its profile, bio and posts readable. It now answers the same `null` an unknown handle does, so
+  suspension is not probeable.
+
+- **Eleven more**, each with a failing test first: forms posting to `/_x/action/*` routes that are
+  not mounted; four authed pages declared public, so no `vary: cookie` and a cache could serve one
+  user's page to another; a route guard that passed a whole `Policy` where a `{ permission }` is
+  required, so the permission read as `undefined` while the route still marked itself gated; an
+  `unblockPerson` that threw while instructing its reader to add a function that already exists;
+  reads capped at 100 that callers fed 300; a messages screen at ~152 statements per render, now
+  ~52; up to 99 sequential inserts, now one; a hardcoded 15/30-day billing cycle; and an admin count
+  that bypassed the authorization decision its neighbours respect.
+
 - **A deployment with no mail credential reported `accepted` for mail that never left the process.**
   `selectMailDriver` fell back to the memory driver in **every** environment, and `serve.ts` — what
   a production container's `ENTRYPOINT` runs — reaches it. Password resets, receipts and

@@ -6,12 +6,15 @@
 // wins" — packages/realtime/src/channel.ts:69). A list assembled in one place is a list that can be
 // read; a list assembled by import side effects is a race.
 //
-// KNOWN GAP, stated rather than hidden: nothing calls `installRealtimeTopics` at boot, because the
-// framework offers no seam to. `x dev` and a container both build the hub themselves —
-// `new ChannelHub({ transport, sockets })` in packages/cli/src/dev-roles.ts:176 — and never ask the
-// app for guards. Until that seam exists every topic below is denied by the hub's own
-// deny-by-default rule, which is the safe direction: the guards are declared and tested here, and
-// `api/realtime.test.ts` runs them against a real hub.
+// KNOWN GAP, stated rather than hidden and re-checked 2026-08: nothing calls
+// `installRealtimeTopics` at boot, because the framework offers no seam to. `x dev` and a container
+// both build the hub themselves — `new ChannelHub({ transport, sockets })` in
+// packages/cli/src/dev-sync.ts:69, which is where it moved to since this comment first named
+// dev-roles.ts — and neither asks the app for guards. Until that seam exists every topic below is
+// denied by the hub's own deny-by-default rule, which is the safe direction: the guards are
+// declared and tested here, and `api/realtime.test.ts` runs them against a real hub. Kept rather
+// than deleted for exactly that reason — this file is where the topics' authorization is written
+// down, and the day the seam lands it is one call, not a rewrite.
 
 import type { ChannelHub } from '@ultimat3/realtime';
 import { guardConversations } from '../app/messages/topics';

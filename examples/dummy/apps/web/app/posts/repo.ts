@@ -140,9 +140,9 @@ export const bySlug = async (orgId: OrgId, slug: string): Promise<PostView | nul
 };
 
 /**
- * Authorship only: the policy needs two columns, not a whole row. Scoped, and that is not a
- * weakening of `postPublish` — the rule denies on a null row exactly as it denies on a row from
- * another org, so the org the input names bounds the read without deciding anything.
+ * Authorship only: the policy needs two columns, not a whole row. The org is a parameter and the
+ * caller decides it — `service.ts` passes the ACTING member's, because this read happens before
+ * the guard and a read into another tenant raises instead of denying.
  */
 export const authorshipOf = async (
   orgId: OrgId,

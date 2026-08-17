@@ -2,14 +2,9 @@
 // repo and it never sees `db`. Authorization is NOT repeated here — the policy decided before the
 // handler ran. What lives here is the part a rule cannot express because it needs two reads.
 
-import {
-  BlockRemoveUnsupportedError,
-  FriendMirrorExistsError,
-  FriendRequestNotFoundError,
-  FriendSelfError,
-} from './errors';
+import { FriendMirrorExistsError, FriendRequestNotFoundError, FriendSelfError } from './errors';
 import type { Block, Friendship } from './repo';
-import { blockEdge, friendshipEdge, saveBlock, saveFriendship } from './repo';
+import { blockEdge, friendshipEdge, removeBlock, saveBlock, saveFriendship } from './repo';
 
 /**
  * Ask to be someone's friend.
@@ -72,11 +67,10 @@ export const respondToFriendship = async (
 /**
  * Block someone, and settle the friendship between them.
  *
- * DECLINED, not deleted — stated because the brief asks which one. Two reasons, and the second is
- * the one that would decide it on its own: declining keeps who asked, which is the only fact the
- * table exists to hold, and `@ultimat3/entity` cannot delete a composite-key row at all
- * (`X_BLOCK_REMOVE_UNSUPPORTED` says the rest). A declined row also blocks the mirror, so unblocking
- * later cannot leave the pair with two rows.
+ * DECLINED, not deleted — stated because the brief asks which one. Declining keeps who asked, which
+ * is the only fact the table exists to hold; a deleted row keeps nothing. A declined row also blocks
+ * the mirror, so unblocking later cannot leave the pair with two rows. (`deleteWhere` exists now and
+ * this is still not a delete: the reason was never that the framework could not.)
  */
 export const blockPerson = async (
   viewerId: string,
@@ -107,11 +101,18 @@ export const blockPerson = async (
 };
 
 /**
- * Lift a block. Unimplementable today, and loudly so rather than quietly wrong: removing the row
- * needs a delete addressed by a composite key, which no driver in `@ultimat3/entity` has. The error
- * names the framework change; `repo.test.ts` pins the limitation so this stops being true the
- * moment that change lands.
+ * Lift a block.
+ *
+ * Idempotent, and that is the answer to "what if there is no block": `deleteWhere` returns how many
+ * rows went, so unblocking someone who is not blocked is `false` and not a refusal — the caller
+ * asked for a state, and the state is already true. The friendship is NOT restored: blocking
+ * declined it, and who wants to be friends again is a decision the pair makes, not a side effect.
+ *
+ * This threw `X_BLOCK_REMOVE_UNSUPPORTED` until 2026-08, on the ground that `@ultimat3/entity` had
+ * no delete for a composite primary key. It has one — `deleteWhere` (packages/entity/src/query.ts:116)
+ * — so the refusal was instructing its reader to add code that was already there.
  */
-export const unblockPerson = (targetId: string): never => {
-  throw new BlockRemoveUnsupportedError(targetId);
+export const unblockPerson = async (viewerId: string, targetId: string): Promise<boolean> => {
+  if (viewerId === targetId) throw new FriendSelfError('unblockUser');
+  return (await removeBlock(viewerId, targetId)) > 0;
 };

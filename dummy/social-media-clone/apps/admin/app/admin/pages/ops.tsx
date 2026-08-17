@@ -13,25 +13,36 @@ import type { AdminCustomPage, AdminPageProps } from '@ultimat3/admin';
 import { t } from '@ultimat3/i18n';
 import { registeredTasks } from '@ultimat3/jobs';
 import type { JSX } from 'solid-js';
-import { mediaStateCounts } from '../repo';
 import styles from './ops.module.scss';
+import { uploadsFor } from './uploads';
 
-export async function OpsPage(_props: AdminPageProps): Promise<JSX.Element> {
+export async function OpsPage(props: AdminPageProps): Promise<JSX.Element> {
   const tasks = registeredTasks().map((handle) => handle.describe());
-  const counts = await mediaStateCounts();
+  // Decided before it is counted — `uploads.ts` owns both halves, and `props.ctx` is where the
+  // decision comes from. This page renders the answer; it does not re-derive it.
+  const uploads = await uploadsFor(props.ctx);
 
   return (
     <div class={styles.board}>
       <section class={styles.card}>
         <h2 class={styles.cardTitle}>{t('admin.ops.uploads')}</h2>
-        <dl class={styles.stats}>
-          {Object.entries(counts).map(([state, count]) => (
-            <div class={styles.stat} data-state={state}>
-              <dt>{t(`admin.media.state.${state}`)}</dt>
-              <dd>{String(count)}</dd>
-            </div>
-          ))}
-        </dl>
+        {uploads.counts === null ? (
+          <p class={styles.refusal}>
+            {t('admin.denied.body', {
+              permission: uploads.decision.permission,
+              reason: uploads.decision.reason,
+            })}
+          </p>
+        ) : (
+          <dl class={styles.stats}>
+            {Object.entries(uploads.counts).map(([state, count]) => (
+              <div class={styles.stat} data-state={state}>
+                <dt>{t(`admin.media.state.${state}`)}</dt>
+                <dd>{String(count)}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
         <p class={styles.hint}>{t('admin.ops.uploadsHint')}</p>
       </section>
 

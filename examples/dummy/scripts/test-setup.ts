@@ -15,7 +15,7 @@ import '@ultimat3/testing/preload';
 import '../apps/web/api';
 import { assert, userActor } from '@ultimat3/core';
 import type { Driver, EntityCore, Repo, Seed } from '@ultimat3/entity';
-import { memoryDriver, seedId } from '@ultimat3/entity';
+import { defaultDriver, seedId } from '@ultimat3/entity';
 import { defineFixtures } from '@ultimat3/testing';
 
 /** Every seeded row carries an id; the rest of the columns are the entity's business. */
@@ -40,9 +40,11 @@ const idOf = (row: unknown): string | undefined => {
  * Rows are captured on the way in rather than read back out: a tenant-scoped entity refuses an
  * unscoped read, so a fixture would have to name the org before it could fetch the org. Insert
  * still runs `$parse` and the invariants, so seeding still tests the schema.
+ *
+ * It decorates the driver it is given rather than building one, and the caller gives it the
+ * PROCESS driver — see `handleFor`.
  */
-const capturingDriver = (rows: Map<string, SeedRow>): Driver => {
-  const base = memoryDriver();
+const capturingDriver = (base: Driver, rows: Map<string, SeedRow>): Driver => {
   return {
     repo: <Row>(entity: EntityCore<Row>): Repo<Row> => {
       const inner = base.repo(entity);
@@ -59,10 +61,21 @@ const capturingDriver = (rows: Map<string, SeedRow>): Driver => {
   };
 };
 
-/** A fresh graph per call: two tests must never see each other's writes. */
+/**
+ * A fresh graph per call, in the driver the APP reads through. `database()` resolves
+ * `defaultDriver()` when a call names none, which is what `@postly/db`'s `db` does — so a seed run
+ * against a driver of its own writes rows nothing else in the process can see, and every action,
+ * job and query under test reads an empty table. It failed three suites away as
+ * `X_ORG_NOT_FOUND`, as a policy denial on a null `row:`, and as a `posts.authorId` invariant.
+ *
+ * `reset?.()` first, because that driver is process-wide: fresh is now something this call has to
+ * do rather than something a new object gives it for free.
+ */
 const handleFor = (seed: Seed): SeedHandle => {
   const rows = new Map<string, SeedRow>();
-  const ready = seed.run({ driver: capturingDriver(rows) });
+  const driver = defaultDriver();
+  driver.reset?.();
+  const ready = seed.run({ driver: capturingDriver(driver, rows) });
 
   return {
     pick: async <M extends Readonly<Record<string, string>>>(labels: M) => {
@@ -97,10 +110,17 @@ const createSeed = async (): Promise<(name: string) => SeedHandle> => {
   };
 };
 
-/** A member row is the actor: same org, and its membership role is the authz role. */
+/**
+ * A member row is the actor: same org, and its membership role is the authz role.
+ *
+ * `id` is the MEMBER row's id, never `userId`. Postly's identity is the membership —
+ * `AppActor.id` is a `MemberId`, `memberOf()` reads the member id straight off `actor.id`, and
+ * `posts.authorId` holds a member id — so an actor minted from the user id owns nothing it wrote
+ * and `mayPublish` denies its author their own draft.
+ */
 const actorFor = (member: SeedRow) =>
   userActor({
-    id: String(member['userId'] ?? member.id),
+    id: member.id,
     orgId: String(member['orgId']),
     roles: [String(member['role'])],
   });

@@ -87,8 +87,26 @@ test('blocking DECLINES the friendship in both directions rather than removing i
   expect(block).not.toBeNull();
 });
 
-test('unblocking refuses loudly, and the refusal names the framework change that fixes it', () => {
-  // Pinning test. The day `@ultimat3/entity` grows a composite-key delete, this fails and points at
-  // the three lines that have to change. A silent no-op would leave a block nobody can lift.
-  expect(() => unblockPerson(BEN)).toThrow('X_BLOCK_REMOVE_UNSUPPORTED');
+test('unblocking someone who is not blocked is false, not a refusal', async () => {
+  // The failure case first: an idempotent lift has to answer for a state that is already true.
+  // This threw `X_BLOCK_REMOVE_UNSUPPORTED` until 2026-08 — for a `deleteWhere` that already existed.
+  expect(await unblockPerson(ANA, CAT)).toBe(false);
+});
+
+test('unblocking removes the block row, and says it did', async () => {
+  await requestFriendship(CAT, BEN, NOW);
+  await blockPerson(CAT, BEN, NOW);
+  expect(await db.blocks.where({ blockerId: CAT, blockedId: BEN }).one()).not.toBeNull();
+
+  expect(await unblockPerson(CAT, BEN)).toBe(true);
+  expect(await db.blocks.where({ blockerId: CAT, blockedId: BEN }).one()).toBeNull();
+  // The friendship stays declined: blocking settled it, and un-declining it would decide something
+  // the pair never asked for.
+  expect((await db.friendships.where({ requesterId: CAT, addresseeId: BEN }).one())?.status).toBe(
+    'declined',
+  );
+});
+
+test('unblocking yourself is the same non-edge blocking yourself is', async () => {
+  await expect(unblockPerson(ANA, ANA)).rejects.toMatchObject({ code: 'X_FRIEND_SELF' });
 });

@@ -36,6 +36,17 @@ export const publicProfile = async (
   const user = await userByHandle(handle);
   if (user === null) return null;
 
+  // A suspended account has no public profile. Not a `where` in the repo — that is where the file
+  // header refuses to put the POST rule, for a reason that does not apply here: suspension is a
+  // property of the account, the same answer for every reader, not a per-viewer judgement.
+  //
+  // The gap this closes: `apps/web/app/auth/viewer.ts:39` already refuses to let a suspended
+  // account ACT, and the admin's only lever is `suspended: true` (apps/admin/app/admin/admin.ts:64)
+  // — so suspending someone silenced them and left their profile, their bio and their posts served
+  // to anonymous readers. Absent, not 403: the same answer as a handle nobody holds, so the
+  // suspension is not something a stranger can probe for.
+  if (user.suspended) return null;
+
   const rows = await postsByAuthor(user.id, limit * OVERFETCH);
   const posts: Post[] = [];
   for (const post of rows) {

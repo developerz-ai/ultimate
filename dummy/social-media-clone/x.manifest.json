@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "d5c348a7bab60ad4",
+  "buildId": "edb334dabe4cd1a5",
   "app": {
     "name": "social-media-clone",
     "version": "0.1.0"
@@ -1266,6 +1266,72 @@
       }
     },
     {
+      "name": "runAdminAction",
+      "input": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "the registered admin action, e.g. user.suspend"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "confirmation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "name",
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "output": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "next": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "ok",
+          "name",
+          "id",
+          "next"
+        ],
+        "additionalProperties": false
+      },
+      "policy": "admin:read",
+      "permissions": [
+        "admin:read"
+      ],
+      "cacheInvalidates": [],
+      "mcp": {
+        "expose": false
+      }
+    },
+    {
       "name": "sendMessage",
       "input": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1547,7 +1613,9 @@
     },
     {
       "permission": "admin:read",
-      "enforcedIn": []
+      "enforcedIn": [
+        "action:runAdminAction"
+      ]
     },
     {
       "permission": "admin:write",
@@ -1729,6 +1797,14 @@
   ],
   "errorCodes": [
     {
+      "code": "X_ADMIN_ACTION_REFUSED",
+      "package": "apps/admin"
+    },
+    {
+      "code": "X_ADMIN_ACTION_UNKNOWN",
+      "package": "apps/admin"
+    },
+    {
       "code": "X_AUTH_CAPTCHA_FAILED",
       "package": "apps/web"
     },
@@ -1742,10 +1818,6 @@
     },
     {
       "code": "X_AUTH_PASSWORD_WEAK",
-      "package": "apps/web"
-    },
-    {
-      "code": "X_BLOCK_REMOVE_UNSUPPORTED",
       "package": "apps/web"
     },
     {
