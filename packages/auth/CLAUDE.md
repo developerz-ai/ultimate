@@ -37,6 +37,28 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   on it. The point is that `Auth.rateLimit` is what an operator reads as "what this deployment
   enforces", so an injected limiter may not quietly enforce something else. Nothing here reads the
   environment to guess a replica count. `defineAuth({ limiter })` is the one install point.
+- **`normaliseEmail` is the ONE normalisation, it lives ABOVE the `AuthAdapter` seam, and no
+  adapter may fold case** (`As of 2026-08`). `MemoryAdapter` lowercased and trimmed on both
+  `findUserByEmail` and `createUser`; `BuiltinAdapter` issues `where email = $1` against a plain
+  case-sensitive `text ... unique`. Two adapters, two answers to "does this account exist" — and
+  `oauth-login.ts`'s `resolveUser` normalised nothing at all, carrying the provider's display
+  casing straight through. So a provider sending `Ada@Example.com` linked the existing account
+  under `x dev` and minted a SECOND one in production, at an address `login()` (which lowercases)
+  could then never reach; a later `register()` at the lowercase spelling made a third. Every door
+  now normalises before the adapter sees the address — `register`, `login`, `profileEmail` in
+  `oauth-login.ts`, and `accountKey`, which must key the same way or one address buys a fresh
+  lockout budget per spelling. `adapter-parity.test.ts` pins both adapters in one test, the shape
+  `jobs/driver-parity.test.ts` established; `MemoryAdapter` normalising again is a failing test.
+  Trim and lowercase only: stripping a `+tag` or a gmail dot MERGES two addresses a person kept
+  apart, which is takeover between colleagues at one domain.
+- **`json.ts` owns `isRecord` and `decodeJwtSegment`, and this package holds no second copy.**
+  `isRecord` was declared six times here and the base64url-JSON-payload decode three
+  (`jwks.decodeJwtHeader`, `id-token.decodeSegment`, `workload.verifyWorkloadToken`). All six
+  agreed that an array is not a record, which is the fact that matters: on a decoded JWT payload
+  the check is what gates every claim read after it, and `JSON.parse('[]')` narrows to
+  `Record<string, unknown>` without it. One declaration means one place for that to be true.
+  `decodeJwtSegment` answers `null` for all three failures — not base64url, not JSON, not an
+  object — because each caller has its own coded refusal to raise.
 - Absolute and idle expiry are two separate computations in `sessionExpiry()`. Do not fold them.
 - PKCE is not provider-dependent. `OAuthProvider.usesPkce` is the literal `true`, not `boolean`,
   so `usesPkce: false` is a type error rather than a comment — and there is no
@@ -191,6 +213,8 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `oauth-paths.ts` | the one declaration of where the two routes live. Imports nothing |
 | `oauth-route.ts` | `oauthLogin(auth)` — the redirect out and the callback back |
 | `kdf-gate.ts` | the one bound on concurrent argon2 work, and the `X_OVERLOADED` past it |
+| `email.ts` | `normaliseEmail` — the one normalisation an address gets before it is an identity key |
+| `json.ts` | reading untrusted JSON: `isRecord`, and a base64url JWT segment as an object or `null` |
 
 ```bash
 bun test packages/auth

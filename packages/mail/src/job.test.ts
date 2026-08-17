@@ -1,5 +1,10 @@
 import { expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
+import type { JobRunArgs } from '@ultimat3/jobs';
 import { registerMailCatalog } from './catalog';
+import type { MailMessage } from './driver';
+import { resetMailDriver, setMailDriver } from './driver';
+import { driverUnavailable } from './errors';
 import { mailIdempotencyKey } from './idempotency';
 import { sendMailJob } from './job';
 import { renderMessage, type SendOptions } from './mail';
@@ -51,6 +56,40 @@ test("the caller's idempotency key wins over the derived one", () => {
   // Scoped to the mail: a caller key is an id from the caller's domain, and two mails about one
   // signup sharing a key means the queue and the provider drop the second, silently.
   expect(mailIdempotencyKey(message)).toBe('mail:welcome:signup:42');
+});
+
+/**
+ * The queued half of the header rule. `renderMessage` gates the inline path, but a queue row is not
+ * necessarily one this process rendered and `mailMessageSchema` proves only the SHAPE of a payload
+ * — `t.string` accepts a subject with a CR in it. Refused before a driver is even reached, so a
+ * hand-written or replayed row cannot inject headers on the one transport that builds them.
+ */
+test('a queued payload with a line break in its subject never reaches a driver', async () => {
+  resetMailDriver();
+  const reached: string[] = [];
+  setMailDriver({
+    name: 'probe',
+    send: (message) => {
+      reached.push(message.subject);
+      return Promise.reject(driverUnavailable('this probe never delivers'));
+    },
+  });
+
+  const poisoned: MailMessage = {
+    ...renderMessage(welcomeMail, PAYLOAD, TO),
+    subject: 'Welcome\r\nBcc: evil@example.test',
+  };
+  // The body reads `input` and nothing else, so the rest of the run args are deliberately absent
+  // rather than faked: a `Ctx` and a `StepApi` built here would assert nothing and could drift.
+  const args = { input: poisoned } as JobRunArgs<MailMessage>;
+  const failure = await sendMailJob.run(args).then(
+    (): unknown => undefined,
+    (error: unknown) => error,
+  );
+
+  expect(isUltimateError(failure) ? failure.code : failure).toBe('X_MAIL_HEADER_INVALID');
+  expect(reached).toEqual([]);
+  resetMailDriver();
 });
 
 test('the send job retries five times with exponential backoff', () => {

@@ -6,6 +6,7 @@
 import { logger } from '@ultimat3/core';
 import { oauthExchangeFailed, restartAt } from './errors';
 import { idTokenEmailVerified, isVerifiedFlag } from './id-token';
+import { isRecord } from './json';
 import type { OAuthProviderId } from './oauth';
 import {
   OAUTH_USER_AGENT,
@@ -37,9 +38,6 @@ interface GithubEmail {
   readonly primary: boolean;
   readonly verified: boolean;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const stringOrNull = (value: unknown): string | null =>
   typeof value === 'string' && value !== '' ? value : null;

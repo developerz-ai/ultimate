@@ -7,6 +7,7 @@ import type { Clock } from '@ultimat3/core';
 import { EnvMissingError, renderCauseValue, systemClock } from '@ultimat3/core';
 import { oauthExchangeFailed, restartAt } from './errors';
 import { type IdTokenClaims, verifyIdToken } from './id-token';
+import { isRecord } from './json';
 import type { IdTokenKeys } from './jwks';
 import {
   assertOAuthCallback,
@@ -79,9 +80,6 @@ export function oauthCredentials(
   }
   return { clientId, clientSecret };
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * Prefers the provider's own words; falls back to raw text, capped so a login page can't flood logs.

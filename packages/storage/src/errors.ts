@@ -17,6 +17,7 @@ export const STORAGE_OWNED_ERROR_CODES = [
   'X_STORAGE_ORG_MISMATCH',
   'X_STORAGE_UPLOAD_FAILED',
   'X_STORAGE_DELETE_FAILED',
+  'X_STORAGE_LIST_FAILED',
   'X_STORAGE_QUARANTINED',
 ] as const;
 
@@ -50,6 +51,7 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_ORG_MISMATCH: 'object key belongs to another org',
   X_STORAGE_UPLOAD_FAILED: 'the signed upload was refused',
   X_STORAGE_DELETE_FAILED: 'the object could not be deleted',
+  X_STORAGE_LIST_FAILED: 'the objects could not be listed',
   X_STORAGE_QUARANTINED: 'the object is still in quarantine',
 };
 
@@ -227,6 +229,34 @@ export const deleteFailed = (
     cause: `disk "${disk}" refused DELETE "${key}": ${reason}`,
     fix,
     meta: { disk, key, reason },
+  });
+};
+
+/**
+ * A listing the disk REFUSED — a denied `s3:ListBucket`, a throttle, an expired credential, a root
+ * this process cannot read. Exactly `deleteFailed`'s shape and for exactly its reason: an empty
+ * page and an unreadable one are indistinguishable to a caller, and `sweepOrphans` walks `list()`,
+ * so a swallowed refusal reports "no orphans" for a prefix nothing could see — the false-erasure
+ * report the `delete()` fix already closed one call to the left.
+ *
+ * A root that does not exist yet is NOT this: a disk nobody has written to is honestly empty, and
+ * both drivers answer it with an empty page.
+ *
+ * The `fix` is the driver's, for `deleteFailed`'s reason: the command that reproduces the refusal
+ * with the disk's own words differs per driver, and a generic one costs a round trip.
+ */
+export const listFailed = (
+  disk: string,
+  prefix: string,
+  error: unknown,
+  fix: string,
+): StorageError => {
+  const reason = renderThrowable(error);
+  return new StorageError({
+    code: 'X_STORAGE_LIST_FAILED',
+    cause: `disk "${disk}" refused to list "${prefix === '' ? '(the whole disk)' : prefix}": ${reason}`,
+    fix,
+    meta: { disk, prefix, reason },
   });
 };
 

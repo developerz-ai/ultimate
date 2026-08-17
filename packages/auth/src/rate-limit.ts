@@ -4,6 +4,7 @@
 // bypassable. `loginFailed()` lives here so the throttle and the message can never drift apart.
 
 import type { Clock } from '@ultimat3/core';
+import { normaliseEmail } from './email';
 import {
   AuthError,
   accountLocked,
@@ -91,7 +92,11 @@ export interface MemoryAuthLimiter extends AuthLimiter {
   readonly size: number;
 }
 
-export const accountKey = (email: string): string => `account:${email.trim().toLowerCase()}`;
+/**
+ * The SAME normalisation the lookup uses, from the one declaration — a bucket keyed differently
+ * from the row it protects hands a sprayer a fresh attempt budget per spelling of one address.
+ */
+export const accountKey = (email: string): string => `account:${normaliseEmail(email)}`;
 
 export const ipKey = (ip: string): string => `ip:${ip}`;
 

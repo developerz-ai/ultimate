@@ -79,7 +79,17 @@ export type SignedUrlMethod = 'GET' | 'PUT';
 export interface SignedUrlOptions {
   readonly method?: SignedUrlMethod | undefined;
   readonly expiresInMs?: number | undefined;
-  /** Constrains a `PUT`: the signature covers it, so a client cannot widen it. */
+  /**
+   * Ceiling on a `PUT`, and **the one option whose enforcement is the driver's, not the caller's**.
+   *
+   * `localDriver` signs it into the URL, so `acceptSignedUpload` refuses a client that widens it.
+   * `s3Driver` CANNOT: S3 has no request header for a size and Bun's `presign` covers method,
+   * expiry and content type only — so the client PUTs straight into the bucket and nothing between
+   * the grant and the object enforces this number. It is not refused there, because `grantUpload`
+   * supplies it on every grant and refusing would break every s3 upload an app mints; the ceiling
+   * a bucket-backed disk actually gets is a bucket rule or a post-upload check on `object.size`.
+   * `driver-parity.test.ts` pins both halves so neither moves alone.
+   */
   readonly maxBytes?: number | undefined;
   readonly contentType?: string | undefined;
 }

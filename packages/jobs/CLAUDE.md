@@ -409,7 +409,19 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   `createdAt` ASCENDING in memory and `created_at desc` in pg — one call, two answers, and because
   the limit lands after the sort, `x jobs ls` against `x dev` paged the hundred OLDEST rows. The
   `attempt` floor is the same shape: `greatest(attempt - 1, 0)` in pg, `Math.max(0, …)` in memory,
-  with the settle fence in front of both.
+  with the settle fence in front of both. Two more closed `As of 2026-08`, and in BOTH the memory
+  driver was the correct side:
+  - **`SQL_LEASE_RENEW` fences on `expires_at > now()` as well as on `holder`.** The holder fence
+    answers "another worker has this slot"; only the expiry fence answers "nobody has it YET". A
+    lapsed slot is free for anyone's next `acquire`, so reviving it made the TTL an expiry other
+    processes observed and the holder did not — and since `worker-fleet-slots.ts` reads `renew()
+    === false` as `X_JOB_SLOT_LOST`, the same lapsed slot cancelled the run under `x dev` and
+    silently continued in production. `createMemoryLeaseStore` has always purged on read.
+  - **`SQL_STATS` puts a row in exactly ONE bucket.** `count(*) filter (where state = 'delayed' or
+    run_at > now())` was every state's future row, so a `step.sleep` job counted as `suspended`
+    AND `delayed` — the five buckets summed past the number of rows in the table. The memory
+    driver's `if/else if` chain was always exclusive; the filter is now
+    `state = 'delayed' or (state = 'ready' and run_at > now())`, which is that chain in SQL.
 - **Every timer body catches before it finalises.** `worker.ts`, `scheduler.ts` and the outbox
   relay all spell `void work().catch(log).finally(...)`. The relay's missing `.catch` made a
   rejected `store.claim()` an unhandled rejection, and Bun ends the process on one — with every

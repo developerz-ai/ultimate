@@ -9,6 +9,7 @@ import { parse, type StandardSchemaV1 } from '@ultimat3/schema';
 import type { MailTemplate } from './blocks';
 import { type MailMessage, mailDriver, type SendResult } from './driver';
 import { localeMissing, mailDuplicate, templateUnknown } from './errors';
+import { assertHeaderSafe } from './header-safety';
 import { mailIdempotencyKey } from './idempotency';
 import { sendMailJob } from './job';
 import { BASE_LAYOUT } from './layout';
@@ -120,7 +121,7 @@ export function renderMessage<I>(
     unsubscribeUrl: options.unsubscribeUrl,
   });
 
-  return {
+  const message: MailMessage = {
     mailId: mail.id,
     to,
     subject: rendered.subject,
@@ -134,6 +135,12 @@ export function renderMessage<I>(
     unsubscribeUrl: options.unsubscribeUrl,
     idempotencyKey: options.idempotencyKey,
   };
+  // Here, not in a driver: interpolated data reaches `Subject`, and whether a break in it injects
+  // headers is a property of the message, not of whichever transport this deploy happens to run.
+  // Checked before the queue too, so the refusal lands on the `send()` call site that made it
+  // rather than on a worker three retries later.
+  assertHeaderSafe(message);
+  return message;
 }
 
 /**

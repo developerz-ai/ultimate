@@ -4,12 +4,16 @@
 // this is that something, and it is keyed on env rather than a config field so the same image
 // deploys to every environment.
 
-import { ConfigInvalidError } from '@ultimat3/core';
-import { createMemoryDriver, type MailDriver } from './driver';
+import { ConfigInvalidError, isLocal, resolveEnvironment } from '@ultimat3/core';
+import { createMemoryDriver, createUnconfiguredDriver, type MailDriver } from './driver';
 import { createResendDriver } from './driver-resend';
 import { createSmtpDriver } from './driver-smtp';
 
-/** The keys read here, and nothing else. Named once so docs and tests cannot drift from the code. */
+/**
+ * The MAIL keys read here, and nothing else. Named once so docs and tests cannot drift from the
+ * code. `ULTIMATE_ENV`/`NODE_ENV` are deliberately absent: which deploy this is belongs to core's
+ * one resolver, and restating it as a mail key would make it two settings with one meaning.
+ */
 export const MAIL_ENV_KEYS = ['SMTP_URL', 'RESEND_API_KEY', 'MAIL_FROM', 'MAIL_POOL_SIZE'] as const;
 
 export type MailEnvironment = Readonly<Record<string, string | undefined>>;
@@ -63,9 +67,17 @@ function poolSizeFrom(env: MailEnvironment): number | undefined {
 }
 
 /**
- * A credential selects its transport; no credential catches mail in memory. Two credentials is
- * the one case that cannot be answered by picking a winner — whichever this chose would be the
- * one an operator did not mean half the time, and mail would silently leave by the wrong path.
+ * A credential selects its transport. Two credentials is the one case that cannot be answered by
+ * picking a winner — whichever this chose would be the one an operator did not mean half the time,
+ * and mail would silently leave by the wrong path.
+ *
+ * NO credential is answered by the ENVIRONMENT, and it is the one decision here that is not about
+ * a credential. In development and test it is the memory driver: the `/_x` panel shows what a
+ * template renders in every locale and nothing escapes to a real address. Anywhere else it is a
+ * driver that refuses, because the memory driver in production reports `accepted` for mail that
+ * never left the process — every password reset, receipt and invitation "sent", none delivered,
+ * and no error anywhere to find it by. `isLocal` is core's one reader of that question, so mail
+ * cannot disagree with storage about which deploy this is.
  */
 export function selectMailDriver(env: MailEnvironment): MailSelection {
   const smtpUrl = nonEmpty(env['SMTP_URL']);
@@ -98,8 +110,16 @@ export function selectMailDriver(env: MailEnvironment): MailSelection {
     };
   }
 
+  if (isLocal({ env })) {
+    return {
+      driver: createMemoryDriver(),
+      detail: 'caught in memory — set SMTP_URL or RESEND_API_KEY to deliver',
+    };
+  }
+
+  const environment = resolveEnvironment({ env });
   return {
-    driver: createMemoryDriver(),
-    detail: 'caught in memory — set SMTP_URL or RESEND_API_KEY to deliver',
+    driver: createUnconfiguredDriver(environment),
+    detail: `no transport configured for ${environment} — set SMTP_URL or RESEND_API_KEY`,
   };
 }

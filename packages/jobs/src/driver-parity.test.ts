@@ -10,7 +10,8 @@ import type { JobDriver } from './driver';
 import { createMemoryDriver } from './driver-memory';
 import type { PgExecutor } from './driver-pg';
 import { createPgDriver } from './driver-pg';
-import { SQL_NACK } from './driver-pg-sql';
+import { SQL_LEASE_RENEW, SQL_NACK, SQL_STATS } from './driver-pg-sql';
+import { createMemoryLeaseStore } from './leases';
 
 /** The pg driver compiles its SQL against this seam, so the statement it issues is readable. */
 function recordingExecutor(): PgExecutor & { readonly sql: string[] } {
@@ -107,5 +108,93 @@ describe('introspect.list answers newest first', () => {
     expect(
       ((await driver.introspect?.list({ limit: 1 })) ?? []).map((row) => row.idempotencyKey),
     ).toEqual(['listed:c']);
+  });
+});
+
+describe('a lapsed fleet slot is lost, not renewed', () => {
+  test('the memory store refuses its own holder past the TTL, and the pg statement fences on it', async () => {
+    const clock = frozenClock(1_700_000_000_000);
+    const store = createMemoryLeaseStore({ clock });
+    const lease = await store.acquire('job:sweep', 1, 30_000, 'w1');
+    if (lease === undefined) throw new TypeError('the first slot under a limit of 1 must be free');
+
+    // A renewal INSIDE the window still lands — the fence must not turn every heartbeat into a
+    // loss, which is the way "add an expiry check" goes wrong.
+    clock.advance(29_000);
+    expect(await store.renew(lease, 30_000)).toBe(true);
+
+    // Past the TTL with nobody having taken the slot. `worker-fleet-slots.ts` reads `false` as
+    // `X_JOB_SLOT_LOST` and cancels the run, so the two drivers answering this differently is a
+    // job that survives its lapsed slot in production and is killed for it under `x dev`.
+    clock.advance(30_001);
+    expect(await store.renew(lease, 30_000)).toBe(false);
+    expect(await store.held('job:sweep')).toBe(0);
+
+    // The holder fence alone answers the case another worker HAS taken the slot; only an expiry
+    // fence answers the case nobody has yet. Both halves in one test: drop either and this fails.
+    expect(SQL_LEASE_RENEW).toContain('holder = $3');
+    expect(SQL_LEASE_RENEW).toContain('expires_at > now()');
+  });
+});
+
+describe('stats puts a job in exactly one bucket', () => {
+  // The statement is aligned for a human reading it out of a log, so the fragment is matched
+  // against a whitespace-collapsed copy rather than against the padding.
+  const DELAYED_FILTER =
+    "filter (where state = 'delayed' or (state = 'ready' and run_at > now())) as delayed";
+  const compactStats = () => SQL_STATS.replace(/\s+/g, ' ');
+
+  /** Enqueue one job, claim it, and settle it the way `step.sleep` or a retry settles one. */
+  const settledOnce = async (
+    key: string,
+    options: { readonly delayMs: number; readonly countsAsAttempt: boolean },
+  ) => {
+    const clock = frozenClock(1_700_000_000_000);
+    const driver = createMemoryDriver({ clock });
+    const { id } = await driver.enqueue({
+      name: 'sleeper',
+      queue: 'default',
+      input: {},
+      idempotencyKey: key,
+      maxAttempts: 3,
+    });
+    await claimOne(driver);
+    await driver.nack(id, options);
+    return (await driver.stats())[0];
+  };
+
+  test('a suspended job is suspended and NOT also delayed', async () => {
+    // What `step.sleep` leaves behind: `suspended`, with `run_at` in the future. That future
+    // `run_at` is what the unfenced pg filter counted a SECOND time, so the five buckets summed to
+    // more rows than the table holds — and `x jobs` said one thing under `x dev` and another in
+    // production, which is the number an operator sizes a worker fleet from.
+    expect(await settledOnce('sleeper:1', { delayMs: 3_600_000, countsAsAttempt: false })).toEqual({
+      queue: 'default',
+      ready: 0,
+      delayed: 0,
+      running: 0,
+      suspended: 1,
+      dead: 0,
+      oldestReadyMs: 0,
+    });
+    // The fence, in the pg statement that has to mean the same thing. `run_at > now()` alone was
+    // every state's future row; only a `ready` one is genuinely waiting for its clock.
+    expect(compactStats()).toContain(DELAYED_FILTER);
+    expect(compactStats()).not.toContain("state = 'delayed' or run_at > now()");
+  });
+
+  test('a retrying job waiting out its backoff is delayed, in both', async () => {
+    // The case the fence must NOT drop: `ready` with a future `run_at` is the backoff a retry is
+    // sitting in, and it belongs in `delayed` on both sides.
+    expect(await settledOnce('retry:1', { delayMs: 60_000, countsAsAttempt: true })).toEqual({
+      queue: 'default',
+      ready: 0,
+      delayed: 1,
+      running: 0,
+      suspended: 0,
+      dead: 0,
+      oldestReadyMs: 0,
+    });
+    expect(compactStats()).toContain(DELAYED_FILTER);
   });
 });

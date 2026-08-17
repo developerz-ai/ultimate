@@ -53,6 +53,9 @@ export {
 export { BuiltinAdapter } from './builtin-adapter';
 export type { AuthUserSummary } from './directory';
 export { describeUser, findUserByExternalId, listOrgUsers } from './directory';
+// The one normalisation an address gets before it is an identity key. Public because an app
+// writing its own `AuthAdapter`, or its own login route, has to key exactly the way this does.
+export { normaliseEmail } from './email';
 export type { AuthErrorCode, AuthThrowCode, OAuthExchangeFailure } from './errors';
 export {
   AUTH_BORROWED_ERROR_CODES,

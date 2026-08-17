@@ -56,6 +56,12 @@ export class FakeS3Client implements S3ClientLike {
   failDeleteFor: string | undefined;
   /** A provider "there is nothing there" — the one failure `delete()` may call success. */
   absentDeleteFor: string | undefined;
+  /**
+   * A refused LISTING — a denied `s3:ListBucket`, a throttle, an expired credential. There is no
+   * "absent" counterpart: a prefix with no keys is an empty page, never a rejection, so every
+   * failure `list()` can meet is one it must surface.
+   */
+  failListWith: Error | undefined;
 
   /** Which key each handed-out `S3FileLike` stands for, so `write(sourceFile)` can read it. */
   private readonly fileKeys = new WeakMap<object, string>();
@@ -134,6 +140,7 @@ export class FakeS3Client implements S3ClientLike {
 
   async list(input: ListCall): Promise<S3ListResultLike> {
     this.listCalls.push(input);
+    if (this.failListWith !== undefined) throw this.failListWith;
     return this.listResult;
   }
 }

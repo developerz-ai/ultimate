@@ -11,8 +11,9 @@
 | `blocks.ts` | the template vocabulary: `MailBlock`, `blocks`, `MailTemplate`, `TemplateArgs` |
 | `render.ts` | blocks → HTML **and** text, plus the layout call and the footer slots |
 | `layout.ts` | `MAIL_TOKENS` (light + dark), the 600px table shell, layout registry |
-| `driver.ts` | `MailDriver` + memory/log + `resultFor` + the `setMailDriver` seam |
+| `driver.ts` | `MailDriver` + memory/log/unconfigured + `resultFor` + the `setMailDriver` seam |
 | `driver-env.ts` | `selectMailDriver`: which transport an environment installs, and nothing else |
+| `header-safety.ts` | `assertHeaderSafe`: the CR/LF gate on a `MailMessage`, so every driver refuses the same one |
 | `driver-smtp.ts` | `createSmtpDriver`: `SMTP_URL` parsing, the pool ceiling, one send |
 | `driver-resend.ts` | `createResendDriver`: one `POST /emails`, status → retryable |
 | `smtp-client.ts` | the conversation: greeting → EHLO → STARTTLS → AUTH → envelope → DATA |
@@ -45,6 +46,39 @@
   field — nothing loads that file's contents at runtime, so a `mail:` config block would be a
   setting no boot could read. Two credentials at once is refused, not resolved: mail leaving by
   the wrong provider is not a failure anyone sees. The credential never reaches a printed string.
+- **No credential is answered by the ENVIRONMENT, and outside development it REFUSES** (`As of
+  2026-08`). It answered the memory driver everywhere, including production — so a deploy that
+  configured no transport reported `accepted` for mail that never left the process, with no error
+  anywhere. `createUnconfiguredDriver` rejects every send with `X_MAIL_CREDENTIAL_MISSING` instead.
+  Three parts of that are decisions, not details. It is a **driver and not a boot refusal**, so an
+  app that sends no mail still deploys and one that does fails on the path that needed the
+  capability. `staging` refuses too, because staging exists to fail the way production fails —
+  which is `isLocal()`'s own rule, read from **core** rather than restated here, so mail and storage
+  cannot disagree about which deploy this is. And it is its **own code**: `X_MAIL_DRIVER_UNAVAILABLE`
+  is a developer who never called `setMailDriver`, this is an operator who set no variable, and one
+  code for two audiences is a `fix:` that is wrong half the time.
+- **The CR/LF header rule is a property of the MESSAGE, checked at `renderMessage` and again in
+  `sendMailJob`** (`As of 2026-08`). `mime.ts` held the only copy, so a subject an SMTP deploy
+  refused was accepted by memory in dev and by Resend in staging — the same app, three answers.
+  `mime.ts` keeps its gate and is not redundant: it also covers `From`, `Date` and `Message-ID`,
+  which the transport mints and no message-level check can see. The job's copy exists because a
+  queue row is not necessarily one this process rendered, and `mailMessageSchema` proves a payload's
+  SHAPE only. A driver reached DIRECTLY through `mailDriver().send(handBuilt)` is off that path —
+  `assertHeaderSafe` is exported for a custom driver that wants the same gate.
+- **The SMTP `Message-ID` is content-derived, so every attempt of one send presents the same one**
+  (`As of 2026-08`). It was a fresh `nanoid` per attempt, and a send that times out after `DATA` is
+  classified retryable — so the retry was a second email to every mailbox that would otherwise have
+  collapsed it, while `SendResult.idempotencyKey` claimed one message on both transports. This
+  narrows the gap and cannot close it: SMTP has no idempotency protocol, so the header is an
+  opportunity for the receiving side and never a guarantee, where Resend's `Idempotency-Key` is
+  enforced by the provider. That asymmetry is a transport DIFFERENCE and is pinned as one.
+  `mailMessageIdToken` is a one-way digest of `mailIdempotencyKey`, never the key itself: the key
+  holds the recipient list, bcc included, and a `Message-ID` is visible to all of them.
+- **`driver-parity.test.ts` asserts every driver's behaviour in ONE test.** Both production drivers
+  run for real — SMTP over a fake `SmtpStream`, Resend over an injected `fetch` — so a case compares
+  what each did rather than a proxy for it, and neither side can move alone. The memory driver joins
+  the cases about the MESSAGE and none about a wire: it dials nothing, maps no status and carries no
+  idempotency header, and that is documented difference, not defect.
 - `Bcc` is an envelope field. It reaches `RCPT TO` and Resend's body, never a header.
 - Recipient addresses stay out of logs and out of error text we write ourselves; the server's own
   reply is passed through verbatim, and that is where the refused address comes from.

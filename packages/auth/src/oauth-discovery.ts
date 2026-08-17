@@ -4,6 +4,7 @@
 // four endpoints that nobody re-checks when the vendor moves one.
 
 import { oauthExchangeFailed } from './errors';
+import { isRecord } from './json';
 import type { OAuthProvider } from './oauth';
 import type { OAuthFetch } from './oauth-exchange';
 
@@ -25,9 +26,6 @@ export interface DiscoverOAuthProviderInput {
   readonly fetch?: OAuthFetch | undefined;
   readonly timeoutMs?: number | undefined;
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const stringOrNull = (body: Record<string, unknown>, key: string): string | null => {
   const value = body[key];

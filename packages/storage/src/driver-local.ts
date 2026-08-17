@@ -23,6 +23,7 @@ import {
 import {
   checksumMismatch,
   deleteFailed,
+  listFailed,
   objectNotFound,
   signingSecretMissing,
   storageNotImplemented,
@@ -162,12 +163,19 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
   // No `contentType` fallback: the sidecar is the only thing that knows, so a missing one means
   // this driver does not know either — exactly what the s3 driver's `list()` reports. `get()`
   // fills the default below, because a `StorageObject` promises a type and a read has one.
-  const head = async (key: string): Promise<StorageListEntry | undefined> => {
+  //
+  // `hash` is the ONLY thing that reads the object's bytes, and it defaults off. The etag used to
+  // be computed unconditionally when the sidecar was missing, under a comment saying "`list()`
+  // must not read every file it lists" — which is exactly what `list()` then did, one whole
+  // object at a time, sequentially, for every sidecar-less key on the disk (a `put()` that died
+  // between its two writes leaves one). `copy()` inherited it too, so a copy documented as never
+  // routing bytes through the heap buffered the whole source. A listing that cannot know an etag
+  // reports `''`, which is what the s3 listing already answers for a provider that returns none.
+  const head = async (key: string, hash = false): Promise<StorageListEntry | undefined> => {
     const file = Bun.file(filePath(key));
     if (!(await file.exists())) return undefined;
     const sidecar = await readSidecar(key);
-    // Only hash when the sidecar is gone — `list()` must not read every file it lists.
-    const etag = sidecar?.etag ?? etagOf(new Uint8Array(await file.arrayBuffer()));
+    const etag = sidecar?.etag ?? (hash ? etagOf(new Uint8Array(await file.arrayBuffer())) : '');
     return {
       key,
       size: file.size,
@@ -231,7 +239,13 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
       if (entry === undefined) throw objectNotFound(DRIVER_NAME, safe);
       const bytes = new Uint8Array(await Bun.file(filePath(safe)).arrayBuffer());
       return {
-        object: { ...entry, contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE },
+        object: {
+          ...entry,
+          contentType: entry.contentType ?? DEFAULT_CONTENT_TYPE,
+          // Hashed HERE and not inside `head`, so a sidecar-less object is read exactly once: a
+          // `get()` already holds every byte, and `head(key, true)` would have read them again.
+          etag: entry.etag === '' ? etagOf(bytes) : entry.etag,
+        },
         bytes,
       };
     },
@@ -247,7 +261,10 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
     async copy(from: string, to: string): Promise<StorageObject> {
       const source = assertSafeKey(from);
       const destination = assertSafeKey(to);
-      const entry = await head(source);
+      // `hash: true` — the destination gets a sidecar, and a sidecar carrying `etag: ''` is a
+      // durable lie every later `get()` of the copy would trust. The read is bounded to the one
+      // case the source has no sidecar of its own; the common path still touches no bytes.
+      const entry = await head(source, true);
       if (entry === undefined) throw objectNotFound(DRIVER_NAME, source);
       await Bun.write(filePath(destination), Bun.file(filePath(source)));
       const sidecar: Sidecar = {
@@ -292,9 +309,20 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
           if (cursor !== undefined && key <= cursor) continue;
           keys.push(key);
         }
-      } catch {
+      } catch (error) {
         // A disk nobody has written to yet has no directory: an empty listing, not an error.
-        return { objects: [], truncated: false };
+        if (isMissingFile(error)) return { objects: [], truncated: false };
+        // Everything else is a refusal, and a bare `catch` reported all of them as "this disk is
+        // empty" — `EACCES` on the root, `ENOTDIR` on a root that is a file, an I/O error on the
+        // mount. `sweepOrphans` walks `list()`, so that swallow certified an unreadable prefix as
+        // having no orphans: the same false report `delete()`'s `.catch(() => undefined)` used to
+        // make, one call to the left.
+        throw listFailed(
+          DRIVER_NAME,
+          prefix,
+          error,
+          `make the disk root readable by this process, then retry: ls -ld ${root}`,
+        );
       }
       keys.sort();
       const page = keys.slice(0, limit);

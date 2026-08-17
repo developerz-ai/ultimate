@@ -18,6 +18,7 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 | `models.ts` | the model REGISTRY: `registerModel`, limits, prices, the reasoning controls each one accepts |
 | `provider.ts` | `Provider` interface, the request half, the money arithmetic, Anthropic + Echo |
 | `wire.ts` | the response half: `usage` / `stop_reason` shapes, and the SSE `MessageStream` |
+| `error-body.ts` | what a failure body SAYS (`detailOf`) and what must never survive into it (`withoutKey`) — one copy, both transports |
 | `sse.ts` | Server-Sent Events framing — protocol only, knows nothing about Anthropic |
 | `openai-provider.ts` | `openAiProvider()` — the socket, the credential and the errors for any endpoint speaking the OpenAI chat-completions FORMAT |
 | `openai-messages.ts` | the format mapping's request half: `AiMessage` blocks → OpenAI messages, `LlmTool` → functions, `tool_choice` |
@@ -83,6 +84,27 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 - Every non-2xx and every in-band `error` frame becomes `AiTransportError`, which carries a real
   `status` field — that field IS the gateway's retry rule. A body parsed as a message would read
   as an empty, successful answer, which is the one outcome nothing downstream can detect.
+- **The two wire formats answer the same question the same way, and `provider-parity.test.ts` is
+  what makes that a build error — added 2026-08.** Four rules were held by one format and not the
+  other, all of them in the RESPONSE half, and each one is a failure that reads as a success:
+  - an in-band `error` object in a **200 body** is `AiTransportError` on both. `parseMessage` read
+    one as an empty `end_turn` answer while `MessageStream` — the *same provider's* streamed half —
+    had always refused it. `throwInBandError` is `wire.ts`'s, exported, so one status table decides
+    the gateway's retry on both transports.
+  - a `stopDetails` of type `refusal` **forces** `stopReason: 'refusal'`, because `llm()` and
+    `agent()` branch on the reason and nothing reads the detail. `parseStopReason` answers
+    `end_turn` for a spelling this build has never seen, so a refusal in a new vocabulary arrived
+    as a complete answer that happened to be empty. The OpenAI-format read always forced it.
+  - a tool call's `input` is **parsed, never cast**: `asToolInput`, one copy. `(b['input'] ?? {}) as
+    Record<string, unknown>` put a string under that type, and `runLlmToolCall` indexes it.
+  - the **credential is scrubbed** out of `AiTransportError.detail` on both. `withoutKey` was the
+    OpenAI provider's alone, so a proxy echoing `x-api-key` into its 400 body put an Anthropic key
+    in an error — and an error reaches a log index, a span and a problem document. Both providers
+    now call `error-body.ts`'s pair; `detailOf` moved there from `provider.ts` with it (internal,
+    never in `src/index.ts`).
+  What is NOT parity: the two status tables (529 vs 503 for "overloaded") and the OpenAI-format
+  `estimatedUsage` fallback. Those are the formats differing, and the parity suite asserts them
+  *as* differences rather than flattening them.
 - A stream that ends without `message_stop` throws. A truncated answer that returns `end_turn`
   is a confidently wrong answer with no signal, which the budget rule already forbids.
 - A tool call is emitted whole. `input_json_delta` fragments are not arguments until the block

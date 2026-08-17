@@ -46,6 +46,10 @@ report `application/octet-stream`, indistinguishable from an object that really 
 local driver read the truth out of its sidecar: a caller filtering a listing by content type got
 everything on `local` and nothing on `s3`. `get()` always answers a full `StorageObject`.
 
+The etag follows the same rule: a listed object with no sidecar reports `etag: ''`, because
+answering otherwise means reading and hashing the whole object — which is what the local `list()`
+used to do, once per sidecar-less row, sequentially. `get()` hashes out of bytes it already holds.
+
 ## `put()` is for objects that fit in memory
 
 `put()` buffers the whole body — size and checksum have to be known before the object exists —
@@ -105,7 +109,9 @@ Verification is constant-time, checks the signature *before* the expiry (a forge
 learns it was merely late), takes a `Clock` so tests freeze time, and returns
 `{ ok: false, reason }` rather than throwing — `malformed | unsafe-key | signature-mismatch |
 expired`. S3 presign covers method, expiry and content type but **not** `maxBytes`: S3 has no
-header for it, so size stays a server-side `validateUpload()` check.
+header for it, so a bucket-backed disk's ceiling is a bucket rule or a post-upload `object.size`
+check, never the signature. `s3Driver` does not refuse `maxBytes` either — `grantUpload` supplies
+it on every grant, so refusing would break every s3 upload an app mints.
 
 ## Uploads sniff the content type
 
@@ -210,6 +216,7 @@ Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan
 | `X_STORAGE_ORG_MISMATCH` | the key is well-formed and unforged, and belongs to another org |
 | `X_STORAGE_UPLOAD_FAILED` | client half: the presigned `PUT` answered non-2xx or never landed |
 | `X_STORAGE_DELETE_FAILED` | the disk REFUSED a delete — denied `s3:DeleteObject`, a throttle, an expired credential, a read-only mount. An **absent** key is still not an error |
+| `X_STORAGE_LIST_FAILED` | the disk REFUSED a listing — denied `s3:ListBucket`, a throttle, an unreadable root. An **empty** disk is still not an error |
 | `X_STORAGE_QUARANTINED` | `promoteAttachment` on a key nothing has released from `pending/quarantine/` |
 | `X_NOT_IMPLEMENTED` | S3 user metadata / cache-control; `serverSideEncryption` on either driver |
 | `X_ENV_MISSING` | core's: S3 credential env vars, or a `localDriver` built outside development where neither `signingSecret` nor `STORAGE_SIGNING_SECRET` holds a secret other than the published `DEV_SIGNING_SECRET` |

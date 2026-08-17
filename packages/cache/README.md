@@ -145,12 +145,25 @@ fixture entity therefore turns validation on for every later file in the same `b
 
 | Key | Holds |
 |---|---|
-| `<prefix>:<buildId>:c:<key>` | the value, `SET … EX` |
-| `<prefix>:<buildId>:t:{<entity>}` | the collection's members |
-| `<prefix>:<buildId>:t:{<entity>}:<id>` | one row's members |
+| `<prefix>:<buildId>:c:<key>` | the value, `SET … PX` |
+| `<prefix>:<buildId>:t:{<entity>}` | members carrying the **collection tag** — `tag('post')` |
+| `<prefix>:<buildId>:t:{<entity>}:<id>` | members carrying **that row's tag** — `tag('post', '1')` |
+| `<prefix>:<buildId>:e:{<entity>}` | members carrying **any** tag of the entity — the index |
 
-`{<entity>}` is a **Redis Cluster hash tag**, not decoration: it is what makes a row's bucket and
-its collection's bucket hash to one slot, so a script may take both in `KEYS`. Invalidation issues
+Four keys, three jobs, and the fourth is why: `t:` buckets are the tags a caller declared and `e:`
+is the entity index. A **collection bust** reads the index, so it clears the rows too; a **row
+bust** reads that row's bucket and the collection tag's, so `post:2` survives a bust of `post:1`.
+That is `tagMatches` — the same predicate the LRU answers through its two indexes and the request
+memo answers through `tagsIntersect` — and the shared tier is the rung that did not, because `t:`
+served as the index as well: `invalidateTags([tag('post', '1')])` came back with every post-tagged
+key in the store and deleted them, so one row write emptied the shared tier for that entity while
+the in-process tier one rung closer kept exactly the row that had changed.
+`tier-parity.test.ts` compares all three rungs and `redis.live.test.ts` runs the same two busts
+against a real server.
+
+`{<entity>}` is a **Redis Cluster hash tag**, not decoration: it is what makes a row's bucket, its
+collection's bucket and the index hash to one slot, so a script may take them in one `KEYS`.
+Invalidation issues
 **one script call per tag** for that reason — the batched form carried every tag's buckets in one
 `EVAL` and was rejected with `CROSSSLOT` before the script ran, landing in `report.errors` as a
 partial bust while stale rows served until TTL. Value keys are still deleted client-side, one `DEL`

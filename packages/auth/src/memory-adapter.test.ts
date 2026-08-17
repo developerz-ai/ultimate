@@ -1,5 +1,5 @@
 // Direct coverage for the in-memory adapter's own semantics — every other test in this package
-// uses it as a backing store, but nothing pinned its edge cases (case folding, patch-vs-omit,
+// uses it as a backing store, but nothing pinned its edge cases (exact-match lookup, patch-vs-omit,
 // double-consume, double-revoke, sort order) directly until now.
 
 import { describe, expect, test } from 'bun:test';
@@ -17,19 +17,21 @@ const user = (overrides: Partial<Parameters<MemoryAdapter['createUser']>[0]> = {
 });
 
 describe('users', () => {
-  test('findUserByEmail is case-insensitive and trims whitespace', async () => {
+  test('findUserByEmail matches exactly, as `where email = $1` does', async () => {
     const adapter = new MemoryAdapter();
     await adapter.createUser(user());
 
-    expect((await adapter.findUserByEmail('a@example.com'))?.id).toBe('user-1');
-    expect((await adapter.findUserByEmail('  A@Example.com  '))?.id).toBe('user-1');
+    expect((await adapter.findUserByEmail('A@Example.com'))?.id).toBe('user-1');
+    // Folding case HERE is what made this the one adapter that finds an account Postgres does not.
+    // `normaliseEmail` is the caller's, above the seam — see `adapter-parity.test.ts`.
+    expect(await adapter.findUserByEmail('  a@example.com  ')).toBeNull();
     expect(await adapter.findUserByEmail('nobody@example.com')).toBeNull();
   });
 
-  test('createUser stores the email normalized and starts with no permissions/mfa', async () => {
+  test('createUser stores the email it was handed and starts with no permissions/mfa', async () => {
     const adapter = new MemoryAdapter();
     const created = await adapter.createUser(user());
-    expect(created.email).toBe('a@example.com');
+    expect(created.email).toBe('A@Example.com');
     expect(created.permissions).toEqual([]);
     expect(created.mfaSecret).toBeNull();
     expect(created.disabledAt).toBeNull();

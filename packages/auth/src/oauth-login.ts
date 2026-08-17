@@ -6,6 +6,7 @@
 import { ConfigInvalidError, logger, uuid } from '@ultimat3/core';
 import type { AuthAccount, AuthUser } from './adapter';
 import type { Auth, LoginResult } from './auth';
+import { normaliseEmail } from './email';
 import {
   authWriteFailed,
   emailVerifiedNotStored,
@@ -103,8 +104,18 @@ async function applyGrants(auth: Auth, user: AuthUser, grants: OAuthGrants): Pro
   return patched;
 }
 
+/**
+ * The provider's address, put through the one normalisation every other door uses. Providers send
+ * display casing (`Ada@Example.com`) and change it between logins, and `x_users.email` is a plain
+ * case-sensitive `unique` column — so unnormalised, the lookup below missed the account the user
+ * registered and `createUserFor` minted a second one at the same address, which `login()` could
+ * then never reach. `MemoryAdapter` used to fold case itself, which is why no test saw it.
+ */
+const profileEmail = (profile: OAuthProfile): string | null =>
+  profile.email === null ? null : normaliseEmail(profile.email);
+
 async function createUserFor(auth: Auth, input: OAuthSignInInput): Promise<AuthUser> {
-  const email = input.profile.email;
+  const email = profileEmail(input.profile);
   // The provider authenticated somebody and told us no address. There is nothing to create an
   // account from, and saying "wrong password" here would send the developer hunting the wrong bug.
   if (email === null) {
@@ -162,7 +173,8 @@ async function resolveUser(
   input: OAuthSignInInput,
   linked: AuthAccount | null,
 ): Promise<AuthUser> {
-  const { provider, email, emailVerified } = input.profile;
+  const { provider, emailVerified } = input.profile;
+  const email = profileEmail(input.profile);
   if (linked !== null) return await userForAccount(auth, linked);
 
   if (email === null) return await createUserFor(auth, input);
