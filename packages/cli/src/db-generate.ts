@@ -10,6 +10,7 @@ import {
   declaredSchema,
   generateMigration,
   migrationSnapshotMissing,
+  snapshotJson,
 } from '@ultimat3/db';
 import { describeEntities } from '@ultimat3/entity';
 import { loadApp } from './app-load';
@@ -97,7 +98,9 @@ export async function generateAppMigration(
   const sql = `${migration.id}.sql`;
   const snapshot = snapshotFileName(migration.id);
   await Bun.write(join(dir, sql), migrationSql(migration));
-  await Bun.write(join(dir, snapshot), `${JSON.stringify(migration.snapshot, null, 2)}\n`);
+  // `snapshotJson`, never `JSON.stringify`: the sidecar is the one migration artefact a scaffolded
+  // app's `biome check .` reads, and its bytes carry their own trailing newline.
+  await Bun.write(join(dir, snapshot), snapshotJson(migration.snapshot));
   const schemaHash = await writeSchemaHash(root, migration.id);
 
   return {

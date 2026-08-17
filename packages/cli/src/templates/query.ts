@@ -5,6 +5,8 @@
 import type { FeatureTarget } from './entity';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
+import { sliceFoundation } from './slice-foundation';
+import { wrapImport } from './wrap';
 
 /** A live read always fans out fresh, so a TTL on it would only ever be dead configuration. */
 const cacheLine = (feature: NameSet, live: boolean): string =>
@@ -20,7 +22,10 @@ const querySource = (
 
 import { from, query, t } from '@ultimat3/query';
 import type { ${feature.pascal} } from '../entity';
-import { can${feature.pascal}Read${live ? '' : `, ${feature.camel}Tag`} } from '../policy';
+${wrapImport(
+  live ? [`can${feature.pascal}Read`] : [`can${feature.pascal}Read`, `${feature.camel}Tag`],
+  '../policy',
+)}
 import * as repo from '../repo';
 
 export const ${name.camel} = query({
@@ -28,7 +33,7 @@ export const ${name.camel} = query({
   policy: can${feature.pascal}Read,
   live: ${String(live)},${cacheLine(feature, live)}
   // Opt-in, unlike an action's tool: a read hands rows to an agent, so silence exposes nothing.
-  mcp: { expose: true, description: '${name.raw} — generated, edit the description' },
+  mcp: { expose: true, description: '${name.raw} — edit this description' },
   sql: ({ orgId, limit }) =>
     // \`feature.table\`, not the kebab plural: \`from()\` quotes the identifier into the SQL text,
     // and the entity created the table as snake_case.
@@ -120,6 +125,10 @@ export function queryFiles(rawName: string, target: QueryOptions): readonly Gene
   const live = target.live === true;
   const dir = `${target.surfaceDir}/${target.feature}/${live ? 'live' : 'queries'}`;
   return [
+    // A read declares the row type it returns (`../entity`), the rule that admits it (`../policy`)
+    // and the one module allowed to query the table (`../repo`) — all three are the slice's, and
+    // `--live` changes only which directory this file lands in.
+    ...sliceFoundation(target, ['entity', 'policy']),
     { path: `${dir}/${name.kebab}.ts`, contents: querySource(name, feature, live) },
     { path: `${dir}/${name.kebab}.test.ts`, contents: queryTest(name, feature, live) },
   ];

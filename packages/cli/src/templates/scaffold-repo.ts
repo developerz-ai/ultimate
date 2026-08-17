@@ -56,6 +56,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
   },
   "dependencies": {
     "@ultimat3/action": "^${version}",
+    "@ultimat3/admin": "^${version}",
     "@ultimat3/cache": "^${version}",
     "@ultimat3/cli": "^${version}",
     "@ultimat3/core": "^${version}",
@@ -150,12 +151,17 @@ export const config = defineConfig({
 // scaffolded app fail its first `x verify` on the config rather than on the code. The note that
 // used to be a comment lives here, where it is read by the person who would have changed the line:
 // x.manifest.json and openapi.json are emitted byte-for-byte by `x manifest`, so a formatter
-// rewriting them puts `x manifest` and `x verify` in a loop neither can win.
+// rewriting them puts `x manifest` and `x verify` in a loop neither can win. `**/migrations` is the
+// same rule for the same reason and the same glob this repo's own biome.json carries: `x db gen`
+// writes the `.sql` and its `.snapshot.json` sidecar, and an app that narrows `lineWidth` would
+// otherwise fail `lint` on a file no author typed and `x db gen` would rewrite anyway.
 // `preset`, not `recommended`: the older key is deprecated from 2.5 on and every `bun run lint`
 // in the scaffolded app printed the migration notice for a config the app never wrote by hand.
 const biome = (): string => `{
   "$schema": "https://biomejs.dev/schemas/${BIOME_VERSION}/schema.json",
-  "files": { "includes": ["**", "!x.manifest.json", "!openapi.json"] },
+  "files": {
+    "includes": ["**", "!**/migrations", "!x.manifest.json", "!openapi.json"]
+  },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
   "linter": {
     "rules": {

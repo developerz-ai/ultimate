@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import type { Migration, SchemaDescription } from '@ultimat3/db';
 import { parseSnapshot } from '@ultimat3/db';
 
-/** Where `x new` writes them and where `x db gen` adds to. App-root-relative, POSIX. */
+/** Where `x db gen` — the only writer — puts them. App-root-relative, POSIX. */
 export const MIGRATIONS_DIR = 'packages/db/migrations';
 
 /** The schema `<id>` leaves behind, written by `x db gen` so the next one can diff against it. */

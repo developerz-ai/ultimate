@@ -4,6 +4,7 @@
 
 import type { GeneratedFile, NameSet } from './naming';
 import { packageShapeFiles, workspacePackageJson } from './scaffold-package-shape';
+import { wrapImport } from './wrap';
 
 const DESCRIPTION = 'Pure types and constants, no I/O';
 
@@ -58,7 +59,7 @@ const domainTest = (
 // A float here is a rounding error nobody sees until it is on an invoice.
 import { expect } from 'bun:test';
 import { unitTest } from '@ultimat3/testing';
-import { add, ${app.pascal}CurrencyMismatchError, zero } from './index';
+${wrapImport(['add', `${app.pascal}CurrencyMismatchError`, 'zero'], './index')}
 
 unitTest('money adds in minor units', () => {
   expect(add({ minor: 1050, currency: 'USD' }, { minor: 250, currency: 'USD' })).toEqual({

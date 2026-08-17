@@ -4,16 +4,16 @@
 
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
+import { wrapList } from './wrap';
 
 /** Biome would rewrap this itself, so the generator emits the already-formatted form. */
-const permissionSet = (feature: NameSet): string => {
-  const read = `'${feature.kebab}:read'`;
-  const write = `'${feature.kebab}:write'`;
-  const line = `export const ${feature.camel}Permissions = definePermissions([${read}, ${write}]);`;
-  return line.length <= 100
-    ? line
-    : `export const ${feature.camel}Permissions = definePermissions([\n  ${read},\n  ${write},\n]);`;
-};
+const permissionSet = (feature: NameSet): string =>
+  wrapList(
+    '',
+    `export const ${feature.camel}Permissions = definePermissions([`,
+    [`'${feature.kebab}:read'`, `'${feature.kebab}:write'`],
+    ']);',
+  );
 
 const policySource = (
   feature: NameSet,
@@ -83,28 +83,29 @@ const otherOrg = '00000000-0000-4000-8000-000000000009';
 // process — and a second test declaring the same name differently is X_ROLE_REDEFINED rather than
 // an override. The app's roles live in apps/web/shared/roles.ts, once. \`permissions\` is the same
 // check one layer down.
-const reader = testActor('reader', { orgId: org, permissions: ['${feature.kebab}:read'] }).actor;
-const writer = testActor('writer', {
-  orgId: org,
-  permissions: ['${feature.kebab}:read', '${feature.kebab}:write'],
-}).actor;
-const outsider = testActor('outsider', {
-  orgId: otherOrg,
-  permissions: ['${feature.kebab}:read', '${feature.kebab}:write'],
-}).actor;
+// The two grants and the org, each named once. Not decoration: every assertion below then carries
+// the feature's own name and still fits the formatter's width, whatever that name is — a generated
+// file the app's \`lint\` step rewrites is a red gate over code nobody typed.
+const read = '${feature.kebab}:read';
+const write = '${feature.kebab}:write';
+const input = { orgId: org };
+
+const reader = testActor('reader', { orgId: org, permissions: [read] }).actor;
+const writer = testActor('writer', { orgId: org, permissions: [read, write] }).actor;
+const outsider = testActor('outsider', { orgId: otherOrg, permissions: [read, write] }).actor;
 
 unitTest('${feature.camel} read denies anonymous and cross-org actors', async () => {
-  await expect(can${feature.pascal}Read).toDenyPolicy({ actor: null, input: { orgId: org } });
-  await expect(can${feature.pascal}Read).toDenyPolicy({ actor: outsider, input: { orgId: org } });
-  await expect(can${feature.pascal}Read).not.toDenyPolicy({ actor: reader, input: { orgId: org } });
+  await expect(can${feature.pascal}Read).toDenyPolicy({ actor: null, input });
+  await expect(can${feature.pascal}Read).toDenyPolicy({ actor: outsider, input });
+  await expect(can${feature.pascal}Read).not.toDenyPolicy({ actor: reader, input });
 });
 
-unitTest('${feature.camel} write denies an actor holding only the read grant', async () => {
+unitTest('${feature.camel} write denies the read-only actor', async () => {
   // The outsider holds the grant and is still denied: the predicate is a second, independent
   // gate, and this is the assertion that fails if someone deletes it.
-  await expect(can${feature.pascal}Write).toDenyPolicy({ actor: reader, input: { orgId: org } });
-  await expect(can${feature.pascal}Write).toDenyPolicy({ actor: outsider, input: { orgId: org } });
-  await expect(can${feature.pascal}Write).not.toDenyPolicy({ actor: writer, input: { orgId: org } });
+  await expect(can${feature.pascal}Write).toDenyPolicy({ actor: reader, input });
+  await expect(can${feature.pascal}Write).toDenyPolicy({ actor: outsider, input });
+  await expect(can${feature.pascal}Write).not.toDenyPolicy({ actor: writer, input });
 });
 
 unitTest('${feature.camel} rules name the permission they require', () => {

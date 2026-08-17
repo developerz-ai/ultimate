@@ -4,6 +4,10 @@
 
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
+import { wrapImport, wrapList } from './wrap';
+
+/** The columns that leave the server. One list, read by the declaration and by its test. */
+const VIEW_KEYS: readonly string[] = ["'id'", "'title'", "'price'", "'createdAt'"];
 
 export interface FeatureTarget {
   /** `apps/web/app` or `apps/web/site` — the surface the feature lives in. */
@@ -49,14 +53,31 @@ export type ${name.pascal} = typeof ${name.camel}.$row;
 // What leaves the server: an action writes \`output: ${name.pascal}View\` and the shape is the
 // columns', never a second declaration to keep in sync. The tenant column is not in it — an org
 // id is the caller's context, not the client's data.
-export const ${name.pascal}View = ${name.camel}.$view(['id', 'title', 'price', 'createdAt']);
+${wrapList('', `export const ${name.pascal}View = ${name.camel}.$view([`, VIEW_KEYS, ']);')}
 export type ${name.pascal}View = typeof ${name.pascal}View.$row;
 `;
 
-const repoSource = (
-  name: NameSet,
-  table: string,
-): string => `// The only module allowed to query the ${name.pluralKebab} table. Routes call actions and
+const repoSource = (name: NameSet, table: string): string => {
+  const row = name.pascal;
+  const byIdCall = wrapList(
+    '  ',
+    `const row = await db().one<${row}>(`,
+    [`sql\`select * from ${table} where id = \${id}\``],
+    ');',
+  );
+  const listSignature = wrapList(
+    '',
+    'export async function listByOrg(',
+    ['orgId: string', 'limit = 50'],
+    `): Promise<readonly ${row}[]> {`,
+  );
+  const insertSignature = wrapList(
+    '',
+    'export async function insert(',
+    [`row: Omit<${row}, 'id' | 'createdAt'>`],
+    `): Promise<${row}> {`,
+  );
+  return `// The only module allowed to query the ${name.pluralKebab} table. Routes call actions and
 // queries; actions call services; services call this.
 // \`db()\` is the ambient handle: inside a transaction it IS the transaction, so these functions
 // join the caller's transaction without knowing one is open.
@@ -66,18 +87,18 @@ import { dbDrift, newId } from '@ultimat3/entity';
 import type { ${name.pascal} } from './entity';
 
 export async function byId(id: string): Promise<${name.pascal} | undefined> {
-  const row = await db().one<${name.pascal}>(sql\`select * from ${table} where id = \${id}\`);
+${byIdCall}
   return row ?? undefined;
 }
 
-export async function listByOrg(orgId: string, limit = 50): Promise<readonly ${name.pascal}[]> {
+${listSignature}
   // Ordered and bounded: an unordered page is a different page on every request.
   return db().query<${name.pascal}>(
     sql\`select * from ${table} where org_id = \${orgId} order by created_at desc limit \${limit}\`,
   );
 }
 
-export async function insert(row: Omit<${name.pascal}, 'id' | 'createdAt'>): Promise<${name.pascal}> {
+${insertSignature}
   // Money is three physical columns — integer minor units, the ISO code, and the scale, never a
   // float. \`scale ?? null\`: an amount at the currency's own minor unit carries no scale at all,
   // and writing \`0\` for it would claim whole units — a 100x reinterpretation of the price.
@@ -90,6 +111,7 @@ export async function insert(row: Omit<${name.pascal}, 'id' | 'createdAt'>): Pro
   return created;
 }
 `;
+};
 
 const entityTest = (
   name: NameSet,
@@ -99,9 +121,11 @@ const entityTest = (
 // are what the migration generator and every query read, so both are worth pinning.
 import { expect, unitTest } from '@ultimat3/testing';
 import type { ${name.pascal} } from './entity';
-import { ${name.pascal}View, ${name.camel} } from './entity';
+${wrapImport([`${name.pascal}View`, name.camel], './entity')}
 
-const row = (over: Partial<${name.pascal}> = {}): ${name.pascal} => ({
+type Over = Partial<${name.pascal}>;
+
+const row = (over: Over = {}): ${name.pascal} => ({
   id: '00000000-0000-4000-8000-000000000001',
   orgId: '00000000-0000-4000-8000-000000000002',
   title: 'valid title',
@@ -132,20 +156,26 @@ unitTest('${name.camel} describes itself for the manifest', () => {
   expect(described.columns.map((column) => column.column)).toContain('price_minor');
   expect(described.columns.map((column) => column.column)).toContain('price_currency');
   expect(described.columns.map((column) => column.column)).toContain('price_scale');
-  expect(described.invariants.map((rule) => rule.name)).toContain('${snake}_price_non_negative');
+  // Named first: the assertion line carries the entity's own name and stays under the app's
+  // formatter width whatever that name is.
+  const rules = described.invariants.map((rule) => rule.name);
+  expect(rules).toContain('${snake}_price_non_negative');
 });
 
-unitTest('${name.pascal}View projects the row an action returns, without the tenant', () => {
-  expect(${name.pascal}View.$keys).toEqual(['id', 'title', 'price', 'createdAt']);
+unitTest('${name.pascal}View projects the row an action returns', () => {
+  const keys = ${name.pascal}View.$keys;
+  expect(keys).toEqual([${VIEW_KEYS.join(', ')}]);
   // The org id is the caller's context, never the client's data: a view that leaked it would
   // let a response carry a tenant boundary the policy already decided.
-  expect(${name.pascal}View.$keys).not.toContain('orgId');
+  expect(keys).not.toContain('orgId');
 });
 
-unitTest('${name.camel} invariants reject a blank title and a negative price', () => {
+unitTest('${name.camel} invariants reject blank and negative', () => {
+  const blank = row({ title: '   ' });
+  const negative = row({ price: { minor: -1, currency: 'USD' } });
   expect(() => ${name.camel}.$assert(row())).not.toThrow();
-  expect(() => ${name.camel}.$assert(row({ title: '   ' }))).toThrow();
-  expect(() => ${name.camel}.$assert(row({ price: { minor: -1, currency: 'USD' } }))).toThrow();
+  expect(() => ${name.camel}.$assert(blank)).toThrow();
+  expect(() => ${name.camel}.$assert(negative)).toThrow();
 });
 
 unitTest('${name.camel} parses a row through its own columns', () => {

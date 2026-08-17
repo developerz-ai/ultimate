@@ -52,10 +52,14 @@ Built with [Ultimate](https://ultimate.dev). Bun-only, Postgres, SolidJS.
 ## 🚀 Start
 
 \`\`\`sh
-bin/setup     # prerequisites, deps, env, migrate, seed
+bin/setup     # prerequisites, deps, env, the first migration, migrate, seed
 x dev         # all roles in one process, embedded Postgres, /_x mounted
 x verify      # the gate: typecheck, lint, boundaries, tests, drift, budgets
 \`\`\`
+
+\`packages/db/migrations\` starts empty and \`x db gen\` is its only writer — \`bin/setup\` runs
+\`x db gen "initial"\` for you on a fresh clone. Until it has, \`x verify\`'s \`drift\` step is red
+with \`X_DB_DRIFT\`, and that is the fix it names.
 
 ## 🗺 Layout
 
@@ -78,6 +82,11 @@ cd "$(dirname "$0")/.."
 command -v bun >/dev/null || { echo "X_BUN_MISSING: install bun — https://bun.sh"; exit 1; }
 bun install
 [ -f .env.development.local ] || printf '# per-box secrets, gitignored, wins over .env.development\\n' > .env.development.local
+# \`x db gen\` is the ONE writer of packages/db/migrations — the scaffold no longer hand-writes a
+# 0000_initial.sql, because a second writer is how the source and the ledger ended up disagreeing
+# about what "initial" meant. Guarded on the directory rather than on the generator being a no-op:
+# this script is documented idempotent, and the guard is what makes that true here.
+ls packages/db/migrations/*.sql >/dev/null 2>&1 || bunx x db gen "initial"
 bunx x db migrate "$@"
 bun run db:seed
 echo "setup complete — next: x dev"

@@ -51,6 +51,7 @@ What `x new` writes, and who owns it afterwards:
 | `openapi.json` | generated | HTTP surface from `action` / `query` declarations |
 | `AGENTS.md` / `CLAUDE.md` | **human-authored stubs** | short, terse. Ultimate never generates prose docs at runtime |
 | `docker/` | generated | dev compose + per-role prod compose + Dockerfile ([Deployment](Deployment)) |
+| `packages/db/migrations/` | **not written at all** | `x db gen` is its only writer, `As of 2026-08`. First commands in a new app: `x db gen "initial"`, then `x db migrate` — `bin/setup` runs both. Until the first one has, `x verify`'s `drift` step is red and names it, for any app declaring an entity; `--no-example` declares none, and zero against zero is agreement |
 
 ## Typed env, validated at boot
 

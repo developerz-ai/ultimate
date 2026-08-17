@@ -19,10 +19,20 @@ One engine per concern. A **migration** changes the shape of a table — schema,
 `x db gen` and the `ROLE=migrate` release-phase container run the **same** engine — `packages/db`'s `migrate()`/`generateMigration()` — not two. **In 1.1.0** they did not: `x db gen`'s subcommands shelled out to `bunx drizzle-kit`, a second schema engine with its own journal, declared in no `package.json` and fetched unpinned at run time, which is why a 1.1.0 scaffold's own `bin/setup` fails. That shelling-out is gone from current source — `cmd-db.ts` calls `generateAppMigration` and `runMigrations` from `@ultimat3/db`/`@ultimat3/cli` directly, and the only remaining mention of `drizzle-kit` anywhere is a file header comment recording the history.
 
 ```
+x db gen "initial"            # a new app's first database command — x new writes no migration
 x db gen "add publish_at"     # diffs entities against migrations, writes a named migration + its down
 x db migrate                  # applies pending migrations, dev or prod, through migrate()
 ROLE=migrate                  # the same migrate() as a release-phase container, one image
 ```
+
+`x db gen` is the **only** writer of `packages/db/migrations`, `As of 2026-08`. `x new` scaffolds no
+`0000_initial.sql`, so a scaffold that **declares an entity** — the default `--example` slice does —
+is red on `x verify`'s `drift` step until that one command runs: *packages/db has a schema but no
+migration recorded it*, fix `x db gen "initial"`. Zero entities against zero migrations is
+agreement, not drift, so `x new --no-example` is green until its first `entity()`. A
+scaffold that hand-wrote the first migration was a second writer of the same directory: the file
+carried no `.snapshot.json`, which only the generator can produce, so the app's first `x db gen` and
+its first `x db migrate` both refused (axiom 1).
 
 ### The `x_migrations` ledger
 
@@ -36,7 +46,35 @@ Every migration applies inside its own transaction, recorded into `x_migrations`
 
 ### `generateMigration()` — one diff engine
 
-`x db gen` diffs the app's entity snapshots against the schema the newest migration's `.snapshot.json` sidecar recorded, and writes the migration text plus that sidecar for the *next* diff. A migration missing its sidecar — deleted, or hand-written without one — is `X_MIGRATION_SNAPSHOT_MISSING`: refused rather than defaulted to an empty schema, which would emit `create table` for every table the database already holds.
+`x db gen` diffs the app's entity snapshots against the schema the newest migration's `.snapshot.json` sidecar recorded, and writes the migration text plus that sidecar for the *next* diff. A migration missing its sidecar — deleted, or hand-written without one — is `X_MIGRATION_SNAPSHOT_MISSING`: refused rather than defaulted to an empty schema, which would emit `create table` for every table the database already holds. No migration at all is a different answer and not a refusal: zero migrations declare the empty schema, which is what makes `x db gen "initial"` work in an app that has never generated one.
+
+Its two remedies, in the order they are safe to run: `git checkout -- packages/db/migrations/<id>.snapshot.json`, or, when the file was never written, `rm packages/db/migrations/<id>.* && x db gen "<name>"`. The delete comes first because `x db gen` against the migration that is still there raises this same code. Until 2026-08 the `fix:` said "restore … from version control" alone while `x db migrate`'s `unknown-schema` difference answered `x db gen "snapshot <name>"` — each naming the command that raises the other, with nothing to restore in an app whose sidecar was never written.
+
+### Foreign keys are their own statement
+
+Every foreign key is `alter table … add constraint`, emitted **after** every table statement, and
+never a `references` clause inside `create table` — decided 2026-08. Inline, the constraint is
+created with the table, so the referenced table has to exist already; the order `generateMigration`
+walks is `describeEntities()`, which is the app's *import* order and says nothing about where a
+`references()` points. Measured against PGlite on a scaffolded app: `create table "comments" (…
+references "posts" …)` ahead of `create table "posts"` is `relation "posts" does not exist` on
+statement one, and `down` had the mirror fault — `drop table "posts"` while `comments` still
+references it is `2BP01`. `down` is reversed as a whole, so the constraint drops pushed last come
+out first.
+
+**No topological sort and no cycle error**, deliberately: separate constraints need no ordering at
+all, and two tables referencing each other cannot be expressed inline in any order. The same call
+site answers the second half — a `references()` added to a column that **already exists** now emits
+its own `add constraint`, where before the `up` came out empty, `x db gen` wrote no file, and the
+`drift` step stayed red forever behind a fix that did nothing. Removing a `references()` still emits
+nothing, exactly as a removed index does ([Known gaps](Known-Gaps)).
+
+The sidecar is written through `snapshotJson()`, not `JSON.stringify(value, null, 2)`. Biome
+collapses a short array onto one line and `JSON.stringify` never does, so an app whose `lint` step
+read that directory failed `x verify` on a file no author typed — *Formatter would have printed the
+following content* — as `X_LINT_FAILED`. Two fixes, both on `main`, unreleased: the serialiser is a
+fixed point of Biome 2.5.5 at `lineWidth: 100`, and `x new`'s `biome.json` excludes
+`**/migrations`, the glob this repo's own config already carried.
 
 ## The destructive-migration rail
 
@@ -244,7 +282,7 @@ Scaffolds a working pair, never a stub: `x g backfill <name>` writes `<feature>/
 | `X_MIGRATION_CONFLICT` | the ledger disagrees with this build — a foreign app-version row, or an applied migration whose checksum moved | deploy the version `cause` names, or `x db gen "fix <migration>"` — never edit an applied migration |
 | `X_MIGRATION_IRREVERSIBLE` | a generated plan drops a column or table and its `down` cannot restore the rows | `x db gen "<name>" --allow-destructive`, or keep the column and deprecate it |
 | `X_MIGRATION_DESTRUCTIVE` | a committed migration's `up` destroys data with no `-- destructive: true` line | add the marker, or regenerate with `--allow-destructive` — before the migration is applied |
-| `X_MIGRATION_SNAPSHOT_MISSING` | the newest migration on disk carries no `.snapshot.json` sidecar to diff against | restore the sidecar from version control, or delete and regenerate that migration |
+| `X_MIGRATION_SNAPSHOT_MISSING` | the newest migration on disk carries no `.snapshot.json` sidecar to diff against | `git checkout -- packages/db/migrations/<id>.snapshot.json` — or, when it was never written, `rm packages/db/migrations/<id>.* && x db gen "<name>"`, the delete first |
 | `X_DB_DRIFT` | the live schema, or the source, disagrees with the migrations | `x db gen "<name>"` — see [Entities and migrations → Drift is a `x verify` failure](Entities-And-Migrations#drift-is-a-x-verify-failure) |
 
 Seven codes, and each one exists because it sends the reader somewhere different — run it, force it, change environment, migrate first, wait, fix the predicates, fix the name. All are `@ultimat3/jobs`': the CLI throws the framework package's errors rather than minting a parallel set, and the pass enforces two of them itself.

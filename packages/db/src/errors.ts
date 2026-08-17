@@ -250,6 +250,21 @@ export const migrationIrreversible = (cause: string, fix: string): DbError =>
   new DbError({ code: 'X_MIGRATION_IRREVERSIBLE', cause, fix });
 
 /**
+ * `packages/db/migrations/0000_initial.snapshot.json` → `packages/db/migrations/0000_initial.*` —
+ * every file that one migration owns, as one `rm` argument. Derived from the path the caller passed
+ * rather than rebuilt from a directory this package does not know: `db` is tier 1 and where an app
+ * keeps its migrations is `@ultimat3/cli`'s answer, not this one's.
+ */
+const snapshotSiblings = (file: string): string => file.replace(/\.snapshot\.json$/, '.*');
+
+/**
+ * `20260817120000_add_posts` → `add_posts`, the argument `x db gen` takes. The name is free text
+ * and only ever labels a *new* id, so an id carrying no stamp answers with itself rather than with
+ * the empty string — a `fix:` ending in `x db gen ""` is a command that cannot be run.
+ */
+const migrationNameOf = (id: string): string => id.replace(/^\d+_/, '') || id;
+
+/**
  * The sidecar every generated migration writes is what the *next* generation diffs against, so a
  * newest migration without one leaves nothing to diff. Refused rather than defaulted to the empty
  * schema, which would generate `create table` for every table the database already holds.
@@ -257,8 +272,15 @@ export const migrationIrreversible = (cause: string, fix: string): DbError =>
 export const migrationSnapshotMissing = (id: string, file: string): DbError =>
   new DbError({
     code: 'X_MIGRATION_SNAPSHOT_MISSING',
-    cause: `migration "${id}" records no schema snapshot, so there is nothing to diff against`,
-    fix: `restore ${file} from version control, or delete "${id}" and regenerate it`,
+    cause: `migration "${id}" records no schema snapshot (${file}), so there is nothing to diff against`,
+    // Two remedies, both commands, in the order they are safe to try. "restore from version
+    // control" alone was neither: on a scaffolded app the sidecar was never written, so there is
+    // nothing to restore — and the drift this refusal answers named `x db gen` as *its* fix, so
+    // the two errors pointed at each other and an app's first migration had no way out.
+    // `x db gen` is named only *after* the files it would trip over are gone.
+    fix:
+      `git checkout -- ${file}   # or, if it was never written: ` +
+      `rm ${snapshotSiblings(file)} && x db gen "${migrationNameOf(id)}"`,
     meta: { id, file },
   });
 

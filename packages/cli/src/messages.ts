@@ -120,7 +120,10 @@ const CATALOG = {
   'cli.manifest.wrote': 'manifest written to {path} ({routes} routes, {actions} actions)',
   'cli.mcp.serving': 'mcp {transport} serving {tools} tools',
   'cli.mcp.scopes': '  scopes {scopes}',
-  'cli.new.done': 'created {name} — next: cd {name} && x dev',
+  // `x db gen "initial"` is a first step, not an optional one: the scaffold writes no migration, so
+  // the app has a schema no migration records and `x verify`'s drift step says so until it runs.
+  'cli.new.done':
+    'created {name} — next: cd {name} && bun install && x db gen "initial" && x db migrate && x dev',
   'cli.policy.count':
     '{permissions} permission(s), {roles} role(s), {enforced} enforced by a declaration',
   // One row per (declaration, actor) pair, never per role: a permission two declarations enforce

@@ -8,6 +8,7 @@ import { tryResolveEnvironment, usesDevCursorSecret } from '@ultimat3/core';
 import { STORAGE_SIGNING_SECRET_KEY, usesDevStorageSecret } from '@ultimat3/storage';
 import { findAppRoot, REQUIRED_BUN, versionAtLeast } from './app-root';
 import type { CliCommand, CommandContext } from './command';
+import { checkMigrationSnapshots } from './db-snapshot';
 import { ICON_SOURCE } from './dev-assets';
 import { checkSourceDrift } from './drift';
 import { intFlagOr, PORT_RANGE } from './flag-number';
@@ -39,6 +40,12 @@ export interface DoctorProbe {
   exists(relativePath: string): boolean;
   portFree(port: number): Promise<boolean>;
   drift(): Promise<readonly Finding[]>;
+  /**
+   * The other half of the migrations directory: a newest migration with no `.snapshot.json`, which
+   * is what `x db gen` refuses on. Separate from `drift()` because they are separate questions with
+   * separate remedies — one is "generate a migration", the other is "this migration is incomplete".
+   */
+  snapshots(): Promise<readonly Finding[]>;
 }
 
 const docs = (code: string): string => `https://ultimate.dev/errors/${code}`;
@@ -151,6 +158,10 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
     );
   }
   findings.push(...(await probe.drift()));
+  // Last, and it is why `X_CLI_UNEXPECTED`'s `fix: x doctor --json` is not a dead end on the path an
+  // author reaches it from: `x db gen` throwing `X_MIGRATION_SNAPSHOT_MISSING` used to be a
+  // condition this diagnostic could not see at all, so the fix line ran clean over a broken app.
+  findings.push(...(await probe.snapshots()));
   return findings;
 }
 
@@ -183,6 +194,7 @@ export function probeFor(cwd: string, bunVersion: string, port: number): DoctorP
     exists: (relativePath) => (root === undefined ? false : existsSync(join(root, relativePath))),
     portFree,
     drift: async () => (root === undefined ? [] : checkSourceDrift(root)),
+    snapshots: async () => (root === undefined ? [] : checkMigrationSnapshots(root)),
   };
 }
 

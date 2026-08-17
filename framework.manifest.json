@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "70577482982394e64fd9f4692e51c08b325a760f2d034e58707c6a96721cd2f7",
+  "buildId": "2668099932ade88316631d4dd4f52c0532b9d83f0ad473eff04dd1fdf6fe05d6",
   "tiers": {
     "0": [
       "core",
@@ -1814,6 +1814,11 @@
       "code": "X_RUNTIME_DRIVER_SPLIT",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SCAFFOLD_FIRST_RUN_FAILED",
+      "owner": "scripts",
+      "at": "scripts/scaffold-first-run.ts"
     },
     {
       "code": "X_SCAFFOLD_GATE_RED",

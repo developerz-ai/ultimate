@@ -10,6 +10,86 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **A freshly scaffolded app could not run its first database command, and its first migration was
+  wrong four ways.** All four reproduced against a real `x new` scaffold on the embedded PGlite.
+
+  **The cycle.** `x db migrate` applied the scaffold's migration and then answered `X_DB_DRIFT` —
+  *records no schema snapshot* — with `x db gen "snapshot initial"` as its `fix:`; `x db gen`
+  answered `X_MIGRATION_SNAPSHOT_MISSING`, whose `fix:` read *"restore … from version control"* for
+  a file version control never had, and refused before writing anything. Two errors, each naming
+  the command that raises the other, on the app's first database command. Both `fix:` lines now
+  carry the same two remedies in the same order: `git checkout --` the sidecar, or — when it was
+  never written — delete the migration's files **first** and only then `x db gen "<name>"`.
+
+  **Foreign keys were emitted in entity-registration order.** `x db gen` wrote every key as a
+  `references` clause inside `create table`, and the order it walks is `describeEntities()`: the
+  app's import order, which says nothing about which table a key points at. Measured:
+  `create table "comments" (… references "posts" …)` ahead of `create table "posts"` is
+  `relation "posts" does not exist` on statement one, and `down` had the mirror fault —
+  `drop table "posts"` while `comments` still references it is `2BP01`. Every key is now its own
+  `alter table … add constraint`, merged in after every table statement, and `down` drops
+  constraints before tables. **No topological sort and no cycle error**: separate constraints need
+  no ordering at all, and two tables referencing each other cannot be expressed inline in any order.
+
+  **The same clause is why a `references()` added to an existing column generated an EMPTY
+  migration.** The column was already there, so nothing was emitted — while the entity hash moved,
+  so `x db gen` wrote no file and `x verify`'s `drift` step stayed red forever behind a fix that did
+  nothing. One call site answers both cases: which of this entity's keys the database does not hold
+  yet. Removing a `references()` still emits nothing, exactly as a removed index does.
+
+  **The generated snapshot failed the app's own `lint`.** The sidecar was written with
+  `JSON.stringify(value, null, 2)`; Biome collapses a one-element array onto one line and
+  `JSON.stringify` never does, so a scaffolded app's `biome check .` answered `X_LINT_FAILED` —
+  *Formatter would have printed the following content* — on a file no author typed.
+  `snapshotJson()` (`packages/db/src/snapshot-json.ts`) emits Biome's shape instead, proved by
+  running the repo's own `biome format` over its output and demanding no change, with the naive
+  spelling asserted to fail the same check so the test cannot pass by doing nothing. `x new`'s
+  `biome.json` also excludes `**/migrations`, the glob this repo's own config already carried. It
+  had already bitten: the demo app's committed `…_initial_schema.snapshot.json` is in *Biome's*
+  shape, which `JSON.stringify(value, null, 2)` cannot produce — it was reformatted by hand after
+  generation.
+
+  **None of it was in CI.** `scaffold-smoke` proved `x new` → `bun install` → `x verify` and stopped
+  there, so it never invoked a generator and never opened a database.
+  `scripts/scaffold-first-run.ts` is the first ten minutes after `x new` run as a check —
+  `x db migrate` against the pristine scaffold, every generator projected from the CLI's own
+  `GENERATORS` registry rather than a sample, then `x db gen` and a second `x db migrate` over what
+  they wrote — reporting each failing step as `X_SCAFFOLD_FIRST_RUN_FAILED` with the command that
+  reproduces it, and never stopping at the first. The scaffold's `x verify` now runs after it and
+  over its output, which is what makes generated code typechecked and linted rather than merely
+  written.
+
+- **Five generators imported slice modules they never wrote.** `x g action`, `x g mutator`,
+  `x g query`, `x g job`, `x g task` and `x g backfill` all open with
+  `import * as repo from '../repo'` — an action adds `../policy` and `../errors` — while only
+  `x g resource` emitted any of them, so each of those generators wrote a file that does not load
+  (`TS2307`, then `X_CLI_UNEXPECTED` from every registry command) in any slice a resource had not
+  been run in first. Each now composes exactly the modules its own source imports, through
+  `sliceFoundation(target, needs)`: into a **bare** slice `x g job` writes 5 files where it wrote 2,
+  and `x g action` 8 where it wrote 3.
+
+  **Named per generator, never one fixed set.** A job has no request behind it and evaluates no
+  policy, so it plants no `policy.ts` — a generated file nobody reads is one an author has to read
+  before deleting. `'entity'` is the *pair*: `repo.ts` imports `./entity` for its row type, so
+  emitting one without the other moves the unresolved import rather than closing it.
+
+  Counts, `As of 2026-08`, into a slice that has none of them: `x g action` and `x g mutator` 8,
+  `x g query` (with or without `--live`) 7, `x g task` 7, `x g job` and `x g backfill` 5.
+  `x g resource` still writes 25 — it composes the same sub-generators, and the five copies of
+  `entity.ts` that composition produces are collapsed by `dedupe`.
+
+  **A planted module is never a conflict and never overwritten**, which is the half that makes a
+  second run work. `planFile` gives `merge: 'if-absent'` a third answer beside write and conflict:
+  an existing one is a **skip**, `--force` included — a foundation module belongs to the slice, not
+  to the generator that needed it, and `--force` is about the primitive the author named, so
+  clobbering `policy.ts` to regenerate one action would delete every rule they wrote. Regenerating a
+  slice module is `x g entity` / `x g policy`. Measured on a slice holding an authored `policy.ts`:
+  `x g action` writes 7 of 8 — everything missing, including `policy.test.ts`, and not that file —
+  and a second `x g action` into the finished slice writes exactly its own 2, with the authored file
+  byte-for-byte. Before this, a second `x g action` was `X_GENERATE_CONFLICT` on `errors.ts` and
+  wrote **nothing**, and its only offered fix (`x g --force`) would have deleted the feature's error
+  codes.
+
 - **The deployed demo had no persistence, and its own comment said it did.** `client.ts` exported an
   unconditional `memoryDriver()` under a comment claiming *"in production `DATABASE_URL` selects the
   Postgres driver."* It did not — and the shape is worse than "data is lost on redeploy": the app
@@ -21,8 +101,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   zero tables** — five lines, all comments — so the branch alone would have taken the demo from "no
   persistence" to "does not boot". And the regenerated one could not apply either: `x db gen` emits
   `create table` in entity-registration order with foreign keys inline, so `blocks references users`
-  came first and Postgres answered `relation "users" does not exist`. That generator bug is
-  **unfixed and reported** — every app that generates a first migration with foreign keys hits it.
+  came first and Postgres answered `relation "users" does not exist`. That generator bug is **fixed
+  below** — every foreign key is now its own `alter table … add constraint`, after every table.
 
   Three writes had to become upserts with it. An insert on an existing key overwrites **only** in
   the memory driver; on Postgres every re-block, every answered friend request and every re-opened
@@ -1010,6 +1090,20 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   failure, forever, on the only two commands that raise it. It now reads `x help <command>`.
   `--help` is unchanged and still works everywhere else: `db` and `mcp` are exactly the commands
   that declare no `defaultSubcommand`, and `parse.test.ts` pins that pair.
+
+- **BREAKING — `x new` writes no migration.** `packages/db/migrations/0000_initial.sql` and its
+  `.hash` are gone from the scaffold, and `x db gen` is that directory's single writer (axiom 1). A
+  hand-written first migration could not carry a `.snapshot.json` — the artifact only the generator
+  produces — which is the whole of the refusal cycle above, and it also let the source and the
+  ledger disagree about what "initial" meant. **Consequence, and it is correct behaviour rather
+  than a defect:** a scaffold that declares an entity — the default `--example` slice does — is red
+  on `x verify`'s `drift` step, *packages/db has a schema but no migration recorded it*, until the
+  first generate runs. `--no-example` declares none and stays green: `checkSourceDrift` now reads
+  the declared-entity count in that one branch, because zero declared against zero recorded is
+  agreement, and the weaker "a `packages/db` directory exists" test it replaced held such an app
+  permanently red behind a fix that succeeds and writes nothing (an empty diff produces no `.hash`).
+  **Fix:** a new app's first two database commands are `x db gen "initial"` then `x db migrate`;
+  `bin/setup` runs both for you, generating only when the directory holds no `.sql`.
 
 - **BREAKING — an MCP tool is named by the export name, verbatim, on every surface. `snake_case`
   tool names are gone, and so is `toToolName`.** One primitive was reachable under one name and

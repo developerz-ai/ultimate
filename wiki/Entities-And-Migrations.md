@@ -370,7 +370,8 @@ X_DB_DRIFT: schema differs from migrations
 |---|---|---|
 | Entity has what migrations lack | you edited an entity and did not generate — run the `fix` | `x verify` |
 | DB has what migrations lack | someone changed the database by hand; generate a migration or revert the change | `x db migrate` |
-| Migrations have what the entity lacks | a stale migration or a deleted column; reconcile before shipping | `x verify` |
+| Migrations have what the entity lacks | a stale migration or a deleted column; reconcile before shipping. Deleting the **last** entity is this direction, not "nothing is declared so nothing drifts": `x db gen "<name>"` refuses with `X_MIGRATION_IRREVERSIBLE`, and the same command plus `--allow-destructive` writes the drop | `x verify` |
+| Neither declares anything | not drift. Zero entities against zero migrations is agreement, which is what keeps a scaffold with no `entity()` green until its first one | — |
 
 One code, two detectors, because one check cannot be both. `x verify`'s `drift` step reads the
 entity source and the `.hash` a migration recorded — no database, which is what lets the gate run

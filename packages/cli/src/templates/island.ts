@@ -35,7 +35,9 @@ export interface ${Name}Props {
 export function mount(el: HTMLElement, props: ${Name}Props): void {
   el.textContent = props.label;
   el.addEventListener('click', () => {
-    el.dataset['open'] = el.dataset['open'] === 'true' ? 'false' : 'true';
+    // \`dataset.open\`, not \`dataset['open']\`: the bracket form is lint/complexity/useLiteralKeys,
+    // which the app's own \`biome check\` fails on — twice, in the one file every island copies.
+    el.dataset.open = el.dataset.open === 'true' ? 'false' : 'true';
   });
 }
 `;
@@ -49,6 +51,7 @@ const islandTest = (
 
 import { expect, unitTest } from '@ultimat3/testing';
 import * as entry from './${name}.island';
+
 unitTest('${name}.island exports the mount the hydration runtime calls', () => {
   expect(typeof entry.mount).toBe('function');
 });

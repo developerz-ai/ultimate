@@ -7,7 +7,6 @@ import { chmod } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { dedupe } from './cmd-generate';
 import type { CliCommand, CommandContext } from './command';
-import { writeSchemaHash } from './drift';
 import { msg } from './messages';
 import type { CommandResult } from './output';
 import { flagBool, flagString } from './parse';
@@ -40,16 +39,23 @@ export function planNewApp(options: NewAppOptions): readonly GeneratedFile[] {
 export interface WrittenApp {
   readonly dir: string;
   readonly files: readonly string[];
-  readonly schemaHash: string;
 }
 
+/**
+ * Every byte it writes is in `planNewApp`, so `--dry-run` and the disk cannot disagree.
+ *
+ * It writes NO migration and no `.hash`: `x db gen` is the one writer of `packages/db/migrations`,
+ * and it writes `.sql`, `.snapshot.json` and `.hash` together. A scaffold that wrote a `.hash` for
+ * a migration whose snapshot never existed is what made the app's first two database commands
+ * refuse each other — `x db migrate` naming `x db gen`, and `x db gen` refusing a sidecar version
+ * control never had. The consequence is deliberate: `x verify`'s `drift` step is red on a pristine
+ * scaffold until `x db gen "initial"` runs, which is what `cli.new.done` tells the author to do.
+ */
 export async function writeNewApp(target: string, options: NewAppOptions): Promise<WrittenApp> {
   const files = planNewApp(options);
   for (const file of files) await Bun.write(join(target, file.path), file.contents);
   for (const path of EXECUTABLE_FILES) await chmod(join(target, path), 0o755);
-  // Record the schema hash beside the initial migration so `x verify` sees no drift on run one.
-  const hash = await writeSchemaHash(target, '0000_initial');
-  return { dir: target, files: files.map((file) => file.path), schemaHash: hash };
+  return { dir: target, files: files.map((file) => file.path) };
 }
 
 function parentDir(cwd: string, dirFlag: string | undefined): string {
@@ -126,7 +132,7 @@ export const newCommand: CliCommand = {
       ok: true,
       command: 'new',
       summary: msg('cli.new.done', { name: app.kebab }),
-      data: { dir: written.dir, files: written.files, schemaHash: written.schemaHash },
+      data: { dir: written.dir, files: written.files },
       lines: [`  ${written.files.length} files in ${target}`],
     };
   },

@@ -287,6 +287,16 @@ type WritePlan =
   | { readonly kind: 'conflict'; readonly finding: Finding };
 
 function planFile(file: GeneratedFile, absolute: string, force: boolean): WritePlan {
+  // A foundation file belongs to the slice, not to the generator that needs it: several generators
+  // emit the same `repo.ts`, so an existing one is the author's — never a conflict, and never
+  // overwritten, `--force` included. `--force` is about the primitive the author named; clobbering
+  // `policy.ts` to regenerate one action would delete every rule they wrote. Regenerating a slice
+  // module is `x g entity|policy`.
+  if (file.merge === 'if-absent') {
+    return existsSync(absolute)
+      ? { kind: 'skip' }
+      : { kind: 'write', file, absolute, contents: file.contents };
+  }
   if (!force && existsSync(absolute)) {
     return {
       kind: 'conflict',

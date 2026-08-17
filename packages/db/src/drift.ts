@@ -5,6 +5,7 @@
 
 import { baseClient, type DbClient } from './client';
 import { DbError } from './errors';
+import { foreignKeyTarget } from './foreign-key';
 import {
   type ForeignKeyDescription,
   findTable,
@@ -122,7 +123,13 @@ function unknownSchema(migrations: readonly Migration[]): DriftDifference {
     cause:
       `migration "${newest?.id ?? ''}" records no schema snapshot, so what this database owes ` +
       'cannot be established',
-    fix: `x db gen "snapshot ${newest?.name ?? ''}"   # or restore its .snapshot.json sidecar`,
+    // The same two remedies `X_MIGRATION_SNAPSHOT_MISSING` names, in the same order, because it is
+    // the same condition. It used to lead with `x db gen`, which raises that error and whose own
+    // fix pointed back here — a cycle a scaffolded app hit on its first `x db migrate`. The
+    // pathspec is a glob because this package is tier 1: only `@ultimat3/cli` knows the directory.
+    fix:
+      `git checkout -- "*${newest?.id ?? ''}.snapshot.json"   # or, if it was never written: ` +
+      `delete migration "${newest?.id ?? ''}" and rerun x db gen "${newest?.name ?? 'initial'}"`,
   };
 }
 
@@ -211,11 +218,11 @@ function compareIndexes(live: TableDescription, expected: TableDescription): Dri
  * declared side is judged, for the reason `compareIndexes` gives. Named in `wiki/Known-Gaps.md`.
  */
 function compareForeignKeys(live: TableDescription, expected: TableDescription): DriftDifference[] {
-  const target = (key: ForeignKeyDescription): string =>
-    JSON.stringify([[...key.columns], key.referencedTable, [...key.referencedColumns]]);
-  const present = new Set(live.foreignKeys.map(target));
+  // The same identity `x db gen` diffs on (`foreign-key.ts`): a generator and a detector that
+  // disagreed about whether two keys are the same key is drift on a correct database.
+  const present = new Set(live.foreignKeys.map(foreignKeyTarget));
   return expected.foreignKeys
-    .filter((key) => !present.has(target(key)))
+    .filter((key) => !present.has(foreignKeyTarget(key)))
     .map((key) => missingForeignKey(live.name, key));
 }
 
