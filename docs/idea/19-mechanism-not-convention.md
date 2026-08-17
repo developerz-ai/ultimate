@@ -39,7 +39,9 @@ made three of them wrong.
 
 ## The seam is the wrapper
 
-An app composes primitives into its own base and builds on that. Verified against 1.2.0, not re-run against 2.0.0:
+An app composes primitives into its own base and builds on that. **Re-run against 2.0.0**
+`As of 2026-08`: it compiles under the repository's own `tsconfig.base.json`, and the entity it
+declares registers with the merged column set and `orgScoped: true`.
 
 ```ts
 // apps/web/shared/base/tenant-entity.ts — the app's convention, written once
@@ -60,9 +62,9 @@ Nothing downstream can tell the difference, and nothing downstream needs to:
 
 | Fact | Why the wrapper is invisible |
 |---|---|
-| `entity()` registers | `registerEntity` is called from inside `entity()` ([`packages/entity/src/entity.ts:283`](../../packages/entity/src/entity.ts)) — whenever the factory calls it |
-| `isAction()` accepts | structural: `typeof value === 'function'`, `kind === 'action'`, a stashed declaration ([`packages/action/src/action.ts:239`](../../packages/action/src/action.ts)). It asks whether `action()` built the value, never where |
-| `getAction(name) === theExport` | `nameAction` stamps the name **in place** ([`:251`](../../packages/action/src/action.ts)), so the registry holds the app's own object, not a copy |
+| `entity()` registers | `registerEntity` is called from inside `entity()` ([`packages/entity/src/entity.ts:292`](../../packages/entity/src/entity.ts)) — whenever the factory calls it |
+| `isAction()` accepts | structural: `typeof value === 'function'`, `kind === 'action'`, a stashed declaration ([`packages/action/src/action.ts:286`](../../packages/action/src/action.ts)). It asks whether `action()` built the value, never where |
+| `getAction(name) === theExport` | `nameAction` stamps the name **in place** ([`:298`](../../packages/action/src/action.ts)), so the registry holds the app's own object, not a copy |
 | the gate agrees | **no `x verify` step matches source text for `action(` / `entity(` / `mutator(`.** Every primitive fact reaches the gate through `loadApp` ([`packages/cli/src/app-load.ts`](../../packages/cli/src/app-load.ts)), which imports modules and reads the runtime registries. The only text scanning in the CLI is for `X_*` codes ([`ts-scan.ts`](../../packages/cli/src/ts-scan.ts)) |
 
 So the manifest, all five projections (`.tool()` `.openapi()` `.client()` `.job()` `.contract()`),

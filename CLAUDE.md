@@ -13,8 +13,9 @@ This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x`
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
 **Status:** 2.0.0, `As of 2026-08`. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` —
-29 in all — **versioned** in lockstep: one version, one commit, one tag. 2.0.0 is the **first
-major**: the 2.0.0 section of [`CHANGELOG.md`](CHANGELOG.md) carries 33 entries marked
+29 in all — **versioned** in lockstep: one version, one commit, one tag. That is the rule; for 2.0.0
+the version and the commit are done and the tag and the publish are not — nothing at 2.0.0 is on
+npm, where the latest is still 1.2.0. 2.0.0 is the **first major**: the 2.0.0 section of [`CHANGELOG.md`](CHANGELOG.md) carries 33 entries marked
 `BREAKING —` and ships no codemod, so each one is a manual edit its own entry names. Publication is not in
 lockstep and the repo said it was until 2026-08: **`@ultimat3/flags` has never been published** —
 the registry answers 404, not a stale version — so 28 of the 29 are on npm. It is not opting out

@@ -17,7 +17,7 @@
 
 </div>
 
-> **Status: 2.0.0**, `As of 2026-08`. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — versioned in lockstep: one version, one commit, one tag. **The first major**: [CHANGELOG.md](CHANGELOG.md)'s 2.0.0 section carries 33 entries marked `BREAKING —`, and no codemod ships with them, so each is a manual edit its entry names ([Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading)). Publication is not in lockstep: **`@ultimat3/flags` has never reached npm** ([#84](https://github.com/developerz-ai/ultimate/issues/84)), and it needs the one-time manual bootstrap every package gets before a trusted publisher can attach. 1.1.0 was the **first release published by the workflow**, over OIDC trusted publishing with provenance attached; 1.0.0 was the manual bootstrap. Semver applies — a breaking change to a documented API needs a major. That is what the version number means: a stable API under semver, not a promise about your infrastructure.
+> **Status: 2.0.0 in the repository, not on npm**, `As of 2026-08`. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — are **versioned** in lockstep: one version, one commit, one tag. Versioned and committed is done; the tag and the publish are not. **The first major**: [CHANGELOG.md](CHANGELOG.md)'s 2.0.0 section carries 33 entries marked `BREAKING —`, and no codemod ships with them, so each is a manual edit its entry names ([Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading)). **Nothing at 2.0.0 is installable yet** — npm's latest is **1.2.0**, which is what `bunx create-ultimate myapp` gives you today. The blocker is `@ultimat3/flags`, which has never reached npm at any version ([#84](https://github.com/developerz-ai/ultimate/issues/84)) and needs the one-time manual bootstrap every package gets before a trusted publisher can attach: it is tier 1 and in the derived publish list, so a release run without it aborts with `core` and `schema` already published irreversibly. [PUBLISHING.md](PUBLISHING.md) names the four human steps and records that none is done. 1.1.0 was the **first release published by the workflow**, over OIDC trusted publishing with provenance attached; 1.0.0 was the manual bootstrap. Semver applies — a breaking change to a documented API needs a major. That is what the version number means: a stable API under semver, not a promise about your infrastructure.
 
 ## Built by agents, for agents, maintained by agents
 
@@ -229,7 +229,7 @@ Three tiers, the same mutator shape at every rung. Tier 2 → tier 3 is a config
 |---|---|---|
 | 1 · **Channels** | `ctx.publish(topic, msg)` over Bun's native WS pub/sub | presence, cursors, notifications |
 | 2 · **Live queries** | declare server-side with a policy, receive a Solid signal | **90% of "realtime app"** |
-| 3 · **Local-first** *(v2)* | optimistic mutators, OPFS SQLite, offline queue, rebase | offline writes that reconcile |
+| 3 · **Local-first** *(not in 2.0.0)* | optimistic mutators, OPFS SQLite, offline queue, rebase | offline writes that reconcile |
 
 → [Realtime design and its honest limits](docs/idea/03-realtime.md)
 
@@ -258,7 +258,7 @@ The same app code on one PaaS dyno and on a replicated cluster. Climbing is a dr
 | DB | **Postgres**, no ORM | `entity()` is the one table declaration; `postgresDriver()` emits hand-written parameterised SQL, so an agent reads the statement and self-corrects |
 | Validation | **Standard Schema**, builtin provider default | dependency-free and shipped; ArkType/Zod/Valibot swap in behind `configureSchemaProvider()` with a ~40-line adapter you write |
 | Auth | **Better Auth**, wrapped | MIT, self-hosted, with our policy layer on top |
-| Frontend | **SolidJS 2** + our own router | fine-grained reactivity; we vendor the router rather than track an alpha |
+| Frontend | **SolidJS, pinned `1.9.14`** + our own router | fine-grained reactivity on the stable line; Solid 2 is still `2.0.0-beta.N`, and we vendor the router rather than track an alpha |
 | Styling | **SCSS modules + design tokens** | no Tailwind (diff noise), no CSS-in-JS (runtime cost) |
 | Jobs | Postgres queue default; Redis/NATS drivers not in 2.0.0 | zero-infra start, a real scale path behind one interface |
 | Observability | **OpenTelemetry, always on** | one trace across HTTP → job → live query |
