@@ -1,7 +1,7 @@
 // Single responsibility: blank everything a keyword could legitimately hide inside — comments,
-// literals, quoted identifiers, dollar-quoted bodies — so a guard reading SQL text judges the
-// operation and not the prose around it. Three guards share it (the read-only client, the
-// read-only query role, the destructive rail), and one wrong answer here is a hole in all three.
+// literals, quoted identifiers, dollar-quoted bodies — so a reader judging SQL text sees the
+// operation and not the prose around it. Two readers share it (`readOnlyQuery`'s cursorable check,
+// the destructive rail), and one wrong answer here is a wrong answer in both.
 
 import { noiseAt } from './sql-scan';
 
@@ -20,8 +20,8 @@ const BLANK: Readonly<Record<string, string>> = {
  *
  * Scanned in source order rather than by a sequence of replacements, and that ordering is the
  * whole guard: blanking comments first reads the `--` in `select '--'; delete from posts` as a
- * comment and erases the `delete` before `inspectStatement()` ever sees it, which is a mutating
- * fragment through `readOnly(client, { seal: false })`.
+ * comment and erases the `delete` with it, so anything reading the blanked text sees a SELECT
+ * where a mutating statement was. `sql-noise.test.ts` pins that case and the four beside it.
  */
 export function stripSqlNoise(text: string): string {
   let out = '';

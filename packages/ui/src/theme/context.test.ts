@@ -3,6 +3,7 @@
 // runtime installed — the state the package is actually published in.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { createContext, runWithContext } from '@ultimat3/core';
 import { configureLocales, directionOf, isMiss, type Locale, localeConfig } from '@ultimat3/i18n';
 import { configureTime, type TimeZone, timeConfig } from '@ultimat3/time';
 import { UI_ERROR_CODES } from '../errors';
@@ -118,6 +119,22 @@ describe('ambientUiContext', () => {
     expect(ctx.dir).toBe('rtl');
     expect(ctx.timeZone).toBe('Asia/Tokyo' as TimeZone);
     expect(ctx.t.locale).toBe('ar' as Locale);
+  });
+
+  // The request beats the process default, or `ambientUiContext()` is a constant with extra
+  // steps: `currentTimeZone()` used to read a context field the HTTP pipeline never wrote, so
+  // every server-rendered date was UTC however the request arrived.
+  test('reads the in-flight request, not the configured fallback', () => {
+    configureLocales({ fallback: 'en' as Locale });
+    configureTime({ defaultZone: 'Europe/Berlin' as TimeZone });
+
+    const ctx = runWithContext(createContext({ locale: 'ar', tz: 'Asia/Tokyo' }), () =>
+      ambientUiContext(),
+    );
+
+    expect(ctx.timeZone).toBe('Asia/Tokyo' as TimeZone);
+    expect(ctx.locale).toBe('ar' as Locale);
+    expect(ctx.dir).toBe('rtl');
   });
 
   test('falls back to the package defaults with nothing configured and no request', () => {

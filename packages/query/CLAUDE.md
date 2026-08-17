@@ -26,8 +26,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `cursor-value.ts` | what a sort value becomes inside a cursor, and what it becomes again |
 | `input-shape.ts` | what a read's `input:` may be, given that its route is a query STRING |
 | `sql.ts` | `explain()` / `describeSql()` |
-| `cache.ts` | the read path: the request memo, and the fill through the tier |
-| `read-cache.ts` | the tier itself — the `ReadCache` seam, the bounded `MemoryReadCache` default, `invalidateQueryTags` |
+| `cache.ts` | the read path: the request memo, and the fill through `@ultimat3/cache`'s registered tiers |
 | `source.ts` | `SqlSource` contract + `from()` in-memory reference |
 | `shape.ts` | shared read vocabulary (filters, ordering, seek keys) |
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
@@ -232,6 +231,12 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   whatever an action's input or a route parameter carried, so one request could ask for five
   million rows. The constant is a TWIN of `@ultimat3/entity`'s, under the same tier compromise
   `naming.ts` and `deprecation.ts` are ported under.
+- **`tagKeys` is `@ultimat3/cache`'s, not this package's — moved 2026-08.** `src/tags.ts` here and
+  `@ultimat3/action`'s were byte-identical, and both packages are tier 3, so neither can import the
+  other and a copy in either is a second answer for the other — the same move `toBucket` made into
+  `@ultimat3/http`. `tagKey` went with it: `serializeTag` under a second name, zero call sites.
+  `@ultimat3/render` exports a *different* function under the same name (declaration order kept);
+  never import that one here.
 - **A fingerprint is an identity, so two different inputs may not share one** (`stable.ts`).
   `NaN`, `±Infinity` and JSON `null` all encoded as `'null'`, and `String(-0)` is `"0"` — so four
   distinct inputs shared one read-cache entry and one cursor scope. They are bare tokens now
@@ -248,8 +253,8 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   failed read is not the request's answer, and the next read retries. `requestMemo(ctx)` is
   therefore `Map<string, Promise<unknown>>`; never put a settled value in it.
 - **Every read is memoized; only a `cache:` read goes through the tier.** `readThrough` is
-  `readOnce` plus `fill` and nothing else, and `readRows` picks between them on `def.cache` alone.
-  The memo is not what `cache:` buys — a list that renders one uncached lookup per row pays for
+  `readOnce` plus the fill through the ladder, and `readRows` picks between them on `def.cache`
+  alone. The memo is not what `cache:` buys — a list that renders one uncached lookup per row pays for
   every row otherwise, which is the N+1 this collapses. Never gate `readOnce` on `def.cache`
   again, and never let a second key function grow beside `cacheKeyFor`.
 - **A cache key carries the read's AUTHORITY, and `cache.scope` is what widens it** (`As of
@@ -279,41 +284,44 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - **A fill is FENCED, and the fence is `@ultimat3/cache`'s** (`As of 2026-08`). `run()` answers with
   rows it read in the past: a mutator committing in between busts a key not yet in the tier, so the
   drop is a no-op reporting `errors: []`, and the fill then publishes the pre-write rows for the
-  full TTL — invisible to every reader until it expires. `sampleFence({ key, tags })` immediately
-  before `run()`, `fence.isValid()` before the write. **Sampling before the tier `get` would be
-  wrong**: a bust landing while the `get` is in flight is one the source read has not started yet
-  and will therefore see. The caller is answered either way — those rows ARE its answer; only
-  publishing is refused. No `cover()`: every joiner of a key joins one in-flight read under one
-  scope, so there are no tags the sample missed. Never write a second fence — this is the one
-  mechanism, and `packages/cache/src/fence.ts` is where it lives.
-- **A tier refusal degrades the cache, never the read.** `tier.get`/`tier.set` go through
-  `bestEffort('query-read', …)` from `@ultimat3/cache`: a refused `get` reads as a miss, a refused
-  `set` as "that tier is unchanged", and the entry expires by TTL. The label is `'query-read'` —
-  a `TierLabel`, deliberately NOT a `TierName` — because this seam is not a rung of that ladder and
-  `TIER_ORDER.indexOf` answers `-1` for a name it does not know, which would sort a query tier ahead
-  of the request memo. The refusal lands in `recentTierFailures()` under its own honest name; never
-  wrap this in a private try/catch, which would be a second failure log the `/_x` panel cannot read.
-- **The read tier reads its clock, and `readThrough` hands it one.** `fill` dated an entry with
-  `Date.now()` and `MemoryReadCache` decided staleness with another, in a package where every read
-  arrives holding `ctx.clock` — so a frozen clock could not drive either. `nowMs(clock)`, both
-  places.
-- **The installed read cache must be an object the ONE fan-out already reaches.** `invalidateTags`
-  walks the registered `CacheTier`s and nothing else; a `ReadCache` is registered nowhere. Left as
-  the module-default `MemoryReadCache`, every deployment without `REDIS_URL` served pre-write rows
-  for the whole TTL while the invalidation report said `errors: []` — and the hop that would have
-  dropped them, `invalidateQueryTags`, had zero callers in the repo. The boot
-  (`packages/cli/src/dev-cache.ts`) therefore installs a read cache **over a registered object**:
-  the shared tier through `tierReadCache`, or the `lru` tier's own `LruCache` through
-  `MemoryReadCacheOptions.cache`. `invalidateQueryTags` stays for the host that supplies a
-  `ReadCache` of its own, which no fan-out can see. An entry is written with the read's
-  `cache.tags` — `readThrough`'s last argument — or it is reachable by key alone and can only
-  expire.
-- **The read tier is bounded and a `cache:` read always expires.** `MemoryReadCache` is
-  `@ultimat3/cache`'s `LruCache` (byte budget, tag index, one definition of tag matching — never
-  a second one derived here), and `def.cache.ttlMs ?? DEFAULT_READ_CACHE_TTL_MS` is what
-  `readRows` passes. A query keyed on `{ orgId, cursor }` has as many distinct keys as the
-  deployment has tenants; unbounded and immortal, that is one permanent entry per page per org.
-  A `null` expiry is "the caller named none", never "never" — the tier applies its own default.
+  full TTL — invisible to every reader until it expires. The sample happens inside
+  `createCacheStack.read`, immediately before `load()`, and is re-asked per rung before each write.
+  This package no longer samples one of its own — that copy went with the private store. The caller
+  is answered either way: those rows ARE its answer, and only publishing is refused.
+  `cache-fence.test.ts` is the proof the property survived the move.
+- **This package owns NO cache store, and that is the enforcement** (`As of 2026-08`). A `cache:`
+  read fills `createCacheStack(registeredTiers(), { clock })` — the tiers `@ultimat3/cache` has
+  registered — and there is nothing here to install, swap or wire. There used to be: a private
+  `ReadCache` seam (`setReadCache`/`getReadCache`/`MemoryReadCache`) that `invalidateTags` could not
+  reach, because that fan-out walks the registered `CacheTier`s and nothing else. The gap was closed
+  by `packages/cli/src/dev-cache.ts` installing the read cache **over** an object it also
+  registered — a correctness property held by a wiring line in a CLI file, one edit from being
+  wrong, and carrying a second `ReadCache` implementation (`tierReadCache`) that dated entries with
+  `Date.now()`. And `invalidateQueryTags` was a second fan-out path, which
+  `packages/cache/CLAUDE.md` forbids in as many words. One registry, one fan-out, no seam. **Never
+  reintroduce a store here**, and never call `tier.invalidateTags()` from this package.
+- **A tier refusal degrades the cache, never the read** — and so does every other tier concern.
+  `bestEffort`, the fence, the single flight, the promotion and the TTL are all `createCacheStack`'s,
+  which is what "no store here" buys: a refused `get` reads as a miss, a refused `set` as "that tier
+  is unchanged", and the failure lands in `recentTierFailures()` under the name of the tier that
+  actually refused rather than under a `'query-read'` label for a rung in no registry. Never wrap a
+  tier call here in a private try/catch, and never sample a second fence.
+- **The read path reads NO clock, and that is what makes it drivable.** It hands the stack a
+  RELATIVE `ttlMs`; the tier's own clock turns it into an absolute expiry. `fill` used to compute
+  `nowMs(clock) + ttlMs` and `tierReadCache` used to compute `expiresAt - Date.now()`, so the two
+  `ReadCache` implementations disagreed about "now" and no frozen clock could drive the
+  Redis-backed one. `read-tier.test.ts` pins it: a `createLruTier({ clock, jitterFraction: 0 })` and
+  a `ctx.clock` frozen at the same instant produce an expiry a test can assert exactly.
+- **A `cache:` read always expires, and the bound is the tier's.**
+  `def.cache.ttlMs ?? DEFAULT_READ_CACHE_TTL_MS` (60s) is what `readRows` passes — a query keyed on
+  `{ orgId, cursor }` has as many distinct keys as the deployment has tenants, and unbounded that is
+  one permanent entry per page per org. `null` is "the caller named none", never "never": it reaches
+  the stack as an OMITTED `ttlMs`, which is how a tier is asked for its own default. Every tier
+  refuses a non-positive lease outright, so there is no immortal entry to spell.
+- **A process that registered no tier reads uncached.** `createCacheStack([])` loads, answers and
+  writes nowhere — correct, and slower. That is the trade for deleting the module-default store: a
+  script, a worker boot or a test that wants caching calls `registerTier`, the same call every
+  other cached surface in the framework already uses.
 - **The memo holds an execution, never a decision.** `readRows` runs `buildSource` — parse, guard,
   `sql()` — *before* it reaches the memo, on every call, and `.as()` reads in a child context whose
   identity is its own memo. So a memoized answer is still one this actor was allowed to ask for,

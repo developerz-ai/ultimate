@@ -55,6 +55,26 @@ export function serializeTags(tags: readonly CacheTag[]): string[] {
 }
 
 /**
+ * The wire forms as an IDENTITY: sorted and de-duplicated, so two declaration orders of one tag
+ * set are one string. `@ultimat3/action`'s descriptor and OpenAPI `invalidates`, and
+ * `@ultimat3/query`'s `cacheKeyFor`, are built from it — a key that varied with declaration order
+ * would fill two entries for one read, and an action's `invalidates` would drop whichever of them
+ * it happened to name.
+ *
+ * It lives here rather than in either of those packages, which held byte-identical copies of it:
+ * both are tier 3, so neither can import the other and a copy in either is a second answer for the
+ * other. The same move `toBucket` made into `@ultimat3/http`.
+ *
+ * NOT the same function as `@ultimat3/render`'s same-named `tagKeys`, which is `serializeTags`
+ * over an optional list and deliberately preserves declaration order for a route descriptor
+ * (`dsl.test.ts` pins it). Two behaviours under one name, in two packages an app imports together:
+ * naming it here is where a reader can see both.
+ */
+export function tagKeys(tags: readonly CacheTag[]): readonly string[] {
+  return [...new Set(serializeTags(tags))].sort();
+}
+
+/**
  * Every tag a row participates in: its collection and its own identity. A row write
  * therefore busts list caches and detail caches with one call.
  */

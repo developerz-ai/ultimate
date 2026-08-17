@@ -1,25 +1,25 @@
 /**
  * Resolve the request timezone once, then read it from the ALS context.
- * User record → header → config default. Every formatter still takes the zone
- * explicitly; this is where call sites get the value from, not a hidden default.
+ * Explicit preference → chosen → browser guess → config default. Every formatter still takes the
+ * zone explicitly; this is where call sites get the value from, not a hidden default.
  */
 
-import { type Ctx, useContext } from '@ultimat3/core';
+import { tryUseContext } from '@ultimat3/core';
 import { canonicalTimeZone } from './zone-canonical';
 import { type TimeZone, UTC } from './zones';
 
 /** Header a client sets from `Intl.DateTimeFormat().resolvedOptions().timeZone`. */
 export const TIMEZONE_HEADER = 'x-timezone';
 
-const CTX_TIMEZONE = 'timeZone';
-
 export interface TimeZoneSources {
   /** `user.timeZone` — an explicit preference beats a browser guess. */
   user?: string | null;
-  /** `x-timezone` request header. */
-  header?: string | null;
+  /** The cookie a zone picker writes — chosen, so it beats what the browser was installed as. */
+  cookie?: string | null;
   /** `?tz=Europe/Berlin`, for share links and email previews. */
   query?: string | null;
+  /** `x-timezone` request header. */
+  header?: string | null;
 }
 
 export type TimeZoneSourceName = keyof TimeZoneSources;
@@ -35,7 +35,15 @@ export interface TimeConfig {
   order: readonly TimeZoneSourceName[];
 }
 
-let config: TimeConfig = { defaultZone: UTC, order: ['user', 'header', 'query'] };
+/**
+ * Explicit before inferred, the same rule `@ultimat3/i18n`'s locale order states: `Accept-Language`
+ * and `x-timezone` are what the browser was installed as, while the user row, the cookie and the
+ * query are what a person *chose*. A zone picker that wrote a cookie the header always outranked
+ * would appear to do nothing.
+ */
+const DEFAULT_ORDER: readonly TimeZoneSourceName[] = ['user', 'cookie', 'query', 'header'];
+
+let config: TimeConfig = { defaultZone: UTC, order: DEFAULT_ORDER };
 
 export function configureTime(partial: Partial<TimeConfig>): TimeConfig {
   config = { ...config, ...partial };
@@ -68,33 +76,17 @@ export function resolveTimeZone(
   return { zone: defaultZone, source: 'default' };
 }
 
-/** Called once per request by the HTTP layer. */
-export function attachTimeZone(ctx: Ctx, zone: TimeZone): TimeZone {
-  (ctx as unknown as Record<string, unknown>)[CTX_TIMEZONE] = zone;
-  return zone;
-}
-
-export function timeZoneOf(ctx: Ctx): TimeZone {
-  return readField(ctx, CTX_TIMEZONE) ?? config.defaultZone;
-}
-
-/** Ambient zone for the in-flight request; the configured default outside one. */
+/**
+ * Ambient zone for the in-flight request; the configured default outside one.
+ *
+ * The store is **`Ctx.tz`**, core's own declared field — never a second one this package writes.
+ * It used to be a `ctx['timeZone']` key nothing in the framework ever set, while the HTTP pipeline
+ * wrote `ctx.tz`: two ambient answers to one question, and the one every `@ultimat3/ui` component
+ * reads on a server render was the empty one, so every date rendered in UTC however the request
+ * arrived. `withChildContext({ tz })` and `createContext({ tz })` are therefore the only writers,
+ * which is what makes a subtree's zone a core concept rather than this package's.
+ */
 export function currentTimeZone(): TimeZone {
-  const ctx = tryContext();
-  return (ctx === undefined ? undefined : readField(ctx, CTX_TIMEZONE)) ?? config.defaultZone;
-}
-
-function tryContext(): Ctx | undefined {
-  try {
-    return useContext();
-  } catch {
-    // Outside a request scope (boot, worker tick, CLI) — fall back to the configured zone.
-    return undefined;
-  }
-}
-
-/** `Ctx` belongs to core (tier 0) and cannot import `TimeZone`; read the field structurally. */
-function readField(ctx: Ctx, field: string): string | undefined {
-  const value = (ctx as unknown as Record<string, unknown>)[field];
-  return typeof value === 'string' && value !== '' ? value : undefined;
+  const zone = tryUseContext()?.tz;
+  return zone === undefined || zone === '' ? config.defaultZone : zone;
 }

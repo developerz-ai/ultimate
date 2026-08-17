@@ -14,7 +14,6 @@ export {
   WEEKEND_SUN_ONLY,
 } from './business';
 export {
-  attachTimeZone,
   configureTime,
   currentTimeZone,
   resolveTimeZone,
@@ -24,7 +23,6 @@ export {
   type TimeZoneSourceName,
   type TimeZoneSources,
   timeConfig,
-  timeZoneOf,
 } from './context';
 export {
   type CronExpression,

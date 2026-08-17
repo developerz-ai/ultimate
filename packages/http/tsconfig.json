@@ -12,7 +12,13 @@
       "path": "../core"
     },
     {
+      "path": "../i18n"
+    },
+    {
       "path": "../schema"
+    },
+    {
+      "path": "../time"
     }
   ]
 }

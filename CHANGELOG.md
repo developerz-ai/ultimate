@@ -10,6 +10,65 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **Every server-side render formatted its dates in UTC, however the request arrived.** The
+  framework had two ambient stores for the request's time zone — or rather one and a half, which is
+  the part that made it survive four releases. `@ultimat3/i18n`'s key was already `locale`, the same
+  field `@ultimat3/core` declares and `@ultimat3/http` writes, so the locale half worked end to end.
+  `@ultimat3/time`'s was `timeZone` against core's `tz`, so `currentTimeZone()` — the reader every
+  `@ultimat3/ui` component goes through — answered the configured default for every request. http
+  had been writing the right value all along inside `runWithContext`; only the reader looked in the
+  wrong place. **The defect was a field-name divergence in one constant**, and the fix is that
+  `Ctx.tz` is the store: it is declared, typed, and the only tier a tier-4 reader like
+  `@ultimat3/mail` can reach.
+
+  Three more defects came out with it, all from `@ultimat3/http` re-implementing what tier 1 owns:
+  an app shipping `{ en, fr }` resolved `ctx.locale` to `'en'` **forever**; a language switcher
+  writing the documented `LOCALE_COOKIE` (`x_locale`) was read by nothing, because http spelled the
+  cookie `x-locale`; and `x-timezone: +01:00` — a fixed offset with no DST rules — became `ctx.tz`
+  and threw four packages later. http is tier 2 and `time`/`i18n` are tier 1, so importing them was
+  always legal; `docs/architecture/01-package-map.md` had declared both edges all along. They are
+  real now.
+
+- **Four distinct payloads shared one idempotency record and one job dedupe key.**
+  `@ultimat3/action`'s canonical form folded `NaN`, `Infinity` and `-Infinity` onto `null`, and `-0`
+  onto `0` — so `{n: NaN}` and `{n: null}` produced one `requestHash`. 1.2.0's cycle recorded this
+  as **blocked**, because the same function serialises the OpenAPI document and a bare `NaN` token
+  would make a published spec invalid JSON. It is not blocked: the two duties differ in exactly one
+  branch. The document form keeps folding to `null` and is pinned by a `JSON.parse` round trip; the
+  hash form is injective. Ordinary payloads are byte-identical, so nothing re-keyed.
+
+  `@ultimat3/realtime` had the third copy of the same defect, and there it decides a **`qid`** — a
+  sharing key where a hit hands the joiner the first subscriber's compiled source, matcher and
+  seated window. Narrower than it looks and the tests say so: `NaN` and `±Infinity` have no JSON
+  spelling and cannot arrive on a `subscribe` frame, but **`-0` is wire-reachable** —
+  `JSON.parse('{"a":-0}')` answers `-0`.
+
+- **A cached query's read cache was a second registry the boot hand-wired to the first.**
+  `@ultimat3/query` shipped its own `ReadCache`, outside `@ultimat3/cache`'s tag fan-out, and the
+  seam joining them lived in a CLI file: `dev-cache.ts` installed the read tier **over** an object
+  it also registered, a correctness property held by one wiring line. Its `tierReadCache` was a
+  second `ReadCache` implementation that dated entries with `Date.now()` while the other used an
+  injected `Clock`, so the two disagreed about "now" and no frozen clock could drive the
+  Redis-backed path. And `invalidateQueryTags` called `tier.invalidateTags()` from outside
+  `invalidate.ts`, which `@ultimat3/cache`'s own contract forbids in as many words.
+
+  A `cache:` read now fills `createCacheStack(registeredTiers(), { clock })`, so an action's
+  `cache.invalidates` drops it through the one fan-out by construction. The read path computes no
+  expiry at all — it hands the ladder a **relative** `ttlMs` and the tier's own clock decides.
+
+- **Four admin pages could not disagree with the route table, and the fifth one nobody looked at.**
+  `@ultimat3/admin` built a route table the router never received, while each demo admin page
+  hand-wrote its own `policy`. The audit called this "two permission answers"; measured, **all five
+  pairs agreed** — both sides reach `permissionsForOperation`. What the hole actually cost is one
+  row down: the table declares **17 routes and 6 are served**, and the orphans include create and
+  edit routes gated `admin:write`. The four list pages were byte-identical apart from the entity
+  name, so the next admin page gets written by copying one — and copying `permission: 'admin:read'`
+  onto `/admin/users/:id/edit` is a write screen behind a read gate, with the framework's own table
+  declaring `admin:write` for it. A page now reads its gate from `adminRouteFor(app, path)`, and an
+  app-level source scan fails if a permission string reappears in a page file — a rule that catches
+  a re-added declaration **even when it agrees**, which is the only way to see this hole while the
+  two sides match.
+
 - **Every container this image ever started was dead on arrival, and the build stayed green.** The
   binary was compiled on an Alpine base (musl) and shipped on a glibc-only runtime, so `/app/x`
   asked for a loader that was not there and every `docker run` exited
@@ -789,6 +848,75 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`scripts/stdout-truncation.test.ts` no longer asserts a race.** The premise case measured a naive `process.stdout.write` against a reader draining concurrently, and on a fast runner the whole payload landed by luck — a flaky gate step. It now writes past any kernel buffer and reads nothing until the child has exited, so what `process.exit()` discarded was genuinely discarded.
 
 ### Changed
+
+- **BREAKING — `@ultimat3/query` no longer ships a read-cache seam of its own.** Removed:
+  `setReadCache`, `getReadCache`, `invalidateQueryTags`, `MemoryReadCache`,
+  `DEFAULT_READ_CACHE_MAX_BYTES`, and the types `ReadCache` and `ReadCacheEntry`.
+  `DEFAULT_READ_CACHE_TTL_MS` stays. **A Redis deployment's read path changes in both directions**:
+  it was the Redis tier *alone*, so every cached read was a network round trip and this process's
+  own LRU was never consulted for one; it is now read-down/promote-up across
+  `request-memo → lru → redis`, a warm key answered locally and promoted with its *remaining* lease,
+  and concurrent misses of one key share a single load. The cost is one extra local `get` on a
+  genuine miss and a copy of each entry in the local LRU. **Fix:** an app that installed its own
+  read cache calls `registerTier(myTier)` from `@ultimat3/cache`, which was already the only way to
+  add a backend for every other cached surface; `invalidateQueryTags(tags)` becomes
+  `invalidateTags(tags)`, which is now literally the same call. A process that registers no tier
+  reads **uncached** rather than filling a store no fan-out can see. A cached query is cold once on
+  deploy.
+
+- **BREAKING — `@ultimat3/auth` no longer exports `requireRole` / `requireScope`.** They decided a
+  403 outside `@ultimat3/policy`, with **zero callers** in the framework or either tracked app —
+  and they were *documented*, which is what makes deletion right rather than wrong.
+  `packages/policy/README.md` named them "one honest exception", and the same paragraph admitted the
+  cost: a route gated that way reports `policy: null` in `x routes`, in `framework.manifest.json`
+  and in `openapi.json`, and `x policy list` reports its permission unenforced. A sanctioned second
+  door nobody walked through. `requireActor`/`currentActor` stay — those assert *authentication*,
+  which is what this package produces. **Fix:** declare the rule as a `Policy` — `can('admin:access')`
+  — which every introspection surface can read.
+
+- **BREAKING — `@ultimat3/db` no longer exports `readOnly()`, `assertReadOnly()`,
+  `inspectStatement()`, `MutationVerdict`, `ReadOnlyOptions` or `readonlyViolation()`, and
+  `X_READONLY_VIOLATION` is retired.** The framework shipped three "is this SQL a write?" lexers;
+  admin's folded into mcp's last release, and this was the last one standing — zero callers, and the
+  only one on a public API. It was also the weakest: a keyword list matched with `\b…\b` judges
+  statement keywords and nothing else, so `select pg_sleep(60)`, `select pg_read_file('/etc/passwd')`
+  and any writing function call all read as reads. What remains is what the server enforces or a
+  real scanner decides: a `NOLOGIN` SELECT-only role, `BEGIN READ ONLY` with a statement timeout,
+  and `@ultimat3/mcp`'s `assertReadOnlyQuery`. **Fix:**
+  `readOnly(db()).query(f)` → `readOnlyQuery(text, { role: await ensureReadOnlyRole() })`, which
+  reports which defences engaged.
+
+- **BREAKING — `@ultimat3/seo` no longer ships a performance-budget surface, and
+  `X_SEO_BUDGET_EXCEEDED` is retired.** `checkBudgets`, `assertBudgets`, `parseBytes`,
+  `DEFAULT_BUDGET`, `BUDGET_UNITS`, the four `Budget*` types, `budgetExceeded()`, `RouteBudget` and
+  `RouteRecord.budget` are gone; nothing but their own test ever called them. seo is **tier 1** and
+  cannot see a build's bytes, so it was never the package that could answer — the gate that runs is
+  `@ultimat3/cli`'s, raising `@ultimat3/render`'s `X_BUDGET_EXCEEDED`. Two codes for one fault, and
+  the one nothing threw was the one an agent got a fix line from — a fix naming a report no step
+  produces. `parseBytes` also reported a malformed size string *as a budget violation*, so the code
+  already meant two things. The name is never reused; its row moves under **Reserved codes** so an
+  old log line still resolves. A deprecation note would have been worse: a deprecated code still
+  answers `x errors explain` with a fix for a check that does not exist.
+
+- **BREAKING — `@ultimat3/seo` no longer exports `renderLd`.** `renderMeta` already emits `meta.ld`
+  as one `<script type="application/ld+json">` **per node**; `renderLd` collapsed the same nodes
+  into **one** script with a `@graph` — a second serialisation of one input, exported and callerless,
+  and an app calling both emitted its graph twice. It could not satisfy `@ultimat3/render`'s
+  `LdRenderer` slot either, so the comment claiming it filled that seam was false before this
+  release. `ld.*` and `meta.ld` are unchanged and are the one way to declare JSON-LD.
+
+- **BREAKING — `@ultimat3/time` and `@ultimat3/i18n` no longer export `attachTimeZone`,
+  `timeZoneOf`, `attachLocale` or `localeOf`, and `@ultimat3/http` no longer exports
+  `negotiateLocale`, `isValidTimeZone` or `resolveTimeZone`.** All seven had zero callers. Write the
+  zone with `createContext({ tz })` or `withChildContext({ tz })` and read it with
+  `currentTimeZone()`; take the other three from the packages that own them. Note the stricter zone
+  rule that comes with it: `CET`, `EST5EDT`, `+01:00` and `''` are refused, and a resolved zone comes
+  back canonically spelled, so one zone is one formatter-cache key. `HttpConfig.locale` and
+  `HttpConfig.tz` now hold header and cookie **names** only — the supported set and fallback locale
+  are `defineCatalogs({ locales, default })`, the fallback zone is `configureTime({ defaultZone })`.
+  `TimeZoneSources` gains `cookie` and the default order is `user, cookie, query, header` — explicit
+  before inferred, the rule i18n's locale order already stated.
+
 
 - **BREAKING — `@ultimat3/seo` no longer exports `renderHeadTags`.** It serialised `renderMeta()`'s
   tags to HTML, escaped `</` and nothing else, and **had no caller anywhere** — while

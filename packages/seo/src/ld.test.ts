@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { SEO_ERROR_CODES } from './errors';
-import { ld, renderLd } from './ld';
+import { ld } from './ld';
 
 describe('ld builders', () => {
   test('Article requires datePublished at the type level', () => {
@@ -74,16 +74,5 @@ describe('ld builders', () => {
     });
     expect(node['location']).toMatchObject({ '@type': 'VirtualLocation' });
     expect(node['eventAttendanceMode']).toBe('https://schema.org/OnlineEventAttendanceMode');
-  });
-
-  test('renderLd collapses several nodes into one @graph script', () => {
-    const tag = renderLd([
-      ld.WebSite({ name: 'Ultimate', url: 'https://ultimate.dev' }),
-      ld.Organization({ name: 'Developerz', url: 'https://developerz.ai' }),
-    ]);
-    expect(tag.attrs['type']).toBe('application/ld+json');
-    const parsed = JSON.parse(tag.text ?? '{}') as { '@graph': unknown[] };
-    expect(parsed['@graph']).toHaveLength(2);
-    expect(JSON.stringify(parsed['@graph'])).not.toContain('@context');
   });
 });

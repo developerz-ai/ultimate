@@ -20,12 +20,18 @@ export const TIER_ORDER: readonly TierName[] = ['request-memo', 'lru', 'redis', 
 
 /**
  * Who a swallowed refusal is attributed to in `recentTierFailures()` and the `/_x` panel: every
- * rung of the ladder, plus a cache that degrades the same way without being on it —
- * `@ultimat3/query`'s read cache, which is a tier-3 store this tier-1 package cannot import.
+ * rung of the ladder, plus a store that degrades the same way without being on it.
  *
  * Closed rather than a free-form string, and NOT a widening of `TierName`: `TIER_ORDER` is the
  * ladder and a name missing from it sorts to `-1`, ahead of the request memo. A label is a log
  * facet; a `TierName` is a position. Two spellings of one store is a panel nobody can group.
+ *
+ * **`'query-read'` emits nothing as of 2026-08** and is kept only because narrowing a shipped
+ * exported union breaks any caller that passes it to `bestEffort`. It named `@ultimat3/query`'s
+ * private read cache, which was a store in no registry — so `invalidateTags` could not reach it,
+ * which is exactly why that store is gone and a `cache:` read now fills these tiers. A refusal on
+ * that path is attributed to the tier that actually refused. Do not add a second such member: a
+ * cache worth a label is a cache worth registering.
  */
 export type TierLabel = TierName | 'query-read';
 

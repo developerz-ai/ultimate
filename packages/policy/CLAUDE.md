@@ -57,12 +57,14 @@ two differ, and it is why a surface that decides on input alone needs no edit.
 
 ## The one authz rule — and the one honest exception
 
-Actions, queries, jobs and MCP tools all resolve their rule through `evaluate()`. Routes have
-a second, coarser door: `@ultimat3/auth`'s `requireRole()` / `requireScope()`
-(`packages/auth/src/guards.ts`), which assert on the ambient actor and — as that file's own
-header says — **never evaluate a policy**. They are small and honest about themselves, but a
-route gated that way is invisible to `x policy list`, to `framework.manifest.json` and to
-`contract-diff`. Anything finer than "is this actor an admin" belongs in a policy.
+Actions, queries, jobs, MCP tools **and routes** all resolve their rule through `evaluate()`.
+There is no second door. `@ultimat3/auth`'s `requireRole()` / `requireScope()` were one until
+1.3.0 — they asserted on the ambient actor and never evaluated a policy, and a route gated that
+way was invisible to `x policy list`, to `framework.manifest.json` and to `openapi.json`. They
+are deleted: in the repo's whole history, and in both tracked apps, **nothing ever called them**,
+so the framework shipped a documented invitation to an under-reported route and nobody accepted
+it. `packages/auth/src/guards.test.ts` pins that module's export list, so an authz decision
+reappearing there is a failing test.
 
 ## Files
 

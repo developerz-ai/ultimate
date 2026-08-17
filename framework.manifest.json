@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "b5de91d7d54e75c195a13daf9ef4d3657d0bc6c18592da3663fe2f5199e4fc37",
+  "buildId": "4ce8d71df58183a205f54a36e8f7abb46b35884c9229beb3a8f55d834d150d96",
   "tiers": {
     "0": [
       "core",
@@ -1606,11 +1606,6 @@
       "at": "packages/core/src/error-codes.ts"
     },
     {
-      "code": "X_READONLY_VIOLATION",
-      "owner": "db",
-      "at": "packages/db/src/errors.ts"
-    },
-    {
       "code": "X_REBASE_CONFLICT",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
@@ -1844,11 +1839,6 @@
       "code": "X_SECRETS_TAMPERED",
       "owner": "core",
       "at": "packages/core/src/secrets-errors.ts"
-    },
-    {
-      "code": "X_SEO_BUDGET_EXCEEDED",
-      "owner": "seo",
-      "at": "packages/seo/src/errors.ts"
     },
     {
       "code": "X_SEO_CANONICAL_MISMATCH",

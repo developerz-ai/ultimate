@@ -39,11 +39,10 @@ await withTransaction(async (tx) => {
 | `appTables()` / `FRAMEWORK_TABLE_PREFIX` | `As of 2026-08`: the live schema minus the `x_` namespace — no migration declares the ledger, the queue, the outbox or an auth table, so none of them is drift |
 | `generateMigration()` | `x db gen "<name>"` — reversible up/down SQL, and `destructive` for the marker the file must carry |
 | `destructiveStatements()` / `hasDestructiveMarker()` / `isDestructive()` / `DESTRUCTIVE_MARKER` | `As of 2026-08`: the destructive-SQL rail — does this `up` drop, truncate or retype, and does the file declare it with `-- destructive: true`? One classifier, read by `x db gen` when it writes the marker and by `x verify` when it demands one |
-| `stripSqlNoise()` | comments, literals, dollar-quoted bodies and quoted identifiers blanked **in source order**, so a guard reads the operation and not the prose. Shared by `readOnly()`, `readOnlyQuery()` and the destructive rail |
+| `stripSqlNoise()` | comments, literals, dollar-quoted bodies and quoted identifiers blanked **in source order**, so a reader sees the operation and not the prose. Shared by `readOnlyQuery()` and the destructive rail |
 | `introspect()` | live schema → `SchemaDescription` |
 | `createBranch()` / `dropBranch()` / `reapBranches()` | copy-on-write branch databases |
 | `createPgliteClient()` / `branchPglite()` | the embedded database — Postgres in this process |
-| `readOnly()` | mutation-rejecting wrapper |
 | `ensureReadOnlyRole()` / `grantReadOnlySql()` / `READONLY_ROLE` | a `NOLOGIN`, SELECT-only Postgres role — layer 1 of `db.query`'s defence |
 | `readOnlyQuery()` / `READONLY_TIMEOUT_MS` | one statement inside `BEGIN READ ONLY` with a statement timeout — layer 2 |
 | `setStatementObserver()` / `statementObserver()` | `As of 2026-08`: one event **and one `db.<verb>` span** per settled statement, both drivers; uninstalled is one branch |
@@ -299,7 +298,6 @@ always on the error and nothing read it, so a `23505` from two clicks racing a s
 | `X_MIGRATION_IRREVERSIBLE` | generated `down` would lose data |
 | `X_SQL_UNSAFE` | non-bindable interpolation, or an unsafe identifier/branch name |
 | `X_BRANCH_EXISTS` | branch database already exists (or is the connected one) |
-| `X_READONLY_VIOLATION` | a mutating statement reached a `readOnly()` client |
 | `X_NOT_IMPLEMENTED` | branching an in-memory PGlite — a copy needs a directory |
 | `X_ENV_MISSING` | core's — `DATABASE_POOL_MAX` is set to something that is not a positive integer |
 

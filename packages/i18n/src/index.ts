@@ -12,7 +12,6 @@ export {
   parseNestedCatalog,
 } from './catalog';
 export {
-  attachLocale,
   catalogFor,
   configureLocales,
   currentDirection,
@@ -24,7 +23,6 @@ export {
   type LocaleSources,
   localeConfig,
   localeCookieOf,
-  localeOf,
   registerCatalog,
   registeredLocales,
   resetCatalogs,

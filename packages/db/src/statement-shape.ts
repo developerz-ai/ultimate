@@ -13,7 +13,7 @@ const WHITESPACE = /\s+/g;
  * The first word, lowercased — `select`, `insert`, `begin` — and `''` when a statement opens with
  * anything else. A text opening with a comment or a parenthesis has no verb, deliberately: this is
  * the one word every statement carries, and stripping comments to find a later one would be a
- * second SQL scanner living next to `inspectStatement` for the sake of one label.
+ * second reading of the SQL — `sql-noise.ts` is the one blanker — for the sake of one label.
  */
 export function statementVerb(text: string): string {
   return (LEADING_WORD.exec(text.trimStart())?.[0] ?? '').toLowerCase();

@@ -6,11 +6,28 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
 
 | Owns | Does not own |
 |---|---|
-| metadata model, the build gate, JSON-LD, sitemap/robots/feeds, image contract, budgets | rendering, routing, the route table itself (it consumes `RouteRecord`) |
+| metadata model, JSON-LD, sitemap/robots/feeds, image contract | rendering, routing, the route table itself (it consumes `RouteRecord`), **performance budgets** |
 
 ## Hard rules
 
-- **Enforced, not documented.** Every check has an `assert*` that throws a coded `SeoError`, and a `--json`-shaped report the CLI prints. A check that only returns a boolean does not exist.
+- **Enforced, not documented — and `As of 2026-08` the gate half of this package is not yet
+  enforcing anything.** Every check here has an `assert*` that throws a coded `SeoError` beside a
+  `--json`-shaped report; a check that only returns a boolean does not exist. That is a rule about
+  the SHAPE of a check, and it must not be read as a claim that CI fails on one. What is actually
+  reached from outside this package is `renderMeta` (through `@ultimat3/render`'s `seoRenderers`),
+  `ld.*` (an app's own `meta`), `buildFeed`, and the image contract (`parseImageQuery` /
+  `builtinImageDriver` / `responsiveImage`, through `@ultimat3/cli`'s `dev-assets.ts`).
+  `validateMeta`/`assertMeta`, `buildSitemap`, `buildRobots`, `isIndexable` and
+  `indexableRoutes`/`expandRoute` have **no caller anywhere** — no step of `x verify` runs them.
+  Wiring them is a `HostCheck` on an existing step in `packages/cli/src/cmd-verify.ts`; until that
+  lands, do not restate the CI claim here, in `README.md` or in the wiki.
+- **Performance budgets are not this package's, `As of 2026-08`.** `checkBudgets`/`assertBudgets`/
+  `parseBytes`/`DEFAULT_BUDGET`/`BUDGET_UNITS`, `RouteBudget`, `RouteRecord.budget` and
+  `X_SEO_BUDGET_EXCEEDED` are deleted: the whole surface was callerless, and `parseBytes` reported a
+  malformed size string *as a budget violation*. The live gate is `@ultimat3/cli`'s `checkBudgets`
+  over the route manifest and the build's own stats, throwing `@ultimat3/render`'s
+  `X_BUDGET_EXCEEDED`. seo is tier 1 and cannot see a build's bytes, so it was never the package
+  that could answer. `errors.test.ts` pins the code set, so re-adding one is a failing test.
 - **Errors name the file, not the URL.** `RouteRecord.file` is in every cause and every fix; an agent must be able to open the source without guessing.
 - **Fail closed, and core reads the key.** `isIndexable()` is `environment === 'production'` and
   nothing else — `staging`, a laptop, a typo and an unset variable all disallow. `ULTIMATE_ENV` has
@@ -30,6 +47,13 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
   cannot import render's escapers either — seo is tier 1, render is tier 4. `xml.ts` stays the
   package's one escaper for the XML and attribute surfaces it really does emit (sitemap, feeds,
   robots, `<picture>`), whose rules are the opposite of a raw-text element's.
+- **One producer of the JSON-LD tags, and it is `renderMeta`.** `ld.*` builds nodes; `renderMeta`
+  emits `meta.ld` as one `<script type="application/ld+json">` **per node**. `ld.ts` also carried a
+  `renderLd(nodes)` that collapsed the same nodes into ONE script with a `@graph` — a second
+  serialisation of one input, exported, callerless, and the reason `@ultimat3/render`'s
+  `head-seo.ts` had to write down that it binds no `renderLd` half on purpose. Deleted
+  `As of 2026-08`. Never add it back: an app that found it on the public surface and called it from
+  `meta` emitted its graph twice, which is exactly the duplicate that comment was defending against.
 - **`builtinImageDriver({ read })` takes its reader.** `TransformRequest.src` is a string, and
   whether that string is a path, a storage key or a URL is the app's fact, not seo's — never add
   a filesystem fallback. Pixels come from `@ultimat3/core`'s pipeline; seo owns no second scaler,

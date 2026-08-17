@@ -13,7 +13,7 @@ import {
   type AdminPageComponent,
   AdminPagePathInvalidError,
   type AdminRouteConfig,
-  adminRoutes,
+  adminRouteFor,
 } from '@ultimat3/admin';
 import type { JSX } from 'solid-js';
 import { admin, adminCtxForRequest } from '../admin';
@@ -27,17 +27,20 @@ const OPS_PATH = `${admin.basePath}${opsPage.path}`;
 /**
  * The route `defineAdmin` built for this page, or the failure that names the missing wiring. A
  * `find` that answered `undefined` and rendered nothing would be the unguarded second way in all
- * over again, one release later.
+ * over again, one release later — so the missing-route half is `adminRouteFor()`'s own refusal
+ * now, the same lookup every other admin page in this app reads its gate from. What stays here is
+ * the half only this file can judge: a path the table DOES declare, as a generated view rather
+ * than as a guarded page, has no component to render and must not fall back to one.
  */
 function mountedOps(): {
   readonly config: AdminRouteConfig['config'];
   readonly render: AdminPageComponent;
 } {
-  const route = adminRoutes(admin).find((candidate) => candidate.path === OPS_PATH);
-  if (route === undefined || route.component === null) {
+  const route = adminRouteFor(admin, OPS_PATH);
+  if (route.component === null) {
     throw new AdminPagePathInvalidError({
       path: opsPage.path,
-      cause: 'is not a guarded page in the admin route table',
+      cause: 'is a generated view, not a guarded page',
       fix: 'add opsPage to `pages:` in apps/admin/app/admin/admin.ts',
     });
   }

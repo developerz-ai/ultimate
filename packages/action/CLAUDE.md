@@ -35,7 +35,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `audit.ts` | the audit seam: `AuditRecord`, `AuditSink`, the memory sink, the installed-sink store |
 | `audit-gate.ts` | **the only** file that calls a sink, and where the two failure policies live |
 | `type-pins.ts` | compile-time assertions `tsc` checks — what the erased view projects, and why `client()` is not part of it |
-| `naming.ts`, `infer.ts`, `validate.ts`, `json-schema.ts`, `stable.ts`, `tags.ts` | pure helpers |
+| `naming.ts`, `validate.ts`, `json-schema.ts`, `stable.ts` | pure helpers |
 
 ## Invariants
 
@@ -61,6 +61,22 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   author, and never reach the evaluation that had the row. `meta.policy` stays set — dropping
   it would read as "this action is unguarded" in `x routes` and the manifest. `http.test.ts`
   drives a row-level action over the real pipeline and counts the evaluations: exactly one.
+- **`stable.ts` holds TWO serializers, and they are not one function.** `stableStringify` is the
+  DOCUMENT form: `serializeOpenApi` publishes it as `openapi.json` and `json-schema.ts` re-reads it
+  with `JSON.parse`, so a non-finite number has to be `null` — the bare token `NaN` would make a
+  published spec unparseable. `canonicalJson` is the HASH form `fingerprint` is taken over, and it
+  must be INJECTIVE: `NaN`, `±Infinity` and JSON `null` all encoded as `'null'` and `String(-0)` is
+  `"0"`, so four distinct inputs shared one `requestHash` — one caller handed another's stored
+  response on replay — and one job dedupe key. That is why the fix `@ultimat3/query` made in its own
+  `stable.ts` could not simply be copied here; it needed the split first. Ordinary payloads are
+  byte-identical between the two, so no idempotency record and no enqueued job moved.
+  `stable.test.ts` pins both duties, including a `JSON.parse` of the document form.
+- **`tagKeys` is `@ultimat3/cache`'s, not this package's — moved 2026-08.** `packages/action/src/tags.ts`
+  and `packages/query/src/tags.ts` were byte-identical, and both packages are tier 3, so neither can
+  import the other and a copy in either is a second answer for the other. `tagKey` went with it: it
+  was `serializeTag` under a second name with zero call sites. Same shape as `toBucket`. Never
+  restore a local one, and never reach for `@ultimat3/render`'s same-named `tagKeys` — that one
+  preserves declaration order and is a different function.
 - **`toBucket` is `@ultimat3/http`'s, not this package's — moved 2026-08.** http owns `Bucket` and
   the limiter maths, and `@ultimat3/query` needs the identical conversion while being the same
   tier as this package, so a copy in either is a second answer to "what does this limit mean" for

@@ -5,6 +5,7 @@
  * direct server call, and cannot acquire a second authz path while doing it.
  */
 
+import { tagKeys } from '@ultimat3/cache';
 import { isUltimateError } from '@ultimat3/core';
 import type { Route, RouteMeta, UltimateRequest } from '@ultimat3/http';
 import { json, problem, toBucket } from '@ultimat3/http';
@@ -16,7 +17,6 @@ import { derivePath } from './naming';
 import { policyCapability } from './policy-gate';
 import type { AnyQuery } from './query';
 import { queryName, runQuery } from './read';
-import { tagKeys } from './tags';
 
 /**
  * `liveFeed` -> `GET /_x/query/live-feed`. Named for the primitive rather than spelled

@@ -110,8 +110,10 @@ operation, the key and the `X_*` code, and each one also logged as `cache.tier.f
 bargain as `report.errors` on the invalidation side — degraded is visible, not merely slow.
 
 `bestEffort(label, op, key, run)` is that guard, exported: a cache that is not a rung of this ladder
-(`@ultimat3/query`'s read cache, `label: 'query-read'`) degrades into the same log rather than a
-private `try/catch` nobody can read. The label is closed (`TierLabel`) so the panel can group by it.
+degrades into the same log rather than into a private `try/catch` nobody can read. The label is
+closed (`TierLabel`) so the panel can group by it. `'query-read'` is in that union and emits nothing
+— it named `@ultimat3/query`'s own read cache, a store in no registry, and that store is gone: a
+`cache:` read fills these tiers, so its refusals carry the refusing tier's own name.
 
 ## Tags
 

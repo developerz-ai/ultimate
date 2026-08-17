@@ -6,13 +6,23 @@
 // so the drop is a no-op and the report says `errors: []`. T2 `run()` resolves with pre-write rows.
 // T3 the fill publishes them for the full TTL — invisible to every reader until it expires. The
 // fence is `@ultimat3/cache`'s, sampled before the load and asked before the write; there is no
-// second one here.
+// second one here — `createCacheStack` owns it, and this file is the proof the read path inherited
+// the property when it stopped keeping a store of its own.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { declareTags, invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
+import type { CacheTier } from '@ultimat3/cache';
+import {
+  createLruTier,
+  declareTags,
+  invalidateTags,
+  isolateDeclaredTags,
+  isolateTiers,
+  registerTier,
+  resetTiers,
+  tag,
+} from '@ultimat3/cache';
 import { createContext } from '@ultimat3/core';
 import { readThrough } from './cache';
-import { getReadCache, MemoryReadCache, setReadCache } from './read-cache';
 
 /** A source that hangs until released, so the sequence below is an ordering, not a duration. */
 function gate(): { readonly wait: Promise<void>; readonly open: () => void } {
@@ -23,16 +33,22 @@ function gate(): { readonly wait: Promise<void>; readonly open: () => void } {
   return { wait, open };
 }
 
-const original = getReadCache();
+let restore: (() => void) | undefined;
+let lru: CacheTier;
 const restoreTags = isolateDeclaredTags();
 declareTags(['post', 'comment']);
 
 beforeEach(() => {
-  setReadCache(new MemoryReadCache());
+  restore?.();
+  restore = isolateTiers();
+  resetTiers();
+  lru = createLruTier();
+  registerTier(lru);
 });
 
 afterAll(() => {
-  setReadCache(original);
+  restore?.();
+  restore = undefined;
   restoreTags();
 });
 
@@ -41,7 +57,7 @@ afterAll(() => {
  * whether a later reader can be served the entry, and a count of `set` calls is one step removed
  * from that.
  */
-const published = async (key: string): Promise<unknown> => (await getReadCache().get(key))?.value;
+const published = async (key: string): Promise<unknown> => (await lru.get(key))?.value;
 
 describe('the fence around a read-through fill', () => {
   /**

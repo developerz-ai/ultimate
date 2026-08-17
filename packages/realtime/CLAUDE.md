@@ -353,6 +353,15 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   and rows — and input is client-chosen, so 32 bits is a collision found offline in seconds and one
   client served out of another's window. `fnv1a` stays the cursor's result-set digest, where a
   collision costs a missed re-sort.
+- **`canonicalJson` is injective over the values it accepts, and `JSON.stringify` is not.**
+  `JSON.stringify` answers `"null"` for `NaN` and `±Infinity` and `"0"` for `-0`, so four distinct
+  inputs hashed to one qid — and a qid *hit* hands the joiner the first subscriber's compiled
+  source, matcher and seated window. Bare `NaN` / `Infinity` / `-Infinity` / `-0` tokens are emitted
+  instead; they are not valid JSON, which is correct, because this output is hashed and never
+  parsed. Exposure is narrower than it looks and the tests say so rather than overclaiming: `NaN`
+  and `±Infinity` have no JSON spelling and so cannot arrive on a `subscribe` frame — they reach
+  `qidOf` only from a caller building `input` in JS. **`-0` is wire-reachable**: `JSON.parse('{"a":-0}')`
+  answers `-0`.
 - **Refusing new sockets and draining the ones you have are two shutdown phases.** `stopAccepting()`
   is the `accept` phase: `ready = false`, `/readyz` 503, a late upgrade shed with `retry-after-ms`,
   and every socket untouched — a draining node still owes its clients their patches, and `stop()` is

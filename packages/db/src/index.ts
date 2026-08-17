@@ -71,7 +71,6 @@ export {
   multipleStatements,
   poolAcquireTimeout,
   poolMaxInvalid,
-  readonlyViolation,
   serializationExhausted,
   sqlUnsafe,
 } from './errors';
@@ -138,8 +137,6 @@ export {
 } from './pglite';
 export type { PgliteBranchInfo, PgliteBranchOptions } from './pglite-branch';
 export { branchPglite, pgliteBranchDir } from './pglite-branch';
-export type { MutationVerdict, ReadOnlyOptions } from './readonly';
-export { assertReadOnly, inspectStatement, readOnly } from './readonly';
 export type { ReadOnlyQueryOptions, ReadOnlyQueryResult } from './readonly-query';
 export { READONLY_TIMEOUT_MS, readOnlyQuery } from './readonly-query';
 export type { ReadOnlyRoleOptions } from './readonly-role';

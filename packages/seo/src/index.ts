@@ -1,10 +1,7 @@
 // The public surface of @ultimat3/seo. Explicit named exports only.
 
-export type { BudgetMeasurement, BudgetMetric, BudgetReport, BudgetViolation } from './budgets';
-export { assertBudgets, BUDGET_UNITS, checkBudgets, DEFAULT_BUDGET, parseBytes } from './budgets';
 export type { SeoErrorCode, SeoErrorInit } from './errors';
 export {
-  budgetExceeded,
   canonicalMismatch,
   duplicateMeta,
   imageQueryInvalid,
@@ -70,7 +67,6 @@ export {
   Organization,
   Person,
   Product,
-  renderLd,
   SoftwareApplication,
   WebSite,
 } from './ld';
@@ -96,7 +92,7 @@ export {
 } from './meta';
 export type { RobotsConfig, RobotsGroup } from './robots';
 export { buildRobots, isIndexable } from './robots';
-export type { ChangeFreq, RenderMode, RouteBudget, RouteRecord, Surface } from './routes';
+export type { ChangeFreq, RenderMode, RouteRecord, Surface } from './routes';
 export { expandRoute, indexableRoutes, isDynamic } from './routes';
 export type { BuildFeedOptions, Feed, FeedAuthor, FeedChannel, FeedItem } from './rss';
 export { buildFeed } from './rss';

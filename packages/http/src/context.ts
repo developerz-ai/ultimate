@@ -16,6 +16,8 @@ import {
   useContext,
   uuid,
 } from '@ultimat3/core';
+import { localeConfig } from '@ultimat3/i18n';
+import { timeConfig } from '@ultimat3/time';
 import type { HttpConfig } from './config';
 import { noRequest } from './errors';
 import type { AuthzDecision } from './hooks';
@@ -180,8 +182,10 @@ export const createRequestContext = (init: RequestContextInit): RequestContext =
     params: {},
     route: undefined,
     actor: anonymousActor(),
-    locale: init.config.locale.default,
-    tz: init.config.tz.default,
+    // What the request gets before the `locale` stage runs, and what it keeps if the stage is
+    // never reached (a refusal in `admit`). The owners' configured fallbacks, never a third one.
+    locale: localeConfig().fallback,
+    tz: timeConfig().defaultZone,
     clientBuildId: null,
     input: undefined,
     authz: undefined,

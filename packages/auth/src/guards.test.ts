@@ -1,10 +1,11 @@
-// Direct coverage for the http pipeline's auth assertions — untested until now despite being
-// the gate every role/scope-shaped route calls before touching a policy.
+// Direct coverage for the http pipeline's auth assertions, and the pin that keeps this module to
+// authentication alone: an authorization decision belongs to `@ultimat3/policy` and nowhere else.
 
 import { describe, expect, test } from 'bun:test';
 import { assert, createContext, runWithContext, userActor } from '@ultimat3/core';
 import { AuthError } from './errors';
-import { currentActor, requireActor, requireRole, requireScope } from './guards';
+import * as guards from './guards';
+import { currentActor, requireActor } from './guards';
 
 const asAnonymous = <T>(fn: () => T): T => runWithContext(createContext(), fn);
 
@@ -46,32 +47,15 @@ describe('requireActor', () => {
   });
 });
 
-describe('requireRole', () => {
-  test('passes when the actor has the role', () => {
-    const actor = asUser(['admin'], [], () => requireRole('admin'));
-    expect(actor.id).toBe('user-1');
-  });
-
-  test('throws X_FORBIDDEN when the actor lacks the role', () => {
-    const error = asUser(['editor'], [], () => caught(() => requireRole('admin')));
-    expect(error.code).toBe('X_FORBIDDEN');
-  });
-
-  test('throws X_UNAUTHENTICATED (not X_FORBIDDEN) when anonymous', () => {
-    const error = asAnonymous(() => caught(() => requireRole('admin')));
-    expect(error.code).toBe('X_UNAUTHENTICATED');
-  });
-});
-
-describe('requireScope', () => {
-  test('passes when the actor has the scope', () => {
-    const actor = asUser([], ['posts:write'], () => requireScope('posts:write'));
-    expect(actor.id).toBe('user-1');
-  });
-
-  test('throws X_FORBIDDEN when the actor lacks the scope', () => {
-    const error = asUser([], ['posts:read'], () => caught(() => requireScope('posts:write')));
-    expect(error.code).toBe('X_FORBIDDEN');
+describe('the guard surface', () => {
+  test('asserts authentication only — an authorization decision is a Policy', () => {
+    // `requireRole` / `requireScope` lived here and decided a 403 outside `@ultimat3/policy`, with
+    // zero callers repo-wide. The cost was not the duplication: a route gated that way reports
+    // `policy: null` in `x routes`, in `framework.manifest.json` and in `openapi.json`, and
+    // `x policy list` reports its permission unenforced — a route that ships guarded while every
+    // introspection surface says it is not. Anything finer than "is somebody signed in" is
+    // `can('post:publish')`, evaluated by policy, which is the one authz evaluator.
+    expect(Object.keys(guards).sort()).toEqual(['currentActor', 'requireActor']);
   });
 });
 

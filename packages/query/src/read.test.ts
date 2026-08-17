@@ -3,22 +3,25 @@
 // ordering proved with a spy, impersonation via `options.actor`, and `buildSource`'s `total()`.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { declareTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
+import type { CacheTier } from '@ultimat3/cache';
+import {
+  createLruTier,
+  declareTags,
+  invalidateTags,
+  isolateDeclaredTags,
+  isolateTiers,
+  registerTier,
+  resetTiers,
+  tag,
+} from '@ultimat3/cache';
 import { createContext, userActor } from '@ultimat3/core';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
-import { cacheKeyFor, readAuthority } from './cache';
+import { cacheKeyFor, DEFAULT_READ_CACHE_TTL_MS, readAuthority } from './cache';
 import { QueryDeniedError, QueryForeignError, QueryUnregisteredError } from './errors';
 import type { AnyQuery } from './query';
 import { query } from './query';
 import { defOf, hasDef, queryName, runQuery, sourceFor } from './read';
-import {
-  DEFAULT_READ_CACHE_TTL_MS,
-  getReadCache,
-  invalidateQueryTags,
-  MemoryReadCache,
-  setReadCache,
-} from './read-cache';
 import type { SqlSource } from './source';
 import { from } from './source';
 
@@ -28,13 +31,32 @@ interface Row {
 }
 
 /**
- * The `cache:` block below tags `post`, and `invalidateQueryTags` validates a tag against the
- * declared entities. Declared here so the fan-out runs against a real registry instead of the
- * disabled one an empty registry means — and restored, so no later file inherits it.
+ * The `cache:` block below tags `post`, and the fan-out validates a tag against the declared
+ * entities. Declared here so it runs against a real registry instead of the disabled one an empty
+ * registry means — and restored, so no later file inherits it.
  */
 const restoreTags = isolateDeclaredTags();
 declareTags(['post']);
 afterAll(restoreTags);
+
+/**
+ * A registered `lru` tier, with the TTL spread turned off so an expiry is a number a test may
+ * assert. There is no read cache to install: the read path fills the tiers `@ultimat3/cache` has
+ * registered, which is the whole of what C3 changed.
+ */
+let readTier: CacheTier & { readonly cache: unknown };
+let restoreTiers: (() => void) | undefined;
+const withReadTier = (): void => {
+  restoreTiers?.();
+  restoreTiers = isolateTiers();
+  resetTiers();
+  readTier = createLruTier({ jitterFraction: 0 });
+  registerTier(readTier);
+};
+afterAll(() => {
+  restoreTiers?.();
+  restoreTiers = undefined;
+});
 
 const ORG = '00000000-0000-4000-8000-000000000001';
 const Input = t.object({ orgId: t.uuid });
@@ -306,24 +328,25 @@ describe("a cache: read's tier entry, and what drops it", () => {
     return { target, counts };
   }
 
-  // The measured failure: the entry was immortal and no fan-out could reach it, so the
-  // pre-write list was served for the life of the process.
-  test('an invalidateQueryTags fan-out drops it, and the next request re-reads', async () => {
-    setReadCache(new MemoryReadCache());
+  // The measured failure: the entry lived in a store no fan-out could reach, so the pre-write
+  // list was served for the life of the process. It is now dropped by `invalidateTags` — the very
+  // call an action's `cache.invalidates` makes, with nothing in between.
+  test('an invalidateTags fan-out drops it, and the next request re-reads', async () => {
+    withReadTier();
     const { target, counts } = defineCachedQuery();
 
     await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: allowedActor }) });
     await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: allowedActor }) });
     expect(counts.executed).toBe(1); // second request served from the tier
 
-    await invalidateQueryTags([tag('post')]);
+    await invalidateTags([tag('post')]);
 
     await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: allowedActor }) });
     expect(counts.executed).toBe(2);
   });
 
   test('a cache: block with no ttlMs still writes a bounded expiry', async () => {
-    setReadCache(new MemoryReadCache());
+    withReadTier();
     const { target } = defineCachedQuery();
     const before = Date.now();
 
@@ -335,13 +358,13 @@ describe("a cache: read's tier entry, and what drops it", () => {
       [tag('post')],
       readAuthority(allowedActor, 'actor'),
     );
-    const entry = await getReadCache().get(key);
+    const entry = await readTier.get(key);
     expect(entry?.expiresAt).toBeGreaterThanOrEqual(before + DEFAULT_READ_CACHE_TTL_MS);
     expect(entry?.tags).toEqual([tag('post')]);
   });
 
   test('a declared ttlMs is honoured over the default', async () => {
-    setReadCache(new MemoryReadCache());
+    withReadTier();
     const { target } = defineCachedQuery(5_000);
     const before = Date.now();
 
@@ -353,7 +376,7 @@ describe("a cache: read's tier entry, and what drops it", () => {
       [tag('post')],
       readAuthority(allowedActor, 'actor'),
     );
-    const entry = await getReadCache().get(key);
+    const entry = await readTier.get(key);
     expect(entry?.expiresAt).toBeLessThan(before + DEFAULT_READ_CACHE_TTL_MS);
   });
 });

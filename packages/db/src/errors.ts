@@ -26,7 +26,6 @@ export const DB_OWNED_ERROR_CODES = [
   'X_MIGRATE_CONCURRENT',
   'X_SQL_UNSAFE',
   'X_BRANCH_EXISTS',
-  'X_READONLY_VIOLATION',
 ] as const;
 
 /**
@@ -58,7 +57,6 @@ export const DB_ERROR_TITLES: Readonly<Record<DbOwnedErrorCode, string>> = {
   X_MIGRATION_SNAPSHOT_MISSING: 'the newest migration records no schema snapshot',
   X_SQL_UNSAFE: 'SQL was built by string interpolation',
   X_BRANCH_EXISTS: 'that branch database already exists',
-  X_READONLY_VIOLATION: 'a mutating statement reached a read-only client',
 };
 
 // Registered unconditionally, in one call, so a second package claiming one of db's codes fails
@@ -339,14 +337,6 @@ export const branchNameInvalid = (branch: string): DbError =>
     cause: `branch name "${branch}" is not [a-z0-9_-]+`,
     fix: 'x db branch create <name>   # lowercase letters, digits, underscore and dash only',
     meta: { branch },
-  });
-
-export const readonlyViolation = (statement: string, keyword: string): DbError =>
-  new DbError({
-    code: 'X_READONLY_VIOLATION',
-    cause: `a read-only client received a ${keyword.toUpperCase()} statement: ${statement}`,
-    fix: 'use db() instead of readOnly(db()), or rewrite the statement as a SELECT',
-    meta: { keyword },
   });
 
 export const dbNotImplemented = (feature: string, fix: string): DbError =>

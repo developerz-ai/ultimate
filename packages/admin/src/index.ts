@@ -197,7 +197,12 @@ export {
   repoOf,
   resourceFor,
 } from './resource';
-export { type AdminRouteConfig, adminRouteConfig, adminRoutes } from './routes';
+export {
+  type AdminRouteConfig,
+  adminRouteConfig,
+  adminRouteFor,
+  adminRoutes,
+} from './routes';
 export {
   type AdminSearchHit,
   type AdminSearchInput,

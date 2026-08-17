@@ -12,10 +12,14 @@ export const publishPost = action({
 });
 ```
 
-One honest exception, named rather than hidden: `@ultimat3/auth`'s `requireRole()` /
-`requireScope()` gate *routes* on the ambient actor and never evaluate a policy. They are coarse
-by design, and a route gated that way is invisible to `x policy list`, the manifest and
-`contract-diff`. Anything finer than "is this actor an admin" is a policy.
+**No exception, as of 1.3.0.** `@ultimat3/auth`'s `requireRole()` / `requireScope()` used to gate
+*routes* on the ambient actor without evaluating a policy; they are deleted. They were documented
+here as "one honest exception" and had **zero callers** in the framework or in either tracked app —
+a sanctioned second door nobody walked through, whose own documentation admitted that a route
+gated that way is invisible to `x policy list`, to `framework.manifest.json` and to `openapi.json`.
+Gate a route with a `Policy`: `can('admin:access')`, which every introspection surface can read.
+`requireActor()` and `currentActor()` remain — those assert *authentication*, which is what
+`@ultimat3/auth` produces.
 
 ## Shape
 

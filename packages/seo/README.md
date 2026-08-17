@@ -1,6 +1,12 @@
 # @ultimat3/seo 🔍
 
-SEO is **enforced, not documented**. These are build errors, not lint warnings.
+SEO is **enforced, not documented**: every rule below is an `assert*` that throws a coded
+`SeoError` with the route file and the exact edit, never a lint warning.
+
+`As of 2026-08` the half that *calls* those asserts is missing — nothing outside this package
+imports `assertMeta`, `buildSitemap` or `buildRobots`, so no step of `x verify` runs them yet.
+Wiring them is a `HostCheck` on an existing step in `packages/cli/src/cmd-verify.ts`. The shapes
+below are what will fail the build; today they fail an app that calls them itself.
 
 ## What fails the build
 
@@ -11,8 +17,11 @@ SEO is **enforced, not documented**. These are build errors, not lint warnings.
 | `X_SEO_META_TOO_LONG` | title > 60 chars, description > 160 | the tail is truncated in results — the words are paid for and never read |
 | `X_SEO_CANONICAL_MISMATCH` | `meta.canonical` does not resolve to the route's own URL | a wrong canonical de-indexes the page in favour of another |
 | `X_LD_INVALID` | a JSON-LD node missing a required schema.org field | invalid structured data drops the rich result silently |
-| `X_SEO_BUDGET_EXCEEDED` | a route over its `js` / `css` / `lcp` / `cls` / `inp` budget | performance is a ranking factor and regressions are invisible without a gate |
 | `X_SITEMAP_TOO_LARGE` | the sitemap index exceeds 50,000 files | past the protocol limit the whole sitemap is discarded |
+
+Performance budgets are **not** here: `x verify`'s `budgets` step is `@ultimat3/cli`'s
+`checkBudgets`, over the route manifest and the build's own stats, and it throws
+`@ultimat3/render`'s `X_BUDGET_EXCEEDED`. This package is tier 1 and cannot see a build's bytes.
 
 Every error names the exact route **file** and the exact edit:
 
@@ -35,7 +44,6 @@ X_SEO_META_MISSING: a site/ route is missing required metadata
 | `feed-dates.ts` | the one place a feed timestamp is parsed or formatted — an item date that will not parse is *absent*, never `Invalid Date` and never a crash |
 | `images.ts` | `srcset` widths, AVIF → WebP → original, inlined intrinsic dimensions, and `parseImageQuery()` — reads a minted URL back into a transform request |
 | `image-driver.ts` | `ImageTransformDriver` + `builtinImageDriver()`: the variant bytes and the blur placeholder |
-| `budgets.ts` | `checkBudgets()` / `assertBudgets()`, the CI gate |
 
 ## Type-level enforcement
 
@@ -146,6 +154,6 @@ export const config = defineRoute({
 ## Commands
 
 ```
-bun test                 # meta, validation, JSON-LD, sitemap, robots, feeds, images, budgets
+bun test                 # meta, validation, JSON-LD, sitemap, robots, feeds, images, error codes
 bun run typecheck
 ```

@@ -11,6 +11,8 @@ import {
   isDraining,
   reportError,
 } from '@ultimat3/core';
+import { resolveLocale } from '@ultimat3/i18n';
+import { resolveTimeZone } from '@ultimat3/time';
 import { signInRedirect } from './auth-redirect';
 import { defaultCache } from './cache-policy';
 import { type HttpConfig, stripBasePath } from './config';
@@ -31,7 +33,7 @@ import {
   unauthenticated,
 } from './errors';
 import type { ServerHooks } from './hooks';
-import { negotiateLocale, readCookie, resolveTimeZone } from './locale';
+import { readCookie } from './locale';
 import { compose, type Middleware } from './middleware';
 import { overlayResponse, wantsOverlay } from './overlay';
 import { type RateLimiter, rateLimitKey } from './rate-limit';
@@ -171,17 +173,23 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       return undefined;
     },
 
+    /**
+     * The two values land on `ctx.locale` / `ctx.tz` — core's own declared fields, which is what
+     * makes `currentLocale()` and `currentTimeZone()` answer for this request once `pipeline.ts`
+     * publishes the context into the ALS. This stage decides only WHERE to read them from; the
+     * owners decide what they mean, so `Accept-Language: zh-Hant-TW` and `x-timezone: eUrOpE/bErLiN`
+     * get one answer in the framework rather than one per package.
+     */
     locale: (request, ctx) => {
       const cookies = request.header('cookie');
-      ctx.locale = negotiateLocale(
-        request.header('accept-language'),
-        config.locale,
-        readCookie(cookies, config.locale.cookie),
-      );
-      ctx.tz = resolveTimeZone(
-        request.header(config.tz.header) ?? readCookie(cookies, config.tz.cookie),
-        config.tz,
-      );
+      ctx.locale = resolveLocale({
+        header: request.header('accept-language'),
+        cookie: readCookie(cookies, config.locale.cookie),
+      }).locale;
+      ctx.tz = resolveTimeZone({
+        cookie: readCookie(cookies, config.tz.cookie),
+        header: request.header(config.tz.header),
+      }).zone;
       ctx.headers.set('content-language', ctx.locale);
       return undefined;
     },

@@ -72,9 +72,10 @@ function cursorable(statement: string): boolean {
  * to keep right.
  *
  * Deliberately does not use `withTransaction`: it nests into an ambient transaction with a
- * `SAVEPOINT`, and a savepoint inside a read-write transaction is not read-only. Deliberately
- * does not wrap the connection in `readOnly()` either: that guard's regex would refuse our own
- * `SET LOCAL` statements, and `BEGIN READ ONLY` is a stronger, Postgres-enforced backstop.
+ * `SAVEPOINT`, and a savepoint inside a read-write transaction is not read-only. It runs no
+ * mutating-keyword scan of its own either — `BEGIN READ ONLY` is the server refusing the write,
+ * which is stronger than any regex, and this package deliberately ships no second answer to "is
+ * this SQL a write?" (`@ultimat3/mcp`'s parse guard is layer 3, and it is the only one).
  */
 export async function readOnlyQuery<T>(
   statement: string,

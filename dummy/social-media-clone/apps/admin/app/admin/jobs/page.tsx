@@ -4,20 +4,28 @@
 // `apps/web/api/tasks.ts` handing its module to `defineApi`, and nothing promises that ran before
 // this module was imported. A snapshot taken at `defineAdmin()` time would be empty on some boots
 // and full on others, which is the worst kind of correct.
+//
+// The gate below is `adminRouteFor()`'s — the coarse half of the `permissionsForOperation('job',
+// 'list')` pair `defineAdmin()` declared for this URL. `pageDecision('job')` is the fine half of
+// that same pair, and both now trace back to one declaration in `admin.ts`.
 
+import { adminRouteFor } from '@ultimat3/admin';
 import { t } from '@ultimat3/i18n';
 import { describeJobs } from '@ultimat3/jobs';
 import { defineRoute } from '@ultimat3/render';
+import { admin } from '../admin';
 import { actorLabel } from '../label';
 import { pageDecision, visibleNavFor } from '../screen';
 import { AdminShell } from '../views';
 import styles from '../views.module.scss';
 
+const route = adminRouteFor(admin, `${admin.basePath}/jobs`);
+
 export const config = defineRoute({
   render: 'ssr',
   hydrate: 'never',
   offline: 'network-only',
-  policy: { permission: 'admin:read' },
+  policy: route.policy,
   budget: { js: '0kb', lcp: 3000 },
   meta: () => ({ title: t('admin.jobs.title'), description: t('admin.jobs.description') }),
 });

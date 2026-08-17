@@ -49,13 +49,40 @@ export function changedColumns(before: JsonObject | null, after: JsonObject): Js
   return out;
 }
 
-/** Key-sorted JSON so a query id derived from input is stable across property order. */
+/**
+ * Key-sorted JSON so a query id derived from input is stable across property order — and
+ * INJECTIVE, because that id decides who shares a window.
+ *
+ * `qidOf` is `stableDigest(canonicalJson(input))` and a qid HIT hands the joiner the existing
+ * entry: the first subscriber's compiled source, its matcher and its seated rows. Two inputs that
+ * canonicalise to one string are therefore two clients served out of one window. `JSON.stringify`
+ * is not injective over numbers — `NaN` and `±Infinity` are both `"null"`, which also collides
+ * with JSON `null` itself, and `-0` is `"0"` — so the number branch is spelled out here.
+ *
+ * `-0` is the one of those a client can put on the wire (`JSON.parse('{"a":-0}')` answers `-0`);
+ * the non-finite three have no JSON spelling and arrive only from a caller building `input` in JS,
+ * such as `useLive(feed, () => ({ limit: Number.parseInt(raw) }))` on an unparseable `raw`.
+ * The tokens are bare, never quoted: this output is only ever hashed, and the `string` branch
+ * always quotes, so an unquoted word cannot collide with the text that spells it.
+ *
+ * The twin of `@ultimat3/query`'s and `@ultimat3/action`'s rules in their own `stable.ts`. All
+ * three are tier 3, so no two of them can import each other; the shared home is `@ultimat3/core`
+ * if one is ever made.
+ */
 export function canonicalJson(value: JsonValue): string {
+  if (typeof value === 'number') return canonicalNumber(value);
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   const keys = Object.keys(value).sort();
   const parts = keys.map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key] ?? null)}`);
   return `{${parts.join(',')}}`;
+}
+
+/** Ordinary numbers are `String(n)`, byte-identical to what this emitted before. */
+function canonicalNumber(value: number): string {
+  if (Number.isNaN(value)) return 'NaN';
+  if (!Number.isFinite(value)) return value > 0 ? 'Infinity' : '-Infinity';
+  return Object.is(value, -0) ? '-0' : String(value);
 }
 
 /**

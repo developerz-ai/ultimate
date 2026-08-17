@@ -5,6 +5,7 @@
  */
 
 import type { CacheTag } from '@ultimat3/cache';
+import { tagKeys } from '@ultimat3/cache';
 import type { Actor, Ctx } from '@ultimat3/core';
 import { isMcpExposed } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
@@ -26,7 +27,6 @@ import {
   policyPermissions,
   type Surface,
 } from './policy-gate';
-import { tagKeys } from './tags';
 
 export interface ActionCache {
   /** Tags dropped from every cache tier after the handler settles. */

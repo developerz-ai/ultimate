@@ -128,6 +128,31 @@ that shadows a generated screen throws `X_ADMIN_PAGE_PATH_INVALID` the same way.
 Custom pages are `render: 'ssr'`, `hydrate: 'never'`: the guard runs on the server, so there is no
 shell to ship and nothing to decide twice.
 
+### Serving an admin URL from your own route file
+
+A host whose router is file-based writes its own `page.tsx` for an admin URL. Take the gate from
+the route table — never type it a second time:
+
+```ts
+import { adminRouteFor } from '@ultimat3/admin';
+import { admin } from './admin';
+
+const route = adminRouteFor(admin, `${admin.basePath}/users`);
+
+export const config = defineRoute({
+  render: 'ssr',
+  hydrate: 'never',
+  offline: 'network-only',
+  policy: route.policy, // `defineAdmin()`'s, from `permissionsForOperation('users', 'list')`
+  meta: () => ({ title: t('admin.users.title') }),
+});
+```
+
+`route.policy` is the same object `route.config.policy` carries, so the gate has one declaration
+and one reader. A `path` the admin does not declare throws `X_ADMIN_PAGE_PATH_INVALID` listing the
+paths that would have worked — a page serving an admin URL the admin never built is a screen whose
+permissions nothing composed.
+
 ### Splitting the admin across files
 
 `defineAdmin` takes **plain values** — `entities`, `resources`, `actions`, `jobs`, `pages`, `nav`,
