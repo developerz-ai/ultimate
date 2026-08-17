@@ -39,7 +39,7 @@ x version              # CLI version
 | `x manifest` | regenerate `x.manifest.json` and `openapi.json` | shipped |
 | `x routes` | the route table: path, surface, render mode, hydrate, offline | shipped |
 | `x mcp serve` | serve the framework MCP tools over stdio or HTTP | shipped |
-| `x doctor` | environment, versions, drift, ports, PWA prerequisites — each with a fix | shipped |
+| `x doctor` | environment, versions, drift, the newest migration's snapshot sidecar, ports, PWA prerequisites — each with a fix | shipped |
 | `x help` / `x version` | catalogue and version | shipped |
 | `x actions` / `x queries` / `x entities` | introspect the declaration registries | shipped |
 | `x jobs` | list, show, retry, drain the queue | shipped |
@@ -78,7 +78,7 @@ $ x new myapp --dry-run --json
 {"ok":true,"command":"new","summary":"…","data":{"dir":"/home/me/myapp","files":["README.md","AGENTS.md",…],"dryRun":true}}
 ```
 
-**115 files** with the example slice, **91** with `--no-example` — measured on `main` `As of 2026-08`. Both numbers move the moment a template is added, so derive rather than quote them:
+**114 files** with the example slice, **90** with `--no-example` — measured on `main` `As of 2026-08`, one lower than 1.2.0's because the scaffold no longer writes `0000_initial.sql`. Both numbers move the moment a template is added, so derive rather than quote them:
 
 ```bash
 x new myapp --dry-run --json | jq '.data.files | length'
@@ -214,7 +214,22 @@ Alias: `x generate`.
 | `--force` | boolean | `false` | overwrite existing files |
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
 
-`resource` emits the whole slice — `entity`, `repo`, `policy`, `actions`, `live`, `ui`, a migration, and the failing test scaffolds. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). Every generator produces code that passes `x verify` unmodified. Errors: `X_GENERATE_CONFLICT`.
+`resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the plural route and a test beside each declaration — **25 files** (27 with `--admin --live`), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>` then `x db gen "create <name>"`. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). Every generator produces code that passes `x verify` unmodified. Errors: `X_GENERATE_CONFLICT`.
+
+**A narrower generator plants the slice modules its own source imports**, `As of 2026-08` — they used to be `x g resource`'s alone, so `x g job` into a hand-written slice emitted `import * as repo from '../repo'` against a file nobody had written. Which modules differ per generator, on purpose: a job has no request behind it and evaluates no policy, so `x g job` plants no `policy.ts`.
+
+| Generator | Files into a **bare** slice | Its own | Slice modules it plants |
+|---|---|---|---|
+| `x g action` · `x g mutator` | 8 | 2 | `entity.ts` + `entity.test.ts` + `repo.ts`, `policy.ts` + `policy.test.ts`, `errors.ts` |
+| `x g query` (± `--live`) | 7 | 2 | `entity.ts` + `entity.test.ts` + `repo.ts`, `policy.ts` + `policy.test.ts` |
+| `x g job` | 5 | 2 | `entity.ts` + `entity.test.ts` + `repo.ts` |
+| `x g backfill` | 5 | 2 | `entity.ts` + `entity.test.ts` + `repo.ts` |
+| `x g task` | 7 | 4 — the task **and** the job it enqueues | `entity.ts` + `entity.test.ts` + `repo.ts` |
+| `x g entity` · `x g policy` | 3 · 2 | all of them | it *is* the slice module |
+
+`repo.ts` is never planted alone: it imports `./entity` for its row type, so the pair goes in together or the unresolved import has only moved.
+
+**A module the slice already has is skipped — never a conflict, never overwritten, `--force` included.** A foundation module belongs to the slice, not to the generator that needed it, and `--force` is about the primitive you named: clobbering `policy.ts` to regenerate one action would delete every rule in it. Regenerating a slice module is its own generator — `x g entity`, `x g policy`. So a second `x g action` into a finished slice writes exactly its own 2 files, and one into a half-built slice writes only what is missing.
 
 The synopsis above is `GENERATORS` in `packages/cli/src/cmd-generate.ts`, which `x g --help` prints verbatim — run it if this list and the CLI ever disagree.
 
@@ -288,6 +303,17 @@ either: reads and writes run on `@ultimat3/entity`'s hand-written `postgresDrive
 | `packages/db/migrations/<id>.sql` | the `up`, then a lone `-- down` line, then the reverse |
 | `packages/db/migrations/<id>.snapshot.json` | the schema this migration leaves behind — what the *next* `x db gen` diffs against |
 | `packages/db/migrations/<id>.hash` | the entity-source hash `x verify`'s `drift` step checks |
+
+**And `x db gen` is that directory's only writer**, `As of 2026-08`. `x new` scaffolds no migration:
+a hand-written first file carried no `.snapshot.json` — the one artifact only the generator produces
+— so the app's first `x db migrate` and first `x db gen` refused each other. A pristine scaffold's
+first two commands are `x db gen "initial"` then `x db migrate` (`bin/setup` runs both), and until
+the first has run, `x verify`'s `drift` step is red naming exactly that — **for an app that declares
+an entity**, since zero declared against zero recorded is agreement and `--no-example` is therefore
+green. A foreign key is
+emitted as `alter table … add constraint` **after** every table statement, never as a `references`
+clause inside `create table`, so the order entities happen to register in cannot make a migration
+unappliable.
 
 **`X_DB_DRIFT` has two detectors, and each answers what the other cannot.** `x verify`'s `drift`
 step hashes the entity source against the `.hash` sidecars — no database, so it runs in a CI with
@@ -605,13 +631,16 @@ A tool this caller may not see is absent from `tools/list` and answers ToolNotFo
 x doctor [--port 3000] [--json]
 ```
 
-Checks Bun version, env completeness, migration drift, port availability, and PWA prerequisites — each failing check carries its own fix command.
+Checks Bun version, env completeness, source drift, **the newest migration's `.snapshot.json`**, port availability and PWA prerequisites — each failing check carries its own fix command. The snapshot half is `As of 2026-08` and separate from drift on purpose: they are two questions with two remedies, and `x db gen`'s own `X_MIGRATION_SNAPSHOT_MISSING` was a condition this diagnostic could not see at all, so `x doctor --json` — the `fix:` of the `X_CLI_UNEXPECTED` an author reaches it through — ran clean over a broken app.
+
+The output is a `CommandResult` like every other command's: `findings`, not a `checks` array.
 
 ```bash
 $ x doctor --json
-{"ok":false,"checks":[{"name":"drift","ok":false,"code":"X_DB_DRIFT",
-  "cause":"table \"posts\" has column \"publish_at\" not present in any migration",
-  "fix":"x db gen \"add publish_at\""}]}
+{"ok":false,"command":"doctor","summary":"1 finding(s)","findings":[{"code":"X_DB_DRIFT",
+  "cause":"packages/db has a schema but no migration recorded it",
+  "fix":"x db gen \"initial\"","docs":"https://ultimate.dev/errors/X_DB_DRIFT",
+  "at":"packages/db/migrations"}],"data":{"count":1,"codes":["X_DB_DRIFT"]}}
 ```
 
 ## x actions · x queries · x entities

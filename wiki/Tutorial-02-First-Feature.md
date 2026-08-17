@@ -24,16 +24,18 @@ bunx x g resource todo --dry-run
   + apps/web/app/todo/service.ts               + …/service.test.ts
   + apps/web/app/todo/ui.tsx  ui.module.scss  ui/todo-card.tsx  ui/todo-form.tsx
   + packages/i18n/catalogs/en.json
-  + apps/web/app/todos/page.tsx  page.module.scss  page.test.ts
-✓ wrote 24 file(s) for resource todo
+  + apps/web/app/todos/page.tsx  page.module.scss  page.test.ts  page.e2e.test.ts
+✓ wrote 25 file(s) for resource todo
 ```
 
-Drop `--dry-run` to write them. `x g` never clobbers — an existing file is `X_GENERATE_CONFLICT`, and the i18n catalog is merged key-by-key rather than overwritten.
+Drop `--dry-run` to write them. `x g` never clobbers — an existing file is `X_GENERATE_CONFLICT`; the i18n catalog is merged key-by-key rather than overwritten; and a **slice module** (`entity.ts`, `repo.ts`, `policy.ts`, `errors.ts`) the slice already has is skipped, `--force` included, because it belongs to the slice rather than to the generator that needed it. **A run whose catalog merge gains no key writes 24**: a merge that changes nothing is skipped rather than counted.
+
+**No migration is in that list.** `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource todo` and then the two steps below.
 
 | Generator | Emits |
 |---|---|
-| `x g resource <n>` | the whole slice above — 24 files |
-| `x g entity` / `policy` / `action` / `mutator` / `query` / `job` / `task` | that primitive plus its test |
+| `x g resource <n>` | the whole slice above — 25 files, 27 with `--admin --live` |
+| `x g entity` / `policy` / `action` / `mutator` / `query` / `job` / `task` | that primitive plus its test — **and the slice modules its own source imports**, when the slice has none: `x g job` is 5 files into a bare slice, `x g action` 8. Which ones differ per generator, so a job plants no `policy.ts` ([CLI reference § x g](CLI-Reference)) |
 | `x g route <path> --surface site\|app` | `page.tsx`, its stylesheet, its test, its catalog keys |
 
 `--surface site` on a `resource` is refused: a slice ships a live query and a form with a signal, and `site/` is the never-hydrated surface. Full flag table: [CLI reference § x g](CLI-Reference).
@@ -166,9 +168,11 @@ Now `x verify` sees drift, which is the point:
 ```text
   ✗ drift              2ms
       X_DB_DRIFT (packages/db/src)
-        cause: schema hashes to 92b6e21a9f3acc81, newest migration 0000_initial.hash recorded 164f6d3add24dcd0
+        cause: schema hashes to 92b6e21a9f3acc81, newest migration 20260817120000_initial.hash recorded 164f6d3add24dcd0
         fix:   x db gen "describe the change"
 ```
+
+A migration id is `<stamp>_<slug>` — the stamp is `x db gen`'s own clock, so yours differs. The one it names here is the `initial` from [tutorial 1](Tutorial-01-First-App#the-database-first-run); `x new` writes no migration, so on `main` that generate has already happened by the time you read this.
 
 **2. `x db gen` does not work at 1.1.0.** It shells out to `drizzle-kit`, which a scaffolded app neither installs nor configures:
 

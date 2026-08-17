@@ -24,8 +24,8 @@ bunx create-ultimate myapp
 **Unpinned on purpose.** Pinning the tutorial to a version pins readers to a scaffold that stops matching this page on the next tag; `README.md` and `llms.txt` drop the pin for the same reason. To reproduce a specific release, add `@<version>` and read that release's tag of this page.
 
 ```text
-  115 files in /tmp/tmp.XXXXXXXX/myapp
-✓ created myapp — next: cd myapp && x dev
+  114 files in /tmp/tmp.XXXXXXXX/myapp
+✓ created myapp — next: cd myapp && bun install && x db gen "initial" && x db migrate && x dev
 ```
 
 Counts are a derived fact — `x new --dry-run --json` lists every file, and one added template moves the number.
@@ -186,14 +186,26 @@ Boundaries are a build error, not a note — but `boundaries` is a **step of `x 
 
 ### The database, first run
 
-`bin/setup` runs `bun install` then `bunx x db migrate`, and `x db migrate` runs `@ultimat3/db`'s own migrator — the same one `ROLE=migrate` runs — so nothing extra has to be installed. It applies `0000_initial` and then reports one finding:
+`packages/db/migrations` starts **empty**, and `x db gen` is its only writer. Two commands, in this order:
 
-```text
-X_DB_DRIFT: migration "0000_initial" records no schema snapshot, so what this database owes
-            cannot be established
+```bash
+bunx x db gen "initial"    # entities → <id>.sql, <id>.snapshot.json, <id>.hash
+bunx x db migrate          # applies them, then diffs the live schema against the ledger it wrote
 ```
 
-`x new` writes the migration without its `.snapshot.json` sidecar, so the first `x db gen` is also refused, with `X_MIGRATION_SNAPSHOT_MISSING`. Measured on `main` `As of 2026-08`; the workaround and the file that causes it are on [Known gaps](Known-Gaps).
+`bin/setup` runs both — `bun install`, `x db gen "initial"` when the directory holds no `.sql`, `x db migrate`, then the seed. `x db migrate` is `@ultimat3/db`'s own migrator, the one `ROLE=migrate` runs, so nothing extra has to be installed.
+
+Until the generate has run, `x verify` is **red on its `drift` step** — correct behaviour with a runnable fix, not a defect:
+
+```text
+X_DB_DRIFT: schema differs from migrations
+  cause: packages/db has a schema but no migration recorded it
+  fix:   x db gen "initial"
+```
+
+That is the scaffold **with** the example slice, which declares one entity. `x new --no-example` declares none, and zero entities against zero migrations is agreement rather than drift, so its `drift` step is green from the first run and goes red the moment you write your first `entity()`.
+
+`x new` hand-wrote a `0000_initial.sql` until 2026-08 and that was the defect — a second writer of a directory the generator owns, whose file carried no `.snapshot.json`, so `x db migrate` answered `X_DB_DRIFT` naming `x db gen` and `x db gen` answered `X_MIGRATION_SNAPSHOT_MISSING` naming version control for a file version control never had. Neither `fix:` now names the command that raises the other ([Known gaps](Known-Gaps)).
 
 ## The routes are clean
 

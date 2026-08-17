@@ -11,8 +11,8 @@ import { names } from './naming';
 const resourceSource = (
   feature: NameSet,
 ): string => `// Admin override for ${feature.pluralKebab}. Everything not set here — fields, operations,
-// detail layout — is derived from the entity. Wire this in once:
-//   import { ${feature.camel}AdminResource } from '${'@'}app/web/app/${feature.kebab}/admin/resource';
+// detail layout — is derived from the entity. Wire it in once, importing ${feature.camel}AdminResource
+// through this app's own tsconfig path alias for apps/web/app/${feature.kebab}/admin/resource:
 //   defineAdmin({ entities: [..., ${feature.camel}], resources: { ${feature.table}: ${feature.camel}AdminResource } })
 
 import type { AdminResourceOptions, AdminRow } from '@ultimat3/admin';
@@ -31,10 +31,12 @@ const resourceTest = (
 import { expect, unitTest } from '@ultimat3/testing';
 import { ${feature.camel}AdminResource } from './resource';
 
-unitTest('${feature.camel}AdminResource sets a title key and bounded list fields', () => {
-  expect(${feature.camel}AdminResource.titleKey).toBe('admin.${feature.kebab}.title');
-  expect(${feature.camel}AdminResource.listFields?.length).toBeGreaterThan(0);
-  expect(${feature.camel}AdminResource.pageSize).toBeGreaterThan(0);
+const resource = ${feature.camel}AdminResource;
+
+unitTest('${feature.camel}AdminResource sets a title key and list fields', () => {
+  expect(resource.titleKey).toBe('admin.${feature.kebab}.title');
+  expect(resource.listFields?.length).toBeGreaterThan(0);
+  expect(resource.pageSize).toBeGreaterThan(0);
 });
 `;
 

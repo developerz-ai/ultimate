@@ -39,12 +39,48 @@ describe('unit · source drift', () => {
   test('a schema no migration ever recorded is drift, and the fix generates the first one', async () => {
     await withRoot(async (root) => {
       await writeSchema(root, 'export const posts = 1;\n');
-      const findings = await checkSourceDrift(root);
+      const findings = await checkSourceDrift(root, async () => 1);
       expect(findings).toHaveLength(1);
       expect(findings[0]?.code).toBe('X_DB_DRIFT');
       expect(findings[0]?.cause).toBe('packages/db has a schema but no migration recorded it');
       expect(findings[0]?.fix).toBe('x db gen "initial"');
       expect(findings[0]?.at).toBe(MIGRATIONS_DIR);
+    });
+  });
+
+  // The regression `x new --no-example` shipped: no entity declared, so `x db gen "initial"` has an
+  // empty diff, writes no `.hash`, and exits ok — leaving this finding standing behind a fix that
+  // runs clean and changes nothing. Zero declared against zero recorded is agreement, not drift.
+  test('a db package declaring no entity is not drift — the fix would generate nothing', async () => {
+    await withRoot(async (root) => {
+      await writeSchema(root, 'export {};\n');
+      expect(await checkSourceDrift(root, async () => 0)).toEqual([]);
+    });
+  });
+
+  // The limit of the source model, pinned so it is a decision and not a surprise: with the entities
+  // gone AND the migrations deleted there is nothing recorded to disagree with, so this answers
+  // clean. A database still holding those tables is the OTHER drift — `checkDrift` in
+  // `@ultimat3/db`, which `runMigrations` asks where a connection is open.
+  test('entities and migrations both gone is agreement here; the database half is elsewhere', async () => {
+    await withRoot(async (root) => {
+      await writeSchema(root, 'export {};\n');
+      expect(await checkSourceDrift(root, async () => 0)).toEqual([]);
+    });
+  });
+
+  // Entities removed while the migrations stay is NOT the branch above: a recorded hash exists, so
+  // the comparison below answers, and its fix is a real diff — `generateMigration` refuses that one
+  // with X_MIGRATION_IRREVERSIBLE and its own `--allow-destructive` fix. A chain of instructions,
+  // never a no-op.
+  test('entities removed with migrations still committed stays drift, on the hash comparison', async () => {
+    await withRoot(async (root) => {
+      await writeSchema(root, 'export const posts = 1;\n');
+      await generate(root, '0001_initial');
+      await writeSchema(root, 'export {};\n');
+      const findings = await checkSourceDrift(root, async () => 0);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.fix).toBe('x db gen "describe the change"');
     });
   });
 

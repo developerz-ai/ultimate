@@ -7,7 +7,7 @@ import { afterAll, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { declaredSchema, generateMigration } from '@ultimat3/db';
+import { declaredSchema, generateMigration, snapshotJson } from '@ultimat3/db';
 import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';
 import { generateAppMigration, migrationSql } from './db-generate';
 import { MIGRATIONS_DIR, readMigrations } from './migrations';
@@ -100,6 +100,32 @@ test('generation writes the sql, the snapshot and the hash, and the snapshot is 
     expect(declaredSchema(migrations).tables.map((table) => table.name)).toEqual([
       'db_gen_test_notes',
     ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// A scaffolded app's `lint` step is `biome check .`, and `.sql`/`.hash` are types Biome does not
+// process — so the sidecar is the first migration artefact the app's own gate ever reads. The bytes
+// are `@ultimat3/db`'s `snapshotJson`, which is a fixed point of the formatter;
+// `JSON.stringify(…, null, 2)` is not, so the generator used to write a file its own gate rejected.
+test('the snapshot sidecar is written as the bytes biome would have printed', async () => {
+  const dir = tempRoot();
+  try {
+    await Bun.write(join(dir, 'packages/db/src/schema.ts'), 'export const schema = 1;\n');
+    const generated = await generateAppMigration(dir, { name: 'add notes' });
+    const snapshot = generated.migration?.snapshot;
+    expect(snapshot).toBeDefined();
+    const written = await Bun.file(
+      join(dir, MIGRATIONS_DIR, `${generated.migration?.id}.snapshot.json`),
+    ).text();
+
+    // Asserted to DIFFER from the naive spelling first, so this fixture cannot pass by the two
+    // serialisers happening to agree — `primaryKey: ["id"]` is what Biome collapses and
+    // `JSON.stringify` never does.
+    const naive = `${JSON.stringify(snapshot, null, 2)}\n`;
+    expect(written).not.toBe(naive);
+    expect(written).toBe(snapshotJson(snapshot ?? { tables: [] }));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

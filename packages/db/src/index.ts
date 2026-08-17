@@ -141,6 +141,7 @@ export type { ReadOnlyQueryOptions, ReadOnlyQueryResult } from './readonly-query
 export { READONLY_TIMEOUT_MS, readOnlyQuery } from './readonly-query';
 export type { ReadOnlyRoleOptions } from './readonly-role';
 export { ensureReadOnlyRole, grantReadOnlySql, READONLY_ROLE } from './readonly-role';
+export { snapshotJson } from './snapshot-json';
 export { parseSnapshot } from './snapshot-parse';
 export type { SqlFragment } from './sql';
 export { identifier, isSqlFragment, join, literal, raw, sql } from './sql';

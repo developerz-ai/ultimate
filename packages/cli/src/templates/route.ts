@@ -149,7 +149,7 @@ unitTest('/${path} declares metadata', async () => {
   expect(meta.description ?? '').not.toBe('');
 });
 
-unitTest('/${path} declares a render mode, an offline strategy and a budget', () => {
+unitTest('/${path} declares its render, offline and budget', () => {
   expect(config.render).toBe('${RENDER[surface]}');
   expect(config.offline).toBe('${OFFLINE[surface]}');
   // budget is always on the descriptor, so pin the number: presence cannot fail.
@@ -175,7 +175,7 @@ import { e2eTest, expect } from '@ultimat3/testing';
 
 // Runs under the \`e2e\` step, against the BUILT output. Without a registered browser driver
 // \`e2eTest\` reports itself skipped, naming the command that builds what it would drive.
-e2eTest('/${path} renders offline from its fallback', async ({ page, offline }) => {
+e2eTest('/${path} renders offline', async ({ page, offline }) => {
   await page.goto('/${sampleUrl(path)}');
   await offline();
   await page.reload();

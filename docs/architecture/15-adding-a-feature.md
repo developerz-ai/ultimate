@@ -7,9 +7,9 @@ The loop, end to end. Worked example: **posts, with publishing, a live feed, and
 | # | Step | Command | Lands in |
 |---|---|---|---|
 | 0 | Pick the surface | — | see the table below |
-| 1 | Generate the slice | `x g resource post --live --admin` | 16 files ([`12-generated-app.md`](./12-generated-app.md)) |
+| 1 | Generate the slice | `x g resource post --live --admin` | 27 files — 25 without either flag ([`12-generated-app.md`](./12-generated-app.md)) |
 | 2 | Entity + invariants | edit | `packages/db/src/schema/posts.ts`, `apps/web/app/posts/entity.ts` |
-| 3 | Migration | `x db gen "create posts"` | `packages/db/migrations/NNNN_create_posts.sql` |
+| 3 | Migration | `x db gen "create posts"` | `packages/db/migrations/<stamp>_create_posts.{sql,snapshot.json,hash}` |
 | 4 | Apply | `x db migrate` | the dev database |
 | 5 | Policy | edit | `apps/web/app/posts/policy.ts` |
 | 6 | Service | edit | `apps/web/app/posts/service.ts` |
@@ -79,9 +79,16 @@ export const PostView = posts.$view(['id', 'title', 'excerpt', 'cover', 'publish
 ## 3–4. Migration
 
 ```bash
-x db gen "create posts"     # diffs entity source vs. the latest snapshot, writes the .sql + hash
+x db gen "create posts"     # diffs entity source vs. the latest snapshot; writes .sql + .snapshot.json + .hash
 x db migrate                  # applies to the dev database, then re-reads the live catalog
 ```
+
+`x db gen` is the **only** writer of `packages/db/migrations`, `As of 2026-08` — `x new` scaffolds
+none, so step 3 in a brand-new app is `x db gen "initial"`, and from step 2 (the first `entity()`)
+until it runs, the `drift` step is red naming it. An app that declares **no** entity is not drifting:
+zero declared against zero recorded is agreement, which is what keeps `x new --no-example` green
+before its first entity. Foreign keys are emitted as `alter table … add constraint` after every table
+statement, so the order entities register in cannot produce a migration that will not apply.
 
 Three separate checks, and conflating them is how a "drift" report gets chased in the wrong place.
 

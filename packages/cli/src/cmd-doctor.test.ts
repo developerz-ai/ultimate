@@ -15,6 +15,7 @@ const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   exists: () => true,
   portFree: async () => true,
   drift: async () => [],
+  snapshots: async () => [],
   ...over,
 });
 
@@ -70,6 +71,24 @@ describe('unit · x doctor', () => {
       }),
     );
     expect(findings.at(-1)?.fix).toBe('x db gen "add publish_at"');
+  });
+
+  // `X_CLI_UNEXPECTED`'s own `fix:` is `x doctor --json`, and the throw an author most often hits
+  // on a first run is `x db gen` refusing a migration with no snapshot — a condition this probe
+  // could not see, so the fix ran clean and reported nothing about the thing that was broken.
+  test('a migration with no snapshot sidecar is reported, so the X_CLI_UNEXPECTED fix answers', async () => {
+    const findings = await runDoctor(
+      probe({
+        snapshots: async () => [
+          {
+            code: 'X_MIGRATION_SNAPSHOT_MISSING',
+            cause: 'migration "0001_init" records no schema snapshot',
+            fix: 'git checkout -- packages/db/migrations/0001_init.snapshot.json',
+          },
+        ],
+      }),
+    );
+    expect(findings.map((finding) => finding.code)).toEqual(['X_MIGRATION_SNAPSHOT_MISSING']);
   });
 
   // A finding every developer sees on day one is one they learn to skip, and the report goes with

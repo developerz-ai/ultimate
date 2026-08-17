@@ -28,12 +28,28 @@ export interface GeneratedSourceFile {
 }
 
 /**
+ * A module the feature slice owns and no single generator does — `entity.ts`, `repo.ts`,
+ * `policy.ts`, `errors.ts`. Several generators import one and none of them wrote it, so `x g job`
+ * into a slice that has no `repo.ts` emitted an import against nothing. Emitting it as an ordinary
+ * file is the opposite failure: the copy on disk is the author's, and rewriting it (or reporting
+ * `X_GENERATE_CONFLICT` and abandoning the whole set) is how `x g action` into an existing slice
+ * stops working. `'if-absent'` is the third answer — written when the slice lacks it, left exactly
+ * as it is when the slice has it, `--force` included, and never a conflict either way.
+ */
+export interface GeneratedFoundationFile {
+  /** POSIX path relative to the app root. */
+  readonly path: string;
+  readonly contents: string;
+  readonly merge: 'if-absent';
+}
+
+/**
  * Split on `merge` rather than widening one shape's `contents` in place, so the split is
  * load-bearing, not cosmetic: a `merge: 'json'` file's `contents` stays a plain `string` at the
  * type level, which is what stops a byte-carrying file from ever reaching
  * `cmd-generate.ts`'s JSON parser — the compiler refuses the call before the code can run.
  */
-export type GeneratedFile = GeneratedJsonFile | GeneratedSourceFile;
+export type GeneratedFile = GeneratedJsonFile | GeneratedSourceFile | GeneratedFoundationFile;
 
 const words = (input: string): readonly string[] =>
   input
