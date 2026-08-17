@@ -4,7 +4,7 @@ status: in_progress
 created_by: sebi
 worked_by: "claude (hive of 4 per PR, one checkout)"
 owner: sebi
-percent: 94
+percent: 97
 current_focus: >
   02 and 06 are DONE across three PRs — realtime #107, cache/query/jobs/core/db #110, http/action
   #112. auth and entity needed nothing: every finding naming them was already closed by #104 and
@@ -15,7 +15,9 @@ current_focus: >
   11+14 land as #114; 08 as #116 at 85% — C5+C8 (the prod server wrapping the whole dev CLI, and
   realtime's single barrel serving browser and wire code) are DEFERRED to their own PR, because
   splitting a package's entry points is boundary surgery and does not belong in a deletion wave.
-  Next: 15 (dead code + driver parity), then 12, 13.
+  15 lands as #117 at 85% — the identity-function consolidation (fnv1a, sha256_16, canonicalJson)
+  needs @ultimat3/core and must resolve query's missing document/hash split FIRST, or it publishes
+  bare NaN tokens into a document surface. Next: 12 (both tracked apps), then 13 (docs drift).
 slices:
   - file: 05-gate-and-scripts.md
     tier: 0
@@ -60,7 +62,7 @@ slices:
   - file: 03-tier45-bugs.md
     tier: 4
     status: done
-    percent: 94
+    percent: 97
     pr: 113
   - file: 11-deploy-ci.md
     tier: 5
@@ -83,8 +85,9 @@ slices:
     percent: 0
   - file: 15-dead-code-drift.md
     tier: 0
-    status: not_started
-    percent: 0
+    status: done
+    percent: 85
+    pr: 117
   - file: 13-docs-drift.md
     tier: 5
     status: not_started
@@ -387,6 +390,55 @@ evidence:
          set; ISR caches by pathname with no locale in the key (pre-existing); registerRoute is
          still never called with the admin route table."
     retired_codes: [X_SEO_BUDGET_EXCEEDED, X_READONLY_VIOLATION]
+  - pr: 117
+    slices: ['15']
+    gate: "14 of 17 passed, 3 skipped; app gate every pin holds"
+    falsified:
+      - "The slice frames these as '42 divergences'. In FOUR OF SIX SEAMS the in-memory driver was
+         not merely different — it was CONCEALING a defect that only appears in production. Every
+         one reads as 'dev works, production does not', which is the exact failure a parity test
+         exists to make impossible."
+      - "A5's named scenario was ALREADY CLOSED — expired AND claimed by another worker fenced
+         correctly on both sides. The live case was expired AND UNCLAIMED, which the audit did not
+         name: pg revived it, memory refuses it, and the caller turns a refused renewal into
+         X_JOB_SLOT_LOST — so a stalled worker was killed in dev and ran on in production."
+      - "A8/A9 are NOT construction-time validation differences; both drivers already validate
+         symmetrically there. One is a send-time gate, the other a send-time identifier."
+      - "isRecord is SEVEN shipped declarations, not twelve, and purge-http.ts's is NOT public API —
+         index.ts re-exports two other symbols from that file and the package has one entry point.
+         No BREAKING entry was needed."
+      - "query has NO canonicalJson at all, so the 'three identical copies' claim was two. And there
+         are FOUR fnv1a declarations, not three — one is named contentHash — so only two of the
+         three 'contentHashes' are content hashes; render's is FNV-1a, not sha256."
+      - "recentTierFailures()'s stated reason to keep was FALSE: the /_x panel does not read it
+         (dev-dashboard.ts imports recentInvalidations and nothing else). Kept for a different
+         reason — it is the only evidence a degraded tier leaves."
+      - "list()'s 'must not read every file' comment was false AND worse than reported: copy()
+         inherited the same read, and get() was reading its file twice."
+    decided:
+      - "Mail refuses at the SEND, not at boot, and only outside development/test. Boot refusal
+         turns a working deploy of a mail-less app into a failing one; refusal at send lands on the
+         path that needed the capability, where the queue's retry and dead-letter paths already
+         know what to do with it."
+      - "DECLINED 'make s3 signedUrl refuse maxBytes' — grant.ts passes it on EVERY grant, so it
+         would throw on every s3 upload in every app. DECLINED 'make local refuse metadata' — it
+         would delete a working tested capability to buy symmetry with a temporary Bun limitation.
+         Both halves pinned instead, so the s3 line fails when Bun grows the hook."
+      - "MemoryAdapter not enforcing email uniqueness STAYS, as a Known-Gaps row: every fix mints a
+         refusal Postgres does not throw, and the defensible home is a check in register() — an
+         ACCOUNT-ENUMERATION decision, which auth's whole loginFailed() doctrine exists to avoid."
+      - "Six parity suites, and the shape differs by seam: four run both drivers FOR REAL; jobs and
+         auth assert the SQL that would go out — and auth's asserts BOUND VALUES, not text, which is
+         stronger than the shape it was copied from."
+    deferred:
+      - "The identity-function consolidation needs @ultimat3/core (tier 0) and must resolve query's
+         missing document/hash split FIRST, or it publishes bare NaN tokens into a document surface.
+         Surveyed with measured facts so it lands as a decision rather than a grep."
+      - "The upload ceiling on a bucket-backed disk: a presigned S3 PUT cannot carry maxBytes and
+         grantUpload promises it regardless. The two places that could enforce it are a mounted
+         accept path (which does not exist) or a post-upload object.size check in promoteAttachment."
+      - "Wiring the /_x panel to recentTierFailures, in cli/src/dev-dashboard.ts."
+    new_codes: [X_MAIL_CREDENTIAL_MISSING, X_STORAGE_LIST_FAILED]
 notes: >
   Slice order in this file is execution order, not tier order — 05 and 10 land first because the gate
   does not yet mean what it says, and 08 lands late because it is mostly deletions that would collide
