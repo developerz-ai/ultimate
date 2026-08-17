@@ -29,6 +29,7 @@ import {
   findingFor,
   sharedLeafFindingFor,
 } from './boundaries';
+import { errorStatusCompleteness } from './error-map';
 import { errorRendering } from './error-render';
 import { flagBool, parseScriptArgs } from './lib/args';
 import { writeOut } from './lib/log';
@@ -123,14 +124,19 @@ export const errorCodeDocs: HostCheck = async (root) => {
 };
 
 /**
- * The `errors` step's host half: the reference page's two rules, plus the rule that an error
- * factory may not die formatting its own message. Three rules on one step, the same shape
- * `boundaries` already carries — a rule about errors belongs on the errors step, not on a
- * fourteenth one an agent has to learn the name of.
+ * The `errors` step's host half: the reference page's two rules, the rule that an error factory
+ * may not die formatting its own message, and the rule that `@ultimat3/http`'s status table stays
+ * closed. Four rules on one step, the same shape `boundaries` already carries — a rule about
+ * errors belongs on the errors step, not on an eighteenth one an agent has to learn the name of.
+ *
+ * The completeness rule is deliberately NOT its own step: `VerifyStepName` is a closed union owned
+ * by `@ultimat3/cli`, and a generated app would inherit a step name that only this repo can run.
+ * It blocks `x verify` either way, which is what "enforced, not documented" asks for.
  */
 export const errorContract: HostCheck = async (root) => [
   ...(await errorCodeDocs(root)),
   ...(await errorRendering(root)),
+  ...(await errorStatusCompleteness(root)),
 ];
 
 export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {

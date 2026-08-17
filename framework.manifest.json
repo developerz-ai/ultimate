@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "ff623eefe238316b928facb903cb4e87573dd3a1aeb767886f5b975ed7ba9195",
+  "buildId": "b455bdef549b0ed104a22fcd9cd0d46023fce46e0861ee363cae5488bb47eb90",
   "tiers": {
     "0": [
       "core",
@@ -796,9 +796,24 @@
       "at": "packages/core/src/error-codes.ts"
     },
     {
+      "code": "X_ERROR_STATUS_BACKLOG_STALE",
+      "owner": "scripts",
+      "at": "scripts/error-map.ts"
+    },
+    {
       "code": "X_ERROR_STATUS_INVALID",
       "owner": "http",
       "at": "packages/http/src/errors.ts"
+    },
+    {
+      "code": "X_ERROR_STATUS_MISSING",
+      "owner": "scripts",
+      "at": "scripts/error-map.ts"
+    },
+    {
+      "code": "X_ERROR_STATUS_UNKNOWN_CODE",
+      "owner": "scripts",
+      "at": "scripts/error-map.ts"
     },
     {
       "code": "X_EVAL_BASELINE_INVALID",
@@ -907,6 +922,11 @@
     },
     {
       "code": "X_IDEMPOTENCY_CONFLICT",
+      "owner": "action",
+      "at": "packages/action/src/errors.ts"
+    },
+    {
+      "code": "X_IDEMPOTENCY_KEY_INVALID",
       "owner": "action",
       "at": "packages/action/src/errors.ts"
     },
@@ -1034,6 +1054,11 @@
       "code": "X_LD_INVALID",
       "owner": "seo",
       "at": "packages/seo/src/errors.ts"
+    },
+    {
+      "code": "X_LIFECYCLE_DRAINED",
+      "owner": "core",
+      "at": "packages/core/src/lifecycle-errors.ts"
     },
     {
       "code": "X_LINT_FAILED",

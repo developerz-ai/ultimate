@@ -52,17 +52,22 @@ function write(value: unknown, indent: number, depth: number): string {
   return `{${pad}${entries.join(`,${pad || ''}`)}${close}}`;
 }
 
-/** FNV-1a/32 as hex. Fingerprinting only — never a security boundary. */
-export function fnv1a(input: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, '0');
-}
-
-/** Stable fingerprint of any JSON-ish value. */
+/**
+ * SHA-256, first 16 hex characters — the same primitive and width `@ultimat3/query`'s `fingerprint`
+ * and `@ultimat3/realtime`'s `stableDigest` already chose, and for the same reason.
+ *
+ * A fingerprint here is a SHARING key over input a client chooses, not a checksum. It is the
+ * `requestHash` that decides "same request, replay the stored response" and the job dedupe key
+ * `job-handle.ts` files an enqueue under, so a collision hands one caller's stored response to a
+ * different request, or drops an enqueue as a duplicate of a job it shares nothing with. FNV-1a/32
+ * — what this was — is 4x10^9 values, brute-forceable offline in seconds, so a payload landing on
+ * another request's hash was something an attacker could mint rather than something they had to
+ * wait for.
+ *
+ * The canonical form above is unchanged, so the only thing that moved is the hash: an idempotency
+ * record reserved before this deploy answers a retry as a payload mismatch
+ * (`X_IDEMPOTENCY_CONFLICT`), whose fix — send a fresh key — is the right instruction.
+ */
 export function fingerprint(value: unknown): string {
-  return fnv1a(stableStringify(value));
+  return new Bun.CryptoHasher('sha256').update(stableStringify(value)).digest('hex').slice(0, 16);
 }

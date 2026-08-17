@@ -66,7 +66,7 @@ export { defineApi } from './define-api';
  */
 export type { Deprecation, DeprecationField, DeprecationRender } from './deprecation';
 export { recordDeprecatedCall, renderDeprecation } from './deprecation';
-export type { IdempotencyConflictReason, RemoteFailure } from './errors';
+export type { IdempotencyConflictReason, IdempotencyKeyProblem, RemoteFailure } from './errors';
 export {
   ActionDeniedError,
   ActionDeprecationInvalidError,
@@ -79,6 +79,7 @@ export {
   AuditSinkMissingError,
   ContractDriftError,
   IdempotencyConflictError,
+  IdempotencyKeyInvalidError,
   IdempotencyNotSharedError,
   IdempotencyReplayedFailureError,
   InputInvalidError,
@@ -97,7 +98,8 @@ export {
 /**
  * The idempotency seam. `withIdempotency` and `IDEMPOTENCY_HEADER` are both public, so a plain
  * mutating `route` can reserve-and-replay exactly as an action does — `idempotencyKeyFor` is the
- * namespacing it must apply, or two routes sharing a caller's key would share one record.
+ * namespacing it must apply, or two routes sharing a caller's key would share one record, and so
+ * would two callers sending one key value.
  */
 export type {
   IdempotencyConfig,
@@ -115,11 +117,11 @@ export {
   DEFAULT_IDEMPOTENCY_CONFIG,
   getIdempotencyStore,
   idempotencyConfig,
-  idempotencyKeyFor,
   resetIdempotency,
   setIdempotencyStore,
   withIdempotency,
 } from './idempotency';
+export { idempotencyKeyFor, MAX_IDEMPOTENCY_KEY_LENGTH } from './idempotency-key';
 export type { MemoryIdempotencyStoreOptions } from './idempotency-memory';
 export {
   DEFAULT_IDEMPOTENCY_WINDOW_MS,

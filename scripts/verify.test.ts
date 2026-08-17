@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { exec, readVerifyFloor, VERIFY_STEPS, verifyStepNames } from '@ultimat3/cli';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 // Only the integration assertion below lives here — `checkRoadmap`'s own cases are in
 // `scripts/roadmap.test.ts`, next to their source.
 import { checkRoadmap } from './roadmap';
@@ -30,28 +30,28 @@ describe('unit · the repo gate is the CLI gate', () => {
     expect(Object.keys(HOST_CHECKS)).toEqual(['boundaries', 'errors', 'manifest', 'roadmap']);
   });
 
-  // `errorCodeDocs` calls the CLI's process-wide `registeredErrorCodes()`, which dynamically
-  // imports every @ultimat3/* package to build the registry — real work regardless of how small
-  // `dir` is. Bun's 5s default covered that while the suite ran serially and stopped the moment
-  // `x test` began sharding across workers, because the shards compete for the same cores. The
-  // import walk is the point of the call, so the timeout is what moves. Same shape as
-  // `packages/cli/src/error-contract.test.ts`'s `this repo` describe block.
-  test('the error reference is enforced through the errors step', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-docs-'));
-    try {
-      await Bun.write(
-        join(dir, 'packages/core/src/errors.ts'),
-        "export const CORE_ERROR_CODES = ['X_MADE_UP'] as const;\n",
-      );
-      await Bun.write(join(dir, ERROR_REFERENCE), '# Error codes\n');
-      const findings = await errorCodeDocs(dir);
-      expect(findings).toHaveLength(1);
-      expect(findings[0]?.code).toBe('X_ERROR_CODE_UNDOCUMENTED');
-      expect(findings[0]?.at).toBe(ERROR_REFERENCE);
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  }, 30_000);
+  // `errorCodeDocs` dynamically imports every @ultimat3/* package to build the registry — real
+  // work regardless of how small `dir` is. `REPO_SCAN_TIMEOUT_MS` says why the budget moved.
+  test(
+    'the error reference is enforced through the errors step',
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-docs-'));
+      try {
+        await Bun.write(
+          join(dir, 'packages/core/src/errors.ts'),
+          "export const CORE_ERROR_CODES = ['X_MADE_UP'] as const;\n",
+        );
+        await Bun.write(join(dir, ERROR_REFERENCE), '# Error codes\n');
+        const findings = await errorCodeDocs(dir);
+        expect(findings).toHaveLength(1);
+        expect(findings[0]?.code).toBe('X_ERROR_CODE_UNDOCUMENTED');
+        expect(findings[0]?.at).toBe(ERROR_REFERENCE);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
 
   test('a documented code no package registers fails the same step', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-registry-'));
@@ -121,20 +121,24 @@ describe('unit · the repo gate is the CLI gate', () => {
    * Asserted as a ratchet rather than as a fixed list, so a step that starts applying here has to
    * join the floor in the same commit.
    */
-  test('the committed floor names every step that applies in this repo', async () => {
-    const root = repoRoot();
-    const floor = await readVerifyFloor(root);
-    expect(floor?.problems).toEqual([]);
-    const ctx = { root, runner: exec, hostChecks: HOST_CHECKS };
-    const missing: string[] = [];
-    for (const step of VERIFY_STEPS) {
-      // No `applies` means the step always runs, so it can never vanish and needs no floor line.
-      if (step.applies === undefined) continue;
-      if (!(await step.applies(ctx))) continue;
-      if (floor?.steps.includes(step.name) !== true) missing.push(step.name);
-    }
-    expect(missing).toEqual([]);
-  }, 30_000);
+  test(
+    'the committed floor names every step that applies in this repo',
+    async () => {
+      const root = repoRoot();
+      const floor = await readVerifyFloor(root);
+      expect(floor?.problems).toEqual([]);
+      const ctx = { root, runner: exec, hostChecks: HOST_CHECKS };
+      const missing: string[] = [];
+      for (const step of VERIFY_STEPS) {
+        // No `applies` means the step always runs, so it can never vanish and needs no floor line.
+        if (step.applies === undefined) continue;
+        if (!(await step.applies(ctx))) continue;
+        if (floor?.steps.includes(step.name) !== true) missing.push(step.name);
+      }
+      expect(missing).toEqual([]);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
 
   /**
    * `tsc -b` compiles the projects the root REFERENCES and nothing else, and a project can only be
@@ -159,42 +163,51 @@ describe('unit · the repo gate is the CLI gate', () => {
    * project fails nothing once the reference is gone. Run on a two-file solution in a temp dir —
    * the repo's own build is minutes and writes `.tsbuildinfo` every other suite shares.
    */
-  test('tsc -b fails on a referenced project and passes over an unreferenced one', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-refs-'));
-    try {
-      const project = {
-        compilerOptions: { composite: true, noEmit: true, strict: true, types: [] },
-      };
-      for (const name of ['sub', 'other']) {
-        await Bun.write(join(dir, name, 'tsconfig.json'), JSON.stringify(project));
+  test(
+    'tsc -b fails on a referenced project and passes over an unreferenced one',
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-refs-'));
+      try {
+        const project = {
+          compilerOptions: { composite: true, noEmit: true, strict: true, types: [] },
+        };
+        for (const name of ['sub', 'other']) {
+          await Bun.write(join(dir, name, 'tsconfig.json'), JSON.stringify(project));
+        }
+        await Bun.write(join(dir, 'other/ok.ts'), 'export const ok = 1;\n');
+        await Bun.write(
+          join(dir, 'sub/probe.ts'),
+          "export const probe: number = 'not a number';\n",
+        );
+        const tsc = join(repoRoot(), 'node_modules/.bin/tsc');
+        // `other` is always referenced, so the solution has something to build either way and the
+        // exit code is answering "was sub compiled?" and not "was this configuration empty?".
+        const build = async (paths: readonly string[]): Promise<number> => {
+          const references = paths.map((path) => ({ path }));
+          await Bun.write(join(dir, 'tsconfig.json'), JSON.stringify({ files: [], references }));
+          await rm(join(dir, 'sub/tsconfig.tsbuildinfo'), { force: true });
+          return (await exec([tsc, '-b', '--pretty', 'false'], { cwd: dir })).code;
+        };
+        expect(await build(['./other', './sub'])).not.toBe(0);
+        expect(await build(['./other'])).toBe(0);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
       }
-      await Bun.write(join(dir, 'other/ok.ts'), 'export const ok = 1;\n');
-      await Bun.write(join(dir, 'sub/probe.ts'), "export const probe: number = 'not a number';\n");
-      const tsc = join(repoRoot(), 'node_modules/.bin/tsc');
-      // `other` is always referenced, so the solution has something to build either way and the
-      // exit code is answering "was sub compiled?" and not "was this configuration empty?".
-      const build = async (paths: readonly string[]): Promise<number> => {
-        const references = paths.map((path) => ({ path }));
-        await Bun.write(join(dir, 'tsconfig.json'), JSON.stringify({ files: [], references }));
-        await rm(join(dir, 'sub/tsconfig.tsbuildinfo'), { force: true });
-        return (await exec([tsc, '-b', '--pretty', 'false'], { cwd: dir })).code;
-      };
-      expect(await build(['./other', './sub'])).not.toBe(0);
-      expect(await build(['./other'])).toBe(0);
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  }, 30_000);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
 
-  // Four full-repo scans, one of them a complete manifest regeneration over 29 packages. Bun's
-  // 5s default was always marginal for that and became a failure the moment `x test` started
-  // sharding across workers, because the shards compete for the same cores. The work is the
-  // point of the test, so the timeout is what moves — not the scan.
-  test('this repo has no tier violations and its manifest still generates', async () => {
-    const root = repoRoot();
-    expect(await tierBoundaries(root)).toEqual([]);
-    expect(await frameworkManifest(root)).toEqual([]);
-    expect(await errorCodeDocs(root)).toEqual([]);
-    expect(await checkRoadmap(root)).toEqual([]);
-  }, 30_000);
+  // Four full-repo scans, one of them a complete manifest regeneration over 29 packages —
+  // `REPO_SCAN_TIMEOUT_MS`.
+  test(
+    'this repo has no tier violations and its manifest still generates',
+    async () => {
+      const root = repoRoot();
+      expect(await tierBoundaries(root)).toEqual([]);
+      expect(await frameworkManifest(root)).toEqual([]);
+      expect(await errorCodeDocs(root)).toEqual([]);
+      expect(await checkRoadmap(root)).toEqual([]);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
 });

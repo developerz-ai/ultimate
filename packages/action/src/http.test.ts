@@ -114,6 +114,64 @@ describe('an action route over the pipeline', () => {
 });
 
 /**
+ * `req.header()` is `Headers.get()`, which answers `''` for `Idempotency-Key:` and never `null`,
+ * so a blank header used to become a live key — one record shared by every caller who sent one.
+ * The refusal is raised before the handler, so nothing has been written when it lands.
+ */
+describe('an idempotent action over the pipeline', () => {
+  const counter = (runs: { count: number }) =>
+    action({
+      input: t.object({ postId: t.uuid }),
+      output: t.object({ runs: t.number }),
+      policy: allow(),
+      idempotent: true,
+      handle: () => {
+        runs.count += 1;
+        return { runs: runs.count };
+      },
+    }).named('countPost');
+
+  const call = (target: AnyAction, key: string | null) =>
+    createServer({ routes: [toRoute(target)], config: oneProcess() }).fetch(
+      new Request('http://dev.test/api/posts/count', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(key === null ? {} : { 'idempotency-key': key }),
+        },
+        body: JSON.stringify({ postId: POST_ID }),
+      }),
+    );
+
+  test('a blank Idempotency-Key is refused with a code, and nothing runs', async () => {
+    const runs = { count: 0 };
+    const response = await call(counter(runs), '');
+    const body = (await response.json()) as { code?: string };
+
+    expect(body.code).toBe('X_IDEMPOTENCY_KEY_INVALID');
+    expect(runs.count).toBe(0);
+  });
+
+  // RED until `X_IDEMPOTENCY_KEY_INVALID: 400` is added to `ERROR_STATUS` in
+  // `packages/http/src/error-map.ts` — the framework's one code-to-status table, which this
+  // package may not write to. A code with no row there is `DEFAULT_STATUS`, and `pipeline.ts`
+  // reports every `status >= 500` to the error monitor: a caller's blank header would page
+  // whoever is on call, which is the exact failure that table's own comment describes.
+  test('and it is a 400 — the row belongs in http ERROR_STATUS, not here', async () => {
+    const response = await call(counter({ count: 0 }), '');
+    expect(response.status).toBe(400);
+  });
+
+  test('no header at all is still the un-keyed path, which runs every time', async () => {
+    const runs = { count: 0 };
+    const target = counter(runs);
+    expect((await call(target, null)).status).toBe(200);
+    expect((await call(target, null)).status).toBe(200);
+    expect(runs.count).toBe(2);
+  });
+});
+
+/**
  * A JS-less `<form method="post">` is what `site/` encourages — 0kb JS — and this projection
  * wrapped every return in `json()`, so the reader landed on `{"ok":true,"next":"/feed"}`. A
  * `Location` set through `ctx.headers` did not help: it arrived on a 200, which browsers ignore.

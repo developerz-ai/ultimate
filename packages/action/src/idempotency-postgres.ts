@@ -4,7 +4,7 @@
  * without it, `replicas: 3` means a retry that lands elsewhere re-runs a committed handler.
  * Statements are spelled out so an agent can run the exact one it saw in a log.
  */
-import { uuid } from '@ultimat3/core';
+import { logger, uuid } from '@ultimat3/core';
 import type {
   IdempotencyFailure,
   IdempotencyRecord,
@@ -81,12 +81,24 @@ select key, id, request_hash, status, value, failure,
    and created_at >= now() - make_interval(secs => $2::double precision)
 `;
 
+/**
+ * `and status = 'in-flight'` is a FENCE, not a filter — the one `@ultimat3/jobs`' `SQL_ACK` carries
+ * as `and state = 'running'`, for the same failure. A reservation whose window lapsed is reclaimed
+ * by the next caller (`do update` above), so a straggler from the first one arriving afterwards
+ * overwrote a record it no longer owned: the next replay under that key answered a retry with a
+ * value produced for a different request. `returning key` is what makes the refusal observable —
+ * an update matching no row is indistinguishable from one that matched, otherwise.
+ */
 export const SQL_IDEMPOTENCY_SETTLE = `
-update x_idempotency set status = 'settled', value = $2::jsonb, failure = null where key = $1
+update x_idempotency set status = 'settled', value = $2::jsonb, failure = null
+ where key = $1 and status = 'in-flight'
+returning key
 `;
 
 export const SQL_IDEMPOTENCY_FAIL = `
-update x_idempotency set status = 'failed', value = null, failure = $2::jsonb where key = $1
+update x_idempotency set status = 'failed', value = null, failure = $2::jsonb
+ where key = $1 and status = 'in-flight'
+returning key
 `;
 
 export const SQL_IDEMPOTENCY_RELEASE = `delete from x_idempotency where key = $1`;
@@ -195,11 +207,13 @@ export function postgresIdempotencyStore(
     },
 
     async settle(key, value): Promise<void> {
-      await exec.query(SQL_IDEMPOTENCY_SETTLE, [key, JSON.stringify(value ?? null)]);
+      const rows = await exec.query(SQL_IDEMPOTENCY_SETTLE, [key, JSON.stringify(value ?? null)]);
+      fenced(rows, key, 'settle');
     },
 
     async fail(key, failure: IdempotencyFailure): Promise<void> {
-      await exec.query(SQL_IDEMPOTENCY_FAIL, [key, JSON.stringify(failure)]);
+      const rows = await exec.query(SQL_IDEMPOTENCY_FAIL, [key, JSON.stringify(failure)]);
+      fenced(rows, key, 'fail');
     },
 
     async release(key): Promise<void> {
@@ -216,6 +230,17 @@ export function postgresIdempotencyStore(
       return rows.length;
     },
   };
+}
+
+/**
+ * Logged, never thrown. A settlement lands after the handler has committed, so raising here would
+ * turn a durable write into the caller's error — the rule `withIdempotency` already follows for a
+ * store that refuses. An operator still has to see it: a fenced settle means this attempt's record
+ * belongs to another reservation, and the value this attempt produced is stored nowhere.
+ */
+function fenced(rows: readonly unknown[], key: string, statement: 'settle' | 'fail'): void {
+  if (rows.length > 0) return;
+  logger.warn('action.idempotency.settlement-fenced', { key, statement });
 }
 
 function toRecord(row: IdempotencyRow): IdempotencyRecord {

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { frozenClock, systemClock } from './clock';
+import { UltimateError } from './errors';
 import {
   beginWork,
   configureLifecycle,
@@ -351,6 +352,73 @@ describe('the drain deadline', () => {
     // budget, on a clock a test controls, for a deadline the kubelet enforces in real seconds.
     expect(seen).toBeLessThan(1_000_000);
     expect(seen).toBeGreaterThan(systemClock.monotonic());
+  });
+});
+
+/**
+ * One process, one lifecycle. These pin the half of that rule the deadline work did not touch:
+ * `drain()` memoizes and `state` never leaves `stopped`, so the SECOND thing in a process to call
+ * `markReady()` used to be told nothing at all.
+ */
+describe('a drained lifecycle is terminal', () => {
+  test('markReady() after a drain is REFUSED, never a silent no-op', async () => {
+    markReady();
+    await drain('SIGTERM');
+    expect(lifecycleState()).toBe('stopped');
+
+    // Measured before this refusal existed: `markReady()` returned normally, the state stayed
+    // `stopped`, and `@ultimat3/http`'s `createServer().start()` went on to bind a real port that
+    // answered 503 to every request and was still accepting connections after its own `stop()`.
+    expect(() => markReady()).toThrow(/X_LIFECYCLE_DRAINED/);
+    expect(lifecycleState()).toBe('stopped');
+  });
+
+  test('the refusal names the state it refused and the one call that undoes it', async () => {
+    await drain('SIGTERM');
+    let thrown: unknown;
+    try {
+      markReady();
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(UltimateError);
+    const error = thrown as UltimateError;
+    expect(error.code).toBe('X_LIFECYCLE_DRAINED');
+    // A code alone is not an instruction: whoever reads this is either booting a role too late or
+    // is in a test that forgot the reset, and the line has to answer both.
+    expect(error.cause).toContain('stopped');
+    expect(error.fix).toContain('resetLifecycle()');
+  });
+
+  test('a drain still IN FLIGHT refuses too — a late start() cannot un-drain a SIGTERM', async () => {
+    const stuck = deferred();
+    markReady();
+    onShutdown('slow-accept', () => stuck.promise, { phase: 'accept' });
+
+    const drained = drain('SIGTERM');
+    expect(lifecycleState()).toBe('draining');
+    expect(() => markReady()).toThrow(/X_LIFECYCLE_DRAINED/);
+
+    stuck.resolve();
+    await drained;
+  });
+
+  /**
+   * Why the answer is a refusal and not a repair. A drain is memoized on purpose — concurrent
+   * signals join one drain — so everything registered after it is unreachable, and "let the second
+   * server start" would mean handing it hooks nothing will ever call.
+   */
+  test('a hook registered after the drain never runs, and the second drain never happens', async () => {
+    await drain('SIGTERM');
+    let ran = 0;
+    onShutdown('registered-too-late', () => {
+      ran += 1;
+    });
+
+    await drain('manual');
+
+    expect(ran).toBe(0);
+    expect(lifecycleState()).toBe('stopped');
   });
 });
 

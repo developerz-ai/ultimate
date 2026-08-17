@@ -2,7 +2,13 @@
 // network, and `handle.fetch()` runs the identical pipeline in-process. The real
 // listen path is covered by e2e/server.e2e.test.ts, which is opt-in.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { inflightCount, lifecycleState, resetLifecycle } from '@ultimat3/core';
+import {
+  drain,
+  inflightCount,
+  lifecycleState,
+  resetLifecycle,
+  shutdownHookCount,
+} from '@ultimat3/core';
 import { defineHttpConfig } from './config';
 import { memoryRateLimitStore, type RateLimitStore } from './rate-limit';
 import { json, text } from './response';
@@ -145,6 +151,31 @@ describe('lifecycle wiring', () => {
     const before = inflightCount();
     await server().fetch(new Request('http://local/ping'));
     expect(inflightCount()).toBe(before);
+  });
+
+  /**
+   * One process, one lifecycle. A second `start()` after a drain used to bind a real port and then
+   * answer 503 to everything forever — measured: the socket was still accepting connections after
+   * that second handle's own `stop()` returned, because `drain()` had memoized on the first drain
+   * and the close hook never ran again.
+   *
+   * No socket is bound by any of this, and that is the assertion: the refusal has to arrive BEFORE
+   * `Bun.serve`, or the port is taken by the very handle that cannot serve from it.
+   */
+  test('start() after a drain is refused before any socket is bound', async () => {
+    await drain('manual');
+    const hooksBefore = shutdownHookCount();
+    const handle = server();
+    // Core's state, read through the handle — this package keeps no second copy to disagree with.
+    expect(handle.state()).toBe('stopped');
+
+    expect(() => handle.start()).toThrow(/X_LIFECYCLE_DRAINED/);
+
+    // `url()` still refusing is what proves nothing was bound: `start()` assigns the server before
+    // it registers anything, so a refusal raised after `Bun.serve` would leave a real origin here.
+    expect(() => handle.url()).toThrow(/X_SERVER_NOT_STARTED|start\(\)/);
+    // And nothing was left behind for the next drain to call against a torn-down handle.
+    expect(shutdownHookCount()).toBe(hooksBefore);
   });
 
   test('a handler that throws still balances the in-flight count', async () => {

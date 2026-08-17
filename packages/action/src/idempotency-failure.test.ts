@@ -10,6 +10,7 @@ import { t } from '@ultimat3/schema';
 import { action } from './action';
 import type { IdempotencyFailure, IdempotencyStore } from './idempotency';
 import { withIdempotency } from './idempotency';
+import { idempotencyKeyFor } from './idempotency-key';
 import { MemoryIdempotencyStore } from './idempotency-memory';
 import { invoke } from './invoke';
 
@@ -62,7 +63,9 @@ describe('a post-commit throw does not release the reservation', () => {
     await invoke(target, { amount: 10 }, { ctx: charger, store, idempotencyKey: 'key-1' }).catch(
       () => undefined,
     );
-    const record = await store.get('chargeCard:key-1');
+    // Built, never spelled: the record is filed under the caller as well as the action, so a
+    // literal here would pin the old action-only namespace and pass while every caller shared it.
+    const record = await store.get(idempotencyKeyFor('chargeCard', 'key-1', charger.actor));
     expect(record?.status).toBe('failed');
     expect(record?.failure?.code).toBe('X_OUTPUT_INVALID');
   });

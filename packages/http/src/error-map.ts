@@ -61,6 +61,20 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   // it, and because a missing row made a typo'd uuid a 500: the caller was told the server broke,
   // and the `error-map` stage reported the caller's mistake to the on-call monitor.
   X_INPUT_INVALID: 400,
+  // A retried `Idempotency-Key` naming a different payload, or one still in flight. 409 because
+  // that is what the action's own OpenAPI operation publishes for it — the runtime answered 500
+  // while the document promised 409, and a client written against the spec read the framework
+  // working exactly as designed as an outage.
+  X_IDEMPOTENCY_CONFLICT: 409,
+  // A blank or over-long `Idempotency-Key` HEADER, refused before the handler runs. 400 and not
+  // the 422 a body gets: what failed is a parameter the OpenAPI operation publishes a `maxLength`
+  // for, which is the same thing `X_INPUT_INVALID` is 400 for.
+  X_IDEMPOTENCY_KEY_INVALID: 400,
+  // 500, and deliberately not the 409 above. `IdempotencyReplayedFailureError` re-throws the FIRST
+  // attempt's own code whenever the store recorded one, so this literal code is reached only when
+  // that attempt failed carrying no code at all: an unclassified throw whose commit state nobody
+  // knows. That is the server's to explain, and it is worth reporting.
+  X_IDEMPOTENCY_REPLAYED_FAILURE: 500,
   // @ultimat3/auth — every one of these is reachable from a request: the OAuth route descriptors
   // are mounted by the app, and `authenticate` throws the session codes inside the pipeline. Without
   // a row each fell to 500, so a user pressing Cancel on a consent screen paged the on-call and a
@@ -79,15 +93,47 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   // 502, not 500: the conversation that failed is with the provider's server, and the on-call
   // question "is it us or them?" is the one a status is read for.
   X_OAUTH_EXCHANGE_FAILED: 502,
+  // 422 and not 400: the body parsed, the field is a string, and a policy rejected its CONTENT —
+  // the same class as `X_BODY_INVALID` and `X_INVARIANT_VIOLATED` above. Unmapped, a visitor
+  // choosing "password" at a signup form was reported to the on-call monitor as a server fault.
+  X_PASSWORD_WEAK: 422,
   // @ultimat3/entity
   X_NOT_FOUND: 404,
   X_ENTITY_DUPLICATE: 409,
   X_INVARIANT_VIOLATED: 422,
   X_TENANCY_UNSCOPED: 500,
   X_DB_DRIFT: 500,
+  // The three tenancy refusals, all 403, and all deliberately NOT the 404 `X_STORAGE_ORG_MISMATCH`
+  // takes: that one answers 404 because a 403 on a KEY the caller supplied confirms the key exists.
+  // These three name no resource and read no row — the comparison is the actor against an argument
+  // (`X_TENANCY_ACTOR_MISMATCH`), the actor against nothing at all (`X_TENANCY_ACTOR_ORG_REQUIRED`),
+  // or the actor's scopes at `crossTenant()` (`X_TENANCY_CROSS_DENIED`) — so the answer is the same
+  // whether or not the other tenant's row exists, and a 404 would buy no secrecy for the lie.
+  X_TENANCY_ACTOR_MISMATCH: 403,
+  // 403 and never 401, for the reason `X_CSRF_BLOCKED` is one: the actor may be fully
+  // authenticated and merely carry no org — a service actor minted without one — so a 401 sends a
+  // signed-in caller to a sign-in page that cannot give them a tenant.
+  X_TENANCY_ACTOR_ORG_REQUIRED: 403,
+  X_TENANCY_CROSS_DENIED: 403,
+  // @ultimat3/db — the constraints a request trips, both 409. db's own `fix:` for the unique
+  // violation says "answer 409, which is what a raced signup is", and `X_ENTITY_DUPLICATE` — the
+  // same event one layer up — is 409 above; a foreign key rides with it because both halves of it
+  // are a conflict with the state that is there (the parent is missing, or the child still points
+  // at it), which 422 describes only for the insert.
+  X_DB_UNIQUE_VIOLATION: 409,
+  X_DB_FOREIGN_KEY_VIOLATION: 409,
   // @ultimat3/policy
   X_POLICY_MISSING: 500,
   X_PERMISSION_UNKNOWN: 500,
+  // @ultimat3/query — the read declares no id, so no cursor can name a position in it. The one
+  // paging failure that is NOT the caller's: the fix is an edit to the read's own select, nothing
+  // the client sends changes the answer, and the report to the on-call monitor is the point.
+  X_QUERY_NOT_PAGEABLE: 500,
+  // @ultimat3/i18n — a well-formed tag outside the set this app ships, asserted on a value the
+  // caller supplied (`assertSupportedLocale`). 400 rather than 406: the http `locale` stage
+  // negotiates `Accept-Language` and never throws, so the tag that reaches here came from a path,
+  // query or body the caller wrote — the same place `X_IMAGE_QUERY_INVALID` comes from.
+  X_LOCALE_UNSUPPORTED: 400,
   // @ultimat3/seo — a transform query the caller wrote, so the caller is the one who can fix it.
   X_IMAGE_QUERY_INVALID: 400,
   // @ultimat3/storage — every one of these is reachable from a route: `/media/*` already serves
@@ -112,6 +158,14 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   // The caller asked for a format the pipeline cannot produce (`?f=avif`): the request names an
   // unsupported representation, which is 415 — not a 500, which would blame the server for it.
   X_IMAGE_UNSUPPORTED: 415,
+  // A page token this server minted and the caller echoed back, and it did not verify — tampered,
+  // or replayed against another read. The caller's value and the caller's repair ("request the
+  // first page again"), so it belongs beside `X_IMAGE_QUERY_INVALID` at 400 and not at 500.
+  X_CURSOR_INVALID: 400,
+  // Raised by `markReady()` while a role STARTS, in a process whose lifecycle already drained — so
+  // no request is ever answered with it, and the row exists for the reason the construction-time
+  // rows above do: this table is the closed one, and a code with no row is a 500 anyway.
+  X_LIFECYCLE_DRAINED: 500,
   X_NOT_IMPLEMENTED: 501,
   X_TIMEOUT: 504,
   X_ABORTED: 499,

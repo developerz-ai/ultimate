@@ -80,9 +80,16 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     return Promise.resolve({ record, created: true });
   }
 
+  /**
+   * Both settlements are FENCED on `in-flight`, as `SQL_IDEMPOTENCY_SETTLE` is and as
+   * `@ultimat3/jobs`' `SQL_ACK` is: a record past the window is reclaimed by the next caller, so a
+   * straggler from the reservation before it would otherwise overwrite a record it no longer owns
+   * and the next replay would answer one request with another's value. Both stores fence, or the
+   * guarantee is whichever store the deployment happens to install.
+   */
   settle(key: string, value: unknown): Promise<void> {
     const existing = this.#records.get(key);
-    if (existing !== undefined) {
+    if (existing?.status === 'in-flight') {
       this.#records.set(key, { ...existing, status: 'settled', value });
     }
     return Promise.resolve();
@@ -90,7 +97,7 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
 
   fail(key: string, failure: IdempotencyFailure): Promise<void> {
     const existing = this.#records.get(key);
-    if (existing !== undefined) {
+    if (existing?.status === 'in-flight') {
       this.#records.set(key, { ...existing, status: 'failed', value: undefined, failure });
     }
     return Promise.resolve();
