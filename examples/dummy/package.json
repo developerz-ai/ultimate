@@ -27,7 +27,7 @@
     "@ultimat3/cache": "1.2.0",
     "@ultimat3/entity": "1.2.0",
     "@ultimat3/testing": "1.2.0",
-    "typescript": "5.9.2"
+    "typescript": "7.0.2"
   },
   "dependencies": {
     "@ultimat3/cli": "1.2.0",
