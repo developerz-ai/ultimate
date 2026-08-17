@@ -32,9 +32,11 @@ export const GATED_APPS: readonly GatedApp[] = [
     reference: './examples/dummy',
     expectedRed: {
       typecheck:
-        '137 errors as of `bunx tsc -b --pretty false` — 136 inside examples/dummy, 1 leaking ' +
-        'through project refs from packages/mcp/src/transport-stdio.ts:35 (a ReadableStream ' +
-        'missing [Symbol.asyncIterator]). NOT the builder-method/tenancy-escape-hatch pair this ' +
+        '138 errors as of `bunx tsc -b --pretty false`, ALL of them inside examples/dummy ' +
+        '(its own packages/ included) as of the TypeScript 7 bump. The one that used to leak ' +
+        'through project refs — packages/mcp/src/transport-stdio.ts:35, a ReadableStream missing ' +
+        '[Symbol.asyncIterator] — is GONE: TS 7 ships that lib declaration, so the compiler bump ' +
+        'closed it rather than any edit here. NOT the builder-method/tenancy-escape-hatch pair this ' +
         'line used to blame: the posts repo was rewritten onto the real @ultimat3/entity surface ' +
         'and the query client landed, which is what took the count from 227 to here. What ' +
         'remains: apps/web/app/orgs/repo.ts still chains the same phantom .update().returning() ' +
@@ -45,7 +47,9 @@ export const GATED_APPS: readonly GatedApp[] = [
         '(`SpaceStep`, `DateTimeFormatter`) plus a Date/Instant brand mismatch on every toZoned ' +
         'call in packages/core/src/digest-schedule.ts. The count moved 136 → 137 with ' +
         'previousDigestAt and its digestPreview caller, which are two more instances of those ' +
-        "same two classes, not new ones. Still the data-substrate work's to close",
+        'same two classes, not new ones. 137 → 138 is the TS 7 bump alone, and it added no new ' +
+        'class either — the WHOLE file breaks down as TS2339 ×68, TS2322 ×30, TS2345 ×29 and a ' +
+        "tail of 11, which is the same set the lines above describe. Still the data-substrate work's to close",
       live:
         'X_TEST_FIXTURE_UNAVAILABLE on all 5 tests: `subscribe` is declared by @ultimat3/testing’s ' +
         'preload and nothing in the repo drives it — fixture-drivers.ts registers ' +
