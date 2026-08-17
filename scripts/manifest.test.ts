@@ -46,11 +46,13 @@ const withEditedVersion = (manifest: FrameworkManifest): FrameworkManifest => ({
 });
 
 describe('unit · the framework manifest is generated, not written', () => {
+  // A SECOND full `buildManifest(repoRoot())` on top of the one `beforeAll` already ran — the
+  // comparison is the point, so the body pays the scan twice. Same shape as the hook above.
   test('two builds of one tree are byte-identical: no clock, no counter, no glob order', async () => {
     const again = await buildManifest(repoRoot());
     expect(frameworkManifestJson(again)).toBe(frameworkManifestJson(fresh));
     expect(again.buildId).toBe(fresh.buildId);
-  });
+  }, 30_000);
 
   test('the generator actually finds the real packages and codes — not an empty list', () => {
     expect(fresh.packages.length).toBeGreaterThan(20);
@@ -154,12 +156,16 @@ describe('unit · every code, not the ones in one filename per package', () => {
    * The independent check: the process-wide registry is built by importing every package and is
    * derived from nothing this generator reads. A registered code the manifest cannot name is
    * exactly the drift the old scan shipped — 17 of them, `X_ROLE_INVALID` and friends.
+   *
+   * `registeredErrorCodes()` dynamically imports every @ultimat3/* package — the same real,
+   * unavoidable import-graph cost as `scripts/verify.test.ts`'s `errorCodeDocs` test, so it gets
+   * the same budget for the same reason.
    */
   test('every code x errors explain answers for is in the manifest', async () => {
     const listed = new Set(fresh.errorCodes.map((entry) => entry.code));
     const missing = [...(await registeredErrorCodes())].filter((code) => !listed.has(code)).sort();
     expect(missing).toEqual([]);
-  });
+  }, 30_000);
 
   test('a code only a test file invents is not a code', () => {
     const codes = fresh.errorCodes.map((entry) => entry.code);
@@ -169,7 +175,9 @@ describe('unit · every code, not the ones in one filename per package', () => {
   });
 
   // `at` is load-bearing or it is decoration: every one has to point at a file that really is
-  // where that code is written.
+  // where that code is written. One `Bun.file().exists()` + `.text()` round trip per shipped
+  // code — a couple hundred real file reads scattered across every package in the repo, not one
+  // in-memory assertion — so it carries the same budget as the scans above.
   test('every `at` names a real file that really declares its code', async () => {
     const unreadable: string[] = [];
     for (const entry of fresh.errorCodes) {
@@ -179,7 +187,7 @@ describe('unit · every code, not the ones in one filename per package', () => {
       }
     }
     expect(unreadable).toEqual([]);
-  });
+  }, 30_000);
 });
 
 describe('unit · the bytes on disk', () => {
