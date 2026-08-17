@@ -72,6 +72,44 @@ describe('telemetry', () => {
     expect(span?.events[0]?.attributes['error.code']).toBe('X_INTERNAL');
   });
 
+  test('recording a hostile throwable never replaces the caller’s real failure', () => {
+    // `error instanceof Error ? error.message : String(error)` is two property reads on a value
+    // the framework did not build. `withSpan` wraps `cache.invalidate`, `db.<verb>` and every
+    // HTTP and job span, so a throw HERE substitutes the tracer's TypeError for the failure the
+    // caller was about to handle — and the span it was meant to annotate is never ended.
+    const exporter = memoryExporter();
+    configureTelemetry({ exporter });
+    const real = new Proxy(new Error('real failure'), {
+      getPrototypeOf(): never {
+        throw new TypeError('proxy trap');
+      },
+    });
+
+    let caught: unknown;
+    try {
+      withSpan('db.update', () => {
+        throw real;
+      });
+    } catch (thrown) {
+      caught = thrown;
+    }
+
+    expect(caught).toBe(real);
+    expect(exporter.spans[0]?.status.code).toBe('error');
+    expect(exporter.spans[0]?.events[0]?.name).toBe('exception');
+  });
+
+  test('a bigint thrown out of a span is recorded, not rethrown as a TypeError', () => {
+    const exporter = memoryExporter();
+    configureTelemetry({ exporter });
+    expect(() =>
+      withSpan('job.tick', () => {
+        throw 10n;
+      }),
+    ).toThrow();
+    expect(exporter.spans[0]?.events[0]?.attributes['error.message']).toBe('10n');
+  });
+
   test('traceparent round-trips for cross-process propagation', () => {
     const exporter = memoryExporter();
     configureTelemetry({ exporter });

@@ -65,4 +65,38 @@ describe('coerceQuery', () => {
       inner: { live: true },
     });
   });
+
+  test('a numeric or boolean literal is reachable over its own GET route', () => {
+    // `literal` fell through to `default: return raw`, so `t.literal(2)` received `"2"` and
+    // `literalSchema` compares with `===` — the endpoint 400d on every request, while the same
+    // declaration worked over an action's JSON body and over MCP.
+    const input = t.object({ version: t.literal(2), beta: t.literal(true) });
+    const coerced = coerceQuery(input, new URLSearchParams('version=2&beta=true'));
+    expect(coerced['version']).toBe(2);
+    expect(coerced['beta']).toBe(true);
+    expect(parse(input, coerced)).toEqual({ version: 2, beta: true });
+  });
+
+  test('a union of numeric literals coerces through its members', () => {
+    const input = t.object({ version: t.union(t.literal(1), t.literal(2)) });
+    expect(parse(input, coerceQuery(input, new URLSearchParams('version=2')))).toEqual({
+      version: 2,
+    });
+  });
+
+  test('a string literal is left alone, and a non-numeric value still reaches validation', () => {
+    const input = t.object({ kind: t.literal('post'), version: t.literal(2) });
+    const coerced = coerceQuery(input, new URLSearchParams('kind=post&version=abc'));
+    expect(coerced['kind']).toBe('post');
+    expect(coerced['version']).toBe('abc');
+  });
+
+  test('a record key that reaches Object.prototype survives to be REFUSED', () => {
+    // `out[key] = …` on a `{}` literal hit the prototype setter, so `__proto__` vanished before
+    // `recordSchema`'s deliberate refusal of it could run: reported as absent, never as rejected.
+    const record = t.record(t.string);
+    const coerced = coerceNode(record.node, JSON.parse('{"a":"b","__proto__":"x"}'));
+    expect(Object.keys(coerced as object)).toEqual(['a', '__proto__']);
+    expect(() => parse(record, coerced)).toThrow(/X_VALIDATION_FAILED/);
+  });
 });

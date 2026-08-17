@@ -41,6 +41,29 @@ function sampleString(node: SchemaNode): string {
   return node.maxLength === undefined ? padded : padded.slice(0, node.maxLength);
 }
 
+/**
+ * Whether the value this module built for `node` satisfies the node's own `pattern`.
+ *
+ * A regex cannot be inverted, so `sampleString` cannot construct a value for an arbitrary one —
+ * but `pattern` IS in the IR, so whether the value it DID construct is acceptable is knowable
+ * here, before the sample is ever handed to `invoke`. That is the whole difference between
+ * "the framework could not build your payload, pass one" and an `X_INPUT_INVALID` surfacing out
+ * of the action's own parse, which reads as the action being wrong when the action is fine.
+ *
+ * An uncompilable pattern is a gap, not a throw: only a foreign provider's IR can produce one
+ * (`t.string.pattern()` takes a `RegExp`, whose `.source` always recompiles), and a generated
+ * contract test must not die on the way to reporting what it needs.
+ */
+function satisfiesPattern(node: SchemaNode, value: unknown): boolean {
+  if (node.pattern === undefined) return true;
+  if (typeof value !== 'string') return false;
+  try {
+    return new RegExp(node.pattern, node.patternFlags ?? '').test(value);
+  } catch {
+    return false;
+  }
+}
+
 function sampleNumber(node: SchemaNode): number {
   const low = node.minimum ?? 0;
   const value = node.integer === true ? Math.ceil(low) : low;
@@ -98,12 +121,57 @@ function sampleFor(node: SchemaNode): unknown {
 }
 
 /**
- * Best effort, and honest about it: a schema carrying a constraint the IR does not — a bare
- * `pattern`, a provider's own refinement — yields a value the schema rejects. The caller turns
- * that into `X_CONTRACT_DRIFT` naming `input:` as the fix, because a silently skipped assertion
- * is the vacuous test this function exists to end.
+ * Best effort, and honest about it: a schema carrying a constraint the IR does not — a provider's
+ * own refinement — yields a value the schema rejects. The caller turns that into
+ * `X_CONTRACT_DRIFT`, because a silently skipped assertion is the vacuous test this function
+ * exists to end. The one constraint the IR DOES carry is `pattern`, and `sampleGaps` reads it.
  */
 export function sampleInput(schema: StandardSchemaV1): unknown {
   const node = tryIntrospect(schema);
   return node === undefined ? {} : sampleFor(node);
+}
+
+/** The root's name in a gap path — a bare `t.string` input has no field to point at. */
+const ROOT_PATH = '(the input)';
+
+/**
+ * Dotted paths of every sampled field whose own `pattern` the synthesized value cannot satisfy —
+ * "what this schema needs that the framework cannot invent", in the order a reader fills them in.
+ *
+ * Empty is the common case, including for `t.slug` and `t.cursor`, whose patterns `'sample'`
+ * already matches. It walks the SAMPLED shape, so an optional key — which `sampleObject`
+ * deliberately omits — owes nothing.
+ */
+export function sampleGaps(schema: StandardSchemaV1): readonly string[] {
+  const node = tryIntrospect(schema);
+  return node === undefined ? [] : gapsIn(node, '');
+}
+
+function gapsIn(node: SchemaNode, path: string): string[] {
+  if (node.nullable === true) return [];
+  if (node.kind === 'object') {
+    const properties = node.properties ?? {};
+    const out: string[] = [];
+    for (const key of requiredKeys(node)) {
+      const child = properties[key];
+      if (child !== undefined) out.push(...gapsIn(child, path === '' ? key : `${path}.${key}`));
+    }
+    return out;
+  }
+  if (satisfiesPattern(node, sampleFor(node))) return [];
+  return [path === '' ? ROOT_PATH : path];
+}
+
+/** `orderRef` -> `orderRef (must match ^ORD-\d{4}$)`, for a cause a reader can act on. */
+export function describeSampleGap(schema: StandardSchemaV1, path: string): string {
+  const pattern = patternAt(tryIntrospect(schema), path);
+  return pattern === undefined ? path : `${path} (must match ${pattern})`;
+}
+
+function patternAt(node: SchemaNode | undefined, path: string): string | undefined {
+  if (node === undefined) return undefined;
+  if (path === '' || path === ROOT_PATH) return node.pattern;
+  const [head, ...rest] = path.split('.');
+  const child = head === undefined ? undefined : node.properties?.[head];
+  return child === undefined ? undefined : patternAt(child, rest.join('.'));
 }

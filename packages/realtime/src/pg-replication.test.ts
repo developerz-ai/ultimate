@@ -113,7 +113,7 @@ describe('decoded changes', () => {
     const { server, events, settled, feed } = await start();
     server.push(xlog(relation(POSTS_OID, 'posts', POST_COLUMNS)));
     server.push(xlog(begin(0x1000n, 0n, 42)));
-    server.push(xlog(insert(POSTS_OID, ['p1', 'Hello', 'org-1', '1990', 'USD'])));
+    server.push(xlog(insert(POSTS_OID, ['p1', 'Hello', 'org-1', '1990', 'USD', null])));
     server.push(xlog(commit(0x1000n, 0x1010n, 0n)));
     await settled(1);
 
@@ -137,12 +137,31 @@ describe('decoded changes', () => {
     await feed.stop();
   });
 
+  test('a scaled amount reaches the subscriber scaled — one property, three columns', async () => {
+    // $0.000002. Dropped, this row is delivered as $0.02: a 10,000x reinterpretation with no
+    // error anywhere, and the live surface disagreeing with a refetch about one price.
+    const { server, events, settled, feed } = await start();
+    server.push(xlog(relation(POSTS_OID, 'posts', POST_COLUMNS)));
+    server.push(xlog(begin(0x1100n, 0n, 43)));
+    server.push(xlog(insert(POSTS_OID, ['p2', 'Tokens', 'org-1', '2', 'USD', '6'])));
+    server.push(xlog(commit(0x1100n, 0x1110n, 0n)));
+    await settled(1);
+
+    expect(events[0]?.after).toEqual({
+      id: 'p2',
+      title: 'Tokens',
+      orgId: 'org-1',
+      price: { minor: 2, currency: 'USD', scale: 6 },
+    });
+    await feed.stop();
+  });
+
   test('every row of one transaction gets a strictly increasing lsn', async () => {
     const { server, events, settled, feed } = await start();
     server.push(xlog(relation(POSTS_OID, 'posts', POST_COLUMNS)));
     server.push(xlog(begin(0x2000n, 0n, 7)));
     for (let index = 1; index <= 5; index += 1) {
-      server.push(xlog(insert(POSTS_OID, [`p${index}`, 't', 'org-1', null, null])));
+      server.push(xlog(insert(POSTS_OID, [`p${index}`, 't', 'org-1', null, null, null])));
     }
     server.push(xlog(commit(0x2000n, 0x2100n, 0n)));
     await settled(5);
@@ -160,7 +179,7 @@ describe('decoded changes', () => {
     server.push(xlog(relation(OTHER_OID, 'audit_log', [{ name: 'id', key: true }])));
     server.push(xlog(begin(0x3000n, 0n, 9)));
     server.push(xlog(insert(OTHER_OID, ['a1'])));
-    server.push(xlog(insert(POSTS_OID, ['p9', 't', null, null, null])));
+    server.push(xlog(insert(POSTS_OID, ['p9', 't', null, null, null, null])));
     server.push(xlog(commit(0x3000n, 0x3100n, 0n)));
     await settled(1);
 
@@ -178,10 +197,14 @@ describe('decoded changes', () => {
     server.push(xlog(begin(0x4000n, 0n, 11)));
     server.push(
       xlog(
-        update(POSTS_OID, ['p1', 'Old', 'org-1', null, null], ['p1', 'New', 'org-1', null, null]),
+        update(
+          POSTS_OID,
+          ['p1', 'Old', 'org-1', null, null, null],
+          ['p1', 'New', 'org-1', null, null, null],
+        ),
       ),
     );
-    server.push(xlog(remove(POSTS_OID, ['p1', null, null, null, null])));
+    server.push(xlog(remove(POSTS_OID, ['p1', null, null, null, null, null])));
     server.push(xlog(commit(0x4000n, 0x4100n, 0n)));
     await settled(2);
 
@@ -190,13 +213,14 @@ describe('decoded changes', () => {
     expect(events[0]?.after?.['title']).toBe('New');
     expect(events[1]?.op).toBe('delete');
     // A key-only identity nulls the non-key columns, and half a money value is not money — so the
-    // two price columns stay as themselves rather than folding into an invalid `{minor, currency}`.
+    // three price columns stay as themselves rather than folding into an invalid `{minor, currency}`.
     expect(events[1]?.before).toEqual({
       id: 'p1',
       title: null,
       orgId: null,
       priceMinor: null,
       priceCurrency: null,
+      priceScale: null,
     });
     expect(events[1]?.after).toBeNull();
     await feed.stop();
@@ -206,7 +230,7 @@ describe('decoded changes', () => {
     const { server, events, settled, feed } = await start();
     server.push(xlog(relation(POSTS_OID, 'posts', POST_COLUMNS)));
     server.push(xlog(begin(0x5000n, 0n, 12)));
-    server.push(xlog(update(POSTS_OID, null, ['p1', 'New', null, null, null])));
+    server.push(xlog(update(POSTS_OID, null, ['p1', 'New', null, null, null, null])));
     server.push(xlog(commit(0x5000n, 0x5100n, 0n)));
     await settled(1);
 
@@ -219,7 +243,7 @@ describe('decoded changes', () => {
     server.push(xlog(relation(POSTS_OID, 'posts', POST_COLUMNS)));
     server.push(xlog(begin(0x6000n, 0n, 13)));
     for (let index = 1; index <= 4; index += 1) {
-      server.push(xlog(insert(POSTS_OID, [`p${index}`, 't', null, null, null])));
+      server.push(xlog(insert(POSTS_OID, [`p${index}`, 't', null, null, null, null])));
     }
     server.push(xlog(commit(0x6000n, 0x6100n, 0n)));
     await settled(2);
@@ -447,7 +471,7 @@ describe('slot confirmation', () => {
     const { server, settled, feed } = await start();
     server.push(xlog(relation(POSTS_OID, 'posts', POST_COLUMNS)));
     server.push(xlog(begin(0x8000n, 0n, 15)));
-    server.push(xlog(insert(POSTS_OID, ['p1', 't', null, null, null])));
+    server.push(xlog(insert(POSTS_OID, ['p1', 't', null, null, null, null])));
     server.push(xlog(commit(0x8000n, 0x8100n, 0n)));
     await settled(1);
     server.push(keepalive(0x9000n, 1));
@@ -463,7 +487,7 @@ describe('slot confirmation', () => {
     const { server, settled, feed } = await start();
     server.push(xlog(relation(POSTS_OID, 'posts', POST_COLUMNS)));
     server.push(xlog(begin(0xa000n, 0n, 16)));
-    server.push(xlog(insert(POSTS_OID, ['p1', 't', null, null, null])));
+    server.push(xlog(insert(POSTS_OID, ['p1', 't', null, null, null, null])));
     server.push(xlog(commit(0xa000n, 0xa100n, 0n)));
     await settled(1);
     await feed.stop();

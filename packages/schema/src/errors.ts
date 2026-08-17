@@ -23,6 +23,9 @@ export const SCHEMA_ERROR_CODES: Readonly<Record<string, SchemaErrorCodeDeclarat
     X_SCHEMA_DISCRIMINANT_INVALID: {
       title: 'a discriminated union member can never be dispatched to',
     },
+    X_SCHEMA_DEFAULT_UNSHAREABLE: {
+      title: 'a schema default cannot be copied per parse',
+    },
   });
 
 /**

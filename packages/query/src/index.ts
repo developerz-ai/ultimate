@@ -27,12 +27,14 @@ export { recordDeprecatedCall, renderDeprecation } from './deprecation';
 export type { QueryProblem } from './errors';
 export {
   CursorInvalidError,
+  CursorValueUnsupportedError,
   MatcherUnsupportedError,
   QueryDeniedError,
   QueryDeprecationInvalidError,
   QueryDuplicateError,
   QueryForeignError,
   QueryInputInvalidError,
+  QueryInputUnencodableError,
   QueryNotPageableError,
   QueryPolicyMissingError,
   QueryRequestFailedError,

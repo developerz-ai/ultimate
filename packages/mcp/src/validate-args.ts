@@ -122,7 +122,25 @@ function string(schema: JsonSchema, input: unknown, path: string, issues: ArgIss
   if (schema.maxLength !== undefined && input.length > schema.maxLength) {
     issues.push({ path, message: `must be at most ${schema.maxLength} characters` });
   }
+  if (schema.pattern !== undefined) matchesPattern(schema.pattern, input, path, issues);
   return input;
+}
+
+/**
+ * A pattern this server cannot COMPILE is refused, not skipped. `tools/list` published it, so an
+ * agent has already been told the rule — passing a call the server cannot check is the silent-pass
+ * this whole module exists to prevent. Every framework-projected pattern is a `RegExp.source` and
+ * compiles; only a hand-written tool can reach the second branch, and that is its author's bug.
+ */
+function matchesPattern(pattern: string, input: string, path: string, issues: ArgIssue[]): void {
+  let compiled: RegExp;
+  try {
+    compiled = new RegExp(pattern);
+  } catch {
+    issues.push({ path, message: `declares a pattern this server cannot compile: ${pattern}` });
+    return;
+  }
+  if (!compiled.test(input)) issues.push({ path, message: `must match ${pattern}` });
 }
 
 function number(schema: JsonSchema, input: unknown, path: string, issues: ArgIssue[]): unknown {

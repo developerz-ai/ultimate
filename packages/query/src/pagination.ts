@@ -9,8 +9,9 @@
  * The codec is `@ultimat3/core`'s. This file only decides what a cursor is bound
  * to — `queryHash(name, input)` — so one read's cursor cannot page another.
  */
-import { decodeCursor, encodeCursor } from '@ultimat3/core';
+import { assert, decodeCursor, encodeCursor } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import { reviveSortKey, serializeSortValue } from './cursor-value';
 import type { Query, SourceOptions } from './query';
 import { queryHash, queryName, sourceFor } from './query';
 import type { QueryShape, SeekKey } from './shape';
@@ -30,6 +31,15 @@ export interface PaginateArgs extends SourceOptions {
 }
 
 /**
+ * The largest page a read will serve. A TWIN of `@ultimat3/entity`'s `MAX_PAGE_SIZE` — this
+ * package holds no dependency on that one, the same compromise `naming.ts` and `deprecation.ts`
+ * are ported under — and it exists for the same reason: `first` reaches here straight from an
+ * action's input or a route parameter, so `args.first + 1` bound whatever a client sent and one
+ * request could ask for five million rows.
+ */
+const MAX_PAGE_SIZE = 10_000;
+
+/**
  * One page. Push-down when the source implements `seek()`; otherwise the rows are
  * sliced after execution and the source is doing more work than it should.
  */
@@ -38,12 +48,21 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
   input: unknown,
   args: PaginateArgs,
 ): Promise<Page<TRow>> {
+  assert(
+    Number.isInteger(args.first) && args.first >= 1 && args.first <= MAX_PAGE_SIZE,
+    `first must be a whole number of rows between 1 and ${MAX_PAGE_SIZE}`,
+    `read.page(input, { first: Math.min(requested, ${MAX_PAGE_SIZE}) }) — or bound it in the input schema: t.number.int().min(1).max(50)`,
+  );
   const name = queryName(target);
   const hash = queryHash(name, input);
   // The scope is this read plus these arguments: a cursor from anywhere else is
   // already `X_CURSOR_INVALID` by the time it gets here.
   const decoded = args.after === undefined ? null : decodeCursor(args.after, hash);
-  const after: SeekKey | null = decoded === null ? null : { key: decoded.key, id: decoded.id };
+  // Revived to the types the columns hold, never left as the strings JSON handed back: a `Date`
+  // key decoded as an ISO string reaches `compareValues` as text and is compared against the
+  // row's own millisecond number, so page two matched nothing at all. See `cursor-value.ts`.
+  const after: SeekKey | null =
+    decoded === null ? null : { key: reviveSortKey(decoded.key), id: decoded.id };
   const base = await sourceFor(target, input, args);
   const shape = base.shape();
 
@@ -59,7 +78,10 @@ export async function paginate<TInput extends StandardSchemaV1, TRow extends obj
 
   return {
     rows,
-    endCursor: seek === null ? null : encodeCursor({ scope: hash, key: seek.key, id: seek.id }),
+    endCursor:
+      seek === null
+        ? null
+        : encodeCursor({ scope: hash, key: seek.key.map(serializeSortValue), id: seek.id }),
     hasNextPage: scoped.length > args.first,
   };
 }

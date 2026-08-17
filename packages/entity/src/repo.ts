@@ -183,12 +183,20 @@ const matches = (row: unknown, predicate: Predicate): boolean => {
   }
 };
 
-/** `%` and `_` are the wildcards; everything else in the pattern is literal, as in SQL. */
+/**
+ * `%` and `_` are the wildcards; everything else in the pattern is literal, as in SQL.
+ *
+ * A RUN of `%` is one `.*`, not one each: `%%%…x` compiled to twenty adjacent `.*` groups, and an
+ * anchored regex with twenty of them takes exponential time to fail on a long value — a filter
+ * value an app forwards from a search box is then a CPU stall in the process, on the in-memory
+ * driver. Postgres reads a run of `%` as one wildcard too, so this is the two drivers agreeing
+ * rather than a defensive narrowing.
+ */
 const likePattern = (pattern: string): RegExp =>
   new RegExp(
     `^${pattern
       .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      .replaceAll('%', '.*')
+      .replaceAll(/%+/g, '.*')
       .replaceAll('_', '.')}$`,
     's',
   );

@@ -63,6 +63,7 @@ function fakeRedis(): FakeRedis {
       if (command === 'SET') {
         values.set(String(args[0]), String(args[1]));
         if (args[2] === 'EX') expiries.set(String(args[0]), Number(args[3]) * 1_000);
+        if (args[2] === 'PX') expiries.set(String(args[0]), Number(args[3]));
         return Promise.resolve('OK');
       }
       if (command === 'PTTL') {
@@ -162,23 +163,37 @@ describe('createRedisTier', () => {
     expect(joins.map((entry) => entry[3])).toEqual(['x:t:{user}']);
   });
 
-  test('set with a custom ttlMs rounds up to whole seconds, minimum 1', async () => {
+  // The lease is spent in MILLISECONDS, exactly as the LRU tier holds it. `EX` with a `Math.ceil`
+  // honoured a 1,001ms lease as 2s — favouring staleness, which is the opposite of what the jitter
+  // machinery beside it protects, and it made two tiers of one stack disagree about when the same
+  // entry dies. The tag buckets keep whole seconds: rounding a bucket's lease UP is correct,
+  // because it has to outlive every member it holds.
+  test('set spends the ttl in milliseconds, unrounded', async () => {
     const client = fakeRedis();
     const tier = tierFor(client);
     await tier.set('k', 'v', { ttlMs: 500 });
 
     const setCall = client.sent.find((entry) => entry[0] === 'SET');
-    expect(setCall).toEqual(['SET', 'x:c:k', JSON.stringify({ v: 'v', t: [] }), 'EX', '1']);
+    expect(setCall).toEqual(['SET', 'x:c:k', JSON.stringify({ v: 'v', t: [] }), 'PX', '500']);
   });
 
-  test('set with no ttlMs uses the default TTL (300_000ms -> EX 300)', async () => {
+  test('a sub-second remainder is not rounded up into staleness', async () => {
+    const client = fakeRedis();
+    const tier = tierFor(client);
+    await tier.set('k', 'v', { ttlMs: 1_001 });
+
+    const setCall = client.sent.find((entry) => entry[0] === 'SET');
+    expect(setCall?.[4]).toBe('1001');
+  });
+
+  test('set with no ttlMs uses the default TTL (300_000ms -> PX 300000)', async () => {
     const client = fakeRedis();
     const tier = tierFor(client);
     await tier.set('k', 'v');
 
     const setCall = client.sent.find((entry) => entry[0] === 'SET');
-    expect(setCall?.[3]).toBe('EX');
-    expect(setCall?.[4]).toBe('300');
+    expect(setCall?.[3]).toBe('PX');
+    expect(setCall?.[4]).toBe('300000');
   });
 
   test('a custom defaultTtlMs passed to createRedisTier is honoured', async () => {
@@ -187,7 +202,7 @@ describe('createRedisTier', () => {
     await tier.set('k', 'v');
 
     const setCall = client.sent.find((entry) => entry[0] === 'SET');
-    expect(setCall?.[4]).toBe('5');
+    expect(setCall?.[4]).toBe('5000');
   });
 
   test('del sends DEL for the value key only, not the tag buckets', async () => {
@@ -431,19 +446,21 @@ describe('the shared tier is namespaced per build', () => {
 });
 
 describe('the redis lease is spread', () => {
-  test('the default jitter shortens EX, and rng() === 0 is the full lease', async () => {
+  test('the default jitter shortens PX, and rng() === 0 is the full lease', async () => {
     const full = fakeRedis();
     const shaved = fakeRedis();
     await createRedisTier({ client: full, buildId: null, rng: () => 0 }).set('k', 'v');
     await createRedisTier({ client: shaved, buildId: null, rng: () => 1 }).set('k', 'v');
 
-    expect(full.sent.find((entry) => entry[0] === 'SET')?.[4]).toBe('300');
-    expect(shaved.sent.find((entry) => entry[0] === 'SET')?.[4]).toBe('285');
+    expect(full.sent.find((entry) => entry[0] === 'SET')?.[4]).toBe('300000');
+    // 5% of 300s, in the milliseconds the spread was computed in — a whole-second `EX` could not
+    // have carried a shave finer than a second, which is the other half of the rounding defect.
+    expect(shaved.sent.find((entry) => entry[0] === 'SET')?.[4]).toBe('285000');
   });
 
   test('jitterFraction: 0 turns it off', async () => {
     const client = fakeRedis();
     await createRedisTier({ client, buildId: null, jitterFraction: 0, rng: () => 1 }).set('k', 'v');
-    expect(client.sent.find((entry) => entry[0] === 'SET')?.[4]).toBe('300');
+    expect(client.sent.find((entry) => entry[0] === 'SET')?.[4]).toBe('300000');
   });
 });

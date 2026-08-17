@@ -139,12 +139,56 @@ export function compareValues(a: unknown, b: unknown): number {
   if (isNull(a) || isNull(b)) return isNull(a) ? (isNull(b) ? 0 : 1) : -1;
   const left = normalize(a);
   const right = normalize(b);
-  if (typeof left === 'number' && typeof right === 'number') return left - right;
+  if (isNumeric(left) && isNumeric(right)) return compareNumeric(left, right);
   const l = String(left);
   const r = String(right);
   return l < r ? -1 : l > r ? 1 : 0;
 }
 
+function isNumeric(value: unknown): value is number | bigint {
+  return typeof value === 'number' || typeof value === 'bigint';
+}
+
+/**
+ * Numbers and bigints, in one order, because **Postgres orders them in one order**.
+ *
+ * `bigint` is a first-class `ColumnKind` — the physical type of every `<p>_minor` column — and
+ * `@ultimat3/entity`'s `count-by.ts` lists it as groupable, so these values do reach the
+ * comparator. The old numeric fast path was `typeof left === 'number' && typeof right ===
+ * 'number'` alone, so a bigint fell through to `String(left) < String(right)`:
+ * `compareValues(9n, 10n)` answered `1` and a sort came out `["10", "100", "9"]`, which means the
+ * in-memory source, the live matcher and the seek fallback all disagreed with the database on any
+ * bigint-ordered read — including page two of one.
+ *
+ * A bigint pair never subtracts: the difference is exact but the return type is a `number`. A
+ * mixed pair goes through `BigInt` when the number is whole, so a value past 2^53 keeps its exact
+ * place; a fractional number cannot equal a bigint, so comparing it as a float is enough to place
+ * it. `Number.isInteger` is false for `NaN` and `±Infinity`, which is what keeps them out of the
+ * `BigInt()` call that would throw on them.
+ */
+function compareNumeric(left: number | bigint, right: number | bigint): number {
+  if (typeof left === 'number' && typeof right === 'number') return left - right;
+  if (typeof left === 'bigint' && typeof right === 'bigint') return sign(left, right);
+  // Widened rather than negated: `-sign(a, b)` answers `-0` for a tie, and `-0` is a different
+  // value from `0` to `Object.is` and to a caller writing `=== 0`.
+  return typeof left === 'bigint'
+    ? mixed(left, right as number)
+    : -mixed(right as bigint, left) || 0;
+}
+
+/** A bigint against a number, in that order. Whole numbers go through `BigInt` so a value past
+ * 2^53 keeps its exact place; a fractional number can never equal a bigint, so comparing it as a
+ * float is enough to place it. `Number.isInteger` is false for `NaN` and `±Infinity`, which is
+ * what keeps them out of the `BigInt()` call that would throw on them. */
+function mixed(big: bigint, other: number): number {
+  return Number.isInteger(other) ? sign(big, BigInt(other)) : sign(Number(big), other);
+}
+
+function sign<T extends number | bigint>(left: T, right: T): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/** A `Date` compares by instant, so two of them order by time and never by their ISO text. */
 function normalize(value: unknown): unknown {
   return value instanceof Date ? value.getTime() : value;
 }

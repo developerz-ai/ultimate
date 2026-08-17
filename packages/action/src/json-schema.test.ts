@@ -1,7 +1,8 @@
 /**
- * `jsonSchemaOf`/`mcpSchemaOf` never throw — a schema the active provider cannot
- * describe degrades to a permissive node rather than breaking a deploy — and
- * `sortSchema` is the byte-stable ordering the committed OpenAPI file depends on.
+ * `jsonSchemaOf`/`mcpSchemaOf` REFUSE a schema the active provider cannot describe — publishing
+ * "any object accepted" for an input `validateInput` rejects every payload from is the deploy that
+ * succeeds while every caller is lied to — and `sortSchema` is the byte-stable ordering the
+ * committed OpenAPI file depends on.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -28,10 +29,11 @@ describe('jsonSchemaOf', () => {
     expect(result.required).toEqual(['postId', 'title']);
   });
 
-  test('degrades to the permissive fallback node when the provider cannot introspect it', () => {
-    const result = jsonSchemaOf(unintrospectable);
-
-    expect(result).toEqual({ type: 'object', additionalProperties: true });
+  // `additionalProperties: true` was published for a schema the runtime rejects EVERYTHING from,
+  // so the OpenAPI component and the MCP `inputSchema` both said "any object accepted" while
+  // `validateInput` refused every payload. A spec that cannot be produced must not be produced.
+  test('refuses, with the provider code, when the provider cannot introspect it', () => {
+    expect(() => jsonSchemaOf(unintrospectable)).toThrow(/X_SCHEMA_UNSUPPORTED/);
   });
 });
 
@@ -43,10 +45,8 @@ describe('mcpSchemaOf', () => {
     expect(result.type).toBe('object');
   });
 
-  test('degrades to the permissive fallback node when the provider cannot introspect it', () => {
-    const result = mcpSchemaOf(unintrospectable);
-
-    expect(result).toEqual({ type: 'object', additionalProperties: true });
+  test('refuses, with the provider code, when the provider cannot introspect it', () => {
+    expect(() => mcpSchemaOf(unintrospectable)).toThrow(/X_SCHEMA_UNSUPPORTED/);
   });
 });
 

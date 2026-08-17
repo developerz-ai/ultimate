@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "70d24d983e754ed558ed8af557e34c1d946c8bcb3fbd21ce18013e2e56d77753",
+  "buildId": "5725ea6384f5b77df89c7119aa39b86014a8f703dcf4fcfbdcc16a8b4662aa4b",
   "tiers": {
     "0": [
       "core",
@@ -629,6 +629,11 @@
       "code": "X_CURSOR_STALE",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
+    },
+    {
+      "code": "X_CURSOR_VALUE_UNSUPPORTED",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
     },
     {
       "code": "X_DB_BRANCH_FAILED",
@@ -1451,6 +1456,11 @@
       "at": "packages/query/src/errors.ts"
     },
     {
+      "code": "X_QUERY_INPUT_UNENCODABLE",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
+    },
+    {
       "code": "X_QUERY_NOT_PAGEABLE",
       "owner": "query",
       "at": "packages/query/src/errors.ts"
@@ -1689,6 +1699,11 @@
       "code": "X_SCHEDULE_INVALID",
       "owner": "time",
       "at": "packages/time/src/errors.ts"
+    },
+    {
+      "code": "X_SCHEMA_DEFAULT_UNSHAREABLE",
+      "owner": "schema",
+      "at": "packages/schema/src/errors.ts"
     },
     {
       "code": "X_SCHEMA_DISCRIMINANT_INVALID",

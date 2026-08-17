@@ -316,6 +316,25 @@ describe('builtinT.string', () => {
     expect(builtinT.string.node.pattern).toBeUndefined();
   });
 
+  test('min/max count characters, the unit the emitted JSON Schema promises', () => {
+    // JSON Schema defines `minLength`/`maxLength` over CODE POINTS, and the message already said
+    // "chars" — but the check counted UTF-16 code units, so `t.string.max(1)` refused a value a
+    // human, the published schema and Postgres' `char_length` all read as one character.
+    expect(validate(builtinT.string.max(1), '👍').issues).toBeUndefined();
+    expect(validate(builtinT.string.max(1), '👍👍').issues).toBeDefined();
+    expect(validate(builtinT.string.min(2), '👍👍').issues).toBeUndefined();
+    expect(validate(builtinT.string.min(2), '👍').issues).toBeDefined();
+  });
+
+  test('a global pattern gives the same verdict every time it is asked', () => {
+    // The RegExp is compiled once per schema now; a `g` flag carries `lastIndex` between calls,
+    // so the second `.test()` of an identical value would answer `false`.
+    const global = builtinT.string.pattern(/[a-z]+/g);
+    expect(validate(global, 'abc').issues).toBeUndefined();
+    expect(validate(global, 'abc').issues).toBeUndefined();
+    expect(validate(global, 'abc').issues).toBeUndefined();
+  });
+
   test('enforces min/max/pattern once chained', () => {
     const schema = builtinT.string
       .min(3)

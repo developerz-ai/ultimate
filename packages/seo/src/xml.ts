@@ -32,8 +32,17 @@ export function attributes(attrs: Readonly<Record<string, string>>): string {
     .join('');
 }
 
-/** Join a base URL and a path without producing `//` or dropping a segment. */
+/**
+ * Join a base URL and a path without producing `//` or dropping a segment.
+ *
+ * A trailing slash the PATH declares is kept: `/blog/` and `/blog` are different resources, and
+ * this builds every `<loc>` (`sitemap.ts`) and every canonical (`meta.ts`), so stripping it made a
+ * trailing-slash site publish URLs that redirect. Only the bare-root join — `''` or `'/'` — has
+ * nothing to keep, and it collapses to the base.
+ */
 export function absoluteUrl(baseUrl: string, path: string): string {
   if (/^https?:\/\//.test(path)) return path;
-  return `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`.replace(/\/$/, '') || baseUrl;
+  const base = baseUrl.replace(/\/+$/, '');
+  const rest = path.replace(/^\/+/, '');
+  return rest === '' ? base : `${base}/${rest}`;
 }

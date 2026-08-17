@@ -12,6 +12,7 @@ import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema
 import type { QueryClientMethod, QueryClientOptions } from './client';
 import type { Deprecation } from './deprecation';
 import { facadeFor } from './facade';
+import { assertEncodableInput } from './input-shape';
 import type { LiveQuery, ToLiveOptions } from './live';
 import type { QueryToolDescriptor } from './mcp-tool';
 import type { Page, PaginateArgs } from './pagination';
@@ -211,6 +212,10 @@ export type QueryFacade<TInput extends StandardSchemaV1, TRow extends object> = 
 export function query<TInput extends StandardSchemaV1, TRow extends object>(
   def: QueryDef<TInput, TRow>,
 ): Query<TInput, TRow> {
+  // Here and not in `toQueryRoute`: a read is projected to `GET /_x/query/<kebab>` whether or not
+  // anyone mounts it, and the typed client derives that same URL — so an input a query string
+  // cannot carry is wrong for every call, and the file that declared it is where it is repaired.
+  assertEncodableInput(def.input);
   return build(def, '');
 }
 

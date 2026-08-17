@@ -5,7 +5,7 @@
 // bugs are born. Register into this one or you are not in the framework.
 
 import type { CacheTag } from './tags';
-import { serializeTag, serializeTags } from './tags';
+import { parseTag, serializeTag, serializeTags } from './tags';
 
 export type DependentKind = 'cache-key' | 'isr-route' | 'cdn-path' | 'live-query';
 
@@ -16,28 +16,39 @@ export interface CacheDependent {
 }
 
 const byTag = new Map<string, Set<string>>();
+// The mirror of `LruCache`'s `entityIndex`: entity name -> every dependent registered under ANY tag
+// of that entity, row tags included. Without it a collection bust reached only the dependents
+// registered on the bare collection tag, so `invalidateTags([tag.post])` cleared the cached detail
+// page and left its ISR route, its CDN path and its live query untouched — reported as clean.
+const byEntity = new Map<string, Set<string>>();
 const dependents = new Map<string, CacheDependent>();
 const tagsByDependent = new Map<string, Set<string>>();
 
 const dependentId = (dep: CacheDependent): string => `${dep.kind}\u0000${dep.id}`;
 
+function addTo(index: Map<string, Set<string>>, bucket: string, key: string): void {
+  let set = index.get(bucket);
+  if (set === undefined) {
+    set = new Set();
+    index.set(bucket, set);
+  }
+  set.add(key);
+}
+
+function removeFrom(index: Map<string, Set<string>>, bucket: string, key: string): void {
+  const set = index.get(bucket);
+  if (set === undefined) return;
+  set.delete(key);
+  if (set.size === 0) index.delete(bucket);
+}
+
 function link(wireTag: string, dep: CacheDependent): void {
   const key = dependentId(dep);
   dependents.set(key, dep);
 
-  let set = byTag.get(wireTag);
-  if (set === undefined) {
-    set = new Set();
-    byTag.set(wireTag, set);
-  }
-  set.add(key);
-
-  let owned = tagsByDependent.get(key);
-  if (owned === undefined) {
-    owned = new Set();
-    tagsByDependent.set(key, owned);
-  }
-  owned.add(wireTag);
+  addTo(byTag, wireTag, key);
+  addTo(byEntity, parseTag(wireTag).entity, key);
+  addTo(tagsByDependent, key, wireTag);
 }
 
 /** Record that `dep` is stale whenever any of `tags` changes. Idempotent. */
@@ -50,9 +61,8 @@ export function unregisterDependent(dep: CacheDependent): void {
   const owned = tagsByDependent.get(key);
   if (owned !== undefined) {
     for (const wire of owned) {
-      const set = byTag.get(wire);
-      set?.delete(key);
-      if (set !== undefined && set.size === 0) byTag.delete(wire);
+      removeFrom(byTag, wire, key);
+      removeFrom(byEntity, parseTag(wire).entity, key);
     }
   }
   tagsByDependent.delete(key);
@@ -60,15 +70,16 @@ export function unregisterDependent(dep: CacheDependent): void {
 }
 
 /**
- * Everything that must be busted for `tags`. A row tag (`post:1`) also matches the
- * collection tag (`post`) it belongs to — a row change invalidates lists of that row.
+ * Everything that must be busted for `tags`, expanded in BOTH directions exactly as `tagMatches`
+ * answers and as `LruCache.invalidateTags` clears: a row tag (`post:1`) also matches the collection
+ * tag (`post`) it belongs to, and a collection tag matches every row of that entity.
  */
 export function dependentsOf(tags: readonly CacheTag[]): readonly CacheDependent[] {
   const seen = new Set<string>();
   const out: CacheDependent[] = [];
 
-  const collect = (wire: string): void => {
-    for (const key of byTag.get(wire) ?? []) {
+  const collect = (keys: Iterable<string> | undefined): void => {
+    for (const key of keys ?? []) {
       if (seen.has(key)) continue;
       seen.add(key);
       const dep = dependents.get(key);
@@ -77,8 +88,12 @@ export function dependentsOf(tags: readonly CacheTag[]): readonly CacheDependent
   };
 
   for (const value of tags) {
-    collect(serializeTag(value));
-    if (value.id !== undefined) collect(value.entity);
+    if (value.id === undefined) {
+      collect(byEntity.get(value.entity));
+      continue;
+    }
+    collect(byTag.get(serializeTag(value)));
+    collect(byTag.get(value.entity));
   }
   return out;
 }
@@ -111,6 +126,7 @@ export function graphSize(): { tags: number; dependents: number } {
 /** Tests and `x dev` hot reload only. Production code never drops the graph. */
 export function resetGraph(): void {
   byTag.clear();
+  byEntity.clear();
   dependents.clear();
   tagsByDependent.clear();
 }
@@ -137,6 +153,11 @@ export function isolateGraph(): () => void {
     resetGraph();
     for (const [wire, keys] of capturedByTag) byTag.set(wire, new Set(keys));
     for (const [key, dep] of capturedDependents) dependents.set(key, dep);
-    for (const [key, wires] of capturedOwned) tagsByDependent.set(key, new Set(wires));
+    // `byEntity` is derived, so it is rebuilt from the captured wire tags rather than captured
+    // separately — one fewer index a future edit can forget to put back.
+    for (const [key, wires] of capturedOwned) {
+      tagsByDependent.set(key, new Set(wires));
+      for (const wire of wires) addTo(byEntity, parseTag(wire).entity, key);
+    }
   };
 }

@@ -74,8 +74,18 @@ export function match<TRow extends object>(
     compareRows(event.row, current, shape.orderBy) !== 0;
   if (!moved) return [{ kind: 'update', position: index, row: event.row }];
 
-  // A move keeps the window full, so it never needs a refill.
   const without = [...rows.slice(0, index), ...rows.slice(index + 1)];
+  // A move to the TAIL of a full window is a position only the server can fill. `insert()` places
+  // the row among the `limit - 1` rows the client still holds, so its position can never reach
+  // `shape.limit` and the `position >= shape.limit` bail below is unreachable on this path — the
+  // row was re-inserted INSIDE the window. Proven with `limit: 3`, window `[a:1, b:2, c:3]` and a
+  // server also holding `d:4, e:5`: moving `a` to `99` rendered `[b, c, a:99]` where the true
+  // window is `[b, c, d]`. Whether the moved row is still in the window is the server's answer
+  // too, so the refill covers both.
+  const wasFull = shape.limit !== null && rows.length >= shape.limit;
+  if (wasFull && positionFor(shape, without, event.row) >= without.length) {
+    return removeAt<TRow>(shape, index, id, true);
+  }
   return [...removeAt<TRow>(shape, index, id, false), ...insert(shape, without, event.row)];
 }
 

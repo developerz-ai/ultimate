@@ -3,7 +3,7 @@
 // the caller-visible `now` default.
 
 import { describe, expect, test } from 'bun:test';
-import { createBranch, reapBranches } from './branch';
+import { createBranch, dropBranch, reapBranches } from './branch';
 import { createRecordingClient } from './fake';
 
 describe('createBranch', () => {
@@ -32,5 +32,26 @@ describe('reapBranches', () => {
     // silently fell back to something other than "now" (e.g. the epoch) would drop nothing.
     const dropped = await reapBranches({ client, maxAgeMs: 1_000 });
     expect(dropped).toEqual(['stale']);
+  });
+});
+
+/**
+ * The boolean answers "was there a branch here?", which is the only question a reaper or a preview
+ * teardown asks it. `drop database if exists` reports the same command tag either way, so
+ * `affected >= 0` was `true` by construction — a constant dressed as a result.
+ */
+describe('dropBranch', () => {
+  test('a branch that existed answers true; a name that was never a database answers false', async () => {
+    const client = createRecordingClient();
+    client.on('current_database', { rows: [{ name: 'postgres' }] });
+
+    client.on('from pg_database where datname', { rows: [{ ok: 1 }] });
+    expect(await dropBranch('feature_x', { client })).toBe(true);
+
+    client.on('from pg_database where datname', { rows: [] });
+    expect(await dropBranch('feature_x', { client })).toBe(false);
+
+    // The statement still went out both times: `if exists` is what makes the second call safe.
+    expect(client.texts.filter((text) => text.includes('drop database'))).toHaveLength(2);
   });
 });

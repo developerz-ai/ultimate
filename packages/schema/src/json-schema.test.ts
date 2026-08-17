@@ -95,6 +95,46 @@ describe('toJsonSchema', () => {
     ]);
   });
 
+  test('a nullable field projects the null branch its own validator accepts', () => {
+    // The round trip that was missing: the IR field and its projection pinned together. `nullable`
+    // was declared, set by `.nullable()` and read by exactly one consumer, so every published
+    // spec forbade a `null` the action's own `output:` validator returns — a generated client
+    // typed it non-null and a spec-validating gateway rejected the server's own valid response.
+    const post = t.object({ title: t.string, coverUrl: t.nullable(t.url) });
+    const coverNode = post.node.properties?.['coverUrl'];
+    expect(coverNode?.nullable).toBe(true);
+
+    const json = toJsonSchema(post, { includeDialect: false });
+    expect(json.properties?.['coverUrl']).toEqual({
+      anyOf: [{ type: 'string', format: 'uri' }, { type: 'null' }],
+    });
+    // nullable is not optional: the key is still sent, it just carries `null`.
+    expect(json.required).toEqual(['title', 'coverUrl']);
+    expect(post.parse({ title: 'a', coverUrl: null })).toEqual({ title: 'a', coverUrl: null });
+  });
+
+  test('a nullable field carries its annotations outside the anyOf', () => {
+    const json = toJsonSchema(
+      t.object({ note: t.nullable(t.string.describe('why it was skipped')) }),
+      { includeDialect: false },
+    );
+    expect(json.properties?.['note']).toEqual({
+      anyOf: [{ type: 'string', minLength: 1 }, { type: 'null' }],
+      description: 'why it was skipped',
+    });
+  });
+
+  test('a nullable field with a default stays out of required and keeps the default', () => {
+    const json = toJsonSchema(t.object({ cover: t.nullable(t.url).default(null) }), {
+      includeDialect: false,
+    });
+    expect(json.required).toEqual([]);
+    expect(json.properties?.['cover']).toEqual({
+      anyOf: [{ type: 'string', format: 'uri' }, { type: 'null' }],
+      default: null,
+    });
+  });
+
   test('an unrefined schema gains no new keys — nothing already generated moves', () => {
     const json = toJsonSchema(t.object({ id: t.uuid }), { includeDialect: false });
     expect('x-ultimate-refinements' in json).toBe(false);

@@ -66,6 +66,57 @@ afterEach(() => {
   resetJobsFacade();
 });
 
+// The same shape as the `retry.attempts >= 1` backstop beside it, and for the same reason: a
+// `concurrency: 0` is not "no cap", it is a fleet slot table that grants nothing — `acquire`
+// answers `false` forever, with no log line, and the job is permanently unrunnable.
+describe('job() refuses a concurrency that can never be filled', () => {
+  const declare =
+    (concurrency: number): (() => JobHandle<OrgInput>) =>
+    () =>
+      job<OrgInput>({
+        tenant: 'none',
+        name: `capped-${String(concurrency)}`,
+        concurrency,
+        input: passthrough<OrgInput>(),
+        idempotencyKey: ({ orgId }) => `capped:${orgId}`,
+        retry: { attempts: 1 },
+        run: () => Promise.resolve(),
+      });
+
+  test('zero, a negative and a fraction are all refused at declaration', () => {
+    expect(declare(0)).toThrow(/X_INVARIANT/);
+    expect(declare(-1)).toThrow(/X_INVARIANT/);
+    expect(declare(1.5)).toThrow(/X_INVARIANT/);
+  });
+
+  /**
+   * The RESULT is returned, never discarded. `declare(0)();` as a bare expression statement does
+   * not run at all under Bun 1.3.14 — the call is elided when its value is unused, so the `catch`
+   * never fires and the assertion below reads `undefined` from an error that was never raised.
+   * That is a test which cannot fail; `void declare(0)()` or using the value both run it.
+   */
+  const refusalFrom = (concurrency: number): { cause?: string; fix?: string } => {
+    try {
+      return { cause: `no refusal: ${declare(concurrency)().name}` };
+    } catch (error) {
+      return error as { cause?: string; fix?: string };
+    }
+  };
+
+  test('the refusal names the job and the edit', () => {
+    const refusal = refusalFrom(0);
+
+    expect(refusal.cause).toContain('capped-0');
+    expect(refusal.cause).toContain('no worker can ever fill');
+    expect(refusal.fix).toContain('omit the field for no cap at all');
+  });
+
+  test('an omitted concurrency is still "no cap", not a refusal', () => {
+    expect(notify.concurrency).toBeUndefined();
+    expect(refusalFrom(1).cause).toContain('no refusal: capped-1');
+  });
+});
+
 describe('handle.enqueue', () => {
   test('queues a row under the handle own idempotency key, and dedupes a repeat', async () => {
     setJobDriver(driver);

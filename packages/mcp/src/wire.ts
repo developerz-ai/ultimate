@@ -81,6 +81,14 @@ export interface JsonSchema {
   readonly maximum?: number;
   readonly minLength?: number;
   readonly maxLength?: number;
+  /**
+   * A `RegExp.source` string, JSON Schema semantics (a partial match unless it anchors itself).
+   * In the subset because `validate-args.ts` enforces it: without it `tools/list` published
+   * `{minLength,maxLength}` for a field whose OpenAPI component carried the pattern, so an HTTP
+   * client and an MCP agent held different contracts for one declaration and the agent's only
+   * way to learn the format was `X_INPUT_INVALID` from the action's own parse.
+   */
+  readonly pattern?: string;
   readonly anyOf?: readonly JsonSchema[];
 }
 

@@ -9,8 +9,16 @@
 // tool in `defineAppMcp`'s `scopes:` map (see `scopes.ts`) — declared once, next to the
 // other tools that same token capability covers, never guessed from the action.
 //
-// `toMcpTool` in @ultimat3/action owns the schema half of the projection (input schema →
-// JSON Schema); this file owns the execution half.
+// `toWireSchema` (`input-schema.ts`), reached through `projectable.ts`, owns the schema half of
+// what THIS server publishes; this file owns the execution half. It is deliberately not
+// `toMcpTool` in @ultimat3/action — which this comment claimed until 2026-08, while
+// `projectable.ts` had always called `toWireSchema`. The two are not interchangeable:
+// `toMcpTool` emits the full draft-07 vocabulary and `toWireSchema` narrows to the subset
+// `validate-args.ts` can ENFORCE, so a keyword in one and not the other is a contract an agent
+// is judged against and was never shown. `pattern` was exactly that until 2026-08.
+// `action` is tier 3 and this package is tier 4, so the two cannot share one function today; the
+// shared home would be `@ultimat3/schema`. `packages/mcp/src/cross-surface.test.ts` is what keeps
+// them from diverging again.
 
 import type { Actor } from '@ultimat3/core';
 import { isMcpExposed } from '@ultimat3/core';
@@ -49,7 +57,7 @@ export interface ProjectablePrimitive {
   readonly name: string;
   readonly description?: string;
   readonly mcp?: McpExposure;
-  /** JSON Schema of the input, as produced by `toMcpTool`. */
+  /** JSON Schema of the input, narrowed to the wire subset by `toWireSchema`. */
   readonly inputJsonSchema?: JsonSchema;
   /** True for a mutation. Drives the rate-limit bucket; queries set it false. */
   readonly mutates?: boolean;

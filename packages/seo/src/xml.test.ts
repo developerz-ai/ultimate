@@ -147,11 +147,16 @@ describe('absoluteUrl', () => {
     expect(absoluteUrl('https://example.com', '//foo')).toBe('https://example.com/foo');
   });
 
-  test('a trailing slash on the joined result is stripped', () => {
-    expect(absoluteUrl('https://example.com', 'about/')).toBe('https://example.com/about');
+  // `/blog/` and `/blog` are different resources. This builds every `<loc>` and every canonical,
+  // so stripping the slash the author wrote made a trailing-slash site publish URLs that redirect
+  // — and made `assertCanonical` compare a canonical against a path it had just rewritten.
+  test('a trailing slash the path declares is kept', () => {
+    expect(absoluteUrl('https://example.com', 'about/')).toBe('https://example.com/about/');
+    expect(absoluteUrl('https://example.com/', '/blog/')).toBe('https://example.com/blog/');
+    expect(absoluteUrl('https://example.com', '/blog')).toBe('https://example.com/blog');
   });
 
-  test('falls back to baseUrl when stripping the trailing slash would empty the result', () => {
+  test('only the bare-root join collapses back to the base', () => {
     expect(absoluteUrl('https://example.com', '')).toBe('https://example.com');
     expect(absoluteUrl('https://example.com/', '/')).toBe('https://example.com');
   });

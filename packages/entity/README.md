@@ -61,7 +61,7 @@ still imports one package: `import { entity, t } from '@ultimat3/entity'`.
 |---|---|---|
 | `uuid()`, `uuid<PostId>()` | `uuid`; `.primaryKey()` defaults to v7 | time-ordered keys keep the pk index append-friendly; the optional brand is declared once and survives to every signature |
 | `timestamp()` | `timestamptz` | UTC storage is not a per-table decision; there is no naive variant |
-| `money()` | `<name>_minor bigint` + `<name>_currency char(3)` | never a float, never one implied currency. The row value is `@ultimat3/schema`'s `MoneyValue` — the same declaration `@ultimat3/money`'s `Money` is — so a decoded row goes straight to `add()`/`formatMoney()`. A writer may hand a `bigint`; a stored minor unit past ±2^53 is refused on read, never rounded |
+| `money()` | `<name>_minor bigint` + `<name>_currency char(3)` + `<name>_scale integer null` | never a float, never one implied currency. The row value is `@ultimat3/schema`'s `MoneyValue` — the same declaration `@ultimat3/money`'s `Money` is — so a decoded row goes straight to `add()`/`formatMoney()`. A writer may hand a `bigint`; a stored minor unit past ±2^53 is refused on read, never rounded. `scale` is the decimal exponent `minor` counts in when it is not the currency's own (`{ minor: 2, currency: 'USD', scale: 6 }` is $0.000002); NULL in the column means "the currency's own minor unit" and round-trips as an ABSENT key, never as `0` |
 | `enumerated(v)` | `text` + CHECK | a variant is a one-line migration, not `ALTER TYPE` |
 | `tz(zones)`, `locale(tags)` | `text` + CHECK, `Intl`-validated at declaration | an offset is not a time zone |
 | `text({ max })`, `integer()`, `boolean()`, `url()` | `text`/`integer`/`boolean` + CHECK | format is enforced by the database too |
@@ -276,7 +276,7 @@ so the two sides can never disagree, and neither can drift from the constraint t
 | Ambiguity | two keys that differ only by an `Id` suffix ⇒ `X_INVARIANT_VIOLATED` naming both columns, never one relation silently swallowing the other |
 | Unknown name | `X_PRELOAD_UNKNOWN_RELATION`, whose `fix` is a `relationNamed()` call on one that exists plus the rest by name — they are derived, so there is no schema file listing them to go and read |
 | Keys | `local*` is always on `from`, `remote*` on `to`, whichever side the edge is read from |
-| Money | no relation: one property, two physical columns, so neither is the key |
+| Money | no relation: one property, three physical columns, so none of them is the key |
 
 **Where they come from.** `RegistryEntry.references()` — every `entity()` call leaves one behind, so
 a consumer walks the whole domain without importing a schema module. A method rather than a field:

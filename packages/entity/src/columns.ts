@@ -3,7 +3,7 @@
 // currency) are the bugs this file exists to make unreachable.
 
 import { uuid as uuidV7 } from '@ultimat3/core';
-import { describeValue } from '@ultimat3/schema';
+import { describeValue, isMoneyScale, MAX_MONEY_SCALE } from '@ultimat3/schema';
 import { BARE, column, GENERATED_UUID, makeColumn, makeTimestamp } from './column';
 import { invariantViolated } from './errors';
 import type {
@@ -241,18 +241,46 @@ const parseCurrency = (value: unknown): string =>
     ? value
     : reject('iso-4217', `expected a 3-letter ISO-4217 code, ${got(value)}`);
 
+/**
+ * The decimal exponent `minor` counts in, when it is not the currency's own. `undefined` and `0`
+ * are DIFFERENT values — "the currency's natural minor unit" versus "whole units" — so the key is
+ * carried only when it was supplied, exactly as `@ultimat3/schema`'s `moneySchema` carries it.
+ * The legal range is `isMoneyScale`'s, imported rather than restated: one bound, one declaration.
+ */
+const parseScale = (value: unknown): number => {
+  const scale = typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : value;
+  return isMoneyScale(scale)
+    ? scale
+    : reject(
+        'money-scale',
+        `expected a whole number of decimal places between 0 and ${MAX_MONEY_SCALE}, ${got(value)}`,
+      );
+};
+
 const parseMoney = (value: unknown): MoneyValue => {
   if (typeof value !== 'object' || value === null) {
     return reject('money', `expected { minor, currency }, ${got(value)}`);
   }
   const input: Partial<MoneyInput> = value;
-  return { minor: parseMinor(input.minor), currency: parseCurrency(input.currency) };
+  return {
+    minor: parseMinor(input.minor),
+    currency: parseCurrency(input.currency),
+    ...(input.scale === undefined || input.scale === null
+      ? {}
+      : { scale: parseScale(input.scale) }),
+  };
 };
 
 /**
- * One property, two physical columns: `<name>_minor bigint` and `<name>_currency char(3)`.
- * A single implied currency is a migration nobody wants to write later, and a float is a
- * rounding bug nobody wants to debug.
+ * One property, three physical columns: `<name>_minor bigint`, `<name>_currency char(3)` and
+ * `<name>_scale integer null`. A single implied currency is a migration nobody wants to write
+ * later, and a float is a rounding bug nobody wants to debug.
+ *
+ * The third column is not decoration: `scale` is what lets an amount name a sub-cent value, and
+ * the entity layer used to rebuild the row as `{ minor, currency }` — so
+ * `{ minor: 2, currency: 'USD', scale: 6 }` ($0.000002) was stored and read back as $0.02, a
+ * silent 10,000x reinterpretation of a value the type system, `t.money` and `@ultimat3/money` all
+ * carry. `null` in the column is "no explicit scale" and decodes to an ABSENT key, never to `0`.
  */
 export const money = (): Column<MoneyValue> => column<MoneyValue>('money', parseMoney);
 
@@ -288,3 +316,11 @@ export const narrowMoney = <Row>(columns: ColumnMap, row: Row): Row => {
 
 /** The CHECK that stops a psql session writing a currency the app would refuse. */
 export const currencyCheck = (currencyColumn: string): string => `${currencyColumn} ~ '^[A-Z]{3}$'`;
+
+/**
+ * The same for the scale column: `parseScale` refuses anything outside `0…MAX_MONEY_SCALE`, and a
+ * row written by a backfill or a psql session must not be able to hold a value the app would
+ * refuse to read back. `is null` is legal and is the ordinary case.
+ */
+export const scaleCheck = (scaleColumn: string): string =>
+  `${scaleColumn} is null or (${scaleColumn} >= 0 and ${scaleColumn} <= ${MAX_MONEY_SCALE})`;

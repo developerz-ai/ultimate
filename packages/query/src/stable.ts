@@ -13,8 +13,15 @@ export function stableStringify(value: unknown): string {
   switch (typeof value) {
     case 'string':
       return JSON.stringify(value);
+    // A bare token, never `'null'` and never a quoted string: this output is only ever hashed, so
+    // an unquoted word cannot collide with the `string` branch (which always quotes) while
+    // `'null'` collided with JSON `null` itself — `{ n: NaN }`, `{ n: Infinity }` and `{ n: null }`
+    // fingerprinted identically and shared one cache entry and one cursor scope. `-0` is spelled
+    // out for the same reason: `String(-0)` is `"0"`, so `-0` and `0` were one key too.
     case 'number':
-      return Number.isFinite(value) ? String(value) : 'null';
+      if (Number.isNaN(value)) return 'NaN';
+      if (!Number.isFinite(value)) return value > 0 ? 'Infinity' : '-Infinity';
+      return Object.is(value, -0) ? '-0' : String(value);
     case 'boolean':
       return String(value);
     case 'bigint':

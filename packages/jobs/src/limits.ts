@@ -128,12 +128,22 @@ export function createLimiter(
   const evictTo = Math.max(1, Math.floor(maxTenants * 0.9));
   const byQueue = new Map<string, number>();
   const byTenant = new Map<string, number>();
+  // `{queue, tenantId}` is ONE key — `blockedBy` has always read it that way. Without this counter
+  // `inFlight` had nothing to answer it from and silently widened to "this tenant, everywhere".
+  // Deleted at zero by `bump`, exactly like the two above, so it is bounded by live leases.
+  const byQueueTenant = new Map<string, number>();
   const starts = new Map<string, number[]>();
   const refusals = new Map<string, { reason: LimitReason; atMs: number }>();
   let global = 0;
   let lastSweepMs = Number.NEGATIVE_INFINITY;
 
   const tenantOf = (key: LimitKey): string => key.tenantId ?? NO_TENANT;
+  /**
+   * ONE spelling of "queue plus tenant", shared by the refusal log and the composite counter.
+   * They were two literals and `inFlight` had neither, which is how one key came to mean the
+   * composite in `blockedBy` and the bare tenant in `inFlight`.
+   */
+  const compositeKey = (key: LimitKey): string => `${key.queue}\u0000${tenantOf(key)}`;
   /**
    * A counter at zero is DELETED, never stored. `Math.max(0, ...)` wrote `0` and kept the key, so a
    * worker that ran one job for an org held that org's name for the life of the process — and a
@@ -202,7 +212,7 @@ export function createLimiter(
   return {
     tryAcquire(key) {
       const tenant = tenantOf(key);
-      const refusalKey = `${key.queue}\u0000${tenant}`;
+      const refusalKey = compositeKey(key);
       const at = nowMs(clock);
       const refuse = (reason: LimitReason): undefined => {
         refusals.set(refusalKey, { reason, atMs: at });
@@ -222,6 +232,7 @@ export function createLimiter(
       global += 1;
       bump(byQueue, key.queue, 1);
       bump(byTenant, tenant, 1);
+      bump(byQueueTenant, refusalKey, 1);
       if (config.ratePerTenant !== undefined) {
         starts.set(tenant, [...(starts.get(tenant) ?? []), at]);
       }
@@ -238,12 +249,13 @@ export function createLimiter(
           global = Math.max(0, global - 1);
           bump(byQueue, key.queue, -1);
           bump(byTenant, tenant, -1);
+          bump(byQueueTenant, refusalKey, -1);
         },
       };
     },
 
     blockedBy(key) {
-      const refusal = refusals.get(`${key.queue}\u0000${tenantOf(key)}`);
+      const refusal = refusals.get(compositeKey(key));
       if (refusal === undefined) return undefined;
       // A refusal past its window answers as a missing one rather than as an explanation of a
       // decision nobody is looking at any more.
@@ -251,10 +263,12 @@ export function createLimiter(
       return refusal.reason;
     },
 
+    // Answers the key it was GIVEN. `{queue, tenantId}` used to drop the queue and report the
+    // tenant's total across every queue — the same key `blockedBy` reads as one composite.
     inFlight(key) {
       if (key === undefined) return global;
-      if (key.tenantId !== undefined) return byTenant.get(key.tenantId) ?? 0;
-      return byQueue.get(key.queue) ?? 0;
+      if (key.tenantId === undefined) return byQueue.get(key.queue) ?? 0;
+      return byQueueTenant.get(compositeKey(key)) ?? 0;
     },
 
     snapshot() {

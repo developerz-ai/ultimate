@@ -323,6 +323,19 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   compare-and-set the shared store does not have: the lease key is a *keyed set*, so each node's
   claim is its own member and the leader is the lowest id every claimant can see. Eventually
   consistent on purpose — the worst case is a duplicate `leave` for someone already gone.
+- **Money is THREE physical columns on the wire too, and a live row must equal a repository row.**
+  `entityRow` folds `<p>_minor`/`<p>_currency`/`<p>_scale` into one property. It matched two, so a
+  scaled amount arrived at every subscriber unscaled *and* carrying a stray physical `priceScale`
+  beside `price` — one row, two shapes, no error anywhere. NULL and absent both mean **no `scale`
+  key**, never `0` (that is whole units, a 100x reinterpretation of an ordinary price), which is
+  exactly what `@ultimat3/entity`'s `moneyOf` does. That equality is the pin:
+  `pg-entity-row-parity.test.ts` reads one physical row through both surfaces — this package's fold
+  and a real `postgresRepo` — and asserts one object, each side absolutely as well as against the
+  other, because equality alone is satisfied by both failing open together. It is the one test here
+  that imports `@ultimat3/entity` (tier 2, a legal downward edge, test-only: `*.test.ts` never
+  ships), and it has to, or the thing being compared against is a copy of the reader instead of the
+  reader. The `0…15` scale bound stays `@ultimat3/schema`'s — enforced by the column CHECK and by
+  `parseScale`, never restated here.
 - Never a bare `Error`. Never `any`. Never `Date.now()` — take a `Clock` (`clock.now()` is a `Date`;
   use `monotonic()` for durations).
 

@@ -100,6 +100,26 @@ describe('localDriver', () => {
     expect(listed?.metadata).toEqual({ uploadedBy: 'user-1' });
   });
 
+  // `typeof [] === 'object'` and `Object.values(['a']).every(isString)` is `true`, so an ARRAY in
+  // the sidecar's `metadata` slot was handed back through `head()`/`get()` as object metadata —
+  // and `StorageObject.metadata` is declared `Record<string, string>`, so every reader downstream
+  // was typed against a shape it was not given.
+  test('an array in the sidecar metadata slot is not object metadata', async () => {
+    const key = 'org/org-1/docs/odd.pdf';
+    await driver.put(key, bytesOf('pdf-bytes'), { contentType: 'application/pdf' });
+
+    const sidecar = `${root}/${META_DIR}/${key}.json`;
+    const written: unknown = await Bun.file(sidecar).json();
+    await Bun.write(
+      sidecar,
+      JSON.stringify({ ...(written as Record<string, unknown>), metadata: ['a', 'b'] }),
+    );
+
+    expect((await driver.get(key)).object.metadata).toBeUndefined();
+    const [listed] = (await driver.list({ prefix: 'org/org-1/' })).objects;
+    expect(listed?.metadata).toBeUndefined();
+  });
+
   test('get on a missing key is X_STORAGE_NOT_FOUND', async () => {
     let caught: unknown;
     try {

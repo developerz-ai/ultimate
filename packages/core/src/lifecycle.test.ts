@@ -152,6 +152,41 @@ describe('lifecycle', () => {
     expect(closed).toBe(1);
     expect(lines.some((line) => line.includes('shutdown hook failed'))).toBe(true);
   });
+
+  test('a hook throwing a value the LOGGER cannot render still completes the drain', async () => {
+    // The SIGTERM hang: `runPhase` catches the hook's throw and logs it, so a value the logger
+    // itself dies on (a bigint, an object with a throwing getter) escapes that catch, rejects
+    // `drainPromise`, and `installSignalHandlers`' `void drain(signal).then(…)` never reaches
+    // `process.exit(0)` — the pod is killed at the grace period instead of exiting clean.
+    const lines: string[] = [];
+    configureLifecycle({
+      logger: createLogger({ level: 'info', writer: (line) => lines.push(line) }),
+    });
+    let closed = 0;
+    onShutdown('bigint-thrower', () => {
+      throw 10n;
+    });
+    onShutdown('getter-thrower', () => {
+      throw {
+        get message(): never {
+          throw new Error('hostile');
+        },
+      };
+    });
+    onShutdown('good', () => {
+      closed += 1;
+    });
+
+    let exited = false;
+    await drain('SIGTERM').then(() => {
+      exited = true;
+    });
+
+    expect(exited).toBe(true);
+    expect(closed).toBe(1);
+    expect(lifecycleState()).toBe('stopped');
+    expect(lines.filter((line) => line.includes('shutdown hook failed'))).toHaveLength(2);
+  });
 });
 
 describe('readiness checks', () => {

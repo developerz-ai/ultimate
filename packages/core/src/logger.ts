@@ -2,6 +2,7 @@
 // default because the primary reader is an agent tailing `x logs --json`.
 
 import { type Clock, systemClock } from './clock';
+import { renderCauseValue } from './error-render';
 import { isUltimateError } from './errors';
 import { isSecret, REDACTED } from './secret';
 
@@ -102,29 +103,99 @@ function defaultWriter(line: string, level: LogLevel): void {
   stream.write(`${line}\n`);
 }
 
+/**
+ * TOTAL, on purpose. `lifecycle.ts` logs the value a shutdown hook threw and the value a
+ * readiness check threw — both caught, both arbitrary — so a renderer that throws here escapes
+ * `runPhase`'s catch, rejects the drain promise, and `installSignalHandlers` never reaches
+ * `process.exit(0)`: SIGTERM hangs, and `/readyz` dies with the check it was reporting on. A log
+ * line must never replace the event it describes.
+ *
+ * Degradation is per KEY, the same shape `renderMetaRecord` uses: one hostile getter must not
+ * cost a reader the fields beside it.
+ */
 function serialiseValue(value: unknown, depth: number): unknown {
+  try {
+    return serialise(value, depth);
+  } catch {
+    // `instanceof`, `Object.keys` and `toJSON` are all property reads on a value the framework
+    // did not build; `renderCauseValue` is the one renderer that cannot itself throw.
+    return renderCauseValue(value);
+  }
+}
+
+function serialise(value: unknown, depth: number): unknown {
+  // `JSON.stringify` raises a `TypeError` on a bigint, so the whole line died for one field.
+  if (typeof value === 'bigint') return renderCauseValue(value);
   if (value === null || typeof value !== 'object') return value;
   // Before every other branch: a `Secret` is redacted by VALUE, so it stays redacted under a key
   // nobody listed — `{ dsn: secret(url) }` is the leak key-name redaction cannot see.
   if (isSecret(value)) return REDACTED;
-  if (value instanceof Date) return value.toISOString();
+  // `toISOString()` THROWS on an invalid Date, and an invalid Date is exactly the value worth
+  // logging when a schedule went wrong.
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? 'an invalid Date' : value.toISOString();
+  }
   if (isUltimateError(value)) return value.toJSON();
   if (value instanceof Error) return { name: value.name, message: value.message };
   if (depth >= 6) return '[depth-limit]';
   if (Array.isArray(value)) return value.map((item) => serialiseValue(item, depth + 1));
+  const source = value as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
-    out[key] = isRedactedKey(key) ? REDACTED : serialiseValue(nested, depth + 1);
+  for (const key of Object.keys(source)) {
+    out[key] = isRedactedKey(key) ? REDACTED : entryValue(source, key, depth);
   }
   return out;
 }
 
+/** One field. The `try` covers the property READ — `serialiseValue` above is already total. */
+function entryValue(source: Record<string, unknown>, key: string, depth: number): unknown {
+  try {
+    return serialiseValue(source[key], depth + 1);
+  } catch {
+    return 'a value that cannot be read';
+  }
+}
+
 function redactFields(fields: LogFields): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(fields)) {
-    out[key] = isRedactedKey(key) ? REDACTED : serialiseValue(value, 0);
+  const source = fields as Record<string, unknown>;
+  // `Object.keys` before the values, so the read of each value is its own guarded step: a field
+  // record is the caller's object, and enumerating it eagerly threw on the first hostile getter.
+  for (const key of ownKeys(source)) {
+    out[key] = isRedactedKey(key) ? REDACTED : entryValue(source, key, 0);
   }
   return out;
+}
+
+function ownKeys(source: Record<string, unknown>): readonly string[] {
+  try {
+    return Object.keys(source);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The last guard. The walk above already degraded every hostile field, so reaching the fallback
+ * means the assembled line itself refused to serialise — and the answer to that is still a line,
+ * not a throw propagating out of `log.error` into whatever `catch` block called it.
+ */
+function renderLine(
+  line: Readonly<Record<string, unknown>>,
+  level: LogLevel,
+  message: string,
+  ts: unknown,
+): string {
+  try {
+    return JSON.stringify(line);
+  } catch {
+    return JSON.stringify({
+      ts: typeof ts === 'string' ? ts : '',
+      level,
+      msg: message,
+      logFields: 'a log line that cannot be serialised',
+    });
+  }
 }
 
 function envLevel(): LogLevel {
@@ -151,7 +222,7 @@ export function createLogger(options?: LoggerOptions): Logger {
       ...redactFields(contextFields() ?? {}),
       ...redactFields(fields ?? {}),
     };
-    writer(JSON.stringify(line), lineLevel);
+    writer(renderLine(line, lineLevel, message, line.ts), lineLevel);
   }
 
   return {

@@ -163,6 +163,8 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     expect(migration.up).toContain('"slug" text not null unique');
     expect(migration.up).not.toContain('create unique index "pg_live_orgs_slug_key"');
     expect(migration.up).toContain('"total_currency" char(3)');
+    // The third money column, nullable and range-checked — emitted by the same projection.
+    expect(migration.up).toContain('"total_scale" integer');
     // beforeAll applied it; a table that did not exist would have failed every statement after.
     expect(statementsOf(migration.up).length).toBeGreaterThan(0);
   });
@@ -183,6 +185,38 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     const read = await repo().findById(written.id, { orgId: acme });
     expect(read?.total).toEqual({ minor: 12_500, currency: 'EUR' });
     expect(read?.reference).toBe('INV-round-trip');
+  });
+
+  test('a SCALED amount survives the round trip, and an absent scale stays absent', async () => {
+    // The third money column against a real int2/int4: `{ minor: 16, currency: 'USD', scale: 5 }`
+    // is $0.00016, and the entity layer used to store and read it back as $16.00 — a 10,000x
+    // reinterpretation with no error anywhere. A recording client cannot prove the column exists.
+    const scaled = await write(acme, 'INV-scaled', {
+      total: { minor: 16, currency: 'USD', scale: 5 },
+    });
+    expect(scaled.total).toEqual({ minor: 16, currency: 'USD', scale: 5 });
+    expect((await repo().findById(scaled.id, { orgId: acme }))?.total).toEqual({
+      minor: 16,
+      currency: 'USD',
+      scale: 5,
+    });
+
+    // NULL in the column is "the currency's own minor unit", and it must decode to an ABSENT key:
+    // `scale: 0` is a different value — whole units — and would be a 100x error on every price.
+    const plain = await write(acme, 'INV-unscaled', { total: { minor: 1250, currency: 'USD' } });
+    const read = await repo().findById(plain.id, { orgId: acme });
+    expect(read?.total).toEqual({ minor: 1250, currency: 'USD' });
+    expect(Object.hasOwn(read?.total ?? {}, 'scale')).toBe(false);
+  });
+
+  test('the scale column carries its own CHECK, so a psql session cannot write 42 either', async () => {
+    const insert = client.execute(
+      raw(
+        `insert into "pg_live_invoices" ("org_id", "reference", "total_minor", "total_currency", "total_scale")` +
+          ` values ('${acme}', 'INV-badscale', 100, 'USD', 42)`,
+      ),
+    );
+    await expect(insert).rejects.toThrow();
   });
 
   test('a CHECK the entity declared is enforced by Postgres, not only by $assert', async () => {

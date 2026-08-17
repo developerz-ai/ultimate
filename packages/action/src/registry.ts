@@ -4,10 +4,12 @@
  * actions. Registration is also where a missing policy becomes a build error.
  */
 
+import { SchemaUnsupportedError } from '@ultimat3/schema';
 import type { ActionDescriptor, AnyAction } from './action';
 import { isAction, nameAction } from './action';
 import { ActionDuplicateError, ActionPathDuplicateError, ActionPolicyMissingError } from './errors';
 import { assertIdempotencyScope } from './idempotency';
+import { jsonSchemaOf, mcpSchemaOf } from './json-schema';
 import { derivePath } from './naming';
 
 const registry = new Map<string, AnyAction>();
@@ -43,6 +45,7 @@ export function registerAction<A extends AnyAction>(name: string, target: A): A 
   if (target.policy === undefined || target.policy === null) {
     throw new ActionPolicyMissingError(name);
   }
+  assertProjectable(name, target);
   const { path } = derivePath(name);
   const owner = paths.get(path);
   if (owner !== undefined && owner !== name) {
@@ -52,6 +55,32 @@ export function registerAction<A extends AnyAction>(name: string, target: A): A 
   registry.set(name, named);
   paths.set(path, name);
   return named;
+}
+
+/**
+ * Both schemas must reach JSON Schema, and this is where that is decided — boot, beside the policy
+ * check, never the first `tools/list`. `jsonSchemaOf` used to swallow the refusal into
+ * `additionalProperties: true`, so an action whose `input:` the provider cannot describe registered
+ * cleanly and then published "any object accepted" on three surfaces while `validateInput` rejected
+ * every payload. The shipped `X_SCHEMA_UNSUPPORTED` is re-raised rather than re-coded — the failure
+ * is the provider's, and only the cause needs to say which action and which field.
+ */
+function assertProjectable(name: string, target: AnyAction): void {
+  for (const field of ['input', 'output'] as const) {
+    try {
+      jsonSchemaOf(target[field]);
+      mcpSchemaOf(target[field]);
+    } catch {
+      // The thrown value is deliberately not rendered into the cause: it is the provider's, of
+      // unknown shape, and this package's own two facts — which action, which field — are the
+      // ones a reader acts on.
+      throw new SchemaUnsupportedError({
+        cause: `${name}: \`${field}:\` cannot be projected to JSON Schema`,
+        fix: `declare ${name}'s \`${field}:\` with t.object({ ... }) from @ultimat3/action, or call configureSchemaProvider() with a provider that can introspect it`,
+        meta: { action: name, field },
+      });
+    }
+  }
 }
 
 /**

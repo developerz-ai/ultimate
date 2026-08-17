@@ -8,6 +8,7 @@ import {
   otlpEndpoint,
   otlpHeaders,
   otlpResource,
+  postOtlp,
   tryOtlpEndpoint,
   unixNano,
 } from './otlp';
@@ -127,6 +128,27 @@ describe('otlpResource', () => {
         { key: 'service.name', value: { stringValue: 'web' } },
         { key: 'service.version', value: { stringValue: '1.2.0' } },
       ],
+    });
+  });
+});
+
+describe('postOtlp', () => {
+  test('a rejection that fights being READ still never reaches the caller', async () => {
+    // The catch that keeps a collector outage from becoming an app failure rendered the reason
+    // with `failure instanceof Error ? failure.message : String(failure)`. On Bun an unhandled
+    // rejection out of a fire-and-forget export takes the process with it, which is the whole
+    // reason this function swallows.
+    const hostile = new Proxy(new Error('ECONNREFUSED'), {
+      getPrototypeOf(): never {
+        throw new TypeError('proxy trap');
+      },
+    });
+    await postOtlp({
+      url: 'http://collector:4318/v1/traces',
+      headers: {},
+      body: '{}',
+      timeoutMs: 10,
+      fetch: (() => Promise.reject(hostile)) as unknown as typeof globalThis.fetch,
     });
   });
 });

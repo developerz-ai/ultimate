@@ -185,6 +185,26 @@ describe('renderOverlay notices', () => {
     expect(markup).toContain('x fix &quot;&lt;b&gt;now&lt;/b&gt;&quot;');
     expect(markup).toContain('https://x.test/?a=&quot;b&quot;&amp;c=&lt;d&gt;');
   });
+
+  test('a single quote is escaped too — every attribute here is double-quoted, but the next one written may not be', () => {
+    const markup = renderOverlay(error, {
+      notices: [{ ...nPlusOne, cause: "it's here" }],
+    });
+
+    expect(markup).toContain('it&#39;s here');
+    expect(markup).not.toContain("it's here");
+  });
+
+  // Escaping does nothing to a scheme: `javascript:alert(1)` survives every entity replacement
+  // and is then an href the agent debugging this page clicks.
+  test('a docs value that is not an http(s) URL is rendered as text, never as an href', () => {
+    const card = noticesCardOf(
+      renderOverlay(error, { notices: [{ ...nPlusOne, docs: 'javascript:alert(1)' }] }),
+    );
+
+    expect(card).not.toContain('<a href');
+    expect(card).toContain('javascript:alert(1)');
+  });
 });
 
 describe('overlayResponse', () => {

@@ -101,6 +101,44 @@ describe('makeSchema', () => {
     expect(withDefault.safeParse(42)).toEqual({ value: 42 });
   });
 
+  test('.default() hands each parse its own object — never one shared reference', () => {
+    // Cross-request data bleed: every request that omitted the field received the SAME array, so
+    // one handler's `push` was the next request's starting value for the life of the process.
+    const schema = makeSchema<unknown, string[]>({ kind: 'array' }, (value, path) =>
+      Array.isArray(value) ? pass(value as string[]) : fail(path, 'expected an array'),
+    ).default([]);
+
+    const first = schema.parse(undefined);
+    const second = schema.parse(undefined);
+    expect(first).not.toBe(second);
+
+    first.push('leaked');
+    expect(schema.parse(undefined)).toEqual([]);
+  });
+
+  test('.default() keeps the DECLARED value on the node, for OpenAPI', () => {
+    const declared = { retries: 3 };
+    const schema = makeSchema<unknown, { retries: number }>({ kind: 'object' }, (value) =>
+      pass(value as { retries: number }),
+    ).default(declared);
+    expect(schema.node.default).toEqual({ retries: 3 });
+    expect(schema.node.hasDefault).toBe(true);
+  });
+
+  test('.default() refuses a fallback it cannot hand out a fresh copy of', () => {
+    const schema = makeSchema<unknown, unknown>({ kind: 'unknown' }, (value) => pass(value));
+    expect(() => schema.default({ onMiss: () => 1 })).toThrow(/X_SCHEMA_DEFAULT_UNSHAREABLE/);
+  });
+
+  test('.default(x).optional() publishes no default it cannot produce', () => {
+    // `optional()` short-circuits `undefined` to `undefined` BEFORE the default is reached, so a
+    // published `default: 20` described a value this schema never returns.
+    const schema = makeNumberSchema().default(20).optional();
+    expect(schema.parse(undefined)).toBeUndefined();
+    expect(schema.node.hasDefault).toBeUndefined();
+    expect('default' in schema.node).toBe(false);
+  });
+
   test('.describe() sets node.description and leaves check behavior unchanged', () => {
     const schema = makeNumberSchema();
     const described = schema.describe('a count');

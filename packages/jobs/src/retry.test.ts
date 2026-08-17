@@ -42,6 +42,19 @@ describe('backoff schedules', () => {
     expect(backoffDelayMs(jittered, 3, () => 1)).toBe(4_000);
     expect(backoffDelayMs(jittered, 3, () => 0.5)).toBe(3_000);
   });
+
+  // `jitter` was the one option with no `DEFAULT_RETRY` fallback while its own doc says "Equal
+  // jitter … by default", so an omitted `jitter` retried in lockstep — the thundering herd the
+  // default exists to break. Masked for jobs declared through `job()`, which merges the defaults;
+  // this is the exported function, and `retrySchedule` reads it directly.
+  test('an omitted jitter takes the documented default, not "off"', () => {
+    const declared: RetryPolicy = { attempts: 3, backoff: 'exponential', delay: 1_000 };
+
+    expect(backoffDelayMs(declared, 3, () => 0)).toBe(2_000);
+    expect(backoffDelayMs(declared, 3, () => 1)).toBe(4_000);
+    // An explicit `false` still turns it off — the default is a default, not a policy.
+    expect(backoffDelayMs({ ...declared, jitter: false }, 3, () => 0)).toBe(4_000);
+  });
 });
 
 describe('nextRetry', () => {

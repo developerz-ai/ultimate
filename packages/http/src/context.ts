@@ -201,8 +201,13 @@ export const createRequestContext = (init: RequestContextInit): RequestContext =
  */
 export const asCtx = (ctx: RequestContext): Ctx => ctx;
 
-/** Read the ambient request context. Throws outside a request via core's ALS. */
-export const useRequestContext = (): RequestContext => useContext() as unknown as RequestContext;
+/**
+ * The ambient `Ctx`, WIDENED to the request shape and not yet proven to be one. Private for that
+ * reason: every export below runs it through `assertInRequest` first. The cast is the inverse of
+ * `asCtx` and the only one in this file that cannot be a checked widening — core's `Ctx` genuinely
+ * does not carry `requestHeaders`, which is precisely what makes the proof necessary.
+ */
+const ambientContext = (): RequestContext => useContext() as unknown as RequestContext;
 
 /**
  * The ambient context, proven to be an HTTP request's rather than a job's or a task's.
@@ -211,10 +216,20 @@ export const useRequestContext = (): RequestContext => useContext() as unknown a
  * `TypeError: object is not extensible`, which is not an instruction. Not exported from the
  * package: callers want a header, a cookie or a redirect, never the proof.
  */
-export const assertInRequest = (member: string, ctx = useRequestContext()): RequestContext => {
+export const assertInRequest = (member: string, ctx = ambientContext()): RequestContext => {
   if ((ctx.requestHeaders as Headers | undefined) === undefined) throw noRequest(member);
   return ctx;
 };
+
+/**
+ * Read the ambient request context. Throws outside a request via core's ALS — and, since a job, a
+ * task, a scheduler round and a CLI command all supply an ordinary `Ctx`, throws `X_NO_REQUEST`
+ * there too rather than handing back an object whose non-optional fields are `undefined`. That is
+ * what it used to do, so the first read (`ctx.requestHeaders.get(...)`) was a bare `TypeError`
+ * from a public API. `member` names what the caller was after, so the refusal instructs.
+ */
+export const useRequestContext = (member = 'the request context'): RequestContext =>
+  assertInRequest(member, ambientContext());
 
 /**
  * The inbound headers of the request in scope. `use*` because it reads core's ALS, like

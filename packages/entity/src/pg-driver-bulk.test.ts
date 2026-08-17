@@ -91,6 +91,8 @@ const cellsOf = (row: Invoice): readonly (readonly [string, unknown, unknown])[]
   ['reference', row.reference, row.reference],
   ['total_minor', row.total.minor, String(row.total.minor)],
   ['total_currency', row.total.currency, row.total.currency],
+  // The third money column: `null` is "the currency's own minor unit", which is every row here.
+  ['total_scale', row.total.scale ?? null, row.total.scale ?? null],
   ['paid', row.paid, row.paid],
   ['note', row.note, row.note],
   ['issued_at', row.issuedAt, row.issuedAt.toISOString()],
@@ -161,16 +163,21 @@ describe('a batch is one statement, and both drivers mean the same by it', () =>
     await repo().insertAll([invoice(2), invoice(3, { reference: evil })]);
 
     expect(lastText()).not.toContain('drop table');
-    expect(lastText()).toEndWith('($10, $11, $12, $13, $14, $15, $16, $17, $18) returning *');
-    expect(lastValues()[11]).toBe(evil);
+    expect(lastText()).toEndWith('($11, $12, $13, $14, $15, $16, $17, $18, $19, $20) returning *');
+    expect(lastValues()[12]).toBe(evil);
   });
 
-  test('money binds as two parameters, in the positions its two columns occupy', async () => {
-    await repo().insertAll([invoice(2), invoice(3, { total: { minor: 5, currency: 'USD' } })]);
+  test('money binds as three parameters, in the positions its three columns occupy', async () => {
+    await repo().insertAll([
+      invoice(2),
+      invoice(3, { total: { minor: 5, currency: 'USD', scale: 6 } }),
+    ]);
 
-    expect(lastText()).toContain('"total_minor", "total_currency"');
-    expect(lastValues().slice(3, 5)).toEqual([129900, 'EUR']);
-    expect(lastValues().slice(12, 14)).toEqual([5, 'USD']);
+    expect(lastText()).toContain('"total_minor", "total_currency", "total_scale"');
+    // An amount at the currency's own scale binds `null` there — never `0`, which means whole
+    // units and would reinterpret every ordinary price by a factor of a hundred.
+    expect(lastValues().slice(3, 6)).toEqual([129900, 'EUR', null]);
+    expect(lastValues().slice(13, 16)).toEqual([5, 'USD', 6]);
   });
 
   test('no rows is no statement, and one row is the statement insert always sent', async () => {
@@ -194,9 +201,9 @@ describe('a batch is one statement, and both drivers mean the same by it', () =>
     // rest — which is what makes a row inside a batch mean what it means on its own.
     expect(tuplesOf(lastText())[0]).not.toContain('default');
     expect(lastText()).toContain(
-      '(default, $10, $11, $12, $13, default, default, default, default)',
+      '(default, $11, $12, $13, $14, $15, default, default, default, default)',
     );
-    expect(lastValues()).toHaveLength(13);
+    expect(lastValues()).toHaveLength(15);
   });
 
   test('past the bind count it is whole statements whose tuples are the batch, in order', async () => {
@@ -251,6 +258,7 @@ describe('upsertAll() compiles the conflict clause', () => {
     expect(lastText()).toEndWith(
       ' on conflict ("org_id", "reference") do update set' +
         ' "total_minor" = excluded."total_minor", "total_currency" = excluded."total_currency",' +
+        ' "total_scale" = excluded."total_scale",' +
         ' "paid" = excluded."paid", "note" = excluded."note", "issued_at" = excluded."issued_at"' +
         ' returning *',
     );
@@ -347,7 +355,7 @@ describe('upsertAll() compiles the conflict clause', () => {
     // `do nothing` overwrites nothing, so the cell means what it means in a plain `insertAll`.
     await repo().upsertAll(uneven, { ...args, onMatch: 'nothing' });
     expect(lastText()).toContain(
-      '(default, $10, $11, $12, $13, default, default, default, default)',
+      '(default, $11, $12, $13, $14, $15, default, default, default, default)',
     );
   });
 

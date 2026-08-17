@@ -9,10 +9,12 @@ export { CursorInvalidError } from '@ultimat3/core';
 
 /** Titles for the framework-wide code table — every one of them owned by this package. */
 const OWNED_TITLES: Readonly<Record<string, string>> = {
+  X_CURSOR_VALUE_UNSUPPORTED: 'a sort value cannot be carried in a cursor',
   X_MATCHER_UNSUPPORTED: 'live query shape cannot be patched incrementally',
   X_QUERY_DEPRECATION_INVALID: 'a query declares a deprecation whose dates cannot be rendered',
   X_QUERY_DUPLICATE: 'two queries are registered under one name',
   X_QUERY_FOREIGN: 'a value that is not a query was projected as one',
+  X_QUERY_INPUT_UNENCODABLE: 'a query input cannot be carried in a query string',
   X_QUERY_NOT_PAGEABLE: 'a read returned rows with no id, so a cursor cannot name a position',
   X_QUERY_POLICY_MISSING: 'a query was registered without a policy',
   X_QUERY_UNREGISTERED: 'a query was used before it was registered',
@@ -108,6 +110,25 @@ export class QueryForeignError extends UltimateError {
   }
 }
 
+/**
+ * A read whose declared input cannot survive its own route. Thrown at `query()`, so the file that
+ * wrote it is the file that fails.
+ *
+ * The `fix` names the three edits that exist, because which one applies depends on what the key
+ * means: a structure belongs in an `action`'s JSON body, a filter can be flattened into scalar
+ * keys, and an explicitly-null argument is spelled as an absent optional one.
+ */
+export class QueryInputUnencodableError extends UltimateError {
+  constructor(offender: string) {
+    super({
+      code: 'X_QUERY_INPUT_UNENCODABLE',
+      cause: `${offender}, and a read is served as GET /_x/query/<name> — a query string carries characters, not structures or nulls`,
+      fix: 'flatten the key into scalar arguments (status: t.string, limit: t.number), spell an absent value as `.optional()` rather than `t.nullable(...)`, or declare it as an action() if it really needs a JSON body',
+      docs: docs('X_QUERY_INPUT_UNENCODABLE'),
+    });
+  }
+}
+
 export class QueryDuplicateError extends UltimateError {
   constructor(name: string) {
     super({
@@ -161,6 +182,29 @@ export class QueryNotPageableError extends UltimateError {
       cause: `a row from ${subject} has no "id", so a cursor cannot name its position`,
       fix: `return the primary key from the query's sql: db.${entity ?? 'rows'}.select({ id: true, … })`,
       docs: docs('X_QUERY_NOT_PAGEABLE'),
+    });
+  }
+}
+
+/**
+ * A sort key the cursor codec cannot carry, refused where the cursor is MINTED.
+ *
+ * Deliberately not `X_CURSOR_INVALID`: that code means "the cursor you sent is not one of ours",
+ * and its fix — request the first page again — repairs nothing here. This is the read's own
+ * `orderBy` naming a column whose values are objects, `NaN` or `±Infinity`, so the repair is one
+ * edit to the declaration and no retry will ever help. `Date` and `bigint` are NOT in this set:
+ * `cursor-value.ts` tags both and revives them, which is the whole reason it exists.
+ *
+ * The description says the SHAPE and never the value — a cursor's key is row data, and a `cause`
+ * reaches the log index and the problem document alike.
+ */
+export class CursorValueUnsupportedError extends UltimateError {
+  constructor(description: string) {
+    super({
+      code: 'X_CURSOR_VALUE_UNSUPPORTED',
+      cause: `a sort key holds ${description}, which no cursor can carry`,
+      fix: 'order by a scalar column — .orderBy("createdAt") or .orderBy("id") — and project the composite value into the row instead',
+      docs: docs('X_CURSOR_VALUE_UNSUPPORTED'),
     });
   }
 }

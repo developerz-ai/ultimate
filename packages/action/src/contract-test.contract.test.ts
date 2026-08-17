@@ -103,7 +103,11 @@ describe('the policy assertion', () => {
     expect(seen).toEqual([{ postId: '00000000-0000-4000-8000-000000000000', notify: true }]);
   });
 
-  test('reports drift, naming `input:`, when the sample cannot satisfy the schema', async () => {
+  // `pattern` IS in the IR, so "no value can be synthesized" is knowable BEFORE the invocation.
+  // This used to be reported as `X_INPUT_INVALID` surfacing out of the action's own parse, which
+  // reads as the action being wrong — the action is fine, `input:` is fine, and the only thing
+  // that can supply the value is the author.
+  test('reports drift naming the FIELD, before the invocation, when no sample can be built', async () => {
     const target = action({
       input: t.object({ code: t.string.pattern(/^\d+$/) }),
       output: Output,
@@ -116,8 +120,10 @@ describe('the policy assertion', () => {
       .catch((error: unknown) => error);
     expect(failure).toBeUltimateError('X_CONTRACT_DRIFT');
     // Not silence, and not a pass: an assertion that could not run says so and says how to fix it.
-    expect(causeOf(failure)).toContain('X_INPUT_INVALID before its policy decided');
-    expect(fixOf(failure)).toContain('pass `input:` to contractTestsFor(publishByCode)');
+    expect(causeOf(failure)).toContain('code (must match ^\\d+$)');
+    expect(causeOf(failure)).not.toContain('X_INPUT_INVALID');
+    // The exact call to paste — the action's own `input:` is not what answers this.
+    expect(fixOf(failure)).toContain('contractTestsFor(publishByCode, { input:');
   });
 
   test('an explicit `input:` overrides the synthesized one', async () => {

@@ -76,8 +76,15 @@ const serializeSortValue = (value: unknown): string => {
 };
 
 // No `money` case: `kindAt` resolves a money sort key to the kind of the part being ordered by
-// (`minor` is bigint, `currency` is char) and refuses the bare property, so the composite kind
-// never reaches here. A case for it could only ever revive "[object Object]".
+// and refuses the bare property, so the composite kind never reaches here. A case for it could
+// only ever revive "[object Object]".
+//
+// The parts revive as `MONEY_PARTS` declares them — `minor` as an `integer` and `currency` as a
+// `char` — and `minor` is deliberately NOT `bigint` even though the physical column is: the row
+// property is a `number` (`@ultimat3/schema` owns that declaration), and a cursor reviving a
+// `bigint` there would compare against a `number` property in the memory driver and mint a seek
+// bind of the wrong type in the other. The comment here used to claim the opposite of the
+// constant three lines above it.
 const reviveSortValue = (kind: ColumnKind, text: string): unknown => {
   switch (kind) {
     case 'timestamptz':

@@ -1,7 +1,8 @@
 // Single responsibility: the `Schema` type every builtin validator returns, and the factory
 // that turns a check function plus an IR node into a Standard-Schema-conforming object.
 
-import { ValidationFailedError, type ValidationIssue } from './errors';
+import { describeValue } from './describe-value';
+import { SchemaError, ValidationFailedError, type ValidationIssue } from './errors';
 import type { SchemaNode, SchemaRefinement } from './node';
 import {
   formatPath,
@@ -115,6 +116,42 @@ export type ShapeInput<S extends Shape> = Simplify<
   }
 >;
 
+/**
+ * One FRESH copy of a default per parse. `.default([])` handed every parse the same array, so a
+ * handler pushing onto it made that push the next request's starting value for the life of the
+ * process — cross-request data bleed declared in a schema.
+ *
+ * Primitives are immutable, so they are still shared and cost nothing. Everything else is decided
+ * ONCE, here at declaration: a value `structuredClone` can copy is copied per parse, and one it
+ * cannot is refused at the first import of the authoring file — the same "wrong for every input,
+ * so say so where it is written" rule `X_SCHEMA_DISCRIMINANT_INVALID` follows. What that refuses
+ * was never a working declaration: `node.default` is published as JSON, so a default carrying a
+ * function or a symbol could not reach OpenAPI either.
+ *
+ * Known narrow cost: a class instance clones to a plain object, so a default that relied on its
+ * prototype loses it. Schema defaults are wire values, which is the only thing `node.default` can
+ * publish, so that shape was already outside what a default may mean.
+ */
+function defaultFactory<Out>(fallback: Out): () => Out {
+  if (fallback === null || typeof fallback !== 'object') return () => fallback;
+  try {
+    structuredClone(fallback);
+  } catch {
+    throw new SchemaError({
+      code: 'X_SCHEMA_DEFAULT_UNSHAREABLE',
+      cause: `default() received ${describeValue(fallback)}, which structuredClone cannot copy`,
+      fix: 'pass a JSON-shaped default (plain object, array, Date, Map, Set), or drop .default() and answer the absent value in the handler',
+    });
+  }
+  return () => structuredClone(fallback);
+}
+
+/** The default declaration, dropped — for a wrapper that can no longer reach it. */
+function withoutDefault(node: SchemaNode): SchemaNode {
+  const { hasDefault: _hasDefault, default: _default, ...rest } = node;
+  return rest;
+}
+
 function toIssues(result: CheckErr): readonly ValidationIssue[] {
   return result.issues.map((issue) => ({
     path: formatPath(issue.path),
@@ -146,7 +183,10 @@ export function makeSchema<In, Out>(node: SchemaNode, check: Check<Out>): Schema
     },
     optional(): Schema<In | undefined, Out | undefined> {
       return makeSchema<In | undefined, Out | undefined>(
-        { ...node, optional: true },
+        // `.default(x).optional()` published `default: x` while `parse` answered `undefined`:
+        // this wrapper short-circuits `undefined` before the default is ever reached, so a client
+        // honouring the published default assumed a value the server never produced.
+        withoutDefault({ ...node, optional: true }),
         (value, path) => (value === undefined ? pass(undefined) : check(value, path)),
       );
     },
@@ -156,9 +196,12 @@ export function makeSchema<In, Out>(node: SchemaNode, check: Check<Out>): Schema
       );
     },
     default(fallback: Out): Schema<In | undefined, Out> {
+      const fresh = defaultFactory(fallback);
       return makeSchema<In | undefined, Out>(
+        // The node keeps the DECLARATION, never a copy: `node.default` is what OpenAPI, the MCP
+        // tool schema and the typed client publish, and they describe what was written.
         { ...node, hasDefault: true, default: fallback },
-        (value, path) => (value === undefined ? pass(fallback) : check(value, path)),
+        (value, path) => (value === undefined ? pass(fresh()) : check(value, path)),
       );
     },
     describe(description: string): Schema<In, Out> {

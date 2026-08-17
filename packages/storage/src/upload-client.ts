@@ -47,32 +47,65 @@ const pathOf = (url: string): string => {
   }
 };
 
+const aborted = (url: string): ReturnType<typeof uploadFailed> =>
+  uploadFailed(pathOf(url), 0, 'the upload was aborted');
+
 export const xhrSignedPut: SignedPut = (input) =>
   new Promise<void>((resolve, reject) => {
+    // Asked BEFORE anything is opened: per spec, adding an `abort` listener to a signal that has
+    // already aborted never fires it, so the whole body used to go up for a caller who had already
+    // given up — the one case the listener below cannot cover.
+    if (input.signal?.aborted === true) {
+      reject(aborted(input.url));
+      return;
+    }
+
     const request = new XMLHttpRequest();
+    const onAbortRequested = (): void => {
+      request.abort();
+    };
+    /**
+     * Every terminal outcome releases the signal listener. An `AbortSignal` is normally one per
+     * picker session and an upload is one per file, so a listener that is only ever added left one
+     * behind per call for the life of the signal — and each one retains its `XMLHttpRequest`.
+     */
+    const settle =
+      (answer: () => void): (() => void) =>
+      () => {
+        input.signal?.removeEventListener('abort', onAbortRequested);
+        answer();
+      };
+
     request.open('PUT', input.url, true);
     request.setRequestHeader('content-type', input.contentType);
     request.upload.addEventListener('progress', (event: ProgressEvent) => {
       input.onProgress?.(progressOf(event.loaded, event.lengthComputable ? event.total : 0));
     });
-    request.addEventListener('load', () => {
-      if (request.status >= 200 && request.status < 300) {
-        input.onProgress?.(progressOf(input.body.size, input.body.size));
-        resolve();
-        return;
-      }
-      reject(uploadFailed(pathOf(input.url), request.status, request.responseText));
-    });
+    request.addEventListener(
+      'load',
+      settle(() => {
+        if (request.status >= 200 && request.status < 300) {
+          input.onProgress?.(progressOf(input.body.size, input.body.size));
+          resolve();
+          return;
+        }
+        reject(uploadFailed(pathOf(input.url), request.status, request.responseText));
+      }),
+    );
     // A transport fault carries no status; 0 is the one value no server can answer with.
-    request.addEventListener('error', () => {
-      reject(uploadFailed(pathOf(input.url), 0, 'the request never reached the disk'));
-    });
-    request.addEventListener('abort', () => {
-      reject(uploadFailed(pathOf(input.url), 0, 'the upload was aborted'));
-    });
-    input.signal?.addEventListener('abort', () => {
-      request.abort();
-    });
+    request.addEventListener(
+      'error',
+      settle(() => {
+        reject(uploadFailed(pathOf(input.url), 0, 'the request never reached the disk'));
+      }),
+    );
+    request.addEventListener(
+      'abort',
+      settle(() => {
+        reject(aborted(input.url));
+      }),
+    );
+    input.signal?.addEventListener('abort', onAbortRequested);
     request.send(input.body);
   });
 

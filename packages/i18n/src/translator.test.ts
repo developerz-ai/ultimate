@@ -70,6 +70,52 @@ describe('createTranslator', () => {
     expect(t.locale).toBe('en');
     expect(t.keys()).toContain('approvals.empty');
   });
+
+  // `has()` and `t()` are two functions in one package answering one question, and they used to
+  // disagree: `has()` is true on any of `key`, `_other`, `_plural`, `_one`, while the candidate
+  // chain for the `one` category stopped after `_one` and the bare key — so a catalog authored
+  // `{items_other, items_plural}` rendered ⟦items⟧ for a count of 1, in production copy.
+  describe('has(key) true implies t(key, { count }) is never a loud miss', () => {
+    const authorings = [
+      ['items'],
+      ['items_one'],
+      ['items_other'],
+      ['items_plural'],
+      ['items_other', 'items_plural'],
+      ['items_one', 'items_other'],
+    ];
+    // Every CLDR category reachable from the supported set: en other/one, pl one/few/many,
+    // ru one/few/many, ar zero/one/two/few/many/other.
+    const probes: readonly (readonly [string, number])[] = [
+      ['en', 0],
+      ['en', 1],
+      ['en', 3],
+      ['pl', 1],
+      ['pl', 3],
+      ['pl', 5],
+      ['ru', 1],
+      ['ru', 2],
+      ['ru', 5],
+      ['ar', 0],
+      ['ar', 1],
+      ['ar', 2],
+      ['ar', 3],
+      ['ar', 11],
+      ['ar', 100],
+    ];
+
+    for (const keys of authorings) {
+      for (const [locale, count] of probes) {
+        test(`{${keys.join(', ')}} @ ${locale}/${count}`, () => {
+          const catalog: Catalog = Object.fromEntries(keys.map((key) => [key, `${key}: {count}`]));
+          const t = createTranslator(catalog, locale);
+
+          expect(t.has('items')).toBe(true);
+          expect(isMiss(t('items', { count }))).toBe(false);
+        });
+      }
+    }
+  });
 });
 
 /**

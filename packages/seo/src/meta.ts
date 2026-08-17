@@ -94,9 +94,22 @@ export interface RenderMetaOptions {
   path?: string;
 }
 
+/**
+ * Separators a title template puts between the slot and the brand. Stripped so the BRAND is what
+ * the containment test reads: `'%s — Ultimate'` means the brand is `Ultimate`, not `— Ultimate`.
+ */
+const TEMPLATE_SEPARATORS = /^[\s\-–—|·:>/]+|[\s\-–—|·:>/]+$/g;
+
+/**
+ * The containment was `template.includes(title)` — inverted, so it only ever answered true when
+ * the title EQUALLED the brand. `applyTitleTemplate('About Ultimate', '%s — Ultimate')` produced
+ * `'About Ultimate — Ultimate'`, which `validate.ts` then measured against `TITLE_MAX_LENGTH`.
+ */
 export function applyTitleTemplate(title: string, template?: string): string {
   if (template === undefined || template === '') return title;
-  return template.includes(title) ? title : template.replace('%s', title);
+  const brand = template.replace('%s', '').replace(TEMPLATE_SEPARATORS, '');
+  if (brand !== '' && title.includes(brand)) return title;
+  return template.replace('%s', title);
 }
 
 export function robotsContent(directives: RobotsDirectives): string {

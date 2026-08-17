@@ -316,8 +316,15 @@
             "type": "string"
           },
           "respondedAt": {
-            "format": "date-time",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "enum": [
@@ -376,8 +383,15 @@
             "type": "string"
           },
           "respondedAt": {
-            "format": "date-time",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "enum": [

@@ -229,7 +229,13 @@ export const entity = <const C extends ColumnMap>(
     const input = value as Readonly<Record<string, unknown>>;
     const row: Record<string, unknown> = {};
     for (const [property, column] of entries) {
-      const given = input[property] ?? defaultValue(column.$meta);
+      // `=== undefined`, never `??`: an explicit `null` is the caller CLEARING a nullable column,
+      // and `??` read it as absence and wrote the column's declared default straight back — so
+      // `update(id, { status: null })` reported success and stored `'draft'`, with nothing on any
+      // surface to say otherwise. A present `undefined` still means absence, which is what a
+      // spread of an omitted optional key produces and is the shape every existing caller has.
+      const raw = input[property];
+      const given = raw === undefined ? defaultValue(column.$meta) : raw;
       if (given === undefined || given === null) {
         if (column.$meta.notNull) {
           throw invariantViolated(name, property, 'is required and has no default');

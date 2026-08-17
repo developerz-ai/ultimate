@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "buildId": "0d787d16185d9e2b",
+  "buildId": "834838ba19f3f7b0",
   "app": {
     "name": "@postly/root",
     "version": "0.0.1"
@@ -362,6 +362,12 @@
           "primaryKey": false
         },
         {
+          "name": "monthly_scale",
+          "type": "integer",
+          "nullable": true,
+          "primaryKey": false
+        },
+        {
           "name": "seats",
           "type": "integer",
           "nullable": false,
@@ -677,8 +683,15 @@
             "minLength": 1
           },
           "coverUrl": {
-            "type": "string",
-            "format": "uri"
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "type": "string",
@@ -693,8 +706,15 @@
             "minimum": 0
           },
           "publishedAt": {
-            "type": "string",
-            "format": "date-time"
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "authorId": {
             "type": "string",
@@ -999,8 +1019,15 @@
             "minLength": 1
           },
           "coverUrl": {
-            "type": "string",
-            "format": "uri"
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "type": "string",
@@ -1015,8 +1042,15 @@
             "minimum": 0
           },
           "publishedAt": {
-            "type": "string",
-            "format": "date-time"
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "authorId": {
             "type": "string",
@@ -1071,8 +1105,15 @@
         "type": "object",
         "properties": {
           "url": {
-            "type": "string",
-            "minLength": 1
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1146,8 +1187,15 @@
             "minLength": 1
           },
           "coverUrl": {
-            "type": "string",
-            "format": "uri"
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "type": "string",
@@ -1162,8 +1210,15 @@
             "minimum": 0
           },
           "publishedAt": {
-            "type": "string",
-            "format": "date-time"
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "authorId": {
             "type": "string",

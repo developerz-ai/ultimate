@@ -59,16 +59,49 @@ function describePattern(node: SchemaNode): string {
     : `/${node.pattern}/${node.patternFlags}`;
 }
 
+/**
+ * Characters, not UTF-16 code units — the unit `json-schema.ts` already promises, since JSON
+ * Schema defines `minLength`/`maxLength` over code points and the message here has always said
+ * "chars". `'👍'.length` is 2, so `t.string.max(1)` refused a value the published schema, a human
+ * and Postgres' `char_length` all count as one.
+ *
+ * Only a surrogate makes the two counts differ, so the string is walked only when one is present
+ * — every ASCII value keeps the O(1) read this replaced.
+ */
+const HAS_SURROGATE = /[\uD800-\uDBFF]/;
+
+function charCount(value: string): number {
+  return HAS_SURROGATE.test(value) ? [...value].length : value.length;
+}
+
+/**
+ * Compiled once per schema, not once per validation. `lastIndex` is reset because a `g` or `y`
+ * pattern carries it between calls — a cached global RegExp answers `false` for the second
+ * `.test()` of the very value it just accepted, which the per-call construction hid.
+ */
+function patternTester(node: SchemaNode): ((value: string) => boolean) | undefined {
+  if (node.pattern === undefined) return undefined;
+  const source = node.pattern;
+  const flags = node.patternFlags;
+  let compiled: RegExp | undefined;
+  return (value) => {
+    compiled ??= new RegExp(source, flags);
+    compiled.lastIndex = 0;
+    return compiled.test(value);
+  };
+}
+
 function stringLike(node: SchemaNode, what: string, test?: (value: string) => boolean) {
+  const matchesPattern = patternTester(node);
   const check: Check<string> = (value, path) => {
     if (typeof value !== 'string') return fail(path, expected(what, value));
-    if (node.minLength !== undefined && value.length < node.minLength) {
+    if (node.minLength !== undefined && charCount(value) < node.minLength) {
       return fail(path, expected(`${what} of at least ${node.minLength} chars`, value));
     }
-    if (node.maxLength !== undefined && value.length > node.maxLength) {
+    if (node.maxLength !== undefined && charCount(value) > node.maxLength) {
       return fail(path, expected(`${what} of at most ${node.maxLength} chars`, value));
     }
-    if (node.pattern !== undefined && !new RegExp(node.pattern, node.patternFlags).test(value)) {
+    if (matchesPattern !== undefined && !matchesPattern(value)) {
       return fail(path, expected(`${what} matching ${describePattern(node)}`, value));
     }
     if (test !== undefined && !test(value)) return fail(path, expected(what, value));

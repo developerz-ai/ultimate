@@ -6,7 +6,8 @@
 import { type Clock, systemClock } from './clock';
 import { tryUseContext } from './context';
 import { DEFAULT_ENVIRONMENT, type Environment, tryResolveEnvironment } from './environment';
-import { isUltimateError, toUltimateError } from './errors';
+import { renderThrowable, stringField } from './error-render';
+import { toUltimateError } from './errors';
 import { logger } from './logger';
 import type { Role } from './roles';
 import { currentSpanContext, type SpanResource, serviceResource } from './telemetry';
@@ -179,8 +180,10 @@ export function errorReport(error: unknown, options: ReportErrorOptions): ErrorR
     docs: normalized.docs,
     meta: normalized.meta,
     // The thrown value's own stack, not the wrapper's: `toUltimateError` builds its `InternalError`
-    // at this line, so the wrapper's stack points here rather than at the throw.
-    stack: (isUltimateError(error) ? error : error instanceof Error ? error : normalized).stack,
+    // at this line, so the wrapper's stack points here rather than at the throw. Read through
+    // `stringField`, because `error instanceof Error` and `.stack` are both property operations
+    // on a caught value — and this function's own contract is that reporting never throws.
+    stack: stringField(error, 'stack') ?? normalized.stack,
     resource: serviceResource(),
     environment: environmentNow(),
     release: release ?? ctx?.buildId ?? null,
@@ -200,7 +203,10 @@ export function reportError(error: unknown, options: ReportErrorOptions): void {
   } catch (failure) {
     logger.warn('error reporter failed', {
       source: options.source,
-      error: failure instanceof Error ? failure.message : String(failure),
+      // `renderThrowable`: `failure instanceof Error ? failure.message : String(failure)` is
+      // itself a throw on a hostile value, and it sat inside the catch that makes this function's
+      // documented "never throws" true.
+      error: renderThrowable(failure),
     });
   }
 }

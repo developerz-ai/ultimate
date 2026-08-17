@@ -172,6 +172,16 @@ export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
     `job "${name}" needs retry.attempts >= 1, got ${String(definition.retry.attempts)}`,
     `set retry: { attempts: 1 } or higher on job("${name}") — 0 attempts means the job is never executed at all, not that it never retries`,
   );
+  // `concurrency: 0` is not "no cap" — it is a fleet slot table that grants nothing.
+  // `createFleetSlots.acquire` reads `limit === undefined` as uncapped, so a declared `0` reaches
+  // `leases.acquire(key, 0, …)`, answers `false` forever with no log line, and the job is
+  // permanently unrunnable. Refused where it is written, the way `createPacer` refuses `rate: 0`.
+  assert(
+    definition.concurrency === undefined ||
+      (Number.isInteger(definition.concurrency) && definition.concurrency >= 1),
+    `job "${name}" declares concurrency ${String(definition.concurrency)}, which no worker can ever fill`,
+    `set a whole concurrency of 1 or more on job("${name}"), or omit the field for no cap at all`,
+  );
 
   const handle: JobHandle<I> = {
     kind: 'job',

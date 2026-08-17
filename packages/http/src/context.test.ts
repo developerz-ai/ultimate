@@ -136,6 +136,25 @@ describe('useRequestContext', () => {
     const result = runWithContext(asCtx(ctx), () => useRequestContext());
     expect(Object.is(result, ctx)).toBe(true);
   });
+
+  // A job, a task, a scheduler round and a CLI command all supply core's `Ctx` — none of them a
+  // `RequestContext`. The unchecked cast handed those back with `undefined` in non-optional
+  // fields, so the first reader failed as a bare `TypeError` from a PUBLIC API.
+  test('refuses a context that is not an HTTP request, with an instruction', () => {
+    const jobCtx = createContext({});
+
+    expect(() => runWithContext(jobCtx, () => useRequestContext())).toThrow(/X_NO_REQUEST/);
+    expect(() => runWithContext(jobCtx, () => useRequestContext().requestHeaders.get('cookie'))) //
+      .not.toThrow(TypeError);
+  });
+
+  test('names what the caller was after in the refusal', () => {
+    const jobCtx = createContext({});
+
+    expect(() => runWithContext(jobCtx, () => useRequestContext('the session cookie'))).toThrow(
+      /the session cookie was read outside an HTTP request/,
+    );
+  });
 });
 
 // Before these, `RequestContext` held the RESPONSE headers and no reference to the request at

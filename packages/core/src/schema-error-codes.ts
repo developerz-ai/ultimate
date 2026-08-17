@@ -14,6 +14,7 @@ export const SCHEMA_ERROR_CODE_TITLES: Readonly<Record<string, string>> = Object
   X_VALIDATION_FAILED: 'value did not match its schema',
   X_SCHEMA_UNSUPPORTED: 'the active schema provider cannot do this',
   X_SCHEMA_DISCRIMINANT_INVALID: 'a discriminated union member can never be dispatched to',
+  X_SCHEMA_DEFAULT_UNSHAREABLE: 'a schema default cannot be copied per parse',
 });
 
 // Registered here rather than in `error-codes.ts`'s `CORE_CODE_TITLES` because core does not own

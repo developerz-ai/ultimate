@@ -42,11 +42,27 @@ describe('registerDependent / dependentsOf', () => {
     expect(dependentsOf([tag('post', '1')])).toEqual([dep]);
   });
 
-  test('a collection-only tag does not reach dependents registered on unrelated row tags', () => {
+  // The mirror of the case above, and the half that was missing: `tagMatches` answers true in BOTH
+  // directions and `LruCache.invalidateTags` walks its `entityIndex` for exactly this, so a graph
+  // that expanded only row -> collection reported a partial bust as clean.
+  test('a collection tag also reaches dependents registered on its own row tags', () => {
     const rowDep = { kind: 'cache-key' as const, id: 'post:1' };
     registerDependent([tag('post', '1')], rowDep);
 
+    expect(dependentsOf([tag('post')])).toEqual([rowDep]);
+  });
+
+  test('a collection tag does not reach dependents of a DIFFERENT entity', () => {
+    registerDependent([tag('user', '1')], { kind: 'cache-key', id: 'user:1' });
+
     expect(dependentsOf([tag('post')])).toEqual([]);
+  });
+
+  test('an ISR route registered per row is revalidated by a collection bust', () => {
+    registerDependent([tag('post')], { kind: 'isr-route', id: '/posts' });
+    registerDependent([tag('post', '1')], { kind: 'isr-route', id: '/posts/1' });
+
+    expect(dependentsOfKind([tag('post')], 'isr-route').toSorted()).toEqual(['/posts', '/posts/1']);
   });
 
   test('de-dupes a dependent registered under multiple matching tags', () => {
@@ -80,6 +96,15 @@ describe('unregisterDependent', () => {
 
     unregisterDependent(dep);
     expect(dependentsOf([tag('post', '1')])).toEqual([]);
+  });
+
+  test('removes the dependent from the entity expansion too, not only its own wire tag', () => {
+    const dep = { kind: 'isr-route' as const, id: '/posts/1' };
+    registerDependent([tag('post', '1')], dep);
+    expect(dependentsOf([tag('post')])).toEqual([dep]);
+
+    unregisterDependent(dep);
+    expect(dependentsOf([tag('post')])).toEqual([]);
   });
 
   test('leaves siblings under the same tag resolvable, and cleans up empty tag buckets', () => {
