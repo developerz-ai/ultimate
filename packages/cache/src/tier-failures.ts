@@ -4,7 +4,7 @@
 // running degraded stays answerable instead of merely looking slow.
 
 import { logger, systemClock, UltimateError } from '@ultimat3/core';
-import type { TierName } from './tiers';
+import type { TierLabel } from './tiers';
 
 /** The three tier calls a stack makes on the value path. `invalidateTags` reports its own. */
 export type TierOperation = 'get' | 'set' | 'del';
@@ -12,7 +12,7 @@ export type TierOperation = 'get' | 'set' | 'del';
 export interface TierFailure {
   /** ISO-8601, from core's `systemClock` — never `new Date()`. */
   readonly at: string;
-  readonly tier: TierName;
+  readonly tier: TierLabel;
   readonly op: TierOperation;
   readonly key: string;
   /** The `X_*` code when the tier threw an `UltimateError`; absent for anything else. */
@@ -57,9 +57,14 @@ export function isolateTierFailures(): () => void {
  * `get` already reads as a miss and a `set`/`del` as "that tier is unchanged" — so the caller
  * needs no branch. The entry a tier refused to hold expires by TTL, exactly as one an
  * `invalidateTags` failure left behind does.
+ *
+ * Public, and the only sanctioned way to swallow a cache refusal: a store outside this package
+ * (`@ultimat3/query`'s read cache) that wrapped its own `try/catch` would degrade invisibly, and
+ * a second failure log nobody reads is what this one exists to prevent. Pass the store's
+ * `TierLabel` — it is closed for that reason.
  */
 export async function bestEffort<T>(
-  tier: TierName,
+  tier: TierLabel,
   op: TierOperation,
   key: string,
   run: () => Promise<T>,
@@ -72,7 +77,7 @@ export async function bestEffort<T>(
   }
 }
 
-function record(tier: TierName, op: TierOperation, key: string, error: unknown): void {
+function record(tier: TierLabel, op: TierOperation, key: string, error: unknown): void {
   const failure: TierFailure = {
     at: systemClock.now().toISOString(),
     tier,

@@ -13,6 +13,7 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_JOB_TENANT_REQUIRED',
   'X_JOB_CONCURRENCY_UNENFORCEABLE',
   'X_JOB_LEASE_LOST',
+  'X_JOB_SLOT_LOST',
   'X_JOB_NOT_CANCELLABLE',
   'X_OUTBOX_NO_TX',
   'X_BACKFILL_PENDING',
@@ -47,6 +48,7 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
   X_JOB_TENANT_REQUIRED: 'the job declares no tenant',
   X_JOB_CONCURRENCY_UNENFORCEABLE: 'job.concurrency is declared and cannot be enforced',
   X_JOB_LEASE_LOST: 'the queue took this job back mid-run',
+  X_JOB_SLOT_LOST: 'the fleet concurrency slot was taken by another worker',
   X_JOB_NOT_CANCELLABLE: 'the job cannot be cancelled',
   X_OUTBOX_NO_TX: 'enqueue outside a transaction',
   X_BACKFILL_PENDING: 'a declared backfill has never completed',
@@ -227,6 +229,24 @@ export class LeaseLostError extends UltimateError {
       cause: `job "${input.job}" (${input.jobId}) is no longer claimed by this worker — it was cancelled, or its visibility lease lapsed and the queue re-delivered it`,
       fix: `x jobs show ${input.jobId} --json`,
       docs: docsFor('X_JOB_LEASE_LOST'),
+    });
+  }
+}
+
+/**
+ * The fleet slot this run holds under `job.concurrency` is somebody else's now: renewal answered
+ * "not yours", which is the one thing `LeaseStore.renew` can say that a retry cannot fix. Its own
+ * code and not `X_JOB_LEASE_LOST`, because they are different rows on different clocks — the
+ * queue may still consider this worker the owner of the JOB while another worker is already
+ * running one under the same cap, which is precisely the guarantee `concurrency` sells.
+ */
+export class JobSlotLostError extends UltimateError {
+  constructor(input: { job: string; jobId: string; slot: number }) {
+    super({
+      code: 'X_JOB_SLOT_LOST',
+      cause: `job "${input.job}" (${input.jobId}) no longer holds fleet concurrency slot ${input.slot} — its lease expired and another worker took it`,
+      fix: `x jobs show ${input.jobId} --json`,
+      docs: docsFor('X_JOB_SLOT_LOST'),
     });
   }
 }

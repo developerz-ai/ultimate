@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "5725ea6384f5b77df89c7119aa39b86014a8f703dcf4fcfbdcc16a8b4662aa4b",
+  "buildId": "ff623eefe238316b928facb903cb4e87573dd3a1aeb767886f5b975ed7ba9195",
   "tiers": {
     "0": [
       "core",
@@ -1011,6 +1011,11 @@
       "at": "packages/jobs/src/errors.ts"
     },
     {
+      "code": "X_JOB_SLOT_LOST",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
       "code": "X_JOB_TENANT_REQUIRED",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
@@ -1439,6 +1444,11 @@
       "code": "X_PWA_SYNC_INCOMPLETE",
       "owner": "pwa",
       "at": "packages/pwa/src/errors.ts"
+    },
+    {
+      "code": "X_QUERY_CACHE_TTL_INVALID",
+      "owner": "query",
+      "at": "packages/query/src/errors.ts"
     },
     {
       "code": "X_QUERY_DEPRECATION_INVALID",

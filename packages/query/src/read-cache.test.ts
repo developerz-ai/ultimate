@@ -4,7 +4,8 @@
 // `read.test.ts`. Here the tier is driven directly, so a failure names the tier and not the read.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { declareTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
+import { declareTags, isolateDeclaredTags, LruCache, tag } from '@ultimat3/cache';
+import { frozenClock } from '@ultimat3/core';
 import type { ReadCache, ReadCacheEntry } from './read-cache';
 import {
   DEFAULT_READ_CACHE_MAX_BYTES,
@@ -142,6 +143,35 @@ describe('MemoryReadCache', () => {
     expect(await memory.get('a')).toBeUndefined();
     expect(await memory.get('b')).toBeUndefined();
     expect((await memory.get('c'))?.value).toBe(3);
+  });
+
+  // `Date.now()` here decided whether an entry was already stale, so a frozen clock could not
+  // drive it and a read served under an injected clock was judged against the wall clock.
+  test('reads "now" from the injected clock, never the wall clock', async () => {
+    const clock = frozenClock(1_000);
+    const memory = new MemoryReadCache({ clock });
+
+    await memory.set('stale', { value: 'rows', expiresAt: 999 });
+    await memory.set('live', { value: 'rows', expiresAt: 61_000 });
+
+    expect(await memory.get('stale')).toBeUndefined();
+    expect((await memory.get('live'))?.value).toBe('rows');
+  });
+
+  /**
+   * The wiring the boot depends on: `invalidateTags` fans out to registered `CacheTier`s only, so
+   * the read cache holds entries in the SAME `LruCache` the process registers as its `lru` tier.
+   * Sharing the object is what makes the read tier reachable by the one fan-out.
+   */
+  test('holds its entries in a caller-supplied LruCache, tag index included', async () => {
+    const shared = new LruCache();
+    const memory = new MemoryReadCache({ cache: shared });
+
+    await memory.set('a', { value: 1, expiresAt: null, tags: [tag('post')] });
+
+    // Dropped through the tier's own handle on the cache — the half `invalidateTags` reaches.
+    expect(shared.invalidateTags([tag('post')])).toEqual(['a']);
+    expect(await memory.get('a')).toBeUndefined();
   });
 
   test('the defaults are the numbers the read path is documented against', () => {

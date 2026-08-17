@@ -216,7 +216,10 @@ describe('createCacheStack write', () => {
 });
 
 describe('createCacheStack drop', () => {
-  test('calls del() on every tier once', async () => {
+  test('calls del() on every tier once, FARTHEST first', async () => {
+    // Read order clears the near tiers while the far one still holds the old value, and a read
+    // racing the drop promotes it straight back up into them. `invalidateTags` fans out the same
+    // way and for the same reason — `invalidation-race.test.ts` pins the outcome that follows.
     const calls: string[] = [];
     const lru = fakeTier('lru', calls);
     const redis = fakeTier('redis', calls);
@@ -224,7 +227,7 @@ describe('createCacheStack drop', () => {
 
     await stack.drop('k');
 
-    expect(calls).toEqual(['del:lru:k', 'del:redis:k']);
+    expect(calls).toEqual(['del:redis:k', 'del:lru:k']);
   });
 });
 
@@ -334,7 +337,7 @@ describe('createCacheStack: a refusing tier never fails the business call', () =
 
     await stack.drop('k');
 
-    expect(calls).toEqual(['del:lru:k', 'del:redis:k']);
+    expect(calls).toEqual(['del:redis:k', 'del:lru:k']);
     expect(recentTierFailures()[0]).toMatchObject({ tier: 'lru', op: 'del', key: 'k' });
   });
 });

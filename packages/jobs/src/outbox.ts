@@ -293,7 +293,13 @@ export interface OutboxRelay {
   /** One pass. Returns how many rows were published. Call it directly in tests. */
   tick(): Promise<number>;
   start(): void;
-  stop(): void;
+  /**
+   * Stop polling and WAIT OUT the pass in flight, the way `worker.stop()` waits out its rounds and
+   * `scheduler.stop()` its dispatch. A pass is a publish followed by a `markPublished`, and a
+   * caller that returned between the two closed the database under the row it was about to mark:
+   * re-published next boot at best, a rejection against a closed pool at worst.
+   */
+  stop(): Promise<void>;
   pending(): Promise<number>;
 }
 
@@ -306,6 +312,8 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
   const intervalMs = options.intervalMs ?? 200;
   let timer: ReturnType<typeof setInterval> | undefined;
   let running = false;
+  /** The pass in flight, so `stop()` joins it instead of returning underneath it. */
+  let pass: Promise<void> | undefined;
 
   const tick = async (): Promise<number> => {
     const batch = await options.store.claim(batchSize);
@@ -356,7 +364,13 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
         // guards each publish but not `store.claim()` — one pool timeout during a failover
         // rejects here unobserved, and Bun's default for an unhandled rejection is to end the
         // process, taking every staged, unpublished row with it.
-        void tick()
+        //
+        // Kept rather than discarded, because `stop()` awaits exactly this chain: the publish and
+        // the `markPublished` behind it are one pass, and a teardown that returned between them
+        // closed the database under the row it was about to mark. The chain carries its own
+        // `catch`, so a caller that does not await still gets no unhandled rejection.
+        pass = tick()
+          .then((): void => undefined)
           .catch((error: unknown) => {
             logger.error('jobs.outbox.tick-failed', {
               error: error instanceof Error ? error.message : String(error),
@@ -364,12 +378,15 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
           })
           .finally(() => {
             running = false;
+            pass = undefined;
           });
       }, intervalMs);
     },
-    stop() {
+    async stop() {
       if (timer !== undefined) clearInterval(timer);
       timer = undefined;
+      // Awaited AFTER the interval is cleared, so no further pass can start behind this one.
+      await pass;
     },
     pending: () => options.store.pendingCount(),
   };

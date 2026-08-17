@@ -1,6 +1,8 @@
 // Single responsibility: tests for the read path's one guarantee — a key is read once per
 // request. The tier it fills through is `read-cache.test.ts`; what is proved here is how many
-// times the read path reaches for it.
+// times the read path reaches for it. Three questions about a fill that are NOT this file's:
+// who an entry may be served to (`cache-authority.test.ts`), whether it may be written at all
+// (`cache-fence.test.ts`), and what happens when the tier refuses (`cache-degraded.test.ts`).
 // Concurrency is the half that used to be missing: the memo holds the read *in flight*,
 // not its value, or two readers arriving in the same tick both miss and both execute. The same
 // shape is what lets a legitimately `undefined` result memoize, and the failure case is here
@@ -8,7 +10,7 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { CacheTag } from '@ultimat3/cache';
-import { createContext } from '@ultimat3/core';
+import { createContext, frozenClock } from '@ultimat3/core';
 import { readFresh, readOnce, readThrough, requestMemo } from './cache';
 import type { ReadCache, ReadCacheEntry } from './read-cache';
 import { getReadCache, MemoryReadCache, setReadCache } from './read-cache';
@@ -291,6 +293,16 @@ describe('readThrough', () => {
     expect(ttl?.expiresAt).toBeLessThanOrEqual(after + 60_000);
     expect(forever).toEqual({ value: 'rows', expiresAt: null, tags: [] });
     expect(tier.writes).toHaveLength(2);
+  });
+
+  // `Date.now()` in a package that is handed a `Clock` on every read: a test could not decide the
+  // expiry it asserts, and a read served under an injected clock wrote an entry under another one.
+  test("dates the entry by the request's own clock, never the wall clock", async () => {
+    const ctx = createContext({ clock: frozenClock(1_000) });
+
+    await readThrough(ctx, 'k', 60_000, async () => 'rows');
+
+    expect(tier.writes[0]?.expiresAt).toBe(61_000);
   });
 
   test('fails every reader that joined the read, having run the source once', async () => {

@@ -11,7 +11,7 @@ import { statementObserver } from './observe';
 import { createTurnQueue } from './pglite-turns';
 import type { SqlFragment } from './sql';
 import { withStatementSpan } from './statement-span';
-import { currentTx } from './transaction';
+import { inLiveTx } from './transaction';
 
 /** What PGlite answers with. `rows` is empty for a write, which is why the count is separate. */
 export interface PgliteResult {
@@ -203,7 +203,14 @@ export function createPgliteClient(options: PgliteOptions = {}): PgliteClient {
     // inside of would hang. `handle.enqueue(input, { outbox: false })` within `withTransaction`
     // is the shape that reaches this line; on a pooled server it would get its own connection,
     // and here it joins the caller's transaction because a second connection does not exist.
-    if (currentTx() !== undefined) return statement(driver, fragment);
+    //
+    // The fence is the transaction's LIVENESS, never the ALS store's presence: the store rides
+    // into every promise chain started inside `withTransaction`, so a statement the app forgot to
+    // `await` still found one after COMMIT, skipped the queue, and landed inside whichever unit of
+    // work held the session next — a stray statement in someone else's transaction, committed or
+    // rolled back with it, with no error anywhere. A closed scope falls through and takes its own
+    // turn, exactly as `client.ts`'s released pin sends a late statement back to the pool.
+    if (inLiveTx()) return statement(driver, fragment);
     return turns.run(() => statement(driver, fragment));
   }
 

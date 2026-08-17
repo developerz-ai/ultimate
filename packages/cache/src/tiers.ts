@@ -6,6 +6,9 @@
 import type { Clock } from '@ultimat3/core';
 import { systemClock } from '@ultimat3/core';
 import { CacheJitterInvalidError, CacheTtlInvalidError } from './errors';
+import type { CacheFence } from './fence';
+import { markInvalidated, sampleFence } from './fence';
+import { mergeSetOptions, ttlOptionsFor } from './set-options';
 import { createSingleFlight } from './single-flight';
 import type { CacheTag } from './tags';
 import { bestEffort } from './tier-failures';
@@ -14,6 +17,17 @@ export type TierName = 'request-memo' | 'lru' | 'redis' | 'cdn';
 
 /** Read order. Index in this array is the tier's distance from the request. */
 export const TIER_ORDER: readonly TierName[] = ['request-memo', 'lru', 'redis', 'cdn'];
+
+/**
+ * Who a swallowed refusal is attributed to in `recentTierFailures()` and the `/_x` panel: every
+ * rung of the ladder, plus a cache that degrades the same way without being on it —
+ * `@ultimat3/query`'s read cache, which is a tier-3 store this tier-1 package cannot import.
+ *
+ * Closed rather than a free-form string, and NOT a widening of `TierName`: `TIER_ORDER` is the
+ * ladder and a name missing from it sorts to `-1`, ahead of the request memo. A label is a log
+ * facet; a `TierName` is a position. Two spellings of one store is a panel nobody can group.
+ */
+export type TierLabel = TierName | 'query-read';
 
 /** Injected so a jittered TTL is deterministic in a test. Never `Math.random()` at a call site. */
 export type Rng = () => number;
@@ -66,10 +80,16 @@ export interface CacheSetOptions {
  * window, and with single-flight sharing only the loads that overlap that is still 40,000 origin
  * reads. Shaving a random slice off each lease is what turns one cliff into a ramp.
  */
+/**
+ * Where a lease is being spent. Every tier — plus `'semantic'`, which is not a tier and still may
+ * not invent its own reading of `ttlMs: 0`.
+ */
+export type TtlScope = TierName | 'semantic';
+
 export function assertTtl(
   key: string,
   ttlMs: number,
-  tier: TierName,
+  tier: TtlScope,
   jitter: TtlJitter = {},
 ): number {
   if (!Number.isFinite(ttlMs) || ttlMs <= 0) {
@@ -129,17 +149,6 @@ export function sortTiers(tiers: readonly CacheTier[]): readonly CacheTier[] {
 }
 
 /**
- * `negativeTtlMs` selected when the value IS the absence of one. Kept here rather than in a tier
- * because the stack is the only layer that ever sees what `load()` answered.
- */
-function ttlOptionsFor<T>(value: T, options?: CacheSetOptions): CacheSetOptions | undefined {
-  const negative = options?.negativeTtlMs;
-  if (negative === undefined) return options;
-  if (value !== null && value !== undefined) return options;
-  return { ...options, ttlMs: negative };
-}
-
-/**
  * Every tier call here goes through `bestEffort`: a tier that refuses is a tier that did not
  * answer, never a failed business read. `load()` is the one call left unguarded — it *is* the
  * business read, and swallowing it would return `undefined` as if it were the value.
@@ -158,10 +167,34 @@ export function createCacheStack(
   // Per stack, not per module: two stacks are two ladders and must not join each other's loads.
   const flight = createSingleFlight();
 
-  const fill = async <T>(key: string, value: T, setOptions?: CacheSetOptions): Promise<void> => {
+  /** Take back what a fence refused mid-ladder: half a stale ladder is still a stale read. */
+  const rollback = async (written: readonly CacheTier[], key: string): Promise<void> => {
+    for (const tier of [...written].reverse()) {
+      await bestEffort(tier.name, 'del', key, () => tier.del(key));
+    }
+  };
+
+  /**
+   * `fence` is what stops a fill from republishing what an invalidation just cleared: the value
+   * was read by a `load()` that started before the bust, so writing it now hides that write from
+   * every reader for the whole TTL — and the invalidation reported `errors: []` while doing it.
+   * Re-checked per tier rather than once, because the ladder is several awaits long.
+   */
+  const fill = async <T>(
+    key: string,
+    value: T,
+    setOptions?: CacheSetOptions,
+    fence?: CacheFence,
+  ): Promise<void> => {
     const resolved = ttlOptionsFor(value, setOptions);
+    const written: CacheTier[] = [];
     for (const tier of ordered) {
+      if (fence !== undefined && !fence.isValid()) {
+        await rollback(written, key);
+        return;
+      }
       await bestEffort(tier.name, 'set', key, () => tier.set(key, value, resolved));
+      written.push(tier);
     }
   };
 
@@ -170,6 +203,11 @@ export function createCacheStack(
     key: string,
     setOptions?: CacheSetOptions,
   ): Promise<CacheEntry<T> | undefined> => {
+    // A promotion is a write too. The ladder is one await per rung, so a bust can finish between
+    // the far `get` and the near `set` — which promotes a value out of a tier nothing has cleared
+    // yet into one that was cleared a millisecond ago. Fan-out order makes that window small; the
+    // fence is what makes crossing it not matter.
+    const fence = sampleFence({ key });
     for (let i = 0; i < ordered.length; i += 1) {
       const tier = ordered[i];
       if (tier === undefined) continue;
@@ -188,11 +226,20 @@ export function createCacheStack(
         tags: hit.tags,
         ...(hit.expiresAt === undefined ? {} : { ttlMs: hit.expiresAt - now }),
       };
+      fence.cover({ tags: hit.tags });
+      const promotedInto: CacheTier[] = [];
       for (let up = 0; up < i; up += 1) {
         const closer = ordered[up];
         if (closer === undefined) continue;
+        if (!fence.isValid()) {
+          await rollback(promotedInto, key);
+          break;
+        }
         await bestEffort(closer.name, 'set', key, () => closer.set(key, hit.value, promoted));
+        promotedInto.push(closer);
       }
+      // Returned either way: this IS what a tier held when it was asked, and a fence never fails
+      // a business read — it only declines to publish.
       return hit;
     }
     return undefined;
@@ -208,19 +255,40 @@ export function createCacheStack(
       // The stampede guard. The homepage feed read 8,000x/s with a 60s lease misses for the whole
       // ~200ms `load()` takes, so ~1,600 identical queries reach Postgres at every TTL boundary
       // unless the arrivals inside that window join the read already running.
-      return await flight.run(key, async () => {
-        const value = await load();
-        await fill(key, value, setOptions);
-        return value;
-      });
+      return await flight.run<T, CacheSetOptions>(
+        key,
+        async (shared) => {
+          // Sampled BEFORE `load()` — everything after this instant is a write this value has
+          // not seen, and a fill that ignored it would hide that write for the whole TTL.
+          const fence = sampleFence({
+            key,
+            ...(setOptions?.tags === undefined ? {} : { tags: setOptions.tags }),
+          });
+          const value = await load();
+          // Joiners merged their own tags into the load they shared; covering is retroactive, so
+          // a tag that arrived mid-load is fenced back to the sample rather than from now.
+          const merged = shared() ?? setOptions;
+          if (merged?.tags !== undefined) fence.cover({ tags: merged.tags });
+          await fill(key, value, merged, fence);
+          return value;
+        },
+        { context: setOptions ?? {}, merge: mergeSetOptions },
+      );
     },
 
     write<T>(key: string, value: T, options?: CacheSetOptions): Promise<void> {
+      // An explicit write is newer truth than any load already in flight for this key, so it
+      // fences those fills off before it starts rather than losing a race with one.
+      markInvalidated({ key });
       return fill(key, value, options);
     },
 
     async drop(key: string): Promise<void> {
-      for (const tier of ordered) {
+      markInvalidated({ key });
+      // Farthest tier first, for the reason `invalidateTags` fans out that way: clearing the near
+      // tiers first leaves a window where a racing read finds the far tier still holding the old
+      // value and promotes it back up, into tiers this call has already cleared.
+      for (const tier of [...ordered].reverse()) {
         await bestEffort(tier.name, 'del', key, () => tier.del(key));
       }
     },

@@ -12,6 +12,7 @@ import {
   noopPurgeDriver,
   registeredTiers,
 } from '@ultimat3/cache';
+import { getReadCache, MemoryReadCache } from '@ultimat3/query';
 import { InProcessTransport } from '@ultimat3/realtime';
 import { CACHE_INVALIDATE_SUBJECT, startCacheTiers, tierReadCache } from './dev-cache';
 
@@ -80,6 +81,53 @@ describe('which tiers a boot registers', () => {
     expect(registeredTiers().length).toBeGreaterThan(0);
     await stop();
     expect(registeredTiers()).toEqual([]);
+  });
+});
+
+describe("the read tier an action's cache.invalidates has to reach", () => {
+  /**
+   * The failure this pins: `invalidateTags` fans out to REGISTERED tiers, the read tier a `cache:`
+   * query fills through is `@ultimat3/query`'s own seam, and on a boot with no `REDIS_URL` that
+   * seam was left as the module-default `MemoryReadCache` — an object in no registry, which
+   * nothing in the framework called `invalidateQueryTags` on. Every `cache:` read on every
+   * non-Redis deployment therefore served pre-write rows for the whole TTL while the invalidation
+   * report said `errors: []`.
+   */
+  const fillReadCache = async (): Promise<string> => {
+    const key = 'query:feed:fingerprint:post';
+    await getReadCache().set(key, {
+      value: ['pre-write'],
+      expiresAt: Date.now() + 60_000,
+      tags: [{ entity: 'post' }],
+    });
+    return key;
+  };
+
+  test('with no REDIS_URL an invalidateTags fan-out drops the read entry', async () => {
+    restore = isolateTiers();
+    declareTags(['post']);
+    release = startCacheTiers({
+      env: {},
+      purge: noopPurgeDriver(),
+      transport: new InProcessTransport(),
+    });
+    const key = await fillReadCache();
+    expect(await getReadCache().get(key)).toBeDefined();
+
+    await invalidateTags([{ entity: 'post' }]);
+
+    expect(await getReadCache().get(key)).toBeUndefined();
+  });
+
+  test('the release puts the process back on an unwired read cache', async () => {
+    restore = isolateTiers();
+    const stop = startCacheTiers({
+      env: {},
+      purge: noopPurgeDriver(),
+      transport: new InProcessTransport(),
+    });
+    await stop();
+    expect(getReadCache()).toBeInstanceOf(MemoryReadCache);
   });
 });
 

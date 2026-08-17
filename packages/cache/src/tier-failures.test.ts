@@ -41,6 +41,24 @@ describe('bestEffort', () => {
     expect(recentTierFailures()).toEqual([]);
   });
 
+  test('a cache OFF the ladder degrades into the same one log', async () => {
+    // `@ultimat3/query`'s read cache is not a rung of the ladder and refuses the same way. It has
+    // to reach this log, not a private try/catch of its own: a second, invisible failure record
+    // is exactly what one bounded log exists to prevent — and it needs a name it can pass
+    // honestly, because attributing a query-cache refusal to `redis` is a lie in the `/_x` panel.
+    const answer = await bestEffort('query-read', 'get', 'cache:posts', () =>
+      Promise.reject(new Error('read cache is down')),
+    );
+
+    expect(answer).toBeUndefined();
+    expect(recentTierFailures()[0]).toMatchObject({
+      tier: 'query-read',
+      op: 'get',
+      key: 'cache:posts',
+      message: 'read cache is down',
+    });
+  });
+
   test('a rejection resolves to undefined instead of propagating', async () => {
     const answer = await bestEffort('redis', 'set', 'k', () =>
       Promise.reject(new Error('connection refused')),

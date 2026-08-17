@@ -67,7 +67,23 @@ a reader arriving while another's load is running joins it instead of issuing it
 ends as the load settles, rejection included, so one failure is never held as a permanent one. A
 feed cached for 60s and read 8,000×/s otherwise sends ~1,600 identical queries to Postgres at every
 TTL boundary, because the write only lands after `load()` resolves. The primitive is
-`createSingleFlight()` if you need it elsewhere; the stack holds one per stack.
+`createSingleFlight()` if you need it elsewhere; the stack holds one per stack. A joiner shares the
+leader's **write** as well as its load, so it contributes to it: tags union, TTLs take the shortest.
+Without that the entry landed carrying only the leader's tags and the joiner's invalidation never
+fired.
+
+**A fill obeys an invalidation that raced it.** `load()` answers with rows it read in the past, so a
+bust landing in between finds a key that is not there yet — it reports `errors: []` and the fill
+republishes the pre-write rows for the full TTL, invisibly. `stack.read` samples a fence before the
+load and re-checks it before each tier write; a fill that lost the race is dropped, and anything it
+already wrote is taken back. The caller still gets what the origin answered: a fence declines to
+publish, it never fails a read. It is exported for any cache doing its own read-through:
+
+```ts
+const fence = sampleFence({ key, tags });
+const value = await run();
+if (fence.isValid()) await tier.set(key, value, { tags });
+```
 
 **A `null` can carry its own TTL.** `negativeTtlMs` is used when the loaded value is `null` or
 `undefined`, so a lookup for a row that has not replicated yet is not held for the positive lease:
@@ -92,6 +108,10 @@ though it were the value.
 `recentTierFailures()` is where those refusals go: last 100, newest first, each naming the tier, the
 operation, the key and the `X_*` code, and each one also logged as `cache.tier.failed`. Same
 bargain as `report.errors` on the invalidation side — degraded is visible, not merely slow.
+
+`bestEffort(label, op, key, run)` is that guard, exported: a cache that is not a rung of this ladder
+(`@ultimat3/query`'s read cache, `label: 'query-read'`) degrades into the same log rather than a
+private `try/catch` nobody can read. The label is closed (`TierLabel`) so the panel can group by it.
 
 ## Tags
 
@@ -134,6 +154,13 @@ its collection's bucket hash to one slot, so a script may take both in `KEYS`. I
 partial bust while stale rows served until TTL. Value keys are still deleted client-side, one `DEL`
 each, which is slot-local under every topology.
 
+The script **deletes nothing at all** — not the value keys, and not the buckets either. The tier
+`SREM`s exactly the members whose `DEL` succeeded, so a refused delete keeps its membership and the
+retry the error asks for still finds it; dropping the bucket inside the script made that failure
+permanent. A `set` mirrors it: buckets are joined **before** the value is written and membership is
+re-checked after, because a bust that landed in between would otherwise leave a row nothing can
+reach by tag, serving until its own lease ran out.
+
 **Every tag set carries a lease**, renewed on each write to the member's own TTL plus 60s, raised
 only when the new lease is longer — a 60s member must not shorten a bucket a 1h member is in.
 Without it a tag set grew forever: value keys died after five minutes, their membership never did,
@@ -157,7 +184,9 @@ your own payloads.
 const report = await invalidateTags([tag('post', postId)]);
 ```
 
-One function. Returns the report the `/_x` cache panel and `x cache bust --json` render:
+One function. It returns the report below, which is also what the `/_x` cache panel renders — and
+what `x cache bust --json` will print once it ships; that command is planned and exits
+`X_NOT_IMPLEMENTED` today.
 
 ```json
 {
@@ -173,6 +202,12 @@ One function. Returns the report the `/_x` cache panel and `x cache bust --json`
 
 A dead tier lands in `errors` and never throws — a Redis outage must not fail the write
 that triggered the bust. Entries there expire by TTL instead.
+
+The fan-out walks the ladder **farthest tier first** — Redis before the LRU before the request memo
+— and reports in read order. Clearing near-to-far leaves the far tier holding the old value after
+the near ones are clear, and a read racing the bust promotes it straight back up into them: every
+tier reports cleared and the LRU is stale again before the call returns. `stack.drop(key)` reverses
+for the same reason.
 
 `cdn` is what the dependency graph hangs off these tags, not what cleared: the `cdn` tier purges
 those paths (as surrogate keys, alongside the tags), so what actually cleared is that tier's row

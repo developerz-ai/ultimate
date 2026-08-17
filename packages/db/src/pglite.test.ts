@@ -1,43 +1,16 @@
-import { afterEach, describe, expect, test } from 'bun:test';
-import { withStatementAttribution } from './attribution';
-import { isReservable, setDbClient } from './client';
-import { expectedQueryLoop } from './expected-loop';
-import type { StatementEvent, StatementObserver } from './observe';
-import { setStatementObserver } from './observe';
+import { describe, expect, test } from 'bun:test';
+import { isReservable } from './client';
+import { fakeDriver } from './fake-pglite';
 import {
   createPgliteClient,
   loadPgliteDriver,
   PGLITE_FIX,
   PGLITE_MEMORY,
-  type PgliteDriver,
   type PgliteResult,
   pgliteDataDir,
 } from './pglite';
 import { sql } from './sql';
 import { withTransaction } from './transaction';
-
-interface Recorded {
-  readonly text: string;
-  readonly values: readonly unknown[];
-}
-
-function fakeDriver(result: PgliteResult): PgliteDriver & {
-  readonly calls: Recorded[];
-  closed: number;
-} {
-  const calls: Recorded[] = [];
-  return {
-    calls,
-    closed: 0,
-    async query(text, values) {
-      calls.push({ text, values: values ?? [] });
-      return result;
-    },
-    async close() {
-      this.closed += 1;
-    },
-  };
-}
 
 /** A stand-in for the `@electric-sql/pglite` namespace: same one export, no WASM. */
 const fakeModule = (
@@ -54,6 +27,15 @@ const fakeModule = (
     async close(): Promise<void> {}
   },
 });
+
+/** A promise the test resolves by hand, so a race is driven by an event and not by the clock. */
+function deferred(): { readonly promise: Promise<void>; readonly resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
 
 const failure = async (run: () => Promise<unknown>): Promise<{ code: string; fix: string }> => {
   try {
@@ -319,6 +301,78 @@ describe('createPgliteClient', () => {
     await expect(client.execute(sql`insert into t values (1)`)).resolves.toBeDefined();
   });
 
+  // The transaction's ALS store survives into any promise chain started inside its body, so a
+  // statement the app forgot to `await` still read a live-looking store minutes after COMMIT — and
+  // `run()` fenced on the store's PRESENCE, so it skipped the turn queue and landed inside whoever
+  // held the single session next. Measured order before the fix: begin, inside tx, commit, begin,
+  // straggler, inside tx 2, commit — a statement from a finished transaction committed by another.
+  test('a straggler from a finished transaction waits its turn instead of joining the next one', async () => {
+    const driver = fakeDriver({ rows: [] });
+    const client = createPgliteClient({ driver });
+    const gate = deferred();
+    let straggler!: Promise<unknown>;
+
+    await withTransaction(
+      async () => {
+        await client.query(sql`select 'inside tx'`);
+        // The forgotten `await`: a chain started inside the body that outlives the scope. `.then`
+        // inherits the store from here, which is exactly what made the dead transaction look live.
+        straggler = gate.promise.then(() => client.query(sql`select 'straggler'`));
+      },
+      { client },
+    );
+
+    // Somebody else's unit of work takes the one session.
+    const holder = await client.reserve();
+    await holder.execute(sql`begin`);
+    gate.resolve();
+    // Not an ordering assertion: the straggler must never run here, so waiting longer only
+    // strengthens it — the same shape as the released-reservation test above.
+    await Bun.sleep(5);
+    expect(driver.calls.map((call) => call.text)).toEqual([
+      'BEGIN',
+      "select 'inside tx'",
+      'COMMIT',
+      'begin',
+    ]);
+
+    await holder.execute(sql`select 'inside tx 2'`);
+    await holder.execute(sql`commit`);
+    holder.release();
+    await straggler;
+
+    expect(driver.calls.map((call) => call.text)).toEqual([
+      'BEGIN',
+      "select 'inside tx'",
+      'COMMIT',
+      'begin',
+      "select 'inside tx 2'",
+      'commit',
+      "select 'straggler'",
+    ]);
+  });
+
+  // A statement issued while the transaction is genuinely OPEN must still skip the queue: the
+  // transaction is holding the turn, so waiting for one would hang forever. This is the shape
+  // `handle.enqueue(input, { outbox: false })` inside `withTransaction` takes.
+  test('a statement inside a LIVE transaction still runs on the turn that transaction holds', async () => {
+    const driver = fakeDriver({ rows: [] });
+    const client = createPgliteClient({ driver });
+
+    await withTransaction(
+      async () => {
+        await client.execute(sql`insert into outbox values (1)`);
+      },
+      { client },
+    );
+
+    expect(driver.calls.map((call) => call.text)).toEqual([
+      'BEGIN',
+      'insert into outbox values (1)',
+      'COMMIT',
+    ]);
+  });
+
   test('releasing after disposal is a no-op, not a second turn', async () => {
     const driver = fakeDriver({ rows: [] });
     const client = createPgliteClient({ driver });
@@ -337,162 +391,5 @@ describe('createPgliteClient', () => {
     holder.release();
     await queued;
     expect(driver.calls.map((call) => call.text)).toEqual(['insert into t values (1)']);
-  });
-});
-
-function recorder(): StatementObserver & { readonly seen: StatementEvent[] } {
-  const seen: StatementEvent[] = [];
-  return {
-    seen,
-    onStatement(event: StatementEvent): void {
-      seen.push(event);
-    },
-  };
-}
-
-describe('the statement observer', () => {
-  afterEach(() => {
-    // Both are process-wide: leaving either installed makes every later test observe this one's.
-    setStatementObserver(undefined);
-    setDbClient(undefined);
-  });
-
-  // `statement()` is the funnel: the queued path, the pinned path and the in-transaction path that
-  // skips the queue all land on it. A detector fed by only one of the three would be blind to
-  // exactly the reads that happen inside a transaction.
-  test('sees every statement once, whichever of the three paths it took', async () => {
-    const driver = fakeDriver({ rows: [{ id: 1 }, { id: 2 }], affectedRows: 0 });
-    const client = createPgliteClient({ driver });
-    setDbClient(client);
-    const observer = recorder();
-    setStatementObserver(observer);
-
-    await client.query(sql`select id from posts where org = ${'o_1'}`);
-    await withTransaction(async (tx) => {
-      await tx.execute(sql`insert into posts values (${1})`);
-      // Through the ambient client, so it reaches `run()` with a transaction open and skips the
-      // queue rather than waiting for a turn the transaction is already holding.
-      await client.query(sql`select id from posts`);
-    });
-
-    expect(observer.seen.map((event) => event.text)).toEqual([
-      'select id from posts where org = $1',
-      'BEGIN',
-      'insert into posts values ($1)',
-      'select id from posts',
-      'COMMIT',
-    ]);
-    expect(observer.seen[0]?.values).toEqual(['o_1']);
-    expect(observer.seen[0]?.rows).toBe(2);
-    expect(observer.seen[0]?.durationMs).toBeGreaterThanOrEqual(0);
-    expect(observer.seen[0]).not.toHaveProperty('error');
-  });
-
-  // The same count `execute()` answers with, from the same helper — a report saying 0 rows for
-  // every write while `execute` said 3 would make the two disagree about the same statement.
-  test('counts rows the way execute does: the command tag for a write', async () => {
-    const client = createPgliteClient({ driver: fakeDriver({ rows: [], affectedRows: 3 }) });
-    const observer = recorder();
-    setStatementObserver(observer);
-
-    expect(await client.execute(sql`delete from posts`)).toBe(3);
-    expect(observer.seen[0]?.rows).toBe(3);
-  });
-
-  test('reports a failed statement with the error the caller is about to be thrown', async () => {
-    const client = createPgliteClient({
-      driver: {
-        query: () => Promise.reject(new Error('syntax error')),
-        close: async () => undefined,
-      },
-    });
-    const observer = recorder();
-    setStatementObserver(observer);
-
-    const error = await failure(() => client.query(sql`selct 1`));
-
-    expect(error.code).toBe('X_DB_UNAVAILABLE');
-    // Identity, not shape: the event carries the very error thrown, already wrapped by the funnel.
-    expect(observer.seen[0]?.error).toBe(error);
-    expect(observer.seen[0]?.rows).toBe(0);
-  });
-
-  // Strict test mode is an observer that throws, and the throw must arrive as itself. Notifying
-  // inside the statement's own `try` would report a statement that succeeded as X_DB_UNAVAILABLE.
-  test('a throwing observer reaches the caller as its own error, not a database failure', async () => {
-    const client = createPgliteClient({ driver: fakeDriver({ rows: [] }) });
-    setStatementObserver({
-      onStatement(): void {
-        throw new Error('n+1 in a strict test');
-      },
-    });
-
-    await expect(client.query(sql`select 1`)).rejects.toThrow('n+1 in a strict test');
-  });
-
-  test('booting, reserving and closing are not statements', async () => {
-    const driver = fakeDriver({ rows: [] });
-    const client = createPgliteClient({ driver });
-    const observer = recorder();
-    setStatementObserver(observer);
-
-    await client.ping();
-    (await client.reserve()).release();
-    await client.close();
-
-    expect(observer.seen).toEqual([]);
-  });
-
-  test('an uninstalled seam observes nothing, which is the production path', async () => {
-    const observer = recorder();
-    setStatementObserver(observer);
-    setStatementObserver(undefined);
-
-    await createPgliteClient({ driver: fakeDriver({ rows: [] }) }).query(sql`select 1`);
-
-    expect(observer.seen).toEqual([]);
-  });
-
-  test('carries the attribution declared by the scope, undefined outside every scope', async () => {
-    const client = createPgliteClient({ driver: fakeDriver({ rows: [] }) });
-    const observer = recorder();
-    setStatementObserver(observer);
-
-    await withStatementAttribution('members', 'findById', () => client.query(sql`select 1`));
-    await client.query(sql`select 2`);
-
-    expect(observer.seen.map((event) => event.attribution)).toEqual([
-      { entity: 'members', op: 'findById' },
-      undefined,
-    ]);
-  });
-
-  test('the failing statement path still carries the attribution', async () => {
-    const client = createPgliteClient({
-      driver: { query: () => Promise.reject(new Error('boom')), close: async () => undefined },
-    });
-    const observer = recorder();
-    setStatementObserver(observer);
-
-    await failure(() =>
-      withStatementAttribution('members', 'findById', () => client.query(sql`selct 1`)),
-    );
-
-    expect(observer.seen[0]?.attribution).toEqual({ entity: 'members', op: 'findById' });
-    expect(observer.seen[0]?.rows).toBe(0);
-  });
-
-  // Two independent scopes: an expected-loop reason does not crowd out the attribution.
-  test('attribution and an expected-loop reason are stamped together, independently', async () => {
-    const client = createPgliteClient({ driver: fakeDriver({ rows: [] }) });
-    const observer = recorder();
-    setStatementObserver(observer);
-
-    await withStatementAttribution('members', 'findMany', () =>
-      expectedQueryLoop('one lookup per id', () => client.query(sql`select 1`)),
-    );
-
-    expect(observer.seen[0]?.attribution).toEqual({ entity: 'members', op: 'findMany' });
-    expect(observer.seen[0]?.expected).toBe('one lookup per id');
   });
 });

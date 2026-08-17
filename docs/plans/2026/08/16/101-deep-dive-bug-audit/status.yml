@@ -4,8 +4,12 @@ status: in_progress
 created_by: sebi
 worked_by: "claude (hive of 4 per PR, one checkout)"
 owner: sebi
-percent: 27
-current_focus: "01+09+04 next (tiers 0-1, logic, projection). 05/10 = #101; 07 = #102/#103/#104, all merged"
+percent: 60
+current_focus: >
+  02+06 land their cache/query/jobs/core/db half as #108 — the realtime half was #107, so both
+  slices sit at 70% with only http, action, auth and entity left. Merged so far: 05/10 = #101;
+  07 = #102/#103/#104; 01/09 = #105; 04 = #106; 02/06 realtime = #107.
+  Next after #108: 02+06's http/action/auth/entity remainder, then 03.
 slices:
   - file: 05-gate-and-scripts.md
     tier: 0
@@ -24,24 +28,29 @@ slices:
     prs: [102, 103, 104]
   - file: 01-tier01-bugs.md
     tier: 0
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
+    pr: 105
   - file: 09-logic-edge-cases.md
     tier: 0
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
+    pr: 105
   - file: 04-projection-contract.md
     tier: 0
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
+    pr: 106
   - file: 02-tier23-bugs.md
     tier: 2
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 70
+    prs: [107, 108]
   - file: 06-concurrency-lifecycle.md
     tier: 2
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 70
+    prs: [107, 108]
   - file: 03-tier45-bugs.md
     tier: 4
     status: not_started
@@ -91,6 +100,43 @@ evidence:
       - "X_PACKAGE_UNREFERENCED fail-opens on a JSONC root tsconfig (comment => parse
          returns undefined => rule reads it as 'no project references')."
     new_codes: [X_REFERENCE_APP_NO_FLOOR, X_SCAFFOLD_GATE_RED, X_PACKAGE_UNREFERENCED]
+  - pr: 108
+    slices: [02, 06]
+    gate: "17 of 17 passed, 3 skipped (drift, contract-diff, budgets)"
+    falsified:
+      - "02-3b: 'reverse the Redis set ordering' is HALF a fix and worse alone. SADD-then-SET with
+         no re-check lets the bust SREM the membership and the later SET publish a row unreachable
+         by ANY tag — permanently uninvalidatable. Ships with an SISMEMBER re-check."
+      - "02-cursor: fixing `queryHash` alone was too narrow. `fingerprint` also backs
+         `cacheKeyFor`, so the 32-bit hash over client-chosen input was ALSO the shared cache
+         entry key — strictly worse than the cursor case the sweep named."
+      - "06-attempt: repeated suspensions cannot drive `attempt` negative. `nack` is fenced on
+         state === 'running', which only `claim` sets, and `claim` increments."
+      - "06-deadline: `configureLifecycle({deadlineMs})` is NOT unused — http/src/server.ts:97
+         declares one on every createServer. And X_SHUTDOWN_TIMEOUT already existed."
+      - "02-dates: the bare-Date.now() list in the cache package is EMPTY — fixed in #105/#106/#107.
+         Only `remember` bypassing assertTtl was real."
+    decided:
+      - "The drain deadline flipped from opt-in to bounded-by-default (25s). Built opt-in as
+         briefed, but `jobs` and `realtime` declare no budget, so the proven symptom — a worker pod
+         SIGKILLed mid-job — stayed unfixed. A mechanism that does not fix the symptom while
+         claiming the deadline works is a claim wider than what is enforced."
+      - "Colocated test fakes ship in the tarball. Four now do; a one-off `files` negation in one
+         package invents a convention nothing else follows. If it matters it is one sweep over all
+         29 package.json, and it belongs to the dead-code slice."
+    deferred:
+      - "The cache fill fence is PER PROCESS — two pods still interleave a load on one with a write
+         and bust on the other. Cross-node needs a Redis-side epoch and a wire change. Known-Gaps
+         row landed."
+      - "`createCacheStack` has zero production callers, so its copy of the fence is dormant. The
+         live fenced path is runQuery -> readRows -> readThrough -> fill."
+      - "`recentTierFailures()` has no reader outside cache, and /_x's invalidations source is
+         `unwired` — routed to slice 03."
+      - "`invalidateWireTags` has zero callers but is the wire-form door `x cache bust` will call.
+         Not dead; recorded for slice 15 to weigh."
+      - "`cache.scope` is auditable by grep, not by `x queries describe` — publishing it on
+         QueryDescriptor ripples into both tracked apps' manifests."
+    new_codes: [X_JOB_SLOT_LOST, X_QUERY_CACHE_TTL_INVALID]
 notes: >
   Slice order in this file is execution order, not tier order — 05 and 10 land first because the gate
   does not yet mean what it says, and 08 lands late because it is mostly deletions that would collide

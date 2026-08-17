@@ -14,9 +14,32 @@ Tier 1. Tagged caching + THE invalidation graph.
   `tier.invalidateTags()` from outside it. It is also the only place the log is written:
   `recentInvalidations()` is a read of what that one path already reported, never a second
   recorder a caller has to remember to call.
+- **The fan-out clears FARTHEST tier first, and reports in read order.** Near-to-far leaves the far
+  tier holding the old value after the near ones are clear, and a read racing the bust promotes it
+  straight back up — `report.errors` empty, LRU stale again before the call returns. `CacheStack.drop`
+  reverses for the same reason. The report is re-sorted into `TIER_ORDER` because it is what the
+  `/_x` panel renders. Pinned in `invalidation-race.test.ts`.
+- **A fill is fenced: sample before `load()`, ask before the write** (`fence.ts`). A read-through
+  fill publishes rows `load()` read in the past, so a bust landing in between finds a key that is
+  not there yet, reports `errors: []`, and is overwritten milliseconds later — invisible for the
+  whole TTL. `sampleFence({ key, tags })` → `fence.isValid()` is the whole API, `markInvalidated`
+  is its write half (called by `fanOut`, `CacheStack.write` and `CacheStack.drop`; a caller only
+  needs it for a clearing path of its own). It is **exported** because `@ultimat3/query`'s read
+  cache has the same hole and must not grow a second mechanism. `cover()` widens a fence
+  RETROACTIVELY — needed only where joiners contribute tags the leader never sampled, which is
+  `createCacheStack.read` and nothing else. A fence never fails a read: it declines to publish.
+  This is the one process-global here with **no `isolate*()` seam and no reset**, and that is
+  structural: a fence samples the current generation, which is always at or above what the ring has
+  forgotten, so another file's marks cannot invalidate a fence sampled after them.
 - One graph. `graph.ts` exports functions over module state and **no constructor** — do not
   add one, do not add a second registry anywhere else.
 - Tag order is `TIER_ORDER`, never registration order. `sortTiers()` enforces it.
+- **`bestEffort()` is public, and it is the only sanctioned way to swallow a cache refusal.** A
+  store outside this package that wraps its own `try/catch` degrades invisibly, and a second
+  failure log nobody reads is what this bounded one exists to prevent. Its label is `TierLabel` —
+  `TierName` plus `'query-read'` — closed, and deliberately NOT a widening of `TierName`: a name
+  missing from `TIER_ORDER` sorts to `-1`, ahead of the request memo. A label is a log facet; a
+  `TierName` is a position on the ladder.
 - Tier failures go into `report.errors`. A cache tier may never fail a business read or write.
   `createCacheStack` routes every `get`/`set`/`del` through `bestEffort()` for that reason — a
   refusal becomes "that tier did not answer" and lands in `recentTierFailures()`, the read side's
@@ -43,7 +66,11 @@ Tier 1. Tagged caching + THE invalidation graph.
   `isolateTiers()` already covers.
 - Clocks are injected (`LruOptions.clock`, `CacheStackOptions.clock`); read them through `nowMs()`.
 - **`ttlMs` is positive and finite, and `assertTtl` (in `tiers.ts`) is the one place that says so.**
-  Every tier calls it before it writes. `0` used to be "never expires" here and `EX 1` in `redis.ts`,
+  Every tier calls it before it writes, and so does `createMemorySemanticCache.remember` — which was
+  the one writer skipping it, so `ttlMs: 0` stored an entry already past its expiry and every lookup
+  missed with a completion bill as the only evidence. Its scope is `'semantic'` (`TtlScope`), with
+  `jitterFraction: 0`: spreading a lease is a herd defence for a SHARED store, and that one is per
+  process. `0` used to be "never expires" here and `EX 1` in `redis.ts`,
   so one stack answered two ways; the rule lives beside `CacheSetOptions` precisely so a new tier
   cannot invent a third reading. `X_CACHE_TTL_INVALID`, never a resolution.
 - **`assertTtl` also SPREADS the lease it validated** — validate, then jitter, one choke point. A
@@ -56,6 +83,12 @@ Tier 1. Tagged caching + THE invalidation graph.
   `realtime`'s `entry.reading`). The share ends as the load settles — a REJECTED load must clear
   its entry too, or one origin failure becomes a permanent cached rejection. One `SingleFlight` per
   stack, never a module-level map: two stacks are two ladders.
+- **A joiner shares the leader's WRITE, so it contributes to it** (`FlightJoin`, merged by
+  `mergeSetOptions` in `set-options.ts`). Keyed on `key` alone and read late, the entry used to land
+  carrying only the leader's tags: the joiner's tag reached nothing, so the invalidation it declared
+  never fired. Tags union, TTLs take the SHORTEST — an entry held longer than a caller asked for is
+  stale to that caller. `work` reads the merge through `shared()` **after** the load, or it sees
+  only what the leader brought.
 - **`negativeTtlMs` is the stack's decision, not a tier's.** Only `createCacheStack` sees what
   `load()` answered, so the `null`/`undefined` branch lives in `ttlOptionsFor` there and reaches a
   tier as an ordinary `ttlMs`.
@@ -68,11 +101,28 @@ Tier 1. Tagged caching + THE invalidation graph.
   owns the clock, so it survives skew between the node that wrote and the node that reads, and no
   stored payload shape changes under a running deployment. `-1`/`-2` are sentinels, not durations:
   they mean no expiry, never one millisecond ago.
-- **`redis.ts`'s script deletes only keys it was handed in `KEYS`.** The members of a tag set are
-  value keys in slots this node may not own, so `DEL`ing them from Lua is a cross-slot access that
-  fails on Redis Cluster and Dragonfly strict mode — into `report.errors`, so the bust reads as
-  partial and stale rows serve until TTL. The script returns the members; the tier deletes them
-  client-side, one key per `DEL`, which is slot-local under every topology.
+- **`redis.ts`'s script deletes NOTHING — it reads.** The members of a tag set are value keys in
+  slots this node may not own, so `DEL`ing them from Lua is a cross-slot access that fails on Redis
+  Cluster and Dragonfly strict mode — into `report.errors`, so the bust reads as partial and stale
+  rows serve until TTL. The script returns the members; the tier deletes them client-side, one key
+  per `DEL`, which is slot-local under every topology.
+- **The bucket is not dropped in the script either, and the tier `SREM`s only what it deleted.**
+  Dropping it atomically with the `SMEMBERS` made one failure permanent: a refused `DEL` left its
+  member with no bucket to be found in, so the retry the error asks for answered `keys: []` and
+  those rows served until their own TTL. `Promise.allSettled` is what makes "what actually died"
+  knowable. A member a concurrent write added between the two halves keeps its membership instead
+  of being orphaned by a bust that never deleted it.
+- **A `set` joins its buckets BEFORE it writes the value, and re-checks membership after.** Value
+  first left a window where a bust's `SMEMBERS` saw an empty bucket and the value survived its own
+  invalidation for the full TTL. Joining first moves the window somewhere observable: membership
+  gone by the time the `SET` lands means this write was busted in the air, and the value goes with
+  it — a row nothing can reach by tag is one no later bust can clear. Only a literal `0` from
+  `SISMEMBER` counts as gone (`saysAbsent`); a reply the tier cannot read is not evidence, and
+  deleting on one is a cache that never caches.
+- **`GET` and `PTTL` are two commands and the key can die between them.** `PTTL: -2` for a value
+  the `GET` returned is a MISS, not an entry with no expiry — reported as a hit it is promoted into
+  the LRU on the CALLER's ttl, so a row one millisecond from death gets a fresh five minutes one
+  tier closer.
 - **That fixed half of it; `KEYS` itself was the other half.** Tag keys carry a `{entity}` hash tag
   (`<ns>:t:{post}`, `<ns>:t:{post}:7`) and `invalidateTags` issues **one script call per tag**, so
   every key a call is handed hashes to one slot. A single `EVAL` carrying two tags' buckets is
@@ -133,7 +183,9 @@ Tier 1. Tagged caching + THE invalidation graph.
 |---|---|
 | `tags.ts` | `tag` factory, wire form, match semantics, declared-tag registry |
 | `graph.ts` | tag → dependents (cache keys, ISR routes, CDN paths, live queries) |
-| `tiers.ts` | `CacheTier`, `TIER_ORDER`, read-through stack |
+| `tiers.ts` | `CacheTier`, `TIER_ORDER`, `TierLabel`, `assertTtl`, read-through stack |
+| `fence.ts` | the invalidation fence a fill (here or in `query`) checks before it publishes |
+| `set-options.ts` | how two callers' `CacheSetOptions` combine, and the `null`-load TTL |
 | `tier-failures.ts` | `bestEffort()`, and the bounded log of refusals it absorbs |
 | `memo.ts` | request memo over the ALS ctx (WeakMap, no lifecycle) |
 | `lru.ts` | byte-budgeted LRU (linked list + map + tag index) |

@@ -73,7 +73,10 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): JobDriver
         .filter((record) => filter.queue === undefined || record.queue === filter.queue)
         .filter((record) => filter.name === undefined || record.name === filter.name)
         .filter((record) => filter.state === undefined || record.state === filter.state)
-        .sort((a, b) => a.createdAt - b.createdAt)
+        // NEWEST first, as `createPgDriver`'s `order by created_at desc` is. Ascending here meant
+        // `x jobs ls` answered one thing against `x dev` and the opposite in production — and,
+        // because the limit is applied after the sort, a default page of the hundred OLDEST rows.
+        .sort((a, b) => b.createdAt - a.createdAt)
         .slice(0, filter.limit ?? 100);
       return Promise.resolve(rows);
     },
@@ -205,8 +208,11 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): JobDriver
       const patch: Partial<JobRecord> = {
         state: nackOptions.deadLetter === true ? 'dead' : counts ? 'ready' : 'suspended',
         runAt: at + nackOptions.delayMs,
-        // A suspension must not burn an attempt, or a 3-day sleep dead-letters the run.
-        attempt: counts ? record.attempt : record.attempt - 1,
+        // A suspension must not burn an attempt, or a 3-day sleep dead-letters the run. Floored
+        // where `SQL_NACK` floors it (`greatest(attempt - 1, 0)`): the fence above is what keeps
+        // the decrement paired with a claim today, so this is the guard that survives the fence
+        // being read as the only one.
+        attempt: counts ? record.attempt : Math.max(0, record.attempt - 1),
         ...(nackOptions.error === undefined ? {} : { lastError: nackOptions.error }),
       };
       update(jobId, patch);

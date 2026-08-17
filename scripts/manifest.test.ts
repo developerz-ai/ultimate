@@ -18,10 +18,15 @@ import { buildManifest, DEFAULT_OUT, frameworkManifestDrift, ownerOf } from './m
 let dir = '';
 let fresh: FrameworkManifest;
 
+// `buildManifest(repoRoot())` is a full manifest regeneration over 29 packages — one of the four
+// full-repo scans named in `scripts/verify.test.ts`'s own comment, run once here for the whole
+// file. Bun's 5s default covered that while the suite ran serially and stopped the moment
+// `x test` began sharding across workers, because the shards compete for the same cores. The scan
+// is the point of the hook, so the timeout is what moves. Same shape as `scripts/verify.test.ts`.
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'ultimate-framework-manifest-'));
   fresh = await buildManifest(repoRoot());
-});
+}, 30_000);
 
 afterAll(async () => {
   await rm(dir, { recursive: true, force: true });

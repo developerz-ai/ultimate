@@ -138,6 +138,7 @@ export {
   JobMaxAttemptsError,
   JobNameTakenError,
   JobNotCancellableError,
+  JobSlotLostError,
   JobsNotImplementedError,
   JobTenantRequiredError,
   JobTimeoutError,

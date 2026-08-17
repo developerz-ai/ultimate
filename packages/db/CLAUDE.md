@@ -29,16 +29,31 @@ itself. Keep both sides `function` declarations so hoisting covers the TDZ.
 
 `pglite.ts` is a pool of exactly one: PGlite is a single session, so `reserve()` (backed by
 `pglite-turns.ts`) is what stops two concurrent `BEGIN`s becoming one transaction. Three rules
-hold it together and none is optional — the plain path takes a turn; a statement issued while
-`currentTx()` is set skips the queue because it is already inside the transaction holding it; and
-a reservation runs direct **only while its turn is held**, re-queueing through `turns.run` once
-`release()` has been called. Drop the first and a rollback is silently lost; drop the second and
-`enqueue(input, { outbox: false })` inside `withTransaction` hangs forever; drop the third and a
-`tx` handle leaked past its scope writes into whichever transaction holds the connection next. The
-first two are pinned by real-database tests in `pglite-embedded.test.ts` and a fake driver cannot
-catch either; the third is a fake-driver test in `pglite.test.ts`, because it is about ordering,
-not SQL. That is the split between the two files: `pglite.test.ts` pins the adapter against fakes,
-`pglite-embedded.test.ts` boots the WASM module once and pins the binding.
+hold it together and none is optional — the plain path takes a turn; a statement issued while a
+transaction is **live** (`inLiveTx()`) skips the queue because it is already inside the transaction
+holding it; and a reservation runs direct **only while its turn is held**, re-queueing through
+`turns.run` once `release()` has been called. Drop the first and a rollback is silently lost; drop
+the second and `enqueue(input, { outbox: false })` inside `withTransaction` hangs forever; drop the
+third and a `tx` handle leaked past its scope writes into whichever transaction holds the connection
+next. The first two are pinned by real-database tests in `pglite-embedded.test.ts` and a fake driver
+cannot catch either; the third is a fake-driver test in `pglite.test.ts`, because it is about
+ordering, not SQL. That is the split between the two files: `pglite.test.ts` pins the adapter
+against fakes, `pglite-embedded.test.ts` boots the WASM module once and pins the binding.
+`pglite-observer.test.ts` is the third, split off the first purely for the line ceiling, along the
+seam `observe.ts` already draws.
+
+**The second rule fences on `inLiveTx()`, never on `currentTx() !== undefined`** — the two are
+different questions and reading the second as the first was a cross-transaction write. The
+`AsyncLocalStorage` store rides into every promise chain started inside `withTransaction`, so a
+statement the app forgot to `await` still found a store after COMMIT, skipped the turn queue, and
+landed inside whichever unit of work held the single session next: measured `BEGIN`, `select 'inside
+tx'`, `COMMIT`, `BEGIN`, `select 'straggler'`, `select 'inside tx 2'`, `COMMIT` — committed by a
+transaction that never issued it, with nothing anywhere to read. `runRoot` now marks `TxState.live`
+false on every exit and `inLiveTx()` (`transaction.ts`) is the one reader. A closed scope falls
+through to `turns.run` **quietly**, exactly as `client.ts`'s released pin sends a late statement back
+to the pool — one answer to one question, on both drivers. `currentTx()` deliberately still answers
+with the dead handle: its statements go through the reservation, whose own `held` fence already
+re-queues them, and it is a pinned public seam three packages are written against.
 
 `Turn` (`pglite-turns.ts`) is `Disposable`, same shape as `DbConnection`: `release()` and
 `[Symbol.dispose]` are the same call, idempotent for free because it is a settled promise's
