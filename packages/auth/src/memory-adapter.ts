@@ -26,10 +26,15 @@ export class MemoryAdapter implements AuthAdapter {
   readonly #verifications = new Map<string, AuthVerification>();
   readonly #apiKeys = new Map<string, AuthApiKeyRecord>();
 
+  /**
+   * Exact match, because `BuiltinAdapter` issues `where email = $1` against a plain `text ...
+   * unique` column and nothing folds case there. Normalising here instead made this the ONE
+   * adapter that found an account Postgres would not, which is a linked account under `x dev` and
+   * a duplicate one in production. `normaliseEmail` is the caller's, above the seam.
+   */
   async findUserByEmail(email: string): Promise<AuthUser | null> {
-    const wanted = email.trim().toLowerCase();
     for (const user of this.#users.values()) {
-      if (user.email === wanted) return user;
+      if (user.email === email) return user;
     }
     return null;
   }
@@ -41,7 +46,8 @@ export class MemoryAdapter implements AuthAdapter {
   async createUser(input: CreateUserInput): Promise<AuthUser> {
     const user: AuthUser = {
       id: input.id,
-      email: input.email.trim().toLowerCase(),
+      // Stored as handed over, exactly as the `insert into x_users` binds it.
+      email: input.email,
       emailVerifiedAt: null,
       passwordHash: input.passwordHash,
       orgId: input.orgId,

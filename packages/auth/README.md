@@ -242,6 +242,12 @@ an adapter implementation, not a dependency of this package.
 | `MemoryAdapter` | `x new` before a database exists, and every test in this package |
 | your own | implement `AuthAdapter`; DDL in `tables.ts` shows what the columns mean |
 
+**An adapter stores and matches the address it is handed — it never folds case.** `x_users.email`
+is a plain case-sensitive `text ... unique`, so an adapter that lowercased found accounts Postgres
+would not. Normalisation happens once, above the seam, in `normaliseEmail` (`email.ts`): trim and
+lowercase, nothing else. Call it before `findUserByEmail`/`createUser` in any login route of your
+own, and key any bucket of your own with it — `accountKey` does.
+
 The seam's newer members — `findUserByExternalId`, `listUsersByOrg`, `deleteSessionsForUser`,
 `deleteSessionsForOrg`, `deleteSessionsCreatedBefore` — are **optional**, so a 1.2-era adapter
 still satisfies the interface. Calling one an adapter has not implemented is `X_NOT_IMPLEMENTED`

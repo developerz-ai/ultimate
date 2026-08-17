@@ -154,6 +154,12 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   // 404, deliberately NOT 403: the org check fires before anything is read, so answering
   // "forbidden" would confirm that a key exists to the one caller who must not learn it.
   X_STORAGE_ORG_MISMATCH: 404,
+  // @ultimat3/mail
+  // The deployment configured no transport. It reaches a caller only through an inline
+  // `send(…, { sync: true })` inside a request; the queued path dead-letters instead. A server-side
+  // configuration fault either way, so 500 and never a 4xx — nothing the caller sent is wrong, and
+  // this is exactly the condition somebody should be paged for.
+  X_MAIL_CREDENTIAL_MISSING: 500,
   // @ultimat3/core
   // The caller asked for a format the pipeline cannot produce (`?f=avif`): the request names an
   // unsupported representation, which is 415 — not a 500, which would blame the server for it.

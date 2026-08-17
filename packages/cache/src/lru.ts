@@ -259,9 +259,12 @@ export function createLruTier(options: LruOptions = {}): CacheTier & { readonly 
     get<T>(key: string) {
       return Promise.resolve(cache.get<T>(key));
     },
-    set<T>(key: string, value: T, setOptions?: CacheSetOptions) {
+    // `async`, so a refusal is a REJECTION and not a synchronous throw out of a function typed
+    // `Promise<void>`. `LruCache.set` stays synchronous — it is a sync API — but a `CacheTier` is
+    // one interface with two implementations, and `tier.set(...).catch(...)` has to mean the same
+    // thing on the in-process rung as on the shared one, where the throw is already a rejection.
+    async set<T>(key: string, value: T, setOptions?: CacheSetOptions) {
       cache.set(key, value, setOptions ?? {});
-      return Promise.resolve();
     },
     del(key: string) {
       cache.del(key);

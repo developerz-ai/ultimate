@@ -1,7 +1,18 @@
 // Single responsibility: the one adapter from the `nats` client to this package's port. It is the
 // only file in the repo that imports `nats` — everything else speaks `NatsClient`, so the wire, the
-// reconnect and the TLS upgrade are the library's and stay replaceable. What it adds on top is
-// ours: every failure leaves here as an `UltimateError`, never as a raw library error.
+// reconnect and the TLS upgrade are the library's and stay replaceable.
+//
+// WHERE FAILURES ARE TRANSLATED, and it is deliberately not all here. This file coded the calls
+// that have no synchronous caller frame to catch them: `request`, `requestMany`, the dial, and the
+// background `#watch` that is the only place a lost connection is announced. `publish` and
+// `subscribe` are synchronous and stay raw — `NatsTransport.#translating` codes them, because
+// `NatsTransportOptions.connect` is a PUBLIC injection seam: translating in this class would cover
+// the one client the repo ships and leave every app-supplied one uncovered, and translating in both
+// places would be two answers to one event. `unsubscribe()` is wrapped nowhere on purpose — it is
+// synchronous, returns `void`, and its throw reaches the caller rather than being swallowed.
+//
+// This header said "every failure leaves here as an `UltimateError`" until 2026-08, which a reader
+// took as a guarantee it never was.
 
 import { connect, Events, headers, Match, type Msg, type MsgHdrs, type NatsConnection } from 'nats';
 import { TransportUnavailableError } from './errors';

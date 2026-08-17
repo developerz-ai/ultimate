@@ -33,6 +33,7 @@ delivers inline only when `{ sync: true }` is passed or no job driver is configu
 | Every string is a key | `mail.<id>.<slot>`; English lives in `src/catalog.ts` and app catalogs override it |
 | Every colour is a token | `MAIL_TOKENS` in `layout.ts` holds light + dark hexes; templates never see a hex |
 | Every date takes an IANA zone | `options.tz`, else `ctx.tz`, else `UTC` |
+| No CR/LF in a header-bound field | checked in `renderMessage` and again in `sendMailJob`, so every driver refuses the same message (`X_MAIL_HEADER_INVALID`). `mime.ts` keeps its own gate for the headers the SMTP transport mints itself |
 | Sending is a job | `retry: { attempts: 5, backoff: 'exponential' }`, idempotency key derived from `(mailId, recipients, hash(rendered))`, or `(mailId, your key)` when you pass one — a caller's key is scoped to its mail so two templates cannot dedupe each other away |
 
 ## Drivers
@@ -44,20 +45,28 @@ delivers inline only when `{ sync: true }` is passed or no job driver is configu
 |---|---|---|
 | `createMemoryDriver()` | dev, tests | retains messages; `outbox()` / `lastTo()` feed the `/_x` mail panel |
 | `createLogDriver()` | workers without credentials | one structured line per message through core's `logger`; bodies never logged |
+| `createUnconfiguredDriver(env)` | a deploy that configured no transport | refuses every send with `X_MAIL_CREDENTIAL_MISSING`; delivers nothing and claims nothing |
 | `createSmtpDriver({ url, from })` | prod | real ESMTP over `Bun.connect`: STARTTLS, `AUTH PLAIN`/`LOGIN`, quoted-printable MIME |
 | `createResendDriver({ apiKey, from })` | prod | one `POST /emails`, `Idempotency-Key` on every request |
 
 ### Which one a boot installs
 
-`selectMailDriver(env)` is the one answer, and `x dev` calls it — an unset variable means the
-embedded default, the same law the database, event bus and storage bindings follow. Nothing about
+`selectMailDriver(env)` is the one answer, and `x dev` and `runRole` both call it. Nothing about
 the app changes between environments; the credential does.
 
 | env | driver |
 |---|---|
-| *(nothing set)* | `createMemoryDriver()` — caught, never sent |
+| *(nothing set)*, `development` / `test` | `createMemoryDriver()` — caught, never sent |
+| *(nothing set)*, `staging` / `production` | `createUnconfiguredDriver(...)` — every send is `X_MAIL_CREDENTIAL_MISSING` |
 | `SMTP_URL` + `MAIL_FROM` | `createSmtpDriver(...)`, `MAIL_POOL_SIZE` optional |
 | `RESEND_API_KEY` + `MAIL_FROM` | `createResendDriver(...)` |
+
+**No credential outside development is a refusal, not the embedded default.** The memory driver
+there answered `accepted` for mail that never left the process — password resets, receipts and
+invitations all reported as sent, none delivered, no error anywhere. The refusal lands on the
+**send**, not on the boot, so an app that sends no mail still deploys. Which environment this is
+comes from core's `isLocal()` (`ULTIMATE_ENV`, else `NODE_ENV`, else `development`) — mail does not
+own a second reading of it.
 
 Both credentials at once is `X_CONFIG_INVALID` rather than a winner picked for you, and a
 transport with no `MAIL_FROM` is refused at boot instead of on the first send. A host that is not
@@ -77,7 +86,8 @@ with STARTTLS. Credentials are percent-decoded, so a password with `@` or `/` wo
 | `poolSize` (default 4) caps concurrent connections | a burst of sends queues instead of opening one socket each |
 | `Bcc` never reaches a header | it travels in `RCPT TO` only |
 | Every envelope address is gated for CR/LF | `MAIL FROM`/`RCPT TO` are built by interpolation, and `bcc` is the one address no header check ever sees. Refused (`X_MAIL_ADDRESS_INVALID`), never stripped — a rewritten address delivers somewhere else |
-| The reported `id` is the `Message-ID` | an SMTP `250` carries nothing a caller could correlate. It is not derived from the idempotency key, which holds the recipient list |
+| The reported `id` is the `Message-ID` | an SMTP `250` carries nothing a caller could correlate |
+| The `Message-ID` is stable per message | SMTP has no idempotency protocol, so it is the one identifier a receiving mailbox can collapse a retry on. A fresh token per attempt made a timeout past `DATA` a second email. It is a one-way **digest** of `mailIdempotencyKey`, never the key: the key holds the recipient list, and this header is visible to all of them |
 
 ### Resend
 
@@ -111,7 +121,8 @@ Translating them = shipping `mail.*` keys in an app catalog. Never edit a templa
 | `X_MAIL_TEMPLATE_UNKNOWN` | export a `defineMail({ id })` and import it (also raised for an unregistered layout) |
 | `X_MAIL_DUPLICATE` | rename one of two `defineMail({ id })` declarations |
 | `X_MAIL_TEXT_MISSING` | add a text-bearing block to the template |
-| `X_MAIL_DRIVER_UNAVAILABLE` | `setMailDriver(createMemoryDriver())` at boot |
+| `X_MAIL_DRIVER_UNAVAILABLE` | `setMailDriver(createMemoryDriver())` at boot — a wiring bug |
+| `X_MAIL_CREDENTIAL_MISSING` | set `SMTP_URL` (or `RESEND_API_KEY`) and `MAIL_FROM` in the deployment — an operations one |
 | `X_MAIL_HEADER_INVALID` | strip CR/LF from the interpolated value before it reaches a header |
 | `X_MAIL_ADDRESS_INVALID` | pass a bare `addr-spec` — an envelope address may hold no control character and no `<`/`>` |
 | `X_MAIL_SEND_FAILED` | the `cause` names the stage, the provider's status and whether a retry can help |

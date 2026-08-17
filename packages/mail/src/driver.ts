@@ -4,8 +4,8 @@
 // `driver-resend.ts`; swapping one for the other is an `app.config.ts` line and zero template
 // changes.
 
-import { nanoid, logger as rootLogger } from '@ultimat3/core';
-import { driverUnavailable } from './errors';
+import { type Environment, nanoid, logger as rootLogger } from '@ultimat3/core';
+import { driverUnavailable, mailCredentialMissing } from './errors';
 import { mailIdempotencyKey } from './idempotency';
 
 /** The rendered envelope. Everything a transport needs; nothing it does not. */
@@ -129,6 +129,28 @@ export function isMemoryDriver(driver: MailDriver): driver is MemoryMailDriver {
     typeof candidate.lastTo === 'function' &&
     typeof candidate.clear === 'function'
   );
+}
+
+export const UNCONFIGURED_DRIVER_NAME = 'unconfigured';
+
+/**
+ * What a deployment outside development gets when it configured no transport. It is a driver and
+ * not a boot refusal so an app that sends no mail still deploys; it refuses on the send so an app
+ * that does sends nothing silently. The memory driver in that position answered `accepted` for
+ * every message — a password reset reported as delivered, with no error anywhere to find it by.
+ */
+export function createUnconfiguredDriver(environment: Environment): MailDriver {
+  return {
+    name: UNCONFIGURED_DRIVER_NAME,
+    // Rejected rather than thrown: `send()` and `sendMailJob` both await this, and a synchronous
+    // throw from a method typed as returning a promise escapes the caller's own error path.
+    send: (): Promise<SendResult> => Promise.reject(mailCredentialMissing(environment)),
+  };
+}
+
+/** Whether this process will refuse every send. A host prints a different boot line for it. */
+export function isUnconfiguredDriver(driver: MailDriver): boolean {
+  return driver.name === UNCONFIGURED_DRIVER_NAME;
 }
 
 /**

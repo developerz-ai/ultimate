@@ -117,6 +117,26 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   over as its `reconnectDelayHandler` because spreading a restart herd is the framework's decision,
   and the KV semantics presence needs (`nats-jetstream.ts`, `nats-kv.ts`) — a per-message TTL and a
   batch direct get, which the library's own KV abstraction cannot express.
+- **Nothing leaves `NatsTransport` uncoded, and `#translating` is where that is enforced — added
+  2026-08.** `client.publish` and `client.subscribe` are the port's two SYNCHRONOUS calls, and the
+  library refuses locally on both: a bad subject, a payload over the server's `max_payload`, a
+  connection torn down between the `#ensure` and the call, a permissions violation on the subject.
+  A raw `NatsError` escaped `publish()` into `ChannelHub`'s bridge, `SocketRegistry` and the
+  replicator — no code, no `fix:`, nothing an operator can act on — while `InProcessTransport`
+  answered `X_TRANSPORT_UNAVAILABLE` for its own one refusal. `transport-parity.test.ts` asserts
+  both transports in one test, and a third case proves the wrap still DELIVERS: a translation that
+  swallowed a working publish would satisfy the two refusal cases and fan out nothing. An
+  `UltimateError` passes through untouched — the port raises its own for a closed client, and
+  re-wrapping buries the code a caller branches on. `nats-lib-client.ts`'s header claim that every
+  failure leaves *there* as an `UltimateError` is still false for those two calls; the translation
+  is deliberately in ONE place, and it is the transport, because `connect` is a public injection
+  seam and an app-supplied client throws whatever it likes.
+- **Reusing a client whatever its state is a DECISION, not the other half of that bug.** `#ensure`
+  hands back a client that is mid-reconnect on purpose: the library is re-establishing that same
+  connection and its subscriptions, and a second dial alongside it doubles every delivery. What a
+  caller gets from a client whose reconnect budget is spent is a publish that resolves into
+  nothing — reported through `onError` by `#watch`, and visible to `/readyz` through `connected`,
+  which is where a dead bus is meant to be caught.
 - One place reads `NATS_URL`, and it is `selectTransport` — a boot that resolved the bus itself
   could reach a different one than the container it is standing in for. The KV bucket and the
   presence TTL come back with the transport for the same reason: they are one decision.

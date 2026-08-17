@@ -119,10 +119,18 @@ update x_jobs
 returning id
 `.trim();
 
+/**
+ * Five buckets a queue depth is SUMMED from, so a row may land in exactly one. `run_at > now()`
+ * unqualified was every state's future row: a `step.sleep` job counted as `suspended` AND
+ * `delayed`, a delayed dead-letter as `dead` AND `delayed`. The memory driver's `if/else if` chain
+ * has always been exclusive, so `x jobs` reported one depth under `x dev` and a larger one in
+ * production — off the same rows.
+ */
 export const SQL_STATS = `
 select queue,
        count(*) filter (where state = 'ready' and run_at <= now())              as ready,
-       count(*) filter (where state = 'delayed' or run_at > now())              as delayed,
+       count(*) filter (where state = 'delayed'
+                           or (state = 'ready' and run_at > now()))             as delayed,
        count(*) filter (where state = 'running')                                as running,
        count(*) filter (where state = 'suspended')                              as suspended,
        count(*) filter (where state = 'dead')                                   as dead,
@@ -203,10 +211,19 @@ on conflict (lease_key, slot) do update
 returning slot
 `.trim();
 
+/**
+ * Two fences, and each answers a case the other cannot. `holder` answers "another worker has this
+ * slot"; `expires_at > now()` answers "nobody has it YET" — a lapsed slot is one any worker may
+ * take on its next acquire, so reviving it makes the TTL an expiry only other processes observe,
+ * and `held()` (which counts live rows) disagreed with the holder's own belief in between. The
+ * memory store has always answered `false` here, and `worker-fleet-slots.ts` turns that into
+ * `X_JOB_SLOT_LOST`; without this line the same lapsed slot cancelled the run under `x dev` and
+ * silently continued in production.
+ */
 export const SQL_LEASE_RENEW = `
 update x_job_leases
    set expires_at = now() + ($4::bigint * interval '1 millisecond')
- where lease_key = $1 and slot = $2::int and holder = $3
+ where lease_key = $1 and slot = $2::int and holder = $3 and expires_at > now()
 returning slot
 `.trim();
 

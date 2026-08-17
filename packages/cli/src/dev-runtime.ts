@@ -9,7 +9,13 @@ import { isNoopPurgeDriver, selectPurgeDriver } from '@ultimat3/cache';
 import { isLocal, resolveEnvironment } from '@ultimat3/core';
 import type { EventBus, JobDriver, OutboxStore } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
-import { isMemoryDriver, resetMailDriver, selectMailDriver, setMailDriver } from '@ultimat3/mail';
+import {
+  isMemoryDriver,
+  isUnconfiguredDriver,
+  resetMailDriver,
+  selectMailDriver,
+  setMailDriver,
+} from '@ultimat3/mail';
 import type { Transport, TransportSelection } from '@ultimat3/realtime';
 import { selectTransport } from '@ultimat3/realtime';
 import type { Storage } from '@ultimat3/storage';
@@ -60,6 +66,10 @@ export interface RunningServices {
  * the human half.
  */
 export function describeMail(runtime: RunningServices): string {
+  // Three arms, not two. A deployment with no credential outside development installs a driver that
+  // REFUSES every send, and reporting that as `external` would name it as a transport that delivers
+  // — the same lie the memory driver told when it answered `accepted` for mail nobody received.
+  if (isUnconfiguredDriver(runtime.mail)) return `mail=refused(${runtime.mailDetail})`;
   return isMemoryDriver(runtime.mail)
     ? 'mail=embedded'
     : `mail=external(${runtime.mail.name} via ${runtime.mailDetail})`;
@@ -82,6 +92,8 @@ export function describeCdn(runtime: RunningServices): string {
  * value stays where `--json` can depend on it.
  */
 export function mailLabel(runtime: RunningServices): string {
+  if (isUnconfiguredDriver(runtime.mail))
+    return msg('cli.dev.mail.refused', { detail: runtime.mailDetail });
   return isMemoryDriver(runtime.mail)
     ? msg('cli.dev.mail.embedded')
     : msg('cli.dev.mail.external', { driver: runtime.mail.name, detail: runtime.mailDetail });

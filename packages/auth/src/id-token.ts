@@ -8,10 +8,11 @@
 import type { Clock } from '@ultimat3/core';
 import { renderCauseValue } from '@ultimat3/core';
 import { oauthStateInvalid, oauthTokenInvalid, restartAt } from './errors';
+import { decodeJwtSegment } from './json';
 import { type IdTokenKeys, verifyJwtSignature } from './jwks';
 import type { OAuthProvider, OAuthProviderId } from './oauth';
 import { providerFor } from './oauth-registry';
-import { base64UrlBytes, timingSafeEqual } from './tokens';
+import { timingSafeEqual } from './tokens';
 
 /** The subset of OIDC claims this package acts on. Provider-specific extras are ignored. */
 export interface IdTokenClaims {
@@ -30,22 +31,18 @@ export interface IdTokenClaims {
 /** Two servers rarely agree on the second. Anything wider hides a genuinely expired token. */
 export const ID_TOKEN_CLOCK_SKEW_MS = 60_000;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const stringOrUndefined = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
 
 function decodeSegment(provider: string, segment: string, fix: string): Record<string, unknown> {
-  const bytes = base64UrlBytes(segment);
-  let parsed: unknown;
-  try {
-    if (bytes === null) throw new TypeError('not base64url');
-    parsed = JSON.parse(new TextDecoder().decode(bytes));
-  } catch {
-    throw oauthTokenInvalid(provider, 'the payload segment is not base64url-encoded JSON', fix);
+  const parsed = decodeJwtSegment(segment);
+  if (parsed === null) {
+    throw oauthTokenInvalid(
+      provider,
+      'the payload segment is not base64url-encoded JSON describing an object',
+      fix,
+    );
   }
-  if (!isRecord(parsed)) throw oauthTokenInvalid(provider, 'the payload is not an object', fix);
   return parsed;
 }
 

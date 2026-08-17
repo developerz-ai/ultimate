@@ -9,9 +9,11 @@
 //   TEST_REDIS_URL=redis://localhost:6379 bun test packages/cache/src/redis.live.test.ts
 
 import { afterAll, describe, expect, test } from 'bun:test';
+import { createLruTier } from './lru';
 import type { RedisLike } from './redis';
 import { createRedisTier, REDIS_INVALIDATE_SCRIPT } from './redis';
 import { tag } from './tags';
+import type { CacheTier } from './tiers';
 
 const url = Bun.env['TEST_REDIS_URL'];
 const hasRedis = typeof url === 'string' && url.length > 0;
@@ -162,5 +164,59 @@ describe.skipIf(!hasRedis)('live · redis · both Lua scripts, executed by a rea
     await tier.set('long', 'v', { ttlMs: 3_600_000, tags: [tag('raised')] });
 
     expect(await count(client, 'TTL', bucket)).toBeGreaterThan(3_000);
+  });
+
+  // `tier-parity.test.ts` compares the memo and the LRU as real objects and the shared tier on the
+  // wire, because a fake cannot run `SMEMBERS`. Here it can: this is the same two busts with the
+  // shared tier answering out of a real server, and the assertion is the EQUALITY of what the two
+  // rungs kept — never each one checked apart, which is how they came to disagree.
+  describe('one bust, one answer, whichever rung holds it', () => {
+    const seed = async (tier: CacheTier, entity: string): Promise<void> => {
+      await tier.set(`${entity}-1`, 'one', { ttlMs: 60_000, tags: [tag(entity, '1')] });
+      await tier.set(`${entity}-2`, 'two', { ttlMs: 60_000, tags: [tag(entity, '2')] });
+      await tier.set(`${entity}-feed`, 'list', { ttlMs: 60_000, tags: [tag(entity)] });
+    };
+
+    const survivors = async (tier: CacheTier, entity: string): Promise<string[]> => {
+      const found: string[] = [];
+      for (const suffix of ['1', '2', 'feed']) {
+        if ((await tier.get(`${entity}-${suffix}`)) !== undefined) found.push(suffix);
+      }
+      return found;
+    };
+
+    test('a ROW bust leaves the same keys in the LRU and in a real Redis', async () => {
+      // The divergence this closes, measured rather than argued: the shared tier joined a
+      // row-tagged key to the COLLECTION bucket and read that bucket back on a row bust, so
+      // `row-2` came out of `SMEMBERS` and was deleted — while the LRU one rung closer kept it.
+      // Every single-row write emptied the shared tier for that entity, silently and per node.
+      const lru = createLruTier({ rng: () => 0 });
+      const redis = tierOn(raw());
+      await seed(lru, 'liverow');
+      await seed(redis, 'liverow');
+
+      await lru.invalidateTags([tag('liverow', '1')]);
+      const cleared = await redis.invalidateTags([tag('liverow', '1')]);
+
+      expect(await survivors(redis, 'liverow')).toEqual(await survivors(lru, 'liverow'));
+      expect(await survivors(redis, 'liverow')).toEqual(['2']);
+      expect([...cleared.keys].sort()).toEqual(['liverow-1', 'liverow-feed']);
+    });
+
+    test('a COLLECTION bust leaves the same keys in the LRU and in a real Redis', async () => {
+      // The other direction, and the reason the entity index is a SECOND bucket rather than a
+      // narrowing of the collection tag's: a collection bust must still reach every row.
+      const lru = createLruTier({ rng: () => 0 });
+      const redis = tierOn(raw());
+      await seed(lru, 'livecoll');
+      await seed(redis, 'livecoll');
+
+      await lru.invalidateTags([tag('livecoll')]);
+      const cleared = await redis.invalidateTags([tag('livecoll')]);
+
+      expect(await survivors(redis, 'livecoll')).toEqual(await survivors(lru, 'livecoll'));
+      expect(await survivors(redis, 'livecoll')).toEqual([]);
+      expect([...cleared.keys].sort()).toEqual(['livecoll-1', 'livecoll-2', 'livecoll-feed']);
+    });
   });
 });

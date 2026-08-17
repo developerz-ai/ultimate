@@ -9,6 +9,7 @@ import { useContext } from '@ultimat3/core';
 import type { CacheTag } from './tags';
 import { tagsIntersect } from './tags';
 import type { CacheEntry, CacheSetOptions, CacheTier, TierInvalidation } from './tiers';
+import { assertTtl } from './tiers';
 
 type MemoStore = Map<string, CacheEntry<unknown>>;
 
@@ -55,9 +56,26 @@ export function createMemoTier(): CacheTier {
       return Promise.resolve(entry as CacheEntry<T> | undefined);
     },
 
-    set<T>(key: string, value: T, options?: CacheSetOptions): Promise<void> {
+    /**
+     * The lease is VALIDATED and then discarded, which is not a contradiction.
+     *
+     * This tier holds nothing past the request, so it stores no `expiresAt` — but it is still a
+     * rung of one ladder, and `assertTtl` is the one place that says what `ttlMs` may be. Skipping
+     * it made `ttlMs: 0` a value the memo accepted and every other tier refused: `createCacheStack`
+     * routes each rung through `bestEffort`, so the miswiring was swallowed as two tier failures
+     * and the read still hit — out of the one tier that never should have taken it. Exactly the
+     * "two tiers, two readings of `0`" the rule exists to close.
+     *
+     * Only a lease the caller SUPPLIED is checked: there is no default to fall back to, because a
+     * memo entry that outlives its request is not a thing that can happen. `jitterFraction: 0` for
+     * `createMemorySemanticCache`'s reason — spreading a lease is a herd defence for a SHARED
+     * store, and this one dies with the request that made it.
+     */
+    async set<T>(key: string, value: T, options?: CacheSetOptions): Promise<void> {
+      if (options?.ttlMs !== undefined) {
+        assertTtl(key, options.ttlMs, 'request-memo', { jitterFraction: 0 });
+      }
       storeFor(true)?.set(key, { value, tags: options?.tags ?? [] });
-      return Promise.resolve();
     },
 
     del(key: string): Promise<void> {

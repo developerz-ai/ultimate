@@ -73,6 +73,7 @@ export {
   deleteFailed,
   diskUnknown,
   isStorageError,
+  listFailed,
   objectNotFound,
   orgMismatch,
   pathUnsafe,

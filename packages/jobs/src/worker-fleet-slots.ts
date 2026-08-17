@@ -45,10 +45,13 @@ export interface FleetSlots {
   /**
    * Keeps this job's slot alive until the returned stop is called. A no-op when it holds none.
    *
-   * `onLost` fires once, when a renewal comes back `false` — the row is another holder's, so this
-   * run and the one that took the slot are both live under a cap of one. The caller cancels the
-   * run on it; renewal stops here either way, because extending a slot this worker no longer holds
-   * would push out somebody else's expiry.
+   * `onLost` fires once, when a renewal comes back `false` — this worker no longer holds the slot,
+   * either because another holder took it (this run and that one are both live under a cap of one)
+   * or because it lapsed and is now free for anyone's next `acquire`. Both drivers answer `false`
+   * to both cases; the pg statement fenced only on the holder until 2026-08, so a lapsed slot
+   * revived itself there and cancelled the run under `x dev`. The caller cancels the run on it;
+   * renewal stops here either way, because extending a slot this worker no longer holds would push
+   * out somebody else's expiry.
    */
   startRenewal(jobId: string, onLost?: (slot: HeldLease) => void): () => void;
   release(jobId: string): Promise<void>;

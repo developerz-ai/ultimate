@@ -18,13 +18,16 @@ export type {
 export {
   createLogDriver,
   createMemoryDriver,
+  createUnconfiguredDriver,
   envelopeRecipients,
   isMemoryDriver,
+  isUnconfiguredDriver,
   mailDriver,
   messageHeaders,
   resetMailDriver,
   setMailDriver,
   tryMailDriver,
+  UNCONFIGURED_DRIVER_NAME,
 } from './driver';
 export type { MailEnvironment, MailSelection } from './driver-env';
 export { MAIL_ENV_KEYS, selectMailDriver } from './driver-env';
@@ -48,15 +51,17 @@ export {
   MAIL_ERROR_CODES,
   MAIL_ERROR_TITLES,
   MailError,
+  mailCredentialMissing,
   mailDuplicate,
   sendFailed,
   templateUnknown,
   textMissing,
 } from './errors';
+export { assertHeaderSafe } from './header-safety';
 
 export { escapeHtml, safeUrl } from './html';
 
-export { mailIdempotencyKey } from './idempotency';
+export { mailIdempotencyKey, mailMessageIdToken } from './idempotency';
 export { mailMessageSchema, sendMailJob } from './job';
 export type {
   ColorScheme,

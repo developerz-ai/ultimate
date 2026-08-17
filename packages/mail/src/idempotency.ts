@@ -38,6 +38,21 @@ export function mailIdempotencyKey(message: MailMessage): string {
   return `mail:${message.mailId}:${recipients.join(',')}:${digest}`;
 }
 
+/**
+ * The `Message-ID` token for a message, stable across every attempt of the same send.
+ *
+ * SMTP has no idempotency protocol, so this header is the ONE identifier a receiving mailbox can
+ * collapse a duplicate on — and an attempt that times out after `DATA` is retryable, so the job
+ * retry hands the server the identical mail. A fresh random token per attempt made that second copy
+ * a different message to everything downstream.
+ *
+ * A one-way digest of the key, never the key itself: the key holds the recipient list, bcc
+ * included, and a `Message-ID` is visible to every recipient of the mail.
+ */
+export function mailMessageIdToken(message: MailMessage): string {
+  return contentDigest(mailIdempotencyKey(message));
+}
+
 /** Key order is normalised so two structurally equal payloads hash identically. */
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;

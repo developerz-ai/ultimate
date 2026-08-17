@@ -19,7 +19,13 @@ import {
   sha256Base64,
   toBytes,
 } from './driver';
-import { checksumMismatch, deleteFailed, objectNotFound, storageNotImplemented } from './errors';
+import {
+  checksumMismatch,
+  deleteFailed,
+  listFailed,
+  objectNotFound,
+  storageNotImplemented,
+} from './errors';
 import { assertSafeKey } from './path';
 import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
@@ -299,11 +305,28 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
     },
 
     async list(listOptions?: ListOptions): Promise<ListPage> {
-      const result = await conn().list({
-        maxKeys: listOptions?.limit ?? DEFAULT_LIST_LIMIT,
-        ...(listOptions?.prefix === undefined ? {} : { prefix: listOptions.prefix }),
-        ...(listOptions?.cursor === undefined ? {} : { continuationToken: listOptions.cursor }),
-      });
+      const prefix = listOptions?.prefix ?? '';
+      // `conn()` OUTSIDE the try: a missing credential or an absent `Bun.S3Client` is this disk
+      // misconfigured, and it already answers with its own code and its own fix.
+      const client = conn();
+      let result: S3ListResultLike;
+      try {
+        result = await client.list({
+          maxKeys: listOptions?.limit ?? DEFAULT_LIST_LIMIT,
+          ...(listOptions?.prefix === undefined ? {} : { prefix: listOptions.prefix }),
+          ...(listOptions?.cursor === undefined ? {} : { continuationToken: listOptions.cursor }),
+        });
+      } catch (error) {
+        // A bare `S3Error` used to escape here, uncoded: no `X_*`, no `fix`, no `--json` shape, and
+        // `@ultimat3/http`'s error map has nothing to turn it into but a 500. A denied
+        // `s3:ListBucket` is the commonest one and reads to an operator as an app crash.
+        throw listFailed(
+          DRIVER_NAME,
+          prefix,
+          error,
+          `grant s3:ListBucket on this bucket to the app's role, then reproduce with the provider's own words: aws s3api list-objects-v2 --bucket ${options.bucket}${prefix === '' ? '' : ` --prefix ${prefix}`}`,
+        );
+      }
       const objects: StorageListEntry[] = [];
       for (const entry of result.contents ?? []) {
         if (entry.key === undefined) continue;

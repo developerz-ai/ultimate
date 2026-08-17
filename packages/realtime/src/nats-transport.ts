@@ -3,7 +3,7 @@
 // re-establishing subscriptions, which is what makes a `sync` node stateless: a lost connection is
 // re-dialled and re-subscribed underneath the caller, and this file keeps no socket state at all.
 
-import { type Clock, isUltimateError, logger, systemClock } from '@ultimat3/core';
+import { type Clock, isUltimateError, logger, renderThrowable, systemClock } from '@ultimat3/core';
 import { TransportUnavailableError } from './errors';
 import type { Transport, TransportHandler, TransportSet, TransportSubscription } from './fanout';
 import type { NatsClient, NatsConnect } from './nats-client';
@@ -76,7 +76,13 @@ export class NatsTransport implements Transport {
 
   async publish(subject: string, payload: string): Promise<void> {
     const client = await this.#ensure();
-    client.publish(subject, encoder.encode(payload));
+    // `client.publish` is synchronous and refuses locally: a bad subject, a payload over the
+    // server's `max_payload`, a connection torn down between the `#ensure` and this line. Those
+    // are the LIBRARY's errors — or an app-supplied `connect`'s — so they arrive uncoded, and
+    // `ChannelHub`'s bridge, `SocketRegistry` and the replicator all await this call.
+    this.#translating(`publish to ${subject}`, () =>
+      client.publish(subject, encoder.encode(payload)),
+    );
   }
 
   /**
@@ -86,13 +92,16 @@ export class NatsTransport implements Transport {
    */
   async subscribe(subject: string, handler: TransportHandler): Promise<TransportSubscription> {
     const client = await this.#ensure();
-    const live = client.subscribe(subject, (message) => {
-      try {
-        handler(decoder.decode(message.payload), message.subject);
-      } catch (error) {
-        this.#report(error, message.subject);
-      }
-    });
+    // Same seam as `publish`: a permissions violation on the subject is refused here, not later.
+    const live = this.#translating(`subscribe to ${subject}`, () =>
+      client.subscribe(subject, (message) => {
+        try {
+          handler(decoder.decode(message.payload), message.subject);
+        } catch (error) {
+          this.#report(error, message.subject);
+        }
+      }),
+    );
     return { subject, unsubscribe: () => live.unsubscribe() };
   }
 
@@ -177,6 +186,25 @@ export class NatsTransport implements Transport {
     const client = this.#client;
     if (client === undefined) return;
     void this.#ensureBucket(client).catch((error: unknown) => this.#report(error, this.name));
+  }
+
+  /**
+   * One call into the client, with its refusal translated. An `UltimateError` passes through — the
+   * port raises its own for a closed client, and re-wrapping would bury the code a caller branches
+   * on — while anything else becomes `X_TRANSPORT_UNAVAILABLE` carrying the library's own words as
+   * evidence. Never a bare `Error` out of this file: a raw `NatsError` has no code, no `fix:` and
+   * nothing an operator can act on, which is the whole reason the port is here.
+   */
+  #translating<T>(what: string, call: () => T): T {
+    try {
+      return call();
+    } catch (error) {
+      if (isUltimateError(error)) throw error;
+      throw new TransportUnavailableError({
+        transport: this.name,
+        reason: `${what} was refused: ${renderThrowable(error)}`,
+      });
+    }
   }
 
   /**

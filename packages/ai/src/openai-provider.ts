@@ -8,7 +8,8 @@
 // credential and the errors.
 
 import type { Secret } from '@ultimat3/core';
-import { isSecret, REDACTED, revealSecret } from '@ultimat3/core';
+import { isSecret, revealSecret } from '@ultimat3/core';
+import { detailOf, withoutKey } from './error-body';
 import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './errors';
 import type { ModelId } from './models';
 import { chatCompletionBody } from './openai-body';
@@ -24,13 +25,7 @@ import type {
   StreamChunk,
   TokenUsage,
 } from './provider';
-import {
-  costOf,
-  detailOf,
-  estimateInputTokens,
-  estimateTextTokens,
-  requiresStreaming,
-} from './provider';
+import { costOf, estimateInputTokens, estimateTextTokens, requiresStreaming } from './provider';
 import { readSse } from './sse';
 
 const API_KEY_ENV = 'OPENAI_API_KEY';
@@ -209,9 +204,8 @@ class OpenAiProvider implements Provider {
       throw new AiTransportError({
         provider: this.name,
         status: response.status,
-        // The endpoint's own message, with the credential scrubbed out of it. A proxy that echoes
-        // the request headers into its 400 body is the one path by which a key reaches an error,
-        // and an error reaches a log index, a span and an HTTP problem document.
+        // The endpoint's own message, with the credential scrubbed out of it — `error-body.ts`
+        // says why, and both providers call the same pair.
         detail: withoutKey(await detailOf(response), apiKey),
         envVar: API_KEY_ENV,
       });
@@ -263,10 +257,4 @@ export function estimatedUsage(request: GenerateRequest, text: string): TokenUsa
     cacheReadTokens: 0,
     cacheWriteTokens: 0,
   };
-}
-
-/** Replace every occurrence of the credential with `[redacted]`. Cheap, and the one leak path. */
-function withoutKey(detail: string, apiKey: string): string {
-  if (apiKey === '') return detail;
-  return detail.split(apiKey).join(REDACTED);
 }

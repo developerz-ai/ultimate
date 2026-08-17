@@ -14,7 +14,7 @@ import {
   REDIS_INVALIDATE_SCRIPT,
   REDIS_TAG_MEMBER_SCRIPT,
 } from './redis';
-import { fakeRedis, tierFor } from './redis-fake';
+import { fakeRedis, keysOf, tierFor } from './redis-fake';
 import { tag } from './tags';
 import { createCacheStack } from './tiers';
 
@@ -43,7 +43,11 @@ describe('createRedisTier', () => {
     await expect(tier.get('badkey')).resolves.toBeUndefined();
   });
 
-  test('set with tags joins both the row bucket and the collection bucket', async () => {
+  test("set with tags joins the tag's own bucket and the entity index", async () => {
+    // Two buckets with two different jobs. `x:t:{post}:1` is the tag, and a bust of exactly that
+    // tag reads it; `x:e:{post}` is `LruCache`'s `entityIndex`, and only a COLLECTION bust reads
+    // it. Joining `x:t:{post}` here instead — one key doing both jobs — is what made a bust of
+    // `tag('post','1')` return every post-tagged key in the store. See `tier-parity.test.ts`.
     const client = fakeRedis();
     const tier = tierFor(client);
     await tier.set('post-1', { title: 'hi' }, { tags: [tag('post', '1')] });
@@ -53,11 +57,13 @@ describe('createRedisTier', () => {
     );
     expect(joins.map((entry) => [entry[3], entry[4]])).toEqual([
       ['x:t:{post}:1', 'x:c:post-1'],
-      ['x:t:{post}', 'x:c:post-1'],
+      ['x:e:{post}', 'x:c:post-1'],
     ]);
   });
 
-  test('set with an id-less tag joins only the collection bucket', async () => {
+  test('set with an id-less tag joins the collection tag AND the entity index', async () => {
+    // The bare collection tag needs both too: `x:t:{user}` is what a ROW bust of that entity
+    // reads (a row bust must still kill the lists), `x:e:{user}` is what a collection bust reads.
     const client = fakeRedis();
     const tier = tierFor(client);
     await tier.set('users', ['u'], { tags: [tag('user')] });
@@ -65,7 +71,7 @@ describe('createRedisTier', () => {
     const joins = client.sent.filter(
       (entry) => entry[0] === 'EVAL' && entry[1] === REDIS_TAG_MEMBER_SCRIPT,
     );
-    expect(joins.map((entry) => entry[3])).toEqual(['x:t:{user}']);
+    expect(joins.map((entry) => entry[3])).toEqual(['x:t:{user}', 'x:e:{user}']);
   });
 
   // The lease is spent in MILLISECONDS, exactly as the LRU tier holds it. `EX` with a `Math.ceil`
@@ -182,10 +188,13 @@ describe('createRedisTier', () => {
     await tier.invalidateTags([tag('post', '1'), tag('post')]);
 
     const evals = client.sent.filter((entry) => entry[1] === REDIS_INVALIDATE_SCRIPT);
-    // buckets for tag('post','1') = [{post}:1, {post}]; tag('post') adds nothing new, so its
-    // call is not issued at all rather than sent with an empty KEYS.
-    expect(evals).toHaveLength(1);
-    expect(evals[0]?.[2]).toBe('2');
+    // buckets for tag('post','1') = [{post}:1, {post}]; tag('post') = [e:{post}, {post}], and
+    // `{post}` is already claimed, so its call carries the index alone rather than re-reading it.
+    expect(evals).toHaveLength(2);
+    expect(evals.map((entry) => keysOf(entry))).toEqual([
+      ['x:t:{post}:1', 'x:t:{post}'],
+      ['x:e:{post}'],
+    ]);
   });
 
   test('get reports the remaining lease as expiresAt, read from PTTL', async () => {

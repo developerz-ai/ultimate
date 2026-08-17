@@ -12,6 +12,7 @@ import {
 import type { SendResult } from './driver';
 import { envelopeRecipients, type MailDriver, type MailMessage, resultFor } from './driver';
 import { sendFailed } from './errors';
+import { mailMessageIdToken } from './idempotency';
 import { addressDomain, addressSpec, buildMimeMessage } from './mime';
 import {
   type SmtpConnector,
@@ -159,10 +160,15 @@ export function createSmtpDriver(options: SmtpDriverOptions): MailDriver {
 
   async function deliver(message: MailMessage): Promise<SendResult> {
     // The Message-ID is the id the recipient's mailbox shows, so it is also the id we report: an
-    // SMTP `250` carries no identifier a caller could correlate with anything. It is deliberately
-    // NOT derived from the idempotency key — that key holds the recipient list, and a Message-ID
-    // is visible to every recipient, blind ones included.
-    const messageId = `<${message.mailId}.${nanoid(16)}@${addressDomain(options.from)}>`;
+    // SMTP `250` carries no identifier a caller could correlate with anything.
+    //
+    // It is CONTENT-DERIVED, so every attempt of one send presents the same one. A `nanoid` here
+    // made a retry after a timeout past `DATA` a second, unrelated email — the case
+    // `SendResult.idempotencyKey` claims is one message, and the case Resend's `Idempotency-Key`
+    // header has always covered. It is a one-way digest and not the key itself, which is what
+    // answers the objection the key raises: the key holds the recipient list, blind ones included,
+    // and this header is visible to all of them.
+    const messageId = `<${message.mailId}.${mailMessageIdToken(message)}@${addressDomain(options.from)}>`;
     const data = buildMimeMessage(message, {
       from: options.from,
       messageId,

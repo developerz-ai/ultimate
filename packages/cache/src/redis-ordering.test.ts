@@ -151,7 +151,7 @@ describe('invalidation is slot-local on Redis Cluster', () => {
     const buckets = client.sent
       .filter((entry) => entry[1] === REDIS_TAG_MEMBER_SCRIPT)
       .map((entry) => String(entry[3]));
-    expect(buckets).toEqual(['x:t:{post}:1', 'x:t:{post}', 'x:t:{user}']);
+    expect(buckets).toEqual(['x:t:{post}:1', 'x:e:{post}', 'x:t:{user}', 'x:e:{user}']);
     for (const bucket of buckets) expect(bucket).toMatch(/\{[^}]+\}/);
   });
 });

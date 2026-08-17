@@ -15,9 +15,9 @@
 import type { Clock } from '@ultimat3/core';
 import { AuthError } from './errors';
 import { ID_TOKEN_CLOCK_SKEW_MS } from './id-token';
+import { decodeJwtSegment } from './json';
 import { type JwksKeySource, verifyJwtSignature } from './jwks';
 import type { ServiceIdentity } from './policy-bridge';
-import { base64UrlBytes } from './tokens';
 
 /** The claims a workload token is read for. Everything else the issuer sends is ignored. */
 export interface WorkloadClaims {
@@ -59,9 +59,6 @@ const refused = (reason: string): AuthError =>
     fix: "confirm the workload token's issuer, audience and key set match verifyWorkloadToken({ issuers, audience, keys })",
   });
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const readScopes = (payload: Record<string, unknown>): readonly string[] => {
   const scope = payload['scope'];
   if (typeof scope === 'string') return scope.split(' ').filter((one) => one !== '');
@@ -85,15 +82,10 @@ export async function verifyWorkloadToken(input: VerifyWorkloadTokenInput): Prom
   }
 
   const payloadSegment = input.token.split('.')[1];
-  const bytes = payloadSegment === undefined ? null : base64UrlBytes(payloadSegment);
-  let parsed: unknown;
-  try {
-    if (bytes === null) throw new TypeError('not base64url');
-    parsed = JSON.parse(new TextDecoder().decode(bytes));
-  } catch {
-    throw refused('the payload is not base64url-encoded JSON');
+  const parsed = payloadSegment === undefined ? null : decodeJwtSegment(payloadSegment);
+  if (parsed === null) {
+    throw refused('the payload is not base64url-encoded JSON describing an object');
   }
-  if (!isRecord(parsed)) throw refused('the payload is not an object');
 
   const iss = parsed['iss'];
   const sub = parsed['sub'];

@@ -52,6 +52,7 @@ const CATALOG = {
   'cli.dev.cdn.none': 'cdn=none',
   'cli.dev.mail.embedded': 'mail=embedded',
   'cli.dev.mail.external': 'mail=external({driver} via {detail})',
+  'cli.dev.mail.refused': 'mail=refused({detail})',
   'cli.dev.hmr': 'reloaded {file} in {ms}ms',
   'cli.dev.roles': '  roles {roles}',
   'cli.dev.panels': '  panels {panels}',

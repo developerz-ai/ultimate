@@ -2,7 +2,7 @@
 // Mail fails in production, not in tests — a wrong locale, an empty text part or an
 // unconfigured driver must name the exact call site edit that repairs it.
 
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { type Environment, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const MAIL_ERROR_CODES = [
   'X_MAIL_LOCALE_MISSING',
@@ -10,6 +10,7 @@ export const MAIL_ERROR_CODES = [
   'X_MAIL_DUPLICATE',
   'X_MAIL_TEXT_MISSING',
   'X_MAIL_DRIVER_UNAVAILABLE',
+  'X_MAIL_CREDENTIAL_MISSING',
   'X_MAIL_HEADER_INVALID',
   'X_MAIL_ADDRESS_INVALID',
   'X_MAIL_SEND_FAILED',
@@ -23,6 +24,7 @@ export const MAIL_ERROR_TITLES: Readonly<Record<MailErrorCode, string>> = {
   X_MAIL_DUPLICATE: 'two mails claim the same id',
   X_MAIL_TEXT_MISSING: 'the rendered mail has no plain-text part',
   X_MAIL_DRIVER_UNAVAILABLE: 'no mail driver is configured',
+  X_MAIL_CREDENTIAL_MISSING: 'this deployment configured no mail transport',
   X_MAIL_HEADER_INVALID: 'a header value carries a line break',
   X_MAIL_ADDRESS_INVALID: 'an envelope address could restructure the SMTP command line',
   X_MAIL_SEND_FAILED: 'the mail transport refused the message',
@@ -106,6 +108,28 @@ export const driverUnavailable = (what: string): MailError =>
     cause: `${what} — nothing can deliver the message`,
     fix: 'setMailDriver(createMemoryDriver()) in dev, createSmtpDriver({ url: env.SMTP_URL }) live',
     meta: { what },
+  });
+
+/**
+ * A DEPLOYMENT set neither credential, where `X_MAIL_DRIVER_UNAVAILABLE` is a WIRING bug — one is
+ * fixed by an operator setting a variable, the other by a developer calling `setMailDriver`, so
+ * they are two codes and not one cause string.
+ *
+ * Raised on the send rather than at boot, deliberately: a boot refusal turns a working deploy of an
+ * app that sends no mail into a failing one, while this lands on the exact path that needed the
+ * capability — the alternative being the memory driver reporting `accepted` for a password reset
+ * that never left the process.
+ */
+export const mailCredentialMissing = (environment: Environment): MailError =>
+  new MailError({
+    code: 'X_MAIL_CREDENTIAL_MISSING',
+    cause:
+      `neither SMTP_URL nor RESEND_API_KEY is set in ${environment}, so this process has no ` +
+      'transport — the message was not delivered and was not queued anywhere',
+    fix:
+      'set SMTP_URL="smtps://user:pass@host:465" (or RESEND_API_KEY=re_...) and ' +
+      'MAIL_FROM="App <no-reply@yourdomain.test>" in the deployment environment, then restart',
+    meta: { environment, missing: ['SMTP_URL', 'RESEND_API_KEY'] },
   });
 
 /**

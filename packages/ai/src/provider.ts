@@ -4,12 +4,20 @@
 // catalogue and the per-model rules, ./wire owns the response half.
 
 import type { Money } from '@ultimat3/money';
+import { detailOf, withoutKey } from './error-body';
 import { AiKeyMissingError, AiTransportError } from './errors';
 import type { Effort, ModelId, ThinkingMode } from './models';
 import { ANTHROPIC_MODEL_IDS, DEFAULT_MODEL, modelIds, modelSpec, reasoningBody } from './models';
 import { readSse } from './sse';
 import type { LlmTool, LlmToolCall } from './tools';
-import { MessageStream, parseStopDetails, parseStopReason, parseUsage } from './wire';
+import {
+  asToolInput,
+  MessageStream,
+  parseStopDetails,
+  parseStopReason,
+  parseUsage,
+  throwInBandError,
+} from './wire';
 
 /**
  * One block of a structured message. A plain string message is still the common case and still
@@ -168,8 +176,6 @@ export interface AnthropicProviderInput {
 
 const ANTHROPIC_VERSION = '2023-06-01';
 const API_KEY_ENV = 'ANTHROPIC_API_KEY';
-/** Enough of an error body to name the field that was wrong, not enough to fill a log. */
-const DETAIL_LIMIT = 300;
 
 /**
  * Above this ceiling a non-streaming request sits on an open socket past the HTTP timeout and
@@ -301,7 +307,10 @@ export class AnthropicProvider implements Provider {
       throw new AiTransportError({
         provider: this.name,
         status: response.status,
-        detail: await detailOf(response),
+        // The endpoint's own message, with the credential scrubbed out of it — the same rule the
+        // OpenAI-format provider follows, and for the same reason: a proxy echoing the request
+        // headers into its 4xx body is the one path by which `x-api-key` reaches an error.
+        detail: withoutKey(await detailOf(response), apiKey),
         envVar: API_KEY_ENV,
       });
     }
@@ -309,30 +318,13 @@ export class AnthropicProvider implements Provider {
   }
 }
 
-/**
- * The provider's own message, when it sent one — it names the offending field, we name the fix.
- * Exported because the OpenAI-format endpoints report a failure in the same `{ error: { message } }`
- * envelope, and two copies of this would be two behaviours to keep in step.
- */
-export async function detailOf(response: Response): Promise<string> {
-  const body = await response.text().catch(() => '');
-  try {
-    const parsed: unknown = JSON.parse(body);
-    if (typeof parsed === 'object' && parsed !== null) {
-      const error = (parsed as Record<string, unknown>)['error'];
-      if (typeof error === 'object' && error !== null) {
-        const message = (error as Record<string, unknown>)['message'];
-        if (typeof message === 'string') return message.slice(0, DETAIL_LIMIT);
-      }
-    }
-  } catch {
-    // Not JSON — a proxy or a gateway timeout page. The raw text is still the best evidence.
-  }
-  return body === '' ? response.statusText : body.slice(0, DETAIL_LIMIT);
-}
-
 /** Map a Messages API response onto `GenerateResult`. Exported so tests can drive it. */
 export function parseMessage(model: ModelId, raw: Record<string, unknown>): GenerateResult {
+  // A 200 carrying an `error` object instead of an answer — how a gateway in front of a model
+  // reports a fault it noticed after the headers were sent. Read as a message it is an empty,
+  // successful answer, which is the one outcome nothing downstream can detect; the STREAMED half
+  // of this same provider has always refused it.
+  throwInBandError(raw);
   const content = Array.isArray(raw['content']) ? raw['content'] : [];
   let text = '';
   const toolCalls: LlmToolCall[] = [];
@@ -344,17 +336,24 @@ export function parseMessage(model: ModelId, raw: Record<string, unknown>): Gene
       toolCalls.push({
         id: b['id'],
         name: b['name'],
-        input: (b['input'] ?? {}) as Record<string, unknown>,
+        // Parsed, never cast: `input` is untrusted, and a string under `Record<string, unknown>`
+        // is a lie every later reader indexes into. The streamed half already parses it.
+        input: asToolInput(b['input']),
       });
     }
   }
   const usage = parseUsage(raw['usage']);
+  const stopDetails = parseStopDetails(raw['stop_details']);
   return {
     model,
     text,
     toolCalls,
-    stopReason: parseStopReason(raw['stop_reason']),
-    stopDetails: parseStopDetails(raw['stop_details']),
+    // A refusal detail is a refusal whatever the stop field says: `parseStopReason` answers
+    // `end_turn` for a spelling this build has never seen, and `llm()` branches on the REASON —
+    // `stopDetails` has no reader that can refuse — so the pair would arrive as a complete answer
+    // that happens to be empty. The OpenAI-format read has always forced it.
+    stopReason: stopDetails === undefined ? parseStopReason(raw['stop_reason']) : 'refusal',
+    stopDetails,
     usage,
     cost: costOf(model, usage),
   };

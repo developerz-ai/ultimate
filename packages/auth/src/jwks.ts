@@ -9,6 +9,7 @@
 import type { Clock } from '@ultimat3/core';
 import { systemClock } from '@ultimat3/core';
 import { oauthExchangeFailed, oauthTokenInvalid } from './errors';
+import { decodeJwtSegment, isRecord } from './json';
 import type { OAuthProvider } from './oauth';
 import type { OAuthFetch } from './oauth-exchange';
 import { base64UrlBytes } from './tokens';
@@ -56,9 +57,6 @@ export interface JwksClientOptions {
   readonly timeoutMs?: number | undefined;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 const importParams = (alg: JwtAlgorithm): RsaHashedImportParams | EcKeyImportParams =>
   alg === 'RS256'
     ? { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }
@@ -69,15 +67,8 @@ const verifyParams = (alg: JwtAlgorithm): AlgorithmIdentifier | EcdsaParams =>
 
 /** A JWT header is attacker-supplied, so an unreadable one is `null` and never an exception. */
 export function decodeJwtHeader(segment: string): JwtHeader | null {
-  const bytes = base64UrlBytes(segment);
-  if (bytes === null) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(new TextDecoder().decode(bytes));
-  } catch {
-    return null;
-  }
-  if (!isRecord(parsed)) return null;
+  const parsed = decodeJwtSegment(segment);
+  if (parsed === null) return null;
   const alg = parsed['alg'];
   if (typeof alg !== 'string' || !SUPPORTED_ALGORITHMS.includes(alg)) return null;
   const kid = parsed['kid'];

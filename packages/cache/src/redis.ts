@@ -209,9 +209,35 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
   // its collection's bucket hash to ONE slot, so a script may take both in `KEYS`.
   const tagKey = (owned: CacheTag): string =>
     owned.id === undefined ? `${ns}:t:{${owned.entity}}` : `${ns}:t:{${owned.entity}}:${owned.id}`;
-  // A row write must also appear in the collection's tag set, or list caches survive it.
-  const tagKeysFor = (owned: CacheTag): string[] =>
-    owned.id === undefined ? [tagKey(owned)] : [tagKey(owned), tagKey({ entity: owned.entity })];
+  // Every key carrying ANY tag of this entity — `LruCache`'s `entityIndex`, on the wire. A SECOND
+  // bucket rather than a reuse of `tagKey({ entity })`, and that is the whole fix: one key serving
+  // both roles is what made a row bust over-reach.
+  const entityKey = (entity: string): string => `${ns}:e:{${entity}}`;
+
+  // A write joins the bucket of the tag it declared, plus its entity's index — so a collection
+  // bust reaches a row-tagged key without that row's tag having to live in the collection's bucket.
+  const writeBucketsFor = (owned: CacheTag): string[] => [tagKey(owned), entityKey(owned.entity)];
+
+  /**
+   * `tagMatches` expressed in keys, which is the point: the LRU and the request memo both answer a
+   * bust through that predicate and this tier did not.
+   *
+   * A COLLECTION bust matches every tag of the entity, so it reads the entity index. A ROW bust
+   * matches its own tag and the bare collection tag ONLY — `post:2` survives a bust of `post:1` —
+   * so it reads the row's bucket and the collection tag's, never the index. Reusing the collection
+   * bucket as the index meant `invalidateTags([tag('post', '1')])` returned every post-tagged key
+   * in the store and deleted them: one row write emptied the shared tier for that whole entity,
+   * while the in-process tier one rung closer kept exactly the row that had changed.
+   *
+   * A collection bust also reads `tagKey(owned)`, a strict subset of the index in this layout. That
+   * extra `SMEMBERS` is bought deliberately: a deployment pinned to `buildId: null` upgrades into
+   * this layout with the old two-role buckets still leased, and reading them keeps a collection
+   * bust from MISSING those keys. Over-reading a subset costs a round trip; under-reading is stale.
+   */
+  const bustBucketsFor = (owned: CacheTag): string[] =>
+    owned.id === undefined
+      ? [entityKey(owned.entity), tagKey(owned)]
+      : [tagKey(owned), tagKey({ entity: owned.entity })];
 
   return {
     name: 'redis',
@@ -276,9 +302,9 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
       // the LRU tier about when the same entry dies. The BUCKET keeps whole seconds and keeps
       // rounding up: a tag set has to outlive every member it holds.
       const bucketTtlSeconds = String(Math.max(1, Math.ceil(ttlMs / 1000)) + TAG_TTL_GRACE_SECONDS);
-      // Deduped: two tags of one entity share the collection bucket, and joining it twice is a
-      // round trip that changes nothing. Issued together — one key each, so still slot-local.
-      const buckets = [...new Set(tags.flatMap(tagKeysFor))];
+      // Deduped: two tags of one entity share the entity index, and joining it twice is a round
+      // trip that changes nothing. Issued together — one key each, so still slot-local.
+      const buckets = [...new Set(tags.flatMap(writeBucketsFor))];
       await Promise.all(
         buckets.map((bucket) =>
           conn().send('EVAL', [TAG_MEMBER_SCRIPT, '1', bucket, stored, bucketTtlSeconds]),
@@ -306,9 +332,9 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
       const claimed = new Set<string>();
       const perTag: string[][] = [];
       for (const owned of tags) {
-        // A bucket already claimed by an earlier tag is dropped rather than re-sent: two tags of
-        // one entity share the collection bucket, and the second call would find it gone anyway.
-        const buckets = tagKeysFor(owned).filter((bucket) => !claimed.has(bucket));
+        // A bucket already claimed by an earlier tag is dropped rather than re-sent: a collection
+        // tag and one of its rows overlap, and the second call would read the same members.
+        const buckets = bustBucketsFor(owned).filter((bucket) => !claimed.has(bucket));
         for (const bucket of buckets) claimed.add(bucket);
         if (buckets.length > 0) perTag.push(buckets);
       }

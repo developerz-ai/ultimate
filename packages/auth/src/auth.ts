@@ -6,6 +6,7 @@
 import { type Clock, systemClock, uuid } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import type { AuthAdapter, AuthSession, AuthUser } from './adapter';
+import { normaliseEmail } from './email';
 import { mfaRequired, sessionUnknown } from './errors';
 import type { OAuthProviderId } from './oauth';
 import { oauthProviderIds } from './oauth-registry';
@@ -194,7 +195,7 @@ export async function register(auth: Auth, input: RegisterInput): Promise<AuthUs
   checkPasswordStrength(input.password, { policy: auth.password });
   return await auth.adapter.createUser({
     id: uuid(auth.clock),
-    email: input.email.trim().toLowerCase(),
+    email: normaliseEmail(input.email),
     passwordHash: await hashPassword(input.password, auth.password.params),
     orgId: input.orgId ?? null,
     roles: input.roles ?? [],
@@ -228,7 +229,7 @@ export async function login(auth: Auth, input: LoginInput): Promise<LoginResult>
   await auth.limiter.assertAllowed(account);
   if (ip !== null) await auth.limiter.assertAllowed(ipKey(ip));
 
-  const user = await auth.adapter.findUserByEmail(input.email.trim().toLowerCase());
+  const user = await auth.adapter.findUserByEmail(normaliseEmail(input.email));
   // The tenant bucket can only be consulted once the address resolves to an org, which is still
   // before the KDF runs — the expensive half of this function — so it costs one map lookup and
   // caps a spray that per-IP and per-account buckets both let through.

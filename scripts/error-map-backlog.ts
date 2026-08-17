@@ -126,7 +126,12 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
   ],
   // tier 1 — driver-side failures behind a `/media/*` or `/_storage` route. The caller-facing
   // storage codes all have rows already; these three are the disk's, not the caller's.
-  storage: ['X_STORAGE_DELETE_FAILED', 'X_STORAGE_DISK_UNKNOWN', 'X_STORAGE_UPLOAD_FAILED'],
+  storage: [
+    'X_STORAGE_DELETE_FAILED',
+    'X_STORAGE_DISK_UNKNOWN',
+    'X_STORAGE_LIST_FAILED',
+    'X_STORAGE_UPLOAD_FAILED',
+  ],
   // tier 1 — schedule and zone parsing, raised where a `job` or a formatter is DECLARED.
   time: [
     'X_CRON_INVALID',

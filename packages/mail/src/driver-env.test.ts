@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
-import type { MailDriver, MemoryMailDriver } from './driver';
+import type { MailDriver, MailMessage, MemoryMailDriver } from './driver';
 import { createMemoryDriver, isMemoryDriver } from './driver';
 import { MAIL_ENV_KEYS, selectMailDriver } from './driver-env';
 import { driverUnavailable } from './errors';
@@ -126,6 +126,74 @@ describe('selectMailDriver', () => {
     expect(thrown(() => selectMailDriver({ SMTP_URL: 'https://nope', MAIL_FROM: FROM })).code).toBe(
       'X_CONFIG_INVALID',
     );
+  });
+});
+
+/**
+ * The highest-severity thing this file guards. With no credential the selection used to answer the
+ * MEMORY driver in every environment, so a deployment that configured no transport reported
+ * `accepted` for mail that never left the process: password resets, receipts and invitations all
+ * "sent", none delivered, no error anywhere. Outside development the driver now refuses on the
+ * send that needs it.
+ */
+describe('a deployment with no mail credential', () => {
+  const message: MailMessage = {
+    mailId: 'reset-password',
+    to: ['ada@example.test'],
+    subject: 'Reset your password',
+    html: '<p>reset</p>',
+    text: 'reset',
+    locale: 'en',
+    tz: 'UTC',
+  };
+
+  const refusal = async (env: Record<string, string>): Promise<UltimateError> => {
+    const selection = selectMailDriver(env);
+    expect(isMemoryDriver(selection.driver)).toBe(false);
+    const failure = await selection.driver.send(message).then(
+      (result): unknown => result,
+      (error: unknown) => error,
+    );
+    if (failure instanceof UltimateError) return failure;
+    return expect.unreachable('expected the send to be refused, not accepted');
+  };
+
+  test.each(['development', 'test'])('%s still catches in memory', (environment) => {
+    expect(isMemoryDriver(selectMailDriver({ ULTIMATE_ENV: environment }).driver)).toBe(true);
+  });
+
+  test.each(['staging', 'production'])(
+    '%s refuses the send instead of reporting accepted',
+    async (environment) => {
+      const error = await refusal({ ULTIMATE_ENV: environment });
+      expect(error.code).toBe('X_MAIL_CREDENTIAL_MISSING');
+      expect(error.cause).toContain(environment);
+      // The two variables an operator can actually set, in the fix, not in prose somewhere else.
+      expect(error.fix).toContain('SMTP_URL');
+      expect(error.fix).toContain('RESEND_API_KEY');
+    },
+  );
+
+  // The env the shipped artifact actually boots with: `docker/Dockerfile` sets `NODE_ENV=production`
+  // and nothing sets `ULTIMATE_ENV`. A refusal that only armed on `ULTIMATE_ENV` would have left
+  // every container this framework builds on the memory driver, which is the whole bug.
+  test('the shipped image environment arms it: NODE_ENV=production, no ULTIMATE_ENV', async () => {
+    expect((await refusal({ NODE_ENV: 'production' })).code).toBe('X_MAIL_CREDENTIAL_MISSING');
+  });
+
+  // A blank credential is an unset one everywhere else in this file; it must not become a transport
+  // here either, and it must not fall back to the silent memory driver in production.
+  test('a blank credential in production is refused, not caught', async () => {
+    expect((await refusal({ ULTIMATE_ENV: 'production', SMTP_URL: '  ' })).code).toBe(
+      'X_MAIL_CREDENTIAL_MISSING',
+    );
+  });
+
+  test('the boot line names both keys and never a credential', () => {
+    const detail = selectMailDriver({ ULTIMATE_ENV: 'production' }).detail;
+    expect(detail).toContain('SMTP_URL');
+    expect(detail).toContain('RESEND_API_KEY');
+    expect(detail).toContain('production');
   });
 });
 

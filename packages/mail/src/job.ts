@@ -5,6 +5,7 @@
 import { type JobHandle, job } from '@ultimat3/jobs';
 import { type StandardSchemaV1, t } from '@ultimat3/schema';
 import { type MailMessage, mailDriver, type SendResult } from './driver';
+import { assertHeaderSafe } from './header-safety';
 import { mailIdempotencyKey } from './idempotency';
 
 /** The queue payload is the already-rendered envelope: rendering happens once, at send time. */
@@ -36,5 +37,13 @@ export const sendMailJob: JobHandle<MailMessage> = job<MailMessage>({
   // tenant-scoped table and has no org to declare.
   tenant: 'none',
   retry: { attempts: 5, backoff: 'exponential' },
-  run: ({ input }): Promise<SendResult> => mailDriver().send(input),
+  // `async`, so the refusal below is a REJECTED promise: a synchronous throw from a body whose
+  // signature promises one escapes every caller that only awaits it.
+  run: async ({ input }): Promise<SendResult> => {
+    // The second boundary the header rule is checked at, and the one `renderMessage` cannot cover:
+    // a queue row is not necessarily one this process rendered — `mailMessageSchema` proves the
+    // SHAPE of a payload and says nothing about a break inside a string it accepted.
+    assertHeaderSafe(input);
+    return await mailDriver().send(input);
+  },
 });

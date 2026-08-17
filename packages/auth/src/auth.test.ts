@@ -131,7 +131,11 @@ describe('login', () => {
     const legacyHash = await hashPassword(PASSWORD, { ...FAST_PARAMS, memoryCost: 1024 });
     const user = await adapter.createUser({
       id: 'user-legacy',
-      email: EMAIL,
+      // Seeding the adapter directly bypasses `register()`, which is the one place an address is
+      // normalised — so the fixture has to store what `register()` would have. Handing the raw
+      // `EMAIL` here made this test pass only against the memory adapter's own case folding, and
+      // the identical scenario against Postgres found no row at all.
+      email: NORMALISED_EMAIL,
       passwordHash: legacyHash,
       orgId: null,
       roles: [],

@@ -45,6 +45,41 @@ bun run typecheck
 ```
 
 Gotchas:
+- **A driver's semantics are pinned in ONE test with the other driver beside them.**
+  `driver-parity.test.ts` drives `localDriver` over a temp dir and `s3Driver` over `FakeS3Client`
+  in a single `test()` per claim, so neither disk can move alone. Where the two genuinely cannot
+  agree it pins the DIVERGENCE, with the reason — that is the honest form, and it still fails the
+  day either half changes.
+- **`list()` is idempotent for an EMPTY disk and for nothing else** (`As of 2026-08`) — exactly
+  `delete()`'s rule, one call to the left, and both drivers broke it in opposite directions. The
+  local one caught EVERYTHING and answered `{ objects: [], truncated: false }`, so `EACCES` on the
+  root read as "this disk is empty"; the s3 one let a bare `S3Error` escape uncoded, with nothing
+  for the http error map to render but a 500. `sweepOrphans` walks `list()`, so the local swallow
+  was a false-erasure report a layer up. `ENOENT` (a root nobody has written to) is still an empty
+  page; everything else is `X_STORAGE_LIST_FAILED`, whose `fix` the DRIVER supplies.
+- **`head()` NEVER reads an object's bytes, and `list()` is why** (`As of 2026-08`). It hashed a
+  sidecar-less object to invent an etag, under a comment saying "`list()` must not read every file
+  it lists" — which is what `list()` then did, one whole buffered object per listed row,
+  sequentially, and `copy()` inherited it, so a copy documented as never routing bytes through the
+  heap buffered the entire source. A listing that cannot know an etag reports `''`, which is what
+  the s3 listing already answers. `get()` hashes out of bytes it already holds; `copy()` passes
+  `hash: true`, because the sidecar it writes at the destination would otherwise carry `etag: ''`
+  as a durable lie.
+- **`put({ metadata })` / `put({ cacheControl })` is the one `PutOptions` pair the disks disagree
+  about, and it is pinned rather than resolved.** Bun's `S3File.write` exposes `type`, `acl` and
+  `storageClass` and no header hook for `x-amz-meta-*` or `Cache-Control`, so `s3Driver` refuses
+  (`X_NOT_IMPLEMENTED`, with the out-of-band `aws s3 cp` in the fix) while `localDriver` stores both
+  in its sidecar and reads them back. **Do not "fix" this by making the local disk refuse too** —
+  that deletes a working capability and the two `StorageListEntry` fields that carry it, to buy
+  symmetry with a limitation that is Bun's and temporary. The day the hook lands, the s3 half of
+  `driver-parity.test.ts` fails and the resolution is to make s3 store them.
+- **`signedUrl({ maxBytes })` is signed on `local` and unenforceable on `s3`, and the s3 driver may
+  NOT refuse it.** `grantUpload` passes `maxBytes: policy.maxBytes` on every grant, so a refusal
+  would break every s3 upload an app mints. S3 has no request header for a size and Bun's `presign`
+  covers method, expiry and type — so on the production disk the client PUTs straight into the
+  bucket and nothing between the grant and the object holds the ceiling. That belongs to a bucket
+  rule or a post-upload `object.size` check, neither of which is a driver's; `SignedUrlOptions`
+  says so and `driver-parity.test.ts` pins both halves.
 - **`delete()` is idempotent for an ABSENT key and for nothing else.** Both drivers used to end in
   `.catch(() => undefined)`, so a denied `s3:DeleteObject`, a `SlowDown`, an expired credential and
   a read-only mount all resolved as success — and `sweepOrphans` returned them as deleted, which

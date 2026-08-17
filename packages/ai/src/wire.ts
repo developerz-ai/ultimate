@@ -93,6 +93,27 @@ const ERROR_STATUS: Readonly<Record<string, number>> = {
   overloaded_error: 529,
 };
 
+/**
+ * A 200 whose body carries an `error` object instead of an answer, refused — how a gateway in
+ * front of a model reports a fault it noticed after the headers were sent. Exported because the
+ * non-streaming read needs the identical rule and the identical status table: the envelope arrives
+ * on either transport, and one copy of the mapping is what keeps the gateway's retry decision the
+ * same on both. The twin of `openai-wire.ts`'s.
+ */
+export function throwInBandError(payload: Record<string, unknown>): void {
+  const error = asRecord(payload['error']);
+  if (error === undefined) return;
+  throw inBandFailure(error);
+}
+
+/**
+ * A tool call's arguments, or `{}`. Never a cast: `input` is untrusted, so a string or an array
+ * arriving under `Record<string, unknown>` is a type lie every later reader indexes into.
+ */
+export function asToolInput(value: unknown): Record<string, unknown> {
+  return asRecord(value) ?? {};
+}
+
 interface PendingTool {
   readonly id: string;
   readonly name: string;
@@ -156,7 +177,10 @@ export class MessageStream {
     return {
       text: this.text,
       toolCalls: [...this.toolCalls],
-      stopReason: this.stopReason,
+      // A refusal detail is a refusal whatever the stop reason says. `parseStopReason` answers
+      // `end_turn` for a spelling this build has never seen, and every consumer branches on the
+      // REASON, so the pair would read as a complete answer that happens to be empty.
+      stopReason: this.stopDetails === undefined ? this.stopReason : 'refusal',
       stopDetails: this.stopDetails,
       usage: this.usage,
     };
@@ -237,8 +261,7 @@ export class MessageStream {
   private inputOf(tool: PendingTool): Record<string, unknown> {
     if (tool.json === '') return {};
     try {
-      const parsed: unknown = JSON.parse(tool.json);
-      return asRecord(parsed) ?? {};
+      return asToolInput(JSON.parse(tool.json));
     } catch (error) {
       throw new AiTransportError({
         provider: 'anthropic',
@@ -261,16 +284,23 @@ export class MessageStream {
     return [];
   }
 
+  /**
+   * An `error` EVENT is a failure whether or not it carried a detail — the event type is itself
+   * the report. A body has no such signal, which is why `throwInBandError` reads the object first.
+   */
   private onError(payload: Record<string, unknown>): never {
-    const error = asRecord(payload['error']);
-    const type = typeof error?.['type'] === 'string' ? error['type'] : 'api_error';
-    const message = typeof error?.['message'] === 'string' ? error['message'] : type;
-    throw new AiTransportError({
-      provider: 'anthropic',
-      status: ERROR_STATUS[type],
-      detail: message,
-    });
+    throw inBandFailure(asRecord(payload['error']) ?? {});
   }
+}
+
+function inBandFailure(error: Record<string, unknown>): AiTransportError {
+  const type = typeof error['type'] === 'string' ? error['type'] : 'api_error';
+  const message = typeof error['message'] === 'string' ? error['message'] : type;
+  return new AiTransportError({
+    provider: 'anthropic',
+    status: ERROR_STATUS[type],
+    detail: message,
+  });
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

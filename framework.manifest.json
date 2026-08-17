@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "4ce8d71df58183a205f54a36e8f7abb46b35884c9229beb3a8f55d834d150d96",
+  "buildId": "c24e647fce5b8e8b68bec553c29a3271e3f0bbb13c448b99fd297e567b8040d7",
   "tiers": {
     "0": [
       "core",
@@ -1146,6 +1146,11 @@
       "at": "packages/mail/src/errors.ts"
     },
     {
+      "code": "X_MAIL_CREDENTIAL_MISSING",
+      "owner": "mail",
+      "at": "packages/mail/src/errors.ts"
+    },
+    {
       "code": "X_MAIL_DRIVER_UNAVAILABLE",
       "owner": "mail",
       "at": "packages/mail/src/errors.ts"
@@ -1927,6 +1932,11 @@
     },
     {
       "code": "X_STORAGE_DISK_UNKNOWN",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_LIST_FAILED",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
     },

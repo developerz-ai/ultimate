@@ -10,6 +10,73 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **A deployment with no mail credential reported `accepted` for mail that never left the process.**
+  `selectMailDriver` fell back to the memory driver in **every** environment, and `serve.ts` — what
+  a production container's `ENTRYPOINT` runs — reaches it. Password resets, receipts and
+  invitations: all "sent", none delivered, no error anywhere. Outside `development` and `test` the
+  boot now installs a driver that **refuses** every send with `X_MAIL_CREDENTIAL_MISSING`. Refusal
+  is at the send rather than at boot, so an app that sends no mail still deploys, and the failure
+  lands on the path that needed the capability — where the queue's five attempts and its dead-letter
+  path already know what to do with it.
+
+  Found alongside it: the SMTP transport minted its `Message-ID` with a fresh random per **attempt**,
+  so **a retry after a timeout past `DATA` was a second email**. It is now a one-way digest of the
+  idempotency key — stable across attempts, and exposing no recipient, which is what the comment
+  arguing against deriving it had actually been protecting.
+
+- **OAuth sign-in linked an existing account in `x dev` and created a duplicate in production.**
+  The OAuth path normalised the address **not at all**, while `register()` and `login()` both
+  lowercased — and `x_users.email` is `text not null unique` with no `citext` and no `lower()` index,
+  so Postgres is exactly case-sensitive. A provider returning `Ada@Example.com` for a user registered
+  as `ada@example.com` therefore **minted a second account at the same address**, which the index
+  accepts. That row can never be reached by `login()`, so the user loses password sign-in to the
+  account they registered, and a later `register()` makes a third.
+
+  The memory adapter had been case-folding, which is what hid it: fixing the two adapters to agree
+  would have left the OAuth path storing provider casing in both. One `normaliseEmail` now serves
+  all four doors and both adapters became pure storage.
+
+- **A row-level cache bust emptied the whole collection on the shared tier.** Redis used one bucket
+  for two jobs — "the collection tag's members" and "any member of this entity" — so
+  `invalidateTags([tag('post', '1')])` dropped **every** post-tagged key on every node, while the
+  LRU one rung closer correctly kept the ones that had not changed. Three implementations of one
+  matching rule, and the shared tier was the outlier. The entity index is now its own key.
+
+  Two more in the same seam: `request-memo` never validated its TTL, though the package's own
+  contract claimed every tier did — and because the stack swallows the other rungs' refusals as
+  best-effort, a `ttlMs: 0` write produced a **hit** out of the one rung that should never have held
+  it. And `CacheTier.set` threw *synchronously* on two rungs while rejecting on the third, so
+  `tier.set(...).catch(...)` missed half the failures.
+
+- **A listing that the disk refused was reported as a disk with nothing in it.** The local driver
+  swallowed every error as an empty page and the s3 driver leaked a bare provider error — opposite
+  failures at one seam. `sweepOrphans` walks `list()`, so the swallow **certified an unreadable
+  prefix as having no orphans**. Both now raise `X_STORAGE_LIST_FAILED`, and a genuinely empty root
+  is still an honest empty page.
+
+  While there: `head()` hashed the whole object whenever a sidecar was missing, and `list()` calls
+  `head()` per entry — so listing *N* sidecar-less keys buffered *N* whole objects, sequentially, in
+  a function whose comment promised it did not. `copy()` inherited the same read, and `get()` was
+  reading its file twice.
+
+- **A lapsed job slot was killed in dev and ran on in production.** `SQL_LEASE_RENEW` fenced on the
+  holder but not on expiry, so Postgres revived an expired-and-unclaimed slot that the memory store
+  correctly refuses — and the caller turns a refused renewal into `X_JOB_SLOT_LOST` and cancels the
+  run. The two stores now agree. Separately, `stats()` counted any future-dated row as `delayed`
+  regardless of state, so **every sleeping job was counted twice** and the five buckets summed past
+  the row count.
+
+- **A model provider's error body reached the logs with the credential still in it.** The Anthropic
+  4xx path put the endpoint's response body into the raised error **unscrubbed**, so a proxy echoing
+  `x-api-key` back in a 400 put the key into a log index, a span and a problem document at once. The
+  scrubber existed — it was private to the other provider. Both now share it.
+
+  Three more one-sided rules in the same file, each a failure that read as a success: a 200 carrying
+  an error object was parsed as an empty finished answer, a tool call's `input` was cast rather than
+  checked, and an unrecognised stop reason fell through to `end_turn` where callers branch on the
+  reason alone.
+
+
 - **Every server-side render formatted its dates in UTC, however the request arrived.** The
   framework had two ambient stores for the request's time zone — or rather one and a half, which is
   the part that made it survive four releases. `@ultimat3/i18n`'s key was already `locale`, the same
@@ -848,6 +915,26 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`scripts/stdout-truncation.test.ts` no longer asserts a race.** The premise case measured a naive `process.stdout.write` against a reader draining concurrently, and on a fast runner the whole payload landed by luck — a flaky gate step. It now writes past any kernel buffer and reads nothing until the child has exited, so what `process.exit()` discarded was genuinely discarded.
 
 ### Changed
+
+- **BREAKING — with no `SMTP_URL` and no `RESEND_API_KEY`, `selectMailDriver` refuses instead of
+  falling back to memory.** `development` and `test` are unchanged; `staging` and `production` now
+  install a driver that rejects every send with `X_MAIL_CREDENTIAL_MISSING`. An app that sends no
+  mail still deploys — the refusal is on the send, not at boot. **Also**: the SMTP transport's
+  `Message-ID`, and therefore `SendResult.id`, is content-derived and stable across attempts of one
+  send where it was previously random per attempt.
+
+- **BREAKING — a fleet slot whose lease has lapsed can no longer be renewed by its own holder.**
+  `SQL_LEASE_RENEW` fences on `expires_at > now()` as well as `holder`, matching the memory store. A
+  run whose slot lapsed is cancelled with `X_JOB_SLOT_LOST` rather than continuing uncapped past
+  `job.concurrency` — which is what the documented contract already said, and what `x dev` already
+  did.
+
+- **The shared cache tier's key layout changed.** An entity index (`<ns>:e:{entity}`) is now its own
+  key rather than sharing the collection tag's bucket. Upgrading costs a colder shared tier once,
+  which the default build-id namespace already pays per deploy; a `buildId: null` deployment is
+  covered because a collection bust also reads the old bucket during the rollover. One extra `SADD`
+  per write.
+
 
 - **BREAKING — `@ultimat3/query` no longer ships a read-cache seam of its own.** Removed:
   `setReadCache`, `getReadCache`, `invalidateQueryTags`, `MemoryReadCache`,
