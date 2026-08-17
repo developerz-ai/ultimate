@@ -4,7 +4,7 @@ status: in_progress
 created_by: sebi
 worked_by: "claude (hive of 4 per PR, one checkout)"
 owner: sebi
-percent: 90
+percent: 94
 current_focus: >
   02 and 06 are DONE across three PRs — realtime #107, cache/query/jobs/core/db #110, http/action
   #112. auth and entity needed nothing: every finding naming them was already closed by #104 and
@@ -12,7 +12,10 @@ current_focus: >
   07 = #102/#103/#104; 01/09 = #105; 04 = #106; 02/06 = #107/#110/#112.
   03 lands as #113 at 90%: the four pwa findings are the held-back tenth, deliberately, because
   pwa stays unwired by decision and fixing internals of code with no callers is dead work.
-  11+14 land as #114. Next: 08 (architecture, mostly deletions), then 15, 12, 13.
+  11+14 land as #114; 08 as #116 at 85% — C5+C8 (the prod server wrapping the whole dev CLI, and
+  realtime's single barrel serving browser and wire code) are DEFERRED to their own PR, because
+  splitting a package's entry points is boundary surgery and does not belong in a deletion wave.
+  Next: 15 (dead code + driver parity), then 12, 13.
 slices:
   - file: 05-gate-and-scripts.md
     tier: 0
@@ -57,7 +60,7 @@ slices:
   - file: 03-tier45-bugs.md
     tier: 4
     status: done
-    percent: 90
+    percent: 94
     pr: 113
   - file: 11-deploy-ci.md
     tier: 5
@@ -71,8 +74,9 @@ slices:
     pr: 114
   - file: 08-architecture.md
     tier: 0
-    status: not_started
-    percent: 0
+    status: done
+    percent: 85
+    pr: 116
   - file: 12-tracked-apps.md
     tier: 5
     status: not_started
@@ -318,6 +322,71 @@ evidence:
     new_codes: [X_PUBLISH_LIST_INCOMPLETE, X_PUBLISH_LIST_UNKNOWN, X_BENCH_CLAIM_STALE,
                 X_WIKI_TABLE_MALFORMED, X_FRAME_DOCS_STALE, X_CHART_VERSION_STALE,
                 X_IMAGE_LIBC_MISMATCH, X_IMAGE_GUARD_MISSING]
+  - pr: 116
+    slices: ['08']
+    gate: "14 of 17 passed, 3 skipped; app gate every pin holds. `bun install` re-linked two new
+           workspace deps — a package.json dep without a re-link is an unresolvable module"
+    falsified:
+      - "'Two ambient timezone stores' is ONE AND A HALF, and that is why it survived four releases:
+         i18n's key was already `locale`, the field core declares and http writes, so that half
+         worked end to end. Only time's `timeZone` diverged from core's `tz`. Proven, not argued —
+         in the first ui test run the locale and direction assertions PASSED and only timeZone
+         failed. The defect was a field-name divergence in ONE CONSTANT."
+      - "'Two permission answers' on the admin routes: MEASURED, ALL FIVE PAIRS AGREED — both sides
+         reach permissionsForOperation. The real cost is that the table declares 17 routes and 6 are
+         served, and the four list pages were byte-identical, so the next page gets written by
+         COPYING one — and copying permission:'admin:read' onto an edit screen is a write behind a
+         read gate, with the table declaring admin:write for it."
+      - "'Delete AdminRouteConfig' would have broken the deployed demo: ops/page.tsx imports it, and
+         ops/page.tsx is the ONE PAGE ALREADY MIGRATED to the pattern the fix wanted adopted. The
+         prescribed migration was also impossible — assertPath refuses a page path a generated route
+         already claimed, and all four are generated."
+      - "C4's `enforce: false` was already fixed by the security slice, and DIFFERENTLY: it became
+         `unenforced: string`, a mandatory written reason. Following the doc literally would have
+         meant deleting something already gone."
+      - "The last cycle recorded action's -0/NaN fix as BLOCKED by the OpenAPI duty. Not blocked —
+         the duties differ in exactly one branch."
+      - "packages/render/src/budgets.ts DOES NOT EXIST; the dead budget surface is seo's. render's
+         callerless checkBudgets is in islands.ts and is still homeless."
+      - "tagKeys 'in three places' was two copies plus a DIFFERENT FUNCTION under the same name
+         (render/src/route.ts, order-preserving, pinned by dsl.test.ts). contentHash 'in three
+         places' is three different signatures."
+    decided:
+      - "Ten of ~13 named deletions were public API. Every removal cleared four points first:
+         exported? who imports it (production vs test-only vs its own test)? named in prose? declares
+         an X_* code, which is stable forever?"
+      - "KEPT against the slice: configureTime/timeConfig/resolveTimeZone (dead ONLY because http
+         duplicated them; deleting resolveTimeZone re-opens a documented 31MB formatter-cache leak),
+         createCacheStack (it BECOMES the production read path), app-tool.ts (the reference app uses
+         the record form, and the ninth-primitive premise fails)."
+      - "noiseAt deliberately NOT exported, against the slice's explicit instruction: after the fold
+         there is one consumer and db/CLAUDE.md forbids it importing this package, so the export
+         would have zero callers on day one — 'exactly how readonly.ts got here'."
+      - "X_SEO_BUDGET_EXCEEDED and X_READONLY_VIOLATION RETIRED, not deprecated: a deprecated code
+         still answers `x errors explain` with a fix for a check that does not exist. Rows moved
+         under Reserved codes so an old log line still resolves."
+      - "packages/http/CLAUDE.md's 'May import: core, schema. Nothing else, ever.' is RETIRED — it
+         stated no reason, was stricter than the executable tier table, and package-author.md names
+         that exact anti-pattern. What it bought was three divergent re-implementations."
+    deferred:
+      - "C5+C8 — the prod server wrapping the whole dev CLI, and realtime's single barrel serving
+         browser and wire-protocol code. Boundary surgery, own PR."
+      - "scripts/boundaries.ts CHECKS ONLY THE TIER CEILING, NEVER THE FLOOR — which is why http sat
+         at tier 2 importing tier 0 only and nothing noticed for four releases. A floor check would
+         have made this slice unnecessary."
+      - "@ultimat3/seo's GATE HALF IS ENTIRELY UNWIRED, not just budgets: assertMeta, validateMeta,
+         buildSitemap, buildRobots, isIndexable, indexableRoutes, expandRoute, RouteRecord have ZERO
+         importers anywhere. NOT deleted — unlike budgets they have no live equivalent, so deleting
+         deletes a capability. The docs no longer claim x verify fails CI on them."
+      - "AppToolArgs.input is typed InferOutput<TInput> and NO PARSE EVER RUNS, so t.string().email()
+         is enforced for an action and silently not for a hand-written tool. One-line fix needs
+         validateInput exported from @ultimat3/action."
+      - "canonicalJson/fingerprint/isJsonObject are now written THREE times identically across
+         action, query and realtime — all tier 3, so the only shared home is core."
+      - "core's AppConfig.locales is the last remaining second declaration of the supported locale
+         set; ISR caches by pathname with no locale in the key (pre-existing); registerRoute is
+         still never called with the admin route table."
+    retired_codes: [X_SEO_BUDGET_EXCEEDED, X_READONLY_VIOLATION]
 notes: >
   Slice order in this file is execution order, not tier order — 05 and 10 land first because the gate
   does not yet mean what it says, and 08 lands late because it is mostly deletions that would collide
