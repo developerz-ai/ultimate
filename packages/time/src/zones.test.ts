@@ -1,4 +1,11 @@
+// Zone maths and the one-zone-one-key rule: every casing of an IANA name has to reach `Intl` as
+// one string, because the string arrives from `x-timezone` and every formatter cache keys on it.
+
 import { describe, expect, test } from 'bun:test';
+// `node:` because the framework is Bun-only and this is the one Node API with no Bun equivalent:
+// the test measures *JavaScript heap* growth, and `Bun.unsafe.memoryFootprint()` reports the
+// process footprint, which moves with allocator behaviour rather than with retained formatters.
+import { memoryUsage } from 'node:process';
 import { fromIso } from './instant';
 import { canonicalTimeZone } from './zone-canonical';
 import {
@@ -100,12 +107,12 @@ describe('one zone is one key', () => {
     // `Intl.DateTimeFormat`. The bound and the canonical key together hold this near zero.
     zonePartsAt('Europe/Berlin', winter);
     Bun.gc(true);
-    const before = process.memoryUsage().heapUsed;
+    const before = memoryUsage().heapUsed;
     for (let mask = 0; mask < CASINGS; mask += 1) {
       expect(zonePartsAt(casing('Europe/Berlin', mask), winter).year).toBe(2026);
     }
     Bun.gc(true);
-    expect((process.memoryUsage().heapUsed - before) / 1e6).toBeLessThan(8);
+    expect((memoryUsage().heapUsed - before) / 1e6).toBeLessThan(8);
   });
 });
 

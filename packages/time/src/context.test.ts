@@ -1,3 +1,6 @@
+// Request-zone selection: which source wins, that an invalid one is skipped rather than thrown,
+// and that what comes back is the canonical name — a header casing must not fork a formatter cache.
+
 import { describe, expect, test } from 'bun:test';
 import { resolveTimeZone } from './context';
 

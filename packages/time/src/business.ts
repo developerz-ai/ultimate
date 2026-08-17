@@ -76,7 +76,8 @@ export function nextBusinessDay(at: Instant, calendar: BusinessCalendar): Instan
  * The loop used to advance an *instant* one local day at a time and stop on
  * `cursor.getTime() > end.getTime()`, which made the last day depend on whether `to`'s clock time
  * had passed `from`'s: `Mon 09:00 → Fri 10:00` answered 4 and `Mon 09:00 → Fri 08:00` answered 3
- * for the same calendar span. Order-independent: a reversed range returns a negative count.
+ * for the same calendar span. Order-independent: a reversed range returns a negative count, and an
+ * empty one returns `0` in either direction — never `-0`.
  */
 export function businessDaysBetween(
   from: Instant,
@@ -95,5 +96,7 @@ export function businessDaysBetween(
     if (isBusinessDay(cursor, calendar)) count += 1;
     cursor = addDaysInZone(cursor, 1, calendar.zone);
   }
-  return sign * count;
+  // Guarded rather than `sign * count`: an empty interval read backwards would otherwise answer
+  // `-0`, which `Object.is`, a `Map` key and every `toBe` treat as a value distinct from `0`.
+  return count === 0 ? 0 : sign * count;
 }

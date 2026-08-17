@@ -1,3 +1,7 @@
+// `describeCron`'s summaries: that every connective word comes from the caller, that a truncated
+// clock-time list never reads as complete, and that a schedule it has no vocabulary for is
+// declined rather than described wrong.
+
 import { describe, expect, test } from 'bun:test';
 import { type CronPhrases, describeCron } from './cron-describe';
 

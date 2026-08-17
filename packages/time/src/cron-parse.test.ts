@@ -1,3 +1,6 @@
+// The cron field grammar: what parses, what is refused, and that the seconds field is read rather
+// than dropped — a silently discarded field schedules a task at a time nobody asked for.
+
 import { describe, expect, test } from 'bun:test';
 import { isValidCron, parseCron } from './cron-parse';
 

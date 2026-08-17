@@ -1,3 +1,6 @@
+// The one bounded formatter cache: it must reuse on the second ask and evict oldest-first at the
+// cap, because the keys are locales and zones a request header chooses.
+
 import { describe, expect, test } from 'bun:test';
 import { cachedFormatter, MAX_CACHED_FORMATTERS } from './intl-cache';
 

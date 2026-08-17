@@ -1,3 +1,6 @@
+// Business-day maths: the weekend is configuration, the zone decides which local day it is, and
+// `businessDaysBetween` counts the half-open `[from, to)` interval `daysBetween` measures.
+
 import { describe, expect, test } from 'bun:test';
 import {
   addBusinessDays,
@@ -103,5 +106,25 @@ describe('businessDaysBetween counts [from, to)', () => {
   test('a reversed range is the same count, negated', () => {
     const friday = fromIso('2026-03-06T10:00:00Z');
     expect(businessDaysBetween(friday, monday09, UTC_CAL)).toBe(-4);
+  });
+
+  test('an empty reversed interval is +0, not the -0 that `sign * 0` produces', () => {
+    // `Object.is(-0, 0)` is false, so a `-0` leaks through `toBe`, a `Map` key and a JSON diff as
+    // a distinct value — and "zero business days, backwards" is not a different answer to "zero".
+    const later = fromIso('2026-03-02T17:00:00Z');
+    expect(Object.is(businessDaysBetween(later, monday09, UTC_CAL), 0)).toBe(true);
+    // Same local day, so the half-open interval is empty in either direction.
+    expect(businessDaysBetween(monday09, later, UTC_CAL)).toBe(0);
+    // A reversed interval that straddles a weekend is empty too, and equally must not be -0.
+    expect(
+      Object.is(
+        businessDaysBetween(
+          fromIso('2026-03-09T09:00:00Z'),
+          fromIso('2026-03-07T09:00:00Z'),
+          UTC_CAL,
+        ),
+        0,
+      ),
+    ).toBe(true);
   });
 });

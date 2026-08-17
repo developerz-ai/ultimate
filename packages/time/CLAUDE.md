@@ -10,6 +10,7 @@
 | `instant.ts` | the UTC `Instant` brand, ISO/epoch conversion, `now(clock)`, `epoch()` |
 | `zones.ts` | IANA validation, `offsetAt` (minutes east), zone labels |
 | `zone-canonical.ts` | one zone, one key: `canonicalTimeZone` — the casing/alias collapse every cache keys on |
+| `locale-canonical.ts` | one locale, one key: `canonicalLocale` — the same collapse for the `Accept-Language` half |
 | `intl-cache.ts` | the one bounded FIFO every `Intl` formatter cache in this package uses |
 | `zoned.ts` | `toZoned` / `fromZoned` + gap and overlap policies. Everything depends on this. |
 | `format.ts` | `Intl` rendering. Every function takes `locale` **and** `zone`. |
@@ -26,9 +27,12 @@
 
 - Never format without an explicit `timeZone`. No ambient default, no `toLocaleString()`.
 - **Never cache an `Intl` formatter on a raw caller string.** A zone and a locale both arrive from
-  a request header, so the key must be canonical (`canonicalTimeZone`) and the cache must be
-  bounded (`cachedFormatter`, `intl-cache.ts`). An unbounded `Map` keyed on `x-timezone` grew
-  31 MB for 4,096 casings of one zone name, and the casing space of a 13-letter zone is 2^12.
+  a request header, so the key must be canonical (`canonicalTimeZone` for a zone, `canonicalLocale`
+  for a locale) and the cache must be bounded (`cachedFormatter`, `intl-cache.ts`). An unbounded
+  `Map` keyed on `x-timezone` grew 31 MB for 4,096 casings of one zone name, and the casing space
+  of a 13-letter zone is 2^12. **Both halves, always** — a canonical key does not bound anything
+  (an unknown `-u-` extension value survives canonicalization as a distinct string) and the cap
+  alone lets one locale evict itself under three spellings.
 - **Never hand back the caller's own `Date`, and never export a shared one.** `Instant` is a
   branded `Date` and a `Date` cannot be frozen — `Object.freeze` does not close `setTime`, the
   value is in an internal slot. So `instant()` copies and `epoch()` is a function, not a constant.
