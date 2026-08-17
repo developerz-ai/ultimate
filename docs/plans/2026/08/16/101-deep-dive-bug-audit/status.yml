@@ -4,12 +4,13 @@ status: in_progress
 created_by: sebi
 worked_by: "claude (hive of 4 per PR, one checkout)"
 owner: sebi
-percent: 60
+percent: 72
 current_focus: >
-  02+06 land their cache/query/jobs/core/db half as #110 — the realtime half was #107, so both
-  slices sit at 70% with only http, action, auth and entity left. Merged so far: 05/10 = #101;
-  07 = #102/#103/#104; 01/09 = #105; 04 = #106; 02/06 realtime = #107.
-  Next after #110: 02+06's http/action/auth/entity remainder, then 03.
+  02 and 06 are DONE across three PRs — realtime #107, cache/query/jobs/core/db #110, http/action
+  #112. auth and entity needed nothing: every finding naming them was already closed by #104 and
+  #106, verified file-by-file before #112 was scoped. Merged so far: 05/10 = #101;
+  07 = #102/#103/#104; 01/09 = #105; 04 = #106; 02/06 = #107/#110/#112.
+  Next: 03 (tiers 4-5), then 11+14, 08, 15, 12, 13.
 slices:
   - file: 05-gate-and-scripts.md
     tier: 0
@@ -43,14 +44,14 @@ slices:
     pr: 106
   - file: 02-tier23-bugs.md
     tier: 2
-    status: in_progress
-    percent: 70
-    prs: [107, 110]
+    status: done
+    percent: 100
+    prs: [107, 110, 112]
   - file: 06-concurrency-lifecycle.md
     tier: 2
-    status: in_progress
-    percent: 70
-    prs: [107, 110]
+    status: done
+    percent: 100
+    prs: [107, 110, 112]
   - file: 03-tier45-bugs.md
     tier: 4
     status: not_started
@@ -138,6 +139,51 @@ evidence:
       - "`cache.scope` is auditable by grep, not by `x queries describe` — publishing it on
          QueryDescriptor ripples into both tracked apps' manifests."
     new_codes: [X_JOB_SLOT_LOST, X_QUERY_CACHE_TTL_INVALID]
+  - pr: 112
+    slices: [02, 06]
+    gate: "14 of 17 passed, 3 skipped; app gate every pin holds — examples/dummy 10/17 (7 red,
+           7 pinned), social-media-clone 14/17 (3 red, 3 pinned)"
+    falsified:
+      - "02-H4 said ELEVEN caller-caused codes; it is TEN. X_QUERY_NOT_PAGEABLE is a developer bug
+         by its own fix: (an edit to the read's own SQL — nothing the caller sends changes it), and
+         X_IDEMPOTENCY_REPLAYED_FAILURE surfaces as itself only when the first attempt carried no
+         code. Both got explicit 500 rows so the new check sees a decision, not an omission."
+      - "02-H1's 'follow the shape scheduler.ts:153 uses' would have made it WORSE: that line is a
+         colon-joined string over framework-controlled values with no actor in it — exactly the
+         ambiguous encoding the fix had to avoid. A JSON tuple was used instead."
+      - "02-L3's 'SQL_ACK/SQL_NACK in the same file' — they are in jobs/driver-pg-sql.ts, and they
+         fence on id AND state because jobs' settle API carries the job id. Idempotency's does not,
+         so only the state half was available."
+      - "02-M7's prototype description was wrong: pollution fires on the FIRST occurrence, not the
+         second, and Object.prototype is never mutated — out['__proto__'] reads a non-undefined
+         inherited value, so the repeated-key branch assigns an ARRAY as the object's prototype."
+      - "auth and entity were listed as in scope and are FULLY CLOSED — 02-M1 by #104, 02-M6 and
+         02-L4 by #106. Remaining entity mentions are pattern citations inside other findings."
+    decided:
+      - "The completeness step is a RATCHET, not the audit's literal rule. 'Every tier <= 4 code
+         needs a row' flags 237 of 394 — a step an agent disables in week one — and reachability is
+         not derivable (same tier, same shape, and blanket re-exports collapse the import graph).
+         226 codes pinned with a reason per group; the list may only shrink."
+      - "It is a fourth rule on the existing `errors` step, not an eighteenth step: VerifyStepName
+         is a closed union a generated app inherits, and an app cannot run a check only this repo
+         can. Precedent already written at scripts/verify.ts:126-129."
+      - "X_LIFECYCLE_DRAINED got a 500 ROW rather than a backlog pin. 500 asserts no reachability
+         the way 503 would, and a row records a decision where a pin records indecision. Precedent:
+         X_CORS_CONFIG_INVALID, X_RATE_LIMIT_NOT_SHARED."
+    deferred:
+      - "action's stableStringify still folds -0/NaN/Infinity and CANNOT take query's fix: it is
+         also the OpenAPI document serializer, so emitting the bare token NaN would make a published
+         spec invalid JSON. Needs the spec serializer split from the hash canonicalizer."
+      - "invoke()'s cache bust is not transaction-aware — a real design change and a db seam tier-3
+         action deliberately does not import. No tracked app calls transaction( in apps/."
+      - "admin (tier 5) is outside the completeness check although X_ADMIN_DENIED reaches a browser;
+         the dashboard is dev-only and refused in prod, so ~80 more pins would buy no signal."
+      - "The last idempotency race (a straggler landing while the REPLACEMENT reservation is in
+         flight) needs the reservation id in settle — a public IdempotencyStore signature change."
+      - "reference-app-gate.ts drops the failing shard's stdout, so an app-gate failure names no
+         test. Diagnosing one flake cost a standalone re-run plus reading the app's test sources."
+    new_codes: [X_IDEMPOTENCY_KEY_INVALID, X_LIFECYCLE_DRAINED, X_ERROR_STATUS_MISSING,
+                X_ERROR_STATUS_BACKLOG_STALE, X_ERROR_STATUS_UNKNOWN_CODE]
 notes: >
   Slice order in this file is execution order, not tier order — 05 and 10 land first because the gate
   does not yet mean what it says, and 08 lands late because it is mostly deletions that would collide
