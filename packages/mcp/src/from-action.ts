@@ -1,8 +1,12 @@
 // The free-tool projection: an `action` (or `query`) with `mcp.expose` becomes an MCP tool
 // at zero authorization cost.
 //
-// The whole claim rests on one line in `handle` below: the tool calls `action.run(...)` —
-// the SAME entry point the HTTP route calls. Policy evaluation lives inside `run`, so
+// The whole claim rests on one line in `handle` below: the tool calls `primitive.run(...)`, and
+// `projectable.ts` builds that `run` out of `invoke(target, …, { surface: 'mcp' })` — the SAME
+// function `toRoute`'s handler calls for an HTTP request, differing only in the surface it
+// declares. (An action has NO `.run` member — it is `as`/`tool`/`openapi`/`job`/`contract` and
+// the callable itself; this comment named one until 2026-08. `run` is `ProjectablePrimitive`'s,
+// the seam, and a query's half of it is `sourceFor`.) Policy evaluation lives inside `invoke`, so
 // there is nothing here to keep in sync and no second authz system to drift. This
 // projection therefore INVENTS no `scope`: a scope is a capability of the connection's
 // token, which a projection cannot know anything about. An app that wants one names the
@@ -93,8 +97,9 @@ export function toolFromAction(primitive: ProjectablePrimitive): AnyMcpTool {
     ...(visibleTo !== undefined ? { visibleTo } : {}),
     // No `scope` from here: see the header. `defineAppMcp`'s `scopes:` map may add one.
     async handle(args: ToolArgs, caller: McpCaller): Promise<McpToolResult> {
-      // ONE authz system, TWO surfaces. HTTP does exactly this call with an actor of
-      // kind 'user'; MCP does it with kind 'agent'. Same policy, same decision.
+      // ONE authz system, TWO surfaces. This `run` IS `invoke`; the HTTP route reaches the
+      // same `invoke` with an actor of kind 'user', MCP arrives with kind 'agent'. Same
+      // policy, same decision.
       const output = await primitive.run({ input: args, actor: caller.actor });
       return jsonResult(output);
     },

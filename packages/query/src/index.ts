@@ -57,7 +57,11 @@ export type { ChangeEvent, ChangeOp, Patch } from './matcher';
 export { assertMatchable, match, positionFor } from './matcher';
 export type { QueryToolDescriptor, QueryToolReadOptions } from './mcp-tool';
 export { isExposed, toQueryTool, toQueryTools } from './mcp-tool';
-export { derivePath, toKebabCase, toToolName } from './naming';
+/**
+ * Path derivation only. There is no `toToolName`: an MCP tool is served under the export name
+ * verbatim, and an exported derivation would be a second way to spell one tool.
+ */
+export { derivePath, toKebabCase } from './naming';
 /**
  * The shapes `query.page(input, { first, after })` takes and answers with. `paginate` itself is
  * deliberately unexported: a page is the read's own answer, and a second, importable way to ask

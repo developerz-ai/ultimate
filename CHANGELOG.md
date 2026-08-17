@@ -1060,6 +1060,38 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   **Fix:** a new app's first two database commands are `x db gen "initial"` then `x db migrate`;
   `bin/setup` runs both for you, generating only when the directory holds no `.sql`.
 
+- **BREAKING — an MCP tool is named by the export name, verbatim, on every surface. `snake_case`
+  tool names are gone, and so is `toToolName`.** One primitive was reachable under one name and
+  published under another. The served name has only ever been the export name —
+  `packages/mcp/src/from-action.ts:82` is the one name `tools/call` accepts and the one
+  `defineAppMcp`'s `scopes:` map is keyed on, and `@ultimat3/ai`'s LLM tool list agrees
+  (`packages/ai/src/tools.ts:72`) — while three *publishers* spelled the same tool
+  `publish_post`. So an agent handed `openapi.json` read `"mcpTool": "publish_post"`, called
+  `tools/call { name: "publish_post" }`, and got ToolNotFound: the catalog it was given was the
+  wrong one. The served side was right, so the publishers moved.
+
+  | Was | Now |
+  |---|---|
+  | `publishPost.tool().name` → `'publish_post'` | `'publishPost'` |
+  | `liveFeed.tool().name` → `'live_feed'` | `'liveFeed'` |
+  | `openapi.json` → `"x-ultimate": { "mcpTool": "publish_post" }` | `"mcpTool": "publishPost"` |
+  | `publishPost.describe().mcp.tool` → `'publish_post'`, and with it `x actions describe <name> --json`, the `actions.describe` MCP dev tool and the `/_x` **Routes** panel | `'publishPost'` |
+  | `import { toToolName } from '@ultimat3/action'` / `'@ultimat3/query'` | removed from both — there is no derivation left to call |
+
+  **What an app author changes.** Nothing that *worked* moves: a `tools/call`, a `scopes:` entry
+  and a `visibleTo` list were already spelled verbatim, and a snake_case `scopes:` entry was
+  already `X_MCP_SCOPE_UNKNOWN` at boot. What moves is everything read off the published contract
+  — run `x manifest` to regenerate `openapi.json`, and re-point any agent prompt, saved tool
+  allowlist, generated client or test that took its tool name from `x-ultimate.mcpTool`,
+  `describe().mcp.tool` or `.tool().name`. **15 committed names change** in the two tracked apps
+  alone — of 17 published `x-ultimate.mcpTool` values, `examples/dummy` moves 9 of 10 and
+  `dummy/social-media-clone` 6 of 7; a single-word export (`summarize`, `health`) was already its
+  own snake_case form and does not move. An app that fed `.tool()` descriptors
+  into its own MCP host — public API, and the one case where the name was live on a wire — renames
+  those tools for real. `x.manifest.json` is unaffected: its `mcp` fact is
+  `{ expose, description }` and never carried a tool name (`packages/manifest/src/schema.ts:85`).
+  Issue #120.
+
 - **BREAKING — with no `SMTP_URL` and no `RESEND_API_KEY`, `selectMailDriver` refuses instead of
   falling back to memory.** `development` and `test` are unchanged; `staging` and `production` now
   install a driver that rejects every send with `X_MAIL_CREDENTIAL_MISSING`. An app that sends no

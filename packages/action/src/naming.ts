@@ -1,7 +1,8 @@
 /**
- * The one naming rule: an action's export name derives its HTTP path and MCP
- * tool name. Pure string math so the browser client can derive the same path
- * without importing a byte of server code.
+ * The one naming rule: an action's export name derives its HTTP path and its
+ * OpenAPI component names. Pure string math so the browser client can derive
+ * the same path without importing a byte of server code. The MCP tool name is
+ * derived by nothing — it is the export name verbatim.
  */
 
 /** Irregular plurals we actually hit in domain models. Extend deliberately, not eagerly. */
@@ -66,10 +67,9 @@ export function derivePath(name: string): ActionPath {
   return { verb: head, resource, path: `/api/${resource}/${head}` };
 }
 
-/** MCP tool names are `snake_case`: `publishPost` -> `publish_post`. */
-export function toToolName(name: string): string {
-  return splitWords(name).join('_');
-}
+// There is deliberately no `toToolName`. An MCP tool name is the export name verbatim — the one
+// `@ultimat3/mcp` serves and the one a `tools/call` spells — so a second derivation would be a
+// second name for one action, which is what shipped `publish_post` in two committed contracts.
 
 /** OpenAPI `operationId` is the action name verbatim — it is already unique. */
 export function toOperationId(name: string): string {

@@ -54,7 +54,8 @@ describe('one authz system, two surfaces', () => {
     const tool = toolFromAction(action);
     const input = { postId: 'p1', notify: false };
 
-    // Surface 1: what the HTTP route does.
+    // Surface 1: the seam directly, standing in for the HTTP route — which reaches the same
+    // `invoke` this fake's `run` replaces. (The route calls `invoke`, never an `action.run`.)
     const viaHttp = await action.run({ input, actor: human });
     // Surface 2: what the MCP tool does.
     const viaMcp = await tool.handle(input, caller(human));

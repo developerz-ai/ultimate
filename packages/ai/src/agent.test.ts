@@ -164,7 +164,9 @@ describe('agent() is an action factory, not a ninth primitive', () => {
     expect(isAction(support)).toBe(true);
     expect(PRIMITIVE_KINDS).toContain(support.describe().kind);
     expect(support.describe().kind).toBe('action');
-    expect(support.tool().name).toBe('projecting_agent');
+    // The export name verbatim — the same rule `llm()` inherits, for the same reason: an
+    // `agent()` is an action, and `@ultimat3/mcp` serves an action under its export name.
+    expect(support.tool().name).toBe('projectingAgent');
     expect(support.job().name).toBe('action:projectingAgent');
   });
 

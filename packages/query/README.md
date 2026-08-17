@@ -29,7 +29,7 @@ Every projection is a method on the query itself. A query has no `.def`.
 | `liveFeed.as(actor, { orgId })` | the same read as another actor — the surrounding context is untouched, `null` is signed out |
 | `liveFeed.page({ orgId }, { first: 20, after })` | one bounded page plus the signed cursor that continues it. There is no `offset` |
 | `liveFeed.live({ orgId })` | the `LiveQuery` `@ultimat3/realtime` subscribes to, carrying the same policy object |
-| `liveFeed.tool()` | the MCP read tool. `tool().policy === liveFeed.policy`, and it reads fresh |
+| `liveFeed.tool()` | the MCP read tool, named `liveFeed`. `tool().policy === liveFeed.policy`, and it reads fresh |
 | `liveFeed.client({ baseUrl })` | `GET /_x/query/live-feed?orgId=…`, typed both ways |
 | `liveFeed.describe()` | the manifest row |
 
@@ -84,7 +84,7 @@ forgetting the policy, and the reason is what tells the next reader which of the
 | `mcp-tool.ts` | the MCP read descriptor |
 | `client.ts` | the typed read client (browser-safe) |
 | `http.ts` | the route projection — `GET /_x/query/<kebab>`, the URL the client derives |
-| `naming.ts` | export name → wire path + tool name |
+| `naming.ts` | export name → wire path. The MCP tool name is the export name verbatim |
 | `live.ts` | the `LiveQuery` descriptor `@ultimat3/realtime` subscribes to |
 | `matcher.ts` | change event → minimal patch (`add` / `update` / `remove` / `refill`) |
 | `pagination.ts` | `paginate()` — keyset pages over core's cursor codec |

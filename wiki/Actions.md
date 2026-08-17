@@ -17,7 +17,7 @@ export const publishPost = action({
 });
 ```
 
-Declared in `api/` or a feature's `actions.ts`. Named export, never default. The export name is the identity: it derives the HTTP path, the OpenAPI `operationId`, and the MCP tool name, and it must be globally unique.
+Declared in `api/` or a feature's `actions.ts`. Named export, never default. The export name is the identity, and it must be globally unique. Only the HTTP path is *derived* from it (`publishPost` → `POST /api/posts/publish`); the OpenAPI `operationId` and the **MCP tool name are the export name verbatim** — `publishPost`, never `publish_post`. `As of 2026-08` that holds on every surface at once: what `tools/call` accepts, what `defineAppMcp`'s `scopes:` map is keyed on, what the LLM tool list offers, what `openapi.json`'s `x-ultimate.mcpTool` publishes, and what `describe().mcp.tool` reports.
 
 ## Fields
 
@@ -76,7 +76,7 @@ Every projection needs the name `registerActions()` stamps on. It names the expo
 | 2 | **OpenAPI operation** | `input` + `output` + `mcp.description` | `publishPost.openapi()`, emitted into `x.manifest.json` and `openapi.json`; contract diff runs in `x verify` |
 | 3 | **Typed client function** | `input` + `output` | one map-wide client, `export const client = rpc<Api['actions']>({ baseUrl })`, then `await client.publishPost({ postId })` in `app/`; or `publishPost.client({ baseUrl })` for a single method. `rpc` is the only name for the map-wide client — no `createClient` alias, no fetch, no codegen step to remember |
 | 4 | **Job handle** | the whole declaration | `publishPost.job()` — a namespaced name, an `idempotencyKey` from the payload, and an `invoke` that runs the same handler durably. Register it with the queue; `.enqueue()` belongs to a declared `job` |
-| 5 | **MCP tool** | `mcp` + `input` + `policy` | `publishPost.tool()` — one `publish_post` per exposed action, JSON Schema from `input`, authz unchanged |
+| 5 | **MCP tool** | `mcp` + `input` + `policy` | `publishPost.tool()` — one tool named `publishPost` per exposed action, JSON Schema from `input`, authz unchanged |
 | 6 | **Test** | `input` + `policy` | `publishPost.contract()` — schema round-trip plus a denial test per policy branch, generated green, not as a `TODO` |
 
 Plus cache invalidation: `cache.invalidates` fans out to request memo, in-process LRU (all instances, over NATS), Redis, ISR pages, and the CDN purge webhook in one hop ([Caching and invalidation](Caching-And-Invalidation)).
@@ -172,7 +172,7 @@ $ x actions describe publishPost --json
                   "notify":{"type":"boolean","default":true}}},
   "output":{"$ref":"#/components/schemas/PostView"},
   "invalidates":["feed","post"],"idempotent":false,
-  "mcp":{"expose":true,"tool":"publish_post","description":"Publish a draft post"},
+  "mcp":{"expose":true,"tool":"publishPost","description":"Publish a draft post"},
   "rateLimit":null}}
 ```
 

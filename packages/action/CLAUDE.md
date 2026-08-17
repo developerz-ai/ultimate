@@ -22,7 +22,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `openapi.ts` | deterministic OpenAPI 3.1 document |
 | `client.ts` | typed RPC client (browser-safe: no server imports) |
 | `mcp-tool.ts` | MCP descriptor, same `invoke` |
-| `job-handle.ts` | shape `@ultimat3/jobs` consumes |
+| `job-handle.ts` | the `.job()` projection: an action as a queueable payload. **Not** consumed by `@ultimat3/jobs` — see Invariants |
 | `contract-test.ts` | assertions `x g action` emits |
 | `sample-input.ts` | a value `input:` accepts, from its own IR — what makes the policy assertion reach a policy |
 | `idempotency.ts` | the store SEAM: types, the installed-store slot, the scope declaration + `assertIdempotencyScope`, and `withIdempotency` — the replay-or-run gate |
@@ -189,6 +189,20 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   (`spanId: ''`, which `currentSpanContext()` answers when a request context exists but no span
   does) sends nothing rather than `00-<trace>--01`. In a browser there is no ambient context, so
   a cross-origin call acquires no CORS preflight it did not already have.
+- **`ActionJobHandle` is not consumed by `@ultimat3/jobs`, and the file said it was until
+  2026-08.** The header read "`@ultimat3/jobs` consumes this shape, so enqueueing an existing
+  action costs zero rewriting" — a claim no code supports. `'action-job'` occurs in four places,
+  all inside this package (`job-handle.ts:16,30`, `job-handle.test.ts`, `facade.test.ts`), and
+  `isJobHandle` (`packages/jobs/src/job.ts:256`) requires `kind === 'job'` **and** membership of a
+  module-private `WeakMap` written only inside `job()` — so this is impossible in principle, not
+  merely unwired. `JobHandle` shares two members with it. What the shape actually gives: `.job()`
+  on the façade, `action:<name>` as a durable queue key, a payload-derived idempotency key, and an
+  `invoke` that runs the one execution path under `surface: 'job'` — so an app that owns a queue
+  can drive it by hand and still get the action's parse + policy. **The missing halves are
+  `tenant` and `retry`**, both required on `JobDefinition` with deliberately no default, so "zero
+  rewriting" was never reachable regardless of wiring. The bridge is one `job({ … })` call, and it
+  belongs in the app or at tier 4+: `action` and `jobs` are both tier 3. Not built here — that is
+  code, and this was a comment correction.
 - An action has no `.def`. Inside the package read it with `defOf(target)`; outside,
   read the lifted `.input`/`.output`/`.policy`/`.mcp` or `describe()`.
 - **`AnyAction` projects every surface, `client()` excepted.** The registry answers in the erased
@@ -219,6 +233,30 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   `!== false`) until 2026-08, so an action with no `mcp` block was advertised as a tool by both
   contract artifacts and refused by the only surface that could serve one. A contract that
   disagrees with the runtime is worse than no contract; never spell the check inline again.
+- **An MCP tool's NAME is the export name verbatim, in all four places — `toToolName` is gone**
+  (`As of 2026-08`). The same three readers that fail-opened on exposure also *derived* the name:
+  `toToolName` snake_cased it for `toMcpTool`, for `x-ultimate.mcpTool` and for
+  `describeAction().mcp.tool`, while `@ultimat3/mcp` has only ever served
+  `primitive.mcp?.name ?? primitive.name`. So nine of the ten tool names
+  `examples/dummy/openapi.json` published — `publish_post`, `create_post`, … — were names
+  `tools/call` answers not-found for; the tenth, `summarize`, is single-word and so was already
+  its own snake_case form, which is why a count of the wrong names is not a count of the rows. The
+  DESCRIPTOR said the same: `x actions describe --json`, `x actions list --json`, the
+  `actions.describe` dev MCP tool and the `/_x` Routes panel all read `.mcp.tool`. **Not the app
+  manifest** — `ActionFact.mcp` is `{ expose, description? }` and `packages/manifest/src/sources.ts`
+  copies only those two, so `x.manifest.json` has never carried a tool name and `grep '"tool"'` on
+  either committed manifest finds none. Do not describe this defect as a manifest defect; the
+  manifest's stake in the `mcp` block is `expose`, which is the invariant above. `ActionMcp`
+  carries no `name:`, so
+  the verbatim name is the whole rule and there is nothing left to derive; the helper is
+  **deleted** rather than left exported, because a dead name-deriver is a second way to name a
+  tool. `mcp-tool.test.ts`'s "one name per action, on every surface" asserts the three strings are
+  one string AND that it is the verbatim name — the equality alone passes on the old behaviour,
+  where all three agreed on the wrong name. **Neither package derives a tool name any more**:
+  `@ultimat3/query` carried a same-named twin with the identical defect and deleted it in the same
+  change, so `packages/query/src/naming.ts` derives PATHS only and its `src/index.ts` exports no
+  such helper. Both are tier 3, so neither could import the other and each owned its own removal —
+  which is why the rule is restated in both `CLAUDE.md`s rather than shared.
 - **The post-commit bust never fails the write it followed.** `cache.invalidates` fans out once the
   handler has committed, so `bustAfterCommit` — `cache-gate.ts`, the only caller of
   `invalidateTags` here — absorbs a fan-out that refuses and answers `undefined`: an undeclared tag

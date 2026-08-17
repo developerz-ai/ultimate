@@ -40,12 +40,14 @@ the list**, never assumed. Truncation is never silent.
 ## One authz system, two surfaces
 
 Every `action` with `mcp: { expose: true }` becomes a tool for free, and the tool's `handle`
-calls the **same `action.run`** the HTTP route calls. Policy evaluation lives inside `run`.
+reaches the **same `invoke`** the HTTP route reaches — the projection's `run` is that call with
+`surface: 'mcp'`, nothing more. Policy evaluation lives inside `invoke`. (An action has no `.run`
+member; `run` is the projection seam, and a query's half of it is `sourceFor`.)
 
 ```
-HTTP  POST /api/publishPost  ─┐
-                              ├─→ action.run({ input, actor }) ─→ policy ─→ handler
-MCP   tools/call publishPost ─┘
+HTTP  POST /api/posts/publish ─┐
+                               ├─→ invoke(action, input, { surface, actor }) ─→ policy ─→ handler
+MCP   tools/call publishPost  ─┘
 ```
 
 `mcp: { visibleTo: [...] }` on the action or query travels with the projection too — the only
@@ -141,6 +143,17 @@ One adapter serves both routes, so a written-out primitive runs through the same
 `sourceFor`) the swept one does — the list changes which tools are NAMED, never how one runs.
 An action that was never handed to `defineApi` has no export name, and is
 `X_ACTION_UNREGISTERED` rather than a tool called `''` that nothing could call.
+
+**The tool name is the export name, verbatim** — `publishPost`, never `publish_post`. This server
+answers `tools/call` for that name and no other, so every surface that PUBLISHES a name has to
+publish the same one: `action.tool()`, `query.tool()`, `x-ultimate.mcpTool` in `openapi.json`, and
+`ActionDescriptor.mcp.tool`. The projection reads `primitive.mcp?.name ?? primitive.name`, so the
+export name is the **default** and `mcp.name` is an explicit override — unreachable from `action()`
+or `query()`, whose declarations carry no `name` field, and available only to a hand-authored
+`ProjectablePrimitive` passed to `defineAppMcp`'s `tools:`. The three action publishers snake_cased
+the name `As of 2026-08`, so an agent reading the spec called a tool the catalog never contained and
+got ToolNotFound.
+`src/cross-surface.test.ts` is what makes a fourth spelling a failing test rather than a note.
 
 A hand-written tool's `policy` is a permission, evaluated through the same `guard()` an
 HTTP request goes through, so a tool cannot acquire a second authz path. A tool without one

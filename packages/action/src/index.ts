@@ -170,7 +170,7 @@ export type {
 } from './mutator';
 export { custom, isMutator, mutator, resolveConflict, strategyOf } from './mutator';
 export type { ActionPath } from './naming';
-export { derivePath, inputSchemaName, outputSchemaName, pluralize, toToolName } from './naming';
+export { derivePath, inputSchemaName, outputSchemaName, pluralize } from './naming';
 export type { BuildOpenApiOptions, OpenApiDocument, OpenApiInfo } from './openapi';
 export { buildOpenApi, serializeOpenApi } from './openapi';
 export type { ActionPolicy, PolicySubject, Surface } from './policy-gate';

@@ -83,7 +83,7 @@ describe('one authz system', () => {
   test('the tool descriptor mirrors the action declaration', () => {
     const { target } = defineCounted();
     const tool = toMcpTool(target);
-    expect(tool.name).toBe('publish_post');
+    expect(tool.name).toBe('publishPost');
     expect(tool.action).toBe('publishPost');
     expect(tool.inputSchema['type']).toBe('object');
   });
@@ -128,7 +128,7 @@ describe('exposure is opt-in', () => {
     expect(toOpenApiOperation(declaring())['x-ultimate']['mcpTool']).toBe(null);
     expect(toOpenApiOperation(declaring({ expose: false }))['x-ultimate']['mcpTool']).toBe(null);
     expect(toOpenApiOperation(declaring({ expose: true }))['x-ultimate']['mcpTool']).toBe(
-      'publish_post',
+      'publishPost',
     );
   });
 
@@ -140,5 +140,45 @@ describe('exposure is opt-in', () => {
       expect(toOpenApiOperation(target)['x-ultimate']['mcpTool'] !== null).toBe(exposed);
       expect(toMcpTools([target]).length > 0).toBe(exposed);
     }
+  });
+});
+
+// The defect this closes: `@ultimat3/mcp` serves the export name verbatim — it is what a
+// `tools/call` spells and what `defineAppMcp`'s `scopes:` is keyed on — while these three
+// surfaces published a snake_cased one. An agent reading `openapi.json` for `mcpTool`, or
+// `x actions describe --json` for `.mcp.tool`, called a name the server answers not-found. It was
+// wrong where it was hardest to notice: nothing in the framework reads its own spec back.
+describe('one name per action, on every surface', () => {
+  const exposedTarget = () =>
+    action({
+      input: Input,
+      output: Output,
+      policy: can('post:publish'),
+      mcp: { expose: true },
+      handle: () => ({ id: POST_ID, published: true }),
+    }).named('publishPost');
+
+  test('.tool(), openapi.json and the descriptor all name the verbatim export name', () => {
+    const target = exposedTarget();
+    const names = [
+      target.tool().name,
+      toOpenApiOperation(target)['x-ultimate']['mcpTool'],
+      describeAction(target).mcp.tool,
+    ];
+    expect(new Set(names).size).toBe(1);
+    expect(names).toEqual(['publishPost', 'publishPost', 'publishPost']);
+  });
+
+  test('a multi-word name is never re-cased — the served catalog cannot spell it back', () => {
+    const target = action({
+      input: Input,
+      output: Output,
+      policy: can('post:publish'),
+      mcp: { expose: true },
+      handle: () => ({ id: POST_ID, published: true }),
+    }).named('updateUserProfile');
+    expect(target.tool().name).toBe('updateUserProfile');
+    expect(describeAction(target).mcp.tool).toBe('updateUserProfile');
+    expect(toOpenApiOperation(target)['x-ultimate']['mcpTool']).toBe('updateUserProfile');
   });
 });
