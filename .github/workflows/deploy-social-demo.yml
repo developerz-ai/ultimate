@@ -62,7 +62,7 @@ jobs:
       name: social-demo
       url: https://social-media.ultimate.demo.developerz.ai
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -112,16 +112,16 @@ jobs:
           echo "::error::${CHECK} reported no verdict for ${SHA} within 10 minutes — not publishing"
           exit 1
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       # The DO API token is used as both username and password — that is what the registry expects.
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: registry.digitalocean.com
           username: ${{ secrets.DOCR_TOKEN }}
           password: ${{ secrets.DOCR_TOKEN }}
 
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           # Root context: the demo imports the framework packages from this tree, not from npm.
           context: .
