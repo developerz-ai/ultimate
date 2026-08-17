@@ -90,13 +90,21 @@ export class AdminFieldUnsupportedError extends UltimateError {
   }
 }
 
-/** An action reached the admin without a policy — the button would be an open door. */
+/**
+ * An action reached the admin without a policy — the button would be an open door.
+ *
+ * The subject's NAME goes in the cause and the permission's SHAPE goes in the fix: `can()` takes
+ * `resource:verb` (`Permission` is `` `${string}:${string}` ``), and `subject` is an export name,
+ * so the `can('<the action name>')` this used to emit was a paste that could not compile. No
+ * `allow()` branch, unlike action's and query's twin: an unguarded admin operation is the one
+ * thing this code exists to refuse.
+ */
 export class AdminPolicyMissingError extends UltimateError {
   constructor(input: { subject: string; kind: 'action' | 'resource' }) {
     super({
       code: 'X_ADMIN_POLICY_MISSING',
       cause: `${input.kind} "${input.subject}" is exposed in the admin with no policy`,
-      fix: `add policy: can('${input.subject}') to the ${input.kind} definition`,
+      fix: `add \`policy: can('<resource>:<verb>')\` to the ${input.kind} "${input.subject}" — a permission your definePermissions() call declares, never the ${input.kind}'s own name`,
       docs: docsFor('X_ADMIN_POLICY_MISSING'),
     });
   }

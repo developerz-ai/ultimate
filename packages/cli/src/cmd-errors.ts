@@ -7,6 +7,7 @@ import type { ErrorExplanation } from '@ultimat3/mcp';
 import type { CliCommand, CommandContext } from './command';
 import type { ErrorCatalog } from './error-catalog';
 import { loadErrorCatalog } from './error-catalog';
+import { codeFixes, loadCodeFixes } from './error-fixes';
 import { ErrorCodeUnknownError, MissingPositionalError } from './errors';
 import { explainErrorCode, explainEveryErrorCode } from './mcp-errors';
 import { msg } from './messages';
@@ -15,12 +16,22 @@ import { nearest } from './parse';
 
 export const ERRORS_SUBCOMMANDS = ['explain', 'list'] as const;
 
-const asJson = (explanation: ErrorExplanation): JsonValue => ({
-  code: explanation.code,
-  cause: explanation.cause,
-  fix: explanation.fix,
-  docs: explanation.docs,
-});
+/**
+ * `site` is the throw site as DATA, and it is why the `fix:` for a code whose fix is built at run
+ * time does not have to pretend to be a command. For those codes the location IS the answer, and a
+ * caller that has to regex `packages/x/src/y.ts:80` back out of an English sentence is a caller the
+ * machine-readable surface failed. `null` when the installed framework raises the code nowhere.
+ */
+const asJson = (explanation: ErrorExplanation): JsonValue => {
+  const site = codeFixes().get(explanation.code)?.[0];
+  return {
+    code: explanation.code,
+    cause: explanation.cause,
+    fix: explanation.fix,
+    docs: explanation.docs,
+    site: site === undefined ? null : { at: site.at, line: site.line },
+  };
+};
 
 /** The 3-line contract format, minus the leading blank code line `renderFinding` would add. */
 const detailLines = (explanation: ErrorExplanation): readonly string[] => [
@@ -87,7 +98,10 @@ export const errorsCommand: CliCommand = {
   // `async` is load-bearing: a synchronous throw would escape every caller that awaits the
   // promise this signature promises, including the dispatcher's own error path.
   async run(ctx: CommandContext): Promise<CommandResult> {
-    const catalog = await loadErrorCatalog();
+    // Both loads, always, and before either subcommand branches: the catalog is which codes exist
+    // and the fix index is what each one instructs. `x errors list` answering 397 codes with the
+    // fallback line would be a complete-looking table of shrugs.
+    const [catalog] = await Promise.all([loadErrorCatalog(), loadCodeFixes()]);
     if (ctx.args.subcommand === 'list') return listAll(catalog);
     const code = ctx.args.positionals[0];
     if (code === undefined) {

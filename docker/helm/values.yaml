@@ -29,6 +29,12 @@ serviceAccount:
   create: true
   name: ""
 
+# A voluntary-eviction budget per role that has more than one pod (pdb.yaml). On by default: a node
+# drain takes every pod of a role at once without it, and the chart's `maxUnavailable: 0` rolling
+# update only covers a deploy.
+podDisruptionBudget:
+  enabled: true
+
 podSecurityContext:
   runAsNonRoot: true
   runAsUser: 65532

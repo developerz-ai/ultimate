@@ -81,7 +81,12 @@ describe('unit · x mcp tools', () => {
     expect(tools.map((tool) => tool.name)).toContain('verify.run');
     for (const tool of tools) expect(tool.description.length).toBeGreaterThan(20);
     expect(result.summary).toBe('mcp none serving 13 tools');
-  });
+    // `x mcp tools` builds the catalog, which now resolves every code's fix by walking the whole
+    // framework scope — real I/O over every published package's `src`. It is ~1.3s alone and the
+    // headroom is what 8-way sharding eats, so the scan is the point and the timeout is what moves.
+    // A literal rather than `scripts/lib/run.ts`'s constant: a published package's suite must not
+    // import the host monorepo's scripts. Same reason `error-catalog.test.ts` repeats it.
+  }, 30_000);
 
   test('--json carries every line the terminal renders, the scopes included', async () => {
     const result = await mcpCommand.run(context(['mcp', 'tools', '--json']));
@@ -94,14 +99,18 @@ describe('unit · x mcp tools', () => {
     // reproduce what the terminal printed.
     expect(payload.data.scopes).toEqual(SCOPES);
     expect(result.lines?.at(-1)).toBe(`  scopes ${SCOPES.join(' ')}`);
-  });
+    // Same catalog scan as above, so the same budget.
+  }, 30_000);
 
   test('the server closes cleanly, so a second run is identical', async () => {
     const first = await mcpCommand.run(context(['mcp', 'tools']));
     const second = await mcpCommand.run(context(['mcp', 'tools']));
     expect(second.data).toEqual(first.data as never);
     expect(second.ok).toBe(true);
-  });
+    // Two catalog builds, so the most exposed of the three. Raised with its neighbours rather than
+    // after it is observed failing: they call one function, and fixing one relocates the failure to
+    // whichever shard the others land in.
+  }, 30_000);
 
   test('an unknown transport is refused before the app is loaded', async () => {
     // Awaited: an unawaited `.rejects` settles after the test body returns, so the assertion

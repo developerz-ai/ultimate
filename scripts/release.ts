@@ -7,6 +7,7 @@
 
 import { join } from 'node:path';
 import { checkPackageShape, SEMVER } from '@ultimat3/cli';
+import { CHART_FILE, setChartVersions } from './chart-version';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -199,6 +200,14 @@ if (import.meta.main) {
       const own = published.has(path) ? setOwnVersion(raw, version) : raw;
       await Bun.write(path, repinFrameworkDeps(own, version));
     }
+    // The Helm chart moves with them. It is not a workspace, so the loop above cannot reach it —
+    // and `appVersion` is the default `image.tag`, so a chart left behind names an image tag this
+    // release never pushes. It sat at 0.0.1 through every 1.x release for exactly that reason.
+    const chartPath = join(root, CHART_FILE);
+    const chart = Bun.file(chartPath);
+    if (await chart.exists()) {
+      await Bun.write(chartPath, setChartVersions(await chart.text(), version));
+    }
     const changelogPath = join(root, 'CHANGELOG.md');
     const existing = await Bun.file(changelogPath)
       .text()
@@ -221,6 +230,7 @@ if (import.meta.main) {
         `  version   ${current} -> ${version}`,
         `  packages  ${publishable.map((workspace) => workspace.name).join(', ')}`,
         `  manifests ${manifests.length} rewritten (${published.size} published, the rest repinned)`,
+        `  chart     ${CHART_FILE} version + appVersion -> ${version}`,
         `  commits   ${subjects.length}`,
         `  next      bun install, commit, tag v${version}, then publish a GitHub Release`,
       ],

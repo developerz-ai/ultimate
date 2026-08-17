@@ -26,7 +26,10 @@ export const mcp = defineAppMcp({
 });
 `;
 
-const mcpTest = (): string => `import { expect, unitTest } from '@ultimat3/testing';
+const mcpTest =
+  (): string => `// The app exposes its actions as MCP tools, and each tool carries the action's own policy. An
+// agent reaching a tool that authorises differently is the failure this rules out.
+import { expect, unitTest } from '@ultimat3/testing';
 import { mcp } from './index';
 
 unitTest('the app exposes its actions as MCP tools', () => {

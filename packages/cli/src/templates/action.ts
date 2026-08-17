@@ -84,6 +84,14 @@ export const ${name.camel} = mutator({
 const notFoundCode = (feature: NameSet): string =>
   `X_${feature.kebab.toUpperCase().split('-').join('_')}_NOT_FOUND`;
 
+/**
+ * The emitted `fix:` cites `x queries list`, and which command it cites is the whole point: a
+ * scaffolded app runs the same `errors` step this repo does, so a fix naming a command the build
+ * does not ship writes a fresh X_ERROR_FIX_INVALID into the app on every `x g action`. It cited
+ * `x db studio`, which is in `PLANNED_SUBCOMMANDS` and exits X_NOT_IMPLEMENTED — the generator was
+ * breaking the one rule it exists to demonstrate. `x queries list` ships, and a read is where a
+ * caller gets an id that exists.
+ */
 const errorsSource = (feature: NameSet): string => {
   const errorCode = notFoundCode(feature);
   return `// The ${feature.kebab} feature's X_* codes. Never throw a bare Error: an agent reading the failure
@@ -96,7 +104,7 @@ export class ${feature.pascal}NotFoundError extends UltimateError {
     super({
       code: '${errorCode}',
       cause: \`no ${feature.kebab} with id \${input.id}\`,
-      fix: 'x db studio to confirm the row exists, or pass an id from the list query',
+      fix: 'x queries list --json, then pass an id the ${feature.kebab} read returns',
       docs: 'https://ultimate.dev/errors/${errorCode}',
     });
   }
@@ -129,7 +137,9 @@ const actionTest = (
   name: NameSet,
   feature: NameSet,
   isMutator: boolean,
-): string => `import { testActor } from '@ultimat3/policy';
+): string => `// ${name.camel}: its declared shape, the input it refuses, the contract every action owes, and the
+// foreign-org actor it denies before the handler runs. One declaration, every surface.
+import { testActor } from '@ultimat3/policy';
 import { contractTest, expect, unitTest } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 

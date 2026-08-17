@@ -49,7 +49,7 @@ x version              # CLI version
 | `x test <type>` | run one of the six test types, or the whole suite | shipped |
 | `x errors explain <CODE>` | code → cause, fix, docs | shipped |
 | `x docs "<question>"` | framework docs, offline, from `node_modules` | shipped |
-| `x fix boundary <file>` | the minimal cut for an import that crossed a surface boundary | shipped |
+| `x fix boundary <file>` | plan the minimal cut for an import that crossed a surface boundary (never rewrites) | shipped |
 | `x cache` | tag graph, bust, clear, stats | planned |
 | `x branch` | copy-on-write branch environments | planned |
 | `x status` | connected-client build-ID distribution, role health | planned |

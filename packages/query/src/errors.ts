@@ -165,12 +165,20 @@ export class QueryDuplicateError extends UltimateError {
   }
 }
 
+/**
+ * The `fix` pastes a PERMISSION and the `cause` names the query, and the two are not
+ * interchangeable: `can()` takes `resource:verb` (`Permission` is `` `${string}:${string}` ``), so
+ * the `can('${name}')` this used to emit did not compile, and `assertPermission` would refuse it
+ * the moment the app declared its own set. The reader needs the query's name to find the file and
+ * the permission's SHAPE to fill the argument — the same split `@ultimat3/policy`'s own
+ * `policyMissing()` already makes.
+ */
 export class QueryPolicyMissingError extends UltimateError {
   constructor(name: string) {
     super({
       code: 'X_QUERY_POLICY_MISSING',
       cause: `query "${name}" was registered without a policy`,
-      fix: `add \`policy: can('${name}')\` to the query definition in the file that exports it`,
+      fix: `add \`policy: can('<resource>:<verb>')\` to the query() that exports "${name}" — a permission your definePermissions() call declares, never the query's own name — or \`allow('<resource>:<verb>')\` to state that the read is public`,
       docs: docs('X_QUERY_POLICY_MISSING'),
     });
   }

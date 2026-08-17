@@ -44,8 +44,44 @@ function declaredBudgets(js: number | null, lcp: number | undefined): string {
  * finding, never a pass: a route that clears the gate without ever being weighed is exactly the
  * false green axiom 5 exists to prevent. Only a route that declares nothing is skipped.
  */
-export function checkBudgets(manifest: Manifest, stats: BuildStats): readonly Finding[] {
-  const byPath = new Map(stats.routes.map((route) => [route.path, route]));
+/**
+ * Two ways a budget goes unweighed, and they are not one instruction.
+ *
+ * `undefined` stats is "no build has ever run in this repo" — one command closes every route at
+ * once, and `.x/` is gitignored, so this is the state a fresh clone and a fresh scaffold are in.
+ * A stats file that exists and has no row for this route is the other thing entirely: a build DID
+ * run and could not weigh this one, which is `PrerenderReport.unmeasured`'s question and not a
+ * second build's. Reporting the first as the second is what sends a reader to re-run a build that
+ * already did everything it was going to do.
+ */
+function unmeasuredFinding(url: string, declared: string, built: boolean): Finding {
+  return {
+    code: 'X_BUDGET_UNMEASURED',
+    cause: built
+      ? `${url} declares a ${declared} budget and ${BUILD_STATS_FILE} has no row for it, so the build ran and could not weigh it`
+      : `${url} declares a ${declared} budget and no build has written ${BUILD_STATS_FILE} in this repo`,
+    // `--target static` is load-bearing and `x build` alone was a fix that changes nothing: the
+    // flag defaults to `docker`, and only the static target runs `apps/web/prerender.ts`, which is
+    // the one caller of `writeBuildStats`. When a build already ran, the second half is where the
+    // answer is — the report names every route it could not weigh, and why.
+    fix: built
+      ? `x build --target static --json   # its "unmeasured" list says why ${url} could not be weighed`
+      : 'x build --target static --json && x verify --json',
+    docs: 'https://ultimate.dev/errors/X_BUDGET_UNMEASURED',
+    at: url,
+  };
+}
+
+/**
+ * `undefined` stats means no build has run; `{ routes: [] }` means one ran and emitted nothing.
+ * The parameter is widened rather than defaulted, because collapsing the two here is exactly the
+ * distinction the finding above exists to make.
+ */
+export function checkBudgets(
+  manifest: Manifest,
+  stats: BuildStats | undefined,
+): readonly Finding[] {
+  const byPath = new Map((stats?.routes ?? []).map((route) => [route.path, route]));
   const findings: Finding[] = [];
   for (const route of manifest.routes) {
     const measured = byPath.get(route.url);
@@ -53,13 +89,7 @@ export function checkBudgets(manifest: Manifest, stats: BuildStats): readonly Fi
     const lcp = route.budget?.lcp;
     if (measured === undefined) {
       if (js !== null || lcp !== undefined) {
-        findings.push({
-          code: 'X_BUDGET_UNMEASURED',
-          cause: `${route.url} declares a ${declaredBudgets(js, lcp)} budget but ${BUILD_STATS_FILE} has no entry for it`,
-          fix: 'x build && x verify',
-          docs: 'https://ultimate.dev/errors/X_BUDGET_UNMEASURED',
-          at: route.url,
-        });
+        findings.push(unmeasuredFinding(route.url, declaredBudgets(js, lcp), stats !== undefined));
       }
       continue;
     }

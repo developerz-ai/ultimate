@@ -1,3 +1,13 @@
+# Secrets never enter the build context. The build stage does `COPY . .`, so an operator's local
+# `.env` landed in an image layer — one that `cache-to=type=gha,mode=max` then pushes to a shared
+# cache. `.env.example` is the committed template and is the one file here that must survive.
+**/.env
+**/.env.*
+!**/.env.example
+# Same shape, different file: an `.npmrc` carries a registry auth token, none is tracked in this
+# repo, so any that exists is somebody's local credential and has no business in a layer.
+**/.npmrc
+
 node_modules
 **/node_modules
 **/dist

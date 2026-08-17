@@ -5,9 +5,10 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { docsCommand, frameworkScopeDir } from './cmd-docs';
+import { docsCommand } from './cmd-docs';
 import type { CommandContext } from './command';
 import { exec } from './exec';
+import { frameworkScopeDir } from './framework-scope';
 import type { CommandResult, JsonValue } from './output';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';

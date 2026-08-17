@@ -16,6 +16,14 @@ import { i18nFiles } from './scaffold-i18n';
 import { mcpPackageFiles } from './scaffold-mcp-package';
 import { uiPackageFiles } from './scaffold-ui-package';
 
+/**
+ * Spelled once and pinned EXACTLY, because two places named it and a caret let them disagree:
+ * `"^2.4.15"` beside a `$schema` of `2.4.15` installed 2.5.8, whose own parser then reported the
+ * config as out of date on every `bun run lint`. A formatter is a build input — a range that floats
+ * is a `lint` step whose verdict depends on the day the app was installed.
+ */
+const BIOME_VERSION = '2.5.8';
+
 // `version` is not decoration: the manifest's app version IS the contract's compatibility gate,
 // and the manifest never fabricates one — so an app scaffolded without it failed `x manifest`,
 // the `manifest` verify step and every production boot with X_APP_PACKAGE_INVALID.
@@ -40,7 +48,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "db:seed": "bun run packages/db/src/seed.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.15",
+    "@biomejs/biome": "${BIOME_VERSION}",
     "@electric-sql/pglite": "^0.5.4",
     "@types/bun": "^1.3.14",
     "@ultimat3/testing": "^${version}",
@@ -143,13 +151,15 @@ export const config = defineConfig({
 // used to be a comment lives here, where it is read by the person who would have changed the line:
 // x.manifest.json and openapi.json are emitted byte-for-byte by `x manifest`, so a formatter
 // rewriting them puts `x manifest` and `x verify` in a loop neither can win.
+// `preset`, not `recommended`: the older key is deprecated from 2.5 on and every `bun run lint`
+// in the scaffolded app printed the migration notice for a config the app never wrote by hand.
 const biome = (): string => `{
-  "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
+  "$schema": "https://biomejs.dev/schemas/${BIOME_VERSION}/schema.json",
   "files": { "includes": ["**", "!x.manifest.json", "!openapi.json"] },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
   "linter": {
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "suspicious": { "noExplicitAny": "error" },
       "correctness": { "noUnusedVariables": "error", "noUnusedImports": "error" }
     }
@@ -166,10 +176,12 @@ const biome = (): string => `{
  * `X_VERIFY_SUITE_VANISHED` was unreachable in every generated app, in the one repo shape that
  * grows suites fastest.
  *
- * Every name here is a step this scaffold has proved it can run: the seven with no `applies` at
- * all, plus `package-shape` (five workspace packages), `eval`, `drift` and `budgets` (all three
- * apply to any root with an `app.config.ts`). Typed as `VerifyStepName`, so a name the gate does
- * not run is a compile error rather than a floor that covers nothing.
+ * Every name here is a step this scaffold has proved it can run: the SIX that declare no `applies`
+ * at all — typecheck, lint, boundaries, filesize, errors, manifest — plus `package-shape` (five
+ * workspace packages), `unit` (every generator emits a `<file>.test.ts`; like every suite step it
+ * applies on its own file list, `verify-tests.ts`), and `eval`, `drift` and `budgets`, which apply
+ * to any root with an `app.config.ts`. Typed as `VerifyStepName`, so a name the gate does not run
+ * is a compile error rather than a floor that covers nothing.
  *
  * Four are deliberately absent. `contract`, `live` and `job` have no scaffolded file; `e2e` has
  * one, and it is an `e2eTest` — `test.skip` until the app registers a browser driver, so the step

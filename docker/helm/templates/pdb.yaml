@@ -1,0 +1,56 @@
+{{/*
+One PodDisruptionBudget per role that has more than one pod to lose.
+
+`strategy.rollingUpdate.maxUnavailable: 0` in deployments.yaml protects a DEPLOY and nothing else.
+A node drain — an upgrade, a spot reclaim, a `kubectl drain` — is a voluntary eviction, and the
+scheduler will take every pod of a role at once unless a budget says otherwise. That is the same
+hole the readiness probe had: the rolling restart looks invisible right up until the day the
+disruption comes from the cluster instead of from the chart.
+
+`maxUnavailable: 1`, never `minAvailable`: a budget can only ever block one eviction at a time, so
+a drain always finishes. A `minAvailable` equal to the replica count deadlocks the drain forever,
+which is how a PDB turns into an outage of its own.
+
+Emitted only where the floor is above 1. `scheduler` is pinned to one replica by design (leader
+election is a Postgres advisory lock), and a budget over a single pod means that pod can never be
+evicted — so those roles get none, deliberately.
+*/}}
+{{- if and .Values.podDisruptionBudget .Values.podDisruptionBudget.enabled }}
+{{- range $role, $cfg := .Values.roles }}
+{{- if $cfg.enabled }}
+{{/*
+The floor, and a values contract that refuses to be wrong quietly. `nil | int` is 0 in Go templates,
+so a role with `autoscaling.enabled: true` and no `minReplicas` — or with neither key — would score
+a floor of 0, fall through the `gt $floor 1` below and get NO budget, with a rendered chart that
+looks complete. A missing disruption budget is invisible until the node drain that needed it, which
+is the one failure this file exists to prevent, so an incoherent role is a `helm template` error
+instead. `fail` is the only assertion a chart can make about its own inputs.
+*/}}
+{{- $floor := $cfg.replicas | int -}}
+{{- if and $cfg.autoscaling $cfg.autoscaling.enabled -}}
+{{- if not $cfg.autoscaling.minReplicas -}}
+{{- fail (printf "roles.%s sets autoscaling.enabled but no autoscaling.minReplicas — the HPA floor is what a PodDisruptionBudget is sized from, so set roles.%s.autoscaling.minReplicas in your values" $role $role) -}}
+{{- end -}}
+{{- $floor = $cfg.autoscaling.minReplicas | int -}}
+{{- else if not $cfg.replicas -}}
+{{- fail (printf "roles.%s is enabled with neither replicas nor autoscaling.enabled — set roles.%s.replicas in your values" $role $role) -}}
+{{- end -}}
+{{- if gt $floor 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ultimate.fullname" $ }}-{{ $role }}
+  labels:
+    {{- include "ultimate.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $role }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: {{ $role }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

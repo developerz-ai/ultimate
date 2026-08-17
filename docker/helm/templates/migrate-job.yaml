@@ -24,6 +24,8 @@ spec:
     spec:
       restartPolicy: Never
       serviceAccountName: {{ include "ultimate.fullname" . }}
+      # Same reason as the Deployments: ROLE=migrate applies SQL and exits, and calls no API server.
+      automountServiceAccountToken: false
       securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         {{- include "ultimate.container" (dict "role" "migrate" "cfg" .Values.migrate "root" .) | nindent 8 }}

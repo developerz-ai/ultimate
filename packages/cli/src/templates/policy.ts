@@ -67,16 +67,22 @@ export const can${feature.pascal}Write = can<${feature.pascal}Scope>(
 );
 `;
 
-const policyTest = (feature: NameSet): string => `import { testActor } from '@ultimat3/policy';
+const policyTest = (
+  feature: NameSet,
+): string => `// The ${feature.kebab} rules, from the DENIAL side: anonymous, cross-org, and the actor holding
+// only read. A policy whose tests all pass is a policy nobody has tried to get past.
+import { testActor } from '@ultimat3/policy';
 import { expect, unitTest } from '@ultimat3/testing';
 import { can${feature.pascal}Read, can${feature.pascal}Write } from './policy';
 
 const org = '00000000-0000-4000-8000-000000000002';
 const otherOrg = '00000000-0000-4000-8000-000000000009';
 
-// Direct grants rather than roles: the role map is app-global and defineRoles() replaces it
-// wholesale, so a generated test that installed one would decide authz for every other test in
-// the process. \`permissions\` is the same check one layer down.
+// Direct grants rather than roles: defineRoles() MERGES into one app-global map that outlives this
+// file, so a role installed here would still be granting permissions to every later test in the
+// process — and a second test declaring the same name differently is X_ROLE_REDEFINED rather than
+// an override. The app's roles live in apps/web/shared/roles.ts, once. \`permissions\` is the same
+// check one layer down.
 const reader = testActor('reader', { orgId: org, permissions: ['${feature.kebab}:read'] }).actor;
 const writer = testActor('writer', {
   orgId: org,

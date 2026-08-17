@@ -138,6 +138,18 @@ describe('unit · x fix boundary', () => {
     expect(result.findings ?? []).toEqual([]);
   });
 
+  // The command is named `fix` and it has never fixed anything: it prints a plan and a caller runs
+  // it. Renaming it would break the five packages whose `fix:` lines cite `x fix boundary <file>`,
+  // so what it owes instead is to say so in both lines a reader sees — the one `x help` prints and
+  // the one the run itself ends with.
+  test('it says out loud that it wrote nothing, and offers no flag that would', async () => {
+    const result = await fixCommand.run(contextFor('apps/s2/shared/panel.tsx'));
+    expect(result.summary).toContain('nothing written');
+    expect(fixCommand.spec.summary).toContain('plan');
+    expect(fixCommand.spec.summary).toContain('never rewrites');
+    expect(fixCommand.spec.flags?.map((flag) => flag.name) ?? []).not.toContain('write');
+  });
+
   test('an unknown path is X_FIX_TARGET_UNKNOWN', async () => {
     await expect(fixCommand.run(contextFor('apps/s4/site/nope.tsx'))).rejects.toThrow(
       /X_FIX_TARGET_UNKNOWN/,

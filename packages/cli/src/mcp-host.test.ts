@@ -7,6 +7,7 @@ import { createRecordingClient, READONLY_ROLE } from '@ultimat3/db';
 import type { DatabaseTarget, DevHost, JsonRpcResponse, McpServer, ToolArgs } from '@ultimat3/mcp';
 import { createMcpServer, devTools, resolveQueryLimits } from '@ultimat3/mcp';
 import type { DevServices } from './dev-services';
+import { loadCodeFixes } from './error-fixes';
 import { CliNotImplementedError } from './errors';
 import type { Runner } from './exec';
 import { databaseTarget } from './mcp-db-target';
@@ -308,16 +309,21 @@ describe('unit · errors.explain', () => {
     expect(explainErrorCode('X_NOT_A_REAL_CODE')).toBeUndefined();
   });
 
-  // A code the CLI neither owns nor borrows, so the fix is the generic gate. `X_CONFIG_INVALID`
-  // used to stand here and became a borrowed code when `x env` shipped.
-  test('a registered framework code explains with its registered title', () => {
-    expect(explainErrorCode('X_DB_DRIFT')).toEqual({
-      code: 'X_DB_DRIFT',
-      cause: 'schema differs from migrations',
-      fix: 'x verify --json',
-      docs: 'https://ultimate.dev/errors/X_DB_DRIFT',
-    });
-  });
+  // A code the CLI neither owns nor borrows. Its fix used to be the generic `x verify --json` —
+  // true of the gate step and useless to anyone holding the code — and is now the text one of its
+  // own throw sites writes, with the count of the others said out loud rather than hidden.
+  // `createDevMcpServer` is what awaits the load in a real `x mcp serve`.
+  test('a registered framework code explains with its own throw site', async () => {
+    await loadCodeFixes();
+    const explained = explainErrorCode('X_DB_DRIFT');
+    expect(explained?.cause).toBe('schema differs from migrations');
+    expect(explained?.docs).toBe('https://ultimate.dev/errors/X_DB_DRIFT');
+    expect(explained?.fix).toStartWith('x db gen ');
+    expect(explained?.fix).toContain('X_DB_DRIFT is raised at ');
+    // Reads every installed package's source once: `REPO_SCAN_TIMEOUT_MS`'s value, as a literal,
+    // for the reason `error-catalog.test.ts` repeats it too — a package's own suite may not
+    // import the host monorepo's `scripts/`.
+  }, 30_000);
 
   test("a CLI code answers with the CLI's own runnable fix", () => {
     expect(explainErrorCode('X_VERIFY_FAILED')?.fix).toBe('x verify --json');

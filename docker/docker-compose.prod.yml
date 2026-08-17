@@ -18,7 +18,12 @@ x-common: &common
   image: *image
   restart: unless-stopped
   env_file: [../.env.production]
-  stop_grace_period: 30s          # SIGTERM drains in-flight work before the process exits
+  # SIGTERM drains in-flight work before the process exits. At least `DEFAULT_DEADLINE_MS`
+  # (packages/core/src/lifecycle.ts, 25s) — the drain abandons a hook at its own deadline, so a
+  # value below that is Docker SIGKILLing a process that was about to exit cleanly, and the twin of
+  # `terminationGracePeriodSeconds` in docker/helm/templates/deployments.yaml. Raise this WITH
+  # `configureLifecycle({ deadlineMs })`, never instead of it.
+  stop_grace_period: 30s
 
 services:
   # Run-once, before anything serves traffic. Refuses to run concurrently with another version.

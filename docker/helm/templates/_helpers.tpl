@@ -76,6 +76,20 @@ in values.yaml, where the two numbers would drift.
       containerPort: {{ $root.Values.metricsPort | int }}
     {{- end }}
   {{- end }}
+  {{/*
+  Probes follow the role, because the roles do not agree on what they open. `web` and `sync` serve
+  HTTP and get both probes on it. `worker`, `scheduler` and `replicator` open NO HTTP socket at all
+  (packages/cli/src/metrics-endpoint.ts) — the scrape listener is the only port they have — so they
+  had no probe of any kind and a wedged worker was never restarted by anything. Probing `/readyz` on
+  them would have been the mirror-image bug: a port the role never opens, which is exactly what made
+  sync's readiness probe meaningless.
+
+  Liveness only for those three, never readiness: nothing routes to them, and a readiness flap would
+  drop the pod out of the Service's Endpoints and so out of the Prometheus scrape — losing the
+  `queue_depth` series precisely when the worker is busiest. `startRoles` opens the metrics listener
+  FIRST, before any role, so it is up early; `failureThreshold: 4` at 15s means ~60s of no event
+  loop before a restart, not a boot-time restart loop.
+  */}}
   {{- if $cfg.port }}
   readinessProbe:
     httpGet: { path: /readyz, port: http }
@@ -83,6 +97,11 @@ in values.yaml, where the two numbers would drift.
   livenessProbe:
     httpGet: { path: /healthz, port: http }
     periodSeconds: 15
+  {{- else if $scraped }}
+  livenessProbe:
+    httpGet: { path: /metrics, port: metrics }
+    periodSeconds: 15
+    failureThreshold: 4
   {{- end }}
   resources: {{- toYaml $cfg.resources | nindent 4 }}
   volumeMounts:

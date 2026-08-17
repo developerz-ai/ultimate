@@ -4,7 +4,15 @@
 // could not fail on any of the 17 steps — a waiver justified by ONE pinned typecheck gap that
 // covered all of them.
 //
-//   bun run scripts/scaffold-gate.ts <app dir> [--allow-red typecheck] [--json]
+// THE RATCHET SHRINKS ITSELF, and that is the half worth stating: the `stale` rule fails the job
+// when an allowed step starts PASSING, so removing the allowance is mandatory rather than tidy
+// housekeeping somebody gets to. It has already been load-bearing twice — `typecheck`, then `lint`
+// and `errors` — each of which would otherwise have kept excusing whatever landed behind it. The
+// example below is `budgets` for exactly that reason: `typecheck` is green in a scaffolded app now,
+// so pasting the OLD example from an earlier copy of this line reports `stale` immediately — which
+// is why `scaffold-gate.test.ts` holds every example in this file to what `ci.yml` actually allows.
+//
+//   bun run scripts/scaffold-gate.ts <app dir> [--allow-red budgets] [--json]
 
 import type { Runner } from '@ultimat3/cli';
 import { exec } from '@ultimat3/cli';
@@ -91,7 +99,10 @@ if (import.meta.main) {
           {
             code: 'X_CLI_BAD_FLAG',
             cause: 'no app directory given',
-            fix: 'bun run scripts/scaffold-gate.ts /tmp/demoapp --allow-red typecheck',
+            // `budgets`, not `typecheck`: a fix line is pasted verbatim, and `typecheck` passes in
+            // a scaffolded app now — so the old example produced an instant `stale` finding for a
+            // step that was already green. The example must be a step the ratchet actually allows.
+            fix: 'bun run scripts/scaffold-gate.ts /tmp/demoapp --allow-red budgets',
           },
         ],
       },

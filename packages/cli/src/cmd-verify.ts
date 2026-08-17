@@ -165,9 +165,22 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
       // the case `checkBudgets` already names per route (`X_BUDGET_UNMEASURED`). Skipping the half
       // entirely is how a step that has never run once reported green: `.x/` is gitignored, so no
       // CI run and neither gated app has ever had a `build-stats.json` for it to read.
-      const stats = (await readBuildStats(ctx.root)) ?? { routes: [] };
-      const { manifest } = await appManifest(ctx.root);
+      //
+      // Handed over as `undefined` and never as `?? { routes: [] }`: "no build has run here" and
+      // "a build ran and could not weigh this route" are two different instructions, and only the
+      // caller knows which of them is true. The step still does not BUILD — measuring here would
+      // make `x verify` a static build on every run (8.2s on `dummy/social-media-clone`, and 5.9s
+      // to a hard `X_PRERENDER_FAILED` on `examples/dummy`), and it would be a second builder
+      // beside `apps/web/prerender.ts`, which is where an app reads `SITE_ORIGIN`.
+      const stats = await readBuildStats(ctx.root);
+      // The load's own findings, FIRST and never dropped. A module that would not import registers
+      // no route, so its budget is missing from the manifest and every route it declared reads as
+      // `X_BUDGET_UNMEASURED` — the symptom, pointing the reader at `x build` for a file that will
+      // not compile. `contract-diff` reports these too when it applies; two red steps naming one
+      // broken module is honest, and one of them silently green over it is the false green.
+      const { manifest, findings } = await appManifest(ctx.root);
       return fromFindings([
+        ...findings,
         ...checkDocumentStyles(documentSurfaces()),
         ...checkBudgets(manifest, stats),
       ]);

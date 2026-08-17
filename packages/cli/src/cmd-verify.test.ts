@@ -376,6 +376,38 @@ describe('unit · x verify', () => {
     });
   });
 
+  // The step loads the app to read its declared budgets, and threw the load's own findings away.
+  // A module that will not import registers no route, so its budgets are missing from the manifest
+  // and every one of them came back `X_BUDGET_UNMEASURED` — "run x build" for a file that does not
+  // compile. The cause has to travel with the symptom or the reader is sent to the wrong place.
+  describe('budgets reports what loading the app said', () => {
+    const step = VERIFY_STEPS.find((candidate) => candidate.name === 'budgets');
+
+    test('a module that will not import is a finding on this step', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'x-budgets-'));
+      try {
+        await Bun.write(
+          join(root, 'package.json'),
+          JSON.stringify({ name: 'broken-app', version: '1.0.0' }),
+        );
+        await Bun.write(join(root, 'app.config.ts'), 'export const config = {};\n');
+        await Bun.write(
+          join(root, 'apps/web/app/broken/module.ts'),
+          "throw new Error('this module never imports');\n",
+        );
+        expect(await step?.applies?.({ ...ctx, root })).toBe(true);
+        const outcome = await step?.run({ ...ctx, root });
+        const broken = outcome?.findings.filter(
+          (finding) => finding.at === 'apps/web/app/broken/module.ts',
+        );
+        expect(broken?.[0]?.cause).toContain('this module never imports');
+        expect(outcome?.ok).toBe(false);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe('roadmap only runs when a host registers it', () => {
     const step = VERIFY_STEPS.find((candidate) => candidate.name === 'roadmap');
 

@@ -75,7 +75,12 @@ const CATALOG = {
   // arrives with a fifth marker; `--json` carries the paths themselves in `data.files`.
   'cli.file.added': '  + {path}',
   'cli.fix.clean': 'no boundary violation involves {file}',
-  'cli.fix.plan': '{count} boundary violation(s) involve {file} — {edits} edit(s) to make',
+  // "nothing written", the same admission `cli.generate.planned` makes and for the same reason: a
+  // command called `fix` that only ever REPORTS teaches an agent to expect a repair and act as
+  // though one happened. There is no `--write` and there is not going to be one
+  // (`docs/architecture/02-boundaries.md`), so the line that runs says so every time.
+  'cli.fix.plan':
+    '{count} boundary violation(s) involve {file} — {edits} edit(s) to make, nothing written',
   'cli.generate.wrote': 'wrote {count} file(s) for {kind} {name}',
   // A distinct key, not the same sentence with a flag beside it: `--dry-run` reported "wrote 4
   // file(s)" while `data.dryRun` said nothing had landed, so an agent branching on `summary`

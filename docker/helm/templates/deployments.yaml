@@ -36,7 +36,16 @@ spec:
         app.kubernetes.io/component: {{ $role }}
     spec:
       serviceAccountName: {{ include "ultimate.fullname" $ }}
+      # No role in this image ever calls the Kubernetes API — `ROLE` is read from the env and
+      # everything else comes from app.config.ts. Mounting the token anyway hands a JWT for this
+      # namespace's ServiceAccount to any code that reaches the filesystem, which for a web role is
+      # the blast radius of one path traversal.
+      automountServiceAccountToken: false
       securityContext: {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      # At least `drainDeadlineMs()` (packages/core/src/lifecycle.ts, DEFAULT_DEADLINE_MS = 25s),
+      # which is what X_SHUTDOWN_TIMEOUT's fix line tells an operator. Raise this WITH
+      # `configureLifecycle({ deadlineMs })`, never instead of it: the drain abandons its hooks at
+      # its own deadline, so a larger grace period alone buys nothing.
       terminationGracePeriodSeconds: 45
       containers:
         {{- include "ultimate.container" (dict "role" $role "cfg" $cfg "root" $) | nindent 8 }}

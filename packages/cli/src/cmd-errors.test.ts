@@ -35,24 +35,31 @@ const rejection = async (argv: readonly string[]): Promise<{ readonly fix: strin
 
 describe('unit · x errors explain', () => {
   // `X_DB_DRIFT` and not `X_CONFIG_INVALID`: the exemplar has to be a code the CLI neither owns
-  // nor borrows, or the test stops asserting the fallback it is named for. `X_CONFIG_INVALID`
-  // became a borrowed code when `x env` shipped (`CLI_BORROWED_ERROR_CODES`), so it now answers
-  // with the CLI's own fix — which is the case the next test covers.
-  test('a code the CLI neither owns nor borrows falls back to the gate', async () => {
+  // nor borrows, or the test stops asserting the projection it is named for. `X_CONFIG_INVALID`
+  // became a borrowed code when `x env` shipped (`CLI_BORROWED_ERROR_CODES`), so it answers from
+  // the CLI's own table — which is the case the next test covers.
+  //
+  // It used to answer `x verify --json`, and so did 326 other codes: the gate does not raise most
+  // of them, so the one command every reader was handed reported green and changed nothing. The
+  // answer is now the text the code's OWN throw site writes, read by `error-fixes.ts`, which
+  // `run()` loads before it explains anything.
+  test('a code the CLI neither owns nor borrows answers from its own throw site', async () => {
     const result = await run(['errors', 'explain', 'X_DB_DRIFT']);
     expect(result.ok).toBe(true);
-    expect(record(result.data)).toEqual({
-      code: 'X_DB_DRIFT',
-      cause: 'schema differs from migrations',
-      fix: 'x verify --json',
-      docs: 'https://ultimate.dev/errors/X_DB_DRIFT',
-    });
+    const data = record(result.data);
+    expect(data['code']).toBe('X_DB_DRIFT');
+    expect(data['cause']).toBe('schema differs from migrations');
+    expect(data['docs']).toBe('https://ultimate.dev/errors/X_DB_DRIFT');
+    expect(String(data['fix'])).toStartWith('x db gen ');
+    expect(String(data['fix'])).not.toBe('x verify --json');
     expect(result.lines).toEqual([
       '  cause: schema differs from migrations',
-      '  fix:   x verify --json',
+      `  fix:   ${String(data['fix'])}`,
       '  docs:  https://ultimate.dev/errors/X_DB_DRIFT',
     ]);
-  });
+    // Reads every installed package's source once: `REPO_SCAN_TIMEOUT_MS`'s value as a literal,
+    // for the reason `error-catalog.test.ts` repeats it too.
+  }, 30_000);
 
   test("a CLI code answers with the CLI's own fix, not the generic gate", async () => {
     const result = await run(['errors', 'explain', 'X_BUN_VERSION']);

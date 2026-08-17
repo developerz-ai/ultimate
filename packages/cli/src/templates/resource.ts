@@ -40,7 +40,9 @@ export async function require${feature.pascal}(id: string): Promise<${feature.pa
 
 const serviceTest = (
   feature: NameSet,
-): string => `import { expect, unitTest } from '@ultimat3/testing';
+): string => `// The ${feature.kebab} feature's failure, pinned: a code an agent can match on, a cause naming
+// the row, and a fix that is an instruction. A bare Error would satisfy none of the three.
+import { expect, unitTest } from '@ultimat3/testing';
 import { ${feature.pascal}NotFoundError } from './errors';
 
 unitTest('${feature.pascal}NotFoundError carries a code, a cause and a fix', () => {

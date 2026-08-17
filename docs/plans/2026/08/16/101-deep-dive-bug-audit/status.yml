@@ -4,7 +4,7 @@ status: in_progress
 created_by: sebi
 worked_by: "claude (hive of 4 per PR, one checkout)"
 owner: sebi
-percent: 82
+percent: 90
 current_focus: >
   02 and 06 are DONE across three PRs — realtime #107, cache/query/jobs/core/db #110, http/action
   #112. auth and entity needed nothing: every finding naming them was already closed by #104 and
@@ -12,7 +12,7 @@ current_focus: >
   07 = #102/#103/#104; 01/09 = #105; 04 = #106; 02/06 = #107/#110/#112.
   03 lands as #113 at 90%: the four pwa findings are the held-back tenth, deliberately, because
   pwa stays unwired by decision and fixing internals of code with no callers is dead work.
-  Next: 11+14 (deploy/CI + agent DX + the five remaining enforcement gaps), then 08, 15, 12, 13.
+  11+14 land as #114. Next: 08 (architecture, mostly deletions), then 15, 12, 13.
 slices:
   - file: 05-gate-and-scripts.md
     tier: 0
@@ -61,12 +61,14 @@ slices:
     pr: 113
   - file: 11-deploy-ci.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
+    pr: 114
   - file: 14-agent-dx.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: done
+    percent: 100
+    pr: 114
   - file: 08-architecture.md
     tier: 0
     status: not_started
@@ -242,6 +244,80 @@ evidence:
       - "TEST_EXCLUSION lacks .tsx — latent; zero .test.tsx files exist, and changing it fails
          package-shape for all 28 published packages until every files array is edited."
     new_codes: [X_CATALOG_KEY_UNREACHABLE, X_MAIL_ADDRESS_INVALID, X_MCP_RESOURCE_DUPLICATE]
+  - pr: 114
+    slices: ['11', '14']
+    gate: "14 of 17 passed, 3 skipped; app gate every pin holds. CodeRabbit reviewed for real —
+           25 comments, first unthrottled in four PRs — and a second commit answers them"
+    falsified:
+      - "The two worst defects were in NEITHER slice doc, and both needed EXECUTION not reading:
+         the shipped image was dead on arrival (musl binary on a glibc runtime, every container
+         exiting `exec: no such file or directory`) while the build stayed green because the
+         --version guard ran on the BUILD image; and RENDER.app = 'stream' meant every generated
+         app/ route threw X_ROUTE_MODE_INVALID at import and registered NO ROUTE AT ALL."
+      - "`lint` was red from ONE TRAILING BLANK LINE in an emitted test file. Both named causes
+         (Bun.env['SITE_ORIGIN'], the biome $schema pin) are Biome INFOS — `biome check` exits 0
+         with all three present."
+      - "docker/Dockerfile has NO HEALTHCHECK at all and never had; the four byte-identical /readyz
+         ones are in the scaffold template and the two apps."
+      - "The grace periods ALREADY satisfied the 25s drain deadline — 45s in the chart, 30s in
+         compose. No value changed."
+      - "ROLE=migrate was never broken: runRole reads options.env and nothing reads argv, so every
+         documented release-phase promise held. Only appended argv was discarded."
+      - "The budgets pins CANNOT go green from this slice, and measuring inside the step would make
+         it worse: social-media-clone prerenders in 8.2s but examples/dummy FAILS in 5.9s
+         (X_PRERENDER_FAILED on /offline), so the step would report a build failure under the name
+         'budgets'. Skipping was rejected too — the code documents that as the false green an
+         earlier wave closed."
+      - "`x docs` works, X_DB_DRIFT is not circular, the `Declared` alias does not exist, `✗` on
+         success was fixed long ago, and the introspection-command noise does not reproduce in
+         either tracked app. Five findings dropped."
+      - "helm pullPolicy: IfNotPresent is not a defect. The real bug behind it was appVersion 0.0.1
+         naming a tag that has never existed."
+    decided:
+      - "Eight claims the repo made about itself are now build errors. Two are shaped by what a
+         NAIVE version would have broken: the table checker splits on UNESCAPED pipes only (36 rows
+         across 16 wiki pages carry an escaped one), and the image rule checks libc FAMILY, not
+         base-image version, because a tag->glibc table fails on a correct Dockerfile the day the
+         base rebases."
+      - "X_IMAGE_GUARD_MISSING is deliberately NOT 'the file contains a guard' — the Dockerfile that
+         shipped the dead image HAD one, in the wrong stage, which is how it survived review. The
+         rule is that the final stage's ENTRYPOINT must be executed by a RUN in THAT stage."
+      - "TWO proposed gate rules were KILLED BY MEASUREMENT. An invented-verb rule flags 21 fix
+         lines, 20 of them false positives — including `open the route to <host>:<port>, then:
+         x doctor db`, the same word in the same position, correct. A helm render assertion would
+         reproduce the fail-open shape at a seam with no skip accounting, and its assertions are
+         snapshot counts."
+      - "A shared helper for the policy-missing message was argued down: it saves 24 characters,
+         adds an import to three packages, and prevents nothing, because the next author still has
+         a name in scope and a hole in the sentence."
+    deferred:
+      - "ENFORCEMENT GAP: all 29 packages/*/tsconfig.json exclude src/**/*.test.ts and typecheck is
+         tsc -b, so THE GATE'S FIRST STEP READS ZERO TEST FILES. Same gap as #101's carried '282
+         typecheck errors across 110 test files', now corroborated from the other end."
+      - "ENFORCEMENT GAP: citedCommandProblem judges the next BARE WORD as a subcommand and never
+         inspects FLAGS, so X_PRERENDER_FAILED's `x build --route <path>` passes while --route does
+         not exist."
+      - "ENFORCEMENT GAP: a fix: containing can('…')/allow('…') whose argument is neither a literal
+         resource:verb nor a placeholder. The same mistake occurred in action, query AND admin."
+      - "A helm .live. suite with its step in x.verify.json is the honest home for chart coverage —
+         branch-shaped assertions only, never the 19-object count."
+      - "examples/dummy's /offline page calls useMutationQueue() at prerender, so x build --target
+         static cannot complete on the reference app."
+      - "x deploy --method compose ignores --image entirely; closing it spans docker/ and templates."
+    human_steps_owed:
+      - "npm publish -w @ultimat3/flags --access public, BEFORE the next release. The workflow
+         publishes tier by tier under set -e and flags is tier 1, so core and schema land on the
+         registry at the new version before the run dies: an IRREVERSIBLE PARTIAL RELEASE, 2 of 29
+         packages ahead, unpublishable."
+      - "Create the npm-publish environment with required reviewers. A workflow referencing an
+         environment that does not exist AUTO-CREATES an empty one with no protection rules and
+         publishes ungated, while the YAML still reads as gated."
+      - "Add the v* deployment tag rule."
+      - "Set Trusted Publisher Environment = npm-publish on npmjs.com, per package. Blank today,
+         which means a token from ANY run of release.yml is accepted."
+    new_codes: [X_PUBLISH_LIST_INCOMPLETE, X_PUBLISH_LIST_UNKNOWN, X_BENCH_CLAIM_STALE,
+                X_WIKI_TABLE_MALFORMED, X_FRAME_DOCS_STALE, X_CHART_VERSION_STALE,
+                X_IMAGE_LIBC_MISMATCH, X_IMAGE_GUARD_MISSING]
 notes: >
   Slice order in this file is execution order, not tier order — 05 and 10 land first because the gate
   does not yet mean what it says, and 08 lands late because it is mostly deletions that would collide

@@ -13,8 +13,10 @@ import { allow, defineRoles, type RoleDef } from '@ultimat3/policy';
  * silently holds nothing.
  *
  * Roles are sugar: everything is expanded to a flat permission set before any policy runs, so a
- * rule never reasons about the hierarchy. `defineRoles()` replaces the map wholesale — it is app
- * state, called exactly once, from the leaf both surfaces already import.
+ * rule never reasons about the hierarchy. `defineRoles()` MERGES into one app-global map and
+ * refuses a role two modules define differently (`X_ROLE_REDEFINED`, naming both sites) — so a
+ * second call in a feature folder is legal and silent, and *that* is why this file exists: Postly
+ * calls it exactly once, from the leaf both surfaces already import, and every role is here.
  */
 export const roles = defineRoles({
   reader: {

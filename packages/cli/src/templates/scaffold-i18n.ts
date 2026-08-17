@@ -110,7 +110,10 @@ const i18nCatalog = (app: NameSet): string =>
     'admin.home.description': `Operations for ${app.pascal}.`,
   });
 
-const i18nTest = (): string => `import { expect } from 'bun:test';
+const i18nTest =
+  (): string => `// Every locale carries the same keys as the default one. A key present in en and missing in fr
+// renders \u27e6key\u27e7 to a user, and nothing else in the app can notice.
+import { expect } from 'bun:test';
 import { unitTest } from '@ultimat3/testing';
 import { catalogs } from './index';
 

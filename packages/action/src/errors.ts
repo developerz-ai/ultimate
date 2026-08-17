@@ -157,12 +157,19 @@ export class ActionPathDuplicateError extends UltimateError {
   }
 }
 
+/**
+ * The action's NAME goes in the cause and the permission's SHAPE goes in the fix — the two are not
+ * interchangeable. `can()` takes `resource:verb` (`Permission` is `` `${string}:${string}` ``), so
+ * the `can('<the action name>')` this used to emit was a snippet that could not compile, and
+ * `assertPermission` would refuse it once the app declared its own set. Same split
+ * `@ultimat3/policy`'s own `policyMissing()` makes, and the same repair `X_QUERY_POLICY_MISSING` took.
+ */
 export class ActionPolicyMissingError extends UltimateError {
   constructor(name: string) {
     super({
       code: 'X_ACTION_POLICY_MISSING',
       cause: `action "${name}" was registered without a policy`,
-      fix: `add \`policy: can('${name}')\` to the action definition in the file that exports it`,
+      fix: `add \`policy: can('<resource>:<verb>')\` to the action() that exports "${name}" — a permission your definePermissions() call declares, never the action's own name — or \`allow('<resource>:<verb>')\` if the operation is genuinely public`,
       docs: docs('X_ACTION_POLICY_MISSING'),
     });
   }

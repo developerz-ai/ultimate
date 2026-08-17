@@ -118,11 +118,25 @@ export const stripComments = (text: string): string => blankRegions(text, false)
 /** Comments and string contents gone, delimiters kept — what a scan for code structure reads. */
 export const maskLiterals = (text: string): string => blankRegions(text, true);
 
-const lineOf = (text: string, index: number): number => {
-  let line = 1;
-  for (let i = 0; i < index; i += 1) if (text[i] === '\n') line += 1;
-  return line;
-};
+/**
+ * Line numbers for one text, in one pass. Counting newlines per lookup is O(index), which a scan
+ * asking for a line per literal pays once per literal — measured at ~15s over the framework's own
+ * package tree, against ~1s for the same walk with this. One offset table, then a binary search.
+ */
+function lineIndex(text: string): (index: number) => number {
+  const newlines: number[] = [];
+  for (let i = 0; i < text.length; i += 1) if (text[i] === '\n') newlines.push(i);
+  return (index) => {
+    let low = 0;
+    let high = newlines.length;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if ((newlines[mid] as number) < index) low = mid + 1;
+      else high = mid;
+    }
+    return low + 1;
+  };
+}
 
 /**
  * Every string literal in the value expression starting at `from`, at the expression's own bracket
@@ -130,7 +144,12 @@ const lineOf = (text: string, index: number): number => {
  * instead of silently skipped; the depth rule is what keeps `command.join(' ')`'s separator and
  * `table['key']`'s key out — an argument is not a fix.
  */
-function valueLiterals(masked: string, source: string, from: number): readonly FixSite[] {
+function valueLiterals(
+  masked: string,
+  source: string,
+  from: number,
+  lineAt: (index: number) => number,
+): readonly FixSite[] {
   const found: { value: string; index: number }[] = [];
   let depth = 0;
   for (let i = from; i < masked.length; i += 1) {
@@ -147,7 +166,7 @@ function valueLiterals(masked: string, source: string, from: number): readonly F
   }
   return found.map((literal) => ({
     at: '',
-    line: lineOf(masked, literal.index),
+    line: lineAt(literal.index),
     fix: literal.value,
   }));
 }
@@ -163,10 +182,13 @@ const FIX_KEY = /(?<![.\w$])fix\s*:\s*/g;
  */
 export function scanFixes(source: string, at: string): readonly FixSite[] {
   const masked = maskLiterals(source);
+  const lineAt = lineIndex(masked);
   const sites: FixSite[] = [];
   for (const key of masked.matchAll(FIX_KEY)) {
     const start = key.index + key[0].length;
-    for (const literal of valueLiterals(masked, source, start)) sites.push({ ...literal, at });
+    for (const literal of valueLiterals(masked, source, start, lineAt)) {
+      sites.push({ ...literal, at });
+    }
   }
   return sites;
 }
@@ -197,9 +219,10 @@ const CODE_KEY = /^[\t ]*(X_[A-Z0-9_]+)\s*:/gm;
  */
 export function scanCodes(source: string, at: string): readonly CodeSite[] {
   const text = stripComments(source);
+  const lineAt = lineIndex(text);
   const sites = new Map<string, CodeSite>();
   const add = (code: string, index: number): void => {
-    if (!sites.has(code)) sites.set(code, { at, line: lineOf(text, index), code });
+    if (!sites.has(code)) sites.set(code, { at, line: lineAt(index), code });
   };
   for (const match of text.matchAll(CODE_AT_KEY)) add(match[2] as string, match.index);
   if (isCodeRegistry(text)) {
@@ -207,6 +230,89 @@ export function scanCodes(source: string, at: string): readonly CodeSite[] {
     for (const match of text.matchAll(CODE_KEY)) add(match[1] as string, match.index);
   }
   return [...sites.values()];
+}
+
+export interface CodeFixSite extends CodeSite {
+  /**
+   * The fix literal exactly as written, `${…}` included. Absent when the throw site builds its
+   * fix out of something this cannot read — a helper call, a parameter, a ternary with two
+   * branches — because a fix the scan has to guess at is one it must not report.
+   */
+  readonly fix?: string;
+}
+
+/** `code:` / `code =`, or `fix:`. `fix =` is deliberately not a declaration — `scanFixes` agrees. */
+const CODE_OR_FIX_KEY = /(?<![.\w$])(?:(code)\s*[:=]|(fix)\s*:)\s*/g;
+
+/**
+ * The single literal a key's value evaluates to, or `undefined` when it evaluates to none or to
+ * more than one. Two is as unreadable as zero here: `cond ? 'a' : 'b'` and `'a' + 'b'` need a
+ * parser to tell apart, and picking a branch would publish half a fix as the whole one.
+ */
+function soleLiteral(
+  masked: string,
+  source: string,
+  from: number,
+  lineAt: (index: number) => number,
+): FixSite | undefined {
+  const found = valueLiterals(masked, source, from, lineAt);
+  return found.length === 1 ? found[0] : undefined;
+}
+
+/**
+ * Every `X_*` code paired with the `fix:` written beside it — in the SAME object literal, which is
+ * the whole rule. `new UltimateError({ code, cause, fix })` is the one shape this framework raises
+ * an error in, so adjacency decides the pair without a parser and without asking which of a file's
+ * fixes belongs to which of its codes. `X_ERROR_FIX_INVALID` already proves every one of these is
+ * runnable, so a reader that projects them inherits that proof instead of restating it (axiom 2).
+ *
+ * A site is reported with no `fix` rather than dropped: "this code is raised here and the fix is
+ * computed" is a different, and more useful, answer than "this code does not exist".
+ */
+export function scanCodeFixSites(source: string, at: string): readonly CodeFixSite[] {
+  const masked = maskLiterals(source);
+  const lineAt = lineIndex(masked);
+  const keys = new Map<number, { readonly kind: 'code' | 'fix'; readonly from: number }>();
+  for (const key of masked.matchAll(CODE_OR_FIX_KEY)) {
+    keys.set(key.index, {
+      kind: key[1] === undefined ? 'fix' : 'code',
+      from: key.index + key[0].length,
+    });
+  }
+  const codes = new Map<number, CodeSite>();
+  const fixes = new Map<number, string>();
+  const stack: number[] = [];
+  for (let i = 0; i < masked.length; i += 1) {
+    const ch = masked[i] as string;
+    if (QUOTES.has(ch)) {
+      i = endOfLiteral(masked, i) - 1;
+      continue;
+    }
+    if (OPENERS.has(ch)) {
+      stack.push(i);
+      continue;
+    }
+    if (CLOSERS.has(ch)) {
+      stack.pop();
+      continue;
+    }
+    const key = keys.get(i);
+    // Scope `-1` is the file body: a top-level `const code = 'X_A'` and an unrelated `fix:` far
+    // below it are not one declaration, and pairing them would invent an error nobody throws.
+    const scope = stack.at(-1);
+    if (key === undefined || scope === undefined) continue;
+    const literal = soleLiteral(masked, source, key.from, lineAt);
+    if (literal === undefined) continue;
+    if (key.kind === 'fix') {
+      if (!fixes.has(scope)) fixes.set(scope, literal.fix);
+    } else if (/^X_[A-Z0-9_]+$/.test(literal.fix) && !codes.has(scope)) {
+      codes.set(scope, { at, line: literal.line, code: literal.fix });
+    }
+  }
+  return [...codes].map(([scope, site]) => {
+    const fix = fixes.get(scope);
+    return fix === undefined ? site : { ...site, fix };
+  });
 }
 
 const BORROWED_LIST = /BORROWED_ERROR_CODES[^=]*=[^[]*\[([^\]]*)\]/g;

@@ -3,12 +3,14 @@ node_modules/
 .bun/
 bun.lockb.tmp
 
-# Env
+# Env. Ignore every .env variant and un-ignore the one committed template, rather than listing the
+# variants: the list was `.env`, `.env.local`, `.env.*.local`, `.env.test.local`, `.env.dev`, and
+# `.env.production` — the file docker-compose.prod.yml reads real production secrets from — matched
+# none of them. A deny-list of secret filenames is wrong by construction; the next name nobody
+# thought of is committed in plaintext.
 .env
-.env.local
-.env.*.local
-.env.test.local
-.env.dev
+.env.*
+!.env.example
 
 # Build artifacts
 dist/
@@ -91,6 +93,9 @@ packages/cli/.mcp-fixture/
 
 # Scratch credential files. A mis-set path once wrote an npm session token into the repo root.
 .npmrc-login
+# And the file that incident was aiming at. No `.npmrc` is tracked anywhere in this repo — releases
+# authenticate over OIDC and need none — so any that appears is a local credential.
+.npmrc
 undefined/
 .serve-fixture/
 .dev-hold-fixture/

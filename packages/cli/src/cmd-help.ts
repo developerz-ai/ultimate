@@ -19,6 +19,9 @@ export function renderHelp(specs: readonly CommandSpec[], topic: string | undefi
     (entry) => entry.name === topic || (entry.aliases ?? []).includes(topic ?? ''),
   );
   if (spec === undefined) {
+    // `cli.hint.help` is deliberately absent from this list: it is the command's own `summary`, and
+    // `renderHuman` prints every line and THEN the summary — so the catalogue ended with the same
+    // sentence twice, once bare and once marked `✓`. One string, one place that renders it.
     return [
       msg('cli.tagline'),
       '',
@@ -29,8 +32,6 @@ export function renderHelp(specs: readonly CommandSpec[], topic: string | undefi
       '',
       msg('cli.flags.heading'),
       ...GLOBAL_FLAGS.map(flagLine),
-      '',
-      msg('cli.hint.help'),
     ];
   }
   return [

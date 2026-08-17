@@ -4,6 +4,7 @@
 
 import type { GeneratedFile, NameSet } from './naming';
 import { icon } from './scaffold-icon';
+import { rolesFiles } from './scaffold-roles';
 
 const webPackage = (app: NameSet): string => `{
   "name": "@${app.kebab}/web",
@@ -81,7 +82,10 @@ const siteStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 }
 `;
 
-const sitePageTest = (): string => `import { metaContextFor, routeDataFor } from '@ultimat3/render';
+const sitePageTest =
+  (): string => `// The landing page ships zero JS and declares its metadata. Both are promises the file makes in
+// its config, and both are the kind that rot silently when someone adds one import.
+import { metaContextFor, routeDataFor } from '@ultimat3/render';
 import { expect, unitTest } from '@ultimat3/testing';
 import { config } from './page';
 
@@ -139,7 +143,10 @@ const dashboardStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 }
 `;
 
-const dashboardTest = (): string => `import { expect, unitTest } from '@ultimat3/testing';
+const dashboardTest =
+  (): string => `// The dashboard renders per request, is gated by a policy, and has an offline strategy. Losing
+// the policy is the interesting regression: the page still renders, to anyone.
+import { expect, unitTest } from '@ultimat3/testing';
 import { config } from './page';
 
 unitTest('the dashboard renders on the server, is gated, and has an offline strategy', () => {
@@ -197,7 +204,10 @@ export const health = action({
 });
 `;
 
-const apiTest = (): string => `import { contractTest, expect } from '@ultimat3/testing';
+const apiTest =
+  (): string => `// The health action's contract, run as the framework generates it: garbage input refused, the
+// operation in the OpenAPI document. The declaration is the source; this only runs it.
+import { contractTest, expect } from '@ultimat3/testing';
 import { health } from './health';
 
 // Named here because every projection needs a stable name and this file does not boot the app.
@@ -260,24 +270,41 @@ import './global.scss';
 const sharedActor =
   (): string => `// The actor type both surfaces agree on. Policies read this and nothing else, so authz cannot
 // disagree between HTTP, live queries, jobs and MCP.
+import { expandRoles, grantMatches } from '@ultimat3/policy';
+import { roles } from './roles';
+
 export interface Actor {
   readonly id: string;
   readonly orgId: string;
   readonly roles: readonly string[];
 }
 
-export const isMember = (actor: Actor | null): boolean =>
-  actor !== null && (actor.roles.includes('member') || actor.roles.includes('owner'));
+/**
+ * What this actor may DO, answered from the declared role map. Never \`actor.roles.includes('admin')\`:
+ * a role-name comparison is a second authz rule, and it goes stale the moment a role is renamed or
+ * a grant moves to another role. \`grantMatches\` is what reads a \`post:*\` wildcard as one.
+ */
+export const holds = (actor: Actor | null, permission: string): boolean =>
+  actor !== null &&
+  expandRoles(actor.roles, roles).some((grant) => grantMatches(grant, permission));
 `;
 
-const sharedActorTest = (): string => `import { expect } from 'bun:test';
-import { unitTest } from '@ultimat3/testing';
-import { isMember } from './actor';
+const sharedActorTest =
+  (): string => `// \`holds\` answers from the declared role map, never from a role NAME. An undeclared role must
+// expand to no grants — the branch that turns a typo into an actor who can do everything.
+import { expect, unitTest } from '@ultimat3/testing';
+import type { Actor } from './actor';
+import { holds } from './actor';
 
-unitTest('isMember rejects anonymous and viewer actors', () => {
-  expect(isMember(null)).toBe(false);
-  expect(isMember({ id: 'a', orgId: 'o', roles: ['viewer'] })).toBe(false);
-  expect(isMember({ id: 'a', orgId: 'o', roles: ['owner'] })).toBe(true);
+const actor = (...names: readonly string[]): Actor => ({ id: 'a', orgId: 'o', roles: names });
+
+unitTest('holds answers from the role map, and an anonymous actor holds nothing', () => {
+  expect(holds(null, 'dashboard:read')).toBe(false);
+  // A role no defineRoles() call declares expands to no grants — never to every grant.
+  expect(holds(actor('visitor'), 'dashboard:read')).toBe(false);
+  expect(holds(actor('member'), 'dashboard:read')).toBe(true);
+  expect(holds(actor('admin'), 'dashboard:read')).toBe(true);
+  expect(holds(actor('member'), 'admin:read')).toBe(false);
 });
 `;
 
@@ -379,7 +406,10 @@ const root = join(import.meta.dir, '..', '..');
 const flag = Bun.argv.indexOf('--out');
 const out = (flag === -1 ? undefined : Bun.argv[flag + 1]) ?? join(root, '.x', 'static');
 // SITE_ORIGIN is what canonical and og:url are built from; the default is only ever a local build.
-const origin = Bun.env['SITE_ORIGIN'];
+// Property access, not \`Bun.env['SITE_ORIGIN']\`: the scaffolded tsconfig does not set
+// \`noPropertyAccessFromIndexSignature\`, so the bracket form is the one biome's useLiteralKeys
+// reports — a diagnostic in an app's first lint run over a file the app never wrote.
+const origin = Bun.env.SITE_ORIGIN;
 
 if (import.meta.main) {
   const report = await prerenderSite({ root, out, ...(origin === undefined ? {} : { origin }) });
@@ -424,6 +454,10 @@ export function appFiles(app: NameSet): readonly GeneratedFile[] {
     { path: 'apps/web/shared/global.ts', contents: sharedGlobalModule() },
     { path: 'apps/web/shared/actor.ts', contents: sharedActor() },
     { path: 'apps/web/shared/actor.test.ts', contents: sharedActorTest() },
+    // The app's role map, beside the actor that reads it. `shared/` and not a feature folder:
+    // `defineRoles()` merges, so a per-feature call is legal and is how an app ends up with no
+    // answer to "which roles exist?" — see `scaffold-roles.ts`.
+    ...rolesFiles(),
     { path: 'apps/admin/package.json', contents: adminPackage(app) },
     { path: 'apps/admin/tsconfig.json', contents: tsconfig() },
     // `apps/admin/app/admin/page.tsx`, not `apps/admin/app/page.tsx`: the directory IS the URL,

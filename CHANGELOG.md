@@ -10,6 +10,92 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **Every container this image ever started was dead on arrival, and the build stayed green.** The
+  binary was compiled on an Alpine base (musl) and shipped on a glibc-only runtime, so `/app/x`
+  asked for a loader that was not there and every `docker run` exited
+  `exec /app/x: no such file or directory`. The `--version` guard that was supposed to catch exactly
+  this ran in the **build** stage, which is not what ships — so it proved a binary nobody would ever
+  execute. The guard now runs in the runtime stage, which makes the base pairing enforced instead of
+  assumed, and `scripts/image-contract.ts` refuses the mismatch at `x verify` time.
+
+  Two more Dockerfile defects sat on top of it, each hiding the next: the deps stage never copied
+  `dummy/`, whose seven workspace members are in `bun.lock`, so `--frozen-lockfile` failed outright;
+  and it copied only the root `node_modules`, while Bun's isolated linker symlinks each workspace's
+  own. The manifests are now derived from the build context, so the next workspace glob cannot be
+  forgotten.
+
+- **Every generated `app/` route registered no route at all.** The route template declared
+  `render: 'stream'`, which sets `needsSuspense`; the framework ships no hole marker, so
+  `defineRoute` threw `X_ROUTE_MODE_INVALID` **at import**. Every `x g route --surface app` and
+  every `x g resource` produced a URL absent from `x routes`, from `x.manifest.json` and from
+  `budgets` — a page that scaffolds, compiles, and does not exist.
+
+- **`@ultimat3/flags` has never been published, and the release workflow was why.** The publish
+  steps named workspaces by hand with `-w` and omitted it, so every release skipped the package
+  while the registry answered 404 and nothing noticed — every consumer resolves it through the
+  workspace. The workflow now derives its list from `scripts/list-workspaces.ts`, and
+  `scripts/release-workflow.ts` fails the gate if a publishable workspace is ever unreachable again.
+  Publishing `flags` itself needs one manual `npm publish`: trusted publishing cannot bootstrap a
+  package that does not exist, and the next release now **fails loudly** on that rather than
+  silently skipping it.
+
+- **The publish workflow could be dispatched from any ref, with no environment gate**, while
+  holding `id-token: write` for OIDC trusted publishing. It now refuses any ref that is not
+  `refs/tags/v*` and declares `environment: npm-publish`. Three settings must still be made in the
+  GitHub and npm UIs — they are listed in `PUBLISHING.md`. **`As of 2026-08`** the npm side does not
+  name the environment, so a token from any run of the workflow is accepted; that stops being true
+  the moment those settings land, which is the point of listing them.
+
+- **`x errors explain` answered `x verify --json` for 318 of 375 codes.** That is the tool an agent
+  reaches for when it hits a code it does not recognise, and for the overwhelming majority it
+  returned a shrug — the single surface where *errors are instructions* is most load-bearing.
+  Every framework error already carries an executable `fix:` at its throw site, enforced by the
+  `errors` step, so the answer was to **project** it rather than restate it: 197 codes now return
+  their throw site's fix verbatim, 29 return the first of several naming the count and the exact
+  `@ultimat3/<pkg>/src/<file>:<line>`, and the 92 that genuinely cannot be projected say **why** —
+  a fix built from values only the raised error has, or a code nothing in the installed framework
+  raises. **Zero** still answer `x verify --json`, and both fallbacks were asserted against
+  `fixProblem` for every code.
+
+- **Three of the four "policy missing" errors handed the reader a snippet that does not compile.**
+  `action`, `query` and `admin` all interpolated the primitive's *name* into `can('…')`, where
+  `Permission` is `` `${string}:${string}` `` — so `can('createPost')` neither typechecks nor
+  matches a grant. Only `@ultimat3/policy`'s own got it right. The cause is worth naming because it
+  explains three independent authors making one mistake: the constructor is handed a name, the name
+  is the only value in scope, and it gets pasted wherever the sentence has a hole. The name now
+  stays in the `cause`, which is what finds the file, and the `fix` carries the shape.
+
+- **The Helm chart pulled a tag that has never existed.** `Chart.yaml` sat at `0.0.1` through every
+  1.x release, and `values.yaml` ships `image.tag: ""` — so `appVersion` *is* the tag `helm install`
+  pulls, and the result was an `ImagePullBackOff`, not a documentation nit. `scripts/release.ts` now
+  rewrites the chart in the same pass it rewrites workspace manifests, so it stops being hand-kept,
+  and `scripts/chart-version.ts` fails the gate if it drifts.
+
+- **Three roles had a liveness probe that could never answer, and three had none at all.** The
+  chart's probes assumed every role opens an HTTP port; `worker`, `scheduler` and `replicator` do
+  not. They now probe the metrics endpoint they actually serve — liveness only, deliberately, since
+  a readiness flap would drop the pod from the Service endpoints and so from the Prometheus scrape,
+  exactly when a worker is busiest.
+
+- **`.env.production` was not ignored**, by git or by Docker. The deny-lists named `.env.*.local`
+  and missed the file most likely to hold real credentials, and the build context had no `.env`
+  entry at all while `COPY . .` ran under a shared build cache. Both are now allow-lists:
+  everything `.env*` is excluded except `.env.example`.
+
+- **A scaffolded app was red on its own first gate**, on three steps. `errors` cited `x db studio`,
+  a *planned* subcommand that exits `X_NOT_IMPLEMENTED` — the exact rule the framework enforces on
+  itself. `lint` was red from **a single trailing blank line** in an emitted test file (the two
+  lint-rule defects that looked like the cause are Biome *infos*; `biome check` exits 0 with them
+  present). `budgets` remains red and is now the only allowance on CI's shrink-only ratchet.
+
+- **Five more**, each with a failing test first: `x db`'s bare form ran the migration *generator*
+  because `gen` sorted first, and a default is now declared rather than inferred from array order;
+  `x deploy` passed `--set image=<ref>` against a chart that declares `image` as a map, so the
+  override silently did nothing; the `budgets` step discarded the findings from loading the app, so
+  a module that would not compile was reported as an unmeasured route; `x help` printed its hint
+  line twice; and `x fix boundary`'s one-line summary promised a repair the command has never
+  performed.
+
 - **Any string reaching `meta.ld` could close the `<script>` element and inject markup.**
   `renderTag` emitted `<script>`/`<style>` content **raw**, and JSON-LD is built from route data, so
   a title, a product name or a `t()` string was enough. Escaping HTML the usual way is both
@@ -1009,6 +1095,34 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`x verify` counts skips apart from passes, and names them.** A step with nothing to check here is recorded green so the run continues, and the summary counted it among the passes — so a repo whose `job` and `eval` suites do not exist printed the same `all 17 steps passed` as a repo where both ran. The line is now `14 of 17 steps passed — 3 skipped: drift, contract-diff, budgets` in this repo — the three correctly inapplicable at a non-app root, and the count every run in this sweep reported — and `14 of 17 steps passed in 11153ms — 3 skipped: e2e, contract-diff, roadmap` in the scaffolded app of [tutorial 2](https://github.com/developerz-ai/ultimate/wiki/Tutorial-02-First-Feature); `all {n} steps passed` survives only when nothing was skipped. `--json` gains `data.skipped`, the list of names beside `data.failed` (`steps[].skipped` is unchanged). Exit codes are untouched: a skipped step is still not a failure — it is now just impossible to mistake one for a passing one.
 
 ### Added
+
+- **Eight claims the repo made about itself, now enforced.** Each one was true when written and
+  checked by nothing, which is the state axiom 3 exists to refuse. All ride existing `verify` steps
+  — `VerifyStepName` is a closed union a generated app inherits, and an app cannot run a check only
+  this repository can.
+
+  | Code | What it refuses |
+  |---|---|
+  | `X_PUBLISH_LIST_INCOMPLETE` / `X_PUBLISH_LIST_UNKNOWN` | a release that would skip a publishable workspace, or name one that does not exist |
+  | `X_BENCH_CLAIM_STALE` | a realtime capacity figure in `CLAUDE.md` that the committed bench JSON does not carry |
+  | `X_WIKI_TABLE_MALFORMED` | a markdown table that will not render as one on the public wiki |
+  | `X_FRAME_DOCS_STALE` | a wire frame the protocol sends and `wiki/Realtime.md` never names, or the reverse |
+  | `X_CHART_VERSION_STALE` | a Helm chart that has drifted from the lockstep version |
+  | `X_IMAGE_LIBC_MISMATCH` | a runtime that cannot load the binary the build stage produced |
+  | `X_IMAGE_GUARD_MISSING` | an `ENTRYPOINT` no `RUN` in that same stage ever executes |
+
+  Two of them are shaped by what a *naive* implementation would have done. The table checker splits
+  on **unescaped** pipes only: 36 rows across 16 wiki pages carry a correctly-escaped `\|` — mostly
+  TypeScript union literals — and a naive split reports every one of them as malformed, which is
+  worse than no checker, because the first thing an author does is "fix" the good row. And the image
+  rule checks libc **family**, not base-image version: matching Debian *generations* would need a
+  hand-kept tag table that fails on a correct Dockerfile the day the base rebases.
+
+  `X_IMAGE_GUARD_MISSING` is deliberately not "the file contains a guard" — the Dockerfile that
+  shipped the dead image **had** one, in the wrong stage, which is how it survived review. The rule
+  is that the final stage's `ENTRYPOINT` must be executed by a `RUN` in that same stage: the guard
+  runs on what ships. Both image rules were verified by running them against the Dockerfile as
+  committed, where they reproduce both defects at the right lines.
 
 - **The status table is closed, and the gate now enforces that it is.** A framework code with no
   row in `error-map.ts` falls to 500 and pages the on-call; ten such codes had accumulated, and
