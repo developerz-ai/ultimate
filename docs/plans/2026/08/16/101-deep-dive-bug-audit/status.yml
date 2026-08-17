@@ -1,24 +1,19 @@
 plan: 101-deep-dive-bug-audit
 title: Deep-dive bug audit — twelve sweeps, one plan
-status: in_progress
+status: done
 created_by: sebi
 worked_by: "claude (hive of 4 per PR, one checkout)"
 owner: sebi
-percent: 99
+percent: 100
 current_focus: >
-  02 and 06 are DONE across three PRs — realtime #107, cache/query/jobs/core/db #110, http/action
-  #112. auth and entity needed nothing: every finding naming them was already closed by #104 and
-  #106, verified file-by-file before #112 was scoped. Merged so far: 05/10 = #101;
-  07 = #102/#103/#104; 01/09 = #105; 04 = #106; 02/06 = #107/#110/#112.
-  03 lands as #113 at 90%: the four pwa findings are the held-back tenth, deliberately, because
-  pwa stays unwired by decision and fixing internals of code with no callers is dead work.
-  11+14 land as #114; 08 as #116 at 85% — C5+C8 (the prod server wrapping the whole dev CLI, and
-  realtime's single barrel serving browser and wire code) are DEFERRED to their own PR, because
-  splitting a package's entry points is boundary surgery and does not belong in a deletion wave.
-  15 lands as #117 at 85% — the identity-function consolidation (fnv1a, sha256_16, canonicalJson)
-  needs @ultimat3/core and must resolve query's missing document/hash split FIRST, or it publishes
-  bare NaN tokens into a document surface. 12 lands as #118 — two pins deleted, three pin texts rewritten from false causes, and both apps
-  improved on the ratchet (10->11 and 14->15 passing). Next: 13 (docs drift), the last slice.
+  COMPLETE. Fifteen slices, eight PRs: 05/10 = #101; 07 = #102/#103/#104; 01/09 = #105; 04 = #106;
+  02/06 = #107/#110/#112; 03 = #113; 11/14 = #114; 08 = #116; 15 = #117; 12 = #118; 13 = #119.
+  Error codes 387 -> 417. Twelve new gate checks built across the sweep, four of them in the last
+  slice alone, because the recurring finding was never a missing rule — it was a correct rule one
+  file away that did not cover the path that mattered. Five slices closed under 100% and every
+  remainder is named in the deferred blocks below or filed: #120 (the MCP tool name split),
+  #121 (a fresh app cannot run four generators; its first migration is wrong four ways),
+  #122 (two shipped fix: lines that resolve and still do the wrong thing).
 slices:
   - file: 05-gate-and-scripts.md
     tier: 0
@@ -92,8 +87,9 @@ slices:
     pr: 117
   - file: 13-docs-drift.md
     tier: 5
-    status: in_progress
-    percent: 10
+    status: done
+    percent: 100
+    pr: 119
 evidence:
   - pr: 101
     merged: 290dd96
@@ -497,6 +493,62 @@ evidence:
       - "No app seam installs channel guards; the hub is built by the socket process and never asks
          the app. Both apps document the same gap independently."
     new_codes: [X_ACTOR_UNRESOLVED, X_ADMIN_ACTION_UNKNOWN, X_ADMIN_ACTION_REFUSED]
+  - pr: 119
+    slices: ['13']
+    gate: "14 of 17 passed, 3 skipped; app gate every pin holds — examples/dummy 11/17,
+           social-media-clone 15/17. Manifest at 417 codes (405 + 12 new gate codes)"
+    falsified:
+      - "packages/action/README.md was RIGHT and the code is wrong. One action is reachable as
+         `publishPost` on the wire (mcp/from-action.ts:74 — the only name tools/call accepts) while
+         openapi.json AND x.manifest.json both publish `publish_post`. THE PUBLISHED CONTRACT
+         ADVERTISES A NAME NOTHING SERVES. Not unified — BREAKING, touches both apps' committed
+         openapi.json and nine test files. Filed as #120."
+      - "packages/ai/src/eval-errors.ts does NOT cite `x test summarize` — it reads
+         `x test eval --filter`. The convention was being held BY MEMORY; positionalChoices makes it
+         a build error. Only the README still printed the bad form."
+      - "createPgLeader EXISTS (driver-pg.ts:383), contrary to the report that it does not. The
+         defect was that scheduler.ts:42 recommended it — the session-scoped one whose grant dies
+         with the pooled connection — over createPgLeaseLeader. ELEVEN files described leader
+         election as an advisory lock, one with a pg_try_advisory_lock block."
+      - "Most of the slice's High table was ALREADY FIXED in-flight by the eighteen PRs merged since
+         it was written. Each verified and dropped. The new checks would have caught every one."
+      - "The scaffold count is 115/91, MEASURED — not the wiki's 99/76 and not the slice document's
+         own 112/88. The audit's replacement number was as stale as the number it replaced."
+      - "docker/README.md's two rows were already correct — the healthz claim was fixed and the
+         dependency stage really is lockfile-only (a `manifests` stage strips the rest). Dropped."
+      - "`x env check` was documented as PLANNED and it ships — a working diagnostic every
+         X_ENV_MISSING fix line points at, documented as unavailable."
+      - "docs/architecture/02-boundaries.md documented two boundary escape hatches with ZERO
+         implementation anywhere, and named schema->core as the sideways exception when
+         SIDEWAYS_ALLOW has no such entry and schema/src/errors.ts says the opposite."
+    decided:
+      - "23 wiki version stamps collapsed to ONE. Not find-and-replaced to 1.2.0: [Unreleased]
+         carries 30 BREAKING entries so the next cut is a major and all 23 would be wrong again in
+         one release. _Footer.md renders on every page, so it is the one page that states it."
+      - "The flag half of the citation resolver SHIPS ENFORCING — 386 flag citations, 23 flagged,
+         0 false positives. The bar was a measurement, not optimism; a sibling agent correctly
+         declined a similar rule at 21 flagged / 20 false positives earlier in this audit."
+      - "readme-fences ships PINNED, not enforcing: 170 fences across 28 of 29 READMEs, 155 failing,
+         most illustrative fragments. A ratchet that only lowers means a NEW broken example fails
+         from day one while the existing 155 retire. The slice framed this as three READMEs."
+      - "Four legitimate negation sentences ('there is no `x env --fix`') went into
+         DOC_COMMAND_ALLOWANCES rather than being deleted. Refusing them would delete true
+         sentences, which is a worse doc than a stale one."
+    deferred:
+      - "#120 — the MCP tool name split. #121 — a fresh app cannot run four of its generators and
+         its first migration is wrong four ways. #122 — two shipped fix: lines that resolve and
+         still do the wrong thing; one CREATES a database."
+      - "scaffold-smoke never runs a generator and never runs `x db migrate`, so every defect in
+         #121 is outside what CI exercises."
+      - "Six conventions documented as rules that nothing enforces are now LABELLED rather than
+         asserted: hardcoded-string, raw-hex, date-no-tz, money-as-number, SW checksum, strategy
+         coherence. Each names the check that would close it."
+      - "CHANGELOG.md has no [1.1.0] or [1.2.0] section — only [Unreleased], [1.0.0], [0.0.1] —
+         while npm serves 1.1.0 and 1.2.0."
+    new_codes: [X_DOC_FIX_UNRUNNABLE, X_DOC_FIX_UNSCANNED, X_DOC_COMMAND_UNKNOWN,
+                X_DOC_COMMAND_ALLOWANCE_STALE, X_DOC_COMMAND_UNSCANNED, X_README_EXAMPLE_UNCOMPILED,
+                X_README_EXAMPLE_PIN_STALE, X_README_EXAMPLE_UNSCANNED, X_VERSION_STAMP_STALE,
+                X_VERSION_STAMP_DUPLICATE, X_VERSION_LOCKSTEP_BROKEN, X_VERSION_STAMP_UNSCANNED]
 notes: >
   Slice order in this file is execution order, not tier order — 05 and 10 land first because the gate
   does not yet mean what it says, and 08 lands late because it is mostly deletions that would collide
