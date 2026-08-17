@@ -6,10 +6,10 @@ worked_by: "claude (hive of 4 per PR, one checkout)"
 owner: sebi
 percent: 60
 current_focus: >
-  02+06 land their cache/query/jobs/core/db half as #108 — the realtime half was #107, so both
+  02+06 land their cache/query/jobs/core/db half as #110 — the realtime half was #107, so both
   slices sit at 70% with only http, action, auth and entity left. Merged so far: 05/10 = #101;
   07 = #102/#103/#104; 01/09 = #105; 04 = #106; 02/06 realtime = #107.
-  Next after #108: 02+06's http/action/auth/entity remainder, then 03.
+  Next after #110: 02+06's http/action/auth/entity remainder, then 03.
 slices:
   - file: 05-gate-and-scripts.md
     tier: 0
@@ -45,12 +45,12 @@ slices:
     tier: 2
     status: in_progress
     percent: 70
-    prs: [107, 108]
+    prs: [107, 110]
   - file: 06-concurrency-lifecycle.md
     tier: 2
     status: in_progress
     percent: 70
-    prs: [107, 108]
+    prs: [107, 110]
   - file: 03-tier45-bugs.md
     tier: 4
     status: not_started
@@ -100,9 +100,10 @@ evidence:
       - "X_PACKAGE_UNREFERENCED fail-opens on a JSONC root tsconfig (comment => parse
          returns undefined => rule reads it as 'no project references')."
     new_codes: [X_REFERENCE_APP_NO_FLOOR, X_SCAFFOLD_GATE_RED, X_PACKAGE_UNREFERENCED]
-  - pr: 108
+  - pr: 110
     slices: [02, 06]
-    gate: "17 of 17 passed, 3 skipped (drift, contract-diff, budgets)"
+    gate: "14 of 17 passed, 3 skipped (drift, contract-diff, budgets); app gate green, every pin
+           holds — examples/dummy 10/17 (7 red, 7 pinned), social-media-clone 14/17 (3 red, 3 pinned)"
     falsified:
       - "02-3b: 'reverse the Redis set ordering' is HALF a fix and worse alone. SADD-then-SET with
          no re-check lets the bust SREM the membership and the later SET publish a row unreachable
