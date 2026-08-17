@@ -10,6 +10,31 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **An unregistered currency arriving over HTTP answered 500 and paged the on-call.**
+  `X_CURRENCY_UNKNOWN` had no row in `packages/http/src/error-map.ts`, so it took `DEFAULT_STATUS`
+  — and `stages.ts` reports every `status >= 500` to the error monitor. It is **400** now, beside
+  `X_LOCALE_UNSUPPORTED`: a well-formed value naming something outside the set this process carries.
+
+  It was never merely theoretical, and this release is what makes it undeniable. The currency table
+  is **open** as of `registerCurrency`, and every surface between the wire and the throw accepts any
+  `^[A-Z]{3}$` — `@ultimat3/schema`'s `CURRENCY_CODE_PATTERN`, the OpenAPI `pattern` emitted from
+  it, and `@ultimat3/entity`'s `char(3)` CHECK. So `{ "minor": 100, "currency": "ZWL" }` parsed,
+  passed validation, reached `money()` -> `assertCurrency`, and the caller was told the server had
+  broken over a code the framework's own schema had just accepted. Pinned end to end in
+  `packages/http/src/error-map.test.ts`: the request answers 400 with `X_CURRENCY_UNKNOWN` in the
+  problem document, and the error monitor records nothing. Clients that branched on the 500 will
+  see a 400; there was no declared contract to break, because the 500 was a default nobody chose.
+
+- **`registerCurrency`'s two refusals are classified.** `X_CURRENCY_INVALID` and
+  `X_CURRENCY_REDEFINED` are pinned in `scripts/error-map-backlog.ts` with the reason:
+  `registerCurrency` is their only thrower, it is a boot-time module-scope registry like
+  `registerRoute` and `registerErrorStatus`, and its `REGISTERED` map is per process — so a
+  request-driven registration is broken on a second replica before a status could describe it.
+
+- **`packages/money/README.md`'s examples compile.** Both fences were missing their import line; the
+  README fence ratchet **falls** from 155 to 154 and `money` leaves `scripts/readme-fences-backlog.ts`
+  entirely, so any future breakage in that file is a build error rather than a pin.
+
 - **A freshly scaffolded app could not run its first database command, and its first migration was
   wrong four ways.** All four reproduced against a real `x new` scaffold on the embedded PGlite.
 

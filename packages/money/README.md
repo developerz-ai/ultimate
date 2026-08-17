@@ -43,6 +43,8 @@ add(price, money(500, 'USD'));               // throws X_CURRENCY_MISMATCH
 call rather than a fork: a local currency, a scrip, a loyalty point, a token.
 
 ```ts
+import { fromDecimal, registerCurrency } from '@ultimat3/money';
+
 registerCurrency({ code: 'XBT', exponent: 8, name: 'Bitcoin' });
 fromDecimal('1.23456789', 'XBT');            // { minor: 123456789, currency: 'XBT' }
 ```
@@ -69,6 +71,8 @@ nothing about `{ minor, currency }` changes: same shape, same JSON, same columns
 is $5 counted in whole dollars, and `rescale()` produces such values legitimately.
 
 ```ts
+import { add, fromDecimal, money, moneyScale, rescale } from '@ultimat3/money';
+
 moneyScale(money(1299, 'EUR'));              // 2 — the currency's own
 moneyScale(money(2, 'USD', 6));              // 6
 rescale(money(80, 'USD'), 8);                // $0.80 as 80,000,000 hundred-millionths
