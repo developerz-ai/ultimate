@@ -5,6 +5,7 @@
 import { type Clock, systemClock } from './clock';
 import { UltimateError } from './errors';
 import { settleWithin } from './lifecycle-deadline';
+import { lifecycleDrained } from './lifecycle-errors';
 import { type Logger, logger as rootLogger } from './logger';
 
 export type HealthState = 'starting' | 'ready' | 'draining' | 'stopped';
@@ -127,8 +128,16 @@ export function lifecycleState(): HealthState {
  * readiness checks answer. Before them, `markReady()` was the whole of `/readyz`, so a pod went
  * green the instant it bound and the load balancer sent traffic into a Postgres pool that had not
  * opened a connection yet; `maxUnavailable: 0` does not help when readiness lies.
+ *
+ * **A drained lifecycle refuses this, and that is the whole of "one process, one lifecycle."**
+ * `state` never leaves `stopped` and `drain()` memoizes, so a role that marked ready after a drain
+ * used to be told nothing and go on to bind a socket answering 503 to everything, with no drain
+ * left to close it. `X_LIFECYCLE_DRAINED` is that mistake named at the moment it is made, rather
+ * than a lifecycle that can be restarted: two live lifecycles racing one shutdown is a worse
+ * mechanism than a boot that fails.
  */
 export function markReady(): void {
+  if (isDraining()) throw lifecycleDrained(state === 'draining' ? 'draining' : 'stopped');
   if (state === 'starting') state = 'ready';
 }
 

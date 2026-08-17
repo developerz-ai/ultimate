@@ -190,10 +190,11 @@ Thrown by more than one package, or by the gate about any of them; every package
 | `X_ERROR_STATUS_INVALID` | `http` | 500 | `registerErrorStatus()` given a framework code, an out-of-range status, or a second answer for one code | map a code this app owns to a status the framework does not hold |
 | `X_NOT_IMPLEMENTED` | any | 501 | a labelled unimplemented driver path | switch to the default driver |
 | `X_INTERNAL` | `core` | 500 | a non-`UltimateError` escaped | report with the trace id |
-| `X_INPUT_INVALID` | `schema` | 422 | `input` parse failed; `data.path` names the field | fix the caller's field |
+| `X_INPUT_INVALID` | `action` | 400 | `input` parse failed; `data.path` names the field | fix the caller's field |
 | `X_OUTPUT_INVALID` | `action` | 500 | handler returned a value the `output` schema rejects | fix the handler or the schema |
 | `X_FORBIDDEN` | `policy` | 403 | authz refused; `data.reason` is the denial reason | grant the permission or change the actor |
-| `X_TENANT_MISMATCH` | `entity` | 403 | a row's tenant differs from the request tenant | scope the query to `ctx.tenantId` |
+| `X_TENANCY_ACTOR_MISMATCH` | `entity` | 403 | a predicate or a row names a tenant that is not the actor's | scope the read to `ctx.actor.orgId` |
+| `X_TENANCY_CROSS_DENIED` | `entity` | 403 | `crossTenant()` refused: the actor's scopes do not carry the capability | grant the cross-tenant scope, or drop the `crossTenant()` |
 | `X_DB_DRIFT` | `entity` | 500 | schema differs from migrations | `x db gen "<name>"` |
 | `X_BOUNDARY_VIOLATION` | `cli` | build | an import rule broke; `data.chain` is the path | `x fix boundary <file>` |
 | `X_ERROR_FIX_INVALID` | `cli` | build | a `fix:` literal is empty, or advice with no command token | `rewrite the fix at <file>:<line> as a runnable command` |

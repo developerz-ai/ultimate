@@ -90,6 +90,37 @@ describe('validateSync', () => {
   });
 });
 
+// A Standard Schema result is discriminated by the PRESENCE of `issues`: `StandardSuccessResult`
+// declares `issues?: undefined` and `StandardFailureResult` carries no `value` at all
+// (`@ultimat3/schema`'s `standard.ts`). Reading the LENGTH instead turned a failure result with an
+// empty array into `{ ok: true, value: undefined }` — so `request.query()` handed a handler
+// `undefined` where its type promised a parsed object, the `body` stage put that `undefined` in
+// `ctx.input`, and the first property read off it was a TypeError answered as X_INTERNAL 500.
+describe('a failure result carrying no issues is still a failure', () => {
+  const empty = <Out>() => syncSchema<Out>(() => ({ issues: [] }));
+
+  test('validateSync refuses it instead of passing undefined off as the value', () => {
+    const result = validateSync(empty<{ title: string }>(), { title: 'hi' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toEqual(['the schema reported a failure with no issues']);
+  });
+
+  test('validate refuses it too, on the async path', async () => {
+    const schema = asyncSchema<{ title: string }>(() => ({ issues: [] }));
+    const result = await validate(schema, { title: 'hi' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues.length).toBeGreaterThan(0);
+  });
+
+  test('a success result is still success, empty issues array or not', () => {
+    const result = validateSync(
+      syncSchema<number>((value) => ({ value: value as number })),
+      7,
+    );
+    expect(result).toEqual({ ok: true, value: 7 });
+  });
+});
+
 describe('validate', () => {
   test('awaits an async schema and returns ok with the value', async () => {
     const schema = asyncSchema<{ title: string }>((value) => ({

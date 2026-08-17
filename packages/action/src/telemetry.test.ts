@@ -15,6 +15,7 @@ import {
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
+import { idempotencyKeyFor } from './idempotency-key';
 import { MemoryIdempotencyStore } from './idempotency-memory';
 import { invoke } from './invoke';
 
@@ -105,7 +106,9 @@ describe('the span says who, where and how it ended', () => {
     expect(spans).toHaveLength(2);
     expect(spans[0]?.attributes['ultimate.idempotency.replayed']).toBe(false);
     expect(spans[1]?.attributes['ultimate.idempotency.replayed']).toBe(true);
-    expect(spans[1]?.attributes['ultimate.idempotency.key']).toBe('publishPost:k1');
+    expect(spans[1]?.attributes['ultimate.idempotency.key']).toBe(
+      idempotencyKeyFor('publishPost', 'k1', editor.actor),
+    );
   });
 
   test('a call with no key carries no key attribute at all', async () => {

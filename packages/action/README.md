@@ -216,6 +216,16 @@ the loser would go on being read as enforced.
 (`x-ultimate-replayed: 1`); a duplicate still in flight, or a reused key with a new payload, is
 `X_IDEMPOTENCY_CONFLICT`.
 
+**A record belongs to one caller.** The key is namespaced by action *and* by actor
+(`idempotencyKeyFor`), so two callers sending the same header value hold two records — the same
+value under one action used to be one shared record, which replayed one caller's response to
+another. A **blank** `Idempotency-Key:` is `X_IDEMPOTENCY_KEY_INVALID`, never read as "no key":
+`Headers.get()` answers `''` and not `null`, so a blank header was itself a shared key, and the
+quiet reading — run without idempotency — loses the retry protection exactly when a client's key
+interpolation broke. Omit the header to run un-keyed; the published `maxLength: 255` is enforced
+by the same refusal. An anonymous caller has no identity to narrow to, so anonymous callers of a
+public idempotent action still share a key space: a UUID key is what keeps them apart.
+
 **A failed first attempt is replayed too, not re-run.** `guard()` and the input parse both happen
 *before* the idempotency gate, so everything it can see throw is post-authorization and possibly
 post-commit: a handler that took the money and then failed its own `output:` schema is the case.
@@ -251,9 +261,14 @@ reserves and replays through the one implementation rather than growing a second
 
 ```ts
 const key = req.header(IDEMPOTENCY_HEADER);
+// No header is the caller declining idempotency; a BLANK one is not, and
+// `idempotencyKeyFor` refuses it below rather than filing a record everyone shares.
+if (key === null) return json(await refund(input));
 const outcome = await withIdempotency(
   getIdempotencyStore(),
-  idempotencyKeyFor('refundCharge', key),   // namespaced, or two routes share one caller's key
+  // Namespaced by action AND actor: otherwise two routes share one caller's key, and two
+  // callers share one record.
+  idempotencyKeyFor('refundCharge', key, req.ctx.actor),
   input,
   () => refund(input),
 );
@@ -409,6 +424,7 @@ never a pass — the assertion says which code got in the way and names `input:`
 | `X_ACTION_DEPRECATION_INVALID` | `deprecated:` with a `since`/`sunset` that is not a date | use an ISO-8601 instant |
 | `X_INPUT_INVALID` | input failed the Standard Schema | `x actions describe <name> --json` |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a new payload / still in flight | new key, or retry later |
+| `X_IDEMPOTENCY_KEY_INVALID` | `Idempotency-Key:` sent blank (`Headers.get()` answers `''`, not `null`) or past 255 characters | send one unique value per request, or omit the header |
 | `X_IDEMPOTENCY_NOT_SHARED` | `configureIdempotency({ scope: 'shared' })` over a per-process (or scope-less) store | install `postgresIdempotencyStore({ executor: Bun.sql })` at boot |
 | `X_IDEMPOTENCY_REPLAYED_FAILURE` | a retried key replays a first attempt that failed and carried no framework code of its own | read the first attempt, then send a fresh key |
 | `X_CONTRACT_DRIFT` | client/server build skew, missing spec entry | reload / `x verify --contract` |

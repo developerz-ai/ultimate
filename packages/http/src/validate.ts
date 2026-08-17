@@ -26,12 +26,23 @@ export const formatIssue = (issue: Issue): string => {
   return path.length > 0 ? `${path}: ${issue.message}` : issue.message;
 };
 
+/** A refusal still owes its reader a sentence, and a degenerate result gave none. */
+const NO_ISSUES_REPORTED = 'the schema reported a failure with no issues';
+
+/**
+ * A Standard Schema result is discriminated by the PRESENCE of `issues`, never by its length: a
+ * success result declares `issues?: undefined` and a failure result carries no `value` at all. A
+ * length test read `issues: []` as success and returned `value: undefined as Out` — an `undefined`
+ * the caller's types say cannot happen, which surfaced one frame later as a `TypeError` and a 500
+ * for a request that was simply invalid.
+ */
 const outcome = <Out>(result: {
   readonly value?: Out;
   readonly issues?: readonly Issue[] | undefined;
 }): ValidationOutcome<Out> => {
-  if (result.issues !== undefined && result.issues.length > 0) {
-    return { ok: false, issues: result.issues.map(formatIssue) };
+  if (result.issues !== undefined) {
+    const issues = result.issues.map(formatIssue);
+    return { ok: false, issues: issues.length > 0 ? issues : [NO_ISSUES_REPORTED] };
   }
   return { ok: true, value: result.value as Out };
 };

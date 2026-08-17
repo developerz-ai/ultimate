@@ -228,3 +228,94 @@ describe('storage states the caller can act on', () => {
     expect(statusFor('X_STORAGE_QUARANTINED')).toBe(409);
   });
 });
+
+// Eleven codes a REQUEST produces had no row, so each answered the 500 default — and the
+// `error-map` stage reports `status >= 500` to the error monitor, so nine caller mistakes paged
+// the on-call. The assertion that matters is the STATUS, one test per argument: a test counting
+// rows would pass with all eleven still at 500.
+describe('codes other packages throw ON a request', () => {
+  // The published contract had already answered this one. `statusFor` and not `ERROR_STATUS`
+  // because what a client depends on is the status the server answers.
+  test('a reused idempotency key is a 409', () => {
+    expect(statusFor('X_IDEMPOTENCY_CONFLICT')).toBe(409);
+  });
+
+  // Deliberately NOT a 4xx: `IdempotencyReplayedFailureError` re-throws the FIRST attempt's own
+  // code whenever the store kept one, so this literal code is reached only when that attempt
+  // failed carrying no code at all — an unclassified throw that may have committed. The row is
+  // read off `ERROR_STATUS`, because a `statusFor` of 500 is also what a missing row answers.
+  test('a replayed failure the store kept no detail of is a reported 500, by decision', () => {
+    expect(ERROR_STATUS.X_IDEMPOTENCY_REPLAYED_FAILURE).toBe(500);
+  });
+
+  // A page token this server minted and the caller echoed back. Same class as
+  // `X_IMAGE_QUERY_INVALID`: a value the caller sent, and the fix is theirs (`after: null`).
+  test('a cursor the caller tampered with blames the caller', () => {
+    expect(statusFor('X_CURSOR_INVALID')).toBe(400);
+  });
+
+  // All three are tenancy isolation, and all three refuse BEFORE any row is read — so unlike
+  // `X_STORAGE_ORG_MISMATCH`, which answers 404 because a 403 would confirm a key exists, there
+  // is no existence here to confirm: the comparison is actor-vs-argument and names no resource.
+  test('a tenant boundary refusal is a 403, and never a 404 it has nothing to hide behind', () => {
+    expect(statusFor('X_TENANCY_ACTOR_MISMATCH')).toBe(403);
+    expect(statusFor('X_TENANCY_CROSS_DENIED')).toBe(403);
+  });
+
+  // 403 and never 401, for the reason `X_CSRF_BLOCKED` is: the actor may be fully authenticated
+  // and simply carry no org, so a sign-in page repairs nothing it is sent to.
+  test('an actor with no tenant is a 403, not a second trip to sign-in', () => {
+    expect(statusFor('X_TENANCY_ACTOR_ORG_REQUIRED')).toBe(403);
+  });
+
+  // A well-formed string that fails a semantic policy — the same shape as `X_BODY_INVALID` and
+  // `X_INVARIANT_VIOLATED`, both already 422 here. Unmapped, a user choosing "password" paged
+  // whoever was on call.
+  test('a password the policy rejects is a 422', () => {
+    expect(statusFor('X_PASSWORD_WEAK')).toBe(422);
+  });
+
+  // db's own `fix:` for the unique violation says "answer 409, which is what a raced signup is",
+  // and `X_ENTITY_DUPLICATE` — the same event one layer up — is already 409 in this table.
+  test('a constraint the database enforced is a 409, the status db’s own fix line names', () => {
+    expect(statusFor('X_DB_UNIQUE_VIOLATION')).toBe(409);
+    expect(statusFor('X_DB_FOREIGN_KEY_VIOLATION')).toBe(409);
+  });
+
+  // The one of the eleven that is NOT the caller's: the fix is an edit to the read's own SQL
+  // (`select({ id: true })`), so nothing the caller sends changes the answer and the on-call
+  // report is the point.
+  test('a read that returned rows with no id is the server’s 500, by decision', () => {
+    expect(ERROR_STATUS.X_QUERY_NOT_PAGEABLE).toBe(500);
+  });
+
+  // A well-formed tag this app does not ship, asserted on a value the caller supplied.
+  test('an unsupported locale the caller asked for is a 400', () => {
+    expect(statusFor('X_LOCALE_UNSUPPORTED')).toBe(400);
+  });
+
+  // Two codes that arrived with the same change as the rows above. A header the caller chose and
+  // an OpenAPI parameter bound, so 400; and a lifecycle refusal raised while a role STARTS, which
+  // no request can be answered with, so 500 with a row rather than 500 by omission. Both are owned
+  // elsewhere — if either code is renamed, this test is where that has to be noticed.
+  test('a malformed Idempotency-Key header is a 400, and a drained lifecycle a 500', () => {
+    expect(statusFor('X_IDEMPOTENCY_KEY_INVALID')).toBe(400);
+    expect(ERROR_STATUS.X_LIFECYCLE_DRAINED).toBe(500);
+  });
+});
+
+// `@ultimat3/action` is tier 3 and this package is tier 2, so no import can ever compare the
+// two — and while nothing did, the OpenAPI document promised 409 for `X_IDEMPOTENCY_CONFLICT`
+// while the server answered 500. The bytes are the only seam left; the same shape as
+// `scripts/oauth-route-status.test.ts`, which pins auth's statuses from outside both packages.
+describe('the published contract and the answered status agree', () => {
+  test('the action’s OpenAPI operation publishes the status this table answers', async () => {
+    const source = await Bun.file(`${import.meta.dir}/../../action/src/http.ts`).text();
+    const published = /'(\d{3})': problemResponse\('X_IDEMPOTENCY_CONFLICT'\)/.exec(source)?.[1];
+    expect(
+      published,
+      'packages/action/src/http.ts no longer publishes a status for X_IDEMPOTENCY_CONFLICT',
+    ).toBeDefined();
+    expect(statusFor('X_IDEMPOTENCY_CONFLICT')).toBe(Number(published));
+  });
+});

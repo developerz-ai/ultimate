@@ -32,7 +32,8 @@ import {
 } from './audit-gate';
 import { bustAfterCommit } from './cache-gate';
 import { ActionForeignError, ActionUnregisteredError } from './errors';
-import { getIdempotencyStore, idempotencyKeyFor, withIdempotency } from './idempotency';
+import { getIdempotencyStore, withIdempotency } from './idempotency';
+import { idempotencyKeyFor } from './idempotency-key';
 import { actorOf, guard } from './policy-gate';
 import { validateInput, validateOutput } from './validate';
 
@@ -244,9 +245,10 @@ async function perform(
     value = await run();
   } else {
     const store = options.store ?? getIdempotencyStore();
-    // The namespaced key, not the caller's: the same key under two actions is two keys, and an
-    // audit row keyed on the raw header would collide across them.
-    trace.idempotencyKey = idempotencyKeyFor(name, key);
+    // The namespaced key, not the caller's: the same key under two actions — or from two callers
+    // — is two keys, and an audit row keyed on the raw header would collide across both. The
+    // ACTOR comes from `ctx`, which `invoke` installed, so every surface scopes identically.
+    trace.idempotencyKey = idempotencyKeyFor(name, key, ctx.actor);
     const outcome = await withIdempotency(store, trace.idempotencyKey, input, run);
     if (outcome.replayed) options.onReplay?.();
     trace.replayed = outcome.replayed;

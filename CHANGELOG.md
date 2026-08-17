@@ -10,6 +10,93 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **One caller's idempotent response was replayed to another, and a blank header was a live key.**
+  `idempotencyKeyFor(actionName, key)` namespaced by **action name only** — no actor anywhere — so
+  alice's stored response for `charge` was returned to bob whenever bob sent the same key. With a
+  *differing* payload bob instead got `X_IDEMPOTENCY_CONFLICT`, which is a cross-actor denial of
+  service: any caller could poison any key. Compounding it, `Headers.get()` answers `''` and never
+  `null` for `Idempotency-Key:`, so a **blank** header became a live key that every blank sender
+  shared. The key is now `JSON.stringify([action, kind, id, orgId ?? null, key])` — a fixed-arity
+  tuple rather than the joined string the scheduler uses, because an actor id is app data that may
+  contain the separator, and a value that can spell a boundary can spell someone else's. A blank or
+  whitespace-only key is refused before the handler as the new `X_IDEMPOTENCY_KEY_INVALID`, a 400,
+  and so is one past the 255 characters the OpenAPI operation had been publishing without enforcing.
+
+  A blank key is a **client error, not an absent key**, and the asymmetry decides it: reading blank
+  as absent silently removes retry protection at exactly the moment a client's key interpolation
+  broke, and the double charge then lands on that client's own automatic retry.
+
+- **Ten error codes answered 500 and paged the on-call for a caller's mistake.** `error-map.ts`
+  holds a **closed** status table: a code with no row falls to `DEFAULT_STATUS` (500), and
+  `stages.ts` reports every `status >= 500` to the error monitor. So a reused idempotency key, an
+  expired cursor, a weak password and a duplicate signup each woke somebody at 3am. The sharpest
+  case was a contradiction the framework published about itself: `packages/action/src/http.ts:151`
+  declared `'409'` for `X_IDEMPOTENCY_CONFLICT` in its OpenAPI document while the runtime answered
+  500 — now pinned by a test that reads that file's bytes, since `http` is tier 2 and can never
+  import `action`.
+
+  Thirteen rows landed. `X_IDEMPOTENCY_CONFLICT` is 409 because the published contract outranks
+  preference; `X_TENANCY_ACTOR_MISMATCH` and `X_TENANCY_CROSS_DENIED` are 403 and **not** the 404
+  storage takes, because storage hides existence for a caller-supplied *key* while these compare an
+  actor against an argument, name no resource and read no row — 404 would buy no secrecy;
+  `X_DB_UNIQUE_VIOLATION` is 409 because db's own `fix:` already said so. Two are **500 by
+  decision, with a row so the decision is recorded rather than defaulted**: `X_QUERY_NOT_PAGEABLE`
+  is a developer bug by its own `fix:` (an edit to the read's own SQL — nothing the caller sends
+  changes it), and `X_IDEMPOTENCY_REPLAYED_FAILURE` surfaces as itself only when the first attempt
+  carried no code at all.
+
+- **A second server in one process bound a port it could never serve from.** `core`'s lifecycle
+  `state` and `drainPromise` are module-level singletons and `markReady()` only promoted from
+  `'starting'`, so any process that drained once and then called `createServer().start()` got a
+  server born `stopped`: it bound a socket, answered 503 to everything, and — measured with a real
+  connection after its own `stop()` returned — **kept accepting connections**. `markReady()` now
+  refuses a drained lifecycle with the new `X_LIFECYCLE_DRAINED`, raised as the **first** statement
+  of `start()`, above `Bun.serve`: refusing after the bind still takes the port, which the failing
+  test caught holding one.
+
+  No shipped path reaches this — the only `createServer` call site runs once per process, and
+  `x dev`'s watcher rebuilds bundles without restarting roles. It ships because **three test files
+  had independently discovered the rule and written a `resetLifecycle()` workaround around it**,
+  one of them spelling out the symptom: "a suite that only passes when its tests are run one at a
+  time." Three discoveries of one unenforced convention is the case for a mechanism. Letting
+  `markReady()` promote from `'stopped'` was rejected as a half-fix — `drain()` is memoized, so the
+  restarted server's `stop()` never reaches its close hook and the socket leaks anyway; un-memoizing
+  it means a second live lifecycle able to cancel a SIGTERM already in flight.
+
+- **A query string could replace the parsed object's prototype.** `parseQuery` built a bare `{}`,
+  so `?__proto__=x` reached the inherited `Object.prototype` through the property setter. The
+  mechanism is not the textbook one: because `out['__proto__']` on a plain object reads a value that
+  is **not `undefined`**, the very first occurrence took the repeated-key branch and assigned
+  `[Object.prototype, 'x']` — an array, which the setter accepts. `Object.prototype` itself is never
+  mutated; the object gets a new prototype, inherits `length` and `push`, yields phantom `'0'`/`'1'`
+  keys under `for…in`, and silently swallows the parameter. `Object.create(null)` closes it.
+
+  It closed a second defect nobody had filed: `coerceQuery` decides whether to coerce a declared
+  property with `key in record`, and every `Object.prototype` member answered `true` — so a schema
+  declaring `toString` or `constructor` coerced an inherited function no request ever carried.
+
+- **A schema that failed with an empty `issues` array was read as success.** `validate.ts` tested
+  `issues !== undefined && issues.length > 0`, so a degenerate failure returned
+  `{ ok: true, value: undefined }` and handed a handler an `undefined` its type says is impossible —
+  a `TypeError`, then `X_INTERNAL`, then a 500 and a page, for an invalid request. Presence is the
+  discriminator, not length: the Standard Schema contract declares `issues?: undefined` on success
+  and carries no `value` on failure. An empty array now still refuses, with a substituted sentence
+  so the refusal is sayable.
+
+- **The third copy of a 32-bit hash over client-chosen input.** `@ultimat3/realtime`'s was fixed in
+  1.2.0's cycle and `@ultimat3/query`'s above; `@ultimat3/action`'s `fingerprint` was still FNV-1a/32.
+  Here it is worse than the cursor case: it backs the idempotency `requestHash`, so a collision makes
+  the payload-mismatch check pass and replays one caller's stored response for a **different**
+  request, and it backs `job-handle.ts`'s queue dedupe key, so a collision silently drops an enqueue
+  as a duplicate of an unrelated job. Now SHA-256, first 16 hex.
+
+- **A late settlement overwrote an idempotency record that had already been replaced.**
+  `SQL_IDEMPOTENCY_SETTLE` and `SQL_IDEMPOTENCY_FAIL` carried no status fence, so a straggler from a
+  superseded attempt could land on a fresh reservation. Both now fence on `status = 'in-flight'` and
+  return the key, and the no-op is logged rather than thrown — a settlement is post-commit, and
+  throwing there would fail a request whose work already succeeded. The same fence landed on the
+  memory store, so the guarantee does not depend on which store is installed.
+
 - **A `cache:` query served one actor's rows to the next.** `cacheKeyFor` returned
   `query:<name>:<fingerprint(input)>:<tags>` — no actor, no tenant — and `readThrough` wrote that
   key into a **process-wide** tier, while `sql(input, ctx)` is handed the `Ctx` and `@ultimat3/entity`
@@ -509,6 +596,31 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Changed
 
+- **BREAKING — `idempotencyKeyFor` takes the actor as a required third argument, and records
+  written before this release are unreachable after it.** Required and positional for the reason
+  `cacheKeyFor`'s `authority` is: an optional one is one a call site can forget, and the forgotten
+  one is the cross-actor replay above. The stored key's **shape** changed with it, so on the shared
+  Postgres store a retry that crosses the deploy boundary finds no record and **re-runs the
+  handler**, inside the 24h idempotency window. The memory store dies with its process and is
+  unaffected. `truncate x_idempotency` after deploying makes that state honest rather than
+  half-reachable.
+
+- **BREAKING — `Idempotency-Key` is enforced at 255 characters.** The OpenAPI operation had
+  published `maxLength: 255` all along and nothing checked it, so a client sending longer keys
+  worked by accident and now gets a 400. A contract that disagrees with the runtime is worse than
+  no contract.
+
+- **BREAKING — `@ultimat3/action`'s `fingerprint` is SHA-256/16.** Action idempotency is unaffected
+  in practice (the key changed too, so no pre-deploy record is looked up), but `job-handle.ts`'s
+  dedupe key `action:<name>:<fingerprint>` changed: a job enqueued before the deploy and re-enqueued
+  after it will not dedupe against the earlier row.
+
+- **BREAKING — `markReady()` throws `X_LIFECYCLE_DRAINED` on a drained lifecycle.** It used to
+  decline silently. Any process that drains and then starts a role now fails loudly at the mistake
+  instead of binding a socket that answers 503 forever. A test that drains and starts another
+  server needs `resetLifecycle()` between the two — which is what three test files were already
+  doing by hand.
+
 - **BREAKING — a drain is bounded by default: 25s, and a hook that outruns it is ABANDONED.**
   `configureLifecycle({ deadlineMs })` had existed since 1.0.0 and `drainDeadlineMs()` answered
   `undefined` until something declared one — so a role that declared none drained *unbounded*, and
@@ -772,6 +884,30 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`x verify` counts skips apart from passes, and names them.** A step with nothing to check here is recorded green so the run continues, and the summary counted it among the passes — so a repo whose `job` and `eval` suites do not exist printed the same `all 17 steps passed` as a repo where both ran. The line is now `14 of 17 steps passed — 3 skipped: drift, contract-diff, budgets` in this repo — the three correctly inapplicable at a non-app root, and the count every run in this sweep reported — and `14 of 17 steps passed in 11153ms — 3 skipped: e2e, contract-diff, roadmap` in the scaffolded app of [tutorial 2](https://github.com/developerz-ai/ultimate/wiki/Tutorial-02-First-Feature); `all {n} steps passed` survives only when nothing was skipped. `--json` gains `data.skipped`, the list of names beside `data.failed` (`steps[].skipped` is unchanged). Exit codes are untouched: a skipped step is still not a failure — it is now just impossible to mistake one for a passing one.
 
 ### Added
+
+- **The status table is closed, and the gate now enforces that it is.** A framework code with no
+  row in `error-map.ts` falls to 500 and pages the on-call; ten such codes had accumulated, and
+  nothing would have caught the eleventh. The `errors` step gained a fourth host rule:
+  `X_ERROR_STATUS_MISSING` for an in-scope code with neither a row nor a pin,
+  `X_ERROR_STATUS_BACKLOG_STALE` for a pin that has since been resolved or names a code nobody
+  declares, and `X_ERROR_STATUS_UNKNOWN_CODE` for a row mapping a code that does not exist — a
+  mistyped row reads as enforced and maps nothing, which is the most expensive edit that file
+  accepts. It reads the exported `ERROR_STATUS` object rather than parsing the source, so
+  `Object.hasOwn` can tell "no row" from "row = 500", which `statusFor` structurally cannot.
+
+  **A ratchet, not a wall.** The obvious rule — every code owned by a tier ≤ 4 package needs a row —
+  flags **237 of 394 codes**, including `X_MIGRATION_DESTRUCTIVE` and `X_CRON_INVALID`: a step an
+  agent disables in its first week. Whether a code can reach a request is **not derivable**:
+  `X_MIGRATION_DESTRUCTIVE` and `X_TENANCY_CROSS_DENIED` are the same tier and the same shape, and
+  blanket `index.ts` re-exports collapse import reachability to "the whole package" at every
+  boundary. So the 226 undecided codes are pinned in `scripts/error-map-backlog.ts`, grouped by
+  owner with a reason per group, and the list may only shrink — the same `expectedRed` idiom the
+  tracked-app gate already uses. A pin says "nobody has decided yet", never "this can never reach a
+  request", and the promise the gate keeps is that the undecided set never grows.
+
+  It is a rule on the existing `errors` step rather than an eighteenth step, because `VerifyStepName`
+  is a closed union a generated app inherits, and an app cannot run a check that only this
+  repository can. It caught two codes on its first run against live work.
 
 - **`channel_frames_dropped_total` — the only trace a lost channel message leaves.** Tier 1 is **at
   most once** and always was: a topic has no cursor, no `desynced` mark and no re-snapshot, so a

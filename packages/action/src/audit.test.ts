@@ -12,6 +12,7 @@ import { t } from '@ultimat3/schema';
 import { action } from './action';
 import type { AuditRecord, AuditSink } from './audit';
 import { memoryAuditSink, resetAuditSink, setAuditSink } from './audit';
+import { idempotencyKeyFor } from './idempotency-key';
 import { MemoryIdempotencyStore } from './idempotency-memory';
 import * as surface from './index';
 import { invoke } from './invoke';
@@ -168,9 +169,11 @@ describe('the audit seam', () => {
     await invoke(target, { postId: POST_ID }, options);
 
     expect(sink.records().map((record) => record.replayed)).toEqual([false, true]);
-    // The NAMESPACED key: the same header under two actions is two keys, so a row keyed on the
-    // caller's string alone would collide across them.
-    expect(sink.records()[0]?.idempotencyKey).toBe('publishPost:k1');
+    // The NAMESPACED key: the same header under two actions — or from two callers — is two keys,
+    // so a row keyed on the caller's string alone would collide across both.
+    expect(sink.records()[0]?.idempotencyKey).toBe(
+      idempotencyKeyFor('publishPost', 'k1', editor.actor),
+    );
   });
 
   test('`audit: true` with no sink installed refuses before the handler runs', async () => {

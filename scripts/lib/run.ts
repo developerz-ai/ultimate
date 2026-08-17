@@ -50,3 +50,19 @@ export async function run(
 }
 
 export const repoRoot = (): string => new URL('../..', import.meta.url).pathname.replace(/\/$/, '');
+
+/**
+ * The budget for a test that walks the WHOLE repo — `collectSourceFiles(repoRoot())`,
+ * `buildManifest(repoRoot())`, `collectErrorCodes(repoRoot())`, a `tsc -b` in a temp tree. Beside
+ * `repoRoot()` because calling it is what makes a scan whole-repo, and because a plain number
+ * keeps this file importable with no `node_modules` present, which `boundaries.ts` requires.
+ *
+ * Bun's default is 5000ms. That covered these scans while the suite ran serially and stopped the
+ * moment `x test unit` began sharding across workers, because the shards compete for the same
+ * cores. The scan IS the point of each of those tests, so the timeout is what moves — never the
+ * scan. One constant rather than eleven copies of this paragraph, and for a reason measured
+ * twice: the second round of failures happened because CI shards SIX ways while the local
+ * reproduction used EIGHT, so a different test crossed the line each time and no local run had
+ * ever seen the one that broke main. A per-site number is a per-site guess.
+ */
+export const REPO_SCAN_TIMEOUT_MS = 30_000;

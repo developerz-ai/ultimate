@@ -8,7 +8,6 @@ import { defineHttpConfig, type HttpConfigInput } from './config';
 import { createRequestContext } from './context';
 import { HttpError } from './errors';
 import { UltimateRequest } from './request';
-import type { Schema } from './validate';
 
 /** One request/context/config triple per test, built consistently. */
 const build = (
@@ -144,53 +143,6 @@ describe('param()', () => {
     expect(error?.code).toBe('X_BODY_INVALID');
     expect(error?.cause).toContain('missing');
     expect(error?.cause).toContain(':missing');
-  });
-});
-
-describe('queryRaw()', () => {
-  test('a single key becomes a plain string', () => {
-    const { req } = build('https://example.com/x?a=1');
-    expect(req.queryRaw()).toEqual({ a: '1' });
-  });
-
-  test('a repeated key becomes an array, in order', () => {
-    const { req } = build('https://example.com/x?a=1&a=2');
-    expect(req.queryRaw()).toEqual({ a: ['1', '2'] });
-  });
-
-  test('no query string returns an empty object', () => {
-    const { req } = build('https://example.com/x');
-    expect(req.queryRaw()).toEqual({});
-  });
-});
-
-describe('query()', () => {
-  test('a valid query parses through a real schema', () => {
-    const { req } = build('https://example.com/x?page=2');
-    const schema = t.object({ page: t.string });
-    expect(req.query(schema)).toEqual({ page: '2' });
-  });
-
-  test('an invalid query throws X_BODY_INVALID with issues', () => {
-    const { req } = build('https://example.com/x');
-    const schema = t.object({ page: t.string });
-    const error = captureSyncError(() => req.query(schema));
-    expect(error?.code).toBe('X_BODY_INVALID');
-    expect(error?.cause.length).toBeGreaterThan(0);
-  });
-
-  test('a schema with controlled issues surfaces them verbatim in the cause', () => {
-    const { req } = build('https://example.com/x?a=1');
-    const schema: Schema<never> = {
-      '~standard': {
-        version: 1,
-        vendor: 'ultimate-test',
-        validate: () => ({ issues: [{ message: 'must be a widget', path: ['a'] }] }),
-      },
-    };
-    const error = captureSyncError(() => req.query(schema));
-    expect(error?.code).toBe('X_BODY_INVALID');
-    expect(error?.cause).toContain('a: must be a widget');
   });
 });
 

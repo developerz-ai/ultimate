@@ -138,11 +138,6 @@ export function assertIdempotencyScope(
   if (store.scope !== 'shared') throw new IdempotencyNotSharedError(store.scope);
 }
 
-/** Keys are namespaced per action: the same key under two actions is two keys. */
-export function idempotencyKeyFor(actionName: string, key: string): string {
-  return `${actionName}:${key}`;
-}
-
 export interface IdempotentOutcome<T> {
   readonly value: T;
   readonly replayed: boolean;

@@ -36,6 +36,7 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_ACTION_UNREGISTERED: 'an action was projected before it was registered',
   X_CONTRACT_DRIFT: 'client and server disagree about the contract',
   X_IDEMPOTENCY_CONFLICT: 'idempotency key reused with a different payload or still in flight',
+  X_IDEMPOTENCY_KEY_INVALID: 'an Idempotency-Key was sent that cannot identify one request',
   X_IDEMPOTENCY_NOT_SHARED:
     'idempotency is declared fleet-wide and the installed store is per-process',
   X_IDEMPOTENCY_REPLAYED_FAILURE:
@@ -209,6 +210,35 @@ export class IdempotencyConflictError extends UltimateError {
           ? 'send a fresh Idempotency-Key header for a different payload'
           : 'retry the same Idempotency-Key after the first request settles',
       docs: docs('X_IDEMPOTENCY_CONFLICT'),
+    });
+  }
+}
+
+export type IdempotencyKeyProblem = 'empty' | 'too-long';
+
+/**
+ * The header arrived and cannot name one request. Refused, never read as absent: `Headers.get()`
+ * answers `''` for `Idempotency-Key:` rather than `null`, so a blank value became a live key that
+ * every caller sending a blank header shared — and reading it as "no key" is the quieter failure,
+ * because a client whose key interpolation produced nothing would lose the protection silently
+ * and double-charge on its own retry. `@ultimat3/jobs` refuses an empty key at the enqueue for the
+ * same reason; it uses `assert` because the empty key there is the app's own declaration, while
+ * this one is a caller's header and therefore a 4xx.
+ *
+ * The length bound is the one the OpenAPI operation has always published (`maxLength: 255`).
+ * A contract that disagrees with the runtime is worse than no contract.
+ */
+export class IdempotencyKeyInvalidError extends UltimateError {
+  constructor(action: string, problem: IdempotencyKeyProblem, length: number) {
+    super({
+      code: 'X_IDEMPOTENCY_KEY_INVALID',
+      cause:
+        problem === 'empty'
+          ? `action "${action}" was called with an empty Idempotency-Key, which every caller sending a blank header would share`
+          : `action "${action}" was called with an Idempotency-Key of ${length} characters, past the 255 its OpenAPI operation publishes`,
+      fix: 'set the Idempotency-Key header to a fresh crypto.randomUUID() on the client, one per request — or omit the header entirely to run this call without idempotency',
+      docs: docs('X_IDEMPOTENCY_KEY_INVALID'),
+      meta: { action, problem, length },
     });
   }
 }

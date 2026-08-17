@@ -153,6 +153,17 @@ export const createServer = (options: ServerOptions): ServerHandle => {
     describe: () => describeRoutes(table),
     fetch: (request) => dispatch(request),
     start() {
+      // FIRST, before the socket. `markReady()` refuses a process whose lifecycle already drained
+      // (`X_LIFECYCLE_DRAINED`), and a refusal that arrived after the bind would leave a listener
+      // this handle can never close: `drain()` memoized on the first drain, so `stop()` below never
+      // reaches the close hook — measured, a second server was still accepting connections after
+      // its own `stop()` returned, answering 503 to everything in between.
+      //
+      // The promotion moving above the bind costs nothing observable: `Bun.serve` is synchronous,
+      // and `/readyz` is served by the socket this line precedes. `x dev`'s only earlier listener
+      // is the metrics endpoint, which answers `METRICS_PATH` and nothing else.
+      markReady();
+
       server = Bun.serve({
         port: config.port,
         hostname: config.hostname,
@@ -191,7 +202,6 @@ export const createServer = (options: ServerOptions): ServerHandle => {
         { phase: 'close' },
       );
 
-      markReady();
       logger.info(`ultimate ${role} listening on ${server.url.origin}`);
       return handle;
     },

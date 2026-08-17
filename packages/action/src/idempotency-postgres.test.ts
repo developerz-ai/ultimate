@@ -4,7 +4,12 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from './idempotency-postgres';
-import { postgresIdempotencyStore, SQL_IDEMPOTENCY_TABLE } from './idempotency-postgres';
+import {
+  postgresIdempotencyStore,
+  SQL_IDEMPOTENCY_FAIL,
+  SQL_IDEMPOTENCY_SETTLE,
+  SQL_IDEMPOTENCY_TABLE,
+} from './idempotency-postgres';
 
 interface Call {
   readonly sql: string;
@@ -87,6 +92,23 @@ describe('the postgres idempotency store', () => {
     await store.reserve('k', 'hash');
     expect(calls[0]?.params[3]).toBe(60);
     expect(calls[1]?.params[1]).toBe(60);
+  });
+
+  // The fence `@ultimat3/jobs`' `SQL_ACK` carries as `and state = 'running'`. Without it, a
+  // settle from a reservation the window already reclaimed overwrites the row it no longer owns,
+  // and the next replay answers one caller's retry with another caller's stored value.
+  test('both settlements are fenced on the record still being in flight', () => {
+    expect(SQL_IDEMPOTENCY_SETTLE).toContain("status = 'in-flight'");
+    expect(SQL_IDEMPOTENCY_FAIL).toContain("status = 'in-flight'");
+  });
+
+  test('a settlement the fence rejected is reported, never silently dropped', async () => {
+    const { exec } = executor([[]]);
+    const store = postgresIdempotencyStore({ executor: exec });
+    // `returning key` is what makes the no-op observable — an update that matched nothing looks
+    // exactly like one that matched, otherwise.
+    expect(SQL_IDEMPOTENCY_SETTLE).toContain('returning key');
+    await store.settle('chargeCard:k1', { ok: true });
   });
 
   test('the install statement creates the table and its sweep index', () => {

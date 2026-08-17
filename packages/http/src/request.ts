@@ -15,9 +15,19 @@ export type QueryValues = Readonly<Record<string, string | readonly string[]>>;
 const contentTypeOf = (request: Request): string =>
   (request.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
 
-/** Repeated keys become arrays; everything else stays a string for the schema to coerce. */
+/**
+ * Repeated keys become arrays; everything else stays a string for the schema to coerce.
+ *
+ * `Object.create(null)`, never `{}`: on a plain object `out['__proto__']` never reads as
+ * `undefined` — it reads the inherited `Object.prototype` — so the FIRST `?__proto__=` took the
+ * repeated-key branch below and assigned an array through the `__proto__` SETTER, which accepts an
+ * object and swapped this object's prototype for it. One occurrence was enough. A null prototype
+ * has neither accessor, so `__proto__` is an ordinary key here, and `key in record` — how
+ * `coerceQuery` decides whether to coerce a declared property — stops answering true for every
+ * member of `Object.prototype`.
+ */
 const parseQuery = (url: URL): QueryValues => {
-  const out: Record<string, string | string[]> = {};
+  const out: Record<string, string | string[]> = Object.create(null);
   for (const [key, value] of url.searchParams) {
     const existing = out[key];
     if (existing === undefined) out[key] = value;

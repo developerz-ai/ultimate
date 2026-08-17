@@ -12,21 +12,18 @@ import {
   manifestDrift,
   readFrameworkManifest,
 } from './lib/framework-manifest';
-import { repoRoot } from './lib/run';
+import { REPO_SCAN_TIMEOUT_MS, repoRoot } from './lib/run';
 import { buildManifest, DEFAULT_OUT, frameworkManifestDrift, ownerOf } from './manifest';
 
 let dir = '';
 let fresh: FrameworkManifest;
 
-// `buildManifest(repoRoot())` is a full manifest regeneration over 29 packages — one of the four
-// full-repo scans named in `scripts/verify.test.ts`'s own comment, run once here for the whole
-// file. Bun's 5s default covered that while the suite ran serially and stopped the moment
-// `x test` began sharding across workers, because the shards compete for the same cores. The scan
-// is the point of the hook, so the timeout is what moves. Same shape as `scripts/verify.test.ts`.
+// `buildManifest(repoRoot())` is a full manifest regeneration over 29 packages, run once here for
+// the whole file — `REPO_SCAN_TIMEOUT_MS`.
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'ultimate-framework-manifest-'));
   fresh = await buildManifest(repoRoot());
-}, 30_000);
+}, REPO_SCAN_TIMEOUT_MS);
 
 afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
@@ -47,12 +44,16 @@ const withEditedVersion = (manifest: FrameworkManifest): FrameworkManifest => ({
 
 describe('unit · the framework manifest is generated, not written', () => {
   // A SECOND full `buildManifest(repoRoot())` on top of the one `beforeAll` already ran — the
-  // comparison is the point, so the body pays the scan twice. Same shape as the hook above.
-  test('two builds of one tree are byte-identical: no clock, no counter, no glob order', async () => {
-    const again = await buildManifest(repoRoot());
-    expect(frameworkManifestJson(again)).toBe(frameworkManifestJson(fresh));
-    expect(again.buildId).toBe(fresh.buildId);
-  }, 30_000);
+  // comparison is the point, so the body pays the scan twice.
+  test(
+    'two builds of one tree are byte-identical: no clock, no counter, no glob order',
+    async () => {
+      const again = await buildManifest(repoRoot());
+      expect(frameworkManifestJson(again)).toBe(frameworkManifestJson(fresh));
+      expect(again.buildId).toBe(fresh.buildId);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
 
   test('the generator actually finds the real packages and codes — not an empty list', () => {
     expect(fresh.packages.length).toBeGreaterThan(20);
@@ -158,14 +159,19 @@ describe('unit · every code, not the ones in one filename per package', () => {
    * exactly the drift the old scan shipped — 17 of them, `X_ROLE_INVALID` and friends.
    *
    * `registeredErrorCodes()` dynamically imports every @ultimat3/* package — the same real,
-   * unavoidable import-graph cost as `scripts/verify.test.ts`'s `errorCodeDocs` test, so it gets
-   * the same budget for the same reason.
+   * unavoidable import-graph cost the rest of these scans pay, so `REPO_SCAN_TIMEOUT_MS`.
    */
-  test('every code x errors explain answers for is in the manifest', async () => {
-    const listed = new Set(fresh.errorCodes.map((entry) => entry.code));
-    const missing = [...(await registeredErrorCodes())].filter((code) => !listed.has(code)).sort();
-    expect(missing).toEqual([]);
-  }, 30_000);
+  test(
+    'every code x errors explain answers for is in the manifest',
+    async () => {
+      const listed = new Set(fresh.errorCodes.map((entry) => entry.code));
+      const missing = [...(await registeredErrorCodes())]
+        .filter((code) => !listed.has(code))
+        .sort();
+      expect(missing).toEqual([]);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
 
   test('a code only a test file invents is not a code', () => {
     const codes = fresh.errorCodes.map((entry) => entry.code);
@@ -177,17 +183,21 @@ describe('unit · every code, not the ones in one filename per package', () => {
   // `at` is load-bearing or it is decoration: every one has to point at a file that really is
   // where that code is written. One `Bun.file().exists()` + `.text()` round trip per shipped
   // code — a couple hundred real file reads scattered across every package in the repo, not one
-  // in-memory assertion — so it carries the same budget as the scans above.
-  test('every `at` names a real file that really declares its code', async () => {
-    const unreadable: string[] = [];
-    for (const entry of fresh.errorCodes) {
-      const source = Bun.file(join(repoRoot(), entry.at));
-      if (!(await source.exists()) || !(await source.text()).includes(entry.code)) {
-        unreadable.push(`${entry.code} -> ${entry.at}`);
+  // in-memory assertion — so `REPO_SCAN_TIMEOUT_MS`.
+  test(
+    'every `at` names a real file that really declares its code',
+    async () => {
+      const unreadable: string[] = [];
+      for (const entry of fresh.errorCodes) {
+        const source = Bun.file(join(repoRoot(), entry.at));
+        if (!(await source.exists()) || !(await source.text()).includes(entry.code)) {
+          unreadable.push(`${entry.code} -> ${entry.at}`);
+        }
       }
-    }
-    expect(unreadable).toEqual([]);
-  }, 30_000);
+      expect(unreadable).toEqual([]);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
 });
 
 describe('unit · the bytes on disk', () => {
@@ -270,17 +280,21 @@ describe('unit · drift names the section that moved', () => {
 describe('unit · the gate reads the file, not just the generator', () => {
   // THREE manifest regenerations over 29 packages, one per assertion. See the note in
   // `verify.test.ts`: the 5s default cannot cover this once shards share the machine.
-  test('freshly written: no drift; hand-edited: the section; deleted: missing', async () => {
-    const path = join(dir, 'gate.json');
-    await Bun.write(path, frameworkManifestJson(fresh));
-    expect(await frameworkManifestDrift(repoRoot(), path)).toEqual([]);
+  test(
+    'freshly written: no drift; hand-edited: the section; deleted: missing',
+    async () => {
+      const path = join(dir, 'gate.json');
+      await Bun.write(path, frameworkManifestJson(fresh));
+      expect(await frameworkManifestDrift(repoRoot(), path)).toEqual([]);
 
-    await Bun.write(path, frameworkManifestJson(withEditedVersion(fresh)));
-    expect(await frameworkManifestDrift(repoRoot(), path)).toEqual(['packages differs']);
+      await Bun.write(path, frameworkManifestJson(withEditedVersion(fresh)));
+      expect(await frameworkManifestDrift(repoRoot(), path)).toEqual(['packages differs']);
 
-    await rm(path);
-    expect(await frameworkManifestDrift(repoRoot(), path)).toEqual([
-      'file is missing or unreadable',
-    ]);
-  }, 30_000);
+      await rm(path);
+      expect(await frameworkManifestDrift(repoRoot(), path)).toEqual([
+        'file is missing or unreadable',
+      ]);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
 });

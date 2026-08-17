@@ -26,6 +26,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `contract-test.ts` | assertions `x g action` emits |
 | `sample-input.ts` | a value `input:` accepts, from its own IR — what makes the policy assertion reach a policy |
 | `idempotency.ts` | the store SEAM: types, the installed-store slot, the scope declaration + `assertIdempotencyScope`, and `withIdempotency` — the replay-or-run gate |
+| `idempotency-key.ts` | the namespaced key — action + actor + the caller's key, as one JSON tuple — and the refusal of one that names no request |
 | `idempotency-memory.ts` | the process default: bounded, swept, `scope: 'process'` |
 | `idempotency-postgres.ts` | the SHARED store — one table, one `insert … on conflict` |
 | `deprecation.ts` | `Deprecation` + the RFC 9745/8594 render + the `deprecated_calls_total` counter |
@@ -90,6 +91,33 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   for the same reason — a 409 the caller can act on beats a silent re-run. A store with no `fail`
   slot gets the same fail-closed treatment. `idempotency-failure.test.ts` drives the
   post-commit-throw path first, because that is the one that shipped.
+- **An idempotency record belongs to ONE CALLER, and a key that names no request is refused**
+  (`As of 2026-08`). The namespace was the action name alone, so `idempotencyKeyFor` filed every
+  caller's `k1` under one record: alice POSTed `charge`, bob POSTed `charge` with the same header
+  and was handed alice's stored response — and with a *differing* payload bob got
+  `X_IDEMPOTENCY_CONFLICT` instead, so any key he guessed was a key he could deny her. The key is
+  now `JSON.stringify([action, actor.kind, actor.id, actor.orgId ?? null, key])`, and the encoding
+  is a **JSON tuple, never a joined string**, for `readAuthority`'s reason: an actor id is app data,
+  so under `a:b:c` an id of `alice:x` with key `y` is the same record as `alice` with key `x:y`.
+  Separately, `req.header()` is `Headers.get()`, which answers `''` for `Idempotency-Key:` and
+  never `null` — so a blank header was itself a shared key. It is `X_IDEMPOTENCY_KEY_INVALID`, a
+  4xx raised before the handler, and **not** read as "no key": the quiet reading loses the retry
+  protection exactly when a client's key interpolation broke, and the double charge lands on the
+  client's own automatic retry. `@ultimat3/jobs` refuses an empty key at the enqueue for the same
+  reason and uses `assert` because *its* empty key is the app's declaration, not a caller's header.
+  What this does NOT close: an anonymous actor is one identity, so anonymous callers of a public
+  idempotent action still share a key space — nothing at this tier can tell two apart, and keying
+  on an IP or a cookie would break the retry the header exists to serve.
+- **Both stores FENCE a settlement on `in-flight`**, as `@ultimat3/jobs`' `SQL_ACK` fences on
+  `state = 'running'`. A reservation whose window lapsed is reclaimed by the next caller
+  (`on conflict … do update`), so a straggler from the first one used to overwrite a record it no
+  longer owned and the next replay answered a retry with a value produced for a different request.
+  Postgres fences in SQL and returns `key`, so the no-op is observable and logged; memory checks
+  the status it holds. It is logged and never thrown — a settlement is post-commit, so raising
+  there would turn a durable write into the caller's error. The fence is on the STATUS only: the
+  reservation's own `id` would close the last case (a straggler landing while the replacement is
+  still in flight) and cannot be checked, because `IdempotencyStore.settle(key, value)` is public
+  API and does not carry it.
 - **Where the idempotency records live is DECLARED, and refused at registration.**
   `IdempotencyStore.scope` says what a driver provides; `configureIdempotency({ scope })` says what
   the deployment requires; `assertIdempotencyScope` compares them inside `registerAction` — the
