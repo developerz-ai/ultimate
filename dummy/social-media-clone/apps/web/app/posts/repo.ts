@@ -34,11 +34,27 @@ export const feedPage = (limit: number): Promise<readonly FeedPost[]> =>
 
 export const byId = (id: string): Promise<FeedPost | null> => db.posts.where({ id }).one();
 
-/** The authors a feed page needs, keyed by id. Bounded — an unbounded read is a scan waiting for traffic. */
-export const authorsById = async (
-  limit = 200,
+/** Ceiling on one feed's author lookup. A page over-fetches 3x, so this is far above any page. */
+const AUTHORS_MAX = 200;
+
+/**
+ * The authors OF A PAGE, keyed by id.
+ *
+ * It used to read "the first 200 users" and hope the page's authors were among them — no filter, no
+ * order, no relation to the rows being rendered. A post whose author fell outside that arbitrary
+ * slice was dropped from the feed by `visibleFeed`'s `author === undefined` branch, silently, and
+ * which 200 rows the driver answered with was never anything the app decided. Asking for the ids
+ * the page actually named is both smaller and correct.
+ */
+export const authorsByIds = async (
+  ids: readonly string[],
 ): Promise<ReadonlyMap<string, { handle: string; displayName: string }>> => {
-  const rows = await db.users.limit(limit).all();
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Map();
+  const rows = await db.users
+    .andWhere('id', 'in', unique)
+    .limit(Math.min(unique.length, AUTHORS_MAX))
+    .all();
   return new Map(
     rows.map((user) => [user.id, { handle: user.handle, displayName: user.displayName }]),
   );

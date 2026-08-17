@@ -9,6 +9,7 @@
 
 import { useT } from '@postly/i18n';
 import { PostCard } from '@postly/ui';
+import type { KnownPermission } from '@ultimat3/policy';
 import { useConnection } from '@ultimat3/realtime';
 import { defineRoute } from '@ultimat3/render';
 import { Skeleton, Stack, Text } from '@ultimat3/ui';
@@ -25,6 +26,14 @@ import styles from './page.module.scss';
 
 export const config = defineRoute({
   render: 'stream',
+  /**
+   * The org's feed is not public, and the route has to say so: a page declaring no `policy` is
+   * registered `auth: 'public'` (`metaOf` in `packages/cli/src/dev-render.ts`), which also skips
+   * `render-ssr`'s gated branch — so the response carries no `vary: cookie` and a shared cache may
+   * hand one member's feed to the next visitor. The coarse permission only; `liveFeed`'s own
+   * `feedRead` still decides the org, per subscriber, on every row.
+   */
+  policy: { permission: 'feed:read' satisfies KnownPermission },
   /**
    * Network-first for the document, cache-first for the content-hashed chunks. The feed's *rows*
    * are not cached by the service worker at all — they come from the persisted live query.

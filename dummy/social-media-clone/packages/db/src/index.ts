@@ -27,4 +27,4 @@ export type {
   User,
 } from './schema';
 export * as schema from './schema';
-export { DEMO_LOGINS, demo, seedDemo } from './seed';
+export { DEMO_LOGINS, DEMO_MARKER_IDS, demo, seedDemo, seededRowIds } from './seed';

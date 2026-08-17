@@ -7,7 +7,13 @@
 import { logger } from '@ultimat3/core';
 import { job, t } from '@ultimat3/jobs';
 import { DemoResetUnsafeError } from './errors';
-import { markOrphan, pendingMediaBefore, restoreSeededGraph, SWEEP_PAGE } from './repo';
+import {
+  markOrphan,
+  missingDemoMarkers,
+  pendingMediaBefore,
+  restoreSeededGraph,
+  SWEEP_PAGE,
+} from './repo';
 
 /**
  * An instant on the wire is an ISO-8601 string, not a `Date`. The queue round-trips input through
@@ -62,8 +68,12 @@ export const resetDemo = job({
   async run({ input }) {
     // Checked in the job, not in the task: a task only enqueues, and the guard has to hold for a
     // manual `resetDemo.enqueue(...)` and a backfill exactly as it does for the cron.
-    const boundTo = 'DATABASE_URL';
-    if ((Bun.env[boundTo] ?? '') !== '') throw new DemoResetUnsafeError({ boundTo });
+    //
+    // The store is asked, not the environment. `DATABASE_URL is set` was the old test, and it
+    // stopped meaning "not the demo" the day the demo got a database of its own
+    // (packages/db/src/client.ts) — it would have dead-lettered this job on every occurrence.
+    const missing = await missingDemoMarkers();
+    if (missing.length > 0) throw new DemoResetUnsafeError({ missing });
 
     const purged = await restoreSeededGraph();
     logger.info('tasks.demo.reset', {

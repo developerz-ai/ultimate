@@ -30,6 +30,21 @@ A button you cannot press is never drawn — and hiding a button is never what s
 
 The demo's `admin/admin` account is exactly this: `admin:read` only.
 
+## The button and the call, `As of 2026-08`
+
+| Half | Where | Note |
+|---|---|---|
+| renders | `app/admin/views.tsx` → `RowActions` | one `<form method="post">` per allowed action, per row, carrying the row's id |
+| answers | `api/admin-actions.ts` → `runAdminAction` | resolves the posted name against `defineAdmin()`'s registry, then `invokeAdminAction` |
+| the URL | `shared/action-route.ts` | `derivePath('runAdminAction')`, read by both sides so neither types a path |
+
+Pages here are `hydrate: 'never'`, so a control is a **form submit** — the browser's own form
+handling is the client. The toolbar shipped as `<button type="button">` with no handler and no
+enclosing form until 2026-08, backed by an `invokeAdminAction` nothing called: two halves that each
+looked finished. A refusal at POST time is `X_ADMIN_ACTION_REFUSED` (403) with the permission that
+refused it, because the button only renders when the decision allows — reaching the POST anyway is
+a stale page, a hand-written request, or a destructive echo that was not given.
+
 ## Not a second front door
 
 The dashboard has **no session of its own** — it reads the actor the app already resolved for the

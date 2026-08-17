@@ -11,6 +11,7 @@
 import type { AppTheme } from '@postly/domain';
 import { SUPPORTED_LOCALES, SUPPORTED_ZONES, THEMES } from '@postly/domain';
 import { useT } from '@postly/i18n';
+import type { KnownPermission } from '@ultimat3/policy';
 import { defineRoute } from '@ultimat3/render';
 import { Button, DateTime, Select, Stack, Switch, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
@@ -18,22 +19,27 @@ import { createSignal, For } from 'solid-js';
 import { useActor } from '../../shared/actor';
 import { client } from '../../shared/client';
 import { Layout } from '../layout';
-import { memberSelf } from '../orgs/policy';
 import styles from './page.module.scss';
 
 export const config = defineRoute({
   render: 'spa',
   /**
    * The shell is static, so it carries no server-rendered data to authorise — the route itself
-   * has to hold the rule. The same `memberSelf` the save action enforces: one definition, two
-   * surfaces, and a signed-out visitor never reaches the shell in the first place.
+   * has to hold the rule.
+   *
+   * A `RouteGuard` is a PERMISSION and not a `Policy` (`packages/render/src/route.ts`): render
+   * only needs to know the route has a gate, so that evaluation stays in one place. Passing
+   * `memberSelf` — the `can()` object — put `{ label, permissions }` where `{ permission }` was
+   * required, and every reader of `config.policy.permission` (the route's own `auth` meta) read
+   * `undefined`. `member:self` is the same grant `savePreferences` gates on; the row-level half,
+   * "your own member row", stays in `memberSelf` where the action evaluates it.
    */
-  policy: memberSelf,
+  policy: { permission: 'member:self' satisfies KnownPermission },
   /** The shell precaches; the preferences themselves are always fetched. */
   offline: 'precache',
   hydrate: 'idle',
   budget: { js: '45kb', lcp: 1800 },
-  meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: 'noindex' }),
+  meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 
 export function Page(): JSX.Element {

@@ -3,8 +3,10 @@
 // the second authz path the admin exists to prevent.
 
 import type { AdminActionButton, NavGroup } from '@ultimat3/admin';
+import { confirmationToken } from '@ultimat3/admin';
 import { t } from '@ultimat3/i18n';
 import type { JSX } from 'solid-js';
+import { ADMIN_ACTION_ROUTE } from '../../shared/action-route';
 import { admin } from './admin';
 import type { OperationDecision, ResourceScreen } from './screen';
 import styles from './views.module.scss';
@@ -89,23 +91,50 @@ export function OperationMatrix(props: { readonly rows: readonly OperationDecisi
   );
 }
 
-export function ActionBar(props: { readonly buttons: readonly AdminActionButton[] }) {
-  if (props.buttons.length === 0) {
-    return <p class={styles.note}>{t('admin.actions.none')}</p>;
-  }
+/**
+ * The allowed actions for ONE row, as native form submits. `hydrate: 'never'` is kept — a form
+ * POST is the browser's own client — and the target is the route `runAdminAction` derives, so the
+ * button that `actionButtons()` allowed reaches the `invokeAdminAction` that decides it again.
+ *
+ * Until 2026-08 these were `type="button"` with no handler and no enclosing form on a page that
+ * never hydrated: a control that could not act, on top of an `invokeAdminAction` nothing called.
+ */
+export function RowActions(props: {
+  readonly entity: string;
+  readonly id: string;
+  readonly buttons: readonly AdminActionButton[];
+}) {
   return (
-    <p class={styles.actions}>
+    <span class={styles.actions}>
       {props.buttons.map((button) => (
-        <button type="button" class={button.destructive ? styles.destructive : styles.button}>
-          {t(button.labelKey)}
-        </button>
+        <form class={styles.actionForm} method="post" action={ADMIN_ACTION_ROUTE}>
+          <input type="hidden" name="name" value={button.name} />
+          <input type="hidden" name="id" value={props.id} />
+          {button.destructive ? (
+            <label class={styles.confirm}>
+              {/* The echo a destructive action must carry. Typed, not pre-filled: the token is on
+                  screen so it can be copied, and copying it is the deliberate act. */}
+              {t('admin.actions.confirm.label', {
+                token: confirmationToken(props.entity, props.id),
+              })}
+              <input name="confirmation" autocomplete="off" required />
+            </label>
+          ) : null}
+          <button type="submit" class={button.destructive ? styles.destructive : styles.button}>
+            {t(button.labelKey)}
+          </button>
+        </form>
       ))}
-    </p>
+    </span>
   );
 }
 
 /** One generated resource screen: the table when the actor may list it, the refusal when not. */
 export function ResourceView(props: { readonly screen: ResourceScreen }) {
+  // Computed once: every policy in this app is `can(...)` with no predicate, so the decision does
+  // not read the row — a per-row re-decision would be the same answer asked N times.
+  const actionable = props.screen.buttons.length > 0;
+
   return (
     <section class={styles.panel}>
       {props.screen.denial === null ? (
@@ -115,14 +144,24 @@ export function ResourceView(props: { readonly screen: ResourceScreen }) {
               {props.screen.columns.map((column) => (
                 <th>{t(column.labelKey)}</th>
               ))}
+              {actionable ? <th>{t('admin.actions.column')}</th> : null}
             </tr>
           </thead>
           <tbody>
             {props.screen.rows.map((row) => (
               <tr>
-                {row.map((value) => (
+                {row.cells.map((value) => (
                   <td>{value}</td>
                 ))}
+                {actionable ? (
+                  <td>
+                    <RowActions
+                      entity={props.screen.name}
+                      id={row.id}
+                      buttons={props.screen.buttons}
+                    />
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>
@@ -135,7 +174,7 @@ export function ResourceView(props: { readonly screen: ResourceScreen }) {
           })}
         </p>
       )}
-      <ActionBar buttons={props.screen.buttons} />
+      {actionable ? null : <p class={styles.note}>{t('admin.actions.none')}</p>}
       <OperationMatrix rows={props.screen.matrix} />
     </section>
   );

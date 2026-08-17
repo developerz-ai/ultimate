@@ -16,9 +16,10 @@ import { type MemberId, type OrgId, type PlanCode, seatLimit } from '@postly/dom
 import { type Ctx, defineService } from '@ultimat3/core';
 import type { UploadGrant, UploadRequest } from '@ultimat3/storage';
 import { daysBetween, instant } from '@ultimat3/time';
+import { NotAMember } from '../../shared/errors';
 import { mintAvatarGrant, signedAvatarUrl } from './avatar';
 import type { InviteInput, MemberView, OrgView, UpgradeReceipt } from './entity';
-import { NotAMember, OrgNotFound } from './errors';
+import { OrgNotFound } from './errors';
 import {
   allDigestRecipients,
   digestRecipients,

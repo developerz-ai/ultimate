@@ -2,7 +2,13 @@
 
 import { expect, test } from 'bun:test';
 import { addMs, daysBetween, fromIso, toIso } from '@ultimat3/time';
-import { assertSeatsAvailable, endOfBillingPeriod, quoteUpgrade, seatsRemaining } from './billing';
+import {
+  assertSeatsAvailable,
+  billingPeriodAt,
+  endOfBillingPeriod,
+  quoteUpgrade,
+  seatsRemaining,
+} from './billing';
 import type { CoreError } from './errors';
 
 const codeOf = (run: () => unknown): string | undefined => {
@@ -126,4 +132,53 @@ test('the cycle length a quote prorates against is the real month, DST included'
   expect(cycleAt('2026-01-15T00:00:00Z', 'UTC')).toBe(31);
   // March in New York contains a 23-hour day; it is still 31 days long.
   expect(cycleAt('2026-03-15T00:00:00Z', 'America/New_York')).toBe(31);
+});
+
+test('the period a quote prorates against is read off the calendar, never 15/30', () => {
+  const period = (iso: string, zone: string) => billingPeriodAt(fromIso(iso), zone);
+
+  expect(period('2026-02-15T00:00:00Z', 'UTC')).toEqual({ daysRemaining: 13, daysInCycle: 28 });
+  expect(period('2026-01-15T00:00:00Z', 'UTC')).toEqual({ daysRemaining: 16, daysInCycle: 31 });
+  // March in New York contains a 23-hour day; it is still 31 days long. And it is still 14 March
+  // there when it is already the 15th in UTC, so the same instant has 17 days left rather than
+  // 16 — local day boundaries, not elapsed milliseconds.
+  expect(period('2026-03-15T00:00:00Z', 'America/New_York')).toEqual({
+    daysRemaining: 17,
+    daysInCycle: 31,
+  });
+  // Autumn-back: New York's November is 30 local days and 30 days PLUS an hour of real time, so
+  // `differenceMs / 86_400_000` answers 30 days remaining on the 1st — one whole day of the
+  // customer's money — where local day boundaries answer 29.
+  expect(period('2026-11-01T04:00:00Z', 'America/New_York')).toEqual({
+    daysRemaining: 29,
+    daysInCycle: 30,
+  });
+});
+
+test('the last local day of a period has nothing left to prorate', () => {
+  expect(billingPeriodAt(fromIso('2026-01-31T23:00:00Z'), 'UTC').daysRemaining).toBe(0);
+  // Same instant, five hours behind: it is still 31 January in New York, and also the last day.
+  expect(billingPeriodAt(fromIso('2026-02-01T04:00:00Z'), 'America/New_York').daysRemaining).toBe(
+    0,
+  );
+});
+
+test('a quote built from the real period charges for the days that are actually left', () => {
+  const { daysRemaining, daysInCycle } = billingPeriodAt(fromIso('2026-02-15T00:00:00Z'), 'UTC');
+  const quote = quoteUpgrade({
+    from: 'free',
+    to: 'team',
+    currency: 'USD',
+    daysRemaining,
+    daysInCycle,
+  });
+
+  // 13/28 of $19.00, rounded half-up on the minor unit — not the 15/30 that shipped.
+  expect(quote.charge).toEqual({ minor: 882, currency: 'USD' });
+});
+
+test('an unusable zone is refused rather than silently answered in UTC', () => {
+  expect(codeOf(() => billingPeriodAt(fromIso('2026-02-15T00:00:00Z'), 'Mars/Olympus'))).toBe(
+    'X_TIMEZONE_INVALID',
+  );
 });

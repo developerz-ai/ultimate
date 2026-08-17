@@ -9,6 +9,7 @@ import {
   type CrudCtx,
   defineAdmin,
   memoryAuditLog,
+  permissionsForOperation,
   policyAuthz,
 } from '@ultimat3/admin';
 import { currentAdminActor } from './actor';
@@ -75,6 +76,27 @@ export const admin: AdminApp = defineAdmin({
    * nothing enforces.
    */
   pages: [opsPage],
+  /**
+   * `/admin/jobs` is a route `defineAdmin()` builds for every app, and `adminNav()` derives items
+   * from the RESOURCES and from `pages:` — never from the built-in routes. So this app served a
+   * jobs screen that no sidebar linked and only a typed URL reached, which is the same defect as
+   * the dashboard having no link in. Declared here, with the SAME `permissionsForOperation('job',
+   * 'list')` the route was built from, so `visibleNav` hides the link for exactly the actor
+   * `/admin/jobs` would refuse. `/admin/audit` and `/admin/search` stay unlinked on purpose: this
+   * app serves no page file for either, and a link to a URL with no page is a 404 with a label.
+   */
+  nav: {
+    extra: [
+      {
+        key: 'jobs',
+        labelKey: 'admin.jobs.title',
+        href: '/jobs',
+        entity: null,
+        permissions: permissionsForOperation('job', 'list'),
+        group: 'admin.group.operations',
+      },
+    ],
+  },
   branding: { nameKey: 'admin.brand.name', mode: 'system', density: 'comfortable' },
   auth: {
     actor: () => currentAdminActor().actor,

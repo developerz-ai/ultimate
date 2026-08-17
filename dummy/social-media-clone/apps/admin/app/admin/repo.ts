@@ -137,7 +137,15 @@ export const usersAdminRepo = adminRepoFor(schema.users);
 export const postsAdminRepo = adminRepoFor(schema.posts);
 export const mediaAdminRepo = adminRepoFor(schema.media);
 
-/** The uploads breakdown the ops page reads. Counted through the same repo the list page uses. */
+/**
+ * The uploads breakdown the ops page reads. Counted through the same repo the list page uses.
+ *
+ * UNGATED, deliberately and only here: this module is imported BY `admin.ts`, so it cannot import
+ * the `AdminApp` whose authz would decide it without closing a cycle. The decision is the caller's
+ * — `pages/ops.tsx` asks `permissionsForOperation('media', 'list')` off its own `props.ctx` before
+ * calling this — and it is the one call in `apps/admin` where that is true. A second caller must
+ * carry the same gate; there is no repo-level refusal to fall back on.
+ */
 export const mediaStateCounts = async (): Promise<Readonly<Record<string, number>>> => {
   const states = ['pending', 'attached', 'orphan'] as const;
   const counts: Record<string, number> = {};

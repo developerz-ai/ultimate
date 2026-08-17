@@ -49,22 +49,25 @@ export const sendMessage = action({
 });
 
 /**
- * One notification per other participant. Written here rather than in a job because the demo runs
- * every role in one process; the shape is the same either way — the row is the fact, and the badge
- * counts rows.
+ * One notification per other participant, in ONE statement. The row is the fact and the badge
+ * counts rows, so the shape is the same whether this runs here or in a job — but the loop that
+ * awaited an insert per member made a message to a full 100-person conversation 99 sequential
+ * round trips inside the request that sent it, and the person waiting for those was the sender.
  */
 async function notifyOthers(
   conversationId: string,
   authorId: string,
   messageId: string,
 ): Promise<void> {
-  for (const member of await repo.membersOf(conversationId)) {
-    if (member.userId === authorId) continue;
-    await notifications.insertNotification({
-      userId: member.userId,
-      kind: 'message',
-      actorId: authorId,
-      subjectId: messageId,
-    });
-  }
+  const members = await repo.membersOf(conversationId);
+  await notifications.insertNotifications(
+    members
+      .filter((member) => member.userId !== authorId)
+      .map((member) => ({
+        userId: member.userId,
+        kind: 'message' as const,
+        actorId: authorId,
+        subjectId: messageId,
+      })),
+  );
 }

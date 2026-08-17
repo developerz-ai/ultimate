@@ -9,7 +9,7 @@
  */
 
 import { COMMENT_MAX, tag } from '@postly/db';
-import { orgId, postId } from '@postly/domain';
+import { postId } from '@postly/domain';
 import { action, t } from '@ultimat3/action';
 import { llm } from '@ultimat3/ai';
 import { CommentView, CreatePostInput, PostView } from './entity';
@@ -36,12 +36,15 @@ export const publishPost = action({
   policy: postPublish,
   // `postPublish` decides about a post, not just about an org, so the post has to be loaded
   // before the guard rather than inside it — the predicate stays synchronous, and this runs once
-  // per invocation instead of once per live subscriber. Scoped to the org the input names, which
-  // costs the rule nothing: `postPublish` denies a null row exactly as it denies a row from
-  // another org, and it compares `input.orgId` against the actor's own before it reads the row at
-  // all. An unscoped read here is `X_TENANCY_UNSCOPED` — a tenant-columned entity has no
-  // cross-tenant escape hatch — so a loader that skipped the org would deny every publish.
-  row: ({ input, ctx }) => ctx.posts.authorship(orgId(input.orgId), postId(input.postId)),
+  // per invocation instead of once per live subscriber.
+  //
+  // The loader runs BEFORE any policy, which is the ordering that decides the scope: the service
+  // reads inside the ACTING member's org and answers `null` for anyone without one, so a foreign
+  // caller reaches the rule with `row: null` and is denied. Scoping it to `input.orgId` instead
+  // put a tenancy error (`X_TENANCY_ACTOR_MISMATCH`, or `X_TENANCY_ACTOR_ORG_REQUIRED` for an
+  // anonymous caller) in front of the denial — an unscoped read is `X_TENANCY_UNSCOPED`, and
+  // neither is the `X_FORBIDDEN` this action's contract promises.
+  row: ({ input: { postId: id }, ctx }) => ctx.posts.authorship(postId(id)),
   // `blog` too: publishing is the ONE write that puts a post on the public, anonymous blog, and
   // `site/blog/*` sets `revalidate: { tags: [tag.blog] }`. Omitting it left those ISR pages
   // pinned to whatever the build saw — the tag existed, nothing ever evicted it.

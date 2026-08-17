@@ -139,6 +139,32 @@
   margin: 0;
 }
 
+// One form per button — a native POST is the whole client on a page that never hydrates, and a
+// single form around several submits could not say which one was pressed without a `formaction`.
+.actionForm {
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(2);
+  margin: 0;
+}
+
+.confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: t.space(1);
+  font-size: t.text('xs');
+  color: t.role('fg-muted');
+
+  input {
+    @include t.control;
+
+    border: 1px solid t.role('line');
+    border-radius: t.radius('md');
+    background: t.role('surface');
+    color: t.role('fg');
+  }
+}
+
 .button,
 .destructive {
   @include t.control;

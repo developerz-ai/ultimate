@@ -30,11 +30,13 @@ export const notifySubscribers = job({
   async run({ input, step, ctx }) {
     const post = await step.run('load-post', () => ctx.posts.byId(toPostId(input.postId)));
 
-    // Tier 1 realtime: everyone already looking at the org sees it without a refetch.
-    await step.run('announce', () =>
-      ctx.channel(`org:${post.orgId}`).publish({ type: 'post.published', postId: post.id }),
-    );
-
+    // No channel announcement here, and it is a gap rather than a decision: a `ChannelHub` is
+    // built by the process that serves sockets (`new ChannelHub(...)` in
+    // packages/cli/src/dev-roles.ts) and there is no seam by which an app reaches it — a worker
+    // building its own would publish onto a transport nothing bridges. This step used to call
+    // `ctx.channel(...)`, a service nothing registered, so every run of this job dead-lettered on
+    // a `TypeError` before it mailed anybody. The feed stays live through `live.ts`'s
+    // `query({ live: true })`, which is the path that does work.
     const recipients = await step.run('load-recipients', () =>
       ctx.orgs.digestRecipients(toOrgId(post.orgId)),
     );

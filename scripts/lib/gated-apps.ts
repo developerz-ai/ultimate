@@ -46,11 +46,20 @@ export const GATED_APPS: readonly GatedApp[] = [
         'call in packages/core/src/digest-schedule.ts. The count moved 136 → 137 with ' +
         'previousDigestAt and its digestPreview caller, which are two more instances of those ' +
         "same two classes, not new ones. Still the data-substrate work's to close",
-      contract:
-        "X_TENANCY_UNSCOPED on every post write, and on the read that publishPost's `row:` " +
-        'loader makes before its policy runs — data substrate',
-      live: 'the live suite reads through the same unscoped repo — data substrate',
-      job: 'the digest job writes through the same unscoped repo — data substrate',
+      live:
+        'X_TEST_FIXTURE_UNAVAILABLE on all 5 tests: `subscribe` is declared by @ultimat3/testing’s ' +
+        'preload and nothing in the repo drives it — fixture-drivers.ts registers ' +
+        'unavailableFixture for it and no in-process replicator exists in any package. NOT the ' +
+        'unscoped repo this line used to blame: no repo, query or migration is involved. ' +
+        'Registering one in examples/dummy/scripts/test-setup.ts would be the app deciding what a ' +
+        'live subscription is, so it closes when the framework ships the driver — the same gap ' +
+        '`page` leaves on e2e, and its own fix line names a driver that does not exist',
+      job:
+        '1 of 5 fails, and not through a repo: `a rolled-back invite never enqueues its mail` is ' +
+        'a TypeError on ctx.auth.ensureUser at apps/web/app/orgs/service.ts:60. ctx.auth is ' +
+        'undeclared and unimplemented, and this app’s CLAUDE.md already names it together with the ' +
+        'x_users/x_sessions/x_accounts tables no migration creates — neither half is a file to ' +
+        'hand-write. NOT the unscoped repo this line used to blame',
       e2e:
         'X_TEST_FIXTURE_UNAVAILABLE on all 6 tests: the `page` fixture is declared and nothing in ' +
         'this process drives it, so not one of them reaches a built page. NOT the data substrate ' +
@@ -58,11 +67,15 @@ export const GATED_APPS: readonly GatedApp[] = [
         'Closed by installing a browser driver in scripts/test-setup.ts',
       drift: 'migrations predate the current entity set; regenerated with the schema',
       budgets:
-        'X_BUDGET_UNMEASURED on all 8 routes that declare a `budget:`. The step used to skip its ' +
-        'per-route half whenever `.x/build-stats.json` was absent — and `.x/` is gitignored, so ' +
-        'that half has never run here or in CI while the step reported green. It now reports ' +
-        'every declared budget the build never weighed. Closing it means running `x build` ' +
-        'before the app gate so the stats file exists, which is milestone 11 work',
+        'X_BUDGET_UNMEASURED on 5 of the 8 routes that declare a `budget:`, and `.x/` is gitignored ' +
+        'so no stats file is ever committed. `x build --target static` now COMPLETES here — the ' +
+        '/offline page called useMutationQueue() at prerender with no LiveClient and took the ' +
+        'whole build down, which is fixed — and it weighs 3 of the 8. The other 5 fail the ' +
+        'in-memory measuring pass for two reasons no app can reach: /blog, /blog/:slug, /feed and ' +
+        '/posts/:id raise X_ENV_MISSING because APP_URL is unset so the typed client has no ' +
+        'origin, and /posts/new and /settings raise X_NO_CONTEXT because the app/ shell renders ' +
+        'outside a request. Closing it means running the build with APP_URL set AND giving the ' +
+        'app/ routes a request context — not merely running `x build` first, as this line used to say',
     } satisfies Partial<Record<VerifyStepName, string>>,
   },
   {
@@ -79,9 +92,7 @@ export const GATED_APPS: readonly GatedApp[] = [
         'X_BOUNDARY_SITE_TO_APP ×3 — apps/web/site/feed/page.tsx imports ' +
         'apps/web/app/posts/service.ts, which drags policy.ts and repo.ts across the static/app ' +
         'line with it. The static feed needs a query, not the authed service',
-      drift:
-        'migrations predate the current entity set: the schema hashes to 0141d780fa37711d and ' +
-        'the newest migration recorded 164f6d3add24dcd0. Regenerate with `x db gen`',
+
       budgets:
         'X_BUDGET_UNMEASURED on every route that declares a `budget:` — the same never-run half ' +
         'of the step pinned on examples/dummy above, for the same reason: no `.x/build-stats.json` ' +

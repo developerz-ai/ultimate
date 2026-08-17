@@ -17,12 +17,23 @@ export const personById = (id: string): Promise<User | null> => db.users.where({
 export const personByHandle = (handle: string): Promise<User | null> =>
   db.users.where({ handle }).one();
 
-/** One read for every name a screen renders, keyed for the caller. Never one query per row. */
+/** The union `friendsScreen` asks for: three PAGE-bounded lists — inbox, outbox, blocks. */
+const PEOPLE_MAX = PAGE * 3;
+
+/**
+ * One read for every name a screen renders, keyed for the caller. Never one query per row.
+ *
+ * The bound is the caller's own id list, not `PAGE`. `friendsScreen` unions those three lists into
+ * ONE call, so up to 300 ids arrived at a `limit(100)` and the other 200 were dropped with no error
+ * anywhere: `viewOf` cannot find those people, returns null, and the rows vanish off the screen. A
+ * screen silently missing two thirds of its rows is worse than a slow one.
+ */
 export const peopleByIds = async (ids: readonly string[]): Promise<ReadonlyMap<string, User>> => {
-  if (ids.length === 0) return new Map();
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return new Map();
   const rows = await db.users
-    .andWhere('id', 'in', [...new Set(ids)])
-    .limit(PAGE)
+    .andWhere('id', 'in', unique)
+    .limit(Math.min(unique.length, PEOPLE_MAX))
     .all();
   return new Map(rows.map((user) => [user.id, user]));
 };
@@ -45,11 +56,19 @@ export const friendshipEdge = (
 ): Promise<Friendship | null> => db.friendships.where({ requesterId, addresseeId }).one();
 
 /**
- * The composite key IS the upsert: writing `(a→b)` twice replaces the row rather than adding one,
- * so answering a request and re-answering it land on the same fact. It is also the only write path
- * available — `Table.update(id, …)` is id-addressed and refuses a two-column key.
+ * Writing `(a→b)` twice replaces the row rather than adding one, so asking, answering and
+ * re-answering all land on the same fact. `upsertAll`, not `insert`: an insert on an existing
+ * primary key is an overwrite ONLY in the memory driver — Postgres answers `23505` — and every
+ * caller here writes a row the pair may already have. It is also the only write path available:
+ * `Table.update(id, …)` is id-addressed and refuses a two-column key.
  */
-export const saveFriendship = (row: Friendship): Promise<Friendship> => db.friendships.insert(row);
+export const saveFriendship = async (row: Friendship): Promise<Friendship> => {
+  const [written] = await db.friendships.upsertAll([row], {
+    onConflict: ['requesterId', 'addresseeId'],
+  });
+  // `upsertAll` resolves with the rows it wrote; `onMatch` defaults to `update`, so there is one.
+  return written ?? row;
+};
 
 export const blocksBy = (blockerId: string): Promise<readonly Block[]> =>
   db.blocks.where({ blockerId }).orderBy('createdAt', 'desc').limit(PAGE).all();
@@ -57,4 +76,16 @@ export const blocksBy = (blockerId: string): Promise<readonly Block[]> =>
 export const blockEdge = (blockerId: string, blockedId: string): Promise<Block | null> =>
   db.blocks.where({ blockerId, blockedId }).one();
 
-export const saveBlock = (row: Block): Promise<Block> => db.blocks.insert(row);
+/** Same shape, same reason as `saveFriendship`: blocking twice is one row, on either driver. */
+export const saveBlock = async (row: Block): Promise<Block> => {
+  const [written] = await db.blocks.upsertAll([row], { onConflict: ['blockerId', 'blockedId'] });
+  return written ?? row;
+};
+
+/**
+ * Lift a block. `deleteWhere` is the only way to remove a composite-key row — `Table.delete(id)`
+ * cannot name one — and it answers with a count rather than throwing, so "there was no block"
+ * reaches the service as `0` and not as an error about a row nobody asked to exist.
+ */
+export const removeBlock = (blockerId: string, blockedId: string): Promise<number> =>
+  db.blocks.deleteWhere({ blockerId, blockedId });

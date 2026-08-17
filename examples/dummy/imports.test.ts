@@ -88,7 +88,12 @@ describe('every app module', () => {
     }
 
     expect(broken).toEqual([]);
-  });
+    // Both tests here walk EVERY app module and dynamically import it, so they pay a real
+    // module-graph cost that grows with the app — measured at a coin-flip against bun's 5000ms
+    // default while eight shards compete for the same cores. The scan is the point of the test, so
+    // the timeout is what moves. A literal rather than `scripts/lib/run.ts`'s constant: an app's
+    // suite must not import the host monorepo's scripts.
+  }, 30_000);
 
   test('imports only names those packages actually export', async () => {
     const files = await modules();
@@ -116,5 +121,7 @@ describe('every app module', () => {
     }
 
     expect(missing).toEqual([]);
-  });
+    // Same whole-graph walk as above, so the same budget. Raised with its neighbour rather than
+    // after it is seen failing: they scan one module set, and fixing one relocates the failure.
+  }, 30_000);
 });

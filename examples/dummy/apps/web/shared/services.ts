@@ -25,7 +25,6 @@ import type { UploadGrant, UploadRequest } from '@ultimat3/storage';
 import type { InviteInput, MemberView, OrgView, UpgradeReceipt } from '../app/orgs/entity';
 import type { CommentView, CreatePostInput, PostSummary, PostView } from '../app/posts/entity';
 import type { PostRow } from '../app/posts/policy';
-import type { SessionService } from './actor';
 
 export interface PostsService {
   byId(postId: PostId): Promise<PostView>;
@@ -39,11 +38,12 @@ export interface PostsService {
   publishedSince(orgId: OrgId, since: Date): Promise<PostSummary[]>;
   /**
    * The two columns `postPublish` decides about, for `publishPost`'s `row:` loader. Scoped to the
-   * org the caller names: `null` then means "no such post in that org", which the rule reads as a
-   * denial exactly as it reads a row from another org — and an unscoped read of a tenant-columned
-   * entity is `X_TENANCY_UNSCOPED`, so the org is not optional here.
+   * ACTING member's org — not to an org a caller names — because the loader runs before the guard,
+   * so a read across tenants raises `X_TENANCY_ACTOR_MISMATCH` where the contract says
+   * `X_FORBIDDEN`. `null` means "no such post this member can see", which is what the rule denies
+   * on; the org the input names is still compared against the member's own inside `postPublish`.
    */
-  authorship(orgId: OrgId, postId: PostId): Promise<PostRow | null>;
+  authorship(postId: PostId): Promise<PostRow | null>;
 }
 
 export interface OrgsService {
@@ -74,17 +74,19 @@ export interface OrgsService {
   allDigestRecipients(): Promise<MemberView[]>;
 }
 
-/** Tier 1 realtime: a topic anything server-side can announce onto. */
-export interface Channel {
-  publish(message: Readonly<Record<string, unknown>>): Promise<void>;
-}
-
+/**
+ * Two services, and both are registered: `defineService('posts', …)` and `defineService('orgs', …)`
+ * run when `apps/web/api/index.ts` imports their modules, which is this app's whole boot.
+ *
+ * A `session` and a `channel` were declared here until 2026-08 and neither was ever registered —
+ * `CtxServices` carries a string index signature, so `ctx.session` compiled and was `undefined` at
+ * runtime, and a declaration nothing installs is a lie the type system helps tell. The member row
+ * moved onto the actor's own facts (`shared/actor.ts`); the channel publish is gone from
+ * `app/posts/jobs.ts` with the reason it cannot exist yet.
+ */
 declare module '@ultimat3/core' {
   interface CtxServices {
     readonly posts: PostsService;
     readonly orgs: OrgsService;
-    /** The app half of the actor — org, orgs, member row. See `shared/actor.ts`. */
-    readonly session: SessionService;
-    channel(name: string): Channel;
   }
 }

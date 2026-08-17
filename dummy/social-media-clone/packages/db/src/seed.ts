@@ -7,8 +7,9 @@
 // friends-only post the viewer may not see, a soft-deleted post, two locales, and four IANA zones
 // including one southern-hemisphere and one without DST.
 
-import { defineSeed } from '@ultimat3/entity';
+import { defineSeed, seedId } from '@ultimat3/entity';
 import { driver } from './client';
+import { replayable, seededIds } from './replayable';
 import {
   blocks,
   comments,
@@ -23,6 +24,16 @@ import {
   posts,
   users,
 } from './schema';
+
+/**
+ * The rows whose presence says "this store holds the demo's fixture graph, and nothing else's".
+ *
+ * `seedId` is a UUID v5 of the label in the framework's fixed namespace, so these two values are the
+ * same on every machine and are not reachable by accident: a database that answers to both of them
+ * was seeded by THIS seed. That is what `resetDemo` asks before it deletes anything — it used to ask
+ * whether `DATABASE_URL` was set, which stopped meaning "not the demo" the moment the demo got one.
+ */
+export const DEMO_MARKER_IDS: readonly string[] = [seedId('user:user'), seedId('user:admin')];
 
 /** The two demo logins, said out loud so a reader does not have to infer them from a hash. */
 export const DEMO_LOGINS = [
@@ -398,8 +409,15 @@ export const demo = defineSeed('demo', async ({ insert, id }) => {
  * from `client.ts` rather than left as the module-private default.
  */
 export const seedDemo = async (): Promise<void> => {
-  await demo.run({ driver });
+  await demo.run({ driver: replayable(driver) });
 };
+
+/**
+ * Which rows the fixture owns, per entity — what a reset must NOT delete. Derived by replaying the
+ * seed, so it cannot drift from the graph above; see `seededIds` for why deleting them is fatal.
+ */
+export const seededRowIds = (): Promise<ReadonlyMap<string, ReadonlySet<string>>> =>
+  seededIds(demo);
 
 if (import.meta.main) {
   await seedDemo();

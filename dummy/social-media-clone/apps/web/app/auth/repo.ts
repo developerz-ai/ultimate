@@ -27,8 +27,16 @@ export const userById = (id: string): Promise<User | null> => db.users.where({ i
 export const credentialFor = (userId: string): Promise<{ passwordHash: string } | null> =>
   db.credentials.where({ userId }).select({ passwordHash: true }).one();
 
+/**
+ * `put`, and now it is one: an upsert on `credentials.userId`, which is the primary key.
+ *
+ * An insert here was an overwrite only in the memory driver. Against Postgres it is `23505` in two
+ * cases the app already has — a password change through this same function, and two processes
+ * bootstrapping the demo logins at once. `ensureDemoCredentials` memoizes that race away inside ONE
+ * process, and the deployed demo runs four role containers against one database.
+ */
 export const putCredential = async (userId: string, passwordHash: string): Promise<void> => {
-  await db.credentials.insert({ userId, passwordHash });
+  await db.credentials.upsertAll([{ userId, passwordHash }], { onConflict: ['userId'] });
 };
 
 export interface NewUser {

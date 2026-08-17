@@ -1,7 +1,7 @@
 // Every read and write the scheduled work makes. The jobs decide WHAT to do; this file decides HOW
 // to ask. Only a repo.ts may touch `db` — a job importing it directly is X_BOUNDARY_VIOLATION.
 
-import { db, type Media, seedDemo } from '@social-media-clone/db';
+import { DEMO_MARKER_IDS, db, type Media, seedDemo, seededRowIds } from '@social-media-clone/db';
 
 /**
  * A sweep is a job, not a table scan: it collects a bounded page per run and the next occurrence
@@ -39,6 +39,22 @@ export const pendingMediaBefore = (before: Date, limit = SWEEP_PAGE): Promise<re
 export const markOrphan = (id: string): Promise<Media> => db.media.update(id, { state: 'orphan' });
 
 export const mediaById = (id: string): Promise<Media | null> => db.media.where({ id }).one();
+
+/**
+ * Which of the demo's marker rows this store is missing — empty means "this is the demo's database".
+ *
+ * One statement, `in` over two deterministic ids, because the question is asked immediately before a
+ * job deletes five tables. It answers "the seed ran here", never "the database is small" or "the
+ * URL looks like a demo": those are guesses, and the thing being guarded is destruction.
+ */
+export const missingDemoMarkers = async (): Promise<readonly string[]> => {
+  const rows = await db.users
+    .andWhere('id', 'in', [...DEMO_MARKER_IDS])
+    .limit(DEMO_MARKER_IDS.length)
+    .all();
+  const found = new Set(rows.map((row) => row.id));
+  return DEMO_MARKER_IDS.filter((id) => !found.has(id));
+};
 
 /** What one reset removed, per table. Returned so the job's log names rows rather than "ok". */
 export interface PurgeCount {
@@ -90,11 +106,27 @@ const CONTENT_TABLES = [
  * Users, credentials and sessions are deliberately NOT purged: an hourly reset that signs the
  * visitor out mid-click is worse than one that leaves their account alone, and the seed restores
  * every seeded user in place anyway.
+ *
+ * One statement per row, up to 5 × PURGE_PAGE of them, and no checkpoint — deliberate, at this
+ * size. A page is 1,000 and the demo's hour produces dozens, so the real pass is a few dozen
+ * statements; a cancelled attempt re-reads what is still there rather than redoing what it already
+ * deleted, because `entry.ids()` runs again on the retry. What would change that judgement is a
+ * bulk delete this app can express: `deleteWhere` needs an equality filter and `deleteWhere({})` is
+ * `X_WRITE_UNFILTERED`, so "empty this table" is not expressible today. Splitting the pass into a
+ * `step.run` per table would checkpoint it — the cost is only worth paying when a page is full.
  */
 export const restoreSeededGraph = async (): Promise<readonly PurgeCount[]> => {
+  // What the fixture owns, so the purge removes what VISITORS added and nothing else. It used to
+  // delete every row and count on the replay to put the seeded ones back, which worked only on the
+  // in-memory driver: `posts` and `comments` are soft-deletable, deleting one stamps it, and no
+  // upsert can clear that stamp again (packages/entity/src/bulk-write.ts:219 spares the column, and
+  // the memory driver refuses to address a stamped row at all). The first hourly reset would have
+  // left the demo's feed empty for good — `apps/web/app/posts/service.test.ts` caught it.
+  const seeded = await seededRowIds();
   const counts: PurgeCount[] = [];
   for (const entry of CONTENT_TABLES) {
-    const rows = await entry.ids();
+    const keep = seeded.get(entry.table) ?? new Set<string>();
+    const rows = (await entry.ids()).filter((row) => !keep.has(row.id));
     for (const row of rows) await entry.drop(row.id);
     counts.push({ table: entry.table, removed: rows.length });
   }

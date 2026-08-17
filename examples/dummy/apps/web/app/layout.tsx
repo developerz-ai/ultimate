@@ -7,7 +7,6 @@
  */
 
 import { useT } from '@postly/i18n';
-import { OrgSwitcher } from '@postly/ui';
 import { isTheme, type Theme, UiProvider } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import { useActor } from '../shared/actor';
@@ -35,12 +34,18 @@ export function Layout(props: { readonly children: JSX.Element }): JSX.Element {
               {t('common.appName')}
             </a>
 
+            {/*
+              No org switcher. `@postly/ui`'s `OrgSwitcher` posts a native form, and switching org
+              is a SESSION write — a cookie plus a redirect — which none of the eight primitives can
+              perform: an action answers JSON and may not touch headers or cookies, and an app
+              cannot contribute a raw POST route (`packages/cli/src/serve.ts` composes actions,
+              queries, assets, storage, islands and page routes, and nothing else). It posted to
+              `/_x/session/org` until 2026-08, a path nothing in this repo has ever served.
+            */}
             <nav class={styles.nav} aria-label={t('app.nav.org')}>
               <a href="/feed">{t('app.nav.feed')}</a>
               <a href="/settings">{t('app.nav.settings')}</a>
             </nav>
-
-            <OrgSwitcher orgs={actor.orgs} currentOrgId={actor.orgId} action="/_x/session/org" />
           </header>
 
           <UpdateBanner label={t('errors.updateAvailable')} action={t('errors.updateAction')} />

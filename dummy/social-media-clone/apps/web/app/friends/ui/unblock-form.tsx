@@ -2,8 +2,8 @@
 //
 // The control is rendered because `blockDelete` allows it — the same decision that answers the call
 // — and NOT because the row happens to be in the list. That is the `admin/admin` rule applied here:
-// view-only is a permission, never a hidden button. The call currently refuses with
-// `X_BLOCK_REMOVE_UNSUPPORTED`, and hiding the button would hide the framework gap with it.
+// view-only is a permission, never a hidden button. The call is idempotent: submitting it for a
+// person who is not blocked answers with the same pair rather than an error.
 
 import { t } from '@ultimat3/i18n';
 import { Button } from '@ultimat3/ui';

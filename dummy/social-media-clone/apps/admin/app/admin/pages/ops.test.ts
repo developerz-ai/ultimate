@@ -1,6 +1,6 @@
 // What `pages:` buys, asserted rather than described: the ops board is in the SAME route table
 // and behind the SAME permission pair a generated screen gets, and it carries no route and no
-// authz of its own for anyone to get wrong.
+// authz of its own for anyone to get wrong. The board's own gate is `uploads.test.ts`.
 
 import { expect, test } from 'bun:test';
 import { pageRoutes } from '@ultimat3/admin';

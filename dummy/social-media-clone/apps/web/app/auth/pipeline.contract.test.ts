@@ -65,7 +65,13 @@ beforeAll(async () => {
       rateLimit: { scope: 'process' },
     }),
   });
-});
+  // `loadApp` walks this app's whole module graph — ~2.7s alone, and the four contract files
+  // that do it run while every other suite competes for the same cores, so the 5000ms bun
+  // gives a hook is a coin flip rather than a budget. Booting the app IS the fixture here,
+  // so the timeout is what moves. Raised across all four together: they share one cost, and
+  // raising the one seen failing only relocates the failure to whichever shard the others
+  // land in.
+}, 30_000);
 
 contractTest('the app configured an authenticator — without it every request is anonymous', () => {
   // The condition, not the consequence. `hooks.authenticate` absent is a server where a valid

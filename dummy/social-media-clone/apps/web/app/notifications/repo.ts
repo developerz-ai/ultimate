@@ -77,3 +77,14 @@ export interface NewNotification {
 
 export const insertNotification = (notification: NewNotification): Promise<Notification> =>
   db.notifications.insert(notification);
+
+/**
+ * One statement for a whole group, which is what `insertAll` is for: a message to a 100-person
+ * conversation used to be 99 sequential inserts inside the request that sent it, each waiting for
+ * the last. Every row is parsed and asserted exactly as `insert` parses one, so nothing is skipped
+ * by going wide — and an empty batch writes nothing rather than sending an empty statement.
+ */
+export const insertNotifications = (
+  batch: readonly NewNotification[],
+): Promise<readonly Notification[]> =>
+  batch.length === 0 ? Promise.resolve([]) : db.notifications.insertAll(batch);
