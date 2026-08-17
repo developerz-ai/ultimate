@@ -109,7 +109,7 @@ Five artifacts, read off the real registry with `createTodo.describe()`, `.opena
 |---|---|
 | HTTP route | `POST /api/todos/create`, capability `todo:write` |
 | OpenAPI operation | `operationId: "createTodo"`, `summary` from `mcp.description` |
-| MCP tool | `create_todo` — and `tool().policy === createTodo.policy` is `true`, one authz object, not a copy |
+| MCP tool | `createTodo` — the export name verbatim, which is what `tools/call` spells — and `tool().policy === createTodo.policy` is `true`, one authz object, not a copy |
 | Job handle | `action:createTodo` — the same handler, run through the queue |
 | Contract tests | 3 generated assertions: garbage input rejected, anonymous denied, operation present in the spec |
 | Typed client | `.client({ baseUrl })` derives the path by string math, so the browser imports no server code |

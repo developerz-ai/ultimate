@@ -8,14 +8,21 @@ import { isMcpExposed } from '@ultimat3/core';
 import type { AnyAction } from './action';
 import { actionName, defOf, invoke } from './invoke';
 import { type JsonSchemaObject, mcpSchemaOf, sortSchema } from './json-schema';
-import { toToolName } from './naming';
 import type { ActionPolicy } from './policy-gate';
 import { listActions } from './registry';
 
 export interface McpToolDescriptor {
+  /**
+   * The export name VERBATIM — `@ultimat3/mcp` serves that name and nothing else, so any
+   * transformation here would be a label no `tools/call` could spell. See `toMcpTool`.
+   */
   readonly name: string;
   /** The action's `mcp.description`, or its name when the author gave none. */
   readonly description: string;
+  /**
+   * The action this tool projects. Equal to `name` by construction since 2026-08 — kept because
+   * a reader asking "which action is behind this tool?" should not have to know that.
+   */
   readonly action: string;
   /**
    * The action's own policy object, not a copy — `tool().policy === action.policy`
@@ -32,11 +39,16 @@ export interface McpInvokeOptions {
   readonly idempotencyKey?: string | null;
 }
 
+/**
+ * The tool name is the export name VERBATIM — it was `snake_case`d until 2026-08, and
+ * `@ultimat3/mcp` has only ever served the verbatim one, so `.tool().name` was a label no
+ * `tools/call` accepted. One name per action, on every surface.
+ */
 export function toMcpTool(target: AnyAction): McpToolDescriptor {
   const name = actionName(target);
   const def = defOf(target);
   return {
-    name: toToolName(name),
+    name,
     description: def.mcp?.description ?? name,
     action: name,
     policy: def.policy,

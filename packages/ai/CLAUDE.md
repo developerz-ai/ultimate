@@ -11,6 +11,11 @@ rather than imported. Same contract, two wire formats — and the same *decision
 `runLlmToolCall` ask `isMcpExposed` from `@ultimat3/core` (tier 0, reachable by both), never a
 local `=== true`. An in-app agent and an external one must be offered exactly the same tools.
 
+**And the same NAME**: `toLlmTool` passes `action.name` through untouched, which is the export name
+`@ultimat3/mcp` serves. Never derive one here. `llm()` and `agent()` return actions, so their
+`.tool()` name is the verbatim export name too — it read `summarize_post` / `projecting_agent`
+until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts`).
+
 ## Owns
 
 | File | Job |

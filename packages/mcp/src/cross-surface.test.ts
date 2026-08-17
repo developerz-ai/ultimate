@@ -11,6 +11,14 @@
 // This file is the cross-surface assertion. A keyword the wire subset cannot enforce is a
 // deliberate omission (`validate-args.ts` is what makes it a contract at all) — so the assertion
 // is per keyword and states which surface owes what.
+//
+// The same claim applies to the tool's NAME, and nothing asserted it until 2026-08: this package
+// serves `actionName(target)`/`queryName(target)` verbatim (`projectable.ts`), while `.tool()`,
+// `x-ultimate.mcpTool` and `ActionDescriptor.mcp.tool` all published `toToolName(name)` —
+// `publishPost` served, `publish_post` published. An agent that read the spec and issued
+// `tools/call { name: 'publish_post' }` got ToolNotFound. Every existing test asserted one side
+// or the other, never the two against each other, so the second block below compares each
+// PUBLISHED name against the catalog the server actually answers.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
@@ -20,7 +28,7 @@ import {
   registerAction,
   resetRegistry as resetActions,
 } from '@ultimat3/action';
-import { agentActor } from '@ultimat3/core';
+import { agentActor, createContext, runWithContext } from '@ultimat3/core';
 import {
   can,
   clearPermissions,
@@ -28,6 +36,7 @@ import {
   definePermissions,
   defineRoles,
 } from '@ultimat3/policy';
+import { from, query, registerQuery, resetRegistry as resetQueries } from '@ultimat3/query';
 import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
 import type { McpCaller } from './registry';
@@ -57,6 +66,15 @@ const declare = () =>
     handle: () => ({ ok: true }),
   });
 
+/** A read, for the name block: the naming rule is one rule and both primitives obey it. */
+const declareRead = () =>
+  query({
+    input: t.object({ orgId: t.string }),
+    policy: can('order:archive'),
+    mcp: { expose: true, description: 'Recently archived orders' },
+    sql: () => from<{ id: string }>('orders', [{ id: 'o1' }]),
+  });
+
 describe('one declaration, three schema surfaces', () => {
   let archiveOrder: ReturnType<typeof declare>;
 
@@ -65,7 +83,9 @@ describe('one declaration, three schema surfaces', () => {
     clearRoles();
     clearPermissions();
     definePermissions(['order:archive']);
-    defineRoles({ owner: ['order:archive'] });
+    // `{ grants: [...] }`, not a bare array: `expandRoles` reads `.grants` and a bare array
+    // defines a role that grants nothing — invisible until something actually runs a policy.
+    defineRoles({ owner: { grants: ['order:archive'] } });
     archiveOrder = registerAction('archiveOrder', declare());
   });
 
@@ -81,10 +101,9 @@ describe('one declaration, three schema surfaces', () => {
 
   const listedSchema = async (): Promise<JsonSchema> => {
     const { server } = defineAppMcp({ actions: [archiveOrder] });
-    const response = await server.handle(
-      { jsonrpc: '2.0', id: 1, method: 'tools/list' },
-      { caller },
-    );
+    // `handle` takes the caller itself, not a wrapper: `{ caller }` carries no `actor`, which
+    // `tools/list` never reads and `tools/call` dereferences on its way to the audit line.
+    const response = await server.handle({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, caller);
     const result = response?.result as
       | { tools?: { name: string; inputSchema: JsonSchema }[] }
       | undefined;
@@ -137,5 +156,91 @@ describe('one declaration, three schema surfaces', () => {
       ok: false,
       issues: [{ path: 'orderRef' }],
     });
+  });
+});
+
+describe('one declaration, ONE tool name', () => {
+  let archiveOrder: ReturnType<typeof declare>;
+  let recentOrders: ReturnType<typeof declareRead>;
+
+  beforeEach(() => {
+    resetActions();
+    resetQueries();
+    clearRoles();
+    clearPermissions();
+    definePermissions(['order:archive']);
+    defineRoles({ owner: { grants: ['order:archive'] } });
+    archiveOrder = registerAction('archiveOrder', declare());
+    recentOrders = registerQuery('recentOrders', declareRead());
+  });
+
+  afterEach(() => {
+    resetActions();
+    resetQueries();
+    clearRoles();
+    clearPermissions();
+  });
+
+  const appMcp = () => defineAppMcp({ actions: [archiveOrder], queries: [recentOrders] });
+
+  /** The names `tools/call` answers to — read off the catalog, never assumed from an export. */
+  const servedNames = async (): Promise<readonly string[]> => {
+    const response = await appMcp().server.handle(
+      { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      caller,
+    );
+    const result = response?.result as { tools?: { name: string }[] } | undefined;
+    return (result?.tools ?? []).map((tool) => tool.name);
+  };
+
+  /** The operation as the published document carries it, located by id rather than by path. */
+  const openapiMcpTool = (): unknown => {
+    for (const item of Object.values(buildOpenApi().paths)) {
+      const operation = (item as { post?: Record<string, unknown> }).post;
+      if (operation?.['operationId'] === 'archiveOrder') {
+        return (operation['x-ultimate'] as Record<string, unknown> | undefined)?.['mcpTool'];
+      }
+    }
+    return undefined;
+  };
+
+  test('every surface that PUBLISHES a tool name publishes one the server answers to', async () => {
+    const served = await servedNames();
+
+    // The served name is the export name VERBATIM — no derivation, on either side.
+    expect([...served].sort()).toEqual(['archiveOrder', 'recentOrders']);
+    // The three an action publishes. Each was `archive_order` until 2026-08, and none of the
+    // three is a name this catalog has ever contained.
+    expect(served).toContain(archiveOrder.tool().name);
+    expect(served).toContain(openapiMcpTool());
+    expect(served).toContain(archiveOrder.describe().mcp.tool);
+    // A query publishes one; `QueryDescriptor` carries no `mcp` block, so there is no fourth.
+    expect(served).toContain(recentOrders.tool().name);
+  });
+
+  // The failure end to end, and the reason the assertion above is not enough on its own: an
+  // agent reads `x-ultimate.mcpTool` out of `openapi.json` and calls exactly that name.
+  test('the name OpenAPI publishes is a name tools/call resolves', async () => {
+    const name = openapiMcpTool();
+    const response = await runWithContext(createContext({}), () =>
+      appMcp().server.handle(
+        {
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/call',
+          params: { name, arguments: { orderRef: 'ORD-1234', note: null } },
+        },
+        caller,
+      ),
+    );
+
+    // `-32601` ToolNotFound is what the published name actually got. Not a policy question:
+    // this caller holds `order:archive`, so a resolved tool answers with the handler's value.
+    expect(response?.error).toBeUndefined();
+    const result = response?.result as
+      | { isError?: boolean; content?: { text?: string }[] }
+      | undefined;
+    expect(result?.isError).toBeUndefined();
+    expect(result?.content?.[0]?.text ?? '').toContain('"ok": true');
   });
 });

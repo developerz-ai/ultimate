@@ -45,14 +45,14 @@ That line is the entire integration. From the existing declaration:
 
 | MCP requirement | Source |
 |---|---|
-| tool name | action name |
+| tool name | the action's export name, **verbatim** — `publishPost`, never `publish_post`. The one name `tools/call` accepts, `scopes:` is keyed on, and every published catalog spells. `As of 2026-08`: `openapi.json`'s `x-ultimate.mcpTool` and `describe().mcp.tool` published a snake_case name until then, and an agent that trusted either called a tool the server answers ToolNotFound for |
 | JSON Schema for input | the `input` schema (Standard Schema → JSON Schema, via `introspect()`) |
 | output schema | `output` |
 | description | `mcp.description` |
 | **authorization** | the action's `policy` — unchanged, unwrapped, identical |
 | audit trail | the same OTel span and log line as an HTTP call |
 
-The projected tool calls `action.run(...)` — the same entry point the HTTP route calls. Policy runs inside `run`, so there is nothing to keep in sync. The projection itself adds **no** MCP scope: a second gate hard-coded into the projection would sit in front of the only gate that matters, and the two would eventually disagree. `defineAppMcp`'s `scopes:` map may still attach one from outside — a property of the connection's token, never invented by the projection.
+The projected tool's `run` **is** `invoke` — the same entry point the HTTP route calls (`packages/mcp/src/projectable.ts`). Policy runs inside it, so there is nothing to keep in sync. The projection itself adds **no** MCP scope: a second gate hard-coded into the projection would sit in front of the only gate that matters, and the two would eventually disagree. `defineAppMcp`'s `scopes:` map may still attach one from outside — a property of the connection's token, never invented by the projection.
 
 No MCP-specific permission table, no service account with broad rights. Exposure is opt-in; silence exposes nothing.
 
@@ -233,6 +233,7 @@ Full list: [Error codes](Error-Codes). CLI surface: [CLI reference](CLI-Referenc
 ## Rules
 
 - One authz system. An MCP call and an HTTP call reach the same `policy` with the same actor resolution.
+- One name. A projected tool is called the primitive's export name, verbatim, in `tools/list`, in `scopes:`, in the LLM tool list, in `openapi.json` and in `describe()`. There is no second spelling to derive.
 - Exposure is opt-in per action; the projection carries no scope of its own — `defineAppMcp`'s `scopes:` map may still attach one, from outside the primitive.
 - Visibility is fail-closed and computed per connection. A hidden tool answers ToolNotFound, never Forbidden.
 - Gate order is visibility → scope → arguments → policy, and every outcome is audited. There is no trusted-tool mode.

@@ -97,7 +97,10 @@ describe('llm() is an action factory, not a ninth primitive', () => {
 
     expect(isAction(summarize)).toBe(true);
     expect(typeof summarize).toBe('function');
-    expect(summarize.tool().name).toBe('summarize_post');
+    // Verbatim, because `llm()` returns an action and an action's tool name is its export name
+    // — the one `@ultimat3/mcp` serves and the only one `tools/call` answers to. It read
+    // `summarize_post` until 2026-08, which named a tool no MCP catalog has ever contained.
+    expect(summarize.tool().name).toBe('summarizePost');
     expect(summarize.openapi().operationId).toBe('summarizePost');
     expect(summarize.contract().length).toBeGreaterThan(0);
     expect(summarize.job().name).toBe('action:summarizePost');

@@ -11,6 +11,17 @@ describe('@ultimat3/query public surface', () => {
     expect(surface).not.toHaveProperty('paginate');
   });
 
+  test('no tool-name deriver on the barrel — a read has ONE name, its export name', () => {
+    // `@ultimat3/mcp` serves a read under `queryName(target)` and answers `tools/call` for
+    // nothing else, so any second spelling names a tool the server has never heard of. That
+    // package is tier 4 and cannot be imported here to prove it, which is exactly why the pin
+    // has to live in the package where the deriver can be reintroduced.
+    // `mcp-tool.test.ts` pins the descriptor's name structurally; this pins the ABSENCE.
+    expect(surface).not.toHaveProperty('toToolName');
+    const derivers = Object.keys(surface).filter((key) => /tool_?name/i.test(key));
+    expect(derivers).toEqual([]);
+  });
+
   test('re-exports the one `t`, not a copy of it', () => {
     // A spread or a re-implementation would still typecheck but would stop tracking
     // `configureSchemaProvider()`. Identity is the only assertion that catches that.

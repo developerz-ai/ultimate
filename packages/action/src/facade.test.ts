@@ -79,7 +79,7 @@ describe('the fluent surface', () => {
     const tool = target.tool();
     // The same policy object on both surfaces — an MCP call cannot reach a second authz path.
     expect(tool.policy).toBe(target.policy);
-    expect(tool.name).toBe('publish_post');
+    expect(tool.name).toBe('publishPost');
     expect(tool.description).toBe('Publish a draft post');
     expect(target.openapi().operationId).toBe('publishPost');
     expect(target.openapi().summary).toBe('Publish a draft post');

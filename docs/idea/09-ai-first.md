@@ -45,7 +45,7 @@ That line is the entire integration. From the existing declaration:
 
 | MCP requirement | Source |
 |---|---|
-| tool name | action name |
+| tool name | the action's export name, verbatim — `publishPost`. One name across `tools/call`, `scopes:`, the LLM tool list and every published catalog; nothing derives a second spelling |
 | JSON Schema for input | the action's `input` (Standard Schema → JSON Schema) |
 | output schema | `output` |
 | description | `mcp.description` |

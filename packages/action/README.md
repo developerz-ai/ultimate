@@ -119,24 +119,27 @@ a page's module graph free of any edge to a feature's implementation.
 ## Path derivation
 
 First camelCase word is the verb; the rest is the resource, last word pluralized,
-kebab-cased. The **served MCP tool name is not derived** — it is the export name verbatim, because
+kebab-cased. The **MCP tool name is not derived at all** — it is the export name verbatim, because
 that is what `defineAppMcp`'s `scopes:` and a `tools/call` have to spell.
 
-| Action | Route | MCP tool, as served |
+| Action | Route | MCP tool |
 |---|---|---|
 | `publishPost` | `POST /api/posts/publish` | `publishPost` |
 | `updateUserProfile` | `POST /api/user-profiles/update` | `updateUserProfile` |
 | `likePost` | `POST /api/posts/like` | `likePost` |
 | `checkout` (single word) | `POST /api/checkouts/invoke` | `checkout` |
 
-> **Known defect, `As of 2026-08`: three surfaces in this package say `publish_post` instead.**
-> The served name is `@ultimat3/mcp`'s (`toolFromAction` → `primitive.mcp?.name ?? primitive.name`),
-> and it is the only one an agent can call. But `toToolName()` snake_cases the name for
-> `action.tool().name` (`mcp-tool.ts`), for `openapi.json`'s `x-ultimate.mcpTool` (`http.ts`) and
-> for `describeAction().mcp.tool`, which is the manifest row. So the published contract advertises
-> a tool no server serves. Unifying on the verbatim name is a **breaking** change to both generated
-> artifacts and is not yet made — until it is, read `.tool().name` as a descriptor's own label and
-> `defineAppMcp`'s catalog as the wire truth.
+**One name, four surfaces** — `.tool().name`, `openapi.json`'s `x-ultimate.mcpTool`,
+`describeAction().mcp.tool` (what `x actions describe --json`, `x actions list --json`, the
+`actions.describe` dev MCP tool and the `/_x` Routes panel show) and the catalog `@ultimat3/mcp`
+serves. It was two until 2026-08: a `toToolName()` here snake_cased the first three to
+`publish_post` while the server answered only `publishPost`, so an agent that read the published
+contract called a tool that does not exist. `toToolName` is **deleted**, not deprecated — a second
+derivation is a second name. `mcp-tool.test.ts`'s "one name per action, on every surface" is what
+keeps it that way.
+
+`x.manifest.json` is **not** one of the four: `ActionFact.mcp` is `{ expose, description? }`, so
+the manifest never carried a tool name and was never wrong about one.
 
 ## One invocation core
 

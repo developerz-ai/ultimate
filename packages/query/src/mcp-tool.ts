@@ -8,7 +8,6 @@ import type { Actor, Ctx } from '@ultimat3/core';
 import { isMcpExposed } from '@ultimat3/core';
 import type { JsonSchema } from '@ultimat3/schema';
 import { toMcpInputSchema } from '@ultimat3/schema';
-import { toToolName } from './naming';
 import type { QueryPolicy } from './policy-gate';
 import type { AnyQuery } from './query';
 import { queryName, sourceFor } from './read';
@@ -21,6 +20,11 @@ export interface QueryToolReadOptions {
 }
 
 export interface QueryToolDescriptor {
+  /**
+   * The export name VERBATIM, and identical to `query` below. `@ultimat3/mcp` serves a read
+   * under `queryName(target)` and answers `tools/call` for nothing else, so a snake_cased
+   * descriptor named a tool the server had never heard of — which it did until 2026-08.
+   */
   readonly name: string;
   /** The query's `mcp.description`, or its name when the author gave none. */
   readonly description: string;
@@ -39,7 +43,7 @@ export interface QueryToolDescriptor {
 export function toQueryTool(target: AnyQuery): QueryToolDescriptor {
   const name = queryName(target);
   return {
-    name: toToolName(name),
+    name,
     description: target.mcp?.description ?? name,
     query: name,
     policy: target.policy,

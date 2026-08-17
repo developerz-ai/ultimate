@@ -113,7 +113,8 @@ describe('the fluent surface', () => {
 
     // The same policy object on both surfaces — an MCP call cannot reach a second authz path.
     expect(tool.policy).toBe(target.policy);
-    expect(tool.name).toBe('org_feed');
+    // One name: what the descriptor advertises is what `tools/call` accepts.
+    expect(tool.name).toBe('orgFeed');
     expect(tool.query).toBe('orgFeed');
     expect(tool.description).toBe('The org feed');
     expect(tool.mutates).toBe(false);

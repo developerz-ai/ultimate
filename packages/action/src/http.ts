@@ -24,7 +24,6 @@ import {
   PROBLEM_SCHEMA_NAME,
   schemaRef,
   toOperationId,
-  toToolName,
 } from './naming';
 import { policyCapability } from './policy-gate';
 
@@ -156,8 +155,11 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
       invalidates: tagKeys(def.cache?.invalidates ?? []),
       // The tool name an agent would call, or `null` when there is no tool. `!== false` here
       // advertised one for every action, so an agent reading the spec asked for a tool the MCP
-      // catalog never listed — `isMcpExposed` is the same answer `toMcpTool` gives.
-      mcpTool: isMcpExposed(def.mcp) ? toToolName(name) : null,
+      // catalog never listed — `isMcpExposed` is the same answer `toMcpTool` gives. The NAME was
+      // the second half of the same defect: `toToolName` published `publish_post` while
+      // `@ultimat3/mcp` served `publishPost`, so a spec-reading agent called a tool that does not
+      // exist. Verbatim, and never derived — this is a published contract, not a label.
+      mcpTool: isMcpExposed(def.mcp) ? name : null,
       rateLimit: rateLimitMeta(name, def.rateLimit),
       // The dates as data, beside the boolean flag OpenAPI defines: `deprecated: true` says an
       // operation is going away and nothing else, so a client that wants to plan the migration

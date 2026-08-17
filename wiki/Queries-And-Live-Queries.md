@@ -58,7 +58,7 @@ Every projection is a method on the query — `liveFeed.tool()`, never `toQueryT
 | Typed client hook | `input` + `sql` return type | `const feed = useLiveFeed({ orgId })` in `app/` — no fetch, no codegen step. Bound once with `liveHookFor`, below |
 | Live subscription | `live: true` | WS frames `{qid, op, row, lsn}` patched into a Solid signal |
 | Cache entry | tags from `sql` | key is the query name + a fingerprint of the parsed input + the sorted tag keys — the actor is not in it; see [Caching and invalidation](Caching-And-Invalidation) |
-| MCP read tool | `input` + `policy` + name | one read tool per query, identical authz. See [MCP and AI](MCP-And-AI) |
+| MCP read tool | `input` + `policy` + name | one read tool per query, named for the export **verbatim** — `liveFeed`, never `live_feed`. The URL is kebab-cased; the tool name is not. Identical authz. See [MCP and AI](MCP-And-AI) |
 
 ### The typed client hook, precisely
 

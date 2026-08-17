@@ -11,6 +11,15 @@ import { t } from './index';
  */
 const PRIVATE_TO_INVOKE = ['defOf', 'stashDef', 'hasDef'] as const;
 
+/**
+ * The tool-name derivers this package must never grow back. `toToolName` snake_cased an MCP tool
+ * name until 2026-08 while `@ultimat3/mcp` served the export name verbatim, so `openapi.json` and
+ * every descriptor reader published a name `tools/call` answers not-found for. The only test that
+ * caught it lived in `@ultimat3/mcp` — tier 4, which this package cannot import, so the rule was
+ * enforced one tier above where it can be broken.
+ */
+const NO_TOOL_NAME_DERIVER = ['toToolName', 'deriveToolName', 'toolNameFor'] as const;
+
 const publishPost = surface
   .action({
     input: schemaT.object({ postId: schemaT.uuid }),
@@ -41,6 +50,19 @@ describe('@ultimat3/action public surface', () => {
     for (const name of PRIVATE_TO_INVOKE) expect(exported).not.toContain(name);
     // The positive half: the one execution path IS exported, because every surface needs it.
     expect(exported).toContain('invoke');
+  });
+
+  // Two halves of one rule, pinned HERE because tier 3 cannot import the tier-4 test that
+  // caught the original bug: an MCP tool's name is the export name, and nothing derives one.
+  test('the tool name is the registered name, and no deriver is exported', () => {
+    // Structural, with no literal to drift: whatever the action was registered as IS the tool.
+    expect(surface.describeAction(publishPost).mcp.tool).toBe(publishPost.name);
+    expect(publishPost.tool().name).toBe(publishPost.name);
+
+    const exported = Object.keys(surface);
+    for (const name of NO_TOOL_NAME_DERIVER) expect(exported).not.toContain(name);
+    // The positive half: PATH derivation is still this package's job and stays exported.
+    expect(exported).toContain('derivePath');
   });
 
   test('no projection carries the declaration out with it', () => {

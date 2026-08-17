@@ -129,7 +129,7 @@ describe('mutator', () => {
     expect(renamed.policy).toBe(likePost.policy);
     expect(renamed.mcp).toEqual({ expose: true, description: 'Like a post' });
     expect(await renamed.as(likerActor, { postId: POST_ID })).toEqual({ id: POST_ID, likes: 7 });
-    expect(renamed.tool().name).toBe('favorite_post');
+    expect(renamed.tool().name).toBe('favoritePost');
     expect(renamed.openapi().operationId).toBe('favoritePost');
     expect(typeof renamed.client({ baseUrl: 'https://app.test' })).toBe('function');
     expect(renamed.job().name).toBe('action:favoritePost');

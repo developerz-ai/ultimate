@@ -1389,7 +1389,7 @@
             "comment",
             "post"
           ],
-          "mcpTool": "create_comment",
+          "mcpTool": "createComment",
           "rateLimit": null
         }
       }
@@ -1450,7 +1450,7 @@
           "invalidates": [
             "member"
           ],
-          "mcpTool": "toggle_digest_opt_in",
+          "mcpTool": "toggleDigestOptIn",
           "rateLimit": null
         }
       }
@@ -1512,7 +1512,7 @@
             "member",
             "org"
           ],
-          "mcpTool": "invite_member",
+          "mcpTool": "inviteMember",
           "rateLimit": null
         }
       }
@@ -1574,7 +1574,7 @@
             "org",
             "plan"
           ],
-          "mcpTool": "upgrade_plan",
+          "mcpTool": "upgradePlan",
           "rateLimit": null
         }
       }
@@ -1635,7 +1635,7 @@
           "invalidates": [
             "feed"
           ],
-          "mcpTool": "create_post",
+          "mcpTool": "createPost",
           "rateLimit": null
         }
       }
@@ -1697,7 +1697,7 @@
             "feed",
             "post"
           ],
-          "mcpTool": "like_post",
+          "mcpTool": "likePost",
           "rateLimit": null
         }
       }
@@ -1760,7 +1760,7 @@
             "feed",
             "post"
           ],
-          "mcpTool": "publish_post",
+          "mcpTool": "publishPost",
           "rateLimit": null
         }
       }
@@ -1821,7 +1821,7 @@
           "invalidates": [
             "member"
           ],
-          "mcpTool": "save_preferences",
+          "mcpTool": "savePreferences",
           "rateLimit": null
         }
       }
@@ -2003,7 +2003,7 @@
           "invalidates": [
             "member"
           ],
-          "mcpTool": "set_theme",
+          "mcpTool": "setTheme",
           "rateLimit": null
         }
       }

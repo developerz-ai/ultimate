@@ -20,7 +20,7 @@ import type { ActionJobHandle } from './job-handle';
 import type { JsonSchemaObject } from './json-schema';
 import { jsonSchemaOf } from './json-schema';
 import type { McpToolDescriptor } from './mcp-tool';
-import { derivePath, toToolName } from './naming';
+import { derivePath } from './naming';
 import {
   type ActionPolicy,
   policyCapability,
@@ -356,7 +356,11 @@ export function describeAction(target: AnyAction): ActionDescriptor {
       // Fail-open here published every action as a tool no surface would ever serve, which made
       // a first honest `expose: false` read as a withdrawn capability and demand a major bump.
       expose: isMcpExposed(mcp),
-      tool: toToolName(name),
+      // The export name verbatim, which is the only name `@ultimat3/mcp` will answer a
+      // `tools/call` for. A derived one made every descriptor reader — `x actions describe
+      // --json`, the `actions.describe` dev tool, the `/_x` panel — name a tool no surface
+      // serves. `x.manifest.json` is not among them: it copies `expose` and `description` only.
+      tool: name,
       description: mcp?.description ?? null,
     },
     rateLimit: def.rateLimit ?? null,
