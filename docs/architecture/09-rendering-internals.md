@@ -70,7 +70,7 @@ Emits:
 
 | Rule | Detail |
 |---|---|
-| Props cross a boundary | must be structured-clone serializable. A function or class instance is a build error (`X_ISLAND_PROPS_UNSERIALIZABLE`) |
+| Props cross a boundary | must be structured-clone serializable. A function or class instance is `X_ISLAND_PROPS_INVALID` |
 | Props transport | inlined JSON for small payloads, a separate `p` fetch above the size cap |
 | Children | server-rendered HTML by default; a child needing its own timing becomes its own island, nested |
 | Chunking | one chunk per island, content-hashed. Two islands importing the same module share a sub-chunk **within the same graph** |
@@ -142,7 +142,7 @@ GET /blog/hello
 | Regeneration | a `job`, not an inline render — so a burst of 10k requests costs one render and the origin is never the bottleneck |
 | Storage | tier 3 (Redis) is **required** for ISR: regeneration happens on a different instance than the write ([`../idea/05-caching.md`](../idea/05-caching.md)) |
 | Serving during regen | the stale copy, with `stale-while-revalidate` so the CDN does the same |
-| Failure | regen failure keeps the stale copy and records `X_ISR_REGEN_FAILED` with the trace; a stale page never becomes a 500 |
+| Failure | regen failure keeps the stale copy and logs `isr.regenerate.failed` (`packages/render/src/render-isr.ts:250-256`); a stale page never becomes a 500. It throws no error and carries no `X_*` code — the request already had an answer |
 | Prerender | `prerender()` supplies the initial param set at build; params discovered at runtime are recorded for the reverse index below |
 
 ## Tag → page dependency lookup
@@ -174,16 +174,32 @@ Fanout is enqueued in the same transaction as the write and executed post-commit
 
 Live queries are a **separate path**: the same commit already flows through logical replication ([`07-realtime-internals.md`](./07-realtime-internals.md)). Realtime never depends on cache invalidation succeeding.
 
-A rolled-back write never purges. A committed write always does. `x cache graph --json` prints exactly what a write will evict, before you run it.
+A rolled-back write never purges. A committed write always does. `x cache graph --json` would print
+what a write will evict before you run it — **planned, not shipped**: `x cache` is in the registry
+and `x help` lists it, and running it exits `X_NOT_IMPLEMENTED` naming its own fix,
+`x dev` and the cache panel at `/_x`. The graph itself is real — `x.manifest.json` carries it — and
+`recentInvalidations()` is what the panel reads.
 
 ## Codes
 
 | Code | Meaning | Fix |
 |---|---|---|
 | `X_BUDGET_EXCEEDED` | route bytes / LCP over budget; `data.cause` names the import chain | `x fix boundary <file>` |
-| `X_ISLAND_PROPS_UNSERIALIZABLE` | a non-clonable prop crossed an island boundary | pass an id and look it up inside the island |
-| `X_ISR_REGEN_FAILED` | background regeneration threw; the stale copy stands | read the linked trace, then `x cache purge <route>` |
-| `X_SEO_NO_TITLE` / `X_SEO_NO_DESCRIPTION` | required metadata missing | add it to `meta` in the named route file |
-| `X_SW_UNCACHEABLE` | `offline: 'precache'` on an `ssr` route | change `offline` or the render mode |
-| `X_SW_HAND_EDITED` | `sw.js` checksum mismatch | `x build` — never edit the artifact |
+| `X_ISLAND_PROPS_INVALID` | a non-clonable prop crossed an island boundary | pass an id and look it up inside the island |
+| `X_ISLAND_INVALID` | an island declaration cannot become a client entry | correct the `src` to the `.island.tsx` file the cause names |
+| `X_ISLAND_NOT_HYDRATED` | a page renders an island that nothing would ever boot | declare it on the route, or drop the render |
+| `X_ROUTE_META_MISSING` | required metadata missing (`@ultimat3/render`) | `add description to meta in <the named route file>` |
+| `X_SEO_META_MISSING` | a `site/` route is missing required metadata (`@ultimat3/seo`) | same edit, named by `packages/seo/src/validate.ts` |
+| `X_ROUTE_OFFLINE_MISSING` | `defineRoute()` with no `offline`, or one outside `precache \| runtime \| network-only` | `add offline: 'precache' \| 'runtime' \| 'network-only' to defineRoute` |
+| `X_ROUTE_MODE_INVALID` | render mode not allowed on this surface | change `render` to one this surface permits |
+| `X_SURFACE_BOUNDARY` | a surface imported across the hard boundary | `x fix boundary <file>` |
+| `X_PRERENDER_FAILED` | a prerendered path threw during build | fix the `load` the cause names |
 | `X_BUILD_SKEW` | client build ID incompatible with the current contract | client-side reload signal |
+
+Two names the design docs use are **reserved, not raised** `As of 2026-08`
+([Error codes → Reserved codes](../../wiki/Error-Codes.md#reserved-codes)):
+
+| Reserved | What happens today |
+|---|---|
+| `X_SW_UNCACHEABLE` | an `offline` strategy contradicting the route's `render` mode is **accepted**. `X_ROUTE_OFFLINE_MISSING` checks the strategy's own validity, never its agreement with the mode; `X_SW_SCOPE_INVALID` covers only the scope half |
+| `X_SW_HAND_EDITED` | `sw.js` carries no checksum, so a hand edit survives `x build` and is silently overwritten on the next one |

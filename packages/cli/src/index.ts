@@ -142,6 +142,14 @@ export {
 } from './errors';
 export type { ExecOptions, ExecResult, Runner } from './exec';
 export { exec, execOutput } from './exec';
+export type { CitationFault, CitationRules, CommandCatalog, FixCitation } from './fix-command';
+export {
+  citationFault,
+  citationProblem,
+  citedCommandProblem,
+  fixCitations,
+  loadCommandCatalog,
+} from './fix-command';
 export type { Guard } from './guards';
 export { findingProblem, GUARD_DIR, guardFindings, guardPaths } from './guards';
 export type { DrainFailure, DrainOutcome, DrainSkip } from './jobs-drain';

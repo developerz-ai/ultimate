@@ -40,16 +40,16 @@ Any test that can pass twice and fail the third time is worse than no test — i
 | **Seeds** | `seed(name)` builds a named, deterministic fixture graph via entity factories. Same input → identical rows, identical UUIDs |
 | **Frozen clock** | time starts at a fixed instant. `clock.advance('3d')` moves it, and it also drives `step.sleep` and cron in tests |
 | **Seeded RNG** | `Math.random`, `crypto.randomUUID`, and Bun's RNG are seeded per test file from its path — reproducible, distinct across files |
-| **Sealed network** | any egress not explicitly mocked **fails the test** with `X_TEST_NETWORK_EGRESS`, naming the URL and the fix |
+| **Sealed network** | any egress not explicitly mocked **fails the test** with `X_TEST_NETWORK_SEALED`, naming the URL and the fix |
 | **Fixed timezone + locale** | `UTC` and `en-US` unless a test declares otherwise; a tz-dependent bug fails deterministically |
 | **Ordered concurrency** | job workers in tests run deterministically; `runJobs()` drains the queue synchronously |
 
 Sealed network is the highest-value rule: it converts "the suite is slow and occasionally fails" into "you forgot to mock Stripe, here is the line".
 
 ```
-X_TEST_NETWORK_EGRESS: unmocked network call
+X_TEST_NETWORK_SEALED: unmocked network call
   cause: POST https://api.stripe.com/v1/charges from app/billing/service.ts:42
-  fix:   x test mock https://api.stripe.com/v1/charges
+  fix:   mockFetch('https://api.stripe.com/v1/charges', () => new Response('{}')) — or allowHost('api.stripe.com') if it must be real
 ```
 
 Locale and zone are declared per test when the behavior under test depends on them — see [Timezones and dates](Timezones-And-Dates) and [I18n](I18n).
@@ -316,7 +316,7 @@ $ x verify
 
 | Code | Cause | Fix |
 |---|---|---|
-| `X_TEST_NETWORK_EGRESS` | a test reached the network without a mock | `x test mock <url>` |
+| `X_TEST_NETWORK_SEALED` | a test reached the network without a mock | `mockFetch('<url>', …)`, or `allowHost('<host>')` if the call must be real — both from `@ultimat3/testing`. There is no `x test mock` subcommand |
 | `X_FORBIDDEN` | the actor's policy refused — the assertion target of every denial test | `x actions describe <action> --json` names the capability it enforces: assert the denial with `.rejects.toBeUltimateError('X_FORBIDDEN')`, or grant that capability to the seeded actor's role in `apps/web/shared/policies.ts` |
 | `X_INVARIANT` | a domain invariant was violated inside a test fixture | fix the seed or the invariant |
 | `X_CONFIG_INVALID` | test config names an unknown worker count, driver, or test type | `x test --help` |

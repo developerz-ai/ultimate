@@ -207,6 +207,103 @@ convention and business convention never ships ([axiom
 **every** login — so removing somebody from a group in the IdP takes effect at their next sign-in,
 rather than never. A seam that returns the stored answer writes nothing.
 
+## MFA — TOTP and recovery codes
+
+Pure functions over a secret and a clock. This package mints, checks and de-duplicates a code;
+**it persists nothing** — the secret, the recovery-code hashes and the spent steps are the app's
+rows, because `AuthAdapter` has no MFA member and adding one would break every third-party
+adapter.
+
+```ts
+import { createTotpReplayGuard, enrolTotp, generateRecoveryCodes, verifyTotp } from '@ultimat3/auth';
+import { systemClock } from '@ultimat3/core';
+
+const enrolment = enrolTotp({ issuer: 'Acme', account: 'ada@example.com' });
+// enrolment.uri  -> otpauth://…  the QR code
+// enrolment.secret -> base32, store it against the user
+
+const recovery = generateRecoveryCodes();   // { codes, hashes } — show `codes` ONCE, store `hashes`
+const guard = createTotpReplayGuard();
+
+export function secondFactorHolds(userId: string, secret: string, code: string): boolean {
+  const at = systemClock.now();
+  const { ok, step } = verifyTotp({ secret, code, at });
+  if (!ok || step === null || guard.isUsed(userId, step)) return false;
+  guard.remember(userId, step, at);
+  return true;
+}
+```
+
+| Call | Answers |
+|---|---|
+| `enrolTotp({ issuer, account, secret? })` | `{ secret, uri, digits, periodSeconds }` — `secret` omitted mints one |
+| `verifyTotp({ secret, code, at, drift?, usedSteps? })` | `{ ok, step }`. `step` is the window the code belonged to, `null` on no match |
+| `createTotpReplayGuard(drift?)` | the in-process `{ isUsed, remember }`; a fleet passes a Redis-backed pair of the same two methods |
+| `generateRecoveryCodes(count = 10)` | `{ codes, hashes }`. `codes` is shown once and is never re-derivable |
+| `redeemRecoveryCode(code, hashes)` | the **remaining** hashes, or `null`. Persisting that array is what makes a code single-use |
+| `totpStep(at, stepSeconds?)` / `totpCode(secret, step, digits?)` | the RFC 6238 halves, for a test that has to mint a valid code |
+
+`TOTP_DIGITS` (6), `TOTP_STEP_SECONDS` (30) and `TOTP_DRIFT_STEPS` (±1 window) are exported so an
+app's own copy of the parameters cannot disagree with the verifier's.
+
+A step is remembered per **subject**, not globally: a code is valid for `drift` windows either
+side of now, so without the guard the same six digits log in twice inside a minute. `verifyTotp`
+answers `{ ok: false, step }` — the step still named — when `usedSteps` already holds it, which is
+how a replay is told apart from a wrong code.
+
+**The second leg of login is the app's, `As of 2026-08`.** `login()` and `completeOAuthLogin()`
+throw `X_MFA_REQUIRED` before any session exists; finishing the flow is `verifyTotp` followed by
+`createSession({ mfaSatisfied: true })` in the app's own route. The framework ships no
+`POST /auth/mfa/verify`, deliberately — see [`CLAUDE.md`](CLAUDE.md) for the three things that
+would have to land together, and why fewer is worse than none.
+
+## Email verification and password reset
+
+One issue/consume pair, two purposes. The token is mailed and only its `sha256` is stored, and
+consuming it is a single conditional statement — the hash is an **argument to** the consume, never
+a comparison after one.
+
+```ts
+import {
+  consumeVerification,
+  issueVerification,
+  type MailSender,
+  MemoryAdapter,
+  type VerificationRuntime,
+} from '@ultimat3/auth';
+import { systemClock } from '@ultimat3/core';
+
+declare const mail: MailSender;   // the app wires @ultimat3/mail's `send` here
+
+const runtime: VerificationRuntime = { store: new MemoryAdapter(), clock: systemClock, mail };
+
+const issued = await issueVerification(runtime, {
+  purpose: 'password-reset',
+  identifier: 'ada@example.com',       // the address; also the store key
+  locale: 'en',
+  link: (token) => `https://acme.test/reset?token=${token}`,
+});
+
+const verification = await consumeVerification(runtime, {
+  purpose: 'password-reset',
+  identifier: 'ada@example.com',
+  token: issued.token,                 // in production this arrives off the link
+});
+```
+
+| Name | Is |
+|---|---|
+| `VERIFICATION_PURPOSES` | `['email-verify', 'password-reset']` — the whole set, and `VerificationPurpose` is derived from it |
+| `VERIFICATION_TEMPLATES` | purpose → **catalog key** (`auth.email-verify`, `auth.password-reset`), never copy: the body lives in the app's i18n catalog |
+| `DEFAULT_VERIFICATION_TTL_MS` | 24 h for `email-verify`, 1 h for `password-reset` — a reset link is a password |
+| `MailSender` | the injected port: `send(template, to, data, locale)`. `@ultimat3/mail` is tier 4 and this package is tier 2, so the app wires it |
+| `issueVerification(runtime, input)` | `{ token, expiresAt }`. The token comes back for a test or a CLI; production only ever mails it |
+| `consumeVerification(runtime, input)` | the `AuthVerification` row, or `X_UNAUTHENTICATED`. Unknown, spent, expired and mismatched are one answer |
+
+One live token per `(purpose, identifier)`. A wrong guess destroys nothing: the store's
+`takeVerification(purpose, identifier, tokenHash)` matches before it consumes, so an
+unauthenticated POST with any token cannot kill the victim's live link.
+
 ## Revocation, offboarding and access review
 
 | Call | Blast radius |
@@ -257,9 +354,13 @@ with the method named, not a silent no-op.
 `org_id` index. `X_USERS_MIGRATION_1_3` is those statements for an app already on 1.2; both
 columns are additive with a default, so the migration takes no table rewrite.
 
-```bash
-x db gen "auth tables"     # emits AUTH_TABLES into a migration
-```
+**Nothing wires those statements into a migration for you, `As of 2026-08`.** `AUTH_TABLES` is the
+DDL as plain strings (`AUTH_TABLE_NAMES` is what they create, and `X_USERS_TABLE`,
+`X_SESSIONS_TABLE`, `X_ACCOUNTS_TABLE`, `X_API_KEYS_TABLE`, `X_VERIFICATIONS_TABLE` are the
+individual ones). `x db gen <name>` diffs `describeEntities()` against the newest migration's
+snapshot — these tables are not `entity()` declarations, so nothing outside `tables.ts` reads the
+constant and the command cannot see them. Paste each statement into its own file under
+`packages/db/migrations/`, one statement per migration, then `x db migrate`.
 
 ## Sessions are not a write path
 

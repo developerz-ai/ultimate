@@ -101,7 +101,10 @@ roles:
 
   scheduler:
     enabled: true
-    replicas: 1                 # fixed 1; leader election is a Postgres advisory lock
+    # Fixed 1. Leader election is an expiring row in x_scheduler_leader, NOT an advisory lock: that
+    # grant is session-scoped and the executor is a pool, so it dies when the connection returns and
+    # every replica reads itself as leader. A second replica here is safe but pointless — it stands by.
+    replicas: 1
     resources:
       requests: { cpu: 50m, memory: 128Mi }
       limits: { memory: 256Mi }

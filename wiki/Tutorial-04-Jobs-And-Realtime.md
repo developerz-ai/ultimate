@@ -2,7 +2,7 @@
 
 Three primitives, three rules. A `job` is durable work with memoized steps. A `task` is a cron trigger that only ever enqueues. A `query` with `live: true` is a bounded, totally-ordered read that patches per subscriber.
 
-v1.1.0 `As of 2026-08`. Every output on this page was executed against a `create-ultimate@1.1.0` app carrying the [tutorial 2](Tutorial-02-First-Feature) `todo` slice.
+`As of 2026-08`. Every output on this page was executed against a `create-ultimate@1.1.0` app carrying the [tutorial 2](Tutorial-02-First-Feature) `todo` slice.
 
 Series: [1 — first app](Tutorial-01-First-App) · [2 — first feature](Tutorial-02-First-Feature) · [3 — auth and admin](Tutorial-03-Auth-And-Admin) · **4** · [5 — deploy free](Tutorial-05-Deploy-Free) · [6 — growing up](Tutorial-06-Growing-Up)
 

@@ -6,7 +6,11 @@ Honest answers. Where something is not built yet, it says so.
 
 ### Is it production ready?
 
-**v1.1.0 `As of 2026-08`.** Stable API, semver from here, 27 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 28 in all — published to npm in lockstep, and 1.1.0 is the first release the workflow published over OIDC trusted publishing. That is exactly what the version claims — a stable API under semver, not a promise about your infrastructure.
+**`As of 2026-08`.** Stable API, semver from here. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — **29 in all** — are **versioned** in lockstep: one version, one commit, one tag.
+
+**Publication is not in lockstep.** 28 of the 29 are on npm; `@ultimat3/flags` has never been published — the registry answers 404 at every version, verified `As of 2026-08` — and nothing in the repo notices, because every consumer resolves it through the workspace ([Known gaps](Known-Gaps)). 1.1.0 was the first release the workflow published over OIDC trusted publishing, with provenance; 1.0.0 was the manual bootstrap.
+
+That is exactly what the version claims — a stable API under semver, not a promise about your infrastructure.
 
 What it does **not** claim:
 
@@ -18,11 +22,11 @@ What it does **not** claim:
 
 ### What is actually finished?
 
-All 28 packages, implemented and tested — not skeletons. The eight primitives, HTTP, rendering, caching, realtime tiers 1–2, auth, mail, storage, jobs, the AI-first surface (MCP, `llm()`, evals), and admin + generators + `x new`. Milestones 0–10 are ✅ and enforced by `x verify`'s `roadmap` step; milestone 11 is 🚧, open on its two-platform deploy proof. Each milestone ends in a **working demo app plus green `x verify`**, and the same demo app grows through all twelve. [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) is the source of truth for those markers.
+All 29 packages, implemented and tested — not skeletons. The eight primitives, HTTP, rendering, caching, realtime tiers 1–2, auth, mail, storage, jobs, the AI-first surface (MCP, `llm()`, evals), and admin + generators + `x new`. Milestones 0–10 are ✅ and enforced by `x verify`'s `roadmap` step; milestone 11 is 🚧, open on its two-platform deploy proof. Each milestone ends in a **working demo app plus green `x verify`**, and the same demo app grows through all twelve. [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) is the source of truth for those markers.
 
-### What is left after 1.1.0?
+### What is left?
 
-**One thing: milestone 11's two-platform deploy proof** — the demo app on Compose **and** K8s from one image, with a rolling restart invisible to connected clients. The other item that was open at 1.0.0, the **50k-socket forced-restart benchmark**, is measured and committed at 1.1.0: 50,000 sockets, forced `sync` restart, first patch on the reconnected socket at p50 54.0s / p90 105.5s, on one node ([Realtime](Realtime)). Milestone 11 lands when it is demonstrated, not on a date — publishing a date is how roadmaps become fiction. Everything in milestones 0–10 is shipped and gated. Scope cuts come off the back, never the middle (M4's budgets). The open defects 1.1.0 shipped with are listed on [Known gaps](Known-Gaps).
+**One thing: milestone 11's two-platform deploy proof** — the demo app on Compose **and** K8s from one image, with a rolling restart invisible to connected clients. The other item that was open at 1.0.0, the **50k-socket forced-restart benchmark**, is measured and committed at 1.1.0: 50,000 sockets, forced `sync` restart, first patch on the reconnected socket at p50 54.0s / p90 105.5s, on one node ([Realtime](Realtime)). Milestone 11 lands when it is demonstrated, not on a date — publishing a date is how roadmaps become fiction. Everything in milestones 0–10 is shipped and gated. Scope cuts come off the back, never the middle (M4's budgets). The open defects the current release shipped with are listed on [Known gaps](Known-Gaps).
 
 ## The stack
 

@@ -45,7 +45,11 @@ export function conditionsSql(scope: VectorScope, filter?: MetadataFilter): SqlF
 }
 
 /**
- * `x db gen` emits this. The primary key is `(tenant, id)`, not `id`: it makes a cross-tenant
+ * The store's whole schema as one string, for an app to split across migration files. **No
+ * command emits it** — `x db gen` diffs `describeEntities()` and a vector store is not an
+ * `entity()`, so no CLI file references this at all.
+ *
+ * The primary key is `(tenant, id)`, not `id`: it makes a cross-tenant
  * overwrite impossible at the storage layer instead of relying on every upsert remembering to
  * check. An unscoped store writes the empty tenant, which is a tenant like any other.
  */

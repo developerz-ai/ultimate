@@ -76,14 +76,16 @@ Boot parses this before any listener binds. Failure costs ~40ms and exit 1 — n
 ```
 X_ENV_MISSING: required environment variables are missing or invalid
   cause: STRIPE_KEY missing; NATS_URL is not a URL ("nats:4222")
-  fix:   x env check --fix
+  fix:   add STRIPE_KEY, NATS_URL to .env (copy .env.example), then run: x env check
 ```
+
+The `fix:` is per-key and built from your own declarations ([`packages/core/src/env.ts:237`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/env.ts)); `defineEnv({ KEY: { fix } })` overrides it for one key.
 
 | Property | Behavior |
 |---|---|
 | Access | `env.STRIPE_KEY` is typed. A `process.env` read outside the schema is a lint error |
 | Per-role | a role requires only the keys it uses — `ROLE=worker` does not fail on a missing `VAPID` |
-| Repair | `x env check --fix` writes the missing keys to `.env` with placeholders |
+| Repair | `x env example` regenerates `.env.example` from the schema; copy the keys it names into `.env`. There is **no** `x env --fix` — `x env` declares `check` and `example` and no flags, so `x env check --fix` dies at the parser with `X_CLI_BAD_FLAG` |
 | CI | `x env check` runs inside `x verify`, against the schema — never against a checked-in example file |
 | Provenance | `/_x` → **Env** shows every resolved key and which source it came from |
 
@@ -144,8 +146,8 @@ Read tools are unrestricted in dev; write tools are scoped to branch environment
 
 | Task | Command |
 |---|---|
-| Framework version bump + codemods | `x upgrade` |
-| Check what a bump would change | `x upgrade --dry-run --json` |
+| Framework version bump + codemods | `x upgrade` — **planned**, exits `X_NOT_IMPLEMENTED`. The shipped path is `bun update --latest && x verify`, then pin every `@ultimat3/*` to one exact version |
+| Check what a bump would change | nothing shipped does this. `x upgrade --dry-run` is worse than unimplemented: a planned command declares no flags, so it dies at the parser with `X_CLI_BAD_FLAG` instead of the honest `X_NOT_IMPLEMENTED`. Read `CHANGELOG.md` — `[Unreleased]` currently carries 30 `BREAKING —` entries ([Upgrading](Upgrading)) |
 | Remove dev state (embedded PG, storage, caches) | `rm -rf .x` |
 | Remove the CLI | it ships with the app; deleting the repo is the uninstall |
 

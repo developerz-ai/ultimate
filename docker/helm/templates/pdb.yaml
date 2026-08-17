@@ -12,7 +12,7 @@ a drain always finishes. A `minAvailable` equal to the replica count deadlocks t
 which is how a PDB turns into an outage of its own.
 
 Emitted only where the floor is above 1. `scheduler` is pinned to one replica by design (leader
-election is a Postgres advisory lock), and a budget over a single pod means that pod can never be
+election is an expiring lease row), and a budget over a single pod means that pod can never be
 evicted — so those roles get none, deliberately.
 */}}
 {{- if and .Values.podDisruptionBudget .Values.podDisruptionBudget.enabled }}

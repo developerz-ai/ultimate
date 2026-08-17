@@ -12,7 +12,7 @@ How Ultimate is built. [`../idea/`](../idea/README.md) answers *what and why*; t
 | [`05-type-chain.md`](./05-type-chain.md) | DB column → entity → action → OpenAPI → client → component. Rename a field, count the compile errors. |
 | [`06-data-layer.md`](./06-data-layer.md) | Entities, repos, tenancy. Cursor pagination only. Migrations that cannot lie. |
 | [`07-realtime-internals.md`](./07-realtime-internals.md) | WAL → change feed → matcher → fanout → patch. Per-subscriber policy, reconnect cost model. |
-| [`08-jobs-internals.md`](./08-jobs-internals.md) | Memoized step replay, the real `SKIP LOCKED` claim SQL, advisory-lock leader election. |
+| [`08-jobs-internals.md`](./08-jobs-internals.md) | Memoized step replay, the real `SKIP LOCKED` claim SQL, lease-row leader election. |
 | [`09-rendering-internals.md`](./09-rendering-internals.md) | Two bundle graphs, the streaming envelope, four hydration strategies, ISR single-flight. |
 | [`10-cross-cutting.md`](./10-cross-cutting.md) | i18n, theming, timezones, money — four concerns, enforced rather than documented. |
 | [`11-ai-surface.md`](./11-ai-surface.md) | One `evaluate`, two adapters. Hidden tools answer `ToolNotFound`, never `Forbidden`. |

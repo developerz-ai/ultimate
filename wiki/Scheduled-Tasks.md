@@ -2,7 +2,7 @@
 
 A `task` is a cron trigger that enqueues jobs. It never does work itself.
 
-v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
+`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
 ## The canonical shape
 
@@ -157,7 +157,7 @@ Runner: `x test job` (tasks are dispatch, jobs are the assertion surface). See [
 
 | Code | Cause | Fix |
 |---|---|---|
-| `X_JOB_NO_IDEMPOTENCY_KEY` | a task enqueues a job with no idempotency key — a double fire would duplicate work | add `idempotencyKey` to the job |
+| `X_IDEMPOTENCY_REQUIRED` | a task enqueues a job with no idempotency key — a double fire would duplicate work | add `idempotencyKey` to the job |
 | `X_FORBIDDEN` | the task's system actor lacks a permission the enqueued action requires | grant it explicitly; a task never bypasses [policies](Policies-And-Authz) |
 | `X_DRAINING` | a tick landed while the leader was releasing its lock | none — the standby promotes and the tick fires late |
 

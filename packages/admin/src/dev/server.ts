@@ -182,7 +182,7 @@ export function devDashboard(opts: DevDashboardOptions = {}): DevDashboard {
         error: {
           code: 'X_ADMIN_ENTITY_UNKNOWN',
           cause: `no /_x panel named "${key}" (have: ${[...byKey.keys()].join(', ')})`,
-          fix: `x dev --panel ${[...byKey.keys()][0] ?? 'routes'}`,
+          fix: `x dev   # then the ${[...byKey.keys()][0] ?? 'routes'} panel at /_x`,
         },
       };
     }

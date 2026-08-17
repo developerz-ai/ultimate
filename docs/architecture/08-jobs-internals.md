@@ -6,12 +6,14 @@ Postgres queue by default, one driver interface, durable steps. Why an outbox an
 
 `run()` is re-entered from the top on every attempt. Completed steps are **not re-executed** — their stored results are returned.
 
-```ts
-// packages/jobs/src/step-executor.ts — one responsibility: replay a run deterministically
-export function createStep(jobId: JobId, memo: Record<string, unknown>, driver: JobDriver) {
-  return {
+Sketch of `createStepRunner` ([`packages/jobs/src/steps.ts`](../../packages/jobs/src/steps.ts)) —
+the shape, not the source:
+
+```text
+// one responsibility: replay a run deterministically
+createStepRunner(options) => {
     async run<T>(name: string, fn: () => Promise<T>): Promise<T> {
-      assertUniqueStepName(jobId, name);              // X_JOB_DUPLICATE_STEP
+      assertUniqueStepName(jobId, name);              // X_STEP_DUPLICATE
       if (name in memo) return memo[name] as T;       // replay: no call, no side effect
       const result = await fn();                      // executed once, ever
       await driver.saveStep(jobId, name, result);     // durable before returning
@@ -23,9 +25,8 @@ export function createStep(jobId: JobId, memo: Record<string, unknown>, driver: 
       if (key in memo) return;
       await driver.saveStep(jobId, key, true);
       await driver.sleepUntil(jobId, addDuration(now(), duration));
-      throw SUSPEND;                                  // releases the worker; no held connection
+      throw StepSuspension;                           // releases the worker; no held connection
     },
-  };
 }
 ```
 
@@ -139,24 +140,31 @@ RETURNING id, name, attempt;
 | Long step | heartbeats keep it alive; a step exceeding `maxStepMs` is killed and retried, never left leased forever |
 | SIGKILL | no heartbeat → the lease expires → the reaper requeues. Completed steps are memoized, so recovery resumes at the failed step |
 | Clock | `now()` is the **database's** clock, so a skewed worker cannot steal or hold leases |
-| Reaped job | logged with `X_JOB_LEASE_EXPIRED` and the attempt count; repeated reaping is the signal for a stuck external call |
+| Reaped job | `logger.error('jobs.lease.lost', …)` (`packages/jobs/src/heartbeat.ts:71`); the run itself fails as `X_JOB_LEASE_LOST`. Repeated reaping is the signal for a stuck external call |
 
 ## Scheduler leader election
 
-`scheduler` is fixed-1 by design. Election is a **session-level Postgres advisory lock**, so a crash releases it automatically — no TTL, no heartbeat table, no split brain from a paused process.
+`scheduler` is fixed-1 by design. Election is an **expiring row**, `createPgLeaseLeader`
+([`packages/jobs/src/scheduler-pg.ts`](../../packages/jobs/src/scheduler-pg.ts)) — one row per
+`lock_key` in `x_scheduler_leader`, holder plus expiry, and `acquire()` is also the renewal.
 
-```sql
-SELECT pg_try_advisory_lock(hashtext('ultimate:scheduler'));   -- true = leader
-```
+**Not `pg_try_advisory_lock`, and that is the whole point.** An advisory lock is *session*-scoped,
+and the executor this package is handed is a **pool** — the grant dies the moment the connection
+goes back, so every node reads itself as leader and a rolling update double-fires every task.
+`createPgLeader` does not exist; `@ultimat3/realtime`'s `PgAdvisoryLock` solves the same problem by
+owning its connection, and this package holds no wire protocol, so it solves it with a row.
 
 | Property | Detail |
 |---|---|
-| Held for | the process's DB session lifetime. Connection dies → lock released by Postgres |
-| A non-leader | reports `/readyz` **not ready** by design and stays a warm standby; it never dispatches |
-| Handover | the leader releases on SIGTERM (drain step 4), so the standby promotes within one lock-retry interval (default 5s) |
-| Missed tick | fires **late** rather than being skipped |
+| Held for | `ttlMs`, default `DEFAULT_LEADER_TTL_MS` = 30s, against a 1s tick. Comfortably longer than the tick, or a slow round loses the lock mid-dispatch |
+| Renewal | the scheduler's per-round `acquire()`. It both extends the lease and answers the round the node stops being leader |
+| Holder identity | a per-process uuid, never a hostname a pod reuses |
+| A non-leader | stays a warm standby and never dispatches. It reports **no** readiness — the `scheduler` role opens no HTTP socket at all, only the metrics listener on `DEFAULT_METRICS_PORT` (`packages/cli/src/metrics-endpoint.ts:22-26`) |
+| Crash | the lease is reclaimed by expiry, with nothing to clean up — the one property the advisory lock had, and one a plain `insert … on conflict do nothing` would not |
+| Single node | `soleLeader()`, which acquires unconditionally |
+| Missed tick | decided against the durable watermark in `x_scheduler_state` (`pgSchedulerState`), per `catchUp` — `skip` (default), `run-once` or `run-all` bounded by `maxCatchUp` |
 | Double fire during handover | absorbed by the enqueued job's `idempotencyKey` |
-| `replicator` | same mechanism, key `x:replicator:<slot>`; a second instance exits non-zero with `X_REPLICATOR_SLOT_HELD` rather than double-delivering |
+| `replicator` | a second instance exits non-zero with `X_REPLICATOR_SLOT_HELD` rather than double-delivering |
 
 `task` only enqueues. A `task` with a handler body is a rejected design — if it does work, it is a `job` ([`../idea/02-primitives.md`](../idea/02-primitives.md)).
 
@@ -183,7 +191,7 @@ export const onboardOrg = job({
 |---|---|
 | Enforcement | unique partial index: `CREATE UNIQUE INDEX ON x_jobs (idempotency_key) WHERE state <> 'done'` |
 | Duplicate enqueue with a live key | the insert conflicts; `enqueue` returns the existing handle, no new row, no error |
-| Key must be | deterministic from `input` only. No timestamps, no randomness, no `ctx` — checked by `x verify` (`X_JOB_KEY_NONDETERMINISTIC`) |
+| Key must be | deterministic from `input` only. No timestamps, no randomness, no `ctx`. **A convention, not a rule** — `As of 2026-08` nothing checks it: no code, no step, no lint. A non-deterministic key is a duplicate charge the unique index cannot see |
 | Uniqueness window | `retention` per queue; default 24h after terminal state |
 | Non-idempotent external call inside a step | pass the provider's idempotency header keyed `${jobId}:${stepName}` |
 
@@ -235,10 +243,15 @@ Rule: after the queue is wiped, the business must be reconstructible from Postgr
 
 | Code | Meaning | Fix |
 |---|---|---|
-| `X_JOB_NO_IDEMPOTENCY_KEY` | runtime guard behind the compile-time requirement | add `idempotencyKey` to the job |
-| `X_JOB_KEY_NONDETERMINISTIC` | key derived from time/randomness/`ctx` | derive it from `input` only |
-| `X_JOB_DUPLICATE_STEP` | two `step.run` calls with the same name in one `run` | rename one step |
-| `X_JOB_STEP_FAILED` | a step exhausted its attempts; `data.step` names it | `x jobs retry <id> --from <step>` |
-| `X_JOB_LEASE_EXPIRED` | a claimed job's lease expired and it was requeued | raise `leaseMs` or split the step |
-| `X_JOB_QUEUE_UNKNOWN` | `queue` not present in `WORKER_QUEUES` anywhere | add the queue to a worker role |
-| `X_NOT_IMPLEMENTED` | a driver path with no implementation yet | `set jobs.driver = "pg" in app.config.ts` |
+| `X_IDEMPOTENCY_REQUIRED` | runtime guard behind the compile-time requirement | add `idempotencyKey` to the job definition — the factory's own fix line writes the interpolation out |
+| `X_STEP_DUPLICATE` | two `step.run` calls share a name in one `run` | `rename one of them, e.g. step.run('<name>-2', ...)` — step names are the replay key |
+| `X_JOB_MAX_ATTEMPTS` | the job exhausted its retries | `x jobs retry <id>` |
+| `X_JOB_TIMEOUT` | the job exceeded its wall-clock limit | `raise timeout on the job definition, or split the work into step.run() calls` |
+| `X_JOB_LEASE_LOST` | the queue took this job back mid-run | `x jobs show <id> --json` |
+| `X_JOB_SLOT_LOST` | the fleet concurrency slot was taken by another worker | `x jobs ls --state running --json` |
+| `X_JOB_NOT_CANCELLABLE` | the driver cannot cancel | `set jobs: { driver: 'postgres' } in app.config.ts, then: x jobs cancel <id> --json` |
+| `X_JOB_TENANT_REQUIRED` | the job declares no tenant | `add tenant: (input) => input.orgId to the job — or tenant: 'none', which declares NO org` |
+| `X_JOB_CONCURRENCY_UNENFORCEABLE` | `concurrency` declared on a driver that cannot enforce it | `remove concurrency from the job, or set jobs: { driver: 'postgres' } in app.config.ts` |
+| `X_OUTBOX_NO_TX` | `enqueue` outside a transaction | `wrap the call in ctx.tx(async (tx) => ...), or enqueue with { outbox: false }` |
+| `X_DRIVER_UNAVAILABLE` | the queue driver is unreachable | the factory takes the `fix` from the driver — it names the connection to repair |
+| `X_NOT_IMPLEMENTED` | a driver path with no implementation yet | `set jobs: { driver: 'postgres' } in app.config.ts` |

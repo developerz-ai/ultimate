@@ -35,7 +35,7 @@ throw new UltimateError({
 |---|---|
 | Prefix | `X_` always. The prefix is what makes a code greppable across logs, JSON, and prose |
 | Case | SCREAMING_SNAKE, words separated by `_` |
-| Shape | `X_<SUBJECT>_<CONDITION>`: `X_DB_DRIFT`, `X_JOB_STEP_FAILED`, `X_SEO_NO_TITLE` |
+| Shape | `X_<SUBJECT>_<CONDITION>`: `X_DB_DRIFT`, `X_JOB_MAX_ATTEMPTS`, `X_ROUTE_META_MISSING` |
 | Stability | **stable forever once shipped.** A code is a public API — agents match on it, docs URLs resolve to it, dashboards group by it |
 | Deprecation | never rename. Add the new code, keep the old one throwing with `data.supersededBy` |
 | Ownership | each package declares its own codes in `src/errors.ts` and subclasses `UltimateError` |
@@ -105,13 +105,29 @@ Over HTTP the same object is the problem+json body, with `httpStatus` as the sta
 
 ```ts
 // packages/entity/src/errors.ts — one file per package, no codes declared inline
-export class EntityError extends UltimateError {}
+import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 
-export const ENTITY_ERRORS = {
-  X_DB_DRIFT: { title: 'schema differs from migrations', httpStatus: 500, retryable: false },
-  X_TENANT_MISMATCH: { title: 'row tenant does not match request tenant', httpStatus: 403, retryable: false },
-} as const;
+/** Codes this package declares and owns. Borrowed codes go in a second list, never titled twice. */
+export const ENTITY_OWNED_ERROR_CODES = ['X_INVARIANT_VIOLATED', 'X_TENANCY_UNSCOPED'] as const;
+
+export type EntityOwnedErrorCode = (typeof ENTITY_OWNED_ERROR_CODES)[number];
+
+export const ENTITY_ERROR_TITLES: Readonly<Record<EntityOwnedErrorCode, string>> = {
+  X_INVARIANT_VIOLATED: 'a domain invariant rejected this row',
+  X_TENANCY_UNSCOPED: 'a tenant-scoped query has no org predicate',
+};
+
+// Registration is the import's side effect: `format()` renders the title, and a second package
+// claiming one of these fails as X_ERROR_CODE_DUPLICATE rather than silently winning the race.
+registerErrorCodes(
+  Object.fromEntries(Object.entries(ENTITY_ERROR_TITLES).map(([code, title]) => [code, { title }])),
+);
+
+export class EntityError extends UltimateError {}
 ```
+
+The status is **not** declared here. `ERROR_STATUS` in `@ultimat3/http` is the one place a code
+becomes a status, for the reason the next section gives.
 
 ## Code → HTTP status
 
@@ -146,11 +162,11 @@ to be paged declares a 5xx and gets one.
 
 | ❌ Rejected `fix` | ✅ Accepted |
 |---|---|
-| `check your database connection` | `x db status --json` |
+| `check your database connection` | `x doctor --json` |
 | `add a description` | `add description to meta in site/pricing/page.tsx` |
-| `see the docs` | `x errors explain X_SW_UNCACHEABLE` |
+| `see the docs` | `x errors explain X_SW_SCOPE_INVALID` |
 | `this is not supported` | `set jobs.driver = 'pg' in app.config.ts` |
-| `retry later` | `x jobs retry 8f2a1c --from nudge` |
+| `retry later` | `x jobs retry 8f2a1c --from-step nudge` |
 
 Enforced by the **`errors` step** of `x verify`. It reads every `fix:` string literal in shipped source — test files and `.d.ts` excluded — and treats a `${…}` interpolation as unknown, so nothing inside one counts as a command.
 
@@ -158,9 +174,12 @@ Enforced by the **`errors` step** of `x verify`. It reads every `fix:` string li
 |---|---|
 | an empty `fix` | `X_ERROR_FIX_INVALID` |
 | a `fix` carrying `check`, `make sure`, `try` or `see the docs` with no command token | `X_ERROR_FIX_INVALID` |
+| a `fix` citing an `x <command>` the registry does not hold, or one that is **planned** | `X_ERROR_FIX_INVALID` |
 | a declared `X_*` code with no row in `wiki/Error-Codes.md` | `X_ERROR_CODE_UNDOCUMENTED` |
 
 A **command token** is the `x` CLI, a known tool (`bun`, `bunx`, `git`, `docker`, `psql`, `curl`, …), a literal call expression (`name(`), or a file path (`app.config.ts`, `apps/web/api/index.ts`). "check `x doctor --json`" passes; "check your database connection" does not.
+
+The citation rule is **conditional, and that is load-bearing**: *if* a `fix` names `x <command>`, `citationProblem` (`packages/cli/src/fix-command.ts`) resolves it against the registry — the same one `x help` prints — and a second word is judged as a subcommand only when the spec declares subcommands. A `fix` that names no command at all is fine when it is executable on its own (`set OTEL_EXPORTER_OTLP_ENDPOINT=…`). A **planned** command fails the rule: `x logs tail` parses and `x help` lists it, and running it hands the reader `X_NOT_IMPLEMENTED` instead of the fix.
 
 The docs half is a **host check** the framework repo contributes to the `errors` step — the same seam the tier table uses on `boundaries`.
 
@@ -199,13 +218,17 @@ Thrown by more than one package, or by the gate about any of them; every package
 | `X_BOUNDARY_VIOLATION` | `cli` | build | an import rule broke; `data.chain` is the path | `x fix boundary <file>` |
 | `X_ERROR_FIX_INVALID` | `cli` | build | a `fix:` literal is empty, or advice with no command token | `rewrite the fix at <file>:<line> as a runnable command` |
 | `X_ERROR_CODE_UNDOCUMENTED` | `cli` | build | a declared `X_*` code has no row in the error reference | `add a row for <CODE> to wiki/Error-Codes.md` |
-| `X_MANIFEST_STALE` | `manifest` | build | `x.manifest.json` / `openapi.json` differ from the code | `x manifest write` |
+| `X_MANIFEST_STALE` | `manifest` | build | `x.manifest.json` / `openapi.json` differ from the code | `x manifest` |
 | `X_BUDGET_EXCEEDED` | `render` | build | route bytes / LCP over budget; `data.cause` names the import | `x fix boundary <file>` |
 | `X_BUILD_SKEW` | `http` | 409 | client build ID incompatible with the server contract | `reload` (client-side signal) |
 | `X_RATE_LIMITED` | `http` | 429 | token bucket exhausted for `(tenant, actor, route)` | retry after `data.retryAfterMs` |
-| `X_I18N_MISSING_KEY` | `i18n` | build | a key rendered as `⟦key⟧` | `x i18n add <key>` |
-| `X_MONEY_CURRENCY_MISMATCH` | `money` | 500 | arithmetic across two currencies | convert explicitly first |
-| `X_TIME_NO_ZONE` | `time` | build | formatting without an explicit IANA zone | pass `timeZone: ctx.tz` |
-| `X_TEST_NETWORK_EGRESS` | `testing` | test | unmocked egress inside a test | mock the named URL |
+| `X_CATALOG_MISSING_KEYS` | `i18n` | build | a locale's catalog lacks a key source calls `t()` with | `x i18n sync <locale>` |
+| `X_CURRENCY_MISMATCH` | `money` | 500 | arithmetic across two currencies | convert explicitly first |
+| `X_TIMEZONE_INVALID` | `time` | 500 | a `zone` that is not an IANA identifier | pass an IANA id such as `Europe/Berlin`, never `CET` |
+| `X_TEST_NETWORK_SEALED` | `testing` | test | unmocked egress inside a test | mock the named URL |
+
+There is no runtime code for *formatting with no zone at all*: `FormatContext.zone` is required
+(`packages/time/src/format.ts:14-18`), so an omitted zone is a type error and never reaches a throw.
+`X_TIMEZONE_INVALID` covers the case a type cannot — a string that is not an IANA name.
 
 Package-local codes live with their subsystem: jobs in [`08-jobs-internals.md`](./08-jobs-internals.md), realtime in [`07-realtime-internals.md`](./07-realtime-internals.md), rendering/SEO/PWA in [`09-rendering-internals.md`](./09-rendering-internals.md).

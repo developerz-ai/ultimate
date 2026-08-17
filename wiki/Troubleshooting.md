@@ -59,7 +59,7 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 | `X_BUDGET_EXCEEDED` on `js` | one import pulled a library into a surface | the error names the **import chain**; `x routes --json` for per-route budgets |
 | A `site/` route reports non-zero JS | a component with client state leaked into the static surface | move it to `app/`, or set `hydrate: 'never'` |
 | LCP or CLS regression | an unsized image or a late-loading font | `x routes --json` for the route's budget; images go through the pipeline, never a raw `<img>` |
-| `X_SEO_NO_TITLE` / `X_SEO_NO_DESCRIPTION` | `meta` missing a field, or a description outside 50–160 chars | add it to the route's `meta`. Deleting a description is a build error, by design |
+| `X_SEO_META_MISSING` | an indexable route's `meta` has no `title`, or no `description`. One code for both — `cause` names the field and the file | add it to the route's `meta`. Deleting a description is a build error, by design. Over-length is a different code, `X_SEO_META_TOO_LONG` (title > 60, description > 160). `X_SEO_NO_TITLE` / `X_SEO_NO_DESCRIPTION` are design-doc names that were never implemented ([Error codes](Error-Codes#names-used-in-the-design-docs)) |
 | `X_ROUTE_META_MISSING` | a route has no `meta` at all | every route sets `render`, `offline`, `hydrate`, `meta` |
 | `X_CATALOG_MISSING_KEYS` | a key exists in one locale's catalog and not another | the cause lists key + locale; add the translation. There is no silent English fallback |
 | `⟦some.key⟧` rendered in the UI | the key is missing everywhere | add it to the default catalog; `x verify` fails until you do |
@@ -69,8 +69,8 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `X_JOB_NO_IDEMPOTENCY_KEY` (compile error) | `idempotencyKey` omitted — it is required by the type | add an `idempotencyKey` derived from `input` only, e.g. `onboard:${orgId}` |
-| `X_JOB_DUPLICATE_STEP` | two `step.run` calls with the same name in one `run` | rename one. Step names must be unique and stable |
+| `X_IDEMPOTENCY_REQUIRED` (compile error) | `idempotencyKey` omitted — it is required by the type | add an `idempotencyKey` derived from `input` only, e.g. `onboard:${orgId}` |
+| `X_STEP_DUPLICATE` | two `step.run` calls with the same name in one `run` | rename one. Step names must be unique and stable |
 | A step re-ran after a deploy | the step was **renamed** — renaming invalidates its stored result | treat a rename as a new step; keep old names |
 | `X_IDEMPOTENCY_CONFLICT` | same key, different input, inside the dedupe window | the key is not deterministic from `input`. Remove the timestamp or random part |
 | Job stuck "in-flight" after a worker was killed | the lease has not expired yet | wait `jobs.visibilityTimeout` (default `'30s'`); the row is re-claimed and resumes at the **next** step, never mid-step. `x jobs show <id> --json` |
@@ -117,13 +117,13 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `X_TEST_NETWORK_EGRESS` | a test reached the network unmocked | the error names the URL. Mock it — sealed network is the design, not a bug |
+| `X_TEST_NETWORK_SEALED` | a test reached the network unmocked | the error names the URL. Mock it — sealed network is the design, not a bug |
 | A test passes alone, fails in the suite | shared state that should not exist — each worker gets its own cloned DB | check for a module-level singleton or a fixture written outside `seed()` |
 | Time-dependent failure | asserted on wall clock | use the frozen clock and `clock.advance('3d')` — it also drives `step.sleep` and cron |
 | A test flakes | **fix it or delete it the same day** | there is no `retry: 3`. A test that passes twice and fails the third trains people to ignore red |
 | Snapshot/UUID churn between runs | not using `seed(name)` | seeds are deterministic: same input → identical rows, identical UUIDs |
 | Job test doesn't drain | queue not advanced | `await runJobs.drain()`; workers run deterministically in tests |
-| `--keep-db` needed | inspecting a failure | `x test <type> --keep-db`, then connect to `myapp_test_N` |
+| Want the failing worker's database after the run | there is **no** `--keep-db` — `x test` declares `--workers`, `--worker`, `--filter` and `--sample` and nothing else, and the harness calls `drop()` at teardown ([`packages/testing/src/harness.ts:108`](https://github.com/developerz-ai/ultimate/blob/main/packages/testing/src/harness.ts)) | what survives is the migrated template, `ultimate_test_template` — the clones are `ultimate_test_template_w<N>`. Inspect the template: `psql "$TEST_DATABASE_URL" -c "\l"`, then connect to it. To hold a clone open, assert inside the test rather than after it |
 
 ## MCP and AI
 
@@ -132,13 +132,13 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 | `X_MCP_TOOL_UNKNOWN`, or a tool absent from `tools/list` | the tool is hidden from this caller, or the name is stale — role-hidden and absent answer identically, on purpose | visibility is fail-closed: check the caller against the tool's `visibleTo` (a role allowlist or a predicate over the caller). Otherwise `tools/list` for the catalog this caller may use, and `x manifest` if the committed manifest is stale |
 | `X_MCP_TOOL_UNDECLARED`, and MCP refuses to boot | an action or query written out in `defineAppMcp`'s `actions:`/`queries:` never declared `mcp: { expose: true }` — a boot-time configuration error, not a hidden tool | add `mcp: { expose: true, description: '<what it does>' }` beside the primitive's policy, or drop it from the list and let `include: 'exposed'` project what opted in |
 | `X_MCP_SCOPE_UNKNOWN`, and MCP refuses to boot | `defineAppMcp`'s `scopes:` map names a tool by a name the server does not project — a typo, or the primitive was renamed or dropped from `actions:`/`queries:`/`tools:` | spell the name as one of the tools the server actually projects, or drop it from that `scopes` entry |
-| `X_MCP_SCOPE_DENIED` | the connection's token does not carry the tool's scope — scope is a property of the token, not of the actor's permissions | `x token grant <scope>`, then reconnect: scopes are fixed for the life of a connection |
+| `X_MCP_SCOPE_DENIED` | the connection's token does not carry the tool's scope — scope is a property of the token, not of the actor's permissions | reconnect with a token whose scopes include the one `cause` names — the app's `resolveToken(token)` returns them — or drop that scope from `defineAppMcp({ scopes })`. Scopes are fixed for the life of a connection, so a grant takes effect on the next one. `x token grant` is **planned** and exits `X_NOT_IMPLEMENTED` |
 | `X_FORBIDDEN` from a `tools/call` | the tool was invoked and its policy refused this input — the same denial the HTTP route returns for the same call | grant the human the permission — an agent can never exceed the human it acts for |
 | Dev MCP server not reachable | `x dev` not running, or you pointed at prod | default socket is `mcp.devSocket` (`ws://localhost:9229`). The dev server is **never** bound in `ROLE=web` |
 | `X_MCP_QUERY_REJECTED` | `db.query` was not given exactly one read-only statement | send a single **read-only** `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — a data-modifying CTE is not a read. MCP has no arbitrary-write path: change data by calling an action exposed with `mcp: { expose: true }`, change schema with `db.migrate` on a branch database |
 | `X_MCP_NOT_BRANCH_DB` | `db.migrate` was aimed at a database that is not a branch | `x db branch <name>`, then retry `db.migrate` |
 | `X_LLM_OUTPUT_INVALID` | structured output failed its schema twice | tighten the prompt or loosen the schema; the retry already happened once |
-| Prompt change had no effect | semantic cache hit | bump the prompt version — editing a prompt requires it. `x ai cache --json` |
+| Prompt change had no effect | semantic cache hit | bump the prompt version — editing a prompt requires it. (`x ai cache --json` is **planned**; `x test eval --json` is the shipped command) |
 | `x verify` fails on a prompt | no evals file | an unevaluated prompt is untested code. Add `<prompt>.evals.ts` |
 
 ## Still stuck

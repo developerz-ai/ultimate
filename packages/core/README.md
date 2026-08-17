@@ -29,6 +29,8 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | OTLP/HTTP JSON: endpoint, headers, value encoding | `otlp.ts` |
 | `SpanExporter` on the wire, batched | `otlp-span-exporter.ts` |
 | `MetricExporter` on the wire | `otlp-metric-exporter.ts` |
+| `reportError` + the `ErrorReporter` seam, no-op by default | `error-reporter.ts` |
+| that seam on the wire, Sentry's envelope and DSN | `error-reporter-sentry.ts` |
 | OTel-shaped counter / gauge / histogram, same seam | `metrics.ts` |
 | the `/metrics` scrape body | `metrics-text.ts` |
 | the series every process emits, incl. what the chart scales on | `runtime-metrics.ts` |
@@ -94,8 +96,16 @@ and RUNS any `toJSON` the value carries; `` `${value}` `` throws on a symbol and
 `toString`. Both are reachable from app data.
 
 ```ts
-cause: `expected a ${kind} UUIDv7, received ${renderCauseValue(value)}`,
-fix: `pass an id produced by typedId<${renderFixLiteral(kind, '<kind>')}>()`,
+import { renderCauseValue, renderFixLiteral, UltimateError } from '@ultimat3/core';
+
+declare const kind: unknown;
+declare const value: unknown;
+
+throw new UltimateError({
+  code: 'X_ID_INVALID',
+  cause: `expected a ${renderCauseValue(kind)} UUIDv7, received ${renderCauseValue(value)}`,
+  fix: `pass an id produced by typedId<${renderFixLiteral(kind, '<kind>')}>()`,
+});
 ```
 
 | Helper | For | Degrades to |
@@ -341,6 +351,54 @@ from `@ultimat3/http`'s pipeline, `recordConnection` from `@ultimat3/realtime`'s
 at `METRICS_PATH` on `METRICS_PORT` (9090), for every role rather than only the ones that open an
 HTTP socket. Labels are route **patterns**, status **classes** and queue names: nothing
 per-user, per-id or attacker-chosen ever becomes a series.
+
+## Error reporting: the third seam, same shape as the other two
+
+A no-op by default, one transport on the wire, one memory double for tests — `telemetry.ts` and
+`metrics.ts`' shape a third time. What a monitor receives is the framework's error contract
+verbatim, so it groups on `code` and shows `fix` to whoever is paged.
+
+**An Ultimate app installs nothing.** `@ultimat3/cli`'s `serve.ts` calls
+`configureErrorReporting` at boot from one env var — `SENTRY_DSN`, unset meaning the no-op stays
+and nobody is paged — and passes the build id it already computed as `release`. The call below is
+for a host that boots something other than `runRole`.
+
+```ts
+import { configureErrorReporting, reportError, sentryErrorReporter } from '@ultimat3/core';
+
+declare const sentryDsn: string;
+declare const buildId: string;
+declare const failure: unknown;
+
+configureErrorReporting({
+  reporter: sentryErrorReporter({ dsn: sentryDsn }),   // config, never a constant in this package
+  release: buildId,                                    // the id `x-ultimate-build` carries
+});
+
+reportError(failure, { source: 'http', severity: 'error', scope: { operation: 'POST /api/posts' } });
+```
+
+| | |
+|---|---|
+| `reportError(error, { source, severity?, scope? })` | never throws, never awaits. A monitor that is down must not turn one failure into two |
+| `ERROR_SOURCES` | `http` `job` `realtime` `cli` `process` — closed. A new surface adds a member, never a string of its own |
+| `ErrorSeverity` | `warning` `error` `fatal`. `warning` is a failure the framework already recovered from — a retry, not a dead letter |
+| `ErrorScope` | `requestId` `traceId` `spanId` `role` `operation` `actorId` `extra`. `operation` is a route **pattern** or a job name, never a concrete path or a row id |
+| `ErrorReport` | `code` `title` `cause` `fix` `docs` + `meta` `stack` `resource` `environment` `release` `scope`, and the thrown value under `error` |
+| `configureErrorReporting({ reporter, clock, release, environment, enabled })` | the one install point; `resetErrorReporting()` puts the no-op back |
+| Reporters | `noopErrorReporter` (default), `memoryErrorReporter()` (`.events`, `.reset()`), `sentryErrorReporter({ dsn, fetch?, clientName? })` |
+| Wire, testable alone | `parseSentryDsn(dsn)` → `{ publicKey, envelopeUrl, … }`, `sentryEnvelope(report, { dsn, eventId })` → the envelope body. Pure, exactly as `otlpTraceRequest` is |
+| `errorReport(error, options)` | the normalisation on its own, for a transport's test or a surface that enriches before sending |
+
+`As of 2026-08` four packages call `reportError`, seven call sites in all: `@ultimat3/http`'s
+`stages.ts` (`status >= 500` only), `@ultimat3/jobs`' `executeJob` — the one frame still holding the
+thrown value — `@ultimat3/realtime`'s `sync-node.ts` and `sync-upgrade.ts`, and `@ultimat3/flags`'
+`runtime.ts` (`source: 'process'`, severity `warning`). Trace and span resolve as a **pair** from
+one source: a caller-supplied `traceId` never picks up the ambient `spanId`, because a report
+claiming a span from a different trace sends whoever is paged somewhere authoritative and wrong.
+
+`ErrorReporterDsnInvalidError` (`X_ERROR_REPORTER_DSN_INVALID`) is the only code this seam owns —
+raised at `parseSentryDsn`, at configuration, never at a report.
 
 ## One cursor, everywhere
 

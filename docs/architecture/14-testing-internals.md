@@ -42,7 +42,7 @@ A test that can pass twice and fail the third time is worse than no test — it 
 | **Seeds** | `seed(name)` builds a named fixture graph via entity factories; ids are derived from a hash of `(seedName, entity, index)` | "works on my machine" from random ids landing in a different sort order |
 | **Frozen clock** | time starts at a fixed instant; `clock.advance('3d')` moves it and also drives `step.sleep`, cron, TTLs, and lease expiry | tests that fail at midnight, or only in CI's timezone |
 | **Seeded RNG** | `Math.random`, `crypto.randomUUID`, and Bun's RNG seeded per file from its path — reproducible, distinct across files | two files generating the same "random" key and colliding |
-| **Sealed network** | any egress not explicitly mocked fails with `X_TEST_NETWORK_EGRESS`, naming the URL and the fix | a suite that is slow and occasionally red because a third party is |
+| **Sealed network** | any egress not explicitly mocked fails with `X_TEST_NETWORK_SEALED`, naming the URL and the fix | a suite that is slow and occasionally red because a third party is |
 | **Fixed tz + locale** | `UTC` and `en-US` unless declared otherwise | a DST bug that reproduces only in October ([`10-cross-cutting.md`](./10-cross-cutting.md)) |
 | **Ordered concurrency** | job workers run deterministically; `runJobs()` drains the queue synchronously | a job test that depends on scheduler timing |
 | **Stable ordering** | queries in tests require a total order, same as production | pagination assertions that pass by accident |
@@ -52,7 +52,7 @@ A test that can pass twice and fail the third time is worse than no test — it 
 An unmocked HTTP call is three bugs at once: the test is slow, the test is flaky, and the test is **lying** — it asserts behavior that depends on a system nobody in CI controls. Worse, it hides the interesting case: nobody writes the timeout test, the 500 test, or the malformed-response test, because the happy path "works".
 
 ```
-X_TEST_NETWORK_EGRESS: unmocked request in a test
+X_TEST_NETWORK_SEALED: unmocked request in a test
   cause: POST https://api.stripe.com/v1/charges from apps/web/app/billing/service.ts:41
   fix:   http.mock('POST https://api.stripe.com/v1/charges', { status: 200, body: {...} })
 ```

@@ -78,7 +78,13 @@ $ x new myapp --dry-run --json
 {"ok":true,"command":"new","summary":"…","data":{"dir":"/home/me/myapp","files":["README.md","AGENTS.md",…],"dryRun":true}}
 ```
 
-**99 files** with the example slice, **76** with `--no-example`. `--dry-run --json` lists every one, which is also how you check what a build target expects to find.
+**115 files** with the example slice, **91** with `--no-example` — measured on `main` `As of 2026-08`. Both numbers move the moment a template is added, so derive rather than quote them:
+
+```bash
+x new myapp --dry-run --json | jq '.data.files | length'
+```
+
+`--dry-run --json` lists every file, which is also how you check what a build target expects to find.
 
 Deployment artifacts are part of the scaffold — an app is deployable the moment it is generated:
 
@@ -634,8 +640,9 @@ A name nothing registered is `X_DECLARATION_UNKNOWN`, whose `fix` names the near
 ## x jobs
 
 ```bash
-x jobs [ls|show <id>|retry <id>|drain --to <driver>] [--queue q] [--state s] [--limit n]
-       [--name n] [--from-step name] [--dry-run] [--json]
+x jobs [ls|show <id>|retry <id>|cancel <id>|drain --to <driver>] [--queue q] [--state s]
+       [--limit n] [--name n] [--from-step name] [--reason text] [--to driver]
+       [--dry-run] [--json]
 ```
 
 | Subcommand | Does |
@@ -643,7 +650,14 @@ x jobs [ls|show <id>|retry <id>|drain --to <driver>] [--queue q] [--state s] [--
 | `ls` | queue depth, the matching rows, the dead-letter list — a dead job is never filtered out of view — and the `backfill()` passes **in flight**, with rows so far and cursor |
 | `show <id>` | state, attempt, every step's result, the remaining retry delays, and the `x_backfills` row for this run when the job is a backfill (`backfill: null` for every other job) |
 | `retry <id>` | re-queue; `--from-step <name>` drops that step so it re-executes while everything before it replays from storage |
+| `cancel <id>` | stop a job that has not finished — the way to end a runaway `backfill()` sweep. `--reason <text>` is recorded on the job. Re-reads the row after cancelling, so **exit 0 means it is genuinely stopped**: a job that already finished, an id no queue holds, and a driver with no `introspect.cancel` (the redis and nats stubs) all raise `X_JOB_NOT_CANCELLABLE` rather than reporting success |
 | `drain --to memory\|redis\|nats` | move every `ready`/`delayed`/`suspended` job onto another driver; `--dry-run` reports the plan and moves nothing |
+
+`retry` and `cancel` each take **one id positional** — there is no bulk form and no time filter. `--queue`, `--state`, `--limit` and `--name` narrow `ls` only.
+
+```bash
+x jobs cancel 019ff1c5-0000-7000-8000-000000000001 --reason "wrong tenant" --json
+```
 
 Runs against the app's own driver — the ambient one when a process already installed it, otherwise the same embedded Postgres queue `x dev` boots. `drain` enqueues on the target **before** acking the source: a crash mid-drain duplicates a job, where the idempotency key dedupes it, instead of losing it.
 
@@ -651,7 +665,7 @@ Runs against the app's own driver — the ambient one when a process already ins
 ledger, finished passes included, is `x db backfill --list`. A driver that ships no backfill ledger
 answers with no passes rather than failing the command — the queue is still the question here.
 
-Errors: `X_JOB_UNKNOWN`, `X_CLI_BAD_FLAG`, and `X_NOT_IMPLEMENTED` from a driver with no introspection.
+Errors: `X_JOB_UNKNOWN`, `X_JOB_NOT_CANCELLABLE`, `X_CLI_BAD_FLAG`, and `X_NOT_IMPLEMENTED` from a driver with no introspection.
 
 ## x tasks
 

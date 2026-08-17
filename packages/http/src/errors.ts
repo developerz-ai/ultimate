@@ -300,7 +300,8 @@ const numbers = (bucket: BucketNumbers): string => `${bucket.capacity} / ${bucke
  * disagree about what is enforced, and whichever a merge picked would leave the other a number
  * someone read and nothing applies — the failure this seam exists to end. The message speaks
  * capacity and refill rather than the `limit`/`windowMs` an action declares, because that is what
- * the limiter runs on; `toBucket` in `@ultimat3/action` is the conversion between them.
+ * the limiter runs on; `toBucket` (`rate-limit.ts`, this package) is the conversion between them —
+ * it lives here because http owns `Bucket` and the maths, and both tier-3 callers need it.
  */
 export const rateLimitBucketConflict = (input: {
   bucket: string;
@@ -384,9 +385,9 @@ export const rateLimitScopeUnset = (): HttpError =>
   });
 
 /**
- * A `{ limit, windowMs }` pair the limiter cannot run on. Raised by `toBucket`, which lives here
- * because http owns `Bucket` and the maths, and two tier-3 packages (`action`, `query`) need the
- * same conversion without importing each other.
+ * A `{ limit, windowMs }` pair the limiter cannot run on. Raised by `toBucket` (`rate-limit.ts`),
+ * which lives in this PACKAGE because http owns `Bucket` and the maths, and two tier-3 packages
+ * (`action`, `query`) need the same conversion without importing each other.
  */
 export const rateLimitInvalid = (input: {
   readonly owner: string;

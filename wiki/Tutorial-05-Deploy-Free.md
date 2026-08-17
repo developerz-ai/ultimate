@@ -2,7 +2,7 @@
 
 The framework ships **no** platform primitives — no buildpack, no `app.json`, no `fly.toml`, no adapter. It does not need to: every PaaS builds a Dockerfile, and every one of them wants the same three behaviours the scaffolded image already has.
 
-v1.1.0 `As of 2026-08`. Every command and every output on this page was executed against a `create-ultimate@1.1.0` app and its own `docker/Dockerfile`, with Docker 28 on Linux.
+`As of 2026-08`. Every command and every output on this page was executed against a `create-ultimate@1.1.0` app and its own `docker/Dockerfile`, with Docker 28 on Linux.
 
 Series: [1 — first app](Tutorial-01-First-App) · [2 — first feature](Tutorial-02-First-Feature) · [3 — auth and admin](Tutorial-03-Auth-And-Admin) · [4 — jobs and realtime](Tutorial-04-Jobs-And-Realtime) · **5** · [6 — growing up](Tutorial-06-Growing-Up)
 

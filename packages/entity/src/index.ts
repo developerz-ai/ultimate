@@ -60,12 +60,16 @@ export {
   constraintName,
   invariant,
   invariantsToSql,
+  MAX_ASSERTED_ROWS,
   toSql,
 } from './invariants';
 export type { StatementLoop } from './n-plus-one';
 export { N_PLUS_ONE_THRESHOLD, nPlusOne, preloadsFor } from './n-plus-one';
 export type { PostgresDriverOptions } from './pg-driver';
 export { postgresDriver, postgresRepo, postgresTransactor } from './pg-driver';
+// The two page bounds, beside `N_PLUS_ONE_THRESHOLD` and for the same reason: an app validating
+// its own `pageSize` input against a hardcoded 10_000 is a second declaration of one number.
+export { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from './plan';
 export type { RelatedTable, RelatedTables } from './preload';
 export type { Preloaded, ReadBuilder, Table } from './query';
 export { tableFor } from './query';

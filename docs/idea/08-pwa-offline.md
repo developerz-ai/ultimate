@@ -1,6 +1,6 @@
 # PWA & offline
 
-`sw.js` is a build artifact. It is generated from the route table and **never hand-edited** — editing it is a build error (`X_SW_HAND_EDITED`, checksum mismatch).
+`sw.js` is a build artifact. It is generated from the route table and **never hand-edited**. `X_SW_HAND_EDITED` is the reserved name for the checksum mismatch that would catch it — **reserved, not raised** `As of 2026-08`: `sw.js` carries no checksum, so a hand edit survives `x build` and is silently overwritten on the next one ([Error codes → Reserved codes](../../wiki/Error-Codes.md#reserved-codes)). A convention today, not a build error.
 
 ## Why generated
 
@@ -44,7 +44,7 @@ Excluded always: `api/` responses, anything under an authenticated path unless `
 | `stream` | `runtime` | network-first for the document, cache-first for chunks | shell freshness matters; chunks are content-hashed |
 | `spa` | `precache` | shell cache-first, data network-only | the shell is static; the data never is |
 
-Overriding `offline` is allowed; contradictions are rejected (`offline: 'precache'` on an `ssr` route → `X_SW_UNCACHEABLE`).
+Overriding `offline` is allowed. Contradictions are **not** rejected `As of 2026-08`: `offline: 'precache'` on an `ssr` route is accepted, and `X_SW_UNCACHEABLE` is a reserved name with no thrower. `X_ROUTE_OFFLINE_MISSING` refuses only an absent or unknown strategy; `X_SW_SCOPE_INVALID` covers only the scope half.
 
 Mutations are never cached. Offline writes go through the tier-3 mutator queue ([`03-realtime.md`](./03-realtime.md)), not through Background Sync guesswork.
 

@@ -100,9 +100,9 @@ Rename `excerpt` → `summary` in `packages/db/src/schema/posts.ts` and change n
 | `apps/web/app/posts/repo.ts` | `tsc` | any explicit column list referencing `excerpt` |
 | `apps/web/api/posts.contract.test.ts` | `tsc` | the generated contract test asserts the view's keys |
 | migrations | `X_DB_DRIFT` | `cause: table "posts" has column "summary" not present in any migration` / `fix: x db gen "rename excerpt to summary"` |
-| `openapi.json`, `x.manifest.json` | `X_MANIFEST_STALE` | `fix: x manifest write` |
+| `openapi.json`, `x.manifest.json` | `X_MANIFEST_STALE` | `fix: x manifest` |
 
-Eight failures, each naming a file and a line. Zero silent behavior changes. The rename is **complete when the build is green** — there is no seventh place to remember.
+Eight failures, each naming a file and a line. Zero silent behavior changes. The rename is **complete when the build is green** — there is no ninth place to remember.
 
 Contrast: the same rename in a stack where the API response is hand-written and the client types are a copied interface. Nothing fails. The field arrives as `undefined`, renders as an empty paragraph, and the SEO description silently becomes blank on every blog post.
 

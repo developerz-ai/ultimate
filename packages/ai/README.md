@@ -25,6 +25,46 @@ const answer = await ai.scope({ actorKey: actor.id, orgKey: actor.orgId }, async
 });
 ```
 
+## Budgets — and which of the three is fleet-wide
+
+`request` is one call chain. `actor` and `orgs` are counters across calls, so where they live
+decides what they mean:
+
+| `budgetStore` | `actor` / `org` counts | Right for |
+|---|---|---|
+| omitted — `MemoryBudgetStore` (the default) | **per process**, and reset on every deploy | `x dev`, tests, a single-replica app |
+| your own `BudgetStore` | fleet-wide | anything with more than one replica |
+
+```ts
+import { AnthropicProvider, type BudgetStore, createGateway } from '@ultimat3/ai';
+
+declare const redis: {
+  incrby(key: string, by: number): Promise<number>;
+  del(key: string): Promise<unknown>;
+  flushdb(): Promise<unknown>;
+};
+
+const sharedBudget: BudgetStore = {
+  spent: (key) => redis.incrby(key, 0),
+  add: async (key, tokens) => {
+    await redis.incrby(key, tokens);
+  },
+  reset: async (key) => {
+    await (key === undefined ? redis.flushdb() : redis.del(key));
+  },
+};
+
+export const sharedGateway = createGateway({
+  providers: [new AnthropicProvider()],
+  budget: { request: 40_000, actor: 500_000, org: 20_000_000 },
+  budgetStore: sharedBudget,
+});
+```
+
+Three methods, and `add` takes a **negative** `tokens` — releasing a reservation the call never
+spent is a credit, so a store that clamps at zero leaks the ceiling. `org: 20_000_000` on the
+default store at `replicas: 6` is six ledgers of twenty million, which is a budget that is not one.
+
 ## Rules the gateway enforces
 
 | Rule | Why |
@@ -355,7 +395,7 @@ X_EVAL_THRESHOLD: an eval scored below its tolerance
   cause: eval "summarize" scored 0.667 against a recorded baseline of 1.000
          (tolerance 0.050) on prompt version summarize@1.0.0 (a3f1…);
          regressed: overall 0.67 ← 1.00, refund 0.00 ← 1.00
-  fix:   x test summarize to see per-case scores, then fix the prompt — or
+  fix:   x test eval --filter summarize to see per-case scores, then fix the prompt — or
          ULTIMATE_EVAL_RECORD=1 x test eval to accept the new numbers as a reviewed diff
 ```
 
@@ -398,7 +438,14 @@ RRF fuses by *rank*, so the two score scales never have to be reconciled.
 `PgVectorStore` is the production path: pgvector cosine (`<=>`, HNSW) and Postgres FTS
 (`websearch_to_tsquery` + `ts_rank_cd`, GIN) in **the same Postgres**, fused by `1/(k+rank)` in
 one statement. `MemoryVectorStore` is the dev twin — BM25 instead of `ts_rank_cd`, the same RRF,
-the same envelope. `store.ddl()` prints the table and both indexes; `x db gen` emits it.
+the same envelope.
+
+`store.ddl()` returns one string: `create extension if not exists vector`, the table, and the
+three indexes (hnsw on `embedding`, GIN on `tsv`, GIN on `metadata`). **No command emits it,
+`As of 2026-08`** — `x db gen <name>` diffs `describeEntities()`, a vector store is not an
+`entity()`, and no CLI file references `PgVectorStore` or `ddl()` at all. Split it and paste each
+statement into its own file under `packages/db/migrations/`, exactly as `AUTH_TABLES` is applied,
+then `x db migrate`.
 
 ### The scope is the leak-proofing
 

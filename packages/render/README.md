@@ -41,12 +41,14 @@ same names it always had, so nothing that shipped has to change.
 `As of 2026-07`, omitting `load` means the context IS the data: `meta` may read only what the
 context supplies, and anything richer is a compile error naming the missing `load`.
 
-```ts
-defineRoute({ …, meta: ({ data }) => ({ title: data.post.title }) });
+```text
+defineRoute({ /* … */ meta: ({ data }) => ({ title: data.post.title }) });
 // Property 'load' is missing in type … but required in type '{ readonly load: RouteLoadFn<…> }'
 ```
 
-Without it the route compiled and rendered `undefined` in a `<title>`.
+A `text` fence, not a `ts` one, because it is the one example in this file that must **not**
+compile — that is the whole claim. Without the rule the route compiled and rendered `undefined`
+in a `<title>`.
 
 A loader that throws is `X_ROUTE_LOAD_FAILED`, naming the path to fix — unless it threw an
 `UltimateError` of its own, which passes through untouched: a policy denial or a missing row
@@ -71,14 +73,22 @@ Two fields come back narrower than they went in, so nothing downstream branches 
 
 | Field | The declaration accepts | The descriptor always is |
 |---|---|---|
-| `meta` | `(data) => RouteMeta \| Promise<RouteMeta>` | `(data) => Promise<RouteMeta>` |
+| `meta` | `(ctx: RouteMetaContext) => RouteMeta \| Promise<RouteMeta>` | `(ctx) => Promise<RouteMeta>` |
 | `budget` | omitted, or a `RouteBudget` | a `RouteBudget` — `{}` when undeclared |
 | `hydrate` | omitted, or a `HydrateStrategy` | a `HydrateStrategy` — derived from the islands |
 | `islands` | never written | the `IslandSpec`s this module declared, in order |
 
+`meta` takes the **context**, never the bare data — the same `{ data, params, url, t }` the
+declaration receives, all four required:
+
 ```ts
-const meta = await config.meta({ post });   // always. sync or async declaration, one call
-const js = config.budget.js ?? null;        // never config.budget?.js
+import type { RouteConfig, RouteMetaContext } from '@ultimat3/render';
+
+declare const config: RouteConfig<Post>;
+declare const ctx: RouteMetaContext<Post>;   // { data, params, url, t }
+
+const meta = await config.meta(ctx);   // always. sync or async declaration, one call
+const js = config.budget.js ?? null;   // never config.budget?.js
 ```
 
 No author is forced to write `async`, and a `meta` that throws synchronously comes back as

@@ -2,7 +2,7 @@
 
 `@ultimat3/ui` — 46 SolidJS components on the semantic tokens in [Theming](Theming). SCSS modules, logical properties, no Tailwind, no CSS-in-JS.
 
-v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
+`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
 ## The catalog is generated — read it, don't ask
 

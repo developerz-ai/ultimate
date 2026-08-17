@@ -126,7 +126,7 @@ reads the command next to the failure instead of a stack trace.
 | Surface | Call site | Reported |
 |---|---|---|
 | HTTP | the `error-map` stage of the pipeline | `status >= 500` only. A 404 or a 422 is the caller's mistake and the problem document already said so |
-| jobs | `executeJob`'s failure path | a retry as `warning`, a dead letter as `error`. `x jobs run` takes the same path |
+| jobs | `executeJob`'s failure path | a retry as `warning`, a dead letter as `error`. `x jobs retry <id>` re-enters the same path; `jobs` has no `run` subcommand |
 | realtime | the sync node's frame handler and its detached presence writes | everything that is not a client fault (`X_TOPIC_FORBIDDEN`, `X_SUBSCRIPTION_LIMIT`, `X_PROTOCOL_VERSION`, `X_LIVE_QUERY_UNKNOWN`, `X_CURSOR_STALE`, `X_REBASE_CONFLICT`, `X_FORBIDDEN`, `X_UNAUTHENTICATED`) |
 
 The default reporter is a **no-op**, so an unconfigured app and every test pay nothing and page

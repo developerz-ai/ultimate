@@ -73,7 +73,9 @@ services:
     deploy:
       replicas: 2
 
-  # Exactly one. Leader election is an advisory lock, so a second instance is harmless but idle.
+  # Exactly one. Leader election is an expiring lease row in x_scheduler_leader (NOT an advisory
+  # lock, which is session-scoped and dies with a pooled connection), so a second instance is
+  # harmless but idle.
   scheduler:
     <<: *common
     environment: { ROLE: scheduler }

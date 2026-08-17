@@ -92,8 +92,8 @@ slices:
     pr: 117
   - file: 13-docs-drift.md
     tier: 5
-    status: not_started
-    percent: 0
+    status: in_progress
+    percent: 10
 evidence:
   - pr: 101
     merged: 290dd96

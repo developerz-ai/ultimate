@@ -109,11 +109,13 @@ USER nonroot:nonroot
 # `/bin/sh -c`, which is the very thing this stage does not have.
 RUN ["/app/x", "--version"]
 # No HEALTHCHECK, deliberately. One image serves six roles and `worker`, `scheduler` and
-# `replicator` open no HTTP listener at all, so any single probe baked in here is wrong for half of
+# `replicator` open no APPLICATION listener — only the metrics socket above, which answers
+# METRICS_PATH and 404s everything else — so any single probe baked in here is wrong for half of
 # them — the exact shape of the bug that made sync's readiness probe meaningless. The probe belongs
 # where the role is chosen: `healthcheck:` per service in docker-compose.prod.yml, and per-role
 # readiness/liveness in docker/helm/templates/_helpers.tpl.
 #
-# All roles that serve HTTP expose /healthz and /readyz; every role drains on SIGTERM.
+# Only `web` and `sync` expose /healthz and /readyz — they are the only roles that construct a
+# server. Every role drains on SIGTERM.
 ENTRYPOINT ["/app/x"]
 CMD ["dev", "--once"]

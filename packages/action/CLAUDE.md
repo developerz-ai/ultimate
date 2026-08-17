@@ -30,7 +30,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `idempotency-memory.ts` | the process default: bounded, swept, `scope: 'process'` |
 | `idempotency-postgres.ts` | the SHARED store — one table, one `insert … on conflict` |
 | `deprecation.ts` | `Deprecation` + the RFC 9745/8594 render + the `deprecated_calls_total` counter |
-| `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
+| `policy-gate.ts` | **the only** runtime edge to `@ultimat3/policy` (`errors.ts` takes `SurfaceDenial` as a type, which erases) |
 | `cache-gate.ts` | the post-commit bust — **the only** file that calls `invalidateTags` |
 | `audit.ts` | the audit seam: `AuditRecord`, `AuditSink`, the memory sink, the installed-sink store |
 | `audit-gate.ts` | **the only** file that calls a sink, and where the two failure policies live |
@@ -337,7 +337,9 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 - Authz goes through `enforce(surface, policy, { input, actor, ctx })` from
   `@ultimat3/policy`; a returned denial becomes `ActionDeniedError`, which keeps the
   policy's own code (`X_FORBIDDEN`, `X_UNAUTHENTICATED`) and carries the surface
-  denial. `policy-gate.ts` is the only file that imports the policy package.
+  denial. `policy-gate.ts` is the only file with a **runtime** edge to the policy package;
+  `errors.ts` also imports it, `import type { SurfaceDenial }`, which `verbatimModuleSyntax`
+  erases — so there is still exactly one place authz is evaluated.
 
 ## Commands
 

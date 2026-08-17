@@ -2,7 +2,7 @@
 
 A full-stack, Bun-only, opinionated framework: Rails' philosophy applied to Bun + Postgres + SolidJS, where the primary developer is an AI agent and the secondary developer is a tired senior engineer working through their own AI agent and AI reviewer.
 
-**v1.2.0 `As of 2026-08`.** 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — version in lockstep; **28 are on npm**, all at 1.2.0, and `@ultimat3/flags` is not published at all ([Known gaps](Known-Gaps)). The API is stable and semver applies from here ([Upgrading](Upgrading)). 1.1.0 was the **first release published by the workflow**, over OIDC trusted publishing with provenance attached; 1.0.0 was the manual bootstrap. Milestones 0–10 are ✅; milestone 11 is 🚧, still open on the two-platform deploy proof — 1.1.0 gave a scaffolded app a real deployable artifact, which is progress toward it, not the proof.
+**`As of 2026-08`.** 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — version in lockstep; **28 are on npm**, all at 1.2.0, and `@ultimat3/flags` is not published at all ([Known gaps](Known-Gaps)). The API is stable and semver applies from here ([Upgrading](Upgrading)). 1.1.0 was the **first release published by the workflow**, over OIDC trusted publishing with provenance attached; 1.0.0 was the manual bootstrap. Milestones 0–10 are ✅; milestone 11 is 🚧, still open on the two-platform deploy proof — 1.1.0 gave a scaffolded app a real deployable artifact, which is progress toward it, not the proof.
 
 The realtime restart numbers are **measured and committed**, in two halves that answer different questions ([`scripts/bench/results/`](https://github.com/developerz-ai/ultimate/tree/main/scripts/bench/results)). **Reachability:** 50,000 real WebSocket clients against a **single** `sync` node over `InProcessTransport`, `SIGKILL`ed with no drain — all 50,000 reconnected, 49,981 received a channel patch inside the window, p50 **54.0s** / p90 **105.5s** / max **145.7s**, and 156,851 connect attempts shed by the `AcceptBudget` before any query path. That times the first patch on the reconnected socket and nothing after it; it was published as "time-to-consistent" until 2026-08 and could not see a lost patch, so the name changed and the timings did not. **Delivery:** 10,000 clients, same forced restart, a probe every 200ms — **1,666,882 channel patches received, 0 observed sequence gaps**, `As of 2026-08` the only run with delivery accounting. That counts holes between frames a connection actually received, so it is a lower bound: no client observed a lost frame, which is not the same claim as none was lost. Both are **per-node recovery**: neither crossed NATS, so neither is a multi-node result and neither is a throughput figure → [Realtime](Realtime). This wiki is the only public documentation surface; there is no separate site.
 
@@ -31,7 +31,7 @@ bunx create-ultimate myapp && cd myapp && x dev
 
 ## Tutorials
 
-Follow in order. Every command and every output was executed against the published 1.1.0 packages, and each page names the gaps it hits and the workaround.
+Follow in order. Each page states what it was executed against in its own first line — tutorial 1 is re-measured on `main`, the rest against published 1.1.0 packages — and names the gaps it hits with the workaround.
 
 | Page | You end with |
 |---|---|
@@ -90,8 +90,8 @@ Follow in order. Every command and every output was executed against the publish
 | [Configuration](Configuration) | every `app.config.ts` field and every env var |
 | [Deployment](Deployment) | one image, six roles, `ROLE`/`PORT`, drain, compose, Helm, targets, `docs/ops/` |
 | [Observability](Observability) | counters, gauges, histograms, `MetricExporter`, the Prometheus body, `/metrics` on its own port, and what the chart still cannot reach |
-| [Known gaps](Known-Gaps) | every defect and unfinished seam that shipped in 1.1.0, named |
-| [Upgrading](Upgrading) | `x upgrade`, breaking-change detection, version skew |
+| [Known gaps](Known-Gaps) | every defect and unfinished seam in the published release, named |
+| [Upgrading](Upgrading) | why the next release is a major, breaking-change detection, version skew — and that `x upgrade` is planned |
 | [Troubleshooting](Troubleshooting) | symptom → cause → fix |
 | [FAQ](FAQ) | why Bun only, why no GraphQL, is it production ready |
 | [Contributing](Contributing) | package layout, import tiers, conventions, PR expectations |

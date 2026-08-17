@@ -91,8 +91,9 @@ For each `ChangeEvent`:
 Constraints that make step 2 cheap enough to be honest about:
 
 - `live: true` requires a **deterministic, bounded** `sql`: total `orderBy` + `limit`, no non-deterministic functions. What enforces it is `assertMatchable` (`packages/query/src/matcher.ts`), which refuses a shape the matcher cannot patch incrementally — an unsupported clause, or a filter operator outside `= != in > >= < <=` — with `X_MATCHER_UNSUPPORTED` and the fix "set `live: false` and poll, or reshape to equality filters + `orderBy` + `limit`". There is no separate `X_QUERY_UNBOUNDED`.
-- Predicates must be evaluable against a single row. A live query joining more than the configured table count falls back to **re-execution on change** — correct, more expensive, and reported by `x live explain <query>` so the cost is never a surprise.
-- Aggregates (`count`, `sum`) are supported as incremental deltas only for `+1/-1` shapes; anything else re-executes.
+- Predicates must be evaluable against a **single row of a single entity**. `match` returns no patch at all when `event.entity !== shape.entity` (`packages/query/src/matcher.ts:56`), so a join is not a slower live query — it is not one. `Builder#raw(feature)` is how a source declares a shape the matcher cannot patch, and `assertMatchable` refuses it at subscribe time.
+- **There is no re-execution fallback, and no aggregate deltas.** `As of 2026-08` the refusal is the whole behaviour: unmatchable is `X_MATCHER_UNSUPPORTED`, never a more expensive correct answer. An honest refusal beats a silently wrong result set, and a fallback nobody wrote is worse than both.
+- **Nothing reports which class a query is in before it is subscribed to.** `assertMatchable` runs inside `toLiveQuery` (`packages/query/src/live.ts:125`), which nothing outside `@ultimat3/query` calls, so the refusal arrives at subscribe time and not at build time. There is no explain command — shipped, planned or otherwise.
 
 ## Policy is per subscriber, never per query
 
@@ -264,7 +265,7 @@ Removing it moved **no** `PROTOCOL_VERSION` (still `1`), and both skews are read
 | Reconnect outside the window | snapshot | 1 bounded query per subscription | bounded by `limit`, index-backed |
 | Cold subscribe | snapshot | 1 bounded query | same as any page load |
 | Steady state | matcher + fanout | 0 | changes only |
-| Buffer sizing | `buffer.window` per query group; default 30s of ops, capped by bytes | memory | tuned by `x live explain` |
+| Buffer sizing | `buffer.window` per query group; default 30s of ops, capped by bytes | memory | tuned by hand — no command reports the window |
 | Never | replaying arbitrary WAL history per client | — | rejected design: it makes reconnect O(history) |
 
 **Snapshot fallback, never WAL replay.** Outside the window the client gets a fresh snapshot at a current LSN. Cost is one bounded query, never history traversal.
@@ -328,7 +329,7 @@ Requirements this places on `mutator.local`: pure function of `(tx, input)` — 
 
 | Limit | Reality |
 |---|---|
-| Matcher generality | single-row predicates are fast; multi-table joins and non-trivial aggregates re-execute. `x live explain` tells you which class your query is in |
+| Matcher generality | single-row, single-entity predicates only. Multi-table joins and non-trivial aggregates are **refused** at subscribe time (`X_MATCHER_UNSUPPORTED`), never re-executed, and no command tells you the class in advance |
 | Matcher throughput | CPU on one `replicator` per database. A high-write table with many distinct query shapes is the bottleneck, not socket count |
 | Memory per subscriber | grows with subscribed-result size. 100k sockets holding 50-row results is fine; 100k holding 5k-row results is not |
 | Ordering | per table, by LSN. There is no cross-table transactional snapshot on the wire; a UI that requires one must read via a query, not a subscription |

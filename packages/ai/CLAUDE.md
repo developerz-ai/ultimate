@@ -79,6 +79,12 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
   long before a provider exists. Absent at call time is `X_AI_GATEWAY_MISSING`, never a default
   provider — a silent fallback would spend real money on a boot mistake.
 
+- **`BudgetStore` is where `actor` and `org` actually live, and the default is per PROCESS.**
+  `createGateway({ budgetStore })` is the one install point; omitted, it is `MemoryBudgetStore`,
+  so an `org` ceiling is multiplied by the replica count exactly as `jobs`' `LimitConfig` is.
+  `request` is unaffected — it is one call chain and never crosses a process. `add` takes a
+  **negative** `tokens` (releasing an unspent reservation is a credit), so a store that clamps at
+  zero leaks the ceiling upward on every release.
 - Cost is `Money` (integer minor units), rounded **up**. Never a float, never a division
   that loses a fraction.
 - Every non-2xx and every in-band `error` frame becomes `AiTransportError`, which carries a real
@@ -211,6 +217,12 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
 - **No fix line may name `x ai`.** That command is PLANNED and throws (`packages/cli/src/cmd-planned.ts`),
   so a fix citing `x ai reindex` sends an operator to a wall — an axiom-4 violation. Two shipped;
   both now name the app-code fix instead.
+- **An eval is selected with `x test eval --filter <name>`, never `x test <name>`.** `x test`'s
+  positional is a `TestType` (`unit contract live job e2e eval`), so the eval's own name there is
+  `X_CLI_BAD_FLAG`. `X_EVAL_THRESHOLD` shipped that fix line until 2026-08; `eval-errors.test.ts`
+  now asserts every `x test <word>` these five classes emit is one of the six types. The
+  `errors` step's `fix-command.ts` resolves the *command*, not its positional, so nothing else
+  would have caught it.
 - The introductory price on a model is deliberately not modelled. A price that lapses on a date
   makes a recorded cost depend on when it was read, and under-reporting spend after the lapse is
   a budget that is not one. List price over-reserves, which is the safe direction.

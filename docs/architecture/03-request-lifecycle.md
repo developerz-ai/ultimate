@@ -14,7 +14,7 @@ Order is fixed. Each row states why it cannot move earlier or later.
 | 4 | `route-match` | router resolves path + method → route or action/query ref | a `404` must cost no session lookup, no body read |
 | 5 | `locale-negotiate` | path prefix → cookie → `Accept-Language` → default; sets `locale` + `tz` in ALS | **before anything user-facing.** Stages 6–17 can all produce a message (a denial, a validation error); a message chosen before the locale is a message in the wrong language |
 | 6 | `session-resolve` | Better Auth: cookie/bearer/passkey → `actor` (identity only, zero permissions) | authz needs an actor; tenancy is derived from actor + host |
-| 7 | `tenant-resolve` | host / path / actor claim → `tenantId` in ALS; `X_TENANT_MISMATCH` on conflict | before rate limits, which are keyed per tenant; before any repo call, which requires the tenant |
+| 7 | `tenant-resolve` | host / path / actor claim → `tenantId` in ALS; `X_TENANCY_ACTOR_MISMATCH` on conflict | before rate limits, which are keyed per tenant; before any repo call, which requires the tenant |
 | 8 | `rate-limit` | token bucket on `(tenant, actor, route)` | after the actor exists (per-tenant fairness), before the body is read (a flood must not cost a parse) |
 | 9 | `body-parse` | bounded read, content-type dispatch, size cap | after rate limiting; before validation |
 | 10 | `input-validate` | `input` schema parse → typed `input`; failure → `X_INPUT_INVALID` with the field path | authz reads validated input |

@@ -78,7 +78,7 @@ Allowed, total, and typed. `As of 2026-08` the package ships the currency table,
 | `{ minor: 19.99, currency: 'USD' }` | throws `X_MONEY_NOT_INTEGER`; fix names `fromDecimal` |
 | `fromDecimal('19.999', 'USD')` with no `rounding` | throws — more fraction digits than USD has minor units |
 | `convert(m, 'EUR')` with no rate | throws `X_RATE_MISSING`. There is no default rate provider, because a wrong rate is worse than a missing one |
-| An unknown ISO code | throws `X_CURRENCY_UNKNOWN`; fix is `x money add-currency <CODE> --exponent <n>` |
+| An unknown ISO code | throws `X_CURRENCY_UNKNOWN`. The table is 53 codes, hardcoded — use one of `currencyCodes()`. `x money add-currency` is **planned** and its `--exponent` dies at the parser |
 | `allocate(m, [0, 0])` or a negative ratio | throws `X_ALLOCATION_INVALID` |
 
 Total across a currency boundary requires a conversion first. Silent coercion is how a marketplace bills in the wrong currency for a quarter.
@@ -132,7 +132,7 @@ import { formatMoney } from '@ultimat3/money';
 | Site | Shape |
 |---|---|
 | LLM budgets | `budget: { tokensIn: 8000, costPerCall: { minor: 5, currency: 'USD' } }` — exceeding it throws before spending |
-| LLM cost accounting | per call, per tenant, per prompt version; reported by `x ai cache --json` and `budgets.report` |
+| LLM cost accounting | per call, per tenant, per prompt version; reported by `budgets.report`. `x ai cache --json` is **planned** and exits `X_NOT_IMPLEMENTED`; `x test eval --json` is the shipped command it points at |
 | Job cost accounting | per job run and per step, so an expensive retry loop is visible in the queue view |
 | Admin columns | a money column renders as a right-aligned formatted amount with the currency code; the raw minor value is shown on hover |
 | OTel span attributes | `cost.minor` + `cost.currency` as separate attributes, never a formatted string |
@@ -156,7 +156,7 @@ See [MCP and AI](MCP-And-AI).
 | Code | Cause | Fix |
 |---|---|---|
 | `X_MONEY_NOT_INTEGER` | `minor` is not a safe integer, or a decimal string is more precise than the currency | `fromDecimal(...)`, or pass an explicit rounding mode |
-| `X_CURRENCY_UNKNOWN` | code is not in the ISO-4217 table | `x money add-currency <CODE> --exponent <n>` |
+| `X_CURRENCY_UNKNOWN` | code is not in the ISO-4217 table | pick one of `currencyCodes()` — 53 codes, hardcoded at [`packages/money/src/currency.ts:19`](https://github.com/developerz-ai/ultimate/blob/main/packages/money/src/currency.ts), with no registration call and no `app.config.ts` field. Adding one is a framework change |
 | `X_CURRENCY_MISMATCH` | combining two currencies — an `X_INVARIANT`-class violation | `convert(...)` first, then combine |
 | `X_ALLOCATION_INVALID` | non-positive part count, or ratios that are non-finite, negative, or all zero | pass valid ratios |
 | `X_RATE_MISSING` | no rate registered for the pair | register a `RateProvider` covering it |

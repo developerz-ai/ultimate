@@ -2,7 +2,7 @@
 
 A `route` is a URL + render mode + metadata + offline strategy. Render mode is a per-route property. SEO is enforced by the build, not described in a guide.
 
-v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
+`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
 ## The canonical shape
 
@@ -143,9 +143,9 @@ Failures name the *cause* — the transitive import that added the bytes — bec
 
 | Concern | Enforcement |
 |---|---|
-| `meta.title` missing on any route | build error `X_SEO_NO_TITLE` |
-| `meta.description` missing on a **`site/`** route | build error `X_SEO_NO_DESCRIPTION` + `fix: add description to meta in <file>` |
-| Description outside 50–160 chars | build error, with the measured length |
+| `meta.title` missing on an indexable route | build error `X_SEO_META_MISSING`, `cause` naming `title` and the file |
+| `meta.description` missing on an indexable route | the **same** code, `X_SEO_META_MISSING`, naming `description` — one code for both fields, with `fix: add description to meta in <file>` |
+| Title over 60 chars, description over 160 | build error `X_SEO_META_TOO_LONG`, with the measured length. A **too-short** description is not checked: `DESCRIPTION_MIN_LENGTH` (50) is exported by `@ultimat3/seo` and read by no validator, so a 10-character description passes the gate `As of 2026-08` |
 | Duplicate title/description across routes | build error — duplicate meta is a ranking bug, not a style issue |
 | `og.image` missing on a shareable route | build error; the generated fallback OG image must be opted into explicitly |
 | Broken internal link | build error, resolved against the route table |

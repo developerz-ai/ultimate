@@ -52,6 +52,7 @@ export const testCommand: CliCommand = {
     summary:
       'run one test type — or the whole suite — across N processes, one isolated database per worker',
     usage: `x test [${TEST_TYPES.join('|')}] [--filter text] [--sample N] [--workers N] [--worker I] [--json]`,
+    positionalChoices: TEST_TYPES,
     flags: [
       { name: 'workers', type: 'string', summary: 'process count (default: CPUs - 1, max 8)' },
       {
