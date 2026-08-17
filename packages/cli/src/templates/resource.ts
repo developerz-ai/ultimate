@@ -27,11 +27,16 @@ import * as repo from './repo';
 /** Derived from the row, never restated: a new column reaches this input without an edit here. */
 export type Create${feature.pascal}Input = Omit<${feature.pascal}, 'id' | 'createdAt'>;
 
-export async function create(input: Create${feature.pascal}Input): Promise<${feature.pascal}> {
+/** The row, aliased once, so every signature below reads at one width whatever the feature is
+ * called — a generated file the app's own formatter rewrites is a red \`lint\` over code nobody
+ * typed. */
+type Row = ${feature.pascal};
+
+export async function create(input: Create${feature.pascal}Input): Promise<Row> {
   return repo.insert(input);
 }
 
-export async function require${feature.pascal}(id: string): Promise<${feature.pascal}> {
+export async function require${feature.pascal}(id: string): Promise<Row> {
   const row = await repo.byId(id);
   if (row === undefined) throw new ${feature.pascal}NotFoundError({ id });
   return row;

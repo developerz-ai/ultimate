@@ -6,6 +6,7 @@
 import { assert, systemClock } from '@ultimat3/core';
 import { isDestructive } from './destructive';
 import { migrationIrreversible } from './errors';
+import { addForeignKey, dropForeignKey, foreignKeyTarget } from './foreign-key';
 import {
   type ColumnDescription,
   type ForeignKeyDescription,
@@ -103,10 +104,9 @@ function columnClause(column: ColumnDescriptionLike): string {
   if (column.notNull) parts.push('not null');
   if (column.unique && !column.primaryKey) parts.push('unique');
   if (column.check !== null) parts.push(`check (${column.check})`);
-  if (column.references !== null) {
-    const [refTable, refColumn] = referenceParts(column.references);
-    parts.push(`references "${refTable}" ("${refColumn}")`);
-  }
+  // No `references` clause. A foreign key is `alter table … add constraint`, emitted after every
+  // table exists (`foreignKeyPlan`) — inline it must point at a table that already exists, and
+  // entity registration order is the app's import order, which says nothing about that.
   return parts.join(' ');
 }
 
@@ -139,13 +139,14 @@ function impliedByColumnClause(
 }
 
 /**
- * The keys `columnClause` writes, recorded so drift can see one dropped by hand. Recording
- * `foreignKeys: []` while the same run emitted `references "orgs" ("id")` was a snapshot claiming
- * a constraint does not exist that the migration beside it creates, and `compareTable` had nothing
- * to compare — a key dropped on the database was invisible to every check the framework runs.
+ * The keys this entity declares, recorded so drift can see one dropped by hand. Recording
+ * `foreignKeys: []` while the same run emitted a constraint was a snapshot claiming a constraint
+ * does not exist that the migration beside it creates, and `compareTable` had nothing to compare —
+ * a key dropped on the database was invisible to every check the framework runs.
  *
- * Named the way Postgres names an inline `references` clause (`<table>_<column>_fkey`) because
- * that is what the generated SQL produces, but the name is *not* what drift matches on: see
+ * The name is `<table>_<column>_fkey` — what Postgres would have called an inline `references`
+ * clause — and `addForeignKey` now writes it out, so the snapshot records a name the migration
+ * beside it chose rather than one it guessed. It is still *not* what drift matches on: see
  * `compareForeignKeys` in `drift.ts`.
  *
  * `onDelete` stays `null`. `entity()` carries the option and no clause here has ever spelled one,
@@ -238,6 +239,30 @@ function createIndex(table: string, index: IndexDescriptionLike): string {
 interface Plan {
   readonly up: string[];
   readonly down: string[];
+}
+
+/**
+ * Every foreign key the entity declares that the previous snapshot does not already record, as its
+ * own `add constraint`. One call site for both cases the generator has — a table being created and
+ * a `references()` added to a column that already exists — because they are one question: which of
+ * this entity's keys does the database not hold yet.
+ *
+ * The statements land in a bucket of their own, appended after every table statement, so a key
+ * never runs before the table it points at. `down` is reversed as a whole, so pushing the drops
+ * last here puts them *first* on the way back: `drop table "posts"` with `comments` still
+ * referencing it is `2BP01`, a migration that cannot be rolled back at all.
+ */
+function foreignKeyPlan(
+  entity: EntityDescriptionLike,
+  live: TableDescription | undefined,
+  constraints: Plan,
+): void {
+  const held = new Set((live?.foreignKeys ?? []).map(foreignKeyTarget));
+  for (const key of foreignKeysOf(entity)) {
+    if (held.has(foreignKeyTarget(key))) continue;
+    constraints.up.push(addForeignKey(entity.table, key));
+    constraints.down.push(dropForeignKey(entity.table, key.name));
+  }
 }
 
 /**
@@ -378,10 +403,13 @@ export function slugify(name: string): string {
 export function generateMigration(options: GenerateOptions): GeneratedMigration {
   const current = options.current ?? { tables: [] };
   const plan: Plan = { up: [], down: [] };
+  // Merged into `plan` once every table statement is in, never interleaved with them.
+  const constraints: Plan = { up: [], down: [] };
   const wanted = new Set(options.entities.map((entity) => entity.table));
 
   for (const entity of options.entities) {
     const live = findTable(current, entity.table);
+    foreignKeyPlan(entity, live, constraints);
     if (live === undefined) {
       plan.up.push(...createTable(entity));
       plan.down.push(`drop table "${entity.table}";`);
@@ -416,6 +444,9 @@ export function generateMigration(options: GenerateOptions): GeneratedMigration 
     plan.up.push(`drop table "${table.name}";`);
     plan.down.push(`-- "${table.name}" cannot be restored; recover it from a backup`);
   }
+
+  plan.up.push(...constraints.up);
+  plan.down.push(...constraints.down);
 
   const id = `${migrationStamp(options.now ?? systemClock.now())}_${slugify(options.name)}`;
   const up = plan.up.join('\n');

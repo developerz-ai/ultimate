@@ -1,7 +1,8 @@
 // Source drift: the app's schema *source* against what migrations recorded. `x db gen` writes the
 // hash of the entity schema next to the migration it produced, so drift here is "the schema hashes
 // to something no migration recorded". The hash is committed beside the migration, so a fresh clone
-// answers with no local state and CI needs no database.
+// answers with no local state and CI needs no database. An app with NO migration at all is the one
+// case that also asks how many entities are declared — see `checkSourceDrift`.
 //
 // This is not the post-migrate verification and deliberately cannot be: that one is the live
 // database against the ledger (`checkDrift`, `@ultimat3/db`), asked by `runMigrations` where a
@@ -10,6 +11,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { countDeclaredEntities } from './app-entities';
 // One declaration of where migrations live, and it belongs to the module that reads them —
 // `x db migrate` and this sidecar must never disagree about the directory they share.
 import { hashFileName, MIGRATIONS_DIR } from './migrations';
@@ -61,15 +63,34 @@ export async function writeSchemaHash(root: string, migrationId: string): Promis
 }
 
 /**
- * Empty result = no drift. A missing db package is not drift (an app may have no database yet);
- * a schema with no migration at all is.
+ * How many entities the app declares. Injected so this module's own tests need no app on disk, and
+ * so a caller that has already loaded the app can answer without loading it twice.
  */
-export async function checkSourceDrift(root: string): Promise<readonly Finding[]> {
+export type DeclaredEntityCount = () => Promise<number>;
+
+/**
+ * Empty result = no drift. A missing db package is not drift (an app may have no database yet);
+ * a schema with no migration at all is — *provided* the app declares an entity for one to record.
+ *
+ * The entity count is read lazily and ONLY in that first branch, so an app past its first migration
+ * pays nothing for it: every other path answers from file hashes alone, with no app load and no
+ * database, which is what lets the gate run this in a CI with neither.
+ */
+export async function checkSourceDrift(
+  root: string,
+  declaredEntities: DeclaredEntityCount = () => countDeclaredEntities(root),
+): Promise<readonly Finding[]> {
   if (!existsSync(join(root, DB_PACKAGE))) return [];
   const current = await schemaHash(root);
   const records = await recordedHashes(root);
   const latest = records.at(-1);
   if (latest === undefined) {
+    // Zero declared against zero recorded is AGREEMENT, not drift. The weaker condition this used
+    // to test — "a packages/db directory exists" — held `x new --no-example` permanently red behind
+    // `x db gen "initial"`, which has an empty diff there, writes no `.hash`, and exits ok: a fix
+    // that succeeds and changes nothing. Drift resumes the moment the author declares an entity,
+    // and by then the fix genuinely writes one.
+    if ((await declaredEntities()) === 0) return [];
     return [
       {
         code: 'X_DB_DRIFT',

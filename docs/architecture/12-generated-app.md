@@ -207,13 +207,52 @@ pinned it.
 One compile per *file set*, listed in `scaffold-fixture.ts`: `x new` with every generator run on
 top of it (`--admin` included, since that override is a template no other invocation emits), and
 `x new --no-example` on its own. `--no-example` writes a different `packages/db` — no entity, so
-nothing for `schema.ts`, `seed.ts` or the initial migration to name — and compiling only the
+nothing for `schema.ts` or `seed.ts` to name (no invocation writes a migration at all, `As of
+2026-08`: `x db gen` is that directory's only writer) — and compiling only the
 example app is exactly what let it ship a `schema.ts` importing a slice that invocation never
 wrote. A flag that changes which files are emitted earns a variant; one that changes their
 contents does not.
 
 `x g` never clobbers: a path that already exists is `X_GENERATE_CONFLICT` with the path and the
 `--force` that overrides it, so running the generator twice grows a slice instead of flattening it.
+
+## A narrower generator plants what it imports
+
+The five generators that write *into* a slice import its shared modules — `../repo`, `../policy`,
+`../errors` — and wrote none of them until 2026-08, so each emitted `TS2307` in any slice
+`x g resource` had not been run in first. Each now composes exactly the modules its own source
+imports, through `sliceFoundation(target, needs)`
+([`templates/slice-foundation.ts`](../../packages/cli/src/templates/slice-foundation.ts)).
+
+| Generator | Files into a bare slice | Its own | `needs` |
+|---|---|---|---|
+| `x g action`, `x g mutator` | 8 | 2 | `entity`, `policy`, `errors` |
+| `x g query`, `x g query --live` | 7 | 2 | `entity`, `policy` |
+| `x g job` | 5 | 2 | `entity` |
+| `x g backfill` | 5 | 2 | `entity` |
+| `x g task` | 7 | 4 — the task and the job it enqueues | `entity` |
+
+**Named per generator, never one fixed set.** A job has no request behind it and evaluates no
+policy, so a `policy.ts` it never reads would be a file an author has to read before deleting.
+`'entity'` is the **pair** — `repo.ts` imports `./entity` for its row type, so emitting one without
+the other moves the unresolved import rather than closing it.
+
+`x g resource` composes the same sub-generators and therefore writes `errors.ts` through the action's
+`needs`, not through a template of its own; `dedupe` collapses the five copies of `entity.ts` that
+composition produces, first occurrence winning.
+
+A planted module is tagged `merge: 'if-absent'`, and `planFile`
+([`cmd-generate.ts`](../../packages/cli/src/cmd-generate.ts)) gives it a **third** answer beside
+write and conflict: an existing one is a `skip` — never a conflict, and never overwritten,
+**`--force` included**. A foundation module belongs to the slice rather than to the generator that
+needed it, and `--force` is about the primitive the author named: clobbering `policy.ts` to
+regenerate one action would delete every rule they wrote. Regenerating a slice module is its own
+generator, `x g entity` or `x g policy`.
+
+Measured `As of 2026-08` on a slice holding an authored `policy.ts`: `x g action` writes **7 of 8** —
+everything the slice lacked, including `policy.test.ts`, and not the `policy.ts` — and a second
+`x g action` into the finished slice writes exactly its own **2**. `--force` leaves the authored file
+byte-for-byte.
 
 ### The two hand-wired lines
 

@@ -1,6 +1,6 @@
 # The eight primitives
 
-Everything in the framework is one of these. `x g resource <name>` scaffolds a whole feature slice — an entity + repo, a policy, **two** actions (`create-*`, `archive-*`), a live query, a job, an app route, plus service, UI and i18n files — each with a test that **passes on the first run**. Not one of each: the slice emits no `mutator` and no `task`. Those have their own generators.
+Everything in the framework is one of these. `x g resource <name>` scaffolds a whole feature slice — an entity + repo, a policy, an errors module, **two** actions (`create-*`, `archive-*`), a live query, a job, an app route, plus service, UI and i18n files, 25 in all — each with a test that **passes on the first run**. Not one of each: the slice emits no `mutator` and no `task`. Those have their own generators.
 
 ```
 entity    — a table + its domain type + invariants
@@ -17,12 +17,12 @@ task      — a scheduled trigger (cron) that enqueues jobs
 |---|---|---|---|
 | `entity` | `<feature>/entity.ts` | `x g entity <name>` | [Entities and migrations](Entities-And-Migrations) |
 | `policy` | `<feature>/policy.ts` | `x g policy <name>` | [Policies and authz](Policies-And-Authz) |
-| `action` | `api/` or `<feature>/actions.ts` | `x g action <name>` | [Actions](Actions) |
-| `mutator` | `<feature>/actions.ts` | `x g mutator <name>` | [Realtime](Realtime) |
-| `query` | `<feature>/live.ts` | `x g query <name>` | [Queries and live queries](Queries-And-Live-Queries) |
-| `job` | `<feature>/jobs.ts` | `x g job <name>` | [Jobs and workflows](Jobs-And-Workflows) |
+| `action` | `api/` or `<feature>/actions/<name>.ts` | `x g action <name>` | [Actions](Actions) |
+| `mutator` | `<feature>/actions/<name>.ts` | `x g mutator <name>` | [Realtime](Realtime) |
+| `query` | `<feature>/queries/<name>.ts`, or `live/<name>.ts` with `--live` | `x g query <name>` | [Queries and live queries](Queries-And-Live-Queries) |
+| `job` | `<feature>/jobs/<name>.ts` | `x g job <name>` | [Jobs and workflows](Jobs-And-Workflows) |
 | `route` | a route folder's `config` export | `x g route <path>` | [Routes and render modes](Routes-And-Render-Modes) |
-| `task` | `<feature>/jobs.ts` | `x g task <name>` | [Scheduled tasks](Scheduled-Tasks) |
+| `task` | `<feature>/tasks/<name>.ts`, plus the job it enqueues | `x g task <name>` | [Scheduled tasks](Scheduled-Tasks) |
 
 Every one is a **function returning a value**, so an app encodes a house rule by wrapping one and exporting its own factory — `tenantEntity`, `auditedMutator` — with the registry, the manifest, the projections, admin and MCP treating the result identically. That is how the framework extends itself too (`llm()` returns an `action`, `backfill()` returns a `job`), and it is why there is no plugin API → [Building your own base](Building-Your-Own-Base).
 

@@ -6,6 +6,7 @@
 import type { FeatureTarget } from './entity';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
+import { sliceFoundation } from './slice-foundation';
 
 const jobSource = (
   name: NameSet,
@@ -75,6 +76,9 @@ import { ${name.camel} } from './${name.kebab}';
 const id = '00000000-0000-4000-8000-000000000001';
 const orgId = '00000000-0000-4000-8000-000000000002';
 const input = { id, orgId };
+// The key this job owes, spelled once. Named rather than inlined so the assertion below carries
+// the job's own name and still fits the formatter width the app's \`lint\` step enforces.
+const expectedKey = \`${name.kebab}:\${id}\`;
 
 // The driver is process-global, so it is installed and released around this file rather than
 // left behind for whichever test happens to run next.
@@ -83,14 +87,15 @@ beforeAll(() => {
 });
 afterAll(resetJobDriver);
 
-jobTest('${name.camel} declares an idempotency key and a retry policy', () => {
+jobTest('${name.camel} declares a key and a retry policy', () => {
   expect(${name.camel}.kind).toBe('job');
-  expect(${name.camel}.idempotencyKeyFor(input)).toBe(\`${name.kebab}:\${id}\`);
+  expect(${name.camel}.idempotencyKeyFor(input)).toBe(expectedKey);
   expect(${name.camel}.retry.attempts).toBeGreaterThan(1);
 });
 
 jobTest('${name.camel} derives the same key for the same input', () => {
-  expect(${name.camel}.idempotencyKeyFor(input)).toBe(${name.camel}.idempotencyKeyFor(input));
+  const key = ${name.camel}.idempotencyKeyFor(input);
+  expect(${name.camel}.idempotencyKeyFor(input)).toBe(key);
 });
 
 jobTest('${name.camel} runs as the org its own input names', () => {
@@ -137,7 +142,7 @@ jobTest('${name.camel} declares a cron with an explicit time zone', () => {
   expect(${name.camel}.tz).toBe('UTC');
 });
 
-jobTest('${name.camel} enqueues ${jobName.camel} and nothing else', () => {
+jobTest('${name.camel} enqueues exactly one job', () => {
   const pairs = ${name.camel}.entries();
   expect(pairs).toHaveLength(1);
   expect(pairs[0]?.[0]).toBe(${jobName.camel});
@@ -149,7 +154,7 @@ jobTest('${name.camel} describes its schedule and its jobs', () => {
   expect(described.jobs).toHaveLength(1);
 });
 
-jobTest('${name.camel} fires its entries onto the same queue the scheduler would', async () => {
+jobTest('${name.camel} fires its declared entries', async () => {
   // \`.enqueue()\` is the backfill path: the declared entries, through the facade a job handle
   // uses, with no scheduler and no leader involved.
   const results = await ${name.camel}.enqueue();
@@ -162,6 +167,10 @@ export function jobFiles(rawName: string, target: FeatureTarget): readonly Gener
   const name = names(rawName);
   const dir = `${target.surfaceDir}/${target.feature}/jobs`;
   return [
+    // The job's steps read through `../repo`, which carries `../entity` for its row type. No
+    // policy: a job has no request behind it and evaluates none, so a generated one would be a
+    // file nobody asked for. `x g task` inherits this by composing `jobFiles` below.
+    ...sliceFoundation(target, ['entity']),
     { path: `${dir}/${name.kebab}.ts`, contents: jobSource(name) },
     { path: `${dir}/${name.kebab}.test.ts`, contents: jobTest(name) },
   ];

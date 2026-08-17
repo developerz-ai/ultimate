@@ -5,6 +5,8 @@
 import type { FeatureTarget } from './entity';
 import type { GeneratedFile, NameSet } from './naming';
 import { names } from './naming';
+import { sliceFoundation } from './slice-foundation';
+import { wrapImport } from './wrap';
 
 const actionSource = (
   name: NameSet,
@@ -18,7 +20,7 @@ import { action, t } from '@ultimat3/action';
 // slice's own files and are shared by every action in it.
 
 import { ${feature.pascal}NotFoundError } from '../errors';
-import { can${feature.pascal}Write, ${feature.camel}Tag } from '../policy';
+${wrapImport([`can${feature.pascal}Write`, `${feature.camel}Tag`], '../policy')}
 import * as repo from '../repo';
 
 export const ${name.camel} = action({
@@ -28,7 +30,7 @@ export const ${name.camel} = action({
   output: t.object({ id: t.uuid, title: t.string }),
   policy: can${feature.pascal}Write,
   cache: { invalidates: [${feature.camel}Tag] },
-  mcp: { expose: true, description: '${name.raw} — generated, edit the description' },
+  mcp: { expose: true, description: '${name.raw} — edit this description' },
   async handle({ input }) {
     const row = await repo.byId(input.id);
     if (row === undefined) throw new ${feature.pascal}NotFoundError({ id: input.id });
@@ -58,7 +60,7 @@ export const ${name.camel} = mutator({
   input: t.object({ id: t.uuid, orgId: t.uuid, title: t.string }),
   output: t.object({ id: t.uuid, title: t.string }),
   policy: can${feature.pascal}Write,
-  mcp: { expose: true, description: '${name.raw} — generated, edit the description' },
+  mcp: { expose: true, description: '${name.raw} — edit this description' },
   // tx.table(name) rather than tx.${feature.plural}: the typed accessor exists only once the app
   // augments LocalTables, and generated code cannot assume that has happened yet. The name is the
   // entity's snake_case table, so the local twin and the server row live under one key.
@@ -76,41 +78,6 @@ export const ${name.camel} = mutator({
   conflict: 'server-wins',
 });
 `;
-
-/** The feature's own code, derived once. The `docs:` URL used to be the literal
- * `.../X_NOT_FOUND` beside a `code:` of `X_INVOICE_NOT_FOUND`, so following the link from a real
- * failure landed on a different code's page — the same interpolation `error-codes.ts`'s `docsFor`
- * already does for every framework code. */
-const notFoundCode = (feature: NameSet): string =>
-  `X_${feature.kebab.toUpperCase().split('-').join('_')}_NOT_FOUND`;
-
-/**
- * The emitted `fix:` cites `x queries list`, and which command it cites is the whole point: a
- * scaffolded app runs the same `errors` step this repo does, so a fix naming a command the build
- * does not ship writes a fresh X_ERROR_FIX_INVALID into the app on every `x g action`. It cited
- * `x db studio`, which is in `PLANNED_SUBCOMMANDS` and exits X_NOT_IMPLEMENTED — the generator was
- * breaking the one rule it exists to demonstrate. `x queries list` ships, and a read is where a
- * caller gets an id that exists.
- */
-const errorsSource = (feature: NameSet): string => {
-  const errorCode = notFoundCode(feature);
-  return `// The ${feature.kebab} feature's X_* codes. Never throw a bare Error: an agent reading the failure
-// needs the code, the cause and the exact command that fixes it.
-
-import { UltimateError } from '@ultimat3/core';
-
-export class ${feature.pascal}NotFoundError extends UltimateError {
-  constructor(input: { id: string }) {
-    super({
-      code: '${errorCode}',
-      cause: \`no ${feature.kebab} with id \${input.id}\`,
-      fix: 'x queries list --json, then pass an id the ${feature.kebab} read returns',
-      docs: 'https://ultimate.dev/errors/${errorCode}',
-    });
-  }
-}
-`;
-};
 
 const ID = '00000000-0000-4000-8000-000000000001';
 const ORG = '00000000-0000-4000-8000-000000000002';
@@ -166,21 +133,21 @@ unitTest('${name.camel} rejects input that is not a uuid', async () => {
   await expect(target.input).toAcceptInput(input);
 });
 
-contractTest('${name.camel} passes the contract every action owes', async () => {
+contractTest('${name.camel} passes the action contract', async () => {
   // Three assertions the framework makes for any action, without knowing what this one does:
   // garbage input is rejected, an anonymous actor is denied, and the operation reaches the
   // OpenAPI document. \`.contract()\` is the projection; this loop just runs it.
   for (const contract of target.contract()) await contract.run();
 });
 
-contractTest('${name.camel} denies a foreign org before the handler runs', async () => {
+contractTest('${name.camel} denies a foreign org', async () => {
   // \`.as()\` is the one execution path with the actor swapped, so this denial is the same one
   // HTTP, MCP and the job surface would produce — and no repo call happened to produce it.
   const denied = await target.as(outsider, input).catch((error: unknown) => error);
   expect(denied).toBeUltimateError('X_FORBIDDEN');
 });
 
-contractTest('${name.camel} projects one MCP tool and one OpenAPI operation', () => {
+contractTest('${name.camel} projects one tool and one operation', () => {
   // Same policy object on both surfaces — an MCP call cannot reach a different authz path.
   expect(target.tool().policy).toBe(target.policy);
   expect(target.tool().description).not.toBe('');
@@ -198,14 +165,14 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
   const dir = `${target.surfaceDir}/${target.feature}/actions`;
   const isMutator = target.mutator === true;
   return [
+    // The three slice modules this action's source imports — `../errors`, `../policy`, `../repo`
+    // (which comes with `../entity`, its row type). Composed rather than assumed: `x g action`
+    // into a slice no `x g resource` had created emitted all three imports and wrote none of them.
+    ...sliceFoundation(target, ['entity', 'policy', 'errors']),
     {
       path: `${dir}/${name.kebab}.ts`,
       contents: isMutator ? mutatorSource(name, feature) : actionSource(name, feature),
     },
     { path: `${dir}/${name.kebab}.test.ts`, contents: actionTest(name, feature, isMutator) },
-    {
-      path: `${target.surfaceDir}/${target.feature}/errors.ts`,
-      contents: errorsSource(feature),
-    },
   ];
 }

@@ -241,6 +241,9 @@ stage 14 post-commit
 | Rule | Enforcement |
 |---|---|
 | Schema is the source; migrations are the ledger | `x db gen "<name>"` diffs schema vs. applied migrations and writes SQL |
+| One writer, `As of 2026-08` | `x db gen` alone writes `packages/db/migrations`. `x new` scaffolds none, so a new app's first command is `x db gen "initial"` and until it runs the `drift` step is red naming it — once the app declares an entity. **Zero declared against zero recorded is agreement**, so a scaffold with no `entity()` is green and goes red on the first one |
+| A foreign key is its own statement | `alter table … add constraint`, emitted after every table statement (and reversed first in `down`), never a `references` clause inside `create table` — entity registration order is the app's import order and says nothing about which table a key points at. No topological sort and no cycle error: separate constraints need no order |
+| `onDelete` is declared and reaches no SQL | `references(() => orgs.id, { onDelete: 'cascade' })` above is carried nowhere below the declaration: `describeEntity` renders a reference as `"<entity>.<column>"`, so every generated key records `onDelete: null` and drift does not compare the rule. Add the clause to the generated `add constraint` by hand, before applying it ([`wiki/Known-Gaps.md`](../../wiki/Known-Gaps.md)) |
 | Applied set is recorded in-DB | `x_migrations` table: name, checksum, applied_at, build id |
 | Editing an applied migration | checksum mismatch → `X_MIGRATION_CONFLICT`, `fix: x db gen "<followup>"` |
 | Drift in the source | `X_DB_DRIFT` from `checkSourceDrift`, naming the schema and migration hashes that moved — `x verify`, no database needed |

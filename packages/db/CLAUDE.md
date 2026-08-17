@@ -415,6 +415,19 @@ fix for a migration that already exists. `checkDrift` turns that `undefined` int
 `X_MIGRATION_SNAPSHOT_MISSING` rather than diffing against the empty schema, which would emit
 `create table` for every table the database already holds.
 
+**Those two answers describe one condition, so they must name one remedy — and until 2026-08 they
+named each other.** `unknown-schema`'s fix was `x db gen "snapshot <name>"`, which raises
+`X_MIGRATION_SNAPSHOT_MISSING`, whose fix was "restore … from version control" for a file version
+control never had: reproduced on a pristine `x new` scaffold, whose `0000_initial.sql` ships with no
+sidecar, so the app's first `x db migrate` had no way out at all. Both now lead with the same two
+remedies in the same order — restore the sidecar (`git checkout --`, a real command that fails
+loudly when git has no copy), or, if it was never written, **delete the migration's files first and
+only then** run `x db gen`. The order is the whole point: `x db gen` named before the files are gone
+is the cycle. `snapshotSiblings`/`migrationNameOf` (`errors.ts`) build that second command out of
+the path the caller passed and the id, never out of a directory this tier-1 package invents —
+`unknown-schema` has no path at all and uses a `"*<id>.snapshot.json"` git pathspec for the same
+reason.
+
 `compareTable` compares **nullability**, and it is the only column property it compares besides
 existence. `snapshotOf` had recorded `nullable` all along and nothing read it, which made the
 expand/contract flow a one-way door: `generate.ts` emits a `NOT NULL` add as nullable plus a
@@ -441,15 +454,46 @@ snapshot holds the author's spelling, so a text comparison reports two identical
 `wiki/Known-Gaps.md`.
 
 `compareForeignKeys` judges **declared** keys the same way, and matches on **where the key points**
-— its columns, its target table, its target columns — never on the constraint name. `snapshotOf`
-names one the way Postgres names an inline `references` clause (`posts_org_id_fkey`) because that is
-what the generated SQL produces, but a hand-written migration may have said `constraint fk_posts_org`
-and a key pointing the same way under another name is the same key. `onDelete` is not compared: the
-catalog spells it `a`/`c`/`r` and no generated clause has ever declared one, so a snapshot has
-nothing truthful to hold there. Before this, `snapshotOf` recorded `foreignKeys: []` beside an `up`
-emitting `references "orgs" ("id")` — a snapshot denying a constraint its own migration creates — so
-`alter table … drop constraint` on the database answered `ok: true`. `x db gen` still emits no
-`add constraint`/`drop constraint` of its own; see `wiki/Known-Gaps.md`.
+— its columns, its target table, its target columns — never on the constraint name. That identity is
+`foreignKeyTarget` (`foreign-key.ts`), the **one** copy, read by this comparison and by `x db gen`'s
+own diff: a generator and a detector that disagreed about whether two keys are the same key is drift
+reported on a correct database. `snapshotOf` names a key `<table>_<column>_fkey` — what Postgres
+would have called an inline `references` clause — and `addForeignKey` now writes that name out, so
+the snapshot records a name the migration beside it chose rather than one it guessed; a hand-written
+migration may still have said `constraint fk_posts_org`, and a key pointing the same way under
+another name is the same key. `onDelete` is not compared: the catalog spells it `a`/`c`/`r` and no
+generated clause has ever declared one, so a snapshot has nothing truthful to hold there. Before
+this, `snapshotOf` recorded `foreignKeys: []` beside an `up` emitting `references "orgs" ("id")` — a
+snapshot denying a constraint its own migration creates — so `alter table … drop constraint` on the
+database answered `ok: true`.
+
+**A foreign key is `alter table … add constraint`, never a clause inside `create table`** — decided
+2026-08, and it is the difference between a first migration that applies and one that does not.
+Inline, the constraint is created with the table, so the referenced table must already exist; the
+order `generateMigration` walks is `describeEntities()`, which is the app's *import* order and has
+nothing to say about which table a `references()` points at. Measured against PGlite on a scaffolded
+app: `create table "comments" (… references "posts" …)` before `create table "posts"`, statement one,
+`relation "posts" does not exist`. `down` had the mirror fault — `drop table "posts"` while
+`comments` still referenced it is `2BP01`. So `foreignKeyPlan` collects every key into a bucket of
+its own, merged into the plan **after** every table statement; `down` is reversed as a whole, so the
+drops pushed last there come out first. No topological sort and **no cycle error**: two tables
+referencing each other cannot be expressed inline in any order, and separate constraints need no
+order at all. The same call site answers the other half — a `references()` added to a column that
+already exists now emits its `add constraint`, where before `up` came out **empty**, `x db gen`
+wrote no file, and `x verify`'s drift step stayed red forever with `x db gen "…"` as a fix that did
+nothing. Removing a `references()` still emits nothing, exactly as a removed index does.
+
+**`snapshot-json.ts` writes the sidecar's bytes, and they must be a fixed point of Biome.** A
+scaffolded app's `lint` step is `biome check .` over `"includes": ["**"]`, and `.sql`/`.hash` are
+types Biome does not process — so the `.snapshot.json` is the first migration artefact lint ever
+sees. `JSON.stringify(value, null, 2)` is not that fixed point: Biome collapses `["id"]` onto one
+line and `JSON.stringify` never does, so `x db gen` wrote a file the app's own gate rejected — axiom
+3, inverted. Two rules, measured against 2.5.5 and encoded in `print`: an **object** keeps the
+source's shape, so emitting every non-empty one broken is stable by construction; an **array**
+collapses when every element is already on one line and the line fits, *counting the trailing
+comma*, at `<= 100`. `snapshot-json.test.ts` proves it by running the repo's own `biome format` over
+the output and demanding no change — a pinned expected string could not have caught the boundary,
+and the naive spelling is asserted to fail the same check so the test cannot pass by doing nothing.
 
 `introspect()` reads an index's columns in **index key order** (`indkey`, not `attnum`) and carries
 its predicate and direction. Ordering by `attnum` returned a composite index's columns in table

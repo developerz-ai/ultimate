@@ -1,7 +1,12 @@
-// The generated app's `packages/db`: the entity re-export list the migration generator reads, the
-// deterministic seed, and the initial migration. No business logic — that is the package's own
-// stated boundary, and it is why `example` reaches only the three files describing the slice's
-// table.
+// The generated app's `packages/db`: the entity re-export list the migration generator reads and
+// the deterministic seed. No business logic — that is the package's own stated boundary, and it is
+// why `example` reaches only the two files describing the slice's table.
+//
+// No migration. `x db gen` is the ONE writer of `packages/db/migrations`, and a scaffold that hand-
+// wrote `0000_initial.sql` was a second one: it declared a `posts` table the generator had never
+// diffed, so the first `x db gen` saw a schema the ledger already claimed and the two disagreed
+// about what "initial" meant. `x db gen "initial"` is the app's first command instead — it writes
+// the `.sql`, the `.snapshot.json` and the `.hash` together, which no hand-written file can.
 
 import type { GeneratedFile, NameSet } from './naming';
 import { packageShapeFiles, workspacePackageJson } from './scaffold-package-shape';
@@ -76,34 +81,6 @@ export async function seed(): Promise<number> {
   return 0;
 }${SEED_MAIN}`;
 
-const migration = (example: boolean): string =>
-  example
-    ? `-- 0000_initial: the example feature slice. Reversible: the down section is required.
-CREATE TABLE IF NOT EXISTS posts (
-  id uuid PRIMARY KEY,
-  org_id uuid NOT NULL,
-  title varchar(200) NOT NULL,
-  price_minor integer NOT NULL DEFAULT 0,
-  price_currency char(3) NOT NULL DEFAULT 'USD',
-  -- The third column of one \`money()\` property. Always nullable: NULL is "the currency's own
-  -- minor unit", which is every ordinary price, and \`0\` is a different value — whole units.
-  -- The CHECK is the one \`describeColumn\` emits, so this table and a generated one agree.
-  price_scale integer CHECK (price_scale is null or (price_scale >= 0 and price_scale <= 15)),
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS posts_org_created_idx ON posts (org_id, created_at);
-
--- down
--- DROP INDEX IF EXISTS posts_org_created_idx;
--- DROP TABLE IF EXISTS posts;
-`
-    : `-- 0000_initial: no entity is declared yet, so this migration creates nothing. It exists so the
--- schema hash beside it has a migration to belong to, and \`x verify\` sees no drift on run one.
--- Reversible: the down section is required.
-
--- down
-`;
-
 /** Every file the `packages/db` workspace ships, in the order `x new` writes them. */
 export const dbPackageFiles = (app: NameSet, example: boolean): readonly GeneratedFile[] => [
   { path: 'packages/db/package.json', contents: workspacePackageJson(app, 'db', DESCRIPTION) },
@@ -111,5 +88,4 @@ export const dbPackageFiles = (app: NameSet, example: boolean): readonly Generat
   { path: 'packages/db/src/index.ts', contents: dbIndex() },
   { path: 'packages/db/src/schema.ts', contents: dbSchema(app, example) },
   { path: 'packages/db/src/seed.ts', contents: dbSeed(app, example) },
-  { path: 'packages/db/migrations/0000_initial.sql', contents: migration(example) },
 ];

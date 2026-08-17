@@ -4,11 +4,20 @@
 // an app that scaffolds with an icon nothing can ever turn into `/icons/icon-192.png`.
 
 import { describe, expect, test } from 'bun:test';
+// `node:fs`/`node:os` — Bun has no temp-directory API; `node:path` — no Bun path joiner.
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { decodeImage, probeImage } from '@ultimat3/core';
 import type { NestedCatalog } from '@ultimat3/i18n';
 import { catalogKeys, defineCatalogs, loadCatalog } from '@ultimat3/i18n';
 import { BuiltinImagePipeline } from '@ultimat3/pwa';
-import { planNewApp } from './cmd-new';
+import { newCommand, planNewApp, writeNewApp } from './cmd-new';
+import type { CommandContext } from './command';
+import { exec } from './exec';
+import { MIGRATIONS_DIR } from './migrations';
+import { parseArgs } from './parse';
+import { SPECS } from './registry';
 import { icon } from './templates/scaffold-icon';
 import { belongsToType } from './test-select';
 import { parseVerifyFloor, VERIFY_FLOOR_FILE } from './verify-floor';
@@ -66,6 +75,43 @@ describe('unit · x new · scaffolded icon', () => {
     expect(a).toBe(255);
     // The maskable safe zone stops short of the edge, so the corner is canvas, not mark.
     expect(at(0, 0)[3]).toBe(0);
+  });
+});
+
+describe('unit · x new · x db gen is the only writer of packages/db/migrations', () => {
+  // Two errors used to refuse each other on a pristine scaffold: `x db migrate` answered `X_DB_DRIFT`
+  // naming `x db gen`, and `x db gen` answered `X_MIGRATION_SNAPSHOT_MISSING` for a sidecar nothing
+  // had ever written. The condition cannot arise once the scaffold writes no migration at all —
+  // `.sql`, `.snapshot.json` and `.hash` are written together, by one command, or not at all.
+  test('it writes no migration and no hash sidecar', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'x-new-'));
+    try {
+      const written = await writeNewApp(dir, { name: 'demo-app', example: true });
+      expect(written.files.filter((file) => file.startsWith(MIGRATIONS_DIR))).toEqual([]);
+      // On disk as well as in the file list: the `.hash` was written past `planNewApp`, so it
+      // appeared in no plan, no `--dry-run` and no test — which is how it outlived its own `.sql`.
+      const migrations = join(dir, MIGRATIONS_DIR);
+      expect(existsSync(migrations) ? readdirSync(migrations) : []).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // With no `.hash` on disk, `checkSourceDrift` is red until the author generates the first
+  // migration — correct, and only useful if the scaffold's own next-steps line names the command
+  // that clears it. Read off the rendered summary, not the catalog, so a message key that stops
+  // being interpolated fails here too.
+  test('its next-steps summary names x db gen "initial"', async () => {
+    const ctx: CommandContext = {
+      args: parseArgs(['new', 'demo-app', '--dry-run'], SPECS),
+      cwd: tmpdir(),
+      runner: exec,
+      env: {},
+      bunVersion: '1.3.0',
+    };
+    const result = await newCommand.run(ctx);
+    expect(result.ok).toBe(true);
+    expect(result.summary).toContain('x db gen "initial"');
   });
 });
 

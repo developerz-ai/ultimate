@@ -10,18 +10,33 @@ import { backfillFiles } from './backfill';
 
 const target = { feature: 'post', surfaceDir: 'app' } as const;
 
+/**
+ * Selected by path, never by index: the generator also emits the slice modules its source imports
+ * (`../entity`), and a positional read would silently start asserting about `entity.ts`.
+ */
 const generated = (name = 'normalize-titles'): { source: string; test: string } => {
   const files = backfillFiles(name, target);
-  return { source: files[0]?.contents ?? '', test: files[1]?.contents ?? '' };
+  const at = (path: string): string => {
+    const found = files.find((file) => file.path === path)?.contents;
+    return typeof found === 'string' ? found : '';
+  };
+  return {
+    source: at(`app/post/backfills/${name}.ts`),
+    test: at(`app/post/backfills/${name}.test.ts`),
+  };
 };
 
 describe('unit · x g backfill', () => {
   test('writes the declaration and its test, under the feature own backfills directory', () => {
     const files = backfillFiles('normalize-titles', target);
-    expect(files.map((file) => file.path)).toEqual([
+    // The slice's own modules come first and are `if-absent`; the backfill's two are the run's.
+    expect(files.filter((file) => file.merge === undefined).map((file) => file.path)).toEqual([
       'app/post/backfills/normalize-titles.ts',
       'app/post/backfills/normalize-titles.test.ts',
     ]);
+    // `../entity` is what the declaration reads and what the generated test builds rows of, so the
+    // generator writes it too — the run that emitted the import is the run that has to close it.
+    expect(files.map((file) => file.path)).toContain('app/post/entity.ts');
   });
 
   test('every command a generated fix line names is one this build actually ships', () => {
@@ -83,6 +98,24 @@ describe('unit · x g backfill', () => {
       // A stub that throws carries no `X_*` code and reports rows nobody swept.
       expect(file.contents).not.toContain('throw new Error(');
     }
+  });
+
+  test('a backfill named after its own feature does not redeclare the entity it imports', () => {
+    // `x g backfill post --feature post` is a legal invocation and it emitted `import { post }`
+    // beside `export const post = backfill(...)`: one name, two declarations, which is
+    // lint/suspicious/noRedeclare in the app's own gate and an ambiguous reference in TS.
+    const source = backfillFiles('post', target).find(
+      (file) => file.path === 'app/post/backfills/post.ts',
+    )?.contents;
+    expect(source).toContain("import { post as postEntity } from '../entity';");
+    expect(source).toContain('export const post = backfill({');
+    expect(source).toContain('tableFor(postEntity, postgresRepo(postEntity))');
+  });
+
+  test('a backfill named anything else imports the entity plainly — the alias is not the default', () => {
+    const source = generated().source;
+    expect(source).toContain("import { post } from '../entity';");
+    expect(source).not.toContain('postEntity');
   });
 
   test('the generated test still pins the work, not only the declaration around it', () => {

@@ -188,6 +188,36 @@ jobs:
         # Retried once: the race above is intermittent, and a clean second install is always
         # idempotent — see the job comment for why the first can fail even on a good scaffold.
         run: bun install --linker=hoisted || bun install --linker=hoisted
+      # What the job could not see until 2026-08: it ran `x new` → `bun install` → `x verify` and
+      # NOTHING else, so it never invoked a generator and never opened the database. Three defects
+      # shipped inside that blind spot and were found by a human scaffolding an app, not by CI —
+      # which is the reason this step exists at all: the corrections had been made before, and the
+      # gap let them come back.
+      #
+      # `scripts/scaffold-first-run.ts` is the first ten minutes after `x new`, run as a check, in
+      # the order `bin/setup` documents: `x db migrate` over the empty migrations directory, then
+      # `x db gen "initial"` and the apply that follows it, then EVERY generator projected from the
+      # CLI's own `GENERATORS` registry (never a sample — the failure was 4 of 13, and a fourteenth
+      # generator is covered the day it lands), then the `x db gen` those generators earn and its
+      # apply. The `"initial"` spelling is pinned against `templates/scaffold-docs.ts`'s own bytes,
+      # so this job cannot keep running a first command the scaffold no longer documents.
+      #
+      # It names the step, its exit code and its `--json` verdict per failure, and it does not stop
+      # at the first one: four broken generators are four findings in one run, not four CI rounds.
+      #
+      # LOAD-BEARING for the step below, not just additive. `x db gen` is now the ONE writer of
+      # `packages/db/migrations` and a scaffold ships none, so `x verify`'s `drift` step is red
+      # until `x db gen "initial"` has run — measured: 15 of 17 with `drift` red and no db command,
+      # 16 of 17 with only `budgets` red after this step. The fix is to RUN the documented command,
+      # never to add `drift` to `--allow-red`, which would waive the step this issue exists to make
+      # honest.
+      #
+      # No service container. `resolveServices` (packages/cli/src/dev-services.ts) answers
+      # `embedded` when `DATABASE_URL` is unset, which is PGlite on disk under `.x/` — so the whole
+      # database half costs a `bun install` this job already paid for, and a postgres service on a
+      # free runner would buy nothing this app can tell apart.
+      - name: first run (demoapp) — db gen, db migrate, every generator
+        run: bun run scripts/scaffold-first-run.ts "${{ runner.temp }}/demoapp"
       # BLOCKING, on a ratchet that can only shrink. `continue-on-error: true` used to make all 17
       # steps advisory over a waiver written for exactly one of them, and the first blocking run
       # proved that waiver was both stale and covering three unrelated reds. Two of the three are
@@ -222,7 +252,13 @@ jobs:
       # at this very step (`WAIVER_FILE`). It runs the app's own `verify` script and reads its
       # `--json` step table; the pins for the tracked apps live in scripts/lib/gated-apps.ts, and a
       # scaffolded app has nowhere to keep one because it is built fresh on every run.
-      - name: x verify (demoapp), against the ratchet
+      #
+      # It runs AFTER the first-run step and over its output, and that is what turns the sweep into
+      # a check: all thirteen generators exit 0 even when what they emit cannot resolve an import,
+      # so the catch is `typecheck` and `lint` over the files they wrote — `TS2307: Cannot find
+      # module '../repo'` was invisible to every exit code in this job. It also needs the first-run
+      # step's `x db gen "initial"` to have happened, or `drift` is red before it starts.
+      - name: x verify (demoapp, generated into), against the ratchet
         run: >-
           bun run scripts/scaffold-gate.ts "${{ runner.temp }}/demoapp"
           --allow-red budgets
