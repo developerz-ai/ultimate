@@ -1,6 +1,9 @@
+// "Send at 09:00 local": the slot keeps its wall-clock hour across a DST change, resolves out of a
+// spring-forward gap, and an out-of-range wall-clock field names the field the caller got wrong.
+
 import { describe, expect, test } from 'bun:test';
 import { fromIso, toIso } from './instant';
-import { nextLocalSlot, nextLocalSlots } from './schedule';
+import { nextLocalSlot, nextLocalSlots, nextWeeklySlot } from './schedule';
 import { toZoned } from './zoned';
 
 const BERLIN = 'Europe/Berlin';
@@ -39,3 +42,59 @@ describe('nextLocalSlot', () => {
     expect(next.getTime()).toBeGreaterThan(now.getTime());
   });
 });
+
+describe('nextWeeklySlot', () => {
+  const saturday = fromIso('2026-03-14T08:00:00Z'); // 09:00 Berlin, a Saturday
+
+  test('finds the weekday', () => {
+    // The exact instant, not a field bag: `{ day, hour, weekday }` says nothing about the month
+    // or the year, and a search that starts in the wrong one satisfies all three.
+    const at = nextWeeklySlot({ zone: BERLIN, hour: 9, weekday: 3 }, saturday);
+    expect(toIso(at)).toBe('2026-03-18T08:00:00.000Z');
+    expect(toZoned(at, BERLIN)).toMatchObject({
+      year: 2026,
+      month: 3,
+      day: 18,
+      hour: 9,
+      weekday: 3,
+    });
+  });
+
+  test('both ends of the ISO week are in range', () => {
+    // 1 and 7 are the bounds `assertWallField` is given; only asking about 0 and 9 leaves a
+    // min of 2 or a max of 6 passing every test in this file.
+    expect(toIso(nextWeeklySlot({ zone: BERLIN, hour: 9, weekday: 1 }, saturday))).toBe(
+      '2026-03-16T08:00:00.000Z',
+    );
+    expect(toIso(nextWeeklySlot({ zone: BERLIN, hour: 9, weekday: 7 }, saturday))).toBe(
+      '2026-03-15T08:00:00.000Z',
+    );
+  });
+
+  test('a weekday out of range names the weekday, not the zone', () => {
+    // Falling out of the search loop reported X_TIMEZONE_INVALID against `Europe/Berlin` — a zone
+    // that is perfectly valid — with a fix line about IANA names that fixes nothing.
+    const error = errorOf(() => nextWeeklySlot({ zone: BERLIN, hour: 9, weekday: 9 }, saturday));
+    expect(error.code).toBe('X_SCHEDULE_INVALID');
+    expect(String(error.cause)).toContain('slot.weekday');
+    expect(String(error.cause)).toContain('9');
+    expect(
+      errorOf(() => nextWeeklySlot({ zone: BERLIN, hour: 9, weekday: 0 }, saturday)).code,
+    ).toBe('X_SCHEDULE_INVALID');
+    // A fraction is in range and still not a weekday — the `Number.isInteger` half of the guard
+    // is the one no bounds check covers, and 3.5 would otherwise search eight days and throw
+    // X_TIMEZONE_INVALID against a valid zone all over again.
+    expect(
+      errorOf(() => nextWeeklySlot({ zone: BERLIN, hour: 9, weekday: 3.5 }, saturday)).code,
+    ).toBe('X_SCHEDULE_INVALID');
+  });
+});
+
+function errorOf(run: () => unknown): { code?: unknown; cause?: unknown } {
+  try {
+    run();
+  } catch (error) {
+    return error as { code?: unknown; cause?: unknown };
+  }
+  return { code: 'no-throw', cause: 'no-throw' };
+}

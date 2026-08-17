@@ -5,7 +5,9 @@
  */
 
 import { type CronExpression, parseCronOnce } from './cron-parse';
-import { localeInvalid } from './errors';
+import { cronNotDescribable, localeInvalid } from './errors';
+import { cachedFormatter } from './intl-cache';
+import { canonicalLocale } from './locale-canonical';
 
 export interface CronPhrases {
   everyMinute: string;
@@ -27,15 +29,24 @@ const MAX_LISTED_TIMES = 6;
 /**
  * `describeCron('0 3 * * MON-FRI', 'en', phrases)` → `at 03:00 on Monday–Friday`.
  * Every phrase comes from the caller's `t('time.cron.*')`; only the names are `Intl`'s.
+ *
+ * A 6-field expression whose seconds field says something a 5-field one cannot is **declined**,
+ * not summarised: `CronPhrases` has no seconds vocabulary, so a ten-second step rendered as
+ * "every minute" and `30 0 3 * * *` rendered identically to `0 3 * * *`. A summary that is wrong
+ * is worse than one that says so, and the phrases are the caller's — adding a required field to
+ * `CronPhrases` breaks every existing caller to describe a schedule almost nobody writes.
  */
 export function describeCron(
   expression: string | CronExpression,
   locale: string,
   phrases: CronPhrases,
 ): string {
-  assertLocale(locale);
+  // Canonicalized once, at the entry point, and `tag` is what every line below uses — `EN-us` and
+  // `en-US` are one locale to `Intl`, and must be one key in the caches at the foot of this file.
+  const tag = assertLocale(locale);
   const cron = parseCronOnce(expression);
-  const list = new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' });
+  if (cron.seconds.length !== 1 || cron.seconds[0] !== 0) throw cronNotDescribable(cron);
+  const list = new Intl.ListFormat(tag, { style: 'long', type: 'conjunction' });
   const segments: string[] = [];
 
   const minuteStep = uniformStep(cron.minutes, 60);
@@ -52,7 +63,7 @@ export function describeCron(
     segments.push(hourStep === 1 ? phrases.everyHour : fill(phrases.everyNHours, { n: hourStep }));
   } else {
     explicitTime = true;
-    segments.push(fill(phrases.at, { time: clockTimes(cron, phrases, locale, list) }));
+    segments.push(fill(phrases.at, { time: clockTimes(cron, phrases, tag, list) }));
   }
 
   if (cron.dayOfMonthRestricted) {
@@ -60,11 +71,11 @@ export function describeCron(
     segments.push(fill(phrases.onDaysOfMonth, { days }));
   }
   if (cron.dayOfWeekRestricted) {
-    const days = list.format(cron.daysOfWeek.map((day) => weekdayName(day, locale)));
+    const days = list.format(cron.daysOfWeek.map((day) => weekdayName(day, tag)));
     segments.push(fill(phrases.onWeekdays, { days }));
   }
   if (cron.months.length < 12) {
-    const months = list.format(cron.months.map((month) => monthName(month, locale)));
+    const months = list.format(cron.months.map((month) => monthName(month, tag)));
     segments.push(fill(phrases.inMonths, { months }));
   }
   if (explicitTime && segments.length === 1) segments.push(phrases.everyDay);
@@ -89,13 +100,14 @@ function clockTimes(
   return `${shown} ${fill(phrases.andMore, { n: times.length - MAX_LISTED_TIMES })}`;
 }
 
-/** `Intl` throws a bare `RangeError` on a malformed tag; convert it once, at the entry point. */
-function assertLocale(locale: string): void {
-  try {
-    Intl.DateTimeFormat.supportedLocalesOf([locale]);
-  } catch {
-    throw localeInvalid(locale);
-  }
+/**
+ * `Intl` throws a bare `RangeError` on a malformed tag; convert it once, at the entry point — and
+ * hand back the canonical spelling, so validating and keying are the same single step.
+ */
+function assertLocale(locale: string): string {
+  const tag = canonicalLocale(locale);
+  if (tag === undefined) throw localeInvalid(locale);
+  return tag;
 }
 
 /** Step fields: an evenly spaced set starting at 0 that covers the whole range. */
@@ -118,38 +130,33 @@ function fill(template: string, vars: Readonly<Record<string, string | number>>)
 }
 
 /**
- * Hard-capped rather than key-normalised, because `locale` can arrive from an Accept-Language
- * header: `supportedLocalesOf` collapses unknown *tags*, but still returns a distinct string for
- * every unknown `-u-` extension value, so only a bound keeps the key space finite. FIFO — a `Map`
- * iterates in insertion order — and a miss costs one `Intl` construction, not a wrong answer.
+ * Canonically keyed **and** hard-capped, because `locale` can arrive from an Accept-Language
+ * header. `canonicalLocale` collapses the spellings of one locale — `EN-us`, `en-latn-us` — but it
+ * still returns a distinct string for every unknown `-u-` extension value, so the key alone does
+ * not bound anything and only the cap keeps the key space finite. Neither half is redundant. The
+ * cap and its FIFO live in `intl-cache.ts`, because `zones.ts` and `format.ts` needed the same
+ * rule and a hazard documented in one file is a hazard the other two repeat.
+ *
+ * Both caches are fed the canonical `tag` by `describeCron` alone, never a caller string.
  */
-const MAX_CACHED_LOCALES = 32;
 const monthFormatters = new Map<string, Intl.DateTimeFormat>();
 const weekdayFormatters = new Map<string, Intl.DateTimeFormat>();
 
-function formatterFor(
-  cache: Map<string, Intl.DateTimeFormat>,
-  locale: string,
-  options: Intl.DateTimeFormatOptions,
-): Intl.DateTimeFormat {
-  const hit = cache.get(locale);
-  if (hit !== undefined) return hit;
-  const formatter = new Intl.DateTimeFormat(locale, options);
-  if (cache.size >= MAX_CACHED_LOCALES) {
-    const oldest = cache.keys().next().value;
-    if (oldest !== undefined) cache.delete(oldest);
-  }
-  cache.set(locale, formatter);
-  return formatter;
-}
-
 function monthName(month: number, locale: string): string {
-  const formatter = formatterFor(monthFormatters, locale, { month: 'long', timeZone: 'UTC' });
+  const formatter = cachedFormatter(
+    monthFormatters,
+    locale,
+    () => new Intl.DateTimeFormat(locale, { month: 'long', timeZone: 'UTC' }),
+  );
   return formatter.format(new Date(Date.UTC(2026, month - 1, 1)));
 }
 
 function weekdayName(isoDay: number, locale: string): string {
-  const formatter = formatterFor(weekdayFormatters, locale, { weekday: 'long', timeZone: 'UTC' });
+  const formatter = cachedFormatter(
+    weekdayFormatters,
+    locale,
+    () => new Intl.DateTimeFormat(locale, { weekday: 'long', timeZone: 'UTC' }),
+  );
   // 2026-06-01 is a Monday, so ISO day N is that date + (N - 1).
   return formatter.format(new Date(Date.UTC(2026, 5, isoDay)));
 }

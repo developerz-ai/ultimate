@@ -1,3 +1,6 @@
+// The cron field grammar: what parses, what is refused, and that the seconds field is read rather
+// than dropped — a silently discarded field schedules a task at a time nobody asked for.
+
 import { describe, expect, test } from 'bun:test';
 import { isValidCron, parseCron } from './cron-parse';
 
@@ -18,6 +21,18 @@ describe('parseCron', () => {
     expect(parseCron('30 0 3 * * *')).toMatchObject({ seconds: [30], minutes: [0], hours: [3] });
     expect(parseCron('@daily')).toMatchObject({ minutes: [0], hours: [0] });
     expect(parseCron('@weekly').daysOfWeek).toEqual([7]);
+  });
+
+  test('a wrapping range keeps one stride across the wrap', () => {
+    // `23-3/2` is every second hour starting at 23: 23, 01, 03. Restarting the stride at the
+    // field minimum after the wrap answered 23, 00, 02 — a schedule nobody wrote, one hour off
+    // for every occurrence past midnight.
+    expect(parseCron('0 23-3/2 * * *').hours).toEqual([1, 3, 23]);
+    expect(parseCron('55-5/10 * * * *').minutes).toEqual([5, 55]);
+    // A wrap whose remainder happens to divide the step is unchanged — the phase already aligned.
+    expect(parseCron('0 22-2/2 * * *').hours).toEqual([0, 2, 22]);
+    // Step 1 across a wrap is every hour in the range, which no phase can change.
+    expect(parseCron('0 22-2 * * *').hours).toEqual([0, 1, 2, 22, 23]);
   });
 
   test('rejects malformed expressions with X_CRON_INVALID and a working example', () => {

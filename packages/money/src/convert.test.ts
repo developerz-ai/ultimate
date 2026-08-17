@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { frozenClock } from '@ultimat3/core';
 import { convert, convertWith, type ExchangeRate, fixedRateProvider } from './convert';
 import { money } from './money';
 
@@ -91,6 +92,20 @@ describe('convertWith', () => {
     expect(same.rate).toBe(1);
     expect(same.amount).toEqual({ minor: 1000, currency: 'USD' });
   });
+
+  test('the identity stamps the clock it was asked at, never the epoch', async () => {
+    // `ExchangeRate.at` is the audit trail. `new Date(0)` claimed the parity was observed on
+    // 1970-01-01, which is a date nobody wrote into a ledger on purpose.
+    const clock = frozenClock('2026-08-16T10:00:00.000Z');
+    const same = await convertWith(provider, money(1000, 'USD'), 'USD', { clock });
+    expect(same.at).toBe('2026-08-16T10:00:00.000Z');
+
+    const asked = await convertWith(provider, money(1000, 'USD'), 'USD', {
+      at: new Date('2020-01-01T00:00:00.000Z'),
+      clock,
+    });
+    expect(asked.at).toBe('2020-01-01T00:00:00.000Z');
+  });
 });
 
 function codeOf(run: () => unknown): string {
@@ -122,6 +137,47 @@ describe('conversion is exact', () => {
     expect(convert(money(1005, 'USD'), 'JPY', rate).amount).toEqual({
       minor: 10,
       currency: 'JPY',
+    });
+  });
+});
+
+describe('a value carrying its own scale', () => {
+  // The sub-cent AI-cost case `MoneyValue.scale` exists for. Deriving the decimal shift from
+  // `exponentOf(amount.currency)` reinterpreted $0.000002 as €0.02 — a 10,000x overstatement,
+  // and the exact failure the field was added to prevent.
+  test('converts at its own precision, not the currency exponent', () => {
+    const parity: ExchangeRate = { from: 'USD', to: 'EUR', rate: 1, at };
+    // $1.00 written in micros is €1.00, not €10,000.00.
+    expect(convert(money(1_000_000, 'USD', 6), 'EUR', parity).amount).toEqual({
+      minor: 1_000_000,
+      currency: 'EUR',
+      scale: 6,
+    });
+    expect(convert(money(2, 'USD', 6), 'EUR', parity).amount).toEqual({
+      minor: 2,
+      currency: 'EUR',
+      scale: 6,
+    });
+  });
+
+  test('keeps the scale across a minor-unit exponent change', () => {
+    // $1.00 in micros at ¥100/$ is ¥100 — still counted in micros, because narrowing to JPY's
+    // zero decimals is the silent precision loss `scale` exists to refuse.
+    const usdToJpy: ExchangeRate = { from: 'USD', to: 'JPY', rate: 100, at };
+    expect(convert(money(1_000_000, 'USD', 6), 'JPY', usdToJpy).amount).toEqual({
+      minor: 100_000_000,
+      currency: 'JPY',
+      scale: 6,
+    });
+  });
+
+  test('a deliberately coarser scale is kept too, exactly as money() keeps it', () => {
+    // `money(5, 'USD', 0)` is five whole dollars; at parity that is five whole euros.
+    const parity: ExchangeRate = { from: 'USD', to: 'EUR', rate: 1, at };
+    expect(convert(money(5, 'USD', 0), 'EUR', parity).amount).toEqual({
+      minor: 5,
+      currency: 'EUR',
+      scale: 0,
     });
   });
 });

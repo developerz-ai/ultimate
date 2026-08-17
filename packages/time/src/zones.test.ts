@@ -1,6 +1,22 @@
+// Zone maths and the one-zone-one-key rule: every casing of an IANA name has to reach `Intl` as
+// one string, because the string arrives from `x-timezone` and every formatter cache keys on it.
+
 import { describe, expect, test } from 'bun:test';
+// `node:` because the framework is Bun-only and this is the one Node API with no Bun equivalent:
+// the test measures *JavaScript heap* growth, and `Bun.unsafe.memoryFootprint()` reports the
+// process footprint, which moves with allocator behaviour rather than with retained formatters.
+import { memoryUsage } from 'node:process';
 import { fromIso } from './instant';
-import { isValidTimeZone, observesDst, offsetAt, offsetLabel, zoneAbbrev } from './zones';
+import { canonicalTimeZone } from './zone-canonical';
+import {
+  assertTimeZone,
+  isValidTimeZone,
+  observesDst,
+  offsetAt,
+  offsetLabel,
+  zoneAbbrev,
+  zonePartsAt,
+} from './zones';
 
 const winter = fromIso('2026-01-15T12:00:00Z');
 const summer = fromIso('2026-07-15T12:00:00Z');
@@ -47,6 +63,56 @@ describe('isValidTimeZone', () => {
     expect(isValidTimeZone('Mars/Olympus')).toBe(false);
     expect(isValidTimeZone('+01:00')).toBe(false);
     expect(isValidTimeZone('')).toBe(false);
+  });
+});
+
+describe('one zone is one key', () => {
+  // `Intl` accepts every casing of an IANA name, and both formatter caches were keyed on the raw
+  // string. `x-timezone: eUrOpE/bErLiN` therefore minted a permanent `Intl.DateTimeFormat` per
+  // casing — 2^12 of them for a 13-letter zone, from a request header.
+  const CASINGS = 4096;
+
+  function casing(zone: string, mask: number): string {
+    const chars = [...zone];
+    let bit = 0;
+    for (let index = 0; index < chars.length; index += 1) {
+      const char = chars[index] ?? '';
+      if (!/[a-z]/i.test(char)) continue;
+      chars[index] = (mask >> bit) & 1 ? char.toUpperCase() : char.toLowerCase();
+      bit += 1;
+    }
+    return chars.join('');
+  }
+
+  test('every casing canonicalizes to the same name', () => {
+    expect(canonicalTimeZone('eUrOpE/bErLiN')).toBe('Europe/Berlin');
+    expect(canonicalTimeZone('utc')).toBe('UTC');
+    expect(canonicalTimeZone('Mars/Olympus')).toBe(undefined);
+    expect(canonicalTimeZone('+01:00')).toBe(undefined);
+    expect(canonicalTimeZone('')).toBe(undefined);
+
+    const keys = new Set<string | undefined>();
+    for (let mask = 0; mask < CASINGS; mask += 1)
+      keys.add(canonicalTimeZone(casing('Europe/Berlin', mask)));
+    expect([...keys]).toEqual(['Europe/Berlin']);
+  });
+
+  test('assertTimeZone answers the canonical name, so a formatter key cannot fork', () => {
+    expect(assertTimeZone('eUrOpE/bErLiN')).toBe('Europe/Berlin');
+    expect(assertTimeZone('Europe/Berlin')).toBe('Europe/Berlin');
+  });
+
+  test('4,096 casings do not grow the heap', () => {
+    // Measured against the unbounded raw-keyed cache: 4,096 variants retained 31 MB, ~7.7 KB per
+    // `Intl.DateTimeFormat`. The bound and the canonical key together hold this near zero.
+    zonePartsAt('Europe/Berlin', winter);
+    Bun.gc(true);
+    const before = memoryUsage().heapUsed;
+    for (let mask = 0; mask < CASINGS; mask += 1) {
+      expect(zonePartsAt(casing('Europe/Berlin', mask), winter).year).toBe(2026);
+    }
+    Bun.gc(true);
+    expect((memoryUsage().heapUsed - before) / 1e6).toBeLessThan(8);
   });
 });
 

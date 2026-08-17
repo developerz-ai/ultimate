@@ -12,10 +12,16 @@ declare const instantBrand: unique symbol;
 /** A `Date` that has been proven valid and is documented as UTC. */
 export type Instant = Date & { readonly [instantBrand]: 'utc' };
 
-/** Wrap a `Date` from an untrusted source (a DB driver, a parsed payload). */
+/**
+ * Wrap a `Date` from an untrusted source (a DB driver, a parsed payload).
+ *
+ * A **copy**, never the caller's own object: `value as Instant` handed back a `Date` the caller
+ * still holds and can `setTime()` after the brand is applied, so a value this function certified
+ * as valid could stop being the value it certified.
+ */
 export function instant(value: Date): Instant {
   if (Number.isNaN(value.getTime())) throw instantInvalid(String(value));
-  return value as Instant;
+  return new Date(value.getTime()) as Instant;
 }
 
 /** ISO-8601 in, `Instant` out. An offset or `Z` is required — a bare local string is a bug. */
@@ -86,7 +92,18 @@ export function isInstant(value: unknown): value is Instant {
   return value instanceof Date && !Number.isNaN(value.getTime());
 }
 
-export const EPOCH: Instant = new Date(0) as Instant;
+/**
+ * A fresh instant at the Unix epoch, per call.
+ *
+ * Replaces the `EPOCH` constant, which was one shared mutable `Date` exported from a tier-1
+ * package: a single `EPOCH.setUTCFullYear(...)` anywhere in the process corrupted it for every
+ * other consumer, permanently and silently. A `Date` cannot be frozen — `Object.freeze` does not
+ * close `setTime`, because the value lives in an internal slot — so the only safe shape is a
+ * function. **Breaking: `EPOCH` is removed**; it had no callers in this repo.
+ */
+export function epoch(): Instant {
+  return new Date(0) as Instant;
+}
 
 /** Tolerates a `Clock` whose `now()` returns either a `Date` or epoch milliseconds. */
 function epochMsOf(value: Date | number): number {

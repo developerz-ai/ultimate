@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { roundRatio, roundToDigits, roundToInteger } from './rounding';
+import { ROUNDING_MODES, roundRatio, roundToDigits, roundToInteger } from './rounding';
 
 describe('roundToInteger', () => {
   test('the modes disagree exactly at .5, which is the point', () => {
@@ -15,6 +15,15 @@ describe('roundToInteger', () => {
     expect(roundToInteger(-2.5, 'half-even')).toBe(-2);
     expect(roundToInteger(-2.5, 'down')).toBe(-2);
     expect(roundToInteger(-2.1, 'up')).toBe(-3);
+  });
+
+  test('a negative value rounding to zero is 0, never -0', () => {
+    // `sign * floor` with floor 0 produced `-0` in every mode. `JSON.stringify` writes it as `0`
+    // while `Object.is` and any keyed `Map` see a different value — one amount, two identities.
+    for (const mode of ROUNDING_MODES) {
+      expect(Object.is(roundToInteger(-0.4, mode), -0)).toBe(false);
+    }
+    expect(Object.is(roundToDigits(-0.0001, 2, 'half-up'), -0)).toBe(false);
   });
 
   test('rounds to a digit count', () => {

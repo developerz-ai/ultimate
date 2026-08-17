@@ -141,9 +141,14 @@ function parseField(
     }
 
     if (from > to) {
-      // Wrapping ranges (`fri-mon`, `22-2`) are a real cron idiom.
-      for (let value = from; value <= max; value += step) values.add(value);
-      for (let value = min; value <= to; value += step) values.add(value);
+      // Wrapping ranges (`fri-mon`, `22-2`) are a real cron idiom, and the stride CONTINUES across
+      // the wrap: `23-3/2` is 23, 01, 03 — every second hour starting at 23. Restarting at `min`
+      // answered 23, 00, 02, an hour off for every occurrence past midnight.
+      const span = max - min + 1;
+      const length = to - from + span;
+      for (let offset = 0; offset <= length; offset += step) {
+        values.add(min + ((from - min + offset) % span));
+      }
     } else {
       for (let value = from; value <= to; value += step) values.add(value);
     }

@@ -57,8 +57,9 @@ add(money(1, 'USD'), money(2, 'USD', 6));    // meets at scale 6: 10002, nothing
 
 Arithmetic normalises to the *finer* of two scales, never the coarser — adding a sub-cent fee to
 a cent cannot round the fee away. `compare` and `equals` read the value rather than the encoding,
-so 1299 EUR and 12,990,000 EUR at scale 6 are one amount. `multiply`, `divide`, `negate` and
-`allocate` keep the scale they were handed. Widening is exact and free; a *lossy* narrowing needs
+so 1299 EUR and 12,990,000 EUR at scale 6 are one amount. `multiply`, `divide`, `negate`,
+`allocate` **and `convert`** keep the scale they were handed — a micro-priced amount is still
+micro-priced in the target currency. Widening is exact and free; a *lossy* narrowing needs
 a `RoundingMode` at the call site, exactly as excess precision does in `fromDecimal` — a narrowing
 that drops only zeros is exact and needs no mode.
 
@@ -91,6 +92,12 @@ scales by that when it is there. It is how a derived direction stays exact: a ta
 `USD/EUR: 0.92` names 23/25, so `fixedRateProvider` answers EUR→USD with 25/23 rather than the
 double `1 / 0.92`, whose own decimal spelling rounds a large amount one minor unit low. `rate`
 stays the readable number the audit trail records.
+
+`convert` preserves the amount's own `scale`. `convert(money(2, 'USD', 6), 'EUR', parity)` is
+€0.000002, not €0.02 — the target currency's minor unit decides nothing about a value that
+already carries its own precision. `convertWith` on a same-currency pair stamps `at` from an
+injected `Clock` (`{ clock }`, default `systemClock`) or from an explicit `{ at }`, never from
+the epoch: `ExchangeRate.at` is the audit trail.
 
 ## Errors
 

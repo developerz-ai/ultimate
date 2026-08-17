@@ -6,14 +6,13 @@
 
 import { timezoneInvalid } from './errors';
 import type { Instant } from './instant';
+import { cachedFormatter } from './intl-cache';
+import { canonicalTimeZone } from './zone-canonical';
 
 /** An IANA identifier: `Europe/Berlin`, `Asia/Kathmandu`, `UTC`. Never `CET`, never `+01:00`. */
 export type TimeZone = string;
 
 export const UTC: TimeZone = 'UTC';
-
-/** ES2024 `Intl` accepts `+01:00` as a zone; we do not — a fixed offset has no DST rules. */
-const NUMERIC_OFFSET = /^[+-]/;
 
 /**
  * The package's only builder of a UTC epoch from calendar fields, because `Date.UTC` remaps
@@ -36,18 +35,18 @@ export function utcEpoch(
 }
 
 export function isValidTimeZone(zone: string): boolean {
-  if (zone === '' || NUMERIC_OFFSET.test(zone)) return false;
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone: zone });
-    return true;
-  } catch {
-    return false;
-  }
+  return canonicalTimeZone(zone) !== undefined;
 }
 
+/**
+ * The **canonical** spelling, not the caller's. `Intl` answers for every casing of a zone name, so
+ * returning the input let one zone travel the process as many strings — each one its own key in
+ * every formatter cache downstream, and unbounded when the string came from a request header.
+ */
 export function assertTimeZone(zone: string): TimeZone {
-  if (!isValidTimeZone(zone)) throw timezoneInvalid(zone);
-  return zone;
+  const canonical = canonicalTimeZone(zone);
+  if (canonical === undefined) throw timezoneInvalid(zone);
+  return canonical;
 }
 
 /** Wall-clock fields of an instant in a zone, seconds precision. */
@@ -127,13 +126,20 @@ export function zoneAbbrev(
   return label ?? offsetLabel(offsetAt(zone, at));
 }
 
-/** True when the zone observes a different offset at some point in the surrounding year. */
+/**
+ * True when the zone observes a different offset at some point in the surrounding year.
+ *
+ * Twelve probes on the FIRST of twelve consecutive months. `setUTCMonth(+n)` rolls over at month
+ * end — from 31 January the twelve probes land in January, March, March, May, May, July, July,
+ * August, October, October, December, December, so February, April, June, September and November
+ * are never asked, and a zone whose only transition falls in one of them reads as DST-free.
+ */
 export function observesDst(zone: TimeZone, at: Instant): boolean {
+  const start = zonePartsAt(zone, at);
   const offsets = new Set<number>();
   for (let month = 0; month < 12; month += 1) {
-    const probe = new Date(at.getTime());
-    probe.setUTCMonth(probe.getUTCMonth() + month);
-    offsets.add(offsetAt(zone, probe as Instant));
+    const probe = new Date(utcEpoch(start.year, start.month + month, 1, 12)) as Instant;
+    offsets.add(offsetAt(zone, probe));
   }
   return offsets.size > 1;
 }
@@ -141,25 +147,24 @@ export function observesDst(zone: TimeZone, at: Instant): boolean {
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
 function partsFormatterFor(zone: TimeZone): Intl.DateTimeFormat {
-  const cached = formatters.get(zone);
-  if (cached !== undefined) return cached;
-  let formatter: Intl.DateTimeFormat;
-  try {
-    formatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: zone,
-      hourCycle: 'h23',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
-  } catch {
-    throw timezoneInvalid(zone);
-  }
-  formatters.set(zone, formatter);
-  return formatter;
+  // Keyed on the canonical name, so 4,096 casings of one zone are one entry rather than 4,096.
+  const canonical = canonicalTimeZone(zone);
+  if (canonical === undefined) throw timezoneInvalid(zone);
+  return cachedFormatter(
+    formatters,
+    canonical,
+    () =>
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: canonical,
+        hourCycle: 'h23',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }),
+  );
 }
 
 function pad2(value: number): string {

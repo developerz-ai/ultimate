@@ -5,6 +5,8 @@
  */
 
 import { differenceMs, type Instant } from './instant';
+import { cachedFormatter } from './intl-cache';
+import { canonicalLocale } from './locale-canonical';
 import { assertTimeZone, type TimeZone } from './zones';
 
 export type DateTimeStyle = 'short' | 'medium' | 'long' | 'full';
@@ -165,11 +167,17 @@ export function ordinal(value: number, locale = 'en'): string {
 
 const cache = new Map<string, Intl.DateTimeFormat>();
 
+/**
+ * Bounded, and keyed on a zone `assertTimeZone` and a locale `canonicalLocale` have both already
+ * canonicalized — `Accept-Language` sends `EN-us` and `en-US` for one locale, and each spelling
+ * used to mint its own permanent entry. The bound stays: an unknown `-u-` extension value survives
+ * canonicalization as a distinct string, so only the cap keeps this key space finite.
+ *
+ * A tag `Intl` cannot parse falls through unchanged, so the `Intl.DateTimeFormat` constructor
+ * still raises it — this seam decides a cache key, never whether a locale is acceptable.
+ */
 function formatterFor(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
-  const key = `${locale}|${JSON.stringify(options)}`;
-  const cached = cache.get(key);
-  if (cached !== undefined) return cached;
-  const formatter = new Intl.DateTimeFormat(locale, options);
-  cache.set(key, formatter);
-  return formatter;
+  const tag = canonicalLocale(locale) ?? locale;
+  const key = `${tag}|${JSON.stringify(options)}`;
+  return cachedFormatter(cache, key, () => new Intl.DateTimeFormat(tag, options));
 }

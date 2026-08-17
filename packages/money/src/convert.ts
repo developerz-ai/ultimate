@@ -4,11 +4,13 @@
  * and every converted amount records which rate produced it.
  */
 
+import { type Clock, systemClock } from '@ultimat3/core';
 import { assertCurrency, exponentOf } from './currency';
 import { rateMissing } from './errors';
 import { type Fraction, factorFraction } from './factor';
 import { type Money, money } from './money';
 import { DEFAULT_ROUNDING, type RoundingMode, roundRatio } from './rounding';
+import { moneyScale } from './scale';
 
 export interface ExchangeRate {
   from: string;
@@ -46,7 +48,8 @@ export interface ConvertOptions {
 /**
  * `convert(money(1000,'USD'), 'EUR', { rate: 0.92, ... })`.
  * Scales across differing minor-unit exponents (USD 2 → JPY 0) instead of assuming both
- * sides have cents.
+ * sides have cents, and **preserves the amount's own `scale`**: a micro-priced amount stays
+ * micro-priced in the target currency, exactly as `multiply` and `divide` keep theirs.
  */
 export function convert(
   amount: Money,
@@ -69,7 +72,12 @@ export function convert(
   // has already moved, and a converted invoice line is off by a minor unit with nothing to trace.
   // The provider's own fraction wins when it has one — see `ExchangeRate.ratio`.
   const fraction = rate.ratio ?? factorFraction(rate.rate);
-  const exponent = exponentOf(target) - exponentOf(amount.currency);
+  // The value's OWN precision, never the currency's: `moneyScale`, per this package's rule. A
+  // value carrying an explicit `scale` keeps it, because narrowing $0.000002 to EUR's two
+  // decimals is the 10,000x reinterpretation `scale` was added to prevent — and a value carrying
+  // none meets the target's natural scale, exactly as every conversion always has.
+  const resultScale = amount.scale ?? exponentOf(target);
+  const exponent = resultScale - moneyScale(amount);
   let numerator = BigInt(amount.minor) * fraction.numerator;
   let denominator = fraction.denominator;
   if (exponent > 0) numerator *= 10n ** BigInt(exponent);
@@ -77,7 +85,7 @@ export function convert(
   const converted = roundRatio(numerator, denominator, options.rounding ?? DEFAULT_ROUNDING);
 
   return {
-    amount: money(converted, target),
+    amount: money(converted, target, resultScale),
     source: amount,
     rate: rate.rate,
     at: rate.at.toISOString(),
@@ -97,11 +105,14 @@ export async function convertWith(
   provider: RateProvider,
   amount: Money,
   to: string,
-  options: ConvertOptions & { at?: Date } = {},
+  options: ConvertOptions & { at?: Date; clock?: Clock } = {},
 ): Promise<ConvertedMoney> {
   const target = assertCurrency(to);
   if (amount.currency === target) {
-    const at = (options.at ?? new Date(0)).toISOString();
+    // The instant the parity was asserted, never `new Date(0)`: `ExchangeRate.at` is the audit
+    // trail, and a ledger row claiming its rate was observed on 1970-01-01 is a claim nobody
+    // made. The clock is injected for the same reason the rest of the framework injects one.
+    const at = (options.at ?? (options.clock ?? systemClock).now()).toISOString();
     return { amount, source: amount, rate: 1, at, provider: 'identity' };
   }
   const rate = await provider.rateFor(amount.currency, target, options.at);

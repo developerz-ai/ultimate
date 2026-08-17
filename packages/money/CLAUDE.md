@@ -57,10 +57,23 @@ shape is still additive and this is still a minor version.
   nobody wrote, with a `fromDecimal` fix line that threw the same error again.
 - Never combine currencies without `convert()` first.
 - Never round without naming a `RoundingMode` in the call or accepting the stated default.
-- **Never scale in floats and round after.** `multiply`, `divide` and `convert` take the factor's
-  decimal spelling as an exact fraction (`factorFraction`) and hand it to `roundRatio`, so the mode
-  judges 100.5 and not the 100.49999999999999 `100 * 1.005` produces. A new scaling entry point
-  goes through the same pair — `roundToInteger(a * b, mode)` is the bug, written again.
+- **Never scale in floats and round after.** `multiply`, `divide`, `convert` **and `fromDecimal`**
+  take the decimal spelling as an exact fraction (`factorFraction`, or the digit strings
+  themselves) and hand it to `roundRatio`, so the mode judges 100.5 and not the
+  100.49999999999999 `100 * 1.005` produces. A new scaling entry point goes through the same pair
+  — `roundToInteger(a * b, mode)` is the bug, written again. `fromDecimal` was the last float
+  path and it is the one every user-typed price goes through: `Number('0.4999999999999999999')`
+  is exactly 0.5, so `half-up` saw a tie the written decimal does not have.
+- **`convert` preserves the amount's own `scale`.** `exponentOf(target)` decides the natural scale
+  of a value that names none; a value that names one keeps it, because narrowing $0.000002 to
+  EUR's two decimals is the 10,000x reinterpretation `scale` was added to prevent. Same rule as
+  `multiply` and `divide`, which already kept theirs.
+- **`money()` normalises `-0` to `0`.** One amount must not have two identities: `JSON.stringify`
+  writes `-0` as `0` while `Object.is` and any keyed `Map` see something else, so a refund
+  rounding to nothing produced a value its own wire format cannot reproduce. `roundToInteger`
+  refuses to produce it either — `sign * 0` is the source.
+- **An audit timestamp is never fabricated.** `convertWith`'s identity branch takes `{ at }` or an
+  injected `{ clock }` (default `systemClock`); `new Date(0)` claimed a parity observed in 1970.
 - **A derived rate carries its fraction, never its reciprocal.** `fixedRateProvider` answers the
   inverse direction by swapping `ExchangeRate.ratio`'s numerator and denominator: a table naming
   `USD/EUR: 0.92` names 23/25, so EUR→USD is exactly 25/23, where `1 / 0.92` is a double whose own

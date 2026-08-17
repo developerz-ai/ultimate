@@ -54,6 +54,7 @@ export {
 } from './duration';
 export {
   cronInvalid,
+  cronNotDescribable,
   dstAmbiguous,
   dstNonexistent,
   durationInvalid,
@@ -83,7 +84,7 @@ export {
   addMs,
   compareInstants,
   differenceMs,
-  EPOCH,
+  epoch,
   fromEpochMs,
   fromEpochSeconds,
   fromIso,
@@ -105,6 +106,11 @@ export {
   nextWeeklySlot,
   type WeeklySlot,
 } from './schedule';
+/**
+ * `canonicalTimeZone` is public because a zone arriving from a request header has to become one
+ * key before it reaches anything that caches on it — `@ultimat3/http` reads `x-timezone`.
+ */
+export { canonicalTimeZone } from './zone-canonical';
 export {
   addDaysInZone,
   daysBetween,

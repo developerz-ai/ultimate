@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "00642dcfa2a3cfbae4e21ecd579ec81f0e3f44bc413e7fdc54048f43f00680d6",
+  "buildId": "70d24d983e754ed558ed8af557e34c1d946c8bcb3fbd21ce18013e2e56d77753",
   "tiers": {
     "0": [
       "core",
@@ -592,6 +592,11 @@
     },
     {
       "code": "X_CRON_INVALID",
+      "owner": "time",
+      "at": "packages/time/src/errors.ts"
+    },
+    {
+      "code": "X_CRON_NOT_DESCRIBABLE",
       "owner": "time",
       "at": "packages/time/src/errors.ts"
     },
