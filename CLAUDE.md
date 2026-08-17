@@ -13,18 +13,41 @@ This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x`
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
 **Status:** 1.2.0, `As of 2026-08`. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` —
-29 in all — on npm in lockstep: one version, one commit, one tag. 1.1.0 was the first
+29 in all — **versioned** in lockstep: one version, one commit, one tag. Publication is not in
+lockstep and the repo said it was until 2026-08: **`@ultimat3/flags` has never been published** —
+the registry answers 404, not a stale version — so 28 of the 29 are on npm. It is not opting out
+(`packages/flags/package.json` declares the same `publishConfig` as the rest) and nothing in the
+repo notices, because every consumer resolves it through the workspace. 1.1.0 was the first
 release published by [`.github/workflows/release.yml`](.github/workflows/release.yml) over OIDC
 trusted publishing, provenance attached; 1.0.0 was the manual bootstrap. Semver
 applies — a breaking change to a documented API needs a major, and the eight primitive shapes, the
 `x` CLI surface and the tier table are as stable as the `X_*` codes already were.
 
-Realtime capacity is **measured once, on one node**: 50,000 real WebSocket clients against a single
-`sync` node over `InProcessTransport`, `SIGKILL`ed with no drain. All 50,000 reconnected; **49,981**
-received a channel patch inside the window. Time-to-consistent p50 54.0s / p90 105.5s / max 145.7s;
-156,851 connect attempts shed by the `AcceptBudget` before any query or snapshot path. Per-node
-recovery — the run never crossed NATS, so it is **not** a multi-node result and not a throughput
-figure. [`scripts/bench/restart-bench.ts`](scripts/bench/restart-bench.ts), result committed under
+Realtime capacity is **measured on one node, in two halves that answer different questions**.
+
+**Reachability, 50,000 clients:** real WebSocket clients against a single `sync` node over
+`InProcessTransport`, `SIGKILL`ed with no drain. All 50,000 reconnected; **49,981** received a
+channel patch inside the window, p50 54.0s / p90 105.5s / max 145.7s; 156,851 connect attempts shed
+by the `AcceptBudget` before any query or snapshot path. That figure times **first delivery on the
+reconnected socket** — reconnect *and* resubscribe *and* one patch. It was labelled
+"time-to-consistent" until 2026-08 and never measured consistency: the harness recorded
+`lastSeenSeq` and read it nowhere, so a patch the node dropped was invisible to it by construction.
+The timings are unchanged and still stand; only the name was wrong.
+
+**Delivery, 10,000 clients:** the same harness, now counting holes in the probe sequence each client
+receives, per connection ([`scripts/bench/restart-bench-seq.ts`](scripts/bench/restart-bench-seq.ts)).
+10,000 clients, a probe every 200ms, all 10,000 reconnected: **1,666,882 patches received, 0 observed
+sequence gaps** — no gap, no duplicate, no rewind on any client. A **lower bound**, not a proof of
+zero loss: a hole is only visible between two frames one connection received, so anything lost before
+a connection's first message or after its last is invisible, as is a connection that received nothing. It needs its own counter because a channel topic has
+no cursor and no re-snapshot: a frame `SyncSocket.send` drops under backpressure is unrecoverable,
+and `SocketRegistry.deliver` and `ChannelHub`'s bridge both discard the `false` that would have said
+so. `As of 2026-08` this is the only run with delivery accounting — the 50,000-client result predates
+the counter and carries no delivery number at all.
+
+Per-node recovery in both: neither run crossed NATS and neither subscribes to a live query, so no
+cursor, snapshot or gap-repair path is under test. Not a multi-node result and not a throughput
+figure. [`scripts/bench/restart-bench.ts`](scripts/bench/restart-bench.ts), results committed under
 [`scripts/bench/results/`](scripts/bench/results/).
 
 Open: roadmap milestone 11's two-platform deploy proof — 1.1.0 gave a scaffolded app a real

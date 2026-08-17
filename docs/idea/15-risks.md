@@ -82,7 +82,7 @@ The dangerous case is not steady state; it is **N thousand sockets reconnecting 
 
 | Mitigation | Detail |
 |---|---|
-| **Prototype at milestone 6, before topology is locked** | 50k sockets, forced `sync` restart, measure time-to-consistent, DB queries issued, and peak CPU on the replicator. Published numbers, not estimates |
+| **Prototype at milestone 6, before topology is locked** | 50k sockets, forced `sync` restart, measure time-to-consistent, DB queries issued, and peak CPU on the replicator. Published numbers, not estimates. **Partly met, and the unmet half is larger than it looks.** The 50k run measured reachability, not consistency — its sequence counter was written and never read, and that went unnoticed for a release; delivery accounting exists `As of 2026-08` and has been run at 10,000, not at 50,000. **DB queries issued and replicator CPU were never measured at all**: the bench server registers no live query, has no database and no replication slot, so the only DB-shaped number it produces is the count of connect attempts the `AcceptBudget` shed *before* any query path — which is true because there is no query path. Both dimensions need a run this harness cannot perform |
 | Bounded per-query change buffer | reconnect inside the window is a delta replay with **zero DB work** |
 | Snapshot fallback, never WAL replay | outside the window: one bounded query at a current LSN |
 | Server-directed jittered reconnect | draining nodes send `{ type: 'reconnect', afterMs, resumeFrom }` so clients spread out and redistribute ([`11-topology.md`](./11-topology.md)) |

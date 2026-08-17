@@ -103,7 +103,7 @@ Result: a rolling restart is invisible to users and produces a wide, flat load c
 | Backpressure exposed | a slow client is detectable and sheddable rather than an unbounded queue |
 | Zero-copy message paths | broadcast cost scales with payload, not with JS object churn |
 
-Measured, not assumed, `As of 2026-08`: **50,000 sockets on one `sync` node, survived a `SIGKILL` restart** — all 50,000 reconnected, 49,981 of them consistent inside the window, p50 54.0s / p90 105.5s, and 156,851 connect attempts shed by the `AcceptBudget` before reaching any query path ([`14-roadmap.md`](./14-roadmap.md#closed-the-50k-socket-forced-restart-benchmark)). That run was one node over `InProcessTransport`; NATS fanout was not in the path.
+Measured, not assumed, `As of 2026-08`: **50,000 sockets on one `sync` node, survived a `SIGKILL` restart** — all 50,000 reconnected, 49,981 of them had received a channel patch inside the window, p50 54.0s / p90 105.5s — reachability, not consistency — and 156,851 connect attempts shed by the `AcceptBudget` before reaching any query path. Delivery is a separate run at 10,000 clients: 1,666,882 patches, 0 observed sequence gaps (a lower bound — a hole is only visible between two frames one connection received) ([`14-roadmap.md`](./14-roadmap.md#closed-the-50k-socket-forced-restart-benchmark)). That run was one node over `InProcessTransport`; NATS fanout was not in the path.
 
 **Hundreds of thousands of concurrent subscribers per node remains a target**, not a result — 50k is the number this repo can show. What the measurement does settle is the shape of the cost: recovery is bounded by admission control, not by the matcher, so "realtime by default" is not the line item that decides your infra bill.
 

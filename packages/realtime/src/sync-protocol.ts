@@ -23,12 +23,11 @@ export const PROTOCOL_VERSION = 1;
  * `input` of arbitrary depth reached `canonicalJson`, which recurses.
  *
  * Every number clears what this node itself produces, or the decoder refuses its own frames on
- * the next reconnect: `cursorIds` is `CURSOR_ID_LIMIT`, `resume` clears the per-socket
- * subscription cap, `patches` clears `defaultReconnectBudget.maxPatches`.
+ * the next reconnect: `cursorIds` is `CURSOR_ID_LIMIT`, `patches` clears
+ * `defaultReconnectBudget.maxPatches`.
  */
 export const FRAME_LIMITS = Object.freeze({
   cursorIds: CURSOR_ID_LIMIT,
-  resume: 256,
   patches: 4_096,
   rows: 10_000,
   members: 4_096,
@@ -69,6 +68,17 @@ export type SubscribeTarget =
       readonly cursor: LiveCursor | null;
     };
 
+/**
+ * The opening frame, and the heartbeat's. It carries **no cursors**: resume is decided per
+ * subscription by `subscribe`, whose target already carries the cursor and whose `(name, input)`
+ * is what the node needs to authorize the read and reach the retained window at all. A cursor's
+ * `qid` is `qidOf(name, input)` — a digest, not an input — so a resume list here could never be
+ * more than a second, unauthorized restatement of that decision, and it cost every reconnect a
+ * duplicate copy of up to `CURSOR_ID_LIMIT` ids per subscription during the exact restart storm
+ * `thundering-herd.ts` exists to bound. Removing it needs no `PROTOCOL_VERSION` bump: `decode`
+ * builds a whitelist, so a node reads an old client's `resume` as absent and an old node reads a
+ * new client's omission the way it already read an empty list.
+ */
 export interface HelloFrame {
   readonly type: 'hello';
   readonly v: number;
@@ -76,7 +86,6 @@ export interface HelloFrame {
   /** Server-assigned on the reply, `null` on the client's opening frame. */
   readonly sessionId: string | null;
   readonly actorId: string | null;
-  readonly resume: readonly LiveCursor[];
 }
 
 export interface SubscribeFrame {
@@ -224,7 +233,6 @@ export function decode(raw: string | Uint8Array): Frame {
         buildId: str(parsed, 'buildId'),
         sessionId: nullableStr(parsed, 'sessionId'),
         actorId: nullableStr(parsed, 'actorId'),
-        resume: list(parsed, 'resume', FRAME_LIMITS.resume).map(cursor),
       };
     case 'subscribe':
       return {

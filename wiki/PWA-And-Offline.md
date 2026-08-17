@@ -117,7 +117,7 @@ Server behaviour on a stale build ID:
 | Asset still within retention | serve it |
 | Asset outside retention | `410 Gone` + `X-Ultimate-Build-Current`, SW serves the fallback and flips `AppUpdateAvailable` |
 | Action / query | executed if the contract is compatible; `X_BUILD_SKEW` with a `fix:` line if the input schema changed incompatibly |
-| WS handshake | accepted, then a `build-stale` frame → signal flips; the socket is **not** killed |
+| WS handshake | accepted, then an `update-available` frame carrying the server's `buildId` → signal flips; the socket is **not** killed |
 
 `410 Gone` rather than `404`: a 404 is indistinguishable from a typo, and a client cannot act on it. `410` plus `X-Ultimate-Build-Current` is an instruction.
 

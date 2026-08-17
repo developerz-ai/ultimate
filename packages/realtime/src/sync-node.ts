@@ -4,36 +4,28 @@
 // client may reconnect to any node and resume from its cursor, which is why drain is allowed to
 // redistribute connections at all.
 
-import {
-  type Clock,
-  healthzPayload,
-  logger,
-  markReady,
-  readyzPayload,
-  reportError,
-  systemClock,
-  uuid,
-} from '@ultimat3/core';
+import { type Clock, logger, markReady, reportError, systemClock, uuid } from '@ultimat3/core';
 import type { ChannelHub, Topic } from './channel';
-import { isClientFault, SocketAuthUnavailableError, SocketUnauthenticatedError } from './errors';
+import { isClientFault } from './errors';
 import type { Transport, TransportSubscription } from './fanout';
 import type { LiveQueryRegistry } from './live-query';
 import type { PresenceRegistry } from './presence';
 import { CHANGE_SUBJECT_PREFIX, parseEnvelope, SeqGapDetector } from './replicator';
-import { CLOSE, SocketRegistry, SyncSocket, type WsLike } from './socket';
-import { GrantBook, type SyncAuthenticator, type SyncGrant, sweepGrants } from './sync-auth';
-import { createFrameRouter, type MutationHandler } from './sync-frames';
-import { decode, PROTOCOL_VERSION, toWireError } from './sync-protocol';
+import {
+  CLOSE,
+  DEFAULT_MAX_BUFFERED_BYTES,
+  SocketRegistry,
+  SyncSocket,
+  type WsLike,
+} from './socket';
+import { GrantBook, type SyncAuthenticator, sweepGrants } from './sync-auth';
+import { ackRefOf, createFrameRouter, type MutationHandler } from './sync-frames';
+import { decode, type Frame, PROTOCOL_VERSION, toWireError } from './sync-protocol';
+import { handleUpgrade, type UpgradeTarget, type WsData } from './sync-upgrade';
 import { AcceptBudget, drainPlan, type Rng, reconnectFrame } from './thundering-herd';
 
-/**
- * What the upgrade hands the socket. It carries no actor: the grant does, and one identity written
- * in two places is two that disagree the moment a re-auth renews one of them.
- */
-export interface WsData {
-  readonly socketId: string;
-  readonly clientBuildId: string;
-}
+/** Declared with the upgrade that builds it — this file only ever reads one. */
+export type { UpgradeTarget, WsData } from './sync-upgrade';
 
 export type SyncWs = WsLike & { readonly data: WsData };
 
@@ -77,6 +69,13 @@ export interface SyncNodeOptions {
   readonly maxFramesPerSecond?: number;
   /** Burst allowance on that rate, per socket. */
   readonly frameBurst?: number;
+  /**
+   * When a socket starts dropping frames, and how many drops close it. On `SyncSocket` too, but
+   * this node builds every socket it holds — so unforwarded they were reachable only by abandoning
+   * `createSyncNode`, and a dropped channel frame is the one loss nothing replays.
+   */
+  readonly maxBufferedBytes?: number;
+  readonly maxDroppedFrames?: number;
   readonly onMutate?: MutationHandler;
   /**
    * Who is dialling. Injected for the same reason `onMutate` is: `sync` owns no business logic and
@@ -97,15 +96,18 @@ export interface SyncNodeOptions {
   readonly drainSpreadMs?: number;
 }
 
-/** Structural view of `Bun.serve`'s server object; keeps this module free of a Bun import. */
-export interface UpgradeTarget {
-  upgrade(request: Request, options: { data: WsData }): boolean;
-}
-
 export interface SyncNode {
   readonly sockets: SocketRegistry;
   readonly ready: boolean;
   start(): Promise<void>;
+  /**
+   * Refuse new connections, keep every one this node holds. The SIGTERM `accept` phase calls it —
+   * `/readyz` answers 503 so the load balancer stops routing here, and an upgrade arriving in the
+   * meantime is shed with a retry delay instead of landing on a process that is going away. It is
+   * NOT `stop()`: a draining node still owes its clients their patches, and `stop()` releases the
+   * change subscription that carries them.
+   */
+  stopAccepting(): void;
   stop(): Promise<void>;
   /**
    * Async because `authenticate` is: the credential is decided *before* `server.upgrade`, so a
@@ -118,7 +120,6 @@ export interface SyncNode {
     backpressureLimit: number;
     /** Inbound ceiling. Declared here so every host that mounts this handler inherits it. */
     maxPayloadLength: number;
-    publishToSelf: boolean;
     sendPings: boolean;
     open(ws: SyncWs): void;
     message(ws: SyncWs, message: string | Uint8Array): void;
@@ -295,71 +296,47 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       logger.info('sync node ready', { buildId: options.buildId, path });
     },
 
+    stopAccepting(): void {
+      ready = false;
+    },
+
     async stop(): Promise<void> {
       ready = false;
       release();
     },
 
     async fetch(request: Request, server: UpgradeTarget): Promise<Response | undefined> {
-      const url = new URL(request.url);
-      // Health is the process's, readiness is this node's: a draining node stays healthy while it
-      // hands its sockets to the rest of the fleet.
-      if (url.pathname === '/healthz') return json(healthzPayload());
-      if (url.pathname === '/readyz') {
-        const payload = readyzPayload();
-        return ready ? json(payload) : json({ status: 503, body: payload.body });
-      }
-      if (url.pathname !== path) return new Response('not found', { status: 404 });
-      // The count, not the rate. Shed the same way and with the same delay attached: a client
-      // refused for a full node and one refused for a fast one have the same next move, and the
-      // refusal is decided before `authenticate` so a full node costs no token service call.
-      if (sockets.count >= maxConnections || !ready || !accept.tryAccept()) {
-        // Load shedding with a delay attached: refusing without one just moves the herd next door.
-        return new Response('retry', {
-          status: 503,
-          headers: { 'retry-after-ms': String(accept.retryAfterMs(options.rng ?? Math.random)) },
-        });
-      }
-      let grant: SyncGrant | null = null;
-      if (options.authenticate) {
-        try {
-          grant = await options.authenticate(request);
-        } catch (error) {
-          // A failure is not a denial. The token service timing out must not read to a client as
-          // "you may not connect" — it is told to come back, and this node is the one that pages.
-          reportError(error, { source: 'realtime', scope: { operation: 'sync.authenticate' } });
-          return wireErrorResponse(
-            503,
-            new SocketAuthUnavailableError({ detail: 'see the node log for the cause' }),
-          );
-        }
-        // The decision, made before a socket exists: an upgrade is the cheapest thing to refuse and
-        // the most expensive thing to take back.
-        if (grant === null) {
-          return wireErrorResponse(
-            401,
-            new SocketUnauthenticatedError({ reason: 'authenticate() resolved no actor' }),
-          );
-        }
-      }
-      const data: WsData = {
-        socketId: uuid(),
-        clientBuildId: url.searchParams.get('build') ?? options.buildId,
-      };
-      if (!server.upgrade(request, { data })) {
-        return new Response('expected websocket', { status: 426 });
-      }
-      // After the upgrade took, never before: a grant recorded for a socket that was never opened
-      // is one nothing will ever close, and `open` is the next thing to run.
-      if (grant) grants.set(data.socketId, grant);
-      return undefined;
+      return await handleUpgrade(
+        {
+          path,
+          buildId: options.buildId,
+          maxConnections,
+          accept,
+          rng: options.rng ?? Math.random,
+          // Read per call, never captured: `ready` and the socket count both move while a request
+          // is parked inside `authenticate`, which is the whole reason they are functions.
+          ready: () => ready,
+          socketCount: () => sockets.count,
+          newSocketId: () => uuid(),
+          authenticate: options.authenticate,
+          onGranted: (socketId, grant) => grants.set(socketId, grant),
+        },
+        request,
+        server,
+      );
     },
 
     websocket: {
       idleTimeout: 120,
-      backpressureLimit: 1024 * 1024,
+      // The same number `SyncSocket` refuses to add past, never a second spelling of it. Bun's
+      // limit set lower and our own check never fires: the runtime drops the frame with nothing
+      // marked desynced, which is the silent divergence the mark exists to prevent.
+      backpressureLimit: DEFAULT_MAX_BUFFERED_BYTES,
+      // No `publishToSelf`: this node never publishes to a native topic. Every channel frame is
+      // one filtered `send` per socket through `SocketRegistry.deliver`, which is the only path
+      // that can count the frame it dropped — a flag configuring a mechanism nothing uses reads
+      // as a live one to the next person who has to decide how delivery works.
       maxPayloadLength: options.maxFrameBytes ?? DEFAULT_MAX_FRAME_BYTES,
-      publishToSelf: false,
       sendPings: true,
 
       open(ws: SyncWs): void {
@@ -377,6 +354,12 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
             ? {}
             : { maxFramesPerSecond: options.maxFramesPerSecond }),
           ...(options.frameBurst === undefined ? {} : { frameBurst: options.frameBurst }),
+          ...(options.maxBufferedBytes === undefined
+            ? {}
+            : { maxBufferedBytes: options.maxBufferedBytes }),
+          ...(options.maxDroppedFrames === undefined
+            ? {}
+            : { maxDroppedFrames: options.maxDroppedFrames }),
         });
         sockets.add(socket);
       },
@@ -385,8 +368,13 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
         const socket = sockets.get(ws.data.socketId);
         if (!socket) return;
         void (async () => {
+          // Decoded into a binding the failure path can read: an ack has to name the thing that
+          // failed — the mutation key the client's queue holds, the sid its subscription holds —
+          // and a frame that could not be decoded is the one case where there is nothing to name.
+          let frame: Frame | null = null;
           try {
-            await routeFrame(socket, decode(message));
+            frame = decode(message);
+            await routeFrame(socket, frame);
           } catch (error) {
             // The ack frame tells the client what it did wrong; the monitor only hears about what
             // this node did wrong. Same rule the HTTP pipeline applies at `status >= 500`.
@@ -399,7 +387,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
             socket.send({
               type: 'ack',
               v: PROTOCOL_VERSION,
-              ref: ws.data.socketId,
+              ref: ackRefOf(frame, ws.data.socketId),
               lsn: null,
               error: toWireError(error),
             });
@@ -451,13 +439,3 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
  * There is no frame to carry it — the client never got a connection — so the body is the only
  * channel, and `--json` on every error means this one too.
  */
-function wireErrorResponse(status: number, error: unknown): Response {
-  return json({ status, body: { error: toWireError(error) } });
-}
-
-function json(payload: { status: number; body: unknown }): Response {
-  return new Response(JSON.stringify(payload.body), {
-    status: payload.status,
-    headers: { 'content-type': 'application/json' },
-  });
-}

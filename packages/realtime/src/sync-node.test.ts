@@ -87,7 +87,6 @@ describe('listenSyncNode reports the address it bound', () => {
       buildId: BUILD_ID,
       sessionId: null,
       actorId: null,
-      resume: [],
     });
     expect(reply.type).toBe('hello');
     expect(sync.sockets.count).toBe(1);

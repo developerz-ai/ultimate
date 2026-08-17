@@ -17,6 +17,7 @@ import {
   useMutationQueue,
 } from './hooks';
 import {
+  bumpRef,
   FakeSocket,
   flush,
   harness,
@@ -186,7 +187,7 @@ describe('useConnection', () => {
 });
 
 describe('useMutation', () => {
-  test('applies the local twin, queues it while offline, and clears on drain', async () => {
+  test('applies the local twin, queues it while offline, and clears on the ack', async () => {
     const { client, socket, store, queue } = await harness();
     setLiveClient(client);
     const like = useMutation(likePost);
@@ -200,8 +201,35 @@ describe('useMutation', () => {
     socket.open();
     await useMutationQueue().drain();
 
-    expect(like.pending).toBe(0);
+    // Sent, not settled. `WebSocket.send` returning proves the frame reached a socket and nothing
+    // else — a CLOSING one discards it silently — so the server is what empties the queue.
     expect(socket.frames().some((frame) => frame.type === 'mutate')).toBe(true);
+    expect(like.pending).toBe(1);
+
+    socket.deliver({
+      type: 'ack',
+      v: PROTOCOL_VERSION,
+      ref: sentMutateKey(socket),
+      lsn: '1'.repeat(24),
+      error: null,
+    });
+    await flush();
+    expect(like.pending).toBe(0);
+  });
+
+  test('a repeated idempotency key applies the optimistic twin once, not twice', async () => {
+    const { client, store, queue } = await harness();
+    setLiveClient(client);
+
+    await client.mutate(bumpRef, { postId: 'p1' }, 'bump:p1');
+    await client.mutate(bumpRef, { postId: 'p1' }, 'bump:p1');
+
+    // One intent: the queue collapses it, so the twin must not run a second time over its own
+    // result — 22 is the double count, and the journal a rollback replays is the second run's.
+    expect(store.tx.posts.get('p1')?.likeCount).toBe(12);
+    expect(queue.size).toBe(1);
+    expect(queue.collapsed).toBe(1);
+    expect(queue.pending()).toHaveLength(1);
   });
 
   test('pending counts this mutator only', async () => {
@@ -276,9 +304,32 @@ describe('useMutationQueue', () => {
     socket.open();
     await flush();
 
-    expect(queue.pending()).toHaveLength(0); // the reconnect actually drained the queue
+    // Sent by the reconnect drain, and still queued: only the server's ack retires it.
+    const key = sentMutateKey(socket);
+    expect(key).not.toBe('');
+    expect(queue.pending()).toHaveLength(1);
     expect(notifications()).toBeGreaterThan(beforeReconnect); // ...and the listener fired for it
+
+    socket.deliver({ type: 'ack', v: PROTOCOL_VERSION, ref: key, lsn: null, error: null });
+    await flush();
+    expect(queue.pending()).toHaveLength(0);
     expect(useMutationQueue().pending).toBe(0); // the hook's own getter agrees
+  });
+
+  // A listener per registration, kept forever: the client outlives `setLiveClient`, so the
+  // unsubscribe it returns is the only thing that can drop the previous one.
+  test('re-registering a client replaces its queue listener instead of stacking one', async () => {
+    const { client, socket } = await harness();
+    const notifications = countNotifications(client);
+    setLiveClient(client);
+    setLiveClient(client);
+    setLiveClient(client);
+
+    client.connect();
+    socket.open();
+    await flush(); // the automatic drain notifies exactly once
+
+    expect(notifications()).toBe(1);
   });
 
   // The gap this closes: a server ack/nack arrives asynchronously on `#onFrame`, entirely inside

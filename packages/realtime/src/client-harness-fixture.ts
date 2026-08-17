@@ -31,6 +31,8 @@ export const backoff: BackoffPolicy = { baseMs: 500, maxMs: 30_000, factor: 2, j
 export class FakeSocket implements ClientSocket {
   readonly sent: string[] = [];
   readonly closes: { code: number | undefined; reason: string | undefined }[] = [];
+  /** What a browser socket reports as queued-but-unwritten. Set by a test to back the socket up. */
+  bufferedAmount = 0;
   #open: (() => void) | null = null;
   #message: ((data: string) => void) | null = null;
   #closed: ((code: number) => void) | null = null;
@@ -117,7 +119,17 @@ export interface Harness {
   failNextDials(count: number): void;
 }
 
-export function harness(): Harness {
+export interface HarnessOptions {
+  /**
+   * Off by default. `ManualScheduler` holds ONE armed timer, which is exactly right — a client is
+   * either beating on a live socket or backing off towards a new one, never both — but a heartbeat
+   * armed on every open would put its delay in `timers.delays`, where the reconnect suite reads the
+   * backoff curve. The heartbeat suite turns it on and owns the clock.
+   */
+  readonly heartbeatMs?: number;
+}
+
+export function harness(options: HarnessOptions = {}): Harness {
   const timers = new ManualScheduler();
   const sockets: FakeSocket[] = [];
   const errors: unknown[] = [];
@@ -125,6 +137,7 @@ export function harness(): Harness {
   let failures = 0;
   const client = new LiveClient({
     signal,
+    heartbeatMs: options.heartbeatMs ?? 0,
     connect: () => {
       if (failures > 0) {
         failures -= 1;

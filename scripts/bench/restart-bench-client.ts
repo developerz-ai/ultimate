@@ -4,6 +4,7 @@
 // alone, exactly like a browser tab that lost its socket to a crash instead of a graceful drain.
 
 import { backoffDelay, decode, encode, PROTOCOL_VERSION } from '@ultimat3/realtime';
+import { beginSeqEpoch, newSeqCounters, recordSeq, type SeqCounters } from './restart-bench-seq';
 import { BENCH_SID, BENCH_TOPIC, type BenchProbeRow } from './restart-bench-shared';
 
 export interface ClientStats {
@@ -20,6 +21,13 @@ export interface ClientStats {
   lastCloseAt: number | null;
   alive: boolean;
   lastSeenSeq: number;
+  /**
+   * Holes in the probe sequence this client received, per connection. `patchAfterOpenAt` below
+   * times the FIRST delivery on a socket, which proves reachability and nothing else — a channel
+   * topic carries no cursor, so a patch dropped on the way out is unrecoverable and a
+   * first-delivery timer cannot see one. This is the half that can.
+   */
+  seq: SeqCounters;
   /**
    * When the *first* patch arrived on the connection this client currently holds — cleared on every
    * open, so after the forced restart it reads "first delivery on the reconnected socket". Recording
@@ -42,6 +50,7 @@ export function newClientStats(index: number): ClientStats {
     lastCloseAt: null,
     alive: false,
     lastSeenSeq: 0,
+    seq: newSeqCounters(),
     patchAfterOpenAt: null,
   };
 }
@@ -97,12 +106,14 @@ function handleMessage(stats: ClientStats, data: string | Uint8Array): void {
     return;
   }
   if (frame.type === 'patch' && frame.sid === BENCH_TOPIC) {
-    // Unconditional: the probe seq resets to 1 on every fresh server process, so "greater than the
-    // last one seen" would never fire again after a restart. What proves consistency is receipt at
-    // all, not ordering — the orchestrator only ever asks "when did the first one land?".
+    // The seq is scoped to ONE connection, never compared across two: the probe counter resets to
+    // zero on every fresh server process, so a swarm-wide "greater than the last one seen" would
+    // read the restart itself as a lost frame. `beginSeqEpoch` on every open is what makes the
+    // remaining holes mean the only thing left they can mean — a frame this node sent nowhere.
     const row = frame.patches[0]?.row as BenchProbeRow | undefined;
     if (row) {
-      stats.lastSeenSeq = row.seq;
+      const seq = recordSeq(stats.seq, row.seq);
+      if (seq !== null) stats.lastSeenSeq = seq;
       stats.patchAfterOpenAt ??= Date.now();
     }
   }
@@ -132,6 +143,7 @@ export async function runClient(
     }
     stats.alive = true;
     stats.patchAfterOpenAt = null; // this socket has delivered nothing yet
+    beginSeqEpoch(stats.seq); // ...and its publisher may be a different process than the last one
     ws.addEventListener('message', (event: MessageEvent) => {
       handleMessage(stats, event.data as string | Uint8Array);
     });
@@ -142,7 +154,6 @@ export async function runClient(
         buildId: 'bench-client',
         sessionId: null,
         actorId: null,
-        resume: [],
       }),
     );
     ws.send(

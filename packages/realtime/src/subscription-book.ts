@@ -4,9 +4,20 @@
 // the only thing that knows what exists. Every question it answers is indexed, never scanned.
 
 import type { Actor } from '@ultimat3/core';
-import { SubscriptionLimitError } from './errors';
+import { SubscriptionIdTakenError, SubscriptionLimitError } from './errors';
 import type { LiveSubscription } from './live-contract';
 import type { SyncSocket } from './socket';
+
+/**
+ * A slot taken synchronously at the top of `subscribe` and given back when it has either become a
+ * subscription or failed. It exists because every cap here is answered from what the book HOLDS,
+ * and a subscribe does not hold anything until three awaits later: one WebSocket write carrying N
+ * subscribe frames is dispatched concurrently, so N of them read `size === 0` and every cap is
+ * bypassed by batching. Releasing twice is a no-op — the caller's `finally` runs once per path.
+ */
+export interface SubscriptionSlot {
+  release(): void;
+}
 
 /**
  * The identity of one subscription. `\u0000` because a socket id and a sid are both opaque
@@ -54,6 +65,10 @@ export class SubscriptionBook {
    * decrement a tenant that was never incremented and leave the old one counting forever.
    */
   readonly #tenantOfSocket = new Map<string, string>();
+  /** sids a socket has claimed but not yet attached. Empty between subscribes, so it never grows. */
+  readonly #claimedBySocket = new Map<string, Set<string>>();
+  /** The same claims counted per tenant, because that cap spans sockets and a lane cannot see it. */
+  readonly #claimedPerTenant = new Map<string, number>();
   readonly #caps: SubscriptionCaps;
 
   constructor(caps: SubscriptionCaps = {}) {
@@ -139,10 +154,15 @@ export class SubscriptionBook {
   /**
    * Refuse a subscribe that would exceed a cap. Load shedding, not a crash: both scopes throw
    * `X_SUBSCRIPTION_LIMIT` naming which one refused, so the fix line points at one knob.
+   *
+   * Claims count, because the thing being bounded is work that starts before it is held: a
+   * subscribe that has passed this check and is awaiting its snapshot has already committed this
+   * node to an entry, a matcher and a read.
    */
   assertCapacity(socket: SyncSocket): void {
     const perSocket = this.#caps.maxPerSocket ?? DEFAULT_MAX_PER_SOCKET;
-    if (socket.queries.size >= perSocket) {
+    const claimed = this.#claimedBySocket.get(socket.id)?.size ?? 0;
+    if (socket.queries.size + claimed >= perSocket) {
       throw new SubscriptionLimitError({
         scope: 'socket',
         id: socket.id,
@@ -153,7 +173,7 @@ export class SubscriptionBook {
     const perTenant = this.#caps.maxPerTenant;
     const tenant = this.#tenantFor(socket);
     if (perTenant === undefined || tenant === null) return;
-    if (this.tenantCount(tenant) >= perTenant) {
+    if (this.tenantCount(tenant) + (this.#claimedPerTenant.get(tenant) ?? 0) >= perTenant) {
       throw new SubscriptionLimitError({
         scope: 'tenant',
         id: tenant,
@@ -161,6 +181,47 @@ export class SubscriptionBook {
         knob: 'maxPerTenant',
       });
     }
+  }
+
+  /**
+   * Take the slot this subscribe is going to fill — the sid and the two caps — before it awaits
+   * anything. Every refusal a subscribe can answer with is decided here, in one synchronous step,
+   * so N frames arriving in one write are N decisions against a count that already includes the
+   * ones still in flight.
+   *
+   * The sid is claimed here for the same reason: keyed by `(socket, sid)`, two concurrent frames
+   * reusing one sid both passed `has()` and the second attach replaced the first, stranding it
+   * inside its query entry where nothing can reach it again. The tenant is captured rather than
+   * re-derived — a re-auth may `retenant` this socket while the read is in flight, and the release
+   * has to give the slot back to the tenant that took it.
+   */
+  reserve(socket: SyncSocket, sid: string): SubscriptionSlot {
+    const socketId = socket.id;
+    if (this.has(socketId, sid) || this.#claimedBySocket.get(socketId)?.has(sid) === true) {
+      throw new SubscriptionIdTakenError({ sid, socketId });
+    }
+    this.assertCapacity(socket);
+    const claims = this.#claimedBySocket.get(socketId);
+    if (claims) claims.add(sid);
+    else this.#claimedBySocket.set(socketId, new Set([sid]));
+    const tenant = this.#tenantFor(socket);
+    if (tenant !== null) {
+      this.#claimedPerTenant.set(tenant, (this.#claimedPerTenant.get(tenant) ?? 0) + 1);
+    }
+    let released = false;
+    return {
+      release: (): void => {
+        if (released) return;
+        released = true;
+        const held = this.#claimedBySocket.get(socketId);
+        held?.delete(sid);
+        if (held !== undefined && held.size === 0) this.#claimedBySocket.delete(socketId);
+        if (tenant === null) return;
+        const next = (this.#claimedPerTenant.get(tenant) ?? 0) - 1;
+        if (next > 0) this.#claimedPerTenant.set(tenant, next);
+        else this.#claimedPerTenant.delete(tenant);
+      },
+    };
   }
 
   /** The tenant this socket's subscriptions are counted under: the remembered one, or the actor's. */

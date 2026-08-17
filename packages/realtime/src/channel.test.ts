@@ -102,7 +102,10 @@ describe('channels', () => {
     const { socket, ws } = connect(sockets, actor('alice'));
     const name = topic('org', 'o1', 'cursors');
     await hub.subscribe(socket, name);
-    expect(ws.topics.has(name)).toBe(true);
+    // The socket's own set and the registry's index, which are the two halves of one membership.
+    // Bun's native topic set is deliberately not a third: nothing publishes to it.
+    expect(socket.topics.has(name)).toBe(true);
+    expect(hub.subscriberCount(name)).toBe(1);
 
     // The session changed: same socket, different actor, no longer a member of o1.
     inOrg('alice', 'o2');
@@ -110,7 +113,7 @@ describe('channels', () => {
 
     expect(dropped).toEqual([name]);
     expect(socket.topics.size).toBe(0);
-    expect(ws.topics.has(name)).toBe(false);
+    expect(hub.subscriberCount(name)).toBe(0);
     await hub.publish(name, { x: 1, y: 1 });
     expect(ws.frames).toHaveLength(0);
   });
@@ -175,6 +178,30 @@ describe('what a channel costs the node', () => {
     await hub.publish(name, { x: 1, y: 1 });
     expect(stays.ws.frames).toHaveLength(1);
     expect(goes.ws.frames).toHaveLength(0);
+  });
+
+  /**
+   * The error's whole job is to name the setting an operator moves. Both hub caps are spelled in
+   * `ChannelHubOptions` and neither is `maxPerSocket` — that is `LiveQueryRegistry`'s, one cap over
+   * — so the per-socket topic refusal was handing out the wrong knob by falling through to the
+   * default. Asserted against the option names themselves, so renaming either fails here.
+   */
+  test('each topic cap names its own option in the fix line', async () => {
+    const transport = new InProcessTransport();
+    const sockets = new SocketRegistry();
+    const hub = new ChannelHub({ transport, sockets, maxTopicsPerSocket: 1, maxTopicsPerNode: 1 });
+    hub.guard('org.>', () => true);
+    const one = connect(sockets, actor('alice'));
+    await hub.subscribe(one.socket, topic('org', 'o1', 'a'));
+
+    const perSocket = await hub.subscribe(one.socket, topic('org', 'o1', 'b')).catch((e) => e);
+    expect(perSocket).toBeInstanceOf(SubscriptionLimitError);
+    expect((perSocket as SubscriptionLimitError).fix).toContain('maxTopicsPerSocket');
+
+    const two = connect(sockets, actor('bob'));
+    const perNode = await hub.subscribe(two.socket, topic('org', 'o1', 'c')).catch((e) => e);
+    expect(perNode).toBeInstanceOf(SubscriptionLimitError);
+    expect((perNode as SubscriptionLimitError).fix).toContain('maxTopicsPerNode');
   });
 
   test('distinct topics are capped per NODE, not only per socket', async () => {

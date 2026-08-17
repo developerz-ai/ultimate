@@ -5,6 +5,7 @@
 import type { ChannelHub } from './channel';
 import { topic as makeTopic } from './channel';
 import { FrameRateLimitError } from './errors';
+import { FrameLanes, laneKeyOf } from './frame-lanes';
 import type { JsonValue, Row } from './json';
 import type { LiveQueryRegistry } from './live-query';
 import { type PresenceRegistry, presenceFrame } from './presence';
@@ -30,10 +31,28 @@ export interface FrameRouterOptions {
 
 export type FrameRouter = (socket: SyncSocket, frame: Frame) => Promise<void>;
 
+/**
+ * What a failure ack refers to. `ack.ref` is how a client finds the thing that failed —
+ * `queue.fail(frame.ref)` looks up a mutation by its idempotency key — so an ack built with the
+ * SOCKET id names a key no queue can hold and the whole rollback path is inert end to end: the
+ * optimistic write stays on screen and the mutation stays queued.
+ *
+ * The socket id is the answer for a frame nothing could read (a decode failure) and for the kinds
+ * that carry no reference of their own, because there is nothing else true to say.
+ */
+export function ackRefOf(frame: Frame | null, socketId: string): string {
+  if (frame === null) return socketId;
+  if (frame.type === 'mutate') return frame.key;
+  if (frame.type === 'subscribe') return frame.sid;
+  return socketId;
+}
+
 export function createFrameRouter(options: FrameRouterOptions): FrameRouter {
   const presence = options.presence;
+  // Weakly keyed, so one socket's lanes die with it and no close path has to remember them.
+  const lanes = new WeakMap<SyncSocket, FrameLanes>();
 
-  return async function routeFrame(socket: SyncSocket, frame: Frame): Promise<void> {
+  const routeFrame: FrameRouter = async (socket, frame) => {
     // Before `touch()` and before every amplifier below it: a frame this node refuses to route
     // must not also renew the idle window that would otherwise close a flooding socket.
     if (!socket.frameBudget.tryAccept()) {
@@ -43,6 +62,17 @@ export function createFrameRouter(options: FrameRouterOptions): FrameRouter {
       });
     }
     socket.touch();
+    const key = laneKeyOf(frame);
+    if (key === null) return await apply(socket, frame);
+    // Entered synchronously — an `async` body runs to its first await on the call — so the lane
+    // order is the order `sync-node.message` was called in, which is the order the bytes arrived.
+    const lane = lanes.get(socket) ?? new FrameLanes();
+    lanes.set(socket, lane);
+    return await lane.run(key, () => apply(socket, frame));
+  };
+  return routeFrame;
+
+  async function apply(socket: SyncSocket, frame: Frame): Promise<void> {
     switch (frame.type) {
       case 'hello': {
         socket.send({
@@ -53,7 +83,6 @@ export function createFrameRouter(options: FrameRouterOptions): FrameRouter {
           // The actor the upgrade resolved, so a client can render who the server thinks it is
           // rather than who it thinks it sent.
           actorId: socket.actorId,
-          resume: [],
         });
         if (socket.skewed) {
           socket.send({ type: 'update-available', v: PROTOCOL_VERSION, buildId: options.buildId });
@@ -117,13 +146,12 @@ export function createFrameRouter(options: FrameRouterOptions): FrameRouter {
           seq: frame.seq,
           input: frame.input,
         });
-        socket.send({
-          type: 'ack',
-          v: PROTOCOL_VERSION,
-          ref: frame.key,
-          lsn: result.lsn ?? null,
-          error: null,
-        });
+        // The rebase FIRST, and the ack last. The ack is the receipt, and a receipt is what
+        // retires the client's record of the mutation — its journal row and its rebase-log entry,
+        // both of which stay forever otherwise. A rebase that lands after that has no entry left
+        // to read the mutator's conflict strategy off (every merge silently becomes server-wins)
+        // and no sequence to decide which later optimistic writes to replay over server truth.
+        // These are two frames on one socket, so the order is the only coordination there is.
         if (result.entity !== undefined) {
           socket.send({
             type: 'rebase',
@@ -134,6 +162,13 @@ export function createFrameRouter(options: FrameRouterOptions): FrameRouter {
             row: result.row ?? null,
           });
         }
+        socket.send({
+          type: 'ack',
+          v: PROTOCOL_VERSION,
+          ref: frame.key,
+          lsn: result.lsn ?? null,
+          error: null,
+        });
         return;
       }
       // Server-authored frames are never received from a client.
@@ -146,5 +181,5 @@ export function createFrameRouter(options: FrameRouterOptions): FrameRouter {
       case 'update-available':
         return;
     }
-  };
+  }
 }

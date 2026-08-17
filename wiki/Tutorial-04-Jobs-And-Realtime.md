@@ -224,7 +224,11 @@ bunx x dev --once --port 3100
 
 ## Capacity, measured
 
-50,000 real WebSocket clients against a **single** `sync` node over the in-process transport, `SIGKILL`ed with no drain: all 50,000 reconnected, 49,981 received a channel patch inside the window, time-to-consistent p50 **54.0s** / p90 **105.5s** / max **145.7s**, and 156,851 connect attempts shed by the accept budget before any query path. It is per-node recovery — the run never crossed NATS, so it is neither a multi-node result nor a throughput figure. Committed at [`scripts/bench/results/50k-restart.json`](https://github.com/developerz-ai/ultimate/blob/main/scripts/bench/results/50k-restart.json).
+**Reachability.** 50,000 real WebSocket clients against a **single** `sync` node over the in-process transport, `SIGKILL`ed with no drain: all 50,000 reconnected, 49,981 received a channel patch inside the window, first patch on the reconnected socket at p50 **54.0s** / p90 **105.5s** / max **145.7s**, and 156,851 connect attempts shed by the accept budget before any query path. Committed at [`scripts/bench/results/50k-restart.json`](https://github.com/developerz-ai/ultimate/blob/main/scripts/bench/results/50k-restart.json).
+
+**Delivery.** A second run, 10,000 clients and a probe every 200ms, counting gaps in each client's received sequence: **1,666,882 channel patches received, 0 observed sequence gaps** ([`10k-restart-seq.json`](https://github.com/developerz-ai/ultimate/blob/main/scripts/bench/results/10k-restart-seq.json)). A first-patch timer cannot see a lost patch, which is why the second run exists — `As of 2026-08` it is the only one with delivery accounting. It says nothing about 50,000, and its zero is a lower bound: a gap needs a received frame on each side of it, so "no client observed a loss" is the claim, not "nothing was lost" ([Realtime](Realtime)).
+
+Both are per-node recovery — neither run crossed NATS, so neither is a multi-node result nor a throughput figure. Detail and limits: [Realtime](Realtime).
 
 Realtime tier 3 (local-first, `persist: true`) is v2.
 

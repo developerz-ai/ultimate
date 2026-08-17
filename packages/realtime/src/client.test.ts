@@ -4,8 +4,12 @@
 // down exactly once. The reconnect timer is `client-reconnect.test.ts`.
 
 import { describe, expect, test } from 'bun:test';
-import { decodeSid, feed, harness } from './client-harness-fixture';
+import { frozenClock } from '@ultimat3/core';
+import type { Topic } from './channel';
+import { LiveClient } from './client';
+import { decodeSid, FakeSocket, feed, harness, signal } from './client-harness-fixture';
 import type { Row } from './json';
+import { OfflineQueue, type QueueState, type QueueStore } from './offline-queue';
 import { decode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 describe('LiveClient close events', () => {
@@ -30,10 +34,20 @@ describe('LiveClient close events', () => {
     const stale = sockets[0];
     client.connect(); // e.g. a forced redial after an auth refresh
     sockets[1]?.open();
+    // Live again on the new socket — the state the corpse must not be able to take away. The
+    // redial itself DID report offline, which is the connection it replaced being written off.
+    sockets[1]?.deliver({
+      type: 'snapshot',
+      v: PROTOCOL_VERSION,
+      sid: decodeSid(sockets[1]),
+      rows: [{ id: 'p1' }],
+      cursor: { qid: 'q', lsn: '1', digest: 'd1', ids: ['p1'], count: 1, at: 0 },
+    });
+    expect(handle.state()).toBe('live');
 
     stale?.close(1006); // the replaced socket's close lands late
     expect(client.connected).toBe(true); // the live connection is not the corpse's to end
-    expect(handle.state()).toBe('loading'); // untouched: only the live socket's close moves it
+    expect(handle.state()).toBe('live'); // untouched: only the live socket's close moves it
     expect(timers.pending).toBeNull(); // a backoff here dials a third socket behind a healthy one
     expect(timers.delays).toEqual([]);
   });
@@ -80,6 +94,71 @@ describe('LiveClient close events', () => {
       cursor: { qid: 'q', lsn: '0', digest: 'd0', ids: ['p1'], count: 1, at: 0 },
     });
     expect(handle.rows()).toEqual([{ id: 'p1', likes: 1 }]);
+  });
+});
+
+describe('LiveClient.connect failures', () => {
+  // The dial is app code (`new WebSocket(url)`), so it may refuse. It threw out of `connect()`
+  // with `#socket` already nulled and `#connected` still true: a client that reports itself online
+  // forever, with no socket, no timer, and every mutation marked delivered into nothing.
+  test('a dial that throws on a live client leaves it offline, not falsely online', () => {
+    const { client, sockets, failNextDials } = harness();
+    client.connect();
+    sockets[0]?.open();
+    const handle = client.useLive<Row>(feed, { orgId: 'o1' });
+    expect(client.connected).toBe(true);
+
+    failNextDials(1);
+    expect(() => client.connect()).toThrow('socket refused');
+
+    expect(client.connected).toBe(false);
+    expect(handle.state()).toBe('offline');
+  });
+
+  // The window between `connect()` and the new socket opening reported `connected === true` off
+  // the socket that had just been replaced, so a `useLive` in that window sent its subscribe frame
+  // ahead of `hello` — and then `onOpen` replayed the same sid, which the node refuses with
+  // X_SUBSCRIPTION_ID_TAKEN.
+  test('a redial is offline until the new socket opens, so no sid is subscribed twice', () => {
+    const { client, sockets } = harness();
+    client.connect();
+    sockets[0]?.open();
+
+    client.connect();
+    expect(client.connected).toBe(false);
+    const handle = client.useLive<Row>(feed, { orgId: 'o1' });
+    expect(handle.state()).toBe('offline');
+    expect(sockets[1]?.frames()).toEqual([]);
+
+    sockets[1]?.open();
+    const frames = sockets[1]?.frames() ?? [];
+    expect(frames.map((frame) => frame.type)).toEqual(['hello', 'subscribe']);
+    const sids = frames.filter((frame) => frame.type === 'subscribe').map((frame) => frame.sid);
+    expect(new Set(sids).size).toBe(sids.length);
+  });
+
+  // 'loading' is a promise that rows are on their way. With no socket, nothing is on its way, and
+  // a spinner that never resolves is the state a component renders for the whole session.
+  test('a subscription opened before the first dial reads offline, not loading', () => {
+    const { client } = harness();
+    const handle = client.useLive<Row>(feed, { orgId: 'o1' });
+    expect(handle.state()).toBe('offline');
+  });
+
+  test('an open from a socket the client already replaced re-subscribes nothing', () => {
+    const { client, sockets } = harness();
+    client.connect();
+    const stale = sockets[0];
+    client.useLive<Row>(feed, { orgId: 'o1' });
+
+    client.connect();
+    sockets[1]?.open();
+    const live = sockets[1]?.sent.length ?? 0;
+
+    stale?.open(); // the replaced socket connects late
+    expect(stale?.sent).toEqual([]); // …and speaks for nobody
+    expect(sockets[1]?.sent).toHaveLength(live);
+    expect(client.connected).toBe(true);
   });
 });
 
@@ -160,6 +239,130 @@ describe('LiveClient dead-socket writes', () => {
     client.close();
     handle.unsubscribe();
     expect(sockets[0]?.sent).toHaveLength(afterSubscribe);
+  });
+});
+
+/**
+ * `QueueStore` is OPFS or IndexedDB in a browser and both are allowed to reject — a quota, a
+ * private window, a storage bucket the user evicted. The writes behind a reconnect drain and behind
+ * an ack frame are awaited by nobody, so a rejection there is an unhandled one: `window.onerror` in
+ * a tab, a dead process under Bun. `onError` is the seam that already exists for exactly this.
+ */
+class ToggleStore implements QueueStore {
+  fail = false;
+  #state: QueueState = { mutations: [], nextSeq: 1 };
+
+  async load(): Promise<QueueState> {
+    return this.#state;
+  }
+
+  async save(state: QueueState): Promise<void> {
+    if (this.fail) throw new TypeError('quota exceeded');
+    this.#state = { mutations: state.mutations.map((m) => ({ ...m })), nextSeq: state.nextSeq };
+  }
+}
+
+/** One turn of the microtask queue, so a detached chain has settled before the assertion. */
+const settled = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('LiveClient detached work', () => {
+  async function queued(): Promise<{
+    client: LiveClient;
+    socket: FakeSocket;
+    store: ToggleStore;
+    errors: unknown[];
+  }> {
+    const errors: unknown[] = [];
+    const socket = new FakeSocket();
+    const store = new ToggleStore();
+    const client = new LiveClient({
+      signal,
+      connect: () => socket,
+      buildId: 'build-1',
+      queue: await OfflineQueue.open(store),
+      clock: frozenClock(1_000),
+      scheduler: () => () => {},
+      heartbeatMs: 0,
+      onError: (error) => {
+        errors.push(error);
+      },
+    });
+    return { client, socket, store, errors };
+  }
+
+  test('a durable write that rejects inside the reconnect drain is reported', async () => {
+    const { client, socket, store, errors } = await queued();
+    await client.mutate({ name: 'likePost' }, { postId: 'p1' }); // queued offline
+
+    store.fail = true;
+    client.connect();
+    socket.open(); // onOpen drains, and the drain persists
+    await settled();
+
+    expect(errors).toHaveLength(1);
+    expect(String(errors[0])).toBe('TypeError: quota exceeded');
+  });
+
+  // The node refuses a socket it cannot write to (`socket.ts` checks `bufferedAmount` before every
+  // send); the client pushed regardless, so a burst on a slow connection queued frames the tab
+  // would never write and the queue counted every one of them as delivered.
+  test('a backed-up socket declines the mutation instead of adding to the pile', async () => {
+    const { client, socket } = await queued();
+    client.connect();
+    socket.open();
+    socket.bufferedAmount = 2 * 1024 * 1024;
+
+    await client.mutate({ name: 'likePost' }, { postId: 'p1' });
+
+    expect(socket.frames().some((frame) => frame.type === 'mutate')).toBe(false);
+    const stopped = client.queue?.pending()[0];
+    expect(stopped?.status).toBe('pending'); // still sendable, not lost and not inflight
+    expect(stopped?.error?.code).toBe('X_TRANSPORT_UNAVAILABLE');
+
+    socket.bufferedAmount = 0;
+    await client.drain();
+    expect(socket.frames().some((frame) => frame.type === 'mutate')).toBe(true);
+  });
+
+  // The whole reason the queue is durable: the socket died with the frame in it, and a `send` that
+  // returned proved nothing. Before this the entry was `acked` on the way out and the reconnect
+  // sent ZERO frames — the mutation was gone, with the queue reporting itself empty.
+  test('a socket death re-sends the mutations it was carrying on the next connection', async () => {
+    const { client, socket } = await queued();
+    const mutates = (): number => socket.frames().filter((frame) => frame.type === 'mutate').length;
+    client.connect();
+    socket.open();
+    await client.mutate({ name: 'likePost' }, { postId: 'p1' });
+    expect(mutates()).toBe(1);
+
+    socket.close(1006);
+    client.connect();
+    socket.open();
+    await settled();
+
+    expect(mutates()).toBe(2);
+    expect(client.queue?.pending()).toHaveLength(1);
+  });
+
+  test('a durable write that rejects while settling an ack is reported', async () => {
+    const { client, socket, store, errors } = await queued();
+    client.connect();
+    socket.open();
+    await client.mutate({ name: 'likePost' }, { postId: 'p1' });
+    const sent = socket.frames().find((frame) => frame.type === 'mutate');
+
+    store.fail = true;
+    socket.deliver({
+      type: 'ack',
+      v: PROTOCOL_VERSION,
+      ref: sent?.type === 'mutate' ? sent.key : '',
+      lsn: null,
+      error: null,
+    });
+    await settled();
+
+    expect(errors).toHaveLength(1);
+    expect(String(errors[0])).toBe('TypeError: quota exceeded');
   });
 });
 

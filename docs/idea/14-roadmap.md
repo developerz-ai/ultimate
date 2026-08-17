@@ -51,11 +51,13 @@ Measured `As of 2026-08` by [`scripts/bench/restart-bench.ts`](../../scripts/ben
 | Measure | Count | p50 | p90 | p99 | max |
 |---|---|---|---|---|---|
 | Reconnect | 50,000 of 50,000 | 53.4s | 101.6s | 128.7s | 145.7s |
-| Time-to-consistent | **49,981 of 50,000** | 54.0s | 105.5s | 127.8s | 145.7s |
+| First patch on the reconnected socket | **49,981 of 50,000** | 54.0s | 105.5s | 127.8s | 145.7s |
 
-Every client reconnected. **19 never received a channel patch before the window closed**, so the consistency percentiles are over 49,981 clients, not 50,000 — "all 50,000 recovered" overstates the file.
+Every client reconnected. **19 never received a channel patch before the window closed**, so the first-patch percentiles are over 49,981 clients, not 50,000 — "all 50,000 recovered" overstates the file.
 
-**The recovery cost is admission control, not the matcher**: consistency trails reconnect by ~0.6s at p50, and the shipped `AcceptBudget` default of 500/s bounds full recovery of 50k sockets at ~100s, which is what p90 reports. 156,851 connect attempts were shed before reaching any query or snapshot path — the DB-load half of the question, and the reason a forced restart is not a self-inflicted thundering herd.
+That second row was labelled "time-to-consistent" until 2026-08 and never measured consistency: the harness recorded `lastSeenSeq` and read it nowhere, so a patch the node dropped was invisible to it. It times reconnect *and* resubscribe *and* one delivery — reachability. The timings are unchanged and still stand; only the name was wrong. Delivery is measured separately, `As of 2026-08`: 10,000 clients, a probe every 200ms, **1,666,882 patches received, 0 observed sequence gaps** (a lower bound — a hole is only visible between two frames one connection received) — the only run with delivery accounting, and it is not evidence about 50,000.
+
+**The recovery cost is admission control, not the matcher**: first delivery trails reconnect by ~0.6s at p50, and the shipped `AcceptBudget` default of 500/s bounds full recovery of 50k sockets at ~100s, which is what p90 reports. 156,851 connect attempts were shed before reaching any query or snapshot path — the DB-load half of the question, and the reason a forced restart is not a self-inflicted thundering herd.
 
 Raising the ceiling would measure a different framework, so mitigation 6 in [`03-realtime.md`](./03-realtime.md) — adopting another protocol if our matcher were the bottleneck — is not triggered by this result.
 

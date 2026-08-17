@@ -104,7 +104,9 @@ What actually turns on at this rung:
 
 **Do not run `replicator` until live queries are in use.** The chart ships it `enabled: false` for exactly that reason.
 
-**The 50k number is per-node, not per-cluster.** `scripts/bench/restart-bench.ts` boots one `sync` node over `InProcessTransport` and SIGKILLs it. 50,000 clients: all 50,000 reconnected, 49,981 had received a channel patch inside the window; time-to-consistent p50 54.0s / p90 105.5s; 156,851 connect attempts shed by the `AcceptBudget` before reaching any query path. Recovery is bounded by admission control at its 500/s default, not by the matcher. Multi-node fanout over NATS is *not* what that benchmark measured.
+**The 50k number is per-node, not per-cluster.** `scripts/bench/restart-bench.ts` boots one `sync` node over `InProcessTransport` and SIGKILLs it. 50,000 clients: all 50,000 reconnected, 49,981 had received a channel patch inside the window; time to that first patch on the reconnected socket p50 54.0s / p90 105.5s; 156,851 connect attempts shed by the `AcceptBudget` before reaching any query path. Recovery is bounded by admission control at its 500/s default, not by the matcher. Multi-node fanout over NATS is *not* what that benchmark measured.
+
+**Reachability, not consistency** — the metric was published as "time-to-consistent" until 2026-08 and could not see a lost patch: a channel topic has no cursor and no re-snapshot, so the timer that stops on the first patch cannot notice a second one that never arrived. The timings are unchanged. Loss is the second run's question: 10,000 clients, a probe every 200ms, **1,666,882 patches received, 0 observed sequence gaps** ([`scripts/bench/results/10k-restart-seq.json`](../../scripts/bench/results/10k-restart-seq.json)), `As of 2026-08` the only run with delivery accounting, and not evidence about 50,000. That zero is a **lower bound on loss**: a gap needs a received frame on each side of it, so anything lost before a connection's first arrival or after its last is uncounted, as is a connection that received nothing at all. The defensible sentence is "no client observed a lost frame" — writing "0 lost" restates a bounded measurement as an absolute, which is the same error "time-to-consistent" made.
 
 ## Rung 4 — dedicated hardware, distributed SQL, observability
 
@@ -337,7 +339,8 @@ Two rules underneath all of them:
 | shared cache tier over the Redis protocol, tag sets, declared-key invalidation | **true** — `packages/cache/src/redis.ts`; one call per tag over `{entity}`-tagged buckets, then the value keys one `DEL` each, plus single-flight, TTL jitter and a bucket lease |
 | NATS fanout and JetStream KV presence | **true** — `packages/realtime/src/nats-transport.ts`, selected by `NATS_URL` |
 | Postgres logical replication change feed, `pgoutput`, own wire client | **true** — `packages/realtime/src/pg-replication.ts` |
-| 50k sockets, forced restart, p50 54.0s to consistent | **measured** — one node, in-process transport, `scripts/bench/results/50k-restart.json` |
+| 50k sockets, forced restart, p50 54.0s to the first patch on the reconnected socket | **measured** — one node, in-process transport, `scripts/bench/results/50k-restart.json`. Reachability; it cannot see a lost patch |
+| channel patches delivered across a forced restart, no client observing a gap | **measured at 10k, not at 50k** — 1,666,882 received, 0 observed sequence gaps, a lower bound on loss, `scripts/bench/results/10k-restart-seq.json` |
 | Compose prod topology | **true, and emitted by `x new`** — `web` and `sync` at `replicas: 1` because each publishes a host port; `worker` scales freely |
 | A Helm chart with per-role HPAs | **true in the framework repo**, not emitted by `x new` |
 | tracing with `traceparent` across HTTP → job → live query | **true**, and exportable — `otlpSpanExporter()` over OTLP/HTTP JSON, batched and chained; no-op remains the default |

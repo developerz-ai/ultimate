@@ -28,8 +28,22 @@ export function listenSyncNode(node: SyncNode, options: ListenOptions = {}): Syn
   // Same rule as @ultimat3/http: every socket the framework opens announces itself, so a request
   // back to it is recognisably this process calling itself rather than egress.
   const stopListening = markListening(server.url.origin);
-  // Unregistered by `stop()`: a hook left behind after the listener is gone drains a node that is
-  // already stopped, and the next process-wide shutdown hangs on it.
+  // Two phases, because they answer two different questions. `accept` runs first on SIGTERM: the
+  // node stops taking new sockets and `/readyz` flips to 503, so the load balancer routes away
+  // while every socket this node already holds keeps its patch stream — registered with no phase,
+  // this landed in `close`, and until that last phase ran `fetch` went on upgrading new websockets
+  // onto a process that was going away. The same split `@ultimat3/http`, the worker and the
+  // scheduler already have.
+  //
+  // Both are unregistered by `stop()`: a hook left behind after the listener is gone drains a node
+  // that is already stopped, and the next process-wide shutdown hangs on it.
+  const stopAccepting = onShutdown(
+    'realtime:sync:accept',
+    () => {
+      node.stopAccepting();
+    },
+    { phase: 'accept' },
+  );
   const unregister = onShutdown('realtime:sync', async () => {
     await node.drain();
     await node.stop();
@@ -39,6 +53,7 @@ export function listenSyncNode(node: SyncNode, options: ListenOptions = {}): Syn
   return {
     url: websocketOrigin(server.url),
     stop: () => {
+      stopAccepting();
       unregister();
       server.stop();
       stopListening();

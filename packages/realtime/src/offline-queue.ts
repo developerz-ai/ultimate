@@ -1,10 +1,13 @@
-// Tier 3: the durable mutation queue. Two invariants, both enforced here rather than documented:
+// Tier 3: the durable mutation queue. Three invariants, all enforced here rather than documented:
 //
 //   1. **Order.** Mutations drain in client sequence order and stop at the first failure. A mutator
 //      that assumed `like` ran before `unlike` must never see them swapped.
 //   2. **Dedupe.** The idempotency key is the identity of the intent. Re-enqueueing a key that is
 //      already queued (double click, replay after a crash) collapses onto the existing entry and
 //      never gets a new sequence number.
+//   3. **Only the server removes a mutation.** A `send` that returned proves the frame was handed
+//      to a socket and nothing more, so a drained mutation is `inflight` — not `acked` — until an
+//      `ack`/`fail` frame settles it, or a lost connection returns it to the queue.
 
 import { renderThrowable, stringField } from '@ultimat3/core';
 import type { JsonValue } from './json';
@@ -51,6 +54,7 @@ export class MemoryQueueStore implements QueueStore {
 export interface DrainReport {
   readonly sent: number;
   readonly collapsed: number;
+  /** Still to send. Not the queue depth: a sent mutation is unacknowledged, never unsent. */
   readonly remaining: number;
   readonly stoppedAt: string | null;
 }
@@ -62,6 +66,14 @@ export class OfflineQueue {
   #mutations: QueuedMutation[] = [];
   #nextSeq = 1;
   #collapsed = 0;
+  /** The drain lane: one pass at a time, in call order. See `drain`. */
+  #draining: Promise<DrainReport> | null = null;
+  /**
+   * Which connection the current pass is draining into. The lane orders passes against each other
+   * but `requeueInflight` is not a pass — it is a socket death, and it cannot reach into one that
+   * is parked inside `send`. Bumped by every loss so a pass that resumes afterwards claims nothing.
+   */
+  #epoch = 0;
 
   private constructor(store: QueueStore, state: QueueState) {
     this.#store = store;
@@ -90,7 +102,10 @@ export class OfflineQueue {
     return this.#mutations.find((mutation) => mutation.key === key);
   }
 
-  /** Sorted by sequence. This is the only order anything downstream is allowed to use. */
+  /**
+   * Everything the server has not settled yet, sorted by sequence — this is the only order
+   * anything downstream is allowed to use, and the count a UI renders as "unsynced".
+   */
   pending(): readonly QueuedMutation[] {
     return this.#mutations
       .filter((mutation) => mutation.status === 'pending' || mutation.status === 'inflight')
@@ -108,10 +123,16 @@ export class OfflineQueue {
     at?: number;
   }): Promise<QueuedMutation> {
     const existing = this.find(args.key);
-    if (existing) {
+    if (existing && existing.status !== 'failed') {
       this.#collapsed += 1;
       return existing;
     }
+    // A terminally failed entry is a decision the server already made about this key, kept for the
+    // UI — collapsing onto it makes an explicit idempotency key unusable for the rest of the
+    // session, because nothing ever retries a denial. Re-issuing one is a NEW intent, so the old
+    // entry is dropped and this one takes a new sequence at the back of the queue.
+    if (existing)
+      this.#mutations = this.#mutations.filter((candidate) => candidate.key !== args.key);
     const mutation: QueuedMutation = {
       key: args.key,
       seq: this.#nextSeq,
@@ -131,31 +152,51 @@ export class OfflineQueue {
   /**
    * Drains in sequence order and stops at the first failure. Continuing past a failure is how a
    * sync engine reorders a user's intent — so it does not continue.
+   *
+   * **One pass at a time, chained rather than joined.** Two passes overlapping read the same entry
+   * as sendable and put the same key on the wire twice — with the same seq, and the node dedupes
+   * nothing — and a pass that started later could pass a mutation the pass in front of it has not
+   * reached yet, which is the ordering guarantee above, gone. Chained rather than joined because a
+   * caller that enqueued after the running pass began must still see its own mutation sent: it
+   * gets a pass BEHIND that one, not that one's promise. The chain hangs off a settled shadow, so
+   * one pass that rejected does not reject every pass behind it.
    */
   async drain(send: MutationSender): Promise<DrainReport> {
-    let sent = 0;
-    for (const mutation of this.pending()) {
-      mutation.status = 'inflight';
-      mutation.attempts += 1;
-      try {
-        await send(mutation);
-        mutation.status = 'acked';
-        mutation.error = null;
-        sent += 1;
-      } catch (error) {
-        mutation.status = 'pending';
-        mutation.error = toQueueError(error);
-        await this.#persist();
-        return {
-          sent,
-          collapsed: this.#collapsed,
-          remaining: this.pending().length,
-          stoppedAt: mutation.key,
-        };
-      }
+    const ahead = this.#draining?.then(
+      () => undefined,
+      () => undefined,
+    );
+    const pass = (ahead ?? Promise.resolve()).then(() => this.#pass(send));
+    this.#draining = pass;
+    try {
+      return await pass;
+    } finally {
+      // Cleared only by the last pass in the chain, so the next drain starts fresh instead of
+      // queueing behind a promise that settled a lifetime ago.
+      if (this.#draining === pass) this.#draining = null;
     }
-    await this.#persist();
-    return { sent, collapsed: this.#collapsed, remaining: this.pending().length, stoppedAt: null };
+  }
+
+  /**
+   * A lost connection: everything handed to the dead socket goes back to `pending`, because a
+   * `send` that returned is not an acknowledgement and those frames may never have left the tab.
+   * At least once by construction — the idempotency key is what makes the resend safe.
+   *
+   * The epoch is bumped BEFORE the scan, not after: a pass parked at `await send(p1)` on the socket
+   * that just died resumes into this same turn and would otherwise mark p2 and p3 `inflight` for a
+   * connection that is gone. `#sendable` excludes `inflight`, so the next drain skips them, no ack
+   * will ever arrive, and the writes are lost — which is exactly what invariant 3 forbids.
+   */
+  async requeueInflight(): Promise<number> {
+    this.#epoch += 1;
+    let returned = 0;
+    for (const mutation of this.#mutations) {
+      if (mutation.status !== 'inflight') continue;
+      mutation.status = 'pending';
+      returned += 1;
+    }
+    if (returned > 0) await this.#persist();
+    return returned;
   }
 
   /** Server acknowledged: the mutation leaves the queue and its rebase entry can be committed. */
@@ -176,13 +217,82 @@ export class OfflineQueue {
     await this.#persist();
   }
 
+  /** Never sent on this connection. `inflight` is excluded: it is already on a socket. */
+  #sendable(): readonly QueuedMutation[] {
+    return this.#mutations
+      .filter((mutation) => mutation.status === 'pending')
+      .sort((a, b) => a.seq - b.seq);
+  }
+
+  /** One drain pass. Never called concurrently with itself — `drain` owns that. */
+  async #pass(send: MutationSender): Promise<DrainReport> {
+    const epoch = this.#epoch;
+    const sendable = this.#sendable();
+    // Nothing to do: a pass chained behind one that already sent everything must not rewrite the
+    // durable state for the privilege of reporting zero.
+    if (sendable.length === 0) {
+      return { sent: 0, collapsed: this.#collapsed, remaining: 0, stoppedAt: null };
+    }
+    let sent = 0;
+    for (const mutation of sendable) {
+      // The connection this pass was draining into is gone, and `requeueInflight` has already
+      // handed back what was on it. Everything left stays `pending` for the pass the next
+      // connection arms — claiming it here would strand it on a socket that cannot answer.
+      if (epoch !== this.#epoch) {
+        return {
+          sent,
+          collapsed: this.#collapsed,
+          remaining: this.#sendable().length,
+          stoppedAt: mutation.key,
+        };
+      }
+      mutation.status = 'inflight';
+      mutation.attempts += 1;
+      try {
+        await send(mutation);
+        // Stays `inflight`. `send` resolving means the frame reached a socket — a browser
+        // `WebSocket.send` on a CLOSING socket discards it and returns normally — so calling that
+        // an ack drops the mutation on exactly the socket death this queue exists to survive.
+        // Only `ack`/`fail` (the server) or `requeueInflight` (a lost connection) moves it on.
+        mutation.error = null;
+        sent += 1;
+      } catch (error) {
+        mutation.status = 'pending';
+        mutation.error = toQueueError(error);
+        await this.#persist();
+        return {
+          sent,
+          collapsed: this.#collapsed,
+          remaining: this.#sendable().length,
+          stoppedAt: mutation.key,
+        };
+      }
+    }
+    await this.#persist();
+    return {
+      sent,
+      collapsed: this.#collapsed,
+      remaining: this.#sendable().length,
+      stoppedAt: null,
+    };
+  }
+
   async clear(): Promise<void> {
     this.#mutations = [];
     await this.#persist();
   }
 
+  /**
+   * A snapshot, never the live entries. `save` is a durable write — OPFS, IndexedDB — and it is
+   * allowed to await before it reads. Handed the array itself, a store that resolves after the next
+   * pass has moved on persists a status that was never true when it was called; `inflight` is the
+   * one a reload cannot recover from, because `#sendable` skips it and no ack is coming.
+   */
   async #persist(): Promise<void> {
-    await this.#store.save({ mutations: this.#mutations, nextSeq: this.#nextSeq });
+    await this.#store.save({
+      mutations: this.#mutations.map((mutation) => ({ ...mutation })),
+      nextSeq: this.#nextSeq,
+    });
   }
 }
 

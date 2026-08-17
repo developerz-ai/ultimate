@@ -14,6 +14,8 @@ v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading))
 
 Tier 1 for presence, typing indicators, toasts, cursors. Tier 2 for "the list updates when someone else edits". Tier 3 for offline-capable apps.
 
+**Tier 1 is at-most-once, by construction.** A channel topic has no cursor and no re-snapshot, so a frame dropped under backpressure is not resent — it is counted and logged, never repaired ([below](#why-delivery-needs-its-own-counter)). That is the line between the tiers: state that must arrive belongs on a live query, ephemera belongs on a channel.
+
 Tier 2 covers what people almost always mean by "make it realtime": the list updates without a refresh, and my own click feels instant. It delivers both with **no client database, no client schema versioning, no conflict-resolution UX, and no offline-write semantics to design**. Tier 3 buys exactly one additional property — writes that survive being offline — and costs a durable local store, a rebase log, client migrations, and a conflict story per mutator. Charging every app for that is how realtime frameworks become slow frameworks.
 
 ## Same mutator at every rung
@@ -37,6 +39,8 @@ export const likePost = mutator({
 | 1 | not called | runs, publishes an event |
 | 2 | applies to the in-memory live result immediately, reverted on server echo | runs, DB change flows back through the live query |
 | 3 | applies to the durable local store, queued while offline | runs on reconnect, result rebases the local log per `conflict` |
+
+**A mutation the server *refuses* is rolled back, not retried.** The optimistic write goes, and so does every write made after it — undone newest first, then replayed without it, which is sound only because `local` is pure. The refused intent is dropped from the rebase log: a denial is a decision about that intent, and retrying it would put the write the server refused back on the screen. A refused key stays in the queue as `failed` for the UI to render, and re-issuing the same idempotency key is treated as a **new** intent with a new sequence at the back of the queue, not a collapse onto the denial.
 
 `local` is a pure function of `(tx, input)`, therefore replayable. Hence the rule: **no I/O, no `Date.now()`, no `Math.random()` inside `local`.** Same input, same patch, every replay.
 
@@ -146,11 +150,40 @@ Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a
 
 | Property | Behavior |
 |---|---|
-| Cursor | the highest LSN the client has applied, per subscription |
+| Cursor | the highest LSN the client has applied, per subscription. It advances on **every patch**, not only on a snapshot — a cursor whose `at` freezes at the last snapshot fails the lag check, and every client connected longer than `maxLagMs` re-snapshots instead of resuming |
 | Reconnect inside the change buffer window | delta replay from the `replicator`'s ring buffer — zero DB work |
 | Reconnect outside the window | one bounded snapshot query at a current LSN. Never WAL history traversal |
 | Cursor unusable and no snapshot path supplied | `X_CURSOR_STALE` |
 | Ordering | LSN is monotonic per DB, so a client can never apply an older change over a newer one |
+
+## Inbound frame order
+
+A frame is routed as soon as it arrives, so two frames from one socket can be in flight at once. What is ordered is narrow and deliberate `As of 2026-08` — a lane per socket would put every frame behind the slowest one, and the slowest one is a subscribe's snapshot read.
+
+| Frames | Ordered against | Why that unit |
+|---|---|---|
+| `mutate` | every other `mutate` on the same socket | they write the database, and the client numbered them |
+| `subscribe` on a query | the same `sid` | `add` then `drop` for one sid, or the drop finds nothing and the add strands the subscription it was meant to end |
+| `subscribe` on a topic | the same topic name | one membership, same add/drop pair |
+| `hello`, everything else | nothing | they read state and write none |
+
+**Ordering is not what bounds the caps.** N sequential subscribes still pass a check-then-act limit N times, so every refusal a subscribe can answer with — the sid claim, `maxPerSocket`, `maxPerTenant`, `maxTopicsPerSocket`, `maxTopicsPerNode` — is decided **synchronously, before the first `await`**, against a count that already includes the subscribes still in flight. One WebSocket write carrying N subscribe frames used to pass each cap N times.
+
+## Staying connected
+
+A dead TCP connection that was never closed fires no `close` event. Only the client can end one, so it beats.
+
+| Property | Behaviour |
+|---|---|
+| Interval | `new LiveClient({ heartbeatMs })`, default **15s**. `0` disables it |
+| One beat | a `hello`, plus one subscribe frame per topic held. A beat and an opening frame are **byte-identical** — `hello` carries no cursors — so a beat asks for nothing and resumes nothing |
+| Silence | nothing received for **two** intervals ⇒ the socket is closed with code `4000` and the reconnect timer arms |
+| Why re-sending topics | on the node, subscribing to a topic **is** joining its presence set, and repeating the frame is the presence heartbeat |
+| Server-side key | `realtime.heartbeatMs` in `app.config.ts` is read by nothing `As of 2026-08` → [Known gaps](Known-Gaps). Set the client option |
+
+**A reconnect re-announces everything, one frame at a time.** `hello`, then one `subscribe` per registration carrying that registration's cursor, then one per topic. `hello` itself carries **neither** cursors nor topic membership — resume is decided per subscription, by the frame that also names the query and its input, and topic membership is state on the node's socket. Without the topic half a channel stayed silent from the first reconnect onwards while its handler was still installed, and its presence membership was swept.
+
+**A `send` that returned is not an acknowledgement.** A browser `WebSocket.send` on a closing socket discards the frame and returns normally, so a drained mutation stays `inflight` until the server answers `ack`/`fail` — a lost connection puts it back to `pending` and the next drain resends it. **A drain pass parked when the socket dies abandons the rest of its queue** rather than marking it `inflight` on a connection that cannot answer: losing the connection bumps a drain epoch, and the parked pass checks it before claiming each remaining mutation. Without that, everything queued behind the parked one was marked `inflight` on a dead socket, and nothing ever moved it back — the queue stalled until the tab was reloaded. Delivery is therefore **at least once**, and the idempotency key is what makes the resend safe: every mutation carries one — the `key` argument to `client.mutate`, or `<mutator>:<uuid>` when none is passed — and the resend carries the same one.
 
 ## The reconnect risk
 
@@ -158,43 +191,87 @@ Every frame carries an LSN. The client's last-seen LSN is what makes reconnect a
 
 | # | Mitigation | Detail |
 |---|---|---|
-| 1 | **Prototype before locking topology** | the reconnect benchmark: 50k sockets, forced `sync` restart, time-to-consistent and DB load. **Measured `As of 2026-08`** — the numbers are below, and the result is committed |
+| 1 | **Prototype before locking topology** | the reconnect benchmark: 50k sockets, forced `sync` restart, recovery time and DB load. **Measured `As of 2026-08`** — the numbers are below, and both results are committed |
 | 2 | **Bounded per-query change buffer** | the `replicator` keeps a ring buffer of recent changes per query-hash. Reconnect within the window = delta replay from the buffer, zero DB work |
 | 3 | **Snapshot fallback, not WAL replay** | outside the window the client gets a fresh snapshot at a current LSN. Cost is one bounded query, never history traversal |
 | 4 | **Jittered reconnect-with-backoff, server-directed** | draining `sync` nodes send a `reconnect` frame with a per-client delay so clients redistribute instead of stampeding. `LiveClient` arms **one** timer per closed socket — that delay when the node assigned one, otherwise its own `backoffDelay` — and the timer calls `connect()`. `useConnection().reconnectAt` renders the wait; `client.close()` cancels it |
 | 5 | **Per-tenant subscription caps** | a registered-query explosion is a load-shedding decision, made with a limit and a typed `X_SUBSCRIPTION_LIMIT`, not by falling over. **Reachable, not yet wired** `As of 2026-08`: the boot passes no caps, and the per-tenant scope needs both `maxPerTenant` and `tenantOf`. The **per-socket** cap applies today at its default of 128 |
 | 6 | **Consider wrapping an existing protocol** | if the benchmark says our matcher is the bottleneck, adopting Zero's protocol beats inventing one |
 
-## The 50k forced-restart benchmark
+## The forced-restart benchmark
 
-Measured, committed, and reproducible: [`scripts/bench/restart-bench.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/bench/restart-bench.ts) wrote [`scripts/bench/results/50k-restart.json`](https://github.com/developerz-ai/ultimate/blob/main/scripts/bench/results/50k-restart.json) and its own transcript beside it.
+One harness, two runs, two questions. **Reachability**: how long until a killed node's clients are back and receiving. **Delivery**: how many patches were lost getting there. A first-delivery timer answers the first and is blind to the second, which is why there are two.
+
+[`scripts/bench/restart-bench.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/bench/restart-bench.ts) produced both, each with its own transcript beside it in [`scripts/bench/results/`](https://github.com/developerz-ai/ultimate/tree/main/scripts/bench/results).
 
 ```bash
+# reachability, 50,000 clients — 2026-08-11
 bun run scripts/bench/restart-bench.ts --clients 50000 \
   --out scripts/bench/results/50k-restart.json
+
+# delivery, 10,000 clients, a probe every 200ms — 2026-08-17
+bun run scripts/bench/restart-bench.ts --clients 10000 --probe-interval-ms 200 \
+  --out scripts/bench/results/10k-restart-seq.json
 ```
 
 | Setup | Value |
 |---|---|
-| Clients | 50,000 real WebSocket connections, split across 10 client-shard OS processes |
+| Clients | real WebSocket connections, split across client-shard OS processes — 50,000 over 10, 10,000 over 8 |
 | Server | **one** `sync` node (the shipped `createSyncNode`) in its own process, over `InProcessTransport` |
 | Admission | the shipped `AcceptBudget` at its defaults — 500/s, burst 2000 |
 | Kill | `SIGKILL`, no drain, **no `reconnect` frame** — recovery is driven only by each client's own `backoffDelay` |
 | Readiness | read from the server's own socket count, never the load generator's self-report |
-| Time-to-consistent | per client, first receipt of a channel patch after the kill — reconnect **and** resubscribe **and** delivery |
+| Subscription under test | a **channel** topic. Neither run subscribes to a live query, so no cursor, snapshot or gap-repair path is exercised |
+
+### Reachability — 50,000 clients
+
+Per client, the **first channel patch received on the reconnected socket**: reconnect *and* resubscribe *and* one delivery. It is not a consistency metric, and cannot be one — see below.
 
 | Restart-phase result | Value |
 |---|---|
 | Reconnected | **50,000 / 50,000** |
 | Received a channel patch inside the window | **49,981** |
-| Time-to-consistent p50 | **54.0s** |
-| Time-to-consistent p90 | **105.5s** |
-| Time-to-consistent p99 | 127.8s |
-| Time-to-consistent max | **145.7s** |
+| Time to first patch, p50 | **54.0s** |
+| Time to first patch, p90 | **105.5s** |
+| Time to first patch, p99 | 127.8s |
+| Time to first patch, max | **145.7s** |
 | Connect attempts shed before any query path | **156,851** — the DB-load proxy: none of them reached a query or snapshot |
 | New server accepting | 2.3s after the kill |
 
-What it is **not**: a multi-node result — the run never crossed NATS, so this is **per-node recovery**, not fanout. Not a throughput figure either: no requests/sec, no message rate, no sustained-load number. Per-node socket capacity in the tables above this section is still a target derived from Bun's native WebSocket implementation, not a benchmark result. Long-running Bun processes are also less battle-proven than Node's; sustained-socket memory profiling is explicit roadmap work.
+**The timings are unchanged and still stand.** Only the name was wrong: this metric was published as "time-to-consistent" until 2026-08, and it never measured consistency. The harness recorded each client's last-seen sequence number and read it nowhere, so a patch the node dropped was invisible to it by construction. Nothing here is retracted — a number that timed reachability is now called reachability.
+
+### Delivery — 10,000 clients
+
+Every client counts **observed sequence gaps** in the probe stream it received, per connection. An observed gap is a break between two frames one connection actually received — the publisher numbers every probe, so a missing number *between* two arrivals is a frame that was published to a subscriber and never came.
+
+| Restart-phase result | Value |
+|---|---|
+| Reconnected | **10,000 / 10,000** |
+| Patches received | **1,666,882** |
+| Observed sequence gaps | **0** — 0 gap events, 0 missing frames, 0 duplicates, 0 publisher rewinds, 0 malformed |
+| Clients that observed a gap | **0 / 10,000** |
+| Time to first patch, p50 / p90 / max | 10.9s / 22.3s / 43.5s |
+| Connect attempts shed before any query path | 33,424 |
+
+**Zero observed gaps is a lower bound on loss, not a proof of zero loss.** The counter can only see a hole with a received frame on each side of it, so three losses are invisible to it by construction:
+
+| Invisible to the counter | Why |
+|---|---|
+| frames lost before a connection's first arrival | there is no lower anchor to measure the gap from |
+| frames lost after a connection's last arrival | there is no upper anchor, and the connection may simply have ended |
+| every frame, on a connection that received nothing at all | no anchors, so the connection contributes no sequence to check |
+
+So the honest claim is **"no client observed a lost channel frame"**, not "no channel frame was lost". Every other statement of this result on the wiki is shorthand for this paragraph.
+
+**Not evidence about 50,000.** The 50,000-client run predates the counter and carries no delivery number; `As of 2026-08` the 10,000-client run is the only one with delivery accounting, and it does not extrapolate.
+
+### Why delivery needs its own counter
+
+A **channel** topic is the one subscription with no repair. `SyncSocket.send` drops a frame when the socket's buffer is over budget and returns `false`; there is no cursor behind a topic, no `desynced` mark and no re-snapshot, so that frame is gone. The live-query path repairs the same drop `As of 2026-08` — the subscriber is marked desynced, and the next change re-snapshots it out of the window that lane already holds, one frame and no DB read.
+
+`SocketRegistry.deliver` counts every refusal `As of 2026-08`: the series `channel_frames_dropped_total`, the log line `channel.frames_dropped` at warn carrying `{ topic, dropped, total }`, and `node.sockets.droppedChannelFrames` for a test or a bench that cannot scrape. Visible, and still unrecoverable — repair would need a per-topic sequence in the protocol, because a channel's `lsn` is the publishing hub's own per-node counter and a client cannot tell a gap from a message that came via another node. Treat a channel as at-most-once and put anything that must arrive on a live query.
+
+What it is **not**: a multi-node result — neither run crossed NATS, so this is **per-node recovery**, not fanout. Not a throughput figure either: no requests/sec, no message rate, no sustained-load number. Per-node socket capacity in the tables above this section is still a target derived from Bun's native WebSocket implementation, not a benchmark result. Long-running Bun processes are also less battle-proven than Node's; sustained-socket memory profiling is explicit roadmap work.
 
 ## `sync` drain
 
@@ -219,14 +296,14 @@ Full drain sequence per role: [Deployment](Deployment).
 
 ## Build skew
 
-A client on build `A` connecting to a `sync` node on build `B` is **accepted**, then sent a `build-stale` frame; the socket is not killed. The client's `AppUpdateAvailable` signal flips and the app renders its own update affordance. See [PWA and offline](PWA-And-Offline).
+A client on build `A` connecting to a `sync` node on build `B` is **accepted**, then sent an `update-available` frame carrying the node's `buildId`; the socket is not killed. Skew is decided **at the upgrade**, from `?build=` against the node's own build id, and it is a property of that socket for its lifetime — a client learns about a deploy on the socket it opens against the new node, never on one it is already holding. Every `hello` on that socket re-reports the same answer, the heartbeat's included. The client's `AppUpdateAvailable` signal flips and the app renders its own update affordance. See [PWA and offline](PWA-And-Offline).
 
 ## Errors
 
 | Code | Cause | Fix |
 |---|---|---|
 | `X_TOPIC_FORBIDDEN` | actor may not subscribe to a tier-1 topic | `declare a guard for this topic: hub.guard('<topic>', ({ actor }) => ...)` |
-| `X_SUBSCRIPTION_LIMIT` | a socket or tenant reached the subscription cap; the error names which scope refused | `raise maxPerSocket on the LiveQueryRegistry (default 128), or unsubscribe unused live queries` — it is a constructor option, not an `app.config.ts` field |
+| `X_SUBSCRIPTION_LIMIT` | a socket, tenant or node reached a cap; the error names which scope refused, and which knob | `raise maxPerSocket / maxPerTenant / maxEntries on the LiveQueryRegistry (per socket, default 128), or unsubscribe unused live queries` — a **channel topic** cap answers `maxTopicsPerSocket` (64) / `maxTopicsPerNode` (10,000) on the `ChannelHub`. All constructor options, none an `app.config.ts` field |
 | `X_PROTOCOL_VERSION` | client and server disagree on the wire format, or a malformed frame | `x build && redeploy the client; the sync node sends 'update-available' before it drains` |
 | `X_LIVE_QUERY_UNKNOWN` | a `subscribe` frame named a live query this node does not have | `x queries list --json` |
 | `X_CURSOR_STALE` | resume cursor cannot be honoured and no snapshot path was supplied | `pass 'snapshot' to resumeFrom() so the fallback path can re-snapshot instead of failing` |

@@ -1,0 +1,93 @@
+[bench] booting server for 10000 clients on :39292
+[bench] spawning 8 client-shard processes for 10000 clients...
+[bench] ramping clients (throttled by the server's own AcceptBudget)...
+[bench]   2304/10000 connected (server-reported)
+[bench]   4310/10000 connected (server-reported)
+[bench]   6450/10000 connected (server-reported)
+[bench]   8688/10000 connected (server-reported)
+[bench] ramp done: 10000/10000 alive after 41086ms
+[bench] forcing restart (SIGKILL, no drain)...
+[bench] new server ready 2685ms after kill
+[bench] probing for consistency while clients reconnect on their own backoff...
+[bench]   3045/10000 reconnected (server-reported)
+[bench]   6144/10000 reconnected (server-reported)
+[bench]   8245/10000 reconnected (server-reported)
+[bench] stopping client shards and collecting per-client stats...
+[bench] delivery: 1666882 probe messages received by 10000/10000 clients; 0 lost in 0 gaps on 0 clients (0 duplicates, 0 publisher rewinds, 0 malformed)
+{
+  "measuredAt": "2026-08-17T00:36:57.958Z",
+  "clients": 10000,
+  "workers": 8,
+  "acceptBudget": {
+    "perSecond": 500,
+    "burst": 2000
+  },
+  "restartGapMs": 500,
+  "probeIntervalMs": 200,
+  "ramp": {
+    "requested": 10000,
+    "succeeded": 10000,
+    "shedAttempts": 27790,
+    "durationMs": 41086,
+    "reconnect": {
+      "count": 10000,
+      "minMs": 580,
+      "p50Ms": 6549,
+      "p90Ms": 16916,
+      "p99Ms": 27260,
+      "maxMs": 40571
+    },
+    "consistent": {
+      "count": 0,
+      "minMs": null,
+      "p50Ms": null,
+      "p90Ms": null,
+      "p99Ms": null,
+      "maxMs": null
+    }
+  },
+  "restart": {
+    "requested": 10000,
+    "succeeded": 10000,
+    "shedAttempts": 33424,
+    "durationMs": 41571,
+    "reconnect": {
+      "count": 10000,
+      "minMs": 4693,
+      "p50Ms": 10785,
+      "p90Ms": 22195,
+      "p99Ms": 28737,
+      "maxMs": 43296
+    },
+    "consistent": {
+      "count": 10000,
+      "minMs": 4843,
+      "p50Ms": 10889,
+      "p90Ms": 22318,
+      "p99Ms": 28921,
+      "maxMs": 43490
+    }
+  },
+  "seq": {
+    "observers": 10000,
+    "clientsWithGaps": 0,
+    "epochs": 10000,
+    "received": 1666882,
+    "missing": 0,
+    "gapEvents": 0,
+    "duplicates": 0,
+    "rewinds": 0,
+    "malformed": 0
+  },
+  "notes": [
+    "ramp is throttled by the same AcceptBudget the restart recovery is measured under",
+    "readiness (ramp done / restart consistent) is read from the server’s own socket count, not the load generator’s self-report",
+    "restart.consistent times the FIRST channel patch on the reconnected socket: reconnect + resubscribe + one delivery. That is REACHABILITY, not consistency — a channel topic has no cursor and no re-snapshot, so a patch dropped by backpressure is unrecoverable and a first-delivery timer cannot see one",
+    "seq is the delivery half: each client counts holes in the probe sequence it received while subscribed, per connection. seq.missing = 0 means no client observed a lost channel frame",
+    "seq.missing is a LOWER BOUND — a hole is only visible between two messages one connection received, so anything lost before the first or after the last is not counted",
+    "seq.rewinds, not seq.missing, is where a publisher restart lands: the probe counter resets to zero per server process, and the epoch resets on every socket open",
+    "the consistency probe only publishes after the kill, so ramp.consistent is empty by construction — the ramp measures acceptance, the restart measures recovery",
+    "DB load proxy: shedAttempts is the count of connect attempts the AcceptBudget refused before accepting in that phase — every one of those never reached a query/snapshot path",
+    "client swarm split across 8 OS processes so the load generator's own event loop is never the bottleneck being measured"
+  ]
+}

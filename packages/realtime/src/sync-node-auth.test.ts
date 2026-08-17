@@ -207,6 +207,35 @@ describe('the sync node authenticates an upgrade', () => {
     await node.stop();
   });
 
+  test('a node that stopped accepting mid-authentication sheds rather than upgrades', async () => {
+    let release!: () => void;
+    const authenticating = new Promise<void>((settle) => {
+      release = settle;
+    });
+    const { node, sockets } = nodeWith(async () => {
+      await authenticating;
+      return { actor: alice };
+    });
+    await node.start();
+    const server = upgradeTarget();
+
+    // Past the readiness check at the top of `fetch` and parked in the app's token service.
+    const upgrading = node.fetch(upgradeRequest, server);
+    await Promise.resolve();
+    // SIGTERM lands. The `accept` phase is over before this request reaches `server.upgrade`.
+    node.stopAccepting();
+    release();
+    const response = await upgrading;
+
+    // A draining node that upgrades one more socket is the whole point of the accept phase, gone:
+    // the load balancer has already been told this node is out, so nothing will replace it.
+    expect(response?.status).toBe(503);
+    expect(response?.headers.get('retry-after-ms')).not.toBeNull();
+    expect(server.data).toBeNull();
+    expect(sockets.count).toBe(0);
+    await node.stop();
+  });
+
   test('with no authenticator the node still accepts, and every socket is anonymous', async () => {
     const { node, sockets } = nodeWith();
     await node.start();

@@ -113,6 +113,18 @@ All five are wired `As of 2026-08`, each in the package that owns the event:
 | `recordJob` | `packages/jobs/src/worker.ts` — the outcome branch of a finished job | labelled by queue and outcome only; a label per job name is unbounded in the app's own vocabulary. `suspended` is deliberately unmapped — parking a run with `step.sleep` is control flow, and counting it would make the failure ratio meaningless |
 | `recordLeaseLost` | `packages/jobs/src/heartbeat.ts` — once per job whose lease lapsed | the worker could not renew the visibility window for longer than the window itself, so the queue is free to hand that job to another worker while this one still runs it. One point = one job that ran twice. Alert on any non-zero rate |
 
+### The one series a `sync` node adds
+
+| Instrument | Name | Kind | Unit | Labels |
+|---|---|---|---|---|
+| `channelFramesDropped` | `channel_frames_dropped_total` | counter | `{frame}` | **none** |
+
+Declared in `packages/realtime/src/socket.ts`, not in `runtime-metrics.ts`: that file is the series every Ultimate process emits and the chart scales on, and this one exists only where channels do.
+
+**No labels, on purpose.** A topic is client-chosen — `topic()` admits any `[A-Za-z0-9_-]+` segment — so a per-topic label is unbounded series one socket can mint. The topic goes in the log line instead: `channel.frames_dropped` at `warn`, with `{ topic, dropped, total }`.
+
+**It is a data-loss counter, not a saturation one.** Nothing replays a channel frame: a topic has no cursor and no re-snapshot, so a frame backpressure refused is gone → [Realtime](Realtime). Alert on any non-zero rate. The live-query path is the one that repairs, and its drops are invisible here by design. `SocketRegistry.droppedChannelFrames` is the same number in process, for a test or a benchmark that cannot scrape.
+
 CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle sockets is near-zero CPU and near-capacity, and a worker blocked on a slow HTTP call is idle CPU with a growing backlog. That is why the two custom series exist → [Deployment](Deployment).
 
 ## Spans and logs
