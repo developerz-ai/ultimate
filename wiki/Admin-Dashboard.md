@@ -104,7 +104,7 @@ Own routes in your own app. Never fork the framework.
 | Branding | `defineTheme({ colors, radius, font })` — the one override seam, validated not escaped → [Theming](Theming) |
 | Hide an entity | the entity's policy denies `admin:read` — visibility is authz, not configuration |
 
-No plugin API in v1 ([axiom](Home)). The extension point is that the admin is your app.
+No plugin API, in 1.x or 2.0.0 ([axiom](Home)). The extension point is that the admin is your app.
 
 ## Deployment
 

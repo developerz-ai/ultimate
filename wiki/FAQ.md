@@ -8,7 +8,7 @@ Honest answers. Where something is not built yet, it says so.
 
 **`As of 2026-08`.** Stable API, semver from here. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — **29 in all** — are **versioned** in lockstep: one version, one commit, one tag.
 
-**Publication is not in lockstep.** 28 of the 29 are on npm; `@ultimat3/flags` has never been published — the registry answers 404 at every version, verified `As of 2026-08` — and nothing in the repo notices, because every consumer resolves it through the workspace ([Known gaps](Known-Gaps)). 1.1.0 was the first release the workflow published over OIDC trusted publishing, with provenance; 1.0.0 was the manual bootstrap.
+**Publication is not in lockstep.** 28 of the 29 are on npm; `@ultimat3/flags` has never been published at any version, 2.0.0 included — the registry answers 404 at every version, verified `As of 2026-08` — and nothing in the repo notices, because every consumer resolves it through the workspace ([Known gaps](Known-Gaps)). 1.1.0 was the first release the workflow published over OIDC trusted publishing, with provenance; 1.0.0 was the manual bootstrap.
 
 That is exactly what the version claims — a stable API under semver, not a promise about your infrastructure.
 
@@ -18,7 +18,7 @@ What it does **not** claim:
 |---|---|
 | A multi-node realtime result | the 50k forced-restart benchmark **is** measured and committed, but on **one** `sync` node over `InProcessTransport` — it never crossed NATS. Fanout across nodes, throughput, and per-node socket capacity are all still targets, not results ([Realtime](Realtime)) |
 | The two-platform deploy proof | all three build targets ship — `x build --target docker`, `x build --target binary`, `x build --target static` — and so do the compose files and the Helm chart. The demo app running on Compose **and** K8s from one image, with a rolling restart invisible to connected clients, is milestone 11's remaining item ([Deployment](Deployment)) |
-| The v2 set | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — all behind the interfaces that ship today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` line rather than pretending to work |
+| Not in 2.0.0 | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — all behind the interfaces that ship today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` line rather than pretending to work |
 
 ### What is actually finished?
 
@@ -108,7 +108,7 @@ Yes. `realtime.tier: 1` with `transport: 'memory'` is the default, and a tier-1 
 
 ### What happens if the sync engine doesn't work out?
 
-It is roughly **70% of total effort** and the single largest risk. Tiers 1–2 shipped in milestone 6 and are under semver; tier 3 local-first is v2. The reconnect benchmark that gated topology — 50k sockets, a forced `sync` restart, recovery time and DB load — **is measured at 1.1.0**: all 50,000 reconnected, 49,981 received a channel patch inside the window, p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path ([Realtime](Realtime)). That is **reachability** — first patch on the reconnected socket — not consistency; the delivery half is a separate 10,000-client run, **1,666,882 patches received, 0 observed sequence gaps** — a lower bound, since a hole is only visible between two frames one connection received ([Realtime](Realtime)) — and `As of 2026-08` the only run that counts lost patches at all. Both were run on **one** node, so multi-node fanout is still unproven. If the incremental matcher turns out to be the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback.
+It is roughly **70% of total effort** and the single largest risk. Tiers 1–2 shipped in milestone 6 and are under semver; tier 3 local-first is not in 2.0.0. The reconnect benchmark that gated topology — 50k sockets, a forced `sync` restart, recovery time and DB load — **is measured at 1.1.0**: all 50,000 reconnected, 49,981 received a channel patch inside the window, p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path ([Realtime](Realtime)). That is **reachability** — first patch on the reconnected socket — not consistency; the delivery half is a separate 10,000-client run, **1,666,882 patches received, 0 observed sequence gaps** — a lower bound, since a hole is only visible between two frames one connection received ([Realtime](Realtime)) — and `As of 2026-08` the only run that counts lost patches at all. Both were run on **one** node, so multi-node fanout is still unproven. If the incremental matcher turns out to be the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback.
 
 ### Why ship realtime last if it's the differentiator?
 
@@ -122,7 +122,7 @@ Stated risk, not a hidden one. `As of 2026-08` long-running Bun processes are le
 
 ### Where do plugins fit?
 
-Nowhere in 1.0 — the plugin API is v2. Semver covers the documented surface, not internals, and a plugin API freezes internals permanently. Fork the blessed path if you need something else; extension points earn their existence from real forks, not from speculation.
+Nowhere — the plugin API is not in 1.x and not in 2.0.0. Semver covers the documented surface, not internals, and a plugin API freezes internals permanently. Fork the blessed path if you need something else; extension points earn their existence from real forks, not from speculation.
 
 ### Will you add an adapter for my host or my ORM?
 

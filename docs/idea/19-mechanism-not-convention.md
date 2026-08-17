@@ -39,7 +39,7 @@ made three of them wrong.
 
 ## The seam is the wrapper
 
-An app composes primitives into its own base and builds on that. Verified against 1.2.0:
+An app composes primitives into its own base and builds on that. Verified against 1.2.0, not re-run against 2.0.0:
 
 ```ts
 // apps/web/shared/base/tenant-entity.ts — the app's convention, written once

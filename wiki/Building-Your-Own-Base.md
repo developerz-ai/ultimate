@@ -7,7 +7,7 @@ wrapping and exporting your own factory. No fork, no monkey-patch, no plugin API
 wait for.
 
 Everything downstream treats the result identically — registry, manifest, projections, admin,
-MCP, `x verify`. Verified against 1.2.0.
+MCP, `x verify`. Verified against 1.2.0; not re-run against 2.0.0, whose 33 breaking entries are in [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md).
 
 Put the factory in a surface both `app/` and `api/` may import — `apps/web/shared/base/` in the
 generated layout ([Project layout](Project-Layout)).

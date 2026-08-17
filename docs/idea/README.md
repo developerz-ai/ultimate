@@ -60,7 +60,7 @@ Consequences of each in [`00-thesis.md`](./00-thesis.md); axiom 8 in full in [`1
 
 ## Status
 
-`As of 2026-08`: **1.2.0, shipped.** 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — versioned in lockstep and published over OIDC trusted publishing. `@ultimat3/flags` has never reached npm and still needs its one-time manual bootstrap ([#84](https://github.com/developerz-ai/ultimate/issues/84)), so the registry is not yet in lockstep with the repo. Docs `00`–`15`, `18` and `19` describe what exists; `16` and `17` are design only and say so in every claim.
+`As of 2026-08`: **2.0.0, shipped** — the first major, 33 changelog entries marked `BREAKING —`. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — versioned in lockstep and published over OIDC trusted publishing. `@ultimat3/flags` has never reached npm and still needs its one-time manual bootstrap ([#84](https://github.com/developerz-ai/ultimate/issues/84)), so the registry is not in lockstep with the repo. Docs `00`–`15`, `18` and `19` describe what exists; `16` and `17` are design only and say so in every claim.
 
 Milestone order and the "done when" bar for each live in [`14-roadmap.md`](./14-roadmap.md); the honest accounting of what could kill the project is in [`15-risks.md`](./15-risks.md) — read it before the roadmap, not after.
 

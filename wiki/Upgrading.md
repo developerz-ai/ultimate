@@ -2,7 +2,7 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**The next release is a major.** [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `[Unreleased]` section carries **33** entries marked `BREAKING —`, `As of 2026-08`, and each one changes a surface the table below covers. Plan for the major, not for a minor with a long changelog. No version number and no date is promised here — both are decided at the tag. Read `[Unreleased]` before you pin.
+**2.0.0 is that major.** [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `2.0.0` section carries **33** entries marked `BREAKING —`, and each one changes a surface the table below covers. Read all 33 before you move a pin from 1.x — **no codemod ships with 2.0.0**, so each is a manual edit named by its entry.
 
 ## What semver covers
 
@@ -32,7 +32,7 @@
 | Breaking changes land with codemods | if `x upgrade` cannot codemod it, the changelog carries the manual step |
 | Dependency upgrades are framework work | SolidJS 2 is pre-1.0-stable in places. Bumping it is a framework release, never an app-level `bun update`. There is no ArkType or Drizzle pin to carry: `@ultimat3/schema` ships dependency-free builtin validators (ArkType is an optional provider you adapt yourself) and `@ultimat3/entity` ships its own `postgresDriver()` |
 | Bun floor | `>=1.3`, target 2.0. Below the floor → `X_BUN_VERSION` |
-| Deferred to v2, behind the interfaces that ship today | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — the last throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
+| Not in 2.0.0, behind the interfaces that ship today | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — the last throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
 
 Do not upgrade a transitive dependency of a `@ultimat3/*` package by hand. Open an issue instead — the pin is deliberate.
 
@@ -101,7 +101,7 @@ Server behavior on a stale build ID:
 
 Full detail: [PWA and offline](PWA-And-Offline).
 
-## Migrating jobs between drivers — **v2**
+## Migrating jobs between drivers — **not in 2.0.0**
 
 `jobs.driver` accepts **`postgres` \| `redis` \| `nats`**, and `postgres` is the only one implemented — `redis` and `nats` are interface-complete stubs that throw `X_NOT_IMPLEMENTED`. So **there is no driver migration to perform** `As of 2026-08`: `x jobs drain --to redis` constructs the target and fails on its first enqueue.
 
@@ -124,7 +124,7 @@ Job code never changes across a driver: `steps` is a driver member, so step pers
 | From → to | Change | Notes |
 |---|---|---|
 | tier 1 → tier 2 | `live: true` on the query | needs a `replicator` role and `orderBy` + `limit` on the `sql` |
-| tier 2 → tier 3 | `persist: true` on the query | v2. No new mutators, no new authz, no new server code |
+| tier 2 → tier 3 | `persist: true` on the query | not in 2.0.0. No new mutators, no new authz, no new server code |
 | `memory` → `nats` transport | `realtime.transport`, and **`realtime.urlEnv`** — the env *key name*, not a URL. There is no `realtime.url` field | roll `sync` and `replicator`; clients reconnect with server-directed backoff. What actually decides the transport at boot is **`NATS_URL` being set**: `selectTransport(env)` never reads `config.realtime.transport`, so the config field documents intent and the env var makes the switch ([Configuration](Configuration)) |
 
 ## Where the facts live
