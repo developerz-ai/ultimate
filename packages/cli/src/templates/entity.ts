@@ -95,7 +95,9 @@ const entityTest = (
   name: NameSet,
   snake: string,
   table: string,
-): string => `import { expect, unitTest } from '@ultimat3/testing';
+): string => `// The ${name.kebab} entity's declaration: the table it maps to and the invariants it names. Both
+// are what the migration generator and every query read, so both are worth pinning.
+import { expect, unitTest } from '@ultimat3/testing';
 import type { ${name.pascal} } from './entity';
 import { ${name.pascal}View, ${name.camel} } from './entity';
 

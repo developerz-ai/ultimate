@@ -37,8 +37,10 @@ export interface PublishTarget {
  * `missing` is the hazard this exists for — a package that never reaches the registry. `unknown` is
  * a `-w` naming something the tree does not publish: `npm publish` exits non-zero on it, and a
  * release that dies half way through has already published the packages before it, irreversibly.
+ * `unreadable` is a workflow with no publish command; `absent` is no workflow at all. Two kinds
+ * rather than one, because the edit differs — restore the steps, or restore the file.
  */
-export type PublishGapKind = 'missing' | 'unknown' | 'unreadable';
+export type PublishGapKind = 'missing' | 'unknown' | 'unreadable' | 'absent';
 
 export interface PublishGap {
   readonly kind: PublishGapKind;
@@ -135,7 +137,8 @@ export function checkPublishList(input: PublishListInput): readonly PublishGap[]
   const commands = publishCommands(input.workflow);
   if (commands.length === 0) {
     // Never silence: a workflow with no `npm publish` in it is a check that verified nothing, which
-    // is the vacuous pass this rule exists to make impossible.
+    // is the vacuous pass this rule exists to make impossible. `unreadable`, not `absent` — the
+    // file is there and says nothing, which is a different edit from the file being gone.
     return [{ kind: 'unreadable', name: RELEASE_WORKFLOW }];
   }
   const named = new Set(commands.flatMap(workspaceFlags));
@@ -173,6 +176,13 @@ const unreadableFinding = (): Finding => ({
   at: RELEASE_WORKFLOW,
 });
 
+const absentFinding = (): Finding => ({
+  code: 'X_PUBLISH_LIST_INCOMPLETE',
+  cause: `${RELEASE_WORKFLOW} does not exist and this tree has packages to publish, so nothing publishes them — and every rule about the publish list passes by having no list to disagree with`,
+  fix: `restore ${RELEASE_WORKFLOW} (git checkout -- ${RELEASE_WORKFLOW}), then bun run scripts/release-workflow.ts --json`,
+  at: RELEASE_WORKFLOW,
+});
+
 const unknownFinding = (gap: PublishGap): Finding => ({
   code: 'X_PUBLISH_LIST_UNKNOWN',
   cause:
@@ -187,6 +197,7 @@ const FINDINGS: Readonly<Record<PublishGapKind, (gap: PublishGap) => Finding>> =
   missing: missingFinding,
   unknown: unknownFinding,
   unreadable: unreadableFinding,
+  absent: absentFinding,
 };
 
 export const publishGapFindingFor = (gap: PublishGap): Finding => FINDINGS[gap.kind](gap);
@@ -194,15 +205,24 @@ export const publishGapFindingFor = (gap: PublishGap): Finding => FINDINGS[gap.k
 /**
  * Read the workflow and the workspaces, then check them. The one impure step.
  *
- * A root with no workflow is not this check's problem: the host checks run against synthetic trees
- * in `scripts/verify.test.ts`, and a rule that fired there would make those tests depend on a file
- * they are not about. The real file going missing is caught by CI having no release job at all.
+ * ABSENCE IS A FINDING, gated on there being something to publish. The header claimed CI having no
+ * release job would catch a deleted workflow; it would not — nothing in the gate reads `.github/`
+ * for a job's existence, so deleting the file made "every package is published" true by having no
+ * publish step to disagree with. Found auditing this file's siblings after the same fail-open shape
+ * was reported against three of them.
+ *
+ * The condition is derived, not "is this the framework repo": a tree with no publishable workspace
+ * owes no release workflow, which is exactly the synthetic root in `scripts/verify.test.ts`.
  */
 export async function publishListGaps(root: string): Promise<readonly PublishGap[]> {
+  const workspaces = await listWorkspaces(root);
   const file = Bun.file(`${root}/${RELEASE_WORKFLOW}`);
-  if (!(await file.exists())) return [];
+  if (!(await file.exists())) {
+    if (workspaces.every((workspace) => workspace.private)) return [];
+    return [{ kind: 'absent', name: RELEASE_WORKFLOW }];
+  }
   return checkPublishList({
-    workspaces: await listWorkspaces(root),
+    workspaces,
     workflow: await file.text(),
   });
 }

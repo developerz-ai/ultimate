@@ -129,7 +129,9 @@ const paramsLiteral = (path: string): string => {
 const routeTest = (
   surface: Surface,
   path: string,
-): string => `import { metaContextFor, routeDataFor } from '@ultimat3/render';
+): string => `// /${path}'s declaration, on the \`unit\` step: metadata that renders, and the render mode,
+// offline strategy and budget it promises. A route with no title is an SEO regression.
+import { metaContextFor, routeDataFor } from '@ultimat3/render';
 import { expect, unitTest } from '@ultimat3/testing';
 import { config } from './page';
 
@@ -165,7 +167,11 @@ unitTest('/${path} stays inside its byte budget declaration', () => {
  * test and could never reach the `e2e` step no matter what drove it. `page.e2e.test.ts` is the
  * name the `e2e` step selects on.
  */
-const routeE2eTest = (path: string): string => `import { e2eTest, expect } from '@ultimat3/testing';
+const routeE2eTest = (
+  path: string,
+): string => `// /${path} on a train: the offline fallback, asserted against the BUILT output. Its own file
+// because the gate types a test by its FILENAME — an e2eTest in page.test.ts is a unit test.
+import { e2eTest, expect } from '@ultimat3/testing';
 
 // Runs under the \`e2e\` step, against the BUILT output. Without a registered browser driver
 // \`e2eTest\` reports itself skipped, naming the command that builds what it would drive.

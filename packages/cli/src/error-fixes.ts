@@ -34,7 +34,13 @@ const located = (path: string): string => `@ultimat3/${path}`;
 /** One scope directory in, one index out — pure enough for a test to point at a fixture tree. */
 export async function scanScopeFixes(scope: string): Promise<CodeFixIndex> {
   const index = new Map<string, CodeFixSite[]>();
-  for await (const path of new Bun.Glob(PACKAGE_SOURCES).scan({ cwd: scope, absolute: false })) {
+  // `followSymlinks` defaults to FALSE. `node_modules/@ultimat3/*` is a symlink per package under
+  // `bun link` and under any workspace an app resolves without realpath, and the default answer
+  // there is an empty index — the silent kind of empty, where every code falls back and nothing
+  // says a walk found nothing. The scope is a package directory, so there is no tree to run away
+  // into.
+  const walk = new Bun.Glob(PACKAGE_SOURCES).scan({ cwd: scope, followSymlinks: true });
+  for await (const path of walk) {
     if (isTest(path) || isGenerated(path) || isVendored(path)) continue;
     const text = await Bun.file(join(scope, path)).text();
     for (const site of scanCodeFixSites(text, located(path))) {
@@ -50,14 +56,36 @@ export async function scanScopeFixes(scope: string): Promise<CodeFixIndex> {
   return index;
 }
 
+/**
+ * Whether the walk happened, which an empty index cannot say on its own. `unread` and `read` both
+ * produce no entry for a code and they mean opposite things: "this framework does not raise it"
+ * against "this process never got to look". A fallback line that cannot tell them apart states the
+ * first as fact whenever the second is true.
+ */
+export type CodeFixScan = 'unread' | 'read';
+
 let pending: Promise<CodeFixIndex> | undefined;
 let scanned: CodeFixIndex = new Map();
+let state: CodeFixScan = 'unread';
 
+/**
+ * Best-effort by design, and therefore **never** a throw. One unreadable file under a
+ * `node_modules` an installer left half-written would otherwise reject `loadCodeFixes()`, and its
+ * three callers await it unguarded — so a permission bit would take `x errors explain` and the
+ * whole of `x mcp serve`'s startup down for an index that is a nicety. `pending` caches the
+ * settled promise either way, so a rejection would have been permanent for the process too.
+ */
 async function build(): Promise<CodeFixIndex> {
   const scope = frameworkScopeDir();
-  // A CLI that cannot resolve its own dependency reports that through `x docs`'s finding; here it
-  // simply projects nothing, and every code falls back to a line that says so.
-  scanned = scope === undefined ? new Map() : await scanScopeFixes(scope);
+  if (scope === undefined) return scanned;
+  try {
+    scanned = await scanScopeFixes(scope);
+    state = 'read';
+  } catch {
+    // Deliberately swallowed and deliberately not logged: `explainErrorCode` is the reporter, and
+    // `state` is what makes it say "could not be read" instead of "nothing raises this code".
+    scanned = new Map();
+  }
   return scanned;
 }
 
@@ -75,8 +103,12 @@ export function loadCodeFixes(): Promise<CodeFixIndex> {
 /** What has been loaded, synchronously. Empty until `loadCodeFixes()` has resolved. */
 export const codeFixes = (): CodeFixIndex => scanned;
 
+/** Whether the index above is an answer or an absence. */
+export const codeFixScan = (): CodeFixScan => state;
+
 /** Test seam — the counterpart to `resetErrorCatalog`. */
 export function resetCodeFixes(): void {
   pending = undefined;
   scanned = new Map();
+  state = 'unread';
 }

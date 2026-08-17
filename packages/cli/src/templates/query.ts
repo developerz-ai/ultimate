@@ -45,7 +45,9 @@ export const ${name.camel} = query({
 
 const queryTest = (name: NameSet, feature: NameSet, live: boolean): string => {
   const wrapper = live ? 'liveTest' : 'unitTest';
-  return `import { testActor } from '@ultimat3/policy';
+  return `// ${name.camel}: the shape it reads, the policy it asserts, and the actor it refuses. The read is
+// declarative, so what a test can get wrong is the authz, and that is what this pins.
+import { testActor } from '@ultimat3/policy';
 import { sourceFor } from '@ultimat3/query';
 import { expect, ${wrapper} } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';

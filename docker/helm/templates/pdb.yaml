@@ -18,9 +18,22 @@ evicted — so those roles get none, deliberately.
 {{- if and .Values.podDisruptionBudget .Values.podDisruptionBudget.enabled }}
 {{- range $role, $cfg := .Values.roles }}
 {{- if $cfg.enabled }}
+{{/*
+The floor, and a values contract that refuses to be wrong quietly. `nil | int` is 0 in Go templates,
+so a role with `autoscaling.enabled: true` and no `minReplicas` — or with neither key — would score
+a floor of 0, fall through the `gt $floor 1` below and get NO budget, with a rendered chart that
+looks complete. A missing disruption budget is invisible until the node drain that needed it, which
+is the one failure this file exists to prevent, so an incoherent role is a `helm template` error
+instead. `fail` is the only assertion a chart can make about its own inputs.
+*/}}
 {{- $floor := $cfg.replicas | int -}}
 {{- if and $cfg.autoscaling $cfg.autoscaling.enabled -}}
+{{- if not $cfg.autoscaling.minReplicas -}}
+{{- fail (printf "roles.%s sets autoscaling.enabled but no autoscaling.minReplicas — the HPA floor is what a PodDisruptionBudget is sized from, so set roles.%s.autoscaling.minReplicas in your values" $role $role) -}}
+{{- end -}}
 {{- $floor = $cfg.autoscaling.minReplicas | int -}}
+{{- else if not $cfg.replicas -}}
+{{- fail (printf "roles.%s is enabled with neither replicas nor autoscaling.enabled — set roles.%s.replicas in your values" $role $role) -}}
 {{- end -}}
 {{- if gt $floor 1 }}
 ---

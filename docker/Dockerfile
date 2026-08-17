@@ -77,7 +77,7 @@ RUN VERSION_DEFINE="$(bun --print 'JSON.stringify(require("./packages/core/packa
 # `cc-*` rather than `base-*`: a Bun single-file executable links against libstdc++, which base does
 # not carry. The header here claimed "roughly 80MB total" and no version of this image has ever been
 # that: `--compile` bakes the Bun runtime in, so `/app/x` alone is 104MB and the image measures
-# 189MB (`docker images`, 2026-08, linux/amd64).
+# 189MB (`docker images`, linux/amd64, `As of 2026-08`).
 #
 # `-debian13`, and the digit is load-bearing: it must be the SAME Debian as the build stage above.
 # `oven/bun:1.3-slim` is trixie (glibc 2.41) and `cc-debian12` is bookworm (glibc 2.36), so a binary

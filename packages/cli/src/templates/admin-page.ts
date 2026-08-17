@@ -64,7 +64,9 @@ export const ${declaration}Page: AdminCustomPage = {
 
 const pageTest = (name: string, permission: string): string => {
   const declaration = camel(name);
-  return `import { expect, unitTest } from '@ultimat3/testing';
+  return `// The ${name} admin page is guarded and owns no route of its own — the two facts that separate an
+// admin screen from a page, and the two an edit here is most likely to break.
+import { expect, unitTest } from '@ultimat3/testing';
 import { ${declaration}Page } from './${name}';
 
 // Both facts the frame reads off the declaration, so both are decidable without a request: a path

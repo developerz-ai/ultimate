@@ -96,9 +96,9 @@ CPU is a lagging proxy for all three serving roles and scales the wrong one at t
 the digit is load-bearing** — it must be the same Debian as the build stage (`oven/bun:1.3-slim`,
 trixie). The build stage was `oven/bun:1.3-alpine` until 2026-08, so the binary asked for
 `ld-musl-x86_64.so.1` on a glibc-only runtime and *every container this image started* died with
-`exec /app/x: no such file or directory`. The runtime stage now ends in `RUN ["/app/x", "--version"]`
-— exec form, because distroless has no shell — so that class of failure is a red build rather than a
-red pod.
+`exec /app/x: no such file or directory`. The runtime stage now ends in
+`RUN ["/app/x", "--version"]` — exec form, because distroless has no shell — so that class of
+failure is a red build rather than a red pod.
 
-Measured 2026-08, linux/amd64: `/app/x` is 104MB (`--compile` bakes in the Bun runtime) and the
-image is 189MB. The "roughly 80MB" this file claimed was never true of any build.
+`As of 2026-08`, linux/amd64: `/app/x` is 104MB (`--compile` bakes in the Bun runtime) and the image
+is 189MB (`docker images`). The "roughly 80MB" this file claimed was never true of any build.

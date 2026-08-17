@@ -66,7 +66,9 @@ export const ${name.camel} = task({
 
 const jobTest = (
   name: NameSet,
-): string => `import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+): string => `// ${name.camel} against a real driver: enqueue, drain, assert. Retries and the dead-letter path
+// are the framework's, so what this pins is that THIS job's steps run and are idempotent.
+import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
@@ -117,7 +119,9 @@ jobTest('${name.camel} enqueues once, and dedupes the retry', async () => {
 const taskTest = (
   name: NameSet,
   jobName: NameSet,
-): string => `import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
+): string => `// ${name.camel}: the schedule it declares, the timezone it declares it in, and the job it
+// enqueues. A cron with no explicit IANA zone fires at a different hour twice a year.
+import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { afterAll, beforeAll, expect, jobTest } from '@ultimat3/testing';
 import { ${jobName.camel} } from '../jobs/${jobName.kebab}';
 import { ${name.camel} } from './${name.kebab}';

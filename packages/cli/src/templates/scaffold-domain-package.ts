@@ -52,7 +52,11 @@ export const add = (a: Money, b: Money): Money => {
 };
 `;
 
-const domainTest = (app: NameSet): string => `import { expect } from 'bun:test';
+const domainTest = (
+  app: NameSet,
+): string => `// Money arithmetic in minor units, and the currency mismatch that must throw rather than round.
+// A float here is a rounding error nobody sees until it is on an invoice.
+import { expect } from 'bun:test';
 import { unitTest } from '@ultimat3/testing';
 import { add, ${app.pascal}CurrencyMismatchError, zero } from './index';
 

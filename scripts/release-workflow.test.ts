@@ -3,10 +3,15 @@
 // file, and a test that rewrote it to prove a failure would race the gate it guards.
 
 import { describe, expect, test } from 'bun:test';
+// `node:` — Bun has no temporary-directory or path-join primitive of its own.
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { REPO_SCAN_TIMEOUT_MS, repoRoot, run } from './lib/run';
 import { listWorkspaces, publishOrder } from './lib/workspaces';
 import {
   checkPublishList,
+  type PublishGap,
   type PublishListInput,
   type PublishTarget,
   publishCommands,
@@ -199,6 +204,58 @@ describe('unit · reading the workflow', () => {
 
   test('the other spellings npm accepts are the same flag', () => {
     expect(workspaceFlags('npm publish -w=a --workspace b --workspace=c')).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('unit · a workflow that is not there', () => {
+  /**
+   * The fourth fail-open of this cohort, found auditing this file's siblings after the same shape
+   * was reported against three of them. The header used to claim "CI having no release job catches
+   * it" — nothing in the gate reads `.github/` for a job's existence, so deleting the file made
+   * "every package is published" true by leaving no publish step to disagree with.
+   *
+   * `absent` and `unreadable` are separate kinds because the edit differs: restore the file, or
+   * restore the steps inside it.
+   */
+  test('is a finding when this tree has something to publish', async () => {
+    // `node:` — Bun has no temporary-directory or path-join primitive of its own.
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-publish-absent-'));
+    try {
+      await Bun.write(
+        join(root, 'packages/core/package.json'),
+        '{ "name": "@ultimat3/core", "version": "1.0.0" }\n',
+      );
+      const gaps = await publishListGaps(root);
+
+      expect(gaps).toHaveLength(1);
+      expect(gaps[0]?.kind).toBe('absent');
+      const finding = publishGapFindingFor(gaps[0] as PublishGap);
+      expect(finding.code).toBe('X_PUBLISH_LIST_INCOMPLETE');
+      expect(finding.cause).toContain('does not exist');
+      expect(finding.cause).toContain('no list to disagree with');
+      expect(finding.fix).toContain('git checkout');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('a tree with nothing to publish owes no workflow', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-publish-private-'));
+    try {
+      await Bun.write(
+        join(root, 'packages/demo/package.json'),
+        '{ "name": "demo", "version": "1.0.0", "private": true }\n',
+      );
+      expect(await publishListGaps(root)).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('a workflow that exists and publishes nothing is the OTHER kind', () => {
+    const gaps = checkPublishList(tree({ workflow: '      - run: echo hi\n' }));
+    expect(gaps[0]?.kind).toBe('unreadable');
+    expect(publishGapFindingFor(gaps[0] as PublishGap).fix).toContain('git log');
   });
 });
 

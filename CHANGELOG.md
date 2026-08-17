@@ -42,8 +42,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 - **The publish workflow could be dispatched from any ref, with no environment gate**, while
   holding `id-token: write` for OIDC trusted publishing. It now refuses any ref that is not
   `refs/tags/v*` and declares `environment: npm-publish`. Three settings must still be made in the
-  GitHub and npm UIs â€” they are listed in `PUBLISHING.md`; until the npm side names the environment,
-  a token from any run of the workflow is accepted.
+  GitHub and npm UIs â€” they are listed in `PUBLISHING.md`. **`As of 2026-08`** the npm side does not
+  name the environment, so a token from any run of the workflow is accepted; that stops being true
+  the moment those settings land, which is the point of listing them.
 
 - **`x errors explain` answered `x verify --json` for 318 of 375 codes.** That is the tool an agent
   reaches for when it hits a code it does not recognise, and for the overwhelming majority it
@@ -87,7 +88,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   lint-rule defects that looked like the cause are Biome *infos*; `biome check` exits 0 with them
   present). `budgets` remains red and is now the only allowance on CI's shrink-only ratchet.
 
-- **Nine more**, each with a failing test first: `x db`'s bare form ran the migration *generator*
+- **Five more**, each with a failing test first: `x db`'s bare form ran the migration *generator*
   because `gen` sorted first, and a default is now declared rather than inferred from array order;
   `x deploy` passed `--set image=<ref>` against a chart that declares `image` as a map, so the
   override silently did nothing; the `budgets` step discarded the findings from loading the app, so

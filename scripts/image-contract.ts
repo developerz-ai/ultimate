@@ -65,12 +65,16 @@ export function parseDockerfile(text: string): readonly Stage[] {
     const keyword = (match[1] ?? '').toUpperCase();
     const value = (match[2] ?? '').trim();
     if (keyword === 'FROM') {
-      const from = /^(\S+)(?:\s+[Aa][Ss]\s+(\S+))?/.exec(value);
+      // `FROM --platform=$BUILDPLATFORM oven/bun:1.3-alpine AS build` — the flags come FIRST, and
+      // reading `--platform=…` as the base image made `libcOf` answer `undefined`, which this file
+      // treats as "unknown, say nothing". A cross-build Dockerfile would therefore have skipped the
+      // libc rule entirely: the one syntax most likely to pair two architectures, silently exempt.
+      const from = /^((?:--\S+\s+)*)(\S+)(?:\s+[Aa][Ss]\s+(\S+))?/.exec(value);
       stages.push({
-        base: from?.[1] ?? value,
+        base: from?.[2] ?? value,
         line: start,
         instructions: [],
-        ...(from?.[2] === undefined ? {} : { name: from[2] }),
+        ...(from?.[3] === undefined ? {} : { name: from[3] }),
       });
       continue;
     }
@@ -206,13 +210,24 @@ const FINDINGS: Readonly<Record<ImageGapKind, (gap: ImageGap) => Finding>> = {
 export const imageGapFindingFor = (gap: ImageGap): Finding => FINDINGS[gap.kind](gap);
 
 /**
- * Read the Dockerfile, then check it. The one impure step. A root with no Dockerfile is not this
- * check's problem — the host checks run against synthetic trees in `scripts/verify.test.ts`.
+ * The Dockerfile, or `undefined`. ONE read, shared by the gate check and the command below — they
+ * used to read the path separately and disagree about it being gone: `imageGaps` answered `[]` and
+ * `main` crashed on a bare ENOENT with no code, no `fix:` and no `--json` payload.
+ *
+ * ABSENCE IS NOT A FINDING HERE, and that is a per-check decision rather than a house style: unlike
+ * `wiki/Realtime.md`, which is the only public description of a protocol this tree still ships, a
+ * repo with no Dockerfile is a repo that builds no image, and there is no counterpart artifact left
+ * making a claim. The rule says so out loud in its summary instead of answering a silent green.
  */
-export async function imageGaps(root: string): Promise<readonly ImageGap[]> {
+const readDockerfile = async (root: string): Promise<string | undefined> => {
   const file = Bun.file(`${root}/${DOCKERFILE}`);
-  if (!(await file.exists())) return [];
-  return checkImage(await file.text());
+  return (await file.exists()) ? await file.text() : undefined;
+};
+
+/** Read the Dockerfile, then check it. The one impure step. */
+export async function imageGaps(root: string): Promise<readonly ImageGap[]> {
+  const text = await readDockerfile(root);
+  return text === undefined ? [] : checkImage(text);
 }
 
 /** What this repo contributes to `x verify`'s `boundaries` step. */
@@ -221,18 +236,21 @@ export const imageContractFindings = async (root: string): Promise<readonly Find
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
-  const root = repoRoot();
-  const gaps = await imageGaps(root);
-  const stages = parseDockerfile(await Bun.file(`${root}/${DOCKERFILE}`).text());
+  const text = await readDockerfile(repoRoot());
+  const gaps = text === undefined ? [] : checkImage(text);
+  const stages = text === undefined ? [] : parseDockerfile(text);
+  const green =
+    text === undefined
+      ? `no ${DOCKERFILE} in this tree, so it builds no image and there is nothing to check`
+      : `${stages.length} stages in ${DOCKERFILE}: one libc family, and the shipped entrypoint proven in the stage that ships it`;
   report(
     {
       ok: gaps.length === 0,
       script: 'image-contract',
       summary:
-        gaps.length === 0
-          ? `${stages.length} stages in ${DOCKERFILE}: one libc family, and the shipped entrypoint proven in the stage that ships it`
-          : `${gaps.length} image-contract violation(s) in ${DOCKERFILE}`,
+        gaps.length === 0 ? green : `${gaps.length} image-contract violation(s) in ${DOCKERFILE}`,
       findings: gaps.map(imageGapFindingFor),
+      data: { dockerfile: text === undefined ? null : DOCKERFILE, stages: stages.length },
     },
     args.json,
   );

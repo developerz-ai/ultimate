@@ -3,14 +3,20 @@
 // real `CLAUDE.md` or to a result file, both of which the gate reads while this suite runs.
 
 import { describe, expect, test } from 'bun:test';
+// `node:` — Bun has no temporary-directory or path-join primitive of its own.
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   type BenchClaim,
+  type BenchGap,
   benchClaimGaps,
   benchGapFindingFor,
   CLAIMS,
   CLAIMS_FILE,
   checkBenchClaims,
   groupDigits,
+  RESULTS_10K,
   readNumber,
   renderBench,
 } from './bench-claims';
@@ -112,6 +118,57 @@ describe('unit · reading a result', () => {
     expect(readNumber({ a: { b: 1 } }, 'a.b')).toBe(1);
     expect(readNumber({ a: { b: 1 } }, 'a.b.c')).toBeUndefined();
     expect(readNumber(undefined, 'a')).toBeUndefined();
+  });
+});
+
+describe('unit · a file that is not there', () => {
+  /**
+   * The rule's own false green, in both directions. Each half used to suppress the WHOLE check:
+   * a deleted results file returned `[]` before a single claim was read, and a deleted `CLAUDE.md`
+   * did the same. Deleting the bench results is a state a re-run passes through, which is exactly
+   * when the committed figures are least trustworthy.
+   */
+  const dir = async (files: Readonly<Record<string, string>>): Promise<string> => {
+    // `node:` — Bun has no temporary-directory or path-join primitive of its own.
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-bench-absent-'));
+    for (const [path, body] of Object.entries(files)) await Bun.write(join(root, path), body);
+    return root;
+  };
+
+  test('a deleted results file is unmeasured, never agreement with undefined', async () => {
+    const root = await dir({ 'CLAUDE.md': 'p50 54.0s / p90 105.5s / max 145.7s' });
+    try {
+      const gaps = await benchClaimGaps(root);
+      expect(gaps.length).toBe(CLAIMS.length);
+      expect(gaps.every((gap) => gap.kind === 'unmeasured')).toBe(true);
+      expect(benchGapFindingFor(gaps[0] as BenchGap).cause).toContain('compared against nothing');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('a deleted CLAUDE.md is unstated — the results are still there to be described', async () => {
+    const root = await dir({ [RESULTS_10K]: JSON.stringify({ seq: { received: 1_666_882 } }) });
+    try {
+      const gaps = await benchClaimGaps(root);
+      expect(gaps.length).toBeGreaterThan(0);
+      const patches = gaps.find((gap) => gap.claim.path === 'seq.received');
+      expect(patches?.kind).toBe('unstated');
+      // The measured value rides in the fix, so restoring the sentence needs no second lookup.
+      expect(benchGapFindingFor(patches as BenchGap).fix).toContain('1,666,882');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('neither file is the one silence left, and it is about the TREE, not the rule', async () => {
+    // A synthetic root in scripts/verify.test.ts makes no capacity claims and commits no bench.
+    const root = await dir({ 'README.md': '# not this repo\n' });
+    try {
+      expect(await benchClaimGaps(root)).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 

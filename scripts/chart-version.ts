@@ -70,10 +70,21 @@ export function checkChartVersion(input: ChartVersionInput): readonly ChartGap[]
  * lockstep version instead of being remembered. `appVersion` keeps its quotes — a bare `1.2.0` is
  * a YAML float in enough parsers to be worth not finding out.
  */
-export const setChartVersions = (raw: string, version: string): string =>
-  raw
-    .replace(/^version:[^\n]*/m, `version: ${version}`)
-    .replace(/^appVersion:[^\n]*/m, `appVersion: "${version}"`);
+export function setChartVersions(raw: string, version: string): string {
+  // An ABSENT key is the case a `.replace()` pair silently does nothing for, and `release.ts` then
+  // prints `chart … -> 1.3.0` over a chart that received neither key — a report of work that did
+  // not happen, which is this slice's whole subject. A missing `appVersion` is worse than a stale
+  // one: `values.yaml` ships `image.tag: ""`, so the tag resolves to empty and helm installs
+  // `ultimate-app:`. Written rather than repaired-later, so the output always satisfies
+  // `checkChartVersion` — that property is what `chart-version.test.ts` asserts.
+  const write = (text: string, key: ChartVersionKey, value: string): string => {
+    const line = `${key}: ${value}`;
+    const pattern = new RegExp(`^${key}:[^\\n]*`, 'm');
+    if (pattern.test(text)) return text.replace(pattern, line);
+    return `${text.replace(/\n*$/, '')}\n${line}\n`;
+  };
+  return write(write(raw, 'version', version), 'appVersion', `"${version}"`);
+}
 
 const staleFinding = (gap: ChartGap): Finding => ({
   code: 'X_CHART_VERSION_STALE',

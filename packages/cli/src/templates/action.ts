@@ -137,7 +137,9 @@ const actionTest = (
   name: NameSet,
   feature: NameSet,
   isMutator: boolean,
-): string => `import { testActor } from '@ultimat3/policy';
+): string => `// ${name.camel}: its declared shape, the input it refuses, the contract every action owes, and the
+// foreign-org actor it denies before the handler runs. One declaration, every surface.
+import { testActor } from '@ultimat3/policy';
 import { contractTest, expect, unitTest } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 

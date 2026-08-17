@@ -113,8 +113,14 @@ export {
   RESERVED_HEADING,
   staticFix,
 } from './error-contract';
-export type { CodeFixIndex } from './error-fixes';
-export { codeFixes, loadCodeFixes, resetCodeFixes, scanScopeFixes } from './error-fixes';
+export type { CodeFixIndex, CodeFixScan } from './error-fixes';
+export {
+  codeFixes,
+  codeFixScan,
+  loadCodeFixes,
+  resetCodeFixes,
+  scanScopeFixes,
+} from './error-fixes';
 export {
   BadFlagError,
   BuildEntryMissingError,

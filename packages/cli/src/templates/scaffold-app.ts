@@ -82,7 +82,10 @@ const siteStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 }
 `;
 
-const sitePageTest = (): string => `import { metaContextFor, routeDataFor } from '@ultimat3/render';
+const sitePageTest =
+  (): string => `// The landing page ships zero JS and declares its metadata. Both are promises the file makes in
+// its config, and both are the kind that rot silently when someone adds one import.
+import { metaContextFor, routeDataFor } from '@ultimat3/render';
 import { expect, unitTest } from '@ultimat3/testing';
 import { config } from './page';
 
@@ -140,7 +143,10 @@ const dashboardStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 }
 `;
 
-const dashboardTest = (): string => `import { expect, unitTest } from '@ultimat3/testing';
+const dashboardTest =
+  (): string => `// The dashboard renders per request, is gated by a policy, and has an offline strategy. Losing
+// the policy is the interesting regression: the page still renders, to anyone.
+import { expect, unitTest } from '@ultimat3/testing';
 import { config } from './page';
 
 unitTest('the dashboard renders on the server, is gated, and has an offline strategy', () => {
@@ -198,7 +204,10 @@ export const health = action({
 });
 `;
 
-const apiTest = (): string => `import { contractTest, expect } from '@ultimat3/testing';
+const apiTest =
+  (): string => `// The health action's contract, run as the framework generates it: garbage input refused, the
+// operation in the OpenAPI document. The declaration is the source; this only runs it.
+import { contractTest, expect } from '@ultimat3/testing';
 import { health } from './health';
 
 // Named here because every projection needs a stable name and this file does not boot the app.
@@ -280,7 +289,10 @@ export const holds = (actor: Actor | null, permission: string): boolean =>
   expandRoles(actor.roles, roles).some((grant) => grantMatches(grant, permission));
 `;
 
-const sharedActorTest = (): string => `import { expect, unitTest } from '@ultimat3/testing';
+const sharedActorTest =
+  (): string => `// \`holds\` answers from the declared role map, never from a role NAME. An undeclared role must
+// expand to no grants — the branch that turns a typo into an actor who can do everything.
+import { expect, unitTest } from '@ultimat3/testing';
 import type { Actor } from './actor';
 import { holds } from './actor';
 

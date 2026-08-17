@@ -1,15 +1,8 @@
 #!/usr/bin/env bun
-// Enforce, as a gate step, that the realtime capacity figures `CLAUDE.md` states are the figures
-// the committed bench results carry. They are the repo's loudest measured claim and the first thing
-// an agent reads, and nothing compared them to `scripts/bench/results/*.json` — so a re-run that
-// moved a percentile, or a hand-edited sentence, left the framework describing a run that never
-// happened. Runs on `x verify`'s `manifest` step: "does a committed file still describe the code?"
-// is that step's own question, and `CLAUDE.md` is the file an agent reads first.
-//
-// THE ROUNDING CONVENTION, decided here because the prose was ambiguous: a duration renders as
-// `(ms / 1000).toFixed(1)` seconds — 53951ms is `54.0s` — and a count renders with `,` every three
-// digits. Nothing else is accepted. `toFixed` is what a value landing exactly on a `.x5` boundary
-// settles by, so the fix line always carries the string to write rather than asking for a decision.
+// Enforce, on `x verify`'s `manifest` step, that the realtime capacity figures `CLAUDE.md` states
+// are the figures the committed bench results carry. Nothing compared the two, so a re-run that
+// moved a percentile — or a hand-edited sentence — left the repo's loudest measured claim
+// describing a run that never happened.
 //
 //   bun run scripts/bench-claims.ts [--json]
 
@@ -166,6 +159,13 @@ export const groupDigits = (value: number): string =>
     .reverse()
     .join('');
 
+/**
+ * THE ROUNDING CONVENTION, decided here because the prose was ambiguous, and stated beside the code
+ * that implements it rather than in a header: a duration renders as `(ms / 1000).toFixed(1)` seconds
+ * — 53951ms is `54.0s` — and a count with `,` every three digits. Nothing else is accepted. A value
+ * landing exactly on a `.x5` boundary settles by `toFixed`, so a mismatch finding always carries the
+ * string to write instead of asking an author for a decision.
+ */
 export function renderBench(value: number, format: BenchFormat): string {
   if (format === 'seconds') return (value / 1000).toFixed(1);
   if (format === 'plain') return String(value);
@@ -241,21 +241,31 @@ const readJson = async (path: string): Promise<unknown> => {
 /**
  * Read the prose and the results, then check them. The one impure step.
  *
- * A root with neither file is not this check's problem: the host checks run against synthetic trees
- * in `scripts/verify.test.ts`, and a rule that fired there would make those tests depend on files
- * they are not about.
+ * ONE guard, and it is about the tree rather than about either file: if NEITHER the prose nor a
+ * single committed result exists, this is not a tree that makes these claims and there is nothing
+ * to check. Every other combination is checked, because every other combination is a real and
+ * dangerous state — and each half used to suppress the whole rule:
+ *
+ * | On disk | Was | Is |
+ * |---|---|---|
+ * | results deleted, prose kept | green — the figures were compared against nothing | `unmeasured` per claim |
+ * | prose deleted, results kept | green — every anchored pattern matched nothing | `unstated` per claim |
+ *
+ * The first is the state a re-run passes through, which is the exact moment the numbers are least
+ * trustworthy. `checkBenchClaims` already had a name for both; only these two early returns stopped
+ * it ever saying them.
  */
 export async function benchClaimGaps(root: string): Promise<readonly BenchGap[]> {
   const prose = Bun.file(`${root}/${CLAIMS_FILE}`);
-  if (!(await prose.exists())) return [];
   const files = [...new Set(CLAIMS.map((claim) => claim.file))];
-  if (!(await Bun.file(`${root}/${files[0] ?? ''}`).exists())) return [];
   const loaded = await Promise.all(
     files.map(async (file) => [file, await readJson(`${root}/${file}`)] as const),
   );
+  const proseExists = await prose.exists();
+  if (!proseExists && loaded.every(([, body]) => body === undefined)) return [];
   return checkBenchClaims({
     claims: CLAIMS,
-    prose: await prose.text(),
+    prose: proseExists ? await prose.text() : '',
     results: Object.fromEntries(loaded),
   });
 }

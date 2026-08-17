@@ -8,13 +8,17 @@ Releases use **OIDC trusted publishing** from GitHub Actions
 mints a short-lived token from the run's OIDC identity and attaches a provenance attestation
 automatically.
 
-**29 workspaces publish; 28 are on the registry.** `@ultimat3/flags` has never been published — the
-registry answers 404, not a stale version. It is not opting out: `packages/flags/package.json`
-declares the same `publishConfig` as the other 28, and every consumer resolves it through the
-workspace, so nothing in the repo noticed. The cause was the workflow, which listed its `-w` flags
-by hand and omitted it; that list is now **derived** from `scripts/list-workspaces.ts`, so `flags`
-and every future package are in it by construction. The first publish of `flags` is still a human
-step — see [Human steps outside this file](#human-steps-outside-this-file).
+**`As of 2026-08`: 29 workspaces publish; 28 are on the registry.** `@ultimat3/flags` has never been
+published — the registry answers 404, not a stale version. It is not opting out:
+`packages/flags/package.json` declares the same `publishConfig` as the other 28, and every consumer
+resolves it through the workspace, so nothing in the repo noticed. The cause was the workflow, which
+listed its `-w` flags by hand and omitted it; that list is now **derived** from
+`scripts/list-workspaces.ts`, so `flags` and every future package are in it by construction. The
+first publish of `flags` is still a human step — see
+[Human steps outside this file](#human-steps-outside-this-file).
+
+The count and the 404 are a snapshot and go stale the moment step 1 below is done; that the list is
+derived is a rule and does not.
 
 ## Lockstep versioning — the rule
 
@@ -86,27 +90,87 @@ On npmjs.com, for **each** package: `npmjs.com/package/<name>` → **Settings** 
 
 The GitHub org is `developerz-ai` with a hyphen; the npm scope is `@ultimat3`. Both are correct.
 
-`Environment` was blank until 2026-08, and blank means *any* environment: npm accepted a token from
-any run of `release.yml`, whatever job produced it. Naming `npm-publish` makes the registry itself
-refuse a token minted outside the approval-gated environment, which is the half GitHub cannot
-enforce. It must match `environment.name` in the workflow exactly.
+`Environment` is the row that changed, and **`As of 2026-08` it is still blank on the registry** —
+this table says what it must become, not what it is. Blank means *any* environment: npm accepts a
+token from any run of `release.yml`, whatever job produced it and whatever approval it did or did
+not pass. Setting it to `npm-publish` makes the registry itself refuse a token minted outside the
+approval-gated environment, which is the half GitHub cannot enforce, and it must match
+`environment.name` in the workflow exactly. Performing it is
+[step 4](#4-set-environment-npm-publish-on-every-packages-trusted-publisher).
 
 ## Human steps outside this file
 
-Three things the YAML cannot do for itself. Until they are done, the gates below are half-built —
-the workflow half is in place and takes effect the moment the setting exists.
+**Do these before the next release. `As of 2026-08` none of them is done.**
 
-| Step | Where | Why |
-|---|---|---|
-| Create the **`npm-publish`** environment with **required reviewers** | repo → Settings → Environments | The publish job holds `id-token: write` — the repository's npm identity. An environment is the only GitHub control that holds a job with that permission until a human approves it. |
-| Add a **deployment tag rule** `v*` to that environment | same screen, *Deployment branches and tags* → *Selected branches and tags* | Belt to the workflow's own ref check, enforced by GitHub before the job starts rather than by its first step. |
-| Publish **`@ultimat3/flags@<current version>`** by hand, then attach its trusted publisher | npmjs.com | Trusted publishing cannot bootstrap a package that does not exist, and the derived list now includes `flags` — so the next release fails on it until this is done. |
+Four settings live in the GitHub and npm UIs, and no YAML in this repo can create them. **None of
+them fails loudly if you skip it** — that is the whole problem, and it is why they are written out
+one at a time with what skipping each one actually costs. Do them in this order: step 1 is the only
+one that breaks a release, and it breaks it *after* two packages have already published
+irreversibly.
+
+### 1. Publish `@ultimat3/flags` by hand — do this first
+
+```sh
+npm login                                    # as an @ultimat3 org member
+npm publish -w @ultimat3/flags --access public
+```
+
+Then attach its trusted publisher exactly as in
+[the section above](#one-time-configure-the-trusted-publisher-per-package).
+
+**Why first.** `flags` has never been on the registry, and the workflow's publish list is now
+derived, so it is included from this release on. Trusted publishing cannot bootstrap a package that
+does not exist yet, so the workflow will fail on it.
+
+**Cost of skipping: an irreversible partial release.** The workflow publishes tier by tier and
+aborts on the first failure. `flags` is tier 1, so `@ultimat3/core` and `@ultimat3/schema` are
+already on the registry at the new version when the run dies — and npm publishes cannot be undone.
+You would be recovering by hand, with 2 of 29 packages a version ahead of the other 27.
+
+**Do not "fix" this by removing `flags` from the list.** The list is derived precisely so no package
+can be silently absent again; the loud failure is the feature.
+
+### 2. Create the `npm-publish` environment with required reviewers
+
+Repo → **Settings** → **Environments** → **New environment** → name it `npm-publish` → enable
+**Required reviewers** and add at least one person.
+
+**Cost of skipping: the release publishes anyway, ungated.** GitHub's own documentation:
+*"Running a workflow that references an environment that does not exist will create an environment
+with the referenced name"* — and an environment created that way carries **no protection rules**. So
+`release.yml`'s `environment: npm-publish` does not fail on a missing environment; it silently
+creates an empty one and runs unprotected, looking gated in the YAML while being gated by nothing.
+This is the step most likely to be assumed done.
+
+### 3. Restrict that environment to release tags
+
+Same screen → **Deployment branches and tags** → **Selected branches and tags** → add a **tag** rule
+`v*`.
+
+**Cost of skipping: one less layer, not zero.** `release.yml`'s first step already refuses any ref
+that is not `refs/tags/v*`, so a branch still cannot publish. This makes GitHub refuse before the
+job starts rather than in its first step, which matters because a job that starts has already been
+granted `id-token: write`.
+
+### 4. Set `Environment: npm-publish` on every package's trusted publisher
+
+On npmjs.com, for **each** published package: `npmjs.com/package/<name>` → **Settings** →
+**Trusted Publisher** → set the **Environment** field to `npm-publish`. It must match
+`environment.name` in `release.yml` exactly.
+
+**Cost of skipping: the registry enforces nothing about which job published.** The field is blank
+today, and blank means *any* environment — npm accepts a token minted by any run of `release.yml`,
+whichever job produced it and whatever approval it did or did not pass. Steps 2 and 3 are GitHub
+refusing to start the job; this is npm refusing the token. Without it, a change to this workflow
+that drops the `environment:` line loses the gate with nothing outside the repo noticing.
 
 ## Publish order (dependency tiers)
 
 Lowest tier first, because a package must be on the registry before anything that imports it. The
-workflow **derives** this from `bun run scripts/list-workspaces.ts --json` and groups by `tier`; the
-table is a snapshot for readers, not a source. A new package appears here by existing on disk.
+workflow **derives** this from `bun run scripts/list-workspaces.ts --json` and groups by `tier`.
+That derivation is the rule. The table below is a reader's snapshot of what it answered
+`As of 2026-08` — never a source, and a new package appears in the real list by existing on disk,
+whether or not anyone updates this table.
 
 | Tier | Packages |
 |---|---|
@@ -151,9 +215,12 @@ table is a snapshot for readers, not a source. A new package appears here by exi
 The lockstep rule compares the 29 packages **to each other**, so 29 manifests all reading `1.2.0`
 pass `verify` while the tag says `v1.10.1` — and every publish then dies `EPUBLISHCONFLICT` on a
 version already on the registry, one package at a time, halfway through a release. `--check` anchors
-the comparison to the version read off the tag. Measured on this repo in 2026-08: `git describe`
-answered `v1.10.1-37-g837adfa` with every `package.json` at `1.2.0`, and the workflow ran no such
-check despite `scripts/release.ts` claiming it did.
+the comparison to the version read off the tag.
+
+`As of 2026-08` this repo was in exactly that state: `git describe` answered `v1.10.1-37-g837adfa`
+with every `package.json` at `1.2.0`, and the workflow ran no such check despite
+`scripts/release.ts` claiming it did. The drift is the snapshot; that the tag and the manifests must
+agree before a publish is the rule.
 
 ## What is published
 
@@ -175,7 +242,8 @@ them halves the install: `@ultimat3/cli` 974kB → 541kB, `@ultimat3/core` 348kB
 `LICENSE` is a **real file in each package directory**, not a pointer at the repo root's copy. npm
 silently skips a `files` entry with no file behind it, so a package can declare `"license": "MIT"`,
 name `LICENSE` in `files`, and ship the grant in neither — which is what every package did until the
-gate learned to check. All 29 carry one now (`ls packages/*/LICENSE`, 2026-08). `bun run scripts/new-package.ts` writes it, so a new package cannot regress.
+gate learned to check. `As of 2026-08` all 29 carry one (`ls packages/*/LICENSE`).
+`bun run scripts/new-package.ts` writes it, so a new package cannot regress.
 
 Both halves are enforced by `x verify`'s **package-shape** step, per axiom 3 — a published package
 that promises a file it does not carry, publishes its tests, or has no `files` allowlist at all is

@@ -26,7 +26,9 @@ export const ${feature.camel}AdminResource: AdminResourceOptions<AdminRow> = {
 
 const resourceTest = (
   feature: NameSet,
-): string => `import { expect, unitTest } from '@ultimat3/testing';
+): string => `// The ${feature.kebab} admin override says what the entity cannot derive: a title key, the list
+// columns, a bounded page size. Everything unset here is derived, and needs no test.
+import { expect, unitTest } from '@ultimat3/testing';
 import { ${feature.camel}AdminResource } from './resource';
 
 unitTest('${feature.camel}AdminResource sets a title key and bounded list fields', () => {

@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ExecResult } from '@ultimat3/cli';
 import { flagList, parseScriptArgs } from './lib/args';
+import { repoRoot } from './lib/run';
 import type { GateStep } from './reference-app-gate';
 import { reproduce, runScaffoldGate, scaffoldFindings, WAIVER_FILE } from './scaffold-gate';
 
@@ -87,7 +88,9 @@ describe('unit · the waiver flag and the subprocess', () => {
    * This is that, and it reads both sites at once by scanning this script's own source.
    */
   test('every --allow-red example in the script names a step the CI ratchet still allows', async () => {
-    const root = `${import.meta.dir}/..`;
+    // `repoRoot()`, not `${import.meta.dir}/..` — one way to find the root, and it does not drift
+    // the day this file moves.
+    const root = repoRoot();
     const workflow = await Bun.file(`${root}/${WAIVER_FILE}`).text();
     const allowed = new Set(
       [...workflow.matchAll(/--allow-red\s+([\w,]+)/g)].flatMap((match) =>

@@ -34,7 +34,10 @@ export const roles = defineRoles({
 });
 `;
 
-const rolesTest = (): string => `import { expandRoles, rolesGranting } from '@ultimat3/policy';
+const rolesTest =
+  (): string => `// The app's role map, expanded: what each role grants once inheritance is flattened, and which
+// roles hold a given permission. An undeclared role must grant nothing at all.
+import { expandRoles, rolesGranting } from '@ultimat3/policy';
 import { expect, unitTest } from '@ultimat3/testing';
 import { roles } from './roles';
 

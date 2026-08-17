@@ -124,10 +124,10 @@ jobs:
       # Before the 10-minute gate, because it costs a second and catches the failure the gate
       # cannot: `verify`'s lockstep rule compares the 29 packages to EACH OTHER, so 29 manifests all
       # reading 1.2.0 pass it while the tag says v1.10.1 — and every publish then dies
-      # EPUBLISHCONFLICT on a version already on the registry. Measured on this tree 2026-08:
-      # `git describe` answered v1.10.1-37-g837adfa with every package.json at 1.2.0, so a release
-      # published for that tag would have done exactly that. `scripts/release.ts` claimed this
-      # workflow already ran it; it did not.
+      # EPUBLISHCONFLICT on a version already on the registry. `As of 2026-08` this tree was in that
+      # state: `git describe` answered v1.10.1-37-g837adfa with every package.json at 1.2.0, so a
+      # release published for that tag would have done exactly that. `scripts/release.ts` claimed
+      # this workflow already ran it; it did not.
       - name: the repo is stamped at the version this tag claims
         run: bun run scripts/release.ts --check "${{ steps.release.outputs.version }}" --json
 

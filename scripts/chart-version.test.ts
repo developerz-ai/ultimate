@@ -3,6 +3,7 @@
 // to the real chart, which is the file a `helm install` resolves its image tag from.
 
 import { describe, expect, test } from 'bun:test';
+// `node:` — Bun has no temporary-directory or path-join primitive of its own.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -91,6 +92,29 @@ describe('unit · the rewrite a release performs', () => {
   test('is idempotent — a second release pass over an already-moved chart changes nothing', () => {
     const once = setChartVersions(chart('1.2.0', '1.2.0'), '1.3.0');
     expect(setChartVersions(once, '1.3.0')).toBe(once);
+  });
+
+  /**
+   * The property, stated once and asserted over every shape: whatever went in, what comes out
+   * satisfies the rule. An absent key made both replacements silent no-ops, so `release.ts` printed
+   * `chart … -> 1.3.0` over a chart that received nothing — and a missing `appVersion` resolves the
+   * default image tag to empty, so `helm install` pulls `ultimate-app:`.
+   */
+  test.each([
+    ['both keys present', chart('1.2.0', '1.2.0')],
+    ['no appVersion', 'apiVersion: v2\nname: ultimate\nversion: 1.2.0\n'],
+    ['no version', 'apiVersion: v2\nname: ultimate\nappVersion: "1.2.0"\n'],
+    ['neither key', 'apiVersion: v2\nname: ultimate\n'],
+    ['no trailing newline', 'apiVersion: v2'],
+  ])('writes what is missing: %s', (_name, input) => {
+    const next = setChartVersions(input, '1.3.0');
+
+    expect(findings(next, '1.3.0')).toEqual([]);
+    expect(readChartScalar(next, 'version')).toBe('1.3.0');
+    expect(readChartScalar(next, 'appVersion')).toBe('1.3.0');
+    // Appending must not eat the chart it was given.
+    expect(next).toContain('apiVersion: v2');
+    expect(next.endsWith('\n')).toBe(true);
   });
 });
 

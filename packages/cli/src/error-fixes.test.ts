@@ -4,12 +4,18 @@
 // naming a command that cannot close the code.
 
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadErrorCatalog } from './error-catalog';
 import { fixProblem } from './error-contract';
-import { codeFixes, loadCodeFixes, resetCodeFixes, scanScopeFixes } from './error-fixes';
+import {
+  codeFixes,
+  codeFixScan,
+  loadCodeFixes,
+  resetCodeFixes,
+  scanScopeFixes,
+} from './error-fixes';
 import { explainErrorCode } from './mcp-errors';
 import { scanCodeFixSites } from './ts-scan';
 
@@ -106,6 +112,19 @@ describe('unit · scanScopeFixes', () => {
     expect(index.get('X_FROM_A_TEST')).toBeUndefined();
   });
 
+  // `Bun.Glob.scan` does not follow directory symlinks unless told to, and a package directory
+  // under `node_modules/@ultimat3` is a symlink under `bun link` and under any workspace an app
+  // resolves without realpath. The default answer there was an empty index and no sign of one.
+  test('a linked package is walked, not skipped', async () => {
+    const real = await scopeWith({
+      'render/src/errors.ts': "throw x({ code: 'X_TEAPOT', fix: 'x routes --json' });",
+    });
+    const linked = await mkdtemp(join(tmpdir(), 'x-fixes-link-'));
+    temporary.push(linked);
+    await symlink(join(real, 'render'), join(linked, 'render'), 'dir');
+    expect([...(await scanScopeFixes(linked)).keys()]).toEqual(['X_TEAPOT']);
+  });
+
   // `${…}` is a value only the throw site has. Blanked to the same `<value>` the `errors` step
   // judges a fix line in, so the two surfaces read one string identically.
   test('blanks an interpolation the way the gate does', async () => {
@@ -177,25 +196,49 @@ describe('unit · errors.explain projects the throw site', () => {
   );
 });
 
-describe('unit · the two honest fallbacks', () => {
+describe('unit · the three honest fallbacks', () => {
   test(
-    'a code whose throw site computes its fix names that throw site',
+    'a code whose throw site computes its fix leads with the file, and with no verb',
     async () => {
-      resetCodeFixes();
       await Promise.all([loadErrorCatalog(), loadCodeFixes()]);
       // Render builds this one from the route's own declared modes, so there is no literal to read.
       const fix = explainErrorCode('X_ROUTE_MODE_INVALID')?.fix ?? '';
-      expect(fix).toContain('@ultimat3/render/src/errors.ts:');
+      expect(fix).toStartWith('@ultimat3/render/src/errors.ts:');
       expect(fix).not.toContain('x verify --json');
+      // `open …` read as a program: `open(1)` on macOS, `xdg-open` on Linux, `command not found`
+      // on a CI runner. There is no command for this condition, and inventing one is the same
+      // axiom-4 failure as the gate command this replaced — one step further along.
+      expect(fix).not.toMatch(/^(open|edit|view|cat|less|vim|code)\b/);
       expect(fixProblem(fix)).toBeUndefined();
     },
     REPO_SCAN_MS,
   );
 
-  test('a code nothing in the installed framework raises says exactly that', () => {
+  // Loaded, NOT reset. `resetCodeFixes()` empties the index for every code alike, so the assertion
+  // would have held for a reason that has nothing to do with X_DRAINING — it would still pass if
+  // core grew a readable throw site for it tomorrow.
+  test(
+    'a code nothing in the installed framework raises says exactly that',
+    async () => {
+      await Promise.all([loadErrorCatalog(), loadCodeFixes()]);
+      expect(codeFixes().get('X_DRAINING')).toBeUndefined();
+      expect(codeFixScan()).toBe('read');
+      const fix = explainErrorCode('X_DRAINING')?.fix ?? '';
+      expect(fix).toContain('nothing in the installed framework raises X_DRAINING');
+      expect(fixProblem(fix)).toBeUndefined();
+    },
+    REPO_SCAN_MS,
+  );
+
+  // The third case is the one an empty index used to be indistinguishable from: nothing LOOKED.
+  // Asserting the same code both ways is what proves the two lines are chosen by `codeFixScan()`
+  // and not by the code. Last in the file, because it leaves the index reset.
+  test('an unread index says the packages could not be read, never that nothing raises the code', () => {
     resetCodeFixes();
+    expect(codeFixScan()).toBe('unread');
     const fix = explainErrorCode('X_DRAINING')?.fix ?? '';
-    expect(fix).toContain('nothing in the installed framework raises X_DRAINING');
+    expect(fix).toContain('could not be read');
+    expect(fix).not.toContain('nothing in the installed framework raises');
     expect(fixProblem(fix)).toBeUndefined();
   });
 });

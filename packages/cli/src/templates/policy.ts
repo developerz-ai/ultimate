@@ -67,7 +67,11 @@ export const can${feature.pascal}Write = can<${feature.pascal}Scope>(
 );
 `;
 
-const policyTest = (feature: NameSet): string => `import { testActor } from '@ultimat3/policy';
+const policyTest = (
+  feature: NameSet,
+): string => `// The ${feature.kebab} rules, from the DENIAL side: anonymous, cross-org, and the actor holding
+// only read. A policy whose tests all pass is a policy nobody has tried to get past.
+import { testActor } from '@ultimat3/policy';
 import { expect, unitTest } from '@ultimat3/testing';
 import { can${feature.pascal}Read, can${feature.pascal}Write } from './policy';
 

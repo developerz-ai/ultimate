@@ -48,12 +48,17 @@ const emittedRoutes = (): readonly EmittedRoute[] =>
  * this into a test of a route nobody generates.
  */
 const check = (route: EmittedRoute): void => {
+  // `render` and `offline` are required by `defineRoute` itself, so a regex that stopped matching
+  // has to fail here rather than quietly test a route nobody generates.
   const render = declared(route.source, 'render');
-  const hydrate = declared(route.source, 'hydrate');
   const offline = declared(route.source, 'offline');
   expect(RENDER_MODES).toContain(render as RenderMode);
-  expect(HYDRATE_STRATEGIES).toContain(hydrate as HydrateStrategy);
   expect(OFFLINE_STRATEGIES).toContain(offline as OfflineStrategy);
+  // `hydrate` is OPTIONAL in the declaration — `def.hydrate ?? (islands.length > 0 ? … : 'never')`
+  // — so an omitted one is a legal route, not a broken regex. Asserted when declared and left off
+  // the input when not, which is the only shape that lets `defineRoute` apply its own default.
+  const hydrate = declared(route.source, 'hydrate');
+  if (hydrate !== undefined) expect(HYDRATE_STRATEGIES).toContain(hydrate as HydrateStrategy);
 
   const ttl = /revalidate: \{ ttl: '(?<ttl>[^']*)' \}/.exec(route.source)?.groups?.['ttl'];
   const permission = /policy: \{ permission: '(?<name>[^']*)' \}/.exec(route.source)?.groups?.[
@@ -61,8 +66,8 @@ const check = (route: EmittedRoute): void => {
   ];
   const config = defineRoute({
     render: render as RenderMode,
-    hydrate: hydrate as HydrateStrategy,
     offline: offline as OfflineStrategy,
+    ...(hydrate === undefined ? {} : { hydrate: hydrate as HydrateStrategy }),
     meta: () => ({ title: 'title', description: 'description' }),
     ...(ttl === undefined ? {} : { revalidate: { ttl } }),
     ...(permission === undefined ? {} : { policy: { permission } }),
@@ -79,8 +84,11 @@ const check = (route: EmittedRoute): void => {
 
 describe('unit · every generated route is one the framework will register', () => {
   test('the fixture emits routes on both surfaces, or this test checks nothing', () => {
-    const surfaces = new Set(emittedRoutes().map((route) => route.surface));
-    expect([...surfaces].toSorted()).toEqual(['app', 'site']);
+    const routes = emittedRoutes();
+    expect([...new Set(routes.map((route) => route.surface))].toSorted()).toEqual(['app', 'site']);
+    // The hydrate branch above skips an undeclared one, so a `hydrate` regex that stopped matching
+    // everywhere would turn that branch into a check that never runs. At least one must match.
+    expect(routes.some((route) => /\bhydrate: '/.test(route.source))).toBe(true);
   });
 
   test('no generated defineRoute throws X_ROUTE_MODE_INVALID', () => {

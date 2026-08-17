@@ -6,7 +6,7 @@ import { describeErrorCode, hasErrorCode, listErrorCodes } from '@ultimat3/core'
 import type { ErrorExplanation } from '@ultimat3/mcp';
 import type { CliErrorCode } from './error-codes';
 import { CLI_ERROR_CODES, docsFor } from './error-codes';
-import { codeFixes } from './error-fixes';
+import { codeFixes, codeFixScan } from './error-fixes';
 
 /**
  * One runnable command per CLI code. Typed over `CliErrorCode`, so a new code fails the build.
@@ -141,10 +141,22 @@ function projectedFix(code: string): string {
   const first = readable[0];
   if (first?.fix === undefined) {
     const site = sites[0];
-    if (site === undefined) {
-      return `x errors list --json   # nothing in the installed framework raises ${code}, so the package that registered it owns its fix`;
+    if (site !== undefined) {
+      // The file comes FIRST and carries no verb. `open …` read as a command — `open(1)`,
+      // `xdg-open` — and an agent that executed it got `command not found`, which is the same
+      // axiom-4 failure as the `x verify --json` this replaced, one step further along. There is
+      // genuinely no command here: the fix is assembled from values only the raised error holds.
+      // "A file they can open" is the error contract's own fourth shape (`COMMAND_TOKENS`), and
+      // citing a command that does not really fix it is the mistake `fix-command.ts` warns about.
+      // `x errors explain --json` carries the same site as DATA, so nothing has to parse this.
+      return `${site.at}:${site.line} — the fix is built there out of values only the raised error carries, so reproduce the error and read its own fix line`;
     }
-    return `open ${site.at}:${site.line} — that throw site builds its fix from values only it has, so only the raised error carries one`;
+    if (codeFixScan() === 'unread') {
+      // Not "nothing raises it": nothing LOOKED. `cmd-docs.ts` answers the same broken install
+      // with the same line, because it is the same condition seen from a second command.
+      return `bun install && x doctor --json   # the installed @ultimat3 packages could not be read, so no throw site could be quoted for ${code}`;
+    }
+    return `x errors list --json   # nothing in the installed framework raises ${code}, so the package that registered it owns its fix`;
   }
   // Both notes name a thing this answer does NOT know, because an answer that hides either is one
   // an agent acts on without noticing: which of several throw sites it is quoting, and which words

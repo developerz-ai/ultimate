@@ -4,6 +4,10 @@
 // nobody can trust. Every case is a fixture string; the real Dockerfile is only ever read.
 
 import { describe, expect, test } from 'bun:test';
+// `node:` — Bun has no temporary-directory or path-join primitive of its own.
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   argv0,
   checkImage,
@@ -134,6 +138,28 @@ describe('unit · what the rules refuse to guess', () => {
 });
 
 describe('unit · reading a Dockerfile', () => {
+  test('leading FROM flags are not the base image', () => {
+    // `--platform=$BUILDPLATFORM` read as the base made `libcOf` answer undefined, and undefined
+    // means "say nothing" — so the syntax most likely to pair two architectures was silently exempt.
+    const text = [
+      'FROM --platform=$BUILDPLATFORM oven/bun:1.3-alpine AS build',
+      'RUN bun build --compile --outfile /out/app ./x.ts',
+      'FROM --platform=$TARGETPLATFORM gcr.io/distroless/cc-debian13:nonroot AS runtime',
+      'COPY --from=build /out/app /app/x',
+      'RUN ["/app/x", "--version"]',
+      'ENTRYPOINT ["/app/x"]',
+      '',
+    ].join('\n');
+
+    const stages = parseDockerfile(text);
+    expect(stages.map((one) => one.base)).toEqual([
+      'oven/bun:1.3-alpine',
+      'gcr.io/distroless/cc-debian13:nonroot',
+    ]);
+    expect(stages.map((one) => one.name)).toEqual(['build', 'runtime']);
+    expect(findings(text).map((one) => one.code)).toEqual(['X_IMAGE_LIBC_MISMATCH']);
+  });
+
   test('a continued RUN is one instruction, not five unknown keywords', () => {
     const stages = parseDockerfile(dockerfile());
     const build = stages.find((one) => one.name === 'build');
@@ -168,6 +194,34 @@ describe('unit · reading a Dockerfile', () => {
     ].join('\n');
     expect(findings(text).map((one) => one.code)).toEqual(['X_IMAGE_LIBC_MISMATCH']);
   });
+});
+
+describe('unit · a Dockerfile that is not there', () => {
+  /**
+   * Argued per check rather than by house rule. Absence is NOT a finding here: a repo with no
+   * Dockerfile builds no image, and no counterpart artifact is left making a claim — unlike
+   * `wiki/Realtime.md`, whose absence leaves a shipped wire protocol undescribed. What was wrong is
+   * that the two paths disagreed about it: the gate answered `[]` and the command crashed with a
+   * bare ENOENT — no code, no `fix:`, no `--json` — which is the failure shape an agent cannot read.
+   */
+  test(
+    'the gate is silent, and the command has nothing left to crash on',
+    async () => {
+      // `node:` — Bun has no temporary-directory or path-join primitive of its own.
+      const root = await mkdtemp(join(tmpdir(), 'ultimate-image-absent-'));
+      try {
+        expect(await imageGaps(root)).toEqual([]);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+      // The `main` block no longer reads the path a second time; it branches on the SAME value
+      // `imageGaps` branches on, and these are the two calls it makes when that value is absent.
+      // A crash there is now unreachable by construction rather than by a second guard to forget.
+      expect(parseDockerfile('')).toEqual([]);
+      expect(checkImage('')).toEqual([]);
+    },
+    REPO_SCAN_TIMEOUT_MS,
+  );
 });
 
 describe('unit · this repo', () => {

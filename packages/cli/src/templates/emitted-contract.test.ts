@@ -50,6 +50,20 @@ describe('unit · every emitted file survives the formatter the scaffold configu
   });
 });
 
+describe('unit · every generated test says what it pins before it imports', () => {
+  // 41 of the 44 `<file>.test.ts` the generators write opened with an import, and the three that
+  // did not (backfill, island, guard) had no principle in common. A scaffolded app's generated
+  // tests are the model its agent copies, so the scaffold was teaching the exception: 70% of this
+  // repo's own test files carry the 1–4 line header the conventions ask for. Enforced rather than
+  // written down, because the 30% that do not are what an unenforced convention decays into.
+  test('a generated <file>.test.ts opens with a comment', () => {
+    const offenders = emitted()
+      .filter((file) => /\.test\.tsx?$/.test(file.path) && !file.contents.startsWith('//'))
+      .map((file) => at(file));
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe('unit · every emitted fix: is one the generated app can run', () => {
   // The same two rules `checkErrorFixes` applies to this repo's own source, applied to the source
   // the generators write. `templates/action.ts` emitted a `fix:` citing `x db studio` — a PLANNED
@@ -70,20 +84,26 @@ describe('unit · every emitted fix: is one the generated app can run', () => {
 });
 
 describe('unit · the emitted biome config and the emitted biome dependency name one version', () => {
-  const rootFile = (name: string): string => {
-    const file = emitted().find((entry) => entry.path === name);
-    if (file === undefined) throw new Error(`x new writes no ${name}`);
-    return file.contents;
-  };
+  /**
+   * `''` when `x new` writes no such file. Deliberately not a throw: a missing fixture is this
+   * test's own failure, not a condition an operator is ever handed, and it reads better as the
+   * assertion below naming the file than as a stack out of a helper.
+   */
+  const rootFile = (name: string): string =>
+    emitted().find((entry) => entry.path === name)?.contents ?? '';
 
   // A `$schema` pinned to one version beside a range that resolves to another is a config the
   // installed Biome reports as out of date on every run — and, once the two diverge far enough, a
   // rule set the app declared and the binary does not have. Pinned exactly, spelled once.
   test('biome.json names the version package.json installs', () => {
-    const schema = /schemas\/(?<version>[\d.]+)\/schema\.json/.exec(rootFile('biome.json'))
-      ?.groups?.['version'];
-    const declared = /"@biomejs\/biome":\s*"(?<range>[^"]+)"/.exec(rootFile('package.json'))
-      ?.groups?.['range'];
+    const biome = rootFile('biome.json');
+    const pkg = rootFile('package.json');
+    // Named first, so a scaffold that stopped writing either file fails here rather than by
+    // comparing one absent version against another and passing.
+    expect({ 'biome.json': biome === '' }).toEqual({ 'biome.json': false });
+    expect({ 'package.json': pkg === '' }).toEqual({ 'package.json': false });
+    const schema = /schemas\/(?<version>[\d.]+)\/schema\.json/.exec(biome)?.groups?.['version'];
+    const declared = /"@biomejs\/biome":\s*"(?<range>[^"]+)"/.exec(pkg)?.groups?.['range'];
     expect(schema).toBeDefined();
     expect(declared).toBe(schema as string);
   });

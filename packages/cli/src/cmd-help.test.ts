@@ -11,10 +11,15 @@ import { renderHuman } from './output';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
 
+// Every field `CommandContext` declares, because `packages/cli/tsconfig.json` excludes
+// `src/**/*.test.ts` — `tsc -b` never reads this file, so a short context compiles nowhere and
+// fails nothing. `x help` reads none of them; they are here because the type says so.
 const contextFor = (argv: readonly string[]): CommandContext => ({
   args: parseArgs([...argv], SPECS),
-  cwd: process.cwd(),
+  cwd: import.meta.dir,
   runner: exec,
+  env: {},
+  bunVersion: Bun.version,
 });
 
 const helpCommand = createHelpCommand(() => SPECS);
