@@ -37,6 +37,23 @@ export interface AdminMcpTool {
 const CURSOR_FIELD: AdminToolField = { name: 'cursor', type: 'text', required: false };
 const ID_FIELD: AdminToolField = { name: 'id', type: 'text', required: true };
 
+/**
+ * The envelope `mcp.ts` reads off an action call, declared because it was not: `input: []` renders
+ * as `properties: {}, additionalProperties: false`, so a conforming client refuses to send any
+ * argument at all — and then the server demands `confirmation` from the arguments it just told the
+ * agent were invalid. `id` is optional (a global action has no subject); `confirmation` is required
+ * exactly when the action is destructive, which is when `invokeAdminAction` compares it.
+ *
+ * The action's OWN input is not projected here and must not be: `AdminAction.input` is a Standard
+ * Schema this package does not own, and inventing a field list for it would be a second, wrong
+ * description of the same contract. `mcp.ts` leaves an action tool's schema OPEN instead, so the
+ * action's own validation is the one that decides.
+ */
+const actionEnvelope = (destructive: boolean): readonly AdminToolField[] => [
+  { name: 'id', type: 'text', required: false },
+  ...(destructive ? [{ name: 'confirmation', type: 'text', required: true } as const] : []),
+];
+
 const formFields = (resource: AdminResource): readonly AdminToolField[] =>
   resource.formFields.map((field) => ({
     name: field.name,
@@ -142,7 +159,7 @@ function toolGates(app: AdminApp): readonly ToolGate[] {
           action: action.name,
           permissions: permissionsForAction(action),
           destructive: action.destructive === true,
-          input: [],
+          input: actionEnvelope(action.destructive === true),
         },
         gate: (ctx) => decideAction(action, ctx.actor, ctx.authz),
       });
@@ -177,7 +194,7 @@ function toolGates(app: AdminApp): readonly ToolGate[] {
         action: action.name,
         permissions: permissionsForAction(action),
         destructive: action.destructive === true,
-        input: [],
+        input: actionEnvelope(action.destructive === true),
       },
       gate: (ctx) => decideAction(action, ctx.actor, ctx.authz),
     });

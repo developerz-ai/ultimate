@@ -5,6 +5,7 @@
  * answered instead of swallowed.
  */
 
+import { escapeJsonContent } from './html';
 import type { HydrateStrategy } from './route';
 
 export interface IslandDirective {
@@ -46,12 +47,16 @@ export function emitIslandAttributes(directive: IslandDirective): string {
   return attrs.join(' ');
 }
 
-/** Props travel as a typed JSON script tag, never as an attribute (quoting hazards). */
+/**
+ * Props travel as a typed JSON script tag, never as an attribute (quoting hazards). The body is
+ * escaped by `html.ts`'s one JSON escaper — this file had its own partial copy, and a second
+ * escaper is how one of them ends up missing a character.
+ */
 export function emitIslandProps(directive: IslandDirective): string {
   if (directive.props === undefined || directive.strategy === 'never') return '';
   return (
     `<script type="application/json" data-x-props="${directive.islandId}">` +
-    `${JSON.stringify(directive.props).replace(/</g, '\\u003c')}</script>`
+    `${escapeJsonContent(JSON.stringify(directive.props))}</script>`
   );
 }
 
@@ -66,13 +71,18 @@ export function requiredStrategies(
   return set;
 }
 
+// `el.__x` holds the boot PROMISE, not a boolean flag: it is still "already booting" for the
+// once-only guard, and a second caller now waits for the same mount instead of being handed a
+// resolved promise. As a flag, a second click during the chunk's load short-circuited to
+// `Promise.resolve()`, and the interaction runtime flushed its replay queue into an island that
+// had not mounted — the events went to nothing and the listeners were already removed.
 const RUNTIME_PRELUDE = `
 var Q={};
 function boot(el){var e=el.getAttribute('data-x-entry');
-if(!e||el.__x)return Promise.resolve();el.__x=1;
+if(!e)return Promise.resolve();if(el.__x)return el.__x;
 var p=document.querySelector('script[data-x-props="'+el.getAttribute('data-x-island')+'"]');
 var props=p?JSON.parse(p.textContent||'{}'):{};
-return import(e).then(function(m){return m.mount(el,props)})}
+return el.__x=import(e).then(function(m){return m.mount(el,props)})}
 function each(s,f){Array.prototype.forEach.call(document.querySelectorAll(s),f)}
 `.trim();
 

@@ -110,7 +110,12 @@ describe('framework catalog', () => {
     expect(FRAMEWORK_CATALOG['errors.notFound.title']).toBe('Page not found');
     expect(FRAMEWORK_CATALOG['pagination.page']).toBe('Page {page} of {pages}');
     expect(FRAMEWORK_CATALOG['auth.signIn.submit']).toBe('Sign in');
-    expect(FRAMEWORK_CATALOG['admin.nav.jobs']).toBe('Jobs');
+    // `admin.*` is the one namespace the FRAMEWORK renders itself (`@ultimat3/admin`'s views), so
+    // it is pinned on a key those views actually pass to `t()`. This assertion used to name
+    // `admin.nav.jobs`, from a block describing an admin UI that no longer existed — the shipped
+    // panel rendered ⟦admin.list.loading⟧ and this test was green. `scripts/i18n-catalog.ts` is
+    // what now holds the whole namespace to the source, in both directions.
+    expect(FRAMEWORK_CATALOG['admin.list.loading']).toBe('Loading…');
   });
 });
 

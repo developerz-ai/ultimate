@@ -32,7 +32,7 @@ import {
 } from './db-backfill';
 import { generateAppMigration } from './db-generate';
 import { resolveServices } from './dev-services';
-import { BadFlagError, CliNotImplementedError } from './errors';
+import { BadFlagError, CliNotImplementedError, MissingSubcommandError } from './errors';
 import type { ExecResult } from './exec';
 import { execOutput } from './exec';
 import { withJobDriver } from './jobs-driver';
@@ -178,7 +178,12 @@ export const dbCommand: CliCommand = {
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('db', ctx.cwd).dir;
-    const sub = ctx.args.subcommand ?? 'migrate';
+    // No default, and no `?? 'migrate'` here either: `gen` writes a migration file and `reset`
+    // drops the database, so "whatever the caller left out" is not a safe guess for any of the six.
+    // The parser refuses a bare `x db`; this covers a `ParsedArgs` built by hand.
+    const sub = ctx.args.subcommand;
+    if (sub === undefined)
+      throw new MissingSubcommandError({ command: 'db', known: DB_SUBCOMMANDS });
     const argument = ctx.args.positionals[0] ?? flagString(ctx.args, 'name');
 
     if (sub === 'gen') return runGen(ctx, root, argument ?? 'change');

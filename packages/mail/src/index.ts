@@ -32,8 +32,16 @@ export type { MailFetch, ResendDriverOptions } from './driver-resend';
 export { createResendDriver, RESEND_BASE_URL } from './driver-resend';
 export type { SmtpDriverOptions } from './driver-smtp';
 export { createSmtpDriver } from './driver-smtp';
-export type { MailErrorCode, MailErrorInit, SendFailure, SendStage } from './errors';
+export { assertEnvelopeAddress } from './envelope-address';
+export type {
+  EnvelopeAddressField,
+  MailErrorCode,
+  MailErrorInit,
+  SendFailure,
+  SendStage,
+} from './errors';
 export {
+  addressInvalid,
   driverUnavailable,
   layoutUnknown,
   localeMissing,

@@ -8,9 +8,10 @@ import { requireAppRoot } from './app-root';
 import { runVerify } from './cmd-verify';
 import type { CliCommand, CommandContext } from './command';
 import { BuildEntryMissingError, UnknownCommandError } from './errors';
+import type { ExecResult } from './exec';
 import { execOutput } from './exec';
 import { msg } from './messages';
-import type { CommandResult, Finding } from './output';
+import type { CommandResult } from './output';
 import { flagString } from './parse';
 
 export const BUILD_TARGETS = ['docker', 'binary', 'static'] as const;
@@ -85,6 +86,57 @@ export function argsFor(
   return staticArgs(paths.root, paths.out);
 }
 
+/**
+ * The static gate refused, so nothing was built. Reported under `build`, not `verify`: `command`
+ * is the field an agent keys `--json` off, and answering `"verify"` sent it to re-run a gate it
+ * never asked for while hiding that the build had not started. The steps and the summary are the
+ * gate's own — they are what says which check to fix.
+ */
+export function preflightResult(verify: CommandResult): CommandResult {
+  return { ...verify, command: 'build' };
+}
+
+/**
+ * The build's result from the builder's, kept pure so the two things a reader acts on — the
+ * summary line and the `--json` payload — are testable without spawning `docker`.
+ *
+ * `summary` used to be `msg('cli.build.done')` whatever the exit code, so a failed build printed
+ * `✗ built docker`; and the builder's own logs went only into `lines`, which is declared human-only
+ * and which `renderJson` drops — so CI, which runs `--json`, got the exit code and nothing to act
+ * on. The output now rides in `data` and `lines` renders that same string.
+ */
+export function buildResult(input: {
+  readonly target: BuildTarget;
+  readonly artifact: string;
+  readonly command: readonly string[];
+  readonly result: ExecResult;
+}): CommandResult {
+  const { result, target } = input;
+  const output = result.ok ? '' : execOutput(result);
+  return {
+    ok: result.ok,
+    command: 'build',
+    summary: msg(result.ok ? 'cli.build.done' : 'cli.build.failed', { target }),
+    findings: result.ok
+      ? []
+      : [
+          {
+            code: 'X_BUILD_FAILED',
+            cause: `${input.command.join(' ')} exited ${result.code}`,
+            fix: target === 'docker' ? 'x doctor --json && docker info' : 'x verify --json',
+            docs: 'https://ultimate.dev/errors/X_BUILD_FAILED',
+          },
+        ],
+    data: {
+      target,
+      artifact: input.artifact,
+      durationMs: result.durationMs,
+      ...(result.ok ? {} : { output }),
+    },
+    lines: result.ok ? [] : output.split('\n'),
+  };
+}
+
 export const buildCommand: CliCommand = {
   spec: {
     name: 'build',
@@ -112,31 +164,18 @@ export const buildCommand: CliCommand = {
     );
     const verifyResult = await runVerify(verifySteps, { root, runner: ctx.runner });
     if (!verifyResult.ok) {
-      return verifyResult;
+      return preflightResult(verifyResult);
     }
 
     const out =
       flagString(ctx.args, 'out') ?? join(root, '.x', target === 'static' ? 'static' : 'app');
     const tag = flagString(ctx.args, 'tag') ?? 'ultimate-app:dev';
     const command = argsFor(target, { root, tag, out });
-    const result = await ctx.runner(command, { cwd: root });
-    const findings: readonly Finding[] = result.ok
-      ? []
-      : [
-          {
-            code: 'X_BUILD_FAILED',
-            cause: `${command.join(' ')} exited ${result.code}`,
-            fix: target === 'docker' ? 'x doctor --json && docker info' : 'x verify --json',
-            docs: 'https://ultimate.dev/errors/X_BUILD_FAILED',
-          },
-        ];
-    return {
-      ok: result.ok,
-      command: 'build',
-      summary: msg('cli.build.done', { target }),
-      findings,
-      data: { target, artifact: target === 'docker' ? tag : out, durationMs: result.durationMs },
-      lines: result.ok ? [] : execOutput(result).split('\n'),
-    };
+    return buildResult({
+      target,
+      artifact: target === 'docker' ? tag : out,
+      command,
+      result: await ctx.runner(command, { cwd: root }),
+    });
   },
 };

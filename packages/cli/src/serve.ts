@@ -202,6 +202,27 @@ export async function runMigrations(options: ServeOptions): Promise<MigratedApp>
 }
 
 /**
+ * Release what a boot acquired before it failed, newest first.
+ *
+ * Every failure here is swallowed, because the step that refused to start is the one worth
+ * reporting — the same rule `startRoles`' own rollback runs by. Without it a throw between
+ * `startServices` and `startRoles` left the Postgres pool, the queue and the OTLP exporter running
+ * in a process whose caller has already given up: `x dev` and the container both retry the boot,
+ * and the second attempt met a `.x/pgdata` the first one still held.
+ */
+export async function releaseBoot(
+  acquired: readonly (() => void | Promise<void>)[],
+): Promise<void> {
+  for (const release of [...acquired].reverse()) {
+    try {
+      await release();
+    } catch {
+      // Deliberately empty: see above.
+    }
+  }
+}
+
+/**
  * Boot order is `x dev`'s, for the reason `x dev` gives: services, then the app's own modules
  * (importing them IS the registration), then the role that serves what they registered. The route
  * table is the same three contributions minus the dashboard — a `/_x` in production would expose
@@ -214,6 +235,24 @@ export async function serveApp(options: ServeOptions): Promise<ServedApp> {
     options.env,
     options.runtime,
   );
+  // Everything acquired from here down, in order, so a throw anywhere below gives it all back.
+  const acquired: (() => void | Promise<void>)[] = [() => runtime.stop()];
+  try {
+    return await bootRoles({ options, role, runtime, acquired });
+  } catch (error) {
+    await releaseBoot(acquired);
+    throw error;
+  }
+}
+
+/** The half of `serveApp` whose every acquisition is registered for rollback. */
+async function bootRoles(boot: {
+  readonly options: ServeOptions;
+  readonly role: Role;
+  readonly runtime: RunningServices;
+  readonly acquired: (() => void | Promise<void>)[];
+}): Promise<ServedApp> {
+  const { options, role, runtime, acquired } = boot;
   // Importing the app's modules IS the registration: every route, action and job below is
   // whatever this call put in the registries.
   await loadApp(options.root);
@@ -234,6 +273,7 @@ export async function serveApp(options: ServeOptions): Promise<ServedApp> {
   // an empty dashboard. `x dev` keeps its own recorder — the `/_x` timeline is a different sink
   // with a different lifetime — so this is the production boot's alone (axiom 6).
   const stopOtlp = startOtlpExport(options.env);
+  acquired.push(stopOtlp);
   // Built at boot rather than shipped prebuilt, so the container serves the same chunks `x dev`
   // does from the same source — the alternative is a second bundler invocation in the image build
   // whose output nothing compares against the one the dev loop proved.
@@ -279,6 +319,7 @@ export async function serveApp(options: ServeOptions): Promise<ServedApp> {
     http: CONTAINER_BINDING,
     ...(options.runtime === undefined ? {} : { overrides: options.runtime }),
   });
+  acquired.push(() => running.stop());
   return {
     kind: 'served',
     role,

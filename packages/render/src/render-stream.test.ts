@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { StreamPlan } from './render-stream';
-import { collectStream, holeMarker, REVEAL_SCRIPT, renderStreamHtml } from './render-stream';
+import {
+  collectStream,
+  DEFAULT_HOLE_TIMEOUT_MS,
+  holeMarker,
+  REVEAL_SCRIPT,
+  renderStreamHtml,
+} from './render-stream';
 
 function deferred(): {
   promise: Promise<string>;
@@ -161,5 +167,62 @@ describe('a client that disconnects mid-stream', () => {
 
     expect(await collectStream(stream)).toContain('</body></html>');
     expect(signals.some((signal) => signal.aborted)).toBe(false);
+  });
+});
+
+// A hole is `await`ed application code — a query with no statement timeout, a fetch with no
+// `AbortSignal.timeout`. Nothing outside this file bounded one: `settle` fired only from the
+// hole's own promise, so a hole that never settled held the response, the socket and everything
+// the closure retained open for as long as the process ran.
+describe('a hole that never settles', () => {
+  test('misses its deadline and degrades to the error fallback', async () => {
+    const never = new Promise<string>(() => undefined);
+    const plan: StreamPlan = {
+      head: '<!doctype html><html><head></head><body>',
+      shell: holeMarker('feed', '<div>skeleton</div>'),
+      holes: [{ id: 'feed', fallback: '<div>skeleton</div>', resolve: () => never }],
+    };
+
+    const html = await collectStream(renderStreamHtml(plan, { buildId: 'b1', holeTimeoutMs: 10 }));
+
+    expect(html).toContain('data-x-hole-error="feed"');
+    expect(html).toContain('</body></html>');
+  });
+
+  test('a hole that resolves AFTER its deadline enqueues nothing twice', async () => {
+    const late = deferred();
+    const plan: StreamPlan = {
+      head: '<head>',
+      shell: holeMarker('feed', '<div>skeleton</div>'),
+      holes: [{ id: 'feed', fallback: '<div>skeleton</div>', resolve: () => late.promise }],
+    };
+
+    const html = await collectStream(renderStreamHtml(plan, { buildId: 'b1', holeTimeoutMs: 10 }));
+    late.resolve('<ul>too late</ul>');
+    await late.promise;
+
+    expect(html).not.toContain('too late');
+    expect(html.split('</body></html>').length - 1).toBe(1);
+  });
+
+  test('holeTimeoutMs: null is the opt-out, and the hole still decides', async () => {
+    const slow = deferred();
+    const plan: StreamPlan = {
+      head: '<head>',
+      shell: holeMarker('feed', '<div>skeleton</div>'),
+      holes: [{ id: 'feed', fallback: '<div>skeleton</div>', resolve: () => slow.promise }],
+    };
+
+    const collected = collectStream(renderStreamHtml(plan, { buildId: 'b1', holeTimeoutMs: null }));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+    slow.resolve('<ul>worth waiting for</ul>');
+
+    expect(await collected).toContain('worth waiting for');
+  });
+
+  test('the default deadline is declared, not implicit', () => {
+    expect(DEFAULT_HOLE_TIMEOUT_MS).toBe(15_000);
   });
 });

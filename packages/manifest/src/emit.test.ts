@@ -117,6 +117,45 @@ describe('readManifest', () => {
     });
   });
 
+  // `isManifest` checked five of the thirteen keys and CAST the rest, so a file with `routes`,
+  // `actions` and `entities` was trusted whole — and `diffManifest` reads `before.queries`,
+  // `before.jobs`, `before.permissions` and `before.locales` with no guard at all. The section it
+  // did not check is a bare `TypeError` two calls later, out of the gate that exists to explain.
+  test.each([
+    ['jobs', 'a missing section'],
+    ['queries', 'a missing section'],
+    ['tasks', 'a missing section'],
+    ['policies', 'a missing section'],
+    ['permissions', 'a missing section'],
+    ['locales', 'a missing section'],
+    ['errorCodes', 'a missing section'],
+    ['app', 'a missing app identity'],
+  ])('%s is checked, not cast: %s reads as undefined', async (key) => {
+    await withTempDir(async (path) => {
+      const partial: Record<string, unknown> = { ...(fresh as unknown as Record<string, unknown>) };
+      delete partial[key];
+      await Bun.write(path, JSON.stringify(partial));
+      expect(await readManifest(path)).toBeUndefined();
+    });
+  });
+
+  test('a section of the wrong type reads as undefined', async () => {
+    await withTempDir(async (path) => {
+      await Bun.write(path, JSON.stringify({ ...fresh, jobs: {}, locales: 'en' }));
+      expect(await readManifest(path)).toBeUndefined();
+    });
+  });
+
+  test('an unreadable shape is drift with a code, never a TypeError from the diff', async () => {
+    await withTempDir(async (path) => {
+      const partial: Record<string, unknown> = { ...(fresh as unknown as Record<string, unknown>) };
+      delete partial['jobs'];
+      await Bun.write(path, JSON.stringify(partial));
+      const thrown = await rejectedBy(() => assertNoDrift({ manifest: fresh, path }));
+      expect(thrown.code).toBe('X_MANIFEST_DRIFT');
+    });
+  });
+
   test('what emitManifest wrote is what readManifest reads back', async () => {
     await withTempDir(async (path) => {
       await emitManifest({ manifest: fresh, path });
@@ -195,4 +234,60 @@ describe('assertNoDrift', () => {
       expect(thrown.fix).toBe('x manifest');
     });
   });
+});
+
+/**
+ * `--json` must survive a pipe, and `emitManifest({ stdout: true })` IS the `--json` wire for the
+ * manifest. `Bun.stdout.write()` returns a promise this function did not await, so the bytes past
+ * the kernel buffer were still queued when the caller exited — the same discard
+ * `scripts/stdout-truncation.test.ts` exists for, in the one function whose payload is the largest
+ * thing the CLI ever prints.
+ *
+ * A real process, because the bug is not in-process: it is a property of fd 1 being a pipe and of
+ * the runtime's write queue, and no mock reproduces either. Nothing reads until the child is gone,
+ * so what it queued rather than wrote is still queued when it exits — asserting the rule instead
+ * of racing a reader.
+ */
+describe('emitManifest to stdout', () => {
+  /** Past any pipe buffer a Linux runner holds (~475KB measured), so the queue is non-empty. */
+  const ROUTES = 60_000;
+
+  test('every byte is written before the call resolves', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-manifest-stdout-'));
+    try {
+      const script = join(dir, 'emit-json.ts');
+      await Bun.write(
+        script,
+        [
+          `import { buildManifest } from ${JSON.stringify(join(import.meta.dir, 'build.ts'))};`,
+          `import { emitManifest } from ${JSON.stringify(join(import.meta.dir, 'emit.ts'))};`,
+          `const routes = Array.from({ length: ${ROUTES} }, (_, i) => ({`,
+          "  url: '/p/' + i,",
+          "  render: 'static',",
+          '}));',
+          'const manifest = buildManifest({',
+          "  app: { name: 'acme', version: '1.0.0' },",
+          '  routes,',
+          '  entities: [],',
+          '  actions: [],',
+          "  locales: ['en'],",
+          '});',
+          'await emitManifest({ manifest, stdout: true });',
+          'process.exit(0);',
+        ].join('\n'),
+      );
+
+      const proc = Bun.spawn(['bun', script], { stdout: 'pipe', stderr: 'pipe' });
+      const code = await proc.exited;
+      const out = await new Response(proc.stdout).text();
+
+      expect(code).toBe(0);
+      // Truncated output is not JSON, so a parse IS the assertion — plus the count, because a
+      // payload that happened to break on a valid boundary would still be a lost manifest.
+      const parsed = JSON.parse(out) as Manifest;
+      expect(parsed.routes).toHaveLength(ROUTES);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

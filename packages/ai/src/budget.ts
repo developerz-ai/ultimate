@@ -119,6 +119,16 @@ export class BudgetLedger {
   private costMinor = 0;
   private readonly currency: string;
   /**
+   * The ledger this one was `derive`d from, or `undefined` for a scope's root. Set by `derive`
+   * rather than taken through `BudgetLedgerInput`, so the chain is always the derivation and a
+   * caller cannot build a cycle out of it.
+   *
+   * Without it a derived ledger reported to nobody: `llm()` derives one per call, so the ambient
+   * ledger `gateway.scope()` installed counted zero tokens and zero cost however many calls ran
+   * inside it, and its `request` ceiling was re-granted in full to every one of them.
+   */
+  private parent: BudgetLedger | undefined;
+  /**
    * Reservations take turns. Check-then-debit spans an `await store.spent()`, and three callers
    * interleaving inside it is the bypass this ledger exists to close — one event loop, so a
    * promise chain IS the lock. A store shared across PROCESSES needs an atomic increment of its
@@ -146,14 +156,29 @@ export class BudgetLedger {
    * back when the call never happened.
    */
   async reserve(estimate: SpendEstimate): Promise<BudgetReservation> {
-    const turn = this.turnstile.then(() => this.reserveNow(estimate));
+    // The ROOT's turnstile, not this ledger's: reservations under one scope take turns even when
+    // each call derived its own ledger, which is every `llm()` call. A per-ledger queue serialised
+    // nothing once `derive` existed — `Promise.all` of three derived ledgers all read the chain
+    // before any of them debited it.
+    const gate = this.rootLedger();
+    const turn = gate.turnstile.then(() => this.reserveNow(estimate));
     // Chained on a settled shadow: one refusal must not reject every reservation queued behind it.
-    this.turnstile = turn.catch(() => undefined);
+    gate.turnstile = turn.catch(() => undefined);
     return await turn;
   }
 
+  private rootLedger(): BudgetLedger {
+    let ledger: BudgetLedger = this;
+    while (ledger.parent !== undefined) ledger = ledger.parent;
+    return ledger;
+  }
+
   private async reserveNow(estimate: SpendEstimate): Promise<BudgetReservation> {
-    this.assertScope('request', this.limits.request, this.requestTokens, estimate.tokens);
+    // Every ledger in the chain, because each keeps its own counter and the tightest limit is not
+    // always the one with the most spent against it.
+    for (let l: BudgetLedger | undefined = this; l !== undefined; l = l.parent) {
+      l.assertScope('request', l.limits.request, l.requestTokens, estimate.tokens);
+    }
     // Per call, so nothing is "already spent" against it.
     this.assertScope('tokensIn', this.limits.tokensIn, 0, estimate.inputTokens);
     if (this.limits.actor !== undefined && this.actorKey !== undefined) {
@@ -181,7 +206,7 @@ export class BudgetLedger {
    * an `llm()` action must not be able to widen the actor or org ceiling it runs inside.
    */
   derive(limits: BudgetLimits): BudgetLedger {
-    return new BudgetLedger({
+    const child = new BudgetLedger({
       limits: {
         ...pick('request', tighterNumber(this.limits.request, limits.request)),
         ...pick('tokensIn', tighterNumber(this.limits.tokensIn, limits.tokensIn)),
@@ -194,6 +219,8 @@ export class BudgetLedger {
       store: this.store,
       currency: this.currency,
     });
+    child.parent = this;
+    return child;
   }
 
   /**
@@ -203,14 +230,26 @@ export class BudgetLedger {
    * returned.
    */
   async record(usage: TokenUsage, cost: Money, reservation?: BudgetReservation): Promise<void> {
-    this.costMinor += cost.minor;
+    // Up the chain, because `derive` copies the currency: a scope's reported cost is its own
+    // calls plus every call made under a ledger derived from it.
+    for (let l: BudgetLedger | undefined = this; l !== undefined; l = l.parent) {
+      l.costMinor += cost.minor;
+    }
     await this.debit(totalTokens(usage) - (reservation?.tokens ?? 0));
   }
 
-  /** The one write path. Negative credits a release or an over-estimate back. */
+  /**
+   * The one write path. Negative credits a release or an over-estimate back.
+   *
+   * The in-memory counters walk the chain; the STORE is written once, by the ledger the call was
+   * made on. A child shares its parent's store and identity keys, so debiting through the parent
+   * as well would bill the actor and the org twice for one call.
+   */
   private async debit(tokens: number): Promise<void> {
     if (tokens === 0) return;
-    this.requestTokens += tokens;
+    for (let l: BudgetLedger | undefined = this; l !== undefined; l = l.parent) {
+      l.requestTokens += tokens;
+    }
     if (this.actorKey !== undefined) await this.store.add(this.actorKey, tokens);
     if (this.orgKey !== undefined) await this.store.add(this.orgKey, tokens);
   }

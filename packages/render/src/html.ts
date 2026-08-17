@@ -34,6 +34,41 @@ export function escapeAttribute(value: string): string {
 }
 
 /**
+ * `<script>` and `<style>` hold RAW TEXT: a character reference is not decoded inside them, so
+ * `escapeText` there would ship `&lt;` to a JS or CSS parser and corrupt the code without closing
+ * the hole. What actually ends the element is `</` followed by its tag name, and — inside a script
+ * only — `<!--` switches the tokenizer into the escaped state where the element's own `</script>`
+ * no longer closes it and the rest of the document becomes script text.
+ *
+ * So the two sequences are made unwritable instead. `\/` and `\!` are the identity escape in a JS
+ * string, a JS regex, a CSS string and a CSS url(), which is where a `</` in authored code lives;
+ * outside a string neither `</` nor `<!--` is valid code in either language.
+ */
+export function escapeRawTextContent(value: string): string {
+  return value.replaceAll('</', '<\\/').replaceAll('<!--', '<\\!--');
+}
+
+/**
+ * The same element, when its content is JSON rather than code — `application/ld+json`, which is
+ * built from route data and is therefore the path attacker text takes. JSON gets the total rule:
+ * `<` is the same character to `JSON.parse`, so nothing survives that could spell `</script`
+ * or `<!--`, and the body stays byte-for-byte valid JSON.
+ *
+ * Safe by construction because `<`, `>`, `&`, U+2028 and U+2029 can only occur INSIDE a JSON
+ * string — no JSON structural token contains one — so every replacement lands where `\u` means
+ * an escape. U+2028/U+2029 are legal in a JSON string and illegal in a JS one, and this content
+ * is read back by both.
+ */
+export function escapeJsonContent(json: string): string {
+  return json
+    .replaceAll('<', '\\u003c')
+    .replaceAll('>', '\\u003e')
+    .replaceAll('&', '\\u0026')
+    .replaceAll('\u2028', '\\u2028')
+    .replaceAll('\u2029', '\\u2029');
+}
+
+/**
  * JSX prop name → attribute name. Solid authors write the HTML spelling (`class`, `for`), but the
  * React spellings compile too, and an author who writes one and gets no attribute has a bug with
  * no error message.

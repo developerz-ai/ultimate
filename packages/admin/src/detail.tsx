@@ -49,7 +49,10 @@ export function AdminDetail<Row extends AdminRow>(props: AdminDetailProps<Row>):
       <ErrorState
         error={adminErrorFrom({
           code: 'X_ADMIN_ENTITY_UNKNOWN',
-          cause: t('admin.detail.not-found', { entity: props.resource.name }),
+          // `.cause`, not a bare `admin.detail.not-found`: a catalog is authored nested and
+          // `parseNestedCatalog` refuses a dot inside a key, so a name is a leaf or a branch and
+          // never both — `admin.detail.not-found` + `.fix` could not have coexisted in en.json.
+          cause: t('admin.detail.not-found.cause', { entity: props.resource.name }),
           fix: t('admin.detail.not-found.fix'),
         })}
       />

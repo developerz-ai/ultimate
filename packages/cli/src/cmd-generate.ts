@@ -244,20 +244,18 @@ export function containedPath(root: string, path: string): string {
  * reaching `parseJsonObject` even if a future caller forgets the `file.merge === 'json'` guard
  * its one call site already applies.
  */
-async function mergeJsonFile(
+async function planJsonMerge(
   file: Extract<GeneratedFile, { merge: 'json' }>,
   absolute: string,
-): Promise<{ written: boolean; conflict?: Finding }> {
+): Promise<WritePlan> {
   const generated = parseJsonObject(file.contents) ?? {};
-  if (!existsSync(absolute)) {
-    await Bun.write(absolute, prettyJson(generated));
-    return { written: true };
-  }
+  if (!existsSync(absolute))
+    return { kind: 'write', file, absolute, contents: prettyJson(generated) };
   const existing = parseJsonObject(await Bun.file(absolute).text());
   if (existing === undefined) {
     return {
-      written: false,
-      conflict: {
+      kind: 'conflict',
+      finding: {
         code: 'X_GENERATE_CONFLICT',
         cause: `${file.path} exists but is not a JSON object, so its keys cannot be merged`,
         fix: `edit ${file.path} by hand until it parses as a JSON object, or delete it and re-run x g`,
@@ -270,44 +268,72 @@ async function mergeJsonFile(
   // Deep, so a nested catalog gains `site.blog.title` without losing the rest of `site`.
   const { merged, gained } = mergeJsonDeep(existing, generated);
   // Every key the generator wants is already there — leave the file untouched and unclaimed.
-  if (!gained) return { written: false };
-  await Bun.write(absolute, prettyJson(merged));
-  return { written: true };
+  if (!gained) return { kind: 'skip' };
+  return { kind: 'write', file, absolute, contents: prettyJson(merged) };
 }
 
-/** Never clobbers. A generator that overwrites is a generator nobody runs twice. */
-export async function writeFiles(
-  root: string,
-  files: readonly GeneratedFile[],
-  force: boolean,
-): Promise<WriteReport> {
-  const written: string[] = [];
-  const conflicts: Finding[] = [];
-  // Containment first, for every file: a run that stopped at the offender would already have put
-  // the earlier files on disk, so the whole set is proven before any of it lands.
-  const targets = files.map((file) => ({ file, absolute: containedPath(root, file.path) }));
-  for (const { file, absolute } of targets) {
-    if (file.merge === 'json') {
-      const result = await mergeJsonFile(file, absolute);
-      if (result.written) written.push(file.path);
-      if (result.conflict !== undefined) conflicts.push(result.conflict);
-      continue;
+/**
+ * What one generated file would do, decided without doing it. The merge case computes its own
+ * bytes here rather than at the write, so the two passes below cannot disagree about a file.
+ */
+type WritePlan =
+  | {
+      readonly kind: 'write';
+      readonly file: GeneratedFile;
+      readonly absolute: string;
+      readonly contents: string | Uint8Array;
     }
-    if (!force && existsSync(absolute)) {
-      conflicts.push({
+  | { readonly kind: 'skip' }
+  | { readonly kind: 'conflict'; readonly finding: Finding };
+
+function planFile(file: GeneratedFile, absolute: string, force: boolean): WritePlan {
+  if (!force && existsSync(absolute)) {
+    return {
+      kind: 'conflict',
+      finding: {
         code: 'X_GENERATE_CONFLICT',
         cause: `${file.path} already exists`,
         fix: `x g --force to overwrite, or pass a different name`,
         docs: 'https://ultimate.dev/errors/X_GENERATE_CONFLICT',
         at: file.path,
-      });
-      continue;
-    }
-    // Bun.write creates missing parent directories, so a generator never needs an mkdir step.
-    await Bun.write(absolute, file.contents);
-    written.push(file.path);
+      },
+    };
   }
-  return { written, conflicts };
+  return { kind: 'write', file, absolute, contents: file.contents };
+}
+
+/**
+ * Never clobbers, and never half-writes. A generator that overwrites is a generator nobody runs
+ * twice; a generator that lands four of seven files and then reports a conflict is worse, because
+ * the next run conflicts on the files the failed one wrote.
+ *
+ * Two passes, and the split is the point: the first decides — containment, existence, whether a
+ * catalog can be merged into — and touches nothing, the second writes only when the first found
+ * no conflict at all. Containment was already proven up front and the rest was not.
+ */
+export async function writeFiles(
+  root: string,
+  files: readonly GeneratedFile[],
+  force: boolean,
+): Promise<WriteReport> {
+  const plans: WritePlan[] = [];
+  for (const file of files) {
+    const absolute = containedPath(root, file.path);
+    plans.push(
+      file.merge === 'json' ? await planJsonMerge(file, absolute) : planFile(file, absolute, force),
+    );
+  }
+  const conflicts = plans.flatMap((plan) => (plan.kind === 'conflict' ? [plan.finding] : []));
+  if (conflicts.length > 0) return { written: [], conflicts };
+
+  const written: string[] = [];
+  for (const plan of plans) {
+    if (plan.kind !== 'write') continue;
+    // Bun.write creates missing parent directories, so a generator never needs an mkdir step.
+    await Bun.write(plan.absolute, plan.contents);
+    written.push(plan.file.path);
+  }
+  return { written, conflicts: [] };
 }
 
 const I18N_INDEX_PATH = 'packages/i18n/src/index.ts';

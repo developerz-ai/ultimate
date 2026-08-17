@@ -4,13 +4,15 @@ status: in_progress
 created_by: sebi
 worked_by: "claude (hive of 4 per PR, one checkout)"
 owner: sebi
-percent: 72
+percent: 82
 current_focus: >
   02 and 06 are DONE across three PRs — realtime #107, cache/query/jobs/core/db #110, http/action
   #112. auth and entity needed nothing: every finding naming them was already closed by #104 and
   #106, verified file-by-file before #112 was scoped. Merged so far: 05/10 = #101;
   07 = #102/#103/#104; 01/09 = #105; 04 = #106; 02/06 = #107/#110/#112.
-  Next: 03 (tiers 4-5), then 11+14, 08, 15, 12, 13.
+  03 lands as #113 at 90%: the four pwa findings are the held-back tenth, deliberately, because
+  pwa stays unwired by decision and fixing internals of code with no callers is dead work.
+  Next: 11+14 (deploy/CI + agent DX + the five remaining enforcement gaps), then 08, 15, 12, 13.
 slices:
   - file: 05-gate-and-scripts.md
     tier: 0
@@ -54,8 +56,9 @@ slices:
     prs: [107, 110, 112]
   - file: 03-tier45-bugs.md
     tier: 4
-    status: not_started
-    percent: 0
+    status: done
+    percent: 90
+    pr: 113
   - file: 11-deploy-ci.md
     tier: 5
     status: not_started
@@ -184,6 +187,61 @@ evidence:
          test. Diagnosing one flake cost a standalone re-run plus reading the app's test sources."
     new_codes: [X_IDEMPOTENCY_KEY_INVALID, X_LIFECYCLE_DRAINED, X_ERROR_STATUS_MISSING,
                 X_ERROR_STATUS_BACKLOG_STALE, X_ERROR_STATUS_UNKNOWN_CODE]
+  - pr: 113
+    slices: ['03']
+    gate: "14 of 17 passed, 3 skipped; app gate every pin holds — examples/dummy 10/17 (7 red,
+           7 pinned), social-media-clone 14/17 (3 red, 3 pinned)"
+    falsified:
+      - "Unifying render's JSON-LD escaping with seo's would have made it WEAKER: seo handles `</`
+         but not `<!--<script>`, which moves the tokenizer into double-escaped state where the
+         element's own `</script>` no longer closes it — and it applies the CODE rule to a JSON body
+         where the total \\uXXXX rule is strictly safer."
+      - "admin -> mcp is NOT a sideways import. admin is tier 5, mcp is tier 4 — downward, and mcp
+         was already a runtime dependency of admin. The shared SQL guard needed no new home."
+      - "The admin catalog was missing 69 keys, not 27. Twenty travel as DATA (titleKey, labelKey,
+         reason literals reached through t(variable)) and are invisible to any extractor that reads
+         only t() arguments."
+      - "ROLE=migrate was never broken. runRole reads options.env and nothing reads argv, so every
+         documented release-phase promise holds; only appended argv is silently discarded."
+      - "The budgets pins CANNOT go green from this slice: cmd-verify reads .x/build-stats.json and
+         never produces it, .x/ is gitignored, and the app gate never runs `x build`. No gate event."
+      - "`lines` being absent from the --json payload IS the contract, obeyed by 23 of 24 call
+         sites. The violator was cmd-build.ts, which put the builder's output only there — so CI got
+         X_BUILD_FAILED and nothing to act on."
+      - "docker/docker-compose.prod.yml does NOT carry the scaffold's bug. The framework image's
+         ENTRYPOINT is the CLI binary itself, so `command:` arrives correctly; only the scaffolded
+         app's entrypoint reads ROLE and ignores argv. Verified before editing; no change made."
+      - "The routed `invalidations: unwired` finding is FALSE: the stub is real text but provably
+         overridden by dev-dashboard.ts, the only path x dev takes. A real line, a wrong claim."
+      - "Two slice-03 findings were already fixed by #101 — testing/harness.ts's close() and
+         template-db.ts's unconditional migrate."
+    decided:
+      - "pwa's four findings are NOT fixed. It is 3,407 LOC with only planIcons reachable and stays
+         unwired by decision, so fixing internals of code with no callers is dead work."
+      - "The two new tier-4 codes were PINNED, not given status rows, and the repo's own prior
+         answers decided it: X_MAIL_ADDRESS_INVALID beside X_MAIL_HEADER_INVALID (the CR/LF gate on
+         headers vs the envelope — same class), X_MCP_RESOURCE_DUPLICATE beside
+         X_MCP_TOOL_DUPLICATE (both registration-time, never per-request)."
+      - "seo's renderHeadTags DELETED rather than made to delegate: seo is tier 1 and render tier 4,
+         and the two doctrines are opposites — xml.ts escapes INTO entities, which is exactly wrong
+         inside a raw-text element. A tier-1 export named 'escape script content' would invite the
+         very trap being removed."
+      - "admin's local SQL guard deleted rather than extended: it covered three of five forms, so it
+         produced two explanations for one failure mode, and its message called a $tag$ body and a
+         block comment 'a quote'. It was shadowing a BETTER message with a vaguer one."
+    deferred:
+      - "The inline mail path never runs mailMessageSchema. One call closes it, but it would newly
+         reject every send whose locale/tz/url fails validation — blast radius is both tracked apps
+         and every scaffold."
+      - "LCP is never measured for ANY render mode, so an lcp-only budget passes silently once a
+         route has a stats row. Needs a browser, i.e. the e2e step's domain."
+      - "runRole is not argv-aware. The complete fix spans the CLI and both tracked apps' generated
+         server.ts, so it cannot land in one file set."
+      - "seo's renderLd is a third uncalled export, but it returns data and escapes nothing, so it
+         carries no vulnerability. Dead-code slice."
+      - "TEST_EXCLUSION lacks .tsx — latent; zero .test.tsx files exist, and changing it fails
+         package-shape for all 28 published packages until every files array is edited."
+    new_codes: [X_CATALOG_KEY_UNREACHABLE, X_MAIL_ADDRESS_INVALID, X_MCP_RESOURCE_DUPLICATE]
 notes: >
   Slice order in this file is execution order, not tier order — 05 and 10 land first because the gate
   does not yet mean what it says, and 08 lands late because it is mostly deletions that would collide

@@ -126,6 +126,7 @@ export const policyCommand: CliCommand = {
     usage: 'x policy [list|explain <subject>] [--json]',
     requiresApp: true,
     subcommands: ['list', 'explain'],
+    defaultSubcommand: 'list',
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('policy', ctx.cwd).dir;

@@ -23,7 +23,7 @@ import type {
 import { isRouteConfig, tagKeys } from './route';
 import type { RouteComponent } from './route-component';
 import type { Surface } from './surfaces';
-import { surfaceOf } from './surfaces';
+import { locateSurface } from './surfaces';
 
 /**
  * The one filename a route may carry, per surface. `shared/` is absent on purpose: it is a leaf
@@ -99,16 +99,19 @@ export interface CompiledPattern {
  */
 export function routePathFromFile(file: string): { surface: Surface; path: string } {
   const normalized = file.replace(/\\/g, '/').replace(/^\.\//, '');
-  const surface = surfaceOf(normalized);
-  if (surface === null) {
+  // One reader of the surface segment, and it answers WHERE as well as WHICH. Slicing at
+  // `indexOf('app/')` instead matched inside `myapp/`, so `apps/myapp/app/page.tsx` resolved to
+  // `/app` rather than `/` — the surface came from an anchored regex and the URL from a substring.
+  const located = locateSurface(normalized);
+  if (located === null) {
     throw new SurfaceBoundaryError(
       `${file} is not inside a surface directory, so it has no URL and no bundle graph`,
       `move ${file} under site/, app/ or api/`,
     );
   }
+  const surface = located.surface;
 
-  const afterSurface = normalized.slice(normalized.indexOf(`${surface}/`) + surface.length + 1);
-  const rawSegments = afterSurface.split('/').filter((s) => s.length > 0);
+  const rawSegments = located.rest.split('/').filter((s) => s.length > 0);
   assertRouteFilename(normalized, surface, rawSegments[rawSegments.length - 1]);
 
   const urlSegments = rawSegments
@@ -345,11 +348,32 @@ export function matchRoute(pathname: string): RouteMatch | null {
     const match = entry.pattern.regex.exec(pathname);
     if (match === null) continue;
     const params: Record<string, string> = {};
+    let undecodable = false;
     entry.pattern.keys.forEach((key, index) => {
       const value = match[index + 1];
-      if (value !== undefined) params[key] = decodeURIComponent(value);
+      if (value === undefined) return;
+      const decoded = decodeSegment(value);
+      if (decoded === undefined) undecodable = true;
+      else params[key] = decoded;
     });
+    // A segment that will not decode fails only the branch that would have decoded it, exactly as
+    // `@ultimat3/http`'s router already answers: a literal route matching the same text still wins,
+    // and a pathname nothing else claims is the 404 it always was.
+    if (undecodable) continue;
     return { entry, params };
   }
   return null;
+}
+
+/**
+ * `undefined` for a malformed percent-escape. A pathname is whatever the client typed, and
+ * `decodeURIComponent('%zz')` throws a bare `URIError` — no code, no fix line — which escaped
+ * `matchRoute` as a 500 and an error-monitor page for somebody's typo.
+ */
+function decodeSegment(value: string): string | undefined {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return undefined;
+  }
 }

@@ -3,6 +3,7 @@
 // network. Every refusal becomes `X_MAIL_SEND_FAILED` naming the stage and the server's own reply.
 
 import { base64Utf8 } from './base64';
+import { assertEnvelopeAddress } from './envelope-address';
 import { type MailError, type SendStage, sendFailed } from './errors';
 import {
   authPlain,
@@ -169,6 +170,14 @@ export async function smtpDeliver(
   envelope: SmtpEnvelope,
   options: SmtpSessionOptions,
 ): Promise<SmtpReply> {
+  // Before a single byte: every address below is interpolated into a command line, so one holding
+  // a CR or LF would write commands of its own. `bcc` reaches here having passed through no schema
+  // at all on the inline send path, and the header gate in `mime.ts` never sees it — an envelope
+  // field is not a header. Checked here rather than at either caller, because this is the module
+  // that builds the line, and it is the last place every present and future caller passes through.
+  assertEnvelopeAddress('sender', envelope.from);
+  for (const recipient of envelope.recipients) assertEnvelopeAddress('recipient', recipient);
+
   const talk = new Conversation(stream, options.timeoutMs);
   await talk.expect('greeting', (code) => code === 220);
 

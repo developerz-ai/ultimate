@@ -120,6 +120,12 @@ export interface AdminListQuery {
    * row's id as the tie-break so pages stay stable when the sort column has duplicates.
    */
   readonly after?: KeysetBound;
+  /**
+   * The mirror of `after`. Rows come back in `sort`'s own order either way — the admin renders
+   * what the repo returns and never re-sorts — so on a `before` query the `limit + 1`st row is the
+   * one FURTHEST back, at index 0, and `pageFrom` trims the head rather than the tail. A repo that
+   * answered nearest-first would hand the operator a reversed page.
+   */
   readonly before?: KeysetBound;
 }
 

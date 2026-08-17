@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { UnknownCommandError } from './errors';
 import type { CommandSpec } from './parse';
 import { flagBool, flagString, parseArgs } from './parse';
+import { SPECS as SPECS_SHIPPED } from './registry';
 import { thrownBy } from './thrown-by';
 
 const SPECS: readonly CommandSpec[] = [
@@ -28,13 +29,46 @@ describe('unit · parseArgs', () => {
     expect(args.positionals).toEqual(['feat-billing']);
   });
 
-  test('defaults a subcommand to the first declared one', () => {
-    expect(parseArgs(['db'], SPECS).subcommand).toBe('gen');
+  // Array order is not a declaration. `x db` ran `gen` — a code GENERATOR that writes migration
+  // files — because it sorted first in `DB_SUBCOMMANDS`, and no caller ever asked for it.
+  test('a command that declares no default subcommand refuses a bare invocation', () => {
+    const error = thrownBy(() => parseArgs(['db'], SPECS));
+    expect(error.code).toBe('X_CLI_BAD_FLAG');
+    expect(error.cause).toContain('gen, migrate, branch');
+    expect(error.fix).toBe('x db --help');
+  });
+
+  test('a declared default subcommand is the one that answers a bare invocation', () => {
+    const specs: readonly CommandSpec[] = [
+      { ...(SPECS[1] as CommandSpec), defaultSubcommand: 'migrate' },
+    ];
+    expect(parseArgs(['db'], specs).subcommand).toBe('migrate');
+  });
+
+  // Against the REAL registry, because the rule is about what ships: a default nobody can reach
+  // is the same class of dead declaration as `x db`'s `?? 'migrate'` was.
+  test('every shipped default subcommand is one the command actually declares', () => {
+    for (const spec of SPECS_SHIPPED) {
+      if (spec.defaultSubcommand === undefined) continue;
+      expect(spec.subcommands ?? []).toContain(spec.defaultSubcommand);
+    }
+  });
+
+  // The exact set, so adding or removing one is a deliberate edit and not a side effect of an
+  // array's order. `x db gen` writes a migration file and `x db reset` drops the database; a bare
+  // `x mcp` used to START A SERVER, which is the one thing a word typed by mistake must not do.
+  test('exactly the commands whose bare form is dangerous refuse it', () => {
+    const refusing = SPECS_SHIPPED.filter(
+      (spec) => (spec.subcommands ?? []).length > 0 && spec.defaultSubcommand === undefined,
+    ).map((spec) => spec.name);
+    expect(refusing.sort()).toEqual(['db', 'mcp']);
   });
 
   test('accepts --json on every command and exposes it as a boolean', () => {
-    for (const command of ['verify', 'db', 'g']) {
-      expect(parseArgs([command, '--json'], SPECS).json).toBe(true);
+    // `db` carries its subcommand: it declares no default, so the bare form is refused — and that
+    // refusal is still rendered as JSON, by `wantsJson` on raw argv in `dispatch`.
+    for (const argv of [['verify'], ['db', 'migrate'], ['g']]) {
+      expect(parseArgs([...argv, '--json'], SPECS).json).toBe(true);
     }
     expect(parseArgs(['verify'], SPECS).json).toBe(false);
     expect(parseArgs(['verify', '-j'], SPECS).json).toBe(true);

@@ -72,8 +72,13 @@ out of its page and dropped into a screen the generator never wrote:
 import { AdminList, AdminForm, Widget } from '@ultimat3/admin';
 
 <AdminList resource={admin.resource('posts')} page={page} ctx={ctx} … />;   // just the table
-<Widget input={widgetProps(field, row.total, ctx)} />;                      // just one cell
+<Widget field={field} value={row.total} ctx={ctx} mode="read" />;          // just one cell
 ```
+
+`Widget` takes the field and the raw row value, not pre-derived props: `widgetProps()` is the
+guard (money is minor units, a timestamp has an IANA zone) and the component calls it, so there is
+no way to render a cell that skipped it. `mode` is `read` or `edit`; an edit cell also takes the
+`control` the surrounding `<Field>` hands its child, and `onInput`.
 
 An admin route is an ordinary `route` primitive; an admin action is an ordinary `action`. Nothing
 in this package is written in a second language that only the dashboard understands — the escape

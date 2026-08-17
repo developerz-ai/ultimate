@@ -124,71 +124,126 @@
     "noMore": "That's everything."
   },
   "admin": {
-    "nav": {
-      "dashboard": "Dashboard",
-      "entities": "Data",
-      "actions": "Actions",
-      "jobs": "Jobs",
-      "tasks": "Schedules",
-      "queries": "Queries",
-      "policies": "Policies",
-      "users": "Users",
-      "settings": "Settings",
-      "logs": "Logs",
-      "traces": "Traces",
-      "migrations": "Migrations"
+    "a11y": {
+      "skip-to-content": "Skip to content"
+    },
+    "actions": {
+      "label": "Actions",
+      "confirm": {
+        "title": "Confirm before this runs",
+        "body": "Type {token} to confirm. Nothing happens until it matches.",
+        "label": "Confirmation",
+        "submit": "Run it"
+      }
+    },
+    "ai": {
+      "disabled": "AI panes are switched off for this admin.",
+      "no-runner": "No AI runner is wired, so this pane has nothing to ask.",
+      "anomaly": {
+        "title": "Anomalies",
+        "description": "Rows that look unlike the rest of the table."
+      },
+      "nl-query": {
+        "title": "Ask the data",
+        "description": "A question in plain language, answered as a read-only query."
+      },
+      "forecast": {
+        "title": "Forecast",
+        "description": "Where this series is heading, from the rows already stored."
+      }
+    },
+    "audit": {
+      "title": "Audit trail",
+      "empty": "Nothing has been done to this row yet.",
+      "outcome": {
+        "allowed": "Allowed",
+        "denied": "Denied",
+        "failed": "Failed"
+      }
+    },
+    "brand": {
+      "name": "Admin"
     },
     "dashboard": {
-      "title": "Dashboard",
-      "health": "Health",
-      "throughput": "Requests per minute",
-      "errorRate": "Error rate",
-      "latency": "p95 latency",
-      "queueDepth": "Queue depth",
-      "activeUsers": "Active users",
-      "since": "since {when}"
+      "title": "Dashboard"
+    },
+    "denied": {
+      "body": "This account is missing {permission} ({reason})."
+    },
+    "detail": {
+      "edit": "Edit",
+      "loading": "Loading…",
+      "not-found": {
+        "cause": "No {entity} with that id.",
+        "fix": "Go back to the list and open a row that still exists."
+      }
+    },
+    "error": {
+      "action-failed": "The action threw before it finished.",
+      "confirmation-required": "This is destructive: echo the confirmation token first.",
+      "invalid-input": "Some fields did not pass the entity's own schema."
+    },
+    "form": {
+      "cancel": "Cancel",
+      "create": "New {entity}",
+      "edit": "Edit {entity}",
+      "issues": "Check the highlighted fields",
+      "save": "Save",
+      "saving": "Saving…"
+    },
+    "group": {
+      "data": "Data"
     },
     "jobs": {
-      "title": "Jobs",
-      "queued": "Queued",
-      "running": "Running",
-      "succeeded": "Succeeded",
-      "failed": "Failed",
-      "retrying": "Retrying",
-      "cancelled": "Cancelled",
-      "attempt": "Attempt {attempt} of {attempts}",
-      "nextRun": "Next run {when}",
-      "retryNow": "Retry now",
-      "cancel": "Cancel job",
-      "step": "Step {name}",
-      "pending": "{count} job waiting",
-      "pending_plural": "{count} jobs waiting"
+      "title": "Jobs"
     },
-    "tasks": {
-      "title": "Schedules",
-      "cron": "Cron",
-      "timezone": "Timezone",
-      "lastRun": "Last run",
-      "nextRun": "Next run",
-      "runNow": "Run now",
-      "pause": "Pause",
-      "resume": "Resume"
+    "list": {
+      "empty": "Nothing here yet.",
+      "loading": "Loading…",
+      "next": "Next",
+      "open": "Open",
+      "pagination": "Pagination",
+      "previous": "Previous"
     },
-    "entities": {
-      "title": "Data",
-      "rows": "{count} row",
-      "rows_plural": "{count} rows",
-      "newRecord": "New {entity}",
-      "deleteRecord": "Delete this {entity}?",
-      "noResults": "No {entity} matched that filter."
+    "nav": {
+      "label": "Sections"
     },
-    "table": {
-      "sortAscending": "Sort ascending",
-      "sortDescending": "Sort descending",
-      "columns": "Columns",
-      "selected": "{count} selected",
-      "selectAll": "Select all",
-      "clearSelection": "Clear selection"
+    "operation": {
+      "list": "listed",
+      "detail": "read",
+      "search": "searched",
+      "create": "created",
+      "update": "updated",
+      "delete": "deleted",
+      "page": "opened a page"
+    },
+    "permission": {
+      "read": "Read every admin screen",
+      "write": "Create and update rows",
+      "destroy": "Delete rows",
+      "impersonate": "Act as another account"
+    },
+    "policy": {
+      "all-granted": "every required permission is granted",
+      "evaluated": "the policy decided this",
+      "granted": "the grant list contains this permission",
+      "missing": "no policy is registered for this permission",
+      "not-granted": "the grant list does not contain this permission"
+    },
+    "search": {
+      "title": "Search",
+      "label": "Search",
+      "placeholder": "Search every entity",
+      "skipped": {
+        "forbidden": "this account may not search that entity",
+        "no-text-fields": "that entity has no text field to search",
+        "no-repo": "that entity has no repo bound"
+      }
+    },
+    "value": {
+      "empty": "—",
+      "true": "Yes",
+      "false": "No"
     }
   },
   "dev": {

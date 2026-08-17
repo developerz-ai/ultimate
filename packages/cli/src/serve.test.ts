@@ -15,6 +15,7 @@ import {
   ERROR_DSN_KEY,
   metricsPortFromEnv,
   portFromEnv,
+  releaseBoot,
   roleFromEnv,
   runRole,
 } from './serve';
@@ -108,4 +109,30 @@ test('a malformed DSN fails the boot, because a monitor never connected looks li
   });
   expect(thrown.code).toBe('X_ERROR_REPORTER_DSN_INVALID');
   resetErrorReporting();
+});
+
+// A boot that throws between `startServices` and `startRoles` used to leave the Postgres pool, the
+// queue and the OTLP exporter running in a process whose caller has already given up — and both
+// `x dev` and the container retry, so the second attempt met a `.x/pgdata` the first one held.
+test('a failed boot releases what it acquired, newest first', async () => {
+  const released: string[] = [];
+  await releaseBoot([
+    () => void released.push('services'),
+    async () => void released.push('otlp'),
+    () => void released.push('roles'),
+  ]);
+  expect(released).toEqual(['roles', 'otlp', 'services']);
+});
+
+test('a release that itself fails does not strand the ones acquired before it', async () => {
+  const released: string[] = [];
+  await releaseBoot([
+    () => void released.push('services'),
+    () => {
+      throw new TypeError('stop() on a half-started exporter');
+    },
+    async () => void released.push('roles'),
+  ]);
+  // The step that refused to START is the failure worth reporting; a stop on the way out is not.
+  expect(released).toEqual(['roles', 'services']);
 });

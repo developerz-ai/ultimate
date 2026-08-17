@@ -3,6 +3,7 @@
 // that "normalises" the statement silently changes the query the agent asked for.
 
 import { describe, expect, test } from 'bun:test';
+import { isUltimateError, type UltimateError } from '@ultimat3/core';
 import { assertBranchDatabase, assertReadOnlyQuery } from './readonly-sql';
 
 const refusal = { code: 'X_MCP_QUERY_REJECTED' };
@@ -40,6 +41,19 @@ describe('assertReadOnlyQuery returns what will actually run', () => {
     expect(assertReadOnlyQuery(block)).toBe(block);
   });
 
+  test('an escape string is scanned the way Postgres reads it, and still runs verbatim', () => {
+    // A backslash that is not escaping a quote changes nothing about where the string ends, so
+    // these stay readable: refusing every backslash would cost an agent ordinary reads.
+    const escaped = String.raw`select E'a\nb' as note`;
+    expect(assertReadOnlyQuery(escaped)).toBe(escaped);
+
+    const pattern = String.raw`select id from posts where title ~ '\d+'`;
+    expect(assertReadOnlyQuery(pattern)).toBe(pattern);
+
+    const doubled = String.raw`select E'it''s fine \n' as note`;
+    expect(assertReadOnlyQuery(doubled)).toBe(doubled);
+  });
+
   test('a dollar-quoted body is opaque to the scan and untouched in the result', () => {
     const sql = 'select $tag$ truncate posts $tag$ as note';
     expect(assertReadOnlyQuery(sql)).toBe(sql);
@@ -69,6 +83,67 @@ describe('assertReadOnlyQuery refuses', () => {
     expect(() => assertReadOnlyQuery('select 1; drop table posts')).toThrowError(
       expect.objectContaining(refusal),
     );
+  });
+
+  test('a batch hidden behind an E-string backslash escape', () => {
+    // `E'\''` is ONE quote in Postgres — the backslash escapes it and the third quote closes the
+    // string — so the `;` that follows really does start a second statement. A scanner that knows
+    // only the doubled-quote escape reads the string as still open, blanks the rest of the line
+    // and counts one statement: this exact input was ACCEPTED and handed back verbatim to run.
+    expect(() => assertReadOnlyQuery(String.raw`select E'\'' ; drop table posts --'`)).toThrowError(
+      expect.objectContaining(refusal),
+    );
+    expect(() =>
+      assertReadOnlyQuery(String.raw`select e'\'' ; update posts set title='x' --'`),
+    ).toThrowError(expect.objectContaining(refusal));
+  });
+
+  test('an unterminated quoted run, which used to swallow the write that followed it', () => {
+    // The scanner blanks what it believes is inside a literal, so an opening delimiter that never
+    // closes hid the whole tail: `select '; delete from members` counted ONE statement with no
+    // mutating keyword in it and was handed back to run. Not exploitable through Postgres — an
+    // unterminated quote is a syntax error wherever it lands — but this layer's job is to refuse
+    // what it cannot read, not to lean on the layer below. Over-refusing is fine; under-refusing
+    // is the thing this whole file exists to prevent.
+    for (const sql of [
+      `select '; delete from members`,
+      `select E'x ; delete from members`,
+      `select "; delete from members`,
+      `select $tag$ ; delete from members`,
+      `select 1 /* ; delete from members`,
+    ]) {
+      expect(() => assertReadOnlyQuery(sql)).toThrowError(expect.objectContaining(refusal));
+    }
+  });
+
+  test("a plain string's \\' — the same sequence, refused without the E", () => {
+    // `standard_conforming_strings` (on by default, and a session setting no MCP caller can read
+    // or change — `set` is a write keyword) decides whether this closes the string here. The
+    // difference between the two readings is exactly where a `;` can hide, so it is refused
+    // rather than parsed under one of them.
+    expect(() => assertReadOnlyQuery(String.raw`select 'a\' ; drop table posts --'`)).toThrowError(
+      expect.objectContaining(refusal),
+    );
+  });
+
+  test('but a line comment still runs to the end of the line, apostrophe and all', () => {
+    // `-- it's fine` is not an unterminated string: the comment branch consumes the rest of the
+    // line before any quote is scanned. Refusing it would break an ordinary annotated read.
+    for (const sql of [`select 1 -- it's fine`, `select /* it's fine */ 1 from posts`]) {
+      expect(assertReadOnlyQuery(sql)).toBe(sql);
+    }
+  });
+
+  test('but only inside a string: the same bytes in a comment or a dollar-quoted body read fine', () => {
+    // Refusing the sequence wherever it appears would cost an agent ordinary reads. A comment and
+    // a `$tag$` body are both unambiguous — nothing about a backslash changes where either ends.
+    for (const sql of [
+      String.raw`select 1 -- it\'s fine`,
+      String.raw`select $tag$ it\'s fine $tag$ as note`,
+      String.raw`select "a\'b" from posts`,
+    ]) {
+      expect(assertReadOnlyQuery(sql)).toBe(sql);
+    }
   });
 
   test('a non-read leader', () => {
@@ -192,6 +267,53 @@ describe('assertReadOnlyQuery refuses', () => {
   test('EXPLAIN ANALYZE, which executes the plan it claims to describe', () => {
     expect(() => assertReadOnlyQuery('explain analyze select 1')).toThrowError(
       expect.objectContaining(refusal),
+    );
+  });
+});
+
+describe('a refusal names the problem, and never the surface the reader is not on', () => {
+  // This guard has two callers on two surfaces: the `db.query` MCP tool, and `@ultimat3/admin`'s
+  // `/_x` DB panel, whose reader is a developer in a browser who never called an MCP tool and
+  // cannot see one. The constructor used to prepend `db.query refused: ` to every cause, so the
+  // panel rendered `refused: db.query refused: …` — a stutter naming a tool that is not there.
+  // The tool identity was never missing: it is in the TITLE, which `format()` renders above the
+  // cause and which every code carries independently of who threw it.
+  const caught = (fn: () => unknown): UltimateError => {
+    try {
+      fn();
+    } catch (error) {
+      if (isUltimateError(error)) return error;
+    }
+    throw new Error('expected an UltimateError');
+  };
+
+  test('the cause is the problem alone', () => {
+    const error = caught(() => assertReadOnlyQuery('select 1 /* ; delete from members'));
+
+    expect(error.cause).toBe(
+      'the statement ends inside a /* block comment, so the rest of it cannot be read',
+    );
+    expect(error.cause).not.toContain('db.query');
+  });
+
+  test('the surface is still named for an MCP reader, by the title format() renders', () => {
+    const error = caught(() => assertReadOnlyQuery('select 1; drop table posts'));
+
+    expect(error.format().split('\n')[0]).toBe(
+      'X_MCP_QUERY_REJECTED: db.query was not given one read-only statement',
+    );
+    // One naming, in one place: the line below must not repeat what the line above already said.
+    expect(error.format()).not.toContain('refused: db.query');
+  });
+
+  test('the branch refusal reads the same way', () => {
+    const error = caught(() =>
+      assertBranchDatabase({ label: 'prod', branch: 'main', production: true }),
+    );
+
+    expect(error.cause).toBe('"prod" is a production database');
+    expect(error.format().split('\n')[0]).toBe(
+      'X_MCP_NOT_BRANCH_DB: db.migrate was aimed at a database that is not a branch',
     );
   });
 });

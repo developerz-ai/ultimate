@@ -5,7 +5,7 @@
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { modelIds, modelSpec, registerModel } from './models';
+import { ANTHROPIC_MODEL_IDS, modelIds, modelSpec, moreCapableThan, registerModel } from './models';
 import { OPENAI_MODEL_IDS, registerOpenAiModels } from './openai-models';
 import { costOf } from './provider';
 
@@ -62,5 +62,41 @@ describe('the built-in OpenAI-format models', () => {
     // A negotiated rate replaces the price and keeps the rung; it is not a new, weakest model.
     expect(modelIds().indexOf('gpt-5.6-sol')).toBe(rung);
     registerOpenAiModels();
+  });
+});
+
+/**
+ * `moreCapableThan` walks one flat, cross-vendor list, so the rung above `gpt-5.6-sol` was
+ * `claude-haiku-4-5` — a different vendor, the CHEAPEST model in the catalogue, and very likely an
+ * id the app's configured provider does not serve at all. That is the fix line `X_LLM_REFUSED`
+ * hands an operator to paste, so it has to name a model that is both real here and actually above.
+ */
+describe('the ladder does not cross vendors', () => {
+  test('the top of one family has no rung above it, whatever was registered before it', () => {
+    expect(moreCapableThan('gpt-5.6-sol')).toBeUndefined();
+    expect(moreCapableThan(ANTHROPIC_MODEL_IDS[0])).toBeUndefined();
+  });
+
+  test('within a family the walk still goes up', () => {
+    expect(moreCapableThan('gpt-5.6-luna')).toBe('gpt-5.6-terra');
+    expect(moreCapableThan('gpt-5.6-terra')).toBe('gpt-5.6-sol');
+    expect(moreCapableThan('claude-haiku-4-5')).toBe('claude-sonnet-5');
+  });
+
+  test('a model registered with no family compares only with the other unfamilied ones', () => {
+    const bare = {
+      contextWindow: 1,
+      maxOutput: 1,
+      inputPerMillion: { minor: 1, currency: 'USD' },
+      outputPerMillion: { minor: 1, currency: 'USD' },
+      cacheMinimumTokens: 0,
+      reasoning: { effort: false, adaptive: false, disableThinkingUpTo: undefined },
+    } as const;
+    registerModel({ id: 'llama-internal-70b', ...bare });
+    registerModel({ id: 'llama-internal-8b', ...bare });
+
+    expect(moreCapableThan('llama-internal-8b')).toBe('llama-internal-70b');
+    // Never the vendor rung above it in registration order.
+    expect(moreCapableThan('llama-internal-70b')).toBeUndefined();
   });
 });

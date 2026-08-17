@@ -192,7 +192,11 @@ async function guideEntries(
 export async function scanPackageDocs(dir: string): Promise<readonly DocEntry[]> {
   const manifest = await read(join(dir, 'package.json'));
   if (manifest === undefined) return [];
-  const parsed: unknown = JSON.parse(manifest);
+  // A truncated `package.json` is what an interrupted install leaves behind, and it is not a
+  // package either — same answer as a directory with none, rather than a `SyntaxError` thrown
+  // through `scanInstalledDocs`'s `Promise.all` for every other package to inherit.
+  const parsed: unknown = parseJson(manifest);
+  if (parsed === undefined) return [];
   // `unknown` + a field-by-field read, never a cast: this JSON is whatever is on disk.
   const field = (key: string): string | undefined => {
     if (typeof parsed !== 'object' || parsed === null) return undefined;
@@ -257,7 +261,25 @@ export async function scanInstalledDocs(scopeDir: string): Promise<readonly DocE
     return [];
   }
   const perPackage = await Promise.all(
-    [...names].sort().map((name) => scanPackageDocs(join(scopeDir, name))),
+    [...names].sort().map(async (name) => {
+      try {
+        return await scanPackageDocs(join(scopeDir, name));
+      } catch {
+        // `node_modules` is not a curated tree and it is not stable while an install is running:
+        // a file can vanish between `exists()` and `text()`, and a directory can be half-written.
+        // One package's tree is worth exactly that package's entries — never the whole answer.
+        return [];
+      }
+    }),
   );
   return perPackage.flat();
+}
+
+/** `undefined` rather than a throw. The bytes are whatever is on disk, not something we wrote. */
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
 }

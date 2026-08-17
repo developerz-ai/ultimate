@@ -124,6 +124,7 @@ export {
   FixTargetUnknownError,
   JobUnknownError,
   MissingPositionalError,
+  MissingSubcommandError,
   NoTestFilesError,
   NotInAppError,
   PortInvalidError,
@@ -166,7 +167,12 @@ export {
 } from './output';
 export type { CommandSpec, FlagSpec, ParsedArgs } from './parse';
 export { flagBool, flagList, flagString, GLOBAL_FLAGS, nearest, parseArgs } from './parse';
-export type { PrerenderedPage, PrerenderOptions, PrerenderReport } from './prerender';
+export type {
+  PrerenderedPage,
+  PrerenderOptions,
+  PrerenderReport,
+  UnmeasuredRoute,
+} from './prerender';
 export { DEFAULT_ORIGIN, isPrerenderable, prerenderSite } from './prerender';
 export { COMMANDS, cliVersion, commandFor, SPECS } from './registry';
 export type { MigratedApp, ServedApp, ServeOptions, StartedApp } from './serve';

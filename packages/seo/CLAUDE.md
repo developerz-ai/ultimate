@@ -21,6 +21,15 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
   Never invert that default and never re-read the key here.
 - **Required schema.org fields are required in the input type.** Runtime `required()` only catches empty strings from a CMS; the type is the primary gate.
 - **No ambient defaults for meta.** A missing description is an error, never a fallback string.
+- **Head tags are CONSTRUCTED here and serialised nowhere here.** `renderMeta` returns data;
+  `HeadTag.text` is raw, and `@ultimat3/render`'s `renderHead` picks the escape from the element
+  (raw text for code, the total `\uXXXX` JSON rule for a `type` ending in `json`). `meta.ts` had a
+  `renderHeadTags` that emitted HTML with a weaker escape — `</` neutralised, `<!--<script>` not —
+  and **nothing called it**; deleted `As of 2026-08`. Never add it back, and never escape `text`
+  at construction: it would double-escape at tier 4, and the two rules would drift apart. seo
+  cannot import render's escapers either — seo is tier 1, render is tier 4. `xml.ts` stays the
+  package's one escaper for the XML and attribute surfaces it really does emit (sitemap, feeds,
+  robots, `<picture>`), whose rules are the opposite of a raw-text element's.
 - **`builtinImageDriver({ read })` takes its reader.** `TransformRequest.src` is a string, and
   whether that string is a path, a storage key or a URL is the app's fact, not seo's — never add
   a filesystem fallback. Pixels come from `@ultimat3/core`'s pipeline; seo owns no second scaler,
@@ -49,7 +58,7 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
 | Path | Responsibility |
 |---|---|
 | `routes.ts` | the `RouteRecord` shape + `indexableRoutes` / `expandRoute` |
-| `meta.ts` | model + `renderMeta()`; the only place head tags are constructed |
+| `meta.ts` | model + `renderMeta()`; the only place head tags are constructed, and no place they are serialised |
 | `validate.ts` | the gate; `MetaIssue` is the serialisable projection of a `SeoError` |
 | `xml.ts` | all escaping. Never hand-roll an escape in another module |
 | `rss.ts` | `buildFeed()` — the three feed formats; owns markup, never a date |

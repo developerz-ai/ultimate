@@ -166,6 +166,23 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
     registered.add(path);
   }
 
+  /**
+   * A registration is only true while the store still holds the page. The store evicts silently
+   * and offers no callback — and a custom `IsrStore` need not have one at all — so the store's own
+   * `paths()` is the authority, reconciled after every generation. Left alone, `registered` and
+   * the cache graph behind it only ever grew: `/blog/:slug` retains one edge per slug ever
+   * requested, 404-shaped ones included, for the life of the process.
+   */
+  function forgetEvictedPaths(): void {
+    if (registered.size === 0) return;
+    const live = new Set(store.paths());
+    for (const path of registered) {
+      if (live.has(path)) continue;
+      unregisterDependent({ kind: 'isr-route', id: path });
+      registered.delete(path);
+    }
+  }
+
   function isFresh(entry: IsrEntry): boolean {
     if (entry.stale) return false;
     if (entry.ttlMs === null) return true; // tag-only revalidation: fresh until invalidated
@@ -189,6 +206,7 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
       };
       store.set(entry);
       registerPath(path, descriptor);
+      forgetEvictedPaths();
       return entry;
     })();
 

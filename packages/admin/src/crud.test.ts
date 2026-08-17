@@ -7,7 +7,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { clearRegistry, entity, newId, text, timestamp, uuid } from '@ultimat3/entity';
 import { memoryAuditLog } from './audit';
 import { type AdminActor, staticAuthz } from './authz';
-import { adminDestroy, adminUpdate, type CrudCtx } from './crud';
+import { adminDestroy, adminList, adminUpdate, type CrudCtx } from './crud';
 import type { AdminRow } from './registry';
 import { type AdminResource, adminResource } from './resource';
 
@@ -53,6 +53,32 @@ const ctxWith = (grants: readonly string[]): CrudCtx => ({
   authz: staticAuthz(grants),
   audit: memoryAuditLog(),
   requestId: 'req_1',
+});
+
+// A read is an audited operation here, both ways. `audit.ts`: "if it isn't logged, it didn't
+// happen — so denied and failed attempts are logged too". `adminList` was the one call that
+// logged neither: an operator could walk a whole table, or be refused, and leave no row.
+describe('listing is audited, allowed or not', () => {
+  test('an allowed listing writes one entry keyed on the table, not on a row', async () => {
+    const ctx = ctxWith(['admin:read', 'admin_crud_post:read']);
+    const result = await adminList(bound(new Map()), ctx, {});
+
+    expect(result.ok).toBe(true);
+    const entries = await ctx.audit.entries();
+    expect(entries.map((entry) => entry.operation)).toEqual(['list']);
+    expect(entries[0]?.outcome).toBe('allowed');
+    expect(entries[0]?.entityId).toBeNull();
+  });
+
+  test('a refused listing leaves the record of the refusal', async () => {
+    const ctx = ctxWith([]);
+    const result = await adminList(bound(new Map()), ctx, {});
+
+    expect(result.ok).toBe(false);
+    const entries = await ctx.audit.entries();
+    expect(entries.map((entry) => entry.outcome)).toEqual(['denied']);
+    expect(entries[0]?.operation).toBe('list');
+  });
 });
 
 describe('admin mutations are audited with a before/after diff', () => {

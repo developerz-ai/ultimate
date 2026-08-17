@@ -63,6 +63,14 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
   what makes a version bump invalidate the cache.
 - A per-call budget `derive`s from the ambient ledger, so it can only TIGHTEN the actor and org
   ceilings it runs inside. Widening them from a declaration would be a budget that is not one.
+  **A derived ledger reports back up the chain**: every debit and every recorded cost lands on it
+  AND on every ledger it was derived from, and `reserve` checks the `request` scope of each one.
+  Without that link a child was a fresh counter with no parent — `llm()` derives one per call, so
+  `gateway.spent()` answered zero after a hundred calls and a `request` ceiling of 5,000 was
+  re-granted in full to each of them. The STORE is written once, by the ledger the call was made
+  on: a child shares its parent's store and keys, so writing through both bills the actor twice.
+  Reservations queue on the ROOT's turnstile for the same reason — a per-ledger queue serialises
+  nothing once every call has its own ledger.
 - `cache.invalidates` from `docs/idea/05-caching.md` is **not** on `llm()` yet: `invalidateTags`
   fans out to `CacheTier`s, and a `SemanticCache` is not one. Storing tags nothing visits would
   read as wired and silently not be. Version bump + `ttl` is the invalidation today.
@@ -101,8 +109,13 @@ local `=== true`. An in-app agent and an external one must be offered exactly th
   `claude-opus-5` below list registers it again with its own prices, and every `costOf`, every
   reservation and every recorded cost is that number from then on. Boot runs after this module is
   imported, so the app always wins.
-- **Registration order IS the ladder, most capable first, and `moreCapableThan` is its only
-  reader.** A refusal is worth retrying upward and nowhere else: `MODEL_IDS.find((id) => id !==
+- **Registration order IS the ladder within a `family`, most capable first, and `moreCapableThan`
+  is its only reader.** `ModelSpec.family` is what makes that true once more than one vendor's
+  list is registered: the built-ins are `anthropic` then `openai`, so without it the rung above
+  `gpt-5.6-sol` was `claude-haiku-4-5` — the cheapest model in the catalogue, from a vendor the
+  app's gateway may not serve, offered as an UPGRADE in `X_LLM_REFUSED`'s fix line. Absent is its
+  own family, so an app that registers its whole catalogue in one order still compares across all
+  of it. A refusal is worth retrying upward and nowhere else: `MODEL_IDS.find((id) => id !==
   refused)` answered a refusal on the default model with the next entry DOWN, so `X_LLM_REFUSED`'s
   fix line told an operator to buy the same refusal from a weaker model. When there is no rung
   above — including for a model nobody registered — `alternative` is `undefined` and the fix line

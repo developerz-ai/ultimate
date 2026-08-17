@@ -90,6 +90,54 @@ export function fixtureSnapshot(): FixtureMap {
   return Object.fromEntries(registry);
 }
 
+const CLOSERS: Readonly<Record<string, string>> = { '{': '}', '[': ']', '(': ')' };
+const QUOTES = new Set(['"', "'", '`']);
+
+/**
+ * The pattern's own top-level segments: the `}` that closes the opening `{`, and the commas at
+ * depth zero inside it. `indexOf('}')` stopped at the FIRST closer, so `{ mail, clock: { now },
+ * network }` lost `network` and `{ clock = { now: 1 }, mail }` lost both — silently, and a fixture
+ * that is never built reads as `undefined` in the body, which is the failure this module exists to
+ * turn into a message. Strings are skipped so a default like `{ role = 'a, b' }` is one segment.
+ */
+function patternSegments(source: string, open: number): readonly string[] | undefined {
+  const segments: string[] = [];
+  const stack: string[] = [];
+  let start = open + 1;
+  let quote: string | undefined;
+  for (let index = open; index < source.length; index += 1) {
+    const char = source[index] ?? '';
+    if (quote !== undefined) {
+      if (char === '\\') index += 1;
+      else if (char === quote) quote = undefined;
+      continue;
+    }
+    if (QUOTES.has(char)) {
+      quote = char;
+      continue;
+    }
+    const closer = CLOSERS[char];
+    if (closer !== undefined) {
+      stack.push(closer);
+      continue;
+    }
+    if (stack.length > 0 && char === stack[stack.length - 1]) {
+      stack.pop();
+      if (stack.length === 0) {
+        segments.push(source.slice(start, index));
+        return segments;
+      }
+      continue;
+    }
+    if (char === ',' && stack.length === 1) {
+      segments.push(source.slice(start, index));
+      start = index + 1;
+    }
+  }
+  // An unbalanced pattern is not one this can read; building nothing beats guessing a name.
+  return undefined;
+}
+
 /**
  * The names a body destructures, read from its source.
  *
@@ -102,15 +150,11 @@ export function requestedFixtures(body: (...args: never[]) => unknown): readonly
   const source = body.toString();
   const open = source.indexOf('{');
   if (open === -1) return [];
-  const close = source.indexOf('}', open);
-  if (close === -1) return [];
   // Bail if the brace opens a body rather than a destructuring pattern — `async () => {`.
   const beforeBrace = source.slice(0, open);
   if (/\)\s*(?::[^=]*)?=>\s*$/.test(beforeBrace) || /\)\s*$/.test(beforeBrace)) return [];
-  return source
-    .slice(open + 1, close)
-    .split(',')
-    .map((part) => (part.split(':')[0] ?? '').trim())
+  return (patternSegments(source, open) ?? [])
+    .map((part) => (part.split(/[:=]/)[0] ?? '').trim())
     .filter((name) => /^[A-Za-z_$][\w$]*$/.test(name));
 }
 

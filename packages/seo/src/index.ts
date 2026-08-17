@@ -90,7 +90,6 @@ export {
   DESCRIPTION_MAX_LENGTH,
   DESCRIPTION_MIN_LENGTH,
   hreflangSet,
-  renderHeadTags,
   renderMeta,
   robotsContent,
   TITLE_MAX_LENGTH,

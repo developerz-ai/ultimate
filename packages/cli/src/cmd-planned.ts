@@ -129,7 +129,11 @@ const specFor = (planned: PlannedCommand): CommandSpec => ({
   name: planned.name,
   summary: `${planned.summary} (planned)`,
   usage: planned.usage,
-  ...(planned.subcommands === undefined ? {} : { subcommands: planned.subcommands }),
+  // A planned command answers X_NOT_IMPLEMENTED however it is invoked, so the bare form must
+  // reach its `run` rather than being refused for a subcommand that does not exist yet.
+  ...(planned.subcommands === undefined
+    ? {}
+    : { subcommands: planned.subcommands, defaultSubcommand: planned.subcommands[0] }),
 });
 
 /**

@@ -5,13 +5,19 @@
 import type { MailMessage } from './driver';
 
 /**
- * `(mailId, recipients, hash(rendered payload))`, or the caller's key when supplied.
- * Content-derived on purpose: a retry of the same request produces the same key, while an
- * intentional resend with different content produces a different one.
+ * `(mailId, recipients, hash(rendered payload))`, or `(mailId, the caller's key)` when one is
+ * supplied. Content-derived on purpose: a retry of the same request produces the same key, while
+ * an intentional resend with different content produces a different one.
+ *
+ * The mailId is in BOTH branches, and the explicit one needs it most: a caller's key is a natural
+ * id from its own domain (`signup:42`, an order id), so the welcome mail and the verify-email mail
+ * about one signup would otherwise mint the same key — and the queue dedupes it (`onConflict:
+ * 'dedupe'`) and Resend dedupes it, so the second mail is never delivered and nothing reports it.
+ * Scoping to the template keeps the caller's dedupe where the caller meant it: this send, retried.
  */
 export function mailIdempotencyKey(message: MailMessage): string {
   const explicit = message.idempotencyKey;
-  if (explicit !== undefined && explicit !== '') return `mail:${explicit}`;
+  if (explicit !== undefined && explicit !== '') return `mail:${message.mailId}:${explicit}`;
   const recipients = [...message.to].map((address) => address.toLowerCase()).sort();
   // Every field that reaches the wire is hashed, `replyTo` included: it travels as `Reply-To` and
   // as Resend's `reply_to`, so two mails that differ only there are two mails, and a shared key

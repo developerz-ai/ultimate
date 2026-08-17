@@ -21,8 +21,16 @@ export const FOCUSABLE_SELECTOR = [
 let idCounter = 0;
 
 /**
- * Stable-per-render unique id for label/description wiring. Prefixed so a
- * hydration mismatch is obvious in the DOM rather than silent.
+ * Unique id for label/description wiring, from a PROCESS-wide counter. Prefixed so a mismatch is
+ * obvious in the DOM rather than silent.
+ *
+ * Correct for the only render path that exists: a server render walks a tree once, so every id in
+ * one document is distinct, which is all `for`/`aria-describedby` need. It is NOT stable across two
+ * renders of the same tree — a second process, or a client re-render, starts its own count — so it
+ * cannot survive hydration. That is latent rather than broken: this package has no client runtime
+ * (see CLAUDE.md), so nothing re-renders a server tree yet. Making it survive needs a
+ * RENDER-SCOPED counter, which means a seam in `@ultimat3/render` (or a `SolidRuntime` member);
+ * resetting this one per request would only move the collision. Do not paper over it here.
  */
 export function useId(prefix = 'u'): string {
   idCounter += 1;

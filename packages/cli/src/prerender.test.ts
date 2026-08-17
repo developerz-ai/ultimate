@@ -102,6 +102,54 @@ describe('x build --target static', () => {
     );
   });
 
+  // `X_BUDGET_UNMEASURED` was unclosable by any invocation for these routes: only `static` was ever
+  // rendered, so a `budget:` on ssr/isr/stream/spa produced no `build-stats.json` entry however the
+  // build was run. Prerendering and MEASURING are two questions — the first decides what lands on
+  // a CDN, the second weighs what a browser executes, and every mode makes the second promise.
+  test('a budget on a non-static route is measured, and the page is still not written', async () => {
+    registerRoute({ file: 'apps/web/site/page.tsx', config: staticRoute });
+    registerRoute({
+      file: 'apps/web/app/dashboard/page.tsx',
+      config: streamRoute,
+      suspenseBoundaries: 1,
+    });
+    const out = join(ROOT, 'static');
+    const report = await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
+
+    // Unchanged: a mode whose staleness nothing can correct never lands on disk.
+    expect(report.pages.map((page) => page.file)).toEqual(['index.html']);
+    expect(report.skipped).toEqual(['/dashboard']);
+    expect(await Bun.file(join(out, 'dashboard/index.html')).exists()).toBe(false);
+
+    const stats = await readBuildStats(ROOT);
+    expect((stats?.routes ?? []).map((route) => route.path).sort()).toEqual(['/', '/dashboard']);
+    const { manifest } = await appManifest(ROOT);
+    expect(checkBudgets(manifest, stats ?? { routes: [] })).toEqual([]);
+  });
+
+  test('a route whose render throws is reported unmeasured, never silently skipped', async () => {
+    registerRoute({
+      file: 'apps/web/app/broken/page.tsx',
+      config: defineRoute({
+        render: 'ssr',
+        hydrate: 'visible',
+        offline: 'runtime',
+        budget: { js: '10kb' },
+        meta: () => ({ title: 'Broken', description: 'throws while rendering' }),
+      }),
+      component: () => {
+        throw new TypeError('needs a request');
+      },
+    });
+    const report = await prerenderSite({ root: ROOT, out: join(ROOT, 'static') });
+    expect(report.unmeasured.map((entry) => entry.path)).toEqual(['/broken']);
+    expect(report.unmeasured[0]?.reason).toContain('needs a request');
+    // And the budget it declared still fails the gate, because nothing weighed it.
+    const { manifest } = await appManifest(ROOT);
+    const findings = checkBudgets(manifest, (await readBuildStats(ROOT)) ?? { routes: [] });
+    expect(findings.map((finding) => finding.code)).toEqual(['X_BUDGET_UNMEASURED']);
+  });
+
   test('an app with no static route writes nothing and says so, rather than failing', async () => {
     registerRoute({
       file: 'apps/web/app/dashboard/page.tsx',

@@ -60,10 +60,25 @@ export function revealChunk(id: string, html: string): string {
   return `<template data-x-hole="${key}">${html}</template><script>$X("${key}")</script>`;
 }
 
+/**
+ * How long one hole may take before it is treated as failed. A hole is application code the
+ * framework `await`s — a query with no statement timeout, a fetch with no `AbortSignal.timeout` —
+ * and nothing else in the system bounds one: `settle` fires from the hole's own promise, so a
+ * promise that never settles holds the response, the socket and everything its closure retains
+ * for the life of the process. Long enough that a slow page still renders, short enough that a
+ * hung one is a fallback rather than a leak.
+ */
+export const DEFAULT_HOLE_TIMEOUT_MS = 15_000;
+
 export interface StreamOptions {
   readonly buildId: string;
   /** Rendered into a hole whose promise rejected. Keep it a token-styled inline block. */
   readonly errorFallback?: (holeId: string) => string;
+  /**
+   * Per-hole deadline in ms. `null` waits forever — the deliberate opt-out for a hole that owns
+   * its own timeout, never the default, because "forever" is not a deadline anyone chose.
+   */
+  readonly holeTimeoutMs?: number | null;
 }
 
 /**
@@ -79,6 +94,8 @@ export function renderStreamHtml(
   const tail = plan.tail ?? '</body></html>';
   const errorFallback =
     options.errorFallback ?? ((id) => `<div data-x-hole-error="${id}" hidden></div>`);
+  const timeoutMs =
+    options.holeTimeoutMs === undefined ? DEFAULT_HOLE_TIMEOUT_MS : options.holeTimeoutMs;
   /**
    * The response's own lifetime. A client that disconnects mid-stream cancels the stream, and
    * both halves of that have to be honoured: nothing more may be enqueued — `settle`'s
@@ -123,20 +140,38 @@ export function renderStreamHtml(
       };
 
       for (const hole of plan.holes) {
-        void hole
-          .resolve(holes.signal)
-          .then(
-            (html) => {
-              write(revealChunk(hole.id, html));
-            },
-            (error: unknown) => {
-              logger.warn(
-                `stream hole ${hole.id} rejected: ${error instanceof Error ? error.message : String(error)}`,
-              );
-              write(revealChunk(hole.id, errorFallback(hole.id)));
-            },
-          )
-          .then(settle, settle);
+        // One hole reveals exactly once, whichever of the three finishes first: its own promise,
+        // its rejection, or its deadline. A late resolve after the deadline writes nothing —
+        // the placeholder it would fill was replaced by the fallback and the document is closed.
+        let revealed = false;
+        const reveal = (html: string): void => {
+          if (revealed) return;
+          revealed = true;
+          if (timer !== undefined) clearTimeout(timer);
+          write(revealChunk(hole.id, html));
+          settle();
+        };
+        const timer =
+          timeoutMs === null
+            ? undefined
+            : setTimeout(() => {
+                logger.warn(`stream hole ${hole.id} missed its ${timeoutMs}ms deadline`);
+                reveal(errorFallback(hole.id));
+              }, timeoutMs);
+        // A response nobody is reading must not hold the process open until its deadline.
+        timer?.unref?.();
+
+        void hole.resolve(holes.signal).then(
+          (html) => {
+            reveal(html);
+          },
+          (error: unknown) => {
+            logger.warn(
+              `stream hole ${hole.id} rejected: ${error instanceof Error ? error.message : String(error)}`,
+            );
+            reveal(errorFallback(hole.id));
+          },
+        );
       }
     },
 

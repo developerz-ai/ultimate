@@ -36,6 +36,22 @@ describe('requestedFixtures', () => {
     expect(requestedFixtures(() => void 0)).toEqual([]);
   });
 
+  // Stopping at the first `}` truncates the pattern, and the names AFTER a nested object are the
+  // ones lost — silently, so the fixture is never built and the body reads `undefined`, which is
+  // the exact failure this module's own header says it exists to prevent.
+  bunTest('reads past a nested object in the pattern', () => {
+    expect(
+      requestedFixtures(({ mail, clock: { now }, network }: never) => void [mail, now, network]),
+    ).toEqual(['mail', 'clock', 'network']);
+  });
+
+  bunTest('reads past an object default in the pattern', () => {
+    expect(requestedFixtures(({ clock = { now: 1 }, mail }: never) => void [clock, mail])).toEqual([
+      'clock',
+      'mail',
+    ]);
+  });
+
   bunTest('handles renaming and whitespace', () => {
     expect(requestedFixtures(({ seed: s, page }: never) => void [s, page])).toEqual([
       'seed',

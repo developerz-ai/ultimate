@@ -2,7 +2,7 @@
 // same way and `--json` / `--help` behave identically everywhere. Pure: no I/O, no process
 // access, so the parser is unit-testable and the dispatcher owns all side effects.
 
-import { BadFlagError, UnknownCommandError } from './errors';
+import { BadFlagError, MissingSubcommandError, UnknownCommandError } from './errors';
 
 export type FlagValue = string | boolean;
 
@@ -20,6 +20,12 @@ export interface CommandSpec {
   readonly usage: string;
   readonly aliases?: readonly string[];
   readonly subcommands?: readonly string[];
+  /**
+   * What a bare `x <command>` means, when it means anything. Declared, never inferred: the parser
+   * used to answer `subcommands[0]`, so `x db` ran `gen` — the migration GENERATOR — because it
+   * sorted first. A command with no defensible default omits this and the parser refuses instead.
+   */
+  readonly defaultSubcommand?: string;
   readonly flags?: readonly FlagSpec[];
   /** Command needs an app root (`app.config.ts`) — the dispatcher enforces it. */
   readonly requiresApp?: boolean;
@@ -207,7 +213,10 @@ function readSubcommand(spec: CommandSpec, positionals: readonly string[]): stri
   const allowed = spec.subcommands;
   if (allowed === undefined || allowed.length === 0) return undefined;
   const token = positionals[0];
-  if (token === undefined) return allowed[0];
+  if (token === undefined) {
+    if (spec.defaultSubcommand !== undefined) return spec.defaultSubcommand;
+    throw new MissingSubcommandError({ command: spec.name, known: allowed });
+  }
   if (allowed.includes(token)) return token;
   const suggestion = nearest(token, allowed);
   throw new UnknownCommandError(

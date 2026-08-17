@@ -107,4 +107,41 @@ describe('the MCP surface is the UI surface', () => {
     expect(create?.input.map((field) => field.name)).toEqual(['title']);
     expect(create?.input[0]).toEqual({ name: 'title', type: 'text', required: true });
   });
+
+  // An action tool declared `input: []`, which `mcp.ts` renders as `additionalProperties: false`
+  // with no properties: a conforming client refuses every argument, and the server then reads
+  // `id`/`confirmation` out of the arguments it just declared invalid.
+  test('an action tool declares the envelope the dispatcher reads off the call', () => {
+    const authz = staticAuthz(['admin:write', 'admin_tool_post:read', 'admin_tool_post:publish']);
+    const tool = adminMcpTools(appWith(authz), ctxWith(authz)).find(
+      (candidate) => candidate.name === 'admin.action.post.publish',
+    );
+
+    expect(tool?.input.map((field) => field.name)).toEqual(['id']);
+    expect(tool?.input[0]?.required).toBe(false);
+  });
+
+  test('a destructive action demands the confirmation token it will be checked against', () => {
+    const destroy: AdminAction = {
+      name: 'post.purge',
+      permission: 'admin_tool_post:purge',
+      entity: 'admin_tool_post',
+      destructive: true,
+      async handle(): Promise<null> {
+        return null;
+      },
+    };
+    const authz = staticAuthz(['admin:destroy', 'admin_tool_post:read', 'admin_tool_post:purge']);
+    const app = defineAdmin({
+      entities: [post],
+      actions: [destroy],
+      auth: { actor: (): AdminActor => actor, authz },
+    });
+    const tool = adminMcpTools(app, ctxWith(authz)).find(
+      (candidate) => candidate.name === 'admin.action.post.purge',
+    );
+
+    expect(tool?.destructive).toBe(true);
+    expect(tool?.input.find((field) => field.name === 'confirmation')?.required).toBe(true);
+  });
 });

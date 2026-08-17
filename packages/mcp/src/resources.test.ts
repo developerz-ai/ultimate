@@ -2,7 +2,8 @@
 // naming rule (name + version suffix comes from the filename, never restated).
 
 import { describe, expect, test } from 'bun:test';
-import type { FrameworkResourceProviders } from './resources';
+import { isUltimateError } from '@ultimat3/core';
+import type { FrameworkResourceProviders, McpResource } from './resources';
 import {
   frameworkResources,
   promptFromPath,
@@ -147,25 +148,47 @@ describe('ResourceRegistry', () => {
     expect(await registry.read('ultimate://missing')).toBeUndefined();
   });
 
-  test('registering the same uri twice replaces the first', () => {
+  test('registering the same uri twice is refused, as it is for a tool name', () => {
+    // A URI is public API — AGENTS.md files quote them — so a second claim is not a choice the
+    // registry may make by insertion order: whoever wired last would win and an agent would read
+    // facts from a provider nobody picked. `ToolRegistry.register` already refuses for the same
+    // reason; two registration paths in one package cannot answer this question two ways.
     const registry = new ResourceRegistry();
-    registry.register({
-      uri: 'u',
-      name: 'first',
+    const resource = (name: string): McpResource => ({
+      uri: 'ultimate://manifest',
+      name,
       description: 'd',
       mimeType: 'text/plain',
-      read: () => 'a',
+      read: () => name,
     });
-    registry.register({
-      uri: 'u',
-      name: 'second',
-      description: 'd',
-      mimeType: 'text/plain',
-      read: () => 'b',
-    });
+    registry.register(resource('first'));
+
+    let thrown: unknown;
+    try {
+      registry.register(resource('second'));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(isUltimateError(thrown) ? thrown.code : thrown).toBe('X_MCP_RESOURCE_DUPLICATE');
+    expect(isUltimateError(thrown) ? thrown.cause : '').toContain('ultimate://manifest');
+    // The first registration stands: a refusal that half-applied would be its own surprise.
     expect(registry.list()).toEqual([
-      { uri: 'u', name: 'second', description: 'd', mimeType: 'text/plain' },
+      { uri: 'ultimate://manifest', name: 'first', description: 'd', mimeType: 'text/plain' },
     ]);
+  });
+
+  test('registerAll refuses a duplicate inside one batch too', () => {
+    const registry = new ResourceRegistry();
+    const one = (name: string): McpResource => ({
+      uri: 'ultimate://schema',
+      name,
+      description: 'd',
+      mimeType: 'text/plain',
+      read: () => name,
+    });
+
+    expect(() => registry.registerAll([one('a'), one('b')])).toThrow();
   });
 });
 

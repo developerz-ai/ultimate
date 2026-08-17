@@ -42,6 +42,18 @@ by the CLI, not imported.
   way would call every permission of every operation newly required the first time an app diffs
   against a manifest written before the field existed. Absence is no evidence — the comparison is
   skipped. Same for a `rateLimit` neither half of which `toBucket` would accept.
+- **`isManifest` checks every top-level key, never five and a cast.** `diffManifest` reads
+  `before.queries`, `before.jobs`, `before.permissions` and `before.locales` with no guard, so a
+  section a truncated or hand-trimmed file happens not to carry was a bare `TypeError` two calls
+  from the gate that exists to explain. The FACTS inside a section stay unwalked — a manifest
+  written before a field existed is still readable, which is `MANIFEST_VERSION`'s rule.
+- **`--json` is awaited.** `emitManifest({ stdout: true })` writes through `await Bun.write(
+  Bun.stdout, …)`: a write to a pipe is asynchronous and `process.exit()` discards the queue, and
+  this is the largest payload the CLI prints. Same bug `scripts/stdout-truncation.test.ts` pins.
+- **One package's tree costs that package.** `scanInstalledDocs` guards each `scanPackageDocs`,
+  and a `package.json` that will not parse is "not a package", not a `SyntaxError` thrown through
+  the `Promise.all` for every other package to inherit. `node_modules` is not curated and is not
+  stable while an install is running.
 - `agents-md.ts` **never writes**. Generated prose lowers agent task success; facts go in
   `x.manifest.json` and conventions stay human-authored.
 - `docs-scan.ts` emits **no artifact**. The published tarball is the source, so the docs are

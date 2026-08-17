@@ -123,6 +123,52 @@ describe('unit · x g writes inside the app and nowhere else', () => {
     });
   });
 
+  // The whole set is proven before any of it lands — containment AND conflicts. Writing up to the
+  // offender left a half-generated resource on disk: `x g` reported the conflict, exited non-zero,
+  // and the next run then conflicted on the files the failed run had already written.
+  test('a conflict anywhere in the set means nothing in the set is written', async () => {
+    await withRoot(async (root) => {
+      await Bun.write(join(root, 'apps/web/app/second.ts'), 'export const existing = 1;');
+      const report = await writeFiles(
+        root,
+        [
+          { path: 'apps/web/app/first.ts', contents: 'export {};' },
+          { path: 'apps/web/app/second.ts', contents: 'export {};' },
+          { path: 'apps/web/app/third.ts', contents: 'export {};' },
+        ],
+        false,
+      );
+      expect(report.conflicts).toHaveLength(1);
+      expect(report.conflicts[0]?.at).toBe('apps/web/app/second.ts');
+      expect(report.written).toEqual([]);
+      expect(existsSync(join(root, 'apps/web/app/first.ts'))).toBe(false);
+      expect(existsSync(join(root, 'apps/web/app/third.ts'))).toBe(false);
+      expect(await Bun.file(join(root, 'apps/web/app/second.ts')).text()).toBe(
+        'export const existing = 1;',
+      );
+    });
+  });
+
+  // Same rule across the two write paths: a catalog merge is a write like any other, so a source
+  // conflict must hold it back too — otherwise a refused `x g` still grew the app's catalog.
+  test('a source conflict holds back the catalog merge in the same set', async () => {
+    await withRoot(async (root) => {
+      const catalog = 'packages/i18n/catalogs/en.json';
+      await Bun.write(join(root, 'apps/web/app/page.tsx'), 'existing');
+      const report = await writeFiles(
+        root,
+        [
+          { path: catalog, contents: JSON.stringify({ 'app.new.key': 'New' }), merge: 'json' },
+          { path: 'apps/web/app/page.tsx', contents: 'export {};' },
+        ],
+        false,
+      );
+      expect(report.conflicts).toHaveLength(1);
+      expect(report.written).toEqual([]);
+      expect(existsSync(join(root, catalog))).toBe(false);
+    });
+  });
+
   test('a catalog that is not a JSON object is a finding, never a clobber and never a throw', async () => {
     await withRoot(async (root) => {
       const path = 'packages/i18n/catalogs/en.json';

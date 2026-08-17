@@ -41,8 +41,13 @@ export type CrudResult<Row extends AdminRow> =
     };
 
 export type ListResult<Row extends AdminRow> =
-  | { readonly ok: true; readonly page: AdminPage<Row> }
-  | { readonly ok: false; readonly kind: 'denied'; readonly decision: AdminDecision };
+  | { readonly ok: true; readonly page: AdminPage<Row>; readonly audit: AuditEntry }
+  | {
+      readonly ok: false;
+      readonly kind: 'denied';
+      readonly decision: AdminDecision;
+      readonly audit: AuditEntry;
+    };
 
 /** Both gates, always in this order: the admin-level one, then the entity-level one. */
 export function permissionsForOperation(entity: string, op: AdminOperation): readonly string[] {
@@ -96,14 +101,38 @@ async function refuse<Row extends AdminRow>(
   };
 }
 
+/**
+ * The one read that logged nothing, in either direction: `audit.ts` says denied and failed attempts
+ * are logged too, and `adminDetail` below logs the allowed read as well — so a listing that walked
+ * every row of a table left no trace, and a refused listing left no trace of the refusal either.
+ * There is no `entityId`: the subject is the table, not a row.
+ */
 export async function adminList<Row extends AdminRow>(
   resource: AdminResource<Row>,
   ctx: CrudCtx,
   req: PageRequest = {},
 ): Promise<ListResult<Row>> {
   const decision = decideOperation(resource, 'list', ctx);
-  if (!decision.allowed) return { ok: false, kind: 'denied', decision };
-  return { ok: true, page: await fetchPage(resource, req) };
+  if (!decision.allowed) {
+    const refused = await refuse(resource, 'list', ctx, decision, null);
+    return { ok: false, kind: 'denied', decision, audit: refused.audit };
+  }
+  const page = await fetchPage(resource, req);
+  return {
+    ok: true,
+    page,
+    audit: await ctx.audit.append({
+      requestId: ctx.requestId,
+      actor: ctx.actor,
+      operation: 'list',
+      kind: 'operation',
+      entity: resource.name,
+      entityId: null,
+      permission: decision.permission,
+      outcome: 'allowed',
+      reason: decision.reason,
+    }),
+  };
 }
 
 export async function adminDetail<Row extends AdminRow>(

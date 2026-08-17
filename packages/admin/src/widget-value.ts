@@ -12,6 +12,18 @@ export interface WidgetContext {
   readonly timeZone: string;
   /** BCP-47, for the number/date/money formatters the widgets call. */
   readonly locale: string;
+  /**
+   * Where a foreign-key value links to, or `null` for "do not link it". Absent renders the id as
+   * plain text.
+   *
+   * WHY a seam and not a derivation: the widget used to build `/${entity}s/${value}`, which is
+   * English pluralisation by string concatenation and drops the admin's own `basePath` — a link
+   * that is wrong on every admin not mounted at `/` and on every entity whose plural is not a
+   * trailing `s`. The route table is `AdminApp`'s (`basePath` + `AdminResource.path`, which is
+   * already pluralised once, in `resource.ts`), and a widget three layers down cannot see it. The
+   * caller that builds this context can. A wrong link is worse than no link.
+   */
+  readonly hrefFor?: (entity: string, id: string) => string | null;
 }
 
 export interface SelectOption {

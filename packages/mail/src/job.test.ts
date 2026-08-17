@@ -48,7 +48,9 @@ test('recipient order and case do not change the key', () => {
 
 test("the caller's idempotency key wins over the derived one", () => {
   const message = renderMessage(welcomeMail, PAYLOAD, { ...TO, idempotencyKey: 'signup:42' });
-  expect(mailIdempotencyKey(message)).toBe('mail:signup:42');
+  // Scoped to the mail: a caller key is an id from the caller's domain, and two mails about one
+  // signup sharing a key means the queue and the provider drop the second, silently.
+  expect(mailIdempotencyKey(message)).toBe('mail:welcome:signup:42');
 });
 
 test('the send job retries five times with exponential backoff', () => {

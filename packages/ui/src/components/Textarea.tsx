@@ -25,13 +25,19 @@ export interface TextareaProps {
   onBlur?: JSX.EventHandlerUnion<HTMLTextAreaElement, FocusEvent> | undefined;
 }
 
+/**
+ * `<textarea>` has NO `value` attribute — its value is its text content, and the parser drops the
+ * attribute silently, so `value={…}` rendered every admin edit box empty whatever the row held.
+ * The leading newline is the serializer's, not the value's: the HTML parser strips exactly one
+ * newline after `<textarea>`, so emitting it unconditionally is what makes a value that itself
+ * starts with a newline survive the round trip.
+ */
 export function Textarea(props: TextareaProps): JSX.Element {
   return (
     <textarea
       class={cx(styles['textarea'], props.autoGrow === true && styles['autoGrow'], props.class)}
       id={props.id}
       name={props.name}
-      value={props.value ?? ''}
       placeholder={props.placeholder}
       rows={props.rows ?? 3}
       required={props.required === true}
@@ -43,6 +49,8 @@ export function Textarea(props: TextareaProps): JSX.Element {
       aria-invalid={ariaBool(props['aria-invalid'])}
       onInput={props.onInput}
       onBlur={props.onBlur}
-    />
+    >
+      {`\n${props.value ?? ''}`}
+    </textarea>
   );
 }

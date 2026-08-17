@@ -71,6 +71,7 @@ export interface AdminPage<Row extends AdminRow> {
   readonly pageSize: number;
   readonly nextCursor: string | null;
   readonly prevCursor: string | null;
+  /** A page exists AFTER this one — what the Next control is enabled by, in both directions. */
   readonly hasMore: boolean;
 }
 
@@ -103,7 +104,21 @@ const cursorValue = (row: AdminRow, field: string): string => {
   return value === null || value === undefined ? '' : String(value);
 };
 
-/** Turn `limit + 1` rows into a page plus the cursors that walk off either end. */
+/**
+ * Turn `limit + 1` rows into a page plus the cursors that walk off either end.
+ *
+ * The extra row is on the side the keyset walked TOWARD, so the direction decides everything:
+ *  - `after` (and the first page, which has no cursor): the overflow row is the tail, and it means
+ *    a next page exists. A previous page exists iff a cursor got us here.
+ *  - `before`: the overflow row is the HEAD — the repo returns the page in the query's sort order,
+ *    so the row furthest back is index 0 — and it means a *previous* page exists. A next page
+ *    always exists, because paging backwards is only reachable from a later page.
+ *
+ * Reading `hasMore` as "the fetch overflowed" regardless of direction disabled Next on every
+ * backward page (the operator could not walk back to where they came from) and left Previous
+ * enabled past the first row; trimming the tail on a backward page silently skipped the row next
+ * to the cursor. One flag, both bugs.
+ */
 export function pageFrom<Row extends AdminRow>(
   resource: AdminResource<Row>,
   req: PageRequest,
@@ -111,11 +126,20 @@ export function pageFrom<Row extends AdminRow>(
 ): AdminPage<Row> {
   const sort = req.sort ?? resource.defaultSort;
   const pageSize = Math.max(1, Math.min(req.limit ?? resource.pageSize, 200));
-  const hasMore = fetched.length > pageSize;
-  const rows = hasMore ? fetched.slice(0, pageSize) : fetched;
+  const incoming = decodeAdminCursor(resource, req.cursor);
+  const backwards = incoming?.direction === 'before';
+  const overflow = fetched.length > pageSize;
+
+  const rows = !overflow
+    ? fetched
+    : backwards
+      ? fetched.slice(fetched.length - pageSize)
+      : fetched.slice(0, pageSize);
   const last = rows[rows.length - 1];
   const first = rows[0];
-  const incoming = decodeAdminCursor(resource, req.cursor);
+
+  const hasMore = backwards ? true : overflow;
+  const hasPrevious = backwards ? overflow : incoming !== null;
 
   return {
     rows,
@@ -132,7 +156,7 @@ export function pageFrom<Row extends AdminRow>(
           })
         : null,
     prevCursor:
-      incoming !== null && first !== undefined
+      hasPrevious && first !== undefined
         ? encodeAdminCursor(resource, {
             direction: 'before',
             field: sort.field,

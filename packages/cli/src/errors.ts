@@ -51,6 +51,26 @@ export class MissingPositionalError extends UltimateError {
   }
 }
 
+/**
+ * A command that declares subcommands, invoked with none and declaring no `defaultSubcommand`.
+ *
+ * `X_CLI_BAD_FLAG` is the code a missing positional already takes (`MissingPositionalError`), and a
+ * subcommand is one — a second code for "you left out an argument" is the synonym the registry
+ * exists to prevent. Its own class because the cause must not name a flag: the parser answered
+ * `subcommands[0]` before this existed, so `x db` ran `gen` and wrote a migration file nobody asked
+ * for. `--help` is the fix because which of six was meant is exactly what the caller did not say.
+ */
+export class MissingSubcommandError extends UltimateError {
+  constructor(input: { command: string; known: readonly string[] }) {
+    super({
+      code: 'X_CLI_BAD_FLAG',
+      cause: `"x ${input.command}" takes a subcommand and got none (one of: ${input.known.join(', ')})`,
+      fix: `x ${input.command} --help`,
+      docs: docsFor('X_CLI_BAD_FLAG'),
+    });
+  }
+}
+
 /** At least one `x verify` step failed. The step findings carry the per-step fixes. */
 export class VerifyFailedError extends UltimateError {
   constructor(input: { failed: readonly string[] }) {

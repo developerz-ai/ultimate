@@ -39,6 +39,17 @@ Imported by every package that renders a string.
 - Nothing here formats a number, date or money. That is `@ultimat3/money` / `@ultimat3/time`.
 - `Ctx` fields are read structurally (core cannot depend on `Locale`); one cast, in `context.ts`.
 - Adding a framework string: `catalogs/en.json`, feature-namespaced, then use `t('ns.key')`.
+- **`catalogs/en.json` is gated in both directions**, on `x verify`'s `boundaries` step via
+  `scripts/i18n-catalog.ts`. A `t('literal')` in `packages/*/src` with no entry is
+  `X_CATALOG_MISSING_KEYS`; an entry nothing in framework source names, in a namespace the
+  framework already renders (`admin.*`, `dev.*`, `ui.*`), is `X_CATALOG_KEY_UNREACHABLE`. The
+  namespaces the framework only *ships* for an app (`common.*`, `auth.*`, `errors.*`,
+  `pagination.*`, `validation.*`, `time.*`) are exempt from the second half and derived, not
+  listed. `ui.*` is pinned exactly by `packages/ui/src/i18n-keys.test.ts`, because every ui string
+  resolves as `ui.t(UI_KEYS.x)` and no static scan can follow that.
+- A name is a **leaf or a branch, never both** — `parseNestedCatalog` refuses a dot inside a key,
+  so `admin.detail.not-found` and `admin.detail.not-found.fix` cannot coexist. Both keys shipped
+  and neither was in the catalog; the leaf is now `…not-found.cause`.
 
 ## Commands
 

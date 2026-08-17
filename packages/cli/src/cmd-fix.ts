@@ -96,6 +96,7 @@ export const fixCommand: CliCommand = {
     usage: 'x fix boundary <file> [--json]',
     requiresApp: true,
     subcommands: FIX_SUBCOMMANDS,
+    defaultSubcommand: 'boundary',
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('fix', ctx.cwd).dir;

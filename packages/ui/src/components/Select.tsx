@@ -31,14 +31,21 @@ export interface SelectProps {
   onChange?: JSX.EventHandlerUnion<HTMLSelectElement, Event> | undefined;
 }
 
+/**
+ * `<select>` has NO `value` attribute — the selected option carries `selected`, and the parser
+ * drops the attribute silently, so `value={…}` rendered every admin edit control on its first
+ * option whatever the row held. The placeholder takes the selection when nothing matches, which
+ * is also what keeps an unset field unsubmittable: that option is `disabled`.
+ */
 export function Select(props: SelectProps): JSX.Element {
+  const current = props.value ?? '';
+  const matched = props.options.some((option) => option.value === current);
   return (
     <span class={cx(styles['wrap'], styles[`size-${props.size ?? 'md'}`], props.class)}>
       <select
         class={styles['select']}
         id={props.id}
         name={props.name}
-        value={props.value ?? ''}
         required={props.required === true}
         disabled={props.disabled === true}
         aria-label={props['aria-label']}
@@ -47,12 +54,16 @@ export function Select(props: SelectProps): JSX.Element {
         onChange={props.onChange}
       >
         {props.placeholder === undefined ? null : (
-          <option value="" disabled>
+          <option value="" disabled selected={!matched}>
             {props.placeholder}
           </option>
         )}
         {props.options.map((option) => (
-          <option value={option.value} disabled={option.disabled === true}>
+          <option
+            value={option.value}
+            disabled={option.disabled === true}
+            selected={option.value === current}
+          >
             {option.label}
           </option>
         ))}

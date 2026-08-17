@@ -5,6 +5,7 @@
 // injected as thunks because `@ultimat3/manifest` and `@ultimat3/render` sit in this same
 // tier — the CLI wires them, this package only defines the shape and the URIs.
 
+import { McpResourceDuplicateError } from './errors';
 import type { JsonSchema } from './wire';
 
 /** Stable URIs. These are quoted in AGENTS.md files, so treat them as public API. */
@@ -126,7 +127,14 @@ export function frameworkResources(providers: FrameworkResourceProviders): reado
 export class ResourceRegistry {
   private readonly resources = new Map<string, McpResource>();
 
+  /**
+   * Refuses a second claim on a URI, exactly as `ToolRegistry.register` refuses a second claim on
+   * a tool name — one package cannot answer "this name is taken" two ways. `Map.set` made the
+   * answer whichever provider was wired last, which for a URI quoted in an AGENTS.md file is a
+   * read that succeeds against the wrong document.
+   */
   register(resource: McpResource): this {
+    if (this.resources.has(resource.uri)) throw new McpResourceDuplicateError(resource);
     this.resources.set(resource.uri, resource);
     return this;
   }

@@ -30,6 +30,9 @@ export const ANTHROPIC_MODEL_IDS = [
 
 export const DEFAULT_MODEL: ModelId = 'claude-opus-5';
 
+/** The built-in Anthropic rows' ladder. One `family` string, spelled once. */
+const ANTHROPIC_FAMILY = 'anthropic';
+
 /**
  * Reasoning depth, shallowest first — the order is load-bearing, because a model that caps where
  * thinking may be switched off compares against it. `xhigh` is the best setting for coding and
@@ -70,6 +73,19 @@ export interface ModelSpec {
   /** Minimum cacheable prefix; a shorter prefix silently does not cache. */
   readonly cacheMinimumTokens: number;
   readonly reasoning: ModelReasoning;
+  /**
+   * Which ladder this model is a rung on. A capability comparison only means anything inside one
+   * — registration order across vendors is arrival order, not capability — so `moreCapableThan`
+   * walks up within a family and stops at its boundary. Optional, and absent is its own family:
+   * an app that registers its whole catalogue in the order it wants keeps comparing across all of
+   * it, exactly as before this field existed.
+   *
+   * Registering the OpenAI-format rows after the Anthropic ones is what made this load-bearing:
+   * the rung above `gpt-5.6-sol` was `claude-haiku-4-5`, so `X_LLM_REFUSED`'s fix line told an
+   * operator to paste the cheapest model in the catalogue, from a vendor their gateway may not
+   * serve at all.
+   */
+  readonly family?: string;
 }
 
 /**
@@ -79,8 +95,9 @@ export interface ModelSpec {
 const usd = (minor: number): Money => ({ minor, currency: 'USD' });
 
 /**
- * Insertion order IS the capability ladder, most capable first — `moreCapableThan` is its only
- * reader, exactly as it was when the ladder was a literal tuple. A `Map` because re-registering
+ * Insertion order IS the capability ladder WITHIN a `family`, most capable first —
+ * `moreCapableThan` is its only reader, exactly as it was when the ladder was a literal tuple.
+ * Across families it is arrival order and means nothing. A `Map` because re-registering
  * an id REPLACES its spec in place without moving its rung, which is what makes a negotiated
  * enterprise rate expressible: one call, same id, new prices, same position in the ladder.
  */
@@ -149,18 +166,26 @@ export function resetModels(): void {
 const rankOf = (effort: Effort): number => EFFORTS.indexOf(effort);
 
 /**
- * The model one rung ABOVE `model`, or `undefined` when it is already the most capable one the
- * registry holds. Registration order is most-capable-first — "the others are explicit
- * downgrades" — so the ladder needs no second list to walk.
+ * The model one rung ABOVE `model` IN ITS OWN FAMILY, or `undefined` when it is already the most
+ * capable one that family holds. Registration order is most-capable-first — "the others are
+ * explicit downgrades" — so the ladder needs no second list to walk; `family` is what stops the
+ * walk at the boundary between two vendors' lists, where order is arrival, not capability.
  *
  * A refusal is only worth retrying UPWARD. `MODEL_IDS.find((id) => id !== refused)` answered a
  * refusal on the default model with the next entry DOWN, which is the one retry that cannot help:
  * the fix line told an operator to buy the same refusal from a weaker model.
  */
 export function moreCapableThan(model: ModelId): ModelId | undefined {
+  const spec = registry.get(model);
+  if (spec === undefined) return undefined;
   const ids = modelIds();
-  const at = ids.indexOf(model);
-  return at <= 0 ? undefined : ids[at - 1];
+  // Up, but only within the model's own family: the entry before `gpt-5.6-sol` is
+  // `claude-haiku-4-5`, which is not a rung above anything — it is the previous vendor's list.
+  for (let at = ids.indexOf(model) - 1; at >= 0; at -= 1) {
+    const above = ids[at];
+    if (above !== undefined && registry.get(above)?.family === spec.family) return above;
+  }
+  return undefined;
 }
 
 /**
@@ -235,6 +260,7 @@ function registerBuiltInModels(): void {
   // $5 / $25 per MTok.
   registerModel({
     id: 'claude-opus-5',
+    family: ANTHROPIC_FAMILY,
     contextWindow: 1_000_000,
     maxOutput: 128_000,
     inputPerMillion: usd(500),
@@ -248,6 +274,7 @@ function registerBuiltInModels(): void {
   // spend after the lapse is a budget that is not one. List price over-reserves, which is safe.
   registerModel({
     id: 'claude-sonnet-5',
+    family: ANTHROPIC_FAMILY,
     contextWindow: 1_000_000,
     maxOutput: 128_000,
     inputPerMillion: usd(300),
@@ -260,6 +287,7 @@ function registerBuiltInModels(): void {
   // uncallable while the request body was one shape for the whole catalogue.
   registerModel({
     id: 'claude-haiku-4-5',
+    family: ANTHROPIC_FAMILY,
     contextWindow: 200_000,
     maxOutput: 64_000,
     inputPerMillion: usd(100),

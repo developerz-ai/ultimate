@@ -61,11 +61,30 @@ export const SURFACE_SPECS: Readonly<Record<Surface, SurfaceSpec>> = Object.free
 
 const SURFACE_SEGMENT = /(?:^|\/)(site|app|api|shared)\//;
 
+/** Where the surface segment is, and what follows it — the two halves of one match. */
+export interface SurfaceLocation {
+  readonly surface: Surface;
+  /** Everything after `<surface>/`. `apps/myapp/app/dashboard/page.tsx` → `dashboard/page.tsx`. */
+  readonly rest: string;
+}
+
+/**
+ * The ONE reader of the surface segment, because the two readers disagreed: this regex is
+ * anchored on a path separator, and the route table's `indexOf('app/')` was not — so
+ * `apps/myapp/app/page.tsx` took its surface from here and its URL from the `app/` inside
+ * `myapp/`, and served every route in that app one segment too deep (`/app` instead of `/`).
+ */
+export function locateSurface(file: string): SurfaceLocation | null {
+  const normalized = normalize(file);
+  const match = SURFACE_SEGMENT.exec(normalized);
+  const found = match?.[1];
+  if (found === undefined || match === null) return null;
+  return { surface: found as Surface, rest: normalized.slice(match.index + match[0].length) };
+}
+
 /** `apps/web/site/pricing/page.tsx` → `site`. Returns null for files outside a surface. */
 export function surfaceOf(file: string): Surface | null {
-  const match = SURFACE_SEGMENT.exec(normalize(file));
-  const found = match?.[1];
-  return found === undefined ? null : (found as Surface);
+  return locateSurface(file)?.surface ?? null;
 }
 
 function normalize(file: string): string {

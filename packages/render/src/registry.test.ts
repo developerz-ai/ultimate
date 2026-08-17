@@ -92,6 +92,18 @@ describe('routePathFromFile', () => {
   ])('%s → %s %s', (file, surface, path) => {
     expect(routePathFromFile(file)).toEqual({ surface, path });
   });
+
+  // The surface is where `surfaceOf`'s ANCHORED regex found it, and the URL is everything after
+  // THAT. A bare `indexOf('app/')` matched inside `myapp/` and `offsite/`, so every route in an
+  // app directory whose name merely ends in a surface name was served one segment too deep.
+  test.each<[string, Surface, string]>([
+    ['apps/myapp/app/page.tsx', 'app', '/'],
+    ['apps/myapp/app/dashboard/page.tsx', 'app', '/dashboard'],
+    ['packages/offsite/site/pricing/page.tsx', 'site', '/pricing'],
+    ['services/webapi/api/posts/route.ts', 'api', '/api/posts'],
+  ])('a directory ending in a surface name is not the surface: %s → %s', (file, surface, path) => {
+    expect(routePathFromFile(file)).toEqual({ surface, path });
+  });
 });
 
 describe('one route filename per surface', () => {
@@ -233,5 +245,23 @@ describe('route table', () => {
     expect(dynamic?.entry.path).toBe('/blog/:slug');
     expect(dynamic?.params).toEqual({ slug: 'hello-world' });
     expect(matchRoute('/nope')).toBe(null);
+  });
+
+  // A pathname is whatever the client typed. `decodeURIComponent('%zz')` throws a bare `URIError`
+  // — no code, no fix, a 500 and an error-monitor page for a typo — where `@ultimat3/http`'s own
+  // router already answers "this branch does not match" for the same input.
+  test('a param segment that will not decode is not a match, and never a throw', () => {
+    registerRoute({ file: 'apps/web/site/blog/[slug]/page.tsx', config: staticConfig });
+    for (const bad of ['%zz', '%', '%A', 'a%2', '%E0%A4%A']) {
+      expect(() => matchRoute(`/blog/${bad}`)).not.toThrow();
+      expect(matchRoute(`/blog/${bad}`)).toBe(null);
+    }
+    expect(matchRoute('/blog/a%20b')?.params).toEqual({ slug: 'a b' });
+  });
+
+  test('a literal route still wins over a sibling param that could not decode', () => {
+    registerRoute({ file: 'apps/web/site/blog/[slug]/page.tsx', config: staticConfig });
+    registerRoute({ file: 'apps/web/site/blog/%zz/page.tsx', config: staticConfig });
+    expect(matchRoute('/blog/%zz')?.entry.path).toBe('/blog/%zz');
   });
 });
