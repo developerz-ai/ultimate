@@ -152,6 +152,19 @@ function section<T extends object>(base: T, patch: Input<T> | undefined): T {
 }
 
 const NAME_RE = /^[a-z][a-z0-9-]{1,63}$/;
+
+/**
+ * A deliberate duplicate of `CURRENCY_CODE_PATTERN` in `packages/schema/src/money-value.ts`, which
+ * is the framework's ONE declaration of what an ISO 4217 code looks like and the source
+ * `isCurrencyCode`, the published OpenAPI `pattern` and `@ultimat3/entity`'s Postgres CHECK all
+ * derive from. This file cannot import it: `core` and `schema` are both tier 0 and `core → schema`
+ * is not in `SIDEWAYS_ALLOW` (`scripts/lib/tiers.ts`), the same wall that makes `describeValue` a
+ * character-for-character copy in `error-render.ts`.
+ *
+ * So keep the two identical, and keep the pattern inside the syntax ECMAScript, JSON Schema and
+ * POSIX ERE spell identically — a `defaultCurrency` this accepts and `t.money` refuses is an app
+ * whose configured currency cannot be written to a row.
+ */
 const CURRENCY_RE = /^[A-Z]{3}$/;
 
 function isTimeZone(value: string): boolean {

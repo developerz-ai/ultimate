@@ -123,6 +123,94 @@ throw new E({ fix: 'x doctor --json' });`;
   });
 });
 
+/**
+ * The blind spot that let two stale fix lines ship. `@ultimat3/mcp`'s `readonly-sql.ts` passes its
+ * fixes POSITIONALLY into local `rejected(cause, fix)` / `notBranch(cause, fix)` helpers, so there
+ * is no `fix:` key anywhere in the file and the scanner returned `[]` for all of it — the citation
+ * resolver was never handed a single string to judge.
+ */
+describe('scanFixes · a fix passed positionally into a local error builder', () => {
+  const BUILDER =
+    'function rejected(cause: string, fix: string) {\n' +
+    "  return new McpError({ code: 'X_A', cause, fix });\n" +
+    '}\n';
+
+  test('reads the argument in the fix parameter position', () => {
+    expect(fixes(`${BUILDER}rejected('not one statement', 'x db branch ls --json');`)).toEqual([
+      'x db branch ls --json',
+    ]);
+  });
+
+  test('the position is the declared one, not "the last argument"', () => {
+    const source =
+      'const fail = (field: string, fix: string, meta: object) => {\n' +
+      "  throw new E({ code: 'X_B', cause: field, fix });\n" +
+      '};\n' +
+      "fail('amount', 'x g migration money', { a: 1 });";
+    expect(fixes(source)).toEqual(['x g migration money']);
+  });
+
+  test('a helper that CONSUMES a fix is not a helper that declares one', () => {
+    // `citedCommandProblem(fix: string, catalog)` takes a fix in order to judge it. Reading its
+    // call sites as declarations would report findings about strings that are already findings —
+    // so a helper only counts when its body builds an error.
+    const source =
+      'function citedCommandProblem(fix: string, catalog: Catalog) {\n' +
+      '  return catalog.resolve(fix);\n' +
+      '}\n' +
+      "citedCommandProblem('x db branch lst', catalog);";
+    expect(fixes(source)).toEqual([]);
+  });
+
+  test('a rest or destructured parameter list has no reliable position, so it is skipped', () => {
+    // Both fixtures BUILD an error, or the builder discriminator would be what rejects them and
+    // these two cases would pass without the rules they exist to pin.
+    const rest =
+      'function raise(kind: string, fix: string, ...rest: unknown[]) { throw new MyError({ code: kind, fix }); }\n' +
+      "raise('X_C', 'x doctor --json');";
+    const destructured =
+      'function raise({ kind, fix }: { kind: string; fix: string }) { throw new MyError({ code: kind, fix }); }\n' +
+      "raise({ kind: 'X_C', fix: 'x doctor --json' });";
+    expect(fixes(rest)).toEqual([]);
+    // The object form needs no rule of its own: the `fix:` key at the call site is already read.
+    expect(fixes(destructured)).toEqual(['x doctor --json']);
+  });
+
+  test("a `{` further down the file is not this declaration's body", () => {
+    // The builder discriminator reads the helper's BODY, and `bodyOf` took the next `{` anywhere
+    // below it — so an expression-bodied helper that only formats a string was classified by
+    // whatever object literal happened to follow. Every call to it then handed the gate a string
+    // to judge as a fix, and a gate that fails on innocent source is worse than one that misses.
+    const source =
+      'const label = (fix: string): string => fix.trim();\n' +
+      "const TITLES = { code: 'X_A' };\n" +
+      "label('x db branch lst');";
+    expect(fixes(source)).toEqual([]);
+  });
+
+  test('a concise arrow body is still read, so the bound did not just switch the rule off', () => {
+    const source =
+      "const rejected = (cause: string, fix: string): Finding => ({ code: 'X_A', cause, fix });\n" +
+      "rejected('a', 'x doctor --json');";
+    expect(fixes(source)).toEqual(['x doctor --json']);
+  });
+
+  test("a method call on some other object is not this file's helper", () => {
+    expect(fixes(`${BUILDER}reporter.rejected('a', 'x doctor --json');`)).toEqual([]);
+  });
+
+  test('an argument that is not a sole literal has nothing to read', () => {
+    expect(fixes(`${BUILDER}rejected('a', input.fix);`)).toEqual([]);
+    expect(fixes(`${BUILDER}rejected('a', prefix + 'x doctor');`)).toEqual([]);
+    expect(fixes(`${BUILDER}rejected('a');`)).toEqual([]);
+  });
+
+  test('the site carries the line the argument is on', () => {
+    const source = `${BUILDER}rejected(\n  'a',\n  'x doctor --json',\n);`;
+    expect(scanFixes(source, 'a.ts')).toEqual([{ at: 'a.ts', line: 6, fix: 'x doctor --json' }]);
+  });
+});
+
 describe('scanCodes', () => {
   test('collects throw sites anywhere', () => {
     expect(scanCodes("throw new E({ code: 'X_A', fix: 'x help' });", 'thing.ts')).toEqual([

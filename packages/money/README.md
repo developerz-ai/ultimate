@@ -14,7 +14,7 @@ read rather than rounding it. → [Money](https://github.com/developerz-ai/ultim
 | Concern | Store | Format |
 |---|---|---|
 | Amount | integer minor units (`1299`) | `Intl.NumberFormat`, `style: 'currency'` |
-| Currency | ISO-4217 code (`'EUR'`) | fraction digits derived from its exponent |
+| Currency | a 3-letter code (`'EUR'`) — shipped ISO-4217 or `registerCurrency`'d | fraction digits derived from its exponent |
 | Scale | whenever it differs from the currency's, finer or coarser (`scale: 6`) | `10 ** moneyScale(amount)` — never a literal `/ 100` |
 | FX rate | explicit argument + timestamp | recorded on the converted value |
 
@@ -37,6 +37,31 @@ add(price, money(500, 'USD'));               // throws X_CURRENCY_MISMATCH
 `fromDecimal` scales by it (`'1.234'` KWD → 1234), `toDecimalString` reverses it, and
 `formatMoney` sets the fraction digits from it. Hardcoding `/ 100` is a JPY bug and a KWD bug.
 
+## A currency the shipped rows do not carry
+
+`As of 2026-08`, 53 ISO-4217 rows ship. They are a *convention* — one useful subset — so an app
+adds its own with a call rather than a fork: a local currency, a scrip, a loyalty point, a token.
+
+```ts
+import { fromDecimal, registerCurrency } from '@ultimat3/money';
+
+registerCurrency({ code: 'XBT', exponent: 8, name: 'Bitcoin' });
+fromDecimal('1.23456789', 'XBT');            // { minor: 123456789, currency: 'XBT' }
+```
+
+Once, at boot, before the first amount in that currency is built. The rules, each a refusal:
+
+| Rule | Refusal |
+|---|---|
+| three A–Z letters — `Intl` throws a `RangeError` on anything else | `X_CURRENCY_INVALID` |
+| a whole exponent from 0 to `MAX_MONEY_SCALE` — there is no safe default, and a silent 2 is the corrupted maths this package exists to prevent | `X_CURRENCY_INVALID` |
+| a non-empty name | `X_CURRENCY_INVALID` |
+| one code, one declaration — a second exponent reinterprets every stored amount by a power of ten, and a second name makes `currencyInfo().name` depend on import order. An **identical** re-registration is a no-op, so a module imported twice is not a crash | `X_CURRENCY_REDEFINED` |
+| a shipped ISO row is not the app's to redefine | `X_CURRENCY_REDEFINED` |
+
+`CURRENCIES` stays the shipped constant; `currencyCodes()` answers for *this* process, registrations
+included. That is why one is a value and the other is a call.
+
 ## Sub-cent amounts carry a scale
 
 `money(2, 'USD', 6)` is $0.000002 — `minor` counting 10⁻⁶ instead of the currency's own 10⁻².
@@ -46,6 +71,8 @@ nothing about `{ minor, currency }` changes: same shape, same JSON, same columns
 is $5 counted in whole dollars, and `rescale()` produces such values legitimately.
 
 ```ts
+import { add, fromDecimal, money, moneyScale, rescale } from '@ultimat3/money';
+
 moneyScale(money(1299, 'EUR'));              // 2 — the currency's own
 moneyScale(money(2, 'USD', 6));              // 6
 rescale(money(80, 'USD'), 8);                // $0.80 as 80,000,000 hundred-millionths
@@ -105,7 +132,7 @@ the epoch: `ExchangeRate.at` is the audit trail.
 |---|---|
 | `X_MONEY_NOT_INTEGER` | fractional minor units, a decimal string more precise than the scale, or a `rescale` that would drop a digit with no mode named |
 | `X_MONEY_SCALE_INVALID` | a scale that is not a whole number of decimal places in 0…15, or a widening whose result no longer fits a safe integer |
-| `X_CURRENCY_UNKNOWN` | code not in the ISO-4217 table |
+| `X_CURRENCY_UNKNOWN` | a code neither shipped nor registered by this process — `currencyCodes()` is the list |
 | `X_CURRENCY_MISMATCH` | arithmetic across two currencies |
 | `X_ALLOCATION_INVALID` | bad part count, empty/negative/all-zero ratios, percentages ≠ 100 |
 | `X_RATE_MISSING` | no rate for the pair — never assumes parity |

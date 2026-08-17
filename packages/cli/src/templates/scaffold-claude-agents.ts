@@ -75,7 +75,7 @@ feature slice. Nothing else. A change outside that set is a collision — report
 | Migrations are generated | edit \`entity.ts\`, then \`x db gen "what changed"\`. Never hand-write a file into \`packages/db/migrations/\` |
 | Destructive is declared | a migration that drops, truncates or retypes carries \`-- destructive: true\`, or the gate refuses it |
 | \`repo.ts\` is the only door | every read and write goes through it; a raw statement anywhere else is authz bypassed |
-| Branch before you break things | \`x db branch <name>\`, never the shared dev database |
+| Branch before you break things | \`x db branch create <name>\`, never the shared dev database |
 | Money | \`{ minor, currency }\` — integer minor units and an ISO code, both, always. Never a float |
 | Time | store UTC; a formatted date always names an explicit IANA time zone |
 

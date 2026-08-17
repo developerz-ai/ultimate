@@ -163,8 +163,10 @@ export function assertReadOnlyQuery(sql: string): string {
         `the statement contains the mutating keyword "${word}"`,
         // `db.migrate` applies pending migrations; it is not an INSERT/UPDATE/DELETE path, and
         // there is no MCP tool that is. Data changes go through an action, which carries a policy.
+        // `create`, not the bare name: `x db branch` takes a VERB from a closed set, and the
+        // bare form this used to hand out now resolves to nothing.
         'db.query has no write path: change data by calling an action exposed with ' +
-          'mcp: { expose: true }, and change schema with db.migrate after x db branch <name>',
+          'mcp: { expose: true }, and change schema with db.migrate after x db branch create <name>',
       );
     }
   }
@@ -229,7 +231,14 @@ export function assertBranchDatabase(target: DatabaseTarget): string {
   if (target.branch === null) {
     throw notBranch(
       `"${target.label}" is not a branch database`,
-      'x db branch <name>, then retry db.migrate',
+      // The verb is load-bearing: `x db branch <name>` is now X_CLI_UNKNOWN_COMMAND, and before
+      // the verbs existed it CREATED whatever word followed — including `ls`.
+      //
+      // The guidance rides behind `#`, never a comma: a fix line is pasted into a shell whole, and
+      // `#` is the one joiner that leaves the command in front of it runnable. `<name>` stays a
+      // placeholder — the branch name is the caller's to choose, which is why `@ultimat3/db` ships
+      // this same line, same slot, in `branchNameInvalid`'s X_SQL_UNSAFE fix.
+      'x db branch create <name>   # then retry db.migrate',
     );
   }
   return target.branch;

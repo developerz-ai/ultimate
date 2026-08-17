@@ -83,7 +83,7 @@ docker run --rm -e ROLE=migrate -e DATABASE_URL=postgres://… myapp:dev
 {"ts":"2026-08-11T17:12:23.681Z","level":"info","msg":"ultimate migrate applied","applied":3,"available":3,"appVersion":"dev"}
 ```
 
-It applies every pending migration in `packages/db/migrations` under a Postgres advisory lock, records each in the `x_migrations` ledger with its checksum, and exits 0. Concurrent migrators serialise (`X_MIGRATE_CONCURRENT`); a checksum that no longer matches an applied migration stops the release rather than corrupting it.
+It applies every pending migration in `packages/db/migrations` under a Postgres advisory lock, records each in the `x_migrations` ledger with its checksum, and exits 0. Concurrent migrators serialise — the second waits up to 60s for the lock, then exits non-zero with `X_MIGRATE_CONCURRENT` rather than hanging the release; a checksum that no longer matches an applied migration stops the release rather than corrupting it.
 
 | Platform | Where the command goes |
 |---|---|

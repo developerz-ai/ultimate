@@ -77,7 +77,9 @@ function toolset(database: DatabaseTarget): {
     ran,
     tool(name) {
       const found = tools.find((t) => t.name === name);
-      if (found === undefined) throw new Error(`no dev tool named ${name}`);
+      // An assertion, not a bare `throw new Error`: a missing tool is a failed expectation about
+      // the catalog, and `expect.unreachable` returns `never`, which narrows `found` below.
+      if (found === undefined) expect.unreachable(`no dev tool named ${name}`);
       return found;
     },
   };
@@ -175,7 +177,7 @@ describe('db.migrate refuses anything but a branch database', () => {
     const failure = tool('db.migrate').handle({}, caller);
     await expect(failure).rejects.toMatchObject({
       code: 'X_MCP_NOT_BRANCH_DB',
-      fix: 'x db branch <name>, then retry db.migrate',
+      fix: 'x db branch create <name>   # then retry db.migrate',
     });
     expect(ran).toEqual([]);
   });

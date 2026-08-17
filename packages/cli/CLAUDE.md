@@ -8,7 +8,7 @@ Tier 5. May import tiers 0–4. Nothing imports this except `create-ultimate`.
 | stdout | `write-line.ts`'s `writeLine` — synchronous fd 1, never `process.stdout.write`, which truncates at the 64KB pipe buffer when `process.exit` follows. Exported, because `create-ultimate`'s entry point needs the same one |
 | Numeric flags | `flag-number.ts` — one reader for `--port` / `--workers` / `--shard`. A bare `Number.parseInt` accepts `4abc` and answers `NaN`, which turned three checks into ones that cannot fail |
 | Missing positionals | `MissingPositionalError`, never `BadFlagError` (names a flag that does not exist) and never `UnknownCommandError` (says a known command form is not one). Its `example` is a REAL invocation — `x g route <name>` in a shell is a redirect |
-| Bare subcommands | `CommandSpec.defaultSubcommand`, **declared**. The parser answered `subcommands[0]` until 1.2.0, so `x db` ran `gen` — the migration GENERATOR — because it sorted first, and `x mcp` started a server. A command with no defensible default declares none and `MissingSubcommandError` refuses the bare form; `parse.test.ts` pins the set at exactly `db` and `mcp` |
+| Bare subcommands | `CommandSpec.defaultSubcommand`, **declared**. The parser answered `subcommands[0]` until 1.2.0, so `x db` ran `gen` — the migration GENERATOR — because it sorted first, and `x mcp` started a server. A command with no defensible default declares none and `MissingSubcommandError` refuses the bare form; `parse.test.ts` pins the set at exactly `db` and `mcp`. Its fix is `x help <command>`, never `x <command> --help`: the subcommand is resolved *after* the flag loop, so the latter throws the same error again — a fix line that reproduced its own failure |
 | I/O | only `dispatch.ts` renders or exits; commands return `CommandResult` |
 | Staying up | a command still listening when `run` resolves returns `hold` (`hold.ts`), or `bin.ts` exits out from under it |
 | `--json` | every command, no exceptions — same data as the human render |
@@ -136,6 +136,23 @@ word is judged as a subcommand only when the spec declares subcommands, or `x ne
 → error-contract` closes a cycle back to the caller, and the precedent for the break is
 `cmd-build.ts`.
 
+**It reads a THIRD word, under the same condition.** `x db branch ls --json` resolved — `db` is a
+command, `branch` is one of its subcommands — and the word that decided what actually ran was never
+looked at, so a fix line that created a stray database passed every check the repo had. A third
+word is judged only where the subcommand declares a closed set (`CommandSpec.subcommandPositionals`,
+declared from the constant the command validates against), because `x jobs show <id>` and
+`x db gen "add publish_at"` take open positionals and a universal rule would report findings about
+working invocations. `positionalChoices` cannot express it: `fix-command.ts` reads that field only
+where a command declares no subcommands at all.
+
+**And in that one slot, a `<placeholder>` is a finding too.** `x db branch <name>` is what two
+`@ultimat3/mcp` fix lines said; the citation reader does not read `<name>` as a word, so the slot
+was never examined and the line resolved clean while running it answers `X_CLI_UNKNOWN_COMMAND` —
+the same blind spot in a second disguise. A closed set means the slot is a verb, so there is
+nothing a reader could substitute that would make it run. `CITATION` therefore matches a
+placeholder in the third slot **only**: `x jobs show <id>` and `x db branch drop <name>` are correct
+fix lines and must stay invisible to this rule.
+
 `collectDeclaredCodes` is the only answer to "which codes exist, and where is each declared?" — one
 walk, one entry per code, the owning registry preferred over any throw site and over a registry
 that named the code in its `<PKG>_BORROWED_ERROR_CODES`. The docs check reads it and so does the
@@ -153,6 +170,27 @@ path in this package.
 those as declarations would report findings nobody can fix. What it cannot see is a `fix` with no
 literal — a parameter, or a table lookup with no fallback. Those are out of a static scan's reach,
 and the step says so rather than guessing.
+
+**A fix does not always arrive under a key**, and until `As of 2026-08` the scanner assumed it did.
+`@ultimat3/mcp`'s `readonly-sql.ts` hands every fix positionally to a local `rejected(cause, fix)`
+helper, so the file held no `fix:` at all and `scanFixes` returned `[]` for all of it — the
+citation resolver was never given a string to judge, and two stale `x db branch <name>` lines
+shipped through the hole. `scanFixes` now also reads the argument in the `fix: string` position of
+a **local** helper, under four rules, each with its own case in `ts-scan.test.ts`: the helper must
+BUILD an error (`code` key or `new …Error(` in its body), or `citedCommandProblem(fix, catalog)` —
+which takes a fix to *judge* it — would have its call sites read as declarations; the parameter
+list may hold no rest or destructured parameter, because neither has a reliable position; the call
+may not be a member access; and the argument must BE one literal, stricter than the key path,
+because `prefix + 'x doctor'` reads as one literal there and publishing half a fix is worse than
+publishing none. Measured over the whole tree: 16 files gained readable fixes, `readonly-sql.ts`
+went from 0 to 7, and **zero** new findings.
+
+What it still cannot see is **cross-file**: `dbNotImplemented` is exported from `@ultimat3/db` and
+called from `pglite-branch.ts`, and resolving that means an import graph and a per-symbol parameter
+table. Same for an error class with a positional `constructor(cause, fix)` — `@ultimat3/render`'s
+`errors.ts` has fourteen, and 15 of its codes have never had a fix line read. Measured: **zero**
+same-file call sites for that form, so a constructor rule would be dead code today. Named, not
+guessed at.
 
 `cli → admin` is a declared sideways edge (`scripts/lib/tiers.ts`): `x dev` **mounts** the
 dashboard, it never grows a second one. The CLI's only contribution is the facts no registry
@@ -241,6 +279,9 @@ regex and `+` is a quantifier — `n1` is what actually selects these tests.
 | `migrations.ts` | the app's `packages/db/migrations` read into `@ultimat3/db`'s `Migration` shape — the **one** reader |
 | `db-generate.ts` | `x db gen`: entities diffed against what the migrations declare, written as `.sql` + `.snapshot.json` + `.hash` |
 | `cmd-db.ts` | the subcommands, and nothing else — `gen` calls `db-generate.ts`, `migrate`/`reset` call `serve.ts`'s `runMigrations` |
+| `db-branch.ts` | what a branch IS: the closed verb set, the name it takes on disk and in `pg_database`, and list/create/drop per mode |
+| `cmd-db-branch.ts` | `x db branch`'s wiring alone — which verb, which refusal, and the one connection an external clone runs on |
+| `db-finding.ts` | one thrown value → one `Finding`, shared by `cmd-db.ts` and `cmd-db-branch.ts` |
 | `drift.ts` | `checkSourceDrift`: the `.hash` sidecar `x verify`'s `drift` step compares, no database needed |
 | `db-destructive.ts` | `checkDestructiveMigrations`: the same step's second half — every committed `up` that drops, truncates or retypes must carry `-- destructive: true` |
 | `db-backfill.ts` | `x db backfill --list`: the flag parsing, the ledger read and the table |
@@ -251,6 +292,59 @@ already installed one (inside `x dev` or `x mcp serve`, booting a second queue t
 database) and otherwise boots `startQueue` and releases it in a `finally`, or a CLI that exits
 holding the PGlite lock breaks the next command run against this app. A second copy of that boot
 would be two answers to "which queue is this command talking to".
+
+**`x db branch` takes a VERB, and a branch name can never be one.** `ls`, `create <name>`,
+`drop <name>` — a closed set, declared once in `BRANCH_SUBCOMMANDS` and read three ways: the
+command validates against it, `dbCommand.spec.subcommandPositionals` declares it so the `errors`
+step can resolve a citation against it, and the refusal for an unknown word lists it. The bare-name
+form it replaces is why: the argument *was* the name, so `x db branch ls --json` — the `fix:` on
+the planned `x branch`, on `X_DB_BRANCH_FAILED`, and (as `create`/`drop`) on `@ultimat3/db`'s own
+`X_BRANCH_EXISTS` and `X_SQL_UNSAFE` — cloned a database called `ls` and returned no listing. All
+four passed every check the repo had, because `fix-command.ts` resolved two words and the third was
+the one that decided what ran.
+
+**`drop` has no confirmation flag, and that is the design.** It may only drop what `ls` shows: an
+external branch is a database carrying the marker comment `createBranch` writes **and** this
+database's own `<source>_branch_` prefix, an embedded one is a `pgdata-<name>` directory, so the
+shared database this session is connected to is in neither set.
+The typo is impossible rather than the keystroke tedious — and `@ultimat3/db` already ships
+`x db branch drop <name>` as `X_BRANCH_EXISTS`'s `fix:` with no flag on it, so a flag here would
+break a shipped instruction.
+
+**The prefix half is not decoration: the marker records WHEN a clone was made and never what it was
+cloned FROM.** One Postgres server hosting two Ultimate apps answers `listBranches()` with both
+apps' clones, and `branchNameOf` reduced `postly_branch_feat` and `analytics_branch_feat` to the
+same branch name — so `x db branch drop feat`, run against `postly`, was authorised by
+`analytics`'s row and then issued `drop database if exists "postly_branch_feat"` against a database
+carrying no marker at all: a `DROP DATABASE` the guard had never approved, and nothing recoverable
+about it. `branchNameIn(source, database)` is the source-scoped inverse of `branchDatabaseName` and
+the one `ls` and `drop` both read; `branchNameOf` survives for `mcp-db-target.ts` alone, which has
+a URL and no connection to ask `current_database()` with.
+
+**The membership check lives inside `dropExternalBranch`, not in the wiring above it.** One
+connection, one listing, one statement before the `DROP` — a listing taken by the caller and acted
+on afterwards is two connections and a window wide enough to hold a whole `create`. It is still not
+atomic and cannot be: `DROP DATABASE` runs in no transaction, so no single statement both verifies
+the marker and deletes. Closing the last gap means a lock around both halves inside
+`@ultimat3/db`'s `dropBranch` — which a `psql` at the next terminal would not hold either.
+
+**`ls` is the reason `create` no longer shells out to `psql`.** `listBranches()` finds branches by
+`createBranch`'s marker comment; the `psql` path wrote the `CREATE DATABASE` and no comment, so
+every branch the CLI made was invisible to the only lister the framework has. External branching
+now runs through `@ultimat3/db` on one `role: 'migrate'` client — `max: 1`, no statement timeout,
+both load-bearing: `CREATE DATABASE … TEMPLATE` is refused while any *other* session holds the
+template, and cloning a real database outlives a `web` profile's 10s.
+
+**`DatabaseTarget.production` is a fact this package supplies, and it was the literal `false`.**
+`mcp-db-target.ts` is the only place one is ever built, so `assertBranchDatabase`'s first refusal —
+"production is never migratable from MCP at all" — could not run for any database the CLI produced;
+a production database was refused only incidentally, because its name lacked `_branch_`, and one
+named `shop_branch_hotfix` read as a branch and was migratable. It is now core's one key, read the
+way `x doctor` reads it. An **unreadable** `ULTIMATE_ENV` counts as production: `tryResolveEnvironment`
+answers `undefined` for exactly one input — a value that is not an environment — and a guard that
+read a typo as "not production" would be defeated by the misconfiguration it exists to survive.
+`staging` stays false; `branch: null` is already what refuses it, and widening the flag would make
+the refusal say something untrue.
 
 `x db backfill` has four shapes and a **dry run is the default**: `--list` reports the ledger,
 `--pending` reports declared-minus-completed and exits non-zero when there is drift, `<name>` plans
@@ -334,7 +428,7 @@ hand-written layout and `readMigrations` skips it — read as a migration it sor
 | `dev-policy.ts` | which actors to ask about, and which capability each policy gates |
 | `cmd-dev.ts` | boot order, mounting `/_x`, installing the span exporter, the file watcher |
 | `mcp-host.ts` | the `DevCapabilities` half of `@ultimat3/mcp`'s `DevHost` — db, tests, logs, verify |
-| `mcp-db-target.ts` | which database the host is pointed at, and whether it is a branch |
+| `mcp-db-target.ts` | which database the host is pointed at: whether it is a branch, and whether it is production |
 | `mcp-errors.ts` | `errors.explain`: one runnable command per code, typed over `CliErrorCode` |
 | `error-catalog.ts` | imports every `@ultimat3/*` package so `x errors` answers for codes no command loads |
 | `mcp-test-output.ts` | reading `bun test`'s own summary back into a `TestRun` |

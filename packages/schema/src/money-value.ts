@@ -7,7 +7,21 @@ import { fail, failWith, isPlainObject, makeSchema, pass, type Schema } from './
 import { expected } from './describe-value';
 import type { StandardIssue } from './standard';
 
-const CURRENCY_RE = /^[A-Z]{3}$/;
+/**
+ * The shape of an ISO 4217 alphabetic code, as a pattern SOURCE — the one declaration every
+ * projection of that bound derives from. It is a string rather than a `RegExp` because the two
+ * surfaces that cannot call a predicate need the source itself: `json-schema.ts` emits it as the
+ * `pattern` of the published OpenAPI contract, and `@ultimat3/entity`'s `currencyCheck` emits it
+ * inside a Postgres `~` CHECK so a psql session cannot write a code the app would refuse to read.
+ *
+ * Keep it inside the syntax ECMAScript, JSON Schema and POSIX ERE spell identically — anchors,
+ * a literal character class, a bounded repetition. A construct only one of the three understands
+ * (`\d`, a lookahead, a non-greedy quantifier) makes the CHECK stop meaning what `isCurrencyCode`
+ * means, and a real server is the first thing that says so.
+ */
+export const CURRENCY_CODE_PATTERN = '^[A-Z]{3}$';
+
+const CURRENCY_RE = new RegExp(CURRENCY_CODE_PATTERN);
 
 /**
  * The framework's ONE declaration of a money value. `@ultimat3/money`'s `Money` and
@@ -46,6 +60,17 @@ export interface MoneyValue {
  */
 export const MAX_MONEY_SCALE = 15;
 
+/**
+ * What a legal `MoneyValue.currency` is — declared once, here, beside the type that carries it and
+ * beside `isMoneyScale`, which is the twin of this predicate and the precedent for it. Takes
+ * `unknown` because every caller is a boundary: a row off a `char(3)` column, a body off the wire,
+ * a `registerCurrency` argument from an untyped caller. `String(value).test(…)` on a symbol throws
+ * where a refusal was due, so the `typeof` half belongs in here rather than at each call.
+ */
+export function isCurrencyCode(value: unknown): value is string {
+  return typeof value === 'string' && CURRENCY_RE.test(value);
+}
+
 /** What a legal `MoneyValue.scale` is — declared once, here, beside the type that carries it. */
 export function isMoneyScale(value: unknown): value is number {
   return (
@@ -64,7 +89,7 @@ export const moneySchema: Schema<MoneyValue, MoneyValue> = makeSchema<MoneyValue
         minimum: -Number.MAX_SAFE_INTEGER,
         maximum: Number.MAX_SAFE_INTEGER,
       },
-      currency: { kind: 'string', pattern: CURRENCY_RE.source },
+      currency: { kind: 'string', pattern: CURRENCY_CODE_PATTERN },
       scale: {
         kind: 'number',
         integer: true,
@@ -90,7 +115,7 @@ export const moneySchema: Schema<MoneyValue, MoneyValue> = makeSchema<MoneyValue
         path: [...path, 'minor'],
       });
     }
-    if (typeof currency !== 'string' || !CURRENCY_RE.test(currency)) {
+    if (!isCurrencyCode(currency)) {
       issues.push({
         message: expected('a 3-letter ISO 4217 code', currency),
         path: [...path, 'currency'],

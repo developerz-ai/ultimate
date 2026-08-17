@@ -134,6 +134,15 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   // negotiates `Accept-Language` and never throws, so the tag that reaches here came from a path,
   // query or body the caller wrote — the same place `X_IMAGE_QUERY_INVALID` comes from.
   X_LOCALE_UNSUPPORTED: 400,
+  // @ultimat3/money — a well-formed code this process carries no row for. The currency table is
+  // OPEN (`registerCurrency`), and every surface between the wire and the throw accepts any
+  // `^[A-Z]{3}$`: `@ultimat3/schema`'s `CURRENCY_CODE_PATTERN`, the OpenAPI `pattern` emitted from
+  // it, and `@ultimat3/entity`'s `char(3)` CHECK. So `{ minor: 100, currency: 'ZWL' }` parses,
+  // reaches `money()` -> `assertCurrency`, and with no row answered 500 — reporting a value the
+  // framework's own schema had just accepted to the error monitor. 400 rather than 422, beside
+  // `X_LOCALE_UNSUPPORTED`: the same shape of mistake, a well-formed value naming something
+  // outside the set this process carries, and money's `fix:` already instructs the caller.
+  X_CURRENCY_UNKNOWN: 400,
   // @ultimat3/seo — a transform query the caller wrote, so the caller is the one who can fix it.
   X_IMAGE_QUERY_INVALID: 400,
   // @ultimat3/storage — every one of these is reachable from a route: `/media/*` already serves

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { defineConfig } from './config';
+import { type AppConfig, defineConfig } from './config';
 import { isUltimateError, type UltimateError } from './errors';
 
 describe('defineConfig', () => {
@@ -54,6 +54,44 @@ describe('defineConfig', () => {
     expect(error.cause).toContain('is not an IANA time zone');
     expect(error.cause).toContain('is not a 3-letter ISO 4217 code');
     expect(error.fix).toContain('x verify');
+  });
+
+  test('defaultCurrency answers the same bound schema declares, case by case', () => {
+    // `CURRENCY_RE` is a deliberate copy of `@ultimat3/schema`'s `CURRENCY_CODE_PATTERN` — core is
+    // tier 0 and may not import schema — so the corpus is the copy too: this is the list
+    // `money-value.test.ts` and `columns.test.ts` each run their own projection against. A widened
+    // or narrowed regex in `config.ts` fails here, which is the only place in this package that a
+    // divergence from the tier-0 declaration can be made visible at all. Comparing the two
+    // patterns mechanically needs a package that may import both (the shape of
+    // `schema-error-codes-pin.test.ts` in `@ultimat3/cli`); this is the local half.
+    const cases: readonly (readonly [string, boolean])[] = [
+      ['USD', true],
+      ['EUR', true],
+      ['XBT', true],
+      ['AAA', true],
+      ['ZZZ', true],
+      ['usd', false],
+      ['UsD', false],
+      ['US', false],
+      ['USDD', false],
+      ['US1', false],
+      ['US_', false],
+      ['US ', false],
+      [' US', false],
+      ['', false],
+      // `$` is end-of-input in ECMAScript and end-of-string in Postgres, but end-of-LINE in PCRE:
+      // a bound copied through a third dialect accepts this one, and the copy above is a copy.
+      ['USD\n', false],
+    ];
+    for (const [defaultCurrency, accepted] of cases) {
+      const build = (): AppConfig => defineConfig({ name: 'myapp', defaultCurrency });
+      if (accepted)
+        expect([defaultCurrency, build().defaultCurrency]).toEqual([
+          defaultCurrency,
+          defaultCurrency,
+        ]);
+      else expect(build).toThrow(/is not a 3-letter ISO 4217 code/);
+    }
   });
 
   test('a non-memory transport without a url env is a config error, not a runtime crash', () => {

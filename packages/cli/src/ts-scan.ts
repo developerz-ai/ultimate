@@ -174,11 +174,150 @@ function valueLiterals(
 /** The lookbehind rejects member access: `cond ? e.fix : ''` is a ternary, not a declaration. */
 const FIX_KEY = /(?<![.\w$])fix\s*:\s*/g;
 
+/** Text between the bracket at `open` and its match, or `undefined` when it never closes. */
+function bracketSpan(masked: string, open: number): string | undefined {
+  let depth = 0;
+  for (let i = open; i < masked.length; i += 1) {
+    const ch = masked[i] as string;
+    // Only `()[]{}`. An angle bracket is a generic in a parameter list and the tail of `=>` in the
+    // very same list, so counting it makes `(fn: () => void)` end the span in the wrong place.
+    if (OPENERS.has(ch)) depth += 1;
+    else if (CLOSERS.has(ch)) {
+      depth -= 1;
+      if (depth === 0) return masked.slice(open + 1, i);
+    }
+  }
+  return undefined;
+}
+
+/** Split at depth-0 commas. Safe on masked text, where a comma inside a literal is already gone. */
+function topLevelParts(text: string): readonly string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i] as string;
+    if (OPENERS.has(ch)) depth += 1;
+    else if (CLOSERS.has(ch)) depth -= 1;
+    else if (ch === ',' && depth === 0) {
+      parts.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(text.slice(start));
+  return parts;
+}
+
+/** A local function that builds an error and takes its fix positionally, and where in its list. */
+interface FixHelper {
+  readonly name: string;
+  readonly index: number;
+}
+
+const HELPER_DECL =
+  /(?<![.\w$])(?:function\s+([A-Za-z_$][\w$]*)\s*\(|(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;]*)?=\s*(?:async\s+)?\()/g;
+
+const FIX_PARAM = /^\s*fix\s*:\s*string\s*$/;
+
+/**
+ * What separates a helper that BUILDS a fix from one that CONSUMES one. `citedCommandProblem(fix:
+ * string, …)` in `fix-command.ts` takes a fix in order to judge it, and reading its call sites as
+ * declarations would report findings about strings that are already findings. A builder names a
+ * `code` or constructs an `…Error`; a consumer does neither.
+ */
+const BUILDS_ERROR = /(?<![.\w$])code\s*[:=]|new\s+[A-Za-z_$][\w$]*Error\s*\(/;
+
+/**
+ * The body of the declaration whose parameter list ends at `after`, and never a `{` belonging to
+ * something below it. An unbounded `indexOf('{')` reads the next object literal in the FILE when
+ * the body is a concise expression, so `const label = (fix: string) => fix.trim();` followed
+ * anywhere by a `{ code: … }` was read as an error builder and every `label(…)` call handed the
+ * gate a string to judge as a fix — a false gate failure over innocent source.
+ *
+ * The scan therefore ends at the `;` that ends the declaration, or at a bracket closing a scope
+ * this declaration is inside. Both directions of that bound answer `''`, which classifies the
+ * helper as a non-builder: a missed fix line costs one unchecked citation, a wrongly claimed one
+ * costs a build. A `{` inside a return-type annotation (`(): { ok: boolean } => …`) is read as the
+ * body and answers `''` for the same reason.
+ */
+function bodyOf(masked: string, after: number): string {
+  for (let i = after; i < masked.length; i += 1) {
+    const ch = masked[i] as string;
+    if (ch === '{') return bracketSpan(masked, i) ?? '';
+    if (ch === ';' || CLOSERS.has(ch)) break;
+  }
+  return '';
+}
+
+function fixHelpers(masked: string): readonly FixHelper[] {
+  const helpers: FixHelper[] = [];
+  for (const declaration of masked.matchAll(HELPER_DECL)) {
+    const name = declaration[1] ?? declaration[2];
+    const open = declaration.index + declaration[0].length - 1;
+    if (name === undefined || masked[open] !== '(') continue;
+    const params = bracketSpan(masked, open);
+    // A rest parameter makes the position of everything after it unknowable, and a destructured
+    // one has no position at all — its `fix:` key at the CALL site is already read by `FIX_KEY`.
+    if (params === undefined || params.includes('...')) continue;
+    const parts = topLevelParts(params);
+    if (parts.some((part) => /^\s*[[{]/.test(part))) continue;
+    const index = parts.findIndex((part) => FIX_PARAM.test(part));
+    if (index === -1) continue;
+    if (!BUILDS_ERROR.test(bodyOf(masked, open + params.length + 2))) continue;
+    helpers.push({ name, index });
+  }
+  return helpers;
+}
+
+/**
+ * The argument in that position at every call to that helper IN THIS FILE.
+ *
+ * Same file, deliberately: resolving `dbNotImplemented` imported from `@ultimat3/db` would mean a
+ * cross-file symbol table, and a scanner that guessed at which import a name came from would read
+ * an unrelated function's argument as a fix. The gap that leaves is named in `CLAUDE.md`.
+ */
+function helperFixSites(
+  masked: string,
+  source: string,
+  at: string,
+  helper: FixHelper,
+  lineAt: (index: number) => number,
+): readonly FixSite[] {
+  const sites: FixSite[] = [];
+  // The lookbehind is `FIX_KEY`'s: `reporter.rejected(…)` is some other object's method.
+  const call = new RegExp(`(?<![.\\w$])${helper.name}\\s*\\(`, 'g');
+  for (const match of masked.matchAll(call)) {
+    const open = match.index + match[0].length - 1;
+    const args = bracketSpan(masked, open);
+    if (args === undefined) continue;
+    const parts = topLevelParts(args);
+    const argument = parts[helper.index];
+    if (argument === undefined) continue;
+    // Stricter than the `fix:` path, and deliberately: the whole argument must BE one literal.
+    // `valueLiterals` alone reads `prefix + 'x doctor'` as one literal, because the identifier
+    // half contributes none — and publishing half a fix as the whole one is the failure
+    // `soleLiteral` already names. A key at least declares that what follows is the value.
+    const quote = argument.trim()[0];
+    if (quote === undefined || !QUOTES.has(quote)) continue;
+    const literal = argument.indexOf(quote);
+    if (argument.slice(endOfLiteral(argument, literal)).trim() !== '') continue;
+    const from = parts.slice(0, helper.index).reduce((n, part) => n + part.length + 1, open + 1);
+    const literals = valueLiterals(masked, source, from, lineAt);
+    if (literals.length === 1) sites.push({ ...(literals[0] as FixSite), at });
+  }
+  return sites;
+}
+
 /**
  * Every string a `fix:` can evaluate to. Searched over the masked source, so a `fix:` written
  * inside a doc comment or interpolated into a message is not mistaken for a declaration. A `fix`
  * computed at runtime — a bare identifier, a parameter, a table lookup with no literal fallback —
  * has nothing to read and is beyond a static scan; the gate says so rather than guessing.
+ *
+ * Two shapes, because a fix does not always arrive under a key. `@ultimat3/mcp`'s `readonly-sql.ts`
+ * hands every one of its fixes positionally to a local `rejected(cause, fix)` helper, so the key
+ * rule alone returned `[]` for the whole file — 20 non-test files in that package and the scanner
+ * saw fixes in three — and two stale `x db branch <name>` lines shipped through the hole.
  */
 export function scanFixes(source: string, at: string): readonly FixSite[] {
   const masked = maskLiterals(source);
@@ -189,6 +328,9 @@ export function scanFixes(source: string, at: string): readonly FixSite[] {
     for (const literal of valueLiterals(masked, source, start, lineAt)) {
       sites.push({ ...literal, at });
     }
+  }
+  for (const helper of fixHelpers(masked)) {
+    sites.push(...helperFixSites(masked, source, at, helper, lineAt));
   }
   return sites;
 }

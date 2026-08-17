@@ -21,7 +21,7 @@ import {
 // value-imports `@ultimat3/entity`, and off the barrel it loaded the entity registry into every
 // test that wanted the general harness.
 import { isolateEntityRegistry } from '@ultimat3/testing/registry-isolation';
-import { branchDatabaseName, branchSql, DB_SUBCOMMANDS, dbCommand, driftFindings } from './cmd-db';
+import { DB_SUBCOMMANDS, dbCommand, driftFindings } from './cmd-db';
 import type { CommandContext } from './command';
 import { BadFlagError } from './errors';
 import { exec } from './exec';
@@ -106,15 +106,6 @@ describe('unit · x db reset', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  });
-});
-
-describe('unit · x db branch', () => {
-  test('a branch name is sanitised into the database it clones into', () => {
-    expect(branchDatabaseName('postly', 'feat/new-thing')).toBe('postly_branch_feat_new_thing');
-    expect(branchSql('postly', 'postly_branch_x')).toBe(
-      'CREATE DATABASE "postly_branch_x" TEMPLATE "postly"',
-    );
   });
 });
 

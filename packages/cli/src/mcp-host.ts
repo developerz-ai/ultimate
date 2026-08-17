@@ -176,7 +176,7 @@ function capabilities(input: DevHostInput, lazy: LazyServices): DevCapabilities 
   let readOnlyRole: Promise<string | null> | undefined;
 
   return {
-    database: databaseTarget(lazy.services),
+    database: databaseTarget(lazy.services, input.env),
 
     async runQuery(sql: string, limits: QueryLimits): Promise<QueryRows> {
       const { db } = await lazy.running();

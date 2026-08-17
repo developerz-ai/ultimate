@@ -117,21 +117,27 @@ The response carries a `guards` array naming the layers that actually engaged fo
 
 `db.migrate` refuses anything that is not a branch database.
 
-```
-x branch feat-new-billing
-  ✓ database    myapp_feat_new_billing   (copy-on-write from dev template, 340ms)
-  ✓ build       build id 8f2a1c…
-  ✓ preview     http://feat-new-billing.localhost:3000
-  ✓ mcp         ws://localhost:9229/feat-new-billing
+```bash
+x db branch create feat-new-billing --json
 ```
 
-| Check | Detail |
-|---|---|
-| Database name matches the branch pattern | `<app>_<branch-slug>` |
-| The branch registry lists it as a branch, created by `x branch` | a hand-created database named like a branch is still refused |
-| The connection is not the shared dev or any production-tagged URL | refusal is `X_MCP_NOT_BRANCH_DB`, `fix: x branch <name>` |
-| Destructive statements | require `--allow-destructive` even in a branch |
-| Teardown | `x branch rm <name>`; the SW cache namespace is build-ID-scoped, so a preview can never poison prod caches |
+```json
+{"ok":true,"command":"db","data":{"branch":"feat-new-billing",
+ "database":"myapp_branch_feat_new_billing",
+ "preview":"http://feat-new-billing.localhost:3000","mode":"external"}}
+```
+
+**The test is the database's own name, and nothing else** (`databaseTarget`, `packages/cli/src/mcp-db-target.ts:18`). `DatabaseTarget.branch` is `branchNameOf(<database>)` — `/_branch_(.+)$/` — or, embedded, whether the data directory is `<stateDir>/pgdata-<name>` rather than `<stateDir>/pgdata`. Null means refuse.
+
+| Check | Detail | `As of 2026-08` |
+|---|---|---|
+| Database name carries `_branch_` | `<source>_branch_<slug>` — the same rule `x db branch create` writes, read back from one module so `ls` and the host cannot disagree | **enforced** |
+| Embedded: the data dir is a copy | `pgdata-<name>`, so the dev directory itself is never a branch | **enforced** |
+| Provenance | `createBranch` stamps a `comment on database` marker and `x db branch ls` filters on it — the MCP check does **not** read it, so a hand-created `myapp_branch_x` passes on its name alone | **name only** |
+| Production | `DatabaseTarget.production` is hardcoded `false`: this host is whatever `x dev` resolved, and production migrates through `ROLE=migrate` in a deploy hook, never through MCP | **not a check** |
+| Destructive statements | `db.migrate` applies whatever the files hold; the rail is upstream — `x db gen` needs `--allow-destructive` to emit a drop, and `x verify`'s `drift` step refuses a committed `up` that destroys without a `-- destructive: true` line (`X_MIGRATION_DESTRUCTIVE`). The tool's own `destructive: true` is an MCP annotation, not a gate | **enforced upstream** |
+| Teardown | `x db branch drop <name>` — it may only drop what `ls` shows | **shipped** |
+| Build id scopes the SW | a per-branch build id, so a preview can never poison prod caches | **planned**, part of `x branch` |
 
 An agent can migrate, seed, test, and browse a preview without risking anything shared. That is what makes "let the agent try it" a safe instruction.
 
@@ -193,6 +199,6 @@ An action listed in `defineAppMcp` without `mcp.expose` is a build error, so exp
 | `X_MCP_SCOPE_UNKNOWN` | `defineAppMcp`'s `scopes:` names a tool this server does not project | spell the projected tool name, or drop the entry from `scopes` |
 | `X_MCP_SCOPE_CONFLICT` | two scopes in `defineAppMcp`'s `scopes:` claim one tool | keep the tool under a single scope |
 | `X_MCP_QUERY_REJECTED` | `db.query` got something other than one read-only statement | send exactly one read-only `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` |
-| `X_MCP_NOT_BRANCH_DB` | `db.migrate` aimed at a non-branch database | `x branch <name>` |
+| `X_MCP_NOT_BRANCH_DB` | `db.migrate` aimed at a non-branch database | `x db branch create <name>   # then retry db.migrate` |
 | `X_MCP_TOOL_UNDECLARED` | `defineAppMcp` lists an action without `mcp.expose` | add `mcp: { expose: true, description }` |
 | `X_MANIFEST_STALE` | manifest/openapi differ from the code | `x manifest` |

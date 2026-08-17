@@ -4,9 +4,57 @@
 // contract three packages read, not one validator's behaviour.
 
 import { describe, expect, test } from 'bun:test';
-import { MAX_MONEY_SCALE } from './money-value';
+import { CURRENCY_CODE_PATTERN, isCurrencyCode, MAX_MONEY_SCALE } from './money-value';
 import { validate } from './standard';
 import { builtinT } from './validators';
+
+/** What the currency bound answers, case by case — the same corpus `@ultimat3/entity` runs its
+ * column parse and its Postgres CHECK against, so the three projections are compared to one list
+ * rather than to each other's behaviour. */
+const CURRENCY_CASES: readonly (readonly [string, boolean])[] = [
+  ['USD', true],
+  ['EUR', true],
+  ['XBT', true],
+  ['AAA', true],
+  ['ZZZ', true],
+  ['usd', false],
+  ['UsD', false],
+  ['US', false],
+  ['USDD', false],
+  ['US1', false],
+  ['US_', false],
+  ['US ', false],
+  [' US', false],
+  ['', false],
+  // `$` is end-of-input in ECMAScript and end-of-string in Postgres, but it is end-of-line in
+  // PCRE — a bound copied through a third dialect would accept this one.
+  ['USD\n', false],
+];
+
+describe('isCurrencyCode', () => {
+  test('accepts three uppercase letters and nothing else', () => {
+    for (const [value, accepted] of CURRENCY_CASES) {
+      expect([value, isCurrencyCode(value)]).toEqual([value, accepted]);
+    }
+  });
+
+  test('answers a non-string without throwing', () => {
+    // `registerCurrency`'s signature says `string`, and an untyped caller is what the guard is
+    // for: a predicate that assumed `.test()` was safe would throw where a refusal was due.
+    for (const value of [undefined, null, 123, Symbol('USD'), ['USD'], { code: 'USD' }]) {
+      expect(isCurrencyCode(value)).toBe(false);
+    }
+  });
+
+  test('the money node publishes the same pattern the predicate applies', () => {
+    // The node is the OpenAPI contract: a pattern restated here and widened in the predicate is a
+    // generated client refusing a code this framework accepts, found by an app and not by a test.
+    expect(builtinT.money.node.properties?.['currency']?.pattern).toBe(CURRENCY_CODE_PATTERN);
+    for (const [value, accepted] of CURRENCY_CASES) {
+      expect([value, new RegExp(CURRENCY_CODE_PATTERN).test(value)]).toEqual([value, accepted]);
+    }
+  });
+});
 
 describe('builtinT.money', () => {
   test('accepts a valid Money value', () => {

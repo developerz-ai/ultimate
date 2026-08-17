@@ -1,4 +1,12 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import {
+  configureErrorReporting,
+  memoryErrorReporter,
+  resetErrorReporting,
+  UltimateError,
+} from '@ultimat3/core';
+import { CURRENCY_CODE_PATTERN, isCurrencyCode } from '@ultimat3/schema';
+import { defineHttpConfig } from './config';
 import {
   appErrorStatus,
   ERROR_STATUS,
@@ -10,6 +18,9 @@ import {
   toProblem,
 } from './error-map';
 import { bodyInvalid, forbidden, HTTP_ERROR_CODES, rateLimited, routeNotFound } from './errors';
+import { createPipeline } from './pipeline';
+import { text } from './response';
+import { createRouter, type Route } from './router';
 
 describe('error -> status', () => {
   test('every code this package can throw has a row', () => {
@@ -301,6 +312,103 @@ describe('codes other packages throw ON a request', () => {
   test('a malformed Idempotency-Key header is a 400, and a drained lifecycle a 500', () => {
     expect(statusFor('X_IDEMPOTENCY_KEY_INVALID')).toBe(400);
     expect(ERROR_STATUS.X_LIFECYCLE_DRAINED).toBe(500);
+  });
+});
+
+// A well-formed currency code this process carries no row for, end to end. The table is OPEN
+// (`registerCurrency`), so "unknown" stopped meaning "impossible" — and every surface between the
+// wire and the throw accepts any `^[A-Z]{3}$`, which is what makes the code REACHABLE rather than
+// merely declared. With no row it answered the 500 default, and `stages.ts` reports `>= 500` to
+// the error monitor: the on-call was paged for a value the framework's own schema had accepted.
+//
+// The throw is REPRODUCED, not imported. `@ultimat3/money` is tier 1 and this package is tier 2,
+// so the import would be legal — but money is not a dependency of `@ultimat3/http` and must not
+// become one to run a test. The seam is the CODE, exactly as it is for `X_LOCALE_UNSUPPORTED` and
+// every other borrowed row in this table.
+describe('a currency this process has no row for', () => {
+  const reporter = memoryErrorReporter();
+
+  // `MoneyError extends UltimateError`, and `currencyUnknown()` is what `assertCurrency` throws.
+  const currencyUnknownAsMoneyThrowsIt = (currency: string): UltimateError =>
+    new UltimateError({
+      code: 'X_CURRENCY_UNKNOWN',
+      cause: `"${currency}" is not a currency this process knows`,
+      fix: 'pass a code currencyCodes() lists, uppercased',
+    });
+
+  const routes: readonly Route[] = [
+    {
+      method: 'POST',
+      path: '/prices',
+      meta: { name: 'prices.create', auth: 'public' },
+      // Where an app calls `money(input.minor, input.currency)`: the body already parsed, so the
+      // only thing left to refuse the code is the currency table.
+      handler: () => {
+        throw currencyUnknownAsMoneyThrowsIt('ZWL');
+      },
+    },
+    {
+      method: 'GET',
+      path: '/ok',
+      meta: { name: 'ok', auth: 'public' },
+      handler: () => text('ok'),
+    },
+  ];
+
+  const pipeline = () =>
+    createPipeline({
+      table: createRouter(routes),
+      config: defineHttpConfig({ rateLimit: { scope: 'process' }, dev: false }),
+      hooks: {},
+    });
+
+  const post = (body: unknown): Request =>
+    new Request('http://localhost/prices', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  beforeEach(() => {
+    resetErrorReporting();
+    reporter.reset();
+    configureErrorReporting({ reporter });
+  });
+
+  afterEach(resetErrorReporting);
+
+  // The half that makes the rest reachable: the ONE currency declaration every projection derives
+  // from says `ZWL` is a legal code. `json-schema.ts` publishes this source as the OpenAPI
+  // `pattern` and `@ultimat3/entity` emits it inside a Postgres CHECK, so all three agree — the
+  // value gets through the wire and only the currency table refuses it.
+  test('the schema, and therefore the published contract, accepts the code that gets here', () => {
+    expect(isCurrencyCode('ZWL')).toBe(true);
+    expect(new RegExp(CURRENCY_CODE_PATTERN).test('ZWL')).toBe(true);
+  });
+
+  test('answers 400 with the code, not the 500 it fell through to', async () => {
+    const response = await pipeline().handle(post({ minor: 100, currency: 'ZWL' }), {
+      role: 'web',
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get('content-type')).toContain('application/problem+json');
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body['code']).toBe('X_CURRENCY_UNKNOWN');
+    expect(body['status']).toBe(400);
+  });
+
+  // The assertion the row exists for. `stages.ts` reports every `status >= 500` to the monitor, so
+  // without the row this request woke somebody up for a caller's own currency code.
+  test('the error monitor is not paged for it', async () => {
+    await pipeline().handle(post({ minor: 100, currency: 'ZWL' }), { role: 'web' });
+
+    expect(reporter.events).toEqual([]);
+  });
+
+  test('the row is 400 wherever the status is read from', () => {
+    expect(statusFor('X_CURRENCY_UNKNOWN')).toBe(400);
+    expect(ERROR_STATUS.X_CURRENCY_UNKNOWN).toBe(400);
   });
 });
 

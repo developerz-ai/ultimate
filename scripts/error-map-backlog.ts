@@ -106,11 +106,30 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
   // tier 1 — catalog faults, raised by the build and by `x i18n`. The request-time one is
   // `X_LOCALE_UNSUPPORTED`, which is unpinned.
   i18n: ['X_CATALOG_INVALID', 'X_CATALOG_MISSING_KEYS'],
-  // tier 1 — arithmetic and currency-table faults; a caller never names a currency directly.
+  // tier 1 — two classes, and only the second is arithmetic.
+  //
+  // `X_CURRENCY_INVALID` and `X_CURRENCY_REDEFINED` are `registerCurrency`'s refusals and nothing
+  // else raises them — `packages/money/src/currency.ts:118,130,136,142` are the only four throw
+  // sites in the repo. That is the same module-scope registry shape as `registerErrorStatus`,
+  // `registerRoute`, `registerErrorCodes` and `registerActions`, whose own duplicate-and-invalid
+  // codes are all pinned here too, so this is the answer already given six times over. Nothing
+  // REFUSES a call from inside a handler, but `REGISTERED` is per PROCESS: a request-driven
+  // registration lands on one replica and leaves the others answering `X_CURRENCY_UNKNOWN` for
+  // every amount in that currency, so it is broken before a status could describe it. A currency
+  // that arrives over the wire never reaches the function either — it reaches `assertCurrency`,
+  // which is `X_CURRENCY_UNKNOWN`.
+  //
+  // The rest are arithmetic faults, raised on two values the app already holds. `X_CURRENCY_UNKNOWN`
+  // LEFT this group rather than joining it: the line here used to read "a caller never names a
+  // currency directly", and `@ultimat3/schema`'s `CURRENCY_CODE_PATTERN`, the OpenAPI `pattern`
+  // emitted from it and `@ultimat3/entity`'s `char(3)` CHECK all accept any `^[A-Z]{3}$` — so a
+  // caller CAN post an unregistered code, reach `money()`, and used to be told 500 for a value the
+  // framework's own schema had just accepted. It has a 400 row now.
   money: [
     'X_ALLOCATION_INVALID',
+    'X_CURRENCY_INVALID',
     'X_CURRENCY_MISMATCH',
-    'X_CURRENCY_UNKNOWN',
+    'X_CURRENCY_REDEFINED',
     'X_MONEY_NOT_INTEGER',
     'X_MONEY_SCALE_INVALID',
     'X_RATE_MISSING',

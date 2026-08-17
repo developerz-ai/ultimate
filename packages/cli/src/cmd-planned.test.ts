@@ -11,6 +11,7 @@ import {
 } from './cmd-planned';
 import type { CommandContext } from './command';
 import { exec } from './exec';
+import { citedCommandProblem, loadCommandCatalog } from './fix-command';
 import { parseArgs } from './parse';
 import { commandFor, SPECS } from './registry';
 
@@ -94,7 +95,9 @@ describe('unit · the planned subcommand table', () => {
   test('an unlisted subcommand still fails as not-implemented, never as a bare throw', () => {
     const error = plannedSubcommand('db', 'nope');
     expect(error).toBeUltimateError('X_NOT_IMPLEMENTED');
-    expect(error.fix).toBe('x db --help');
+    // `x db --help` is refused by the parser — `db` declares subcommands and no default, so the
+    // subcommand is resolved before help is rendered. A fix has to be a command that runs.
+    expect(error.fix).toBe('x help db');
   });
 });
 
@@ -114,7 +117,20 @@ describe('unit · what a planned command tells the caller', () => {
 
   test('x branch points at the database half that is shipped', () => {
     const planned = PLANNED_COMMANDS.find((entry) => entry.name === 'branch');
-    // `x db branch <name>` pasted into a shell is a redirect; `ls` is the subcommand that runs.
-    expect(planned?.fix).toBe('x db branch ls --json   # the database half, shipped today');
+    // `x db branch <name>` pasted into a shell is a redirect; `ls` is the verb that runs. It was
+    // this exact line, against a command whose argument was the branch NAME — so an agent that
+    // followed it verbatim created a branch called `ls` and got no listing.
+    expect(planned?.fix).toBe(
+      'x db branch ls --json   # the database half: ls, create <name>, drop <name>',
+    );
+  });
+
+  test('every planned fix resolves as an invocation, three words deep', async () => {
+    // `runnableOf` above reads the first two words. `x db branch ls` passed that check while
+    // `x db branch` had no verbs at all, because nothing looked at the third.
+    const catalog = await loadCommandCatalog();
+    for (const planned of PLANNED_COMMANDS) {
+      expect(citedCommandProblem(planned.fix, catalog)).toBeUndefined();
+    }
   });
 });

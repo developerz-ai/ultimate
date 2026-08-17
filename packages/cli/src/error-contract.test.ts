@@ -66,6 +66,29 @@ describe('fixProblem', () => {
     }
   });
 
+  test('the article is not what makes it advice — "see docs" is the same shrug', () => {
+    // `packages/mcp/src/server.ts` shipped exactly `see docs` as a `fix:` and passed the gate:
+    // the pattern was `see the docs?`, one article longer than the line that got through. The
+    // whole family goes, because the next one is as likely to be `read the docs` as `see docs`.
+    for (const advice of [
+      'see docs',
+      'read the docs',
+      'consult the documentation',
+      'refer to the docs for the field list',
+      'see documentation',
+    ]) {
+      expect(fixProblem(advice)).toContain('names no command, call or file');
+    }
+  });
+
+  test('and it still yields to a real instruction, which is the whole conditional rule', () => {
+    // Naming the observation AND the command is the shape the contract wants — a rule that
+    // refused this would push an author into deleting the sentence that says where to look.
+    expect(
+      fixProblem('see the docs for the field list, then: x actions describe posts.publish'),
+    ).toBeUndefined();
+  });
+
   test('names the phrase it refused, so the rewrite is obvious', () => {
     expect(fixProblem('check your database connection')).toContain('"check"');
   });

@@ -34,7 +34,8 @@ export {
   readTarget,
   requireEntry,
 } from './cmd-build';
-export { branchDatabaseName, branchSql, dbCommand, previewUrl } from './cmd-db';
+export { dbCommand } from './cmd-db';
+export { runBranchCommand } from './cmd-db-branch';
 export type { DeployPlan } from './cmd-deploy';
 export { deployCommand, planDeploy } from './cmd-deploy';
 export type { DevServer, StartDevOptions } from './cmd-dev';
@@ -65,6 +66,15 @@ export { testCommand } from './cmd-test';
 export { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 export type { CliCommand, CommandContext } from './command';
 export { failed, ok } from './command';
+export type { BranchRow, BranchSubcommand } from './db-branch';
+export {
+  BRANCH_SUBCOMMANDS,
+  branchDatabaseName,
+  branchNameOf,
+  isBranchSubcommand,
+  pgliteBranchName,
+  previewUrl,
+} from './db-branch';
 export type { GeneratedFiles, GenerateMigrationOptions } from './db-generate';
 export { generateAppMigration, migrationSql } from './db-generate';
 export type { AssetRoutesOptions } from './dev-assets';

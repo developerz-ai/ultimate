@@ -16,7 +16,13 @@ const catalog: CommandCatalog = {
       subcommands: ['ls', 'show', 'cancel'],
       flags: [{ name: 'from-step', type: 'string', summary: '' }],
     },
-    { name: 'db', summary: '', usage: '', subcommands: ['gen', 'migrate', 'studio'] },
+    {
+      name: 'db',
+      summary: '',
+      usage: '',
+      subcommands: ['gen', 'migrate', 'studio', 'branch'],
+      subcommandPositionals: { branch: ['ls', 'create', 'drop'] },
+    },
     {
       name: 'new',
       summary: '',
@@ -64,6 +70,40 @@ describe('a fix that cites a command this build does not ship', () => {
     // `x test summarize` is what @ultimat3/ai's README still prints as a fix line: `x test`
     // declares no subcommands, so the second word was never judged at all.
     expect(citedCommandProblem('x test summarize', catalog)).toContain('not one of');
+  });
+
+  test("a THIRD word outside a subcommand's closed set is the finding", () => {
+    // The hole `x db branch ls --json` shipped through. The citation resolved — `db` is a command
+    // and `branch` is one of its subcommands — and nothing ever looked at the third word, which
+    // `x db branch` read as a branch NAME and turned into a `CREATE DATABASE`. Following that fix
+    // line verbatim created a stray database instead of listing one.
+    const problem = citedCommandProblem('x db branch lst --json', catalog);
+    expect(problem).toContain('x db branch lst');
+    expect(problem).toContain('ls, create, drop');
+  });
+
+  test('a PLACEHOLDER in a closed-set slot is the finding — a verb set means a verb', () => {
+    // `x db branch <name>` is what `@ultimat3/mcp`'s two fix lines say, and it resolved clean:
+    // the citation reader does not read `<name>` as a word, so the slot was never examined. It
+    // is `X_CLI_UNKNOWN_COMMAND` when run. Where a subcommand declares a closed set, the slot is
+    // a verb — so a placeholder there is always wrong, whatever the reader is meant to put in it.
+    const problem = citedCommandProblem('x db branch <name>, then retry db.migrate', catalog);
+    expect(problem).toContain('x db branch <name>');
+    expect(problem).toContain('ls, create, drop');
+  });
+
+  test('a placeholder AFTER the verb is fine — that slot is the branch name', () => {
+    expect(citedCommandProblem('x db branch create <name>', catalog)).toBeUndefined();
+    expect(citedCommandProblem('x db branch drop <name> --json', catalog)).toBeUndefined();
+    // And a placeholder in an OPEN slot stays fine, which is most fix lines in the repo.
+    expect(citedCommandProblem('x jobs show <id> --json', catalog)).toBeUndefined();
+  });
+
+  test('a third word is judged only where the subcommand declares a closed set', () => {
+    // `x jobs show <id>` and `x db gen "add publish_at"` take open positionals: judging every
+    // third word would be a finding about a working invocation.
+    expect(citedCommandProblem('x jobs show abc123', catalog)).toBeUndefined();
+    expect(citedCommandProblem('x db gen migrations', catalog)).toBeUndefined();
   });
 });
 
@@ -155,5 +195,20 @@ describe('the catalog is the registry, never a copy of it', () => {
 
   test('`x jobs cancel` resolves against the real registry, because it now exists', async () => {
     expect(citedCommandProblem('x jobs cancel <id>', await loadCommandCatalog())).toBeUndefined();
+  });
+
+  test('every `x db branch <verb>` the framework cites resolves against the real registry', async () => {
+    // These four are shipped fix lines, three of them in `@ultimat3/db`'s own error registry and
+    // one in the planned table. All four passed while `x db branch` had no verbs at all: drop
+    // `ls` from `BRANCH_SUBCOMMANDS` and this is what notices.
+    const real = await loadCommandCatalog();
+    for (const fix of [
+      'x db branch ls --json',
+      'x db branch create feature_x',
+      'x db branch drop feature_x   # then re-create, or pick another name',
+      'x db branch create <name>   # lowercase letters, digits, underscore and dash only',
+    ]) {
+      expect(citedCommandProblem(fix, real)).toBeUndefined();
+    }
   });
 });

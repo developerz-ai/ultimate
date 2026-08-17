@@ -2,7 +2,7 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**The next release is a major.** [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `[Unreleased]` section carries **32** entries marked `BREAKING —`, `As of 2026-08`, and each one changes a surface the table below covers. Plan for the major, not for a minor with a long changelog. No version number and no date is promised here — both are decided at the tag. Read `[Unreleased]` before you pin.
+**The next release is a major.** [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `[Unreleased]` section carries **33** entries marked `BREAKING —`, `As of 2026-08`, and each one changes a surface the table below covers. Plan for the major, not for a minor with a long changelog. No version number and no date is promised here — both are decided at the tag. Read `[Unreleased]` before you pin.
 
 ## What semver covers
 

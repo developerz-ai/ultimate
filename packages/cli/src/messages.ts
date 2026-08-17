@@ -38,6 +38,12 @@ const CATALOG = {
     '{count} backfill(s): {enqueued} enqueued, {deduped} already live, {blocked} blocked',
   'cli.db.backfill.dryRun': '{count} backfill(s) would run — nothing written without --write',
   'cli.db.branch.ready': 'branch {name} ready',
+  'cli.db.branch.dropped': 'branch {name} dropped',
+  'cli.db.branch.failed': 'branch command failed',
+  'cli.db.branch.listed': '{count} branch(es) of this database',
+  'cli.db.branch.none': 'this database has no branch',
+  /** The empty cell in an `x db branch ls` column — a value, not a column key. */
+  'cli.db.branch.unknown': '-',
   'cli.db.gen.failed': 'migration not generated',
   'cli.db.gen.unchanged': 'entities and migrations agree — nothing to generate',
   'cli.db.gen.written': 'migration {id} generated',

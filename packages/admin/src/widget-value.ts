@@ -4,6 +4,7 @@
 // this returns and make no decisions of their own.
 
 import type { Money } from '@ultimat3/money';
+import { isCurrencyCode } from '@ultimat3/schema';
 import { AdminFieldUnsupportedError } from './errors';
 import type { AdminField } from './fields';
 
@@ -71,8 +72,6 @@ const fail = (field: AdminField, cause: string, fix: string): never => {
   throw new AdminFieldUnsupportedError({ entity: field.entity, field: field.name, cause, fix });
 };
 
-const CURRENCY = /^[A-Z]{3}$/;
-
 /**
  * `money()` puts a `bigint` on the row — Postgres `bigint` minor units — where `Money` is a
  * number. This is the one place that widening happens, and it refuses rather than round: a
@@ -113,7 +112,12 @@ export function assertMoney(field: AdminField, value: unknown): Money | null {
     );
   }
   const currency = typeof bag.currency === 'string' ? bag.currency : field.currency;
-  if (currency === undefined || !CURRENCY.test(currency)) {
+  // `isCurrencyCode` is `@ultimat3/schema`'s (tier 0), never a local regex: this widget refuses
+  // exactly what `t.money`, the published OpenAPI `pattern` and the Postgres CHECK refuse, so a
+  // row the app wrote can never be one the admin declines to render. It takes `unknown`, which is
+  // what makes the `undefined` case — no row currency and no declared `field.currency` — the same
+  // branch as a malformed one.
+  if (!isCurrencyCode(currency)) {
     return fail(
       field,
       `money has no ISO-4217 currency (got ${String(bag.currency)})`,

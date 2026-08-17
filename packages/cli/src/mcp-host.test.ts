@@ -359,30 +359,59 @@ describe('unit · the database target', () => {
   test('an external url never carries its password into the label', () => {
     const target = databaseTarget(
       services('postgres://joe:hunter2@db.internal:5432/shop', 'external'),
+      {},
     );
     expect(target.label).not.toContain('hunter2');
     expect(target.label).toBe('postgres://db.internal:5432/shop');
   });
 
   test("the app's own dev database is not a branch", () => {
-    expect(databaseTarget(services('pglite:///app/.x/pgdata', 'embedded')).branch).toBeNull();
+    expect(databaseTarget(services('pglite:///app/.x/pgdata', 'embedded'), {}).branch).toBeNull();
     expect(
-      databaseTarget(services('postgres://db.internal:5432/shop', 'external')).branch,
+      databaseTarget(services('postgres://db.internal:5432/shop', 'external'), {}).branch,
     ).toBeNull();
   });
 
   test('a branch is read from the name `x db branch` actually produces', () => {
-    expect(databaseTarget(services('pglite:///app/.x/pgdata-feature', 'embedded')).branch).toBe(
+    expect(databaseTarget(services('pglite:///app/.x/pgdata-feature', 'embedded'), {}).branch).toBe(
       'feature',
     );
     expect(
-      databaseTarget(services('postgres://db.internal:5432/shop_branch_feature', 'external'))
+      databaseTarget(services('postgres://db.internal:5432/shop_branch_feature', 'external'), {})
         .branch,
     ).toBe('feature');
   });
 
-  test('nothing `x dev` resolves is production — the branch gate is what refuses', () => {
-    expect(databaseTarget(services('pglite:///app/.x/pgdata', 'embedded')).production).toBe(false);
+  test('a developer machine is not production, whichever database it points at', () => {
+    const dev = services('pglite:///app/.x/pgdata', 'embedded');
+    expect(databaseTarget(dev, {}).production).toBe(false);
+    expect(databaseTarget(dev, { ULTIMATE_ENV: 'development' }).production).toBe(false);
+    expect(databaseTarget(dev, { NODE_ENV: 'test' }).production).toBe(false);
+    // Staging is not production traffic, and `branch: null` is already what refuses it. Widening
+    // this flag to mean "not development" would make the refusal say something untrue.
+    expect(databaseTarget(dev, { ULTIMATE_ENV: 'staging' }).production).toBe(false);
+  });
+
+  test('a production environment says so — the arm that refuses it was unreachable', () => {
+    // `production` was the literal `false` in both branches, so `assertBranchDatabase`'s FIRST
+    // refusal — "production is never migratable from MCP at all" — could not run for any database
+    // this CLI ever produced. A production database that happens to be named `<x>_branch_<y>`, or
+    // a container whose data directory is `pgdata-<y>`, reads as a branch and was migratable.
+    const prod = services('postgres://db.internal:5432/shop_branch_hotfix', 'external');
+    expect(databaseTarget(prod, { ULTIMATE_ENV: 'production' }).production).toBe(true);
+    expect(databaseTarget(prod, { NODE_ENV: 'production' }).production).toBe(true);
+    // and the branch reading is unchanged — the two answers are independent.
+    expect(databaseTarget(prod, { ULTIMATE_ENV: 'production' }).branch).toBe('hotfix');
+  });
+
+  test('an unreadable ULTIMATE_ENV counts as production, because the guard must fail closed', () => {
+    // `tryResolveEnvironment` answers `undefined` for exactly one input: `ULTIMATE_ENV` set to
+    // something that is not an environment. Reading that as "not production" would let the one
+    // misconfiguration this guard exists to survive defeat it.
+    const target = databaseTarget(services('postgres://db/shop_branch_x', 'external'), {
+      ULTIMATE_ENV: 'Production',
+    });
+    expect(target.production).toBe(true);
   });
 });
 

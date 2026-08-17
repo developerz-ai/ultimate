@@ -449,6 +449,18 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   scale says which units `minor` counts — ordering or filtering by it compares two different
   questions. Existing tables need `alter table <t> add column <p>_scale integer` (see the migration
   note in the PR); every existing row's NULL already means what it always meant.
+- **The currency bound is `@ultimat3/schema`'s too, in BOTH halves — decided 2026-08.**
+  `parseCurrency` calls `isCurrencyCode` and `currencyCheck` interpolates `CURRENCY_CODE_PATTERN`,
+  the pattern source that predicate is built from, exactly as `scaleCheck` interpolates
+  `MAX_MONEY_SCALE`. `^[A-Z]{3}$` had been restated four times across three packages — schema's
+  private regex, its JSON Schema `pattern`, this column's parse and this CHECK — each individually
+  correct, and a divergence between the last two is visible only to a psql session, as a row the
+  app then refuses to read back. SQL cannot call a predicate, so what crosses the seam is the
+  pattern **string**: legitimate only while the pattern stays inside the syntax ECMAScript and
+  POSIX ARE spell identically, which is why `currency-check.live.test.ts` inserts the same corpus
+  `columns.test.ts` runs into a real table carrying the emitted CHECK and demands the server accept
+  exactly what `isCurrencyCode` accepts. That table is `text`, not `char(3)`, on purpose: a width
+  refusal would answer for every over-long case and leave the pattern untested on them.
 - **Money is a `bigint` + `char(3)` column pair, and a `number` + `char(3)` VALUE.** A float throws.
   Never one column, never an implied single currency — and never two declarations of the shape.
   `MoneyValue` is re-exported from `@ultimat3/schema`, which is also what `@ultimat3/money`'s

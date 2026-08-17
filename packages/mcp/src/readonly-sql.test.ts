@@ -9,6 +9,27 @@ import { assertBranchDatabase, assertReadOnlyQuery } from './readonly-sql';
 const refusal = { code: 'X_MCP_QUERY_REJECTED' };
 const notBranch = { code: 'X_MCP_NOT_BRANCH_DB' };
 
+/**
+ * The thrown value as what it is, so a test can read `cause`/`fix` rather than a message.
+ *
+ * The miss is an assertion, never a `throw new Error`: this repo throws no bare `Error` anywhere,
+ * and a helper that throws to say "the thing under test did not" reports at the helper's line with
+ * a stack instead of at the assertion. `expect.unreachable` is the repo's idiom for it and returns
+ * `never`, which is also what narrows `thrown` to an `UltimateError` for the return below.
+ */
+const caught = (fn: () => unknown): UltimateError => {
+  let thrown: unknown;
+  try {
+    fn();
+  } catch (error) {
+    thrown = error;
+  }
+  // One message for both misses — not throwing at all and throwing something else are the same
+  // failure to a reader who wanted the error's `cause`/`fix`.
+  if (!isUltimateError(thrown)) expect.unreachable('expected the call to throw an UltimateError');
+  return thrown;
+};
+
 describe('assertReadOnlyQuery returns what will actually run', () => {
   test('a read is returned byte-for-byte, minus surrounding whitespace and one trailing ;', () => {
     expect(assertReadOnlyQuery('  select id from posts  ')).toBe('select id from posts');
@@ -278,15 +299,6 @@ describe('a refusal names the problem, and never the surface the reader is not o
   // panel rendered `refused: db.query refused: …` — a stutter naming a tool that is not there.
   // The tool identity was never missing: it is in the TITLE, which `format()` renders above the
   // cause and which every code carries independently of who threw it.
-  const caught = (fn: () => unknown): UltimateError => {
-    try {
-      fn();
-    } catch (error) {
-      if (isUltimateError(error)) return error;
-    }
-    throw new Error('expected an UltimateError');
-  };
-
   test('the cause is the problem alone', () => {
     const error = caught(() => assertReadOnlyQuery('select 1 /* ; delete from members'));
 
@@ -315,6 +327,48 @@ describe('a refusal names the problem, and never the surface the reader is not o
     expect(error.format().split('\n')[0]).toBe(
       'X_MCP_NOT_BRANCH_DB: db.migrate was aimed at a database that is not a branch',
     );
+  });
+});
+
+/**
+ * Both `fix:` lines this file hands out cite `x db branch`, and that command took a branch NAME
+ * as its first positional until 1.2.x — so the shipped instruction `x db branch feat-x` CREATED a
+ * branch, and the same words now resolve to nothing (`BRANCH_SUBCOMMANDS` is a closed set). A
+ * `fix:` is copied and run verbatim, so the verb is the load-bearing word and it is pinned here.
+ *
+ * Pinned as a literal, not compared against `BRANCH_SUBCOMMANDS`: that constant is
+ * `@ultimat3/cli`'s (tier 5) and this package is tier 4, so the import would go UP. And the check
+ * that CAN see both — the CLI's `errors` step — cannot see this file: both fix strings are
+ * positional arguments to `rejected()`/`notBranch()`, never a `fix:` property, so `scanFixes`
+ * returns nothing here and the citation is never resolved. That is why both went stale under a
+ * green gate, and why this test is the only thing holding them.
+ */
+describe('the branch fix lines name a verb that still resolves', () => {
+  test('the write refusal sends the caller to `x db branch create`', () => {
+    // A data-modifying CTE: it leads with a read keyword, so it reaches the mutating-keyword
+    // refusal rather than the leader one — the branch whose fix names the schema-change path.
+    const error = caught(() =>
+      assertReadOnlyQuery(
+        'with w as (insert into posts (id) values (1) returning id) select * from w',
+      ),
+    );
+
+    expect(error.fix).toContain('x db branch create <name>');
+    // The bare form is the invocation that used to create a database called `ls`.
+    expect(error.fix).not.toContain('x db branch <name>');
+  });
+
+  test('the non-branch refusal sends the caller to `x db branch create`', () => {
+    const error = caught(() =>
+      assertBranchDatabase({ label: 'staging', branch: null, production: false }),
+    );
+
+    // The guidance rides behind `#`, which is the repo's idiom for exactly this (64 shipped fix
+    // lines, against 9 comma-joined ones) and the one joiner a SHELL agrees with: pasted whole,
+    // everything after the `#` is a comment, so the line the reader runs is the command alone.
+    // `fix-command.ts`'s ARGUMENT_END stops reading arguments there for the same reason — a
+    // comma-joined clause is still scanned for flags and charged to the command in front of it.
+    expect(error.fix).toBe('x db branch create <name>   # then retry db.migrate');
   });
 });
 

@@ -2,7 +2,7 @@
 // bodies and MCP tool `inputSchema` are both this function's output, so an agent's view of an
 // action and an HTTP client's view can never drift.
 
-import { MAX_MONEY_SCALE } from './money-value';
+import { CURRENCY_CODE_PATTERN, MAX_MONEY_SCALE } from './money-value';
 import { requiredKeys, type SchemaNode, type SchemaRefinement } from './node';
 import { introspect } from './provider';
 
@@ -176,7 +176,10 @@ function convert(node: SchemaNode): JsonSchema {
             minimum: -Number.MAX_SAFE_INTEGER,
             maximum: Number.MAX_SAFE_INTEGER,
           },
-          currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+          // The pattern the validator applies, not a copy of it: this object IS the contract a
+          // generated client checks against, so a widened predicate here would be a client
+          // refusing a code the boundary accepts.
+          currency: { type: 'string', pattern: CURRENCY_CODE_PATTERN },
           // Optional, never required: `additionalProperties: false` alone would make a generated
           // client refuse a scaled amount the framework's own validator accepts.
           scale: {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { toJsonSchema, toMcpInputSchema } from './json-schema';
+import { CURRENCY_CODE_PATTERN } from './money-value';
 import { configureSchemaProvider, resetSchemaProvider } from './provider';
 import { t } from './t';
 import { builtinT } from './validators';
@@ -49,6 +50,9 @@ describe('toJsonSchema', () => {
         currency: { type: 'string', pattern: '^[A-Z]{3}$' },
       },
     });
+    // Both halves on purpose: the literal above pins WHAT is published (a shipped contract), this
+    // pins that it is the same string the validator tests against and not a fourth copy of it.
+    expect(money.properties?.['currency']?.pattern).toBe(CURRENCY_CODE_PATTERN);
   });
 
   test('money admits an optional scale without requiring one', () => {

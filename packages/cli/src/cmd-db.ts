@@ -1,6 +1,6 @@
-// `x db gen|migrate|reset|studio|branch|backfill` — everything that touches the database,
-// including the branch DB that makes destructive work safe. An agent that can clone the database
-// in a second can migrate, seed and break things without a human deciding whether to let it.
+// `x db gen|migrate|reset|studio|branch|backfill` — everything that touches the database. One
+// subcommand per line and no fall-through: a word this file does not know is refused, never
+// re-read as an argument to the last branch. `branch` itself is `cmd-db-branch.ts`.
 //
 // Every subcommand here runs `@ultimat3/db`'s own engine, which is the engine `ROLE=migrate` runs
 // (`serve.ts`): one `x_migrations` ledger, one checksum rule, one advisory lock, from a laptop to
@@ -11,11 +11,12 @@
 // directory tree. `node:path` for `join` — Bun exposes no path joiner.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { renderThrowable, resolveEnvironment } from '@ultimat3/core';
-import { branchPglite, type DriftReport, driftError } from '@ultimat3/db';
+import { resolveEnvironment } from '@ultimat3/core';
+import { type DriftReport, driftError } from '@ultimat3/db';
 import { BackfillPendingError } from '@ultimat3/jobs';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
+import { runBranchCommand } from './cmd-db-branch';
 import { plannedSubcommand } from './cmd-planned';
 import type { CliCommand, CommandContext } from './command';
 import type { BackfillAction, BackfillPlanRow } from './db-backfill';
@@ -30,122 +31,38 @@ import {
   renderPlanTable,
   runBackfills,
 } from './db-backfill';
+import { BRANCH_SUBCOMMANDS } from './db-branch';
+import { stepFinding } from './db-finding';
 import { generateAppMigration } from './db-generate';
 import { resolveServices } from './dev-services';
-import { BadFlagError, CliNotImplementedError, MissingSubcommandError } from './errors';
-import type { ExecResult } from './exec';
-import { execOutput } from './exec';
+import {
+  BadFlagError,
+  CliNotImplementedError,
+  MissingSubcommandError,
+  UnknownCommandError,
+} from './errors';
 import { withJobDriver } from './jobs-driver';
 import { backfillToJson } from './jobs-json';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
-import { findingFrom, isUltimateErrorShape } from './output';
+import { findingFrom } from './output';
 import { flagBool, flagString } from './parse';
 import { runMigrations } from './serve';
 
 export const DB_SUBCOMMANDS = ['gen', 'migrate', 'reset', 'studio', 'branch', 'backfill'] as const;
-
-const failure = (result: ExecResult, code: string, fix: string): Finding => ({
-  code,
-  cause: `${result.command.join(' ')} exited ${result.code}: ${execOutput(result).slice(0, 400)}`,
-  fix,
-  docs: `https://ultimate.dev/errors/${code}`,
-});
-
-/**
- * The engine names its own failures — `X_MIGRATION_CONFLICT` carries the ledger row that disagrees
- * and `X_MIGRATION_IRREVERSIBLE` carries the exact `--allow-destructive` line to rerun — so those
- * reach the caller verbatim. `X_DB_GEN_FAILED` / `X_DB_MIGRATE_FAILED` are what is left: the step
- * failed for a reason no framework error claimed, and the raw message is all there is to report.
- */
-const stepFinding = (error: unknown, code: string): Finding =>
-  isUltimateErrorShape(error)
-    ? findingFrom(error)
-    : {
-        code,
-        // The engine may throw a non-Error, and an Error whose `message` is a getter: core's
-        // `renderThrowable` reads both without trusting either, so the refusal cannot be lost to
-        // a TypeError raised while reporting it.
-        cause: renderThrowable(error),
-        fix: 'x doctor --json',
-        docs: `https://ultimate.dev/errors/${code}`,
-      };
-
-/** `x db branch <name>` on a real Postgres: copy-on-write clone, cheap and disposable. */
-export function branchSql(source: string, branch: string): string {
-  return `CREATE DATABASE "${branch}" TEMPLATE "${source}"`;
-}
-
-export function branchDatabaseName(source: string, branch: string): string {
-  return `${source}_branch_${branch.replace(/[^a-zA-Z0-9_]/g, '_')}`;
-}
-
-export const previewUrl = (branch: string, port: number): string =>
-  `http://${branch}.localhost:${port}`;
-
-async function runBranch(
-  ctx: CommandContext,
-  root: string,
-  branch: string,
-): Promise<CommandResult> {
-  const services = resolveServices(root, ctx.env);
-  const port = Number.parseInt(ctx.env['PORT'] ?? '3000', 10);
-  const url = previewUrl(branch, port);
-  if (services.db.mode === 'embedded') {
-    // @ultimat3/db owns embedded branching, name validation and the on-disk layout. Shelling out
-    // to `cp` here was a second implementation of all three — and `--reflink` is a GNU-only flag.
-    try {
-      const info = await branchPglite(branch, { from: services.db.url });
-      return {
-        ok: true,
-        command: 'db',
-        summary: msg('cli.db.branch.ready', { name: branch }),
-        data: { branch, database: info.dataDir, preview: url, mode: 'embedded' },
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        command: 'db',
-        summary: msg('cli.usage'),
-        findings: [findingFrom(error)],
-      };
-    }
-  }
-  const source = services.db.url.split('/').at(-1) ?? 'postgres';
-  const database = branchDatabaseName(source, branch);
-  const psql = await ctx.runner(['psql', services.db.url, '-c', branchSql(source, database)], {
-    cwd: root,
-  });
-  if (!psql.ok) {
-    return {
-      ok: false,
-      command: 'db',
-      summary: msg('cli.usage'),
-      findings: [
-        failure(
-          psql,
-          'X_DB_BRANCH_FAILED',
-          `close open connections to "${source}" (a TEMPLATE clone needs none), then retry`,
-        ),
-      ],
-    };
-  }
-  return {
-    ok: true,
-    command: 'db',
-    summary: msg('cli.db.branch.ready', { name: branch }),
-    data: { branch, database, preview: url, mode: 'external' },
-  };
-}
 
 export const dbCommand: CliCommand = {
   spec: {
     name: 'db',
     summary: 'gen, migrate, reset, studio, branch, backfill',
     usage:
-      'x db gen "add publish_at" | migrate | reset | studio | branch <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n]',
+      'x db gen "add publish_at" | migrate | reset | studio | branch ls | branch create <name> | branch drop <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n]',
     requiresApp: true,
     subcommands: DB_SUBCOMMANDS,
+    // Declared from the constant `runBranchCommand` validates against, never a second literal: it
+    // is what lets the `errors` step resolve `x db branch ls` — a fix line three shipped errors
+    // hand out, which read `ls` as a branch name and cloned a database until 1.2.x.
+    subcommandPositionals: { branch: BRANCH_SUBCOMMANDS },
     flags: [
       { name: 'name', type: 'string', summary: 'migration or branch name, or backfill to filter' },
       { name: 'list', type: 'boolean', summary: 'backfill: print the x_backfills ledger' },
@@ -191,8 +108,18 @@ export const dbCommand: CliCommand = {
     if (sub === 'reset') return runReset(ctx, root);
     if (sub === 'studio') throw plannedSubcommand('db', 'studio');
     if (sub === 'backfill') return runBackfill(ctx, root);
+    if (sub === 'branch') return runBranchCommand(ctx, root);
 
-    return runBranch(ctx, root, argument ?? 'preview');
+    // Never a fall-through. This used to end `return runBranch(ctx, root, argument ?? 'preview')`,
+    // so ANY subcommand the parser had not already refused was reinterpreted as a branch NAME and
+    // cloned a database out of it. A word this command does not know is a refusal, not a guess.
+    throw new UnknownCommandError({
+      path: `db ${sub}`,
+      known: DB_SUBCOMMANDS,
+      // Help, and not the nearest name: `studio` is planned, and `branch`/`backfill` both need a
+      // word this refusal does not have — a suggestion that refuses in turn is not a fix.
+      suggestion: 'help db',
+    });
   },
 };
 

@@ -25,7 +25,7 @@ agent cannot infer from the code.
 | Strings | every user-facing string goes through \`t()\` |
 | Colour | semantic tokens only, never a raw hex |
 
-Commands: \`x dev\`, \`x verify\`, \`x g <primitive>\`, \`x db branch <name>\`, \`x doctor\`.
+Commands: \`x dev\`, \`x verify\`, \`x g <primitive>\`, \`x db branch create <name>\`, \`x doctor\`.
 
 Project notes for ${app.kebab}: replace this line with the conventions a newcomer could not guess.
 `;
@@ -37,7 +37,7 @@ ${app.kebab} — Ultimate app. Read AGENTS.md first; it is the same content in t
 - Gate: \`x verify\` (add \`--json\` for machine output).
 - Scaffold, do not hand-write: \`x g <kind> <name>\` — \`x g --help\` lists every kind, and is the
   only place that list is stated.
-- Destructive DB work goes in a branch: \`x db branch <name>\`, never the shared dev DB.
+- Destructive DB work goes in a branch: \`x db branch create <name>\`, never the shared dev DB.
 - \`x doctor\` explains a broken environment and prints the fix command for every finding.
 
 \`.claude/\` holds the harness that reads this file: \`/feature\`, \`/planx\`, \`/verify\` and four

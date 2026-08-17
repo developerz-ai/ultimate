@@ -34,7 +34,6 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   mail: 1,
   manifest: 1,
   mcp: 2,
-  money: 1,
   policy: 4,
   pwa: 2,
   query: 5,

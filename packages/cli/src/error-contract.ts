@@ -18,7 +18,12 @@ export const BANNED_PHRASES: readonly RegExp[] = [
   /\bcheck(s|ed|ing)?\b/i,
   /\bmake sure\b/i,
   /\btry(ing)?\b/i,
-  /\bsee the docs?\b/i,
+  // The whole family, not one spelling of it. This was `see the docs?` — one article longer than
+  // `see docs`, which `@ultimat3/mcp`'s `server.ts` shipped as a `fix:` and which passed the gate
+  // for that reason alone. Measured against all 740 shipped fix literals: the wider pattern
+  // matches none of them, so it costs nothing and closes `read the docs` and `see documentation`
+  // before either is written.
+  /\b(?:see|read|consult|refer to)\s+(?:the\s+)?(?:docs?|documentation)\b/i,
 ];
 
 /**
