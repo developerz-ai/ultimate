@@ -3,6 +3,8 @@
 // wrong `branch` is a migration against a database somebody else is using, and a `production` that
 // is always false is a refusal that never runs.
 
+// `node:path` for the joiner Bun has no equivalent of — the same reason `db-branch.ts` reaches for
+// it, and the state directory it builds a path under is a real one on disk.
 import { join } from 'node:path';
 import { tryResolveEnvironment } from '@ultimat3/core';
 import { pgliteDataDir } from '@ultimat3/db';

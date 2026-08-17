@@ -1,13 +1,7 @@
 // `@ultimat3/core` carries a deliberate duplicate of `@ultimat3/schema`'s `CURRENCY_CODE_PATTERN`
-// (`config.ts`'s `CURRENCY_RE`), because both are tier 0 and `core → schema` is in no
-// `SIDEWAYS_ALLOW` entry — the same wall that makes `describeValue` a character-for-character copy.
-// Core's own corpus test guards core; nothing could guard the pair, and the direction that breaks
-// the contract is a change in SCHEMA, whose constant is what the published OpenAPI `pattern` and
-// `@ultimat3/entity`'s Postgres CHECK are derived from. `@ultimat3/cli` is tier 5 and may import
-// both, so the pin lives here — the precedent `schema-error-codes-pin.test.ts` already set.
-//
-// Compared through public surfaces only, and deliberately so: a regex exported for a test to read
-// is an export the framework has to keep.
+// (`config.ts`'s `CURRENCY_RE`): both are tier 0 and `core → schema` is in no `SIDEWAYS_ALLOW`
+// entry, so neither package can guard the pair. `@ultimat3/cli` is tier 5 and may import both,
+// which is the only reason the pin lives here — the precedent `schema-error-codes-pin.test.ts` set.
 
 import { describe, expect, test } from 'bun:test';
 import { defineConfig } from '@ultimat3/core';
@@ -59,6 +53,10 @@ const CORPUS: readonly string[] = [
 ];
 
 describe('core and schema agree about what an ISO 4217 code is', () => {
+  // Read through public surfaces only — `defineConfig` and `isCurrencyCode`, never the regexes
+  // themselves: a constant exported for a test to read is an export the framework has to keep.
+  // The direction that breaks the contract is a change in SCHEMA, whose constant is what the
+  // published OpenAPI `pattern` and `@ultimat3/entity`'s Postgres CHECK are both derived from.
   test('every code in the corpus is accepted by both or refused by both, never split', () => {
     for (const code of CORPUS) {
       expect({ code, core: coreAccepts(code) }).toEqual({

@@ -83,11 +83,12 @@ shape is still additive and this is still a minor version.
   reaches `Intl` as `currencySign` — so the locale places the minus and picks the parenthesised
   form, and a UI styling the parts cannot render a different format from the label beside it.
 - **The table is open, and it is opened by a call.** `registerCurrency({ code, exponent, name })` is
-  how an app adds a currency the shipped rows do not carry — axiom 8: 53 of ~180 ISO codes is a
-  *convention*, and a convention an app cannot extend is a fork waiting to happen. The rest of the
-  framework already treated the set as open — `@ultimat3/schema`'s `moneySchema`, the published
-  OpenAPI `pattern` and `@ultimat3/entity`'s `char(3)` CHECK all accept any `^[A-Z]{3}$` — so an
-  unregistered code could arrive over HTTP and reach a row, and only arithmetic refused it.
+  how an app adds a currency the shipped rows do not carry — axiom 8: `As of 2026-08`, 53 of ~180
+  ISO codes is a *convention*, and a convention an app cannot extend is a fork waiting to happen.
+  The rest of the framework already treated the set as open — `@ultimat3/schema`'s `moneySchema`,
+  the published OpenAPI `pattern` and `@ultimat3/entity`'s `char(3)` CHECK all accept any
+  `^[A-Z]{3}$` — so an unregistered code could arrive over HTTP and reach a row, and only
+  arithmetic refused it.
 - **What a well-formed code IS lives in `packages/schema/src/money-value.ts`, and nothing here
   restates it.** `CURRENCY_CODE_PATTERN` is the pattern *source* — a string, because the two
   projections that cannot call a predicate need it: the published OpenAPI `pattern` and

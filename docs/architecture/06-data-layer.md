@@ -249,7 +249,7 @@ stage 14 post-commit
 | Drift in the source | `X_DB_DRIFT` from `checkSourceDrift`, naming the schema and migration hashes that moved — `x verify`, no database needed |
 | Drift in the database | `X_DB_DRIFT` from `checkDrift`, naming the table, column or index the live catalog disagrees on — `x db migrate` and `ROLE=migrate` |
 | Irreversible migrations | `x db gen` refuses to **generate** a drop whose `down` cannot restore the rows: `X_MIGRATION_IRREVERSIBLE`, whose `fix:` is the same command plus `--allow-destructive` |
-| Concurrent versions | `ROLE=migrate` takes an advisory lock; a second version in flight is `X_MIGRATE_CONCURRENT` |
+| Concurrent versions | `ROLE=migrate` takes the advisory lock by a bounded `pg_try_advisory_lock` poll — 500ms apart, 60s budget — so a second version in flight waits, then applies. A lock still held at the budget is `X_MIGRATE_CONCURRENT` and a non-zero exit |
 | Destructive statements | a committed `up` that drops, truncates or retypes must carry the `-- destructive: true` line, or `x verify`'s `drift` step refuses to **ship** it: `X_MIGRATION_DESTRUCTIVE`, one finding per file. `@ultimat3/db`'s `destructive.ts` owns the classifier both the generator and the gate read, so they cannot disagree about one file |
 
 ```

@@ -249,7 +249,7 @@ x db gen "add publish_at" | migrate | reset | studio
 | `migrate` | apply pending migrations, then verify the result | literally `ROLE=migrate`'s own `runMigrations` — which ends by diffing the live schema against the ledger it just wrote, on the connection it already holds. A difference is `X_DB_DRIFT` and a non-zero exit |
 | `reset` | delete the embedded data directory, then migrate | **embedded database only** — against an external Postgres it exits `X_NOT_IMPLEMENTED` and tells you to drop and recreate it yourself |
 | `studio` | — | **planned**: exits `X_NOT_IMPLEMENTED` pointing at the `/_x` db panel. It used to shell out to `bunx drizzle-kit studio`; one subcommand is not worth a second schema engine |
-| `branch ls` | every branch of this database: name, location, created-at, size | the drop path only touches what this lists |
+| `branch ls` | every **managed** branch of this database: name, location, created-at, size | managed means this framework made it — external, a database carrying `createBranch()`'s `comment on database` marker; embedded, a `pgdata-<name>` directory. A branch cloned by the pre-1.2.x `psql` shell-out carries no marker, so it is absent here and `drop` refuses it → [Known gaps](Known-Gaps). `size` reads `unknown` on the embedded database — measuring it is a full directory walk. The drop path only touches what this lists |
 | `branch create <name>` | `CREATE DATABASE … TEMPLATE` copy-on-write clone (PGlite: a copied data directory) | the isolation an agent should use before migrating. An existing name is `X_BRANCH_EXISTS`, never an overwrite |
 | `branch drop <name>` | delete that branch database (PGlite: its `pgdata-<name>` directory) | a name `ls` does not show is refused with `X_DB_BRANCH_FAILED` naming what it *would* have touched — that is the whole guard, and it is why there is no `--force` |
 | `backfill --list` | print the `x_backfills` ledger — one row per `backfill()` pass, newest first | what has already been swept |
@@ -484,9 +484,13 @@ generates it. Because `x new` never writes `docker/helm`, `--method helm` in a s
 `helm` is treated as `compose`. `--critical` is carried into `--json` output and nothing else acts
 on it today. Errors: `X_DEPLOY_FAILED`, `X_NOT_IMPLEMENTED`.
 
-`X_MIGRATE_CONCURRENT` is **reserved and never thrown** — the lock is real. `ROLE=migrate` holds
-`pg_advisory_lock` on one pinned session for the whole run, so two overlapping deploys serialise:
-the second **waits**, it does not race and does not error → [Known gaps](Known-Gaps).
+`X_MIGRATE_CONCURRENT` **is thrown**, `As of 2026-08`. `ROLE=migrate` takes the migration lock by a
+**bounded** `pg_try_advisory_lock` poll on one pinned session — one try per 500ms against a 60s
+budget (`MIGRATION_LOCK_WAIT_MS`) — and holds it for the whole run. Two overlapping deploys
+therefore serialise while the first is merely slow: the second waits, then applies. A lock still
+held when the budget runs out is `X_MIGRATE_CONCURRENT` and a non-zero exit, because blocking
+`pg_advisory_lock` has no timeout and a wedged predecessor sat inside one statement with nothing in
+the logs — that is what 1.2.0 does → [Known gaps](Known-Gaps).
 
 ## Serving in production — `ROLE` and `PORT`
 

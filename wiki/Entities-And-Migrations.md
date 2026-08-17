@@ -353,7 +353,7 @@ More in [MCP and AI](MCP-And-AI).
 | Apply (dev) | `x db migrate` | runs pending migrations against the dev DB; live queries resubscribe |
 | Check | `x db migrate --json` | the live schema against the ledger it just wrote; exits non-zero on a difference |
 | Inspect | `x db studio` | tables, columns, indexes, FKs, generated SQL — also the `/_x` **Schema** panel |
-| Pre-deploy | `ROLE=migrate` container | run-once hook, same image; waits on the session-pinned advisory lock while another version's migration is in flight, then applies (`X_MIGRATE_CONCURRENT` is reserved, not thrown) |
+| Pre-deploy | `ROLE=migrate` container | run-once hook, same image; waits on the session-pinned migration lock while another version's migration is in flight, then applies. The wait is bounded at 60s (`As of 2026-08`) — past that it exits non-zero with `X_MIGRATE_CONCURRENT` instead of hanging the rollout |
 | Test template | automatic | migrate + seed once into `myapp_test_tpl`, then clone per worker |
 
 Prod ordering is fixed: `ROLE=migrate` completes, then `web` / `sync` / `worker` / `scheduler` roll. Migrations are forward-compatible with the previous release so a rolling restart never serves a request against a schema it cannot read. See [Deployment](Deployment).
@@ -434,11 +434,11 @@ x db branch create feat-new-billing --json
 
 | Property | Detail | `As of 2026-08` |
 |---|---|---|
-| Mechanism | `CREATE DATABASE "<source>_branch_<name>" TEMPLATE "<source>"` — Postgres file-copies, cheap, isolated, disposable. On the embedded database it is `branchPglite()`, a data-directory copy | **shipped** |
+| Mechanism | `CREATE DATABASE "<source>_branch_<slug>" TEMPLATE "<source>"` — Postgres file-copies, cheap, isolated, disposable. `<slug>` is the name with every character outside `[A-Za-z0-9_]` replaced by `_` (`branchDatabaseName`), because a hyphen is not legal in an unquoted identifier — hence `myapp_branch_feat_new_billing` above. On the embedded database it is `branchPglite()`, a data-directory copy named `pgdata-<name>`, which keeps the name as typed | **shipped** |
 | Writes | the MCP `db.migrate` tool applies **only** in a branch DB, never the shared dev DB (`X_MCP_NOT_BRANCH_DB`) | **shipped** |
 | Preview URL | reported in `data.preview`, subdomain-routed off `PORT` | **the URL is computed**; nothing routes that subdomain for you |
-| Listing | `x db branch ls` — name, location, created-at, size, over either database. `listBranches()` is the same read in code | **shipped** |
-| Teardown | `x db branch drop <name>`. It may only drop what `ls` shows — an external branch carries the marker comment `createBranch` writes, an embedded one is a `pgdata-<name>` directory — so the shared database this session is connected to is not in the set, and there is no `--force` to get it wrong with. `dropBranch('<name>', { force: true })` is the same operation from `@ultimat3/db` | **shipped** |
+| Listing | `x db branch ls` — name, location, created-at, size, over either database. **Managed branches only**: external, a database carrying `createBranch()`'s marker comment (`listBranches()` is that read); embedded, a `pgdata-<name>` directory under the state dir (`listPgliteBranches()`, in the CLI). A branch cloned by the pre-1.2.x `psql` path carries no marker and is invisible → [Known gaps](Known-Gaps). `created-at` and `size` read `unknown` where nothing recorded one — always the size on the embedded side, since measuring it is a full directory walk | **shipped** |
+| Teardown | `x db branch drop <name>`. It may only drop what `ls` shows, and that guard lives in the **CLI** (`runDrop` lists first, then drops): the shared database this session is connected to carries no marker, so it is not in the set, and there is no `--force` to get it wrong with. `@ultimat3/db`'s `dropBranch()` is the statement underneath, not the same operation — it takes the **database** name (`<source>_branch_<slug>`), reads no marker, and will drop any database but the current one. Its `force: true` means "terminate other sessions first", which the CLI always passes; it is not an override of the guard | **shipped** |
 | Build + scoped MCP socket | a per-branch build id scoping the service worker, and `ws://localhost:9229/<branch>` | **planned**, part of `x branch` |
 
 The same clone mechanism powers test parallelism: each worker gets its own `ultimate_test_template_w<N>` cloned from the migrated template `ultimate_test_template`, typically 100–400ms. Never mock the database — clone it.

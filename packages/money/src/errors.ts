@@ -3,8 +3,8 @@
  * A money bug that throws is a bug you can fix; one that rounds is a bug you ship.
  */
 
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
-import { MAX_MONEY_SCALE } from '@ultimat3/schema';
+import { registerErrorCodes, renderFixLiteral, UltimateError } from '@ultimat3/core';
+import { isCurrencyCode, MAX_MONEY_SCALE } from '@ultimat3/schema';
 
 export const MONEY_ERROR_CODES = [
   'X_MONEY_NOT_INTEGER',
@@ -48,11 +48,36 @@ export class MoneyError extends UltimateError {
   }
 }
 
+/**
+ * A currency code fit to stand in a `fix:` — the caller's when it already is one, `XXX` otherwise.
+ * Two rules at once, and every factory below that names a code goes through it.
+ *
+ * A fix is PASTED AND RUN, so a code carrying a quote closes the literal it sits in and the
+ * instruction becomes a syntax error — `assertCurrency('O'Reilly')` — which is worse than no fix,
+ * because it looks runnable. And a malformed code echoed back would name a call that raises the
+ * error it is answering, the rule `currencyDeclarationInvalid` below already states. Every one of
+ * these factories is exported, so the argument is whatever an app passed, not only what this
+ * package throws. `bun run error-render` cannot see the class: these parameters are typed
+ * `string`, not `unknown`.
+ */
+function codeExample(currency: string): string {
+  // Uppercased and cut to three because the lookup is case-sensitive, so 'usd' is the common
+  // arrival and 'USD' answers it. The `typeof` guard is what keeps an untyped caller's symbol from
+  // throwing out of `.toUpperCase()` inside an error factory.
+  const upper = typeof currency === 'string' ? currency.toUpperCase().slice(0, 3) : '';
+  return isCurrencyCode(upper) ? upper : 'XXX';
+}
+
+/** The same code as source. Safe to interpolate: `codeExample` answers `^[A-Z]{3}$`, nothing else. */
+function codeLiteral(currency: string): string {
+  return `'${codeExample(currency)}'`;
+}
+
 export function moneyNotInteger(minor: number, currency: string): MoneyError {
   return new MoneyError({
     code: 'X_MONEY_NOT_INTEGER',
     cause: `minor units must be a safe integer, got ${String(minor)} for ${currency}`,
-    fix: `use fromDecimal('${Number.isFinite(minor) ? minor : 0}', '${currency}') or round explicitly with multiply(m, factor, 'half-up')`,
+    fix: `use fromDecimal('${Number.isFinite(minor) ? minor : 0}', ${codeLiteral(currency)}) or round explicitly with multiply(m, factor, 'half-up')`,
   });
 }
 
@@ -75,7 +100,10 @@ export function decimalTooPrecise(value: string, currency: string, exponent: num
   // instruction that throws is not one.
   const keepThemAll =
     digits <= MAX_MONEY_SCALE
-      ? `fromDecimal('${value}', '${currency}', { scale: ${digits} }) to keep every digit, or `
+      ? // `renderFixLiteral`, not `'${value}'`: the amount is a caller's string, and `fromDecimal`
+        // trims before it parses — so a value ending in a newline reached the fix line and put a
+        // raw line break inside a single-quoted literal, which no reader can paste.
+        `fromDecimal(${renderFixLiteral(value.trim(), "'12.9999'")}, ${codeLiteral(currency)}, { scale: ${digits} }) to keep every digit, or `
       : '';
   return new MoneyError({
     code: 'X_MONEY_NOT_INTEGER',
@@ -114,7 +142,7 @@ export function scaleOverflow(
     cause: `this ${currency} amount needs more digits at scale ${scale} than a safe integer holds`,
     fix:
       fits === undefined
-        ? `the amount is too large for any scale — split it, or carry it as two ${currency} values`
+        ? `the amount is too large for any scale — split it, or carry it as two ${codeExample(currency)} values`
         : `rescale(theFinerOperand, ${fits}, 'half-up') before combining — scale ${fits} is the finest that fits`,
   });
 }
@@ -149,19 +177,19 @@ export function decimalNotNumeric(value: string, currency: string): MoneyError {
   return new MoneyError({
     code: 'X_MONEY_NOT_INTEGER',
     cause: `"${value}" is not a decimal amount — no grouping separators, no exponent notation`,
-    fix: `pass a plain decimal string: fromDecimal('12.99', '${currency}')`,
+    fix: `pass a plain decimal string: fromDecimal('12.99', ${codeLiteral(currency)})`,
   });
 }
 
 export function currencyUnknown(currency: string): MoneyError {
-  const upper = currency.toUpperCase().slice(0, 3) || 'XXX';
+  const example = codeLiteral(currency);
   // Two arrivals, one code, so the fix names both doors. The lookup is exact and case-sensitive,
   // which is what makes 'usd' the common one; the other is a currency the shipped ISO rows do not
   // carry, and since 1.2.0 that is a call the app makes rather than a fork of this package.
   return new MoneyError({
     code: 'X_CURRENCY_UNKNOWN',
     cause: `"${currency}" is not a currency this process knows — not in the shipped ISO-4217 rows, and not registered by the app`,
-    fix: `pass a code currencyCodes() lists, uppercased — assertCurrency('${upper}') — or declare it once at boot: registerCurrency({ code: '${upper}', exponent: 2, name: '${upper}' })`,
+    fix: `pass a code currencyCodes() lists, uppercased — assertCurrency(${example}) — or declare it once at boot: registerCurrency({ code: ${example}, exponent: 2, name: ${example} })`,
   });
 }
 
@@ -174,7 +202,7 @@ export function currencyDeclarationInvalid(reason: string, exampleCode: string):
   return new MoneyError({
     code: 'X_CURRENCY_INVALID',
     cause: reason,
-    fix: `registerCurrency({ code: '${exampleCode}', exponent: 2, name: '${exampleCode}' }) — three A–Z letters, a whole exponent from 0 to ${MAX_MONEY_SCALE}, and a non-empty name`,
+    fix: `registerCurrency({ code: ${codeLiteral(exampleCode)}, exponent: 2, name: ${codeLiteral(exampleCode)} }) — three A–Z letters, a whole exponent from 0 to ${MAX_MONEY_SCALE}, and a non-empty name`,
   });
 }
 
@@ -193,7 +221,10 @@ export function currencyRedefined(
   return new MoneyError({
     code: 'X_CURRENCY_REDEFINED',
     cause: `${code} is already registered as "${existing.name}" with exponent ${existing.exponent}; refusing to redefine it as "${attempted.name}" with exponent ${attempted.exponent}`,
-    fix: `keep one registerCurrency({ code: '${code}', exponent: ${existing.exponent}, name: '${existing.name}' }) call and delete the other — to change a live exponent you must migrate every stored ${code} amount, because each one shifts by a power of ten`,
+    // `renderFixLiteral` on the name and nowhere else: a name is free text by design — `O'Reilly
+    // Points` is a currency an app may legitimately register — and it is the one value here that
+    // cannot be gated into a safe shape, so it is escaped instead.
+    fix: `keep one registerCurrency({ code: ${codeLiteral(code)}, exponent: ${existing.exponent}, name: ${renderFixLiteral(existing.name, "'the name already registered'")} }) call and delete the other — to change a live exponent you must migrate every stored ${codeExample(code)} amount, because each one shifts by a power of ten`,
   });
 }
 
@@ -209,7 +240,7 @@ export function currencyMismatch(left: string, right: string): MoneyError {
   return new MoneyError({
     code: 'X_CURRENCY_MISMATCH',
     cause: `refusing to combine ${left} and ${right} — two currencies are not one number`,
-    fix: `convert(rightOperand, '${left}', rate) first, then combine`,
+    fix: `convert(rightOperand, ${codeLiteral(left)}, rate) first, then combine`,
   });
 }
 

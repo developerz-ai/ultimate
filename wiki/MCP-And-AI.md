@@ -185,7 +185,7 @@ x db branch drop feat-new-billing --json
 
 | Property | Detail | `As of 2026-08` |
 |---|---|---|
-| DB | `CREATE DATABASE "<source>_branch_<name>" TEMPLATE "<source>"` copy-on-write clone — cheap, isolated, disposable. Embedded: a copied `pgdata-<name>` directory | **shipped** |
+| DB | `CREATE DATABASE "<source>_branch_<slug>" TEMPLATE "<source>"` copy-on-write clone — cheap, isolated, disposable. `<slug>` is the name with every character outside `[A-Za-z0-9_]` replaced by `_` — a hyphen is not legal in an unquoted Postgres identifier — so `create feat-new-billing` clones into `myapp_branch_feat_new_billing`. Embedded: a copied `pgdata-<name>` directory, which keeps the name **as typed** | **shipped** |
 | Migrations | `db.migrate` applies here, never to the shared dev DB (`X_MCP_NOT_BRANCH_DB`) | **shipped** |
 | Preview URL | `http://<name>.localhost:<PORT>`, reported on `data.preview` | **the URL is computed**; nothing routes that subdomain for you |
 | Teardown | `x db branch drop <name>` — it may only drop what `ls` shows | **shipped** |
@@ -223,7 +223,7 @@ $ x verify --json
 | `X_MCP_SCOPE_UNKNOWN` | `defineAppMcp`'s `scopes:` names a tool the server does not project | spell the name as one of the tools the server actually projects, or drop it from that `scopes` entry |
 | `X_MCP_SCOPE_CONFLICT` | two `scopes:` entries claim the same tool | keep the tool under the single scope a token must hold for it, and remove the other entry |
 | `X_MCP_QUERY_REJECTED` | `db.query` was not given one read-only statement | send exactly one **read-only** `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` — a data-modifying CTE is not a read |
-| `X_MCP_NOT_BRANCH_DB` | `db.migrate` pointed at a database that is not a branch | `x db branch create <name>`, then run the host against it — `DATABASE_URL=…/<source>_branch_<name>` — and retry. The target is read from the database's own name, so a shared one can never pass |
+| `X_MCP_NOT_BRANCH_DB` | `db.migrate` pointed at a database that is not a branch | `x db branch create <name>   # then retry db.migrate` — point the host at the database the create reported (`DATABASE_URL=…/<source>_branch_<slug>`). The target is read from the database's own name, so a shared one can never pass |
 | `X_MCP_PROTOCOL` | malformed envelope or unsupported method — a client bug, not an authz outcome | send a JSON-RPC 2.0 body |
 | `X_FORBIDDEN` | the action's policy refused this actor — identical to the HTTP denial | call `policies.list` for the permission this tool enforces, then grant it to the actor's role in `apps/web/shared/policies.ts` |
 | `X_LLM_OUTPUT_INVALID` | model output failed the `output` schema twice | tighten the prompt or widen the schema; bump the prompt version |

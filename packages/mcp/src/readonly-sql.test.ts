@@ -9,14 +9,25 @@ import { assertBranchDatabase, assertReadOnlyQuery } from './readonly-sql';
 const refusal = { code: 'X_MCP_QUERY_REJECTED' };
 const notBranch = { code: 'X_MCP_NOT_BRANCH_DB' };
 
-/** The thrown value as what it is, so a test can read `cause`/`fix` rather than a message. */
+/**
+ * The thrown value as what it is, so a test can read `cause`/`fix` rather than a message.
+ *
+ * The miss is an assertion, never a `throw new Error`: this repo throws no bare `Error` anywhere,
+ * and a helper that throws to say "the thing under test did not" reports at the helper's line with
+ * a stack instead of at the assertion. `expect.unreachable` is the repo's idiom for it and returns
+ * `never`, which is also what narrows `thrown` to an `UltimateError` for the return below.
+ */
 const caught = (fn: () => unknown): UltimateError => {
+  let thrown: unknown;
   try {
     fn();
   } catch (error) {
-    if (isUltimateError(error)) return error;
+    thrown = error;
   }
-  throw new Error('expected an UltimateError');
+  // One message for both misses — not throwing at all and throwing something else are the same
+  // failure to a reader who wanted the error's `cause`/`fix`.
+  if (!isUltimateError(thrown)) expect.unreachable('expected the call to throw an UltimateError');
+  return thrown;
 };
 
 describe('assertReadOnlyQuery returns what will actually run', () => {
@@ -352,7 +363,12 @@ describe('the branch fix lines name a verb that still resolves', () => {
       assertBranchDatabase({ label: 'staging', branch: null, production: false }),
     );
 
-    expect(error.fix).toBe('x db branch create <name>, then retry db.migrate');
+    // The guidance rides behind `#`, which is the repo's idiom for exactly this (64 shipped fix
+    // lines, against 9 comma-joined ones) and the one joiner a SHELL agrees with: pasted whole,
+    // everything after the `#` is a comment, so the line the reader runs is the command alone.
+    // `fix-command.ts`'s ARGUMENT_END stops reading arguments there for the same reason — a
+    // comma-joined clause is still scanned for flags and charged to the command in front of it.
+    expect(error.fix).toBe('x db branch create <name>   # then retry db.migrate');
   });
 });
 

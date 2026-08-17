@@ -171,15 +171,19 @@ async function runCreate(
 /**
  * You may only drop what `ls` shows, and that is the whole guard — stronger than a confirmation
  * flag, because it is the typo that is impossible rather than the keystroke that is tedious. An
- * external branch is a database carrying `createBranch`'s marker comment, so the shared database
- * this session is connected to is not in the set; an embedded one is a `pgdata-<name>` directory,
- * so `pgdata` itself is not either. `@ultimat3/db`'s own `X_BRANCH_EXISTS` fix line is
- * `x db branch drop <name>` with no flag on it, so a flag here would break a shipped instruction.
+ * external branch is a database carrying `createBranch`'s marker comment AND this database's own
+ * prefix, so neither the shared database this session is connected to nor another app's clone on
+ * the same server is in the set; an embedded one is a `pgdata-<name>` directory, so `pgdata` itself
+ * is not either. `@ultimat3/db`'s own `X_BRANCH_EXISTS` fix line is `x db branch drop <name>` with
+ * no flag on it, so a flag here would break a shipped instruction.
+ *
+ * The check is not made here, and that is the point: `false` from either drop means "there was no
+ * such branch", decided by the same call that deletes, on the same connection, one statement
+ * earlier. A listing taken here and acted on below is two connections and a window wide enough to
+ * hold a whole `create` — and the wiring layer is exactly where a guard must not live.
  */
 async function runDrop(services: DevServices, name: string): Promise<CommandResult> {
   try {
-    const branches = await branchesOf(services);
-    if (!branches.some((branch) => branch.name === name)) return notABranch(services, name);
     const dropped =
       services.db.mode === 'embedded'
         ? await dropPgliteBranch(services.db.url, name)

@@ -116,7 +116,7 @@ Result: a rolling restart produces a wide flat load curve instead of a spike.
 |---|---|---|---|
 | `scheduler` | a **row**: `SQL_LEADER_ACQUIRE` on `x_scheduler_leader`, key `scheduler`, holder a per-process uuid | `ttlMs`, default 30s; the per-round `acquire()` renews it | stop ticking; the next round's `acquire()` is the retry |
 | `replicator` | `PgAdvisoryLock` — `pg_try_advisory_lock(hashtext('x:replicator:<slot>'))`, on a connection it owns | the session's lifetime | exit non-zero with `X_REPLICATOR_SLOT_HELD` — a second replicator would double-deliver |
-| `migrate` | `pg_advisory_lock(4919202607)` on a pool pinned to `max: 1` | the migration run | `X_MIGRATE_CONCURRENT`, exit non-zero |
+| `migrate` | `pg_try_advisory_lock(4919202607)`, polled 500ms apart for up to 60s, on a reserved connection from a pool pinned to `max: 1` | the migration run | `X_MIGRATE_CONCURRENT`, exit non-zero — bounded on purpose, because blocking `pg_advisory_lock` has no timeout and hangs the deploy instead of failing it |
 | ISR regen | short-lived Redis `SET NX PX` | 60s | another instance already regenerating; do nothing |
 | jobs, per row | `FOR UPDATE SKIP LOCKED` at claim | the claim transaction | none — a locked row is skipped, not waited on |
 
@@ -188,7 +188,7 @@ Skew handling during a rolling deploy:
 | Code | Meaning | Fix |
 |---|---|---|
 | `X_CONFIG_INVALID` | env/config failed its schema at boot | `x doctor --json` |
-| `X_MIGRATE_CONCURRENT` | another migrator holds `pg_advisory_lock(4919202607)` | `psql "$DATABASE_URL"` for the advisory-lock holder, terminate the wedged backend, then `x db migrate` |
+| `X_MIGRATE_CONCURRENT` | another migrator still held advisory lock `4919202607` when the 60s wait budget ran out | `psql "$DATABASE_URL"` for the advisory-lock holder, terminate the wedged backend, then `x db migrate` |
 | `X_REPLICATOR_SLOT_HELD` | a second replicator for one database | scale `replicator` to 1 |
 | `X_BUILD_SKEW` | client build incompatible with the current contract | client reload signal |
 | `X_SHUTDOWN_TIMEOUT` | graceful shutdown exceeded its deadline | `raise configureLifecycle({ deadlineMs })` or shorten the slow handler |

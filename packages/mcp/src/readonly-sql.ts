@@ -233,7 +233,12 @@ export function assertBranchDatabase(target: DatabaseTarget): string {
       `"${target.label}" is not a branch database`,
       // The verb is load-bearing: `x db branch <name>` is now X_CLI_UNKNOWN_COMMAND, and before
       // the verbs existed it CREATED whatever word followed — including `ls`.
-      'x db branch create <name>, then retry db.migrate',
+      //
+      // The guidance rides behind `#`, never a comma: a fix line is pasted into a shell whole, and
+      // `#` is the one joiner that leaves the command in front of it runnable. `<name>` stays a
+      // placeholder — the branch name is the caller's to choose, which is why `@ultimat3/db` ships
+      // this same line, same slot, in `branchNameInvalid`'s X_SQL_UNSAFE fix.
+      'x db branch create <name>   # then retry db.migrate',
     );
   }
   return target.branch;

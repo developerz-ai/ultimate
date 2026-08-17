@@ -199,6 +199,6 @@ An action listed in `defineAppMcp` without `mcp.expose` is a build error, so exp
 | `X_MCP_SCOPE_UNKNOWN` | `defineAppMcp`'s `scopes:` names a tool this server does not project | spell the projected tool name, or drop the entry from `scopes` |
 | `X_MCP_SCOPE_CONFLICT` | two scopes in `defineAppMcp`'s `scopes:` claim one tool | keep the tool under a single scope |
 | `X_MCP_QUERY_REJECTED` | `db.query` got something other than one read-only statement | send exactly one read-only `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/`TABLE`/`VALUES` |
-| `X_MCP_NOT_BRANCH_DB` | `db.migrate` aimed at a non-branch database | `x db branch create <name>`, then point the host at it |
+| `X_MCP_NOT_BRANCH_DB` | `db.migrate` aimed at a non-branch database | `x db branch create <name>   # then retry db.migrate` |
 | `X_MCP_TOOL_UNDECLARED` | `defineAppMcp` lists an action without `mcp.expose` | add `mcp: { expose: true, description }` |
 | `X_MANIFEST_STALE` | manifest/openapi differ from the code | `x manifest` |

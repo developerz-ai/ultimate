@@ -12,6 +12,7 @@ import { createRecordingClient } from '@ultimat3/db';
 import {
   BRANCH_SUBCOMMANDS,
   branchDatabaseName,
+  branchNameIn,
   branchNameOf,
   createExternalBranch,
   createPgliteBranch,
@@ -51,6 +52,21 @@ describe('unit · the two directions of a branch name', () => {
     expect(branchNameOf('postly_branch_feat_new_thing')).toBe('feat_new_thing');
     // A database nothing named this way is not a branch, and is answered as such.
     expect(branchNameOf('postly')).toBeNull();
+  });
+
+  test('asked of ONE source, a name is the exact inverse of the database it names', () => {
+    // What `ls` shows is what `drop` derives its target from, so the two must be inverses or the
+    // listing is a set of names the command cannot act on.
+    for (const branch of ['feat_x', 'a_branch_b', 'x']) {
+      expect(branchNameIn('postly', branchDatabaseName('postly', branch))).toBe(branch);
+    }
+    // Another app's clone on the same server, and the row `branchNameOf` reduced to `feat` — one
+    // name for two databases is what let a listing authorise a drop against the wrong one.
+    expect(branchNameOf('analytics_branch_feat')).toBe('feat');
+    expect(branchNameIn('postly', 'analytics_branch_feat')).toBeNull();
+    // A branch of a branch, seen from the branch: `b`, not `a_branch_b`.
+    expect(branchNameIn('postly_branch_a', 'postly_branch_a_branch_b')).toBe('b');
+    expect(branchNameIn('postly', 'postly')).toBeNull();
   });
 
   test('the data directory round-trips the same way', () => {
@@ -118,6 +134,7 @@ describe('unit · the embedded database', () => {
 describe('unit · the external database', () => {
   test('only databases carrying the branch marker are branches', async () => {
     const client = createRecordingClient();
+    client.on('current_database', { rows: [{ name: 'postly' }] });
     client.on('pg_database', {
       rows: [
         { name: 'postly', comment: null, size_bytes: 4096 },
@@ -141,6 +158,45 @@ describe('unit · the external database', () => {
     ]);
   });
 
+  /**
+   * One Postgres server, two Ultimate apps. The marker records WHEN a clone was made and never
+   * what it was cloned FROM, so `listBranches()` answers with every marked database on the server
+   * — and both `postly_branch_feat` and `analytics_branch_feat` reduced to the branch name `feat`.
+   * The listing is the whole of `drop`'s guard, so a row belonging to another app authorised a
+   * `drop database` this session's own listing had never approved.
+   */
+  const twoApps = (): ReturnType<typeof createRecordingClient> => {
+    const client = createRecordingClient();
+    client.on('current_database', { rows: [{ name: 'postly' }] });
+    client.on('pg_database', {
+      rows: [
+        { name: 'postly', comment: null, size_bytes: 4096 },
+        {
+          name: 'analytics_branch_feat',
+          comment: 'ultimate:branch:2026-08-01T00:00:00.000Z',
+          size_bytes: 8192,
+        },
+        // Named like a branch of `postly`, carrying no marker: nothing here made it, so nothing
+        // here may delete it. A `DROP DATABASE` is not recoverable.
+        { name: 'postly_branch_feat', comment: null, size_bytes: 16384 },
+      ],
+    });
+    return client;
+  };
+
+  test('a marked clone of another database on this server is not a branch of this one', async () => {
+    expect(await listExternalBranches(twoApps())).toEqual([]);
+  });
+
+  test('a foreign row cannot authorise a drop, and the drop is not attempted', async () => {
+    const client = twoApps();
+    // `exists()` would answer yes for `postly_branch_feat`: the refusal has to come before it.
+    client.on('from pg_database where datname', { rows: [{ ok: 1 }] });
+
+    expect(await dropExternalBranch(client, 'feat')).toBe(false);
+    expect(client.texts.filter((text) => text.includes('drop database'))).toEqual([]);
+  });
+
   test('create writes the marker, so the branch it makes is one ls can see', async () => {
     const client = createRecordingClient();
     client.on('current_database', { rows: [{ name: 'postly' }] });
@@ -158,8 +214,20 @@ describe('unit · the external database', () => {
   test('drop aims at the clone, never at the database the name was derived from', async () => {
     const client = createRecordingClient();
     client.on('current_database', { rows: [{ name: 'postly' }] });
+    client.on('pg_database', {
+      rows: [
+        { name: 'postly', comment: null, size_bytes: 4096 },
+        {
+          name: 'postly_branch_feat_x',
+          comment: 'ultimate:branch:2026-08-01T00:00:00.000Z',
+          size_bytes: 8192,
+        },
+      ],
+    });
     client.on('from pg_database where datname', { rows: [{ ok: 1 }] });
 
+    // `feat-x` and `feat_x` are one clone — the database name substitutes the hyphen — so both
+    // spellings must reach it, and neither may reach anything the listing above does not hold.
     expect(await dropExternalBranch(client, 'feat-x')).toBe(true);
     const dropped = client.texts.filter((text) => text.includes('drop database'));
     expect(dropped).toHaveLength(1);

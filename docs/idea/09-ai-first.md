@@ -171,7 +171,7 @@ The database half ships as `x db branch ls | create <name> | drop <name>`. `x br
 
 | Property | Detail | `As of 2026-08` |
 |---|---|---|
-| DB | `CREATE DATABASE "<source>_branch_<name>" TEMPLATE "<source>"` copy-on-write clone — cheap, isolated, disposable. Embedded: a copied `pgdata-<name>` directory | **shipped** |
+| DB | `CREATE DATABASE "<source>_branch_<slug>" TEMPLATE "<source>"` copy-on-write clone — cheap, isolated, disposable. `<slug>` is `<name>` with every character outside `[A-Za-z0-9_]` replaced by `_`, because a hyphen is not legal in an unquoted Postgres identifier: `create feat-new-billing` clones into `<source>_branch_feat_new_billing`. Embedded: a copied `pgdata-<name>` directory, which keeps the name **as typed** | **shipped** |
 | Migrations | `db.migrate` applies here, never to the shared dev DB | **shipped** |
 | Preview URL | `http://<name>.localhost:<PORT>`, reported on `data.preview` | **computed**, routed by nothing |
 | Teardown | `x db branch drop <name>` — only what `x db branch ls` shows | **shipped** |

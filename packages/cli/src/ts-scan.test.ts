@@ -176,6 +176,25 @@ describe('scanFixes · a fix passed positionally into a local error builder', ()
     expect(fixes(destructured)).toEqual(['x doctor --json']);
   });
 
+  test("a `{` further down the file is not this declaration's body", () => {
+    // The builder discriminator reads the helper's BODY, and `bodyOf` took the next `{` anywhere
+    // below it — so an expression-bodied helper that only formats a string was classified by
+    // whatever object literal happened to follow. Every call to it then handed the gate a string
+    // to judge as a fix, and a gate that fails on innocent source is worse than one that misses.
+    const source =
+      'const label = (fix: string): string => fix.trim();\n' +
+      "const TITLES = { code: 'X_A' };\n" +
+      "label('x db branch lst');";
+    expect(fixes(source)).toEqual([]);
+  });
+
+  test('a concise arrow body is still read, so the bound did not just switch the rule off', () => {
+    const source =
+      "const rejected = (cause: string, fix: string): Finding => ({ code: 'X_A', cause, fix });\n" +
+      "rejected('a', 'x doctor --json');";
+    expect(fixes(source)).toEqual(['x doctor --json']);
+  });
+
   test("a method call on some other object is not this file's helper", () => {
     expect(fixes(`${BUILDER}reporter.rejected('a', 'x doctor --json');`)).toEqual([]);
   });

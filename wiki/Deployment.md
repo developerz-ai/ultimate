@@ -22,7 +22,7 @@ ROLE=replicator myapp
 | `sync` | live queries + fanout over WebSockets | **concurrent connections** | stateless, **no sticky sessions** — a client may reconnect to any node |
 | `worker` | jobs + steps | **queue depth** | one pool per named queue; `WORKER_QUEUES=default,integrations` |
 | `scheduler` | cron dispatch → enqueue only | **fixed 1** | Postgres advisory-lock leader election; a second instance is a warm standby, not a duplicate |
-| `migrate` | run-once, pre-deploy | n/a | applies migrations through the ledger and **exits**; never binds a port. Holds `pg_advisory_lock` on one pinned session for the whole run, so overlapping deploys serialise — the second waits. `X_MIGRATE_CONCURRENT` is reserved and **not thrown** for exactly that reason ([Known gaps](Known-Gaps)) |
+| `migrate` | run-once, pre-deploy | n/a | applies migrations through the ledger and **exits**; never binds a port. Holds the migration advisory lock on one pinned session for the whole run, so overlapping deploys serialise — the second waits, polling once per 500ms for up to 60s, then exits non-zero with `X_MIGRATE_CONCURRENT` rather than hanging the rollout (`As of 2026-08`; 1.2.0 waits forever — [Known gaps](Known-Gaps)) |
 | `replicator` | logical replication → change feed → matcher → NATS | **1 per database** | owns the replication slot; a second instance would double-deliver, so it takes an advisory lock and exits if held |
 
 - No role holds durable state. Everything survivable is in Postgres, NATS, or object storage.

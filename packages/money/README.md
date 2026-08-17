@@ -14,7 +14,7 @@ read rather than rounding it. → [Money](https://github.com/developerz-ai/ultim
 | Concern | Store | Format |
 |---|---|---|
 | Amount | integer minor units (`1299`) | `Intl.NumberFormat`, `style: 'currency'` |
-| Currency | ISO-4217 code (`'EUR'`) | fraction digits derived from its exponent |
+| Currency | a 3-letter code (`'EUR'`) — shipped ISO-4217 or `registerCurrency`'d | fraction digits derived from its exponent |
 | Scale | whenever it differs from the currency's, finer or coarser (`scale: 6`) | `10 ** moneyScale(amount)` — never a literal `/ 100` |
 | FX rate | explicit argument + timestamp | recorded on the converted value |
 
@@ -39,8 +39,8 @@ add(price, money(500, 'USD'));               // throws X_CURRENCY_MISMATCH
 
 ## A currency the shipped rows do not carry
 
-53 ISO-4217 rows ship. They are a *convention* — one useful subset — so an app adds its own with a
-call rather than a fork: a local currency, a scrip, a loyalty point, a token.
+`As of 2026-08`, 53 ISO-4217 rows ship. They are a *convention* — one useful subset — so an app
+adds its own with a call rather than a fork: a local currency, a scrip, a loyalty point, a token.
 
 ```ts
 import { fromDecimal, registerCurrency } from '@ultimat3/money';
@@ -132,7 +132,7 @@ the epoch: `ExchangeRate.at` is the audit trail.
 |---|---|
 | `X_MONEY_NOT_INTEGER` | fractional minor units, a decimal string more precise than the scale, or a `rescale` that would drop a digit with no mode named |
 | `X_MONEY_SCALE_INVALID` | a scale that is not a whole number of decimal places in 0…15, or a widening whose result no longer fits a safe integer |
-| `X_CURRENCY_UNKNOWN` | code not in the ISO-4217 table |
+| `X_CURRENCY_UNKNOWN` | a code neither shipped nor registered by this process — `currencyCodes()` is the list |
 | `X_CURRENCY_MISMATCH` | arithmetic across two currencies |
 | `X_ALLOCATION_INVALID` | bad part count, empty/negative/all-zero ratios, percentages ≠ 100 |
 | `X_RATE_MISSING` | no rate for the pair — never assumes parity |

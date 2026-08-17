@@ -227,10 +227,26 @@ const FIX_PARAM = /^\s*fix\s*:\s*string\s*$/;
  */
 const BUILDS_ERROR = /(?<![.\w$])code\s*[:=]|new\s+[A-Za-z_$][\w$]*Error\s*\(/;
 
-/** The body braces of the declaration whose parameter list ends at `after`. */
+/**
+ * The body of the declaration whose parameter list ends at `after`, and never a `{` belonging to
+ * something below it. An unbounded `indexOf('{')` reads the next object literal in the FILE when
+ * the body is a concise expression, so `const label = (fix: string) => fix.trim();` followed
+ * anywhere by a `{ code: … }` was read as an error builder and every `label(…)` call handed the
+ * gate a string to judge as a fix — a false gate failure over innocent source.
+ *
+ * The scan therefore ends at the `;` that ends the declaration, or at a bracket closing a scope
+ * this declaration is inside. Both directions of that bound answer `''`, which classifies the
+ * helper as a non-builder: a missed fix line costs one unchecked citation, a wrongly claimed one
+ * costs a build. A `{` inside a return-type annotation (`(): { ok: boolean } => …`) is read as the
+ * body and answers `''` for the same reason.
+ */
 function bodyOf(masked: string, after: number): string {
-  const brace = masked.indexOf('{', after);
-  return brace === -1 ? '' : (bracketSpan(masked, brace) ?? '');
+  for (let i = after; i < masked.length; i += 1) {
+    const ch = masked[i] as string;
+    if (ch === '{') return bracketSpan(masked, i) ?? '';
+    if (ch === ';' || CLOSERS.has(ch)) break;
+  }
+  return '';
 }
 
 function fixHelpers(masked: string): readonly FixHelper[] {

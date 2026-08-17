@@ -7,7 +7,7 @@ export interface Money {
 }
 ```
 
-Integer minor units + a three-letter uppercase code — the 53 ISO-4217 rows the framework ships, plus whatever the app registers. Never a float, never a `number` in a column, never a currency-less amount.
+Integer minor units + a three-letter uppercase code — the ISO-4217 rows the framework ships (**53**, `As of 2026-08` — [Currency exponents](#currency-exponents)), plus whatever the app registers. Never a float, never a `number` in a column, never a currency-less amount.
 
 **One declaration, three names.** `@ultimat3/schema`'s `MoneyValue` is the type; `@ultimat3/money`'s `Money` and `@ultimat3/entity`'s `MoneyValue` are aliases of it, not restatements of its shape. It lives at tier 0 because that is the only tier every package may import. A row a `money()` column decodes therefore *is* a `Money` — pass it to `add()`, `formatMoney()` or `<Money>` with no conversion and no cast.
 

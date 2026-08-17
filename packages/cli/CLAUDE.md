@@ -304,11 +304,29 @@ four passed every check the repo had, because `fix-command.ts` resolved two word
 the one that decided what ran.
 
 **`drop` has no confirmation flag, and that is the design.** It may only drop what `ls` shows: an
-external branch is a database carrying the marker comment `createBranch` writes, an embedded one is
-a `pgdata-<name>` directory, so the shared database this session is connected to is in neither set.
+external branch is a database carrying the marker comment `createBranch` writes **and** this
+database's own `<source>_branch_` prefix, an embedded one is a `pgdata-<name>` directory, so the
+shared database this session is connected to is in neither set.
 The typo is impossible rather than the keystroke tedious — and `@ultimat3/db` already ships
 `x db branch drop <name>` as `X_BRANCH_EXISTS`'s `fix:` with no flag on it, so a flag here would
 break a shipped instruction.
+
+**The prefix half is not decoration: the marker records WHEN a clone was made and never what it was
+cloned FROM.** One Postgres server hosting two Ultimate apps answers `listBranches()` with both
+apps' clones, and `branchNameOf` reduced `postly_branch_feat` and `analytics_branch_feat` to the
+same branch name — so `x db branch drop feat`, run against `postly`, was authorised by
+`analytics`'s row and then issued `drop database if exists "postly_branch_feat"` against a database
+carrying no marker at all: a `DROP DATABASE` the guard had never approved, and nothing recoverable
+about it. `branchNameIn(source, database)` is the source-scoped inverse of `branchDatabaseName` and
+the one `ls` and `drop` both read; `branchNameOf` survives for `mcp-db-target.ts` alone, which has
+a URL and no connection to ask `current_database()` with.
+
+**The membership check lives inside `dropExternalBranch`, not in the wiring above it.** One
+connection, one listing, one statement before the `DROP` — a listing taken by the caller and acted
+on afterwards is two connections and a window wide enough to hold a whole `create`. It is still not
+atomic and cannot be: `DROP DATABASE` runs in no transaction, so no single statement both verifies
+the marker and deletes. Closing the last gap means a lock around both halves inside
+`@ultimat3/db`'s `dropBranch` — which a `psql` at the next terminal would not hold either.
 
 **`ls` is the reason `create` no longer shells out to `psql`.** `listBranches()` finds branches by
 `createBranch`'s marker comment; the `psql` path wrote the `CREATE DATABASE` and no comment, so

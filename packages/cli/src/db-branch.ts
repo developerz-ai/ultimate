@@ -69,13 +69,27 @@ export function branchDatabaseName(source: string, branch: string): string {
 }
 
 /**
- * The reverse, and the ONE reader of it: `mcp-db-target.ts` asks the same question to decide
- * whether `db.migrate` is aimed at a private database. A branch created straight through
- * `createBranch()` carries the marker without the naming convention, so an unmatched name is
- * answered `null` and the caller falls back to the database's own name.
+ * The reverse asked of NO source, and the ONE reader of it: `mcp-db-target.ts` decides whether
+ * `db.migrate` is aimed at a private database from a URL alone, with no connection to ask
+ * `current_database()` — so "a branch of somebody" is the only question it can pose, and the
+ * answer it wants for `analytics_branch_feat` is still "not the shared database". Anything holding
+ * a client asks `branchNameIn` instead, which is the question `ls` and `drop` need.
  */
 export const branchNameOf = (database: string): string | null =>
   /_branch_(.+)$/.exec(database)?.[1] ?? null;
+
+/**
+ * The same reverse asked of ONE source: is `database` a branch of `source`, and of what name?
+ * `branchNameOf` cannot answer that — it finds the first `_branch_` in any database on the server,
+ * so `analytics_branch_feat` reduced to `feat` for a session connected to `postly`, and
+ * `postly_branch_a_branch_b` reduced to `a_branch_b` for one connected to `postly_branch_a`.
+ * The exact inverse of `branchDatabaseName`, which is what makes a listed name safe to drop:
+ * `branchNameIn(s, branchDatabaseName(s, b))` is `b` with the same substitution applied.
+ */
+export function branchNameIn(source: string, database: string): string | null {
+  const prefix = `${source}_branch_`;
+  return database.startsWith(prefix) ? database.slice(prefix.length) : null;
+}
 
 /**
  * The embedded peer: `branchPglite` copies `<dir>` to `<dir>-<name>`, so the branch name is the
@@ -157,18 +171,36 @@ export async function dropPgliteBranch(url: string, branch: string): Promise<boo
 }
 
 /**
- * Only databases carrying `createBranch`'s own marker comment. A database this listing does not
- * name is one nothing here created, which is what makes "you may only drop what `ls` shows" a
- * guard rather than a courtesy.
+ * Branches OF `source`: `createBranch`'s marker comment AND this source's own prefix. The marker
+ * alone is not enough, and that is the whole reason this takes a source at all — it records when a
+ * clone was made and never what it was cloned from, so one Postgres server hosting two Ultimate
+ * apps answers `listBranches()` with both apps' clones and `postly_branch_feat` and
+ * `analytics_branch_feat` both reduce to the branch name `feat`.
+ */
+async function branchesOf(client: DbClient, source: string): Promise<readonly BranchRow[]> {
+  const rows: BranchRow[] = [];
+  for (const branch of await listBranches({ client })) {
+    const name = branchNameIn(source, branch.name);
+    if (name === null) continue;
+    rows.push({
+      name,
+      location: branch.name,
+      createdAt: branch.createdAt,
+      sizeBytes: branch.sizeBytes,
+    });
+  }
+  return rows;
+}
+
+/**
+ * Only databases carrying `createBranch`'s own marker comment, and only branches of the database
+ * this session is connected to. A database this listing does not name is one `drop` may not touch,
+ * which is what makes "you may only drop what `ls` shows" a guard rather than a courtesy — and a
+ * row belonging to another app on the same server made that guard answer for a database it had
+ * never seen.
  */
 export async function listExternalBranches(client: DbClient): Promise<readonly BranchRow[]> {
-  const branches = await listBranches({ client });
-  return branches.map((branch) => ({
-    name: branchNameOf(branch.name) ?? branch.name,
-    location: branch.name,
-    createdAt: branch.createdAt,
-    sizeBytes: branch.sizeBytes,
-  }));
+  return branchesOf(client, await currentDatabase(client));
 }
 
 /**
@@ -182,7 +214,9 @@ export async function createExternalBranch(client: DbClient, branch: string): Pr
   const database = branchDatabaseName(source, branch);
   const info = await createBranch(database, { client, base: source });
   return {
-    name: branchNameOf(database) ?? database,
+    // The name `ls` will show for it, derived the way `ls` derives one — a create that reported a
+    // name the listing then spells differently is a `drop` the caller has to guess at.
+    name: branchNameIn(source, database) ?? database,
     location: database,
     createdAt: info.createdAt,
     // `createBranch` reports 0 for a database it has not measured; unknown is the truthful word.
@@ -190,8 +224,28 @@ export async function createExternalBranch(client: DbClient, branch: string): Pr
   };
 }
 
-/** `force`, because a branch exists to be thrown away and its own sessions must not outvote that. */
+/**
+ * `force`, because a branch exists to be thrown away and its own sessions must not outvote that.
+ *
+ * The listing is the guard, so it is taken HERE — on the connection about to issue the `DROP`, one
+ * statement before it — and never accepted from a caller that listed earlier. Two things it closes:
+ * a name approved by another app's clone (the listing is now this source's alone), and a database
+ * that merely LOOKS like a branch of this one — `postly_branch_feat` with no marker is somebody
+ * else's database and `drop database if exists` would have taken it without asking.
+ *
+ * It is not atomic and cannot be: `DROP DATABASE` runs in no transaction, so no single statement
+ * can both verify the marker and delete. What remains is the gap between two adjacent statements on
+ * one session — another process dropping and recreating `<source>_branch_<name>` inside it would
+ * have this drop take the new one. Closing that needs a lock around both halves inside
+ * `@ultimat3/db`'s own `dropBranch`, which is where the `DROP` lives; a `psql` at the next terminal
+ * would still not hold it.
+ */
 export async function dropExternalBranch(client: DbClient, branch: string): Promise<boolean> {
   const source = await currentDatabase(client);
-  return dropBranch(branchDatabaseName(source, branch), { client, force: true });
+  // Matched on the DATABASE, not on the listed name: `branchDatabaseName` substitutes `-` for `_`,
+  // so `feat-x` and `feat_x` are one clone and both spellings must reach it.
+  const database = branchDatabaseName(source, branch);
+  const listed = await branchesOf(client, source);
+  if (!listed.some((row) => row.location === database)) return false;
+  return dropBranch(database, { client, force: true });
 }
