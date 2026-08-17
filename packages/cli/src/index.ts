@@ -113,6 +113,8 @@ export {
   RESERVED_HEADING,
   staticFix,
 } from './error-contract';
+export type { CodeFixIndex } from './error-fixes';
+export { codeFixes, loadCodeFixes, resetCodeFixes, scanScopeFixes } from './error-fixes';
 export {
   BadFlagError,
   BuildEntryMissingError,
@@ -200,11 +202,12 @@ export { belongsToType, discoverTests, sampleFiles } from './test-select';
 export type { ReproduceOptions, RunShardsOptions, Shard } from './test-shards';
 export { planShards, quoteArg, reproduceFor, runShards, shardArgs } from './test-shards';
 export { availableCpus, defaultWorkers, WORKER_CEILING } from './test-workers';
-export type { CodeSite, FixSite, SourceSite } from './ts-scan';
+export type { CodeFixSite, CodeSite, FixSite, SourceSite } from './ts-scan';
 export {
   isCodeRegistry,
   maskLiterals,
   scanBorrowedCodes,
+  scanCodeFixSites,
   scanCodes,
   scanFixes,
   stripComments,

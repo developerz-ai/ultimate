@@ -92,7 +92,10 @@ const editCount = (cuts: readonly BoundaryCut[]): number =>
 export const fixCommand: CliCommand = {
   spec: {
     name: 'fix',
-    summary: 'the minimal cut for an import that crossed a surface boundary',
+    // Says "plan" in the one line `x help` prints. The name is kept — five packages' `fix:` lines
+    // cite `x fix boundary <file>` and renaming a shipped command breaks every one of them — so
+    // the honest move is to stop the summary from promising a repair the command never performs.
+    summary: 'plan the minimal cut for an import that crossed a surface boundary (never rewrites)',
     usage: 'x fix boundary <file> [--json]',
     requiresApp: true,
     subcommands: FIX_SUBCOMMANDS,

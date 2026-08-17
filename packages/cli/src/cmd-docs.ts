@@ -4,34 +4,16 @@
 // should not have to guess which of 29 packages holds the answer, and it must never be handed a
 // URL: `node_modules` already contains every doc, because the published artifact IS the source.
 
-// `node:path` because Bun ships no path module: `dirname` walks up from a resolved package.json
-// to its scope directory, which is string surgery `Bun.resolveSync` does not offer.
-import { dirname } from 'node:path';
 import type { DocEntry, DocHit } from '@ultimat3/manifest';
 import { nearestTopics, scanInstalledDocs, searchDocs } from '@ultimat3/manifest';
 import type { CliCommand, CommandContext } from './command';
 import { MissingPositionalError } from './errors';
+import { frameworkScopeDir } from './framework-scope';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 
 /** Matches printed by default. Enough to choose between, few enough to read all of. */
 const DEFAULT_LIMIT = 5;
-
-/**
- * The installed `@ultimat3` scope, resolved from the CLI's own dependency on `@ultimat3/core`
- * rather than from the user's cwd. That is deliberate: these are the packages THIS `x` is pinned
- * against, so the docs it quotes are the docs of the code it would run. Resolution follows the
- * symlink, so it lands on `node_modules/@ultimat3` in an app and on `packages/` in this monorepo —
- * one code path for both, and a directory listing rather than a hardcoded package list, because
- * an app installs the subset it uses.
- */
-export function frameworkScopeDir(): string | undefined {
-  try {
-    return dirname(dirname(Bun.resolveSync('@ultimat3/core/package.json', import.meta.dir)));
-  } catch {
-    return undefined;
-  }
-}
 
 /** An install where the CLI cannot see its own dependency is broken, not merely undocumented. */
 const unresolvedFinding = (): Finding => ({

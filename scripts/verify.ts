@@ -18,6 +18,7 @@ import {
   runVerify,
   VERIFY_STEPS,
 } from '@ultimat3/cli';
+import { benchClaimFindings } from './bench-claims';
 import {
   adminFlattenerFindingFor,
   checkAdminFlattener,
@@ -29,17 +30,22 @@ import {
   findingFor,
   sharedLeafFindingFor,
 } from './boundaries';
+import { chartVersionFindings } from './chart-version';
 import { errorStatusCompleteness } from './error-map';
 import { errorRendering } from './error-render';
 import { frameworkCatalogFindings } from './i18n-catalog';
+import { imageContractFindings } from './image-contract';
 import { flagBool, parseScriptArgs } from './lib/args';
 import { writeOut } from './lib/log';
 import { repoRoot } from './lib/run';
 import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
+import { publishListFindings } from './release-workflow';
 import { checkRoadmap } from './roadmap';
+import { frameDocFindings } from './wiki-frames';
+import { wikiTableFindings } from './wiki-tables';
 
 /**
- * Four rules on one step. The tier table: a package may import only from a strictly lower tier.
+ * Five rules on one step. The tier table: a package may import only from a strictly lower tier.
  * The `shared/` leaf: an example app's `shared/` may hold types from `app/` but never a runtime
  * edge into it — `x verify` inside the app already checks that, and this repo's own gate must
  * too, because the reference-app job is advisory and this one blocks. `@ultimat3/admin`'s one
@@ -49,16 +55,24 @@ import { checkRoadmap } from './roadmap';
  * source renders, and still describes only screens that exist — 27 `t('admin.…')` keys had no
  * entry and an `admin.nav.*` block nothing reads did, so every admin screen rendered `⟦key⟧`.
  *
- * The catalog rule rides here for the reason this step's own CLI comment gives: `VerifyStepName` is
- * a closed union owned by `@ultimat3/cli`, and a generated app would inherit an eighteenth step
- * only this repo can run. This is already the slot for "conventions this repo makes about its own
- * source that the framework cannot know" — the flattener rule is not a tier rule either.
+ * The image contract: `docker/Dockerfile` must build and ship one libc family, and must prove its
+ * entrypoint in the stage that ships it. Neither was true — the build base was musl and the runtime
+ * glibc, so every container of every build exited `exec /app/x: no such file or directory` while
+ * the build reported green, because the `--version` guard ran on the build stage. `docker build`
+ * runs on no PR, so this text rule is the only thing between that and the next release.
+ *
+ * The catalog and image rules ride here for the reason this step's own CLI comment gives:
+ * `VerifyStepName` is a closed union owned by `@ultimat3/cli`, and a generated app would inherit an
+ * eighteenth step only this repo can run. This is already the slot for "conventions this repo makes
+ * about its own source that the framework cannot know" — the flattener rule is not a tier rule
+ * either — and it runs third, before any suite, which is where a millisecond-cost text rule belongs.
  */
 export const tierBoundaries: HostCheck = async (root) => [
   ...checkBoundaries(await collectSourceFiles(root)).map(findingFor),
   ...checkSharedLeaf(await collectSharedFiles(root)).map(sharedLeafFindingFor),
   ...checkAdminFlattener(await collectAdminFiles(root)).map(adminFlattenerFindingFor),
   ...(await frameworkCatalogFindings(root)),
+  ...(await imageContractFindings(root)),
 ];
 
 /**
@@ -149,10 +163,37 @@ export const errorContract: HostCheck = async (root) => [
   ...(await errorStatusCompleteness(root)),
 ];
 
+/**
+ * The `manifest` step's host half: four rules, all asking that step's own question — does a
+ * committed file still describe this tree? The generated manifest is the original. The other three
+ * are hand-maintained files that claim something about the repo and were checked by nothing:
+ *
+ * | Rule | The claim, and what it cost | Source of truth |
+ * |---|---|---|
+ * | `publishListFindings` | `.github/workflows/release.yml` publishes every package — it does not, and `@ultimat3/flags` has never been on npm | `publishOrder(listWorkspaces())` |
+ * | `benchClaimFindings` | `CLAUDE.md`'s realtime figures are what was measured | `scripts/bench/results/*.json` |
+ * | `wikiTableFindings` | every `wiki/` table renders as a table | the GFM row rule |
+ * | `frameDocFindings` | `wiki/Realtime.md` names the frames the wire actually sends | `FRAME_KINDS` |
+ * | `chartVersionFindings` | `docker/helm/Chart.yaml` is on the lockstep version — it sat at 0.0.1, and `appVersion` IS the default image tag | the publishable workspaces' version |
+ *
+ * None of them is a step of its own, for the reason the `errors` step's comment already gives:
+ * `VerifyStepName` is a closed union owned by `@ultimat3/cli`, and a generated app would inherit an
+ * eighteenth step that only this repo can run. `package-shape` would have been the natural home for
+ * the publish list, but the CLI's step takes no host findings — widening it is that package's edit.
+ */
+export const frameworkFiles: HostCheck = async (root) => [
+  ...(await frameworkManifest(root)),
+  ...(await publishListFindings(root)),
+  ...(await benchClaimFindings(root)),
+  ...(await wikiTableFindings(root)),
+  ...(await frameDocFindings(root)),
+  ...(await chartVersionFindings(root)),
+];
+
 export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {
   boundaries: tierBoundaries,
   errors: errorContract,
-  manifest: frameworkManifest,
+  manifest: frameworkFiles,
   roadmap: checkRoadmap,
 };
 

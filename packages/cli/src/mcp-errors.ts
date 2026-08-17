@@ -6,6 +6,7 @@ import { describeErrorCode, hasErrorCode, listErrorCodes } from '@ultimat3/core'
 import type { ErrorExplanation } from '@ultimat3/mcp';
 import type { CliErrorCode } from './error-codes';
 import { CLI_ERROR_CODES, docsFor } from './error-codes';
+import { codeFixes } from './error-fixes';
 
 /**
  * One runnable command per CLI code. Typed over `CliErrorCode`, so a new code fails the build.
@@ -69,7 +70,11 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_STORAGE_UNWRITABLE: 'x doctor --json',
   X_STORAGE_SECRET_DEV: 'export STORAGE_SIGNING_SECRET="$(openssl rand -hex 32)"',
   X_MANIFEST_STALE: 'x manifest --json',
-  X_BUDGET_UNMEASURED: 'x build --json && x verify --json',
+  // `--target static`, not a bare `x build`: `--target` defaults to `docker`, and only the static
+  // target runs `apps/web/prerender.ts` — the one caller of `writeBuildStats`. Without the flag
+  // this fix builds an image, writes no `.x/build-stats.json`, and the next `x verify` reports the
+  // same code. Byte-identical to `checkBudgets`'s own finding, which is the other half of the pair.
+  X_BUDGET_UNMEASURED: 'x build --target static --json && x verify --json',
   X_BUILD_FAILED: 'x build --json   # the finding names the failing step',
   X_BUILD_ENTRY_MISSING:
     'x new scratch-app --dry-run --json   # the file list names every entry a build needs',
@@ -118,9 +123,49 @@ const isCliCode = (code: string): code is CliErrorCode =>
   (CLI_ERROR_CODES as readonly string[]).includes(code);
 
 /**
+ * The fix a code's own throw site writes, for every code this table does not own.
+ *
+ * The table above stays the answer for `CliErrorCode` and only for it: those lines are typed,
+ * build-enforced, and several of them are deliberately NOT the throw site's wording (the comments
+ * above say which and why). Everywhere else the throw site is the definition and this is a
+ * projection of it — one `fix:`, written once, `x errors explain` and the raised error agreeing by
+ * construction rather than by review.
+ *
+ * Both fallbacks name what they do not know. `x verify --json` was the old answer for all 327 of
+ * them, and it is a lie for every runtime code: the gate does not raise `X_UNAUTHENTICATED`, so
+ * running it reports green and the reader is exactly where they started.
+ */
+function projectedFix(code: string): string {
+  const sites = codeFixes().get(code) ?? [];
+  const readable = sites.filter((site) => site.fix !== undefined);
+  const first = readable[0];
+  if (first?.fix === undefined) {
+    const site = sites[0];
+    if (site === undefined) {
+      return `x errors list --json   # nothing in the installed framework raises ${code}, so the package that registered it owns its fix`;
+    }
+    return `open ${site.at}:${site.line} — that throw site builds its fix from values only it has, so only the raised error carries one`;
+  }
+  // Both notes name a thing this answer does NOT know, because an answer that hides either is one
+  // an agent acts on without noticing: which of several throw sites it is quoting, and which words
+  // in it were an interpolation at the throw site and are a placeholder here.
+  const notes: string[] = [];
+  if (readable.length > 1) {
+    notes.push(
+      `${code} is raised at ${readable.length} sites; this one is ${first.at}:${first.line}`,
+    );
+  }
+  if (first.fix.includes('<value>')) {
+    notes.push('each <value> is filled in by the error that raises it');
+  }
+  return notes.length === 0 ? first.fix : `${first.fix}   # ${notes.join('; ')}`;
+}
+
+/**
  * `undefined` for a code nobody registered — the tool then answers "unknown error code", which
  * beats an invented explanation. The framework-wide registry holds a title and a docs URL but no
- * fix (a thrown error carries its own), so a non-CLI code points at the gate that surfaces it.
+ * fix, so the fix comes from `error-fixes.ts`'s read of the throw sites; a caller that has not
+ * awaited `loadCodeFixes()` gets the honest fallback rather than a stale answer.
  */
 export function explainErrorCode(code: string): ErrorExplanation | undefined {
   const cli = isCliCode(code);
@@ -129,7 +174,7 @@ export function explainErrorCode(code: string): ErrorExplanation | undefined {
   return {
     code,
     cause: described.title,
-    fix: cli ? CLI_FIXES[code] : 'x verify --json',
+    fix: cli ? CLI_FIXES[code] : projectedFix(code),
     docs: cli ? docsFor(code) : described.docs,
   };
 }

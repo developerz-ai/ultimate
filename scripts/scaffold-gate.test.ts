@@ -77,6 +77,38 @@ describe('unit · the waiver flag and the subprocess', () => {
     expect(flagList(parseScriptArgs([DIR]), 'allow-red')).toEqual([]);
   });
 
+  /**
+   * The defect this file's own error had: `--allow-red typecheck` was the example in the usage line
+   * AND inside `X_SCAFFOLD_GATE_RED`'s `fix:`, and `typecheck` passes in a scaffolded app now — so
+   * an agent pasting the fix verbatim got an instant `stale` finding for a step already green. A
+   * fix line is pasted, not read, so an example that has stopped working is a wrong instruction.
+   *
+   * The `stale` rule makes the ALLOWANCE shrink on its own; nothing made the EXAMPLE follow it.
+   * This is that, and it reads both sites at once by scanning this script's own source.
+   */
+  test('every --allow-red example in the script names a step the CI ratchet still allows', async () => {
+    const root = `${import.meta.dir}/..`;
+    const workflow = await Bun.file(`${root}/${WAIVER_FILE}`).text();
+    const allowed = new Set(
+      [...workflow.matchAll(/--allow-red\s+([\w,]+)/g)].flatMap((match) =>
+        (match[1] ?? '').split(','),
+      ),
+    );
+    // A parser that found nothing would make the assertion below vacuously true.
+    expect(allowed.size).toBeGreaterThan(0);
+
+    const source = await Bun.file(`${root}/scripts/scaffold-gate.ts`).text();
+    const examples = [...source.matchAll(/--allow-red\s+([\w,]+)/g)].flatMap((match) =>
+      (match[1] ?? '').split(','),
+    );
+    expect(examples.length).toBeGreaterThan(1);
+    for (const example of examples) {
+      expect(allowed, `--allow-red ${example} is an example that would report stale`).toContain(
+        example,
+      );
+    }
+  });
+
   test('the app’s own verify script is what runs, in the app’s own directory', async () => {
     const calls: { command: readonly string[]; cwd: string }[] = [];
     const fake = async (command: readonly string[], options: { cwd: string }) => {

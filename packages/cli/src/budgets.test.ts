@@ -29,30 +29,44 @@ const stats = (...routes: BuildStats['routes']): BuildStats => ({ routes });
 
 describe('unit · budgets', () => {
   test('a declared JS budget with no measurement is a finding, not a pass', () => {
-    const findings = checkBudgets(manifestOf(route('/pricing', { js: '20kb' })), stats());
+    const findings = checkBudgets(manifestOf(route('/pricing', { js: '20kb' })), undefined);
     expect(findings.map((finding) => finding.code)).toEqual(['X_BUDGET_UNMEASURED']);
     expect(findings[0]?.cause).toContain('/pricing');
     expect(findings[0]?.cause).toContain('JS');
     expect(findings[0]?.cause).toContain(BUILD_STATS_FILE);
-    expect(findings[0]?.fix).toBe('x build && x verify');
+    expect(findings[0]?.fix).toBe('x build --target static --json && x verify --json');
     expect(findings[0]?.at).toBe('/pricing');
   });
 
+  // Two conditions, two instructions. "No build has run" is closed by one command for every route
+  // at once; "a build ran and has no row for this one" is not closed by running it again — the
+  // report's own `unmeasured` list is where that answer is. One cause for both sent a reader to
+  // re-run a build that had already done everything it was going to do.
+  test('a build that ran and missed the route says so, and does not ask for a rebuild alone', () => {
+    const built = checkBudgets(manifestOf(route('/pricing', { js: '20kb' })), stats());
+    expect(built[0]?.cause).toContain('the build ran and could not weigh it');
+    expect(built[0]?.fix).toContain('unmeasured');
+    const never = checkBudgets(manifestOf(route('/pricing', { js: '20kb' })), undefined);
+    expect(never[0]?.cause).toContain('no build has written');
+    expect(never[0]?.fix).toBe('x build --target static --json && x verify --json');
+    expect(built[0]?.cause).not.toBe(never[0]?.cause);
+  });
+
   test('a declared LCP budget with no measurement is a finding too', () => {
-    const findings = checkBudgets(manifestOf(route('/slow', { lcp: 1200 })), stats());
+    const findings = checkBudgets(manifestOf(route('/slow', { lcp: 1200 })), undefined);
     expect(findings.map((finding) => finding.code)).toEqual(['X_BUDGET_UNMEASURED']);
     expect(findings[0]?.cause).toContain('LCP');
     expect(findings[0]?.cause).not.toContain('JS');
   });
 
   test('both budgets unmeasured is one finding that names both', () => {
-    const findings = checkBudgets(manifestOf(route('/both', { js: '5kb', lcp: 900 })), stats());
+    const findings = checkBudgets(manifestOf(route('/both', { js: '5kb', lcp: 900 })), undefined);
     expect(findings).toHaveLength(1);
     expect(findings[0]?.cause).toContain('JS and LCP');
   });
 
   test('a route that declares no budget and was never measured is not a finding', () => {
-    expect(checkBudgets(manifestOf(route('/about')), stats())).toEqual([]);
+    expect(checkBudgets(manifestOf(route('/about')), undefined)).toEqual([]);
   });
 
   test('a measured route over its JS budget names the import chain that caused it', () => {
@@ -145,15 +159,17 @@ describe('unit · an ABSENT stats file is every budget unmeasured, not nothing t
       // A route declaring nothing is still skipped — the rule is "declared but unweighed".
       route('/about'),
     );
-    const findings = checkBudgets(manifest, (await readBuildStats(root)) ?? { routes: [] });
+    // The step hands `checkBudgets` exactly this — the reader's answer, not a stand-in for it.
+    const findings = checkBudgets(manifest, await readBuildStats(root));
     expect(findings.map((finding) => finding.at)).toEqual(['/', '/dash']);
     expect(new Set(findings.map((finding) => finding.code))).toEqual(
       new Set(['X_BUDGET_UNMEASURED']),
     );
-    for (const finding of findings) expect(finding.fix).toBe('x build && x verify');
+    for (const finding of findings)
+      expect(finding.fix).toBe('x build --target static --json && x verify --json');
   });
 
   test('an app that declares no budgets anywhere still passes with no stats file', () => {
-    expect(checkBudgets(manifestOf(route('/'), route('/about')), { routes: [] })).toEqual([]);
+    expect(checkBudgets(manifestOf(route('/'), route('/about')), undefined)).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "fcdd43787a5f7d1715c2a4c171f3907fbc5c41b6e06b775842edeb9e2ff7036c",
+  "buildId": "b5de91d7d54e75c195a13daf9ef4d3657d0bc6c18592da3663fe2f5199e4fc37",
   "tiers": {
     "0": [
       "core",
@@ -446,6 +446,11 @@
       "at": "packages/jobs/src/errors.ts"
     },
     {
+      "code": "X_BENCH_CLAIM_STALE",
+      "owner": "scripts",
+      "at": "scripts/bench-claims.ts"
+    },
+    {
       "code": "X_BODY_INVALID",
       "owner": "http",
       "at": "packages/http/src/errors.ts"
@@ -564,6 +569,11 @@
       "code": "X_CATALOG_MISSING_KEYS",
       "owner": "i18n",
       "at": "packages/i18n/src/errors.ts"
+    },
+    {
+      "code": "X_CHART_VERSION_STALE",
+      "owner": "scripts",
+      "at": "scripts/chart-version.ts"
     },
     {
       "code": "X_CLI_BAD_FLAG",
@@ -891,6 +901,11 @@
       "at": "packages/policy/src/errors.ts"
     },
     {
+      "code": "X_FRAME_DOCS_STALE",
+      "owner": "scripts",
+      "at": "scripts/wiki-frames.ts"
+    },
+    {
       "code": "X_FRAME_RATE_LIMIT",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
@@ -954,6 +969,16 @@
       "code": "X_IMAGE_DECODE_FAILED",
       "owner": "core",
       "at": "packages/core/src/error-codes.ts"
+    },
+    {
+      "code": "X_IMAGE_GUARD_MISSING",
+      "owner": "scripts",
+      "at": "scripts/image-contract.ts"
+    },
+    {
+      "code": "X_IMAGE_LIBC_MISMATCH",
+      "owner": "scripts",
+      "at": "scripts/image-contract.ts"
     },
     {
       "code": "X_IMAGE_QUERY_INVALID",
@@ -1454,6 +1479,16 @@
       "code": "X_PROTOCOL_VERSION",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
+    },
+    {
+      "code": "X_PUBLISH_LIST_INCOMPLETE",
+      "owner": "scripts",
+      "at": "scripts/release-workflow.ts"
+    },
+    {
+      "code": "X_PUBLISH_LIST_UNKNOWN",
+      "owner": "scripts",
+      "at": "scripts/release-workflow.ts"
     },
     {
       "code": "X_PWA_ICON_MISSING",
@@ -2199,6 +2234,11 @@
       "code": "X_VERIFY_SUITE_VANISHED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_WIKI_TABLE_MALFORMED",
+      "owner": "scripts",
+      "at": "scripts/wiki-tables.ts"
     },
     {
       "code": "X_WRITE_UNFILTERED",

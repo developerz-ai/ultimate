@@ -7,6 +7,7 @@ import type { ErrorExplanation } from '@ultimat3/mcp';
 import type { CliCommand, CommandContext } from './command';
 import type { ErrorCatalog } from './error-catalog';
 import { loadErrorCatalog } from './error-catalog';
+import { loadCodeFixes } from './error-fixes';
 import { ErrorCodeUnknownError, MissingPositionalError } from './errors';
 import { explainErrorCode, explainEveryErrorCode } from './mcp-errors';
 import { msg } from './messages';
@@ -87,7 +88,10 @@ export const errorsCommand: CliCommand = {
   // `async` is load-bearing: a synchronous throw would escape every caller that awaits the
   // promise this signature promises, including the dispatcher's own error path.
   async run(ctx: CommandContext): Promise<CommandResult> {
-    const catalog = await loadErrorCatalog();
+    // Both loads, always, and before either subcommand branches: the catalog is which codes exist
+    // and the fix index is what each one instructs. `x errors list` answering 397 codes with the
+    // fallback line would be a complete-looking table of shrugs.
+    const [catalog] = await Promise.all([loadErrorCatalog(), loadCodeFixes()]);
     if (ctx.args.subcommand === 'list') return listAll(catalog);
     const code = ctx.args.positionals[0];
     if (code === undefined) {

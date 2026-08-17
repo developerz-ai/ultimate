@@ -1,0 +1,43 @@
+{{/*
+One PodDisruptionBudget per role that has more than one pod to lose.
+
+`strategy.rollingUpdate.maxUnavailable: 0` in deployments.yaml protects a DEPLOY and nothing else.
+A node drain — an upgrade, a spot reclaim, a `kubectl drain` — is a voluntary eviction, and the
+scheduler will take every pod of a role at once unless a budget says otherwise. That is the same
+hole the readiness probe had: the rolling restart looks invisible right up until the day the
+disruption comes from the cluster instead of from the chart.
+
+`maxUnavailable: 1`, never `minAvailable`: a budget can only ever block one eviction at a time, so
+a drain always finishes. A `minAvailable` equal to the replica count deadlocks the drain forever,
+which is how a PDB turns into an outage of its own.
+
+Emitted only where the floor is above 1. `scheduler` is pinned to one replica by design (leader
+election is a Postgres advisory lock), and a budget over a single pod means that pod can never be
+evicted — so those roles get none, deliberately.
+*/}}
+{{- if and .Values.podDisruptionBudget .Values.podDisruptionBudget.enabled }}
+{{- range $role, $cfg := .Values.roles }}
+{{- if $cfg.enabled }}
+{{- $floor := $cfg.replicas | int -}}
+{{- if and $cfg.autoscaling $cfg.autoscaling.enabled -}}
+{{- $floor = $cfg.autoscaling.minReplicas | int -}}
+{{- end -}}
+{{- if gt $floor 1 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "ultimate.fullname" $ }}-{{ $role }}
+  labels:
+    {{- include "ultimate.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $role }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: {{ $role }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

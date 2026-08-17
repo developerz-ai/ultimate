@@ -44,3 +44,7 @@ metadata:
   name: {{ include "ultimate.fullname" . }}
   labels:
     {{- include "ultimate.labels" . | nindent 4 }}
+# Belt to the pod-level braces in deployments.yaml and migrate-job.yaml: a workload that forgets the
+# pod-spec field still gets no token, and a ServiceAccount this chart creates is used by nothing
+# else. No role in this image calls the Kubernetes API.
+automountServiceAccountToken: false

@@ -3,6 +3,8 @@
 // quieter half of it — the agent that ran a machine-readable command to get here is handed prose.
 
 import { describe, expect, test } from 'bun:test';
+import { buildManifest } from '@ultimat3/manifest';
+import { checkBudgets } from './budgets';
 import { CLI_ERROR_CODES } from './error-codes';
 import { explainErrorCode, explainEveryErrorCode } from './mcp-errors';
 import { parseArgs } from './parse';
@@ -67,8 +69,28 @@ describe('unit · errors.explain', () => {
   });
 
   test('a chained fix carries the flag on both halves', () => {
-    expect(explainErrorCode('X_BUDGET_UNMEASURED')?.fix).toBe('x build --json && x verify --json');
+    expect(explainErrorCode('X_BUDGET_UNMEASURED')?.fix).toBe(
+      'x build --target static --json && x verify --json',
+    );
     expect(explainErrorCode('X_NOT_IN_APP')?.fix).toBe('x new myapp --json && cd myapp');
+  });
+
+  // Two surfaces answer for this one code — `checkBudgets`'s finding and `errors.explain` — and
+  // they lived in different modules with different text. Both said `x build`, which defaults to
+  // `--target docker` and writes no `.x/build-stats.json`: a fix that runs clean, changes nothing,
+  // and hands back the same finding is the failure axiom 4 exists to prevent.
+  test('the unmeasured-budget fix names the only target that writes the stats file', () => {
+    const manifest = buildManifest({
+      app: { name: 'fixture', version: '1.0.0' },
+      routes: [{ url: '/pricing', render: 'static', budget: { js: '10kb' } }],
+    });
+    // `undefined` stats: the state every repo is in until a build runs, and the one this table's
+    // single line has to answer for. (The other branch — a build that ran and missed the route —
+    // has its own fix, asserted in `budgets.test.ts`.)
+    const finding = checkBudgets(manifest, undefined)[0];
+    expect(finding?.code).toBe('X_BUDGET_UNMEASURED');
+    expect(finding?.fix).toBe(explainErrorCode('X_BUDGET_UNMEASURED')?.fix);
+    expect(finding?.fix).toContain('--target static');
   });
 });
 

@@ -10,6 +10,7 @@ import { checkRoadmap } from './roadmap';
 import {
   ERROR_REFERENCE,
   errorCodeDocs,
+  frameworkFiles,
   frameworkManifest,
   HOST_CHECKS,
   tierBoundaries,
@@ -79,6 +80,82 @@ describe('unit · the repo gate is the CLI gate', () => {
       );
       await Bun.write(join(dir, ERROR_REFERENCE), '# Error codes\n\n| `X_HOST_ONLY` | means |\n');
       expect(await errorCodeDocs(dir)).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * The seam, not the rules: `wiki-tables.test.ts` and `release-workflow.test.ts` own their own
+   * cases. What is only provable here is that the `manifest` step actually carries them — a rule
+   * with a test and no wiring is a rule `bun run verify` never runs.
+   */
+  test('a malformed wiki table is reported through the manifest step', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-wiki-'));
+    try {
+      await Bun.write(join(dir, 'wiki/Bad.md'), '| a | b |\n|---|---|\n| 1 | 2 | 3 |\n');
+      const codes = (await frameworkFiles(dir)).map((finding) => finding.code);
+      expect(codes).toContain('X_WIKI_TABLE_MALFORMED');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a workspace no release step publishes is reported through the manifest step', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-publish-'));
+    try {
+      await Bun.write(
+        join(dir, 'packages/core/package.json'),
+        '{ "name": "@ultimat3/core", "version": "1.0.0" }\n',
+      );
+      await Bun.write(
+        join(dir, '.github/workflows/release.yml'),
+        '      - name: publish tier 0\n        run: npm publish -w @ultimat3/schema\n',
+      );
+      const codes = (await frameworkFiles(dir)).map((finding) => finding.code);
+      expect(codes).toContain('X_PUBLISH_LIST_INCOMPLETE');
+      expect(codes).toContain('X_PUBLISH_LIST_UNKNOWN');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a chart left behind by a release is reported through the manifest step', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-chart-'));
+    try {
+      await Bun.write(
+        join(dir, 'packages/core/package.json'),
+        '{ "name": "@ultimat3/core", "version": "1.3.0" }\n',
+      );
+      await Bun.write(join(dir, 'docker/helm/Chart.yaml'), 'version: 0.0.1\nappVersion: "0.0.1"\n');
+      const codes = (await frameworkFiles(dir)).map((finding) => finding.code);
+      expect(codes).toContain('X_CHART_VERSION_STALE');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * The image contract rides `boundaries` rather than `manifest`: it is a convention this repo makes
+   * about its own source, and it costs milliseconds, so it belongs before the suites.
+   */
+  test('an image that could not start is reported through the boundaries step', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-image-'));
+    try {
+      await Bun.write(
+        join(dir, 'docker/Dockerfile'),
+        [
+          'FROM oven/bun:1.3-alpine AS build',
+          'RUN bun build --compile --outfile /out/app ./x.ts',
+          'FROM gcr.io/distroless/cc-debian13:nonroot AS runtime',
+          'COPY --from=build /out/app /app/x',
+          'ENTRYPOINT ["/app/x"]',
+          '',
+        ].join('\n'),
+      );
+      const codes = (await tierBoundaries(dir)).map((finding) => finding.code);
+      expect(codes).toContain('X_IMAGE_LIBC_MISMATCH');
+      expect(codes).toContain('X_IMAGE_GUARD_MISSING');
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

@@ -11,7 +11,14 @@ import { kebab, pascal, titleKey } from './naming';
 
 export type Surface = 'site' | 'app';
 
-const RENDER: Record<Surface, string> = { site: 'isr', app: 'stream' };
+/**
+ * `ssr` on `app/`, not `stream`, for the reason `scaffold-app.ts`'s dashboard already states:
+ * `stream` sets `needsSuspense`, the framework ships no hole marker, and `defineRoute` therefore
+ * throws `X_ROUTE_MODE_INVALID` at import. That is not a failing page — it is a page that registers
+ * NO route at all, so every `x g route --surface app` and every `x g resource` scaffolded a URL
+ * that was absent from `x routes`, from the manifest and from `budgets`. Ship the mode that works.
+ */
+const RENDER: Record<Surface, string> = { site: 'isr', app: 'ssr' };
 const HYDRATE: Record<Surface, string> = { site: 'never', app: 'visible' };
 const OFFLINE: Record<Surface, string> = { site: 'precache', app: 'runtime' };
 /** Structured, not a literal string: the route and the test that pins it read the same fact. */
@@ -150,7 +157,6 @@ unitTest('/${path} declares a render mode, an offline strategy and a budget', ()
 unitTest('/${path} stays inside its byte budget declaration', () => {
   expect(config.budget.js).toBe('${BUDGET[surface].js}');
 });
-
 `;
 
 /**

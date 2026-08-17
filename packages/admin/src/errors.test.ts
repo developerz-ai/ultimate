@@ -9,6 +9,7 @@ import {
   ADMIN_ERROR_CODES,
   ADMIN_ERROR_TITLES,
   ADMIN_OWNED_ERROR_CODES,
+  AdminPolicyMissingError,
 } from './errors';
 
 describe('ADMIN_ERROR_TITLES', () => {
@@ -51,5 +52,35 @@ describe('docs', () => {
     for (const code of ADMIN_ERROR_CODES) {
       expect(describeErrorCode(code).docs).toBe(`https://ultimate.dev/errors/${code}`);
     }
+  });
+});
+
+// The snippet a fix hands the reader has to compile. `can()` takes a `Permission` —
+// `` `${string}:${string}` `` — and `subject` is an action's export name (`resource.ts` throws with
+// `action.name`), so `can('createPost')` is a paste whose only outcome is a second error.
+describe('X_ADMIN_POLICY_MISSING pastes a permission, never the subject name', () => {
+  const CAN_ARGUMENT = /can\('(?<permission>[^']*)'\)/;
+  const missing = (subject: string, kind: 'action' | 'resource'): AdminPolicyMissingError =>
+    new AdminPolicyMissingError({ subject, kind });
+
+  test('the fix names a resource:verb pair', () => {
+    const permission = CAN_ARGUMENT.exec(missing('createPost', 'action').fix)?.groups?.[
+      'permission'
+    ];
+    expect(permission).toBeDefined();
+    expect(permission).not.toBe('createPost');
+    expect(permission ?? '').toMatch(/^[^:]+:[^:]+$/);
+  });
+
+  test('the cause still names the subject, because that is what finds the file', () => {
+    const error = missing('createPost', 'action');
+    expect(error.cause).toContain('createPost');
+    expect(error.code).toBe('X_ADMIN_POLICY_MISSING');
+  });
+
+  // Deliberately unlike action's and query's twin, which both offer `allow()`: an admin operation
+  // with no policy is the open door this code exists to refuse, so there is no escape to name.
+  test('it offers no allow() escape hatch', () => {
+    expect(missing('posts', 'resource').fix).not.toContain('allow(');
   });
 });

@@ -34,6 +34,7 @@ import type { RunningServices } from './dev-runtime';
 import { startServices } from './dev-runtime';
 import type { DevServices, Env } from './dev-services';
 import { resolveServices } from './dev-services';
+import { loadCodeFixes } from './error-fixes';
 import { CliNotImplementedError } from './errors';
 import type { Runner } from './exec';
 import { execOutput } from './exec';
@@ -285,7 +286,10 @@ function capabilities(input: DevHostInput, lazy: LazyServices): DevCapabilities 
  * introspection tool then answers from the framework's own registries, not from a scan.
  */
 export async function createDevMcpServer(input: DevHostInput): Promise<CliMcpServer> {
-  await loadApp(input.root);
+  // `explainError` is synchronous by `DevCapabilities`' own signature, so the walk that reads the
+  // framework's `fix:` lines happens here, once, or `errors.explain` answers with the fallback for
+  // every code it could have quoted.
+  await Promise.all([loadApp(input.root), loadCodeFixes()]);
   const lazy = lazyServices(input);
   const introspection = frameworkIntrospection({
     routes: () => describeRoutes(),

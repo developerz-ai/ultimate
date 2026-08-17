@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
-import { CliNotImplementedError } from './errors';
+import { BadFlagError, CliNotImplementedError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagBool, flagString } from './parse';
@@ -42,8 +42,39 @@ export interface DeployPlan {
   readonly steps: readonly { readonly role: string; readonly command: readonly string[] }[];
 }
 
+/**
+ * The chart declares `image` as a MAP — `repository`, `tag`, `pullPolicy` — and `_helpers.tpl`
+ * renders `printf "%s:%s" .Values.image.repository (default .Chart.AppVersion .Values.image.tag)`.
+ * `--set image=<ref>` replaces that map with a string, so every workload template fails on
+ * `.repository` and the deploy that was asked to ship one image ships nothing. The reference is
+ * split into the two keys the chart actually reads; a reference with no tag sets only the
+ * repository, which leaves the chart's own `default .Chart.AppVersion` in force.
+ *
+ * The last `:` after the last `/`, because a registry may carry a port: `localhost:5000/app` is a
+ * repository with no tag and `localhost:5000/app:1.2.3` is the same repository with one.
+ */
+export function helmImageOverrides(image: string): readonly string[] {
+  const colon = image.lastIndexOf(':');
+  const tag = colon > image.lastIndexOf('/') ? image.slice(colon + 1) : '';
+  const repository = tag === '' ? image : image.slice(0, colon);
+  return tag === ''
+    ? ['--set', `image.repository=${repository}`]
+    : ['--set', `image.repository=${repository}`, '--set', `image.tag=${tag}`];
+}
+
 export function planDeploy(image: string, method: 'compose' | 'helm', root: string): DeployPlan {
   if (method === 'helm') {
+    // `repo@sha256:…` is a reference this chart cannot express: it renders `repository:tag` and
+    // has no digest branch, so passing one through would deploy `repo@sha256:…:<appVersion>` —
+    // a tag no registry has. Refused here rather than by a `helm upgrade` failing halfway.
+    if (image.lastIndexOf('@') > image.lastIndexOf('/')) {
+      throw new BadFlagError({
+        flag: 'image',
+        command: 'deploy',
+        reason: `"${image}" pins a digest, and docker/helm renders repository:tag with no digest branch`,
+        fix: `x deploy --method helm --image ${image.slice(0, image.lastIndexOf('@'))}:<tag> --json`,
+      });
+    }
     return {
       image,
       steps: [
@@ -55,8 +86,7 @@ export function planDeploy(image: string, method: 'compose' | 'helm', root: stri
             '--install',
             'app',
             join(root, 'docker', 'helm'),
-            '--set',
-            `image=${image}`,
+            ...helmImageOverrides(image),
           ],
         },
       ],
