@@ -67,6 +67,16 @@ interface TxState {
   readonly undos: (() => void)[];
   /** Shared by reference across nesting levels so savepoint names never collide. */
   readonly savepoints: { value: number };
+  /**
+   * Whether the scope is still OPEN. Shared by reference across nesting for the same reason the
+   * savepoint counter is: a SAVEPOINT lives and dies with the root transaction that opened it.
+   *
+   * Mutable because the store outlives the scope. `AsyncLocalStorage` propagates into every
+   * promise chain started inside `fn`, so a statement the app forgot to `await` still finds this
+   * store long after COMMIT — and a reader that treats the store's PRESENCE as an open
+   * transaction believes a dead one is live.
+   */
+  readonly live: { value: boolean };
 }
 
 const storage = new AsyncLocalStorage<TxState>();
@@ -74,6 +84,19 @@ const storage = new AsyncLocalStorage<TxState>();
 /** The open transaction, or `undefined` outside one. `@ultimat3/jobs` calls this per enqueue. */
 export function currentTx(): DbTx | undefined {
   return storage.getStore()?.tx;
+}
+
+/**
+ * Is a transaction still OPEN on this async context? A different question from `currentTx() !==
+ * undefined`, which only says a store is present — and the store survives the scope. The one
+ * reader is `pglite.ts`'s `run()`, where the answer decides whether a statement may skip the
+ * single session's turn queue; skipping it on a *closed* transaction is how a straggler landed
+ * inside whichever unit of work held the connection next, committed with it, with nothing to read.
+ * `currentTx()` deliberately still answers with the dead handle: its statements go through the
+ * reservation, whose own `held` fence already re-queues them.
+ */
+export function inLiveTx(): boolean {
+  return storage.getStore()?.live.value === true;
 }
 
 export function beginStatement(options: TransactionOptions): string {
@@ -156,10 +179,12 @@ async function runRoot<T>(fn: (tx: DbTx) => Promise<T>, options: TransactionOpti
   const connection: DbClient = reserved ?? client;
   const undos: (() => void)[] = [];
   const tx = makeTx(`tx_${nanoid(12)}`, connection, undos, client);
+  // Each attempt gets its own state, and therefore its own `live` — a retry re-runs `fn` against a
+  // transaction that is genuinely new, so the abandoned attempt's stragglers must read as closed.
+  const state: TxState = { tx, connection, undos, savepoints: { value: 0 }, live: { value: true } };
 
   try {
     await connection.execute(raw(beginStatement(options)));
-    const state: TxState = { tx, connection, undos, savepoints: { value: 0 } };
     const result = await storage.run(state, () => fn(tx));
     await connection.execute(raw('COMMIT'));
     return result;
@@ -169,6 +194,12 @@ async function runRoot<T>(fn: (tx: DbTx) => Promise<T>, options: TransactionOpti
     await connection.execute(raw('ROLLBACK')).catch(() => undefined);
     runUndos(undos);
     throw error;
+  } finally {
+    // The scope says when it CLOSED, on every exit, because nothing else can: the store it left
+    // behind is indistinguishable from a live one, and `inLiveTx()` is what tells them apart.
+    // Cleared before the `using` pin is given back, so no window exists where a straggler could
+    // still be sent direct at a connection this scope no longer owns.
+    state.live.value = false;
   }
 }
 

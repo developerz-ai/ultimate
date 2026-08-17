@@ -6,7 +6,9 @@
  */
 
 import type { CacheTag, LruOptions } from '@ultimat3/cache';
-import { CacheTooLargeError, invalidateTags, LruCache } from '@ultimat3/cache';
+import { CacheTooLargeError, invalidateTags, LruCache, nowMs } from '@ultimat3/cache';
+import type { Clock } from '@ultimat3/core';
+import { systemClock } from '@ultimat3/core';
 
 export interface ReadCacheEntry {
   readonly value: unknown;
@@ -40,6 +42,19 @@ export const DEFAULT_READ_CACHE_TTL_MS = 60_000;
 /** 32 MiB: half the LRU tier's budget, because a read cache is not the whole cache. */
 export const DEFAULT_READ_CACHE_MAX_BYTES = 32 * 1024 * 1024;
 
+export interface MemoryReadCacheOptions extends LruOptions {
+  /**
+   * An `LruCache` to hold entries in rather than one of this cache's own.
+   *
+   * The one caller is a boot that ALSO registers that same cache as `@ultimat3/cache`'s `lru`
+   * tier. `invalidateTags` fans out to the registered tiers and to nothing else, so a read cache
+   * over a private `LruCache` is a `cache:` query an action's `invalidates` can never drop —
+   * which is what every deployment without a shared tier shipped until 2026-08. Sharing the
+   * object is what puts the read tier inside the one fan-out instead of beside it.
+   */
+  readonly cache?: LruCache;
+}
+
 /**
  * In-memory default. Production installs the tiered cache from @ultimat3/cache.
  *
@@ -49,9 +64,14 @@ export const DEFAULT_READ_CACHE_MAX_BYTES = 32 * 1024 * 1024;
  */
 export class MemoryReadCache implements ReadCache {
   readonly #entries: LruCache;
+  readonly #clock: Clock;
 
-  constructor(options: LruOptions = {}) {
-    this.#entries = new LruCache({ maxBytes: DEFAULT_READ_CACHE_MAX_BYTES, ...options });
+  constructor(options: MemoryReadCacheOptions = {}) {
+    const { cache, ...lru } = options;
+    this.#entries = cache ?? new LruCache({ maxBytes: DEFAULT_READ_CACHE_MAX_BYTES, ...lru });
+    // Injected, never `Date.now()`: an expiry decided by the wall clock cannot be driven by a
+    // test, and this package hands every other reading of "now" through a `Clock` already.
+    this.#clock = options.clock ?? systemClock;
   }
 
   async get(key: string): Promise<ReadCacheEntry | undefined> {
@@ -59,7 +79,7 @@ export class MemoryReadCache implements ReadCache {
   }
 
   async set(key: string, entry: ReadCacheEntry): Promise<void> {
-    const now = Date.now();
+    const now = nowMs(this.#clock);
     // Already stale on arrival: storing it would hand the next reader an entry `get` has to
     // throw away, and `ttl <= 0` is how the LRU spells "no expiry" — the opposite answer.
     if (entry.expiresAt !== null && entry.expiresAt <= now) {
@@ -102,12 +122,15 @@ export function getReadCache(): ReadCache {
 }
 
 /**
- * The one invalidation path. Actions call the same function via their `cache`.
+ * Two drops, one call — for a `ReadCache` the fan-out cannot see.
  *
- * Two drops, one call: the graph @ultimat3/cache owns reaches every registered tier, ISR route,
- * CDN path and live query, and the read tier is dropped by the same tags in the same hop. The
- * read tier is not a registered `CacheTier` — it is this package's seam, replaceable per
- * deployment through `setReadCache` — so the fan-out cannot reach it and this must.
+ * The graph @ultimat3/cache owns reaches every registered `CacheTier`, ISR route, CDN path and
+ * live query. A `ReadCache` is this package's own seam and is registered nowhere, so a host that
+ * installs one through `setReadCache` has to hand it the same tags in the same hop or its entries
+ * can only expire. The framework's own boot avoids needing this at all: it installs a read cache
+ * over the very object it registers as a tier (`MemoryReadCacheOptions.cache`, or the shared tier
+ * seen through `tierReadCache`), so one `invalidateTags` already drops it. An app supplying a
+ * `ReadCache` of its own is the caller this exists for.
  */
 export async function invalidateQueryTags(tags: readonly CacheTag[]): Promise<void> {
   await invalidateTags(tags);

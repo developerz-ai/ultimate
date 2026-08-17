@@ -159,6 +159,38 @@ them — a database outage that failed `/healthz` would restart the whole fleet 
 outage. The registration returns its unregister, same shape and same ownership rule as
 `onShutdown`; `readinessCheckCount()` is the leak probe.
 
+**The drain deadline is enforced, not merely computed, and there is no unbounded state.**
+`ShutdownReason.deadlineAt` was always handed to every hook and **no hook has ever read it** —
+`jobs`' worker awaits every in-flight job and `driver.close()`, `jobs`' scheduler awaits its round,
+`realtime`'s `listenSyncNode` awaits `node.drain()`'s own grace, `http`'s `server.ts` awaits
+`server.stop()` — so before 2026-08 `configureLifecycle({ deadlineMs: 100 })` bounded nothing:
+measured, one 5-second `accept` hook drained in **5053ms**, state pinned at `draining`. `runPhase`
+now races each hook against the time left before `deadlineAt` (`lifecycle-deadline.ts`'s
+`settleWithin`, split out so the race cannot reach this file's state) and an overrun is
+**ABANDONED** — the drain resolves, the later phases still run, and `installSignalHandlers` reaches
+`process.exit(0)`. Merely logging would leave the kubelet to SIGKILL at the grace period, which is
+the every-deploy job duplicate draining exists to prevent; the abandoned hook keeps running with
+nobody reading it, and that cost is named in the log line rather than hidden. `settleWithin`
+attaches a rejection handler unconditionally: an abandoned hook that rejects later has nobody left
+awaiting it, and the unhandled rejection would kill the process the drain is ending cleanly.
+
+Three rules follow and none is optional. **The budget is the WHOLE drain's**, read per hook off
+`deadlineAt`, so a hook that spends it leaves none for the ones behind — the sum of the phases is
+bounded, not each phase separately, which is what `terminationGracePeriodSeconds` means. A budget
+already spent still lets a *synchronous* hook finish (a resolved promise settles on a microtask,
+the 0ms timer on a macrotask), so closing a pool costs nothing it does not already have.
+**`DEFAULT_DEADLINE_MS` (25s) applies whether or not an app sets one** — an opt-in deadline would
+have left `worker`, `scheduler` and `sync` unbounded, i.e. a mechanism claiming more than it
+enforces; abandoned at 25s a worker exits clean, its row's visibility lease lapses and another
+worker re-claims it, which is what at-least-once already promises, and the alternative is the same
+duplicate delivered by SIGKILL with no line naming what overran. The lever is a **larger** value —
+`configureLifecycle({ deadlineMs: 600_000 })` for a 10-minute job — and the `X_SHUTDOWN_TIMEOUT`
+`fix:` says so, because whoever reads it at 3am learns the knob from the line. **The budget is real
+monotonic time (`systemClock`), never the injected `clock`**: `waitForIdle` sleeps on a real
+`setTimeout`, so a frozen clock advanced an hour handed the drain a 16-minute grace period the
+kubelet would never honour. `clock` still owns `uptimeMs`. `drainDeadlineMs()` is the one place the
+budget is decided and the only thing a test can pin — 25s is above any drain a test can wait out.
+
 `impersonate(actor, reason, fn)` is the ONE door through `withChildContext({ actor })`. It stamps
 the caller onto the child as `Actor.onBehalfOf`, so `actorLabel` renders
 `service:eng-7→user:cust-99@org-3` and a refund issued during a support session can never read as

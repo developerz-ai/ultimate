@@ -19,7 +19,7 @@ import {
 } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { formatPath, validateAsync } from '@ultimat3/schema';
-import { cacheKeyFor, readFresh, readOnce, readThrough } from './cache';
+import { cacheKeyFor, readAuthority, readFresh, readOnce, readThrough } from './cache';
 import { QueryForeignError, QueryInputInvalidError, QueryUnregisteredError } from './errors';
 import { actorOf, guard } from './policy-gate';
 import type { AnyQuery, AnyQueryDef, Query, QueryOptions, SourceOptions } from './query';
@@ -162,7 +162,12 @@ async function readRowsIn(
   // The source came from this query's own `sql()`, so its rows are TRow throughout —
   // which is what the typed overload above states, and this body never has to assert.
   const tags = def.cache?.tags ?? [];
-  const key = cacheKeyFor(name, raw, tags);
+  // The authority is part of the key on EVERY read, cached or not, because there is one key
+  // function and a second one beside it is what this package's own rule forbids. It costs the memo
+  // nothing — a memo is already per-ctx — and it is the whole of what the tier was missing: keyed
+  // on the name, the input and the tags alone, the process-wide tier handed one org's rows to the
+  // next org that asked for them. `actor` when the declaration named no scope, always.
+  const key = cacheKeyFor(name, raw, tags, readAuthority(ctx.actor, def.cache?.scope ?? 'actor'));
   // `fresh` is the caller saying no cache may answer this one — the memo included, a memo being
   // a cache whose lifetime is the request. It still *publishes* into the memo: this read is the
   // newest answer the request has, so the next plain read of the key joins it rather than the

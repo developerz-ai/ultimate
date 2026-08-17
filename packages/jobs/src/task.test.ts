@@ -196,10 +196,12 @@ describe('task', () => {
     const occurrenceMs = dispatched[0]?.occurrenceMs ?? 0;
 
     // Two rows, two different keys: the occurrence key is what stops two schedulers from
-    // double-firing a tick, and a manual run has no occurrence to scope itself to.
+    // double-firing a tick, and a manual run has no occurrence to scope itself to. Newest first —
+    // `introspect.list` answers in `createdAt desc` in both drivers, and the dispatched row was
+    // enqueued four hours after the manual one.
     expect(((await driver.introspect?.list()) ?? []).map((row) => row.idempotencyKey)).toEqual([
-      'digest',
       `nightlyDigest:${occurrenceMs}:digest`,
+      'digest',
     ]);
   });
 });

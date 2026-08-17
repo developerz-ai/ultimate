@@ -30,6 +30,12 @@ describe('unit · the repo gate is the CLI gate', () => {
     expect(Object.keys(HOST_CHECKS)).toEqual(['boundaries', 'errors', 'manifest', 'roadmap']);
   });
 
+  // `errorCodeDocs` calls the CLI's process-wide `registeredErrorCodes()`, which dynamically
+  // imports every @ultimat3/* package to build the registry — real work regardless of how small
+  // `dir` is. Bun's 5s default covered that while the suite ran serially and stopped the moment
+  // `x test` began sharding across workers, because the shards compete for the same cores. The
+  // import walk is the point of the call, so the timeout is what moves. Same shape as
+  // `packages/cli/src/error-contract.test.ts`'s `this repo` describe block.
   test('the error reference is enforced through the errors step', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-docs-'));
     try {
@@ -45,7 +51,7 @@ describe('unit · the repo gate is the CLI gate', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('a documented code no package registers fails the same step', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'ultimate-verify-registry-'));

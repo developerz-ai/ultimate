@@ -9,8 +9,10 @@
 import type { CacheTag } from '@ultimat3/cache';
 import type { Actor, Ctx } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
+import type { QueryCacheScope } from './cache';
 import type { QueryClientMethod, QueryClientOptions } from './client';
 import type { Deprecation } from './deprecation';
+import { QueryCacheTtlInvalidError } from './errors';
 import { facadeFor } from './facade';
 import { assertEncodableInput } from './input-shape';
 import type { LiveQuery, ToLiveOptions } from './live';
@@ -26,7 +28,19 @@ import { tagKeys } from './tags';
 export interface QueryCache {
   /** Tags this read depends on. An action's `invalidates` drops exactly these keys. */
   readonly tags: readonly CacheTag[];
+  /**
+   * Lifetime of a tier entry. Positive and finite — `Infinity`, `0` and `NaN` are refused at
+   * `query()` (`X_QUERY_CACHE_TTL_INVALID`), where the file that wrote them fails, rather than on
+   * every read of that query forever. Omitted takes `DEFAULT_READ_CACHE_TTL_MS`.
+   */
   readonly ttlMs?: number;
+  /**
+   * Who a cached answer may be handed back to. **Defaults to `actor`**, and that default is the
+   * mechanism: a read that declares nothing gets the narrowest key, which is always correct.
+   * `tenant` and `global` are written statements that the rows do not depend on the caller beyond
+   * their org, or at all — see `readAuthority`.
+   */
+  readonly scope?: QueryCacheScope;
 }
 
 export interface QueryMcp {
@@ -216,7 +230,20 @@ export function query<TInput extends StandardSchemaV1, TRow extends object>(
   // anyone mounts it, and the typed client derives that same URL — so an input a query string
   // cannot carry is wrong for every call, and the file that declared it is where it is repaired.
   assertEncodableInput(def.input);
+  assertCacheTtl(def.cache);
   return build(def, '');
+}
+
+/**
+ * The same rule, for the same reason: a lease every `CacheTier` refuses is wrong for every read of
+ * this query, so it fails on the line that wrote it rather than on the first request. Positive and
+ * finite is `assertTtl`'s bar in `@ultimat3/cache`, restated as a refusal and never as a second
+ * resolution — there is no "never expires" to fall back to.
+ */
+function assertCacheTtl(cache: QueryCache | undefined): void {
+  const ttlMs = cache?.ttlMs;
+  if (ttlMs === undefined) return;
+  if (!Number.isFinite(ttlMs) || ttlMs <= 0) throw new QueryCacheTtlInvalidError(ttlMs);
 }
 
 /**

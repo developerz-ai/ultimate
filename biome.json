@@ -52,6 +52,9 @@
       "correctness": {
         "noUnusedVariables": "error",
         "noUnusedImports": "error"
+      },
+      "nursery": {
+        "noFloatingPromises": "error"
       }
     }
   },

@@ -193,6 +193,32 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   snapshots `inFlight` has decided there is nothing to wait for, and `close()` then lands under a
   live job. The round re-reads the state before each queue — "stop claiming" means this round
   too — and what it already holds runs to the end.
+- **A fleet slot is taken INSIDE a `try`, and a renewal answering `false` CANCELS the run**
+  (`As of 2026-08`). Two halves of one guarantee, and each was a way for `job.concurrency` to be a
+  number the framework prints and does not hold.
+
+  `fleetSlots.acquire()` is a WRITE to `x_job_leases`, so a failover, a pool timeout or a `57P01`
+  rejects it — and it sits between `limiter.tryAcquire` and the `.finally` that releases what that
+  returned. The in-process slot was burned permanently: four rejections on a concurrency-4 worker
+  and the role claims nothing again for the life of the process, with `jobs.worker.tick-failed` and
+  a climbing `queue_depth` as the only symptoms. The `catch` releases the lease and rethrows; the
+  claimed row goes back to the queue by its visibility timeout, as it does for any round that dies.
+
+  `LeaseStore.renew` answering `false` means the row is another holder's — two runs live under a cap
+  of one — and it was discarded by `.catch(noop)`. It now stops the timer, logs
+  `jobs.worker.slot-lost` and aborts the run through `X_JOB_SLOT_LOST`. Its own code, not
+  `X_JOB_LEASE_LOST`: those are different rows on different clocks, and the queue can still consider
+  this worker the owner of the JOB while another one is running under the same cap. Read as
+  `renewed !== false` for the reason `heartbeat` reads `held === false` — a store from before the
+  return value resolves `undefined`, and treating that as a loss would cancel every job on every
+  renewal. **The heartbeat cannot cover for this**: it renews `x_jobs.visible_at`, a different row,
+  and knows nothing about `x_job_leases`.
+- **The run's signal is a controller this worker owns, never `AbortSignal.any`** (`As of 2026-08`).
+  `run-signal.ts` composes the caller's `Ctx.signal` and the heartbeat's into one controller, and
+  `worker-run.ts` disposes it in the same `finally` that stops the timers. `AbortSignal.any` cannot
+  be undone, which cost twice: an app whose `WorkerOptions.context()` carries a process-lifetime
+  signal accumulated one composite per job run, and nothing could abort the result — so a lost fleet
+  slot had no way to reach the body running under it.
 - **A lease is HELD, not owned, and losing one is said out loud.** `heartbeat.ts` renews the
   window `claim()` bought and decides between two facts: one failed renewal is not a lost lease
   (`jobs.heartbeat.failed`, warn — the window has room for the next), a window that passes with
@@ -369,6 +395,21 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   moving past it, and `at` rather than the last element of `due`, which `maxCatchUp` truncates.
   `skip` still fires the latest occurrence WITHIN the cap rather than the true latest missed —
   named in the README, unchanged here.
+- **`relay.stop()` JOINS the pass in flight, and answers a promise for it** (`As of 2026-08`). It
+  cleared the interval and returned — the one loop in this package whose `stop()` did not wait out
+  its own work, where `worker.stop()` waits for its rounds and `scheduler.stop()` for its dispatch.
+  A SIGTERM landing between `driver.enqueue` and `markPublished` returned to a caller that then
+  closed the database under the row it was about to mark. `OutboxRelay.stop(): Promise<void>` — a
+  caller that does not await gets what it always got (the chain carries its own `catch`), so the
+  join is only as good as the `await`: **`packages/cli/src/dev-roles.ts` still calls it without
+  one**, in both teardown paths.
+- **A driver's semantics are pinned in ONE test with the pg statement beside them.**
+  `driver-parity.test.ts` asserts the memory driver's behaviour and the SQL that has to mean the
+  same thing in a single test, so neither side can move alone. `introspect.list` answered
+  `createdAt` ASCENDING in memory and `created_at desc` in pg — one call, two answers, and because
+  the limit lands after the sort, `x jobs ls` against `x dev` paged the hundred OLDEST rows. The
+  `attempt` floor is the same shape: `greatest(attempt - 1, 0)` in pg, `Math.max(0, …)` in memory,
+  with the settle fence in front of both.
 - **Every timer body catches before it finalises.** `worker.ts`, `scheduler.ts` and the outbox
   relay all spell `void work().catch(log).finally(...)`. The relay's missing `.catch` made a
   rejected `store.claim()` an unhandled rejection, and Bun ends the process on one — with every
@@ -480,6 +521,8 @@ picture from the other side.
 | `execute.ts` | `executeJob` — one claimed job run and settled, and the run's deadline/cancel |
 | `heartbeat.ts` | one claimed job's lease: the renewal interval and the loss it reports |
 | `worker.ts` | `worker` role, claim loop, drain |
+| `worker-run.ts` | one claimed job, wired: its heartbeat, its slot renewal, its run signal and its span, started together and handed back in one `finally` |
+| `run-signal.ts` | the signal ONE run is cancelled by — composition that can be handed back, and that the worker can abort itself |
 | `worker-fleet-slots.ts` | the fleet slot an in-flight job holds — take, renew, hand back. The claim loop asks "may I start this one?"; this answers it across the fleet |
 | `task.ts` | the `task()` primitive + registry + the handle's surface + `registerTask` |
 | `scheduler.ts` | `scheduler` role: the dispatch round, catch-up, leader election, the drain |

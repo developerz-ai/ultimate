@@ -10,6 +10,131 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **A `cache:` query served one actor's rows to the next.** `cacheKeyFor` returned
+  `query:<name>:<fingerprint(input)>:<tags>` — no actor, no tenant — and `readThrough` wrote that
+  key into a **process-wide** tier, while `sql(input, ctx)` is handed the `Ctx` and `@ultimat3/entity`
+  scopes every tenant-scoped read off `ctx.actor.orgId`. Reproduced: a query declaring
+  `cache: { tags: [], ttlMs: 60_000 }` and filtering on `ctx.actor.orgId` answered an **`org-b`**
+  actor with `{id:'a1', orgId:'org-a', secret:'ALPHA'}`. Cross-tenant disclosure, no attacker
+  required — two logged-in users and one cached query.
+
+  The key now carries the read's authority: `query:<name>:<authority>:<fingerprint>:<tags>`, where
+  the authority is `JSON.stringify([kind, id, orgId ?? null])`. JSON rather than a joined string
+  because an actor id containing the separator could otherwise spell a boundary it does not own —
+  the rule `@ultimat3/entity`'s `scopeKey` already states. A new `cache.scope` picks the sharing
+  width: **`'actor'` (the default)**, `'tenant'`, or `'global'`. The default is the narrowest, which
+  is what makes forgetting safe; widening is a written claim that the rows do not vary by caller,
+  and `'tenant'` with no `orgId` narrows to the actor rather than widening to everyone. A fourth
+  scope is an `assertNever` compile error. The **request memo was never affected** — it keys on `ctx`
+  identity and `.as()` mints a child context — so only the tier key was wrong.
+
+- **An action's `cache.invalidates` busted nothing on any deployment without Redis.** The read cache
+  was installed beside the tier registry rather than inside it, and `invalidateTags` fans out to
+  registered tiers only; `invalidateQueryTags` — the function that would have closed the gap — had
+  **zero production callers**. So after an invalidation reported `errors: []` over
+  `['request-memo','lru']`, a fresh `Ctx` was served pre-write rows without executing the source.
+  The read cache is now always a view of an object the same boot also registers, so it sits inside
+  the one fan-out. This one landed first: it produces a failure indistinguishable from the two
+  race conditions below and would have masked them in any reproduction.
+
+- **An invalidation landing while a read was in flight was overwritten by pre-write rows, for the
+  full TTL.** T0 miss → `run()`; T1 a mutator commits and the bust drops a key that is not there
+  yet (a no-op); T2 `run()` resolves with rows read *before* the write; T3 the fill publishes them.
+  Invisible to every reader until the TTL expired, and the invalidation report said `errors: []`.
+  A read-through fill now samples a **fence** before the source read and re-checks it before every
+  tier write, taking back what it already wrote. The fence is a bounded ring of recent invalidation
+  marks (`FENCE_MEMORY = 1024`) sampled by generation, not a per-tag epoch map: a map keyed by tag
+  is unbounded and a single global counter over-invalidates every fill. It degrades
+  **conservatively** — a sample older than the ring proves answers invalid, on the argument that one
+  refetch beats a stale TTL. `markInvalidated` fires on an explicit `write` too, since a write is
+  newer truth than a load already in flight.
+
+  This is the executed path for every `cache:` query: `runQuery` → `readRows` → `readThrough` →
+  `fill`. `createCacheStack` carries the same fence and **still has no production caller**, so its
+  copy is dormant. The fence is also **per process** — two pods can still interleave a load on one
+  with a write and bust on the other; that residual has a `wiki/Known-Gaps.md` row.
+
+- **Two ordering defects on the shared Redis tier, and fixing the second one alone would have made
+  it worse.** The invalidation script dropped the tag bucket atomically with `SMEMBERS`, so a
+  refusal in the client-side `DEL` batch orphaned the surviving members permanently — a retry
+  answered `keys: []` and those value keys lived out their TTL unreachable. And `set` wrote the
+  value key before the tag `SADD`s, so a bust landing between them found an empty bucket and the
+  just-written value survived its own invalidation. Reversing that order **on its own is worse**:
+  `SADD`-then-`SET` with no re-check lets the bust `SREM` the membership and the later `SET`
+  publish a row unreachable by *any* tag, so it can never be invalidated at all. Both halves landed
+  together — buckets joined first, then `SET`, then an `SISMEMBER` re-check that deletes the value
+  it just wrote when a bucket says it is gone (only a literal `0` counts as evidence; a reply the
+  tier cannot read is not). The sweep now `DEL`s, then `SREM`s **only the members that actually
+  died**, and rethrows the first refusal. Every command stays single-key and slot-local, so the
+  Redis Cluster and Dragonfly fix from 1.2.0 is not reintroduced. Proven against a real Redis, not
+  a fake.
+
+- **Invalidation fanned out in read order, so a racing read promoted a stale value backwards.**
+  After `invalidateTags` returned `errors: []` over `['request-memo','lru','redis']`, `lru.get`
+  still answered `'STALE'` — a read racing the bust pulled the value out of the not-yet-cleared far
+  tier and promoted it into the already-cleared near ones. The fan-out and `CacheStack.drop` now
+  clear **farthest-first**; the report is re-sorted into read order afterwards so the `/_x` panel is
+  unchanged.
+
+- **One transient database error killed the `worker` role, permanently and silently.** A rejecting
+  `fleetSlots.acquire()` left the in-process limiter lease unreleased, so each failure burned one
+  concurrency slot for good. Proven: a concurrency-4 worker whose lease store rejects four times
+  reports `limiter.inFlight() === 4` and then claims nothing — after the store recovers,
+  `worker.tick()` returns 0 executions, forever. The only symptom was four `jobs.worker.tick-failed`
+  lines and a climbing queue depth. The acquire now runs inside a `try` whose `catch` releases
+  before rethrowing.
+
+- **A fleet-slot renewal answering `false` was discarded, so `job.concurrency` was silently
+  exceeded.** `LeaseStore.renew` documents `false` as "the slot is no longer this holder's" and
+  `SQL_LEASE_RENEW` is guarded on `holder = $3` for exactly that, but the renewal was
+  fire-and-forget. A worker stalling past the slot TTL kept running after another worker took slot
+  0 — two concurrent runs under `concurrency: 1`, nothing logged. The renewal now reads its answer,
+  stops the timer, logs, and aborts the run with the new `X_JOB_SLOT_LOST`. The file's own comment
+  claiming "the heartbeat is what reports a lost lease" was **wrong** and is deleted: the heartbeat
+  renews `x_jobs.visible_at`, a different row on a different clock.
+
+- **`OutboxRelay.stop()` did not join the tick in flight** — the one loop in the package whose
+  `stop()` did not, where `worker.ts` and `scheduler.ts` both do. A SIGTERM between `driver.enqueue`
+  and `markPublished` either re-published the row next boot or hit a closed pool. It now awaits the
+  pass, and the dev runtime's two teardown paths hold the promise rather than dropping it.
+
+- **`x jobs ls` against `x dev` paged the hundred *oldest* rows.** The memory driver's
+  `introspect.list` sorted `createdAt` ascending where the Postgres driver sorts `created_at desc`,
+  and the limit lands after the sort — so an operator looking for what had just broken got the
+  oldest jobs in the queue. The two drivers now answer the same question, pinned by a new
+  `driver-parity.test.ts`; there was no driver-parity mechanism in the package before this.
+
+- **`configureLifecycle({ deadlineMs })` did not bound a drain at all.** Only the in-flight wait was
+  bounded; every shutdown hook was awaited with no deadline, so the file header's "under one
+  deadline" was false. Proven: `deadlineMs: 100` with one 5-second `accept`-phase hook resolved
+  after **5053 ms**. A `worker` pod holding a 10-minute job ignored its budget and was SIGKILLed
+  mid-job by the kubelet — turning at-least-once into the every-deploy duplicate that draining
+  exists to prevent. Each phase is now raced against the remaining budget. See *Changed* for the
+  behaviour this now has by default.
+
+- **A statement from a finished transaction landed inside the next one.** The PGlite driver skipped
+  its turn queue whenever an `AsyncLocalStorage` transaction store was present, and that store
+  survives into any promise chain started inside a transaction body — so a statement an app forgot
+  to `await` jumped the single-session queue into somebody else's open transaction. Reproduced as
+  `BEGIN, select 'inside tx', COMMIT, BEGIN, select 'straggler', select 'inside tx 2', COMMIT`. The
+  fence is now the transaction's **liveness**, not the store's presence. The late statement takes
+  its own turn quietly, matching what the pooled driver already does — a throw here would mean an
+  app that works in production crashes under `x dev`.
+
+- **A `cache.ttlMs` mistake became a permanent runtime failure.** Nothing validated it at
+  declaration, so `ttlMs: Infinity` compiled, passed review, and made **every** read of that query
+  fail forever with `X_CACHE_TTL_INVALID`. `query()` now refuses it at declaration with the new
+  `X_QUERY_CACHE_TTL_INVALID`.
+
+- **A dropped `await` was caught by nothing, and the deployed app was linted against nothing.**
+  Three floating promises shipped in this one sweep — a relay teardown, an outbox pass, and an
+  `authorize` call in a test that therefore asserted nothing at all. `lint/nursery/noFloatingPromises`
+  is now `error`: 2 pre-existing violations repo-wide, 3884 files, and `bun run lint` costs 6s → 7.1s.
+  Found while enabling it: `dummy/social-media-clone/biome.json` set `"root": false` with **no
+  `extends`**, so the one **deployed** app inherited none of the repo's lint rules — proven both ways
+  with a planted probe. It now extends the root, and its config no longer pins a stale Biome schema
+  or a field Biome will remove in its next major.
+
 - **A subscribe cap was checked before the registration that grows the count, so one batch of
   frames walked past every one of them.** `LiveQueryRegistry.subscribe` called `assertCapacity` at
   the top and attached the subscription three awaits later; `ChannelHub.subscribe` read
@@ -361,9 +486,81 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 - **A ledger the MCP host cannot read is not an empty ledger.** `db.migrate`'s dry run mapped every `readLedger()` failure to `[]`, so a permission denied or an unreachable server reported every migration as pending. Only Postgres' `undefined_table` does that now, through the new `isLedgerMissing()`; everything else propagates.
 
+- **Four repo-scanning gate tests no longer time out under their own sharding.** `x test unit`
+  runs eight shards competing for the same cores, and four tests in `scripts/` pay a whole-repo
+  cost against bun's default 5000ms budget: `boundaries.test.ts`'s two `collectSourceFiles(repoRoot())`
+  scans, `manifest.test.ts`'s `buildManifest(repoRoot())` `beforeAll`, and `verify.test.ts`'s error
+  reference check — which is not a directory walk at all, but `registeredErrorCodes()` dynamically
+  importing all 29 packages no matter how small the temp dir it was handed. Serially all four pass
+  in well under a second of headroom; under contention that headroom is exactly what disappears,
+  and **which** shard a file lands in depends on the file count, so it presented as an intermittent
+  failure rather than a slow test. It surfaced now because this release adds files: every
+  repo-scanning test got slower.
+
+  The budget moves to `30_000`, following `error-contract.test.ts`, which had already been fixed
+  this way and whose comment ends "same shape as `scripts/verify.test.ts`" — the diagnosis was
+  written down and never applied to the file it named. Both `collectSourceFiles` tests moved, not
+  just the one observed failing: they call the identical scan, so fixing one relocates the failure
+  to another shard on another run. Proven by reproducing the failure under the gate's own
+  `--workers 8` command and re-running it after the fix, once plain and once with four extra CPU
+  hogs — 16 of 16 shard processes exit 0.
+
 - **`scripts/stdout-truncation.test.ts` no longer asserts a race.** The premise case measured a naive `process.stdout.write` against a reader draining concurrently, and on a fast runner the whole payload landed by luck — a flaky gate step. It now writes past any kernel buffer and reads nothing until the child has exited, so what `process.exit()` discarded was genuinely discarded.
 
 ### Changed
+
+- **BREAKING — a drain is bounded by default: 25s, and a hook that outruns it is ABANDONED.**
+  `configureLifecycle({ deadlineMs })` had existed since 1.0.0 and `drainDeadlineMs()` answered
+  `undefined` until something declared one — so a role that declared none drained *unbounded*, and
+  the two roles that most need a bound declare none: `jobs` and `realtime` set no budget anywhere.
+  A worker pod holding a long job past `terminationGracePeriodSeconds` is `SIGKILL`ed by the
+  kubelet mid-statement, which is the failure the deadline exists to prevent and the one it was
+  not preventing. `drainDeadlineMs()` now returns a `number` always, and `remainingBudget()` is a
+  `number` rather than `number | undefined`.
+
+  Read `X_SHUTDOWN_TIMEOUT` literally: the hook is **abandoned, not stopped**. It is still running
+  when the process exits, so whatever it had in flight may be half-done — the framework cannot
+  cancel app code it did not write. Both `fix:` lines now name the pair that has to move together:
+  `configureLifecycle({ deadlineMs: 600_000 })` **and** a `terminationGracePeriodSeconds` at least
+  as large, because raising one without the other just relocates the kill.
+
+  An app whose drain legitimately takes longer than 25s must now say so. That is the point: a
+  budget nobody declared was previously read as "no limit", and a limit nobody can see is not a
+  limit anyone tuned.
+
+- **BREAKING — `cacheKeyFor(name, input, tags, authority)` takes a fourth, required, positional
+  argument.** Optional would have defeated it: an optional authority is one a call site can forget,
+  and the forgotten one is the cross-tenant read above. `readAuthority(actor, scope)` is the only
+  thing that produces the value. A direct caller — the export is public — passes
+  `readAuthority(ctx.actor, 'actor')` to keep 1.2.0 behaviour for a per-caller read, and must
+  choose deliberately before writing `'global'`.
+
+- **BREAKING — the query fingerprint is SHA-256/16 hex; cursors minted before this are rejected
+  once.** It was FNV-1a/32 — 4×10⁹ values, brute-forceable offline in seconds — and a fingerprint
+  here is a **sharing key over client-chosen input**, not a checksum: it decides which read-cache
+  entry two callers are served from and which scope a cursor is bound to. The canonical form is
+  unchanged, so only the hash moved. A cursor issued by 1.2.0 fails its scope check as
+  `X_CURSOR_INVALID`, whose `fix:` is already "request the first page again", and a warm read
+  cache is cold exactly once. Same primitive and width `@ultimat3/realtime`'s `stableDigest` and
+  `@ultimat3/entity`'s `planScope` chose.
+
+- **BREAKING — `semantic.remember` rejects a TTL the tiers would have rejected.** It computed
+  `ttlMs` itself and handed it on, so a non-finite or negative lease reached the tier as a value
+  no other write path can produce. It now goes through `assertTtl` like every other write, with
+  `jitterFraction: 0` — jitter is a herd defence for expiry, and a semantic lease is not a herd.
+
+- **BREAKING — `OutboxRelay.stop()` returns `Promise<void>`.** It was `void`: it cleared the timer
+  and returned *underneath* the pass in flight, so a test or a role shutdown that awaited it
+  resumed while a publish and its `markPublished` were still running — a torn write against a
+  closing pool. It now retains the tick chain and joins it, the way `worker.stop()` waits out its
+  rounds and `scheduler.stop()` its dispatch. Callers ignoring the return value keep compiling and
+  keep the old race; `x dev`'s role teardown awaits it.
+
+- **BREAKING — `TierFailure.tier` is `TierLabel`, not `TierName`.** `TierLabel = TierName |
+  'query-read'`, because `@ultimat3/query`'s read tier degrades through the same `bestEffort`
+  wrapper and had nowhere to report as. The union is closed by hand rather than widened to
+  `string`: a label is a value operators read in `/_x`, and an open one is a typo nobody catches.
+  A `switch` over `TierFailure.tier` needs a `'query-read'` arm.
 
 - **BREAKING — `hello` carries no cursors: `HelloFrame.resume` and `FRAME_LIMITS.resume` are
   deleted.** The field was filled by every client on open and read by nobody — the node replied

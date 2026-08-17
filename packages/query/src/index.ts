@@ -9,7 +9,9 @@
 /** Re-exported so a `query` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
-export { cacheKeyFor, readOnce, readThrough, requestMemo } from './cache';
+export type { QueryCacheScope } from './cache';
+/** `readAuthority` is the ONLY producer of `cacheKeyFor`'s authority — never spell one by hand. */
+export { cacheKeyFor, readAuthority, readOnce, readThrough, requestMemo } from './cache';
 export type {
   FetchLike,
   QueryCallOptions,

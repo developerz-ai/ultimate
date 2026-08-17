@@ -445,6 +445,7 @@ export {
   beginWork,
   configureLifecycle,
   drain,
+  drainDeadlineMs,
   healthReport,
   healthzPayload,
   idleWaiterCount,

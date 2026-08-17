@@ -68,7 +68,7 @@ describe.skipIf(!hasRedis)('live · redis · both Lua scripts, executed by a rea
     expect(await tier.get('feed')).toBeUndefined();
   });
 
-  test('the invalidation script drops the buckets it was handed and no value key', async () => {
+  test('the invalidation script reads the buckets it was handed and deletes NOTHING', async () => {
     const client = raw();
     const tier = tierOn(client);
     await tier.set('kept', 'v', { ttlMs: 60_000, tags: [tag('user', '9')] });
@@ -77,11 +77,56 @@ describe.skipIf(!hasRedis)('live · redis · both Lua scripts, executed by a rea
     const members = await reply(client, 'EVAL', [REDIS_INVALIDATE_SCRIPT, '1', bucket]);
 
     expect(members).toEqual([`${PREFIX}:c:kept`]);
-    expect(await count(client, 'EXISTS', bucket)).toBe(0);
-    // Still there, deliberately: a script may only touch keys handed to it in `KEYS`, and a `DEL`
-    // of a `SMEMBERS` result from inside Lua is "attempted to access a non-local key in a cluster
-    // node" on Redis Cluster and in Dragonfly's strict mode. The tier deletes it, one key per DEL.
+    // The value key is untouched deliberately: a script may only reach keys handed to it in
+    // `KEYS`, and a `DEL` of a `SMEMBERS` result from inside Lua is "attempted to access a
+    // non-local key in a cluster node" on Redis Cluster and in Dragonfly's strict mode.
     expect(await count(client, 'EXISTS', `${PREFIX}:c:kept`)).toBe(1);
+    // And the BUCKET is untouched too, which is the newer half. Dropping it here made a refused
+    // client-side `DEL` permanent: the member had no bucket left to be found in, so the retry the
+    // error asks for cleared nothing and the row served until its own TTL.
+    expect(await count(client, 'EXISTS', bucket)).toBe(1);
+  });
+
+  test('the TIER empties the bucket, one SREM of what it actually deleted', async () => {
+    const client = raw();
+    const tier = tierOn(client);
+    await tier.set('swept', 'v', { ttlMs: 60_000, tags: [tag('swept', '11')] });
+    const bucket = `${PREFIX}:t:{swept}:11`;
+    expect(await count(client, 'SCARD', bucket)).toBe(1);
+
+    expect((await tier.invalidateTags([tag('swept', '11')])).keys).toEqual(['swept']);
+
+    // An emptied set is a set Redis removes, so the end state matches the old in-script `DEL` —
+    // reached by a path where a failure leaves the membership behind instead of orphaning it.
+    expect(await count(client, 'EXISTS', bucket)).toBe(0);
+    expect(await count(client, 'EXISTS', `${PREFIX}:c:swept`)).toBe(0);
+  });
+
+  test('a bust landing between the join and the write leaves no unreachable row', async () => {
+    // The real interleaving, driven by a client that busts the tag as the `SET` goes out: the
+    // bucket already holds this key's membership, the value key does not exist yet, so the bust
+    // removes the membership and deletes nothing. Without the re-check the `SET` that follows
+    // publishes a row no bust of `raced` can ever reach again.
+    const client = raw();
+    const buster = tierOn(raw());
+    let busted = false;
+    const racing: RedisLike = {
+      get: (key) => client.get(key),
+      set: (key, value) => client.set(key, value),
+      async send(command: string, args: string[]): Promise<unknown> {
+        if (command === 'SET' && !busted) {
+          busted = true;
+          await buster.invalidateTags([tag('raced')]);
+        }
+        return await client.send(command, args);
+      },
+    };
+    const tier = createRedisTier({ client: racing, prefix: PREFIX, buildId: null, rng: () => 0 });
+
+    await tier.set('raced', 'v', { ttlMs: 60_000, tags: [tag('raced')] });
+
+    expect(busted).toBe(true);
+    expect(await tier.get('raced')).toBeUndefined();
   });
 
   test('a fresh bucket comes out of the join with a lease, never immortal', async () => {

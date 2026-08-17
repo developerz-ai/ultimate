@@ -353,24 +353,31 @@ describe('unit · shared/ is a leaf', () => {
 });
 
 describe('unit · the source set is every directory a package ships from', () => {
+  // `collectSourceFiles(repoRoot())` walks the whole monorepo. Bun's 5s default covered that while
+  // the suite ran serially and stopped the moment `x test` began sharding across workers, because
+  // the shards compete for the same cores — and WHICH shard a file lands in depends on the file
+  // count, so it presents as an intermittent failure rather than a slow test. The scan is the
+  // point of the test, so the timeout is what moves. Same shape as `scripts/verify.test.ts`.
+  //
   // `packages/*/e2e` held real source that `filesize`, `errors` and this file all walked past.
   test('collectSourceFiles includes packages/*/e2e, not just src/', async () => {
     const paths = (await collectSourceFiles(repoRoot())).map((entry) => entry.path);
     expect(paths).toContain('packages/cli/src/bin.ts');
     expect(paths.some((path) => /^packages\/[^/]+\/e2e\//.test(path))).toBe(true);
     expect(new Set(paths).size).toBe(paths.length);
-  });
+  }, 30_000);
 
   /**
    * The other half of `errors` walks `@ultimat3/cli`'s `SOURCE_GLOBS`, which names `scripts/**`.
    * This list did not, so the 16 `X_*` codes declared here were held to the fix-line rule and not
-   * to the render-safety rule — one step, two answers to "what is source".
+   * to the render-safety rule — one step, two answers to "what is source". Same full-repo scan as
+   * the test above, same timeout for the same reason.
    */
   test('collectSourceFiles includes scripts/, so both halves of the errors step see it', async () => {
     const paths = (await collectSourceFiles(repoRoot())).map((entry) => entry.path);
     expect(paths).toContain('scripts/error-render.ts');
     expect(paths).toContain('scripts/lib/tiers.ts');
-  });
+  }, 30_000);
 });
 
 const FLATTENER = 'packages/admin/src/entity-columns.ts';

@@ -1,65 +1,30 @@
 // `--role` used to be parsed and thrown away. These tests pin both halves of the fix: the flag
-// selects, and the selection actually starts (and stops) the framework objects that role runs.
+// selects, and the selection actually starts (and STOPS) the framework objects that role runs.
+// What a started role then does is elsewhere, one file per question: who is calling
+// (`dev-roles-identity.test.ts`) and what its responses admit (`dev-roles-csp.test.ts`).
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
-import { noopPurgeDriver } from '@ultimat3/cache';
-import { logger, METRICS_PATH, resetLifecycle, userActor } from '@ultimat3/core';
-import type { Route } from '@ultimat3/http';
-import { configureAuthenticator, cspHashSource, resetAuthenticator } from '@ultimat3/http';
-import {
-  createMemoryDriver,
-  createMemoryEventBus,
-  createMemoryOutboxStore,
-  resetJobs,
-  resetJobsFacade,
-  resetTasks,
-  task,
-} from '@ultimat3/jobs';
-import { createMemoryDriver as createMemoryMailDriver } from '@ultimat3/mail';
-import { DEFAULT_PRESENCE_TTL_MS, InProcessTransport } from '@ultimat3/realtime';
-import {
-  clearRoutes,
-  clearStylesheets,
-  defineRoute,
-  loadStylesheet,
-  registerRoute,
-} from '@ultimat3/render';
-import { defineStorage, localDriver } from '@ultimat3/storage';
-import { appRoutes } from './dev-render';
+import { METRICS_PATH } from '@ultimat3/core';
+import type { OutboxRecord, OutboxStore } from '@ultimat3/jobs';
+import { task } from '@ultimat3/jobs';
 import type { RunningRoles } from './dev-roles';
 import { DEV_ROLES, SELECTABLE_ROLES, selectRoles, startRoles } from './dev-roles';
-import type { RunningServices } from './dev-runtime';
-import { resolveServices } from './dev-services';
+import { fixtureRuntime, resetDevRolesState } from './dev-roles-fixture';
 
 const ROOT = `${import.meta.dir}/../.roles-fixture`;
 
-/** Every service a role touches, embedded but real — no PGlite boot for a role-wiring test. */
-function fakeRuntime(): RunningServices {
-  const services = resolveServices(ROOT, {});
-  const transport = new InProcessTransport();
-  return {
-    services,
-    db: { async ping() {}, async close() {} } as unknown as RunningServices['db'],
-    jobs: createMemoryDriver(),
-    // A real store, not a stub: the `worker` role starts the outbox relay against it, and a relay
-    // whose `claim()` rejects on the first 200ms tick is an unhandled rejection in whichever test
-    // happens to still be running.
-    outbox: createMemoryOutboxStore(),
-    events: createMemoryEventBus(),
-    transport,
-    transportDetail: 'in-process fanout',
-    // The sync role reads this to build its `PresenceRegistry`; the default is what a boot with no
-    // `NATS_URL` resolves to, so the fixture is the real number rather than a rounder one.
-    presenceTtlMs: DEFAULT_PRESENCE_TTL_MS,
-    storage: defineStorage({ disks: { local: localDriver({ root: `${ROOT}/storage` }) } }),
-    mail: createMemoryMailDriver(),
-    mailDetail: 'embedded',
-    purge: noopPurgeDriver(),
-    purgeDetail: 'none',
-    stop: async () => transport.close(),
-  };
-}
+/**
+ * Hand the loop back until nothing is queued but the work this test is holding. A macrotask turn,
+ * not a duration: the teardown's other awaits are all already-settled promises, so one turn is
+ * everything it can do without the pass — and a sleep would be asserting how long that took.
+ */
+const scheduled = (): Promise<void> =>
+  new Promise((resolve) => {
+    setImmediate(resolve);
+  });
+
+const fakeRuntime = (): ReturnType<typeof fixtureRuntime> => fixtureRuntime(ROOT);
 
 /** The thrown value, so the matcher sees an error rather than a thunk. */
 function refused(flag: string): unknown {
@@ -76,14 +41,7 @@ let running: RunningRoles | undefined;
 afterEach(async () => {
   await running?.stop();
   running = undefined;
-  resetJobs();
-  resetJobsFacade();
-  resetTasks();
-  // Core's lifecycle is process-global and a stopped server leaves it drained, so without this
-  // the SECOND web role in this file answers every request `X_DRAINING` — a suite that only
-  // passes when its own tests are run one at a time. `@ultimat3/http`'s own server suite does the
-  // same thing for the same reason.
-  resetLifecycle();
+  resetDevRolesState();
 });
 
 afterAll(async () => {
@@ -153,6 +111,73 @@ describe('unit · x dev --role', () => {
     expect(await scrape.text()).toContain('# TYPE queue_depth gauge');
   });
 
+  /**
+   * `OutboxRelay.stop()` waits out the pass in flight — a publish and the `markPublished` behind
+   * it are one pass, and a teardown that returns between them closed the database under the row it
+   * was about to mark. That join is only as good as the `await`, and both teardown paths here
+   * called it in statement position, which is a promise the boot dropped on the floor.
+   */
+  test('stopping the worker role joins the outbox pass instead of returning underneath it', async () => {
+    const events: string[] = [];
+    const gate = Promise.withResolvers<void>();
+    const claimed = Promise.withResolvers<void>();
+    let claims = 0;
+    const record: OutboxRecord = {
+      id: 'row-1',
+      job: 'staged-job',
+      queue: 'default',
+      input: {},
+      idempotencyKey: 'staged-job:1',
+      maxAttempts: 1,
+      runAt: 0,
+      stagedAt: 0,
+    };
+    const outbox: OutboxStore = {
+      async stage() {},
+      async commit() {
+        return [];
+      },
+      async rollback() {},
+      async claim() {
+        claims += 1;
+        // One gated pass. A later tick must not re-enter it — `stop()` clears the interval first,
+        // so a second claim only ever happens if the pass this test holds was never joined.
+        if (claims > 1) return [];
+        claimed.resolve();
+        await gate.promise;
+        return [record];
+      },
+      async markPublished() {
+        events.push('marked');
+      },
+      async pendingCount() {
+        return 0;
+      },
+    };
+
+    const started = await startRoles({
+      roles: selectRoles('worker'),
+      port: 0,
+      buildId: 'test',
+      runtime: { ...fakeRuntime(), outbox },
+      env: {},
+      routes: [],
+    });
+
+    // No sleep: the relay's own poll resolves this, and until it does there is no pass to join.
+    await claimed.promise;
+    const stopping = started.stop().then(() => {
+      events.push('stopped');
+    });
+    // Everything the teardown can reach without the pass has now run. Releasing the pass here is
+    // what makes the order an assertion about a dependency rather than about a duration.
+    await scheduled();
+    gate.resolve();
+    await stopping;
+
+    expect(events).toEqual(['marked', 'stopped']);
+  });
+
   test('the web role serves the routes it was handed, and nothing else starts', async () => {
     running = await startRoles({
       roles: selectRoles('web'),
@@ -214,271 +239,5 @@ describe('unit · x dev --role', () => {
     ).rejects.toThrow();
 
     blocker.stop(true);
-  });
-});
-
-/**
- * `startWeb` passed `devHooks()`, which returned `authorize` and nothing else — so
- * `hooks.authenticate` had no caller anywhere in the framework and `auth: 'required'` was
- * unsatisfiable under `x dev` AND under `apps/web/server.ts`, which boots through this same
- * function. This is that wiring, driven end to end: the app declares the resolver, the web role
- * picks it up, and the `auth` stage calls it.
- */
-describe('integration · the web role resolves an actor from the request', () => {
-  afterEach(resetAuthenticator);
-
-  const routes = [
-    {
-      method: 'GET' as const,
-      path: '/whoami',
-      meta: { name: 'whoami', auth: 'required' as const },
-      handler: (_request: unknown, ctx: { actor: { id: string } }) => new Response(ctx.actor.id),
-    },
-  ];
-
-  test('a session cookie becomes the actor; no cookie is still a 401', async () => {
-    let calls = 0;
-    configureAuthenticator((request) => {
-      calls += 1;
-      const session = request.cookie('session');
-      return session === null ? null : userActor({ id: session });
-    });
-
-    running = await startRoles({
-      roles: selectRoles('web'),
-      port: 0,
-      buildId: 'test',
-      runtime: fakeRuntime(),
-      env: {},
-      routes,
-    });
-
-    const anonymous = await running.server?.fetch(new Request('http://dev.test/whoami'));
-    expect(anonymous?.status).toBe(401);
-
-    const signedIn = await running.server?.fetch(
-      new Request('http://dev.test/whoami', { headers: { cookie: 'session=u-7' } }),
-    );
-    expect(signedIn?.status).toBe(200);
-    expect(await signedIn?.text()).toBe('u-7');
-    expect(calls).toBe(2);
-  });
-
-  test('an app that declares no authenticator still boots — every caller is anonymous', async () => {
-    running = await startRoles({
-      roles: selectRoles('web'),
-      port: 0,
-      buildId: 'test',
-      runtime: fakeRuntime(),
-      env: {},
-      routes,
-    });
-
-    const response = await running.server?.fetch(new Request('http://dev.test/whoami'));
-    expect(response?.status).toBe(401);
-  });
-});
-
-/**
- * The bug this pins: the web role sent `style-src 'self'` and every document it served carried its
- * surface's CSS in an inline `<style>`, so the browser parsed zero rules out of it and every
- * deployed app rendered completely unstyled. A header-shaped unit test would not have caught it —
- * the question is whether THIS response's policy admits THIS response's body.
- */
-describe('the CSP the web role sends admits the styles it serves', () => {
-  /** Every `<style>` body in the document that no source in the policy names. */
-  const uncovered = (body: string, csp: string): readonly string[] =>
-    [...body.matchAll(/<style>([\s\S]*?)<\/style>/g)]
-      .map((match) => match[1] ?? '')
-      .filter((css) => !csp.includes(cspHashSource(css)));
-
-  const page = (): void => {
-    registerRoute({
-      file: 'apps/web/site/page.tsx',
-      suspenseBoundaries: 0,
-      config: defineRoute<{ url: string; params: Record<string, string> }>({
-        render: 'static',
-        offline: 'network-only',
-        hydrate: 'never',
-        budget: { js: '0kb' },
-        meta: () => ({ title: 'styled', description: 'styled' }),
-      }),
-    });
-  };
-
-  afterEach(() => {
-    clearRoutes();
-    clearStylesheets();
-  });
-
-  test('a page document is covered by the enforced policy the same response carries', async () => {
-    loadStylesheet('/srv/demo/apps/web/site/page.module.scss', '.hero{color:red}');
-    page();
-    running = await startRoles({
-      roles: selectRoles('web'),
-      port: 0,
-      buildId: 'test',
-      runtime: fakeRuntime(),
-      env: {},
-      routes: appRoutes({ buildId: 'test' }),
-      // A container's binding: `dev: false` is what turns the policy from report-only into the
-      // enforced one, which is the only mode in which this failure is visible at all.
-      http: { dev: false, hostname: 'localhost' },
-    });
-
-    const response = await running.server?.fetch(new Request('http://dev.test/'));
-    const body = (await response?.text()) ?? '';
-    const csp = response?.headers.get('content-security-policy') ?? '';
-
-    expect(body).toContain('color:red');
-    expect(csp).not.toContain("style-src 'self';");
-    expect(uncovered(body, csp)).toEqual([]);
-  });
-
-  test('a document the caller mounted itself is covered once it declares its style', async () => {
-    page();
-    running = await startRoles({
-      roles: selectRoles('web'),
-      port: 0,
-      buildId: 'test',
-      runtime: fakeRuntime(),
-      env: {},
-      routes: appRoutes({ buildId: 'test' }),
-      http: { dev: false, hostname: 'localhost' },
-      // What `x dev` passes for `/_x`: a body no stylesheet registry holds.
-      inlineStyles: ['body{margin:0}'],
-    });
-
-    const csp =
-      (await running.server?.fetch(new Request('http://dev.test/')))?.headers.get(
-        'content-security-policy',
-      ) ?? '';
-    expect(uncovered('<style>body{margin:0}</style>', csp)).toEqual([]);
-  });
-});
-
-/**
- * The sync node evaluated no credential of its own AND no host handed it one, so every socket the
- * framework ever opened carried `actorId: null` — the channel guard, the live-query gate, the
- * presence entry and the per-tenant cap all decided against an anonymous actor. Realtime was
- * single-tenant by wiring.
- */
-describe('integration · the sync role is handed the app’s own authenticator', () => {
-  afterEach(resetAuthenticator);
-
-  const startSyncOnly = async (): Promise<readonly string[]> => {
-    const lines: string[] = [];
-    const original = logger.warn;
-    logger.warn = (line: string) => lines.push(line);
-    try {
-      running = await startRoles({
-        roles: ['sync'],
-        port: 0,
-        buildId: 'test',
-        runtime: fakeRuntime(),
-        routes: [],
-        env: {},
-      });
-    } finally {
-      logger.warn = original;
-    }
-    return lines;
-  };
-
-  test('no authenticator stays anonymous, loudly — the correct default for x dev', async () => {
-    resetAuthenticator();
-    const lines = await startSyncOnly();
-    expect(lines.some((line) => line.includes('no authenticator'))).toBe(true);
-  });
-
-  test('an app that configured one is used, and the node stops saying it is anonymous', async () => {
-    configureAuthenticator(() => userActor({ id: 'u1', roles: ['member'] }));
-    const lines = await startSyncOnly();
-    expect(lines.some((line) => line.includes('no authenticator'))).toBe(false);
-  });
-});
-
-describe('unit · a server that cannot resolve an identity says so', () => {
-  const guarded: Route = {
-    method: 'GET',
-    path: '/private',
-    meta: { name: 'private', auth: 'required' },
-    handler: () => new Response('ok'),
-  };
-  const open: Route = {
-    method: 'GET',
-    path: '/public',
-    meta: { name: 'public', auth: 'public' },
-    handler: () => new Response('ok'),
-  };
-
-  // The exact production state the demo app shipped in: guarded routes, no authenticator, a clean
-  // boot, and a 401 on every valid session. Silence there is what let it survive to a deployment.
-  test('guarded routes with no authenticator warn, naming the call that fixes it', async () => {
-    resetAuthenticator();
-    const lines: string[] = [];
-    const original = logger.warn;
-    logger.warn = (line: string) => lines.push(line);
-    try {
-      const running = await startRoles({
-        roles: ['web'],
-        port: 0,
-        buildId: 'test',
-        runtime: fakeRuntime(),
-        routes: [open, guarded],
-        env: {},
-      });
-      await running.stop();
-    } finally {
-      logger.warn = original;
-    }
-    const warned = lines.find((line) => line.includes('X_CONFIG_INVALID'));
-    expect(warned).toBeDefined();
-    expect(warned).toContain("1 route(s) declare auth: 'required'");
-    expect(warned).toContain('configureAuthenticator()');
-  });
-
-  test('an app that configured one is silent', async () => {
-    resetAuthenticator();
-    configureAuthenticator(() => null);
-    const lines: string[] = [];
-    const original = logger.warn;
-    logger.warn = (line: string) => lines.push(line);
-    try {
-      const running = await startRoles({
-        roles: ['web'],
-        port: 0,
-        buildId: 'test',
-        runtime: fakeRuntime(),
-        routes: [guarded],
-        env: {},
-      });
-      await running.stop();
-    } finally {
-      logger.warn = original;
-      resetAuthenticator();
-    }
-    expect(lines.filter((line) => line.includes('X_CONFIG_INVALID'))).toEqual([]);
-  });
-
-  test('a route table with nothing guarded is silent', async () => {
-    resetAuthenticator();
-    const lines: string[] = [];
-    const original = logger.warn;
-    logger.warn = (line: string) => lines.push(line);
-    try {
-      const running = await startRoles({
-        roles: ['web'],
-        port: 0,
-        buildId: 'test',
-        runtime: fakeRuntime(),
-        routes: [open],
-        env: {},
-      });
-      await running.stop();
-    } finally {
-      logger.warn = original;
-    }
-    expect(lines.filter((line) => line.includes('X_CONFIG_INVALID'))).toEqual([]);
   });
 });

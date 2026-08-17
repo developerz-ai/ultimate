@@ -129,6 +129,32 @@ describe('createSingleFlight', () => {
     expect(flight.size).toBe(0);
   });
 
+  test('a joiner contributes to the leader, which reads the merge LATE', async () => {
+    // A joiner shares the leader's write as well as its load, so anything it declared about that
+    // write is silently dropped unless it reaches the leader before the leader publishes.
+    const flight = createSingleFlight();
+    const gate = deferred<string>();
+    const seen: string[][] = [];
+    const work = (shared: () => string[] | undefined) => async (): Promise<string> => {
+      const value = await gate.promise;
+      seen.push(shared() ?? []);
+      return value;
+    };
+
+    const leader = flight.run<string, string[]>('k', (shared) => work(shared)(), {
+      context: ['leader'],
+      merge: (current, joining) => [...current, ...joining],
+    });
+    const joiner = flight.run<string, string[]>('k', (shared) => work(shared)(), {
+      context: ['joiner'],
+      merge: (current, joining) => [...current, ...joining],
+    });
+
+    gate.resolve('loaded');
+    expect(await Promise.all([leader, joiner])).toEqual(['loaded', 'loaded']);
+    expect(seen).toEqual([['leader', 'joiner']]);
+  });
+
   test('a late settle from a replaced load does not drop the live one', async () => {
     // `settled` compares identity before deleting: without that, the first load's callback would
     // evict the second load's entry and every joiner after it would start its own.
@@ -229,6 +255,41 @@ describe('createCacheStack read: concurrent misses share ONE load', () => {
     fail = false;
     expect(await stack.read('k', load)).toBe('recovered');
     expect(attempts).toBe(2);
+  });
+
+  test("a joiner's tags and its shorter TTL reach the fill it shares", async () => {
+    // The consequence of dropping them: the entry lands carrying only the leader's tags, so the
+    // tag the joiner declared can never reach it and its invalidation silently never fires.
+    const written: CacheSetOptions[] = [];
+    const recorder: CacheTier = {
+      name: 'lru',
+      get: () => Promise.resolve(undefined),
+      set: (_key, _value, options?: CacheSetOptions) => {
+        written.push(options ?? {});
+        return Promise.resolve();
+      },
+      del: () => Promise.resolve(),
+      invalidateTags: () => Promise.resolve({ tier: 'lru' as const, keys: [] }),
+    };
+    const stack = createCacheStack([recorder]);
+    const gate = deferred<string>();
+
+    const leader = stack.read('post:1', () => gate.promise, {
+      ttlMs: 300_000,
+      tags: [{ entity: 'post' }],
+    });
+    const joiner = stack.read('post:1', () => Promise.resolve('never runs'), {
+      ttlMs: 60_000,
+      tags: [{ entity: 'post', id: '1' }],
+    });
+
+    gate.resolve('loaded');
+    await Promise.all([leader, joiner]);
+
+    expect(written).toHaveLength(1);
+    expect(written[0]?.tags).toEqual([{ entity: 'post' }, { entity: 'post', id: '1' }]);
+    // The SHORTEST lease of the two: an entry held longer than a caller asked for is stale to it.
+    expect(written[0]?.ttlMs).toBe(60_000);
   });
 
   test('two stacks are two ladders and never join each other loads', async () => {

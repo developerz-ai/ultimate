@@ -189,6 +189,40 @@ describe('query', () => {
   });
 });
 
+/**
+ * A `ttlMs` no tier can hold is a DECLARATION mistake, so it is refused where it was written.
+ * Left to run time it became `X_CACHE_TTL_INVALID` on every read of that query, forever: the read
+ * tier's only catch absorbs `X_CACHE_TOO_LARGE`, so `ttlMs: Infinity` turned a typo into a
+ * permanently failing business read with a fix line about a cache key.
+ */
+describe('cache.ttlMs is judged at declaration', () => {
+  const withTtl =
+    (ttlMs: number): (() => unknown) =>
+    () =>
+      query({
+        input: Input,
+        policy: can('feed:read'),
+        cache: { tags: [], ttlMs },
+        sql: () => from<Post>('posts', posts),
+      });
+
+  test.each([Number.POSITIVE_INFINITY, 0, -1, Number.NaN])('%p is refused', (ttlMs) => {
+    expect(withTtl(ttlMs)).toThrow('X_QUERY_CACHE_TTL_INVALID');
+  });
+
+  test('a positive finite ttlMs is accepted, and so is a cache block that names none', () => {
+    expect(withTtl(60_000)).not.toThrow();
+    expect(() =>
+      query({
+        input: Input,
+        policy: can('feed:read'),
+        cache: { tags: [] },
+        sql: () => from<Post>('posts', posts),
+      }),
+    ).not.toThrow();
+  });
+});
+
 // A `cache:` block buys the tier. It never bought the request memo — that one is every read's,
 // or a list rendering one uncached lookup per row pays for every row.
 describe('a query with no cache block', () => {

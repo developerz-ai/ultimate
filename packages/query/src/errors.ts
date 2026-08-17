@@ -11,6 +11,7 @@ export { CursorInvalidError } from '@ultimat3/core';
 const OWNED_TITLES: Readonly<Record<string, string>> = {
   X_CURSOR_VALUE_UNSUPPORTED: 'a sort value cannot be carried in a cursor',
   X_MATCHER_UNSUPPORTED: 'live query shape cannot be patched incrementally',
+  X_QUERY_CACHE_TTL_INVALID: 'a query declares a cache ttlMs no tier can hold',
   X_QUERY_DEPRECATION_INVALID: 'a query declares a deprecation whose dates cannot be rendered',
   X_QUERY_DUPLICATE: 'two queries are registered under one name',
   X_QUERY_FOREIGN: 'a value that is not a query was projected as one',
@@ -125,6 +126,30 @@ export class QueryInputUnencodableError extends UltimateError {
       cause: `${offender}, and a read is served as GET /_x/query/<name> — a query string carries characters, not structures or nulls`,
       fix: 'flatten the key into scalar arguments (status: t.string, limit: t.number), spell an absent value as `.optional()` rather than `t.nullable(...)`, or declare it as an action() if it really needs a JSON body',
       docs: docs('X_QUERY_INPUT_UNENCODABLE'),
+    });
+  }
+}
+
+/**
+ * A `cache.ttlMs` no tier will accept, refused at `query()` — so the file that wrote it fails, and
+ * not every read of that query for the life of the process.
+ *
+ * Every `CacheTier` refuses a non-positive or non-finite lease (`assertTtl`, `X_CACHE_TTL_INVALID`)
+ * and the read path's only catch absorbs `X_CACHE_TOO_LARGE`, so `ttlMs: Infinity` used to make a
+ * working read fail permanently with a cause naming a cache key. The value is a number the author
+ * typed, so it is echoed: it is the one fact that repairs the line.
+ *
+ * The query has no name yet — `query()` runs before `registerQueries()` stamps one — which is why
+ * the cause describes the declaration, exactly as `X_QUERY_INPUT_UNENCODABLE` does.
+ */
+export class QueryCacheTtlInvalidError extends UltimateError {
+  constructor(ttlMs: number) {
+    super({
+      code: 'X_QUERY_CACHE_TTL_INVALID',
+      cause: `a query declares cache.ttlMs as ${ttlMs}, and every cache tier refuses a lease that is not positive and finite`,
+      fix: 'set `cache: { ttlMs: 60_000 }` to a positive whole number of milliseconds, or drop ttlMs to take the read cache default',
+      docs: docs('X_QUERY_CACHE_TTL_INVALID'),
+      meta: { ttlMs },
     });
   }
 }

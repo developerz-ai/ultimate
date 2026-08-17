@@ -6,7 +6,9 @@
  */
 
 import type { CacheTag } from '@ultimat3/cache';
-import type { Ctx } from '@ultimat3/core';
+import { bestEffort, nowMs, sampleFence } from '@ultimat3/cache';
+import type { Actor, Clock, Ctx } from '@ultimat3/core';
+import { assertNever } from '@ultimat3/core';
 import { getReadCache } from './read-cache';
 import { fingerprint } from './stable';
 import { tagKeys } from './tags';
@@ -30,9 +32,64 @@ export function requestMemo(ctx: Ctx): Map<string, Promise<unknown>> {
   return created;
 }
 
-/** Deterministic: same query + same input + same tags => same key. */
-export function cacheKeyFor(name: string, input: unknown, tags: readonly CacheTag[]): string {
-  return `query:${name}:${fingerprint(input)}:${tagKeys(tags).join(',')}`;
+/**
+ * Who a cached answer may be handed back to. Declared as `cache: { scope }`.
+ *
+ * `actor` is the default, and the default is the mechanism (axiom 3): a read that says nothing
+ * gets the NARROWEST key, which is always correct. Widening is a written statement about what the
+ * rows are — `tenant` says "every member of this org gets the same rows", `global` says "everyone
+ * does" — and a wrong one is visible in the declaration rather than in a support ticket.
+ */
+export type QueryCacheScope = 'actor' | 'tenant' | 'global';
+
+/**
+ * The authority a read was answered under, as a key component.
+ *
+ * `sql(input, ctx)` is handed the context, and `@ultimat3/entity` derives every tenant predicate
+ * from `ctx.actor.orgId` rather than from the input — so the name, the input and the tags do not
+ * identify a read's answer, and a tier keyed on those three served one org's rows to the next org
+ * that asked. Folding the authority in is what `@ultimat3/entity`'s `scopeKey` does for a batched
+ * point read, for exactly this reason.
+ *
+ * JSON, never a joined string: an actor id is app data and may carry the separator, and a value
+ * that can spell a boundary can spell someone else's.
+ */
+export function readAuthority(actor: Actor, scope: QueryCacheScope): string {
+  switch (scope) {
+    case 'global':
+      return '*';
+    case 'tenant':
+      // An actor inside no org is not a shared tenant. Nothing here can prove two org-less callers
+      // see the same rows, so the key narrows to the actor rather than widening to everyone —
+      // declining instead of guessing, which is the only safe direction for a sharing key.
+      return actor.orgId === undefined || actor.orgId === ''
+        ? actorAuthority(actor)
+        : JSON.stringify(['org', actor.orgId]);
+    case 'actor':
+      return actorAuthority(actor);
+    default:
+      // A fourth scope is a compile error here, not a value that silently keys as `undefined`.
+      return assertNever(scope);
+  }
+}
+
+const actorAuthority = (actor: Actor): string =>
+  JSON.stringify([actor.kind, actor.id, actor.orgId ?? null]);
+
+/**
+ * Deterministic: same query + same input + same tags + same authority => same key.
+ *
+ * `authority` is REQUIRED and positional rather than optional, because an optional one is one a
+ * call site can forget — and a forgotten one is the cross-tenant read this argument exists to
+ * make impossible. `readAuthority` is the only thing that produces it.
+ */
+export function cacheKeyFor(
+  name: string,
+  input: unknown,
+  tags: readonly CacheTag[],
+  authority: string,
+): string {
+  return `query:${name}:${authority}:${fingerprint(input)}:${tagKeys(tags).join(',')}`;
 }
 
 /**
@@ -96,11 +153,12 @@ export function readThrough<T>(
   run: () => Promise<T>,
   tags: readonly CacheTag[] = [],
 ): Promise<T> {
-  return readOnce(ctx, key, () => fill(key, ttlMs, tags, run));
+  return readOnce(ctx, key, () => fill(ctx.clock, key, ttlMs, tags, run));
 }
 
 /** The read itself — tier, then the source. Runs once per key per request; the rest join it. */
 async function fill<T>(
+  clock: Clock,
   key: string,
   ttlMs: number | null,
   tags: readonly CacheTag[],
@@ -109,10 +167,28 @@ async function fill<T>(
   // Read per call, never captured: `setReadCache` after the first read has to be honoured, and a
   // module-level binding here would be a second handle on a tier the seam exists to swap.
   const tier = getReadCache();
-  const cached = await tier.get(key);
+  // A tier that refuses is a tier that did not answer, never a failed business read — the rule
+  // `@ultimat3/cache` keeps for its own ladder, kept here through the same helper so one Redis
+  // outage degrades the cache instead of 500-ing every `cache:` query. The label is `query-read`
+  // and not a `TierName`: this seam is not a rung of that ladder, and `sortTiers` would place a
+  // name it does not know ahead of the request memo.
+  const cached = await bestEffort('query-read', 'get', key, () => tier.get(key));
   if (cached !== undefined) return cached.value as T;
 
+  // Sampled BEFORE the load and asked before the write. The read below is about to answer with
+  // rows it read in the past: a mutator committing in between busts a key that is not in the tier
+  // yet, so the drop is a no-op reporting `errors: []`, and publishing afterwards serves the
+  // pre-write rows for the whole TTL. `@ultimat3/cache`'s fence is the one mechanism for this —
+  // no `cover()`, because every joiner of this key joins the same in-flight read under the same
+  // scope, so there are no tags the sample missed.
+  const fence = sampleFence({ key, tags });
   const value = await run();
-  await tier.set(key, { value, expiresAt: ttlMs === null ? null : Date.now() + ttlMs, tags });
+  // The request's own clock, never `Date.now()`: every other reading of "now" on this path is
+  // injected, and an expiry decided by the wall clock is one no test can drive.
+  const expiresAt = ttlMs === null ? null : nowMs(clock) + ttlMs;
+  // Answered either way — the rows ARE this request's answer. Only publishing is refused.
+  if (fence.isValid()) {
+    await bestEffort('query-read', 'set', key, () => tier.set(key, { value, expiresAt, tags }));
+  }
   return value;
 }

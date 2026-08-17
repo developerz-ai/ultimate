@@ -67,7 +67,7 @@ interface StoredEntry {
 }
 
 /**
- * Read the tag sets out and drop the tag sets themselves — and nothing else.
+ * Read the tag sets out. It deletes nothing at all, and both halves of that are deliberate.
  *
  * A script may only touch keys it was handed in `KEYS`, and the members of a tag set are not
  * among them: they are value keys hashing to slots this node may not even own. `DEL`ing them from
@@ -75,13 +75,15 @@ interface StoredEntry {
  * Redis Cluster and in Dragonfly's strict mode — swallowed into `report.errors`, so a bust read
  * as "partial", the write that triggered it still succeeded, and stale rows served until TTL.
  *
- * The value keys come back to the client instead, which drops them one `DEL` at a time: a single
- * key is always slot-local, whatever the topology. Only the SMEMBERS + tag-set `DEL` stay atomic,
- * and that is the pair that needed to be — a value key re-added by a concurrent write between the
- * two halves is at worst a cache miss, never a stale read.
+ * The buckets themselves used to go, atomically with the `SMEMBERS` that read them. That made one
+ * failure permanent: a refused `DEL` in the client-side batch left its member with no bucket to
+ * be found in again, so the retry the error asks for answered `keys: []` and those rows served
+ * until their own TTL. The tier now `SREM`s exactly the members it managed to delete, which is
+ * strictly more precise — a member added by a concurrent write between the two halves is not in
+ * that list, so it keeps its membership instead of being silently orphaned by the bust.
  *
- * That fixed HALF the cluster story. The other half is `KEYS` itself: one `EVAL` carrying every
- * tag's buckets is rejected with `CROSSSLOT` before the script runs, because `<ns>:t:post` and
+ * That is HALF the cluster story. The other half is `KEYS` itself: one `EVAL` carrying every tag's
+ * buckets is rejected with `CROSSSLOT` before the script runs, because `<ns>:t:post` and
  * `<ns>:t:user` hash to different slots. So the buckets carry a `{entity}` hash tag and the tier
  * issues ONE call per tag — every key of a call then hashes on the same entity, by construction.
  */
@@ -92,7 +94,6 @@ for i, tagKey in ipairs(KEYS) do
   for _, key in ipairs(members) do
     table.insert(removed, key)
   end
-  redis.call('DEL', tagKey)
 end
 return removed
 `.trim();
@@ -145,13 +146,47 @@ const toStrings = (value: unknown): string[] =>
   Array.isArray(value) ? value.map((item) => String(item)) : [];
 
 /**
- * `PTTL`'s answer as milliseconds of remaining life, or `undefined` for the two sentinels it
- * answers with instead of a duration: `-1` (key exists, no expiry) and `-2` (no such key).
- * A driver may hand either back as a string, so the parse goes through `Number`.
+ * What `PTTL` said about a key the `GET` beside it just answered for. `-1` and `-2` are sentinels,
+ * not durations — and they mean different things here: `-1` is a key with no lease (one written
+ * outside this tier), `-2` is no key at all, which for a value the `GET` returned means it expired
+ * BETWEEN the two commands. A driver may hand either back as a string, so the parse is `Number`.
  */
-function remainingMs(reply: unknown): number | undefined {
+type Lease = { readonly kind: 'reaped' } | { readonly kind: 'none' } | { readonly ms: number };
+
+function leaseFrom(reply: unknown): Lease {
   const pttl = Number(reply);
-  return Number.isFinite(pttl) && pttl > 0 ? pttl : undefined;
+  if (!Number.isFinite(pttl)) return { kind: 'none' };
+  if (pttl === -2) return { kind: 'reaped' };
+  return pttl > 0 ? { ms: pttl } : { kind: 'none' };
+}
+
+/**
+ * `SISMEMBER` answered a literal `0`, and nothing else counts. A reply this cannot read is not
+ * evidence: treating one as "gone" deletes every value the tier writes, which is a cache that
+ * never caches.
+ */
+function saysAbsent(reply: unknown): boolean {
+  if (typeof reply === 'number') return reply === 0;
+  if (typeof reply === 'string') return Number(reply) === 0;
+  return false;
+}
+
+/**
+ * The first refusal, verbatim when it is one — `fanOut` renders `message` into `report.errors`, so
+ * the operator sees which key the store refused rather than a count.
+ *
+ * The `fix:` is the call, not a command: there is no `x cache` in this build, and the retry is one
+ * line of the app's own code. It is safe to repeat because every key the store refused kept its
+ * tag membership — the bust `SREM`s only what it deleted.
+ */
+function raiseSweepFailure(failures: readonly unknown[], attempted: number): never {
+  const first = failures[0];
+  if (first instanceof Error) throw first;
+  throw new CacheDriverUnavailableError({
+    driver: 'redis',
+    cause: `${String(failures.length)} of ${String(attempted)} value keys could not be deleted`,
+    fix: "await invalidateTags(tags) again once redis answers — from '@ultimat3/cache', with the same tags; every key it refused kept its bucket membership, so the retry reaches it",
+  });
 }
 
 export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
@@ -199,13 +234,17 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
         conn().send('PTTL', [stored]) as Promise<unknown>,
       ]);
       if (raw === null) return undefined;
-      const remaining = remainingMs(pttl);
+      const lease = leaseFrom(pttl);
+      // Expired between the two commands. Reported as a hit it would be a hit with no `expiresAt`,
+      // which the stack promotes into the LRU on the CALLER's ttl — a row one millisecond from
+      // death handed a fresh five minutes, one tier closer to the request.
+      if ('kind' in lease && lease.kind === 'reaped') return undefined;
       try {
         const parsed = JSON.parse(raw) as StoredEntry;
         return {
           value: parsed.v as T,
           tags: parsed.t.map(parseTag),
-          ...(remaining === undefined ? {} : { expiresAt: nowMs(clock) + remaining }),
+          ...('ms' in lease ? { expiresAt: nowMs(clock) + lease.ms } : {}),
         };
       } catch {
         // A poisoned value is a miss, never a 500. Redis TTL will reap it.
@@ -214,7 +253,18 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
       }
     },
 
-    /** The value key gets a lease and so does every bucket it joins — see `TAG_MEMBER_SCRIPT`. */
+    /**
+     * The value key gets a lease and so does every bucket it joins — see `TAG_MEMBER_SCRIPT`.
+     *
+     * The buckets are joined FIRST and the membership is re-checked LAST, because this write and
+     * a bust of the same tag are two clients with no lock between them. Writing the value first
+     * left a window where the bust's `SMEMBERS` found an empty bucket and the value it should
+     * have cleared survived its own invalidation for the full TTL. Joining first moves the window
+     * somewhere observable: `invalidateTags` removes a member only when it deleted that member's
+     * value key, so a membership gone by the time the `SET` lands means this write was busted
+     * while it was in the air — and the value goes with it, because a row nothing can reach by
+     * tag is one no later bust can clear either.
+     */
     async set<T>(key: string, value: T, setOptions?: CacheSetOptions): Promise<void> {
       const tags = setOptions?.tags ?? [];
       const ttlMs = assertTtl(key, setOptions?.ttlMs ?? defaultTtlMs, 'redis', jitter);
@@ -226,12 +276,20 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
       // the LRU tier about when the same entry dies. The BUCKET keeps whole seconds and keeps
       // rounding up: a tag set has to outlive every member it holds.
       const bucketTtlSeconds = String(Math.max(1, Math.ceil(ttlMs / 1000)) + TAG_TTL_GRACE_SECONDS);
+      // Deduped: two tags of one entity share the collection bucket, and joining it twice is a
+      // round trip that changes nothing. Issued together — one key each, so still slot-local.
+      const buckets = [...new Set(tags.flatMap(tagKeysFor))];
+      await Promise.all(
+        buckets.map((bucket) =>
+          conn().send('EVAL', [TAG_MEMBER_SCRIPT, '1', bucket, stored, bucketTtlSeconds]),
+        ),
+      );
       await conn().send('SET', [stored, JSON.stringify(payload), 'PX', String(Math.ceil(ttlMs))]);
-      for (const owned of tags) {
-        for (const bucket of tagKeysFor(owned)) {
-          await conn().send('EVAL', [TAG_MEMBER_SCRIPT, '1', bucket, stored, bucketTtlSeconds]);
-        }
-      }
+      if (buckets.length === 0) return;
+      const membership = await Promise.all(
+        buckets.map((bucket) => conn().send('SISMEMBER', [bucket, stored])),
+      );
+      if (membership.some(saysAbsent)) await conn().send('DEL', [stored]);
     },
 
     async del(key: string): Promise<void> {
@@ -263,13 +321,37 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
       // A member may sit in two tag sets; deleting it twice is harmless but reporting it twice
       // makes the `/_x` panel overstate what cleared.
       const members = [...new Set(replies.flatMap(toStrings))];
+      const deleted = new Set<string>();
+      const failures: unknown[] = [];
       for (let start = 0; start < members.length; start += DELETE_BATCH) {
         // One key per DEL — always slot-local. Issued together so the batch costs one round trip.
-        await Promise.all(
-          members.slice(start, start + DELETE_BATCH).map((member) => conn().send('DEL', [member])),
+        // `allSettled`, because which ones died decides what leaves the buckets below.
+        const batch = members.slice(start, start + DELETE_BATCH);
+        const settled = await Promise.allSettled(
+          batch.map((member) => conn().send('DEL', [member])),
         );
+        settled.forEach((result, index) => {
+          const member = batch[index];
+          if (member === undefined) return;
+          if (result.status === 'fulfilled') deleted.add(member);
+          else failures.push(result.reason);
+        });
       }
-      const stripped = members.map((key) => key.slice(`${ns}:c:`.length));
+
+      // Only what actually died leaves its bucket. A member the store refused to delete keeps its
+      // membership, so the retry `report.errors` asks for still finds it; the script no longer
+      // drops the bucket, which is what made that failure permanent.
+      for (let i = 0; i < perTag.length; i += 1) {
+        const gone = [...new Set(toStrings(replies[i]))].filter((member) => deleted.has(member));
+        for (const bucket of perTag[i] ?? []) {
+          for (let start = 0; start < gone.length; start += DELETE_BATCH) {
+            await conn().send('SREM', [bucket, ...gone.slice(start, start + DELETE_BATCH)]);
+          }
+        }
+      }
+
+      if (failures.length > 0) raiseSweepFailure(failures, members.length);
+      const stripped = [...deleted].map((key) => key.slice(`${ns}:c:`.length));
       return { tier: 'redis', keys: stripped };
     },
   };

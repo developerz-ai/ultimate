@@ -9,7 +9,12 @@ import { getJob } from './job';
 import type { HeldLease, LeaseStore } from './leases';
 import { jobLeaseKey } from './leases';
 
-/** A slot renewal that failed has a TTL behind it; the heartbeat is what reports a lost lease. */
+/**
+ * A renewal that REJECTED is not a lost slot: there is a TTL behind it and the interval gets
+ * several tries inside it, exactly as `heartbeat.ts` treats a failed `driver.heartbeat`. The
+ * heartbeat cannot cover for this one either way — it renews `x_jobs.visible_at`, a different row
+ * on a different clock, and knows nothing about `x_job_leases`.
+ */
 const noop = (): void => undefined;
 
 export interface FleetSlotOptions {
@@ -37,8 +42,15 @@ export interface FleetSlots {
    * impossible.
    */
   acquire(claimed: ClaimedJob): Promise<boolean>;
-  /** Keeps this job's slot alive until the returned stop is called. A no-op when it holds none. */
-  startRenewal(jobId: string): () => void;
+  /**
+   * Keeps this job's slot alive until the returned stop is called. A no-op when it holds none.
+   *
+   * `onLost` fires once, when a renewal comes back `false` — the row is another holder's, so this
+   * run and the one that took the slot are both live under a cap of one. The caller cancels the
+   * run on it; renewal stops here either way, because extending a slot this worker no longer holds
+   * would push out somebody else's expiry.
+   */
+  startRenewal(jobId: string, onLost?: (slot: HeldLease) => void): () => void;
   release(jobId: string): Promise<void>;
 }
 
@@ -61,18 +73,35 @@ export function createFleetSlots(options: FleetSlotOptions): FleetSlots {
       return true;
     },
 
-    startRenewal(jobId) {
+    startRenewal(jobId, onLost) {
       const slot = held.get(jobId);
       if (slot === undefined) return noop;
+      const stop = (): void => {
+        clearInterval(timer);
+      };
       // Renewed on the lease heartbeat's own interval and released in the same `finally`: one
       // clock for "this worker still owns the job" and "this worker still owns the slot" is one
       // fewer way for them to disagree.
       const timer = setInterval(() => {
-        void options.leases?.renew(slot, options.ttlMs).catch(noop);
+        void options.leases
+          ?.renew(slot, options.ttlMs)
+          .then((renewed) => {
+            // `=== false`, never `!renewed`, for the reason `heartbeat.ts` reads `held` that way:
+            // a store written before this return value existed resolves `undefined`, and treating
+            // that as a loss would cancel every job on every renewal. Only an explicit no is one.
+            if (renewed !== false) return;
+            stop();
+            logger.error('jobs.worker.slot-lost', {
+              workerId: options.workerId,
+              jobId,
+              leaseKey: slot.key,
+              slot: slot.slot,
+            });
+            onLost?.(slot);
+          })
+          .catch(noop);
       }, options.renewIntervalMs);
-      return () => {
-        clearInterval(timer);
-      };
+      return stop;
     },
 
     async release(jobId) {

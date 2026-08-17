@@ -162,6 +162,21 @@ describe('TTL expiry', () => {
     expect(await cache.size()).toBe(0);
   });
 
+  test('a ttlMs that is not a positive, finite number is refused, never stored expired', async () => {
+    // The rule every tier writes under, applied to the one cache that was skipping it: `0` stored
+    // an entry already past its expiry, so every lookup missed and the only evidence was a
+    // completion bill. `X_CACHE_TTL_INVALID` names the edit instead.
+    const cache = createMemorySemanticCache({ clock: fakeClock(1_000) });
+
+    // Thrown where it is validated, exactly as `LruCache.set` throws X_CACHE_TOO_LARGE: the
+    // caller's `await` sees a rejection either way, and `bestEffort` absorbs both shapes.
+    expect(() => cache.remember('k', [1, 0], 'v', { ttlMs: 0 })).toThrow('X_CACHE_TTL_INVALID');
+    expect(() => cache.remember('k', [1, 0], 'v', { ttlMs: Number.POSITIVE_INFINITY })).toThrow(
+      'X_CACHE_TTL_INVALID',
+    );
+    expect(await cache.size()).toBe(0);
+  });
+
   test('defaultTtlMs applies when remember is called without an explicit ttlMs', async () => {
     const clock = fakeClock(1_000_000);
     const cache = createMemorySemanticCache({ defaultTtlMs: 500, clock });

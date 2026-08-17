@@ -13,6 +13,8 @@ export {
   CacheTooLargeError,
   CacheTtlInvalidError,
 } from './errors';
+export type { CacheFence, FenceScope } from './fence';
+export { FENCE_MEMORY, markInvalidated, sampleFence } from './fence';
 export type { CacheDependent, DependentKind } from './graph';
 export {
   dependentsOf,
@@ -73,7 +75,7 @@ export type {
   SemanticRememberOptions,
 } from './semantic';
 export { cosineSimilarity, createMemorySemanticCache } from './semantic';
-export type { SingleFlight } from './single-flight';
+export type { FlightJoin, SingleFlight } from './single-flight';
 export { createSingleFlight } from './single-flight';
 export type { CacheTag, CacheTagRegistry, TagFactory } from './tags';
 export {
@@ -91,7 +93,7 @@ export {
   tagsIntersect,
 } from './tags';
 export type { TierFailure, TierOperation } from './tier-failures';
-export { recentTierFailures } from './tier-failures';
+export { bestEffort, recentTierFailures } from './tier-failures';
 export type {
   CacheEntry,
   CacheSetOptions,
@@ -100,8 +102,10 @@ export type {
   CacheTier,
   Rng,
   TierInvalidation,
+  TierLabel,
   TierName,
   TtlJitter,
+  TtlScope,
 } from './tiers';
 export {
   assertTtl,

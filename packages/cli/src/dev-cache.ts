@@ -102,14 +102,20 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
   // they are the "embedded default" that needs no variable to switch on. Registration order does
   // not decide read order — `sortTiers` does — but it is written in read order anyway.
   registerTier(createMemoTier());
-  registerTier(createLruTier());
+  const lru = createLruTier();
+  registerTier(lru);
   const shared = sharedTier(options.env);
-  if (shared !== undefined) {
-    registerTier(shared);
-    // The read tier follows the shared tier and only the shared tier: with none configured the
-    // in-process `MemoryReadCache` is already the right answer for a single node.
-    setReadCache(tierReadCache(shared));
-  }
+  if (shared !== undefined) registerTier(shared);
+  // The read tier is ALWAYS one of the objects registered above, and that is the whole point:
+  // `invalidateTags` fans out to registered tiers and to nothing else, so a read cache holding
+  // entries of its own is a `cache:` query an action's `invalidates` can never bust. Left as the
+  // module-default `MemoryReadCache`, every non-Redis deployment served pre-write rows for the
+  // full TTL and reported `errors: []` while doing it. The shared tier when there is one — a
+  // second replica must not answer from this node's heap — otherwise the same `LruCache` the
+  // `lru` tier holds, so one bust reaches both views of it.
+  setReadCache(
+    shared === undefined ? new MemoryReadCache({ cache: lru.cache }) : tierReadCache(shared),
+  );
   // Registered only when a credential named a real edge. A noop tier would put a `cdn` line in
   // every invalidation report claiming keys an edge that does not exist had accepted — and the
   // `/_x` cache panel renders those reports, so the lie would be the thing an agent reads.

@@ -143,6 +143,14 @@ the package, and rotating the secret is what invalidates every open cursor. This
 the only thing that is its business — the scope, `queryHash(name, input)` — and re-exports
 `CursorInvalidError` so the failure keeps its name on this surface.
 
+The scope's hash is **SHA-256, first 16 hex** (`fingerprint` in `stable.ts`), the primitive and
+width `@ultimat3/realtime`'s `stableDigest` and `@ultimat3/entity`'s `planScope` already use. It
+was FNV-1a/32 until 2026-08 — 4×10⁹ values over input a client chooses, brute-forceable offline in
+seconds, and a fingerprint here is a *sharing* key: which read-cache entry two callers are served
+from, and which scope a cursor is bound to. The canonical serialization did not change, only the
+hash, so a cursor issued before it fails its scope check as `X_CURSOR_INVALID` with "request the
+first page again" as its fix, and a warm read cache is cold once.
+
 A cursor names a **position in the ordering**, never a row and never a count. Both seek paths
 answer "is this row after that position?" through the one predicate, `isAfterKey`: `Builder.seek()`
 compiles it to SQL — spelled out per key, so a mixed `createdAt desc, id asc` listing is a real
@@ -193,15 +201,45 @@ with it, and a driver whose default differs cannot re-open the divergence.
 ## Caching
 
 Request memo (same read twice in one render ⇒ one round trip), then the tier behind
-`ReadCache`. Keys are `query:<name>:<input fingerprint>:<tags>`. An action's
+`ReadCache`. Keys are `query:<name>:<authority>:<input fingerprint>:<tags>`. An action's
 `cache.invalidates` and a query's `cache.tags` meet in the one graph owned by
 `@ultimat3/cache`.
 
-`invalidateQueryTags(tags)` is what an action's `invalidates` runs, and it drops **both**: the
-graph `@ultimat3/cache` owns (every registered tier, ISR route, CDN path and live query) and the
-read tier, which is this package's own seam and therefore not in that registry. An entry is
-written with the read's `cache.tags`, so a row bust (`post:1`) drops the lists that held the row,
-exactly as `tagMatches` defines it.
+**The authority is who the read was answered for, and it is not optional.** `sql(input, ctx)` is
+handed the context and `@ultimat3/entity` derives every tenant predicate from `ctx.actor.orgId`,
+never from the input — so a key made of the name, the input and the tags did not identify a read's
+answer, and the process-wide tier served one org's rows to the next org that asked. `cache.scope`
+declares who may be served one entry:
+
+| `scope` | Key holds | Use it when |
+|---|---|---|
+| `actor` (default) | the actor's kind, id and org | anything. Declaring nothing gets this, and this is always correct |
+| `tenant` | the actor's org — the actor itself when there is none | every member of one org sees the same rows |
+| `global` | nothing | the rows are the same for everyone, signed-in or not |
+
+The default is the mechanism: forgetting to declare a scope gives the narrowest key. Widening it
+is a written statement about the rows, one `grep` away — the same shape `unenforced:` uses for a
+skipped policy. `readAuthority(actor, scope)` is the only producer of the component, and it is a
+required positional argument of `cacheKeyFor`, because an optional one is one a call site forgets.
+
+**The fill is fenced and best-effort.** `fill` samples `@ultimat3/cache`'s fence
+(`sampleFence({ key, tags })`) immediately before it runs the source and asks it before it writes,
+so a bust that lands mid-read cannot be republished for the whole TTL — the caller still gets the
+rows it read, because those are its answer; only publishing is refused. Both tier calls go through
+`bestEffort('query-read', …)`: a Redis refusal is a miss, not a failed business read, and it shows
+up in `recentTierFailures()` under the `query-read` label. This `fill` is the live read-through
+path — `createCacheStack` has no production caller.
+
+`cache.ttlMs` is refused at `query()` unless it is positive and finite
+(`X_QUERY_CACHE_TTL_INVALID`): every tier refuses such a lease, so `ttlMs: Infinity` used to make
+one read fail permanently at run time with a cause about a cache key.
+
+An entry is written with the read's `cache.tags`, so a row bust (`post:1`) drops the lists that
+held the row, exactly as `tagMatches` defines it. The framework's boot installs a read cache over
+an object it also registers as a `CacheTier` — the shared tier seen through `tierReadCache`, or
+the `lru` tier's own `LruCache` — so a single `invalidateTags` reaches it. `invalidateQueryTags(tags)`
+is for a host that installs a `ReadCache` of its own: registered nowhere, it is reachable by no
+fan-out, and that hop is the only thing that drops it.
 
 The default `MemoryReadCache` is **bounded** — `@ultimat3/cache`'s byte-budgeted `LruCache`,
 `DEFAULT_READ_CACHE_MAX_BYTES` (32 MiB), tunable per instance — and a `cache:` block that omits

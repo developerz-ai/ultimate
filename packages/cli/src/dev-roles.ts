@@ -301,11 +301,9 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
       ? createOutboxRelay({ store: options.runtime.outbox, driver: options.runtime.jobs })
       : null;
     relay?.start();
-    if (relay !== null) {
-      started.push(async () => {
-        relay.stop();
-      });
-    }
+    // Returned, not called-and-discarded: `stop()` waits out the pass in flight, and an unawaited
+    // one hands the failure rollback the same window a dropped `await` gives the teardown below.
+    if (relay !== null) started.push(() => relay.stop());
 
     // `state` and `leader`, not the defaults. `createMemorySchedulerState` forgets every watermark
     // on restart, so a rolling deploy re-fires or skips whatever was due across it, and
@@ -351,8 +349,11 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
         // Reverse boot order, so the slot is released before the bus it published to closes.
         await replicator?.stop();
         await scheduler?.stop();
-        // Before the worker, so nothing publishes into a queue whose consumer has already gone.
-        relay?.stop();
+        // Before the worker, so nothing publishes into a queue whose consumer has already gone —
+        // and AWAITED, because a pass is a `driver.enqueue` followed by a `markPublished`. Dropped,
+        // this returns between the two and the lines below close the pool under the row it was
+        // about to mark: re-published next boot at best, a rejection against a closed pool at worst.
+        await relay?.stop();
         await worker?.stop('x dev stopped');
         await sync?.stop();
         await server?.stop();

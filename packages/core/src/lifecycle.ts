@@ -4,6 +4,7 @@
 
 import { type Clock, systemClock } from './clock';
 import { UltimateError } from './errors';
+import { settleWithin } from './lifecycle-deadline';
 import { type Logger, logger as rootLogger } from './logger';
 
 export type HealthState = 'starting' | 'ready' | 'draining' | 'stopped';
@@ -18,7 +19,13 @@ export type ProcessSignal = 'SIGTERM' | 'SIGINT' | 'SIGHUP' | 'SIGQUIT';
 
 export interface ShutdownReason {
   readonly signal: string;
-  /** Monotonic ms after which hooks are abandoned. */
+  /**
+   * Real monotonic ms (`systemClock`) after which hooks are abandoned — deliberately NOT the
+   * injected clock. The budget this bounds is `terminationGracePeriodSeconds`, counted by the
+   * kubelet in real seconds, so a frozen clock must be unable to extend it: read off `clock` a
+   * test that advanced an hour of fake time handed the drain a 16-minute grace period, while
+   * `waitForIdle` went on sleeping on a real `setTimeout`. `clock` still owns `uptimeMs`.
+   */
   readonly deadlineAt: number;
 }
 
@@ -29,6 +36,19 @@ export interface OnShutdownOptions {
 }
 
 export interface LifecycleOptions {
+  /**
+   * The whole drain's budget — the in-flight wait AND every hook, in every phase. 25s by default,
+   * and **enforced whether or not an app sets it**: `ShutdownReason.deadlineAt` was always computed
+   * and handed to every hook, so the deadline was declared by the design and only the enforcement
+   * was missing. No hook reads `deadlineAt`, which is why it has to be imposed here.
+   *
+   * The lever is a LARGER value, not the absence of one: a `worker` holding a 10-minute job wants
+   * `configureLifecycle({ deadlineMs: 600_000 })` and a `terminationGracePeriodSeconds` at least as
+   * large. Left at 25s it is abandoned and the process exits clean — the row's visibility lease
+   * lapses and another worker re-claims it, which is what at-least-once already promises. The
+   * alternative is not "the job finishes": it is the same duplicate, delivered by SIGKILL at the
+   * kubelet's grace period, with no log line naming what overran.
+   */
   readonly deadlineMs?: number | undefined;
   readonly clock?: Clock | undefined;
   readonly logger?: Logger | undefined;
@@ -222,15 +242,51 @@ function waitForIdle(timeoutMs: number): Promise<boolean> {
   });
 }
 
+/**
+ * The budget every drain is bounded by — `DEFAULT_DEADLINE_MS` until an app raises it. There is no
+ * unbounded state: `ShutdownReason.deadlineAt` was always computed and handed to every hook, so the
+ * deadline was declared by the design all along and only the enforcement was missing.
+ *
+ * The ONE place the budget is decided, and exported so a test can pin it: 25s is far above any
+ * drain a test can wait out, so the default needs a probe and not only a stopwatch.
+ */
+export function drainDeadlineMs(): number {
+  return deadlineMs;
+}
+
+/**
+ * What is left of that budget. Read per hook, not per phase: the deadline bounds the WHOLE drain,
+ * so a hook that spent it leaves nothing for the ones behind it — which is what
+ * `terminationGracePeriodSeconds` means, and what makes the SUM of the phases bounded rather than
+ * each one of them separately. Returns `number`, never `number | undefined`: "no budget" is not a
+ * state this file has, and the type is what keeps it from becoming one again.
+ */
+function remainingBudget(reason: ShutdownReason): number {
+  return Math.max(0, reason.deadlineAt - systemClock.monotonic());
+}
+
 async function runPhase(phase: ShutdownPhase, reason: ShutdownReason): Promise<void> {
   for (const registration of registrations.filter((entry) => entry.phase === phase)) {
-    try {
-      await registration.hook(reason);
-    } catch (thrown) {
+    const outcome = await settleWithin(() => registration.hook(reason), remainingBudget(reason));
+    if (outcome.kind === 'failed') {
       log.error('shutdown hook failed', {
         hook: registration.name,
         phase,
-        error: thrown,
+        error: outcome.error,
+      });
+      continue;
+    }
+    if (outcome.kind === 'abandoned') {
+      // Abandoned, not merely logged. A deadline that waited anyway would leave the kubelet to
+      // SIGKILL this process — the every-deploy duplicate that draining exists to prevent — so
+      // the drain moves on and the hook is left running with nobody reading it. The cost of that
+      // choice is real and named in the cause: a write it had in flight may be half done.
+      log.warn('X_SHUTDOWN_TIMEOUT', {
+        code: 'X_SHUTDOWN_TIMEOUT',
+        cause: `the "${registration.name}" shutdown hook (phase: ${phase}) was still running at the ${deadlineMs}ms drain deadline and has been ABANDONED — the process exits without it, so anything it had in flight may be incomplete`,
+        fix: `raise the budget past the work this hook does — configureLifecycle({ deadlineMs: 600_000 }) for a 10-minute job — and set terminationGracePeriodSeconds to at least as many seconds, or make the "${registration.name}" hook return once it has stopped accepting work rather than once it has finished`,
+        hook: registration.name,
+        phase,
       });
     }
   }
@@ -240,19 +296,21 @@ async function runPhase(phase: ShutdownPhase, reason: ShutdownReason): Promise<v
 export function drain(signal = 'manual'): Promise<void> {
   if (drainPromise !== undefined) return drainPromise;
   state = 'draining';
-  const reason: ShutdownReason = { signal, deadlineAt: clock.monotonic() + deadlineMs };
+  const reason: ShutdownReason = { signal, deadlineAt: systemClock.monotonic() + deadlineMs };
 
   drainPromise = (async () => {
     log.info('draining', { signal, deadlineMs, inflight });
     await runPhase('accept', reason);
 
-    const remaining = Math.max(0, reason.deadlineAt - clock.monotonic());
+    // Real monotonic, like `deadlineAt` itself: `waitForIdle` sleeps on a real `setTimeout`, and a
+    // budget read off an injected clock is a number that timer will never honour.
+    const remaining = Math.max(0, reason.deadlineAt - systemClock.monotonic());
     const idle = await waitForIdle(remaining);
     if (!idle) {
       log.warn('X_SHUTDOWN_TIMEOUT', {
         code: 'X_SHUTDOWN_TIMEOUT',
         cause: `${inflight} in-flight operations still running after ${deadlineMs}ms`,
-        fix: 'raise configureLifecycle({ deadlineMs }) or shorten the slow handler',
+        fix: 'raise the budget past the slowest handler — configureLifecycle({ deadlineMs: 600_000 }) for a 10-minute one — and set terminationGracePeriodSeconds to at least as many seconds, or shorten the handler',
       });
     }
 

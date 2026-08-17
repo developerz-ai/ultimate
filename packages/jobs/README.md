@@ -360,6 +360,11 @@ The memory store (`createMemoryOutboxStore`, `x dev` and tests) **drops** a publ
 the audit trail this map is not. A relay pass that throws is logged as `jobs.outbox.tick-failed`
 and the loop re-arms: an unobserved rejection would end the process with rows still staged.
 
+`relay.stop()` is **async and joins the pass in flight** — `await` it before closing the database,
+the way `worker.stop()` and `scheduler.stop()` are awaited. A pass is a publish followed by a
+`markPublished`, and a caller that returned between the two closed the pool under the row it was
+about to mark.
+
 ## Drivers
 
 One interface: `enqueue`, `claim` (visibility timeout), `ack`, `nack` (backoff),
@@ -521,6 +526,7 @@ FOR a user takes that user's id in its input and re-authorises it in the body.
 | `X_DRIVER_UNAVAILABLE` | no `DATABASE_URL` / executor for the pg driver |
 | `X_ABORTED` | a cancelled attempt tried to write a step — core's code, not a second name for it |
 | `X_JOB_LEASE_LOST` | the job was cancelled, or its lease lapsed and the queue re-delivered it, while this worker was still running it |
+| `X_JOB_SLOT_LOST` | the fleet `concurrency` slot this run held was taken by another worker — a different row on a different clock from the lease above |
 | `X_JOB_NOT_CANCELLABLE` | `cancelJob` reached a job that already finished, or a driver with no `cancel` |
 | `X_JOB_CONCURRENCY_UNENFORCEABLE` | a registered job declares `concurrency` and the driver has no lease store |
 | `X_NOT_IMPLEMENTED` | redis / nats driver |

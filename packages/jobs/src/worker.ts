@@ -4,28 +4,19 @@
 // deploy turns "at least once" into "always twice", so draining is on by default.
 
 import type { Clock, Ctx } from '@ultimat3/core';
-import {
-  logger,
-  onShutdown,
-  parseTraceparent,
-  recordJob,
-  recordQueueDepth,
-  uuid,
-  withSpan,
-} from '@ultimat3/core';
+import { logger, onShutdown, recordJob, recordQueueDepth, uuid } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver, QueueStats } from './driver';
 import { DEFAULT_QUEUE, DEFAULT_VISIBILITY_TIMEOUT_MS } from './driver';
 import { ConcurrencyUnenforceableError } from './errors';
 import type { JobExecution, JobOutcome } from './execute';
-import { executeJob } from './execute';
-import { startLeaseHeartbeat } from './heartbeat';
 import { getJob, registeredJobs } from './job';
 import type { Limiter } from './limits';
 import { createLimiter } from './limits';
 import { recordQueueDeadJobs, recordQueueOldestReady } from './metrics';
 import type { EventLookup } from './steps';
 import { createFleetSlots } from './worker-fleet-slots';
+import { runClaimedJob } from './worker-run';
 
 /**
  * How often the claim loop republishes `queue_depth`. Its own interval, not `pollIntervalMs`:
@@ -156,88 +147,19 @@ export function createWorker(options: WorkerOptions): Worker {
     }
   };
 
-  const runClaimed = async (claimed: ClaimedJob): Promise<JobExecution> => {
-    const handle = getJob(claimed.name);
-    if (handle === undefined) {
-      // Unknown job name: almost always a deploy skew. Park it, do not burn attempts.
-      await options.driver.nack(claimed.id, {
-        delayMs: 30_000,
-        error: `no job registered as "${claimed.name}"`,
-        countsAsAttempt: false,
-      });
-      return {
-        outcome: 'suspended',
-        jobId: claimed.id,
-        job: claimed.name,
-        attempt: claimed.attempt,
-        durationMs: 0,
-        error: `no job registered as "${claimed.name}"`,
-        steps: [],
-        replayed: [],
-      };
-    }
-
-    // The lease, kept alive and NOT kept quiet: a renewal that stops landing means the queue hands
-    // this job to another worker while this one is still running it, and `.catch(() => undefined)`
-    // made that — the one failure a queue cannot recover from on its own — indistinguishable from
-    // a healthy run.
-    const heartbeat = startLeaseHeartbeat({
+  /** One claimed job, run under its lease, its slot and its span. `worker-run.ts` owns the wiring. */
+  const runClaimed = (claimed: ClaimedJob): Promise<JobExecution> =>
+    runClaimedJob({
       driver: options.driver,
       claimed,
-      visibilityTimeoutMs,
-      intervalMs: heartbeatIntervalMs,
+      context: options.context,
+      fleetSlots,
       workerId,
+      visibilityTimeoutMs,
+      heartbeatIntervalMs,
       ...(options.clock === undefined ? {} : { clock: options.clock }),
+      ...(options.events === undefined ? {} : { events: options.events }),
     });
-    // The fleet slot this job already holds, kept alive for as long as the lease is and stopped in
-    // the same `finally`: one clock for "this worker still owns the job" and "this worker still
-    // owns the slot" is one fewer way for them to disagree.
-    const stopSlotRenewal = fleetSlots.startRenewal(claimed.id);
-
-    // The caller's context plus this lease's cancellation, so a job cancelled from outside — or
-    // one this worker lost the lease on — stops at the next renewal. `steps.ts` refuses every
-    // write past the signal, which is what unwinds a body that never reads it.
-    const base = options.context();
-    const ctx: Ctx = {
-      ...base,
-      signal:
-        base.signal instanceof AbortSignal
-          ? AbortSignal.any([base.signal, heartbeat.signal])
-          : heartbeat.signal,
-    };
-
-    // The job's span is a CHILD of the request that queued it when the row carries a trace. That
-    // link is what `04-jobs.md` promised and no column existed to hold: without it a checkout's
-    // `chargeCard` opens a fresh root two seconds later with nothing pointing back.
-    const parent = parseTraceparent(claimed.traceparent);
-
-    try {
-      return await withSpan(
-        `job.${handle.name}`,
-        () =>
-          executeJob({
-            driver: options.driver,
-            claimed,
-            handle,
-            ctx,
-            ...(options.clock === undefined ? {} : { clock: options.clock }),
-            ...(options.events === undefined ? {} : { events: options.events }),
-          }),
-        {
-          ...(parent === undefined ? {} : { parent }),
-          attributes: {
-            'job.name': handle.name,
-            'job.id': claimed.id,
-            'job.attempt': claimed.attempt,
-            ...(claimed.enqueuedBy === undefined ? {} : { 'job.enqueued_by': claimed.enqueuedBy }),
-          },
-        },
-      );
-    } finally {
-      stopSlotRenewal();
-      heartbeat.stop();
-    }
-  };
 
   /** The drain's one question: may this worker still take work off the queue? */
   const claiming = (): boolean => state !== 'draining' && state !== 'stopped';
@@ -286,7 +208,20 @@ export function createWorker(options: WorkerOptions): Worker {
         // `job.concurrency`, at last enforced. The limiter above counts slots in THIS heap, which
         // twenty pods multiply by twenty; this one is a row every replica sees. Taken after the
         // in-process lease so the cheap refusal happens first, and released in the same `finally`.
-        if (!(await fleetSlots.acquire(job))) {
+        //
+        // The `try` is the whole of a bug this had: taking a fleet slot is a WRITE to
+        // `x_job_leases`, so a failover, a pool timeout or a `57P01` REJECTS here — between the
+        // in-process lease above and the `.finally` below that gives it back. The slot was burned
+        // permanently, and four of them on a concurrency-4 worker is the whole role dead, silent
+        // but for `jobs.worker.tick-failed` and a queue depth that climbs forever.
+        let granted: boolean;
+        try {
+          granted = await fleetSlots.acquire(job);
+        } catch (error) {
+          lease.release();
+          throw error;
+        }
+        if (!granted) {
           lease.release();
           await options.driver.nack(job.id, {
             delayMs: pollIntervalMs,

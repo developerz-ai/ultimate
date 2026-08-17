@@ -7,7 +7,7 @@ import { declareTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
 import { createContext, userActor } from '@ultimat3/core';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
-import { cacheKeyFor } from './cache';
+import { cacheKeyFor, readAuthority } from './cache';
 import { QueryDeniedError, QueryForeignError, QueryUnregisteredError } from './errors';
 import type { AnyQuery } from './query';
 import { query } from './query';
@@ -329,7 +329,12 @@ describe("a cache: read's tier entry, and what drops it", () => {
 
     await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: allowedActor }) });
 
-    const key = cacheKeyFor(queryName(target), { orgId: ORG }, [tag('post')]);
+    const key = cacheKeyFor(
+      queryName(target),
+      { orgId: ORG },
+      [tag('post')],
+      readAuthority(allowedActor, 'actor'),
+    );
     const entry = await getReadCache().get(key);
     expect(entry?.expiresAt).toBeGreaterThanOrEqual(before + DEFAULT_READ_CACHE_TTL_MS);
     expect(entry?.tags).toEqual([tag('post')]);
@@ -342,7 +347,12 @@ describe("a cache: read's tier entry, and what drops it", () => {
 
     await runQuery(target, { orgId: ORG }, { ctx: createContext({ actor: allowedActor }) });
 
-    const key = cacheKeyFor(queryName(target), { orgId: ORG }, [tag('post')]);
+    const key = cacheKeyFor(
+      queryName(target),
+      { orgId: ORG },
+      [tag('post')],
+      readAuthority(allowedActor, 'actor'),
+    );
     const entry = await getReadCache().get(key);
     expect(entry?.expiresAt).toBeLessThan(before + DEFAULT_READ_CACHE_TTL_MS);
   });

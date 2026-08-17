@@ -33,8 +33,25 @@ test('a bare token cannot be spelled by a string, so nothing collides the other 
   }
 });
 
-test('an ordinary number is untouched — every existing cursor scope still resolves', () => {
+test('the canonical form is untouched — the digest changed, the serialization did not', () => {
   expect(stableStringify({ limit: 50, ratio: 1.5, cursor: 'abc' })).toBe(
     '{"cursor":"abc","limit":50,"ratio":1.5}',
+  );
+});
+
+/**
+ * A fingerprint is a SHARING key over input a client chooses — the read-cache entry two callers
+ * may be served from, and the scope a cursor is bound to. 32 bits of FNV-1a is a collision anyone
+ * finds offline in seconds, which is the same argument `@ultimat3/realtime` moved its `qid` on;
+ * `stableDigest` there is the primitive this matches, not the code.
+ */
+test('a fingerprint is SHA-256, 64 bits wide — never a 32-bit non-cryptographic hash', () => {
+  const digest = fingerprint({ q: 'all' });
+  expect(digest).toMatch(/^[0-9a-f]{16}$/);
+  expect(digest).toBe(
+    new Bun.CryptoHasher('sha256')
+      .update(stableStringify({ q: 'all' }))
+      .digest('hex')
+      .slice(0, 16),
   );
 });

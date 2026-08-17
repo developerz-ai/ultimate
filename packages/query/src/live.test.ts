@@ -52,7 +52,12 @@ describe('live query descriptor', () => {
     const feed = registerQuery('liveFeed', defineFeed());
     const live = await toLiveQuery(feed, { orgId: ORG }, { ctx: member, epoch: 'build-1' });
 
-    live.authorize({ actor: readerActor, input: {}, ctx: member, query: 'liveFeed' });
+    // Both halves, on ONE descriptor: the claim is that two subscribers get two answers, and the
+    // allowed one was a floating promise asserting nothing — an `authorize` that denied EVERY
+    // subscriber passed this test, which is the opposite failure to the one it is named for.
+    await expect(
+      live.authorize({ actor: readerActor, input: {}, ctx: member, query: 'liveFeed' }),
+    ).resolves.toBeUndefined();
     const denial = await live
       .authorize({ actor: null, input: {}, ctx: anonymous, query: 'liveFeed' })
       .catch((error: unknown) => error);

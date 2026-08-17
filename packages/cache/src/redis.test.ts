@@ -1,117 +1,22 @@
-// The tag -> keys bookkeeping is what buys the scripted invalidation instead of a `KEYS` scan,
-// and it is invisible from the outside: a bucket written wrong leaves keys that no tag can ever
-// reach again. A fake Redis records every command, so the wire traffic itself is the assertion:
-// which keys travel together, which slot they hash to, which lease each join asks for. What a
-// fake cannot do is run a Lua script — so it no longer pretends to, and every claim about what
-// the two scripts DO lives in `redis.live.test.ts`.
+// The tier's own behaviour: what it stores, what it reads back, what lease it spends and which
+// namespace it spends it in. The tag -> keys bookkeeping is invisible from the outside — a bucket
+// written wrong leaves keys no tag can ever reach again — so a fake Redis records every command
+// and the wire traffic is the assertion. Its ORDERING guarantees are `redis-ordering.test.ts`'s
+// subject, and what a Lua script actually does is `redis.live.test.ts`'s.
 
 import { describe, expect, test } from 'bun:test';
 import { appVersion, frozenClock } from '@ultimat3/core';
 import { CacheDriverUnavailableError } from './errors';
 import { createLruTier } from './lru';
-import type { RedisLike, RedisTierOptions } from './redis';
 import {
   createRedisTier,
   namespaceFor,
   REDIS_INVALIDATE_SCRIPT,
   REDIS_TAG_MEMBER_SCRIPT,
 } from './redis';
+import { fakeRedis, tierFor } from './redis-fake';
 import { tag } from './tags';
 import { createCacheStack } from './tiers';
-
-interface FakeRedis extends RedisLike {
-  readonly sent: string[][];
-  /**
-   * What the server's script answers for one `EVAL`. A test driving a path that READS the reply
-   * has to say what came back; there is no default, because `[]` is exactly what a gutted
-   * `INVALIDATE_SCRIPT` returns and a silent one would make "the bust cleared nothing" the
-   * baseline of this whole file.
-   */
-  answerEval(script: string, reply: unknown): void;
-}
-
-function fakeRedis(): FakeRedis {
-  const values = new Map<string, string>();
-  // The lease `EX` bought, in ms. A fake that answered no `PTTL` could not catch a tier that
-  // stopped asking for one — and a hit read back without its remaining life is promoted on the
-  // caller's ttl, which is how a value one second from expiry gets a fresh five minutes.
-  const expiries = new Map<string, number>();
-  const sent: string[][] = [];
-  // A fake cannot run Lua. This one used to mirror both script bodies in TypeScript, which is why
-  // gutting either to `return 1` / `return {}` left all 517 tests in `cache` + `query` green — the
-  // assertions ran against the mirror and the script itself was executed by nothing, ever. What is
-  // left is a recorder: the wire traffic is this file's subject, the script body is opaque to it,
-  // and every claim about what a script DOES lives in `redis.live.test.ts` behind TEST_REDIS_URL.
-  const evalReplies = new Map<string, unknown>([
-    // Nothing reads the tag-join's reply, so a constant here asserts nothing about the script.
-    [REDIS_TAG_MEMBER_SCRIPT, 1],
-  ]);
-  return {
-    sent,
-    answerEval(script, reply) {
-      evalReplies.set(script, reply);
-    },
-    get(key) {
-      return Promise.resolve(values.get(key) ?? null);
-    },
-    set(key, value) {
-      values.set(key, value);
-      return Promise.resolve('OK');
-    },
-    send(command, args) {
-      sent.push([command, ...args]);
-      if (command === 'SET') {
-        values.set(String(args[0]), String(args[1]));
-        if (args[2] === 'EX') expiries.set(String(args[0]), Number(args[3]) * 1_000);
-        if (args[2] === 'PX') expiries.set(String(args[0]), Number(args[3]));
-        return Promise.resolve('OK');
-      }
-      if (command === 'PTTL') {
-        const key = String(args[0]);
-        if (!values.has(key)) return Promise.resolve(-2);
-        return Promise.resolve(expiries.get(key) ?? -1);
-      }
-      if (command === 'DEL') {
-        values.delete(String(args[0]));
-        expiries.delete(String(args[0]));
-        return Promise.resolve(1);
-      }
-      if (command === 'EVAL') {
-        const script = String(args[0]);
-        if (!evalReplies.has(script)) {
-          // Loud rather than `[]`: an empty member list is what the gutted script answers, so a
-          // default would report every bust in this file as clean and every one of them as green.
-          throw new Error(
-            'fake redis cannot execute EVAL — call answerEval(script, reply) to state what the ' +
-              'server returned, or move the claim to redis.live.test.ts, which runs the script',
-          );
-        }
-        return Promise.resolve(evalReplies.get(script));
-      }
-      return Promise.resolve(null);
-    },
-  };
-}
-
-/**
- * `buildId: null` and `rng: () => 0` are the two things a wire assertion needs pinned: the
- * namespace carries the build id by default, and the lease is spread by default.
- */
-function tierFor(client: RedisLike, extra: RedisTierOptions = {}) {
-  return createRedisTier({ client, buildId: null, rng: () => 0, ...extra });
-}
-
-/** The `{...}` hash tag of a key, which is what Redis Cluster hashes to a slot. */
-function slotTokenOf(key: string): string {
-  return /\{([^}]*)\}/.exec(key)?.[1] ?? key;
-}
-
-/** Every key argument of one command — `EVAL script numkeys k1 .. kN` and `DEL key`. */
-function keysOf(command: readonly string[]): string[] {
-  if (command[0] === 'EVAL') return command.slice(3, 3 + Number(command[2]));
-  if (command[0] === 'DEL') return command.slice(1);
-  return [];
-}
 
 describe('createRedisTier', () => {
   test('is named "redis"', () => {
@@ -332,76 +237,6 @@ describe('createRedisTier', () => {
       await expect(tier.get('k')).rejects.toThrow(CacheDriverUnavailableError);
     } finally {
       bunWithRedis.redis = original;
-    }
-  });
-});
-
-describe('invalidation is slot-local on Redis Cluster', () => {
-  test('no single command is ever handed keys from two different tags', async () => {
-    // The failure this pins: one EVAL carrying every tag-set key is rejected with CROSSSLOT
-    // before the script runs, because `x:t:post` and `x:t:user` hash to different slots. It
-    // lands in report.errors as a partial bust, and stale rows serve until TTL.
-    const client = fakeRedis();
-    const tier = tierFor(client);
-    await tier.set('feed', ['a'], { tags: [tag('post', '1')] });
-    await tier.set('inbox', ['b'], { tags: [tag('user', '9')] });
-    await tier.set('teams', ['c'], { tags: [tag('team')] });
-    client.answerEval(REDIS_INVALIDATE_SCRIPT, []);
-    client.sent.length = 0;
-
-    await tier.invalidateTags([tag('post', '1'), tag('user', '9'), tag('team')]);
-
-    for (const command of client.sent) {
-      const slots = new Set(keysOf(command).map(slotTokenOf));
-      expect(slots.size).toBeLessThanOrEqual(1);
-    }
-    // One script call per tag, not one for the batch.
-    expect(client.sent.filter((entry) => entry[1] === REDIS_INVALIDATE_SCRIPT)).toHaveLength(3);
-  });
-
-  test("a row tag's two buckets share one slot, so they may travel in one call", async () => {
-    const client = fakeRedis();
-    const tier = tierFor(client);
-    await tier.set('feed', ['a'], { tags: [tag('post', '1')] });
-    client.answerEval(REDIS_INVALIDATE_SCRIPT, []);
-    client.sent.length = 0;
-
-    await tier.invalidateTags([tag('post', '1')]);
-
-    const evals = client.sent.filter((entry) => entry[1] === REDIS_INVALIDATE_SCRIPT);
-    expect(keysOf(evals[0] ?? [])).toEqual(['x:t:{post}:1', 'x:t:{post}']);
-    expect(new Set(keysOf(evals[0] ?? []).map(slotTokenOf))).toEqual(new Set(['post']));
-  });
-
-  test('every tag-set key carries a hash tag; value keys never need one', async () => {
-    const client = fakeRedis();
-    const tier = tierFor(client);
-    await tier.set('feed', ['a'], { tags: [tag('post', '1'), tag('user')] });
-
-    const buckets = client.sent
-      .filter((entry) => entry[1] === REDIS_TAG_MEMBER_SCRIPT)
-      .map((entry) => String(entry[3]));
-    expect(buckets).toEqual(['x:t:{post}:1', 'x:t:{post}', 'x:t:{user}']);
-    for (const bucket of buckets) expect(bucket).toMatch(/\{[^}]+\}/);
-  });
-});
-
-// The lease a join ASKS for is wire traffic and belongs here. Whether the server then grants it,
-// keeps the longer of two, and gives a fresh bucket one at all is `TAG_MEMBER_SCRIPT`'s own
-// semantics — three claims a fake can only restate, so they live in `redis.live.test.ts`.
-describe('tag sets are bounded', () => {
-  test('every join asks for a lease longer than the member it added', async () => {
-    // Without this a tag set grows forever: value keys expire after five minutes, their
-    // membership never does, and one publish becomes a multi-million-member SMEMBERS.
-    const client = fakeRedis();
-    const tier = tierFor(client);
-    await tier.set('feed', ['a'], { ttlMs: 60_000, tags: [tag('post', '1')] });
-
-    const joins = client.sent.filter((entry) => entry[1] === REDIS_TAG_MEMBER_SCRIPT);
-    expect(joins).toHaveLength(2);
-    for (const join of joins) {
-      // 60s member + the 60s grace: the bucket must outlive what it points at.
-      expect(Number(join[5])).toBe(120);
     }
   });
 });

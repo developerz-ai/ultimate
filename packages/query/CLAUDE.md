@@ -252,14 +252,62 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   The memo is not what `cache:` buys — a list that renders one uncached lookup per row pays for
   every row otherwise, which is the N+1 this collapses. Never gate `readOnce` on `def.cache`
   again, and never let a second key function grow beside `cacheKeyFor`.
-- **`invalidateQueryTags` drops two things, and both are required.** `invalidateTags` reaches the
-  graph `@ultimat3/cache` owns — every registered `CacheTier`, ISR route, CDN path and live query;
-  the read tier is *not* in that registry (it is this package's seam, swapped per deployment
-  through `setReadCache`), so the same tags are passed to `tier.invalidateTags?.()` in the same
-  hop. Dropping only the first is the defect this pairing replaced: the fan-out reported success
-  and the pre-write list was served until the process ended. An entry is therefore written with
-  the read's `cache.tags` — `readThrough`'s last argument — or it is reachable by key alone and
-  can only expire.
+- **A cache key carries the read's AUTHORITY, and `cache.scope` is what widens it** (`As of
+  2026-08`). `cacheKeyFor` held the name, the input and the tags — nothing about who asked — while
+  `sql(input, ctx)` is handed the context and `@ultimat3/entity` derives every tenant predicate
+  from `ctx.actor.orgId`. The tier is process-wide, so the first actor to ask filled the entry and
+  the next was served it: a query filtering on `ctx.actor.orgId` returned `org-a`'s row to an
+  `org-b` actor. `readAuthority(actor, scope)` is the ONE producer of the component and
+  `cacheKeyFor`'s fourth argument is **required and positional**, because an optional one is one a
+  call site forgets and a forgotten one is that read. `scope` defaults to `'actor'` and the default
+  is the mechanism: declaring nothing gets the narrowest key. `'tenant'` and `'global'` are written
+  statements about the rows — the `unenforced:` shape one field over — and `'tenant'` with no
+  `orgId` narrows to the actor rather than widening to everyone, because nothing here can prove two
+  org-less callers share a tenant. The authority is JSON, never a joined string, for the reason
+  `@ultimat3/entity`'s `scopeKey` gives: an actor id is app data and may carry the separator.
+- **`cache.ttlMs` is judged at `query()`, not on the first read.** Every `CacheTier` refuses a
+  lease that is not positive and finite (`assertTtl`), and the read tier's one catch absorbs
+  `X_CACHE_TOO_LARGE` only — so `ttlMs: Infinity` turned a typo into a permanently failing business
+  read whose cause named a cache key. `X_QUERY_CACHE_TTL_INVALID`, on the line that wrote it. It
+  restates `assertTtl`'s bar as a refusal and never as a second resolution.
+- **`fingerprint` is SHA-256/16, never a 32-bit hash** (`stable.ts`, `As of 2026-08`). It is a
+  SHARING key over client-chosen input — which read-cache entry two callers are served from, which
+  scope a cursor is bound to — so FNV-1a/32's 4×10⁹ values are a collision found offline in
+  seconds. Same primitive and width as `@ultimat3/realtime`'s `stableDigest`. `stableStringify` did
+  not move, so the only cost is one cold cache and every open cursor answering `X_CURSOR_INVALID`
+  with its own "request the first page again" fix.
+- **A fill is FENCED, and the fence is `@ultimat3/cache`'s** (`As of 2026-08`). `run()` answers with
+  rows it read in the past: a mutator committing in between busts a key not yet in the tier, so the
+  drop is a no-op reporting `errors: []`, and the fill then publishes the pre-write rows for the
+  full TTL — invisible to every reader until it expires. `sampleFence({ key, tags })` immediately
+  before `run()`, `fence.isValid()` before the write. **Sampling before the tier `get` would be
+  wrong**: a bust landing while the `get` is in flight is one the source read has not started yet
+  and will therefore see. The caller is answered either way — those rows ARE its answer; only
+  publishing is refused. No `cover()`: every joiner of a key joins one in-flight read under one
+  scope, so there are no tags the sample missed. Never write a second fence — this is the one
+  mechanism, and `packages/cache/src/fence.ts` is where it lives.
+- **A tier refusal degrades the cache, never the read.** `tier.get`/`tier.set` go through
+  `bestEffort('query-read', …)` from `@ultimat3/cache`: a refused `get` reads as a miss, a refused
+  `set` as "that tier is unchanged", and the entry expires by TTL. The label is `'query-read'` —
+  a `TierLabel`, deliberately NOT a `TierName` — because this seam is not a rung of that ladder and
+  `TIER_ORDER.indexOf` answers `-1` for a name it does not know, which would sort a query tier ahead
+  of the request memo. The refusal lands in `recentTierFailures()` under its own honest name; never
+  wrap this in a private try/catch, which would be a second failure log the `/_x` panel cannot read.
+- **The read tier reads its clock, and `readThrough` hands it one.** `fill` dated an entry with
+  `Date.now()` and `MemoryReadCache` decided staleness with another, in a package where every read
+  arrives holding `ctx.clock` — so a frozen clock could not drive either. `nowMs(clock)`, both
+  places.
+- **The installed read cache must be an object the ONE fan-out already reaches.** `invalidateTags`
+  walks the registered `CacheTier`s and nothing else; a `ReadCache` is registered nowhere. Left as
+  the module-default `MemoryReadCache`, every deployment without `REDIS_URL` served pre-write rows
+  for the whole TTL while the invalidation report said `errors: []` — and the hop that would have
+  dropped them, `invalidateQueryTags`, had zero callers in the repo. The boot
+  (`packages/cli/src/dev-cache.ts`) therefore installs a read cache **over a registered object**:
+  the shared tier through `tierReadCache`, or the `lru` tier's own `LruCache` through
+  `MemoryReadCacheOptions.cache`. `invalidateQueryTags` stays for the host that supplies a
+  `ReadCache` of its own, which no fan-out can see. An entry is written with the read's
+  `cache.tags` — `readThrough`'s last argument — or it is reachable by key alone and can only
+  expire.
 - **The read tier is bounded and a `cache:` read always expires.** `MemoryReadCache` is
   `@ultimat3/cache`'s `LruCache` (byte budget, tag index, one definition of tag matching — never
   a second one derived here), and `def.cache.ttlMs ?? DEFAULT_READ_CACHE_TTL_MS` is what

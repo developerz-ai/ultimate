@@ -8,7 +8,7 @@ import type { Clock } from '@ultimat3/core';
 import { systemClock } from '@ultimat3/core';
 import type { CacheTag } from './tags';
 import { tagsIntersect } from './tags';
-import { nowMs } from './tiers';
+import { assertTtl, nowMs } from './tiers';
 
 export type Embedding = readonly number[];
 
@@ -111,12 +111,19 @@ export function createMemorySemanticCache(options: SemanticCacheOptions = {}): S
       value: T,
       rememberOptions?: SemanticRememberOptions,
     ): Promise<void> {
+      // The same TTL rule every tier writes under, and for the same reason: `0` here silently
+      // stored an entry that was already expired, so the cache answered every lookup with a miss
+      // and nothing said why. `jitterFraction: 0` — spreading a lease is a herd defence for a
+      // shared store, and this one is per process.
+      const ttlMs = assertTtl(key, rememberOptions?.ttlMs ?? defaultTtlMs, 'semantic', {
+        jitterFraction: 0,
+      });
       records.delete(key);
       records.set(key, {
         key,
         embedding,
         value,
-        expiresAt: nowMs(clock) + (rememberOptions?.ttlMs ?? defaultTtlMs),
+        expiresAt: nowMs(clock) + ttlMs,
         tags: rememberOptions?.tags ?? [],
       });
       // Insertion-ordered Map: the oldest key is the first one.

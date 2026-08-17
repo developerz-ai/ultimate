@@ -5,12 +5,13 @@
 // answerable without a log dive.
 
 import { currentSpan, logger, systemClock, withSpan } from '@ultimat3/core';
+import { markInvalidated } from './fence';
 import { dependentsOfKind } from './graph';
 import type { CacheTag } from './tags';
 import { assertKnownTags, knownTags, parseTag, serializeTags } from './tags';
 import { isolateTierFailures, resetTierFailures } from './tier-failures';
 import type { CacheTier, TierInvalidation } from './tiers';
-import { sortTiers } from './tiers';
+import { sortTiers, TIER_ORDER } from './tiers';
 
 /** Revalidates one ISR route path. Provided by `@ultimat3/render`; absent on a worker. */
 export type Revalidator = (path: string) => Promise<void> | void;
@@ -206,10 +207,18 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
     // caller that only ever awaited this function.
     if (options.validate) assertKnownTags(tags);
 
+    // Before the first tier is touched, so a read-through fill whose `load()` started earlier
+    // cannot republish what this call is about to clear — the bust would otherwise land on a key
+    // that is not there yet, report `errors: []`, and be overwritten milliseconds later.
+    markInvalidated({ tags });
+
     const tiers: TierInvalidation[] = [];
     const errors = options.errors;
 
-    for (const tier of sortTiers(registry)) {
+    // FARTHEST tier first. Near-to-far leaves the far tier holding the old value after the near
+    // ones are clear, and a read racing the bust promotes it straight back up into them — the
+    // report says every tier cleared, and the LRU is stale again before the call returns.
+    for (const tier of [...sortTiers(registry)].reverse()) {
       try {
         tiers.push(await tier.invalidateTags(tags));
       } catch (error) {
@@ -219,6 +228,9 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
         });
       }
     }
+    // The report is read order, not clear order: it is what the `/_x` panel renders, and a ladder
+    // printed upside down is a second thing for a reader to learn.
+    tiers.sort((a, b) => TIER_ORDER.indexOf(a.tier) - TIER_ORDER.indexOf(b.tier));
 
     const isr = dependentsOfKind(tags, 'isr-route');
     const cdn = dependentsOfKind(tags, 'cdn-path');

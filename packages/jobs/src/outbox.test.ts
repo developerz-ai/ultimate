@@ -244,7 +244,10 @@ describe('the relay loop', () => {
         await new Promise((resolve) => setTimeout(resolve, 5));
       }
     } finally {
-      relay.stop();
+      // AWAITED: the assertions below read the state the pass in flight is still writing, so a
+      // teardown that returned before it was the difference between this test proving the row was
+      // published and this test proving it usually is.
+      await relay.stop();
     }
 
     expect(store.claims).toBeGreaterThanOrEqual(2);
@@ -289,6 +292,76 @@ describe('the relay loop', () => {
     // Nothing overtook the wedged row, and all three are still pending for the next pass.
     expect(published).toEqual([]);
     expect(await store.pendingCount()).toBe(3);
+  });
+});
+
+describe('the relay joins the tick it is stopping', () => {
+  /** A promise the test opens by hand — the only way to park a tick inside one exact await. */
+  function gate(): { readonly passed: Promise<void>; open: () => void } {
+    let open = (): void => undefined;
+    const passed = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    return { passed, open: () => open() };
+  }
+
+  // Every other loop in this package joins its in-flight work in `stop()` — `worker.ts` waits out
+  // its rounds, `scheduler.ts` its dispatch. The relay only cleared its interval, so a SIGTERM
+  // landing between `driver.enqueue` and `markPublished` returned to a caller that then closed the
+  // database under the row it was about to mark.
+  test('stop() does not resolve until the row in flight is marked published', async () => {
+    const entered = gate();
+    const release = gate();
+    const published: string[] = [];
+    const driver: Pick<JobDriver, 'enqueue'> = {
+      async enqueue(request: EnqueueRequest) {
+        entered.open();
+        await release.passed;
+        published.push(request.idempotencyKey);
+        return { id: 'x', runId: 'r', deduped: false };
+      },
+    };
+    const store = createMemoryOutboxStore();
+    const tx = fakeTx();
+    await store.stage(tx, {
+      id: 'row-parked',
+      job: 'notify',
+      queue: 'default',
+      input: {},
+      idempotencyKey: 'notify:parked',
+      maxAttempts: 1,
+      runAt: 0,
+      stagedAt: 0,
+    });
+    await store.commit(tx);
+
+    const relay = createOutboxRelay({ store, driver: driver as JobDriver, intervalMs: 1 });
+    relay.start();
+    await entered.passed;
+
+    let joined = false;
+    const stopped = (async (): Promise<void> => {
+      await relay.stop();
+      joined = true;
+    })();
+    // Drained in microtasks, never on a clock: a `stop()` that joined nothing resolves in the
+    // first turn, and this is the whole difference between the two shapes.
+    for (let turn = 0; turn < 5; turn += 1) await Promise.resolve();
+    expect(joined).toBe(false);
+
+    release.open();
+    await stopped;
+    expect(published).toEqual(['notify:parked']);
+    expect(await store.pendingCount()).toBe(0);
+  });
+
+  test('stop() with nothing in flight resolves, and a second one is a no-op', async () => {
+    const relay = createOutboxRelay({
+      store: createMemoryOutboxStore(),
+      driver: createMemoryDriver(),
+    });
+    await relay.stop();
+    await relay.stop();
   });
 });
 
