@@ -84,6 +84,16 @@ import. The CLI wires it.
   query. Writing a primitive out NAMES a tool; it never re-shapes or re-runs one. An action
   with no export name is `X_ACTION_UNREGISTERED` rather than a tool called `''`, which no
   `tools/call` and no `scopes:` entry could ever address.
+- **This package NAMES a tool, it never derives one.** `primitive.mcp?.name ?? primitive.name` in
+  `from-action.ts` is the whole rule, fed the verbatim export name by `projectable.ts` — a
+  transform here would be a second spelling of a name that is already an addressable identity.
+  Every surface that PUBLISHES the name owes the same string: `action.tool()`, `query.tool()`,
+  `x-ultimate.mcpTool`, `ActionDescriptor.mcp.tool`. The three action publishers snake_cased it
+  through `toToolName` until 2026-08, so a spec-reading agent called `publish_post` and got
+  `-32601` from a catalog holding `publishPost`, and nothing noticed because no test compared the
+  served name to a published one. `cross-surface.test.ts` is that comparison — it reads the
+  catalog off `tools/list` and drives a `tools/call` with the name OpenAPI published, so a
+  publisher that re-derives is a failing test and not a wiki note.
 - Every boot-time refusal in `defineAppMcp` is an `UltimateError` with a code, never a bare
   throw: `X_MCP_TOOL_UNDECLARED`, `X_MCP_TOOL_UNSAFE`, `X_MCP_TOOL_DUPLICATE`,
   `X_MCP_SCOPE_UNKNOWN`, `X_MCP_SCOPE_CONFLICT`. The caller reading them is usually an agent

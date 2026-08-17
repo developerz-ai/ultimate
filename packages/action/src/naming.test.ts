@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { derivePath, inputSchemaName, pluralize, toToolName } from './naming';
+import { derivePath, inputSchemaName, pluralize } from './naming';
 
 describe('action name -> route path', () => {
   const cases: readonly [string, string][] = [
@@ -27,8 +27,7 @@ describe('action name -> route path', () => {
     });
   });
 
-  test('tool and component names derive from the same words', () => {
-    expect(toToolName('updateUserProfile')).toBe('update_user_profile');
+  test('component names derive from the same words the path does', () => {
     expect(inputSchemaName('updateUserProfile')).toBe('UpdateUserProfileInput');
   });
 

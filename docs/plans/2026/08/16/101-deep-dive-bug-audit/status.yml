@@ -11,7 +11,9 @@ current_focus: >
   Error codes 387 -> 417. Twelve new gate checks built across the sweep, four of them in the last
   slice alone, because the recurring finding was never a missing rule — it was a correct rule one
   file away that did not cover the path that mattered. Five slices closed under 100% and every
-  remainder is named in the deferred blocks below or filed: #120 (the MCP tool name split),
+  remainder is named in the deferred blocks below or filed: #120 (the MCP tool name split — CLOSED
+  on branch fix/mcp-tool-name-unify: toToolName deleted from action and query, the export name
+  wins on every surface, packages/mcp/src/cross-surface.test.ts pins it),
   #121 (a fresh app cannot run four generators; its first migration is wrong four ways),
   #122 (two shipped fix: lines that resolve and still do the wrong thing).
 slices:
@@ -45,6 +47,14 @@ slices:
     status: done
     percent: 100
     pr: 106
+    note: >
+      percent is #106's own scope, not the slice's entry list. Re-derived against the code
+      2026-08: seven entries closed or void, THREE still open — `.job()` has no consumer
+      (action/job-handle.ts:16), the query client encodes what coerceQuery cannot decode
+      (query/client.ts:151, reproduced), coerceInput is exported with no caller
+      (schema/coerce.ts:149) — plus all five enforcement gaps. The slice file carries a status
+      table; one entry there is VOID, not open: `normalize()` throws and always did by the time
+      the slice landed.
   - file: 02-tier23-bugs.md
     tier: 2
     status: done

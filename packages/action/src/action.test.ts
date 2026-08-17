@@ -52,7 +52,8 @@ describe('action', () => {
     expect(described.name).toBe('publishPost');
     expect(described.path).toBe('/api/posts/publish');
     expect(described.method).toBe('POST');
-    expect(described.mcp.tool).toBe('publish_post');
+    // The export name verbatim — the descriptor and the served catalog are one name.
+    expect(described.mcp.tool).toBe('publishPost');
     expect(described.idempotent).toBe(false);
     // Reported, not inferred downstream: `mutator.test.ts` holds the `true` half.
     expect(described.mutator).toBe(false);

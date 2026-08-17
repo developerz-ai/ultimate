@@ -2,8 +2,12 @@
 //
 // This is the SAME projection @ultimat3/mcp performs, in a different wire format: an
 // in-app agent calling a tool through the gateway and an external agent calling it over
-// MCP both end at `action.run`, so they authorize identically. There is no "LLM
+// MCP both end at the same `invoke`, so they authorize identically. There is no "LLM
 // permissions" concept in Ultimate, because there is no second authz system.
+//
+// `run` below is `ProjectableAction`'s — the projection SEAM, which is what carries `invoke`.
+// It is not a member of the action facade: an `action()` is `as`/`tool`/`openapi`/`job`/
+// `contract` and the callable itself, and this header claimed `action.run` until 2026-08.
 //
 // The JSON Schema type and the projectable-primitive shape are declared here rather than
 // imported from @ultimat3/mcp: that package is the same tier, so importing it would be a

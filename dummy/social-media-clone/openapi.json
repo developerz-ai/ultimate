@@ -754,7 +754,7 @@
           "capability": "friend:request",
           "idempotent": true,
           "invalidates": [],
-          "mcpTool": "request_friend",
+          "mcpTool": "requestFriend",
           "rateLimit": null
         }
       }
@@ -834,7 +834,7 @@
           "capability": "friend:respond",
           "idempotent": true,
           "invalidates": [],
-          "mcpTool": "respond_friend",
+          "mcpTool": "respondFriend",
           "rateLimit": null
         }
       }
@@ -952,7 +952,7 @@
           "capability": "message:send",
           "idempotent": false,
           "invalidates": [],
-          "mcpTool": "send_message",
+          "mcpTool": "sendMessage",
           "rateLimit": null
         }
       }
@@ -1032,7 +1032,7 @@
           "capability": "notification:mark-read",
           "idempotent": true,
           "invalidates": [],
-          "mcpTool": "mark_notifications_read",
+          "mcpTool": "markNotificationsRead",
           "rateLimit": null
         }
       }
@@ -1230,7 +1230,7 @@
           "capability": "block:create",
           "idempotent": true,
           "invalidates": [],
-          "mcpTool": "block_user",
+          "mcpTool": "blockUser",
           "rateLimit": null
         }
       }
@@ -1289,7 +1289,7 @@
           "capability": "block:delete",
           "idempotent": false,
           "invalidates": [],
-          "mcpTool": "unblock_user",
+          "mcpTool": "unblockUser",
           "rateLimit": null
         }
       }

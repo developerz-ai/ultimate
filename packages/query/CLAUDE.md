@@ -18,7 +18,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `http.ts` | route projection (`GET /_x/query/<kebab>`, `enforcedBy: 'handler'`) |
 | `mcp-tool.ts` | MCP read descriptor, same `sourceFor` |
 | `client.ts` | typed read client (browser-safe: no server imports) |
-| `naming.ts` | export name → `/_x/query/<kebab>` + snake_case tool name. Pure string math |
+| `naming.ts` | export name → `/_x/query/<kebab>`. Pure string math. **Paths only** — no tool name |
 | `registry.ts` | export-name registration, `describeQueries()`, and the `registerPrimitiveRegistrar('query', …)` announcement |
 | `live.ts` | `LiveQuery` descriptor + cursor arithmetic |
 | `matcher.ts` | change event → minimal patch, or `X_MATCHER_UNSUPPORTED` |
@@ -78,6 +78,17 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 - `mcp` is opt-in (`expose: true`), exactly as it is for an action: rows reach an agent only when
   the author said so. `isExposed` here delegates to `isMcpExposed` in `@ultimat3/core` — the one
   predicate every reader in the framework asks — rather than spelling `=== true` a second time.
+- **A read has ONE tool name, and it is the export name verbatim** (`As of 2026-08`). `toQueryTool`
+  snake_cased it (`liveFeed` → `live_feed`) while `@ultimat3/mcp` serves the read under
+  `queryName(target)` and answers `tools/call` for nothing else — so anything that read the name off
+  the descriptor rather than off `tools/list` called a tool the server had never heard of, and the
+  scope map in `defineAppMcp` is keyed on the verbatim name too. `toToolName` is **deleted**, not
+  merely unused: an exported derivation is a second way to spell one tool. Two pins, both in this
+  package because this is where the rule can be broken — `mcp-tool.test.ts` asserts
+  `toQueryTool(q).name === queryName(q)` (the presence), and `index.test.ts` asserts the barrel
+  exports no key matching `/tool_?name/i` (the absence, which nothing else catches: the only other
+  guard is `packages/mcp/src/cross-surface.test.ts`, tier 4 and unimportable from here).
+  `naming.ts` derives PATHS only.
 - `client.ts` stays free of server imports — it is bundled into the browser. `@ultimat3/action`
   is the same tier, so its naming is ported here, never imported.
 - **`queryClient` is the map-wide read client and the mirror of `rpc`; both spellings run

@@ -467,12 +467,14 @@ nothing. `scoped()` only ever **tightens** — re-scoping to a different tenant 
 ## Tools: the same projection as MCP
 
 ```ts
+// `ProjectableAction` — `{ name, mcp?, inputJsonSchema?, run }`, the projection SEAM.
 const tools = toLlmTools([publishPost, suspendUser]);   // only those with mcp.expose
 const result = await runLlmToolCall(actions, call, actor);
 ```
 
-An in-app agent and an external MCP agent both end at `action.run`, so they authorize
-identically. The actor comes from the request context, never from the model.
+An in-app agent and an external MCP agent both end at the same `invoke` — `run` is the seam that
+carries it, and an action facade has no `.run` of its own. So they authorize identically. The
+actor comes from the request context, never from the model.
 
 ## Errors
 
