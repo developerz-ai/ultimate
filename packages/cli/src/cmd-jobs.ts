@@ -219,6 +219,8 @@ export const jobsCommand: CliCommand = {
       'x jobs [ls|show <id>|retry <id>|cancel <id>|drain --to <driver>] [--queue q] [--state s] [--limit n] [--from-step name] [--reason text] [--to driver] [--dry-run] [--json]',
     requiresApp: true,
     subcommands: JOBS_SUBCOMMANDS,
+    // The bare `x jobs` lists; it never retries, cancels or drains anything.
+    defaultSubcommand: 'ls',
     flags: [
       { name: 'queue', type: 'string', summary: 'filter by queue name' },
       { name: 'state', type: 'string', summary: 'filter by job state' },

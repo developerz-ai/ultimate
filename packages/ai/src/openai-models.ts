@@ -27,6 +27,8 @@ export const OPENAI_MODEL_IDS: readonly ModelId[] = [
  * adaptive-thinking control at all — depth is `reasoning_effort` and nothing else.
  */
 const FAMILY = {
+  /** One ladder: `moreCapableThan` compares these three with each other and with nothing else. */
+  family: 'openai',
   contextWindow: 1_050_000,
   maxOutput: 128_000,
   /** Automatic caching starts at a 1024-token prefix; a shorter one silently does not cache. */

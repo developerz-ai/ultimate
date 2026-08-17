@@ -268,6 +268,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
   mail: [
     'X_MAIL_DRIVER_UNAVAILABLE',
     'X_MAIL_DUPLICATE',
+    'X_MAIL_ADDRESS_INVALID',
     'X_MAIL_HEADER_INVALID',
     'X_MAIL_LOCALE_MISSING',
     'X_MAIL_SEND_FAILED',
@@ -288,6 +289,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_MCP_NOT_BRANCH_DB',
     'X_MCP_PROTOCOL',
     'X_MCP_QUERY_REJECTED',
+    'X_MCP_RESOURCE_DUPLICATE',
     'X_MCP_SCOPE_CONFLICT',
     'X_MCP_SCOPE_DENIED',
     'X_MCP_SCOPE_UNKNOWN',

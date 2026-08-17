@@ -256,4 +256,40 @@ describe('the default ISR store is bounded', () => {
 
     expect(store.paths()).toEqual(['/a', '/c']);
   });
+
+  // The store was bounded; the controller's dependent registrations were not. `registerPath` only
+  // ever added, and an eviction is silent, so a crawler over 100k slugs left 100k edges in the
+  // cache graph pointing at pages the store no longer holds — an unbounded map in a process that
+  // runs for weeks, and a `revalidateByTags` that reported marking pages it did not mark.
+  test('an evicted page leaves the invalidation graph with it', async () => {
+    isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
+    const controller = createIsrController({
+      routes: describeRoutes,
+      store: memoryIsrStore({ maxEntries: 2 }),
+    });
+    const render = (path: string): string => `<p>${path}</p>`;
+
+    await controller.serve('/blog/a', render);
+    await controller.serve('/blog/b', render);
+    await controller.serve('/blog/c', render);
+
+    expect(controller.store().paths()).toEqual(['/blog/b', '/blog/c']);
+    expect(controller.revalidateByTags([postTag])).toEqual(['/blog/b', '/blog/c']);
+  });
+
+  test('a page rendered again after its eviction rejoins the graph', async () => {
+    isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
+    const controller = createIsrController({
+      routes: describeRoutes,
+      store: memoryIsrStore({ maxEntries: 2 }),
+    });
+    const render = (path: string): string => `<p>${path}</p>`;
+
+    await controller.serve('/blog/a', render);
+    await controller.serve('/blog/b', render);
+    await controller.serve('/blog/c', render); // evicts /blog/a
+    await controller.serve('/blog/a', render); // evicts /blog/b
+
+    expect(controller.revalidateByTags([postTag])).toEqual(['/blog/a', '/blog/c']);
+  });
 });

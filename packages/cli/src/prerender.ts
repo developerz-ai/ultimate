@@ -4,6 +4,7 @@
 // only which routes qualify and where the bytes land.
 
 import { join } from 'node:path';
+import { renderThrowable } from '@ultimat3/core';
 import type { RouteEntry } from '@ultimat3/render';
 import { renderStatic, routeEntries } from '@ultimat3/render';
 import { loadApp } from './app-load';
@@ -36,12 +37,24 @@ export interface PrerenderedPage {
   readonly bytes: number;
 }
 
+/** A route that declared a budget and could not be rendered here, and what stopped it. */
+export interface UnmeasuredRoute {
+  readonly path: string;
+  readonly reason: string;
+}
+
 export interface PrerenderReport {
   readonly out: string;
   readonly buildId: string;
   readonly pages: readonly PrerenderedPage[];
   /** Routes that exist and are not static. Reported, so "only 2 pages" is never a mystery. */
   readonly skipped: readonly string[];
+  /**
+   * Routes whose budget this build could not weigh, with the reason. `X_BUDGET_UNMEASURED` is what
+   * the gate then reports for each; this is the half that says WHY, which a per-route finding read
+   * off a stats file cannot know.
+   */
+  readonly unmeasured: readonly UnmeasuredRoute[];
   /** Where the measured stats landed, for the `budgets` gate step to read. */
   readonly stats: string;
   /** Client entries emitted, one chunk each. Reported so "which JS shipped?" needs no unzip. */
@@ -68,6 +81,22 @@ function heaviestSource(
 
 export const DEFAULT_ORIGIN = 'https://localhost';
 
+/**
+ * Prerendering and measuring are two questions, and conflating them made `X_BUDGET_UNMEASURED`
+ * unclosable by any invocation: only `static` was ever rendered, so a `budget:` on an ssr, isr,
+ * stream or spa route produced no `build-stats.json` entry however the build was run, and a gate
+ * whose finding no command can close is a gate an author learns to ignore.
+ *
+ * The first question decides what lands on a CDN — `isPrerenderable`, unchanged, because a page
+ * whose staleness nothing can correct must not be published. The second asks what a browser
+ * executes, and every render mode makes that promise. So a budgeted route is rendered IN MEMORY
+ * through the same `routeDocument` a request takes, weighed, and thrown away.
+ */
+const declaresBudget = (entry: RouteEntry): boolean => {
+  const budget = entry.config.budget;
+  return budget !== undefined && (budget.js !== undefined || budget.lcp !== undefined);
+};
+
 export async function prerenderSite(options: PrerenderOptions): Promise<PrerenderReport> {
   // The same load `x dev` and `x manifest` perform: importing the app's modules IS what fills the
   // route registry, so there is no route table to prerender before this runs.
@@ -77,6 +106,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   const pages: PrerenderedPage[] = [];
   const skipped: string[] = [];
   const routes: RouteStats[] = [];
+  const unmeasured: UnmeasuredRoute[] = [];
 
   // Before the first document: a page's `data-x-entry` is a built chunk's URL, so the chunks have
   // to exist to be named. Written into `out` too — a static export is served with no process
@@ -87,6 +117,29 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   for (const entry of routeEntries()) {
     if (!isPrerenderable(entry)) {
       skipped.push(entry.path);
+      if (!declaresBudget(entry)) continue;
+      // Non-fatal, and that is deliberate: an ssr page's `load` may want a request, a session or a
+      // database this build does not have, and a `x build --target static` that started failing on
+      // routes it never used to touch would be a worse regression than the gap it closes. A route
+      // that will not render here is reported, gets no stats entry, and stays `X_BUDGET_UNMEASURED`.
+      try {
+        const html = await routeDocument(
+          entry,
+          { url: new URL(entry.path, origin).href, params: {} },
+          { resolveIsland: (file: string) => islands.resolverFor(file) },
+        );
+        const measured = await measureDocumentJs(html, options.out);
+        const chain = heaviestSource(islands, measured.entries);
+        routes.push({
+          path: entry.path,
+          jsBytes: measured.jsBytes,
+          ...(chain === undefined ? {} : { heaviestChain: chain }),
+        });
+      } catch (error) {
+        // `renderThrowable`, never `String(error)`: this is a caught unknown, and a hostile
+        // `toString` here would take the whole build down instead of one route's measurement.
+        unmeasured.push({ path: entry.path, reason: renderThrowable(error) });
+      }
       continue;
     }
     const artifacts = await renderStatic(
@@ -120,6 +173,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     buildId,
     pages,
     skipped,
+    unmeasured,
     stats,
     islands: islands.chunks.map((chunk) => chunk.file),
   };

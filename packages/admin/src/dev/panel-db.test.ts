@@ -69,10 +69,47 @@ describe('assertReadOnly', () => {
     expect(assertReadOnly('select $$ delete from members $$ as note')).toBeNull();
   });
 
-  test('an unterminated quote leaves the rest of the statement visible to the scan', () => {
-    // Failing open on a malformed quote is the same bypass by another route. Postgres rejects
-    // this too, but the guard must not be the thing that let it through.
-    expect(assertReadOnly("select '; delete from members")).not.toBeNull();
-    expect(assertReadOnly('select "; drop table members')).not.toBeNull();
+  // The gap that made this a second, weaker guard: the keyword scan had no notion of a CALL, so
+  // every statement below is a syntactically perfect SELECT and every one of them does something
+  // a read may not do. `@ultimat3/mcp`'s guard already refused all of them; this panel now asks it.
+  test('refuses a read that calls out of the database, or holds a lock, or burns the clock', () => {
+    expect(assertReadOnly("select pg_read_file('/etc/passwd')")).not.toBeNull();
+    expect(assertReadOnly('select pg_sleep(60)')).not.toBeNull();
+    expect(assertReadOnly('select pg_advisory_lock(1)')).not.toBeNull();
+    expect(assertReadOnly("select set_config('work_mem', '1GB', false)")).not.toBeNull();
+    expect(assertReadOnly('select * from members for update')).not.toBeNull();
+  });
+
+  test('refuses a batch, even when every statement in it reads', () => {
+    // Batching is how a write rides in behind a read; the old scan tested the whole blob at once.
+    expect(assertReadOnly('select 1; select 2')).not.toBeNull();
+  });
+
+  test('a column whose name merely starts with a forbidden family is still readable', () => {
+    // The rule is a prefix on a CALL, never on a bare word — otherwise this is a false refusal.
+    expect(assertReadOnly('select pg_sleep_for_seconds from timings')).toBeNull();
+  });
+
+  // An unterminated delimiter blanks the remainder, so the `;` and the write keyword vanish
+  // before the statement count, the leader check and the write-keyword scan ever look. ALL FIVE
+  // forms failed open at once; a local test for a surviving `'`/`"` covered three of them and
+  // called a dollar-quoted body "a quote". Pinned here as one table because it is one mechanism.
+  test.each([
+    ['single quote', "select '; delete from members"],
+    ['E-string', "select E'x ; delete from members"],
+    ['double quote', 'select "; drop table members'],
+    ['dollar quote', 'select $tag$ ; delete from members'],
+    ['block comment', 'select 1 /* ; delete from members'],
+  ])('an unterminated %s cannot hide the statement behind it', (_form, sql) => {
+    expect(assertReadOnly(sql)).not.toBeNull();
+  });
+
+  test('a refusal never sends the developer to a flag that cannot fix it', () => {
+    // `x db psql --write` grants writes; it does not close a delimiter. Asserting the shape of
+    // the sentence, never another package's prose — only that this panel stopped claiming the
+    // write flag IS the fix.
+    const refusal = assertReadOnly("select '; delete from members") ?? '';
+    expect(refusal).toContain('Fix the statement, or');
+    expect(refusal).toContain('x db psql --write');
   });
 });

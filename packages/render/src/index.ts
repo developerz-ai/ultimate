@@ -154,6 +154,7 @@ export {
 export type { StreamHole, StreamOptions, StreamPlan } from './render-stream';
 export {
   collectStream,
+  DEFAULT_HOLE_TIMEOUT_MS,
   holeId,
   holeMarker,
   REVEAL_SCRIPT,

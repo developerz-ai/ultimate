@@ -27,12 +27,7 @@ import {
   type CrudResult,
 } from './crud';
 import type { AdminFieldType } from './fields';
-import {
-  type AdminMcpTool,
-  type AdminToolField,
-  adminMcpTools,
-  adminToolCatalog,
-} from './mcp-tools';
+import { type AdminMcpTool, adminMcpTools, adminToolCatalog } from './mcp-tools';
 import { confirmationToken } from './permissions';
 import type { AdminAction, AdminRow } from './registry';
 import { adminSearch } from './search';
@@ -187,13 +182,23 @@ const JSON_TYPE: Readonly<Record<AdminFieldType, NonNullable<JsonSchema['type']>
   file: 'string',
 };
 
-const inputSchema = (fields: readonly AdminToolField[]): JsonSchema => ({
+/**
+ * `additionalProperties` is closed for every derived CRUD tool — the admin knows every field an
+ * entity has, so an argument outside that set is a mistake worth refusing at the client.
+ *
+ * It is OPEN for an action tool, and that is the whole point: the fields `mcp-tools.ts` declares
+ * there are the admin's own envelope (`id`, `confirmation`), while the action's real input is its
+ * own Standard Schema, which this package does not own and does not project. Closed would refuse
+ * exactly the arguments the action needs; a made-up field list would describe a contract nobody
+ * validates against. Open lets the action's own validation be the one that decides.
+ */
+const inputSchema = (tool: AdminMcpTool): JsonSchema => ({
   type: 'object',
   properties: Object.fromEntries(
-    fields.map((field) => [field.name, { type: JSON_TYPE[field.type] }]),
+    tool.input.map((field) => [field.name, { type: JSON_TYPE[field.type] }]),
   ),
-  required: fields.filter((field) => field.required).map((field) => field.name),
-  additionalProperties: false,
+  required: tool.input.filter((field) => field.required).map((field) => field.name),
+  additionalProperties: tool.kind === 'action',
 });
 
 /**
@@ -256,7 +261,7 @@ function toMcpTool(opts: AdminMcpOptions, requestId: () => string, tool: AdminMc
   return {
     name: tool.name,
     description: tool.description,
-    inputSchema: inputSchema(tool.input),
+    inputSchema: inputSchema(tool),
     destructive: tool.destructive,
     // Visibility IS the gate: a tool this actor may not call is absent from `tools/list` and
     // answers ToolNotFound on call, never Forbidden — Forbidden would confirm the tool exists

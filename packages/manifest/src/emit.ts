@@ -56,8 +56,11 @@ export async function emitManifest(input: EmitInput): Promise<EmitResult> {
   const text = manifestJson(input.manifest);
 
   if (input.stdout === true) {
-    // stdout is the wire in `--json` mode; nothing else may be written to it.
-    Bun.stdout.write(text);
+    // stdout is the wire in `--json` mode; nothing else may be written to it — and the write is
+    // AWAITED, because a write to a pipe is asynchronous and `process.exit()` throws away whatever
+    // is still queued. Unawaited, the largest payload the CLI prints was the one that lost bytes,
+    // exactly as `scripts/stdout-truncation.test.ts` documents for the same bug elsewhere.
+    await Bun.write(Bun.stdout, text);
     return { path, bytes: text.length, buildId: input.manifest.buildId, changed: false };
   }
 

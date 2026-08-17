@@ -98,6 +98,20 @@ describe('the admin MCP catalog is computed per caller', () => {
     expect(mcp.tools.length).toBeGreaterThan(3);
   });
 
+  // A CRUD tool's fields are every field the entity has, so an argument outside them is a typo.
+  // An action's real input is its own Standard Schema, which this package does not project —
+  // closed with an empty `properties` was a schema that forbade every argument `dispatch` reads.
+  test('a CRUD tool closes its argument set and an action tool does not', () => {
+    const schemaOf = (name: string): Record<string, unknown> =>
+      (mcp.tools.find((tool) => tool.name === name)?.inputSchema ?? {}) as Record<string, unknown>;
+
+    expect(schemaOf('admin.admin_mcp_post.create')['additionalProperties']).toBe(false);
+
+    const action = schemaOf('admin.action.post.publish');
+    expect(action['additionalProperties']).toBe(true);
+    expect(Object.keys(action['properties'] as Record<string, unknown>)).toContain('id');
+  });
+
   test('a second caller against the SAME server gets a different catalog', async () => {
     const editor = caller('editor');
     const reader = caller('reader');

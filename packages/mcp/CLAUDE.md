@@ -98,6 +98,23 @@ import. The CLI wires it.
   reads the input. A hand-written app tool is the same: its `policy` reaches `guard()` from
   `@ultimat3/action`, which is the one authz path that reads the input — never a second check
   written for MCP.
+- **A URI is taken once.** `ResourceRegistry.register` throws `X_MCP_RESOURCE_DUPLICATE` on a
+  second claim, exactly as `ToolRegistry.register` throws on a second tool name — one package
+  cannot answer "this name is taken" two ways. `Map.set` made the answer whichever provider was
+  wired last, and a `ultimate://` URI is quoted in AGENTS.md files.
+- **`\'` inside a string literal is refused** (`readonly-sql.ts`). `E'\''` is one quote to
+  Postgres and `standard_conforming_strings` decides the plain spelling, so the two readings
+  disagree about where the string ends — which is exactly where a `;` hides.
+  `select E'\'' ; drop table posts --'` was accepted as one read-only statement and handed back
+  verbatim to run. Only inside a single-quoted run: a comment, a `$tag$` body and a quoted
+  identifier are unambiguous and still read fine.
+- **An unterminated run is refused, never swallowed** (`readonly-sql.ts`). The stripper blanks what
+  it believes is inside a literal, so an opening delimiter that never closes hid the whole tail:
+  `select '; delete from members` counted one statement with no mutating keyword and was handed
+  back to run. All four forms now throw `X_MCP_QUERY_REJECTED` — `'`, `"`, `$tag$`, `/* */`. Not
+  exploitable through Postgres (a syntax error either way); the point is that this layer must not
+  be the thing that waves it through. `@ultimat3/admin`'s `/_x` panel failed CLOSED here where this
+  failed open, which is how it was found — a second, differently-behaved copy of one rule.
 - `db.query` / `db.migrate` refuse structurally, in `readonly-sql.ts`, before the host runs
   (`X_MCP_QUERY_REJECTED` / `X_MCP_NOT_BRANCH_DB` — one code each, because they want different
   next commands).

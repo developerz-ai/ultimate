@@ -8,10 +8,15 @@ import {
   BUILD_ENTRY,
   BUILD_TARGETS,
   binaryArgs,
+  buildResult,
+  preflightResult,
   readTarget,
   requireEntry,
 } from './cmd-build';
 import { planNewApp } from './cmd-new';
+import type { ExecResult } from './exec';
+import type { CommandResult } from './output';
+import { renderJson } from './output';
 import type { ThrownShape } from './thrown-by';
 import { thrownBy } from './thrown-by';
 
@@ -65,6 +70,64 @@ test('the binary target defines the version the executable has no manifest to re
   expect(at).toBeGreaterThan(-1);
   expect(args[at + 1]).toBe(`${VERSION_DEFINE}="${frameworkVersion()}"`);
   expect(args[at + 1]).toMatch(/^ULTIMATE_FRAMEWORK_VERSION="\d+\.\d+\.\d+/);
+});
+
+const exec = (ok: boolean): ExecResult => ({
+  command: ['docker', 'build'],
+  code: ok ? 0 : 1,
+  ok,
+  stdout: 'Step 1/9 : FROM oven/bun:1.3-alpine',
+  stderr: ok ? '' : 'ERROR: failed to solve: process did not complete successfully',
+  durationMs: 12,
+});
+
+test('a failed build says so in its summary line, not "built docker"', () => {
+  const failed = buildResult({
+    target: 'docker',
+    artifact: 'app:dev',
+    command: ['docker', 'build'],
+    result: exec(false),
+  });
+  expect(failed.ok).toBe(false);
+  // The bug: `summary` was `msg('cli.build.done')` unconditionally, so a build that exited 1
+  // printed `✗ built docker` — and every reader whose channel is the summary line read a success.
+  expect(failed.summary).not.toContain('built');
+  expect(
+    buildResult({
+      target: 'docker',
+      artifact: 'app:dev',
+      command: ['docker', 'build'],
+      result: exec(true),
+    }).summary,
+  ).toBe('built docker');
+});
+
+test("a failed build's own output reaches --json, not only the terminal", () => {
+  const failed = buildResult({
+    target: 'docker',
+    artifact: 'app:dev',
+    command: ['docker', 'build'],
+    result: exec(false),
+  });
+  // `lines` is declared human-only and "never carries data JSON does not have" — and `renderJson`
+  // drops it. The builder's own stderr was therefore invisible to CI, which runs `--json`.
+  const payload = JSON.parse(renderJson(failed)) as { data: { output?: string } };
+  expect(payload.data.output).toContain('failed to solve');
+  expect(failed.lines?.join('\n')).toContain('failed to solve');
+});
+
+test('a build blocked by the static gate still reports as the build command', () => {
+  const verify: CommandResult = {
+    ok: false,
+    command: 'verify',
+    summary: '1 of 6 steps failed',
+    steps: [{ name: 'lint', ok: false, durationMs: 3, findings: [] }],
+  };
+  // An agent keys `--json` off `command`: a `build` that answers `"command":"verify"` sends it to
+  // re-run a gate it never asked for, and hides that the build never started.
+  expect(preflightResult(verify).command).toBe('build');
+  expect(preflightResult(verify).steps).toBe(verify.steps);
+  expect(preflightResult(verify).ok).toBe(false);
 });
 
 test('an unknown target names the known ones and a working invocation', () => {

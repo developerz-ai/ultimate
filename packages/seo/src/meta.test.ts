@@ -1,11 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  applyTitleTemplate,
-  hreflangSet,
-  type RouteMeta,
-  renderHeadTags,
-  renderMeta,
-} from './meta';
+import { applyTitleTemplate, hreflangSet, type RouteMeta, renderMeta } from './meta';
 
 const META: RouteMeta = {
   title: 'Ship it',
@@ -107,12 +101,29 @@ describe('renderMeta', () => {
     );
   });
 
-  test('renderHeadTags escapes text and neutralises a </script> break-out', () => {
-    const html = renderHeadTags(
-      renderMeta({ title: 'A & B', ld: [{ '@type': 'Thing', name: '</script><img>' }] }),
-    );
-    expect(html).toContain('<title>A &amp; B</title>');
-    expect(html).not.toContain('</script><img>');
-    expect(html).toContain('<\\/script>');
+  /**
+   * This package CONSTRUCTS head tags and serialises none of them: `renderHeadTags` used to live
+   * here, was called by nothing, and escaped `</` only — so the one path that existed was weaker
+   * than the one every document actually takes (`@ultimat3/render`'s `renderHead`). What survives
+   * the deletion is the contract between the two, which is entirely in the DATA:
+   *
+   * - `text` is the raw JSON, unescaped, because escaping belongs to whoever emits the element;
+   * - `attrs.type` ends in `json`, which is the flag render's `carriesJson` keys the total JSON
+   *   escape off. Spell that attribute differently and render silently downgrades a JSON body to
+   *   the rule for executable code — no test would fail, and `meta.ld` is built from route data.
+   */
+  test('an ld node is emitted as DATA: raw JSON under a ld+json type, escaped by nobody here', () => {
+    const injected = '</script><img src=x onerror=alert(1)>';
+    const tags = renderMeta({ title: 'A & B', ld: [{ '@type': 'Thing', name: injected }] });
+
+    const script = tags.filter((tag) => tag.tag === 'script');
+    expect(script).toHaveLength(1);
+    expect(script[0]?.attrs['type']).toBe('application/ld+json');
+    expect(script[0]?.attrs['type']?.endsWith('json')).toBe(true);
+    // Verbatim, and still parseable as the object it came from.
+    expect(script[0]?.text).toBe(JSON.stringify({ '@type': 'Thing', name: injected }));
+
+    // The title is data too — `&` is not entity-escaped until something renders it.
+    expect(tags.find((tag) => tag.tag === 'title')?.text).toBe('A & B');
   });
 });

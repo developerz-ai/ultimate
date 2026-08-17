@@ -78,9 +78,10 @@ export const envCommand: CliCommand = {
     summary: `the typed environment declared by ${ENV_SCHEMA_EXPORT} in ${APP_CONFIG_FILE}`,
     usage: 'x env [check|example] [--json]',
     requiresApp: true,
-    // `check` is first, so the bare `x env` answers the question the fix line on every
-    // `X_ENV_MISSING` in this framework already tells its reader to run.
     subcommands: ['check', 'example'],
+    // The bare `x env` answers the question the fix line on every `X_ENV_MISSING` in this
+    // framework already tells its reader to run.
+    defaultSubcommand: 'check',
     flags: [],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {

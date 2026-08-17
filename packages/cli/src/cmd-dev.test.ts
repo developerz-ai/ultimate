@@ -223,7 +223,12 @@ describe('unit · x dev boots the app', () => {
     const write = (await (await fetchDev('/_x/db?json=1&sql=delete%20from%20x_jobs')).json()) as {
       data: { result: unknown; refused: string | null };
     };
-    expect(write.data.refused).toContain('read-only');
+    // Asserts the two halves an operator needs, not the prose around them: WHICH word made it a
+    // write, and the one command that runs it anyway. Matching a phrase like "read-only" passed
+    // for a refusal that named neither — and it broke the moment the panel stopped calling a
+    // syntax error a permissions problem.
+    expect(write.data.refused).toContain('"delete"');
+    expect(write.data.refused).toContain('x db psql --write');
     expect(write.data.result).toBeNull();
   });
 

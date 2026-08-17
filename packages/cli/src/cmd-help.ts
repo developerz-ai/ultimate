@@ -51,6 +51,9 @@ const catalogue = (specs: readonly CommandSpec[]): JsonValue =>
     usage: spec.usage,
     aliases: [...(spec.aliases ?? [])],
     subcommands: [...(spec.subcommands ?? [])],
+    // `null` rather than absent: an agent reading this has to be able to tell "the bare form runs
+    // this one" from "the bare form is refused", and a missing key reads as neither.
+    defaultSubcommand: spec.defaultSubcommand ?? null,
     flags: [...(spec.flags ?? []), ...GLOBAL_FLAGS].map((flag) => ({
       name: flag.name,
       type: flag.type,

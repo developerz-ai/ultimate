@@ -94,8 +94,8 @@ export function resetMails(): void {
 
 /**
  * Validate, render, and build the envelope — everything `send` does before it decides
- * between the queue and the transport. Exported so `x mail preview` and tests can render
- * without delivering anything.
+ * between the queue and the transport. Exported so a host or a test can render a mail without
+ * delivering it — the `/_x` mail panel and `mailIdempotencyKey`'s callers both need that.
  */
 export function renderMessage<I>(
   mail: MailDefinition<I>,

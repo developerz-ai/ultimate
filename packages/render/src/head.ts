@@ -9,6 +9,8 @@
 
 import type { RouteMeta } from '@ultimat3/seo';
 import { BudgetExceededError } from './errors';
+// `html.ts` is this package's one escaper — a second one is how a character ends up missing.
+import { escapeAttribute, escapeJsonContent, escapeRawTextContent, escapeText } from './html';
 
 export type HeadTagKind = 'title' | 'base' | 'meta' | 'link' | 'script' | 'style';
 
@@ -106,21 +108,30 @@ export function renderHead(tags: readonly HeadTag[]): string {
 function renderTag(tag: HeadTag): string {
   const attrs = Object.entries(tag.attrs ?? {})
     .map(([name, value]) =>
-      value === true ? ` ${name}` : ` ${name}="${escapeAttr(String(value))}"`,
+      value === true ? ` ${name}` : ` ${name}="${escapeAttribute(String(value))}"`,
     )
     .join('');
   if (VOID_KINDS.has(tag.kind)) return `<${tag.kind}${attrs}>`;
   const raw = tag.content ?? '';
-  const isRaw = tag.kind === 'script' || tag.kind === 'style';
-  return `<${tag.kind}${attrs}>${isRaw ? raw : escapeText(raw)}</${tag.kind}>`;
+  return `<${tag.kind}${attrs}>${contentOf(tag, raw)}</${tag.kind}>`;
 }
 
-function escapeAttr(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+/**
+ * Three contexts, three rules, and the one that was missing was the one attacker text reaches.
+ * `script`/`style` are raw text (`escapeRawTextContent`); a JSON-carrying script is data, so it
+ * takes the total JSON rule; everything else is HTML text, where a character reference IS decoded.
+ * `content` was emitted VERBATIM for script and style until `As of 2026-08`, which made any string
+ * reaching `meta.ld` — a title, a product name, a bio — able to close the element.
+ */
+function contentOf(tag: HeadTag, raw: string): string {
+  if (tag.kind !== 'script' && tag.kind !== 'style') return escapeText(raw);
+  return carriesJson(tag) ? escapeJsonContent(raw) : escapeRawTextContent(raw);
 }
 
-function escapeText(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+/** `application/ld+json`, `application/json`, any `…+json`: the body is data, not code. */
+function carriesJson(tag: HeadTag): boolean {
+  const type = tag.attrs?.['type'];
+  return typeof type === 'string' && type.trim().toLowerCase().endsWith('json');
 }
 
 export interface ThemeScriptOptions {

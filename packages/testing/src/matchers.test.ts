@@ -84,6 +84,28 @@ describe('unit · matchers', () => {
     expect({ operations: [{ operationId: 'publishPost' }] }).not.toMatchOpenApi(committed);
   });
 
+  // A parameter that was optional and is now required breaks every caller that already omits it,
+  // and the matcher compared operation ids alone — so a suite naming it read as covered while the
+  // one change most likely to break a client passed.
+  test('toMatchOpenApi fails when a surviving operation newly requires a parameter', () => {
+    const committed = { operations: [{ operationId: 'listPosts', required: ['orgId'] }] };
+    expect({ operations: [{ operationId: 'listPosts', required: ['orgId'] }] }).toMatchOpenApi(
+      committed,
+    );
+    expect({
+      operations: [{ operationId: 'listPosts', required: ['orgId', 'cursor'] }],
+    }).not.toMatchOpenApi(committed);
+    // Dropping a requirement widens what the API accepts, so it is not breaking.
+    expect({ operations: [{ operationId: 'listPosts', required: [] }] }).toMatchOpenApi(committed);
+  });
+
+  // The received value is `unknown`: a matcher that casts and dereferences turns "you passed the
+  // wrong thing" into a TypeError with no code, from inside the assertion library.
+  test('toMatchOpenApi refuses a received value that is not an OpenAPI document', () => {
+    expect({ paths: {} }).not.toMatchOpenApi({ operations: [] });
+    expect(null).not.toMatchOpenApi({ operations: [] });
+  });
+
   test('toBeWithinBudget compares against the declared limit', () => {
     expect(40_000).toBeWithinBudget(40_960);
     expect(61_000).not.toBeWithinBudget(40_960);

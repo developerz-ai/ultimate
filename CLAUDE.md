@@ -177,7 +177,14 @@ Everything in the framework is one of these. **If a feature doesn't fit one of t
 - Comments explain **why**, never what.
 - Every package carries `README.md` (public API) + `CLAUDE.md` (boundary, deps, commands).
 - Route files: `page.tsx` on `site/`/`app/`, `route.ts` on `api/` — the directory is the URL, never the filename. `index.tsx` is not a page and `<name>.tsx` is not a route; `registerRoute()` enforces it (`X_ROUTE_FILE_INVALID`).
-- i18n catalogs: one flat file per locale, `packages/i18n/catalogs/<locale>.json` — never a directory per locale or a file per feature. `x g route` / `x g resource` merge keys into it.
+- i18n catalogs: one flat file per locale, never a directory per locale or a file per feature. **Two
+  paths, and they are different things** — an **app's** catalogs live at
+  `packages/i18n/catalogs/<locale>.json` (`CATALOG_ROOT`, what `x g route` / `x g resource` merge
+  keys into, and what both tracked apps have on disk); the **framework's own** catalog is
+  `packages/i18n/src/catalogs/en.json`, imported by `framework.ts`. `x i18n check` audits the first;
+  the `boundaries` step audits the second (`X_CATALOG_KEY_UNREACHABLE`), because pointing an app
+  check at this repo silently answers `ok` — `CATALOG_ROOT` does not exist here, so it loads zero
+  locales and passes.
 - Docs style: lead with the rule, fragments over sentences, tables for any ≥3-row structure, no meta-framing, no trailing summary. Date load-bearing claims `As of 2026-07`.
 
 ## Where things live

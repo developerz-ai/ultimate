@@ -342,8 +342,10 @@ export function createSecretsCommand(io: SecretsIo): CliCommand {
       summary: `the committed encrypted secrets, decrypted into the ${ENV_SCHEMA_EXPORT} variables of the same names`,
       usage: 'x secrets [show|init|edit|set <NAME>|rotate] [--json]',
       requiresApp: true,
-      // `show` first, so the bare `x secrets` answers without a key ever leaving the file.
       subcommands: [...SECRETS_SUBCOMMANDS],
+      // The bare `x secrets` answers without a key ever leaving the file. Declared, not inherited
+      // from the array's order — `init`, `edit`, `set` and `rotate` all write.
+      defaultSubcommand: 'show',
       flags: [],
     },
     async run(ctx: CommandContext): Promise<CommandResult> {

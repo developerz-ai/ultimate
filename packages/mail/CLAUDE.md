@@ -50,6 +50,12 @@
   reply is passed through verbatim, and that is where the refused address comes from.
 - Every header value is checked for CR/LF (`X_MAIL_HEADER_INVALID`) before folding — interpolated
   data reaches `Subject`, and a break there injects headers. Refuse it, never strip it.
+- Every ENVELOPE address is checked the same way and separately (`X_MAIL_ADDRESS_INVALID`,
+  `envelope-address.ts`, called by `smtpDeliver`). Two wire formats, one gate each: `bcc` is not a
+  header, so the header gate never sees it, and on the inline send path no schema does either — a
+  `bcc` of `ops@x.test\r\nRCPT TO:<evil@y.test>` relayed mail over the app's own authenticated
+  connection. The refused set is control characters plus `<` and `>`; a space is deliberately
+  allowed (quoted local-parts) and non-ASCII is SMTPUTF8's question, not this check's.
 
 ## Commands
 

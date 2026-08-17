@@ -10,6 +10,7 @@ const CATALOG = {
   'cli.flags.heading': 'flags',
   'cli.commands.heading': 'commands',
   'cli.build.done': 'built {target}',
+  'cli.build.failed': '{target} build failed',
   // `describeCron`'s vocabulary. `@ultimat3/time` is tier 1 and reaches no i18n runtime, so the
   // caller supplies the words — and the caller here is a rendered `x tasks show` line, which is
   // exactly what this catalog holds. `msg()` leaves an un-supplied `{n}`/`{time}`/`{days}`/

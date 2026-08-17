@@ -3,6 +3,10 @@
 // order regardless of directive order, and `hydrateRuntimeBytes` must agree with the runtime text.
 
 import { describe, expect, test } from 'bun:test';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   DEFAULT_REPLAY_EVENTS,
   emitIslandAttributes,
@@ -77,7 +81,16 @@ describe('emitIslandProps', () => {
   test('a "<" inside a prop value is escaped to \\u003c, not left raw', () => {
     const html = emitIslandProps(directive({ strategy: 'idle', props: { html: '<script>' } }));
     expect(html).not.toContain('<script>');
-    expect(html).toContain('\\u003cscript>');
+    expect(html).toContain('\\u003cscript\\u003e');
+  });
+
+  test('a closing tag in a prop value cannot end the props script', () => {
+    const props = { html: '</script><img src=x onerror=alert(1)>' };
+    const html = emitIslandProps(directive({ strategy: 'idle', props }));
+    expect(html).not.toContain('<img');
+    expect(html.split('</script>').length - 1).toBe(1);
+    const body = /data-x-props="[^"]*">([\s\S]*)<\/script>$/.exec(html)?.[1] ?? '';
+    expect(JSON.parse(body)).toEqual(props);
   });
 });
 
@@ -188,5 +201,145 @@ describe('hydrateRuntimeBytes', () => {
 describe('DEFAULT_REPLAY_EVENTS', () => {
   test('is the exact default replay event list', () => {
     expect(DEFAULT_REPLAY_EVENTS).toEqual(['click', 'input', 'change', 'submit', 'keydown']);
+  });
+});
+
+// The emitted runtime, EXECUTED. Everything above pins the STRING; the replay contract is a
+// promise ordering inside it, and a string assertion cannot see an early flush. Driven by a
+// deferred mount rather than by a timer: the failure is "the queue flushed before the chunk
+// mounted", which is an ordering fact, and a wall-clock assertion would only be a slower guess.
+describe('the interaction runtime, executed', () => {
+  interface Harness {
+    /** Fire one replayable event at the island, as a real listener would receive it. */
+    readonly fire: (type: string) => void;
+    /** Event types the runtime re-dispatched onto the target. */
+    readonly replayed: readonly string[];
+    /** Let the island's `mount` finish. */
+    readonly finishMount: () => void;
+    readonly mounts: () => number;
+    readonly dispose: () => Promise<void>;
+  }
+
+  /** One turn of the loop, so a promise chain that WOULD have flushed has flushed. */
+  const settle = async (): Promise<void> => {
+    for (let i = 0; i < 8; i += 1) await Promise.resolve();
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  };
+
+  async function bootInteractionRuntime(): Promise<Harness> {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-hydrate-'));
+    const globals = globalThis as unknown as Record<string, unknown>;
+
+    let mounts = 0;
+    let finishMount = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      finishMount = resolve;
+    });
+    globals['__xTestMount'] = (): Promise<void> => {
+      mounts += 1;
+      return gate;
+    };
+
+    const island = join(dir, 'island.mjs');
+    await writeFile(island, 'export function mount(){return globalThis.__xTestMount()}\n', 'utf8');
+
+    const replayed: string[] = [];
+    class FakeEvent {
+      readonly type: string;
+      readonly target: unknown;
+      constructor(type: string, init: { target: unknown }) {
+        this.type = type;
+        this.target = init.target;
+      }
+    }
+    const listeners = new Map<string, ((event: FakeEvent) => void)[]>();
+    const element = {
+      getAttribute: (name: string): string | null =>
+        name === 'data-x-entry' ? pathToFileURL(island).href : null,
+      addEventListener: (name: string, fn: (event: FakeEvent) => void): void => {
+        listeners.set(name, [...(listeners.get(name) ?? []), fn]);
+      },
+      removeEventListener: (name: string, fn: (event: FakeEvent) => void): void => {
+        listeners.set(
+          name,
+          (listeners.get(name) ?? []).filter((one) => one !== fn),
+        );
+      },
+      dispatchEvent: (event: FakeEvent): boolean => {
+        replayed.push(event.type);
+        return true;
+      },
+    };
+    globals['document'] = {
+      querySelectorAll: (selector: string): unknown[] =>
+        selector.includes('interaction') ? [element] : [],
+      // No props script: the island takes none, so `boot` must still reach the import.
+      querySelector: (): unknown => null,
+    };
+
+    const runtime = join(dir, 'runtime.mjs');
+    const source = hydrateRuntime([directive({ strategy: 'interaction', events: ['click'] })])
+      .replace('<script type="module">', '')
+      .replace('</script>', '');
+    await writeFile(runtime, source, 'utf8');
+    await import(pathToFileURL(runtime).href);
+
+    return {
+      fire: (type) => {
+        for (const fn of listeners.get(type) ?? []) fn(new FakeEvent(type, { target: element }));
+      },
+      replayed,
+      finishMount,
+      mounts: () => mounts,
+      dispose: async () => {
+        globals['document'] = undefined;
+        globals['__xTestMount'] = undefined;
+        await rm(dir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  // The bug: `boot` set `el.__x = 1` and returned a RESOLVED promise to every later caller, so a
+  // second click while the chunk was still loading flushed the queue into an island that did not
+  // exist yet — the events were re-dispatched at nothing and the listeners were already gone.
+  test('a second interaction before the chunk mounts does not flush the queue', async () => {
+    const harness = await bootInteractionRuntime();
+    try {
+      harness.fire('click');
+      harness.fire('click');
+      await settle();
+
+      expect(harness.replayed).toEqual([]);
+
+      harness.finishMount();
+      await settle();
+
+      expect(harness.mounts()).toBe(1);
+      expect(harness.replayed).toEqual(['click', 'click']);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  test('one interaction still replays once the chunk mounts', async () => {
+    const harness = await bootInteractionRuntime();
+    try {
+      harness.fire('click');
+      await settle();
+      expect(harness.replayed).toEqual([]);
+
+      harness.finishMount();
+      await settle();
+      expect(harness.replayed).toEqual(['click']);
+
+      // Listeners are removed once drained, so a click after the mount is the island's own.
+      harness.fire('click');
+      await settle();
+      expect(harness.replayed).toEqual(['click']);
+    } finally {
+      await harness.dispose();
+    }
   });
 });

@@ -130,6 +130,12 @@ services:
   # Dry run is the default, so \`--write\` is explicit.
   backfill:
     <<: *image
+    # The image's ENTRYPOINT is \`bun apps/web/server.ts\`, and that entry reads ROLE and PORT and
+    # NOTHING ELSE — argv never reaches a parser. A bare \`command:\` is appended to it and silently
+    # discarded, so this service used to serve HTTP as ROLE=web under a name that said otherwise.
+    # Overriding the entrypoint is what makes the words below a command. The file path, not
+    # \`node_modules/.bin/x\`: it needs no bin symlink and no executable bit inside the image.
+    entrypoint: ['bun', 'node_modules/@ultimat3/cli/src/bin.ts']
     command: ['db', 'backfill', '--all', '--write', '--json']
     depends_on:
       db: { condition: service_healthy }
@@ -259,6 +265,19 @@ that no longer matches an applied migration stops the release instead of corrupt
 
 There is no \`x db migrate\` in that list on purpose: it is the developer's command and it needs the
 toolchain, while the release phase runs the shipped image and nothing else.
+
+### One-off commands need a new entrypoint, not arguments
+
+\`ENTRYPOINT\` is \`bun apps/web/server.ts\`, and that entry reads \`ROLE\` and \`PORT\` and **nothing
+else** — argv never reaches a parser. So arguments appended to it are discarded in silence:
+
+\`\`\`sh
+docker run ${app.kebab}:dev db backfill --all --write     # serves ROLE=web, forever
+docker run --entrypoint bun ${app.kebab}:dev node_modules/@ultimat3/cli/src/bin.ts db backfill --all --write --json
+\`\`\`
+
+The \`backfill\` service in \`docker-compose.prod.yml\` is the second form. A Kubernetes \`Job\` running
+a one-off command sets \`command:\` (the entrypoint) as well as \`args:\`, for the same reason.
 
 ## Environment
 

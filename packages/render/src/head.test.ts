@@ -148,9 +148,12 @@ describe('renderHead', () => {
     expect(html).toBe('<meta name="a" content="b">');
   });
 
-  test('attribute values are escaped for &, " and < (not >, which is not in the escape set)', () => {
+  // One escaper for the package (`html.ts`), so this is `escapeAttribute`'s set: &, <, > and ".
+  // It was a private copy here that left `>` alone — harmless in an attribute, but a second
+  // escaper is how one of them ends up missing a character that is not harmless.
+  test('attribute values are escaped for &, ", < and >', () => {
     const html = renderHead([{ kind: 'meta', key: 'meta:a', attrs: { content: '<a> & "b"' } }]);
-    expect(html).toBe('<meta content="&lt;a> &amp; &quot;b&quot;">');
+    expect(html).toBe('<meta content="&lt;a&gt; &amp; &quot;b&quot;">');
   });
 
   test('title content is escaped for &, < and >', () => {
@@ -159,7 +162,10 @@ describe('renderHead', () => {
     );
   });
 
-  test('script and style content are emitted raw, not escaped', () => {
+  // Raw text, NOT HTML text: a character reference is not decoded inside script/style, so
+  // `&lt;` there would ship the six characters to the parser and break the code. `<` on its own
+  // ends nothing — only `</` + the tag name does — so a comparison operator survives untouched.
+  test('script and style content keep every character a comparison needs', () => {
     const scriptHtml = renderHead([
       { kind: 'script', key: 'script:a', content: 'if(1<2){var t=1}' },
     ]);
@@ -169,6 +175,72 @@ describe('renderHead', () => {
     const styleHtml = renderHead([{ kind: 'style', key: 'style:a', content: 'a<b & c>d' }]);
     expect(styleHtml).toBe('<style>a<b & c>d</style>');
     expect(styleHtml).not.toContain('&lt;');
+  });
+
+  // The pinned assertion this replaces read "script and style content are emitted raw, not
+  // escaped" and asserted the ABSENCE of any escaping — it pinned the injection below.
+  test('a closing tag inside script/style content cannot end the element', () => {
+    const scriptHtml = renderHead([
+      { kind: 'script', key: 'script:a', content: 'var t="</script><img src=x onerror=alert(1)>"' },
+    ]);
+    expect(scriptHtml).toContain('<\\/script>');
+    expect(scriptHtml.indexOf('</script>')).toBe(scriptHtml.length - '</script>'.length);
+
+    const styleHtml = renderHead([
+      { kind: 'style', key: 'style:a', content: 'a{content:"</style><script>alert(1)</script>"}' },
+    ]);
+    // An OPENING `<script>` inside a style element is inert — RAWTEXT ends at `</style` and at
+    // nothing else — so the invariant is that the element still closes exactly once, at the end.
+    expect(styleHtml.indexOf('</style>')).toBe(styleHtml.length - '</style>'.length);
+    expect(styleHtml).toContain('<\\/style>');
+  });
+
+  // `<!--<script>` puts the tokenizer in script-data-double-escaped, where the element's own
+  // closing tag does not close it — the rest of the document becomes script text.
+  test('an HTML comment opener inside script content cannot start the escaped state', () => {
+    const html = renderHead([{ kind: 'script', key: 'script:a', content: 'var t="<!--<script>"' }]);
+    expect(html).not.toContain('<!--');
+    expect(html).toContain('<\\!--');
+  });
+});
+
+// The injection this file exists to refuse: `meta.ld` is built from route data — a title, a
+// product name, an author's bio — and `renderTag` is the path every `x dev` and every build takes.
+describe('JSON-LD content', () => {
+  const ldHead = (node: unknown): string =>
+    renderHead(
+      headFromMeta({ title: 'T' } as RouteMeta, {
+        renderMeta: () => [],
+        renderLd: () => JSON.stringify(node),
+      }),
+    );
+
+  const ldBody = (html: string): string => {
+    const match = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html);
+    if (match?.[1] === undefined) throw new Error(`no ld+json script in ${html}`);
+    return match[1];
+  };
+
+  test('a closing script tag in a JSON-LD string cannot escape the element', () => {
+    const name = '</script><img src=x onerror=alert(1)>';
+    const html = ldHead({ '@type': 'WebSite', name });
+    expect(html).not.toContain('<img');
+    expect(html).not.toContain('</script><');
+    // Exactly one `</script>` in the document: the one this renderer wrote.
+    expect(html.split('</script>').length - 1).toBe(1);
+  });
+
+  test('the escaped JSON-LD is still the same JSON', () => {
+    const name = '</script> & <!--<script>   done';
+    const parsed: unknown = JSON.parse(ldBody(ldHead({ '@type': 'WebSite', name })));
+    expect(parsed).toEqual({ '@type': 'WebSite', name });
+  });
+
+  test('the JSON escape is \\u-form, never an HTML entity — an entity is not decoded here', () => {
+    const html = ldHead({ '@type': 'WebSite', name: '<a> & </b>' });
+    expect(html).not.toContain('&lt;');
+    expect(html).not.toContain('&amp;');
+    expect(ldBody(html)).toContain('\\u003c');
   });
 
   test('a tag with no content renders empty content, not the string "undefined"', () => {

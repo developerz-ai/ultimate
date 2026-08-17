@@ -37,6 +37,7 @@ export {
   McpNotBranchDbError,
   McpProtocolError,
   McpQueryRejectedError,
+  McpResourceDuplicateError,
   McpScopeConflictError,
   McpScopeDeniedError,
   McpScopeUnknownError,

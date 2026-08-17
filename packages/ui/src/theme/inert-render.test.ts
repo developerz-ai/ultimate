@@ -27,8 +27,10 @@ import { Money } from '../components/Money';
 import { Pagination } from '../components/Pagination';
 import { Popover } from '../components/Popover';
 import { RelativeTime } from '../components/RelativeTime';
+import { Select } from '../components/Select';
 import { Spinner } from '../components/Spinner';
 import { Tabs } from '../components/Tabs';
+import { Textarea } from '../components/Textarea';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { Toast } from '../components/Toast';
 import { Toolbar } from '../components/Toolbar';
@@ -253,6 +255,48 @@ describe('the inert server path', () => {
       expect(html.startsWith('<')).toBe(true);
     });
   }
+
+  // The two controls whose current value is NOT an attribute. Asserted on the rendered string
+  // because that is the whole bug: `value={…}` typechecks, reads correct, and the parser drops it.
+  test('Textarea carries its value as text content, never a value attribute', () => {
+    const html = render(h(Textarea as never, { name: 'bio', value: 'hello' }));
+
+    expect(html).not.toContain('value=');
+    // The serializer's leading newline, which the parser strips, then the value. Escaping is
+    // `@ultimat3/render`'s (`escapeText`), not this file's — the harness here is a 30-line copy.
+    expect(html).toContain('>\nhello</textarea>');
+  });
+
+  test('Select marks the matching option selected, never a value attribute', () => {
+    const html = render(
+      h(Select as never, {
+        name: 'status',
+        value: 'sent',
+        options: [
+          { value: 'draft', label: 'Draft' },
+          { value: 'sent', label: 'Sent' },
+        ],
+      }),
+    );
+
+    expect(/<select[^>]*>/.exec(html)?.[0] ?? '').not.toContain('value=');
+    expect(html).toContain('<option value="sent" selected>Sent</option>');
+    expect(html).toContain('<option value="draft">Draft</option>');
+  });
+
+  test('Select falls back to the placeholder when the value matches no option', () => {
+    const html = render(
+      h(Select as never, {
+        name: 'status',
+        value: 'archived',
+        placeholder: 'Choose one',
+        options: [{ value: 'draft', label: 'Draft' }],
+      }),
+    );
+
+    expect(html).toContain('<option value="" disabled selected>Choose one</option>');
+    expect(html).toContain('<option value="draft">Draft</option>');
+  });
 
   test('UiProvider refuses the inert path instead of dropping the values it was given', () => {
     let caught: unknown;

@@ -239,6 +239,20 @@ function rejected(cause: string, fix: string): McpQueryRejectedError {
   return new McpQueryRejectedError({ cause, fix });
 }
 
+/**
+ * A delimiter that never closes: the scanner would blank everything after it, so the tail — `;`
+ * and any write keyword in it — vanishes from every check below. `select '; delete from members`
+ * counted one statement, contained no mutating word, and was handed back verbatim to run.
+ *
+ * Refused, not swallowed, for the same reason `\'` is: this layer's job is to refuse what it
+ * cannot read. Postgres would answer a syntax error either way, and that is exactly the
+ * dependency on the layer below that four defences exist not to have. Over-refusing costs a
+ * malformed query a clearer message; under-refusing costs the guarantee.
+ */
+function unterminated(what: string, fix: string): McpQueryRejectedError {
+  return rejected(`the statement ends inside ${what}, so the rest of it cannot be read`, fix);
+}
+
 function notBranch(cause: string, fix: string): McpNotBranchDbError {
   return new McpNotBranchDbError({ cause, fix });
 }
@@ -266,13 +280,16 @@ function stripLiteralsAndComments(sql: string, identifiers: 'blank' | 'keep' = '
     }
     if (two === '/*') {
       const end = sql.indexOf('*/', i + 2);
-      i = end === -1 ? sql.length : end + 2;
+      if (end === -1) {
+        throw unterminated('a /* block comment', 'close it with */, or use -- to the end of line');
+      }
+      i = end + 2;
       out += ' ';
       continue;
     }
     const char = sql[i];
     if (char === "'" || char === '"') {
-      const end = skipQuoted(sql, i, char);
+      const end = char === "'" ? skipSingleQuoted(sql, i) : skipQuoted(sql, i, char);
       // Padded, never spliced in place: `select"pg_advisory_lock"(1)` must not fuse into one
       // token, or the call the quotes were hiding stays hidden behind the leading keyword.
       out += char === '"' && identifiers === 'keep' ? ` ${inner(sql.slice(i, end))} ` : ' ';
@@ -284,7 +301,13 @@ function stripLiteralsAndComments(sql: string, identifiers: 'blank' | 'keep' = '
       if (tag !== null) {
         const marker = tag[0];
         const end = sql.indexOf(marker, i + marker.length);
-        i = end === -1 ? sql.length : end + marker.length;
+        if (end === -1) {
+          throw unterminated(
+            `a ${marker} dollar-quoted body`,
+            `close it with the same tag: ${marker} … ${marker}`,
+          );
+        }
+        i = end + marker.length;
         out += ' ';
         continue;
       }
@@ -301,7 +324,49 @@ function inner(run: string): string {
   return run.slice(1, closed ? -1 : undefined).replaceAll('""', '"');
 }
 
-/** Advance past a quoted run, honouring SQL's doubled-quote escape (`'it''s'`). */
+/**
+ * Advance past a single-quoted run, and refuse the one sequence whose meaning this scanner cannot
+ * decide: a backslash immediately before a quote.
+ *
+ * `E'\''` is ONE quote to Postgres — the backslash escapes it, the third quote closes the string —
+ * so what follows is real statement text. A scanner that knows only the doubled-quote escape reads
+ * the same bytes as a string that is still open, blanks the rest of the line, and counts one
+ * statement: `select E'\'' ; drop table posts --'` was accepted and handed back verbatim to run.
+ * Guessing the other way is no better, since `standard_conforming_strings` (a session setting this
+ * tool cannot see) decides whether a PLAIN `'a\'` closes there. So the sequence is refused rather
+ * than parsed under one of two readings — `''` embeds a quote under both.
+ *
+ * `\\` is consumed as a pair on purpose: both readings agree that `E'\\'` ends at that quote, so
+ * refusing it would cost an ordinary read nothing is wrong with.
+ */
+function skipSingleQuoted(sql: string, start: number): number {
+  let i = start + 1;
+  while (i < sql.length) {
+    const char = sql[i];
+    if (char === '\\') {
+      if (sql[i + 1] === "'") {
+        throw rejected(
+          String.raw`the statement contains \' inside a string literal, which ends the string ` +
+            'under one Postgres setting and not the other',
+          String.raw`double the quote instead of escaping it: 'it''s' rather than E'it\'s'`,
+        );
+      }
+      i += 2;
+      continue;
+    }
+    if (char === "'") {
+      if (sql[i + 1] === "'") {
+        i += 2;
+        continue;
+      }
+      return i + 1;
+    }
+    i += 1;
+  }
+  throw unterminated('a string literal', "close the quote, or double it to embed one: 'it''s'");
+}
+
+/** Advance past a quoted identifier, honouring SQL's doubled-quote escape (`"a""b"`). */
 function skipQuoted(sql: string, start: number, quote: string): number {
   let i = start + 1;
   while (i < sql.length) {
@@ -314,5 +379,5 @@ function skipQuoted(sql: string, start: number, quote: string): number {
     }
     i += 1;
   }
-  return sql.length;
+  throw unterminated('a quoted identifier', 'close the quote: select "column name" from posts');
 }

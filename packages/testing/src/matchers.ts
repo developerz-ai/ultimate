@@ -105,6 +105,43 @@ const result = (pass: boolean, message: string): MatcherResult => ({
   message: () => message,
 });
 
+const isOpenApiLike = (value: unknown): value is OpenApiLike =>
+  isRecord(value) &&
+  Array.isArray(value['operations']) &&
+  value['operations'].every(
+    (entry) => typeof (entry as OpenApiLike['operations'][number] | null)?.operationId === 'string',
+  );
+
+/**
+ * The two breaking changes this matcher can see from the shape `OpenApiLike` declares: an
+ * operation that disappeared, and a parameter a surviving operation newly requires — the second
+ * breaks every caller already omitting it, and comparing operation ids alone let it through while
+ * a suite naming this matcher read as covered.
+ *
+ * Deliberately NOT a full OpenAPI diff. Response status codes, response schemas and parameter
+ * TYPES are not on `OpenApiLike` and are not compared; the message says what did break rather than
+ * claiming the contract is otherwise unchanged. `x verify`'s `contract-diff` step is the whole
+ * answer, against the committed manifest.
+ */
+function breakingChanges(before: OpenApiLike, after: OpenApiLike): readonly string[] {
+  const current = new Map(after.operations.map((operation) => [operation.operationId, operation]));
+  const broke: string[] = [];
+  for (const operation of before.operations) {
+    const now = current.get(operation.operationId);
+    if (now === undefined) {
+      broke.push(`removed operation ${operation.operationId}`);
+      continue;
+    }
+    // Only additions: dropping a requirement widens what the API accepts, which no caller notices.
+    const wasRequired = new Set(operation.required ?? []);
+    const added = (now.required ?? []).filter((name) => !wasRequired.has(name));
+    if (added.length > 0) {
+      broke.push(`${operation.operationId} newly requires ${added.join(', ')}`);
+    }
+  }
+  return broke;
+}
+
 expect.extend({
   toBeUltimateError(received: unknown, code?: string) {
     const actual = codeOf(received);
@@ -135,13 +172,16 @@ expect.extend({
   },
 
   toMatchOpenApi(received: unknown, committed: OpenApiLike) {
-    const current = received as OpenApiLike;
-    const before = committed.operations.map((operation) => operation.operationId).sort();
-    const after = current.operations.map((operation) => operation.operationId).sort();
-    const removed = before.filter((id) => !after.includes(id));
+    if (!isOpenApiLike(received)) {
+      return result(
+        false,
+        'expected an OpenAPI document — an object with operations: [{ operationId, required? }]',
+      );
+    }
+    const broke = breakingChanges(committed, received);
     return result(
-      removed.length === 0,
-      `contract removed operation(s): ${removed.join(', ')} — bump the package version or restore them`,
+      broke.length === 0,
+      `contract broke: ${broke.join('; ')} — bump the package version or restore the old shape`,
     );
   },
 

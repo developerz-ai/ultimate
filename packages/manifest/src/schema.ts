@@ -158,15 +158,44 @@ export function isCompatible(manifest: { manifestVersion: number }): boolean {
   return manifest.manifestVersion === MANIFEST_VERSION;
 }
 
-/** Structural check for a value read off disk, before it is trusted as a `Manifest`. */
+/** Every top-level section the type declares as an array. Checked, never assumed. */
+const ARRAY_SECTIONS: readonly (keyof Manifest)[] = [
+  'routes',
+  'entities',
+  'actions',
+  'queries',
+  'jobs',
+  'tasks',
+  'policies',
+  'permissions',
+  'locales',
+  'errorCodes',
+];
+
+/**
+ * Structural check for a value read off disk, before it is trusted as a `Manifest`.
+ *
+ * EVERY top-level key, because the cast covers all of them: this checked five and cast the rest,
+ * and `diffManifest` then read `before.queries`, `before.jobs`, `before.permissions` and
+ * `before.locales` with no guard — so a section a hand-trimmed or truncated file happened not to
+ * carry surfaced as a bare `TypeError` out of the contract gate, two calls from the file that
+ * caused it. Rejecting here makes it `X_MANIFEST_DRIFT`, which names the file and the command.
+ *
+ * The individual FACTS inside a section are deliberately not walked: a manifest written before a
+ * field existed is still readable, which is the compatibility rule `MANIFEST_VERSION` owns and
+ * `build.test.ts`'s `shape compatibility` case pins.
+ */
 export function isManifest(value: unknown): value is Manifest {
   if (typeof value !== 'object' || value === null) return false;
   const m = value as Record<string, unknown>;
-  return (
-    typeof m['manifestVersion'] === 'number' &&
-    typeof m['buildId'] === 'string' &&
-    Array.isArray(m['actions']) &&
-    Array.isArray(m['routes']) &&
-    Array.isArray(m['entities'])
-  );
+  if (typeof m['manifestVersion'] !== 'number' || typeof m['buildId'] !== 'string') return false;
+  for (const section of ARRAY_SECTIONS) if (!Array.isArray(m[section])) return false;
+  return isAppIdentity(m['app']);
+}
+
+/** `app` drives the semver gate, so a missing or non-string version is not a manifest. */
+function isAppIdentity(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const app = value as Record<string, unknown>;
+  return typeof app['name'] === 'string' && typeof app['version'] === 'string';
 }

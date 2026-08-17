@@ -72,9 +72,21 @@ test('every other field that reaches the wire changes the key', () => {
   }
 });
 
-test('the same message hashed twice gives the same key, and a caller key wins outright', () => {
+test('the same message hashed twice gives the same key, and a caller key wins over the digest', () => {
   expect(mailIdempotencyKey(messageFixture())).toBe(mailIdempotencyKey(messageFixture()));
   expect(mailIdempotencyKey(messageFixture({ idempotencyKey: 'signup:42' }))).toBe(
-    'mail:signup:42',
+    'mail:welcome:signup:42',
   );
+});
+
+test('a caller key is scoped to its mail, so two templates cannot dedupe each other away', () => {
+  // A caller's key is an id from its own domain — one signup, one order — so the same value
+  // reaches every mail about that thing. Sharing a key means the queue (`onConflict: 'dedupe'`)
+  // and Resend both drop the second mail, and neither of them reports having done it.
+  const welcome = mailIdempotencyKey(messageFixture({ idempotencyKey: 'signup:42' }));
+  const verify = mailIdempotencyKey(
+    messageFixture({ mailId: 'verify-email', idempotencyKey: 'signup:42' }),
+  );
+
+  expect(welcome).not.toBe(verify);
 });

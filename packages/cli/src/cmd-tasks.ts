@@ -136,6 +136,7 @@ export const tasksCommand: CliCommand = {
     usage: 'x tasks [list|show <name>] [--count n] [--json]',
     requiresApp: true,
     subcommands: ['list', 'show'],
+    defaultSubcommand: 'list',
     flags: [
       { name: 'count', type: 'string', summary: 'show: how many upcoming occurrences to list' },
     ],

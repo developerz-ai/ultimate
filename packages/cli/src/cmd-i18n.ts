@@ -201,6 +201,8 @@ export const i18nCommand: CliCommand = {
     usage: 'x i18n [check|add <locale>|sync <locale>] [--json]',
     requiresApp: true,
     subcommands: I18N_SUBCOMMANDS,
+    // The bare `x i18n` audits; `add` and `sync` write catalogs and must be asked for.
+    defaultSubcommand: 'check',
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('i18n', ctx.cwd).dir;

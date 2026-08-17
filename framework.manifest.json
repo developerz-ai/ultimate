@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "b455bdef549b0ed104a22fcd9cd0d46023fce46e0861ee363cae5488bb47eb90",
+  "buildId": "fcdd43787a5f7d1715c2a4c171f3907fbc5c41b6e06b775842edeb9e2ff7036c",
   "tiers": {
     "0": [
       "core",
@@ -554,6 +554,11 @@
       "code": "X_CATALOG_INVALID",
       "owner": "i18n",
       "at": "packages/i18n/src/errors.ts"
+    },
+    {
+      "code": "X_CATALOG_KEY_UNREACHABLE",
+      "owner": "scripts",
+      "at": "scripts/i18n-catalog.ts"
     },
     {
       "code": "X_CATALOG_MISSING_KEYS",
@@ -1111,6 +1116,11 @@
       "at": "packages/i18n/src/errors.ts"
     },
     {
+      "code": "X_MAIL_ADDRESS_INVALID",
+      "owner": "mail",
+      "at": "packages/mail/src/errors.ts"
+    },
+    {
       "code": "X_MAIL_DRIVER_UNAVAILABLE",
       "owner": "mail",
       "at": "packages/mail/src/errors.ts"
@@ -1182,6 +1192,11 @@
     },
     {
       "code": "X_MCP_QUERY_REJECTED",
+      "owner": "mcp",
+      "at": "packages/mcp/src/errors.ts"
+    },
+    {
+      "code": "X_MCP_RESOURCE_DUPLICATE",
       "owner": "mcp",
       "at": "packages/mcp/src/errors.ts"
     },

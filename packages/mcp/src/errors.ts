@@ -13,6 +13,7 @@ export const MCP_ERROR_CODES = [
   'X_MCP_TOOL_UNSAFE',
   'X_MCP_TOOL_UNDECLARED',
   'X_MCP_TOOL_DUPLICATE',
+  'X_MCP_RESOURCE_DUPLICATE',
   'X_MCP_SCOPE_UNKNOWN',
   'X_MCP_SCOPE_CONFLICT',
 ] as const;
@@ -29,6 +30,7 @@ export const MCP_ERROR_TITLES: Readonly<Record<McpErrorCode, string>> = {
   X_MCP_TOOL_UNSAFE: 'an MCP tool declares no policy',
   X_MCP_TOOL_UNDECLARED: 'defineAppMcp lists a primitive that declares no MCP exposure',
   X_MCP_TOOL_DUPLICATE: 'two primitives project to one MCP tool name',
+  X_MCP_RESOURCE_DUPLICATE: 'two resources claim one MCP resource URI',
   X_MCP_SCOPE_UNKNOWN: 'defineAppMcp scopes a tool this server does not project',
   X_MCP_SCOPE_CONFLICT: 'two scopes claim one MCP tool',
 };
@@ -155,6 +157,23 @@ export class McpToolDuplicateError extends UltimateError {
 }
 
 /**
+ * Two resources claim one `ultimate://` URI. The twin of `McpToolDuplicateError`, and refused for
+ * the same reason: a URI is quoted in AGENTS.md files, so `resources/read` reaching whichever copy
+ * was wired last is a read that succeeds against the wrong document and reports nothing. Silent
+ * replacement also made the answer depend on registration order, which is not a contract.
+ */
+export class McpResourceDuplicateError extends UltimateError {
+  constructor(input: { uri: string }) {
+    super({
+      code: 'X_MCP_RESOURCE_DUPLICATE',
+      cause: `two resources are registered at "${input.uri}"; a URI addresses one document`,
+      fix: `give one of them its own URI — register({ uri: '${input.uri}-<what-it-is>', … }) — or drop the duplicate registration`,
+      docs: docsFor('X_MCP_RESOURCE_DUPLICATE'),
+    });
+  }
+}
+
+/**
  * `defineAppMcp`'s `scopes:` names a tool the server does not project. Boot-time and loud:
  * the alternative is a scope entry that quietly covers nothing, leaving the tool the author
  * meant to gate reachable by every connection — a gate that reads as declared and never runs.
@@ -216,12 +235,19 @@ export class McpProtocolError extends UltimateError {
  * LAYER 3 of `db.query`'s four defences: the statement is not one read-only statement, so it
  * never reaches the server. Separate from the migration refusal below because the two want
  * different next commands, and a code that covers both tells the agent neither.
+ *
+ * The cause is the problem ALONE — no `db.query refused:` frame. The guard has two callers on two
+ * surfaces (the MCP tool, and `@ultimat3/admin`'s `/_x` DB panel), and only the caller knows which
+ * reader it is talking to: the panel added its own frame and rendered `refused: db.query refused:
+ * …`, naming an MCP tool to a developer in a browser who never called one. Nothing is lost —
+ * `X_MCP_QUERY_REJECTED`'s TITLE already says `db.query`, and `format()` renders it above the
+ * cause, so the tool is named once, by the code, wherever the error surfaces.
  */
 export class McpQueryRejectedError extends UltimateError {
   constructor(input: { cause: string; fix: string }) {
     super({
       code: 'X_MCP_QUERY_REJECTED',
-      cause: `db.query refused: ${input.cause}`,
+      cause: input.cause,
       fix: input.fix,
       docs: docsFor('X_MCP_QUERY_REJECTED'),
     });
@@ -232,12 +258,16 @@ export class McpQueryRejectedError extends UltimateError {
  * `db.migrate` was pointed at a database that is not a branch. Enforced, not documented — the
  * dev server holds real credentials, and a migration is the one dev tool that cannot be undone
  * by reading the error afterwards.
+ *
+ * Unframed for the same reason as the refusal above, and it is the same defect even with one
+ * caller today: the title says `db.migrate`, so a `db.migrate refused:` cause said it twice. Two
+ * adjacent errors in one file cannot answer "who names the surface" two different ways.
  */
 export class McpNotBranchDbError extends UltimateError {
   constructor(input: { cause: string; fix: string }) {
     super({
       code: 'X_MCP_NOT_BRANCH_DB',
-      cause: `db.migrate refused: ${input.cause}`,
+      cause: input.cause,
       fix: input.fix,
       docs: docsFor('X_MCP_NOT_BRANCH_DB'),
     });

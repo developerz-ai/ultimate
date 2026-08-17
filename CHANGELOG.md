@@ -10,6 +10,114 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **Any string reaching `meta.ld` could close the `<script>` element and inject markup.**
+  `renderTag` emitted `<script>`/`<style>` content **raw**, and JSON-LD is built from route data, so
+  a title, a product name or a `t()` string was enough. Escaping HTML the usual way is both
+  insufficient and corrupting here: script and style are **raw text**, where the parser does not
+  decode character references — `&lt;` breaks the code and closes nothing, and `<` alone ends
+  nothing, which is why `if (1<2)` has to survive untouched. What ends the element is `</` plus the
+  tag name, and a `<script>` has a **second** exit nobody had handled: `<!--` moves the tokenizer
+  into script-data-escaped state and `<!--<script>` into double-escaped, where the element's own
+  `</script>` no longer closes it and the rest of the document is swallowed as script text.
+
+  So two rules, one per context. Code gets `</` → `<\/` and `<!--` → `<\!--`, which are identity
+  escapes in a JS or CSS string. A JSON-carrying script gets the total rule — `<`, `>`, `&`, U+2028
+  and U+2029 to `\uXXXX` — which is safe **by construction**, because none of those can occur
+  outside a JSON string literal, so every replacement lands where `\u` means an escape and
+  `JSON.parse` returns an identical string. Two more partial escapers went with it: head's private
+  pair, and island props, which escaped `<` only.
+
+- **An envelope address could inject SMTP commands.** `envelopeRecipients()` folds `bcc` into the
+  recipient list and `RCPT TO:<…>` is built by interpolation with no CR/LF check — while **every
+  header** is gated through one such check. On the inline path (`sync: true`, or no job driver) no
+  schema runs either, since `mailMessageSchema` only guards the queued path. A `bcc` of
+  `ops@example.test\r\nRCPT TO:<attacker@evil.test>` was arbitrary mail relay through the app's own
+  authenticated connection; the fix is proven by asserting on the bytes written to the socket.
+
+  `to`, `cc` and `replyTo` were **protected by accident, not by design** — they reach headers, and
+  the MIME is built before the envelope, so the header gate throws first. Nothing stated that
+  ordering; reordering two lines would have removed it silently. The check now sits in the socket
+  writer, which is the module that builds command lines, mirroring the one place headers are gated.
+  Refused, never stripped: stripping a CR out of an address yields a *different address*, so the
+  mail silently goes elsewhere and the attempt leaves no trace.
+
+- **The MCP read-only SQL guard failed open on five kinds of unterminated delimiter.** An
+  unterminated `'`, `E'…'`, `"`, `$tag$` or `/*` made the stripper blank the remainder, so the `;`
+  and the write keyword vanished before the statement count, the leader check and the write scan:
+  `select $tag$ ; delete from members` was accepted and returned verbatim. Postgres answers a syntax
+  error either way, so this was never exploitable through the database — the defect is that this
+  layer leaned on the layer below, which is exactly what a guard exists not to do. Found from the
+  other side, when the admin DB panel started delegating to it and its own weaker check turned out
+  to fail *closed* on two of the five.
+
+  Related, in the same scanner: `E'\''` was read as a string that never closes, so
+  `select E'\'' ; drop table posts --'` was accepted whole. It cannot be fixed by guessing the other
+  reading — `standard_conforming_strings` is a session setting this tool can neither see nor set —
+  and the two readings differ exactly where a `;` hides, so a backslash escape inside a
+  single-quoted run is now refused rather than parsed under one guess.
+
+- **Every admin screen rendered `⟦admin.list.loading⟧`.** 69 keys the admin package renders were
+  absent from the framework catalog, which instead shipped an `admin.nav.*`/`admin.table.*` block
+  describing a UI that no longer exists — drift in **both** directions, so the catalog did not read
+  as incomplete. Twenty of the missing keys travel as **data** (`titleKey`, `labelKey`, `reason`
+  literals reached through `t(variable)`), which is why a count of the `t('literal')` call sites
+  found 27 and missed the rest.
+
+  `x i18n check` could never have caught it: it reads an app's `CATALOG_ROOT`, which does not exist
+  in this repo, so it loads zero locales and answers **ok**. A check that cannot fail is not a
+  check. The `boundaries` step gained a fourth rule reusing i18n's own extractor, with
+  `X_CATALOG_KEY_UNREACHABLE` for the other direction — a key in a namespace the framework renders
+  that no framework source names. Namespaces the catalog only *ships to apps* are exempt, derived
+  from the source rather than listed.
+
+- **A second server in one process, a derived budget that reported to nobody, and six more.**
+  `pageFrom` reported `hasMore` without regard to the cursor's direction, so paging backwards
+  reported the wrong end. A derived `BudgetLedger` reset `costMinor` and `requestTokens` with no
+  parent link, so the `request` ceiling and `gateway.spent()` never saw a child's spend — the actor
+  and org scopes did, because those keys were already shared. The ISR path registry only ever grew,
+  since the store evicts silently and nothing reconciled. A surface prefix matched anywhere in a
+  path, so `apps/myapp/app/page.tsx` resolved to `/app`. A second interaction before an island's
+  chunk resolved flushed the queue early. `moreCapableThan` ranked across vendors by registry
+  order. A stream hole that never settled had **no deadline anywhere** and leaked a response for the
+  life of the process; holes now settle exactly once, at 15s by default. `isManifest` validated five
+  of thirteen keys, one unparseable `package.json` killed a whole docs scan, and `Bun.stdout.write`
+  went unawaited on a path that truncates.
+
+- **`docker run my-app db backfill --all --write` started a web server, healthy, forever.** A
+  scaffolded app's entrypoint reads `ROLE` and `PORT` and nothing else, so any argv appended to it
+  was silently discarded — including the `command:` the generated compose file itself shipped for
+  its backfill service. **`ROLE=migrate` was never broken**: every documented release-phase promise
+  runs through the environment, not argv. The generated compose now overrides the entrypoint, which
+  is what turns those words into a command.
+
+- **A budget on an ssr or isr route could not be measured by any invocation.** `isPrerenderable`
+  gates on `render === 'static'`, so a route declaring `budget:` with any other mode produced no
+  stats row and `X_BUDGET_UNMEASURED` was unclosable. Such a route is now rendered **in memory**
+  through the same document builder a request uses, weighed, and thrown away — never written.
+  Renaming the failure to "unmeasurable" was the alternative and would have made those budgets
+  permanently unenforced.
+
+- **`x db` ran the code generator.** `readSubcommand` returned the first declared subcommand when
+  none was given, and `gen` sorts first — so `x db` generated migrations, and `cmd-db.ts`'s
+  `?? 'migrate'` was dead code documenting an intention the parser overrode. A default is now
+  **declared**, not inferred from array order: nine commands genuinely want theirs and say so, while
+  `x db` and `x mcp` refuse and print usage. A bare `x mcp` used to start a server.
+
+- **A failed build reported success, and CI got nothing to act on.** `x build`'s summary line was
+  set unconditionally, and a failed static pre-check returned a result labelled `verify`. The
+  builder's output went only to the human-rendered lines, so `--json` — which is what CI reads —
+  carried `X_BUILD_FAILED` and no output at all.
+
+- **Nine more**, each with a failing test first: `x generate` wrote files before discovering a
+  conflict, leaving a half-generated resource; a throw during boot leaked the Postgres pool, the
+  queue and the OTLP exporter; `createTestClock` never restored the frozen clock, so `advance('3d')`
+  reached every later test **file**; fixture destructuring stopped at the first `}`; `toMatchOpenApi`
+  compared only removed operation ids, so a newly-required parameter passed; MCP resources silently
+  overwrote on duplicate registration while tools threw; an admin listing wrote no audit entry
+  though detail did; `<textarea>` and `<select>` took `value` as an attribute the platform ignores,
+  so every admin edit view rendered empty controls; and a widget built links by appending `s` to the
+  entity name.
+
 - **One caller's idempotent response was replayed to another, and a blank header was a live key.**
   `idempotencyKeyFor(actionName, key)` namespaced by **action name only** — no actor anywhere — so
   alice's stored response for `charge` was returned to bob whenever bob sent the same key. With a
@@ -595,6 +703,23 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`scripts/stdout-truncation.test.ts` no longer asserts a race.** The premise case measured a naive `process.stdout.write` against a reader draining concurrently, and on a fast runner the whole payload landed by luck — a flaky gate step. It now writes past any kernel buffer and reads nothing until the child has exited, so what `process.exit()` discarded was genuinely discarded.
 
 ### Changed
+
+- **BREAKING — `@ultimat3/seo` no longer exports `renderHeadTags`.** It serialised `renderMeta()`'s
+  tags to HTML, escaped `</` and nothing else, and **had no caller anywhere** — while
+  `@ultimat3/render`'s `renderHead`, the path every `x dev` and every build takes, escaped nothing
+  at all. Two serializers, the unused one weaker, and the used one vulnerable. It also broke its own
+  package's stated rule (*"all escaping lives in `xml.ts`; never hand-roll an escape in another
+  module"*), and it could not simply borrow render's escapers: `seo` is tier 1 and `render` is tier
+  4, and the two doctrines are opposites — `xml.ts` escapes **into** entities, which is right for
+  XML and attributes and exactly wrong inside a raw-text element. An app that called it should
+  render through `renderHead(headFromMeta(meta, seoRenderers()))`. `renderMeta`, `HeadTag` and every
+  other `meta.ts` export are unchanged.
+
+- **BREAKING — a derived `BudgetLedger` now bills its parent.** No signature changed, so nothing
+  fails to compile, but a call that previously slipped past a `request` ceiling can now throw
+  `X_AI_BUDGET_EXCEEDED`, and `gateway.spent()` returns a larger — correct — number. Listed as
+  breaking because it is observable to an app already at its ceiling, even though it makes the
+  documented contract (*"derive can only tighten"*) true for the first time.
 
 - **BREAKING — `idempotencyKeyFor` takes the actor as a required third argument, and records
   written before this release are unreachable after it.** Required and positional for the reason

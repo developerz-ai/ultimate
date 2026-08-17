@@ -11,6 +11,7 @@ export const MAIL_ERROR_CODES = [
   'X_MAIL_TEXT_MISSING',
   'X_MAIL_DRIVER_UNAVAILABLE',
   'X_MAIL_HEADER_INVALID',
+  'X_MAIL_ADDRESS_INVALID',
   'X_MAIL_SEND_FAILED',
 ] as const;
 
@@ -23,6 +24,7 @@ export const MAIL_ERROR_TITLES: Readonly<Record<MailErrorCode, string>> = {
   X_MAIL_TEXT_MISSING: 'the rendered mail has no plain-text part',
   X_MAIL_DRIVER_UNAVAILABLE: 'no mail driver is configured',
   X_MAIL_HEADER_INVALID: 'a header value carries a line break',
+  X_MAIL_ADDRESS_INVALID: 'an envelope address could restructure the SMTP command line',
   X_MAIL_SEND_FAILED: 'the mail transport refused the message',
 };
 
@@ -119,6 +121,37 @@ export const headerInvalid = (name: string, mailId: string): MailError =>
       `strip line breaks from the value before it reaches the header: ` +
       `t('mail.${mailId}.subject', { ...data, x: String(x).replace(/[\\r\\n]+/g, ' ') })`,
     meta: { header: name, mailId },
+  });
+
+/**
+ * Which half of the SMTP envelope an address belongs to. A closed union, and it lives here rather
+ * than beside the check for the same reason `SendStage` does: the two halves come from two
+ * different places — a config line and a `send()` call — so each needs its own `fix`, and a typo
+ * has to be a compile error instead of a lookup that quietly misses.
+ */
+export type EnvelopeAddressField = 'sender' | 'recipient';
+
+const ADDRESS_FIXES: Readonly<Record<EnvelopeAddressField, string>> = {
+  sender: 'set mail.from in app.config.ts to a bare address, e.g. no-reply@example.test',
+  recipient: "pass bare addresses: send(mail, data, { to: ['ada@example.test'], locale })",
+};
+
+/**
+ * `MAIL FROM:<…>` and `RCPT TO:<…>` are built by interpolation, so a CR or LF in an address ends
+ * the command line and lets the rest of it run as SMTP commands of its own — arbitrary relay over
+ * the app's authenticated connection. Refused rather than stripped, like a header: a stripped
+ * address is a different address, so sanitising silently redirects the mail instead of stopping it.
+ * The value never appears here — an address is recipient data, which this package keeps out of
+ * every string it writes itself.
+ */
+export const addressInvalid = (field: EnvelopeAddressField): MailError =>
+  new MailError({
+    code: 'X_MAIL_ADDRESS_INVALID',
+    cause:
+      `the SMTP envelope ${field} address holds a control character or an angle bracket, ` +
+      'which would end the command line and inject SMTP commands',
+    fix: ADDRESS_FIXES[field],
+    meta: { field },
   });
 
 /**

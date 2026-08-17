@@ -79,6 +79,10 @@ export const errorsCommand: CliCommand = {
     summary: 'an X_* code, explained: cause, runnable fix, docs URL',
     usage: 'x errors [explain <CODE>|list] [--json]',
     subcommands: ERRORS_SUBCOMMANDS,
+    // `explain`, deliberately: the bare `x errors` then answers with `MissingPositionalError`,
+    // which names `<CODE>` and hands back a real invocation. `list` would silently print 200 rows
+    // to a caller who meant to explain one — see `MissingPositionalError`'s own note.
+    defaultSubcommand: 'explain',
   },
   // `async` is load-bearing: a synchronous throw would escape every caller that awaits the
   // promise this signature promises, including the dispatcher's own error path.

@@ -120,6 +120,75 @@ describe('derive tightens, never widens', () => {
     });
   });
 
+  // A derived ledger was a NEW ledger with `requestTokens` and `costMinor` at zero and no link
+  // back, so every `llm()` call — each of which derives one — spent against a fresh counter. The
+  // ambient ledger `gateway.scope()` installed saw none of it: `spent()` answered zero after a
+  // hundred calls, and a `request` ceiling of 5,000 admitted 5,000 tokens per call, forever.
+  test('a child debits the parent it was derived from', async () => {
+    const parent = new BudgetLedger({ limits: {} });
+    const child = parent.derive({});
+    const usage = { inputTokens: 900, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 };
+
+    await child.record(usage, usd(7));
+
+    const report = await parent.report();
+    expect(report.requestTokens).toBe(950);
+    expect(report.cost).toEqual(usd(7));
+  });
+
+  test('a grandchild reaches the whole chain, once each', async () => {
+    const root = new BudgetLedger({ limits: {} });
+    const child = root.derive({});
+    const grandchild = child.derive({});
+    const usage = { inputTokens: 10, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+
+    await grandchild.record(usage, usd(1));
+
+    expect((await root.report()).requestTokens).toBe(10);
+    expect((await child.report()).requestTokens).toBe(10);
+    expect((await root.report()).cost).toEqual(usd(1));
+  });
+
+  test("the parent's request ceiling bounds its children together, not each apart", async () => {
+    const parent = new BudgetLedger({ limits: { request: 5_000 } });
+    const first = parent.derive({});
+    const reservation = await first.reserve(estimateSpend(request('x'.repeat(4_000), 3_000)));
+    expect(reservation.tokens).toBeGreaterThan(2_000);
+
+    // A second call under the same scope: its own counter is empty, the parent's is not.
+    const second = parent.derive({});
+    await expect(
+      second.reserve(estimateSpend(request('x'.repeat(4_000), 3_000))),
+    ).rejects.toMatchObject({
+      code: 'X_AI_BUDGET_EXCEEDED',
+      cause: expect.stringContaining('"request"'),
+    });
+  });
+
+  test('a release credits the whole chain back, so nothing is stranded', async () => {
+    const parent = new BudgetLedger({ limits: { request: 5_000 } });
+    const child = parent.derive({});
+    const reservation = await child.reserve(estimateSpend(request('hi', 1_000)));
+    expect((await parent.report()).requestTokens).toBeGreaterThan(0);
+
+    await child.release(reservation);
+    expect((await parent.report()).requestTokens).toBe(0);
+  });
+
+  test('the shared store is still credited exactly once per debit', async () => {
+    const store = new MemoryBudgetStore();
+    const parent = new BudgetLedger({ limits: {}, actorKey: 'actor:u1', orgKey: 'org:o1', store });
+    const child = parent.derive({});
+
+    await child.record(
+      { inputTokens: 100, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      usd(1),
+    );
+
+    expect(store.spent('actor:u1')).toBe(100);
+    expect(store.spent('org:o1')).toBe(100);
+  });
+
   test('an unset scope on either side stays unset rather than defaulting to zero', async () => {
     const child = new BudgetLedger({ limits: {} }).derive({});
     await expect(child.reserve(estimateSpend(request('x'.repeat(100_000))))).resolves.toMatchObject(

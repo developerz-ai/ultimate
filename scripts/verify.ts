@@ -31,6 +31,7 @@ import {
 } from './boundaries';
 import { errorStatusCompleteness } from './error-map';
 import { errorRendering } from './error-render';
+import { frameworkCatalogFindings } from './i18n-catalog';
 import { flagBool, parseScriptArgs } from './lib/args';
 import { writeOut } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -38,17 +39,26 @@ import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
 import { checkRoadmap } from './roadmap';
 
 /**
- * Three rules on one step. The tier table: a package may import only from a strictly lower tier.
+ * Four rules on one step. The tier table: a package may import only from a strictly lower tier.
  * The `shared/` leaf: an example app's `shared/` may hold types from `app/` but never a runtime
  * edge into it — `x verify` inside the app already checks that, and this repo's own gate must
  * too, because the reference-app job is advisory and this one blocks. `@ultimat3/admin`'s one
  * flattener: `packages/admin/CLAUDE.md` names `entity-columns.ts` as the only file that may read
  * `$meta` or call `$describe()` — stated there since it shipped, and unenforced until this line.
+ * The framework catalog: `packages/i18n/src/catalogs/en.json` still answers every key framework
+ * source renders, and still describes only screens that exist — 27 `t('admin.…')` keys had no
+ * entry and an `admin.nav.*` block nothing reads did, so every admin screen rendered `⟦key⟧`.
+ *
+ * The catalog rule rides here for the reason this step's own CLI comment gives: `VerifyStepName` is
+ * a closed union owned by `@ultimat3/cli`, and a generated app would inherit an eighteenth step
+ * only this repo can run. This is already the slot for "conventions this repo makes about its own
+ * source that the framework cannot know" — the flattener rule is not a tier rule either.
  */
 export const tierBoundaries: HostCheck = async (root) => [
   ...checkBoundaries(await collectSourceFiles(root)).map(findingFor),
   ...checkSharedLeaf(await collectSharedFiles(root)).map(sharedLeafFindingFor),
   ...checkAdminFlattener(await collectAdminFiles(root)).map(adminFlattenerFindingFor),
+  ...(await frameworkCatalogFindings(root)),
 ];
 
 /**

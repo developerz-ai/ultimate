@@ -99,6 +99,45 @@ describe('cursor pagination', () => {
     });
   });
 
+  // Paging backwards is the direction `hasMore` was blind to: it meant "the fetch overflowed",
+  // which on a `before` query is a statement about the rows BEHIND this page.
+  describe('paging backwards', () => {
+    const back = (id: string): string =>
+      encodeAdminCursor(resource, {
+        direction: 'before',
+        field: 'createdAt',
+        value: '2026-07-01T00:00:00.000Z',
+        id,
+      });
+
+    test('a backward page always offers Next — it is the page the operator came from', () => {
+      // p_1, p_2 are everything before p_3: no overflow, and yet forward must stay reachable.
+      const page = pageFrom(resource, { cursor: back('p_3') }, rows.slice(0, 2));
+
+      expect(page.rows.map((row) => row['id'])).toEqual(['p_1', 'p_2']);
+      expect(page.hasMore).toBe(true);
+      expect(decodeAdminCursor(resource, page.nextCursor)?.id).toBe('p_2');
+    });
+
+    test('a backward page that reached the start offers no way further back', () => {
+      const page = pageFrom(resource, { cursor: back('p_3') }, rows.slice(0, 2));
+      expect(page.prevCursor).toBeNull();
+    });
+
+    test('the overflow row on a backward page is the head, and it means a previous page', () => {
+      const older: readonly AdminRow[] = [
+        { id: 'p_0', title: 'Zero', createdAt: '2026-07-04T00:00:00.000Z' },
+        ...rows.slice(0, 2),
+      ];
+      const page = pageFrom(resource, { cursor: back('p_3') }, older);
+
+      // The trimmed row is p_0 — the one furthest back — not p_2, which sits against the cursor.
+      expect(page.rows.map((row) => row['id'])).toEqual(['p_1', 'p_2']);
+      expect(page.hasMore).toBe(true);
+      expect(decodeAdminCursor(resource, page.prevCursor)?.id).toBe('p_1');
+    });
+  });
+
   test('a corrupt cursor means page one, not an error page', () => {
     expect(decodeAdminCursor(resource, 'not-a-cursor')).toBeNull();
     expect(decodeAdminCursor(resource, '')).toBeNull();

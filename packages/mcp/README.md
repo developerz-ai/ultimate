@@ -200,3 +200,4 @@ inside their own handler.
 | `X_MCP_PROTOCOL` | malformed envelope, unknown method, bad auth header |
 | `X_MCP_QUERY_REJECTED` | `db.query` given anything but one read-only statement |
 | `X_MCP_NOT_BRANCH_DB` | `db.migrate` aimed at a production or otherwise non-branch database |
+| `X_MCP_RESOURCE_DUPLICATE` | two resources claim one `ultimate://` URI — refused at registration, as a duplicate tool name is |

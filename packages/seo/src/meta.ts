@@ -2,7 +2,7 @@
 // for a global default: a route that does not declare a description does not get
 // one, it fails the build (see validate.ts).
 
-import { absoluteUrl, attributes, escapeXml } from './xml';
+import { absoluteUrl } from './xml';
 
 /** Search results truncate past this; validate.ts enforces it. */
 export const TITLE_MAX_LENGTH = 60;
@@ -83,7 +83,12 @@ export interface RouteMeta {
 export interface HeadTag {
   readonly tag: 'title' | 'meta' | 'link' | 'script';
   readonly attrs: Readonly<Record<string, string>>;
-  /** Text content, already safe to embed for `title`; escaped on render. */
+  /**
+   * Text content, raw. Escaping is the RENDERER's — `@ultimat3/render`'s `renderHead` picks the
+   * rule from the element and, for a `type` ending in `json`, from the fact that the body is data.
+   * Escaping here would double-escape there, and a second escaper is how one of them ends up
+   * missing a character.
+   */
   readonly text?: string;
 }
 
@@ -267,16 +272,10 @@ export function renderMeta(meta: RouteMeta, options: RenderMetaOptions = {}): re
   return tags;
 }
 
-/** Serialise head tags to HTML. `<script>` content is JSON, escaped for `</`. */
-export function renderHeadTags(tags: readonly HeadTag[]): string {
-  return tags
-    .map((tag) => {
-      if (tag.tag === 'title') return `<title>${escapeXml(tag.text ?? '')}</title>`;
-      if (tag.tag === 'script') {
-        const safe = (tag.text ?? '').replaceAll('</', '<\\/');
-        return `<script${attributes(tag.attrs)}>${safe}</script>`;
-      }
-      return `<${tag.tag}${attributes(tag.attrs)}>`;
-    })
-    .join('\n');
-}
+// `renderHeadTags` lived here and was deleted `As of 2026-08`. It serialised these tags to HTML,
+// nothing called it, and its escaping was WEAKER than the path every document actually takes
+// (`@ultimat3/render`'s `renderHead`): it neutralised `</` and not `<!--<script>`, and it applied
+// that code-shaped rule to a JSON body where the total `\uXXXX` rule is available and cannot be
+// got wrong. Exported and vulnerable is a trap — it looks authoritative because it lives in the
+// package named `seo`. This module CONSTRUCTS head tags; serialising them is tier 4's job, and
+// there is now one way to do it. seo cannot borrow render's escapers either: render is tier 4.

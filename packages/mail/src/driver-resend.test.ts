@@ -120,7 +120,9 @@ test("Idempotency-Key carries the caller's key when the message names one", asyn
 
   await driver.send(messageFixture({ idempotencyKey: 'welcome-ada-2026' }));
 
-  expect(seen.headers.get('idempotency-key')).toBe('mail:welcome-ada-2026');
+  // Scoped to the mail: Resend drops a second message carrying a key it has already seen, so two
+  // templates sharing the caller's key would mean one of them is never delivered.
+  expect(seen.headers.get('idempotency-key')).toBe('mail:mail_welcome:welcome-ada-2026');
 });
 
 test('Idempotency-Key is content-derived when the message names none', async () => {

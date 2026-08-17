@@ -182,6 +182,28 @@ describe('unit · scanInstalledDocs', () => {
       '@ultimat3/two',
     ]);
   });
+
+  // `node_modules` is not a curated tree: an interrupted install leaves a truncated
+  // `package.json`, and `JSON.parse` on it threw straight out of the `Promise.all`. One bad
+  // directory took down the scan for every OTHER package — the docs command answered nothing,
+  // for a reason that had nothing to do with the question.
+  test('one unparseable package.json costs that package, not the scan', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ultimate-scope-'));
+    mkdirSync(join(dir, 'good', 'src'), { recursive: true });
+    writeFileSync(join(dir, 'good', 'package.json'), '{"name":"@ultimat3/good"}');
+    writeFileSync(join(dir, 'good', 'src/index.ts'), "export { s } from './m';");
+    writeFileSync(join(dir, 'good', 'src/m.ts'), '// H.\nexport const s = 1;');
+    mkdirSync(join(dir, 'broken'), { recursive: true });
+    writeFileSync(join(dir, 'broken', 'package.json'), '{"name":"@ultimat3/bro');
+
+    const entries = await scanInstalledDocs(dir);
+    expect(entries.map((entry) => entry.package)).toEqual(['@ultimat3/good']);
+  });
+
+  test('a package.json that is JSON but not an object is not a package', async () => {
+    const dir = fixture({ 'package.json': '"@ultimat3/nope"' });
+    expect(await scanPackageDocs(dir)).toEqual([]);
+  });
 });
 
 describe('live · the installed framework', () => {

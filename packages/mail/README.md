@@ -33,7 +33,7 @@ delivers inline only when `{ sync: true }` is passed or no job driver is configu
 | Every string is a key | `mail.<id>.<slot>`; English lives in `src/catalog.ts` and app catalogs override it |
 | Every colour is a token | `MAIL_TOKENS` in `layout.ts` holds light + dark hexes; templates never see a hex |
 | Every date takes an IANA zone | `options.tz`, else `ctx.tz`, else `UTC` |
-| Sending is a job | `retry: { attempts: 5, backoff: 'exponential' }`, idempotency key derived from `(mailId, recipients, hash(rendered))` |
+| Sending is a job | `retry: { attempts: 5, backoff: 'exponential' }`, idempotency key derived from `(mailId, recipients, hash(rendered))`, or `(mailId, your key)` when you pass one — a caller's key is scoped to its mail so two templates cannot dedupe each other away |
 
 ## Drivers
 
@@ -76,6 +76,7 @@ with STARTTLS. Credentials are percent-decoded, so a password with `@` or `/` wo
 | Any rejected recipient fails the send | delivering to three of four addresses and reporting success is the one outcome a caller cannot detect |
 | `poolSize` (default 4) caps concurrent connections | a burst of sends queues instead of opening one socket each |
 | `Bcc` never reaches a header | it travels in `RCPT TO` only |
+| Every envelope address is gated for CR/LF | `MAIL FROM`/`RCPT TO` are built by interpolation, and `bcc` is the one address no header check ever sees. Refused (`X_MAIL_ADDRESS_INVALID`), never stripped — a rewritten address delivers somewhere else |
 | The reported `id` is the `Message-ID` | an SMTP `250` carries nothing a caller could correlate. It is not derived from the idempotency key, which holds the recipient list |
 
 ### Resend
@@ -87,7 +88,9 @@ is a configuration problem that retrying cannot fix.
 
 ## Framework mails
 
-Registered by importing them. `FRAMEWORK_MAILS` is the list `x mail list` prints.
+Registered by importing them — the import IS the registration. `FRAMEWORK_MAILS` is the list, and
+`registeredMails()` / `registeredMailIds()` answer for an app's own mails as well. There is no
+`x mail` command; a host that wants to list or preview a mail calls those and `renderMessage()`.
 
 | id | Input |
 |---|---|
@@ -110,6 +113,7 @@ Translating them = shipping `mail.*` keys in an app catalog. Never edit a templa
 | `X_MAIL_TEXT_MISSING` | add a text-bearing block to the template |
 | `X_MAIL_DRIVER_UNAVAILABLE` | `setMailDriver(createMemoryDriver())` at boot |
 | `X_MAIL_HEADER_INVALID` | strip CR/LF from the interpolated value before it reaches a header |
+| `X_MAIL_ADDRESS_INVALID` | pass a bare `addr-spec` — an envelope address may hold no control character and no `<`/`>` |
 | `X_MAIL_SEND_FAILED` | the `cause` names the stage, the provider's status and whether a retry can help |
 
 ## Commands

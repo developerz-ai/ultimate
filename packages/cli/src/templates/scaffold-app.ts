@@ -366,6 +366,11 @@ const prerender =
   (): string => `// The static entry. \`x build --target static\` runs this with \`--out <dir>\` and it writes one HTML
 // file per \`render: 'static'\` route — a CDN or an object store then serves site/ with no process
 // behind it. Every other render mode needs a running app and is reported as skipped, never emitted.
+//
+// Skipped is not unweighed: a route that declares a \`budget:\` is rendered in memory and measured
+// whatever its mode, so \`x verify\`'s \`budgets\` step has a number for it. \`unmeasured\` is the list
+// this build could not render — each one is an X_BUDGET_UNMEASURED at the gate, and this is where
+// the reason is.
 
 import { join } from 'node:path';
 import { prerenderSite } from '@ultimat3/cli';
@@ -379,7 +384,7 @@ const origin = Bun.env['SITE_ORIGIN'];
 if (import.meta.main) {
   const report = await prerenderSite({ root, out, ...(origin === undefined ? {} : { origin }) });
   await Bun.stdout.write(
-    \`\${JSON.stringify({ ok: true, out: report.out, pages: report.pages.length, skipped: report.skipped })}\\n\`,
+    \`\${JSON.stringify({ ok: true, out: report.out, pages: report.pages.length, skipped: report.skipped, unmeasured: report.unmeasured })}\\n\`,
   );
 }
 `;

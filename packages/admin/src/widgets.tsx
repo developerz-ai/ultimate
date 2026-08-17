@@ -66,7 +66,7 @@ const inputValueFor = (iso: string, precision: 'date' | 'instant'): string =>
   iso.slice(0, precision === 'date' ? 10 : 16);
 
 /** Read-mode rendering of already-guarded props. Never formats; the widgets do that. */
-function readView(props: WidgetProps, field: AdminField): JSX.Element {
+function readView(props: WidgetProps, field: AdminField, ctx: WidgetContext): JSX.Element {
   switch (props.widget) {
     case 'money':
       return props.value === null ? (
@@ -96,12 +96,13 @@ function readView(props: WidgetProps, field: AdminField): JSX.Element {
       );
     case 'json-editor':
       return <pre class="x-admin-json">{props.value}</pre>;
-    case 'reference':
-      return props.value === null ? (
-        <span>{t('admin.value.empty')}</span>
-      ) : (
-        <a href={`/${props.entity}s/${props.value}`}>{props.value}</a>
-      );
+    case 'reference': {
+      if (props.value === null) return <span>{t('admin.value.empty')}</span>;
+      // `ctx.hrefFor` or nothing. The route table lives on `AdminApp`; this file only ever knew
+      // the target entity's NAME, and turning that into a URL by appending an `s` is a guess.
+      const href = ctx.hrefFor?.(props.entity, props.value) ?? null;
+      return href === null ? <span>{props.value}</span> : <a href={href}>{props.value}</a>;
+    }
     case 'upload':
       return props.value === null ? (
         <span>{t('admin.value.empty')}</span>
@@ -259,5 +260,5 @@ function locales(): readonly string[] {
 
 export function Widget(input: WidgetInput): JSX.Element {
   const props = widgetProps(input.field, input.value, input.ctx);
-  return input.mode === 'read' ? readView(props, input.field) : editView(props, input);
+  return input.mode === 'read' ? readView(props, input.field, input.ctx) : editView(props, input);
 }
