@@ -37,7 +37,7 @@ The bottom rung is `git push` on a plan that costs nothing. No Kubernetes, no Co
 | Concern | What the framework already does |
 |---|---|
 | Port | `packages/http/src/config.ts` reads `env('PORT')`, default 3000 — a platform-assigned port works with no change |
-| Health | every role serves `/healthz` and `/readyz` from `packages/http/src/server.ts`; `/readyz` flips to 503 on SIGTERM before the socket closes |
+| Health | `web` and `sync` serve `/healthz` and `/readyz` from `packages/http/src/server.ts`; `/readyz` flips to 503 on SIGTERM before the socket closes. They are the only roles that construct a server — `worker`, `scheduler` and `replicator` open only the metrics listener, which is exactly what rung 0 runs one of |
 | Release-phase migrations | `ROLE=migrate` runs to completion and exits ([`packages/cli/src/serve.ts`](../../packages/cli/src/serve.ts)); map it to Heroku's release phase or Render's pre-deploy command |
 | Drain | SIGTERM drain is framework behaviour, not a deployment guide ([`11-topology.md`](./11-topology.md)) |
 | Image | Heroku and Render both accept a `Dockerfile`; `x new` writes one at `docker/Dockerfile`, entrypoint `bun apps/web/server.ts` |
@@ -69,7 +69,7 @@ Same platform. The change is `ROLE` and two env vars. This is also the rung a fr
 | Role | Why it leaves the web service |
 |---|---|
 | `worker` | a job that must survive the request that queued it, and must not compete with it for CPU |
-| `scheduler` | cron dispatch, fixed at one — leader election is an advisory lock, so a second instance is an idle standby. **Must be always-on**: a plan that sleeps it drops the cron |
+| `scheduler` | cron dispatch, fixed at one — leader election is an expiring lease row, so a second instance is an idle standby. **Must be always-on**: a plan that sleeps it drops the cron |
 | `migrate` | run-once, before anything serves the new schema |
 
 Add the shared cache tier when there is more than one web replica **and** a measured cross-replica miss. `cache.tiers: ['memo', 'lru', 'shared']` plus `REDIS_URL`. Redis, Valkey or Dragonfly `As of 2026-08` — the key layout is slot-clean, so no engine is excluded and no server flag is needed ([below](#dragonfly-honestly)).
@@ -139,7 +139,7 @@ Every scale component, and exactly what to swap.
 | Job queue | `@ultimat3/jobs` · `JobDriver` (`enqueue`/`claim`/`ack`/`nack`/`heartbeat`/`stats`) | `createPgDriver()`; `setJobDriver()` installs it | `jobs.driver: 'postgres'` | `DATABASE_URL` | shipped |
 | Job queue, Redis | same interface | `createRedisDriver()` — Streams + consumer groups + `XAUTOCLAIM` | `jobs.driver: 'redis'` | `REDIS_URL` | **interface-complete stub, throws `X_NOT_IMPLEMENTED`** |
 | Job queue, NATS | same interface | `createNatsDriver()` — work-queue stream per queue, durable pull consumer, `ack_wait` as the visibility timeout, KV for steps | `jobs.driver: 'nats'` | `NATS_URL` | **interface-complete stub, throws `X_NOT_IMPLEMENTED`** |
-| Scheduler leader | `@ultimat3/jobs` · `createPgLeader` | `SQL_TRY_ADVISORY_LOCK` / `SQL_ADVISORY_UNLOCK` | — | — | shipped |
+| Scheduler leader | `@ultimat3/jobs` · `createPgLeaseLeader` | `SQL_LEADER_ACQUIRE` / `SQL_LEADER_RELEASE` — an expiring row in `x_scheduler_leader`, TTL 30s, `acquire()` doubling as the renewal. **Never `pg_try_advisory_lock`**: it is session-scoped, and the executor is a pool, so the grant dies when the connection returns and every node reads itself as leader | — | — | shipped |
 | Realtime fanout | `@ultimat3/realtime` · `Transport`, via `selectTransport(env)` | `InProcessTransport` \| `NatsTransport` | `realtime.transport` (declarative) | `NATS_URL` | shipped |
 | Presence | `@ultimat3/realtime` · JetStream KV | bucket, default `x_presence`, TTL 30s | — | `NATS_KV_BUCKET` | shipped |
 | Change feed | `@ultimat3/realtime` · `ChangeFeed`, via `selectChangeFeed(env)` | `InMemoryChangeFeed` \| `PgLogicalReplicationFeed` (own PG v3 client, SCRAM-SHA-256, CopyBoth, `pgoutput`) | — | `REPLICATION_URL`, `REPLICATION_SLOT`, `REPLICATION_PUBLICATION` | shipped |
@@ -169,7 +169,7 @@ Rule that survives every rung: **an unset variable means the embedded default.**
 4. **Three config values are accepted and ignored.** `realtime.transport: 'redis'` type-checks and validates, and then `selectTransport` builds in-process or NATS — never Redis. `jobs.driver: 'redis' | 'nats'` type-checks, and every method of both drivers throws. `database.poolSize` is validated at boot and never read: the pool comes from `POOL_PROFILES[role]`, so the one knob a free-tier connection cap needs is the one that does nothing. Honest stubs beat silent drops, but a config field that cannot take effect is still a config field an agent will set.
 5. **The runtime switch is env, not `app.config.ts`.** Nothing at boot reads `config.realtime.transport`; `selectTransport(env)` reads `NATS_URL` and `selectChangeFeed(env)` reads `DATABASE_URL`/`REPLICATION_URL`. This is correct for one-image-everywhere, and it means the ladder is climbed with env vars while the config field documents intent.
 6. **Assembling the cache stack is app-side.** `createRedisTier` is real and complete; no framework code reads `config.cache.driver` and builds the stack for you.
-7. **A transaction-pooling proxy in front of Postgres breaks three things.** Session-level advisory locks are the migration lock, the scheduler leader and the replicator singleton — all three assume one session holds the lock for its lifetime. An operator running this stack records the second half too: transaction pooling breaks server-side prepared statements (`SQLSTATE 26000`), and clients that cannot disable them connect direct. Route every role to the primary directly, or to a session-pooling mode.
+7. **A transaction-pooling proxy in front of Postgres breaks three things.** Session-level advisory locks are the migration lock and the replicator singleton — both assume one session holds the lock for its lifetime. The scheduler leader is not one: it is a lease row, precisely because a pool cannot promise that. An operator running this stack records the second half too: transaction pooling breaks server-side prepared statements (`SQLSTATE 26000`), and clients that cannot disable them connect direct. Route every role to the primary directly, or to a session-pooling mode.
 
 8. **The shared cache tier is topology-clean, and unmeasured on a real cluster.** Both halves are **fixed** `As of 2026-08` ([`packages/cache/src/redis.ts`](../../packages/cache/src/redis.ts)): the script touches only the buckets it was handed and returns the value keys for the tier to `DEL` one at a time, and the buckets carry a `{entity}` hash tag while `invalidateTags` issues one call per tag — so every key of every call hashes to one slot by construction. `redis.test.ts` asserts the emitted keys; **no test runs against a real cluster node**, so rung 1's "add a shared cache" is any Redis-protocol server, with clustered deployments unmeasured rather than unsupported.
 
@@ -199,11 +199,11 @@ Not a supported target. No test in this repo runs against YugabyteDB, and no dia
 | `x_jobs_claim_idx on (queue, run_at)` + `order by run_at` | `jobs/driver-pg-sql.ts` | **works, but hotspots.** A monotonic range index concentrates every claim on one tablet. Yugabyte's own job-queue guidance is a `bucket smallint default floor(random()*4)` prefix column plus a 4-branch `UNION ALL` view to spread it ([docs](https://docs.yugabyte.com/stable/develop/data-modeling/common-patterns/jobqueue/)) |
 | each migration's `up` run inside a transaction | `db/migrate.ts` | **not available.** v2026.1's release notes *disable* transactional DDL and table locks; the feature exists behind `ysql_yb_ddl_transaction_block_enabled` with "weaker isolation guarantees than PostgreSQL," and [#1404](https://github.com/yugabyte/yugabyte-db/issues/1404) is open since 2019. A migration that fails halfway does not roll back |
 | `truncate` in a migration | app-authored SQL | not transactional on Yugabyte, and cannot be rolled back |
-| `information_schema` + `pg_class` / `pg_index` / `pg_attribute` introspection | `db/introspect.ts` | **unverified.** Drift detection and `x db drift` ride on it |
+| `information_schema` + `pg_class` / `pg_index` / `pg_attribute` introspection | `db/introspect.ts` | **unverified.** The database half of drift detection rides on it — `checkDrift()`, run inside `x db migrate` and `ROLE=migrate`. `db` has no drift subcommand at all — the source half is the `drift` **step** of `x verify`, and it opens no database |
 
 ### The blocking findings
 
-1. **Below v2025.1, YugabyteDB cannot run this framework at all.** No advisory locks means no migrations (`migrate()` takes `pg_advisory_lock(4919202607)` before it reads the ledger), no scheduler leader election, no replicator singleton, and no parallel test template. Three of those fail closed with a typed error; the fourth would let two replicators double-deliver.
+1. **Below v2025.1, YugabyteDB cannot run this framework at all.** No advisory locks means no migrations (`migrate()` takes `pg_advisory_lock(4919202607)` before it reads the ledger), no replicator singleton (`PgAdvisoryLock`, which owns its connection), and no parallel test template. Scheduler leader election is **not** on that list: it is an expiring row (`createPgLeaseLeader`), so it survives a database with no advisory locks — and it is a pool, not a session, that made the row the right shape in the first place. Two of the three fail closed with a typed error; the replicator one would let two replicators double-deliver.
 2. **`@ultimat3/ai`'s vector store does not create its schema on YugabyteDB, at any version.** `ddlSql()` emits two `USING gin` indexes. The vector index is fine; hybrid search's full-text half and the metadata index are not — and `ybgin` would still refuse the multi-column and multi-term cases the FTS path needs.
 3. **The `replicator` role does not start on a default Yugabyte database.** Its default replica identity, `CHANGE`, cannot be decoded by `pgoutput`, and one such table in the database is enough. Every replicated table needs `REPLICA IDENTITY FULL` before slot creation — a migration the framework does not write today.
 4. **Migrations are no longer atomic.** `migrate()` runs each `up` inside `withTransaction`; v2026.1 disables transactional DDL. A migration that fails partway leaves the schema partly applied while the ledger row is absent — and the ledger's checksum audit then refuses to move forward. This is the failure that most needs a live test.
@@ -334,7 +334,7 @@ Two rules underneath all of them:
 | Claim | State |
 |---|---|
 | one image, `ROLE` selects the process | **true** — `packages/core/src/roles.ts`, `docker/Dockerfile` |
-| Postgres job queue with `SKIP LOCKED`, partial-unique idempotency, advisory-lock leader | **true** — `packages/jobs/src/driver-pg-sql.ts` |
+| Postgres job queue with `SKIP LOCKED`, partial-unique idempotency, lease-row leader | **true** — `packages/jobs/src/driver-pg-sql.ts` |
 | Redis and NATS job drivers | **stubs** — interface-complete, every method throws `X_NOT_IMPLEMENTED` |
 | shared cache tier over the Redis protocol, tag sets, declared-key invalidation | **true** — `packages/cache/src/redis.ts`; one call per tag over `{entity}`-tagged buckets, then the value keys one `DEL` each, plus single-flight, TTL jitter and a bucket lease |
 | NATS fanout and JetStream KV presence | **true** — `packages/realtime/src/nats-transport.ts`, selected by `NATS_URL` |

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "c24e647fce5b8e8b68bec553c29a3271e3f0bbb13c448b99fd297e567b8040d7",
+  "buildId": "3b5f85fefb3c64371b5eee0792014481edc25ce1f9073e9783e2da41bfa062f4",
   "tiers": {
     "0": [
       "core",
@@ -724,6 +724,31 @@
       "code": "X_DEV_DASHBOARD_IN_PROD",
       "owner": "admin",
       "at": "packages/admin/src/errors.ts"
+    },
+    {
+      "code": "X_DOC_COMMAND_ALLOWANCE_STALE",
+      "owner": "scripts",
+      "at": "scripts/doc-commands.ts"
+    },
+    {
+      "code": "X_DOC_COMMAND_UNKNOWN",
+      "owner": "scripts",
+      "at": "scripts/doc-commands.ts"
+    },
+    {
+      "code": "X_DOC_COMMAND_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/doc-commands.ts"
+    },
+    {
+      "code": "X_DOC_FIX_UNRUNNABLE",
+      "owner": "scripts",
+      "at": "scripts/doc-fixes.ts"
+    },
+    {
+      "code": "X_DOC_FIX_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/doc-fixes.ts"
     },
     {
       "code": "X_DRAINING",
@@ -1611,6 +1636,21 @@
       "at": "packages/core/src/error-codes.ts"
     },
     {
+      "code": "X_README_EXAMPLE_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/readme-fences.ts"
+    },
+    {
+      "code": "X_README_EXAMPLE_UNCOMPILED",
+      "owner": "scripts",
+      "at": "scripts/readme-fences.ts"
+    },
+    {
+      "code": "X_README_EXAMPLE_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/readme-fences.ts"
+    },
+    {
       "code": "X_REBASE_CONFLICT",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
@@ -2234,6 +2274,26 @@
       "code": "X_VERIFY_SUITE_VANISHED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_VERSION_LOCKSTEP_BROKEN",
+      "owner": "scripts",
+      "at": "scripts/version-stamps.ts"
+    },
+    {
+      "code": "X_VERSION_STAMP_DUPLICATE",
+      "owner": "scripts",
+      "at": "scripts/version-stamps.ts"
+    },
+    {
+      "code": "X_VERSION_STAMP_STALE",
+      "owner": "scripts",
+      "at": "scripts/version-stamps.ts"
+    },
+    {
+      "code": "X_VERSION_STAMP_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/version-stamps.ts"
     },
     {
       "code": "X_WIKI_TABLE_MALFORMED",

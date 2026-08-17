@@ -80,7 +80,7 @@ cannot tell them apart.
 
 `schema-error-codes.ts` is the same shape a second time, for codes this package does not even own.
 `@ultimat3/schema` is tier 0 like `core` and so can neither call `registerErrorCodes()` itself nor
-import core to reach it — the two codes' titles are a deliberate, tested duplicate of
+import core to reach it — the four codes' titles are a deliberate, tested duplicate of
 `SCHEMA_ERROR_CODES` in `packages/schema/src/errors.ts`, registered unconditionally at import time
 so any process that imports core (not just `@ultimat3/cli`, which used to be the only registrant)
 renders schema's real titles. Neither tier-0 package can check the duplicate against its source, so
@@ -134,10 +134,20 @@ A boot that must not throw asks `tryOtlpEndpoint(signal)` first.
 `error-reporter.ts` is the same shape a third time: `ErrorReporter`, a no-op default, a memory
 reporter for tests, and a transport on the wire (`error-reporter-sentry.ts`, an optional separate
 export — the DSN is the app's typed env, never a constant here). `reportError` never throws and
-never awaits. One call site per package, same rule as the recorders: `@ultimat3/http`'s
-`pipeline.ts` (`status >= 500` only), `@ultimat3/jobs`' `executeJob`, `@ultimat3/realtime`'s
-`sync-node.ts`. `configureErrorReporting({ release })` is fed the build id `serve.ts` already
-computed — never a second deploy identity.
+never awaits. **Four packages call it, seven call sites, `As of 2026-08`** — and unlike the
+recorders it is not one per package, because `realtime` has two files that can see a throw:
+
+| Package | Call site |
+|---|---|
+| `@ultimat3/http` | `stages.ts` — `status >= 500` only |
+| `@ultimat3/jobs` | `execute.ts`, inside `executeJob`: the one frame still holding the thrown value, where the loop above it sees a message string |
+| `@ultimat3/realtime` | `sync-node.ts` (three) and `sync-upgrade.ts` (one) |
+| `@ultimat3/flags` | `runtime.ts` — `source: 'process'`, severity `warning` |
+
+`configureErrorReporting({ release })` is fed the build id `serve.ts` already computed — never a
+second deploy identity. Trace and span resolve as a **pair**, from one source and never field by
+field: a caller-supplied `traceId` picking up the ambient `spanId` produced reports naming a span
+in a different trace, which is worse than no span because it looks authoritative.
 
 `METRICS_PATH` is served by `@ultimat3/cli`'s `metrics-endpoint.ts`, on `METRICS_PORT` (9090) and
 **not** on the role's HTTP port: the chart's ingress routes `/` to `web`, so `/metrics` beside

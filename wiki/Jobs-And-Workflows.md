@@ -2,7 +2,7 @@
 
 Durable background work, optionally multi-step. Postgres queue by default. `idempotencyKey` is required by the type. Drivers swap without touching job code.
 
-v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
+`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
 ## The canonical shape
 
@@ -77,7 +77,7 @@ External brokers are not exempted: the outbox table stays the transactional reco
 
 | Step rule | Enforcement |
 |---|---|
-| Names unique within one `run` | `X_JOB_DUPLICATE_STEP` at `x verify` |
+| Names unique within one `run` | `X_STEP_DUPLICATE` at `x verify` |
 | Names stable across deploys | renaming a step invalidates its stored result — it re-runs |
 | Step results must be serializable | persisted via the driver's `saveStep` |
 | No step inside a loop with a computed name | non-deterministic names break replay; enumerate them |
@@ -118,7 +118,7 @@ Omitting it is a **compile error**, not a lint warning. At-least-once is the onl
 | Key must be | deterministic from `input` only. No timestamps, no random, no `ctx` |
 | Same key, different payload | `X_IDEMPOTENCY_CONFLICT` — `idempotency key "…" was already used with a different payload` |
 | Same key, still in flight | `X_IDEMPOTENCY_CONFLICT` — retry the same key after the first request settles |
-| Missing key | `X_JOB_NO_IDEMPOTENCY_KEY` at build time |
+| Missing key | `X_IDEMPOTENCY_REQUIRED` at build time |
 
 **Durable business state lives in your tables, never only in the queue payload.** A payload is a pointer, not a record. If the queue is drained, replaced, or migrated to another driver, the business must still be reconstructible from Postgres alone. So `{ orgId }`, not `{ org: {...30 fields} }`.
 
@@ -193,7 +193,8 @@ Two implementations ship in 1.0.0. Two more are **v2** — interface-complete st
 | Attempts exhausted | row moves to dead-letter carrying the full step trace and the serialized error |
 | Inspect | `x jobs show <id> --json` — step results, executions per step, next retry, the failing error |
 | Replay | `x jobs retry <id>` — resumes **from the failed step**, completed steps replay from storage |
-| Bulk | `x jobs retry --queue integrations --failed-since 1h --json` |
+| Stop one | `x jobs cancel <id> --reason "<why>" --json` — exit 0 means it is genuinely stopped; a finished job or a driver that cannot cancel raises `X_JOB_NOT_CANCELLABLE` |
+| Bulk | **not shipped.** `retry` and `cancel` each take one id positional; there is no `--failed-since` and no queue-wide replay. List first (`x jobs ls --state dead --queue integrations --json`), then loop over the ids |
 
 Draining a worker mid-job is safe: it finishes the current step, persists it, and releases the lease so another worker resumes at the next step — never mid-step (`X_DRAINING` on new claims).
 
@@ -217,8 +218,8 @@ Every command supports `--json`. See [CLI reference](CLI-Reference).
 
 | Code | Cause | Fix |
 |---|---|---|
-| `X_JOB_NO_IDEMPOTENCY_KEY` | a `job` declaration omits `idempotencyKey` | add `idempotencyKey: (input) => …` derived from `input` only |
-| `X_JOB_DUPLICATE_STEP` | two `step.run` calls share a name in one `run` | rename one step; step names are the persistence key |
+| `X_IDEMPOTENCY_REQUIRED` | a `job` declaration omits `idempotencyKey` | add `idempotencyKey: (input) => …` derived from `input` only |
+| `X_STEP_DUPLICATE` | two `step.run` calls share a name in one `run` | rename one step; step names are the persistence key |
 | `X_JOB_STEP_FAILED` | a step exhausted its retries | `x jobs show <id> --json`, then `x jobs retry <id>` |
 | `X_IDEMPOTENCY_CONFLICT` | same key, different payload, or still in flight | fresh key for a different payload; otherwise retry after the first settles |
 | `X_DRAINING` | claim attempted on a worker that received SIGTERM | none — the job stays queued and another worker claims it |

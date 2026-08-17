@@ -386,8 +386,12 @@ debugging a stuck queue can read and run the exact statement.
 
 | Role | Entry | Behaviour |
 |---|---|---|
-| `worker` | `createWorker({ driver, queues, concurrency })` | per-queue pools, lease heartbeat, SIGTERM drain: stop claiming → finish in-flight → close |
+| `worker` | `createWorker({ driver, context, queues, concurrency })` | per-queue pools, lease heartbeat, SIGTERM drain: stop claiming → finish in-flight → close |
 | `scheduler` | `createScheduler({ driver, leader, state })` | one dispatch round at a time, catch-up policy, SIGTERM drain: stop dispatching → finish the round → release the lock |
+
+`driver` and `context` are the two required keys on `WorkerOptions`; everything else defaults.
+`context: () => Ctx` supplies the ambient `Ctx` a job run executes under — the app wires its ALS
+and its tenant there, and a worker with no way to build one would run every handler as nobody.
 
 **Pass `state` and `leader` in any real deployment.** The defaults are a `Map` and "always the
 leader", and both fail silently: with no durable watermark a redeployed scheduler arms to tomorrow

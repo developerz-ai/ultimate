@@ -2,7 +2,7 @@
 
 One file: `app.config.ts` at the repo root. There is no per-environment config directory, no `config/production.ts`, no `.env.local` cascade. Environment differences are **env vars**, validated once at boot.
 
-v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Field names are covered by semver: renaming or removing one needs a major, and `x upgrade` codemods it.
+`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Field names are covered by semver: renaming or removing one needs a major, and `x upgrade` codemods it.
 
 ```ts
 import { defineConfig, defineEnv } from '@ultimat3/core';

@@ -2,7 +2,7 @@
 
 One command scaffolds a monorepo that already runs. No Docker daemon, no database to provision, no `.env` to fill in.
 
-v1.1.0 `As of 2026-08`. Every command and every output on this page was executed against `create-ultimate@1.1.0` from npm.
+`As of 2026-08`. **This page documents `main`, not a published release.** Every file count, gate result and command output below was re-measured on this tree: `x new` → `bun install` → the command, in a directory outside the checkout. Rows that still describe a published version say so in their own line.
 
 Series: **1** · [2 — first feature](Tutorial-02-First-Feature) · [3 — auth and admin](Tutorial-03-Auth-And-Admin) · [4 — jobs and realtime](Tutorial-04-Jobs-And-Realtime) · [5 — deploy free](Tutorial-05-Deploy-Free) · [6 — growing up](Tutorial-06-Growing-Up)
 
@@ -18,13 +18,17 @@ Series: **1** · [2 — first feature](Tutorial-02-First-Feature) · [3 — auth
 
 ```bash
 cd $(mktemp -d)
-bunx create-ultimate@1.1.0 myapp
+bunx create-ultimate myapp
 ```
 
+**Unpinned on purpose.** Pinning the tutorial to a version pins readers to a scaffold that stops matching this page on the next tag; `README.md` and `llms.txt` drop the pin for the same reason. To reproduce a specific release, add `@<version>` and read that release's tag of this page.
+
 ```text
-  99 files in /tmp/tmp.XXXXXXXX/myapp
+  115 files in /tmp/tmp.XXXXXXXX/myapp
 ✓ created myapp — next: cd myapp && x dev
 ```
+
+Counts are a derived fact — `x new --dry-run --json` lists every file, and one added template moves the number.
 
 ```bash
 cd myapp && bun install
@@ -34,10 +38,12 @@ cd myapp && bun install
 
 ### Two shapes, one generator
 
+Measured on `main`, `As of 2026-08`, `x new --dry-run --json | jq '.data.files | length'`:
+
 | Invocation | Files | `x verify` on run one |
 |---|---|---|
-| `bunx create-ultimate@1.1.0 myapp` | 99 | 16 of 17 green — `typecheck` fails on two known gaps, [below](#the-one-red-step-on-run-one) |
-| `bunx create-ultimate@1.1.0 myapp --no-example` | 76 | **all 17 green** |
+| `bunx create-ultimate myapp` | 115 | 11 pass, **1 fails**, 5 skipped — the red step is `budgets`, [below](#the-one-red-step-on-run-one) |
+| `bunx create-ultimate myapp --no-example` | 91 | 10 pass, **1 fails**, 6 skipped — the same red step, one fewer route |
 
 `--no-example` omits the `post` feature slice and its route. Pick it when an agent is about to write the real feature anyway — [tutorial 2](Tutorial-02-First-Feature) starts there. Pick the default when you want a worked example to read.
 
@@ -47,30 +53,47 @@ cd myapp && bun install
 bunx x verify
 ```
 
-`--no-example`, verbatim:
+`--no-example`, verbatim, on `main` `As of 2026-08`:
 
 ```text
-  ✓ typecheck          11297ms
-  ✓ lint               109ms
-  ✓ boundaries         6ms
-  ✓ filesize           5ms
-  ✓ package-shape      2ms
-  ✓ errors             5ms
-  ✓ unit               175ms
+  ✓ typecheck          19642ms
+  ✓ lint               359ms
+  ✓ boundaries         124ms
+  ✓ filesize           80ms
+  ✓ package-shape      28ms
+  ✓ errors             86ms
+  ✓ unit               2046ms  8 workers
   - contract           0ms
   - live               0ms
   - job                0ms
   - e2e                0ms
-  ✓ eval               31ms
-  ✓ drift              2ms
+  ✓ eval               2907ms
+  ✓ drift              18ms
   - contract-diff      0ms
-  ✓ budgets            0ms
-  ✓ manifest           1ms
+  ✗ budgets            120ms
+  ✓ manifest           63ms
   - roadmap            0ms
-✓ 11 of 17 steps passed in 11633ms — 6 skipped: contract, live, job, e2e, contract-diff, roadmap
+✗ 1 of 17 steps failed — 6 skipped: contract, live, job, e2e, contract-diff, roadmap
 ```
 
 `-` is skipped, not passed: no `*.contract.test.ts` exists yet, so the step has nothing to check. The summary counts the two apart and names every skip, so a gate that is green because a suite does not exist says so on the one line you read. [Tutorial 2](Tutorial-02-First-Feature) turns three of those dashes into ticks.
+
+Timings are one Linux laptop, not a benchmark.
+
+### The one red step on run one
+
+`budgets`, one finding per route with a declared budget:
+
+```text
+  ✗ budgets            120ms
+      X_BUDGET_UNMEASURED (/)
+        cause: / declares a JS and LCP budget and no build has written .x/build-stats.json in this repo
+        fix:   x build --target static --json && x verify --json
+```
+
+Three routes with `--no-example` (`/`, `/admin`, `/dashboard`), four with the example slice (plus `/posts`).
+
+**Not a scaffold defect, and no template change closes it.** Every generated route declares a `budget:`, and the `budgets` step reads its measurement out of `.x/build-stats.json` — a file only `x build --target static` writes, through `apps/web/prerender.ts`. A bare `x build` defaults to `docker` and writes no stats. So on a fresh app every budget is unmeasured. Run the step's own `fix:` once and it goes green; closing it permanently is a change to the step, not to the scaffold. It is the one red step the framework's own `scaffold-smoke` CI job allows (`--allow-red budgets`), and that list may never grow.
 
 ### The invariant block is typed from your columns
 
@@ -159,46 +182,39 @@ myapp/
 └── AGENTS.md  CLAUDE.md     the two files an agent reads first
 ```
 
-Boundaries are a build error, not a note: `bunx x boundaries` runs inside `x verify`. Full model: [Project layout](Project-Layout).
+Boundaries are a build error, not a note — but `boundaries` is a **step of `x verify`**, not a top-level command. `bunx x boundaries` exits `X_CLI_UNKNOWN_COMMAND`. Run `bunx x verify` and read the `boundaries` line. Full model: [Project layout](Project-Layout).
 
-### `bin/setup` is broken at 1.1.0
+### The database, first run
 
-`bin/setup` calls `bunx x db migrate`, which on 1.1.0 shells out to `drizzle-kit` — a package a scaffolded app neither installs nor configures. It exits `X_DB_MIGRATE_FAILED`. Skip it; `bun install` plus `bunx x dev` is the whole first run, and [tutorial 2](Tutorial-02-First-Feature#migrations) covers migrations.
+`bin/setup` runs `bun install` then `bunx x db migrate`, and `x db migrate` runs `@ultimat3/db`'s own migrator — the same one `ROLE=migrate` runs — so nothing extra has to be installed. It applies `0000_initial` and then reports one finding:
 
-**Fixed on `main`, unreleased.** `x db migrate` now runs `@ultimat3/db`'s own migrator — the same one `ROLE=migrate` runs — so `bin/setup` works with nothing extra installed.
+```text
+X_DB_DRIFT: migration "0000_initial" records no schema snapshot, so what this database owes
+            cannot be established
+```
 
-## Three standing findings
+`x new` writes the migration without its `.snapshot.json` sidecar, so the first `x db gen` is also refused, with `X_MIGRATION_SNAPSHOT_MISSING`. Measured on `main` `As of 2026-08`; the workaround and the file that causes it are on [Known gaps](Known-Gaps).
 
-Every registry command in a fresh scaffold prints the same three. They are **not** `x verify` steps, so the gate stays green while they sit there:
+## The routes are clean
+
+`x routes` on a fresh scaffold reports four routes and no findings — the scaffold writes `apps/admin/app/admin/page.tsx` rather than claiming `/` twice, and no page declares `render: 'stream'` without a boundary:
 
 ```bash
 bunx x routes
 ```
 
 ```text
-  X_ROUTE_MODE_INVALID (apps/web/app/posts/page.tsx)
-    cause: … declares render: 'stream' but has no <Suspense> boundary, so there is nothing to
-           stream — the whole page waits like ssr
-  X_ROUTE_MODE_INVALID (apps/web/app/dashboard/page.tsx)
-  X_ROUTE_DUPLICATE (apps/admin/app/page.tsx)
-    cause: / is claimed by both apps/web/site/page.tsx and apps/admin/app/page.tsx
-```
-
-| Finding | Fix that works | Fix that does not |
-|---|---|---|
-| `X_ROUTE_MODE_INVALID` ×2 | set `render: 'ssr'` in the page **and** in its `page.test.ts`, which pins the mode | adding `<Suspense>`: Solid's throws under this renderer at any version, and async data needs no boundary — `await` it in the component |
-| `X_ROUTE_DUPLICATE` | `mv apps/admin/app/page.tsx apps/admin/app/admin/page.tsx` — the directory is the URL | deleting the site landing page |
-
-After both:
-
-```text
   path        surface  render  hydrate  offline       file
   /           site     static  never    precache      apps/web/site/page.tsx
   /admin      app      spa     idle     network-only  apps/admin/app/admin/page.tsx
   /dashboard  app      ssr     visible  runtime       apps/web/app/dashboard/page.tsx
-  /todos      app      ssr     visible  runtime       apps/web/app/todos/page.tsx
+  /posts      app      ssr     visible  runtime       apps/web/app/posts/page.tsx
 ✓ 4 routes
 ```
+
+`--no-example` drops `/posts` and reports three. `x routes` is not a gate step either way, so a finding here never fails `x verify` — run it after scaffolding and after every `x g route`.
+
+If you do hit `X_ROUTE_MODE_INVALID` on a page you wrote, its `fix:` offers two edits and only the second works: set `render: 'ssr'`. Solid's `<Suspense>` throws under this renderer at any version, and async data needs no boundary — `await` it in the component ([Known gaps](Known-Gaps)).
 
 ## The five commands worth memorising
 

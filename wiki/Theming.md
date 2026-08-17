@@ -2,7 +2,7 @@
 
 SCSS modules + design tokens. No Tailwind, no CSS-in-JS, no second CSS system. Build-time only, zero runtime.
 
-v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
+`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
 Every colour is a semantic token. A raw hex in any component or stylesheet is a lint failure and fails `x verify`'s `lint` step.
 

@@ -1,18 +1,14 @@
 # PWA and offline
 
-`sw.js` is a build artifact, generated from the route table. Hand-editing it is a build error (`X_SW_HAND_EDITED`, checksum mismatch).
+`sw.js` is a build artifact, generated from the route table. Hand-editing it is **not** caught: `As of 2026-08` `sw.js` carries no checksum, so an edit survives the build and is silently overwritten by the next one. `X_SW_HAND_EDITED` is a **reserved** name — nothing raises it, and `x errors explain X_SW_HAND_EDITED` refuses it ([Error codes → Not thrown yet](Error-Codes#not-thrown-yet)). Treat "do not edit `sw.js`" as a convention, not a rule, until the checksum ships.
 
-v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
+`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
 ## Why generated
 
 A service worker is a cache-policy compiler whose input is already declared on every route: render mode, offline strategy, asset graph. Hand-writing it duplicates that information, and the duplicate drifts. Every notorious PWA bug — the page serving last month's HTML, the chunk 404 after deploy, the user stuck on a version until they clear site data — is a service worker that disagreed with the app.
 
-```
-X_SW_HAND_EDITED: sw.js does not match its generated checksum
-  cause: apps/web/public/sw.js differs from the artifact emitted for build 9f3c1a2
-  fix:   x build   # change the route's `offline` field instead of editing sw.js
-```
+The edit an agent should make is the route's `offline` field, then `x build`. Nothing enforces that today — see the reserved-code note above.
 
 ## Derived from the route
 
@@ -53,13 +49,7 @@ Total precache size is a **budget** — exceeding it fails `x verify` rather tha
 | `stream` | `runtime` | network-first for the document, cache-first for chunks | shell freshness matters; chunks are content-hashed |
 | `spa` | `precache` | shell cache-first, data network-only | the shell is static; the data never is |
 
-Overriding `offline` is allowed; contradictions are rejected.
-
-```
-X_SW_UNCACHEABLE: route cannot use the requested offline strategy
-  cause: app/reports declares offline: 'precache' with render: 'ssr' — a per-request render has no cacheable body
-  fix:   set render: 'isr' or offline: 'network-only' in apps/web/app/reports/page.tsx
-```
+Overriding `offline` is allowed. Contradictions are **not** rejected `As of 2026-08`: `offline: 'precache'` on a `render: 'ssr'` route is accepted, and `X_SW_UNCACHEABLE` is a reserved name nothing raises ([Error codes → Not thrown yet](Error-Codes#not-thrown-yet)). The scope half *is* enforced — `X_SW_SCOPE_INVALID`, when the service-worker scope cannot serve the routes it precaches. Until the coherence check ships, review the pairing yourself: a per-request render has no cacheable body, so `precache` on `ssr` means the shell is served stale.
 
 Mutations are never cached. **Offline writes go through the tier-3 mutator queue ([Realtime](Realtime)), not through Background Sync guesswork** — a durable queue with a declared `conflict` strategy per mutator, replayed on reconnect and rebased against server truth. Background Sync, when enabled, is only a wake-up trigger for that queue; it is never the queue.
 
@@ -148,25 +138,30 @@ pwa: {
 
 All of them are `route` / `action` / `job` primitives underneath ([The eight primitives](The-Eight-Primitives)) — a push send is a job, a share target is a route with a policy. No PWA-specific concept escapes into the app's mental model.
 
-## What `x verify` checks
+## What is checked, and where
 
-| Check | Fails on |
-|---|---|
-| SW checksum | `sw.js` differs from the generated artifact (`X_SW_HAND_EDITED`) |
-| Strategy coherence | an `offline` value contradicting the route's `render` (`X_SW_UNCACHEABLE`) |
-| Precache budget | total precache bytes over the configured cap |
-| Fallback presence | `pwa.offline.fallback` missing, or pointing at a route that does not exist |
-| Prerenderability | a `precache` route that is not actually prerenderable |
-| Retention config | asset retention below the minimum N-deploys / window |
-| Build ID shape | a timestamp or `latest` used as a build ID |
+`x verify` has **no PWA step** — its 17 steps are typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap. The two PWA checks that ship run in **`x doctor`** ([`packages/cli/src/cmd-doctor.ts:129`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/cmd-doctor.ts)), and report `@ultimat3/pwa`'s own codes rather than CLI twins of them.
+
+| Check | Where | Fails on | `As of 2026-08` |
+|---|---|---|---|
+| Source icon present | `x doctor` | the 1024×1024 source PNG is missing, so install icons and OG images cannot be generated (`X_PWA_ICON_MISSING`) | **shipped** |
+| Offline fallback route present | `x doctor` | the fallback route file is missing, so an offline navigation lands on the browser error page (`X_PWA_NO_OFFLINE_FALLBACK`) | **shipped** |
+| SW scope | `@ultimat3/pwa` | the service-worker scope cannot serve the routes it precaches (`X_SW_SCOPE_INVALID`) | **shipped** |
+| SW checksum | — | nothing computes one; `X_SW_HAND_EDITED` is reserved | **not built** |
+| Strategy coherence | — | an `offline` value contradicting the route's `render` is accepted; `X_SW_UNCACHEABLE` is reserved | **not built** |
+| Precache budget | — | no step reads precache bytes | **not built** |
+| Retention config | — | `retentionPlan(deploys, keep = 3)` is a call-site argument, not a validated config field | **not built** |
+| Build ID present | `@ultimat3/pwa` | `generateServiceWorker` was handed an empty build id, so caches cannot be keyed and skew cannot be detected (`assertBuildId`) | **shipped** |
+| Build ID *shape* | — | only emptiness is rejected. A timestamp or `latest` is accepted, and both defeat the immutable-namespace guarantee | **not built** |
+| Offline fallback declared | `@ultimat3/pwa` | no `offline` block, or one with no `fallback` route — `generateServiceWorker` refuses with `X_PWA_NO_OFFLINE_FALLBACK` rather than building a worker that falls through to the browser error page | **shipped** |
 
 `x test e2e` additionally asserts SW install, offline fallback rendering, and the version-skew reload path in a real browser. See [Testing](Testing).
 
 ## Rules
 
-- Never hand-edit `sw.js`. Change the route, rebuild.
+- Never hand-edit `sw.js`. Change the route, rebuild. **Convention, not a rule** — nothing checks it `As of 2026-08`.
 - Never cache an authenticated response without an explicit `offline` field on the route.
-- Never use a timestamp or `latest` as a build ID.
+- Never use a timestamp or `latest` as a build ID. **Convention, not a rule** — `assertBuildId` rejects only an empty one.
 - Never force-reload a user without a grace period, except on a `--critical` deploy.
 - Never cache a mutation. Offline writes are the tier-3 mutator queue's job.
-- Never ship a PWA without `/offline` — the type will not let you.
+- Never ship a PWA without an `offline.fallback` route — `generateServiceWorker` refuses (`X_PWA_NO_OFFLINE_FALLBACK`). A runtime refusal at build time, not a type error: `OfflineConfig` is passed as a `Partial`.

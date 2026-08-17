@@ -2,7 +2,7 @@
 
 Scaffold the slice, register it, migrate it, name the tests. One `action` declaration becomes an HTTP route, an OpenAPI operation, a typed client method, a job handle, an MCP tool and three contract assertions — with no second file to keep in step.
 
-v1.1.0 `As of 2026-08`. Every command and every output on this page was executed against a `create-ultimate@1.1.0 --no-example` app.
+`As of 2026-08`. Every command and every output on this page was executed against a `create-ultimate@1.1.0 --no-example` app.
 
 Series: [1 — first app](Tutorial-01-First-App) · **2** · [3 — auth and admin](Tutorial-03-Auth-And-Admin) · [4 — jobs and realtime](Tutorial-04-Jobs-And-Realtime) · [5 — deploy free](Tutorial-05-Deploy-Free) · [6 — growing up](Tutorial-06-Growing-Up)
 

@@ -79,7 +79,7 @@ export const tag = tags({
 | `tag.post.id(postId)` | one row | the common case; narrowest eviction |
 | `tag.feed` | derived; declares `[tag.post]` as an upstream | list views that a post membership affects |
 
-Queries acquire tags automatically from the tables their `sql` touches. Routes declare them in `revalidate.tags`. Actions declare them in `cache.invalidates`. The graph is a build-time artifact in `x.manifest.json`, so `x cache graph --json` prints exactly what a write will evict — before you run it.
+Queries acquire tags automatically from the tables their `sql` touches. Routes declare them in `revalidate.tags`. Actions declare them in `cache.invalidates`. The graph is a build-time artifact in `x.manifest.json`. `x cache graph --json` would print exactly what a write will evict before you run it — **planned, not shipped**; it exits `X_NOT_IMPLEMENTED` and its own fix sends you to `x dev` and the cache panel at `/_x`.
 
 ## One hop, all tiers
 
@@ -157,7 +157,7 @@ Also cached exactly (tier 3, not semantic): embeddings themselves, keyed by cont
 ## Rules
 
 - Cache keys are framework-generated. A hand-built key is a rejected PR.
-- Every cached `query` carries at least one tag, enforced by `x verify`.
+- Every cached `query` should carry at least one tag — an entry stored without them is reachable and undroppable until its TTL. **A convention, not a rule**: `As of 2026-08` `tags` defaults to `[]` (`packages/query/src/cache.ts:185`) and no step checks it.
 - Never cache a value whose policy scope is not in its key.
-- `flushAll` exists only as `x cache clear` in dev; there is no runtime API for it.
+- `flushAll` has no runtime API. `x cache clear` is **planned**, not shipped.
 - Cache misses must be correct and merely slower — no code path may depend on a hit.

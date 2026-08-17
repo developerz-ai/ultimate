@@ -126,6 +126,10 @@ and again inside the plan both drivers build, so `findMany({ limit })` straight 
 cannot route around it. `inBatches(size)` is the call that means "every row" — one page per
 statement, never a table in memory.
 
+`DEFAULT_PAGE_SIZE`, `MAX_PAGE_SIZE` and `MAX_ASSERTED_ROWS` are exported, beside
+`N_PLUS_ONE_THRESHOLD` and for the same reason: an action validating its own `pageSize` input
+against a hardcoded `10_000` is a second declaration of one number, and the second one goes stale.
+
 ## Iterating every row
 
 `As of 2026-08`. A page is bounded on purpose, so reading a whole table is a loop — and the loop is

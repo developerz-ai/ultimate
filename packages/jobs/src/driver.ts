@@ -193,8 +193,10 @@ export interface JobDriver {
    * Optional, like `introspect` and `backfills`: fleet-wide slot counting, which is the only thing
    * that can make `job.concurrency` mean what its docstring says. The in-process limiter is a fast
    * path over ONE heap and is multiplied by the replica count; this is the gate that is not.
-   * A driver without one enforces `concurrency` per process and the worker says so at start
-   * (`jobs.worker.concurrency-unenforced`) rather than letting the guarantee pass silently.
+   * A driver without one can only hold the cap per process, so `createWorker().start()` THROWS
+   * `X_JOB_CONCURRENCY_UNENFORCEABLE` (`worker.ts`) naming every registered job that declared
+   * `concurrency` — refused rather than logged, because a documented guarantee that silently does
+   * nothing is worse than either alternative.
    */
   readonly leases?: LeaseStore;
   readonly introspect?: JobIntrospection;

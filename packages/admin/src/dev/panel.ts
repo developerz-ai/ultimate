@@ -5,7 +5,7 @@
 import type { DevSources } from './facts';
 
 export interface DevPanel<Data = unknown> {
-  /** URL segment and `--json` selector: `x dev --panel routes --json`. */
+  /** URL segment under `/_x`, and the key `devDashboard().json(key)` takes. */
   readonly key: string;
   readonly titleKey: string;
   /**

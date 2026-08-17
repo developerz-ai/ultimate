@@ -71,13 +71,17 @@ In a VDOM framework a streaming shell still pays for hydrating the whole tree, w
 
 | Concern | Enforcement |
 |---|---|
-| `meta.title` missing on any route | build error `X_SEO_NO_TITLE` |
-| `meta.description` missing on a **`site/`** route | build error `X_SEO_NO_DESCRIPTION` + `fix: add description to meta in <file>` |
-| Description outside 50–160 chars | build error, with the measured length |
-| Duplicate title/description across routes | build error — duplicate meta is a ranking bug, not a style issue |
-| `og.image` missing on a shareable route | build error; the generated fallback OG image must be opted into explicitly |
-| Broken internal link | build error, resolved against the route table |
-| Missing `alt` on an `<Image>` | build error |
+| `meta.title` or `meta.description` missing on an indexable route | `X_SEO_META_MISSING`, naming the file and the exact edit (`packages/seo/src/validate.ts:61-83`) |
+| `meta` absent from `defineRoute()` at all | `X_ROUTE_META_MISSING` — render refuses the declaration before seo ever sees it |
+| Title over 60 chars, description over 160 | `X_SEO_META_TOO_LONG`, with the measured length. **A maximum only** — no minimum is checked, so a 12-character description passes |
+| Duplicate title/description across routes | `X_SEO_DUPLICATE_META` — duplicate meta is a ranking bug, not a style issue |
+| A `canonical` that does not resolve to its own route | `X_SEO_CANONICAL_MISMATCH`, static paths only; a dynamic route's canonical is produced per item at render time |
+| Missing `alt` on an `<Image>` | a **type** error — `alt: string` is required (`packages/ui/src/components/Image.tsx:27`). `alt=""` is the deliberate opt-out for a decorative image |
+
+Two checks this page claimed and the framework does not run, `As of 2026-08`: a required `og.image`
+on a shareable route, and broken-internal-link resolution against the route table. Neither exists in
+any package or gate step. They are conventions a reviewer applies, not build errors — per axiom 3,
+that means they do not exist.
 | Canonical URL | emitted for every route from the route table; never hand-written |
 | `robots` / `noindex` | a route-level field, so "we shipped staging to Google" is impossible without editing the route |
 

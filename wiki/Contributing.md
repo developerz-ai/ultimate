@@ -1,6 +1,6 @@
 # Contributing
 
-Bun-only monorepo. One gate: `x verify`. v1.1.0 `As of 2026-08` — semver covers the documented surface, so read the tier table before adding an import and assume a rename is a major ([Upgrading](Upgrading)).
+Bun-only monorepo. One gate: `x verify`. `As of 2026-08` — semver covers the documented surface, so read the tier table before adding an import and assume a rename is a major ([Upgrading](Upgrading)).
 
 ```
 bun install
@@ -99,8 +99,8 @@ In a generated app the same mechanism enforces `site/` cannot import `app/`, rou
 | Tests next to the source as `<file>.test.ts` | never a `__tests__/` directory | review |
 | Comments explain WHY | plus a 1–4 line header stating the module's single responsibility | review |
 | i18n-ready | zero hardcoded user-facing strings — everything through `t()` | `x verify` (i18n check) |
-| Dark-theme-ready | every colour a semantic token, never a raw hex | `x verify` lint stage |
-| tz-ready | never format a date without an explicit IANA `timeZone` | `x verify` lint stage, `X_TIME_NO_ZONE` at runtime |
+| Dark-theme-ready | every colour a semantic token, never a raw hex | **review — a convention, not a rule.** `As of 2026-08` no Biome rule and no `x verify` step reads a stylesheet for a hex literal. What *is* enforced is the token name: `t.role('<name>')` with a role that does not exist throws `X_TOKEN_UNKNOWN` |
+| tz-ready | never format a date without an explicit IANA `timeZone` | **the type signature.** Every `@ultimat3/time` formatter takes a required `zone` and rejects a non-IANA value with `X_TIMEZONE_INVALID`, so a formatted date with no zone does not compile. A bare `Date.prototype.toLocaleString()` is caught by **nothing** — no lint rule, no gate step. `X_TIME_NO_ZONE` is not a code: it exists nowhere in the source or the manifest |
 | Money as minor units | `Money = { readonly minor: number; readonly currency: string }` — one declaration in `@ultimat3/schema`, aliased by `money` and `entity`, never restated. Never a float, never a `bigint` on a row | types + `type-pins.ts` + `X_MONEY_NOT_INTEGER` |
 
 TypeScript strictness comes from [`tsconfig.base.json`](https://github.com/developerz-ai/ultimate/blob/main/tsconfig.base.json) and is not negotiable per package: `strict`, `noUncheckedIndexedAccess`, `noImplicitOverride`, `noFallthroughCasesInSwitch`, `noPropertyAccessFromIndexSignature`, `exactOptionalPropertyTypes`, `isolatedModules`, `verbatimModuleSyntax`, `composite`. `noNonNullAssertion` is a Biome **warning** — treat it as an error in review; a `!` is almost always a missing narrow.
@@ -157,7 +157,7 @@ A code with no `fix` command is not mergeable. "Errors are instructions" is axio
 | >=2 meaningful tests per package | tests that would catch a real regression. `expect(true).toBe(true)` is a rejected PR |
 | Never mock the database | clone it. One real Postgres per test worker |
 | Never assert on wall-clock time | advance the frozen clock |
-| Never reach the network unmocked | it fails by design with `X_TEST_NETWORK_EGRESS` |
+| Never reach the network unmocked | it fails by design with `X_TEST_NETWORK_SEALED` |
 | A flaky test is fixed or deleted **the day it flakes** | there is no `retry: 3` |
 
 Six test types, each a first-class runner: `unit`, `contract`, `live`, `job`, `e2e`, `eval`. See [Testing](Testing).

@@ -9,11 +9,23 @@ import { citedCommandProblem, fixCitations, loadCommandCatalog } from './fix-com
 
 const catalog: CommandCatalog = {
   specs: [
-    { name: 'jobs', summary: '', usage: '', subcommands: ['ls', 'show', 'cancel'] },
+    {
+      name: 'jobs',
+      summary: '',
+      usage: '',
+      subcommands: ['ls', 'show', 'cancel'],
+      flags: [{ name: 'from-step', type: 'string', summary: '' }],
+    },
     { name: 'db', summary: '', usage: '', subcommands: ['gen', 'migrate', 'studio'] },
-    { name: 'new', summary: '', usage: '' },
+    {
+      name: 'new',
+      summary: '',
+      usage: '',
+      flags: [{ name: 'example', type: 'boolean', summary: '' }],
+    },
     { name: 'generate', summary: '', usage: '', aliases: ['g'] },
     { name: 'logs', summary: '', usage: '' },
+    { name: 'test', summary: '', usage: '', positionalChoices: ['unit', 'eval'] },
   ],
   planned: new Set(['logs']),
   plannedSubcommands: new Set(['db studio']),
@@ -38,6 +50,20 @@ describe('a fix that cites a command this build does not ship', () => {
 
   test('a planned subcommand is the finding too', () => {
     expect(citedCommandProblem('x db studio', catalog)).toContain('X_NOT_IMPLEMENTED');
+  });
+
+  test('an unknown FLAG is the finding — the command resolves and the parser still refuses', () => {
+    // `x jobs retry --from <step>` ships in two docs pages; the flag is `--from-step`. A rule that
+    // stopped at the command name accepted it, and an agent running it gets X_CLI_BAD_FLAG.
+    const problem = citedCommandProblem('x jobs cancel <id> --from 3', catalog);
+    expect(problem).toContain('--from');
+    expect(problem).toContain('X_CLI_BAD_FLAG');
+  });
+
+  test('a positional outside a declared closed set is the finding', () => {
+    // `x test summarize` is what @ultimat3/ai's README still prints as a fix line: `x test`
+    // declares no subcommands, so the second word was never judged at all.
+    expect(citedCommandProblem('x test summarize', catalog)).toContain('not one of');
   });
 });
 
@@ -72,12 +98,42 @@ describe('the rule is conditional, not universal', () => {
   test('a digit is part of a name, not a boundary', () => {
     // `x i18n check` read through `[a-z-]*` cites `x i`, which is not a command — three of the
     // framework's own fix lines were false findings until the character class allowed digits.
-    expect(fixCitations('x i18n check --json')).toEqual([{ command: 'i18n', sub: 'check' }]);
+    expect(fixCitations('x i18n check --json')).toEqual([
+      { command: 'i18n', sub: 'check', flags: ['json'] },
+    ]);
   });
 
   test('`x` with nothing after it cites nothing', () => {
     expect(fixCitations('run x')).toEqual([]);
     expect(fixCitations('x --json')).toEqual([]);
+  });
+
+  test('a declared flag holds, negated or not, and `--json` holds everywhere', () => {
+    expect(citedCommandProblem('x jobs cancel <id> --from-step 3 --json', catalog)).toBeUndefined();
+    expect(citedCommandProblem('x new my-app --no-example', catalog)).toBeUndefined();
+  });
+
+  test("a second command's flags are not charged to the first", () => {
+    // One fix line routinely names two: charging `--from-step` to `x db migrate` would be a
+    // finding about the wrong half of the sentence.
+    expect(
+      citedCommandProblem('x db migrate, then x jobs cancel <id> --from-step 3', catalog),
+    ).toBeUndefined();
+  });
+
+  test('a planned command is not judged on its flags — its spec declares none', () => {
+    // `x logs tail --since 1h` fails for exactly one reason, and it is X_NOT_IMPLEMENTED.
+    expect(citedCommandProblem('x logs tail --since 1h', catalog, { allowPlanned: true })).toBe(
+      undefined,
+    );
+  });
+
+  test('allowPlanned lets a doc SAY a command is planned', () => {
+    expect(citedCommandProblem('x logs tail', catalog, { allowPlanned: true })).toBeUndefined();
+    // and it does not widen anything else
+    expect(citedCommandProblem('x db query', catalog, { allowPlanned: true })).toContain(
+      'no such subcommand',
+    );
   });
 
   test('an interpolated command name is out of reach and is not guessed at', () => {

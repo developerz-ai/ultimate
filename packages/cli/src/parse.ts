@@ -26,6 +26,16 @@ export interface CommandSpec {
    * sorted first. A command with no defensible default omits this and the parser refuses instead.
    */
   readonly defaultSubcommand?: string;
+  /**
+   * A closed set the FIRST positional must come from, where the command has one. Declarative only:
+   * the parser leaves positionals to the command, because `x test`'s own `readOnlyType` already
+   * refuses an unknown type with the list. What this adds is a set `fix-command.ts` can resolve a
+   * citation against. `packages/ai/src/eval-errors.ts` avoids `x test <eval-name>` by hand, with a
+   * three-line comment explaining that it is `X_CLI_BAD_FLAG` — a convention held by memory,
+   * because nothing outside `cmd-test.ts` knew what `x test` accepts. Declare it from the SAME
+   * constant the command validates against, never a second literal.
+   */
+  readonly positionalChoices?: readonly string[];
   readonly flags?: readonly FlagSpec[];
   /** Command needs an app root (`app.config.ts`) — the dispatcher enforces it. */
   readonly requiresApp?: boolean;

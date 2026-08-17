@@ -17,7 +17,7 @@ Pattern per concern: the rule, the mechanism that makes violating it fail, and t
 ```ts
 t('post.publish');                        // static key — extractable
 t('cart.items', { count: 3 });            // plural — selects cart.items.{one,other,…}
-t('greeting', { name: user.firstName });  // typed slot — a missing var is a compile error
+t('greeting', { name: user.firstName });  // vars are open: a missing one renders the placeholder
 ```
 
 ```json
@@ -28,24 +28,25 @@ t('greeting', { name: user.firstName });  // typed slot — a missing var is a c
 
 | Mechanism | Detail |
 |---|---|
-| Lint rule `hardcoded-string` | a user-facing literal outside `t()` is a build error ([`02-boundaries.md`](./02-boundaries.md)) |
+| No hardcoded user-facing string | **a convention, not a rule.** `As of 2026-08` no Biome rule and no gate step refuses a literal outside `t()` — `biome.json` declares no such rule, and `x i18n check` reads `t()` calls, never the strings beside them. Per axiom 3 this is a review discipline until a check exists |
 | Loud miss | dev renders `⟦key⟧`; the string is impossible to miss in a screenshot or a snapshot test |
-| Extraction gate in `x verify` | AST-scan every `t()` call → the key set; diff against every configured locale's catalog. A key missing in **any** locale is `X_I18N_MISSING_KEY` with `fix: x i18n add <key>` |
-| Unused keys | reported; `x i18n prune --json` removes them. Failing on unused is opt-in, since a key can be used by a template |
-| Dynamic keys | extraction cannot see `t(someVar)`. Declare the set: `t.oneOf(POST_STATES, state)` where `POST_STATES` is a const union — then extraction enumerates it. A raw `t(variable)` is a build error |
-| Typed slots | interpolation variables are inferred from the catalog string, so `t('greeting', {})` fails to compile |
-| Plural completeness | a locale's catalog must supply every CLDR category that locale uses (`ru` needs `one/few/many/other`) — missing category is a build error, not a runtime fallback |
+| Extraction gate | `x i18n check` — scan every `t()` call → the key set; diff against every configured locale's catalog. A key missing in **any** locale is `X_CATALOG_MISSING_KEYS` with `fix: x i18n sync <locale>` |
+| `x i18n add <locale>` | takes a **locale**, not a key: it creates that locale's catalog file. `x i18n sync <locale>` is the one that writes the missing keys into it |
+| Unused keys | reported by `x i18n check` and never a failure — only `missing` becomes a finding (`packages/cli/src/cmd-i18n.ts:102-108`). **No command removes them**: there is no `prune`, planned or shipped. Delete the key from `packages/i18n/catalogs/<locale>.json` by hand |
+| Dynamic keys | extraction cannot see `t(someVar)`. `x i18n check` **reports** each one with its file, line and expression, and `runtimeKeyPatterns` uses them to stop the unused half firing on a key only a template reaches. It is not a build error and there is no `t.oneOf` |
+| Typed keys | `TranslationKey<TCatalog>` makes an unknown **key** a compile error. The interpolation **vars** are not typed against the catalog string — `vars?: TranslateVars` is optional and open (`packages/i18n/src/translator.ts:46`), so a missing slot renders the placeholder rather than failing to compile |
+| Plural completeness | selection is `Intl.PluralRules`, CLDR categories, never an English `n === 1` (`packages/i18n/src/interpolate.ts:57-70`). A **missing** category falls back at runtime; no gate step requires a locale to supply every category it uses |
 | SEO | `hreflang` reciprocal set + per-locale prerender come from the route table ([`../idea/07-rendering-seo.md`](../idea/07-rendering-seo.md)) |
 
 ### Bugs prevented
 
 | Bug | Why it cannot happen |
 |---|---|
-| "1 items" | plural category comes from CLDR, and the catalog must define the categories the locale uses |
+| "1 items" | plural category comes from CLDR (`Intl.PluralRules`), never `count === 1`. A category the catalog omits falls back down `pluralKeyCandidates` rather than rendering the English form |
 | Russian/Polish/Arabic plurals silently wrong | same — `one/other` is not a valid `ru` catalog |
-| English leaking into `/es/` | a key missing from `es` fails the build, not the page |
-| A string that never gets translated | it could not be written in the first place |
-| Sentences broken by concatenation | slots are typed and ordered by the catalog, so word order is the translator's decision |
+| English leaking into `/es/` | a key missing from `es` renders `⟦key⟧`, and `x i18n check` reports it as `X_CATALOG_MISSING_KEYS`. `x verify` has no i18n step, so this one is a command you run, not a step you inherit |
+| A string that never gets translated | `x i18n check` names it — but only once it is inside a `t()`. A literal outside one is still reachable, see Enforcement above |
+| Sentences broken by concatenation | the whole sentence is one catalog entry, so word order is the translator's decision rather than the caller's |
 
 ## Theming
 
@@ -80,12 +81,12 @@ Generated from it: the CSS custom properties for both themes, the TS union of va
 
 | Mechanism | Detail |
 |---|---|
-| Lint rule `raw-hex` | any colour literal (`#hex`, `rgb()`, `hsl()`, a named colour) in a component or `.scss` module is a build error |
-| Token existence | `var(--foo)` referencing a token not in `tokens.ts` is a build error — the generated CSS and the checked set come from the same file |
-| Palette isolation | `palette.*` is importable **only** by `tokens.ts`; anywhere else is a boundary violation. A component cannot reach a raw colour even indirectly |
-| Contrast | generated pairs are checked against WCAG AA at build; a failing pair is a build error with the measured ratio |
+| No raw colour | **a convention, not a rule.** `As of 2026-08` there is no `raw-hex` lint rule and no gate step that refuses a colour literal in a component or `.scss` module. The check that should exist would scan the same file set `errors` and `filesize` already walk |
+| Token existence | `ColorRole` is a union derived from `colorTokens`, so naming a token TypeScript does not know is a compile error **in TS**. A `var(--foo)` in SCSS is not checked against it — SCSS is not typechecked |
+| Contrast | `contrastRatio` / `meetsContrast` measure every pairing against `AA_TEXT` (4.5) and `AA_LARGE` (3), and `packages/ui/src/tokens/contrast.test.ts` fails on a pair that misses. That is the framework's own palette and a brand override run through the same function; it is a **test**, so it reaches the gate through the `unit` step, not through a check of its own |
 | Specificity | generated CSS emits `@media (prefers-color-scheme: dark)` **first**, then `:root[data-theme="dark"]` / `:root[data-theme="light"]` overrides — so an explicit choice always wins in both directions |
-| Pre-paint script | a byte-capped inline `<script>` in `<head>`, generated, counted against the route budget. `x verify` fails if it is missing on any route that can render a themed surface |
+| Pre-paint script | a byte-capped inline `<script>` in `<head>`, counted against the route budget by `measureDocumentJs`. Nothing fails a route that omits it |
+| Inline `<style>` | `style-csp.ts` computes the `style-src` sha256 of every inline `<style>` the web role serves, so a CSP does not need `'unsafe-inline'` |
 | SSR path | the theme cookie is read during `locale-negotiate` (stage 5), so server-rendered HTML already carries `data-theme`; the inline script is the fallback for `static`/`isr` pages served from cache |
 
 ```html
@@ -97,9 +98,9 @@ Generated from it: the CSS custom properties for both themes, the TS union of va
 | Bug | Why it cannot happen |
 |---|---|
 | White flash before dark theme paints | the attribute is set before body renders, in the same document |
-| One component stays light in dark mode | it has no way to name a colour that isn't a token |
+| One component stays light in dark mode | in TS, `ColorRole` admits no non-token name. In SCSS, nothing stops a literal — this one is a review discipline |
 | A user's explicit "dark" overridden by their OS switching to light | `data-theme` selectors are emitted after, and win over, the media query |
-| Unreadable text after a palette tweak | contrast pairs are checked at build |
+| Unreadable text after a palette tweak | `contrast.test.ts` measures every pairing against AA and fails the `unit` step |
 | Two sources of truth drifting (CSS vars vs. a TS theme object) | there is one file; both are generated |
 
 ## Timezones
@@ -112,19 +113,26 @@ Generated from it: the CSS custom properties for both themes, the TS union of va
 - Cron requires an explicit `tz`.
 
 ```ts
-fmt.dateTime(post.publishedAt, { timeZone: ctx.tz, dateStyle: 'medium', timeStyle: 'short' });
+import { formatDateTime } from '@ultimat3/time';
+
+formatDateTime(post.publishedAt, {
+  locale: ctx.locale,
+  zone: ctx.tz,
+  dateStyle: 'medium',
+  timeStyle: 'short',
+});
 ```
 
 ### Enforcement
 
 | Mechanism | Detail |
 |---|---|
-| Lint rule `date-no-tz` | `Intl.DateTimeFormat`, `toLocaleString`, `toLocaleDateString` without `timeZone` is a build error |
-| Type-level | `@ultimat3/time`'s formatters take `timeZone` as a **required** parameter. `ctx.tz` is always available ([`03-request-lifecycle.md`](./03-request-lifecycle.md)) |
+| Type-level, and it is the whole enforcement | `FormatContext.zone` is **required** on every `@ultimat3/time` formatter (`packages/time/src/format.ts:14-18`), so an omitted zone does not compile. `ctx.tz` is always available ([`03-request-lifecycle.md`](./03-request-lifecycle.md)) |
+| A bare `Intl.DateTimeFormat` / `toLocaleString` | **a convention, not a rule.** There is no `date-no-tz` lint rule `As of 2026-08`. The type covers every call that goes through `@ultimat3/time`; a direct `Intl` call bypasses it, and nothing refuses one |
 | Schema-level | a `date` (no time) column maps to `PlainDate`; assigning an `Instant` to it does not compile |
 | Test-level | tests run at a fixed instant in `UTC`; a tz-dependent bug fails deterministically ([`14-testing-internals.md`](./14-testing-internals.md)) |
 | Cron | `tz` is a required field of `task()`. Omitting it is a compile error |
-| Boot | `DEFAULT_TZ` is in the env schema; an invalid IANA name fails at boot with `X_CONFIG_INVALID` |
+| Boot | `app.config.ts`'s `timeZone` is validated by `isTimeZone` against `Intl.DateTimeFormat` (`packages/core/src/config.ts:157-164`); a non-IANA name is `X_CONFIG_INVALID`. It is a **config** field, not an env variable — there is no `DEFAULT_TZ` in the env schema |
 
 ### DST gap and overlap policy
 
@@ -132,13 +140,23 @@ Two hours a year are not ordinary. The policy is explicit and the default is sta
 
 | Case | Example | Default | Alternatives |
 |---|---|---|---|
-| **Gap** (spring forward) — a wall time that does not exist | `2026-03-29 02:30` in `Europe/Berlin` | `'next'` — shift forward to `03:30` | `'reject'` → `X_TIME_DST_GAP`; `'previous'` → `01:30` |
-| **Overlap** (fall back) — a wall time that happens twice | `2026-10-25 02:30` in `Europe/Berlin` | `'earlier'` — the first occurrence (DST still in effect) | `'later'`; `'reject'` → `X_TIME_DST_AMBIGUOUS` |
+| **Gap** (spring forward) — a wall time that does not exist | `2026-03-29 02:30` in `Europe/Berlin` | `gap: 'next'` — shift forward to `03:30` | `'throw'` → `X_DST_NONEXISTENT`; `'previous'` → `01:30` |
+| **Overlap** (fall back) — a wall time that happens twice | `2026-10-25 02:30` in `Europe/Berlin` | `overlap: 'first'` — the first occurrence (DST still in effect) | `'second'`; `'throw'` → `X_DST_AMBIGUOUS` |
+
+`fromZoned(wall, zone, options)` takes a `WallClock` record, never an ISO string — the string form
+would need a parse that decides the same question the options answer.
 
 ```ts
-zoned('2026-03-29T02:30', 'Europe/Berlin');                       // → 03:30 local (gap: 'next')
-zoned('2026-03-29T02:30', 'Europe/Berlin', { gap: 'reject' });    // → X_TIME_DST_GAP
+import { fromZoned } from '@ultimat3/time';
+
+const wall = { year: 2026, month: 3, day: 29, hour: 2, minute: 30 };
+
+fromZoned(wall, 'Europe/Berlin'); // → 03:30 local (gap: 'next')
+fromZoned(wall, 'Europe/Berlin', { gap: 'throw' }); // → throws X_DST_NONEXISTENT
 ```
+
+`fromZonedDetailed` returns the same instant plus a `ZonedResolution` — `'exact' | 'gap' |
+'overlap'` — for a caller that must know which branch it took.
 
 Cron follows the same policy, plus a firing guarantee:
 
@@ -163,17 +181,19 @@ Cron follows the same policy, plus a firing guarantee:
 
 ### Rules
 
-- `Money = { minor: number; currency: string }`. **Never a float, never a bare number.**
+- `Money = { readonly minor: number; readonly currency: string; readonly scale?: number }`. **Never a float, never a bare number, never a `bigint`.** One declaration, in `@ultimat3/schema` — `money` and `entity` alias it and never restate it.
 - The currency travels with the amount, always.
-- The minor-unit exponent comes from the ISO 4217 table — never assumed to be 2.
+- The minor-unit exponent comes from the ISO 4217 table — never assumed to be 2. `scale` overrides it for a sub-cent amount, which is why a $0.00016 model call is expressible instead of rounded up to a whole cent.
 - Cross-currency arithmetic is **refused**, not silently coerced.
 - Splitting money loses nothing.
 
 ```ts
-const price: Money = { minor: 1999, currency: 'USD' };   // $19.99
-add(price, { minor: 500, currency: 'USD' });             // ✅ { minor: 2499, currency: 'USD' }
-add(price, { minor: 500, currency: 'EUR' });             // ✗ X_MONEY_CURRENCY_MISMATCH
-fmt.money(price, { locale: ctx.locale });                // "$19.99"
+import { add, formatMoney, type Money } from '@ultimat3/money';
+
+const price: Money = { minor: 1999, currency: 'USD' }; // $19.99
+add(price, { minor: 500, currency: 'USD' }); // { minor: 2499, currency: 'USD' }
+add(price, { minor: 500, currency: 'EUR' }); // throws X_CURRENCY_MISMATCH
+formatMoney(price, 'en-US'); // '$19.99'
 ```
 
 ### Enforcement
@@ -181,17 +201,22 @@ fmt.money(price, { locale: ctx.locale });                // "$19.99"
 | Mechanism | Detail |
 |---|---|
 | Type-level | every arithmetic function takes `Money`, returns `Money`. There is no `number` overload to fall into |
-| Currency check | runtime guard on every binary op → `X_MONEY_CURRENCY_MISMATCH` naming both currencies. Conversion is an explicit `convert(money, rate, to)` call with the rate as data |
-| Lint rule `money-as-number` | a field named `*amount*`, `*price*`, `*total*`, `*fee*`, `*cost*` typed as `number` is a build error |
+| Currency check | runtime guard on every binary op → `X_CURRENCY_MISMATCH` naming both currencies. Conversion is an explicit `convert(money, rate, to)` call with the rate as data |
+| A money field typed `number` | **a convention, not a rule.** There is no `money-as-number` lint rule `As of 2026-08`; the type only bites where a signature already says `Money`. The check that should exist would read entity column declarations, where the name and the type are both visible |
 | Schema-level | the entity helper `money('price')` emits an integer column + a currency column and infers `Money` — a float column for money is a build error |
-| Exponent table | `minorUnits('JPY') === 0`, `'USD' === 2`, `'KWD' === 3`, from the ISO table shipped in `@ultimat3/money`. Parsing and formatting both read it |
+| Exponent table | `exponentOf('JPY') === 0`, `'USD' === 2`, `'KWD' === 3`, from the ISO table shipped in `@ultimat3/money`. `moneyScale(amount)` is `amount.scale ?? exponentOf(amount.currency)`, and parsing and formatting both read it |
 | Rounding | only at explicit boundaries, with a named mode (`half-even` default). No implicit rounding inside arithmetic — there is nothing to round, integers are exact |
 | Allocation invariant | property test asserts `sum(allocate(total, ratios)) === total` for random totals and ratios, including negatives |
 | Formatting | `Intl.NumberFormat` with `style: 'currency'` at the edge only; a `Money` is never string-formatted for storage or transport |
 
 ```ts
-allocate({ minor: 1000, currency: 'USD' }, [1, 1, 1]);
-// → [{minor:334},{minor:333},{minor:333}]  — largest-remainder, deterministic, sums to 1000
+import { allocate, allocateByRatios } from '@ultimat3/money';
+
+allocate({ minor: 1000, currency: 'USD' }, 3);
+// → [{ minor: 334 }, { minor: 333 }, { minor: 333 }] — largest-remainder, sums to 1000
+
+// `allocate` takes a COUNT. Uneven splits are the ratios form:
+allocateByRatios({ minor: 1000, currency: 'USD' }, [2, 1, 1]);
 ```
 
 `allocate` distributes the remainder to the largest fractional parts first, deterministically ordered by input index for ties. Sum is exact by construction, not by luck.

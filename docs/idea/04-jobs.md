@@ -54,7 +54,7 @@ export const onboardOrg = job({
 
 **The step is the retry unit, not the job.** A failure in `nudge` re-enters `run`, replays `provision` and `welcome-email` from storage in microseconds, and retries only `nudge`. That is why an onboarding flow can retry on day 3 without re-provisioning or re-emailing.
 
-Step names must be unique and stable within a job — renaming a step invalidates its stored result. `x verify` fails on duplicate names in one `run`.
+Step names must be unique and stable within a job — renaming a step invalidates its stored result. A duplicate name in one `run` throws `X_STEP_DUPLICATE` **at run time**, not at build time: the names are produced by executing `run`, so a static scan cannot see them. `x verify`'s `job` step catches it wherever a job suite exercises the path.
 
 ## Idempotency is in the type signature
 
@@ -135,7 +135,7 @@ export const nightlyDigest = task({
 });
 ```
 
-A `task` only enqueues. The `scheduler` role is a fixed single instance elected by a Postgres advisory lock; a missed tick fires late rather than being skipped, and the enqueued job's idempotency key absorbs a double-fire during leader handover.
+A `task` only enqueues. The `scheduler` role is a fixed single instance elected by an expiring row in `x_scheduler_leader` — never an advisory lock, which is session-scoped and dies with a pooled connection; a missed tick fires late rather than being skipped, and the enqueued job's idempotency key absorbs a double-fire during leader handover.
 
 ## Observability
 
@@ -146,4 +146,4 @@ A `task` only enqueues. The `scheduler` role is a fixed single instance elected 
 | MCP tools | `jobs.list`, `jobs.status`, `jobs.retry` — same authz as the actions |
 | OpenTelemetry | one span per job, one child span per step, trace linked to the enqueuing request |
 
-Errors follow the contract: `X_JOB_STEP_FAILED`, `X_JOB_NO_IDEMPOTENCY_KEY`, `X_JOB_DUPLICATE_STEP`, each with a `fix:` command.
+Errors follow the contract: `X_JOB_MAX_ATTEMPTS`, `X_IDEMPOTENCY_REQUIRED`, `X_STEP_DUPLICATE`, each with a `fix:` command. The full table is [`../architecture/08-jobs-internals.md`](../architecture/08-jobs-internals.md).

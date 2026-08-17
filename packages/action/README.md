@@ -75,12 +75,21 @@ export const api = defineApi({
 export type Api = typeof api;
 ```
 
+Six keys, all optional:
+
 | Key | Goes to | Why |
 |---|---|---|
 | `actions` | the action registry | the primitive |
 | `mutators` | the action registry | a mutator IS an action, on the same authz path |
 | `llm` | the action registry | `llm()` returns an action, not a ninth primitive |
 | `queries` | `@ultimat3/query`'s registry, via core's registrar table | `query` is on this tier, so importing it here would be a build error |
+| `jobs` | `@ultimat3/jobs`' registry, the same way | the export name becomes the durable queue key — a job row names the handle, not a counter |
+| `tasks` | `@ultimat3/jobs`' registry, the same way | handing a task over is what names its cron after its export |
+
+Jobs register **before** tasks: a task's descriptor lists the jobs it enqueues by name, so the
+other order would read the queue keys one boot step before they were assigned. `Api` carries all
+four maps back — `api.actions`, `api.queries`, `api.jobs`, `api.tasks` — keyed by the name
+registration stamped.
 
 Names come from **export names** — that is what makes the path, the tool name and the
 OpenAPI `operationId` derivable everywhere without a second declaration. Registration
@@ -90,8 +99,9 @@ features exporting one name collide with `X_ACTION_DUPLICATE` rather than mergin
 names deriving one route collide with `X_ACTION_PATH_DUPLICATE` — `pluralize` leaves a trailing
 `s` alone, so `archiveOrder` and `archiveOrders` are two exports and one `POST /api/orders/archive`.
 
-`registerActions` / `registerQueries` are what `defineApi` composes. An app calling them
-directly is a second path.
+`registerActions` is what `defineApi` composes for the three action-shaped keys; the other three
+go through core's `primitiveRegistrar(kind)`, because this package may not import `@ultimat3/query`
+or `@ultimat3/jobs` sideways. An app calling either directly is a second path.
 
 ## Call it — `rpc`
 
@@ -109,15 +119,24 @@ a page's module graph free of any edge to a feature's implementation.
 ## Path derivation
 
 First camelCase word is the verb; the rest is the resource, last word pluralized,
-kebab-cased. The **MCP tool name is not derived** — it is the export name verbatim, because
+kebab-cased. The **served MCP tool name is not derived** — it is the export name verbatim, because
 that is what `defineAppMcp`'s `scopes:` and a `tools/call` have to spell.
 
-| Action | Route | MCP tool |
+| Action | Route | MCP tool, as served |
 |---|---|---|
 | `publishPost` | `POST /api/posts/publish` | `publishPost` |
 | `updateUserProfile` | `POST /api/user-profiles/update` | `updateUserProfile` |
 | `likePost` | `POST /api/posts/like` | `likePost` |
 | `checkout` (single word) | `POST /api/checkouts/invoke` | `checkout` |
+
+> **Known defect, `As of 2026-08`: three surfaces in this package say `publish_post` instead.**
+> The served name is `@ultimat3/mcp`'s (`toolFromAction` → `primitive.mcp?.name ?? primitive.name`),
+> and it is the only one an agent can call. But `toToolName()` snake_cases the name for
+> `action.tool().name` (`mcp-tool.ts`), for `openapi.json`'s `x-ultimate.mcpTool` (`http.ts`) and
+> for `describeAction().mcp.tool`, which is the manifest row. So the published contract advertises
+> a tool no server serves. Unifying on the verbatim name is a **breaking** change to both generated
+> artifacts and is not yet made — until it is, read `.tool().name` as a descriptor's own label and
+> `defineAppMcp`'s catalog as the wire truth.
 
 ## One invocation core
 

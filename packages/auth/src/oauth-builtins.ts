@@ -68,7 +68,9 @@ export const BUILTIN_OAUTH_PROVIDERS: readonly OAuthProvider[] = Object.freeze([
  * The three ids, and the only list an ANONYMOUS caller is ever shown. It is a framework constant
  * already in the docs, so naming it discloses nothing; the live registry is not, because an app
  * that registered `acme-internal-sso` has put its own vocabulary in there. `oauth-route.ts` is the
- * one reader — every other refusal reaches a developer and gets `oauthProviderIds()` instead.
+ * one reader in this package — every other refusal reaches a developer and gets
+ * `oauthProviderIds()` instead. Off `index.ts` too, because an app writing its own login route
+ * owes an anonymous caller the same narrow list and must not have to restate the three ids.
  */
 export const BUILTIN_OAUTH_PROVIDER_IDS: readonly string[] = Object.freeze(
   BUILTIN_OAUTH_PROVIDERS.map((provider) => provider.id),

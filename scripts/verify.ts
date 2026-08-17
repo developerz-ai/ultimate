@@ -31,6 +31,8 @@ import {
   sharedLeafFindingFor,
 } from './boundaries';
 import { chartVersionFindings } from './chart-version';
+import { docCommandFindings } from './doc-commands';
+import { docFixFindings } from './doc-fixes';
 import { errorStatusCompleteness } from './error-map';
 import { errorRendering } from './error-render';
 import { frameworkCatalogFindings } from './i18n-catalog';
@@ -39,8 +41,10 @@ import { flagBool, parseScriptArgs } from './lib/args';
 import { writeOut } from './lib/log';
 import { repoRoot } from './lib/run';
 import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
+import { readmeFenceFindings } from './readme-fences';
 import { publishListFindings } from './release-workflow';
 import { checkRoadmap } from './roadmap';
+import { versionStampFindings } from './version-stamps';
 import { frameDocFindings } from './wiki-frames';
 import { wikiTableFindings } from './wiki-tables';
 
@@ -148,10 +152,16 @@ export const errorCodeDocs: HostCheck = async (root) => {
 };
 
 /**
- * The `errors` step's host half: the reference page's two rules, the rule that an error factory
+ * The `errors` step's host half: the reference page's three rules, the rule that an error factory
  * may not die formatting its own message, and the rule that `@ultimat3/http`'s status table stays
- * closed. Four rules on one step, the same shape `boundaries` already carries — a rule about
+ * closed. Five rules on one step, the same shape `boundaries` already carries — a rule about
  * errors belongs on the errors step, not on an eighteenth one an agent has to learn the name of.
+ *
+ * `docFixFindings` is the reference page's THIRD rule and the one nothing enforced: the CLI's
+ * `checkErrorFixes` resolves cited commands for `fix:` literals in shipped SOURCE, and the page an
+ * agent is sent to when it hits a code was held to coverage and registration only. So a `Fix` cell
+ * could print `x db query "select id …"` — and `x db` has no `query`, which is a second failure
+ * handed to a reader already holding one.
  *
  * The completeness rule is deliberately NOT its own step: `VerifyStepName` is a closed union owned
  * by `@ultimat3/cli`, and a generated app would inherit a step name that only this repo can run.
@@ -161,6 +171,7 @@ export const errorContract: HostCheck = async (root) => [
   ...(await errorCodeDocs(root)),
   ...(await errorRendering(root)),
   ...(await errorStatusCompleteness(root)),
+  ...(await docFixFindings(root)),
 ];
 
 /**
@@ -175,6 +186,9 @@ export const errorContract: HostCheck = async (root) => [
  * | `wikiTableFindings` | every `wiki/` table renders as a table | the GFM row rule |
  * | `frameDocFindings` | `wiki/Realtime.md` names the frames the wire actually sends | `FRAME_KINDS` |
  * | `chartVersionFindings` | `docker/helm/Chart.yaml` is on the lockstep version — it sat at 0.0.1, and `appVersion` IS the default image tag | the publishable workspaces' version |
+ * | `docCommandFindings` | every `` `x …` `` in `wiki/` and `docs/` is an invocation this build can run | `loadCommandCatalog()` |
+ * | `versionStampFindings` | one page stamps a version, it is the shipped one, and the workspaces agree | every workspace manifest |
+ * | `readmeFenceFindings` | a fenced `ts`/`tsx` example in a package README typechecks | `tsc`, on a ratchet |
  *
  * None of them is a step of its own, for the reason the `errors` step's comment already gives:
  * `VerifyStepName` is a closed union owned by `@ultimat3/cli`, and a generated app would inherit an
@@ -188,6 +202,9 @@ export const frameworkFiles: HostCheck = async (root) => [
   ...(await wikiTableFindings(root)),
   ...(await frameDocFindings(root)),
   ...(await chartVersionFindings(root)),
+  ...(await docCommandFindings(root)),
+  ...(await versionStampFindings(root)),
+  ...(await readmeFenceFindings(root)),
 ];
 
 export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {

@@ -2,7 +2,7 @@
 
 One image, N roles. Build once; the `ROLE` env var selects behavior. No role-specific Dockerfile, no per-role dependency set, no drift between what you tested and what runs.
 
-v1.1.0 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). All three build targets ship — `x build --target docker`, `x build --target binary`, `x build --target static` — and so do the compose files and the Helm chart. Milestone 11 is 🚧 on one thing ([roadmap](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md)): the two-platform proof — the demo app on Compose **and** on K8s from one image, with a rolling restart invisible to connected clients.
+`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). All three build targets ship — `x build --target docker`, `x build --target binary`, `x build --target static` — and so do the compose files and the Helm chart. Milestone 11 is 🚧 on one thing ([roadmap](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md)): the two-platform proof — the demo app on Compose **and** on K8s from one image, with a rolling restart invisible to connected clients.
 
 ```
 docker build -t myapp .          # once

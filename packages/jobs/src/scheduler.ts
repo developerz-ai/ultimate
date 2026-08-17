@@ -39,7 +39,8 @@ export interface LeaderElection {
   release(): Promise<void>;
 }
 
-/** Single-node default: always the leader. Multi-node uses `createPgLeader()`. */
+/** Single-node default: always the leader. Multi-node uses `createPgLeaseLeader()` — never
+ * `createPgLeader()`, whose advisory lock dies with the pooled connection that took it. */
 export function soleLeader(): LeaderElection {
   return {
     acquire: () => Promise.resolve(true),

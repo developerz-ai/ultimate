@@ -185,7 +185,7 @@ Three separate facts add up to zero production cost, not one flag: the `observe.
 guard-first and allocates nothing uninstalled; `withStatementAttribution` is the same shape,
 guarding before it even opens its `AsyncLocalStorage` scope; and `serve.ts` — the only production
 entry point — never calls `setStatementObserver`. Turning the detector on is entirely a fact about
-which binary is running: `x dev` wires it, `x serve`/`ROLE=web` never do.
+which binary is running: `x dev` wires it; `apps/web/server.ts` under any `ROLE` never does. There is no `x serve` command — the production entry is the scaffolded `server.ts`, run directly or through `x build`'s artifact.
 
 ## See also
 

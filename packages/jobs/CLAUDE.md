@@ -480,7 +480,7 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 (`toMs`, `defaultCronResolver`) and the scheduler's resolver is injectable, so a signature
 change in `@ultimat3/time` is a one-line fix, not a sweep.
 
-`driver-pg.ts`'s `PgExecutor` (`:38-41`) is a two-method duck-typed interface — this package still
+`driver-pg.ts`'s `PgExecutor` (`:62-64`) is a one-method duck-typed interface — this package still
 has no `@ultimat3/db` dependency, and nothing here knows what an observer, a span or
 `expectedQueryLoop` is. But `packages/cli/src/dev-queue.ts` is the only boot code in the repo that
 ever builds one, and it wraps a real `@ultimat3/db` client's `.query()` — reached by every role in

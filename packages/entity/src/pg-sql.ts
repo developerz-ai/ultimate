@@ -207,9 +207,11 @@ export interface InsertShape {
 }
 
 /**
- * The cell of a row that did not name this column. `default` is the third and last `raw()` in this
- * file and, like the other two, a closed set of one word: it is what makes a row inside a many-row
- * `insert` mean what the same row means on its own, where an unnamed column is simply left out.
+ * The cell of a row that did not name this column. `default` is the second and last `raw()` in
+ * this file and, like `asc|desc` above it, a closed set of one word: it is what makes a row inside
+ * a many-row `insert` mean what the same row means on its own, where an unnamed column is simply
+ * left out. The seek operator used to be a third — it is chosen in TypeScript now
+ * (`seekAfter`/`seekEqual`), because a timestamp seek is not one operator.
  */
 const DEFAULT_CELL = raw('default');
 

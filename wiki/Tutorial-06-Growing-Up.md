@@ -2,7 +2,7 @@
 
 **The app code is identical at every rung.** Climbing is an env var, a driver swap and someone else's infrastructure — never a rewrite. A small idea reaches a big output by changing where the rows and the messages live, not by changing what an `entity`, `policy`, `action`, `mutator`, `query`, `job`, `route` or `task` says.
 
-v1.1.0 `As of 2026-08`. The full ladder, with costs, seams and the places the invariant breaks, is [`docs/idea/17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md); running it for real is [`docs/ops/`](https://github.com/developerz-ai/ultimate/tree/main/docs/ops). This page is the decision procedure, not a second copy of either.
+`As of 2026-08`. The full ladder, with costs, seams and the places the invariant breaks, is [`docs/idea/17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md); running it for real is [`docs/ops/`](https://github.com/developerz-ai/ultimate/tree/main/docs/ops). This page is the decision procedure, not a second copy of either.
 
 Series: [1 — first app](Tutorial-01-First-App) · [2 — first feature](Tutorial-02-First-Feature) · [3 — auth and admin](Tutorial-03-Auth-And-Admin) · [4 — jobs and realtime](Tutorial-04-Jobs-And-Realtime) · [5 — deploy free](Tutorial-05-Deploy-Free) · **6**
 

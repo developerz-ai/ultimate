@@ -419,24 +419,27 @@ X_MIGRATION_DESTRUCTIVE: this migration destroys data and does not say so
 
 ## Branch DBs for agents
 
-```
-x branch feat-new-billing
-  ✓ database    myapp_feat_new_billing   (copy-on-write from dev template, 340ms)
-  ✓ build       build id 8f2a1c…
-  ✓ preview     http://feat-new-billing.localhost:3000
-  ✓ mcp         ws://localhost:9229/feat-new-billing
+The shipped command is `x db branch <name>` — one argument, the branch name. `x branch` (no `db`) is **planned** and exits `X_NOT_IMPLEMENTED`; the build and MCP-socket halves of the design below are what it will add.
+
+```bash
+x db branch feat-new-billing --json
 ```
 
-| Property | Detail |
-|---|---|
-| Mechanism | `CREATE DATABASE … TEMPLATE` — Postgres file-copies, cheap, isolated, disposable |
-| Writes | the MCP `db.migrate` tool applies **only** in a branch DB, never the shared dev DB |
-| Preview | subdomain-routed, same image, `ROLE=web` |
-| SW scope | the branch build id scopes the service worker and cache namespace, so a preview cannot poison prod cache |
-| Teardown | `x branch rm feat-new-billing`, or automatic on branch delete |
-| Agent loop | migrate, seed, test, browse a preview without risking anything shared |
+```json
+{"ok":true,"command":"db","data":{"branch":"feat-new-billing",
+ "database":"myapp_branch_feat_new_billing",
+ "preview":"http://feat-new-billing.localhost:3000","mode":"external"}}
+```
 
-The same clone mechanism powers test parallelism: `bun test --workers 8` gives each worker its own `myapp_test_N` from the template, typically 100–400ms. Never mock the database — clone it.
+| Property | Detail | `As of 2026-08` |
+|---|---|---|
+| Mechanism | `CREATE DATABASE "<source>_branch_<name>" TEMPLATE "<source>"` — Postgres file-copies, cheap, isolated, disposable. On the embedded database it is `branchPglite()`, a data-directory copy | **shipped** |
+| Writes | the MCP `db.migrate` tool applies **only** in a branch DB, never the shared dev DB (`X_MCP_NOT_BRANCH_DB`) | **shipped** |
+| Preview URL | reported in `data.preview`, subdomain-routed off `PORT` | **the URL is computed**; nothing routes that subdomain for you |
+| Teardown | no CLI subcommand. `dropBranch('<name>', { force: true })` from `@ultimat3/db`, or `psql "$DATABASE_URL" -c 'DROP DATABASE "…"'`. `listBranches()` is the read | API only |
+| Build + scoped MCP socket | a per-branch build id scoping the service worker, and `ws://localhost:9229/<branch>` | **planned**, part of `x branch` |
+
+The same clone mechanism powers test parallelism: each worker gets its own `ultimate_test_template_w<N>` cloned from the migrated template `ultimate_test_template`, typically 100–400ms. Never mock the database — clone it.
 
 ## Errors
 

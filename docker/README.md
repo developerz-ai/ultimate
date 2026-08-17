@@ -13,7 +13,7 @@ Build once. `ROLE` selects behaviour at start; nothing else differs between proc
 | `web` | RPS | `:3000` | `:9090` | `/readyz` + `/healthz` on `:3000` |
 | `sync` | concurrent websockets | `:3001` | `:9090` | `/readyz` + `/healthz` on `:3001` |
 | `worker` | queue depth | — | `:9090` | liveness on `/metrics` |
-| `scheduler` | fixed 1 (advisory-lock leader election) | — | `:9090` | liveness on `/metrics` |
+| `scheduler` | fixed 1 — leader election is an expiring **row**, never `pg_try_advisory_lock`: that grant is session-scoped and dies when a pooled connection returns, so every node reads itself as leader | — | `:9090` | liveness on `/metrics` |
 | `replicator` | 1 per database | — | `:9090` | liveness on `/metrics` |
 | `migrate` | run-once, pre-deploy | — | — | none — it exits |
 

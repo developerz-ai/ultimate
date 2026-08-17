@@ -13,15 +13,21 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x build --target docker\|binary\|static` | one artifact | `ROLE` selects behaviour at start |
 | `x verify` | **the gate** | 17 named steps, each with pass/fail + duration |
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
-| `x db gen\|migrate\|reset\|studio\|branch` | everything DB | `branch` = copy-on-write clone + preview URL |
+| `x db gen\|migrate\|reset\|branch\|backfill` | everything DB | `branch` = copy-on-write clone + preview URL; `backfill` dry-runs unless `--write`. `x db studio` is **planned** — it parses, and exits `X_NOT_IMPLEMENTED` naming `/_x`'s db panel |
 | `x mcp serve` | `@ultimat3/mcp`'s 13 dev tools, over stdio or HTTP | one catalog, one scope set, both transports |
 | `x doctor` | environment, ports, drift, PWA prerequisites | every finding carries a fix command |
 | `x deploy` | container deploy plan | compose or helm; zero platform primitives |
 | `x manifest` / `x routes` | generated facts | `x.manifest.json`, `openapi.json`, route table |
 | `x actions` / `x queries` / `x entities` | the declaration registries | `list` and `describe <name>`, straight off the registries |
-| `x jobs ls\|show\|retry\|drain` | the queue | depth, dead letters, step traces, `retry --from-step`, `drain --to` |
+| `x tasks list\|show` | cron tasks | timezone and next run, off `registeredTasks()` |
+| `x jobs ls\|show\|retry\|cancel\|drain` | the queue | depth, dead letters, step traces, `retry --from-step`, `cancel --reason`, `drain --to` |
 | `x test [type]` | one of the six test types, or all | same type rule as the gate; `--filter`, `--sample N` |
-| `x errors explain <CODE>` | the error table, programmatically | refuses an unregistered code instead of inventing one |
+| `x env check\|example` | the typed environment `envSchema` declares | and the `.env.example` rendered from it |
+| `x secrets show\|init\|edit\|set\|rotate` | the committed encrypted secrets | decrypted into the `envSchema` variables of the same names |
+| `x policy list\|explain <subject>` | which clause decided a permission, and why | five packages print `x policy explain` as a denial's `fix:` |
+| `x i18n check\|add\|sync` | catalogs: gaps, a new locale, key sync | all three of i18n's own error fixes name it |
+| `x errors explain <CODE>` / `list` | the error table, programmatically | refuses an unregistered code instead of inventing one |
+| `x docs "<question>"` | the framework docs, offline | answered from the installed packages, never the network |
 | `x fix boundary <file>` | the minimal cut for a crossed surface boundary | prints the plan and the `git mv`; never rewrites a file |
 
 Everything in [CLI reference](../../wiki/CLI-Reference.md)'s planned table is also in the registry
@@ -41,16 +47,17 @@ X_DB_DRIFT: schema differs from migrations
 
 ```sh
 x verify --json
-# {"ok":false,"command":"verify","summary":"1 of 16 steps failed","steps":[...]}
+# {"ok":false,"command":"verify","summary":"1 of 17 steps failed","steps":[...]}
 ```
 
 ## `x verify` steps
 
 `typecheck lint boundaries filesize package-shape errors unit contract live job e2e eval drift
-contract-diff budgets manifest`
+contract-diff budgets manifest roadmap`
 
-One list, in cost order, defined once in `cmd-verify.ts` — the framework repo's own gate
-(`bun run verify`) runs exactly it. A step with nothing to check here reports as skipped, never as
+Seventeen, in cost order, defined once as `VERIFY_STEP_NAMES` (`verify-step.ts`) — the summary
+count above is projected from that list, and the framework repo's own gate (`bun run verify`)
+runs exactly it. A step with nothing to check here reports as skipped, never as
 passed. Never bails early: an agent fixing three things needs all three findings from one run.
 There is no `--only` and no `--skip`; the exit code is non-zero if any step fails.
 
@@ -86,6 +93,10 @@ is held to the same error contract shipped source is (`X_GUARD_INVALID`, `X_GUAR
 | `app-openapi.ts` | `openapi.json`, projected by `@ultimat3/action` |
 | `app-boundaries.ts` | app import boundaries, over `@ultimat3/render`'s surface check |
 | `app-agents-md.ts` | `AGENTS.md` exists and stays short, over `@ultimat3/manifest`'s check |
+| `serve.ts` | **what a container starts** — `runRole(options)`, the same boot `x dev` runs minus the watcher, `/_x` and `dev: true`. `x new`'s `apps/web/server.ts` is three lines that call it |
+| `prerender.ts` | `x build --target static`: which `site/` routes qualify, and where the bytes land |
+| `metrics-endpoint.ts` | the `METRICS_PATH` scrape listener every role opens, on `METRICS_PORT` |
+| `otlp-export.ts` | the exporters `OTEL_EXPORTER_OTLP_ENDPOINT` switches on, and their drain hooks |
 | `dev-*.ts` | what `x dev` boots: services, runtime, routes, hooks, roles, the `/_x` mount |
 | `island-bundle.ts` | every `*.island.tsx` built as its own entry point, content-hashed |
 | `island-routes.ts` | the one route those chunks are served from, in dev and in the container |

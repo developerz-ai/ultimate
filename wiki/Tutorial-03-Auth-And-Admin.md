@@ -2,7 +2,7 @@
 
 Authentication produces one thing: an `Actor`. Nothing downstream authorizes on a session row, a user row or an api key — HTTP, the typed client, jobs, live queries and MCP all read the same actor and hand it to the same `policy`. One authz system, never two.
 
-v1.1.0 `As of 2026-08`. Every output on this page was executed against a `create-ultimate@1.1.0` app with the [tutorial 2](Tutorial-02-First-Feature) `todo` slice in place.
+`As of 2026-08`. Every output on this page was executed against a `create-ultimate@1.1.0` app with the [tutorial 2](Tutorial-02-First-Feature) `todo` slice in place.
 
 Series: [1 — first app](Tutorial-01-First-App) · [2 — first feature](Tutorial-02-First-Feature) · **3** · [4 — jobs and realtime](Tutorial-04-Jobs-And-Realtime) · [5 — deploy free](Tutorial-05-Deploy-Free) · [6 — growing up](Tutorial-06-Growing-Up)
 

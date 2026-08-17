@@ -1,0 +1,161 @@
+// The failure case first: a page that hands its reader a command this build refuses. Then the two
+// ways this rule could stop being one — an allowance nothing uses, and a glob that reads no file at
+// all, which is how a check written to close a false green ships with one.
+
+import { describe, expect, test } from 'bun:test';
+import type { CommandCatalog } from '@ultimat3/cli';
+import {
+  checkDocCommands,
+  docCommandFindingFor,
+  docCommandGaps,
+  skipDocPath,
+} from './doc-commands';
+import type { DocCommandAllowance } from './doc-commands-allow';
+import { DOC_COMMAND_ALLOWANCES } from './doc-commands-allow';
+import { scanDocCitations } from './lib/doc-citations';
+import { repoRoot } from './lib/run';
+
+const catalog: CommandCatalog = {
+  specs: [
+    { name: 'db', summary: '', usage: '', subcommands: ['gen', 'migrate', 'studio'] },
+    {
+      name: 'env',
+      summary: '',
+      usage: '',
+      subcommands: ['check'],
+      flags: [{ name: 'write', type: 'boolean', summary: '' }],
+    },
+    { name: 'logs', summary: '', usage: '' },
+  ],
+  planned: new Set(['logs']),
+  plannedSubcommands: new Set(['db studio']),
+};
+
+const page = (text: string, path = 'wiki/Page.md') => ({ path, text });
+const gaps = (text: string, allow: readonly DocCommandAllowance[] = []) =>
+  checkDocCommands({ files: [page(text)], catalog, allow });
+
+describe('a page that names a command this build cannot run', () => {
+  test('an unreal subcommand inside a code span is the finding', () => {
+    const found = gaps('confirm with `x db query "select 1" --json` first');
+    expect(found).toHaveLength(1);
+    expect(found[0]?.subject).toBe('x db query');
+    expect(found[0]?.at).toBe('wiki/Page.md:1');
+  });
+
+  test('an unreal FLAG is the finding — it dies at the parser, not at the command', () => {
+    // `x env check --fix` was on three pages. The command and the subcommand both resolve.
+    const found = gaps('| Repair | `x env check --fix` writes the missing keys |');
+    expect(found[0]?.subject).toBe('x env --fix');
+    expect(docCommandFindingFor(found[0] as never).cause).toContain('X_CLI_BAD_FLAG');
+  });
+
+  test('a shell fence is read — that is where a reader copies from', () => {
+    expect(gaps('```\n  fix:   x db query "select 1"\n```')).toHaveLength(1);
+  });
+
+  test('the finding names the file and the line, so it opens in an editor', () => {
+    const finding = docCommandFindingFor(gaps('a\nb\n`x db query`')[0] as never);
+    expect(finding.at).toBe('wiki/Page.md:3');
+    expect(finding.code).toBe('X_DOC_COMMAND_UNKNOWN');
+  });
+});
+
+describe('planned stays sayable', () => {
+  test('a planned command is not a finding — the wiki has a table whose job is to name them', () => {
+    expect(gaps('`x logs tail --json` (planned)')).toEqual([]);
+  });
+
+  test('a planned SUBCOMMAND is not either — `x db studio` is the only one', () => {
+    expect(gaps('`x db studio` opens the schema browser (planned)')).toEqual([]);
+  });
+
+  test('and neither widens anything else on the same page', () => {
+    expect(gaps('`x logs tail` and `x db query`')).toHaveLength(1);
+  });
+});
+
+describe('what is not read, and why', () => {
+  test('a `ts` fence is not shell — its `x` is a variable', () => {
+    expect(gaps('```ts\nconst x = db.query(sql);\n```')).toEqual([]);
+  });
+
+  test('prose outside a code span is not a citation', () => {
+    // "the x axis" is not an invocation, and a rule reading bare prose reports on sentences.
+    expect(gaps('plot the x db values against time')).toEqual([]);
+  });
+
+  test('docs/plans is a dated record of work, and quotes broken commands as evidence', () => {
+    expect(skipDocPath('docs/plans/2026/08/16/101-deep-dive-bug-audit/13-docs-drift.md')).toBe(
+      true,
+    );
+    expect(skipDocPath('docs/architecture/04-error-contract.md')).toBe(false);
+  });
+
+  test('the error reference has one owner, and it is scripts/doc-fixes.ts', () => {
+    // Its Fix column is held to a STRICTER rule there — a fix may not cite a planned command.
+    expect(skipDocPath('wiki/Error-Codes.md')).toBe(true);
+  });
+
+  test('one line naming one invocation twice is one finding', () => {
+    expect(gaps('| Repair | `x db query` | see `x db query` |')).toHaveLength(1);
+  });
+});
+
+describe('the rule cannot quietly stop being one', () => {
+  test('an allowance that matches nothing is a finding', () => {
+    const stale: DocCommandAllowance = {
+      path: 'wiki/Gone.md',
+      cites: 'x serve',
+      kind: 'absent',
+      why: 'the page said there is no such command',
+    };
+    const found = gaps('nothing here', [stale]);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.kind).toBe('allowance');
+    expect(docCommandFindingFor(found[0] as never).code).toBe('X_DOC_COMMAND_ALLOWANCE_STALE');
+  });
+
+  test('an allowance that matches suppresses exactly its own page and citation', () => {
+    const allow: DocCommandAllowance = {
+      path: 'wiki/Page.md',
+      cites: 'x db query',
+      kind: 'absent',
+      why: 'the sentence is that it never existed',
+    };
+    expect(gaps('`x db query` never existed', [allow])).toEqual([]);
+    // ...and not the same citation on another page
+    const other = checkDocCommands({
+      files: [page('`x db query`', 'wiki/Other.md')],
+      catalog,
+      allow: [allow],
+    });
+    expect(other.map((one) => one.kind)).toEqual(['unresolved', 'allowance']);
+  });
+
+  test('NO FILE READ is a failure, never a pass', () => {
+    // The defect a reviewer caught in three of the four gate checks written this month: a check
+    // that answers "everything resolved" over a file set it never opened.
+    const found = checkDocCommands({ files: [], catalog, allow: [] });
+    expect(found[0]?.kind).toBe('vacuous');
+    expect(docCommandFindingFor(found[0] as never).code).toBe('X_DOC_COMMAND_UNSCANNED');
+  });
+});
+
+describe('against this repo', () => {
+  test('the glob reads the real wiki, so the rule is not vacuous here', async () => {
+    const found = await docCommandGaps(repoRoot());
+    expect(found.some((one) => one.kind === 'vacuous')).toBe(false);
+  }, 20_000);
+
+  test('every allowance names a path that exists and a citation that page still writes', async () => {
+    // The allowance list's own hygiene, proved against the tree rather than against a fixture.
+    const found = await docCommandGaps(repoRoot());
+    expect(found.filter((one) => one.kind === 'allowance')).toEqual([]);
+    expect(DOC_COMMAND_ALLOWANCES.length).toBeGreaterThan(0);
+  }, 20_000);
+
+  test('the scanner reads the pages it is pointed at', () => {
+    expect(scanDocCitations(page('`x db migrate`')).length).toBe(1);
+  });
+});

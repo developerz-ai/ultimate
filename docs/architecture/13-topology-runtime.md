@@ -20,16 +20,16 @@ ROLE=replicator myapp
 |---|---|---|---|---|
 | `web` | env → DB pool → cache clients → route table → `Bun.serve` | HTTP on `PORT` | ISR regen consumer (optional), metric flush | SIGTERM drain |
 | `sync` | env → DB pool (read) → NATS subscribe → `Bun.serve` upgrade handler | WS on `PORT` | policy-memo sweep, heartbeat/ping, buffer trim | SIGTERM drain |
-| `worker` | env → DB pool → one pool per `WORKER_QUEUES` entry | `/healthz` only | claim loop per queue, lease reaper, outbox relay | SIGTERM drain |
-| `scheduler` | env → DB pool → `pg_try_advisory_lock` | `/healthz` only | tick loop (1s), lock retry loop if standby | SIGTERM, or lock loss |
-| `migrate` | env → DB → advisory lock → apply | none | none | after apply — **exit 0 or non-zero, run-once** |
-| `replicator` | env → advisory lock → open replication slot → NATS connect | `/healthz` only | WAL decode loop, matcher, publish, LSN confirm | SIGTERM, or lock held elsewhere |
+| `worker` | env → DB pool → one pool per `WORKER_QUEUES` entry | `/metrics` only, on `METRICS_PORT` | claim loop per queue, lease reaper, outbox relay | SIGTERM drain |
+| `scheduler` | env → DB pool → lease `acquire()` on `x_scheduler_leader` | `/metrics` only | tick loop (1s); `acquire()` per round is both the renewal and the standby retry | SIGTERM, or a round where the lease is not this holder's |
+| `migrate` | env → DB → advisory lock → apply → post-migrate drift check | none | none | after apply — **exit 0 or non-zero, run-once** |
+| `replicator` | env → advisory lock → open replication slot → NATS connect | `/metrics` only | WAL decode loop, matcher, publish, LSN confirm | SIGTERM, or lock held elsewhere |
 
 Rules that keep this honest:
 
 - No role holds durable state. Everything survivable is in Postgres, NATS, or object storage.
 - `web` and `sync` are interchangeable to the load balancer except for protocol.
-- A role that cannot get its lock **exits non-zero with a typed error** rather than running degraded.
+- `replicator` and `migrate` **exit non-zero with a typed error** rather than running degraded when their lock is held. `scheduler` is the exception by design: a node that does not hold the lease stays up as a warm standby and retries every round.
 - Any role can be co-located in one process for dev — role isolation is simulated, never skipped.
 - Every role runs the same image and the same `x.manifest.json`, so the build ID is identical across the fleet.
 
@@ -110,14 +110,24 @@ Result: a rolling restart produces a wide flat load curve instead of a spike.
 
 ## Leader election
 
-| Consumer | Lock key | Held for | On loss |
-|---|---|---|---|
-| `scheduler` | `pg_try_advisory_lock(hashtext('ultimate:scheduler'))` | the DB session's lifetime | stop ticking immediately, report not-ready, retry acquisition every 5s |
-| `replicator` | `x:replicator:<slot>` | same | exit non-zero with `X_REPLICATOR_SLOT_HELD` — a second replicator would double-deliver |
-| `migrate` | `ultimate:migrate` | the migration run | `X_MIGRATE_CONCURRENT`, exit non-zero |
-| ISR regen | short-lived Redis `SET NX PX` | 60s | another instance already regenerating; do nothing |
+**Two mechanisms, and which one a consumer gets is decided by whether it owns its connection.**
 
-Session-level advisory locks, not a TTL table: a crashed process's connection dies and Postgres releases the lock. No heartbeat to miss, no lease to mis-tune, no split brain from a paused process — because a paused process's connection is still open and it still holds the lock, which is the correct answer.
+| Consumer | Mechanism | Held for | On loss |
+|---|---|---|---|
+| `scheduler` | a **row**: `SQL_LEADER_ACQUIRE` on `x_scheduler_leader`, key `scheduler`, holder a per-process uuid | `ttlMs`, default 30s; the per-round `acquire()` renews it | stop ticking; the next round's `acquire()` is the retry |
+| `replicator` | `PgAdvisoryLock` — `pg_try_advisory_lock(hashtext('x:replicator:<slot>'))`, on a connection it owns | the session's lifetime | exit non-zero with `X_REPLICATOR_SLOT_HELD` — a second replicator would double-deliver |
+| `migrate` | `pg_advisory_lock(4919202607)` on a pool pinned to `max: 1` | the migration run | `X_MIGRATE_CONCURRENT`, exit non-zero |
+| ISR regen | short-lived Redis `SET NX PX` | 60s | another instance already regenerating; do nothing |
+| jobs, per row | `FOR UPDATE SKIP LOCKED` at claim | the claim transaction | none — a locked row is skipped, not waited on |
+
+The scheduler is the one that cannot use an advisory lock, and it is the executor that decides it:
+`@ultimat3/jobs` is handed a **pool**, and a session-scoped grant dies the moment the connection goes
+back. It shipped as `pg_try_advisory_lock` and every node read itself as leader, so a rolling update
+double-fired every task. `@ultimat3/realtime` solves the same problem the other way — `PgAdvisoryLock`
+owns its connection — because that package holds a wire protocol and jobs does not.
+
+A crashed leader's lease is reclaimed by expiry, with nothing to clean up. That is the one property
+the advisory lock had, and the one a plain `insert … on conflict do nothing` would not.
 
 ## Per-role autoscaling signals
 
@@ -178,8 +188,9 @@ Skew handling during a rolling deploy:
 | Code | Meaning | Fix |
 |---|---|---|
 | `X_CONFIG_INVALID` | env/config failed its schema at boot | `x doctor --json` |
-| `X_MIGRATE_CONCURRENT` | another version's migration is in flight | wait, then `x db status --json` |
+| `X_MIGRATE_CONCURRENT` | another migrator holds `pg_advisory_lock(4919202607)` | `psql "$DATABASE_URL"` for the advisory-lock holder, terminate the wedged backend, then `x db migrate` |
 | `X_REPLICATOR_SLOT_HELD` | a second replicator for one database | scale `replicator` to 1 |
 | `X_BUILD_SKEW` | client build incompatible with the current contract | client reload signal |
-| `X_DRAIN_TIMEOUT` | in-flight work exceeded `DRAIN_TIMEOUT` | raise `DRAIN_TIMEOUT_MS` or shorten the step |
-| `X_ROLE_UNKNOWN` | `ROLE` not in the union | set a valid role |
+| `X_SHUTDOWN_TIMEOUT` | graceful shutdown exceeded its deadline | `raise configureLifecycle({ deadlineMs })` or shorten the slow handler |
+| `X_DRAINING` | work arrived after SIGTERM | retry against another replica; the LB should already have removed this one |
+| `X_ROLE_INVALID` | `ROLE` is not a known runtime role | set `ROLE` to `web`, `sync`, `worker`, `scheduler`, `migrate` or `replicator` |

@@ -126,8 +126,8 @@ Defense in depth, because a single missed `WHERE` is a data breach.
 |---|---|---|
 | 1. Context | `ctx.tenantId` set once, at stage 7 of the pipeline ([`03-request-lifecycle.md`](./03-request-lifecycle.md)) | a repo call with no tenant in context throws `X_NO_CONTEXT` |
 | 2. Repo | every generated statement injects `tenant_col = $ctx.tenantId` | a hand-written repo query without the filter fails a static check in `x verify` |
-| 3. Write guard | insert/update stamps the tenant from context, refuses a mismatching literal | `X_TENANT_MISMATCH` |
-| 4. Read guard | a returned row whose tenant ≠ context tenant is a bug, not a filter miss | `X_TENANT_MISMATCH`, logged with the query hash |
+| 3. Write guard | insert/update stamps the tenant from context, refuses a mismatching literal (`tenancyRowMismatch`) | `X_TENANCY_ACTOR_MISMATCH` |
+| 4. Plan guard | a plan built with no org predicate, or one naming a tenant the actor does not act as | `X_TENANCY_UNSCOPED` / `X_TENANCY_ACTOR_MISMATCH` — one code for the predicate and the row, because it is one mistake in two places |
 | 5. Postgres RLS | optional, opt-in per entity; policy uses a session variable set on checkout | last line of defense for raw SQL and admin sessions |
 | 6. Cache keys | query name + parsed-input fingerprint + tags, never hand-built. `As of 2026-08` the actor is **not** a part, so the tenant must be in the read's input | a `cache:` read scoped by actor rather than by input is a cross-tenant hit ([`../idea/05-caching.md`](../idea/05-caching.md)) |
 | 7. Live queries | subject includes the tenant; policy re-checked per delivered row | [`07-realtime-internals.md`](./07-realtime-internals.md) |
@@ -242,12 +242,12 @@ stage 14 post-commit
 |---|---|
 | Schema is the source; migrations are the ledger | `x db gen "<name>"` diffs schema vs. applied migrations and writes SQL |
 | Applied set is recorded in-DB | `x_migrations` table: name, checksum, applied_at, build id |
-| Editing an applied migration | checksum mismatch → `X_MIGRATION_TAMPERED`, `fix: x db gen "<followup>"` |
+| Editing an applied migration | checksum mismatch → `X_MIGRATION_CONFLICT`, `fix: x db gen "<followup>"` |
 | Drift in the source | `X_DB_DRIFT` from `checkSourceDrift`, naming the schema and migration hashes that moved — `x verify`, no database needed |
 | Drift in the database | `X_DB_DRIFT` from `checkDrift`, naming the table, column or index the live catalog disagrees on — `x db migrate` and `ROLE=migrate` |
-| Irreversible migrations | allowed only with `-- irreversible: <reason>`; otherwise `X_MIGRATION_NOT_REVERSIBLE` |
+| Irreversible migrations | `x db gen` refuses to **generate** a drop whose `down` cannot restore the rows: `X_MIGRATION_IRREVERSIBLE`, whose `fix:` is the same command plus `--allow-destructive` |
 | Concurrent versions | `ROLE=migrate` takes an advisory lock; a second version in flight is `X_MIGRATE_CONCURRENT` |
-| Destructive statements | `DROP COLUMN` / `DROP TABLE` require `--allow-destructive`, and are refused outright against a production-tagged URL |
+| Destructive statements | a committed `up` that drops, truncates or retypes must carry the `-- destructive: true` line, or `x verify`'s `drift` step refuses to **ship** it: `X_MIGRATION_DESTRUCTIVE`, one finding per file. `@ultimat3/db`'s `destructive.ts` owns the classifier both the generator and the gate read, so they cannot disagree about one file |
 
 ```
 X_DB_DRIFT: schema differs from migrations
@@ -264,7 +264,7 @@ bun test --workers 8
   once:        migrate + seed → myapp_test_tpl
   per worker:  CREATE DATABASE myapp_test_N TEMPLATE myapp_test_tpl   (~100-400ms)
   per file:    truncate the tables that file touched
-  teardown:    drop on exit (--keep-db to inspect)
+  teardown:    drop on exit
 ```
 
 Real Postgres, truly parallel. Rejected alternatives and why, plus worker→DB assignment mechanics: [`14-testing-internals.md`](./14-testing-internals.md).
@@ -276,12 +276,14 @@ The short version of why not transaction-rollback isolation: the outbox commits,
 | Code | Meaning | Fix |
 |---|---|---|
 | `X_DB_DRIFT` | schema ≠ migrations ≠ catalog | `x db gen "<name>"` |
-| `X_MIGRATION_TAMPERED` | an applied migration's checksum changed | `x db gen "<followup>"` |
-| `X_MIGRATION_NOT_REVERSIBLE` | no down path and no `irreversible:` marker | add the marker or a down migration |
-| `X_MIGRATE_CONCURRENT` | another version's migration is in flight | wait, then `x db status --json` |
-| `X_TENANT_MISMATCH` | row tenant ≠ request tenant | scope the query to `ctx.tenantId` |
+| `X_MIGRATION_CONFLICT` | the ledger disagrees with this build — an applied migration's checksum changed | `x db gen "<followup>"` |
+| `X_MIGRATION_IRREVERSIBLE` | generating this plan would drop rows the `down` cannot restore | `x db gen "<name>" --allow-destructive` |
+| `X_MIGRATION_DESTRUCTIVE` | a committed `up` destroys data and does not say so | add `-- destructive: true` to the migration file |
+| `X_MIGRATE_CONCURRENT` | another migrator holds the advisory lock | `psql "$DATABASE_URL" -c "select pid, state from pg_stat_activity join pg_locks using (pid) where locktype = 'advisory'"` — terminate the wedged backend, then `x db migrate` |
+| `X_TENANCY_ACTOR_MISMATCH` | a predicate, row or patch named a tenant other than the actor's | drop the `orgId` argument, or `crossTenant('<why>', fn)` |
+| `X_TENANCY_UNSCOPED` | a tenant-scoped plan has no org predicate | `scopedPlan('<entity>', tenantColumn, '<op>', plan)` |
 | `X_CURSOR_INVALID` | signature mismatch, or a cursor from another query, filter or sort order | restart pagination from `after: null` |
 | `X_INVARIANT_VIOLATED` | a write broke a declared invariant; `data.invariant` names it | fix the value, or relax the invariant |
-| `X_QUERY_UNBOUNDED` | `list`/live query without `limit` + total order | add `limit` and a unique tiebreak column |
+| `X_MATCHER_UNSUPPORTED` | a `live:` query the matcher cannot patch incrementally — no total order, or an operator outside `= != in > >= < <=` | set `live: false` and poll, or reshape to equality filters + `orderBy` + `limit` |
 | `X_WRITE_UNFILTERED` | `deleteWhere({})` / `updateWhere({}, patch)` — no filter, so every row | name the columns that bound it; a whole-table write is a migration, `x db gen "<name>"` |
 | `X_PATCH_EMPTY` | `updateWhere(filter, {})` — nothing to write | name the columns to write |

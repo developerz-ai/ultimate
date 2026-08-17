@@ -63,7 +63,8 @@ export class PgVectorStore implements VectorStore {
     };
   }
 
-  /** `x db gen` emits this; kept next to the queries so the index choice is reviewable. */
+  /** An app pastes this into migrations — no command emits it. Beside the queries so the index
+   * choice is reviewable against the reads that depend on it. */
   ddl(): string {
     return ddlSql(this.target);
   }

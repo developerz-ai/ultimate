@@ -44,14 +44,22 @@ there is one environment, and it hides the object a reviewer needs to see.
 |---|---|---|---|
 | `web` | Deployment + Service + Ingress | HPA on request rate | `/readyz` readiness, `/healthz` liveness on `:3000` |
 | `sync` | Deployment + Service, routed at `/_x/sync` | HPA on connections per pod | same, on `:3001` |
-| `worker` | Deployment, no Service | HPA on queue depth | `/healthz` only |
-| `scheduler` | Deployment, `replicas: 1` | fixed — leader election is a Postgres advisory lock | `/healthz` only |
+| `worker` | Deployment, no Service | HPA on queue depth | liveness on `/metrics`, `:9090` — **no readiness** |
+| `scheduler` | Deployment, `replicas: 1` | fixed — the leader is an expiring row in `x_scheduler_leader`, not an advisory lock | liveness on `/metrics`, `:9090` |
 | `migrate` | Job, run-once before any serving role | 1 | none |
-| `replicator` | Deployment, `replicas: 1` **per database** | fixed — holds a replication slot | `/healthz` only |
+| `replicator` | Deployment, `replicas: 1` **per database** | fixed — holds a replication slot under a session advisory lock | liveness on `/metrics`, `:9090` |
 
-`scheduler` and `replicator` refuse to run degraded: a process that cannot take its advisory lock
-reports `/readyz` false rather than doing half the work. A second replica is harmless and idle — it
-is also wasted money, so leave both at 1.
+**Probes follow the role, because the roles do not agree on what they open.** `web` and `sync`
+construct a server and get `/readyz` + `/healthz` on it. `worker`, `scheduler` and `replicator`
+construct none — their only socket is the metrics listener
+([`packages/cli/src/metrics-endpoint.ts`](../../packages/cli/src/metrics-endpoint.ts)), which answers
+`METRICS_PATH` and 404s everything else — so they get a liveness probe on `/metrics` and no readiness
+probe at all. Probing `/healthz` on a port they never bound is the bug that made sync's readiness
+probe meaningless; leaving them with no probe is how a wedged worker was never restarted.
+
+A non-leader `scheduler` stands by: it holds no lease, dispatches nothing, and reports the same
+liveness as the leader — there is no readiness signal to distinguish them. A second replica is
+harmless and idle, and also wasted money, so leave both at 1.
 
 **`PORT` is the web port, and `sync` binds `PORT + 1`.** A sync pod given `PORT=3001` opens 3002,
 so its `containerPort`, its Service `targetPort` and both probes point at a socket nobody bound and

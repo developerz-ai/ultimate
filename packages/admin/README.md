@@ -32,7 +32,7 @@ import { devDashboard, defaultDevSources } from '@ultimat3/admin/dev';
 
 const dev = devDashboard({ sources: defaultDevSources({ authz, actors }) }); // throws in prod
 const response = await dev.handle(request); // null when the path is not /_x
-await dev.json('jobs'); // the same payload `x dev --panel jobs --json` prints
+await dev.json('jobs'); // the same payload /_x/jobs renders from
 ```
 
 The root barrel does not re-export any of this: `x dev` mounts `/_x` without pulling a Solid

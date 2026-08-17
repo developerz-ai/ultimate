@@ -14,7 +14,7 @@ One engine per concern. A **migration** changes the shape of a table — schema,
 
 ## Migrations: one engine, one ledger
 
-**This page documents `main`, not the published 1.1.0 packages** — see [Known gaps → `x db gen` / `x db migrate`](Known-Gaps), which carries the 1.1.0 workaround.
+**This page documents `main`, not a published release** — see [Known gaps → `x db gen` / `x db migrate`](Known-Gaps), which carries the 1.1.0 workaround. Which published version first shipped the fix cannot be read off `CHANGELOG.md`: it has sections for `[Unreleased]` and `[1.0.0]` and none for 1.1.0 or 1.2.0, so everything since 1.0.0 is filed as unreleased whether it shipped or not.
 
 `x db gen` and the `ROLE=migrate` release-phase container run the **same** engine — `packages/db`'s `migrate()`/`generateMigration()` — not two. **In 1.1.0** they did not: `x db gen`'s subcommands shelled out to `bunx drizzle-kit`, a second schema engine with its own journal, declared in no `package.json` and fetched unpinned at run time, which is why a 1.1.0 scaffold's own `bin/setup` fails. That shelling-out is gone from current source — `cmd-db.ts` calls `generateAppMigration` and `runMigrations` from `@ultimat3/db`/`@ultimat3/cli` directly, and the only remaining mention of `drizzle-kit` anywhere is a file header comment recording the history.
 
@@ -231,7 +231,7 @@ A bare `x db backfill` is refused rather than defaulted: the four shapes answer 
 
 Backfills are therefore **never** wired into `runMigrations()`. The `backfill` container runs `x db backfill --all --write --json` and exits.
 
-Position in the plan is **necessary and not sufficient**: `docker compose up -d` returns when a container has started, not when the app inside it serves. The barrier that makes "after" true is declarative — the `backfill` service carries `depends_on: { web: { condition: service_healthy } }`, which `docker compose run` honours. `As of 2026-08` that service ships with the barrier in both committed compose files: [`docker/docker-compose.prod.yml`](../docker/docker-compose.prod.yml) and the one `x new` scaffolds. In the scaffolded app the condition is satisfied by the image's own `HEALTHCHECK` on `/healthz`, so an app that removes it also removes the barrier.
+Position in the plan is **necessary and not sufficient**: `docker compose up -d` returns when a container has started, not when the app inside it serves. The barrier that makes "after" true is declarative — the `backfill` service carries `depends_on: { web: { condition: service_healthy } }`, which `docker compose run` honours. `As of 2026-08` that service ships with the barrier in both committed compose files: [`docker/docker-compose.prod.yml`](https://github.com/developerz-ai/ultimate/blob/main/docker/docker-compose.prod.yml) and the one `x new` scaffolds. In the scaffolded app the condition is satisfied by the image's own `HEALTHCHECK` on `/healthz`, so an app that removes it also removes the barrier.
 
 ### `x g backfill` — the generator
 

@@ -29,7 +29,10 @@ export class EvalThresholdError extends UltimateError {
         `eval "${input.eval}" scored ${input.score.toFixed(3)} against a recorded baseline of ` +
         `${input.baseline.toFixed(3)} (tolerance ${input.tolerance.toFixed(3)}) on prompt ` +
         `version ${input.promptVersion}; regressed: ${input.regressed.join(', ')}`,
-      fix: `x test ${input.eval} to see per-case scores, then fix the prompt — or ULTIMATE_EVAL_RECORD=1 x test eval to accept the new numbers as a reviewed diff`,
+      // `x test eval --filter <name>`, never `x test <name>`: `x test`'s positional is a TestType,
+      // so the eval's own name there is `X_CLI_BAD_FLAG` ("not a test type") — a fix line that
+      // cannot be run is axiom 4 broken at the one moment it is needed.
+      fix: `x test eval --filter ${input.eval} to see per-case scores, then fix the prompt — or ULTIMATE_EVAL_RECORD=1 x test eval to accept the new numbers as a reviewed diff`,
       docs: docsFor('X_EVAL_THRESHOLD'),
     });
   }

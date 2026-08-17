@@ -278,13 +278,18 @@ afterAll(restoreTags);
 | `isolateGraph()` | every tag → dependent edge, across all three indexes |
 | `isolateTiers()` | everything `resetTiers()` drops: the tier registry in registration order, the revalidator, the invalidation broadcast, `recentInvalidations()` and `recentTierFailures()` |
 
-Each returns the function that puts back **exactly what it found**, so a per-test `resetGraph()` or
-`resetTierFailures()` is still fine — pair it with the module-scope isolate and the process gets its
-baseline back. A reset alone is not a substitute: it drops what a neighbouring file registered, and
+Each returns the function that puts back **exactly what it found**, so a per-test `resetGraph()` is
+still fine — pair it with the module-scope isolate and the process gets its baseline back. A reset
+alone is not a substitute: it drops what a neighbouring file registered, and
 `@ultimat3/testing`'s leak guard compares its samples for *additions*, so the loss is invisible to
 it and surfaces as a failure in an innocent file. That is the one leak no mechanism catches for you.
 The last two live in the modules that own the state because a test file cannot reach it: the
 revalidator has no reader, and neither log has a writer.
+
+**`resetTierFailures()` and `isolateTierFailures()` are deliberately off `index.ts`.** Nothing
+outside this package clears that log except through `resetTiers()`, which `isolateTiers()` already
+covers — so a suite outside `packages/cache` isolates the tiers and gets the failure log with them.
+`recentTierFailures()` is the only member of that module the public surface carries.
 
 ## CDN
 

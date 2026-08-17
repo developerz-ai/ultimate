@@ -177,11 +177,14 @@ exist only where a `StatementObserver` is installed, so a trace with no DB child
 with no statement diagnostic, not a broken recorder.
 
 `dev-n-plus-one.ts` is that observer, and `cmd-dev.ts` is the **only** place that installs it —
-`serve.ts` installs neither it nor the span exporter, the same line that file already draws for
-`/_x`. Installing one is the single switch that turns statement instrumentation on at all, which is
-why the ledger and the exporter go in together and come out together in `stop()`: the timeline's
-SQL rows and the repeat counts are one feature with one toggle, and a production process keeps
-paying the one `undefined` branch the seam costs uninstalled (axiom 6).
+`serve.ts` installs neither it nor the in-process trace RECORDER (`createTraceRecorder`, which is
+`/_x/timeline`'s source), the same line that file already draws for `/_x`. **It is not "no
+exporter"**, `As of 2026-08`: `serve.ts` calls `startOtlpExport(options.env)`, because a collector
+named in the chart has to receive spans from the container and not only from a laptop. What a
+production process does without is the *statement* diagnostic and the in-memory timeline — the
+ledger and the recorder go in together and come out together in `stop()`, because the timeline's
+SQL rows and the repeat counts are one feature with one toggle, and uninstalled the seam costs the
+one `undefined` branch it already pays (axiom 6).
 
 Three rules hold the ledger, each load-bearing. **Per request, keyed by the `Ctx` object** — a
 `WeakMap` whose entry dies with the request, so nothing sweeps and nothing accumulates across a dev

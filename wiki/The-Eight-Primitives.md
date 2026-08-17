@@ -199,7 +199,7 @@ export const config = defineRoute({
 |---|---|
 | Projects to | router entry, prerender list, `sw.js` precache/runtime rule, sitemap + RSS row, `<head>` + JSON-LD, per-route budget check |
 | Owns | render mode, hydration timing, metadata, offline strategy |
-| Never | touch the DB directly, hold business logic, or omit `meta.description` in `site/` — that is a build error (`X_SEO_NO_DESCRIPTION`; a missing title is `X_SEO_NO_TITLE`) |
+| Never | touch the DB directly, hold business logic, or omit `meta.description` in `site/` — that is a build error, `X_SEO_META_MISSING` — the same code for a missing title, with `cause` naming the field |
 
 Render modes: `static` (built once), `isr` (static + background regen), `ssr` (per-request), `stream` (shell flushed instantly, holes streamed — **default for app pages**), `spa` (shell only). Table in [Routes and render modes](Routes-And-Render-Modes).
 

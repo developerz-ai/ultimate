@@ -1,6 +1,8 @@
 # Upgrading
 
-**v1.1.0 `As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
+**`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
+
+**The next release is a major.** [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `[Unreleased]` section carries **30** entries marked `BREAKING —`, `As of 2026-08`, and each one changes a surface the table below covers. Plan for the major, not for a minor with a long changelog. No version number and no date is promised here — both are decided at the tag. Read `[Unreleased]` before you pin.
 
 ## What semver covers
 
@@ -71,7 +73,7 @@ Nothing here relies on you reading a changelog carefully. Each class is a build 
 | Budget ratchet | a release lowering a default budget | `X_BUDGET_EXCEEDED` | fix the regression, or set an explicit `budget` on the route |
 | Config field rename/removal | config schema parse, and the compiler before it — an unknown key is an excess property on `Input<AppConfig>`, so it fails `typecheck` rather than reaching a runtime parse | `X_CONFIG_INVALID` | the cause names the field. No codemod has shipped yet, so this is a manual edit |
 | Env schema change | typed env parse at boot | `X_ENV_MISSING` | add the key; fails in ~40ms, not as a later 500 |
-| Renamed job step | duplicate/unknown step names in one `run` | `X_JOB_DUPLICATE_STEP` | renaming a step invalidates its stored result — treat as a new step |
+| Renamed job step | duplicate/unknown step names in one `run` | `X_STEP_DUPLICATE` | renaming a step invalidates its stored result — treat as a new step |
 
 Budgets ratchet **down** across releases. That is intentional: a framework release that makes bundles smaller should not leave your app's slack unclaimed.
 

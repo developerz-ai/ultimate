@@ -19,7 +19,7 @@ ROLE=replicator myapp
 | `web` | SSR + static + RPC (actions/queries over HTTP) | **RPS** | behind CDN, stateless, N replicas, no local state |
 | `sync` | live queries + fanout over WebSockets | **concurrent connections** | stateless, **no sticky sessions** — a client may reconnect to any node |
 | `worker` | jobs + steps | **queue depth** | one pool per named queue; `WORKER_QUEUES=default,integrations` |
-| `scheduler` | cron dispatch → enqueue only | **fixed 1** | Postgres advisory-lock leader election; a second instance is a warm standby, not a duplicate |
+| `scheduler` | cron dispatch → enqueue only | **fixed 1** | leader election is an expiring row in `x_scheduler_leader` (`createPgLeaseLeader`), never an advisory lock — that grant is session-scoped and dies when a pooled connection returns. A second instance is a warm standby, not a duplicate |
 | `migrate` | run-once, pre-deploy | n/a | refuses to run if another version's migration is in flight (`X_MIGRATE_CONCURRENT`) |
 | `replicator` | logical replication → change feed → matcher → NATS | **1 per database** | owns the replication slot; a second instance would double-deliver, so it takes an advisory lock and exits if held |
 

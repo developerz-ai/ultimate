@@ -30,8 +30,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `source.ts` | `SqlSource` contract + `from()` in-memory reference |
 | `shape.ts` | shared read vocabulary (filters, ordering, seek keys) |
 | `policy-gate.ts` | **the only** file that touches `@ultimat3/policy` |
-| `deprecation.ts` | `Deprecation` + the RFC 9745/8594 render + the `deprecated_calls_total` counter — TWINNED in `@ultimat3/action` |
-| `deprecation.ts` | `Deprecation` + the RFC 9745/8594 render + the `deprecated_calls_total` counter — twinned with `@ultimat3/action`'s |
+| `deprecation.ts` | `Deprecation` + the RFC 9745/8594 render + the `deprecated_calls_total` counter — TWINNED with `@ultimat3/action`'s |
 
 ## Invariants
 

@@ -152,6 +152,7 @@ export type {
 export { assertOAuthCallback, beginOAuth, createPkce, pkceChallenge } from './oauth';
 export {
   APPLE_PROVIDER,
+  BUILTIN_OAUTH_PROVIDER_IDS,
   BUILTIN_OAUTH_PROVIDERS,
   GITHUB_PROVIDER,
   GOOGLE_PROVIDER,

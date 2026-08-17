@@ -301,7 +301,7 @@ following day, which becomes a wrong idempotency key that nothing downstream cat
 
 | Aspect | Rule |
 |---|---|
-| Projects to | scheduler entry (advisory-lock leader), next-run introspection, MCP `tasks.list` |
+| Projects to | scheduler entry (lease-row leader), next-run introspection, MCP `tasks.list` |
 | Owns | cron expression + explicit `tz` |
 | Never | contain a handler body. If it does work, it is a `job` |
 
