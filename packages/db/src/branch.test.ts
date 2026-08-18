@@ -33,6 +33,34 @@ describe('reapBranches', () => {
     const dropped = await reapBranches({ client, maxAgeMs: 1_000 });
     expect(dropped).toEqual(['stale']);
   });
+
+  /**
+   * A comment truncated by `pg_database.description`'s own limits, or hand-edited, parses to
+   * `NaN` — and `NaN > cutoff` is `false`, which is the same answer "older than the cutoff"
+   * gives. So an unreadable timestamp did not merely lose its age: it reaped the database on the
+   * next nightly sweep, `maxAgeMs` notwithstanding. An age nothing can read is not an old age.
+   */
+  test('an unparseable createdAt is skipped, not read as infinitely old', async () => {
+    const client = createRecordingClient();
+    client.on('pg_database', {
+      rows: [
+        { name: 'truncated', comment: 'ultimate:branch:2026-01-0', size_bytes: 0 },
+        { name: 'empty', comment: 'ultimate:branch:', size_bytes: 0 },
+        {
+          name: 'stale',
+          comment: `ultimate:branch:${new Date(Date.now() - 10_000).toISOString()}`,
+          size_bytes: 0,
+        },
+      ],
+    });
+
+    const dropped = await reapBranches({ client, maxAgeMs: 1_000 });
+
+    expect(dropped).toEqual(['stale']);
+    expect(
+      client.texts.some((text) => text.includes('drop database') && text.includes('truncated')),
+    ).toBe(false);
+  });
 });
 
 /**

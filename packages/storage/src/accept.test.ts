@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { frozenClock } from '@ultimat3/core';
 import { acceptSignedUpload, readSignedObject } from './accept';
 import type { StorageDriver } from './driver';
+import { sha256Base64 } from './driver';
 import { localDriver } from './driver-local';
 import { isStorageError } from './errors';
 import { grantUpload } from './grant';
@@ -244,5 +245,169 @@ describe('acceptSignedUpload', () => {
       readSignedObject({ url, secret: SECRET, baseUrl: BASE, disk, orgId: 'org-2', clock }),
     );
     expect(code).toBe('X_STORAGE_ORG_MISMATCH');
+  });
+});
+
+/**
+ * The documented pair, with NO `baseUrl` on either call. `localDriver` signs under
+ * `/_storage/<driver>` and the accept side has to arrive at the same base from the disk it was
+ * handed — a second default is a genuine URL that verifies nowhere.
+ */
+describe('the default base', () => {
+  test('a grant minted with no baseUrl verifies with no baseUrl', async () => {
+    const grant = await putGrant(48);
+    const stored = await acceptSignedUpload({
+      url: grant.url,
+      secret: SECRET,
+      disk,
+      orgId: ORG,
+      bytes: genuinePng(),
+      declaredContentType: 'image/png',
+      policy: IMAGES,
+      clock,
+    });
+    expect(stored.key).toBe(grant.key);
+
+    const url = await disk.signedUrl(grant.key, { method: 'GET' });
+    const read = await readSignedObject({ url, secret: SECRET, disk, orgId: ORG, clock });
+    expect(read.bytes.byteLength).toBe(48);
+  });
+});
+
+/** `requireChecksum` governs a path only if a request can carry a checksum at all. */
+describe('requireChecksum', () => {
+  const CHECKED = uploadPolicy({
+    maxBytes: 1024,
+    allowedContentTypes: ['image/png'],
+    requireChecksum: true,
+  });
+
+  const acceptWith = (url: string, bytes: Uint8Array, checksum?: string): Promise<unknown> =>
+    acceptSignedUpload({
+      url,
+      secret: SECRET,
+      disk,
+      orgId: ORG,
+      bytes,
+      declaredContentType: 'image/png',
+      policy: CHECKED,
+      clock,
+      ...(checksum === undefined ? {} : { checksum }),
+    });
+
+  test('accepts an upload whose declared checksum matches the bytes', async () => {
+    const grant = await putGrant(48);
+    const bytes = genuinePng();
+    const stored = await acceptWith(grant.url, bytes, sha256Base64(bytes));
+    expect(stored).toMatchObject({ key: grant.key, contentType: 'image/png', size: 48 });
+    expect(await disk.exists(grant.key)).toBe(true);
+  });
+
+  // `meta.declared` is asserted, not just the code: a build that dropped the field on the floor
+  // would refuse this upload too, as "declared none" — the same code for a different reason.
+  test('refuses an upload whose declared checksum is a lie', async () => {
+    const grant = await putGrant(48);
+    let declared: unknown = 'no-error-thrown';
+    try {
+      await acceptWith(grant.url, genuinePng(), 'not-the-hash');
+    } catch (error) {
+      declared = isStorageError(error) ? error.meta?.['declared'] : String(error);
+    }
+    expect(declared).toBe('not-the-hash');
+    expect(await disk.exists(grant.key)).toBe(false);
+  });
+
+  test('still refuses an upload that declares none, which is what the policy is for', async () => {
+    const grant = await putGrant(48);
+    expect(await codeOf(() => acceptWith(grant.url, genuinePng()))).toBe(
+      'X_STORAGE_CHECKSUM_MISMATCH',
+    );
+  });
+});
+
+/** The code plus `meta.reason` flattened, so two gates cannot pass for each other. */
+async function outcomeOf(fn: () => Promise<unknown>): Promise<string> {
+  try {
+    await fn();
+  } catch (error) {
+    if (!isStorageError(error)) return `not-a-storage-error: ${String(error)}`;
+    const reason = error.meta?.['reason'];
+    return typeof reason === 'string' ? `${error.code}:${reason}` : error.code;
+  }
+  return 'no-error-thrown';
+}
+
+/** A GET signed with the REAL secret, for any key — the attacker this gate must survive. */
+async function forgedGet(key: string, encodeWhole = false): Promise<string> {
+  const constraints = {
+    key,
+    method: 'GET' as const,
+    expiresAt: clock.now().getTime() + 60_000,
+    maxBytes: undefined,
+    contentType: undefined,
+  };
+  const params = new URLSearchParams({
+    [SIGNED_URL_PARAMS.method]: 'GET',
+    [SIGNED_URL_PARAMS.expires]: String(constraints.expiresAt),
+    [SIGNED_URL_PARAMS.signature]: await signConstraints(SECRET, constraints),
+  });
+  const path = encodeWhole
+    ? encodeURIComponent(key)
+    : key.split('/').map(encodeURIComponent).join('/');
+  return `${BASE}/${path}?${params.toString()}`;
+}
+
+describe('keys outside the tenant namespace', () => {
+  test("an app's own shared asset is readable through a signed URL", async () => {
+    await disk.put('brand/logo.png', genuinePng(), { contentType: 'image/png' });
+    const url = await disk.signedUrl('brand/logo.png');
+    const read = await readSignedObject({ url, secret: SECRET, disk, orgId: ORG, clock });
+    expect(read.bytes.byteLength).toBe(48);
+  });
+
+  // Every spoof is signed with the REAL secret: a refusal that leaned on the HMAC would prove
+  // nothing about the tenant gate itself. `org-1` is the actor throughout.
+  const SPOOFS: readonly (readonly [string, string])[] = [
+    ['org/org-2/secret.png', 'X_STORAGE_ORG_MISMATCH'],
+    // Case: `Org/` and `org/` are ONE directory on a case-insensitive filesystem (APFS, NTFS),
+    // so a case-folded prefix that read as "not tenant-scoped" would be a cross-tenant read.
+    ['Org/org-2/secret.png', 'X_STORAGE_ORG_MISMATCH'],
+    ['ORG/org-1/secret.png', 'X_STORAGE_ORG_MISMATCH'],
+    // The prefix ends in a slash, so a longer org id may not borrow a shorter one's namespace.
+    ['org/org-1x/secret.png', 'X_STORAGE_ORG_MISMATCH'],
+    // `new URL()` normalises the traversal away, so the key verified is not the key signed.
+    ['org/org-1/../../org-2/secret.png', 'X_STORAGE_URL_INVALID:signature-mismatch'],
+    ['org/org-1/./secret.png', 'X_STORAGE_URL_INVALID:signature-mismatch'],
+    // The sidecar namespace: reachable only if the org gate stopped being what refused it.
+    ['.meta/org/org-2/secret.png.json', 'X_STORAGE_URL_INVALID:unsafe-key'],
+    ['/org/org-2/secret.png', 'X_STORAGE_URL_INVALID:unsafe-key'],
+    ['org/org-2//secret.png', 'X_STORAGE_URL_INVALID:unsafe-key'],
+  ];
+
+  for (const [key, expected] of SPOOFS) {
+    test(`refuses a genuinely signed "${key}"`, async () => {
+      const url = await forgedGet(key);
+      expect(
+        await outcomeOf(() => readSignedObject({ url, secret: SECRET, disk, orgId: ORG, clock })),
+      ).toBe(expected);
+    });
+  }
+
+  test('a percent-encoded separator decodes before the tenant gate, never after', async () => {
+    const url = await forgedGet('org/org-2/secret.png', true);
+    expect(new URL(url, 'http://storage.invalid').pathname).toContain('%2F');
+    expect(
+      await outcomeOf(() => readSignedObject({ url, secret: SECRET, disk, orgId: ORG, clock })),
+    ).toBe('X_STORAGE_ORG_MISMATCH');
+  });
+
+  // A homoglyph prefix is not tenant-scoped and must not resolve to the object it imitates:
+  // no filesystem folds Cyrillic `о` onto ASCII `o`, so this is a different key entirely.
+  test('a homoglyph org prefix reads no object at all', async () => {
+    await disk.put('org/org-2/secret.png', genuinePng(), { contentType: 'image/png' });
+    const url = await forgedGet('оrg/org-2/secret.png');
+    expect(
+      await outcomeOf(() => readSignedObject({ url, secret: SECRET, disk, orgId: ORG, clock })),
+    ).toBe('X_STORAGE_NOT_FOUND');
   });
 });

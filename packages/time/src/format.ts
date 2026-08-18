@@ -4,9 +4,8 @@
  * because "the server's timezone" is never the answer to "what time is it for the user".
  */
 
+import { cachedFormatter, canonicalLocale } from '@ultimat3/core';
 import { differenceMs, type Instant } from './instant';
-import { cachedFormatter } from './intl-cache';
-import { canonicalLocale } from './locale-canonical';
 import { assertTimeZone, type TimeZone } from './zones';
 
 export type DateTimeStyle = 'short' | 'medium' | 'long' | 'full';

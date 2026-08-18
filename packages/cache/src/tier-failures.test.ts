@@ -55,7 +55,9 @@ describe('bestEffort', () => {
       tier: 'query-read',
       op: 'get',
       key: 'cache:posts',
-      message: 'read cache is down',
+      // `renderThrowable`'s shape, not `error.message`: the name is carried because the renderer
+      // that cannot throw is the only one a catch block may use.
+      message: 'Error: read cache is down',
     });
   });
 
@@ -74,7 +76,7 @@ describe('bestEffort', () => {
     });
 
     expect(answer).toBeUndefined();
-    expect(recentTierFailures()[0]?.message).toBe('sync boom');
+    expect(recentTierFailures()[0]?.message).toBe('Error: sync boom');
   });
 
   test('records tier, op, key, message and an ISO timestamp', async () => {
@@ -84,7 +86,7 @@ describe('bestEffort', () => {
     expect(failure?.tier).toBe('redis');
     expect(failure?.op).toBe('del');
     expect(failure?.key).toBe('feed:org-1');
-    expect(failure?.message).toBe('no socket');
+    expect(failure?.message).toBe('Error: no socket');
     expect(failure?.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
@@ -106,10 +108,12 @@ describe('bestEffort', () => {
     expect(Object.hasOwn(failure ?? {}, 'code')).toBe(false);
   });
 
-  test('stringifies a thrown non-Error rather than losing it', async () => {
+  test('renders a thrown non-Error rather than losing it', async () => {
     await bestEffort('redis', 'get', 'k', () => Promise.reject('just a string'));
 
-    expect(recentTierFailures()[0]?.message).toBe('just a string');
+    // Quoted, because `renderCauseValue` is the one renderer that cannot throw on an arbitrary
+    // value, and a quoted string is what distinguishes a thrown `'null'` from a thrown `null`.
+    expect(recentTierFailures()[0]?.message).toBe('"just a string"');
   });
 });
 
@@ -163,5 +167,47 @@ describe('isolateTierFailures', () => {
     restore();
 
     expect(recentTierFailures().map((failure) => failure.key)).toEqual(['neighbour']);
+  });
+});
+
+/**
+ * The three sites `record()` reads a caught value at — `instanceof UltimateError`, `instanceof
+ * Error`, `String(error)` — are all *calls* on a value this package did not build, and each one
+ * can throw. A `bestEffort` that dies rendering the refusal it was absorbing replaces "that tier
+ * did not answer" with a `TypeError` on the caller's business read, which is the one thing this
+ * function exists to prevent.
+ */
+describe('bestEffort absorbs a throwable that fights being read', () => {
+  /** `instanceof` runs this trap, so both `instanceof` probes throw before any renderer runs. */
+  const trapped = (): unknown =>
+    new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          throw new TypeError('proxy trap');
+        },
+      },
+    );
+
+  test('a Proxy whose getPrototypeOf throws is still a recorded failure, not a rejection', async () => {
+    const answer = await bestEffort('lru', 'get', 'k', () => Promise.reject(trapped()));
+
+    expect(answer).toBeUndefined();
+    const [failure] = recentTierFailures();
+    expect(failure?.tier).toBe('lru');
+    expect(failure?.key).toBe('k');
+    expect(typeof failure?.message).toBe('string');
+    // Nothing claimed a code: the probe answered "not an UltimateError" instead of throwing.
+    expect(Object.hasOwn(failure ?? {}, 'code')).toBe(false);
+  });
+
+  test('a null-prototype object, which String() refuses to convert, is absorbed too', async () => {
+    const answer = await bestEffort('redis', 'set', 'k', () =>
+      Promise.reject(Object.create(null) as unknown),
+    );
+
+    expect(answer).toBeUndefined();
+    expect(recentTierFailures()).toHaveLength(1);
+    expect(typeof recentTierFailures()[0]?.message).toBe('string');
   });
 });

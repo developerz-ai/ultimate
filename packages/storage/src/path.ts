@@ -102,9 +102,15 @@ export function isWithinOrg(key: string, orgId: string): boolean {
  * two apart: `isWithinOrg` alone would answer `false` for every un-scoped key and make an app's
  * own shared assets unreachable, and dropping the check would make one tenant's prefix readable
  * by another. The pair is the question "does this key belong to somebody else?".
+ *
+ * Case-INSENSITIVE, and that is the load-bearing half: `Org/o2/a.png` and `org/o2/a.png` are one
+ * file on a case-insensitive filesystem (APFS, NTFS), so an exact-case test would answer "not a
+ * tenant's" for a key that reads another tenant's bytes on every macOS dev disk. `isWithinOrg` is
+ * exact-case and stays so, so a folded prefix is refused outright rather than matched — `org/` is
+ * the only spelling `scopedKey` mints, so nothing legitimate arrives in any other.
  */
 export function isTenantScoped(key: string): boolean {
-  return key.startsWith(`${ORG_PREFIX}/`);
+  return key.slice(0, ORG_PREFIX.length + 1).toLowerCase() === `${ORG_PREFIX}/`;
 }
 
 /** `org/o1/a/b.png` -> `org/o1/a`. Empty for a top-level key. */

@@ -3,6 +3,7 @@
  * JPY renders without decimals and KWD with three, without a per-locale special case.
  */
 
+import { cachedFormatter, canonicalLocale } from '@ultimat3/core';
 import { exponentOf } from './currency';
 import { type Money, toDecimalNumber } from './money';
 import { moneyScale } from './scale';
@@ -73,19 +74,40 @@ export function currencySymbol(currency: string, locale: string): string {
 /** Digits only, no symbol — for editable inputs and CSV exports. */
 export function formatMoneyDecimal(amount: Money, locale: string): string {
   const digits = moneyScale(amount);
-  return new Intl.NumberFormat(locale, {
-    style: 'decimal',
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-    useGrouping: false,
-  }).format(toDecimalNumber(amount));
+  const tag = canonicalTag(locale);
+  // Through the same cache as `formatterFor`, for the same reason: this took the caller's raw
+  // locale too, and a second way to build a formatter in one file is a second place to forget.
+  return cachedFormatter(
+    decimalCache,
+    `${tag}|${digits}`,
+    () =>
+      new Intl.NumberFormat(tag, {
+        style: 'decimal',
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits,
+        useGrouping: false,
+      }),
+  ).format(toDecimalNumber(amount));
 }
 
+/**
+ * A tag `Intl` cannot parse falls through unchanged, so the `Intl.NumberFormat` constructor still
+ * raises it — this seam decides a cache key, never whether a locale is acceptable.
+ */
+const canonicalTag = (locale: string): string => canonicalLocale(locale) ?? locale;
+
 const cache = new Map<string, Intl.NumberFormat>();
+const decimalCache = new Map<string, Intl.NumberFormat>();
 
 /**
  * `scale` is the amount's own, not the currency's: rendering $0.000002 with two digits shows
  * `$0.00`, which is the sub-cent bug back again, in the one place a human would read it.
+ *
+ * **Canonically keyed and hard-capped, because `locale` arrives from `Accept-Language`.** Keyed
+ * raw into an unbounded `Map`, 20,000 valid-but-distinct tags (`en-US-x-a0` …) retained 55 MB —
+ * memory the client chooses. `canonicalLocale` collapses `EN-us` and `en-US` onto one key and
+ * `cachedFormatter` caps the rest; neither half is sufficient alone, which is why both come from
+ * the one place `@ultimat3/time` reads them from too.
  */
 function formatterFor(
   currency: string,
@@ -96,13 +118,14 @@ function formatterFor(
   const digits =
     options.fractionDigits ?? (options.trimZeroFraction === true ? undefined : exponent);
   const sign = options.accounting === true ? 'accounting' : 'standard';
+  const tag = canonicalTag(locale);
   // `exponent` is in the key because it stopped being derivable from `currency` the moment it
   // started coming from the amount's own scale. On the `trimZeroFraction` path `digits` is
   // `undefined`, so without it every scale of one currency shared a formatter: format 12.99 EUR
   // first and 12.990001 EUR then rendered as `12,99 €` — the sub-cent bug back, silently, in the
   // one place a human reads the number.
   const key = [
-    locale,
+    tag,
     currency,
     options.display ?? 'symbol',
     digits ?? 'auto',
@@ -110,19 +133,19 @@ function formatterFor(
     options.grouping ?? 'auto',
     sign,
   ].join('|');
-  const cached = cache.get(key);
-  if (cached !== undefined) return cached;
-
-  const formatter = new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency,
-    currencyDisplay: options.display ?? 'symbol',
-    currencySign: sign,
-    ...(digits === undefined
-      ? { minimumFractionDigits: 0, maximumFractionDigits: exponent }
-      : { minimumFractionDigits: digits, maximumFractionDigits: digits }),
-    ...(options.grouping === 'never' ? { useGrouping: false } : {}),
-  });
-  cache.set(key, formatter);
-  return formatter;
+  return cachedFormatter(
+    cache,
+    key,
+    () =>
+      new Intl.NumberFormat(tag, {
+        style: 'currency',
+        currency,
+        currencyDisplay: options.display ?? 'symbol',
+        currencySign: sign,
+        ...(digits === undefined
+          ? { minimumFractionDigits: 0, maximumFractionDigits: exponent }
+          : { minimumFractionDigits: digits, maximumFractionDigits: digits }),
+        ...(options.grouping === 'never' ? { useGrouping: false } : {}),
+      }),
+  );
 }

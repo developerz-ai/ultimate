@@ -90,6 +90,41 @@ describe('flattenCatalog', () => {
   });
 });
 
+describe('prototype safety', () => {
+  test('flattenCatalog keeps __proto__ as a key instead of dropping it on the setter', () => {
+    // `JSON.parse`, never an object literal: `{ __proto__: 'Hello' }` in source sets the
+    // prototype, so it could not reproduce what a catalog file on disk carries.
+    const flat = loadCatalog(JSON.parse('{"__proto__":"Hello","greeting":"Hi"}'));
+
+    expect(Object.keys(flat).sort()).toEqual(['__proto__', 'greeting']);
+    expect(ownValue(flat, '__proto__')).toBe('Hello');
+    expect(Object.getPrototypeOf(flat)).toBeNull();
+    expect(Object.hasOwn(Object.prototype, 'greeting')).toBe(false);
+  });
+
+  test('a flat catalog reads absent for every Object.prototype member', () => {
+    const flat = loadCatalog({ greeting: 'Hi' });
+    const inherited = ['valueOf', 'constructor', 'toString', 'hasOwnProperty', '__proto__'];
+
+    // A RAW index, deliberately: that is what a consumer writes, and on a `{}` catalog every one
+    // of these answered an inherited function or object rather than `undefined`.
+    const read = inherited.map((key) => (flat as Record<string, unknown>)[key]);
+    expect(read).toEqual([undefined, undefined, undefined, undefined, undefined]);
+    expect(inherited.filter((key) => Object.hasOwn(flat, key))).toEqual([]);
+  });
+
+  test('mergeCatalogs carries the null prototype through', () => {
+    const merged = mergeCatalogs(
+      loadCatalog(JSON.parse('{"__proto__":"Hello"}')),
+      loadCatalog({ greeting: 'Hi' }),
+    );
+
+    expect(Object.getPrototypeOf(merged)).toBeNull();
+    expect(Object.keys(merged).sort()).toEqual(['__proto__', 'greeting']);
+    expect(ownValue(merged, '__proto__')).toBe('Hello');
+  });
+});
+
 describe('mergeCatalogs', () => {
   test('later catalogs win so an app can override framework strings', () => {
     const framework = flattenCatalog({ errors: { notFound: { title: 'Page not found' } } });

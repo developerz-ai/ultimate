@@ -158,6 +158,28 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Changed
 
+- **BREAKING — `DESCRIPTION_MIN_LENGTH` is deleted from `@ultimat3/seo`.** It was exported,
+  documented as *"validate.ts enforces it"*, and read by no validator anywhere in the repo — a
+  length bound whose only effect was to be importable. Enforcing it instead would have needed a new
+  `X_SEO_*` code and would have newly failed both tracked apps (`dummy/social-media-clone`'s
+  `admin.home.description` is 32 characters), so the honest change is to stop shipping a gate that
+  does not exist. **Manual edit:** delete the import; there is no replacement, and no minimum
+  description length is checked. A test now pins that every bound `@ultimat3/seo` exports is one
+  `validateMeta` actually enforces, so this cannot recur.
+
+- **BREAKING — a metric redeclared with different `bounds` or a different `observe` is refused**
+  (`X_METRIC_NAME_INVALID`) rather than silently answering the first declaration's instrument.
+  `InstrumentOptions.maxSeries` documented "the first declaration of a name wins" and `bounds`/
+  `observe` did not, so a second `histogram('x', { bounds })` kept the original buckets with no
+  signal. An **omitted** option is still a handle-fetch — `gauge(name)` is unchanged — and
+  `maxSeries`/`unit`/`description` keep their shipped first-wins rule. **Manual edit:** make the
+  second declaration state the same `bounds`/`observe`, or fetch the handle without options.
+
+- **`cachedFormatter` and `canonicalLocale` moved from `@ultimat3/time` to `@ultimat3/core`.** Both
+  are re-exported from `time`, so no import breaks. They moved because `@ultimat3/money` needed the
+  same bound and `money → time` is a **sideways** tier-1 import the boundary check refuses — the
+  choice was one mechanism in tier 0 or a second copy of it, and axiom 1 settles that.
+
 - **BREAKING — `Seed.run()` resolves with a result object instead of `void`.** It now answers
   `SeedRun` — `{ name, tier, metrics: { inserted, updated, skipped } }` — which is what lets
   `x db seed` report a table and a `--json` body rather than "done". A caller that awaited it for
@@ -171,6 +193,106 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   keys, and it still reads first so the answer can be `'skipped'`.
 
 ### Fixed
+
+- **SECURITY — a signed storage key differing only in the case of its `org/` prefix escaped the
+  tenancy gate.** `isTenantScoped` compared the first segment exactly, so `Org/org-2/secret.png`
+  read as *not* tenant-scoped and skipped the org check entirely — and `Org/` and `org/` are one
+  directory on APFS and NTFS, so the local driver then opened the other tenant's file. The
+  predicate now folds case on that segment, which also closes it in `x dev`'s asset and storage
+  routes, where the key is client-supplied with no signature at all. `isWithinOrg` stays
+  exact-case, so a folded prefix is refused outright rather than matched.
+
+- **No signed storage URL verified under the documented defaults.** `localDriver` signed under
+  `/_storage/local` while `verifySignedUrl` / `acceptSignedUpload` / `readSignedObject` defaulted to
+  `/_storage`, so the key parsed as `local/<key>` and `grantUpload` → `acceptSignedUpload` — the
+  pair `docs/architecture/17-uploads.md` documents, neither call passing `baseUrl` — always failed
+  `X_STORAGE_URL_INVALID`. The base is now stated once as `signedUrlBaseFor(driverName)` and the
+  verify side derives it from `disk.name`, which the caller already passes.
+
+- **An app's own shared assets were unreachable through a signed URL.** `constraintsFor` gated on
+  `isWithinOrg` alone, so any key outside `org/<id>/` was refused `X_STORAGE_ORG_MISMATCH`.
+  `packages/storage/src/path.ts` had already written down that *"the pair is the question"* and
+  shipped `isTenantScoped` for it; only the dev route used the pair. Nine spoof keys — traversal,
+  encoded separator, longer-id borrow, reserved segment, leading slash, empty segment, Cyrillic
+  homoglyph and two case folds — are each pinned refused, every one signed with the real secret.
+
+- **`policy.requireChecksum` could only ever fail.** `acceptSignedUpload` is the sole production
+  caller of `validateUpload` and had no field to carry a checksum, so declaring the option broke
+  every signed upload it governed. `AcceptSignedUploadInput` now carries `checksum`, travelling
+  exactly as `declaredContentType` does.
+
+- **`t('valueOf')` threw out of the translator that documents "never throws".** The catalog lookup
+  was a raw index on a `{}`-prototyped object, so any key naming an `Object.prototype` member
+  resolved to the inherited value: `t('valueOf')` died with `TypeError: template.includes is not a
+  function`, and `t('constructor')` returned a **function** through a signature typed `string`.
+  Reachable wherever a key travels as data (`t(row.labelKey)`). The lookup now goes through the
+  `Object.hasOwn` guard that sat one line above it, `t.raw()` with it, and `flattenCatalog` /
+  `mergeCatalogs` build on `Object.create(null)` as `nestCatalog` already did.
+
+- **A cron day-of-week range that wraps with a step walked an 8-day week.** The wrap span was
+  `max - min + 1`, which is **8** for day-of-week because the field is 0–7 with two spellings of
+  Sunday: `0 3 * * sat-tue/2` fired Tue, Sat **and** Sun where Vixie gives Sat and Mon. A `task`
+  declaring one ran on the wrong days. The span is now stated (7) rather than recomputed, which
+  leaves every non-wrapping expression byte-identical — normalising the field to 0–6 instead would
+  have silently changed `0 0 * * 5/2` from `[5,7]` to `[5]`.
+
+- **Two functions whose entire contract is absorbing a refusal could themselves throw.**
+  `invalidateTags()` documents *"a dead Redis must not fail the write that triggered the bust"* and
+  `bestEffort` *"absorbs its refusal"*, but both rendered the caught value with
+  `error instanceof Error ? error.message : String(error)` — and on a value the framework did not
+  build, **both halves throw** (a `Proxy` trapping `getPrototypeOf` defeats `instanceof`; a
+  null-prototype object defeats `String`). All four sites now call `renderThrowable`, which exists
+  in core for exactly this. `checkDb` had the same line and backs `/readyz`, so a hostile driver
+  failure took the readiness probe with it.
+
+- **A rejecting `drain()` was an unhandled rejection that ended the process mid-drain.**
+  `installSignalHandlers` observed it with `.then()` alone, and the drain body logged outside any
+  `try` through an injectable sink — an app `Logger` that throws in `info` left `state` short of
+  `'stopped'`, made the memo re-reject on every later `drain()`, and stopped `release()` running at
+  all. The body is now total and the handler is attached on both settle paths. `readinessChecks`
+  had the identical hole off the drain path, where a throwing logger made `/readyz` throw.
+
+- **`applyFlagSnapshot` left a snapshot half-applied.** It validated and wrote key by key, so an
+  invalid targeting on the Nth flag threw with the first N−1 already retargeted and the report
+  discarded — while the doc block argued the throw protects the fleet. It now validates every
+  declared key before it writes any.
+
+- **`rollback({ steps: -1 })` reverted every migration but the last.** `slice(0, steps)` with a
+  negative value selects from the front; `steps` is now refused unless it is a positive integer,
+  before the advisory lock is taken.
+
+- **A migration deleted from the tree was invisible to the ledger audit in `x dev` and CI.**
+  `auditLedger` only refused an unknown row when its `app_version` differed from the running one,
+  and `runningAppVersion()` is `dev` for every development build — so drift then reported `ok: true`
+  against a database that still had the table. The predicate is now membership alone; the version
+  moved into the cause.
+
+- **`reapBranches` dropped a branch whose `createdAt` would not parse.** `NaN > cutoff` is `false`,
+  so an unparseable timestamp read as infinitely old and the database was dropped on the next
+  sweep regardless of `maxAgeMs`.
+
+- **`formatMoney` cached one `Intl.NumberFormat` per distinct locale tag, unbounded, keyed on a
+  request value.** 20,000 tags retained ~55 MB. It now shares core's bounded, canonicalising
+  formatter cache — the mechanism `@ultimat3/time` already had and `money` could not import.
+  `formatMoneyDecimal` built a second uncached formatter in the same file and shares it too.
+
+- **`zoneAbbrev` was the one `Intl` construction in `@ultimat3/time` outside its own cache**, built
+  fresh per call from the caller's raw zone and locale, and an invalid zone escaped as a bare
+  `RangeError` where every other entry point raises `X_TIMEZONE_INVALID`.
+
+- **`coerce` read submitted values off the prototype chain.** `key in record` on a `{}`-literal
+  record meant a schema field named `toString` or `constructor` read the inherited member as client
+  input and forwarded a **function** into validation. `Object.hasOwn` throughout, and `toRecord`
+  builds on `Object.create(null)`. The query-string path was already mitigated upstream by
+  `@ultimat3/http`; route params and form data were not.
+
+- **`responsiveImage`'s no-`srcset` fallback took the last width, not the largest** — correct only
+  because `DEFAULT_WIDTHS` happens to be ascending, so `widths: [1280, 640]` fell back to 640.
+
+- **`SchemaProvider.introspect`'s doc described an alternative that does not exist**, telling
+  implementers they could omit it "if the provider also supplies `toJsonSchema`" — a member
+  `SchemaProvider` does not declare, so following the doc produced `X_SCHEMA_UNSUPPORTED` on every
+  OpenAPI and MCP projection.
 
 - **SECURITY — `verifyPassword` threw on a stored hash Bun cannot parse, which was an
   account-enumeration oracle.** `Bun.password.verify` *throws* rather than answering on a hash it

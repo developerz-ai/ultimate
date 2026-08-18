@@ -1,6 +1,9 @@
+// Single responsibility: what `migrate()` and `rollback()` DO to the ledger — the forward path,
+// the conflicts they refuse, the step count they validate, and how one script becomes one send per
+// statement. Which session those statements run on is `migrate-pin.test.ts`.
+
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { type DbClient, type DbConnection, type ReservableClient, setDbClient } from './client';
-import { expectedQueryLoopReason } from './expected-loop';
+import { setDbClient } from './client';
 import { createRecordingClient, type RecordingClient } from './fake';
 import { type EntityDescriptionLike, generateMigration } from './generate';
 import {
@@ -36,98 +39,6 @@ beforeEach(() => {
   client = createRecordingClient();
   setDbClient(client);
 });
-
-const squash = (text: string): string => text.replace(/\s+/g, ' ').trim();
-
-interface PinnablePool {
-  readonly client: ReservableClient;
-  /** `reserve`, `release`, and every statement tagged with the handle that ran it. */
-  readonly events: readonly string[];
-}
-
-/**
- * A pool whose pin is observable. The defect this pins is invisible to the recording client: the
- * statement texts are identical whether the lock landed on the session that runs the migration or
- * on whatever connection the pool lent for that one statement, and only the tag says which.
- */
-function pinnable(inner: DbClient): PinnablePool {
-  const events: string[] = [];
-  const through = (tag: string): DbClient => ({
-    query: (fragment) => {
-      events.push(`${tag}:${squash(fragment.text)}`);
-      return inner.query(fragment);
-    },
-    one: (fragment) => {
-      events.push(`${tag}:${squash(fragment.text)}`);
-      return inner.one(fragment);
-    },
-    execute: (fragment) => {
-      events.push(`${tag}:${squash(fragment.text)}`);
-      return inner.execute(fragment);
-    },
-  });
-  return {
-    events,
-    client: {
-      ...through('pool'),
-      reserve: async (): Promise<DbConnection> => {
-        events.push('reserve');
-        let held = true;
-        const release = (): void => {
-          if (!held) return;
-          held = false;
-          events.push('release');
-        };
-        return { ...through('pin'), release, [Symbol.dispose]: release };
-      },
-    },
-  };
-}
-
-interface Witness {
-  readonly client: DbClient;
-  readonly statements: readonly { readonly text: string; readonly reason: string | undefined }[];
-}
-
-/**
- * Every statement paired with the `expectedQueryLoop` reason in force when it was issued. The
- * recording client cannot answer this: it never passes a funnel, so the observer never fires and
- * the scope has to be read where the statement is sent.
- */
-function witnessed(inner: DbClient): Witness {
-  const statements: { text: string; reason: string | undefined }[] = [];
-  const note = (text: string): void => {
-    statements.push({ text: squash(text), reason: expectedQueryLoopReason() });
-  };
-  return {
-    statements,
-    client: {
-      query: (fragment) => {
-        note(fragment.text);
-        return inner.query(fragment);
-      },
-      one: (fragment) => {
-        note(fragment.text);
-        return inner.one(fragment);
-      },
-      execute: (fragment) => {
-        note(fragment.text);
-        return inner.execute(fragment);
-      },
-    },
-  };
-}
-
-/**
- * Fails when nothing matched instead of answering `undefined` for it. `find(...)?.reason` alone
- * collapses two different facts into one value — "this statement ran outside every scope" and
- * "this statement never ran" — and the `toBeUndefined()` assertions below are the load-bearing
- * half of both test names, so a reworded ledger read would leave them passing on the wrong one.
- */
-const reasonFor = (witness: Witness, needle: string): string | undefined => {
-  expect(witness.statements.map((statement) => statement.text).join(' | ')).toContain(needle);
-  return witness.statements.find((statement) => statement.text.includes(needle))?.reason;
-};
 
 describe('migrate', () => {
   test('refuses and applies nothing when the ledger belongs to another app version', async () => {
@@ -335,127 +246,97 @@ describe('a multi-statement migration', () => {
   });
 });
 
-describe('the migration advisory lock', () => {
-  test('the lock, the migration and the unlock run on one pinned session', async () => {
-    client.on(/from x_migrations/, { rows: [] });
-    const pool = pinnable(client);
-
-    await migrate({ migrations: [addPosts], appVersion: '1.5.0', client: pool.client });
-
-    expect(pool.events[0]).toBe('reserve');
-    expect(pool.events[1]).toContain('pg_try_advisory_lock');
-    expect(pool.events.at(-2)).toContain('pg_advisory_unlock');
-    expect(pool.events.at(-1)).toBe('release');
-    // Not one statement on the pool: `pg_advisory_lock` is session-scoped, so work done on any
-    // other connection is not under the lock, and the unlock would answer `false` on a session
-    // that never took it. On `ROLE=migrate` (`max: 1`) there is no other connection to run on.
-    expect(pool.events.filter((event) => event.startsWith('pool:'))).toEqual([]);
-    expect(pool.events).toContain('pin:BEGIN');
-    expect(pool.events).toContain('pin:COMMIT');
-    expect(pool.events.some((event) => event.includes('create table "posts"'))).toBe(true);
-    expect(pool.events.filter((event) => event === 'reserve')).toHaveLength(1);
-  });
-
-  test('a refused ledger unlocks and gives the pin back', async () => {
-    const foreign = ledgerRow({ id: '20260202000000_from_the_future', app_version: '1.6.0' });
-    client.on(/from x_migrations/, { rows: [foreign] });
-    const pool = pinnable(client);
-
-    await expect(
-      migrate({ migrations: [addPosts], appVersion: '1.5.0', client: pool.client }),
-    ).rejects.toThrow('X_MIGRATION_CONFLICT');
-
-    expect(pool.events.at(-2)).toContain('pg_advisory_unlock');
-    expect(pool.events.at(-1)).toBe('release');
-  });
-
-  test("lock: false takes no lock, and the only pin left is the transaction's own", async () => {
-    client.on(/from x_migrations/, { rows: [] });
-    const pool = pinnable(client);
-
-    await migrate({
-      migrations: [addPosts],
-      appVersion: '1.5.0',
-      client: pool.client,
-      lock: false,
-    });
-
-    expect(client.texts.some((text) => text.includes('pg_advisory'))).toBe(false);
-    // The ledger runs unpinned, so the one reservation belongs to `withTransaction`, not to a
-    // lock scope that was never opened.
-    expect(pool.events[0]).toStartWith('pool:');
-    expect(pool.events.filter((event) => event === 'reserve')).toHaveLength(1);
-    expect(pool.events.indexOf('reserve')).toBe(pool.events.indexOf('pin:BEGIN') - 1);
-    expect(client.texts.some((text) => text.includes('create table "posts"'))).toBe(true);
-  });
-
-  test('rollback takes the same lock, on its own pinned session', async () => {
-    client.on(/from x_migrations/, { rows: [ledgerRow()] });
-    const pool = pinnable(client);
-
-    const reverted = await rollback({ migrations: [addPosts], client: pool.client });
-
-    expect(reverted).toEqual([addPosts.id]);
-    expect(pool.events[0]).toBe('reserve');
-    expect(pool.events[1]).toContain('pg_try_advisory_lock');
-    expect(pool.events.some((event) => event.includes('drop table "posts"'))).toBe(true);
-    expect(pool.events.filter((event) => event.startsWith('pool:'))).toEqual([]);
-    expect(pool.events.at(-2)).toContain('pg_advisory_unlock');
-    expect(pool.events.at(-1)).toBe('release');
-  });
-
-  test('a rollback that cannot reverse a row unlocks and gives the pin back', async () => {
-    client.on(/from x_migrations/, { rows: [ledgerRow({ id: '20260404000000_unknown' })] });
-    const pool = pinnable(client);
-
-    await expect(rollback({ migrations: [addPosts], client: pool.client })).rejects.toThrow(
-      'X_MIGRATION_CONFLICT',
+/**
+ * `steps` reaches `slice(0, steps)`, and a negative argument there is not "fewer" — it counts
+ * from the END, so `-1` selects every row but the newest and reverses 4 of 5 migrations. A
+ * rollback is the one operation whose mistakes are unrecoverable, so the count is validated
+ * before the lock is taken and before the ledger is read.
+ */
+describe('rollback validates its step count', () => {
+  const fiveRows = (): readonly LedgerRow[] =>
+    ['a', 'b', 'c', 'd', 'e'].map((suffix, index) =>
+      ledgerRow({ id: `2026010100000${index}_${suffix}` }),
     );
 
-    expect(pool.events.some((event) => event.includes('drop table "posts"'))).toBe(false);
-    expect(pool.events.at(-2)).toContain('pg_advisory_unlock');
-    expect(pool.events.at(-1)).toBe('release');
+  const migrationsFor = (rows: readonly LedgerRow[]): readonly Migration[] =>
+    rows.map((row) => ({ ...addPosts, id: row.id, name: row.id }));
+
+  test('a negative step count is refused, not read as "all but the newest"', async () => {
+    const rows = fiveRows();
+    client.on(/from x_migrations/, { rows: [...rows] });
+
+    const caught = await rollback({ migrations: migrationsFor(rows), steps: -1 }).catch(
+      (error: unknown) => error,
+    );
+
+    expect((caught as { code: string }).code).toBe('X_INVARIANT');
+    expect((caught as { cause: string }).cause).toContain('-1');
+    expect((caught as { fix: string }).fix).toContain('rollback(');
+    // Nothing was reversed, and the ledger was never even read.
+    expect(client.texts.some((text) => text.includes('drop table'))).toBe(false);
+    expect(client.texts.some((text) => text.includes('delete from x_migrations'))).toBe(false);
   });
 
-  // The framework's own deliberate loops declare themselves at source, so an N+1 detector reports
-  // the ones nobody argued for. A migration per transaction is the point, not a batch to be found.
-  test('the apply loop declares itself, and the ledger read before it does not', async () => {
-    client.on(/from x_migrations/, { rows: [] });
-    client.on('insert into x_migrations', { affected: 1 });
-    const witness = witnessed(client);
+  test('zero is refused too — a rollback that reverses nothing is a typo, not an intent', async () => {
+    const rows = fiveRows();
+    client.on(/from x_migrations/, { rows: [...rows] });
 
-    await migrate({
-      migrations: [addPosts],
-      appVersion: '1.5.0',
-      client: witness.client,
-      lock: false,
-    });
+    const caught = await rollback({ migrations: migrationsFor(rows), steps: 0 }).catch(
+      (error: unknown) => error,
+    );
 
-    expect(reasonFor(witness, 'from x_migrations')).toBeUndefined();
-    expect(reasonFor(witness, 'create table "posts"')).toContain('its own transaction');
-    expect(reasonFor(witness, 'insert into x_migrations')).toContain('its own transaction');
+    expect((caught as { code: string }).code).toBe('X_INVARIANT');
   });
 
-  test('the rollback loop declares itself too, with its own reason', async () => {
-    client.on(/from x_migrations/, { rows: [ledgerRow()] });
-    const witness = witnessed(client);
+  test('a fractional step count is refused rather than truncated', async () => {
+    const rows = fiveRows();
+    client.on(/from x_migrations/, { rows: [...rows] });
 
-    await rollback({ migrations: [addPosts], client: witness.client, lock: false });
+    const caught = await rollback({ migrations: migrationsFor(rows), steps: 1.5 }).catch(
+      (error: unknown) => error,
+    );
 
-    expect(reasonFor(witness, 'from x_migrations')).toBeUndefined();
-    expect(reasonFor(witness, 'drop table "posts"')).toContain('newest first');
-    expect(reasonFor(witness, 'delete from x_migrations')).toContain('newest first');
+    expect((caught as { code: string }).code).toBe('X_INVARIANT');
   });
 
-  test('rollback with lock: false takes no lock, for a private branch database', async () => {
-    client.on(/from x_migrations/, { rows: [ledgerRow()] });
-    const pool = pinnable(client);
+  test('a positive integer still reverses exactly that many, newest first', async () => {
+    const rows = fiveRows();
+    client.on(/from x_migrations/, { rows: [...rows] });
 
-    const reverted = await rollback({ migrations: [addPosts], client: pool.client, lock: false });
+    const reverted = await rollback({ migrations: migrationsFor(rows), steps: 2 });
 
-    expect(reverted).toEqual([addPosts.id]);
-    expect(client.texts.some((text) => text.includes('pg_advisory'))).toBe(false);
-    expect(pool.events[0]).toStartWith('pool:');
-    expect(pool.events.filter((event) => event === 'reserve')).toHaveLength(1);
+    expect(reverted).toEqual(['20260101000004_e', '20260101000003_d']);
+  });
+});
+
+/**
+ * The audit's question is "does this build ship every migration the ledger records?", and the
+ * version is the ANSWER's detail, never part of the question. Gating on `app_version !==
+ * appVersion` made the audit blind in exactly the environment that deletes migrations: every
+ * development build resolves to `dev` (`runningAppVersion()`), so a migration applied by an
+ * earlier `dev` build and since deleted passed the audit, and `expectedSchema` then filtered its
+ * table out of the drift comparison — `ok: true` against a database that still has the table.
+ */
+describe('auditLedger refuses a migration this build does not ship', () => {
+  const gone = ledgerRow({ id: '20260202000000_deleted', app_version: 'dev' });
+
+  test('even when the row was applied by a build naming the same version', () => {
+    let thrown: unknown;
+    try {
+      auditLedger([gone], [addPosts], 'dev');
+    } catch (error) {
+      thrown = error;
+    }
+
+    const error = thrown as { code: string; cause: string; fix: string };
+    expect(error.code).toBe('X_MIGRATION_CONFLICT');
+    expect(error.cause).toContain('20260202000000_deleted');
+    // The version moved into the cause; it is still the fact an operator acts on.
+    expect(error.cause).toContain('"dev"');
+    expect(error.fix).toContain("delete from x_migrations where id = '20260202000000_deleted'");
+  });
+
+  test('a ledger this build ships in full still passes', () => {
+    expect(() => auditLedger([ledgerRow()], [addPosts], 'dev')).not.toThrow();
   });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import * as seo from './index';
 import { applyTitleTemplate, hreflangSet, type RouteMeta, renderMeta } from './meta';
 
 const META: RouteMeta = {
@@ -28,6 +29,19 @@ function find(
 ) {
   return tags.filter((tag) => tag.attrs[attr] === value);
 }
+
+describe('exported length bounds', () => {
+  test('every exported bound is one validateMeta actually enforces', () => {
+    // `DESCRIPTION_MIN_LENGTH` sat under the comment "validate.ts enforces it" and no validator
+    // ever read it, so a 10-character description passed a gate the constant said it would fail.
+    // A bound that ships without an enforcer is a promise, and a promise is not a build error.
+    const bounds = Object.keys(seo)
+      .filter((name) => name.endsWith('_LENGTH'))
+      .sort();
+
+    expect(bounds).toEqual(['DESCRIPTION_MAX_LENGTH', 'TITLE_MAX_LENGTH']);
+  });
+});
 
 describe('renderMeta', () => {
   test('applies the title template without doubling the brand', () => {

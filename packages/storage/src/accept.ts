@@ -9,9 +9,9 @@
 import type { Clock } from '@ultimat3/core';
 import type { SignedUrlMethod, StorageDriver, StorageObject, StorageRead } from './driver';
 import { orgMismatch, signedUrlExpired, signedUrlRejected, tooLarge } from './errors';
-import { isWithinOrg } from './path';
+import { isTenantScoped, isWithinOrg } from './path';
 import type { SignedUrlConstraints } from './signed-url';
-import { verifySignedUrl } from './signed-url';
+import { signedUrlBaseFor, verifySignedUrl } from './signed-url';
 import type { UploadPolicy } from './upload';
 import { normalizeContentType, uploadPolicy, validateUpload } from './upload';
 
@@ -19,6 +19,11 @@ export interface SignedRequestInput {
   /** Absolute or route-relative — `verifySignedUrl` parses both. */
   readonly url: string;
   readonly secret: string;
+  /**
+   * Defaults to the base THIS disk signs under (`signedUrlBaseFor(disk.name)`), never to the bare
+   * mount prefix: a second default here made every URL `localDriver` mints a signature-mismatch,
+   * because the key parsed as `local/<key>`. Pass one only for a route mounted somewhere else.
+   */
   readonly baseUrl?: string | undefined;
   readonly disk: StorageDriver;
   /**
@@ -33,6 +38,13 @@ export interface AcceptSignedUploadInput extends SignedRequestInput {
   readonly bytes: Uint8Array;
   /** The transport's `Content-Type`. Refused unless it equals the type the grant signed. */
   readonly declaredContentType?: string | undefined;
+  /**
+   * The transport's declared base64 SHA-256, travelling exactly as `declaredContentType` does: a
+   * header the route reads and hands over, trusted for nothing — the bytes are hashed here and a
+   * disagreement is refused. Without this field `uploadPolicy({ requireChecksum: true })` could
+   * only ever fail, since nothing on this path could ever declare one.
+   */
+  readonly checksum?: string | undefined;
   readonly policy?: UploadPolicy | undefined;
 }
 
@@ -48,7 +60,7 @@ async function constraintsFor(
   const result = await verifySignedUrl({
     url: input.url,
     secret: input.secret,
-    ...(input.baseUrl === undefined ? {} : { baseUrl: input.baseUrl }),
+    baseUrl: input.baseUrl ?? signedUrlBaseFor(input.disk.name),
     ...(input.clock === undefined ? {} : { clock: input.clock }),
   });
   if (!result.ok) {
@@ -63,8 +75,15 @@ async function constraintsFor(
       `the URL is signed for ${constraints.method}, and this is a ${method}`,
     );
   }
-  if (!isWithinOrg(constraints.key, input.orgId)) {
-    throw orgMismatch(constraints.key, input.orgId);
+  // The PAIR is the question "does this key belong to somebody else?". `isWithinOrg` alone
+  // answered `false` for every un-scoped key, so an app's own `brand/logo.png` was unreachable
+  // through a URL it had just signed — `path.ts` says so and `dev-storage.ts` already asks it this
+  // way. An actor with no org is inside no org, so every tenant-scoped key is somebody else's;
+  // checked here because `isWithinOrg` reads an empty org as a malformed key and would blame the
+  // URL for the actor's missing claim.
+  const orgId = input.orgId;
+  if (isTenantScoped(constraints.key) && (orgId === '' || !isWithinOrg(constraints.key, orgId))) {
+    throw orgMismatch(constraints.key, orgId);
   }
   return constraints;
 }
@@ -106,7 +125,12 @@ export async function acceptSignedUpload(input: AcceptSignedUploadInput): Promis
 
   const policy = input.policy ?? uploadPolicy();
   const validated = validateUpload(
-    { key, declaredContentType: signed, bytes: input.bytes },
+    {
+      key,
+      declaredContentType: signed,
+      bytes: input.bytes,
+      ...(input.checksum === undefined ? {} : { checksum: input.checksum }),
+    },
     policy,
   );
   return input.disk.put(validated.key, validated.bytes, {

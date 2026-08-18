@@ -35,6 +35,31 @@ describe('parseCron', () => {
     expect(parseCron('0 22-2 * * *').hours).toEqual([0, 1, 2, 22, 23]);
   });
 
+  test('a wrapping day-of-week range strides over a 7-day week, not an 8-day one', () => {
+    // The dow field is spelled 0-7 because 0 and 7 are both Sunday, so `max - min + 1` is 8 and a
+    // wrap walked a week with a phantom day in it: `sat-tue/2` answered sat, sun, tue instead of
+    // sat, mon — a task firing on days nobody scheduled, every week.
+    expect(parseCron('0 3 * * sat-tue/2').daysOfWeek).toEqual([1, 6]); // sat, mon
+    expect(parseCron('0 0 * * fri-mon/2').daysOfWeek).toEqual([5, 7]); // fri, sun
+    // A step that divides the wrap evenly lands on the far end; one that does not stops short.
+    expect(parseCron('0 0 * * fri-mon/3').daysOfWeek).toEqual([1, 5]); // fri, mon
+    expect(parseCron('0 0 * * sat-mon/3').daysOfWeek).toEqual([6]); // sat alone
+    // Step 1 across the wrap is every day in the range — the case that was right by accident.
+    expect(parseCron('0 0 * * sat-tue').daysOfWeek).toEqual([1, 2, 6, 7]);
+    expect(parseCron('0 0 * * fri-mon').daysOfWeek).toEqual([1, 5, 6, 7]);
+    // Sunday spelled 7 on either end of a wrap is the same Sunday as 0.
+    expect(parseCron('0 0 * * 7-2').daysOfWeek).toEqual([1, 2, 7]);
+    expect(parseCron('0 0 * * 6-0').daysOfWeek).toEqual([6, 7]);
+    // Non-wrapping dow ranges and steps are untouched by the span.
+    expect(parseCron('0 0 * * sun-sat').daysOfWeek).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(parseCron('0 0 * * 0-7').daysOfWeek).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(parseCron('0 0 * * 5-7').daysOfWeek).toEqual([5, 6, 7]);
+    expect(parseCron('0 0 * * 1-5/2').daysOfWeek).toEqual([1, 3, 5]);
+    expect(parseCron('0 0 * * */2').daysOfWeek).toEqual([2, 4, 6, 7]);
+    // `5/2` runs to the field maximum, and the dow maximum is 7 — fri and sun, as Vixie reads it.
+    expect(parseCron('0 0 * * 5/2').daysOfWeek).toEqual([5, 7]);
+  });
+
   test('rejects malformed expressions with X_CRON_INVALID and a working example', () => {
     expect(codeOf(() => parseCron('0 3 * *'))).toBe('X_CRON_INVALID');
     expect(codeOf(() => parseCron('61 * * * *'))).toBe('X_CRON_INVALID');

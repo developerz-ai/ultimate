@@ -40,6 +40,16 @@ Tier 1. Tagged caching + THE invalidation graph.
   `TierName` plus `'query-read'` — closed, and deliberately NOT a widening of `TierName`: a name
   missing from `TIER_ORDER` sorts to `-1`, ahead of the request memo. A label is a log facet; a
   `TierName` is a position on the ladder.
+- **A refusal is rendered with `renderThrowable()`, never `error.message`** — the four sites that
+  absorb one (`bestEffort`'s log entry, and `fanOut`'s tier, ISR and broadcast catch blocks). A
+  tier, a revalidator and a broadcast are all app-supplied, so the value they reject with is too:
+  `instanceof` runs a `Proxy`'s `getPrototypeOf` trap and `String()` runs `Symbol.toPrimitive`, so
+  building the log line used to raise INSTEAD of absorbing the refusal — on the business write that
+  triggered the bust, which is the one caller both contracts promise to protect. The code field
+  keeps its own total probe (`ultimateCode` in `tier-failures.ts`) rather than core's `stringField`:
+  a driver error's `code` is a SQLSTATE and must never be reported as an `X_*` one. Consequence to
+  know: a recorded `message` carries the throwable's NAME (`Error: nats is down`, `"just a string"`),
+  which is what `renderThrowable` renders and what the tests here now pin.
 - Tier failures go into `report.errors`. A cache tier may never fail a business read or write.
   `createCacheStack` routes every `get`/`set`/`del` through `bestEffort()` for that reason — a
   refusal becomes "that tier did not answer" and lands in `recentTierFailures()`, the read side's

@@ -11,6 +11,46 @@ const listPosts = t.object({
 });
 
 describe('coerceQuery', () => {
+  test('an Object.prototype member is never read as a submitted value', () => {
+    // A schema is allowed to declare a field called `toString` — a client that never sent one
+    // must not have the INHERITED member coerced in as if it had, and a function must never
+    // reach validation as a value the caller supplied.
+    const input = t.object({
+      toString: t.optional(t.string),
+      valueOf: t.optional(t.number),
+      constructor: t.optional(t.string),
+      page: t.number.int().default(1),
+    });
+
+    const fromSearchParams = coerceQuery(input, new URLSearchParams('page=2'));
+    const fromRecord = coerceQuery(input, { page: '2' });
+
+    for (const coerced of [fromSearchParams, fromRecord]) {
+      expect(Object.hasOwn(coerced, 'toString')).toBe(false);
+      expect(Object.hasOwn(coerced, 'valueOf')).toBe(false);
+      expect(Object.hasOwn(coerced, 'constructor')).toBe(false);
+      expect(coerced['page']).toBe(2);
+    }
+  });
+
+  test("coerceNode's object branch coerces own properties only", () => {
+    const node = t.object({ toString: t.optional(t.string), n: t.optional(t.number) }).node;
+    const coerced = coerceNode(node, { n: '2' }) as Record<string, unknown>;
+
+    // `{ ...source }` already drops what a prototype carries; the `in` check put it back.
+    expect(Object.hasOwn(coerced, 'toString')).toBe(false);
+    expect(coerced['n']).toBe(2);
+  });
+
+  test('a __proto__ query key is data, not a prototype swap', () => {
+    const input = t.object({ page: t.number.int().default(1) });
+    const coerced = coerceQuery(input, new URLSearchParams('__proto__=polluted&page=2'));
+
+    expect(Object.getOwnPropertyDescriptor(coerced, '__proto__')?.value).toBe('polluted');
+    expect(coerced['page']).toBe(2);
+    expect(Object.hasOwn(Object.prototype, 'polluted')).toBe(false);
+  });
+
   test('turns a query string into something the schema accepts', () => {
     const query = new URLSearchParams('page=3&live=yes&tags=alpha&tags=beta&since=2026-07-26');
     const coerced = coerceQuery(listPosts, query);

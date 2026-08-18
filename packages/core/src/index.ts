@@ -428,6 +428,7 @@ export {
 export type { ImageFit, ResizeSpec } from './image/resize';
 export { fitBox, resizeRaster, scaledToFit } from './image/resize';
 export { impersonate, impersonationReason, isImpersonating } from './impersonate';
+export { cachedFormatter, canonicalLocale, MAX_CACHED_FORMATTERS } from './intl-cache';
 export type {
   HealthPayload,
   HealthReport,

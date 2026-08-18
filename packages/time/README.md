@@ -23,8 +23,10 @@ return it. Anything reading a zone off a request header should canonicalize befo
 
 One **locale** is one key for the same reason — `Accept-Language` spells one locale `EN-us`,
 `en-US` and `en-latn-us`, and `formatDateTime` and `describeCron` collapse the three before they
-reach a formatter cache. The cap in `intl-cache.ts` stays either way: an unknown `-u-` extension
-value survives canonicalization as a distinct string, so the key bounds nothing on its own.
+reach a formatter cache. The cap stays either way: an unknown `-u-` extension value survives
+canonicalization as a distinct string, so the key bounds nothing on its own. Both halves —
+`canonicalLocale` and `cachedFormatter` — are `@ultimat3/core`'s as of 2.0.0, so `@ultimat3/money`
+reads the same bound rather than a copy of it.
 
 Every value this package hands back is its own object: `instant(date)` copies rather than branding
 the caller's `Date`, and `epoch()` is a function — the `EPOCH` constant it replaces was one shared

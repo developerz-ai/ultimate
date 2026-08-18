@@ -176,6 +176,11 @@ export function usableWidths(intrinsic: number, widths: readonly number[]): read
   return usable.includes(intrinsic) ? usable : [...usable, intrinsic];
 }
 
+/** The widest candidate, or `undefined` for an empty list — never `Math.max()`'s `-Infinity`. */
+function largestOf(widths: readonly number[]): number | undefined {
+  return widths.length === 0 ? undefined : Math.max(...widths);
+}
+
 export function srcsetFor(
   input: ImageInput,
   widths: readonly number[],
@@ -212,7 +217,10 @@ export function responsiveImage(
   return {
     sources,
     img: {
-      src: urlFor(input.src, widths[widths.length - 1] ?? input.width, undefined),
+      // `Math.max`, not the last element: `usableWidths` preserves the CALLER's order, so the
+      // tail was the largest only because `DEFAULT_WIDTHS` happens to ascend. `widths: [1200, 640]`
+      // handed every no-`srcset` browser the 640 variant of a 1200-wide image.
+      src: urlFor(input.src, largestOf(widths) ?? input.width, undefined),
       srcset: srcsetFor(input, widths, undefined, urlFor),
       sizes,
       alt: input.alt,

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { MAX_CACHED_FORMATTERS } from '@ultimat3/core';
 import { formatMoney, formatMoneyDecimal, formatMoneyParts } from './format';
 import { fromDecimal, money } from './money';
 
@@ -96,5 +97,56 @@ describe('one place decides the sign', () => {
         }).format(-1299),
       ),
     );
+  });
+});
+
+describe('the formatter cache', () => {
+  test('is bounded — the oldest locale is evicted, not kept for the life of the process', () => {
+    // `locale` is whatever `Accept-Language` sent. Keyed raw into an unbounded `Map`, 20,000
+    // distinct-but-valid tags (`en-US-x-a0` …) through this function retained +55.1 MB of RSS
+    // after `Bun.gc(true)` — memory the client chooses, at ~2.7 KB per `Intl.NumberFormat`.
+    // The heap does not show it (ICU allocates natively), so the bound is asserted where it is
+    // decided: the first key in is the first key out, and asking for it again rebuilds it.
+    const amount = money(129900, 'EUR');
+    const built: unknown[] = [];
+    const real = Intl.NumberFormat;
+    Intl.NumberFormat = new Proxy(real, {
+      construct(target, args, newTarget) {
+        built.push(args[0]);
+        return Reflect.construct(target, args, newTarget);
+      },
+    });
+    try {
+      formatMoney(amount, 'en-US-x-oldest');
+      for (let index = 0; index < MAX_CACHED_FORMATTERS; index += 1) {
+        formatMoney(amount, `en-US-x-a${index}`);
+      }
+      built.length = 0;
+      formatMoney(amount, 'en-US-x-oldest');
+      expect(built).toEqual(['en-US-x-oldest']);
+    } finally {
+      Intl.NumberFormat = real;
+    }
+  });
+
+  test('a locale still inside the cap is answered from the cache, never rebuilt', () => {
+    const amount = money(129900, 'EUR');
+    const built: unknown[] = [];
+    const real = Intl.NumberFormat;
+    formatMoney(amount, 'en-US-x-warm');
+    Intl.NumberFormat = new Proxy(real, {
+      construct(target, args, newTarget) {
+        built.push(args[0]);
+        return Reflect.construct(target, args, newTarget);
+      },
+    });
+    try {
+      // The canonical tag is the key AND what reaches `Intl`, so a header spelling one locale
+      // three ways does not mint three permanent formatters.
+      expect(formatMoney(amount, 'EN-us-X-WARM')).toBe(formatMoney(amount, 'en-US-x-warm'));
+      expect(built).toEqual([]);
+    } finally {
+      Intl.NumberFormat = real;
+    }
   });
 });

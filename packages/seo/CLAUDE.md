@@ -28,6 +28,17 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
   over the route manifest and the build's own stats, throwing `@ultimat3/render`'s
   `X_BUDGET_EXCEEDED`. seo is tier 1 and cannot see a build's bytes, so it was never the package
   that could answer. `errors.test.ts` pins the code set, so re-adding one is a failing test.
+- **A length bound with no enforcer does not ship.** `DESCRIPTION_MIN_LENGTH` (50) sat in
+  `meta.ts` under the comment "validate.ts enforces it", was re-exported from `index.ts`, and no
+  validator anywhere read it — a 10-character description passed the gate the constant claimed to
+  fail. Deleted `As of 2026-08`, comment included; `validateMeta` enforces maxima only. Adding a
+  minimum back means adding the check AND a new `X_SEO_*` code in the same change.
+  `meta.test.ts` pins the exported `*_LENGTH` set, so a bound with no enforcer is a failing test.
+- **The `<img src>` fallback is the LARGEST usable width, chosen with `Math.max`.**
+  `usableWidths` preserves the CALLER's order, so `widths[widths.length - 1]` was the largest only
+  because `DEFAULT_WIDTHS` happens to ascend — `widths: [1200, 640]` handed every browser without
+  `srcset` support the 640 variant of a 1200-wide image. Never re-derive it from position, and
+  never sort inside `usableWidths`: the `srcset` order is the caller's to choose.
 - **Errors name the file, not the URL.** `RouteRecord.file` is in every cause and every fix; an agent must be able to open the source without guessing.
 - **Fail closed, and core reads the key.** `isIndexable()` is `environment === 'production'` and
   nothing else — `staging`, a laptop, a typo and an unset variable all disallow. `ULTIMATE_ENV` has

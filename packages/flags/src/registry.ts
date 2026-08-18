@@ -5,7 +5,7 @@
 import { flagDuplicate, flagUnknown } from './errors';
 import type { Flag, FlagDef } from './flag';
 import { toFlag, withTargeting } from './flag';
-import type { FlagTargeting } from './targeting';
+import { assertTargeting, type FlagTargeting } from './targeting';
 
 const flags = new Map<string, Flag>();
 
@@ -54,11 +54,16 @@ export interface SnapshotResult {
  * kill switch that refuses to land because the payload also mentioned tomorrow's flag is a kill
  * switch that does not work on the day it is needed. A bad *targeting* still throws — landing a
  * `rollout: 0.5` would silently switch a feature off for everyone.
+ *
+ * **Two passes, because the throw above is only worth anything if nothing landed.** Validating and
+ * writing in one loop retargeted every key ahead of the bad one and then threw, so the caller — a
+ * poller, a job or a realtime channel — saw a failure and had no record that half the fleet's
+ * flags had already moved. Nothing here awaits, so no other code observes the gap between passes.
  */
 export function applyFlagSnapshot(
   snapshot: Readonly<Record<string, FlagTargeting>>,
 ): SnapshotResult {
-  const applied: string[] = [];
+  const declared: [string, Flag, FlagTargeting][] = [];
   const unknown: string[] = [];
   for (const [key, targeting] of Object.entries(snapshot)) {
     const flag = flags.get(key);
@@ -66,6 +71,11 @@ export function applyFlagSnapshot(
       unknown.push(key);
       continue;
     }
+    assertTargeting(key, targeting);
+    declared.push([key, flag, targeting]);
+  }
+  const applied: string[] = [];
+  for (const [key, flag, targeting] of declared) {
     flags.set(key, withTargeting(flag, targeting));
     applied.push(key);
   }

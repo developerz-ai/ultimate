@@ -157,6 +157,23 @@ Gotchas:
 - `acceptSignedUpload` refuses a URL signed with **no** content type (`unconstrained`). `grantUpload`
   always sets one, so such a URL is hand-rolled, and trusting the uploader's header instead is the
   only other option.
+- **The signed base is declared ONCE, in `signedUrlBaseFor(driverName)`.** `localDriver` mints
+  under it and `accept.ts` defaults to `signedUrlBaseFor(disk.name)` — the same base, arrived at
+  from the disk the caller already passed. It was stated twice (`/_storage/local` in the driver,
+  `/_storage` in `verifySignedUrl`'s default), so with both defaults NO genuine URL verified: the
+  key parsed as `local/<key>` and every grant died as `signature-mismatch`. `@ultimat3/cli`'s
+  `STORAGE_BASE_PATH` is a third statement of the mount prefix and should import
+  `DEFAULT_SIGNED_URL_BASE` instead.
+- **`accept.ts` asks the `isTenantScoped`/`isWithinOrg` PAIR, exactly as `dev-storage.ts` does.**
+  `isWithinOrg` alone refused every un-scoped key, so an app's own `brand/logo.png` was unreachable
+  through a URL it had just signed. `isTenantScoped` is case-INSENSITIVE and `isWithinOrg` is not:
+  `Org/o2/x` and `org/o2/x` are one file on APFS/NTFS, so the fold has to count as tenant-scoped
+  and then fail the exact-case membership test. Do not "simplify" either half.
+- **`AcceptSignedUploadInput.checksum` is what makes `uploadPolicy({ requireChecksum: true })`
+  reachable.** Without it that option could only ever fail, because nothing on the accept path
+  could declare a hash. It travels like `declaredContentType`: the route reads a header and hands
+  it over, and `validateUpload` hashes the bytes itself. The browser half does NOT send one — a
+  custom header on an S3 presigned PUT is a signature question this package cannot answer.
 - `orgId` is required on both halves of `accept.ts` and is the ACTOR's, never a request field. A
   signed URL is a capability; a leaked capability must still not cross a tenant.
 - `X_STORAGE_ORG_MISMATCH` maps to **404**, not 403 (`@ultimat3/http`'s `error-map.ts`). 403 would

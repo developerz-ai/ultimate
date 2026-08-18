@@ -134,7 +134,11 @@ export async function reapBranches(options: ReapOptions): Promise<readonly strin
   const dropped: string[] = [];
   for (const branch of branches) {
     if (branch.createdAt === null) continue;
-    if (new Date(branch.createdAt).getTime() > cutoff) continue;
+    const createdAtMs = Date.parse(branch.createdAt);
+    // `NaN > cutoff` is `false`, which is the same answer "older than the cutoff" gives — so a
+    // truncated or hand-edited comment used to be a database DROPPED on the next sweep, whatever
+    // `maxAgeMs` said. An age nothing can read is not an old age.
+    if (!Number.isFinite(createdAtMs) || createdAtMs > cutoff) continue;
     await dropBranch(branch.name, options);
     dropped.push(branch.name);
   }

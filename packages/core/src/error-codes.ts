@@ -46,7 +46,8 @@ const CORE_CODE_TITLES = {
   X_INVARIANT: 'invariant violated',
   X_METRIC_CARDINALITY:
     'a metric exceeded its series ceiling and is folding into one overflow series',
-  X_METRIC_NAME_INVALID: 'metric name is malformed or already declared with another kind',
+  X_METRIC_NAME_INVALID:
+    'metric name is malformed, or redeclared with a different kind, bounds or observer',
   X_METRIC_VALUE_INVALID: 'metric value is not recordable',
   X_NO_CONTEXT: 'no request context is active',
   X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',

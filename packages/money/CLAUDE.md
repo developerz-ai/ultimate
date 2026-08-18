@@ -79,6 +79,13 @@ shape is still additive and this is still a minor version.
   `USD/EUR: 0.92` names 23/25, so EUR→USD is exactly 25/23, where `1 / 0.92` is a double whose own
   decimal spelling rounds a large amount one minor unit low. `rate` stays the readable number the
   audit trail records; `convert` scales by `ratio` whenever the provider supplied one.
+- **Never cache an `Intl` formatter on a raw caller string.** `locale` arrives from
+  `Accept-Language`, so an unbounded `Map` keyed on it is memory the client chooses: 20,000 valid
+  `en-US-x-*` tags through `formatMoney` retained +55.1 MB of RSS, at ~2.7 KB per
+  `Intl.NumberFormat`. Both halves, always — `canonicalLocale` for the key, `cachedFormatter` for
+  the bound, both `@ultimat3/core`'s and shared with `@ultimat3/time` (tier 1 may not import
+  sideways, so the mechanism lives a tier down rather than twice). Every formatter in `format.ts`
+  goes through that pair; a `new Intl.NumberFormat` outside one is the bug written again.
 - **One place decides a sign.** `formatMoney` is `formatMoneyParts` joined, and `accounting`
   reaches `Intl` as `currencySign` — so the locale places the minus and picks the parenthesised
   form, and a UI styling the parts cannot render a different format from the label beside it.

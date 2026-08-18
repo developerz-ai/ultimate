@@ -17,6 +17,17 @@ export const DEFAULT_SIGNED_URL_TTL_MS = 900_000;
 /** The dev server mounts the download/upload route here; S3 disks never use it. */
 export const DEFAULT_SIGNED_URL_BASE = '/_storage';
 
+/**
+ * The base ONE disk's own URLs hang off: the mount prefix plus the driver's name, because the
+ * mounted route is `${DEFAULT_SIGNED_URL_BASE}/:disk/*key` and the disk segment is inside the
+ * path the HMAC is recovered from. Declared once and called by both halves — the driver that
+ * mints and `accept.ts` that verifies — because a base stated twice is a base that drifts, and a
+ * drifted base makes every genuine URL a `signature-mismatch`: the key parses as `local/<key>`.
+ */
+export function signedUrlBaseFor(driverName: string): string {
+  return `${DEFAULT_SIGNED_URL_BASE}/${driverName}`;
+}
+
 export const SIGNED_URL_PARAMS = {
   method: 'x-method',
   expires: 'x-exp',

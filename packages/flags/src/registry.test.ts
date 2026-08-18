@@ -82,4 +82,34 @@ describe('unit · applyFlagSnapshot', () => {
     );
     expect(thrown).toBeUltimateError('X_FLAG_TARGETING_INVALID');
   });
+
+  test('a refused payload lands nothing — not the keys ahead of the bad one', () => {
+    // The doc block says a bad targeting protects the fleet. It did not: the loop wrote each key
+    // as it validated it, so `a.first` had already moved when `m.middle` threw, and the caller —
+    // a poller or a realtime channel — sees only the throw and no record of the half that landed.
+    permanent('a.first');
+    permanent('m.middle');
+    const thrown = caught(() =>
+      applyFlagSnapshot({
+        'a.first': { default: false, rollout: 10 },
+        'm.middle': { default: false, rollout: 0.5 },
+      }),
+    );
+    expect(thrown).toBeUltimateError('X_FLAG_TARGETING_INVALID');
+    expect(allFlags().map((flag) => flag.targeting.rollout)).toEqual([undefined, undefined]);
+  });
+
+  test('an unknown key ahead of a bad one still does not land the valid ones behind it', () => {
+    permanent('a.first');
+    permanent('z.last');
+    const thrown = caught(() =>
+      applyFlagSnapshot({
+        'shipped.tomorrow': { default: true },
+        'a.first': { default: false, rollout: 10 },
+        'z.last': { default: false, rollout: 0.5 },
+      }),
+    );
+    expect(thrown).toBeUltimateError('X_FLAG_TARGETING_INVALID');
+    expect(allFlags()[0]?.targeting.rollout).toBe(undefined);
+  });
 });

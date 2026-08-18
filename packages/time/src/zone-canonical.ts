@@ -4,7 +4,7 @@
  * A 13-letter name has 2^12 casings and a request header can name any of them.
  */
 
-import { cachedFormatter } from './intl-cache';
+import { cachedFormatter } from '@ultimat3/core';
 
 /** ES2024 `Intl` accepts `+01:00` as a zone; we do not — a fixed offset has no DST rules. */
 const NUMERIC_OFFSET = /^[+-]/;

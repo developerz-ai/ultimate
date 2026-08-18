@@ -141,6 +141,7 @@ export {
   SIGNED_URL_PARAMS,
   SIGNED_URL_VERSION,
   signConstraints,
+  signedUrlBaseFor,
   timingSafeEqual,
   verifySignedUrl,
 } from './signed-url';

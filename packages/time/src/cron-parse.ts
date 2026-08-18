@@ -65,7 +65,9 @@ export function parseCron(expression: string): CronExpression {
   const hours = parseField(expression, hourField ?? '*', 0, 23);
   const daysOfMonth = parseField(expression, domField ?? '*', 1, 31);
   const months = parseField(expression, monthField ?? '*', 1, 12, MONTH_NAMES, 1);
-  const rawDow = parseField(expression, dowField ?? '*', 0, 7, DAY_NAMES, 0);
+  // Span 7, not `max - min + 1` = 8: the dow field accepts 0-7 because Sunday has two spellings,
+  // so the modulus a wrap strides over is a week with a phantom day in it unless it is stated.
+  const rawDow = parseField(expression, dowField ?? '*', 0, 7, DAY_NAMES, 0, 7);
 
   // 0 and 7 are both Sunday in cron; ISO calls Sunday 7.
   const daysOfWeek = [...new Set(rawDow.map((day) => (day === 0 ? 7 : day)))].sort((a, b) => a - b);
@@ -113,6 +115,13 @@ function parseField(
   max: number,
   names: readonly string[] = [],
   nameOffset = 0,
+  /**
+   * How many distinct values one full turn of this field has — `max - min + 1` for every field
+   * whose spelling is one-to-one. Day-of-week is the exception and the reason this is a parameter:
+   * it spells Sunday twice (0 and 7), so its 0-7 bounds describe 8 slots over a 7-day week, and a
+   * wrapping stride computed from the bounds walked a day that does not exist.
+   */
+  span = max - min + 1,
 ): number[] {
   const values = new Set<number>();
   for (const part of field.split(',')) {
@@ -144,7 +153,6 @@ function parseField(
       // Wrapping ranges (`fri-mon`, `22-2`) are a real cron idiom, and the stride CONTINUES across
       // the wrap: `23-3/2` is 23, 01, 03 — every second hour starting at 23. Restarting at `min`
       // answered 23, 00, 02, an hour off for every occurrence past midnight.
-      const span = max - min + 1;
       const length = to - from + span;
       for (let offset = 0; offset <= length; offset += step) {
         values.add(min + ((from - min + offset) % span));

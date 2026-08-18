@@ -3,7 +3,7 @@
 // pool like a `web` process behind a CDN. `Bun.SQL` is reached lazily so importing this module
 // never opens a socket (the CLI imports it to print help).
 
-import { type Role, resolveRole } from '@ultimat3/core';
+import { type Role, renderThrowable, resolveRole } from '@ultimat3/core';
 import { statementAttribution } from './attribution';
 import { DbError, dbUnavailable, driverError, poolAcquireTimeout, poolMaxInvalid } from './errors';
 import { expectedQueryLoopReason } from './expected-loop';
@@ -457,7 +457,9 @@ export async function checkDb(client: DbClient = baseClient()): Promise<DbHealth
     return {
       ok: false,
       latencyMs: Math.round(performance.now() - started),
-      error: error instanceof Error ? error.message : String(error),
+      // `renderThrowable`, never `error.message`: the probe wants a report, and a render that
+      // throws is an exception out of `/readyz` — the one caller that cannot catch it.
+      error: renderThrowable(error),
     };
   }
 }

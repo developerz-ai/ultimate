@@ -81,7 +81,10 @@ export function coerceNode(node: SchemaNode, raw: unknown): unknown {
       const source = raw as Record<string, unknown>;
       const out: Record<string, unknown> = { ...source };
       for (const [key, child] of Object.entries(node.properties)) {
-        if (key in source) out[key] = coerceNode(child, source[key]);
+        // `Object.hasOwn`, never `key in source`: `{ ...source }` above already dropped what a
+        // prototype carries, so an `in` check put it back — a schema field named `toString` or
+        // `valueOf` was coerced from the INHERITED member and handed validation a function.
+        if (Object.hasOwn(source, key)) out[key] = coerceNode(child, source[key]);
       }
       return out;
     }
@@ -111,11 +114,17 @@ export function coerceNode(node: SchemaNode, raw: unknown): unknown {
   }
 }
 
+/**
+ * `Object.create(null)`, for the reason `@ultimat3/http`'s `parseQuery` already uses one: this
+ * record is built from caller-controlled keys. On a `{}` literal `out['__proto__'] = …` hits the
+ * prototype accessor instead of declaring a key, and every member of `Object.prototype` reads
+ * back as present when the client sent nothing.
+ */
 function toRecord(source: QuerySource): Record<string, string | readonly string[] | undefined> {
+  const out = Object.create(null) as Record<string, string | readonly string[] | undefined>;
   if (!(source instanceof URLSearchParams)) {
-    return { ...source };
+    return Object.assign(out, source);
   }
-  const out: Record<string, string | readonly string[]> = {};
   for (const key of new Set(source.keys())) {
     const all = source.getAll(key);
     out[key] = all.length > 1 ? all : (all[0] as string);
@@ -134,7 +143,8 @@ export function coerceQuery(schema: unknown, source: QuerySource): Record<string
 
   const out: Record<string, unknown> = { ...record };
   for (const [key, child] of Object.entries(node.properties)) {
-    if (!(key in record)) continue;
+    // See `toRecord`: a declared property is coerced only when the caller actually sent it.
+    if (!Object.hasOwn(record, key)) continue;
     const raw = record[key];
     out[key] = coerceNode(child, child.kind === 'array' ? (raw ?? []) : normaliseSingle(raw));
   }

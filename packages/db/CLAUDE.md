@@ -11,6 +11,7 @@ reaches down to this package for it. **Never** import `entity`, `jobs`, `http` o
 | SQL | `sql` binds `$n`; anything non-scalar and non-fragment throws `X_SQL_UNSAFE` |
 | Escape hatches | `raw()`, `identifier()`, `literal()` — each call is an audit point |
 | SQLSTATE | one reader, `sqlState()` (`sqlstate.ts`). Never read `error.code` for a SQLSTATE |
+| Reading a caught value | `renderThrowable()` from core; never `error instanceof Error ? error.message : String(error)` — both halves RUN app code (a `Proxy` trap, `Symbol.toPrimitive`) and `checkDb` backs `/readyz`, where a render that throws is an exception in place of the report the kubelet asked for |
 | Errors | subclass `DbError`; never `throw new Error` **in source**. A test simulating a *database* failure throws `dbUnavailable()`; a test simulating the *caller's body* failing throws a bare `Error` on purpose — an arbitrary throw is exactly what rollback and disposal must survive, and a `DbError` there would prove the narrower thing |
 | New code | add to `DB_ERROR_CODES` **and** `DB_ERROR_TITLES` in `errors.ts` |
 | Exports | explicit in `src/index.ts`; no `export *` |
@@ -317,6 +318,29 @@ reach it, and a hand-built description gets the error rather than DDL Postgres c
 block is the join of that fix with the engine it ships through — an entity description into
 `generateMigration`, applied by `migrate()` itself against a real server, columns confirmed against
 `pg_indexes`, rather than either half alone.
+
+**The ledger audit asks one question — does this build ship every migration the ledger records?**
+`auditLedger`'s `foreign` filter is `!known.has(row.id)` and nothing else, `As of 2026-08`. It used
+to also require `row.app_version !== appVersion`, which switched the audit OFF wherever the two
+agree: `runningAppVersion()` answers `dev` for every development build, so a migration applied by an
+earlier `dev` build and since deleted was invisible, and `expectedSchema` (`drift.ts`) then dropped
+its table from the comparison — `x db drift` answering `ok: true` against a database that still has
+the table. The version is a detail of the ANSWER and lives in the cause, never in the predicate.
+
+**`rollback({ steps })` refuses anything that is not a positive safe integer, before the lock.**
+`steps` reaches `slice(0, steps)`, where a negative count counts from the END: `steps: -1` selected
+every applied migration but the newest and reversed four of five. `X_INVARIANT` (core's generic
+code, borrowed in `DB_BORROWED_ERROR_CODES` the way `@ultimat3/money`'s `roundRatio` borrows it —
+a bad argument is not a fact about the ledger), thrown by `rollbackStepsInvalid` before the advisory
+lock is taken and before the ledger is read. Same discipline as `poolMaxInvalid`: a number this
+build cannot honour is refused, never reinterpreted.
+
+**`reapBranches` skips a `createdAt` it cannot parse; it never reads one as infinitely old.**
+`NaN > cutoff` is `false`, which is the same answer "older than the cutoff" gives — so a
+`COMMENT ON DATABASE` that was truncated or hand-edited used to be a database DROPPED on the next
+nightly sweep whatever `maxAgeMs` said. `Date.parse` + `Number.isFinite`, the discipline
+`@ultimat3/seo`'s `feed-dates.ts` applies to the same question. (Distinct from the open
+source-blindness of the reaper, issue #133.)
 
 **One send is one statement, so `migrate()` and `rollback()` split the script.** `tx.execute(raw(
 migration.up))` on a text holding two commands is where the two drivers disagreed, and the

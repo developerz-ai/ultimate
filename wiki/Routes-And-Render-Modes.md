@@ -145,7 +145,7 @@ Failures name the *cause* — the transitive import that added the bytes — bec
 |---|---|
 | `meta.title` missing on an indexable route | build error `X_SEO_META_MISSING`, `cause` naming `title` and the file |
 | `meta.description` missing on an indexable route | the **same** code, `X_SEO_META_MISSING`, naming `description` — one code for both fields, with `fix: add description to meta in <file>` |
-| Title over 60 chars, description over 160 | build error `X_SEO_META_TOO_LONG`, with the measured length. A **too-short** description is not checked: `DESCRIPTION_MIN_LENGTH` (50) is exported by `@ultimat3/seo` and read by no validator, so a 10-character description passes the gate `As of 2026-08` |
+| Title over 60 chars, description over 160 | build error `X_SEO_META_TOO_LONG`, with the measured length. A **too-short** description is not checked and no minimum is exported `As of 2026-08`: a 10-character description passes the gate. `DESCRIPTION_MIN_LENGTH` used to be exported and read by no validator, which is the shape a length bound must not ship in — `validateMeta` enforces every bound `@ultimat3/seo` exports, pinned by a test |
 | Duplicate title/description across routes | build error — duplicate meta is a ranking bug, not a style issue |
 | `og.image` missing on a shareable route | build error; the generated fallback OG image must be opted into explicitly |
 | Broken internal link | build error, resolved against the route table |

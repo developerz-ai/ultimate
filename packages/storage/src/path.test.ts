@@ -88,6 +88,16 @@ describe('isTenantScoped', () => {
     expect(isTenantScoped('orgs/org-1/a.png')).toBe(false);
   });
 
+  // `Org/o2/a.png` and `org/o2/a.png` are ONE file on a case-insensitive filesystem (APFS, NTFS),
+  // so a case-folded prefix that answered `false` would hand a caller another tenant's object on
+  // every macOS dev disk — and the fold is refused outright, because `org/` is the only spelling
+  // `scopedKey` ever mints.
+  test('a case-folded prefix is still the tenant namespace', () => {
+    expect(isTenantScoped('Org/org-2/a.png')).toBe(true);
+    expect(isTenantScoped('ORG/org-1/a.png')).toBe(true);
+    expect(isWithinOrg('Org/org-1/a.png', 'org-1')).toBe(false);
+  });
+
   test('the two guards together are what makes a foreign key unreadable', () => {
     const foreign = scopedKey('org-2', 'a.png');
     expect(isTenantScoped(foreign) && !isWithinOrg(foreign, 'org-1')).toBe(true);

@@ -71,6 +71,7 @@ export {
   multipleStatements,
   poolAcquireTimeout,
   poolMaxInvalid,
+  rollbackStepsInvalid,
   serializationExhausted,
   sqlUnsafe,
 } from './errors';

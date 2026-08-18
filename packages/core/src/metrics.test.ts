@@ -106,6 +106,48 @@ describe('the instrument registry', () => {
   test('a name no exposition format accepts is refused at declaration', () => {
     expect(() => counter('HTTP.Requests')).toThrow('X_METRIC_NAME_INVALID');
   });
+
+  test('a second declaration stating different bounds is refused, not silently dropped', () => {
+    // The first declaration won and the second's bounds were discarded without a word, so a
+    // module recording into buckets it chose was reading another module's.
+    histogram('test_redeclare_seconds', { bounds: [0.1, 1] });
+    let caught: unknown;
+    try {
+      histogram('test_redeclare_seconds', { bounds: [1, 10] });
+    } catch (thrown) {
+      caught = thrown;
+    }
+    expect(isUltimateError(caught)).toBe(true);
+    expect((caught as UltimateError).code).toBe('X_METRIC_NAME_INVALID');
+    expect((caught as UltimateError).cause).toContain('0.1, 1');
+  });
+
+  test('a second declaration stating a different observer is refused', () => {
+    gauge('test_redeclare_observed', { observe: () => 1 });
+    let caught: unknown;
+    try {
+      gauge('test_redeclare_observed', { observe: () => 2 });
+    } catch (thrown) {
+      caught = thrown;
+    }
+    expect((caught as UltimateError).code).toBe('X_METRIC_NAME_INVALID');
+    // The first observer is still the live one — the refusal changed nothing.
+    expect(pointsOf('test_redeclare_observed')[0]?.value).toBe(1);
+  });
+
+  test('omitting an option takes a handle on the existing instrument, and never conflicts', () => {
+    // `gauge(name)` is how a second module reads an instrument someone else declared; it states
+    // nothing, so there is nothing to disagree about.
+    const observed = () => 3;
+    gauge('test_redeclare_handle', { observe: observed, maxSeries: 4 });
+    expect(() => gauge('test_redeclare_handle')).not.toThrow();
+    expect(() => gauge('test_redeclare_handle', { observe: observed })).not.toThrow();
+    expect(() => histogram('test_redeclare_bounds')).not.toThrow();
+    const bounds = [0.5, 5];
+    histogram('test_redeclare_bounds_stated', { bounds });
+    expect(() => histogram('test_redeclare_bounds_stated', { bounds: [0.5, 5] })).not.toThrow();
+    expect(pointsOf('test_redeclare_handle')[0]?.value).toBe(3);
+  });
 });
 
 describe('export', () => {
