@@ -46,23 +46,36 @@ That line is the entire integration. Two authz systems is how every Meteor-like 
 
 `x dev` starts an MCP server on the dev socket. Never exposed in `ROLE=web`.
 
-| Tool | Handler | Reads | Write scope |
-|---|---|---|---|
-| `routes.list` | `manifest` | route table: path, render, hydrate, offline, budget, meta status | read |
-| `schema.describe` | `entity` | tables, columns, types, indexes, FKs, invariants | read |
-| `policies.list` | `policy` | every policy, its consumers, its denial reason | read |
-| `actions.list` | `action` | inputs, outputs, tags, MCP exposure | read |
-| `manifest.get` | `manifest` | the whole `x.manifest.json` | read |
-| `tests.run` | `testing` | run a type or a single file, structured results | branch env only |
-| `logs.tail` | `core` | structured logs + OTel spans, filterable | read |
-| `db.query` | `entity` | **read-only** SQL, row cap, `EXPLAIN` on request | read-only connection |
-| `db.migrate` | `entity` | generate + apply migrations | **branch DB only** |
-| `errors.explain` | `core` | `X_*` → title, cause template, fix, docs | read |
-| `budgets.report` | `render` | per-route bytes/LCP + the import chain behind a regression | read |
-| `live.explain` | `realtime` | a live query's matcher class and estimated cost | read |
-| `jobs.list` / `jobs.status` / `jobs.retry` | `jobs` | queue state, step timeline | same authz as the actions |
+**Thirteen tools, `As of 2026-08`** — the whole catalog, declared once in `devTools(host)`
+([`packages/mcp/src/dev-server.ts`](../../packages/mcp/src/dev-server.ts)) so `x mcp serve` and the
+HTTP transport share it. The names below are the names `tools/call` accepts; there are no aliases,
+and renaming one is a major.
 
-Read tools are unrestricted in dev. Write tools are scoped to branch environments.
+| Tool | Scope | Reads / does |
+|---|---|---|
+| `routes.list` | `dev:read` | route table: url, render mode, offline strategy, hydrate, budget |
+| `schema.describe` | `dev:read` | entities with columns, types and invariants |
+| `policies.list` | `dev:read` | every policy: permission, subject, and where it is enforced |
+| `actions.describe` | `dev:read` | every action **and query**: input/output schema, policy, cache tags, MCP exposure |
+| `jobs.inspect` | `dev:read` | job definitions, retry policy and steps; omit `name` for all |
+| `queue.depth` | `dev:read` | pending, running and failed counts per queue |
+| `manifest.read` | `dev:read` | the whole `x.manifest.json`, as text |
+| `errors.explain` | `dev:read` | `X_*` → cause, exact fix command, docs URL |
+| `db.query` | `db:read` | **one read-only** SQL statement, row and byte caps, `EXPLAIN` on request |
+| `db.migrate` | `db:migrate` | apply pending migrations, **branch DB only** |
+| `tests.run` | `dev:test` | run the suite or a substring filter, structured results |
+| `verify.run` | `dev:test` | the whole gate; `fix: true` applies safe autofixes |
+| `logs.tail` | `dev:logs` | last N structured log lines, filterable by runtime role |
+
+`read()` stamps `scope: dev:read` and `destructive: false` on the first eight; `tests.run` and
+`verify.run` declare `destructive: true`, so neither is metered as read chatter. Read tools are
+unrestricted in dev. Write tools are scoped to branch environments.
+
+Four tools this table named until 2026-08 and the server has never projected: `actions.list`
+(it is `actions.describe`), `manifest.get` (`manifest.read`), `budgets.report`, `live.explain`, and
+the `jobs.list`/`jobs.status`/`jobs.retry` triple (one tool, `jobs.inspect`). `queue.depth` and
+`verify.run` ship and were absent. An agent that trusted the old table called five tools this
+server answers ToolNotFound for.
 
 ## Security posture
 
@@ -190,6 +203,134 @@ export const appMcp = defineAppMcp({
 | Same `--json` errors | `{ code, cause, fix, docs }` reaches the user's agent unchanged |
 
 An action listed in `defineAppMcp` without `mcp.expose` is a build error, so exposure is always declared at the action, next to its policy — not in a distant registry file someone edits without reading the policy.
+
+## The model call: gateway, ledger, provider seam
+
+Every model call in an Ultimate app goes through one `Gateway`, installed once at boot by
+`configureAi({ gateway })` and reached by `aiGateway(name)`. That is what makes budgets and cost
+accounting un-bypassable: a stray `fetch` is the only way around it, and there is no second path.
+
+`Gateway` is four members ([`packages/ai/src/gateway.ts`](../../packages/ai/src/gateway.ts)):
+`generate`, `stream`, `scope` — which opens a `BudgetLedger` every nested call shares — and
+`spent()`.
+
+### `generate()`, in order
+
+| Step | Detail |
+|---|---|
+| resolve the model | `request.model ?? defaultModel ?? DEFAULT_MODEL` |
+| read the cache | `cacheKeyFor(resolved)` — model, system, messages, `maxTokens`, `effort`, `thinking`, tool **names**, stop sequences. A key that ignored `effort` or `system` would serve one prompt's answer for another |
+| a hit costs nothing, so it is **not debited** | |
+| `reserve(estimateSpend(resolved))` | tokens **and** money, against the worst case, **before** the provider is reached |
+| `attempt(model, …)` | every provider that serves this model, each retried on a retryable failure |
+| a throw releases the reservation | a call that never landed must not go on holding it |
+| `record(usage, cost, reservation)` | replaces the estimate with the provider's real counts, so only the *difference* lands |
+| cache the result **unless it is a refusal** | a cached refusal keeps serving a classifier decision after the prompt was fixed |
+
+`stream()` reserves the same way and reconciles at the `done` chunk. It is **not retried
+mid-flight** — the consumer has already seen tokens and replaying from the top would duplicate them
+— so only the handshake retries, and a `finally` releases the reservation when `done` never arrived
+because the stream threw or its consumer abandoned it.
+
+### The provider seam
+
+```ts
+export interface Provider {
+  readonly name: string;
+  readonly models: readonly ModelId[];
+  generate(request: GenerateRequest): Promise<GenerateResult>;
+  stream(request: GenerateRequest): AsyncIterable<StreamChunk>;
+}
+```
+
+Four members, and the gateway routes by `models.includes(model)`.
+
+| Rule | Why |
+|---|---|
+| Fallback is across **providers serving one model**, never across models | a silent model swap changes what answered, what it cost and which eval baseline the answer belongs to |
+| The provider that answered is **stamped** onto the result | `result.provider`, and `llm()` puts it on the span as `llm.provider` — the fallback that does exist is never invisible |
+| Retry is exponential with **full jitter** | synchronised retries from N workers reproduce the rate limit they are backing off from |
+| `isRetryable` is `429`, any `>= 500`, `ETIMEDOUT`, `ECONNRESET` | a 4xx is never retried: the same body gets the same rejection and burns the budget |
+| No provider serves the model → `X_AI_PROVIDER_UNAVAILABLE` | listing what each candidate said, or that none serves it |
+
+Two hand-written providers ship — Anthropic Messages and the OpenAI chat-completions **wire format**
+(Azure, vLLM, Ollama, LiteLLM, your own gateway) — and `provider-parity.test.ts` asserts both sides
+of every rule inside one `test()`, so neither can move alone. Why no SDK sits behind this seam yet,
+and the exact condition under which one could: [`../idea/18-build-vs-wrap.md`](../idea/18-build-vs-wrap.md).
+
+### `BudgetLedger`: how a ceiling holds under concurrency
+
+The subtle, load-bearing part. `BudgetLedger` ([`packages/ai/src/budget.ts`](../../packages/ai/src/budget.ts))
+carries five scopes — `request`, `tokensIn`, `actor`, `org`, `costPerCall` — over an
+`AsyncLocalStorage`, so a RAG retrieval, a tool call that generates and an eval judge all debit the
+same ledger without threading it through every signature.
+
+**A budget refuses; it never truncates.** A silently shortened prompt produces a confidently wrong
+answer that looks real, with no signal anything happened.
+
+Three mechanisms, each closing a hole the previous one left:
+
+| Mechanism | The hole it closes |
+|---|---|
+| **`reserve()` debits, it does not merely check** | check-then-record let three concurrent calls under one ledger all read `spent() === 0`, all pass, and all three record against a ceiling only one of them fitted — an "un-bypassable" org budget bypassed by `Promise.all`. `record()` reconciles the estimate against the provider's real counts; `release()` gives it back when the call never happened |
+| **`derive()` tightens and never widens** | a per-call budget declared on an `llm()` or `agent()` must not be able to widen the actor or org ceiling it runs inside. Each limit becomes the tighter of parent and child; `costPerCall` compares in one currency, and a mismatch is a config bug that throws |
+| **the turnstile is the ROOT's, not the ledger's own** | `derive()` gives every call its own ledger, so a per-ledger queue serialises nothing: `Promise.all` of three derived ledgers all read the chain before any of them debits it. `reserve()` walks `parent` to the root and chains on **that** queue, so reservations under one scope take turns however deep the derivation goes |
+
+Two more details that are not obvious from the shapes:
+
+- **`reserveNow()` checks the whole chain, not just this ledger.** Each ledger keeps its own
+  counter, and the tightest limit is not always the one with the most spent against it.
+- **The turnstile chains on a settled shadow** — `gate.turnstile = turn.catch(() => undefined)` — so
+  one refusal does not reject every reservation queued behind it.
+- **`debit()` walks the chain for the in-memory counters and writes the STORE once**, by the ledger
+  the call was made on. A child shares its parent's store and identity keys, so debiting through the
+  parent as well would bill the actor and the org twice for one call.
+
+One event loop, so a promise chain **is** the lock. A `BudgetStore` shared across *processes* needs
+an atomic increment of its own; this closes the parallelism inside one. The default
+`MemoryBudgetStore` is per process and resets on every deploy, which is why `org: 20_000_000` at six
+replicas is six ledgers of twenty million.
+
+## The agent loop
+
+`agent()` ([`packages/ai/src/agent.ts`](../../packages/ai/src/agent.ts)) is a **factory over
+`action()`** — the third instance of the rule after `llm()` and `backfill()`, and `hive()` is the
+fourth. It exists because the alternative is a hand-rolled loop, and a hand-rolled loop is where the
+dangerous mistake lives: taking the **actor** from the model's output.
+
+```ts
+agent({
+  input, output, prompt, vars,
+  tools: [lookupOrder, issueRefund],   // real action()s, each mcp: { expose: true }
+  maxTurns: 6,
+  budget: { tokensPerRun: 200_000, costPerCall: { minor: 50, currency: 'USD' } },
+  policy: can('order:support'),
+  onTurn: (event) => progress.push(event),
+})
+```
+
+| Decision | Detail |
+|---|---|
+| `tools` accepts `AnyAction \| ProjectableAction` | the app's own `action()` first, because that is what an app has. Until 2026-08 the list took `ProjectableAction` alone — which no `action()` structurally satisfies — so the documented shape was a `TS2741` and every test in the package hand-built a stand-in |
+| Exposure is checked at **declaration** | `isMcpExposed(tool.mcp)` over the *declaration*, not the projection: a real `action()` beside it in the same module has no name until `registerAction` runs at boot. `X_AGENT_TOOL_UNEXPOSED` |
+| Projection is **memoised on first run** | for the same reason: naming a tool at module scope would make the ordinary `export const publishPost = action(...)` beside it `X_ACTION_UNREGISTERED` |
+| The actor is read **once**, from `ctx` | nothing below reads an actor out of a model result. A loop that let the model name its identity would be an escalation primitive |
+| `throwIfAborted(ctx)` at the top of every turn **and** before every tool batch, plus `signal` on the request | the transcript **is** the request, so a loop that keeps going after a disconnect re-sends it once per remaining turn, runs every remaining side effect and discards the answer. The signal rides on `GenerateRequest` too, so a provider call already in flight is cut rather than paid for |
+| Tools of one turn run through one `Promise.all`, **unbounded** | the batch is what a single model turn asked for, each entry is an action with its own `policy` and `rateLimit`, and a second ceiling here would be a throttle competing with those. Results pair **positionally**, each carrying the `tool_use` id it was handed |
+| The ledger is `(currentBudget() ?? new BudgetLedger({ limits: {} })).derive(limitsOf(def))` | `tokensPerRun` maps onto the ledger's `request` scope, which accumulates across every call made under one `withBudget` — which for a run is exactly "the whole run" |
+| Structured output is the forced `respond` tool | `respondToolFor(def.output)`, offered beside the app's tools and filtered out of `toolCalls` before `onTurn` sees them |
+| A bad shape gets **another turn**, not one repair | unlike `llm()`, this loop has turns left by construction, and the correction is the message rather than a tool result |
+| Two exhaustions, two codes | `X_LLM_OUTPUT_INVALID` when every attempt was the wrong shape; `X_AGENT_MAX_TURNS` when the loop kept calling tools and never answered |
+| `onTurn` is **awaited and unguarded** | a throw fails the run. It is the app's code on the run's own path, and an observer that quietly stopped working reads exactly like one that is fine. The same facts always land on the span as an `agent.turn` event |
+| **No semantic cache**, deliberately | similar prompts do not have similar answers once the answer depends on what `lookupOrder` returned this second, and a cache over that would serve one run's world state to another |
+| **No `.stream()`** | `agent()` returns a plain `Action`; only `llm()` returns `LlmAction`. A tool call arrives whole, so per-turn is the finest granularity a tool loop has |
+
+`hive()` fans one action out over many inputs through a bounded, order-preserving,
+cancellation-linked pool (`hive-pool.ts`), reporting three member arms — `ok`, `failed`, `skipped`
+— because *ran and threw* and *never ran* are different facts. `agentJob()` (tier 4, which is why
+the adapter lives in `@ultimat3/ai` and not in `action` or `jobs`, both tier 3) composes a real
+`job()` around the action projection, so `.enqueue()`, the outbox, the worker's cancellation and the
+dead-letter path all arrive without a line of its own. Reference: [`wiki/Agents.md`](../../wiki/Agents.md).
 
 ## Codes
 

@@ -99,6 +99,61 @@ wrap takes the wire, not the semantics presence is built on.
 The verdict in one line: 1,019 LOC of protocol with zero integration benefit, and an agent knows the
 dominant client's semantics from training data but can never know a reimplementation.
 
+### The AI SDK — BUILD, **both layers declined**, decided 2026-08
+
+Two layers were considered separately, because the criterion answers them differently. Both were declined; only one has a revisit condition.
+
+| Layer | Verdict | Reason |
+|---|---|---|
+| the **agent** layer — `tool()`, `generateText`, the loop | **declined, permanently** | it *is* primitive vocabulary, which is the one place the criterion forbids a dependency |
+| the **provider** layer — the language-model interface behind `Provider` | **declined for now**, with a named condition | the seam is right and the port is wider than the SDK's; nothing is blocked either way |
+
+**The agent layer fails the criterion on every row of the "own it when" column.** An app author would write
+
+```ts
+tool({ inputSchema: z.object({ orderId: z.string() }) })   // the SDK's vocabulary
+action({ input: t.object({ orderId: t.uuid }), policy: can('order:read'), mcp: { expose: true } })
+```
+
+side by side in one file. That is two tool vocabularies, two schema libraries — Zod alongside the
+dependency-free `@ultimat3/schema` — and two authorization stories, because the SDK's tool carries
+no `policy` and there is nowhere in its shape to put one. Axiom 1 says never add a second path, and
+this would add three. `agent({ tools })` takes the app's own `action()`s precisely so the tool an
+in-app agent calls and the tool an external MCP client calls are the same object, authorized by the
+same `policy`, projected into the same manifest row. Nothing in a wrapped agent layer inherits any
+of that, and everything in it would have to be re-explained to the agent reading this repo.
+
+**The provider layer is a real seam, and the port is the wider one.** `Provider` in
+[`packages/ai/src/provider.ts`](../../packages/ai/src/provider.ts) is four members — `name`,
+`models`, `generate`, `stream` — sitting behind `createGateway({ providers })`, which is exactly the
+driver/transport shape the criterion admits a dependency at. Two things Ultimate's port carries that
+the SDK's usage type does not, and both are load-bearing:
+
+| Ultimate's port | Why it cannot be dropped |
+|---|---|
+| a **pre-flight cost estimate** — `estimateCost(request): Money`, integer minor units | the budget *reserves against the estimate before the call*. A port that only reports usage afterwards cannot refuse, and a budget that refuses is the entire contract |
+| a **refusal category** — `StopDetails.category`, an open set | a refusal is a 200 with no answer in it. Without the category, `X_LLM_REFUSED` cannot name why, and `moreCapableThan` has nothing to suggest |
+
+So the condition, written down so the argument does not have to be had twice: an adapter mapping the
+SDK's language-model interface onto `Provider`, **behind the existing seam**, imported by exactly one
+file — the shape `nats-lib-client.ts` already has — with cost preserved as `Money` in integer minor
+units, refusal `stopDetails` preserved, and `provider-parity.test.ts` green across both wire formats.
+Until that adapter exists and passes, the two hand-written providers stay.
+
+**Contrast with the NATS WRAP, which was approved.** That verdict is the opposite of this one on
+every axis, which is what makes the criterion a criterion rather than a preference:
+
+| Axis | NATS — WRAP | AI SDK agent layer — declined |
+|---|---|---|
+| What the library implements | ~1,000 LOC of wire protocol: framing, PING/PONG, TLS upgrade, reconnect | a tool loop over an HTTP API |
+| Integration benefit of owning it | **zero** — the `Transport` seam already isolated it | the whole value: one authz object, one schema library, one manifest row |
+| What a caller writes | never NATS vocabulary; one channel API either way | `tool({ inputSchema })` beside `action({ input })`, permanently |
+| What an agent already knows | the dominant client's semantics, from training data | the SDK's semantics *and* Ultimate's, and which one applies where |
+| What it replaced | a hand-rolled reimplementation with a live bug list | nothing — `agent.ts` is 425 lines including its rationale, and what it buys is `ctx`, the actor, the budget scope, the span and the manifest row |
+
+The one-line form: NATS was protocol with no integration; the agent layer is integration with almost
+no protocol.
+
 ## Dependency ledger
 
 Every dependency admitted at a driver/transport seam under this criterion, in one place.

@@ -133,6 +133,22 @@ export const summarize = llm({
 
 Long or multi-call chains are `job`s with steps, so a model call that fails on step 4 retries step 4 only. See [Jobs and workflows](Jobs-And-Workflows).
 
+## Agents, hives and agent jobs → [Agents](Agents)
+
+`llm()` is one model call. A **tool-using loop** is `agent()`, and it is the same kind of thing — an action factory, not a ninth primitive. Everything the loop needs is a factory over a primitive already in the vocabulary:
+
+| Factory | Over | Gives you |
+|---|---|---|
+| `llm()` | `action()` | one model call, streamable, semantically cacheable |
+| `agent()` | `action()` | the turn loop: real actions as tools, forced structured output, `maxTurns`, a run budget, `ctx.signal`, `onTurn`. **No `.stream()`** |
+| `hive()` | `action()` | one action fanned out over many inputs: bounded concurrency, split-order results, three-way `ok`/`failed`/`skipped` member outcomes |
+| `agentJob()` | `job()` | an agent as durable, retried, cancellable queue work — `As of 2026-08` the only way an agent reaches a queue |
+| `backfill()` | `job()` | the resumable, paced sweep those run over → [Migrations and backfills](Migrations-And-Backfills) |
+
+A tool is a real `action()` carrying `mcp: { expose: true }` — the **same** predicate an external MCP client is filtered by, so an in-app agent and an external one are offered exactly the same catalogue and authorize identically. An `agent()` returns an action, so an agent is a tool of another agent with no supervisor primitive anywhere.
+
+Full reference, including the at-least-once trap that makes every mutating tool's idempotency your obligation: [Agents](Agents).
+
 ## Prompts as versioned artifacts
 
 ```
@@ -227,6 +243,9 @@ $ x verify --json
 | `X_MCP_PROTOCOL` | malformed envelope or unsupported method — a client bug, not an authz outcome | send a JSON-RPC 2.0 body |
 | `X_FORBIDDEN` | the action's policy refused this actor — identical to the HTTP denial | call `policies.list` for the permission this tool enforces, then grant it to the actor's role in `apps/web/shared/policies.ts` |
 | `X_LLM_OUTPUT_INVALID` | model output failed the `output` schema twice | tighten the prompt or widen the schema; bump the prompt version |
+| `X_AGENT_TOOL_UNEXPOSED` | an `agent()` lists an action that is not MCP-exposed — refused at **declaration** | add `mcp: { expose: true, description }` to the action, or drop it from `tools` |
+| `X_AGENT_MAX_TURNS` | an `agent()` used every turn without answering | tell the template when to stop and answer through the respond tool, then bump its version |
+| `X_HIVE_EMPTY` | a `hive()` split into zero members | return at least one member input, or guard the call site |
 | `X_NOT_IMPLEMENTED` | a remote driver stub was reached | configure the local/PGlite driver, or wait for the release named in `fix` |
 
 Full list: [Error codes](Error-Codes). CLI surface: [CLI reference](CLI-Reference).
