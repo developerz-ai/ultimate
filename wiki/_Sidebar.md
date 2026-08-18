@@ -5,6 +5,7 @@
 - [Getting started](Getting-Started)
 - [Installation](Installation)
 - [Project layout](Project-Layout)
+- [Migrating an existing app](Migrating-An-Existing-App)
 
 **Tutorials**
 
@@ -35,6 +36,7 @@
 - [N+1 detection](N-Plus-One-Detection)
 - [PWA and offline](PWA-And-Offline)
 - [MCP and AI](MCP-And-AI)
+- [Agents](Agents)
 - [Admin dashboard](Admin-Dashboard)
 
 **Cross-cutting**

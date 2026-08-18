@@ -8,6 +8,234 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Added
+
+- **`agent()` — the tool loop, as an action factory.** The third instance of the rule after `llm()`
+  and `backfill()`: a tool-using run is one server-authoritative operation with an input schema, an
+  output schema and a policy, so `agent()` returns an `action` and inherits `.tool()`,
+  `.openapi()`, `.client()`, `.job()`, `.contract()` and its manifest row.
+
+  `tools` takes the **real `action()`s an app already wrote** — `agent({ tools: [lookupOrder,
+  issueRefund] })`, the imports themselves. The list took a hand-shaped `ProjectableAction` alone
+  until now, which no `action()` structurally satisfies (an action carries
+  `as`/`tool`/`openapi`/`job`/`contract` and never `run`), so the documented shape was a `TS2741`
+  against every real action and the only thing that satisfied it was a stand-in written for a test
+  — which is why the suite stayed green over an API that did not compile (issue #124). Every tool
+  must be `mcp: { expose: true }`, checked at **declaration** (`X_AGENT_TOOL_UNEXPOSED`), so an
+  in-app agent and an external MCP client are offered exactly the same catalogue.
+
+  Because an agent **is** an action, an agent is a tool of another agent with no supervisor
+  primitive anywhere.
+
+- **`agent()` honours `ctx.signal`.** Read at the top of every turn, before every tool batch, and
+  forwarded to the transport on `GenerateRequest` — so a provider call already in flight is cut
+  rather than paid for. The transcript IS the request, so a loop that kept going after the caller
+  disconnected re-sent it once per remaining turn, ran every remaining tool's side effects, and
+  discarded the answer.
+
+- **`onTurn` on `agent()`.** One call per completed model turn, before the answer or the tool calls
+  are acted on, carrying `{ turn, maxTurns, model, toolCalls, stopReason, usage, cost }` — this
+  turn's cost alone, never a running total. A 90-second run emitted nothing until it returned, so a
+  progress indicator, a per-turn spend line and a transcript log all had to be hand-rolled outside
+  the framework, which is exactly the loop `agent()` exists to replace. Observation only: it cannot
+  steer the loop, see the transcript or reach the actor, and a throw from it **fails the run**
+  rather than being swallowed. The same facts always land on the span as an `agent.turn` event.
+  It is not `.stream()` — tokens on a screen is a different contract, and `agent()` has no
+  `.stream()`.
+
+- **Tool calls within one turn run concurrently.** One `Promise.all` over what a single model turn
+  asked for, deliberately unbounded: each entry is an ordinary `action` with its own `policy` and
+  `rateLimit`, and a second ceiling here would be a throttle competing with those. Results pair
+  **positionally**, each carrying the `tool_use` id it was handed, so a fast tool answering first
+  cannot be paired with a slow tool's call. Serial cost 5x wall clock for a turn asking for five
+  tools, and nothing in the types or the docs ever said so.
+
+- **`hive()` — one action fanned out over many inputs.** The fourth factory over `action()`.
+  `member` is any action, most usefully an `agent()`. Bounded `concurrency` (default 4) over a
+  shared cursor, results in **split order** with `index` on every arm, and a **three-way** member
+  outcome — `ok`, `failed`, `skipped` — because *ran and threw* and *never ran* are different facts
+  and an aborted sibling is the second. `onMemberError` is required, no default: `'abort'` stops
+  and leaves the rest `skipped`, `'collect'` harvests the rest, and both are right for somebody.
+  `minMembers` (default 2) stops paying for a pool on a trivial split and **drops nothing**. An
+  empty split is `X_HIVE_EMPTY`, because "0 ok, 0 failed" cannot be told apart from a query that
+  returned no rows and nobody noticed.
+
+- **`agentJob()` — an agent as durable background work.** `As of 2026-08` the only way an agent
+  reaches a queue at all: `.job()` hands back `kind: 'action-job'`, and `isJobHandle` needs
+  `kind === 'job'` **plus** membership of a `WeakMap` only `job()` writes, so nothing externally
+  shaped has ever reached the registry, the worker or the dead-letter path (issue #125). It
+  composes `job()` rather than imitating a handle, so `.enqueue()`, the outbox, the worker's
+  cancellation, `x jobs show` and its manifest row all arrive for free. `name`, `tenant` and
+  `retry` are required; both reads of the action projection are lazy, because `agentJob()` runs at
+  module scope beside the `agent()` it wraps and names are stamped at boot.
+
+  **`idempotencyKey` dedupes the ENQUEUE, never the ATTEMPT** — one row a worker claims, half-runs
+  and loses the lease on is claimed again, and the agent runs a second time from the top. Every
+  tool an agent may call therefore has to be idempotent. The framework does **not** check this and
+  cannot: `mutates` is not a fact an `action()` declares, so a read-only `lookupOrder` and a
+  destructive `issueRefund` are indistinguishable at that seam, and a rule refusing both would be a
+  wrong refusal.
+
+- **`describeAgents()`.** Every registered agent, by name: prompt, prompt id, **prompt hash**,
+  model, `maxTurns`, `maxToolResultChars`, its sorted tool list — the agent's blast radius — its
+  declared budget, and whether it is MCP-exposed. An agent projects to an `ActionDescriptor` like
+  every other action, and that descriptor deliberately knows nothing about turns or tools, so "how
+  far can this loop, and what may it call" had no answer outside the source. Names are read when
+  you ask, not when the agent was declared; an agent nothing registered has no row, because an
+  action with no name reaches no route, no tool catalogue and no queue.
+
+- **`x db seed [<name>] [--tier reference|dev] [--dry-run]`.** The fixture graph, applied and
+  replayable. Seeds are discovered by importing `packages/*/seeds/**/*.ts` and
+  `packages/*/src/seed*.ts` — deliberately not `loadApp`'s whole-`src` glob, because importing
+  every module of every package to find a fixture graph makes an unrelated broken module into a
+  failed seed run. **One transaction per seed**, never one around the run: a seed that fails must
+  not roll back the ones that already succeeded. `--dry-run` reads and reports what each seed
+  *would* write and writes nothing. Which tiers an environment takes is one table
+  (`seedTiersFor`) — production runs `reference` only.
+
+- **`X_SEED_ENVIRONMENT`.** A seed whose tier this environment does not run, refused rather than
+  confirmed: `dev` fixtures reaching production is the one irreversible thing `x db seed` can do.
+  Its own code and not `X_CLI_BAD_FLAG` — the argv was well formed, and the one remedy is naming
+  the tier (`--tier <tier>`, or `ULTIMATE_SEED_TIER` for a container whose command line is fixed)
+  rather than re-reading `x help`. The check runs twice, in `selectSeeds` and again before the
+  driver is booted, because the layer that opens a connection to production must not be the only
+  layer that decided it was allowed to.
+
+- **`X_HIVE_EMPTY`**, owned by `@ultimat3/ai` — a hive whose `split()` produced no members.
+
+- **`wiki/Agents.md`** — the public reference for `agent()`, `hive()` and `agentJob()`.
+  `agent()` appeared nowhere in the public documentation before it — `wiki/MCP-And-AI.md` was the
+  only public AI page and never named it — so "how do I build an agent in Ultimate?" had no public
+  answer at all.
+
+- **`wiki/Migrating-An-Existing-App.md`** — a phased runbook for adopting Ultimate incrementally in
+  front of a production app on another stack, written for the agent executing it: entry and exit
+  conditions per phase, machine-checkable postconditions, error-code branch tables, and explicit
+  stop conditions for everything irreversible or outward-facing.
+
+- **The column vocabulary an existing schema needs.** `json(schema)`, `bigint()`, `decimal({
+  precision, scale })`, `date()`, `bytes()` and `arrayOf(column)`, in `columns-data.ts` and kept
+  apart from the opinionated builders on purpose: those are decisions the framework made for a
+  table it was going to create, and these are the shapes a table already has. Two rules run through
+  all of them — a value crossing the driver is parsed by the column that declared it, because the
+  two drivers disagree about what they hand back (`int8` is a string from Bun's `sql` and a
+  `bigint` from PGlite; `bytea` is a `Buffer` and a `Uint8Array`); and nothing here is an `any`
+  hole, so `json()` **requires** a schema. `bigint()`'s row type is a decimal **string** — a JS
+  `bigint` is what `JSON.stringify` throws on, and a `number` loses digits exactly where a legacy
+  `int8` key lives. `decimal()` refuses a value with more decimal places than the column stores
+  rather than letting Postgres round it silently. `arrayOf(money())` and nested arrays are refused
+  at declaration.
+
+- **Physical-name overrides, so an entity can describe a table it did not create.**
+  `entity(name, { table })` for the physical table — the entity **name** stays the framework's key,
+  so the registry, the `entity:<name>` cache tag, every relation and every policy are unmoved by a
+  rename, while index names follow the table because an index is a physical object;
+  `.column('<physical>')` per column, named last in a chain; and `money({ columns })` per money
+  part, merged over the `<name>_minor`/`<name>_currency`/`<name>_scale` defaults so a table that
+  renamed one of the three does not restate the other two. `columnName(property, meta)` is the one
+  place the physical name is decided — a second `snake(property)` anywhere would be a statement
+  naming a column the table does not have.
+
+- **`@ultimat3/scraping`, tier 5**, with 24 owned `X_SCRAPE_*` codes and two borrowed from core.
+  Every code is classified `retryable` or `terminal` once, in `SCRAPE_ERROR_RETRY`, rather than
+  re-decided by whichever `catch` saw it. Two sets override the table: `NEVER_RETRIED`
+  (`X_SCRAPE_AUTH_FAILED`, `X_SCRAPE_PROMPT_UNANSWERED`) — a site that locks an account after three
+  wrong attempts turns a retrying framework into the thing that destroys the user's account — and
+  `BURNS_SESSION` (`X_SCRAPE_BLOCKED`, `X_SCRAPE_SESSION_EXPIRED`), which discards the persisted
+  identity **before** the retry, because a flagged profile stays flagged. `X_SCRAPE_YIELD_COLLAPSED`
+  is the silent-green alarm: a run that succeeds and returns far too little, checked **before** the
+  run is recorded so the baseline cannot follow a collapse downward.
+
+- **`MoneyValue.scale`** — the decimal places `minor` counts, when they are not the currency's own.
+  Absent still means the currency's minor unit and round-trips byte for byte; `0` means whole
+  units, and the two must not collapse. `MAX_MONEY_SCALE` is 15, because 10^15 is the last power of
+  ten that is itself a safe integer. It exists because a cents-only value could not name a sub-cent
+  amount at all, so the one place that needed one — a model call costing $0.00016 — rounded up to a
+  whole cent and reported 62x the real spend; the alternative was a second money type. Arithmetic
+  meets at the finer of two scales, comparison widens as `bigint`, and narrowing is `rescale()`,
+  which takes a mode out loud. A money entity column is now **three** physical columns, the third
+  nullable — `NULL` decodes to an absent key, never to `0`.
+
+### Changed
+
+- **BREAKING — `Seed.run()` resolves with a result object instead of `void`.** It now answers
+  `SeedRun` — `{ name, tier, metrics: { inserted, updated, skipped } }` — which is what lets
+  `x db seed` report a table and a `--json` body rather than "done". A caller that awaited it for
+  its side effect alone is unaffected; one that typed the result as `void` re-types it.
+
+- **BREAKING — `SeedContext.insert` skips a stored row instead of overwriting it.** The bulk verb
+  writes with `on conflict … do nothing` against the entity's own primary key, so a replay leaves
+  every row already stored exactly as it is and counts it `skipped`. Never `'update'`: a do-nothing
+  conflict needs no tenant column in the target, which is the one form that replays on a
+  tenant-scoped entity whose unique keys are global. `upsert` is the verb for a row the *table*
+  keys, and it still reads first so the answer can be `'skipped'`.
+
+### Fixed
+
+- **SECURITY — `verifyPassword` threw on a stored hash Bun cannot parse, which was an
+  account-enumeration oracle.** `Bun.password.verify` *throws* rather than answering on a hash it
+  cannot read (measured, bun 1.3.14: a Django `pbkdf2_sha256$…` row is `UnsupportedAlgorithm`, a
+  truncated bcrypt string is `InvalidEncoding`), and that escaped. Two faults from one line: a bare
+  `Error` reached `login()`, so the caller answered **500** instead of the one credential failure;
+  and it landed on exactly the rows that have not migrated off a legacy scheme, so "has this
+  account been migrated" — and therefore "does this account exist" — was readable from the outside.
+  That is the oracle `packages/auth/src/password.ts` is built end to end to close, on the one table
+  where a foreign hash is normal.
+
+  An unreadable hash now takes the **same branch as an unknown user**: it burns the same full KDF
+  and answers the same `FAILED`, so neither the response nor the response time separates it from a
+  wrong password. `X_OVERLOADED` from the KDF gate is re-thrown rather than swallowed — load
+  shedding is not a verdict on the credential, and answering "wrong password" for a request this
+  process refused to do the work for would be a worse lie than the 500 was. **Nothing is logged**,
+  deliberately: the algorithm name of an unreadable hash is the same oracle one layer down, and a
+  line per attempt is a spray amplifier.
+
+  Two things this does **not** change. An unreadable hash consumes lockout budget like any other
+  failure, so a table of foreign hashes locks accounts out through ordinary login attempts; and it
+  is still not a migration path, because nothing rewrites the row. Supported-but-old remains a
+  verdict — bcrypt verifies natively and `needsRehash` flags it, which is the lever a legacy
+  migration actually rewrites rows with. `''` also joins the no-user branch now, so an oauth-only
+  account with no password credential is not a stopwatch away from being enumerated either.
+
+- **The connection string replaced an operator's libpq `options` instead of merging them.**
+  `connectionUrl` wrote `searchParams.set('options', '-c statement_timeout=…')` over whatever the
+  operator had put in `DATABASE_URL`, and only when the role's bound was above zero — so a
+  `?options=-c search_path=app` was **dropped** on `web`, `sync`, `worker` and `scheduler` and
+  **kept** on `migrate` and `replicator`, leaving the role that runs the migrations and the role
+  that serves the traffic reading different schemas, with nothing reporting it. A connection string
+  is the operator's file, not the framework's.
+
+  `mergeLibpqOptions` (`packages/db/src/libpq-options.ts`) now merges: the framework wins on the
+  settings it names and the operator keeps everything else. Precedence is enforced by removing the
+  framework's own names before appending, never by argument position — "the last `-c` wins" would
+  make a safety bound depend on backend ordering nobody measured — and all three spellings a
+  backend accepts are recognised (`-c name=value`, `-cname=value`, `--name=value`). A role's
+  `statement_timeout` is a bound the pool is sized around, so a value in the URL may not raise it;
+  a `search_path` or any other `-c` survives.
+
+  **Behaviour change worth naming:** the bound is now emitted for **all six** roles, `migrate` and
+  `replicator` included at `0`. Those two connection strings therefore carry an `options` parameter
+  where they previously carried none, and `-c statement_timeout=0` now overrides a server-side
+  `alter database … set statement_timeout` for them — which is the point: `0` is `migrate` saying
+  it may take as long as it takes, and left unsaid the server-side setting kills the one role that
+  must outlive it. Operationally: a connection pooler that rejects unsupported startup parameters
+  (PgBouncer's default) would newly refuse those two roles. The other four have always sent
+  `options`, so this is not a new class of failure.
+
+- **`packages/db`'s README and a `drift.ts` comment both described an `x db drift` command that
+  does not exist.** `x db` takes `gen`, `migrate`, `reset`, `seed`, `studio`, `branch` and
+  `backfill`. The README additionally claimed a `ROLE=migrate` container logs drift and exits 0,
+  where `runRole` throws the first difference through `assertNoDrift` and exits non-zero — the
+  release phase has one channel, the exit code, and a deploy that rolled past a schema nobody can
+  reconstruct is the failure drift exists to catch.
+
+- **`docs/architecture/11-ai-surface.md` named five MCP dev tools this server has never
+  projected.** `actions.list` (it is `actions.describe`), `manifest.get` (`manifest.read`),
+  `budgets.report`, `live.explain` and the `jobs.list`/`jobs.status`/`jobs.retry` triple (one tool,
+  `jobs.inspect`); `queue.depth` and `verify.run` ship and were absent from the table. An agent
+  that trusted that page called five tools the server answers ToolNotFound for. The table is now
+  the thirteen `devTools(host)` declares, with each one's scope.
+
 ## 2.0.0 - 2026-08-17
 
 **The first major.** 33 entries below are marked `BREAKING —`, and each one changes a surface semver covers: a primitive field, an export, a CLI flag, an `app.config.ts` key, or a tier edge. Semver applies from 1.0.0, so none of them could ship as a minor. Read [Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading), then the `BREAKING —` entries in order — **no codemod ships with this release**, so each one is a manual edit, and the entry names it.

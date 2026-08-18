@@ -17,8 +17,9 @@ bunx create-ultimate myapp && cd myapp && x dev
 | If you are | Read, in order |
 |---|---|
 | Evaluating it | [Getting started](Getting-Started) → [The eight primitives](The-Eight-Primitives) → [FAQ](FAQ) |
+| Moving a production app off another stack | [Migrating an existing app](Migrating-An-Existing-App) → [Known gaps](Known-Gaps) → [Entities and migrations](Entities-And-Migrations) |
 | Building an app | [Installation](Installation) → [Project layout](Project-Layout) → [Actions](Actions) → [Testing](Testing) |
-| An agent driving the framework | [CLI reference](CLI-Reference) → [Error codes](Error-Codes) → [MCP and AI](MCP-And-AI) |
+| An agent driving the framework | [CLI reference](CLI-Reference) → [Error codes](Error-Codes) → [MCP and AI](MCP-And-AI) → [Agents](Agents) |
 | Operating it | [Configuration](Configuration) → [Deployment](Deployment) → [Observability](Observability) → [Troubleshooting](Troubleshooting) |
 | Deciding whether to trust it | [Known gaps](Known-Gaps) → [FAQ](FAQ) → [Upgrading](Upgrading) |
 | Contributing | [Contributing](Contributing) → [Project layout](Project-Layout) → [Testing](Testing) |
@@ -30,6 +31,7 @@ bunx create-ultimate myapp && cd myapp && x dev
 | [Getting started](Getting-Started) | zero to a running app, one action, one green `x verify` |
 | [Installation](Installation) | prerequisites, `x new`, typed env, editor and MCP client setup |
 | [Project layout](Project-Layout) | the generated monorepo, the four surfaces, feature slices, the hard boundaries |
+| [Migrating an existing app](Migrating-An-Existing-App) | strangler fig off Rails/Node/Django, adopting a live schema, identity during cutover, and what does not work yet |
 
 ## Tutorials
 
@@ -68,6 +70,7 @@ Follow in order. Each page states what it was executed against in its own first 
 | [N+1 detection](N-Plus-One-Detection) | the two codes, `expectedQueryLoop`, four surfaces, why prod pays nothing |
 | [PWA and offline](PWA-And-Offline) | generated `sw.js`, precache budgets, version skew |
 | [MCP and AI](MCP-And-AI) | the dev MCP server, every action as a tool, the `llm()` gateway, evals |
+| [Agents](Agents) | `agent()` as an action factory, tools as real actions, `hive()`, `agentJob()`, and the at-least-once trap |
 | [Admin dashboard](Admin-Dashboard) | the generated admin app and its MCP surface |
 
 ## Cross-cutting
