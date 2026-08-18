@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "8428866f7617200e4c62f25817c926645b0605047f88aa5f1edbf72cd1d7016e",
+  "buildId": "4bfbd9c703f0a654427876a97dbc97e70363d4f4a87b49cc0e4193db308a6eef",
   "tiers": {
     "0": [
       "core",
@@ -2217,6 +2217,11 @@
     },
     {
       "code": "X_TRUST_2FA_REQUIRED",
+      "owner": "scripts",
+      "at": "scripts/trust-publishers.ts"
+    },
+    {
+      "code": "X_TRUST_ENVIRONMENT_EMPTY",
       "owner": "scripts",
       "at": "scripts/trust-publishers.ts"
     },

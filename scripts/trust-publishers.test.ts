@@ -64,6 +64,20 @@ describe('a publisher without the environment is NOT configured', () => {
     expect(hasPublisher(listed(env), DEFAULT_REPO, 'other.yml')).toBe(false);
   });
 
+  test('an absent environment is refused even when the caller asked for none', () => {
+    // The bypass: `--environment=""` made both sides '' , so the ungated publisher matched and the
+    // check reported it configured. Asking for nothing must never make nothing acceptable.
+    expect(hasPublisher(listed({}), DEFAULT_REPO, DEFAULT_WORKFLOW, '')).toBe(false);
+    expect(hasPublisher(listed({ environment: '' }), DEFAULT_REPO, DEFAULT_WORKFLOW, '')).toBe(
+      false,
+    );
+  });
+
+  test('trustArgs always names an environment, so the flag cannot be dropped', () => {
+    const args = trustArgs('@ultimat3/core', DEFAULT_REPO, DEFAULT_WORKFLOW, '');
+    expect(args).toContain('--environment');
+  });
+
   test('junk is refused rather than thrown on', () => {
     expect(hasPublisher('not json', DEFAULT_REPO, DEFAULT_WORKFLOW)).toBe(false);
   });

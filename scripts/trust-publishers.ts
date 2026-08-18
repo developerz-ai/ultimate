@@ -3,11 +3,10 @@
 // A package with no trusted publisher silently falls back to token auth on release day, which is
 // the failure this repo removed NPM_TOKEN to avoid.
 //
-// `--check` is an OPERATOR command, not a `x verify` step, and cannot become one: every call needs
-// an npm session carrying 2FA plus a fresh OTP (`NPM_CONFIG_OTP`), which CI has no way to supply —
-// and supplying it would reintroduce the standing credential OIDC exists to remove. The header said
-// "a gate step, not a courtesy" until 2.0.0; it was never wired into `scripts/verify.ts`, and the
-// claim was the kind this repo treats as a defect. Run it before a release, read the findings.
+// An OPERATOR command, not a `x verify` step, and it cannot become one: every call needs an npm
+// session carrying 2FA plus a fresh OTP (`NPM_CONFIG_OTP`), which CI has no way to supply — and
+// supplying it would reintroduce the standing credential OIDC exists to remove. The header claimed
+// "a gate step" until 2.0.0 while never being wired into `scripts/verify.ts`.
 //
 //   bun run scripts/trust-publishers.ts --check [--json]   # verify, read-only
 //   bun run scripts/trust-publishers.ts [--dry-run] [--json]
@@ -64,7 +63,8 @@ export const trustArgs = (
   workflow,
   '--repo',
   repo,
-  ...(environment ? (['--environment', environment] as const) : []),
+  '--environment',
+  environment,
   // Configurations created after 2026-05-20 must name at least one allowed action explicitly.
   '--allow-publish',
   '-y',
@@ -119,7 +119,10 @@ export function hasPublisher(
       // The environment is part of the identity, not a detail: a publisher carrying none accepts a
       // token from ANY environment, so treating it as configured would report the hole as closed.
       const env = entry.environment ?? entry.environment_name ?? '';
+      // Never accept an absent environment, whatever was asked for: '' === '' would report the
+      // ungated publisher as configured, which is the exact hole this comparison exists to catch.
       return (
+        env !== '' &&
         entry.repository === repo &&
         (entry.workflow ?? entry.file) === workflow &&
         env === environment
@@ -163,7 +166,31 @@ async function main(): Promise<never> {
   const dryRun = flagBool(args, 'dry-run');
   const repo = flagString(args, 'repo') ?? DEFAULT_REPO;
   const workflow = flagString(args, 'workflow') ?? DEFAULT_WORKFLOW;
-  const environment = flagString(args, 'environment') ?? DEFAULT_ENVIRONMENT;
+  // `?? ` only covers an ABSENT flag. `--environment=""` yields '', which used to flow through:
+  // `trustArgs` dropped the flag and `hasPublisher` then matched '' against a publisher carrying no
+  // environment — so the one argument that turns the gate off was also the one that hid it.
+  const environmentFlag = flagString(args, 'environment');
+  if (environmentFlag !== undefined && environmentFlag.trim() === '') {
+    report(
+      {
+        ok: false,
+        script: 'trust-publishers',
+        summary: 'refused an empty --environment',
+        findings: [
+          {
+            code: 'X_TRUST_ENVIRONMENT_EMPTY',
+            at: 'scripts/trust-publishers.ts',
+            cause:
+              'an empty --environment attaches a publisher npm will honour from ANY environment, which disables the reviewer and tag rules the npm-publish environment carries',
+            fix: `bun run scripts/trust-publishers.ts --environment ${DEFAULT_ENVIRONMENT}`,
+          },
+        ],
+      },
+      json,
+    );
+    process.exit(1);
+  }
+  const environment = environmentFlag ?? DEFAULT_ENVIRONMENT;
   const root = repoRoot();
 
   const targets = publishOrder(await listWorkspaces(root));

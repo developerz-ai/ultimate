@@ -73,7 +73,7 @@ bun run scripts/list-workspaces.ts --json \
 To bootstrap **one** package — which is what `@ultimat3/flags` needs — publish just that one:
 
 ```sh
-npm publish -w @ultimat3/flags --access public
+npm publish -w @ultimat3/flags --access public --provenance=false
 ```
 
 ## One-time: configure the trusted publisher (per package)
@@ -90,8 +90,9 @@ On npmjs.com, for **each** package: `npmjs.com/package/<name>` → **Settings** 
 
 The GitHub org is `developerz-ai` with a hyphen; the npm scope is `@ultimat3`. Both are correct.
 
-`Environment` is the row that changed, and **`As of 2026-08` it is still blank on the registry** —
-this table says what it must become, not what it is. Blank means *any* environment: npm accepts a
+`Environment` is the row that changed. It was **blank on the registry until 2.0.0**, on all 29
+packages — this table says what it must be, and `bun run scripts/trust-publishers.ts` is what makes
+it so; `--check` refuses a publisher that carries none. Blank means *any* environment: npm accepts a
 token from any run of `release.yml`, whatever job produced it and whatever approval it did or did
 not pass. Setting it to `npm-publish` makes the registry itself refuse a token minted outside the
 approval-gated environment, which is the half GitHub cannot enforce, and it must match
@@ -122,7 +123,7 @@ breaks a release, and it breaks it *after four packages* have already published 
 
 ```sh
 npm login                                    # as an @ultimat3 org member
-npm publish -w @ultimat3/flags --access public
+npm publish -w @ultimat3/flags --access public --provenance=false
 ```
 
 Then attach its trusted publisher exactly as in
