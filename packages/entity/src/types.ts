@@ -6,7 +6,15 @@
 // A column carries its TypeScript type in `$parse`, which is what lets the row type be derived
 // from the column set instead of being written a second time as a hand-maintained schema.
 
-/** Postgres types the blessed builders emit. `money` expands to `bigint` + `char(3)`. */
+/**
+ * Postgres types the builders emit. `money` expands to `bigint` + `char(3)` (+ a nullable
+ * `integer` scale); `array` expands to its element's type with `[]` after it.
+ *
+ * The four beyond the blessed set exist for ONE reason: a schema Ultimate did not generate already
+ * has them. A table with a `numeric(18,8)` rate, a `date` a rate takes effect on, a `jsonb` payload
+ * and a `bytea` blob cannot be declared at all without them, and an entity that cannot be declared
+ * is a rewrite instead of an adoption.
+ */
 export type ColumnKind =
   | 'uuid'
   | 'text'
@@ -14,8 +22,12 @@ export type ColumnKind =
   | 'boolean'
   | 'integer'
   | 'bigint'
+  | 'numeric'
   | 'timestamptz'
+  | 'date'
   | 'jsonb'
+  | 'bytea'
+  | 'array'
   | 'money';
 
 export type ColumnDefault =
@@ -48,6 +60,22 @@ export type { MoneyValue };
  * needs no conversion at the call site. A float throws, and so does a `bigint` past
  * `Number.MAX_SAFE_INTEGER` — see `parseMinor` in `columns.ts`.
  */
+/**
+ * The physical columns behind a money property, when they are not `<name>_minor`,
+ * `<name>_currency` and `<name>_scale`. Named per part and merged over those defaults, so a table
+ * that renamed one column does not have to restate the other two.
+ */
+export interface MoneyColumnNames {
+  readonly minor?: string;
+  readonly currency?: string;
+  /**
+   * `null` says this table has NO scale column — the ordinary shape of a money column written
+   * before scale existed. Every amount in it is then at the currency's own minor unit, which is
+   * what an absent scale already means, so nothing is lost but the ability to store a sub-cent one.
+   */
+  readonly scale?: string | null;
+}
+
 export interface MoneyInput {
   readonly minor: bigint | number;
   readonly currency: string;
@@ -71,7 +99,20 @@ export interface ColumnMeta {
   readonly index: boolean;
   /** Presence of a tenant column is what turns tenancy on. See `tenancy.ts`. */
   readonly tenant: boolean;
+  /**
+   * The physical column, when it is not `snake(property)`. The whole of what makes an existing
+   * table addressable: `githubLogin` on a row, `gh_login` in every statement, decided once here
+   * and read through `columnName()` by every projection.
+   */
+  readonly name?: string;
   readonly length?: number;
+  /** `numeric(precision, scale)` — both, or neither. A bare `numeric` is unbounded on purpose. */
+  readonly precision?: number;
+  readonly numericScale?: number;
+  /** The element column of an `array`, which carries the element's own kind and `$parse`. */
+  readonly element?: AnyColumn;
+  /** Where money's three physical columns live, when the table already named them. */
+  readonly parts?: MoneyColumnNames;
   readonly values?: readonly string[];
   readonly default?: ColumnDefault;
   readonly onUpdate?: ColumnDefault;
@@ -99,6 +140,13 @@ export interface Column<T, Optional extends boolean = false> {
   tenant(): Column<T, Optional>;
   references(target: () => AnyColumn, options?: ReferenceOptions): Column<T, Optional>;
   default(value: T): Column<T, true>;
+  /**
+   * The physical column name, when the table does not spell it `snake(property)`. Name it LAST in
+   * a chain: this link returns the general column, so a builder's own methods (`defaultNow()`,
+   * a uuid key's narrowed `primaryKey()`) are declared before it — `uuid()` and `timestamp()`
+   * override it to keep theirs, and nothing else has any.
+   */
+  column(name: string): Column<T, Optional>;
 }
 
 /**
@@ -111,11 +159,13 @@ export interface Column<T, Optional extends boolean = false> {
 export interface UuidColumn<T extends string = string, Optional extends boolean = false>
   extends Column<T, Optional> {
   primaryKey(): Column<T, true>;
+  column(name: string): UuidColumn<T, Optional>;
 }
 
 export interface TimestampColumn<Optional extends boolean = false> extends Column<Date, Optional> {
   defaultNow(): TimestampColumn<true>;
   onUpdateNow(): TimestampColumn<Optional>;
+  column(name: string): TimestampColumn<Optional>;
 }
 
 export type AnyColumn = Column<unknown, boolean>;

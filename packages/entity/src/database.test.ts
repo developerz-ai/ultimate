@@ -189,25 +189,6 @@ describe('the test seam', () => {
   });
 });
 
-describe('defineSeed()', () => {
-  test('id() is deterministic, so a bug reproduced locally reproduces in CI', async () => {
-    const labels: string[] = [];
-    const seed = defineSeed('ids', async ({ id }) => {
-      labels.push(id('org:acme'), id('org:acme'), id('org:tinta'));
-    });
-    await seed.run();
-    await seed.run();
-    expect(labels[0]).toBe(labels[1] ?? '');
-    expect(labels[0]).not.toBe(labels[2] ?? '');
-    expect(labels[0]).toBe(labels[3] ?? '');
-    expect(labels[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-/);
-  });
-
-  test('a seed writes through the same validation as the app', async () => {
-    const driver = memoryDriver();
-    const broken = defineSeed('broken', async ({ insert }) => {
-      await insert(posts, [{ orgId: ORG, slug: 'b', title: 'B', likeCount: -5 }]);
-    });
-    await expect(broken.run({ driver })).rejects.toThrow(/like_count_non_negative/);
-  });
-});
+// `defineSeed()`'s own rules — replay, the two write verbs, the tiers — are `seed.test.ts`, beside
+// the file that holds them. What stays here is the seed as this file USES it: `fixtures` above is
+// what every `database()` test reads through, so a seed that stopped writing would fail all of them.

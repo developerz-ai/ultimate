@@ -70,6 +70,7 @@ describe('the entity DSL surface', () => {
   test('$describe() delegates to describeEntity() with this entity own fields', () => {
     const direct = describeEntity({
       name: target.$name,
+      table: target.$table,
       columns: Object.entries(target.$columns),
       primaryKey: target.$primaryKey,
       invariants: target.$invariants,

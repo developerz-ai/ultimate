@@ -10,17 +10,21 @@ import { join } from 'node:path';
 import { declaredSchema, generateMigration, snapshotJson } from '@ultimat3/db';
 import { clearRegistry, entity, text, timestamp, uuid } from '@ultimat3/entity';
 import { generateAppMigration, migrationSql } from './db-generate';
+import { checkSourceDrift, schemaHash } from './drift';
 import { MIGRATIONS_DIR, readMigrations } from './migrations';
 
 // Registered here rather than inside a test: `entity()` writes to a process-wide registry that
 // `describeEntities()` reads whole, so the fixture is declared once and cleared once.
-entity('db_gen_test_notes', {
-  columns: {
-    id: uuid().primaryKey(),
-    body: text({ max: 200 }),
-    createdAt: timestamp().defaultNow(),
-  },
-});
+const registerFixtureEntity = (): void => {
+  entity('db_gen_test_notes', {
+    columns: {
+      id: uuid().primaryKey(),
+      body: text({ max: 200 }),
+      createdAt: timestamp().defaultNow(),
+    },
+  });
+};
+registerFixtureEntity();
 
 afterAll(() => {
   clearRegistry();
@@ -137,8 +141,94 @@ test('a second run against an unchanged schema writes nothing at all', async () 
     await generateAppMigration(dir, { name: 'add notes' });
     const again = await generateAppMigration(dir, { name: 'add notes again' });
     expect(again.migration).toBeUndefined();
+    expect(again.outcome).toBe('unchanged');
     expect(again.files).toEqual([]);
     expect((await readMigrations(dir)).length).toBe(1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The whole point of the slice. `X_DB_DRIFT`'s `fix:` is `x db gen "describe the change"`, and the
+// hash it compares covers every non-test file under `packages/db/src` — a seed, a helper, a
+// decorator — not only the ones that imply DDL. So an ordinary edit moves the hash with no diff
+// behind it, and until the empty-diff path recorded the sidecar the instruction ran clean, changed
+// nothing and left the gate red forever, with hand-editing a generated file as the only way out.
+test('an empty diff re-records the schema hash, so following the drift fix actually clears it', async () => {
+  const dir = tempRoot();
+  try {
+    await Bun.write(join(dir, 'packages/db/src/schema.ts'), 'export const schema = 1;\n');
+    const first = await generateAppMigration(dir, { name: 'add notes' });
+    const id = first.migration?.id;
+    expect(await checkSourceDrift(dir)).toEqual([]);
+
+    await Bun.write(join(dir, 'packages/db/src/seed.ts'), 'export const seed = () => {};\n');
+    expect(await checkSourceDrift(dir)).toHaveLength(1);
+
+    const again = await generateAppMigration(dir, { name: 'describe the change' });
+    expect(again.migration).toBeUndefined();
+    expect(again.outcome).toBe('hash-recorded');
+    expect(again.schemaHash).toBe(await schemaHash(dir));
+    expect(again.files).toEqual([`packages/db/migrations/${id}.hash`]);
+    // No second migration, no second snapshot — the sidecar is the only thing that moved.
+    expect((await readMigrations(dir)).length).toBe(1);
+    expect(await checkSourceDrift(dir)).toEqual([]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The check must not be blunted by its own remedy: a real DDL change still has to be a migration,
+// never a sidecar rewrite that makes the gate green over a schema no migration builds.
+test('a real DDL change still generates a migration — the empty-diff path is never reached', async () => {
+  const dir = tempRoot();
+  try {
+    await Bun.write(join(dir, 'packages/db/src/schema.ts'), 'export const schema = 1;\n');
+    // No migrations yet, so the registered entity IS a diff: the first run must be a real one.
+    const first = await generateAppMigration(dir, { name: 'add notes' });
+    expect(first.outcome).toBe('generated');
+    const id = first.migration?.id;
+    expect(first.files).toEqual([
+      `packages/db/migrations/${id}.sql`,
+      `packages/db/migrations/${id}.snapshot.json`,
+      `packages/db/migrations/${id}.hash`,
+    ]);
+    expect(first.migration?.up ?? '').toContain('db_gen_test_notes');
+    expect(declaredSchema(await readMigrations(dir)).tables.map((table) => table.name)).toEqual([
+      'db_gen_test_notes',
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// `checkSourceDrift`'s first branch: an app with a schema, an entity and NO migration. There is no
+// migration id to attach a sidecar to, so the empty-diff path must write nothing — and it cannot
+// be reached with an entity declared, because an entity against zero migrations is a real diff.
+test('an empty diff with no migration at all records nothing — there is no id to record against', async () => {
+  const dir = tempRoot();
+  try {
+    await Bun.write(join(dir, 'packages/db/src/schema.ts'), 'export const schema = 1;\n');
+    clearRegistry();
+    const generated = await generateAppMigration(dir, { name: 'initial' });
+    expect(generated.outcome).toBe('unchanged');
+    expect(generated.files).toEqual([]);
+    expect(await readMigrations(dir)).toEqual([]);
+    // And the gate agrees: zero declared against zero recorded is agreement, not drift.
+    expect(await checkSourceDrift(dir, async () => 0)).toEqual([]);
+  } finally {
+    registerFixtureEntity();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an app whose modules will not load is blocked, and blocked is not unchanged', async () => {
+  const dir = tempRoot();
+  try {
+    await Bun.write(join(dir, 'packages/db/src/broken.ts'), 'throw new Error("boom");\n');
+    const generated = await generateAppMigration(dir, { name: 'add notes' });
+    expect(generated.outcome).toBe('blocked');
+    expect(generated.schemaHash).toBeUndefined();
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

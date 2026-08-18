@@ -20,8 +20,11 @@ const LATER = '2026-05-01T00:00:00.000Z';
 let jobs: RunJobs;
 
 beforeEach(async () => {
-  // Re-seeded per test: `insert` overwrites by primary key, so this puts `media:orphan` back at
-  // `pending` and no test depends on the order the others ran in.
+  // Emptied, THEN re-seeded: a replay is `on conflict do nothing` (packages/entity/src/seed.ts:274),
+  // so it restores a row that is gone and never a value a test changed — `media:orphan` swept to
+  // `orphan` above stays `orphan` for every test after it. `reset?.()` is the framework's test seam
+  // for exactly this, and it is the only thing that makes these tests order-independent.
+  driver.reset?.();
   await seedDemo();
   await jobs?.[Symbol.asyncDispose]();
   jobs = await createRunJobs();

@@ -7,10 +7,50 @@
 // physical name even though two schema modules import each other in a cycle.
 
 import { invariantViolated } from './errors';
-import type { AnyColumn, Column, ColumnDefault, ColumnMeta, TimestampColumn } from './types';
+import type {
+  AnyColumn,
+  Column,
+  ColumnDefault,
+  ColumnMeta,
+  MoneyColumnNames,
+  TimestampColumn,
+} from './types';
 
 export const snake = (value: string): string =>
   value.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+
+/**
+ * The physical column, decided in ONE place: what `.column()` declared, else `snake(property)`.
+ *
+ * Every projection reads it here — the DDL, the binding, the decoder, the invariant resolver, the
+ * index names — because a second `snake(property)` anywhere is a statement naming a column the
+ * table does not have, and the first table that proves it is somebody's production database.
+ */
+export const columnName = (property: string, meta: ColumnMeta): string =>
+  meta.name ?? snake(property);
+
+/** Money's three physical columns, resolved. `scale: null` is a table that has no scale column. */
+export interface MoneyColumns {
+  readonly minor: string;
+  readonly currency: string;
+  readonly scale: string | null;
+}
+
+/**
+ * Per part, merged over the `<base>_minor` / `<base>_currency` / `<base>_scale` defaults — so a
+ * table that renamed one of the three does not have to restate the other two, and `.column()`
+ * moves the base for all of them at once.
+ */
+export const moneyColumns = (property: string, meta: ColumnMeta): MoneyColumns => {
+  const base = columnName(property, meta);
+  const declared: MoneyColumnNames = meta.parts ?? {};
+  return {
+    minor: declared.minor ?? `${base}_minor`,
+    currency: declared.currency ?? `${base}_currency`,
+    // `undefined` takes the default; `null` is the caller saying the column is not there at all.
+    scale: declared.scale === undefined ? `${base}_scale` : declared.scale,
+  };
+};
 
 export const GENERATED_UUID: ColumnDefault = { kind: 'generated', by: 'uuid-v7' };
 export const GENERATED_NOW: ColumnDefault = { kind: 'generated', by: 'now' };
@@ -49,7 +89,7 @@ export const bindColumn = (column: AnyColumn, table: string, property: string): 
         'build a new column instead of sharing one between entities',
     );
   }
-  const binding: Binding = { table, property, name: snake(property) };
+  const binding: Binding = { table, property, name: columnName(property, column.$meta) };
   bindings.set(column, binding);
   return binding;
 };
@@ -135,7 +175,29 @@ export const makeColumn = <T, Optional extends boolean>(
     ),
 
   default: (value) => makeColumn<T, true>({ ...meta, default: literal(value) }, parse, true),
+
+  column: (name) =>
+    makeColumn<T, Optional>({ ...meta, name: assertColumnName(name) }, parse, optional),
 });
+
+/**
+ * A physical name is spliced into DDL and into every statement as a quoted identifier, so it is
+ * checked where it is written rather than trusted there: an empty name produces `""`, and a name
+ * carrying a quote or a newline is the one value in a column declaration that could close the
+ * identifier. `[a-z_][a-z0-9_$]*`, which is what an unquoted Postgres identifier may be, and the
+ * bound is the same 63 bytes the server truncates at — a longer one silently addresses a
+ * different column.
+ */
+export const assertColumnName = (name: string): string => {
+  if (!/^[a-z_][a-z0-9_$]*$/.test(name) || name.length > 63) {
+    throw invariantViolated(
+      'column',
+      'column-name',
+      `"${name}" is not a physical column name: lower-case letters, digits and underscores, at most 63 of them`,
+    );
+  }
+  return name;
+};
 
 export const column = <T>(
   kind: ColumnMeta['kind'],
@@ -155,4 +217,7 @@ export const makeTimestamp = <Optional extends boolean>(
   ...makeColumn<Date, Optional>(meta, parse, optional),
   defaultNow: () => makeTimestamp({ ...meta, default: GENERATED_NOW }, parse, true),
   onUpdateNow: () => makeTimestamp({ ...meta, onUpdate: GENERATED_NOW }, parse, optional),
+  // Overridden so `timestamp().column('created').defaultNow()` still has `defaultNow` — the
+  // general link returns the general column, and a builder with methods of its own keeps them.
+  column: (name) => makeTimestamp({ ...meta, name: assertColumnName(name) }, parse, optional),
 });

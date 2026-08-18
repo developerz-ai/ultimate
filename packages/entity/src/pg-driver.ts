@@ -25,7 +25,6 @@ import {
   upsertPlan,
 } from './bulk-write';
 import { coalesceFindById } from './coalesce';
-import { snake } from './column';
 import { countsFrom, groupColumnOf, groupValue, MAX_GROUPS } from './count-by';
 import { cursorFor, seekFrom, valueAt } from './cursor';
 import type { Driver } from './database';
@@ -33,7 +32,7 @@ import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound, repoClientPinned } from './errors';
 import { assertedRowsTooMany, hasJsOnlyInvariant, MAX_ASSERTED_ROWS } from './invariants';
 import { forgetPreloaded, tagSiblings } from './jit-preload';
-import { bindValues, decodeRow, type PhysicalRow } from './pg-row';
+import { bindValues, decodeRow, type PhysicalRow, physicalName } from './pg-row';
 import {
   type ConflictTarget,
   countByStatement,
@@ -133,7 +132,7 @@ export const postgresRepo = <Row>(
       ? updateStatement(
           entity,
           plan,
-          new Map([[snake(SOFT_DELETE_COLUMN), systemClock.now()]]),
+          new Map([[physicalName(entity, SOFT_DELETE_COLUMN), systemClock.now()]]),
           shapeOf({}),
           false,
         )

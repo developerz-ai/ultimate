@@ -14,19 +14,23 @@ const ARTICLE = [
   '09:00 in Madrid and 09:00 in Auckland without a single conditional in a component.',
 ].join(' ');
 
-export const dev = defineSeed('dev', async ({ insert, id }) => {
+export const dev = defineSeed('dev', async ({ insert, upsert, id }) => {
   // The catalog: every plan priced in every supported currency. No runtime conversion, ever.
-  await insert(
-    plans,
-    PLAN_CODES.flatMap((code) =>
-      (['USD', 'EUR'] as const).map((currency) => ({
-        code,
-        currency,
-        monthly: priceOf(code, currency),
-        seats: PLAN_CATALOG[code].seats,
-      })),
-    ),
-  );
+  //
+  // `upsert`, not `insert`, and the difference is the whole distinction between the two verbs:
+  // `plans` has no id this seed chose — `(code, currency)` is its natural key — and a price edited
+  // here is meant to reach a database that already holds the old one. Every row below is `insert`,
+  // because the seed picked those ids with `id('label')` and a replay must leave them exactly as
+  // they are.
+  for (const code of PLAN_CODES) {
+    for (const currency of ['USD', 'EUR'] as const) {
+      await upsert(
+        plans,
+        { by: ['code', 'currency'] },
+        { code, currency, monthly: priceOf(code, currency), seats: PLAN_CATALOG[code].seats },
+      );
+    }
+  }
 
   // Two tenants, two currencies, two plans — enough to catch a missing orgId filter.
   await insert(orgs, [

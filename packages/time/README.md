@@ -78,6 +78,34 @@ one of these takes the zone explicitly, and none of them has a default.
 `daysBetween` counts boundaries, not milliseconds: 23 real hours across spring forward is `1`,
 and 24 real hours inside a 25-hour fall-back day is `0`.
 
+## A calendar date is not an instant
+
+`PlainDate` is `2026-03-14`: a year, a month and a day, with **no time and therefore no zone**,
+`As of 2026-08`. The golden rule at the top of this page is about instants — a `PlainDate` needs no
+zone because it names no moment, and that is the honest modelling of the values that have one.
+`effective_on` is the date a rate applies; a birthday is a date; an invoice period is two of them.
+Stored as a `timestamptz`, every one of those is a different date on either side of midnight for
+half the planet.
+
+| Function | Answers |
+|---|---|
+| `plainDate(value)` / `isPlainDate(value)` | the date, or a refusal — `2026-02-30` is not one, and a regex cannot say so |
+| `plainDateOf({ year, month, day })` | the same, from fields; an impossible day throws instead of rolling into the next month |
+| `plainDateParts(date)` | back to fields |
+| `plainDateIn(at, zone)` | the calendar date an **instant** falls on, in a named zone. It takes the zone because there is no other honest way to make this conversion |
+| `plainDateUtc(at)` | the date a `Date` holds read as UTC — for the one caller that needs it: a Postgres driver returns a `date` column as midnight UTC |
+| `plainDateToUtcInstant(date)` | midnight UTC of the date. The inverse of `plainDateUtc`, and never of `plainDateIn` |
+| `addPlainDays(date, days)` / `plainDaysBetween(from, to)` | calendar arithmetic with no zone in it: a DST day is one day, because there is no zone to shorten |
+| `comparePlainDates(a, b)` | `-1` / `0` / `1` |
+
+It is a branded **string**, and both halves are load-bearing. Not a `Date`: a `Date` is an instant,
+so `2026-03-14T00:00:00Z` is the 13th anywhere west of Greenwich, and binding one to a Postgres
+`date` parameter fails outright (`time zone "gmt-0500" not recognized`, measured on 17.10). A
+string: the ISO form sorts lexicographically exactly as it sorts chronologically, round-trips
+through `JSON.stringify` as itself, and is the literal Postgres accepts and returns.
+
+`@ultimat3/entity`'s `date()` column is the one that stores it.
+
 ## Cron
 
 `parseCron` handles 5 or 6 fields, `*/n`, ranges, lists, named months and days, `@daily`

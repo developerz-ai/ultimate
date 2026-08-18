@@ -14,7 +14,7 @@ import {
 } from '@ultimat3/db';
 import { describeEntities } from '@ultimat3/entity';
 import { loadApp } from './app-load';
-import { writeSchemaHash } from './drift';
+import { reconcileSchemaHash, writeSchemaHash } from './drift';
 import { hashFileName, MIGRATIONS_DIR, readMigrations, snapshotFileName } from './migrations';
 import type { Finding } from './output';
 
@@ -24,11 +24,20 @@ export interface GenerateMigrationOptions {
   readonly allowDestructive?: boolean | undefined;
 }
 
+/**
+ * What this run actually did — four different things, and `--json` has to tell them apart. A
+ * `hash-recorded` run wrote a file and generated no migration; reporting it as `generated` would
+ * claim a migration nobody can apply, and reporting it as `unchanged` would hide the one write.
+ */
+export type GenerateOutcome = 'generated' | 'hash-recorded' | 'unchanged' | 'blocked';
+
 export interface GeneratedFiles {
-  /** Absent when the entities and the migrations already agree — nothing was written. */
+  readonly outcome: GenerateOutcome;
+  /** Absent unless `outcome` is `generated` — the other three write no migration. */
   readonly migration?: GeneratedMigration | undefined;
   /** App-root-relative paths written, in write order. Empty when there was nothing to write. */
   readonly files: readonly string[];
+  /** What the source hashes to, whenever this run was in a position to record it. */
   readonly schemaHash?: string | undefined;
   /** Modules that would not load. Non-empty means nothing was generated. */
   readonly findings: readonly Finding[];
@@ -72,7 +81,7 @@ export async function generateAppMigration(
   options: GenerateMigrationOptions,
 ): Promise<GeneratedFiles> {
   const app = await loadApp(root);
-  if (app.findings.length > 0) return { files: [], findings: app.findings };
+  if (app.findings.length > 0) return { outcome: 'blocked', files: [], findings: app.findings };
 
   const migrations = await readMigrations(root);
   const current = declaredSchema(migrations);
@@ -90,9 +99,31 @@ export async function generateAppMigration(
     name: options.name,
     ...(options.allowDestructive === true ? { allowDestructive: true } : {}),
   });
-  // An empty diff writes nothing. A migration with no statement still takes a ledger row, a
-  // checksum and a place in the apply order — a permanent record that nothing changed.
-  if (migration.up.trim().length === 0) return { files: [], findings: [] };
+  // An empty diff writes no MIGRATION — one with no statement still takes a ledger row, a checksum
+  // and a place in the apply order, a permanent record that nothing changed. It re-records the
+  // sidecar instead, and that is what makes `X_DB_DRIFT`'s `fix:` a real instruction: the hash
+  // covers every non-test file under `packages/db/src`, so editing a seed or a helper moves it with
+  // no DDL behind it, and the command the error names used to write nothing at all.
+  //
+  // Nothing is masked, because of what has already been proved above: `loadApp` reported no
+  // findings, so the registry is whole rather than short; `declaredSchema` returned a real snapshot
+  // rather than `undefined`, so the diff had something to run against; and the emptiness is the
+  // generator's OWN verdict — the same call, the same classifier — as the written path. A DDL
+  // change that reaches here is a `generateMigration` that missed it, and the sidecar was never the
+  // thing that caught that: an author following the fix simply stayed red with nothing left to run.
+  if (migration.up.trim().length === 0) {
+    const newest = migrations[migrations.length - 1];
+    // No migration to record against, which in this branch means no entity is declared either —
+    // a registry against zero migrations is `create table` for all of it, never an empty diff.
+    if (newest === undefined) return { outcome: 'unchanged', files: [], findings: [] };
+    const reconciled = await reconcileSchemaHash(root, newest.id);
+    return {
+      outcome: reconciled.written ? 'hash-recorded' : 'unchanged',
+      schemaHash: reconciled.hash,
+      files: reconciled.written ? [`${MIGRATIONS_DIR}/${hashFileName(newest.id)}`] : [],
+      findings: [],
+    };
+  }
 
   const dir = join(root, MIGRATIONS_DIR);
   const sql = `${migration.id}.sql`;
@@ -104,6 +135,7 @@ export async function generateAppMigration(
   const schemaHash = await writeSchemaHash(root, migration.id);
 
   return {
+    outcome: 'generated',
     migration,
     schemaHash,
     files: [sql, snapshot, hashFileName(migration.id)].map((file) => `${MIGRATIONS_DIR}/${file}`),

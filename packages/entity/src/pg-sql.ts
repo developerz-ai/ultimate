@@ -4,7 +4,7 @@
 // declared. That is the whole reason this file exists instead of a template literal per method.
 
 import { identifier, join, raw, type SqlFragment, sql } from '@ultimat3/db';
-import { snake } from './column';
+import { columnName } from './column';
 import type { EntityCore } from './entity';
 import { SOFT_DELETE_COLUMN } from './entity';
 import { allColumns, columnsOf, physicalName } from './pg-row';
@@ -111,7 +111,7 @@ const conditions = <Row>(
 ): SqlFragment => {
   const parts = plan.where.map((predicate) => predicateSql(entity, predicate));
   if (entity.$softDelete && !shape.includeDeleted) {
-    parts.push(sql`${identifier(snake(SOFT_DELETE_COLUMN))} is null`);
+    parts.push(sql`${identifier(physicalName(entity, SOFT_DELETE_COLUMN))} is null`);
   }
   if (shape.seek !== undefined) parts.push(seekSql(entity, plan.orderBy, shape.seek));
   return parts.length === 0 ? sql`true` : join(parts, ' and ');
@@ -225,6 +225,35 @@ const conflictSql = (conflict: ConflictTarget): SqlFragment => {
 };
 
 /**
+ * The one column that cannot be bound as itself. A `jsonb` value is a plain object, and the
+ * driver seam refuses one as a parameter (`X_SQL_UNSAFE` — `isBoundValue` takes scalars, a `Date`,
+ * a `Uint8Array` and arrays of those); so `bindValues` hands over the JSON TEXT and the cell says
+ * what to do with it.
+ *
+ * `::text::jsonb` and not `::jsonb`, and the double cast is load-bearing rather than defensive.
+ * Measured against Postgres 17.10 through Bun's `sql`: with `$1::jsonb` the server describes the
+ * parameter as `jsonb`, the client JSON-ENCODES the string it was given, and `{"a":1}` is stored
+ * as the JSON *string* `"{\"a\":1}"` — `jsonb_typeof` says `string`. Pinning the parameter to
+ * `text` first makes the client send the characters and the server parse them, which is the one
+ * spelling that stores an object.
+ */
+/** Physical names of this entity's `jsonb` columns. Resolved ONCE per statement, never per cell. */
+const jsonColumns = <Row>(entity: EntityCore<Row>): ReadonlySet<string> => {
+  const names = new Set<string>();
+  for (const [property, column] of Object.entries(entity.$columns)) {
+    if (column.$meta.kind === 'jsonb') names.add(columnName(property, column.$meta));
+  }
+  return names;
+};
+
+/**
+ * `${value}`, plus the cast that column needs. The `raw()` argument is a literal written here and
+ * nowhere else — the audit point that call is stays a two-word constant, never a value.
+ */
+const cell = (json: ReadonlySet<string>, column: string, value: unknown): SqlFragment =>
+  json.has(column) ? sql`${value}${raw('::text::jsonb')}` : sql`${value}`;
+
+/**
  * One statement for any number of rows. A single row compiles to exactly the text it always did,
  * which is the point: `insertAll([row])` and `insert(row)` are one code path, so there is no
  * second insert builder for the two to drift apart in.
@@ -234,10 +263,13 @@ export const insertStatement = <Row>(
   rows: readonly ReadonlyMap<string, unknown>[],
   shape: InsertShape,
 ): SqlFragment => {
+  const json = jsonColumns(entity);
   const tuples = rows.map(
     (row) =>
       sql`(${join(
-        shape.columns.map((column) => (row.has(column) ? sql`${row.get(column)}` : DEFAULT_CELL)),
+        shape.columns.map((column) =>
+          row.has(column) ? cell(json, column, row.get(column)) : DEFAULT_CELL,
+        ),
       )})`,
   );
   const conflict = shape.conflict === undefined ? sql`` : conflictSql(shape.conflict);
@@ -259,10 +291,12 @@ export const updateStatement = <Row>(
   values: ReadonlyMap<string, unknown>,
   shape: ReadShape,
   returning: boolean,
-): SqlFragment =>
-  sql`update ${identifier(entity.$table)} set ${join(
-    [...values].map(([column, value]) => sql`${identifier(column)} = ${value}`),
+): SqlFragment => {
+  const json = jsonColumns(entity);
+  return sql`update ${identifier(entity.$table)} set ${join(
+    [...values].map(([column, value]) => sql`${identifier(column)} = ${cell(json, column, value)}`),
   )} where ${conditions(entity, plan, shape)}${returning ? sql` returning *` : sql``}`;
+};
 
 /** Only reached when the entity has no soft-delete column, so there is no filter to apply. */
 export const deleteStatement = <Row>(entity: EntityCore<Row>, plan: QueryPlan): SqlFragment =>

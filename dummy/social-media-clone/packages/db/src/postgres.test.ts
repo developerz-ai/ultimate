@@ -9,7 +9,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { createPgliteClient, type DbClient, raw, setDbClient, statementsOf } from '@ultimat3/db';
 import { database, postgresDriver } from '@ultimat3/entity';
-import { replayable } from './replayable';
 import { blocks, conversations, friendships, participants, users } from './schema';
 import { demo } from './seed';
 
@@ -78,9 +77,13 @@ test('the committed migrations build the entity set the app declares', async () 
  * The failure case first: every role container runs `seedDemo()` at boot, so the second boot — and
  * the hourly reset, and the three other roles booting beside the first — replays the whole graph.
  * A plain insert answers `23505` to that; the memory driver silently overwrote and hid it.
+ *
+ * The plain `postgresDriver()` is the assertion: this app wrapped it in a decorator of its own
+ * until `defineSeed`'s `insert` became an `on conflict do nothing` upsert, and only a real server
+ * can tell the framework doing it from nobody doing it.
  */
 test('the demo seed replays onto a store that already holds it', async () => {
-  const driver = replayable(postgresDriver());
+  const driver = postgresDriver();
   await demo.run({ driver });
   const first = await client.one<{ count: string }>(raw('select count(*) from users'));
   await demo.run({ driver });

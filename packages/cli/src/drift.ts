@@ -63,6 +63,41 @@ export async function writeSchemaHash(root: string, migrationId: string): Promis
 }
 
 /**
+ * "Some migration recorded this hash" — the one predicate, read by the check below AND by the
+ * reconcile above it. Two spellings would let `x db gen` report the sidecar written while
+ * `x verify` still reports drift over the same two files.
+ */
+const isRecorded = (records: readonly MigrationRecord[], hash: string): boolean =>
+  records.some((record) => record.hash === hash);
+
+export interface HashReconciliation {
+  readonly hash: string;
+  /** False when a sidecar already held this hash — nothing was written, and nothing needed to be. */
+  readonly written: boolean;
+}
+
+/**
+ * Re-record the sidecar for a migration that is already the right one. `SCHEMA_GLOB` covers every
+ * non-test file under `packages/db/src`, not only the ones that imply DDL, so editing a seed or a
+ * helper moves the hash with no diff behind it — and `X_DB_DRIFT`'s `fix:` has to have somewhere to
+ * land or the instruction is unfollowable. The caller owes the proof that the DDL genuinely did not
+ * move (`db-generate.ts` reaches this only on an empty diff off a fully loaded registry); this
+ * function decides only whether a write is needed.
+ *
+ * A hash an OLDER migration recorded is left alone: `checkSourceDrift` already answers clean on it,
+ * and stamping the newest sidecar would claim that migration produced a schema it did not.
+ */
+export async function reconcileSchemaHash(
+  root: string,
+  migrationId: string,
+): Promise<HashReconciliation> {
+  const hash = await schemaHash(root);
+  if (isRecorded(await recordedHashes(root), hash)) return { hash, written: false };
+  await Bun.write(join(root, MIGRATIONS_DIR, hashFileName(migrationId)), `${hash}\n`);
+  return { hash, written: true };
+}
+
+/**
  * How many entities the app declares. Injected so this module's own tests need no app on disk, and
  * so a caller that has already loaded the app can answer without loading it twice.
  */
@@ -90,6 +125,11 @@ export async function checkSourceDrift(
     // `x db gen "initial"`, which has an empty diff there, writes no `.hash`, and exits ok: a fix
     // that succeeds and changes nothing. Drift resumes the moment the author declares an entity,
     // and by then the fix genuinely writes one.
+    //
+    // An empty diff still writes no `.hash` HERE, and must: `reconcileSchemaHash` needs a migration
+    // id to record against and there is no migration at all in this branch. With an entity declared
+    // the diff is never empty — a registry against zero migrations is `create table` for all of
+    // it — so this branch's fix stays the real generation it always was.
     if ((await declaredEntities()) === 0) return [];
     return [
       {
@@ -101,7 +141,7 @@ export async function checkSourceDrift(
       },
     ];
   }
-  if (records.some((record) => record.hash === current)) return [];
+  if (isRecorded(records, current)) return [];
   return [
     {
       code: 'X_DB_DRIFT',

@@ -67,6 +67,11 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_DB_MIGRATE_FAILED',
   'X_DB_BRANCH_FAILED',
   'X_DB_STUDIO_FAILED',
+  // Refusing to seed production is a REFUSAL, not a malformed invocation, so it is not
+  // `X_CLI_BAD_FLAG`: the argv was well formed and the answer is no. Its own code is what lets
+  // `x errors explain` hand back the one remedy — name the tier — instead of the flag code's
+  // "unknown flag, missing value, or a value the command refuses", which covers a dozen causes.
+  'X_SEED_ENVIRONMENT',
   // The five app-surface boundary codes. `@ultimat3/render` owns the *rule* (`checkSurfaceBoundary`)
   // and the CLI owns the diagnostic, because `x verify` and `x fix boundary` are the two commands
   // that report it — see `app-boundaries.ts`, which holds the one rule-to-code table.
@@ -165,6 +170,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_DB_MIGRATE_FAILED: 'x db migrate failed',
   X_DB_BRANCH_FAILED: 'an x db branch step failed',
   X_DB_STUDIO_FAILED: 'x db studio failed',
+  X_SEED_ENVIRONMENT: 'the seed tier is not one this environment runs',
   X_BOUNDARY_SITE_TO_APP: 'site/ imported app/',
   X_BOUNDARY_SHARED_LEAF: 'shared/ imported a surface',
   X_BOUNDARY_APP_TO_API: 'app/ imported api/ at runtime',

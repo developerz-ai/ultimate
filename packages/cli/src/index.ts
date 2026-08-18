@@ -75,7 +75,7 @@ export {
   pgliteBranchName,
   previewUrl,
 } from './db-branch';
-export type { GeneratedFiles, GenerateMigrationOptions } from './db-generate';
+export type { GeneratedFiles, GenerateMigrationOptions, GenerateOutcome } from './db-generate';
 export { generateAppMigration, migrationSql } from './db-generate';
 export type { AssetRoutesOptions } from './dev-assets';
 export {
@@ -99,8 +99,14 @@ export type { DevServices, ServiceBinding } from './dev-services';
 export { describeServices, resolveServices } from './dev-services';
 export type { DispatchOptions } from './dispatch';
 export { dispatch } from './dispatch';
-export type { DeclaredEntityCount } from './drift';
-export { checkSourceDrift, recordedHashes, schemaHash, writeSchemaHash } from './drift';
+export type { DeclaredEntityCount, HashReconciliation } from './drift';
+export {
+  checkSourceDrift,
+  reconcileSchemaHash,
+  recordedHashes,
+  schemaHash,
+  writeSchemaHash,
+} from './drift';
 export type { ErrorCatalog } from './error-catalog';
 export {
   buildErrorCatalog,

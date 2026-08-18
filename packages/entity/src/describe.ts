@@ -5,7 +5,7 @@
 // Money is the one place the projection is not one-to-one: one property becomes the two
 // physical columns that back it.
 
-import { referenceBinding, snake } from './column';
+import { columnName, moneyColumns, referenceBinding } from './column';
 import { currencyCheck, scaleCheck } from './columns';
 import type { Invariant } from './invariants';
 import type { ColumnDescription, EntityDescription, ReferenceDescription } from './registry';
@@ -13,6 +13,8 @@ import type { AnyColumn, ColumnMeta, IndexDef } from './types';
 
 export interface DescribeInput<Row> {
   readonly name: string;
+  /** The physical table. The entity's own name unless `entity(name, { table })` said otherwise. */
+  readonly table: string;
   readonly columns: readonly (readonly [string, AnyColumn])[];
   readonly primaryKey: readonly string[];
   readonly invariants: readonly Invariant<Row>[];
@@ -41,7 +43,7 @@ export const describeReferences = (
     return [
       {
         property,
-        column: snake(property),
+        column: columnName(property, meta),
         nullable: !meta.notNull,
         targetEntity: target.table,
         targetProperty: target.property,
@@ -50,15 +52,38 @@ export const describeReferences = (
     ];
   });
 
+/**
+ * The Postgres type a column becomes. `kind` is what the migration generator reads and its table
+ * falls through to the kind itself for anything it does not name (`SQL_TYPES[kind] ?? kind`), so a
+ * precise type belongs HERE, where the precision, the element and the length are still in scope —
+ * the alternative is a second copy of the column vocabulary inside `@ultimat3/db`.
+ */
+export const sqlTypeOf = (meta: ColumnMeta): string => {
+  if (meta.kind === 'numeric') {
+    return meta.precision === undefined || meta.numericScale === undefined
+      ? 'numeric'
+      : `numeric(${meta.precision}, ${meta.numericScale})`;
+  }
+  if (meta.kind === 'array') {
+    const element = meta.element?.$meta;
+    // `arrayOf` refuses an element that is not one scalar column, so this is total in practice;
+    // `text[]` is the answer that keeps a description renderable rather than throwing inside a
+    // projection, which is the one place an error has no caller to instruct.
+    return `${element === undefined ? 'text' : sqlTypeOf(element)}[]`;
+  }
+  return meta.kind;
+};
+
 const describeColumn = <Row>(
   input: DescribeInput<Row>,
   property: string,
   meta: ColumnMeta,
   reference: ReferenceDescription | undefined,
 ): readonly ColumnDescription[] => {
-  const physical = snake(property);
+  const physical = columnName(property, meta);
   if (meta.kind === 'money') {
-    const currency = `${physical}_currency`;
+    const parts = moneyColumns(property, meta);
+    const currency = parts.currency;
     const shared = {
       notNull: meta.notNull,
       primaryKey: false,
@@ -69,7 +94,7 @@ const describeColumn = <Row>(
     return [
       {
         property: `${property}Minor`,
-        column: `${physical}_minor`,
+        column: parts.minor,
         kind: 'bigint',
         check: null,
         ...shared,
@@ -85,21 +110,29 @@ const describeColumn = <Row>(
       // currency's own minor unit", which is every amount written before the column existed and
       // every ordinary price after it. A NOT NULL here would demand a scale on values that have
       // none, and `0` is not that value — it means whole units.
-      {
-        property: `${property}Scale`,
-        column: `${physical}_scale`,
-        kind: 'integer',
-        check: scaleCheck(`${physical}_scale`),
-        ...shared,
-        notNull: false,
-      },
+      //
+      // Absent entirely when the table has none: an adopted amount column predating scale is two
+      // physical columns, and describing a third would put a column in the DDL and in every
+      // statement that the table does not have.
+      ...(parts.scale === null
+        ? []
+        : [
+            {
+              property: `${property}Scale`,
+              column: parts.scale,
+              kind: 'integer',
+              check: scaleCheck(parts.scale),
+              ...shared,
+              notNull: false,
+            },
+          ]),
     ];
   }
   return [
     {
       property,
       column: physical,
-      kind: meta.kind,
+      kind: sqlTypeOf(meta),
       notNull: meta.notNull,
       primaryKey: meta.primaryKey || input.primaryKey.includes(property),
       unique: meta.unique,
@@ -114,6 +147,10 @@ const describeColumn = <Row>(
 };
 
 export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescription => {
+  const physicalOf = (property: string): string => {
+    const column = input.columns.find(([key]) => key === property)?.[1];
+    return column === undefined ? property : columnName(property, column.$meta);
+  };
   const references = new Map(
     describeReferences(input.name, input.columns).map((reference) => [
       reference.property,
@@ -122,8 +159,8 @@ export const describeEntity = <Row>(input: DescribeInput<Row>): EntityDescriptio
   );
   return {
     name: input.name,
-    table: input.name,
-    primaryKey: input.primaryKey.map((property) => snake(property)),
+    table: input.table,
+    primaryKey: input.primaryKey.map(physicalOf),
     columns: input.columns.flatMap(([property, column]) =>
       describeColumn(input, property, column.$meta, references.get(property)),
     ),

@@ -57,11 +57,12 @@ export const posts = entity('posts', {
 export type Post = typeof posts.$row;
 ```
 
-The table name is the first argument. Everything else is the init object:
+The entity name is the first argument. Everything else is the init object:
 
 | Field | Meaning |
 |---|---|
 | `columns` | types + defaults + FKs. Money is `bigint` minor units + `char(3)` currency, never a float; timestamps are `timestamptz`, stored UTC |
+| `table` | the physical table, when it is not the entity's own name. For a schema this framework did not generate — see [Adopting an existing database](#adopting-an-existing-database) |
 | `tenant` | the tenant column. Omitted, it is inferred from `.tenant()` or a column named `orgId` — silence never means unscoped |
 | `invariants` | `(c) => [invariant(name, expr), …]` — named predicates enforced on write, projected to a CHECK or UNIQUE constraint where expressible. `c` is typed from `columns`, so a typo is a compile error |
 | `indexes` | composite and partial indexes; a single unique or indexed column declares it on the column instead |
@@ -317,6 +318,123 @@ One consequence to know before you reach for `onMatch: 'update'` on a tenant-sco
 composite unique index the tenancy rule requires is one the migration generator still cannot emit —
 see the composite-index row in [Known gaps](Known-Gaps). Declare it on the entity as usual and write
 that one `create unique index` by hand in the migration until it is fixed.
+
+## Seeding
+
+A seed is the fixture graph, written once and **replayed anywhere**: run it twice and the second
+run writes nothing and raises nothing. `x db seed [<name>]` applies it; `defineSeed` declares it,
+in `packages/<pkg>/seeds/<name>.ts` or `packages/<pkg>/src/seed.ts` — the two places `x db seed`
+looks.
+
+```ts
+export const dev = defineSeed('dev', async ({ insert, upsert, exists, id }) => {
+  // The table owns the id, so the NATURAL key is the only key: insert, or update what is there.
+  await upsert(plans, { by: ['code', 'currency'] }, { code: 'team', currency: 'EUR', monthly });
+
+  // The SEED owns the id, so a replay finds its own rows: `id('org:acme')` is a uuid v5 of the
+  // label — the same value on every machine, in CI and in the container.
+  await insert(orgs, [{ id: id('org:acme'), slug: 'acme', name: 'Acme Editorial' }]);
+
+  // Bulk volume data has no natural key worth upserting ten thousand rows against. The unit of
+  // idempotency is the FILE, and the guard is a sentinel.
+  if (await exists(reports)) return;
+  await insert(reports, generated);
+});
+```
+
+| Verb | Use it when | What a replay does |
+|---|---|---|
+| `insert(entity, rows)` | the seed chose the ids (`id('label')`) | one `on conflict … do nothing` statement per call — a stored row is left exactly as it is, and counted `skipped` |
+| `upsert(entity, { by }, values)` | the table owns the id and a natural key identifies the row | reads first so an unchanged row answers `'skipped'` with no statement, then one `on conflict … do update` — never a read-decide-write race between two containers booting at once |
+| `exists(entity, where?)` / `count(entity, where?)` | volume data, where the file is the unit | the sentinel returns early and nothing is written |
+| `deleteWhere(entity, where)` | a scoped wipe before a regenerate | **refused on a soft-deleting entity** — see the trap below |
+
+Rows go through `entity.$parse` and the invariants either way, so a seed is a test of the schema as
+well as data for one.
+
+| Rule | Detail |
+|---|---|
+| Tier | `reference` ships to production through this same command; `dev` is fixture data and is the default. `x db seed` runs `reference` alone under `ULTIMATE_ENV=production` — naming `--tier dev` (or `ULTIMATE_SEED_TIER=dev`) is both the selection and the consent → [CLI reference](CLI-Reference#x-db) |
+| Transaction | one per seed, never one around the run: a seed that throws must not roll back the seeds that already landed |
+| `createdAt` | an `upsert` that lands on a stored row does **not** overwrite it. A replay must not move when a row first arrived; `preserve: [...]` names other columns to spare |
+| Tenancy | `upsert` on a tenant-scoped entity needs the tenant column inside `by`, else `X_TENANCY_UNSCOPED` — the same rule `upsertAll` carries. `insert` has no such requirement: `do nothing` writes nothing to a row it does not own |
+| Generated key | `insert` refuses a row that leaves a `uuid().primaryKey()` unnamed. `$parse` would fill it with a fresh uuid, the conflict target would match nothing, and run five would leave five copies — the one duplication nothing else can see |
+| `now` | one instant per run, so every row a bulk pass stamps carries the same timestamp |
+| `metrics` | `{ inserted, updated, skipped }`, returned by `run()` and reported per seed by `x db seed --json` |
+
+**The soft-delete trap, and why `deleteWhere` refuses.** Deleting a seeded row on a soft-deleting
+entity *stamps* it rather than removing it. The stamped row still occupies its unique key — that
+index is not partial — and `upsertPlan` spares the soft-delete column on purpose, so no replay can
+clear the stamp: the rows are invisible to every read and no re-seed brings them back. A wipe-then-
+replay that looked idempotent left a demo's feed permanently empty. Inside a seed the call is
+therefore `X_INVARIANT_VIOLATED` naming `x db reset`, which is the only wipe such an entity has.
+
+## Column types
+
+The blessed set is a decision the framework made for a table it was going to create. The wide set
+is the shape a table already has, `As of 2026-08`.
+
+| Builder | Postgres | Row type |
+|---|---|---|
+| `uuid()`, `uuid<PostId>()` | `uuid` | `string`, branded if declared. `.primaryKey()` generates a v7 when omitted |
+| `text({ max })` · `integer()` · `boolean()` · `url()` | `text` · `integer` · `boolean` · `text` + CHECK | `string` / `number` / `boolean` |
+| `enumerated(v)` · `tz(zones)` · `locale(tags)` | `text` + CHECK | the union of the declared values |
+| `timestamp()` | `timestamptz` | `Date` — an instant, stored UTC |
+| `money()` | `<n>_minor bigint` + `<n>_currency char(3)` + `<n>_scale integer null` | `MoneyValue` |
+| `json(schema)` | `jsonb` | whatever the schema infers. The schema is **required** — a `json()` returning `unknown` is an `any` hole, and the value arrives from the database as often as from a caller |
+| `decimal({ precision, scale })` | `numeric(p, s)` | `string`, the exact digits. A value with more decimal places than the column stores is refused, not rounded |
+| `date()` | `date` | `PlainDate` — a calendar date, no time, no zone |
+| `bigint()` | `bigint` | `string`. A JS `bigint` is what `JSON.stringify` throws on and a `number` loses digits past 2^53, which is where a legacy `int8` key lives |
+| `bytes()` | `bytea` | `Uint8Array`, normalised across both drivers |
+| `arrayOf(column)` | `<element>[]` | `readonly T[]`, each member parsed by the element column |
+
+Chain: `.primaryKey()` · `.nullable()` · `.unique()` · `.default(v)` · `.defaultNow()` ·
+`.onUpdateNow()` · `.references(() => other.id, { onDelete })` · `.tenant()` · `.column(name)`.
+
+**A date is not an instant.** `effective_on` is the date a rate applies, not a moment; stored as a
+`timestamptz` it is a different date on either side of midnight for half the planet. `PlainDate`
+(`@ultimat3/time`) is a branded `YYYY-MM-DD` string — it sorts chronologically because it sorts
+lexicographically, round-trips through JSON as itself, and is the literal Postgres accepts. The
+framework's "never a date without an IANA zone" rule is about instants: a calendar date needs no
+zone because it names no instant.
+
+## Adopting an existing database
+
+Three overrides, `As of 2026-08`, and together they are what makes a schema Ultimate did not
+generate declarable at all. An entity that uses none of them emits exactly what it always did.
+
+```ts
+export const accounts = entity('account', {
+  table: 'legacy_accounts',
+  columns: {
+    id: uuid().primaryKey().column('account_id'),
+    githubLogin: text({ max: 40 }).column('gh_login'),
+    balance: money({ columns: { minor: 'amount_cents', currency: 'currency', scale: null } }),
+    openedOn: date().column('opened_on'),
+  },
+});
+```
+
+| Override | What follows it | What does not |
+|---|---|---|
+| `entity(name, { table })` | every statement, index name and foreign key | the entity NAME stays the key: the registry, the cache tag `entity:account`, `x entities describe`, every relation and every policy |
+| `.column(name)` | the DDL, the binding, the decoder, predicates, sort keys, cursors | nothing — name it LAST in a chain, since the link returns the general column; `uuid()` and `timestamp()` keep their own methods across it |
+| `money({ columns })` | the three physical columns, per part, merged over the defaults | `scale: null` says the table has no scale column: every amount is then at the currency's own minor unit, which is what an absent scale already meant |
+
+A physical name is validated where it is written — lower-case letters, digits and underscores, at
+most the 63 bytes Postgres truncates at — because it is spliced into every statement as an
+identifier.
+
+**What is not adoptable yet**, `As of 2026-08`. Each of these is a real table shape that this
+vocabulary cannot express, said precisely rather than approximated:
+
+| Shape | Why, and what to do instead |
+|---|---|
+| a `numeric` money column with no currency column beside it | `money()` is an amount **and** a currency by construction, and a single implied currency is the bug it exists to prevent. Declare it `decimal()` and keep the currency where the app already keeps it, or add the column |
+| a Postgres `enum` TYPE | `enumerated()` emits a CHECK, never `CREATE TYPE`, so a column of a real `pg_enum` type has no declaration. `text()` reads and writes it correctly today; what is missing is the DDL and the closed set |
+| a composite type, a range, `hstore` | no builder, and no way to spell one |
+| a live query over a renamed column | `@ultimat3/realtime` rebuilds a row from the physical names alone (it holds no dependency on this package) and would deliver `ghLogin` where the repository says `githubLogin`. Renamed columns are safe everywhere else |
+| `x db gen` over an adopted table | the generator would emit `create table` for a table that exists. Baselining an existing schema is its own command and is not built |
 
 ## Invariants
 

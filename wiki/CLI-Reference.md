@@ -30,7 +30,7 @@ x version              # CLI version
 | `x new <name>` | scaffold a monorepo that already runs | shipped |
 | `x dev` | all roles in one process: embedded services, sub-second reload, `/_x` mounted | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
-| `x db <sub>` | gen, migrate, reset, studio, branch, backfill | shipped |
+| `x db <sub>` | gen, migrate, reset, seed, studio, branch, backfill | shipped |
 | `x verify [--workers N]` | the gate — 17 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap | shipped |
 | `x env [check\|example]` | validate the process env against `envSchema`, or regenerate `.env.example` from it | shipped |
 | `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
@@ -237,6 +237,7 @@ The synopsis above is `GENERATORS` in `packages/cli/src/cmd-generate.ts`, which 
 
 ```bash
 x db gen "add publish_at" | migrate | reset | studio
+     | seed [<name>] [--tier reference|dev] [--dry-run] [--json]
      | branch ls | branch create <name> | branch drop <name>
      | backfill --list [--name n] [--status s] [--limit n] [--json]
      | backfill --pending [--json]
@@ -248,6 +249,7 @@ x db gen "add publish_at" | migrate | reset | studio
 | `gen "<name>"` | diff the app's entities against what the migrations declare, write the next migration | the message is required and becomes the id's slug. **Opens no database** — the previous migration's snapshot is what it diffs against |
 | `migrate` | apply pending migrations, then verify the result | literally `ROLE=migrate`'s own `runMigrations` — which ends by diffing the live schema against the ledger it just wrote, on the connection it already holds. A difference is `X_DB_DRIFT` and a non-zero exit |
 | `reset` | delete the embedded data directory, then migrate | **embedded database only** — against an external Postgres it exits `X_NOT_IMPLEMENTED` and tells you to drop and recreate it yourself |
+| `seed [<name>]` | apply the app's seeds — every one this environment takes, or the one named | **replayable**: a second run writes nothing and raises nothing, on Postgres as well as in memory. One transaction per seed, so one bad fixture graph cannot roll back the seeds that already landed. `--dry-run` reports what each would write and writes nothing |
 | `studio` | — | **planned**: exits `X_NOT_IMPLEMENTED` pointing at the `/_x` db panel. It used to shell out to `bunx drizzle-kit studio`; one subcommand is not worth a second schema engine |
 | `branch ls` | every **managed** branch of this database: name, location, created-at, size | managed means this framework made it — external, a database carrying `createBranch()`'s `comment on database` marker; embedded, a `pgdata-<name>` directory. A branch cloned by the pre-1.2.x `psql` shell-out carries no marker, so it is absent here and `drop` refuses it → [Known gaps](Known-Gaps). `size` reads `unknown` on the embedded database — measuring it is a full directory walk. The drop path only touches what this lists |
 | `branch create <name>` | `CREATE DATABASE … TEMPLATE` copy-on-write clone (PGlite: a copied data directory) | the isolation an agent should use before migrating. An existing name is `X_BRANCH_EXISTS`, never an overwrite |
@@ -257,6 +259,30 @@ x db gen "add publish_at" | migrate | reset | studio
 | `backfill <name>` / `backfill --all` | gate one sweep (or every pending one) and enqueue it | **dry run by default** — `--write` is never implied. `--write` enqueues; the workers perform the pass, because the queue is a job's execution surface. `--all` isolates per name and continues past a failure, exiting non-zero naming each |
 
 A bare `x db backfill` is `X_CLI_BAD_FLAG` naming a shape that works: the four answer four different questions, and defaulting to one of them is the ambiguity axiom 1 refuses.
+
+**Seeds have TIERS, and production takes one of them**, `As of 2026-08`. A seed declares
+`tier: 'reference'` — data the app is wrong without, which ships to production through this same
+command — or `tier: 'dev'`, the default, which is fixture data. A bare `x db seed` runs every tier
+the resolved environment takes: `reference` and `dev` everywhere, `reference` alone under
+`ULTIMATE_ENV=production`.
+
+| To do this | Run |
+|---|---|
+| every seed this environment takes | `x db seed --json` |
+| one named seed | `x db seed dev --json` |
+| the reference data only, anywhere | `x db seed --tier reference --json` |
+| dev fixtures on a box whose `ULTIMATE_ENV` says production | `x db seed dev --tier dev --json` |
+| the same, with no argv to change (a release-phase container) | `ULTIMATE_SEED_TIER=dev x db seed --json` |
+
+Naming the tier is both the selection and the consent, and that is why it is one word rather than
+two flags: a cluster that sets `ULTIMATE_ENV=production` on every box — staging included — would
+otherwise have to lie about the environment to load its own fixtures. A `dev` seed reached under
+`production` with neither the flag nor the variable is `X_CLI_BAD_FLAG` and a non-zero exit; the
+cause names both spellings and the `fix:` is the runnable one.
+
+`--json` carries a row per seed — `{ file, name, tier, status, ms, inserted, updated, skipped }`,
+**slowest first** — plus the totals, because a seed run that got slow is diagnosed by which file
+took the time. `skipped` is the replay: a row already stored, with no statement sent for it.
 
 **`branch` requires a verb, and the verb set is closed.** The first argument *was* the branch name, so `x db branch ls` cloned a database called `ls` instead of listing anything — and every verb is itself a legal branch name, which is why verb-first is the only shape where a name cannot be read as a subcommand. `As of 2026-08` a bare name is refused: a word outside `ls`, `create` and `drop` is `X_CLI_UNKNOWN_COMMAND`, and its `fix:` hands the caller's own word back inside the command that still creates it.
 
@@ -336,6 +362,8 @@ bookkeeping (the ledger, the queue, the outbox, the auth tables) and is never co
 
 A separate `<id>.down.sql` is not a migration and is never applied — that was a hand-written
 pre-1.2.0 layout, and reading it as one would drop every table the pair exists to reverse.
+
+Errors, seed: `X_DECLARATION_UNKNOWN` (no seed of that name — the cause lists the ones there are), `X_CLI_BAD_FLAG` (an unknown `--tier`, one name declared twice, or a `dev` seed reached under `production` with no consent), and whatever the seed itself threw, reported per seed with the file it came from.
 
 Errors, schema: `X_DB_DRIFT`, `X_DB_GEN_FAILED`, `X_DB_MIGRATE_FAILED`, `X_DB_BRANCH_FAILED`, `X_MIGRATION_CONFLICT`, `X_MIGRATION_IRREVERSIBLE`, `X_MIGRATE_CONCURRENT`, `X_NOT_IMPLEMENTED`. `X_DB_STUDIO_FAILED` is reserved and no longer thrown — `x db studio` is planned.
 

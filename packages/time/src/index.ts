@@ -98,6 +98,21 @@ export {
   toIsoDateUtc,
 } from './instant';
 export {
+  addPlainDays,
+  comparePlainDates,
+  isPlainDate,
+  PLAIN_DATE_PATTERN,
+  type PlainDate,
+  type PlainDateParts,
+  plainDate,
+  plainDateIn,
+  plainDateOf,
+  plainDateParts,
+  plainDateToUtcInstant,
+  plainDateUtc,
+  plainDaysBetween,
+} from './plain-date';
+export {
   type LocalSlot,
   nextLocalSlot,
   nextLocalSlots,

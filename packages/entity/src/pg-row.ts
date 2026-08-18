@@ -4,7 +4,7 @@
 // from the driver is re-parsed by the column that declared it rather than trusted — int8 arrives
 // as a string, timestamptz may arrive as one, and a silent `NaN` is worse than a loud throw.
 
-import { snake } from './column';
+import { columnName, moneyColumns } from './column';
 import { narrowMoney } from './columns';
 import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
@@ -23,10 +23,15 @@ const MONEY_PARTS = new Set(['minor', 'currency']);
  * addressable as a predicate or a sort key (`MONEY_PARTS` below, and `cursor.ts`'s copy) — a scale
  * says which units `minor` counts, so ordering or filtering by it compares two different questions.
  */
-export const columnsOf = (property: string, column: AnyColumn): readonly string[] =>
-  column.$meta.kind === 'money'
-    ? [`${snake(property)}_minor`, `${snake(property)}_currency`, `${snake(property)}_scale`]
-    : [snake(property)];
+export const columnsOf = (property: string, column: AnyColumn): readonly string[] => {
+  if (column.$meta.kind !== 'money') return [columnName(property, column.$meta)];
+  const parts = moneyColumns(property, column.$meta);
+  // Two columns for an adopted amount that has no scale column: the list IS the projection, so a
+  // name here that the table does not have is a `42703` on the first select.
+  return parts.scale === null
+    ? [parts.minor, parts.currency]
+    : [parts.minor, parts.currency, parts.scale];
+};
 
 /**
  * A predicate or sort key names a property, never a physical column — so `orgId` becomes
@@ -44,7 +49,7 @@ export const physicalName = <Row>(entity: EntityCore<Row>, path: string): string
   }
   const isMoney = column.$meta.kind === 'money';
   if (part === undefined) {
-    if (!isMoney) return snake(property);
+    if (!isMoney) return columnName(property, column.$meta);
     throw invariantViolated(
       entity.$name,
       property,
@@ -54,7 +59,8 @@ export const physicalName = <Row>(entity: EntityCore<Row>, path: string): string
   if (!isMoney || !MONEY_PARTS.has(part)) {
     throw invariantViolated(entity.$name, property, `${property} has no part "${part}"`);
   }
-  return `${snake(property)}_${part}`;
+  const parts = moneyColumns(property, column.$meta);
+  return part === 'minor' ? parts.minor : parts.currency;
 };
 
 /** Every physical column of the entity, in declaration order. */
@@ -77,26 +83,63 @@ export const bindValues = <Row>(
     if (!Object.hasOwn(record, property)) continue;
     const value = record[property];
     if (column.$meta.kind !== 'money') {
-      bound.set(snake(property), value ?? null);
+      bound.set(columnName(property, column.$meta), bindable(column, value));
       continue;
     }
+    const parts = moneyColumns(property, column.$meta);
     const money = value as MoneyValue | null | undefined;
-    bound.set(`${snake(property)}_minor`, money?.minor ?? null);
-    bound.set(`${snake(property)}_currency`, money?.currency ?? null);
+    bound.set(parts.minor, money?.minor ?? null);
+    bound.set(parts.currency, money?.currency ?? null);
     // `?? null` and not `!== undefined`: an amount at the currency's own scale carries no key at
     // all, and that absence is what the nullable column stores. A `0` written here for it would
     // claim whole units — a 100x reinterpretation of every ordinary price.
-    bound.set(`${snake(property)}_scale`, money?.scale ?? null);
+    if (parts.scale !== null) bound.set(parts.scale, money?.scale ?? null);
   }
   return bound;
 };
 
-const moneyOf = (source: PhysicalRow, minor: string, currency: string, scale: string): unknown => {
+/**
+ * One array element, as a Postgres array literal spells it. Quoted always: an unquoted element
+ * containing a comma, a brace or a backslash is a different array, and an empty string unquoted
+ * is nothing at all.
+ */
+const arrayElement = (value: unknown): string => {
+  if (value === null || value === undefined) return 'NULL';
+  const text =
+    value instanceof Date ? value.toISOString() : typeof value === 'object' ? '' : String(value);
+  return `"${text.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+};
+
+/**
+ * The value a parameter carries. Every column but one hands its row value straight over — the
+ * measured driver behaviour is that an object binds to `jsonb`, a string binds to `numeric`,
+ * `int8` and `date`, and a `Uint8Array` binds to `bytea`.
+ *
+ * An array is the one that cannot: Bun's `sql` serialises a JS array to `x,y`, which Postgres
+ * answers with `malformed array literal` (measured). What it accepts is the literal, so this is
+ * where a JS array becomes one.
+ */
+const bindable = (column: AnyColumn, value: unknown): unknown => {
+  if (value === null || value === undefined) return null;
+  // A plain object is not a bindable parameter (`X_SQL_UNSAFE`), so a `jsonb` value crosses as its
+  // TEXT and `pg-sql.ts`'s cell casts it back — see `cellCast` for why the cast is `::text::jsonb`.
+  if (column.$meta.kind === 'jsonb') return JSON.stringify(value);
+  if (column.$meta.kind !== 'array' || !Array.isArray(value)) return value;
+  return `{${value.map(arrayElement).join(',')}}`;
+};
+
+const moneyOf = (
+  source: PhysicalRow,
+  minor: string,
+  currency: string,
+  scale: string | undefined,
+): unknown => {
   const amount = source[minor];
   if (amount === null || amount === undefined) return null;
   // A column the projection left out is absent, not null — and absent must read as "no scale"
-  // exactly as a stored NULL does, so both take the same branch.
-  const declared = source[scale];
+  // exactly as a stored NULL does, so both take the same branch. So does a table that has no
+  // scale column at all, which is why the name itself may be `undefined`.
+  const declared = scale === undefined ? undefined : source[scale];
   return {
     minor: amount,
     currency: String(source[currency] ?? '').trim(),
@@ -113,10 +156,13 @@ export const decodeRow = <Row>(entity: EntityCore<Row>, source: PhysicalRow): Ro
   for (const [property, column] of Object.entries(entity.$columns)) {
     const [head, currency, scale] = columnsOf(property, column);
     if (head === undefined || !(head in source)) continue;
+    // Decided by the column's KIND and never by how many names came back: a money column whose
+    // table has no scale column projects two names, and reading that as a non-money column handed
+    // the caller a raw minor unit where a `Money` belongs.
     const value =
-      currency === undefined || scale === undefined
-        ? source[head]
-        : moneyOf(source, head, currency, scale);
+      column.$meta.kind === 'money' && currency !== undefined
+        ? moneyOf(source, head, currency, scale)
+        : source[head];
     if (value !== null && value !== undefined) {
       row[property] = column.$parse(value);
       continue;
