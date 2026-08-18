@@ -31,6 +31,10 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   // and declaring a status the framework already owns. 500 is the honest answer to either.
   X_NO_REQUEST: 500,
   X_ERROR_STATUS_INVALID: 500,
+  // A `hive()` whose `split()` returned no members. The caller cannot fix it by sending
+  // different input — the guard belongs in the app, either by returning at least one member
+  // or by skipping the hive when the source is empty — so it is the server's bug, not theirs.
+  X_HIVE_EMPTY: 500,
   // Thrown while `app.config.ts` resolves, so no request is ever answered with it — the row exists
   // because a code with no status is a 500 anyway and this table is the closed one.
   X_CORS_CONFIG_INVALID: 500,

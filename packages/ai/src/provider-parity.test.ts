@@ -221,3 +221,80 @@ describe('the credential never reaches an error', () => {
     }
   });
 });
+
+describe("the caller's abort signal reaches the socket", () => {
+  test('both formats forward `signal` into fetch, on the streaming and non-streaming paths', async () => {
+    // Cancellation that stops at the top of the next turn still pays for the call already in
+    // flight — which on a long completion is the expensive one. `agent()` puts `ctx.signal` on
+    // every request; a provider that drops it makes that guarantee a comment.
+    const seen: (AbortSignal | undefined)[] = [];
+    const recording = (): typeof fetch => {
+      const impl = async (_url: string, init?: RequestInit): Promise<Response> => {
+        seen.push(init?.signal ?? undefined);
+        return new Response(JSON.stringify({ error: { message: 'stop here' } }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        });
+      };
+      return impl as unknown as typeof fetch;
+    };
+
+    const signal = new AbortController().signal;
+    const anthropic = new AnthropicProvider({ apiKey: KEY, fetch: recording() });
+    const openai = openAiProvider({
+      apiKey: secret(KEY, 'OPENAI_API_KEY'),
+      models: [...OPENAI_MODEL_IDS],
+      fetch: recording(),
+    });
+    const drain = async (chunks: AsyncIterable<unknown>): Promise<void> => {
+      for await (const _chunk of chunks) {
+        // The 503 lands on the first pull; nothing is expected to arrive.
+      }
+    };
+
+    const calls: readonly (() => Promise<unknown>)[] = [
+      () =>
+        anthropic.generate({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 16, signal }),
+      () =>
+        drain(
+          anthropic.stream({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 16, signal }),
+        ),
+      () =>
+        openai.generate({
+          model: OPENAI_MODEL,
+          messages: [{ role: 'user', content: 'hi' }],
+          maxTokens: 16,
+          signal,
+        }),
+      () =>
+        drain(
+          openai.stream({
+            model: OPENAI_MODEL,
+            messages: [{ role: 'user', content: 'hi' }],
+            maxTokens: 16,
+            signal,
+          }),
+        ),
+    ];
+    for (const call of calls) await call().catch(() => undefined);
+
+    expect(seen).toHaveLength(4);
+    expect(seen.every((each) => each === signal)).toBe(true);
+  });
+
+  test('a request with no signal attaches none, rather than an explicit undefined', async () => {
+    let init: RequestInit | undefined;
+    const impl = async (_url: string, given?: RequestInit): Promise<Response> => {
+      init = given;
+      return new Response('{}', { status: 503 });
+    };
+    const anthropic = new AnthropicProvider({
+      apiKey: KEY,
+      fetch: impl as unknown as typeof fetch,
+    });
+    await anthropic
+      .generate({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 16 })
+      .catch(() => undefined);
+    expect(init !== undefined && 'signal' in init).toBe(false);
+  });
+});

@@ -8,13 +8,20 @@
 // `run` below is `ProjectableAction`'s — the projection SEAM, which is what carries `invoke`.
 // It is not a member of the action facade: an `action()` is `as`/`tool`/`openapi`/`job`/
 // `contract` and the callable itself, and this header claimed `action.run` until 2026-08.
+// `asProjectableAction` is what BUILDS that seam out of a real `action()`, so an app writes
+// `agent({ tools: [publishPost] })` and never a hand-shaped stand-in — the same union
+// @ultimat3/mcp's `ListedPrimitive` accepts, adapted at this package's own edge because the two
+// wire formats want different schemas (issue #124).
 //
 // The JSON Schema type and the projectable-primitive shape are declared here rather than
 // imported from @ultimat3/mcp: that package is the same tier, so importing it would be a
 // boundary error. Both packages describe the same structural contract.
 
+import type { AnyAction } from '@ultimat3/action';
+import { actionName, invoke, isAction } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
 import { isMcpExposed } from '@ultimat3/core';
+import { toMcpInputSchema } from '@ultimat3/schema';
 
 /** The JSON Schema subset the framework emits for tool arguments. */
 export interface JsonSchema {
@@ -66,6 +73,57 @@ export interface ProjectableAction {
   readonly mcp?: { readonly expose?: boolean; readonly description?: string };
   readonly inputJsonSchema?: JsonSchema;
   run(args: { input: unknown; actor: Actor }): Promise<unknown>;
+}
+
+/**
+ * What `agent({ tools })` accepts: the real primitive an app writes, or a pre-projected one.
+ *
+ * The real `action()` comes first because it is what an app has. Until 2026-08 this list took
+ * `ProjectableAction` alone, which no `action()` structurally satisfies — an action carries
+ * `as`/`tool`/`openapi`/`job`/`contract` and never `run` — so the documented shape
+ * `agent({ tools: [publishPost] })` was a `TS2741` and every test in this package hand-built a
+ * stand-in, which is why the suite stayed green over an API that did not compile (issue #124).
+ * `ProjectableAction` stays in the union for a surface that builds its catalog programmatically
+ * and for a test that projects a fake.
+ */
+export type AgentTool = AnyAction | ProjectableAction;
+
+/**
+ * Adapt whatever the author listed. The same shape @ultimat3/mcp's `asProjectable` produces, from
+ * the same `invoke` — an in-app agent and an external MCP client end at one execution path, so one
+ * policy decides both. It is not shared code and cannot be: `mcp` is this package's own tier, and
+ * the two projections narrow the schema differently on purpose (`toWireSchema` publishes only what
+ * that server's arg validator will hold a call to; this one publishes the tool schema the Messages
+ * API reads).
+ *
+ * `isAction` is structural against @ultimat3/action's PRIVATE declaration store, so a look-alike
+ * carrying `kind: 'action'` cannot take the first branch — it falls through as the already
+ * projectable object it claims to be.
+ */
+export function asProjectableAction(listed: AgentTool): ProjectableAction {
+  if (!isAction(listed)) return listed;
+  const mcp = listed.mcp;
+  return {
+    // Throws `X_ACTION_UNREGISTERED` on an unnamed action rather than offering a tool called `''`:
+    // a nameless tool is unaddressable by the model, by `runLlmToolCall` and by the author.
+    name: actionName(listed),
+    ...(mcp === undefined ? {} : { mcp }),
+    ...(mcp?.description === undefined ? {} : { description: mcp.description }),
+    inputJsonSchema: toMcpInputSchema(listed.input),
+    // The actor rides in on the options and `invoke` swaps it inside the one execution path —
+    // the action's own `policy` still decides, and its `input:` still parses what the model sent,
+    // which is what drops a `{ actor: 'admin' }` the model invented before any handler sees it.
+    run: ({ input, actor }) => invoke(listed, input, { surface: 'mcp', actor }),
+  };
+}
+
+/**
+ * The tool's name for an error message, before anything is registered. Never `actionName()`:
+ * `X_AGENT_TOOL_UNEXPOSED` is raised at declaration, where an action beside it in the same module
+ * has no name yet, and a naming failure there would hide the exposure failure being reported.
+ */
+export function toolLabel(listed: AgentTool): string {
+  return listed.name === '' ? '(an unregistered action)' : listed.name;
 }
 
 const EMPTY_SCHEMA: JsonSchema = { type: 'object', properties: {}, additionalProperties: false };

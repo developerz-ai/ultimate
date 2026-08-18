@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "537dc6532a657d1409fd02eae4502ee98fe8293db082eadb60c46d61ab905c5d",
+  "buildId": "399a2210d509b78268f10f15688deac6132fd99ca57445214c6e62ed7f156398",
   "tiers": {
     "0": [
       "core",
@@ -969,6 +969,11 @@
       "code": "X_GUARD_INVALID",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_HIVE_EMPTY",
+      "owner": "ai",
+      "at": "packages/ai/src/errors.ts"
     },
     {
       "code": "X_ID_INVALID",

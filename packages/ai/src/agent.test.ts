@@ -6,7 +6,7 @@
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { isAction } from '@ultimat3/action';
+import { action, isAction } from '@ultimat3/action';
 import { createContext, PRIMITIVE_KINDS, userActor } from '@ultimat3/core';
 import { allow, deny } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
@@ -288,5 +288,135 @@ describe('the loop is bounded', () => {
     expect(Array.isArray(results?.content) ? results?.content[0] : undefined).toMatchObject({
       type: 'tool_result',
     });
+  });
+});
+
+describe('a real action() is a tool — issue #124', () => {
+  // The bug this file could not see: every tool above is a hand-written `ProjectableAction`
+  // literal, so the suite was green while `agent({ tools: [publishPost] })` — the shape the
+  // README documents — neither typechecked nor ran. A real `action()` carries
+  // `as`/`tool`/`openapi`/`job`/`contract` and no `run`, so `runLlmToolCall` reached for a
+  // member that has never existed.
+  test('an action() declared by an app can be handed straight to agent({ tools })', async () => {
+    const seenActors: string[] = [];
+    const lookupOrder = action({
+      input: t.object({ id: t.string }),
+      output: t.object({ status: t.string }),
+      policy: allow(),
+      mcp: { expose: true, description: 'Look an order up' },
+      handle: ({ ctx }) => {
+        seenActors.push(ctx.actor.id);
+        return { status: 'shipped' };
+      },
+    }).named('lookupOrder');
+
+    const { provider, seen } = scripted(
+      { calls: [{ name: 'lookupOrder', input: { id: 'o-1' } }] },
+      { calls: [{ name: 'respond', input: { answer: 'shipped' } }] },
+    );
+    configureAi({ gateway: createGateway({ providers: [provider] }) });
+
+    const support = agent({
+      input: Input,
+      output: Output,
+      prompt: promptFor(),
+      vars: ({ input }) => ({ orderId: input.orderId }),
+      tools: [lookupOrder],
+      policy: allow(),
+    }).named('realToolAgent');
+
+    const answer = await support({ orderId: 'o-1' }, { ctx: ctxAs('user-7') });
+    expect(answer).toEqual({ answer: 'shipped' });
+    // The action ran, under the REQUEST's actor.
+    expect(seenActors).toEqual(['user-7']);
+    // ...and the model was offered the action's own input schema, not the empty stand-in.
+    expect(seen[0]?.tools?.find((tool) => tool.name === 'lookupOrder')?.input_schema).toMatchObject(
+      {
+        properties: { id: { type: 'string' } },
+      },
+    );
+  });
+});
+
+describe('an agent can be a tool of another agent', () => {
+  // Impossible before the union: `agent()` returns an `Action` and `tools` demanded
+  // `ProjectableAction[]`, two disjoint types — so a supervisor delegating to a sub-agent had no
+  // spelling at all. It falls out of the factory rule rather than needing a `hive()`: a sub-agent
+  // IS an action, and an action is what a tool is.
+  test('a supervisor delegates to a sub-agent, which runs under the same actor', async () => {
+    const seenActors: string[] = [];
+    const inner = scripted({ calls: [{ name: 'respond', input: { answer: 'shipped' } }] });
+    const outer = scripted(
+      { calls: [{ name: 'orderStatus', input: { orderId: 'o-1' } }] },
+      { calls: [{ name: 'respond', input: { answer: 'shipped' } }] },
+    );
+    // One provider serving both loops: routed by which tools the request offers, so neither
+    // script can drift into the other.
+    const provider: Provider = {
+      name: 'nested',
+      models: ['claude-opus-5'],
+      generate: (request) =>
+        request.tools?.some((tool) => tool.name === 'orderStatus') === true
+          ? outer.provider.generate(request)
+          : inner.provider.generate(request),
+      stream: (request) => new EchoProvider().stream(request),
+    };
+    configureAi({ gateway: createGateway({ providers: [provider] }) });
+
+    const orderStatus = agent({
+      input: t.object({ orderId: t.string }),
+      output: Output,
+      prompt: promptFor(),
+      vars: ({ input, ctx }) => {
+        seenActors.push(ctx.actor.id);
+        return { orderId: input.orderId };
+      },
+      tools: [],
+      policy: allow(),
+      mcp: { expose: true, description: 'Answer one order question' },
+    }).named('orderStatus');
+
+    const supervisor = agent({
+      input: Input,
+      output: Output,
+      prompt: promptFor(),
+      vars: ({ input }) => ({ orderId: input.orderId }),
+      tools: [orderStatus],
+      policy: allow(),
+    }).named('supervisor');
+
+    expect(await supervisor({ orderId: 'o-1' }, { ctx: ctxAs('user-7') })).toEqual({
+      answer: 'shipped',
+    });
+    // The sub-agent ran once, as the REQUEST's actor — a delegated turn is not an escalation.
+    expect(seenActors).toEqual(['user-7']);
+    // The supervisor was offered the sub-agent under its export name.
+    expect(outer.seen[0]?.tools?.map((tool) => tool.name).sort()).toEqual([
+      'orderStatus',
+      'respond',
+    ]);
+  });
+
+  test('a sub-agent that never opted into MCP is refused at declaration, like any other tool', () => {
+    configureAi({ gateway: createGateway({ providers: [new EchoProvider()] }) });
+    const hidden = agent({
+      input: Input,
+      output: Output,
+      prompt: promptFor(),
+      vars: ({ input }) => ({ orderId: input.orderId }),
+      tools: [],
+      policy: allow(),
+    }).named('hiddenAgent');
+
+    expect(() =>
+      agent({
+        input: Input,
+        output: Output,
+        prompt: promptFor(),
+        vars: ({ input }) => ({ orderId: input.orderId }),
+        tools: [hidden],
+        policy: allow(),
+      }),
+    ).toThrow('X_AGENT_TOOL_UNEXPOSED');
   });
 });

@@ -4,8 +4,12 @@
 /** Re-exported so an `llm` file needs one import, not two. Same object as schema's. */
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
-export type { AgentBudget, AgentDef, AgentVarsArgs } from './agent';
+export type { AgentBudget, AgentDef, AgentTurn, AgentVarsArgs } from './agent';
 export { agent } from './agent';
+export type { AgentBudgetFact, AgentFact } from './agent-facts';
+export { describeAgents, resetAgents } from './agent-facts';
+export type { AgentJobOptions } from './agent-job';
+export { agentJob } from './agent-job';
 export type {
   BudgetLedgerInput,
   BudgetLimits,
@@ -89,6 +93,10 @@ export {
 } from './evals';
 export type { CreateGatewayInput, Gateway, GatewayCache, RetryPolicy } from './gateway';
 export { backoffMs, cacheKeyFor, createGateway, DEFAULT_RETRY, isRetryable } from './gateway';
+export type { HiveDef, HiveSplitArgs } from './hive';
+export { hive } from './hive';
+export { HiveEmptyError } from './hive-errors';
+export type { HiveMember, HiveMemberError, HiveOutput, HiveResult } from './hive-result';
 export type {
   LlmAction,
   LlmBudget,
@@ -201,13 +209,14 @@ export {
   numericTolerance,
 } from './scorers';
 export type {
+  AgentTool,
   JsonSchema,
   LlmTool,
   LlmToolCall,
   LlmToolResult,
   ProjectableAction,
 } from './tools';
-export { runLlmToolCall, toLlmTool, toLlmTools } from './tools';
+export { asProjectableAction, runLlmToolCall, toLlmTool, toLlmTools } from './tools';
 export type {
   HybridSearchInput,
   MemoryVectorStoreInput,

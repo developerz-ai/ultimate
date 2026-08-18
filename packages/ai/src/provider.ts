@@ -73,6 +73,15 @@ export interface GenerateRequest {
   readonly thinking?: ThinkingMode;
   readonly tools?: readonly LlmTool[];
   readonly stopSequences?: readonly string[];
+  /**
+   * The caller's abort signal, forwarded to the socket by every provider in this package.
+   *
+   * Deliberately absent from `cacheKeyFor` and from every estimate: it says whether a request was
+   * ABANDONED, never what it asked for, so two calls that differ only in it are the same call and
+   * must share a cache entry. Omitted means the call runs to completion — there is no ambient
+   * default, because a timeout the caller did not ask for is a truncated answer nothing reports.
+   */
+  readonly signal?: AbortSignal;
 }
 
 export interface TokenUsage {
@@ -216,7 +225,7 @@ export class AnthropicProvider implements Provider {
    */
   async generate(request: GenerateRequest): Promise<GenerateResult> {
     if (requiresStreaming(request)) return this.assemble(request);
-    const response = await this.send({ ...this.body(request), stream: false });
+    const response = await this.send({ ...this.body(request), stream: false }, request.signal);
     const raw = (await response.json()) as Record<string, unknown>;
     return parseMessage(request.model ?? DEFAULT_MODEL, raw);
   }
@@ -239,7 +248,7 @@ export class AnthropicProvider implements Provider {
    */
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
     const model = request.model ?? DEFAULT_MODEL;
-    const response = await this.send({ ...this.body(request), stream: true });
+    const response = await this.send({ ...this.body(request), stream: true }, request.signal);
     if (response.body === null) {
       throw new AiTransportError({
         provider: this.name,
@@ -286,7 +295,10 @@ export class AnthropicProvider implements Provider {
    * carrying its status, because the gateway decides whether to retry from that status and a
    * body parsed as if it were a message would read as an empty, successful answer.
    */
-  private async send(body: Record<string, unknown>): Promise<Response> {
+  private async send(
+    body: Record<string, unknown>,
+    signal: AbortSignal | undefined,
+  ): Promise<Response> {
     const apiKey = this.config.apiKey ?? Bun.env[API_KEY_ENV];
     if (apiKey === undefined || apiKey === '') {
       throw new AiKeyMissingError({ provider: this.name, envVar: API_KEY_ENV });
@@ -302,6 +314,9 @@ export class AnthropicProvider implements Provider {
         accept: body['stream'] === true ? 'text/event-stream' : 'application/json',
       },
       body: JSON.stringify(body),
+      // Attached only when the caller has one: `exactOptionalPropertyTypes`, and an explicit
+      // `signal: undefined` is a different value to some fetch implementations.
+      ...(signal === undefined ? {} : { signal }),
     });
     if (!response.ok) {
       throw new AiTransportError({

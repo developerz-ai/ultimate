@@ -4,7 +4,12 @@ Tier 4. May import tier 0–3: `core schema i18n money time cache seo entity pol
 query jobs realtime`. **Never** `mcp manifest render pwa ui admin testing cli`.
 
 Declared today: `action` (the primitive `llm()` returns), `cache` (semantic cache), `core`,
-`db` (pgvector), `money`, `policy`, `schema`, `time`.
+`db` (pgvector), `jobs` (`agentJob()`), `money`, `policy`, `schema`, `time`.
+
+**`jobs` was declared 2026-08, for `agentJob()`.** `packages/action/src/job-handle.ts`'s header
+already named this package as the home: `isJobHandle` needs `kind === 'job'` plus membership of a
+WeakMap only `job()` writes, and `action` and `jobs` are both tier 3, so the bridge has to live at
+tier 4+. Downward edge, nothing new in the tier table.
 
 `mcp` is the same tier, so the LLM-tool projection is restated structurally in `tools.ts`
 rather than imported. Same contract, two wire formats — and the same *decision*: `toLlmTools` and
@@ -44,10 +49,15 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
 | `pg-vector-sql.ts` | every pgvector statement: DDL, upsert, cosine, FTS, RRF fusion |
 | `pg-vector.ts` | `PgVectorStore` — the production store |
 | `rag.ts` | chunker, retriever, reranker, budgeted context assembler |
-| `tools.ts` | action → LLM tool definition; `runLlmToolCall` |
+| `tools.ts` | action → LLM tool definition; the `AgentTool` union and `asProjectableAction`; `runLlmToolCall` |
 | `llm.ts` | `llm()` — the model call, declared as an `action`; and what a streamed answer must satisfy |
 | `llm-stream.ts` | `.stream()`'s plumbing: the sink, the ambient mark, the one-turn drive |
 | `agent.ts` | `agent()` — the tool loop, declared as an `action` |
+| `agent-facts.ts` | `describeAgents()` — the agent registry and the row a manifest publishes |
+| `agent-job.ts` | `agentJob()` — an agent as a real `JobHandle`, composed from `job()` |
+| `hive.ts` | `hive()` — one action fanned out over many inputs, declared as an `action` |
+| `hive-result.ts` | `HiveMember` / `HiveResult`, and the SCHEMA built from the member's own `output` |
+| `hive-errors.ts` | the `X_HIVE_*` class; its code and title stay in `errors.ts` |
 | `redaction.ts` | the one gate between `vars()` and the provider: a `Secret` never reaches a prompt |
 | `eval-errors.ts` | the five `X_EVAL_*` classes; their codes and titles stay in `errors.ts` |
 | `runtime.ts` | the ambient gateway / embedder / semantic caches an `llm()` reaches |
@@ -261,15 +271,129 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   (`X_AGENT_MAX_TURNS`, never a partial answer), by `budget.tokensPerRun` (the ledger's `request`
   scope, which accumulates across turns) and by `maxToolResultChars` — the transcript IS the
   request, so an untruncated tool result is re-billed once per remaining turn.
+  - **`tools` takes the real `action()`, adapted at this package's edge — decided 2026-08 (issue
+    #124).** It took `ProjectableAction` alone, which no `action()` structurally satisfies (an
+    action is `as`/`tool`/`openapi`/`job`/`contract` and the callable, never `run`), so the shape
+    the README documents was a `TS2741` and every test here hand-built a stand-in — which is why
+    the suite was green over an API that did not compile. `AgentTool = AnyAction |
+    ProjectableAction` and `asProjectableAction` are the fix, the same union `@ultimat3/mcp`'s
+    `ListedPrimitive` already accepted. **Not** a `run` member on the action facade, which was the
+    obvious alternative and is wrong three times over: it duplicates `.as()` (axiom 1), it would
+    offer a tool named `''` for an action `registerActions` has not named yet, and it would NOT
+    collapse `mcp`'s adapter, whose `toWireSchema` narrows to the subset that server's arg
+    validator can enforce while this one publishes the Messages API's (`packages/mcp/src/
+    from-action.ts` header). Two wire formats, two projections, one `invoke`.
+  - Projection happens on the FIRST RUN, memoised — never at declaration. `agent()` is evaluated at
+    module scope and `registerAction` stamps a name at boot, so `actionName()` at declaration would
+    make the ordinary `export const publishPost = action(...)` beside it `X_ACTION_UNREGISTERED`.
+  - **An `agent()` is a tool of another `agent()`** — it returns an action, and an action is what a
+    tool is. That is the supervisor/sub-agent shape, with no `hive()` and no ninth primitive; the
+    sub-agent runs under the same actor, through its own policy.
   - A tool listed in `agent({ tools })` that is not `mcp: { expose: true }` is
     `X_AGENT_TOOL_UNEXPOSED` **at declaration**, not filtered at the call: a silently dropped tool
     reads as offered and is not. `isMcpExposed` is the one predicate, so an in-app agent and an
-    external MCP client see the same catalogue.
+    external MCP client see the same catalogue. Asked of the DECLARATION, not of the projection,
+    because exposure needs no name and the name does not exist yet.
+  - **`ctx.signal` is read, at three points.** `throwIfAborted` at the top of every turn and before
+    every tool batch, and `GenerateRequest.signal` forwarded into `fetch` by both providers. The
+    transcript IS the request, so a loop that keeps going after the caller disconnects re-sends it
+    once per remaining turn, runs every remaining tool's side effect and discards the answer —
+    eight provider calls for an answer nothing reads. `X_ABORTED` is core's, already shipped; no
+    new code. `signal` is deliberately absent from `cacheKeyFor` and from every estimate: it says
+    whether a call was ABANDONED, never what it asked for.
+  - **The tools of ONE turn run concurrently**, unbounded within the turn, results paired by index
+    so a fast tool cannot be matched to a slow tool's `tool_use` id. Serial cost 5x wall clock for a
+    turn that asked for five tools and nothing in the types or the docs said so. No second ceiling
+    here: the batch is what one model turn asked for, each entry is an action with its own `policy`
+    and `rateLimit`, and a tool that calls a model still queues on the ledger's root turnstile.
+    Guarantee is "no tool STARTS after the abort" — a tool already in flight unwinds through its
+    own handler's reading of `ctx.signal`, which is the action's to make.
+  - **`onTurn` is the per-turn observation, and `.stream()` on `agent()` is deliberately not shipped
+    yet.** A 90-second multi-turn run emitted nothing until it returned. `onTurn` reports facts
+    only — turn, model, tool names, stop reason, usage, that turn's cost — never the transcript and
+    never the actor, and the same facts land on the span as an `agent.turn` event so a run
+    declaring no hook is still readable in a trace. A throw from it FAILS the run: an observer that
+    quietly stopped working reads exactly like one that is fine. Tokens on a screen is a different
+    contract from turns in a loop, and half-shipping it would be the second path axiom 1 refuses.
   - **No semantic cache on `agent()`.** Similar prompts do not have similar answers once the answer
     depends on what `lookupOrder` returned this second.
   - `AiMessage.content` widened to `string | readonly AiContentBlock[]` for this: a `tool_result`
     has to name the `tool_use` it answers and a string has nowhere to put the id. The block field
     names are the Messages API's, so `body()` passes them through untouched.
+- **`hive()` is a fan-out, and the FOURTH instance of the factory rule** (after `llm()`,
+  `backfill()` and `agent()`) — it returns an `action`, never a ninth primitive. It exists because
+  the alternative is a hand-rolled `Promise.all` over `agent()` calls, and that loop gets four
+  things wrong every time: the actor, the order, the difference between ran-and-failed and
+  never-ran, and the ceiling.
+  - **`HiveResult` is a SCHEMA, not an interface**, built from the member action's own `output` and
+    embedded in the `ok` arm. That is what makes a hive project to OpenAPI, the typed client, the
+    MCP `outputSchema` and the manifest like any other action; a hand-written interface would have
+    given the type and none of the six projections, which is the whole reason it is a factory.
+  - **Three arms — `ok` / `failed` / `skipped` — never two.** A member that ran and threw and a
+    member that never ran are different facts, and an aborted sibling is the second. Two arms make
+    "the hive stopped early" indistinguishable from "every remaining item is bad data", which is
+    the difference between retrying the tail and fixing the source. `skipped` gets its own counter
+    beside `ok` and `failed` for the same reason: three arms and two counters means every caller
+    writes `members.length - ok - failed` once, and writes it wrong once.
+  - **`members` is in SPLIT order, always**, filled by index rather than pushed on settle, with
+    `index` on every arm so a caller can join a result back to its row without depending on array
+    position surviving a filter.
+  - **The hive never names an actor.** `split` derives member inputs from `input` and `ctx` and
+    from nothing a model emitted; each member runs through its own callable, so `invoke` applies
+    the member's own `policy` with `ctx.actor` untouched. There is no `as(actor)` in the factory —
+    the same boundary `agent()` holds, and the reason both belong in the framework.
+  - **No hive-specific budget code, deliberately.** One derived ledger for the run, `withBudget`
+    around the pool, each member's `agent()` deriving again — and the ceiling holds under
+    parallelism because `reserve` DEBITS on the root's turnstile before the call. Three members
+    against a ceiling only one fits leave exactly one `ok`; that is asserted through the hive
+    rather than asserted about the ledger, because the ledger already promised it.
+  - **`onMemberError` is required.** `'abort'` stops and leaves the rest `skipped`; `'collect'`
+    harvests. Both are right for somebody, so neither may be inherited silently.
+  - `concurrency` defaults to 4 and `minMembers` to 2, and neither number is measured off any run —
+    the framework cannot know a provider's concurrency allowance. A below-floor split still runs
+    every input it produced, serially: dropping one would be silent data loss.
+  - An empty split is `X_HIVE_EMPTY`, never a successful run of zero members — "0 ok, 0 failed"
+    cannot be told apart from a query that returned no rows and nobody noticed.
+  - An aborted `ctx` unwinds the whole hive with `X_ABORTED`, which is a DIFFERENT event from
+    `onMemberError: 'abort'`: the latter is a completed run with a partial harvest worth returning,
+    the former has nobody left to hand it to.
+- **`describeAgents()` publishes what an `ActionDescriptor` cannot.** An agent projects to the same
+  descriptor as any other action, and that descriptor knows nothing about turns, tools, models or
+  prompt hashes — so "how far can this loop and what may it call" had no answer outside the source.
+  Same shape as `describePrompts()` / `describeEvals()`, and deliberately NOT a new
+  `ActionDescriptor` field: `@ultimat3/action` is tier 3 and knows nothing about models.
+  The facts are a THUNK, resolved when asked: `agent()` runs at module scope beside the actions it
+  lists, and every name in a row is stamped by `registerAction` at boot. An agent still carrying no
+  name has no row — not a silent drop, but the absence of a capability: an action with no name
+  reaches no route, no tool catalogue and no queue. `named()` builds a TWIN where registration
+  names in place, so an agent renamed that way is absent for the same reason; register it instead.
+- **`agentJob()` closes #125 for the agent case, by COMPOSING `job()`** — the returned value is one
+  `job()` seated in that package's own registry, so `.enqueue()`, the outbox, the worker's
+  cancellation, the dead-letter path, `x jobs show` and its manifest row arrive without a line here.
+  Never an imitation handle: `isJobHandle` needs `kind === 'job'` plus membership of a WeakMap only
+  `job()` writes, which is exactly what stops a second execution path existing.
+  - `name`, `tenant` and `retry` are REQUIRED, no defaults. `name` because a job name is the durable
+    queue key that queued, retrying and dead-lettered rows already carry — deriving it from the
+    export name would move delivery when somebody renames a variable. `tenant` and `retry` because
+    `jobs` states that every candidate default for `tenant` is a cross-tenant read waiting for the
+    first job that takes an org id in its input. Both are `TS2741` when omitted AND have runtime
+    backstops (`X_JOB_TENANT_REQUIRED`, the `retry.attempts` assert), for generated and JS callers.
+  - **Both reads of `target.job()` are LAZY**, and that is load-bearing: `actionName()` throws
+    `X_ACTION_UNREGISTERED` until boot stamps the export name, and `agentJob()` is evaluated at
+    module scope right beside the `agent()` it wraps. Same rule as `agent()`'s tool projection and
+    `describeAgents()`' thunk — third instance in this package.
+  - **The at-least-once trap is DOCUMENTED, not enforced, and that is a decision with evidence.**
+    `idempotencyKey` dedupes the ENQUEUE, never the ATTEMPT: a lost lease re-runs the agent from the
+    top, as does every page `backfill()` replays. So every tool an `agentJob()`'d agent may call has
+    to be idempotent. The framework cannot check it: `mutates` is not a fact an `action()` declares
+    — it exists only in `@ultimat3/mcp`, whose `projectable.ts` sets it to `true` for EVERY action —
+    so a read-only `lookupOrder` and a destructive `issueRefund` are indistinguishable, and
+    `ActionFacade`'s `Pick<>` carries no `idempotent` either (only `describe()` does, and that needs
+    a name). `isMutator` IS legible without a name, but `mutator()` is the local-first write
+    primitive: refusing only those would catch almost none of the risk while reading as if it caught
+    all of it. A wrong refusal is worse than a stated obligation, so the obligation is stated — in
+    `AgentJobOptions.idempotencyKey`'s doc comment and in the README, both naming the second refund.
+
 - **`configureAi({ redact })` is the one seam between `vars()` and the provider.** `vars()` is the
   one declared place a model call loads data, so it is the one place a redactor can see the row
   before it leaves the process; the redactor sees the whole RENDERED prompt and the system prompt,
