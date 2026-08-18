@@ -195,11 +195,11 @@
       "name": "@ultimat3/action",
       "version": "2.0.0",
       "dependencies": {
-        "@ultimat3/cache": "1.2.0",
-        "@ultimat3/core": "1.2.0",
-        "@ultimat3/http": "1.2.0",
-        "@ultimat3/policy": "1.2.0",
-        "@ultimat3/schema": "1.2.0",
+        "@ultimat3/cache": "2.0.0",
+        "@ultimat3/core": "2.0.0",
+        "@ultimat3/http": "2.0.0",
+        "@ultimat3/policy": "2.0.0",
+        "@ultimat3/schema": "2.0.0",
       },
     },
     "packages/admin": {
@@ -227,14 +227,15 @@
       "name": "@ultimat3/ai",
       "version": "2.0.0",
       "dependencies": {
-        "@ultimat3/action": "1.2.0",
-        "@ultimat3/cache": "1.2.0",
-        "@ultimat3/core": "1.2.0",
-        "@ultimat3/db": "1.2.0",
-        "@ultimat3/money": "1.2.0",
-        "@ultimat3/policy": "1.2.0",
-        "@ultimat3/schema": "1.2.0",
-        "@ultimat3/time": "1.2.0",
+        "@ultimat3/action": "2.0.0",
+        "@ultimat3/cache": "2.0.0",
+        "@ultimat3/core": "2.0.0",
+        "@ultimat3/db": "2.0.0",
+        "@ultimat3/jobs": "2.0.0",
+        "@ultimat3/money": "2.0.0",
+        "@ultimat3/policy": "2.0.0",
+        "@ultimat3/schema": "2.0.0",
+        "@ultimat3/time": "2.0.0",
       },
     },
     "packages/auth": {
@@ -250,7 +251,7 @@
       "name": "@ultimat3/cache",
       "version": "2.0.0",
       "dependencies": {
-        "@ultimat3/core": "1.2.0",
+        "@ultimat3/core": "2.0.0",
       },
     },
     "packages/cli": {
@@ -333,27 +334,27 @@
       "name": "@ultimat3/http",
       "version": "2.0.0",
       "dependencies": {
-        "@ultimat3/core": "1.2.0",
-        "@ultimat3/i18n": "1.2.0",
-        "@ultimat3/schema": "1.2.0",
-        "@ultimat3/time": "1.2.0",
+        "@ultimat3/core": "2.0.0",
+        "@ultimat3/i18n": "2.0.0",
+        "@ultimat3/schema": "2.0.0",
+        "@ultimat3/time": "2.0.0",
       },
     },
     "packages/i18n": {
       "name": "@ultimat3/i18n",
       "version": "2.0.0",
       "dependencies": {
-        "@ultimat3/core": "1.2.0",
+        "@ultimat3/core": "2.0.0",
       },
     },
     "packages/jobs": {
       "name": "@ultimat3/jobs",
       "version": "2.0.0",
       "dependencies": {
-        "@ultimat3/core": "1.2.0",
-        "@ultimat3/entity": "1.2.0",
-        "@ultimat3/schema": "1.2.0",
-        "@ultimat3/time": "1.2.0",
+        "@ultimat3/core": "2.0.0",
+        "@ultimat3/entity": "2.0.0",
+        "@ultimat3/schema": "2.0.0",
+        "@ultimat3/time": "2.0.0",
       },
     },
     "packages/mail": {
@@ -395,15 +396,15 @@
       "name": "@ultimat3/money",
       "version": "2.0.0",
       "dependencies": {
-        "@ultimat3/core": "1.2.0",
-        "@ultimat3/schema": "1.2.0",
+        "@ultimat3/core": "2.0.0",
+        "@ultimat3/schema": "2.0.0",
       },
     },
     "packages/policy": {
       "name": "@ultimat3/policy",
       "version": "2.0.0",
       "dependencies": {
-        "@ultimat3/core": "1.2.0",
+        "@ultimat3/core": "2.0.0",
       },
     },
     "packages/pwa": {
@@ -448,6 +449,16 @@
       "name": "@ultimat3/schema",
       "version": "2.0.0",
     },
+    "packages/scraping": {
+      "name": "@ultimat3/scraping",
+      "version": "2.0.0",
+      "dependencies": {
+        "@ultimat3/core": "2.0.0",
+        "@ultimat3/jobs": "2.0.0",
+        "@ultimat3/schema": "2.0.0",
+        "@ultimat3/storage": "2.0.0",
+      },
+    },
     "packages/seo": {
       "name": "@ultimat3/seo",
       "version": "2.0.0",
@@ -459,7 +470,7 @@
       "name": "@ultimat3/storage",
       "version": "2.0.0",
       "dependencies": {
-        "@ultimat3/core": "1.2.0",
+        "@ultimat3/core": "2.0.0",
       },
     },
     "packages/testing": {
@@ -664,6 +675,8 @@
     "@ultimat3/render": ["@ultimat3/render@workspace:packages/render"],
 
     "@ultimat3/schema": ["@ultimat3/schema@workspace:packages/schema"],
+
+    "@ultimat3/scraping": ["@ultimat3/scraping@workspace:packages/scraping"],
 
     "@ultimat3/seo": ["@ultimat3/seo@workspace:packages/seo"],
 

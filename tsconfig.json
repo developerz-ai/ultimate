@@ -81,6 +81,9 @@
       "path": "./packages/schema"
     },
     {
+      "path": "./packages/scraping"
+    },
+    {
       "path": "./packages/seo"
     },
     {

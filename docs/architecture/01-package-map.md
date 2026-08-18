@@ -1,6 +1,6 @@
 # Package map
 
-28 packages, 6 tiers. **One package = one reason to change.** If two things in a package change for different reasons, they are two packages.
+29 packages, 6 tiers. **One package = one reason to change.** If two things in a package change for different reasons, they are two packages.
 
 Rationale for the primitives themselves: [`../idea/02-primitives.md`](../idea/02-primitives.md). Enforcement: [`02-boundaries.md`](./02-boundaries.md).
 
@@ -14,7 +14,7 @@ tier 1  i18n, money, time, cache, seo, db, storage, flags   (may import tier 0)
 tier 2  entity, policy, http, auth                   (may import tier 0-1)
 tier 3  action, query, jobs, realtime                (may import tier 0-2)
 tier 4  render, pwa, mcp, ai, manifest, mail         (may import tier 0-3)
-tier 5  ui, admin, testing, cli                      (may import tier 0-4)
+tier 5  ui, admin, testing, cli, scraping           (may import tier 0-4)
 ```
 
 [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) is the executable copy of this block; `bun run boundaries` reads that one. Prose and code must agree.

@@ -136,7 +136,7 @@ A package may import from strictly lower tiers. Never sideways within a tier, ne
 | 2 | `entity`, `policy`, `http`, `auth` |
 | 3 | `action`, `query`, `jobs`, `realtime` |
 | 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail` |
-| 5 | `ui`, `admin`, `testing`, `cli` |
+| 5 | `ui`, `admin`, `testing`, `cli`, `scraping` |
 
 Declared sideways edges, each earning its line: `admin → ui`, `realtime → query`, `cli → admin`, `cli → testing`, `create-ultimate → cli`.
 
