@@ -73,7 +73,7 @@ bun run scripts/list-workspaces.ts --json \
 To bootstrap **one** package — which is what `@ultimat3/flags` needs — publish just that one:
 
 ```sh
-npm publish -w @ultimat3/flags --access public
+npm publish -w @ultimat3/flags --access public --provenance=false
 ```
 
 ## One-time: configure the trusted publisher (per package)
@@ -90,8 +90,9 @@ On npmjs.com, for **each** package: `npmjs.com/package/<name>` → **Settings** 
 
 The GitHub org is `developerz-ai` with a hyphen; the npm scope is `@ultimat3`. Both are correct.
 
-`Environment` is the row that changed, and **`As of 2026-08` it is still blank on the registry** —
-this table says what it must become, not what it is. Blank means *any* environment: npm accepts a
+`Environment` is the row that changed. It was **blank on the registry until 2.0.0**, on all 29
+packages — this table says what it must be, and `bun run scripts/trust-publishers.ts` is what makes
+it so; `--check` refuses a publisher that carries none. Blank means *any* environment: npm accepts a
 token from any run of `release.yml`, whatever job produced it and whatever approval it did or did
 not pass. Setting it to `npm-publish` makes the registry itself refuse a token minted outside the
 approval-gated environment, which is the half GitHub cannot enforce, and it must match
@@ -100,19 +101,29 @@ approval-gated environment, which is the half GitHub cannot enforce, and it must
 
 ## Human steps outside this file
 
-**Do these before the next release. `As of 2026-08` none of them is done.**
+**`As of 2026-08` all four are done, at 2.0.0.** What follows is what each one is for and how to
+redo it, not a to-do list.
 
-Four settings live in the GitHub and npm UIs, and no YAML in this repo can create them. **None of
-them fails loudly if you skip it** — that is the whole problem, and it is why they are written out
-one at a time with what skipping each one actually costs. Do them in this order: step 1 is the only
-one that breaks a release, and it breaks it *after* two packages have already published
-irreversibly.
+**Three of the four are scriptable, and this file said otherwise until 2.0.0.** Only step 2's
+*reviewer* choice is genuinely a human decision:
+
+| Step | How |
+|---|---|
+| 1 · bootstrap a never-published package | `npm publish -w <pkg> --access public --provenance=false` |
+| 2 · `npm-publish` environment + reviewers + `v*` tag rule | GitHub REST — `PUT /repos/{o}/{r}/environments/npm-publish`, then `POST .../deployment-branch-policies` with `{"name":"v*","type":"tag"}` |
+| 3 · trusted publisher per package | `bun run scripts/trust-publishers.ts` — it wraps `npm trust github`, which shipped in **npm 12** |
+| 4 · the environment ON each publisher | the same script; it passes `--environment npm-publish` |
+
+**None of them fails loudly if you skip it** — that is the whole problem, and it is why each is
+written out with what skipping it actually costs. Do them in this order: step 1 is the only one that
+breaks a release, and it breaks it *after four packages* have already published irreversibly
+(`core`, `schema`, `cache`, `db` — the publish order is tiered, and `flags` is fifth).
 
 ### 1. Publish `@ultimat3/flags` by hand — do this first
 
 ```sh
 npm login                                    # as an @ultimat3 org member
-npm publish -w @ultimat3/flags --access public
+npm publish -w @ultimat3/flags --access public --provenance=false
 ```
 
 Then attach its trusted publisher exactly as in
@@ -123,9 +134,17 @@ derived, so it is included from this release on. Trusted publishing cannot boots
 does not exist yet, so the workflow will fail on it.
 
 **Cost of skipping: an irreversible partial release.** The workflow publishes tier by tier and
-aborts on the first failure. `flags` is tier 1, so `@ultimat3/core` and `@ultimat3/schema` are
-already on the registry at the new version when the run dies — and npm publishes cannot be undone.
-You would be recovering by hand, with 2 of 29 packages a version ahead of the other 27.
+aborts on the first failure. Measured against the derived list at 2.0.0, `flags` is **fifth** — so
+`@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/cache` and `@ultimat3/db` are already on the
+registry at the new version when the run dies, and npm publishes cannot be undone. You would be
+recovering by hand, with 4 of 29 packages a version ahead of the other 25.
+
+**A bootstrap cannot carry provenance.** `publishConfig.provenance: true` is on every package, and
+npm can only attest from CI — a local publish dies with `EUSAGE — Automatic provenance generation
+not supported for provider: null`. Pass `--provenance=false` on that one invocation. **Never edit
+`publishConfig`**: the field is what keeps provenance on every later release, and removing it
+degrades them all silently. The bootstrapped version is the one version of that package with no
+attestation.
 
 **Do not "fix" this by removing `flags` from the list.** The list is derived precisely so no package
 can be silently absent again; the loud failure is the feature.
