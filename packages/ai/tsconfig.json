@@ -21,6 +21,9 @@
       "path": "../db"
     },
     {
+      "path": "../jobs"
+    },
+    {
       "path": "../money"
     },
     {

@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { agentActor } from '@ultimat3/core';
-import { forbidden } from '@ultimat3/policy';
+import { action } from '@ultimat3/action';
+import { agentActor, createContext, runWithContext } from '@ultimat3/core';
+import { allow, forbidden } from '@ultimat3/policy';
+import { t } from '@ultimat3/schema';
 import type { ProjectableAction } from './tools';
-import { runLlmToolCall, toLlmTool, toLlmTools } from './tools';
+import { asProjectableAction, runLlmToolCall, toLlmTool, toLlmTools, toolLabel } from './tools';
 
 const actor = agentActor({ id: 'agent-1' });
 
@@ -131,5 +133,69 @@ describe('runLlmToolCall renders a failure the model can act on', () => {
       actor,
     );
     expect(result).toEqual({ toolUseId: 'call-4', content: 'tool failed', isError: true });
+  });
+});
+
+describe('asProjectableAction', () => {
+  const publishPost = () =>
+    action({
+      input: t.object({ id: t.string }),
+      output: t.object({ published: t.boolean }),
+      policy: allow(),
+      mcp: { expose: true, description: 'Publish a draft post' },
+      handle: ({ input, ctx }) => ({ published: `${input.id}:${ctx.actor.id}` !== '' }),
+    });
+
+  test("a real action() becomes the seam, carrying its own schema and its declaration's name", () => {
+    const projected = asProjectableAction(publishPost().named('publishPost'));
+    expect(projected.name).toBe('publishPost');
+    expect(projected.description).toBe('Publish a draft post');
+    expect(projected.mcp?.expose).toBe(true);
+    // The action's own `input:`, not the empty stand-in `toLlmTool` falls back to.
+    expect(projected.inputJsonSchema).toMatchObject({
+      type: 'object',
+      properties: { id: { type: 'string' } },
+      required: ['id'],
+    });
+  });
+
+  test('run() is invoke: the action parses the model’s arguments and runs as the given actor', async () => {
+    const seen: string[] = [];
+    const probe = action({
+      input: t.object({ id: t.string }),
+      output: t.object({ id: t.string }),
+      policy: allow(),
+      mcp: { expose: true },
+      handle: ({ input, ctx }) => {
+        seen.push(`${ctx.actor.id}:${JSON.stringify(input)}`);
+        return { id: input.id };
+      },
+    }).named('probe');
+
+    await runWithContext(createContext({}), async () => {
+      const result = await runLlmToolCall(
+        [asProjectableAction(probe)],
+        // The model names an actor and an extra field. Neither survives the action's own parse.
+        { id: 'call-9', name: 'probe', input: { id: 'p1', actor: 'admin' } },
+        actor,
+      );
+      expect(result).toEqual({ toolUseId: 'call-9', content: '{"id":"p1"}' });
+    });
+    expect(seen).toEqual(['agent-1:{"id":"p1"}']);
+  });
+
+  test('an unnamed action is refused rather than offered as a tool called ""', () => {
+    expect(() => asProjectableAction(publishPost())).toThrow('X_ACTION_UNREGISTERED');
+  });
+
+  test('an already-projectable object passes through as itself', () => {
+    const fake = projectable('handRolled', { expose: true });
+    expect(asProjectableAction(fake)).toBe(fake);
+  });
+
+  test('toolLabel names an unregistered action instead of failing to name it', () => {
+    expect(toolLabel(publishPost())).toBe('(an unregistered action)');
+    expect(toolLabel(publishPost().named('publishPost'))).toBe('publishPost');
+    expect(toolLabel(projectable('handRolled'))).toBe('handRolled');
   });
 });

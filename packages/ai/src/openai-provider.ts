@@ -114,14 +114,22 @@ class OpenAiProvider implements Provider {
   async generate(request: GenerateRequest): Promise<GenerateResult> {
     if (requiresStreaming(request)) return this.assemble(request);
     const model = this.modelOf(request);
-    const response = await this.send(chatCompletionBody({ request, model, stream: false }), false);
+    const response = await this.send(
+      chatCompletionBody({ request, model, stream: false }),
+      false,
+      request.signal,
+    );
     const answer = parseChatCompletion((await response.json()) as unknown, this.name);
     return this.result(request, model, answer);
   }
 
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
     const model = this.modelOf(request);
-    const response = await this.send(chatCompletionBody({ request, model, stream: true }), true);
+    const response = await this.send(
+      chatCompletionBody({ request, model, stream: true }),
+      true,
+      request.signal,
+    );
     if (response.body === null) {
       throw new AiTransportError({
         provider: this.name,
@@ -183,7 +191,11 @@ class OpenAiProvider implements Provider {
    * its status, because the gateway decides whether to retry from that status and a body parsed as
    * if it were a message would read as an empty, successful answer.
    */
-  private async send(body: Record<string, unknown>, streaming: boolean): Promise<Response> {
+  private async send(
+    body: Record<string, unknown>,
+    streaming: boolean,
+    signal: AbortSignal | undefined,
+  ): Promise<Response> {
     const apiKey = this.apiKey();
     const doFetch = this.config.fetch ?? fetch;
     const response = await doFetch(this.url(), {
@@ -199,6 +211,8 @@ class OpenAiProvider implements Provider {
         ...this.config.headers,
       },
       body: JSON.stringify(body),
+      // Attached only when the caller has one — same rule, same reason, as the Anthropic half.
+      ...(signal === undefined ? {} : { signal }),
     });
     if (!response.ok) {
       throw new AiTransportError({

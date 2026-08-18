@@ -35,6 +35,7 @@
     "@ultimat3/cache": "2.0.0",
     "@ultimat3/core": "2.0.0",
     "@ultimat3/db": "2.0.0",
+    "@ultimat3/jobs": "2.0.0",
     "@ultimat3/money": "2.0.0",
     "@ultimat3/policy": "2.0.0",
     "@ultimat3/schema": "2.0.0",

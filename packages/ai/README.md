@@ -300,22 +300,160 @@ export const support = agent({
   output: t.object({ answer: t.string }),
   prompt: supportPrompt,
   vars:   ({ input }) => ({ orderId: input.orderId }),
-  tools:  [lookupOrder, issueRefund],          // actions, each mcp.expose
+  tools:  [lookupOrder, issueRefund],          // real actions, each mcp.expose
   maxTurns: 6,
   maxToolResultChars: 4_000,
   budget: { tokensPerRun: 200_000, costPerCall: { minor: 50, currency: 'USD' } },
   policy: can('order:support'),
+  onTurn: ({ turn, toolCalls, cost }) => progress.push({ turn, toolCalls, cost }),
 });
 ```
+
+`tools` takes the `action()` an app already wrote — `[lookupOrder, issueRefund]`, the imports
+themselves. `As of 2026-08`: it took a hand-shaped `ProjectableAction` until then, so the line
+above was a `TS2741` against every real action (issue #124) and the only thing that satisfied it
+was a stand-in written for a test.
+
+An `agent()` returns an action, so **an agent is a tool of another agent** — a supervisor lists a
+sub-agent in its own `tools` and the sub-agent runs under the same actor, through the same policy.
+No `hive()`, no supervisor primitive: it falls out of the factory rule.
 
 | Rule | Why |
 |---|---|
 | the actor is **`ctx.actor`**, read once, never from the model | this is the mistake a hand-rolled loop ships, and the reason the loop belongs in the framework |
+| an aborted `ctx` unwinds the run — at the top of every turn, before every tool batch, and on the socket | the transcript IS the request, so a loop that keeps going after the caller disconnects re-sends it once per remaining turn, runs every remaining side effect and discards the answer. `ctx.signal` rides on `GenerateRequest` too, so a call already in flight is cut rather than paid for |
+| the tools of **one turn** run concurrently, results paired by `tool_use` id | a turn asking for five tools cost 5x wall clock and nothing said so. Order is positional, never by completion; the batch is bounded by what one turn asked for, and each tool is an action with its own `policy` and `rateLimit`, so a second ceiling here would be a throttle competing with those |
+| `onTurn` reports each completed turn as it happens (and an `agent.turn` span event, always) | a 90-second run emitted nothing until it returned. Observation only — it cannot steer the loop, see the transcript or reach the actor — and a throw from it fails the run rather than being swallowed |
 | a tool that is not `mcp: { expose: true }` is `X_AGENT_TOOL_UNEXPOSED` **at declaration** | a silently dropped tool reads as offered and is not; `isMcpExposed` is the one predicate, so an in-app agent and an external MCP client see the same catalogue |
 | running out of turns is `X_AGENT_MAX_TURNS`, never a partial answer | a half-finished transcript returned as a result is working notes presented as a decision |
 | `budget.tokensPerRun` caps the **whole run** | a single call is bounded by `maxTokens`; a loop is bounded by nothing until this is set |
 | a tool result is truncated, and says so | the transcript IS the request, so an untruncated result is re-billed once per remaining turn |
 | **no semantic cache** | similar prompts do not have similar answers once the answer depends on what `lookupOrder` returned this second |
+
+## `hive()` — many members, one action
+
+Fan an action out over many inputs. The fourth factory over a primitive, after `llm()`,
+`backfill()` and `agent()`: a fan-out is still one server-authoritative operation with an input
+schema, an output schema and a policy.
+
+```ts
+import { action, t } from '@ultimat3/action';
+import { hive } from '@ultimat3/ai';
+import { allow } from '@ultimat3/policy';
+
+const summarisePost = action({
+  input: t.object({ postId: t.uuid }),
+  output: t.object({ summary: t.string }),
+  policy: allow(),
+  mcp: { expose: true },
+  handle: ({ input }) => ({ summary: input.postId }),
+});
+
+export const summariseBacklog = hive({
+  input: t.object({ postIds: t.array(t.uuid) }),
+  member: summarisePost,
+  split: ({ input }) => input.postIds.map((postId) => ({ postId })),
+  concurrency: 8,
+  minMembers: 2,
+  onMemberError: 'collect',
+  budget: { tokensPerRun: 500_000 },
+  policy: allow(),
+});
+```
+
+`member` is any action — most usefully an `agent()`, which makes a hive a **supervisor over
+sub-agents** with no supervisor primitive anywhere.
+
+| Rule | Why |
+|---|---|
+| `members` comes back in **split order**, with `index` on every arm | a hand-rolled `Promise.all` reports in completion order, so joining a result back to the row it came from silently depends on nothing having failed |
+| three arms — `ok`, `failed`, `skipped` — never two | *ran and threw* and *never ran* are different facts, and an aborted sibling is the second. Collapsing them makes "the hive stopped early" read as "every remaining item is bad data" |
+| `onMemberError` is **required** | `'abort'` stops and leaves the rest `skipped`; `'collect'` harvests the rest. Both are right for somebody, so neither is a default |
+| the hive **never names an actor** | `split` derives member inputs from `input` and `ctx` and from nothing a model emitted; each member runs through its own callable, so `invoke` applies the member's own policy with `ctx.actor` untouched |
+| `concurrency` bounds the fan-out; one derived ledger bounds the spend | the ceiling holds under parallelism because the budget's root turnstile debits before the call, so three members against a ceiling only one fits leave exactly one `ok` — no hive-specific budget code exists |
+| an empty split is `X_HIVE_EMPTY` | "0 ok, 0 failed" cannot be told apart from a query that returned no rows and nobody noticed |
+| `minMembers` (default 2) stops fanning out, and **drops nothing** | a member's fixed cost dominates trivial work; below the floor every input still runs, serially |
+| an aborted `ctx` unwinds the whole hive with `X_ABORTED` | distinct from `onMemberError: 'abort'`, which is a completed run with a partial harvest worth returning — here there is nobody left to hand it to |
+
+## `agentJob()` — an agent as durable background work
+
+Run an agent over a million rows as resumable, retried, budgeted queue work. `As of 2026-08` this
+is the only way an agent reaches a queue at all: `.job()` hands back `kind: 'action-job'`, and
+`isJobHandle` needs `kind === 'job'` plus membership of a `WeakMap` only `job()` writes, so nothing
+externally shaped has ever reached the registry, the worker or the dead-letter path (issue #125).
+
+```ts
+import { t } from '@ultimat3/action';
+import { agent, agentJob, definePrompt } from '@ultimat3/ai';
+import { allow } from '@ultimat3/policy';
+
+const summarisePost = agent({
+  input: t.object({ postId: t.uuid, orgId: t.uuid }),
+  output: t.object({ summary: t.string }),
+  prompt: definePrompt<{ postId: string }>({
+    id: 'summarise-post',
+    version: '1.0.0',
+    template: 'Summarise post {{postId}}.',
+  }),
+  vars: ({ input }) => ({ postId: input.postId }),
+  tools: [],
+  policy: allow(),
+});
+
+export const summariseBacklog = agentJob(summarisePost, {
+  name: 'summarise-backlog',
+  tenant: (input) => input.orgId,
+  retry: { attempts: 3, backoff: 'exponential' },
+});
+```
+
+It composes `job()` rather than imitating a handle, so `.enqueue()`, the outbox, the worker's
+cancellation, `x jobs show` and its manifest row all arrive for free. Pair it with `backfill()` for
+the sweep and `hive()` for the fan-out inside one page.
+
+| Rule | Why |
+|---|---|
+| `name` is required, and is the queue key | a job name is what queued, retrying and dead-lettered rows already carry, so renaming an export must not move where they are delivered |
+| `tenant` and `retry` are required, no default | `jobs` states it: every candidate default for `tenant` is a cross-tenant read waiting for the first job that takes an org id in its input. `tenant: 'none'` is the explicit statement that it touches no scoped table |
+| the action projection is read **lazily** | `agentJob()` runs at module scope beside the `agent()` it wraps, and names are stamped by `registerAction` at boot — reading `.job()` eagerly makes that ordinary file `X_ACTION_UNREGISTERED` |
+| one execution path, and it is the action's | `run` is `invoke(agent, input, { surface: 'job', ctx })`, so the agent's policy, input parse, budget scope and span all apply — and the `ctx` is the worker's, so an attempt timing out aborts the agent's turn loop |
+| the actor is the worker context's, never the model's | the job body runs with system authority and the org comes from the job's declared `tenant`; nothing a model emits can reach either |
+
+### The at-least-once trap, said plainly
+
+**`idempotencyKey` dedupes the ENQUEUE, never the ATTEMPT.** Two enqueues with the same payload are
+one row. One row that a worker claims, half-runs and loses the lease on is claimed again, and **the
+agent runs a second time from the top** — as does every page a `backfill()` replays, since its
+`handle` is at-least-once by construction.
+
+So every tool the agent may call has to be idempotent: an `upsertAll`, an `updateWhere`, a statement
+whose second run changes nothing. Otherwise a replayed attempt issues a second refund.
+
+**The framework does not check this, and the reason is worth knowing.** `mutates` is not a fact an
+`action()` declares — it exists only in `@ultimat3/mcp`, which sets it to `true` for *every* action
+it projects — so a read-only `lookupOrder` and a destructive `issueRefund` are indistinguishable
+here. A rule refusing every tool that has not declared `idempotent: true` would refuse the reads
+too, and a wrong refusal is worse than a stated obligation. `isMutator` is legible, but `mutator()`
+is the local-first write primitive and catches almost none of the risk while reading as if it
+caught all of it. This is a contract you keep, not one the compiler keeps for you.
+
+## `describeAgents()` — what the manifest can say
+
+```ts
+import { describeAgents } from '@ultimat3/ai';
+
+describeAgents();
+// [{ name: 'supportAgent', prompt: 'support@1.0.0', promptHash: '…', model: 'claude-opus-5',
+//    maxTurns: 6, maxToolResultChars: 4000, tools: ['issueRefund', 'lookupOrder'],
+//    budget: { tokensIn: null, tokensPerRun: 200000, costPerCall: { minor: 50, currency: 'USD' } },
+//    mcp: true }]
+```
+
+An agent projects to an `ActionDescriptor` like any other action, and that descriptor knows nothing
+about turns or tools — so "how far can this loop, and what may it call" had no answer outside the
+source. Names are read when you ask, not when the agent was declared: `registerAction` stamps them
+at boot, long after `agent()` ran at module scope. An agent nothing registered has no row, because
+an action with no name reaches no route, no tool catalogue and no queue.
 
 ## Redaction: one declared seam
 
