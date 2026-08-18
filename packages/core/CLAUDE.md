@@ -214,6 +214,15 @@ Every `UltimateError` carries `retry` (`terminal | retryable | retry-after`), **
 registration path and it refuses to reclassify a core code, the same way `registerErrorStatus`
 refuses to remap one. A new code in any package should be classified beside its declaration.
 
+Two readers of that table, and picking the wrong one is a live defect. `retryFor(code)` answers
+*what to do* and fails closed; `declaredErrorRetry(code)` answers *what somebody declared* and is
+`undefined` when nobody did. `retry` on the instance is `init.retry ?? retryFor(code)`, so every
+unclassified error already reads `terminal` — a caller deciding whether to STOP work in flight
+(`@ultimat3/jobs`' executor) must read `declaredErrorRetry`, or it dead-letters attempt 1 of every
+job in every app whose codes nobody classified. An instance `retry: 'terminal'` on an **unregistered**
+code is indistinguishable from the default and is therefore read as unclassified; registering the
+code is the one way to have it honoured.
+
 Gotchas:
 - `exactOptionalPropertyTypes` is on — declare optional fields as `x?: T | undefined`.
 - `noPropertyAccessFromIndexSignature` is on — `ctx.services['mail']`, not `.mail`.

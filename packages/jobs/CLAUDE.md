@@ -237,6 +237,30 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   so, not a job that failed: nacking it re-runs completed work and records `retried` in
   `jobs_total{outcome}` for a failure that never happened. It propagates instead, and the worker's
   `jobs.worker.settle-failed` plus the lapsing lease are the honest answer.
+- **The retry decision reads the ERROR as well as the attempt count — added 2026-08.**
+  `executeJob` decided a retry from `nextRetry(handle.retry, attempt)` alone, so every `terminal`
+  classification in the framework was decorative on the job path: an `X_SCRAPE_AUTH_FAILED` from a
+  rotated password burned the whole policy, which at a site that locks an account after three wrong
+  passwords makes the framework's retry the thing that destroys the account.
+  `retry-classification.ts` composes AROUND `nextRetry` — the backoff arithmetic stays in one
+  place — and `nextRetryForError` is the only caller `execute.ts` has.
+
+  **`classifyThrown` must never read `error.retry` on its own.** That field is
+  `init.retry ?? retryFor(code)` and `retryFor` FAILS CLOSED, so every unclassified `UltimateError`
+  already carries `terminal`; reading it would dead-letter the first attempt of every job in every
+  app whose codes nobody has classified. Hence core's `declaredErrorRetry(code)`, which answers
+  `undefined` where `retryFor` answers the default — and hence the one case that is knowingly
+  under-read: an instance `retry: 'terminal'` on an UNREGISTERED code is indistinguishable from the
+  default and is treated as unclassified. Register the code; that is the one way.
+  `retry-after` reuses the delay the nack already takes (`meta.retryAfterSeconds`, clamped by the
+  policy's `maxDelay`) rather than a second suspension mechanism — `StepSuspension` stays the only
+  way to park a run, and unlike a suspension a retry-after DOES burn an attempt, because the work
+  failed. The ceiling outranks every classification but `terminal`.
+
+  **The verdict is published, not inferred**: `jobs.attempt.failed` and `reportError` carry
+  `stop`, `JobExecution` carries `stopReason`, and `recordedFailure` appends the terminal verdict to
+  the nack's `error` — `lastError` is the ONE failure field a row has, so without it `x jobs show`
+  renders a dead letter at attempt 1 of 5 as a silent early stop.
 - **The claim loop re-arms on the PASS, never on the jobs.** A slot belongs to its own job and is
   free the moment it settles, so `claimRound` starts what it claimed and returns the promises —
   ending the pass on `Promise.allSettled([...inFlight])` made the pool as slow as its slowest
@@ -530,6 +554,7 @@ picture from the other side.
 | `driver-memory.ts` | `x dev` / tests |
 | `driver-redis.ts`, `driver-nats.ts` | honest `X_NOT_IMPLEMENTED` stubs |
 | `retry.ts` | backoff arithmetic, dead-letter decision |
+| `retry-classification.ts` | the OTHER half of that decision: what the thrown error says, and the stop reason the row and the log carry |
 | `execute.ts` | `executeJob` — one claimed job run and settled, and the run's deadline/cancel |
 | `heartbeat.ts` | one claimed job's lease: the renewal interval and the loss it reports |
 | `worker.ts` | `worker` role, claim loop, drain |

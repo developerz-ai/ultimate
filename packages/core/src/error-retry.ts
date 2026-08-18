@@ -87,11 +87,23 @@ export function resetErrorRetry(): void {
   REGISTERED.clear();
 }
 
-// Core table first: `registerErrorRetry` already refuses those codes, so the order is
-// belt-and-braces — but it is the belt that keeps "core's classifications are fixed" true even if
-// a future caller reaches the map some other way.
+/**
+ * The classification somebody actually DECLARED for this code, `undefined` when nobody did.
+ *
+ * `retryFor` answers a client's question — "may I send this again?" — and fails closed, so it
+ * cannot tell a code declared `terminal` from a code nobody classified. A caller deciding whether
+ * to STOP work already in flight has to tell them apart: the job executor reads this, because
+ * treating every unclassified code as `terminal` would end the retry policy of every job in every
+ * shipped app, which is a far larger fault than the one that reading brings.
+ *
+ * Core table first, for the same belt-and-braces reason `retryFor` had it first.
+ */
+export function declaredErrorRetry(code: string): ErrorRetry | undefined {
+  return CORE_ERROR_RETRY[code] ?? REGISTERED.get(code);
+}
+
 export function retryFor(code: string): ErrorRetry {
-  return CORE_ERROR_RETRY[code] ?? REGISTERED.get(code) ?? DEFAULT_ERROR_RETRY;
+  return declaredErrorRetry(code) ?? DEFAULT_ERROR_RETRY;
 }
 
 /** Every classification a package or app declared, for `x errors list` and the manifest. */

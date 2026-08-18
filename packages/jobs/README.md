@@ -447,6 +447,28 @@ retrySchedule({ attempts: 5, backoff: 'exponential', delay: 1000 })
 // => [1000, 2000, 4000, 8000]
 ```
 
+**The error decides too, not only the attempt count** (`As of 2026-08`). `executeJob` reads the
+thrown error's retry classification — `@ultimat3/core`'s `registerErrorRetry`, the same table
+`--json` and an HTTP client read — and a code nobody classified keeps the attempt-count path
+exactly as it had before.
+
+| Thrown | What the queue does |
+|---|---|
+| a `terminal` code (`X_SCRAPE_AUTH_FAILED`, a validation fault, a permission denial) | dead-lettered on the attempt it happened, `attempt` recorded, remaining attempts unspent — a rotated password retried five times is five more wrong passwords at a site that locks the account after three |
+| a `retry-after` code (`X_RATE_LIMITED`, `X_OVERLOADED`) | retried at the time the responder NAMED — `meta.retryAfterSeconds`, clamped by the policy's `maxDelay` — instead of the backoff. Still an attempt, still under the ceiling |
+| a `retryable` code (`X_TIMEOUT`, `X_DRAINING`) | the backoff schedule above, unchanged |
+| an **unclassified** code, or anything that is not an `UltimateError` | the backoff schedule above, unchanged. Most codes are unclassified and `retryFor` answers `terminal` for all of them, so reading that would have stopped every transient retry in every app |
+
+Classify your app's codes beside the module that declares them — that import IS the registration:
+
+```
+registerErrorRetry({ X_INVOICE_REJECTED: 'terminal', X_GATEWAY_BUSY: 'retry-after' });
+```
+
+Why a job stopped is on the row and in the log, never inferred: `jobs.attempt.failed` carries
+`stop: 'terminal' | 'attempts-exhausted'`, `JobExecution.stopReason` carries the same, and a
+terminal dead letter appends its verdict to `lastError` so `x jobs show` explains an attempt 1 of 5.
+
 ## Limits
 
 Two layers, and the difference matters:

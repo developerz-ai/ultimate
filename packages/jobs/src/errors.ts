@@ -1,6 +1,6 @@
 // The X_* codes owned by @ultimat3/jobs. Every one names the command or code change that
 // fixes it — a job failure an agent cannot act on is a job failure that gets retried forever.
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes, registerErrorRetry, UltimateError } from '@ultimat3/core';
 
 /** Codes this package declares and owns. */
 export const JOB_OWNED_ERROR_CODES = [
@@ -65,6 +65,29 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
 registerErrorCodes(
   Object.fromEntries(Object.entries(JOB_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
+
+/**
+ * The codes of this package's that can be thrown INSIDE a job body, classified — `executeJob`
+ * reads this, so a `terminal` one dead-letters on the attempt it happened instead of spending the
+ * whole policy on an answer that cannot change. Same rule every package uses: retryable means the
+ * same code, run again, has a real chance of a different answer.
+ *
+ * Two are deliberately absent. `X_JOB_LEASE_LOST` and `X_JOB_SLOT_LOST` mean the row is somebody
+ * else's now, so this attempt's verdict is not this attempt's to give: dead-lettering would settle
+ * a job another worker is running. They keep the attempt-count path, which ends in the queue
+ * re-delivering — the honest outcome for "we stopped owning it".
+ */
+registerErrorRetry({
+  X_JOB_TIMEOUT: 'retryable',
+  X_DRIVER_UNAVAILABLE: 'retryable',
+  // A second `step.run` under one name is a defect in the handler, replayed identically forever.
+  X_STEP_DUPLICATE: 'terminal',
+  // A sweep whose source ran dry while its own count still matches rows: the next attempt resumes
+  // at the cursor that just ran dry and diverges again.
+  X_BACKFILL_STALLED: 'terminal',
+  X_BACKFILL_ENVIRONMENT: 'terminal',
+  X_BACKFILL_APPLIED: 'terminal',
+});
 
 const docsFor = (code: JobErrorCode): string => `https://ultimate.dev/errors/${code}`;
 

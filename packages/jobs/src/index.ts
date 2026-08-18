@@ -212,6 +212,8 @@ export { createPgOutboxStore } from './outbox-pg';
 
 export type { BackoffStrategy, Random, RetryDecision, RetryPolicy } from './retry';
 export { backoffDelayMs, DEFAULT_RETRY, nextRetry, retrySchedule } from './retry';
+export type { JobRetryDecision, JobStopReason } from './retry-classification';
+export { classifyThrown, nextRetryForError } from './retry-classification';
 export type {
   CronResolver,
   DispatchedOccurrence,
