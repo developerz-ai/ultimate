@@ -1,10 +1,7 @@
-/**
- * One bounded cache, on one canonical key, for every `Intl` formatter the framework builds.
- * A locale and a zone both arrive from a request header, so an unbounded `Map` keyed on the
- * caller's spelling is memory the client chooses: 4,096 case-variants of one zone name retained
- * 31 MB, and 20,000 valid `en-US-x-*` tags through `formatMoney` retained 55 MB of RSS.
- * The bound and the canonical key are two halves of ONE rule and neither is sufficient alone.
- */
+// One bounded cache, on one canonical key, for every `Intl` formatter the framework builds.
+// A locale and a zone both arrive from a request header, so an unbounded `Map` keyed on the
+// caller's spelling is memory the client chooses — 31 MB and 55.1 MB, measured `As of 2026-08` and
+// written up in the README. The bound and the canonical key are two halves of ONE rule.
 
 /**
  * Above the full canonical IANA set (445 zones as of tzdata 2025) so a correct app never evicts,
@@ -15,8 +12,9 @@ export const MAX_CACHED_FORMATTERS = 512;
 
 /** FIFO — a `Map` iterates in insertion order, so the first key inserted is the first evicted. */
 export function cachedFormatter<T>(cache: Map<string, T>, key: string, build: () => T): T {
-  const hit = cache.get(key);
-  if (hit !== undefined) return hit;
+  // Membership decides, never truthiness: `T` is the caller's, so a stored `undefined` is a hit.
+  // The cast is sound because `has` just proved the key is present, which `get`'s signature cannot.
+  if (cache.has(key)) return cache.get(key) as T;
   const formatter = build();
   if (cache.size >= MAX_CACHED_FORMATTERS) {
     const oldest = cache.keys().next().value;

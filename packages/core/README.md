@@ -452,8 +452,9 @@ export function euroFormatter(locale: string): Intl.NumberFormat {
 ```
 
 A locale arrives from `Accept-Language` and a zone from `x-timezone`, so an unbounded `Map` keyed
-on that string is **memory the client chooses**: 4,096 casings of one zone name retained 31 MB, and
-20,000 valid `en-US-x-*` tags through `formatMoney` retained 55 MB. The bound
+on that string is **memory the client chooses**. Measured `As of 2026-08`: 4,096 casings of one
+zone name retained 31 MB, and 20,000 valid `en-US-x-*` tags through `formatMoney` retained 55.1 MB.
+The bound
 (`MAX_CACHED_FORMATTERS`, 512, FIFO) and the canonical key are two halves of one rule and neither
 is sufficient alone — an unknown `-u-` extension value survives canonicalization as a distinct
 string, and the cap alone lets one locale evict itself under three spellings. A miss costs one

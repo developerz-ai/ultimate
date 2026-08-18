@@ -18,6 +18,21 @@ describe('cachedFormatter', () => {
     expect(built).toBe(1);
   });
 
+  test('a stored value is a hit even when it is `undefined` — membership, not truthiness', () => {
+    // Latent, not live: every shipped caller stores an `Intl.*` formatter. This pins the generic
+    // contract `T` advertises — reading a hit off `get(key) !== undefined` makes a cache
+    // instantiated with a nullable `T` rebuild on every single call, silently.
+    const cache = new Map<string, number | undefined>();
+    let built = 0;
+    const build = (): number | undefined => {
+      built += 1;
+      return undefined;
+    };
+    expect(cachedFormatter(cache, 'en', build)).toBe(undefined);
+    expect(cachedFormatter(cache, 'en', build)).toBe(undefined);
+    expect(built).toBe(1);
+  });
+
   test('evicts oldest-first at the cap, so a header cannot mint entries forever', () => {
     // The whole point: a locale or a zone arrives from a request header, and an unbounded Map
     // keyed on that string is memory the client chooses.

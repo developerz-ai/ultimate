@@ -74,12 +74,12 @@ on K8s off one committed file.
 `intl-cache.ts` is tier 0 because two tier-1 packages need it and tier 1 may not import sideways.
 It was `@ultimat3/time`'s, internal, until 2.0.0, when `@ultimat3/money`'s `formatMoney` was found
 keyed raw on the caller's locale into an unbounded `Map` — 20,000 valid `en-US-x-*` tags from one
-`Accept-Language` header retained +55.1 MB of RSS. Copying the FIFO into `money` would have been a
-second answer to one question (axiom 1); `money → time` is a sideways import `bun run boundaries`
-refuses. The bound and the canonical key are **two halves of one rule** and live in one file for
-that reason: a canonical key bounds nothing (an unknown `-u-` extension value survives
-canonicalization as a distinct string) and the cap alone lets one locale evict itself under three
-spellings. Never build an `Intl` formatter on a caller string without both.
+`Accept-Language` header retained +55.1 MB of RSS (measured `As of 2026-08`). Copying the FIFO into
+`money` would have been a second answer to one question (axiom 1); `money → time` is a sideways
+import `bun run boundaries` refuses. The bound and the canonical key are **two halves of one rule**
+and live in one file for that reason: a canonical key bounds nothing (an unknown `-u-` extension
+value survives canonicalization as a distinct string) and the cap alone lets one locale evict
+itself under three spellings. Never build an `Intl` formatter on a caller string without both.
 
 `secrets-errors.ts` registers its seven codes through `registerErrorCodes()` rather than joining
 `CORE_CODE_TITLES` — the codes and the module that throws them ship together, and `registerErrorCodes`

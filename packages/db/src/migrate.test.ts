@@ -261,6 +261,14 @@ describe('rollback validates its step count', () => {
   const migrationsFor = (rows: readonly LedgerRow[]): readonly Migration[] =>
     rows.map((row) => ({ ...addPosts, id: row.id, name: row.id }));
 
+  // "Refused" alone is satisfied by a check that runs AFTER the lock and the ledger read, which is
+  // exactly the placement the fix exists to rule out — so each refusal also asserts that neither
+  // statement went out. Returns the offenders, so a failure names the statement that escaped.
+  const statementsBeforeTheRefusal = (): readonly string[] =>
+    client.texts.filter(
+      (text) => text.includes('pg_try_advisory_lock') || text.includes('from x_migrations'),
+    );
+
   test('a negative step count is refused, not read as "all but the newest"', async () => {
     const rows = fiveRows();
     client.on(/from x_migrations/, { rows: [...rows] });
@@ -272,9 +280,10 @@ describe('rollback validates its step count', () => {
     expect((caught as { code: string }).code).toBe('X_INVARIANT');
     expect((caught as { cause: string }).cause).toContain('-1');
     expect((caught as { fix: string }).fix).toContain('rollback(');
-    // Nothing was reversed, and the ledger was never even read.
+    // Nothing was reversed, and the lock was never taken nor the ledger read.
     expect(client.texts.some((text) => text.includes('drop table'))).toBe(false);
     expect(client.texts.some((text) => text.includes('delete from x_migrations'))).toBe(false);
+    expect(statementsBeforeTheRefusal()).toEqual([]);
   });
 
   test('zero is refused too — a rollback that reverses nothing is a typo, not an intent', async () => {
@@ -286,6 +295,7 @@ describe('rollback validates its step count', () => {
     );
 
     expect((caught as { code: string }).code).toBe('X_INVARIANT');
+    expect(statementsBeforeTheRefusal()).toEqual([]);
   });
 
   test('a fractional step count is refused rather than truncated', async () => {
@@ -297,6 +307,7 @@ describe('rollback validates its step count', () => {
     );
 
     expect((caught as { code: string }).code).toBe('X_INVARIANT');
+    expect(statementsBeforeTheRefusal()).toEqual([]);
   });
 
   test('a positive integer still reverses exactly that many, newest first', async () => {

@@ -115,16 +115,20 @@ describe('the statement observer', () => {
   // inside the statement's own `try` would re-report a statement that succeeded as X_DB_UNAVAILABLE.
   test('a throwing observer reaches the caller as its own error, not a database failure', async () => {
     installFakeSql();
+    // A bare `Error` on purpose: the observer is app-supplied, an app can throw anything, and
+    // "arrives as itself" is the claim. Hoisted so the assertion can be identity — message
+    // equality passes on a re-wrapped copy, which is exactly the failure this test exists to see.
+    const thrown = new Error('n+1 in a strict test');
     setStatementObserver({
       onStatement(): void {
-        throw new Error('n+1 in a strict test');
+        throw thrown;
       },
     });
 
     const caught = await rejection(createPostgresClient({ url: TEST_URL }).query(sql`select 1`));
 
     expect(caught).not.toBeInstanceOf(DbError);
-    expect((caught as Error).message).toBe('n+1 in a strict test');
+    expect(caught).toBe(thrown);
   });
 
   test('reserving a connection and closing the pool are not statements', async () => {

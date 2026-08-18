@@ -130,6 +130,9 @@ describe('the instrument registry', () => {
     } catch (thrown) {
       caught = thrown;
     }
+    // Asserted before the cast: with nothing thrown, `caught` is `undefined` and reading `.code`
+    // dies as a `TypeError` naming neither the metric nor the missing refusal.
+    expect(isUltimateError(caught)).toBe(true);
     expect((caught as UltimateError).code).toBe('X_METRIC_NAME_INVALID');
     // The first observer is still the live one — the refusal changed nothing.
     expect(pointsOf('test_redeclare_observed')[0]?.value).toBe(1);

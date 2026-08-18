@@ -61,6 +61,38 @@ describe('reapBranches', () => {
       client.texts.some((text) => text.includes('drop database') && text.includes('truncated')),
     ).toBe(false);
   });
+
+  /**
+   * `Number.isFinite` is not the whole guard, because truncation does not always reach `NaN`:
+   * `'2020-01-01T00:00'` parses fine — as *local* time, an instant up to 14 hours from the one
+   * the string reads as, and never one `createBranch` wrote. `toISOString()` is the only writer
+   * (`branch.ts`), so a comment that does not round trip through it is not the framework's, and
+   * the reaper leaves it alone rather than acting on a date nobody wrote.
+   */
+  test('a finite but non-canonical createdAt is skipped too, not reaped on a date nobody wrote', async () => {
+    const client = createRecordingClient();
+    client.on('pg_database', {
+      rows: [
+        // Both parse, both are finite, and both are far older than the cutoff — so the finite
+        // check alone drops them, and only the round trip spares them.
+        { name: 'truncated_local', comment: 'ultimate:branch:2020-01-01T00:00', size_bytes: 0 },
+        { name: 'no_millis', comment: 'ultimate:branch:2020-01-01T00:00:00Z', size_bytes: 0 },
+        {
+          name: 'stale',
+          comment: `ultimate:branch:${new Date(Date.now() - 10_000).toISOString()}`,
+          size_bytes: 0,
+        },
+      ],
+    });
+
+    const dropped = await reapBranches({ client, maxAgeMs: 1_000 });
+
+    expect(dropped).toEqual(['stale']);
+    expect(client.texts.some((text) => text.includes('drop database'))).toBe(true);
+    expect(
+      client.texts.some((text) => text.includes('drop database') && !text.includes('"stale"')),
+    ).toBe(false);
+  });
 });
 
 /**
