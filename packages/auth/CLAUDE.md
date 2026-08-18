@@ -18,6 +18,18 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 
 - Every credential failure throws `loginFailed()` — one code, one cause, one fix. Adding a
   parameter to it re-opens account enumeration.
+- **A stored hash Bun cannot read is the generic failure, and it burns the same KDF** (`As of
+  2026-08`). `Bun.password.verify` THROWS rather than answering `false` on an unsupported algorithm
+  (a Django `pbkdf2_sha256$…` row: `UnsupportedAlgorithm`) or a malformed PHC string
+  (`InvalidEncoding`), so `verifyPassword` catching nothing was two faults at once: a bare `Error`
+  out of `login()` — a 500 where `loginFailed()`'s `X_UNAUTHENTICATED` belongs — and an enumeration
+  oracle on exactly the rows that have not migrated off the legacy scheme, which is the normal
+  state of a table mid-migration. `verifyAgainst` (`password.ts`) answers `null` there, and `null`
+  joins the no-user branch, `''` with it. Nothing is logged: the algorithm of an unreadable hash is
+  the same oracle one layer down. An `AuthError` out of the gate (`X_OVERLOADED`) is **re-thrown**,
+  never folded into the failure — a shed is load, not a verdict. Supported-but-old stays a verdict:
+  bcrypt verifies natively and `needsRehash` flags it, which is the rehash-on-login lever a legacy
+  migration rewrites rows with, and `password.test.ts` pins both halves.
 - The limiter's table is **bounded**, and the eviction order is part of the guarantee. `ipKey`
   mints one entry per source address, so half the keys are attacker-chosen and a spray from an
   IPv6 /64 is a fresh key per attempt. Every bucket carries `forgetAtMs` — window emptied *and*

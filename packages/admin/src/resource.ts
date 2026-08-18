@@ -131,7 +131,7 @@ function deriveField(
     sortable: override?.sortable ?? sortable(type, column),
     // Generated columns are excluded from search: an id is found by exact lookup, and a
     // `contains` over a uuid column is a scan that returns nothing useful.
-    searchable: override?.searchable ?? (searchable(type) && !sensitive && !generated),
+    searchable: override?.searchable ?? (searchable(type, column) && !sensitive && !generated),
     ...(values === undefined ? {} : { values }),
     ...(currency === undefined ? {} : { currency }),
     ...(relation === undefined ? {} : { relation }),

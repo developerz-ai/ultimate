@@ -84,6 +84,22 @@ export function widgetFor(type: AdminFieldType): AdminWidget {
  * Every kind `@ultimat3/entity` can put on a column, and nothing else: a name that no column
  * builder emits would be a widget nobody can reach. `text` is the entry the length rule below
  * then refines.
+ *
+ * The kinds an EXISTING schema brings (`bigint()`, `decimal()`, `date()`, `arrayOf()`) each map to
+ * the widget that survives a round trip of the value the column itself produces, which is not
+ * always the widget the Postgres type suggests:
+ *
+ * | kind | field type | why not the obvious one |
+ * |---|---|---|
+ * | `numeric` | `text` | the row value is the exact decimal STRING, and `number-input` renders anything that is not a JS number as null — a blanked field that saves the blank back |
+ * | `bigint` | `text` | same reason, and it shipped as `number` before `bigint()` existed: the row value is decimal digits, because a JS `bigint` is what `JSON.stringify` throws on and a `number` loses everything past 2^53 — the range a legacy `int8` key lives in |
+ * | `date` | `date` | a calendar date has no zone, so it takes the `precision: 'date'` branch (`<input type="date">`) rather than the instant one |
+ * | `array` | `json` | `String(['a,b'])` and `String(['a','b'])` are the same string, and what a text input posts back is not an array at all |
+ *
+ * `bytea` is deliberately ABSENT. The `file` widget's value is a storage reference (`{ url, name }`
+ * — see `uploadValue`), and the `Uint8Array` a `bytes()` column puts on the row is not one, so
+ * mapping it would move the same refusal from derive time, where the fix names the edit, to every
+ * render of every row. There is no `vector` row for the same reason there is no vector column.
  */
 const FIELD_TYPE_BY_COLUMN_KIND: Readonly<Record<string, AdminFieldType>> = {
   uuid: 'text',
@@ -91,9 +107,12 @@ const FIELD_TYPE_BY_COLUMN_KIND: Readonly<Record<string, AdminFieldType>> = {
   char: 'text',
   boolean: 'boolean',
   integer: 'number',
-  bigint: 'number',
+  bigint: 'text',
+  numeric: 'text',
   timestamptz: 'timestamptz',
+  date: 'date',
   jsonb: 'json',
+  array: 'json',
   money: 'money',
 };
 
@@ -146,6 +165,26 @@ export function sortable(type: AdminFieldType, column: AdminColumnFacts): boolea
   return column.index || column.unique || column.primaryKey;
 }
 
-export function searchable(type: AdminFieldType): boolean {
-  return type === 'text' || type === 'textarea';
+/**
+ * The column kinds Postgres will accept a `LIKE` against. MEASURED on Postgres 17 (PGlite), one
+ * statement per type: `text` and `char` answer rows; `uuid`, `numeric`, `bigint`, `integer`,
+ * `date`, `timestamptz`, `jsonb`, `boolean` and `text[]` all answer
+ * `operator does not exist: <type> ~~ unknown`, and `bytea` answers `Invalid input for bytea type`.
+ *
+ * It has to be the KIND and not the field type, because several kinds render in a text box and
+ * only two of them can be searched: `adminSearch` issues one `contains` filter per searchable
+ * field and the driver compiles `contains` to `<column> like $1` with NO cast
+ * (`packages/entity/src/pg-sql.ts`), so a searchable column of any other kind makes the admin's
+ * search box answer a database error rather than an empty result.
+ */
+const LIKE_ABLE_COLUMN_KINDS: ReadonlySet<string> = new Set(['text', 'char']);
+
+/**
+ * A text box over a column a `LIKE` can run against — both halves required. The type keeps an
+ * enum or a relation out of the search index the way it always has; the kind keeps out the ones
+ * that would throw.
+ */
+export function searchable(type: AdminFieldType, column: AdminColumnFacts): boolean {
+  if (type !== 'text' && type !== 'textarea') return false;
+  return LIKE_ABLE_COLUMN_KINDS.has(column.kind);
 }

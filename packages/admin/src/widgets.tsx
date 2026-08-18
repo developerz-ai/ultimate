@@ -54,10 +54,17 @@ const wiring = (control: FieldControl | undefined): ControlWiring =>
 /**
  * A `date` column has no time of day, and ui's default formatter always renders one. A
  * rendered midnight is wrong in every zone but the one the value was stored in.
+ *
+ * `'UTC'`, never `options.zone`: a calendar date is zone-INDEPENDENT by construction — the value
+ * is `YYYY-MM-DD` and the spec parses it as UTC midnight (`date-time-view.ts` says so where it
+ * refuses an offsetless date-TIME). Formatting that instant in the viewer's zone moves it: an
+ * `effective_on` of `2026-08-18` read as `Aug 17, 2026` for every operator west of Greenwich,
+ * which is the exact bug `date()` exists to prevent — measured under `TZ=America/Los_Angeles`.
+ * The instant branch keeps `options.zone`, because an instant genuinely has one.
  */
-const dateOnly: DateTimeFormatter = (at, options) =>
+export const formatCalendarDate: DateTimeFormatter = (at, options) =>
   new Intl.DateTimeFormat(options.locale, {
-    timeZone: options.zone,
+    timeZone: 'UTC',
     dateStyle: 'medium',
   }).format(at);
 
@@ -81,7 +88,7 @@ function readView(props: WidgetProps, field: AdminField, ctx: WidgetContext): JS
         <DateTime
           value={props.value}
           timeZone={props.timeZone}
-          format={props.precision === 'date' ? dateOnly : undefined}
+          format={props.precision === 'date' ? formatCalendarDate : undefined}
         />
       );
     case 'checkbox':

@@ -45,6 +45,12 @@ two differ, and it is why a surface that decides on input alone needs no edit.
   say it in a type (a config-driven route table, a policy resolved by name). Never default
   to allow.
 - `can()` validates its permission at declaration time, not at request time.
+- **`definePermissions()` merges, and an EMPTY registry is permissive.** It only ever `add`s, so a
+  package that declares its own names at import time (`@ultimat3/admin`'s policy bridge) cannot
+  clobber an app's set. What it does change is the mode: `isKnownPermission` answers `true` to
+  everything while nothing is declared, so the first declaration anywhere in the process turns
+  strict checking on for everyone. A test that uses `can()` declares the set it uses and restores
+  the one it found — never leans on the empty registry.
 - **`not()` never inverts `X_UNAUTHENTICATED`.** A null actor is not a fact about this
   actor's grants; inverting it makes `not(can('order:internal'))` a public door into the
   internal one. Any denial carrying that code propagates unchanged.

@@ -115,11 +115,47 @@ describe('createPostgresClient', () => {
     );
   });
 
-  test('a role with no statement timeout sets no options at all', async () => {
+  /**
+   * The role's bound is emitted for EVERY role, `migrate`'s 0 included. 0 is not "say nothing" —
+   * it is "this role may take as long as it takes", and a server-side `alter database ... set
+   * statement_timeout` would otherwise kill the one role that must outlive it.
+   */
+  test('a role with no statement timeout still pins the timeout off', async () => {
     const pool = installFakeSql();
     await createPostgresClient({ url: TEST_URL, role: 'migrate' }).query(sql`select 1`);
 
-    expect(pool.urls[0]).not.toContain('statement_timeout');
+    expect(pool.urls[0]).toContain('statement_timeout%3D0');
+  });
+
+  /**
+   * An operator's own libpq `options` used to be REPLACED, and only on the roles with a timeout:
+   * `?options=-c search_path=app` survived on `migrate` and `replicator` and vanished on `web`,
+   * `sync`, `worker` and `scheduler` — so the role that runs migrations and the role that serves
+   * traffic read different schemas, with nothing anywhere reporting it.
+   */
+  describe("an operator's own options", () => {
+    const WITH_OPTIONS = `${TEST_URL}?options=-c%20search_path%3Dapp%20-c%20timezone%3DUTC`;
+
+    for (const role of ['web', 'migrate'] as const) {
+      test(`survive alongside the role timeout on ${role}`, async () => {
+        const pool = installFakeSql();
+        await createPostgresClient({ url: WITH_OPTIONS, role }).query(sql`select 1`);
+
+        const options = new URL(pool.urls[0] ?? '').searchParams.get('options');
+        expect(options).toBe(
+          `-c search_path=app -c timezone=UTC -c statement_timeout=${role === 'web' ? 10_000 : 0}`,
+        );
+      });
+    }
+
+    test('lose to the role on statement_timeout itself, and keep everything else', async () => {
+      const pool = installFakeSql();
+      const url = `${TEST_URL}?options=-c%20statement_timeout%3D1%20-c%20search_path%3Dapp`;
+      await createPostgresClient({ url, role: 'web' }).query(sql`select 1`);
+
+      const options = new URL(pool.urls[0] ?? '').searchParams.get('options');
+      expect(options).toBe('-c search_path=app -c statement_timeout=10000');
+    });
   });
 });
 
