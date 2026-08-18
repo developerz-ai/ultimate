@@ -12,7 +12,7 @@ export const TIERS: Readonly<Record<number, readonly string[]>> = {
   2: ['entity', 'policy', 'http', 'auth'],
   3: ['action', 'query', 'jobs', 'realtime'],
   4: ['render', 'pwa', 'mcp', 'ai', 'manifest', 'mail'],
-  5: ['ui', 'admin', 'testing', 'cli'],
+  5: ['ui', 'admin', 'testing', 'cli', 'scraping'],
 };
 
 /**

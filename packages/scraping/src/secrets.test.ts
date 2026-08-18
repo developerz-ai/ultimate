@@ -1,0 +1,94 @@
+import { describe, expect, test } from 'bun:test';
+import { secret } from '@ultimat3/core';
+import { fakePage } from './driver-fake';
+import { blankPasswordFields, createSecretBag, redactSecrets, safeHtml } from './secrets';
+
+const bag = (values: Record<string, string>) =>
+  createSecretBag(Object.keys(values), (name) => values[name]);
+
+const codeOf = async (promise: Promise<unknown>): Promise<string | undefined> => {
+  try {
+    await promise;
+    return undefined;
+  } catch (thrown) {
+    return (thrown as { code?: string }).code;
+  }
+};
+
+describe('unit · secrets are names in the definition and values in the worker', () => {
+  test('a declared name with no value refuses the run, naming the file to edit', () => {
+    let thrown: { code?: string; fix?: string } = {};
+    try {
+      createSecretBag(['BANK_PASSWORD'], () => undefined);
+    } catch (error) {
+      thrown = error as { code?: string; fix?: string };
+    }
+    expect(thrown.code).toBe('X_ENV_MISSING');
+    expect(thrown.fix).toContain('.env.local');
+  });
+
+  test('an undeclared name cannot be read — a run resolves only what it declared', () => {
+    const secrets = bag({ A: 'one' });
+    expect(() => secrets.get('B')).toThrow();
+  });
+
+  test('the value is boxed, so printing it renders [redacted]', () => {
+    const secrets = bag({ BANK_PASSWORD: 'hunter2' });
+    expect(`${String(secrets.get('BANK_PASSWORD'))}`).toBe('[redacted]');
+    expect(JSON.stringify({ p: secrets.get('BANK_PASSWORD') })).toBe('{"p":"[redacted]"}');
+  });
+});
+
+describe('unit · redaction is BY VALUE, not by key name', () => {
+  test('a secret in a query string is redacted even though it travels under no known key', () => {
+    const secrets = bag({ TOKEN: 'sk-live-abcdef' });
+    expect(redactSecrets('GET /orders?key=sk-live-abcdef', secrets)).toBe(
+      'GET /orders?key=[redacted]',
+    );
+  });
+
+  test('the longest secret goes first, so one containing another leaves no tail', () => {
+    const secrets = bag({ SHORT: 'abcd', LONG: 'abcd-efgh' });
+    expect(redactSecrets('abcd-efgh', secrets)).toBe('[redacted]');
+  });
+
+  test('a password field is blanked structurally, whatever the value was', () => {
+    expect(blankPasswordFields('<input type="password" value="hunter2" name="p">')).toBe(
+      '<input type="password" value="" name="p">',
+    );
+  });
+
+  test('safeHtml does both passes', () => {
+    const secrets = bag({ P: 'hunter2' });
+    expect(safeHtml('<input type=password value=hunter2><b>hunter2</b>', secrets)).toBe(
+      '<input type=password value=""><b>[redacted]</b>',
+    );
+  });
+});
+
+describe('unit · a screenshot of a filled login form is a live leak', () => {
+  const LOGIN = '<form><input id="p" type="password"><button id="go">Go</button></form>';
+
+  test('a pixel capture is REFUSED once a secret has been typed into the page', async () => {
+    const page = fakePage(LOGIN);
+    // Before: fine. The refusal is about what is on the page, not about the page.
+    expect((await page.screenshot()).byteLength).toBeGreaterThan(0);
+    await page.type('#p', secret('hunter2', 'BANK_PASSWORD'));
+    expect(await codeOf(page.screenshot())).toBe('X_SCRAPE_SECRET_EXPOSED');
+    expect(await codeOf(page.pdf())).toBe('X_SCRAPE_SECRET_EXPOSED');
+  });
+
+  test('a plain string does not taint the page — only a Secret does', async () => {
+    const page = fakePage(LOGIN);
+    await page.type('#p', 'not-a-secret');
+    expect((await page.screenshot()).byteLength).toBeGreaterThan(0);
+  });
+
+  test('page.html() stays available, redacted — the artifact you actually want on a failure', async () => {
+    const secrets = bag({ BANK_PASSWORD: 'hunter2' });
+    const page = fakePage(LOGIN, { context: { secrets } });
+    await page.type('#p', secrets.get('BANK_PASSWORD'));
+    const html = await page.html();
+    expect(html).not.toContain('hunter2');
+  });
+});

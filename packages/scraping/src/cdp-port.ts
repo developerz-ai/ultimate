@@ -1,0 +1,69 @@
+// The browser library's shape, declared STRUCTURALLY and imported from nowhere.
+//
+// `puppeteer-core` is the intended implementation and `docs/idea/18-build-vs-wrap.md` permits it
+// at exactly this seam — a driver/transport boundary, never the vocabulary. Declaring the port
+// instead of importing the types is what keeps that promise mechanical rather than aspirational:
+// nothing in `@ultimat3/scraping` can name a `Page`, an `ElementHandle` or a `CDPSession`, so a
+// puppeteer type cannot reach `ScrapePage` even by accident, and this package takes no runtime
+// dependency at all. The app passes its own `puppeteer` in — the same way `s3Driver({ client })`
+// takes a `S3ClientLike` rather than importing a cloud SDK.
+//
+// Verified against puppeteer-core 25.8.0 on Bun 1.3.14 (both `launch` and
+// `connect({ browserWSEndpoint })`, headless Chrome 150): the WebSocket upgrade Playwright's
+// `connectOverCDP` cannot do under Bun works here, which is why this is the intended library.
+
+export interface CdpRequestLike {
+  url(): string;
+  resourceType(): string;
+  abort(): Promise<void>;
+  continue(): Promise<void>;
+}
+
+export interface CdpPageLike {
+  url(): string;
+  goto(url: string, options?: { readonly timeout?: number }): Promise<unknown>;
+  content(): Promise<string>;
+  /** The string form. Every read this package makes is an expression, never a closure. */
+  evaluate(expression: string): Promise<unknown>;
+  click(selector: string): Promise<void>;
+  type(selector: string, text: string): Promise<void>;
+  select(selector: string, ...values: string[]): Promise<string[]>;
+  screenshot(options: { readonly fullPage?: boolean }): Promise<Uint8Array | string>;
+  pdf(options?: Record<string, unknown>): Promise<Uint8Array>;
+  setRequestInterception(enabled: boolean): Promise<void>;
+  on(event: string, handler: (payload: unknown) => void): unknown;
+  frames(): readonly CdpFrameLike[];
+  close(): Promise<void>;
+}
+
+export interface CdpFrameLike {
+  name(): string;
+  url(): string;
+  content(): Promise<string>;
+  evaluate(expression: string): Promise<unknown>;
+  click(selector: string): Promise<void>;
+  type(selector: string, text: string): Promise<void>;
+  select(selector: string, ...values: string[]): Promise<string[]>;
+}
+
+export interface CdpBrowserLike {
+  newPage(): Promise<CdpPageLike>;
+  /** Present on a browser that owns a cookie jar. Absent ones answer `X_NOT_IMPLEMENTED`. */
+  cookies?(): Promise<unknown>;
+  setCookie?(...cookies: readonly unknown[]): Promise<void>;
+  /** Ends the browser. For an attached session this is what stops the REMOTE half. */
+  close(): Promise<void>;
+  /** Drops the local connection and leaves the remote browser running. */
+  disconnect?(): Promise<void>;
+  process?(): { readonly pid?: number | undefined; kill(signal?: number | string): void } | null;
+}
+
+/**
+ * What an app passes in: `puppeteer` itself. Both methods are optional so a launcher that can only
+ * attach (a provider SDK) still satisfies the port — `remoteBrowser()` refuses one with no
+ * `connect` at the call site, with a code, rather than at a property access.
+ */
+export interface CdpLauncherLike {
+  launch?(options: Record<string, unknown>): Promise<CdpBrowserLike>;
+  connect?(options: Record<string, unknown>): Promise<CdpBrowserLike>;
+}

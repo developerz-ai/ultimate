@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "399a2210d509b78268f10f15688deac6132fd99ca57445214c6e62ed7f156398",
+  "buildId": "9af8424a4d922b1bc50b18802b09b7ba2e1a910e74d48599dc99e3e8d2f4fdeb",
   "tiers": {
     "0": [
       "core",
@@ -40,7 +40,8 @@
       "ui",
       "admin",
       "testing",
-      "cli"
+      "cli",
+      "scraping"
     ]
   },
   "packages": [
@@ -196,6 +197,12 @@
     },
     {
       "name": "@ultimat3/cli",
+      "version": "2.0.0",
+      "tier": 5,
+      "private": false
+    },
+    {
+      "name": "@ultimat3/scraping",
       "version": "2.0.0",
       "tier": 5,
       "private": false
@@ -1859,6 +1866,126 @@
       "code": "X_SCHEMA_UNSUPPORTED",
       "owner": "schema",
       "at": "packages/schema/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_AUTH_FAILED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_BLOCKED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_BROWSER_UNREACHABLE",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_CDP_ATTACH_FAILED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_DOWNLOAD_TIMEOUT",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_DRIVER_UNKNOWN",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_FIXTURE_MISSING",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_FIXTURE_STALE",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_HOST_BLOCKED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_HTTP_FAILED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_NOT_ACTIONABLE",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_OUTPUT_INVALID",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_PAGE_CRASHED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_PROFILE_LOCKED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_PROMPT_UNANSWERED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_RECOVER_REFUSED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_REMOTE_REQUIRED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_ROBOTS_DISALLOWED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_SECRET_EXPOSED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_SELECTOR_MISSING",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_SESSION_EXPIRED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_TIMEOUT",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_WEDGED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_YIELD_COLLAPSED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
     },
     {
       "code": "X_SECRETS_EDIT_FAILED",

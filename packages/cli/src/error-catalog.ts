@@ -36,6 +36,7 @@ export const CATALOG_PACKAGES = [
   '@ultimat3/realtime',
   '@ultimat3/render',
   '@ultimat3/schema',
+  '@ultimat3/scraping',
   '@ultimat3/seo',
   '@ultimat3/storage',
   '@ultimat3/testing',
