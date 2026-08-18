@@ -1,4 +1,4 @@
-// `x db gen|migrate|reset|studio|branch|backfill` — everything that touches the database. One
+// `x db gen|migrate|reset|seed|studio|branch|backfill` — everything that touches the database. One
 // subcommand per line and no fall-through: a word this file does not know is refused, never
 // re-read as an argument to the last branch. `branch` itself is `cmd-db-branch.ts`.
 //
@@ -12,7 +12,8 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveEnvironment } from '@ultimat3/core';
-import { type DriftReport, driftError } from '@ultimat3/db';
+import { type DriftReport, driftError, withTransaction } from '@ultimat3/db';
+import { postgresDriver } from '@ultimat3/entity';
 import { BackfillPendingError } from '@ultimat3/jobs';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
@@ -34,6 +35,16 @@ import {
 import { BRANCH_SUBCOMMANDS } from './db-branch';
 import { stepFinding } from './db-finding';
 import { generateAppMigration } from './db-generate';
+import type { SeedPassRow } from './db-seed';
+import {
+  discoverSeeds,
+  parseSeedTierFlag,
+  renderSeedTable,
+  runSeeds,
+  seedPassToJson,
+  seedTotals,
+  selectSeeds,
+} from './db-seed';
 import { resolveServices } from './dev-services';
 import {
   BadFlagError,
@@ -49,14 +60,22 @@ import { findingFrom } from './output';
 import { flagBool, flagString } from './parse';
 import { runMigrations } from './serve';
 
-export const DB_SUBCOMMANDS = ['gen', 'migrate', 'reset', 'studio', 'branch', 'backfill'] as const;
+export const DB_SUBCOMMANDS = [
+  'gen',
+  'migrate',
+  'reset',
+  'seed',
+  'studio',
+  'branch',
+  'backfill',
+] as const;
 
 export const dbCommand: CliCommand = {
   spec: {
     name: 'db',
-    summary: 'gen, migrate, reset, studio, branch, backfill',
+    summary: 'gen, migrate, reset, seed, studio, branch, backfill',
     usage:
-      'x db gen "add publish_at" | migrate | reset | studio | branch ls | branch create <name> | branch drop <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n]',
+      'x db gen "add publish_at" | migrate | reset | seed [<name>] [--tier reference|dev] [--dry-run] | studio | branch ls | branch create <name> | branch drop <name> | backfill [<name>|--all] [--write] [--force] | backfill --pending | backfill --list [--name n] [--status s] [--limit n]',
     requiresApp: true,
     subcommands: DB_SUBCOMMANDS,
     // Declared from the constant `runBranchCommand` validates against, never a second literal: it
@@ -64,7 +83,21 @@ export const dbCommand: CliCommand = {
     // hand out, which read `ls` as a branch name and cloned a database until 1.2.x.
     subcommandPositionals: { branch: BRANCH_SUBCOMMANDS },
     flags: [
-      { name: 'name', type: 'string', summary: 'migration or branch name, or backfill to filter' },
+      {
+        name: 'name',
+        type: 'string',
+        summary: 'migration, branch or seed name, or backfill to filter',
+      },
+      {
+        name: 'tier',
+        type: 'string',
+        summary: 'seed: which tier to run — reference or dev; also ULTIMATE_SEED_TIER',
+      },
+      {
+        name: 'dry-run',
+        type: 'boolean',
+        summary: 'seed: report what each seed would write, and write nothing',
+      },
       { name: 'list', type: 'boolean', summary: 'backfill: print the x_backfills ledger' },
       {
         name: 'pending',
@@ -106,6 +139,7 @@ export const dbCommand: CliCommand = {
     if (sub === 'gen') return runGen(ctx, root, argument ?? 'change');
     if (sub === 'migrate') return runMigrate(ctx, root, msg('cli.db.migrate.applied'));
     if (sub === 'reset') return runReset(ctx, root);
+    if (sub === 'seed') return runSeed(ctx, root);
     if (sub === 'studio') throw plannedSubcommand('db', 'studio');
     if (sub === 'backfill') return runBackfill(ctx, root);
     if (sub === 'branch') return runBranchCommand(ctx, root);
@@ -125,8 +159,14 @@ export const dbCommand: CliCommand = {
 
 /**
  * Source in, files out — no database is opened, so this answers the same in CI and on a laptop
- * with nothing running. A diff that finds nothing writes nothing and still exits 0: "no change" is
- * an answer, and an empty migration would take a ledger row and a checksum forever.
+ * with nothing running. A diff that finds nothing writes no MIGRATION and still exits 0: "no
+ * change" is an answer, and an empty migration would take a ledger row and a checksum forever. It
+ * may still write the `.hash` sidecar `x verify`'s `drift` step reads, which is what makes
+ * `X_DB_DRIFT`'s `fix:` — this command — a real instruction rather than a no-op.
+ *
+ * So there are THREE answers, not two, and `--json` carries `outcome` on every one: collapsing
+ * `hash-recorded` into either neighbour tells the machine reading this output that a migration
+ * exists when none does, or that nothing was written when the sidecar was.
  */
 async function runGen(ctx: CommandContext, root: string, name: string): Promise<CommandResult> {
   let generated: Awaited<ReturnType<typeof generateAppMigration>>;
@@ -148,9 +188,21 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
     return {
       ok: generated.findings.length === 0,
       command: 'db',
-      summary: msg('cli.db.gen.unchanged'),
+      // The sidecar path, never a bare id: `hash-recorded` writes exactly one, and it is the file
+      // the `drift` step reads back.
+      summary:
+        generated.outcome === 'hash-recorded'
+          ? msg('cli.db.gen.recorded', { file: generated.files[0] ?? '' })
+          : msg('cli.db.gen.unchanged'),
       findings: generated.findings,
-      data: { migration: null, files: [] },
+      // `files` is what this command WROTE, so the empty array here was a false claim.
+      lines: generated.files.map((file) => `  ${file}`),
+      data: {
+        outcome: generated.outcome,
+        migration: null,
+        files: [...generated.files],
+        schemaHash: generated.schemaHash ?? null,
+      },
     };
   }
   return {
@@ -159,6 +211,7 @@ async function runGen(ctx: CommandContext, root: string, name: string): Promise<
     summary: msg('cli.db.gen.written', { id: migration.id }),
     lines: generated.files.map((file) => `  ${file}`),
     data: {
+      outcome: generated.outcome,
       migration: migration.id,
       name: migration.name,
       files: [...generated.files],
@@ -231,6 +284,81 @@ async function runReset(ctx: CommandContext, root: string): Promise<CommandResul
   }
   await rm(join(services.stateDir, 'pgdata'), { recursive: true, force: true });
   return runMigrate(ctx, root, msg('cli.db.reset.done'));
+}
+
+/**
+ * `x db seed [<name>]` — the fixture graph, applied and replayable.
+ *
+ * The environment is resolved BEFORE anything is imported or connected: a run this environment does
+ * not take must refuse without having opened a connection to the database it was refusing to write
+ * to. `selectSeeds` asks the same question a second time, on the seeds themselves, because seeding
+ * is the one irreversible thing this command does (`db-seed.ts`).
+ *
+ * `withJobDriver` is the boot, though nothing here claims a job: it is the CLI's one answer to
+ * "which database is this command talking to", and it also puts a real queue behind any
+ * `handle.enqueue()` a seeded write triggers. A second boot path would be a second answer.
+ */
+async function runSeed(ctx: CommandContext, root: string): Promise<CommandResult> {
+  const environment = resolveEnvironment({ env: ctx.env });
+  const requested = parseSeedTierFlag(
+    flagString(ctx.args, 'tier') ?? ctx.env['ULTIMATE_SEED_TIER'],
+  );
+  const name = ctx.args.positionals[0] ?? flagString(ctx.args, 'name');
+  const dryRun = flagBool(ctx.args, 'dry-run');
+  const discovery = await discoverSeeds(root);
+  const chosen = selectSeeds({
+    discovered: discovery.seeds,
+    ...(name === undefined ? {} : { name }),
+    environment,
+    requested,
+  });
+  if (chosen.length === 0) {
+    return {
+      ok: true,
+      command: 'db',
+      summary: msg('cli.db.seed.none'),
+      findings: discovery.findings,
+      data: seedPassToJson([]),
+    };
+  }
+  return withJobDriver(root, ctx, async () => {
+    const rows = await runSeeds({
+      seeds: chosen,
+      driver: postgresDriver(),
+      dryRun,
+      env: ctx.env,
+      // One transaction per seed, so a seed that throws takes only its own rows with it.
+      transaction: (work) => withTransaction(() => work()),
+    });
+    return seedPassResult(rows, dryRun, discovery.findings);
+  });
+}
+
+function seedPassResult(
+  rows: readonly SeedPassRow[],
+  dryRun: boolean,
+  findings: readonly Finding[],
+): CommandResult {
+  const totals = seedTotals(rows);
+  const failures = rows.flatMap((row) => (row.finding === null ? [] : [row.finding]));
+  return {
+    ok: failures.length === 0 && findings.length === 0,
+    command: 'db',
+    summary:
+      totals.failed > 0
+        ? msg('cli.db.seed.failed', { failed: totals.failed, count: rows.length })
+        : dryRun
+          ? msg('cli.db.seed.dryRun', { count: rows.length })
+          : msg('cli.db.seed.done', {
+              count: rows.length,
+              inserted: totals.inserted,
+              updated: totals.updated,
+              skipped: totals.skipped,
+            }),
+    findings: [...failures, ...findings],
+    lines: renderSeedTable(rows).map((line) => `  ${line}`),
+    data: seedPassToJson(rows),
+  };
 }
 
 /**

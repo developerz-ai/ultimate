@@ -5,7 +5,7 @@
 
 import { systemClock } from '@ultimat3/core';
 import { describeValue, type StandardSchemaV1 } from '@ultimat3/schema';
-import { bindColumn, snake } from './column';
+import { assertColumnName, bindColumn, columnName, moneyColumns } from './column';
 import { newId } from './columns';
 import { describeEntity, describeReferences } from './describe';
 import { invariantViolated } from './errors';
@@ -33,6 +33,15 @@ export interface IndexInit<C extends ColumnMap> {
 
 export interface EntityInit<C extends ColumnMap> {
   readonly columns: C;
+  /**
+   * The physical table, when it is not the entity's own name. The half of adoption a column name
+   * cannot cover: `entity('user', { table: 'users', … })` reads and writes the table that is
+   * already there, and every statement, index name and foreign key follows it.
+   *
+   * The entity NAME stays the framework's key — the registry, the cache tag, `x entities describe`
+   * and every relation are keyed by it — so renaming a table never moves a cache tag or a policy.
+   */
+  readonly table?: string;
   /**
    * The tenant column, said out loud. Omitted, it is inferred from `.tenant()` or a column named
    * `orgId`, so silence never means unscoped.
@@ -117,6 +126,7 @@ export const entity = <const C extends ColumnMap>(
   const entries: readonly (readonly [string, AnyColumn])[] = Object.entries(init.columns);
   for (const [property, column] of entries) bindColumn(column, name, property);
 
+  const table = init.table === undefined ? name : assertColumnName(init.table);
   const cacheTag = `entity:${name}`;
   const softDelete = Object.hasOwn(init.columns, SOFT_DELETE_COLUMN);
   const tenantColumn = resolveTenantColumn(name, init.columns, init.tenant);
@@ -147,19 +157,22 @@ export const entity = <const C extends ColumnMap>(
           `${property} is money: name ${property}.minor or ${property}.currency`,
         );
       }
-      return snake(property);
+      return columnName(property, column.$meta);
     }
     if (!isMoney || !MONEY_PARTS.has(part)) {
       throw invariantViolated(name, property, `${property} has no part "${part}"`);
     }
-    return `${snake(property)}_${part}`;
+    const parts = moneyColumns(property, column.$meta);
+    return part === 'minor' ? parts.minor : parts.currency;
   };
 
   const columnsExpr = invariantColumns<C>(
     name,
     entries.map(([property]) => property),
   );
-  const partialWhere = softDelete ? `${snake(SOFT_DELETE_COLUMN)} is null` : undefined;
+  // Through the one resolver, so a soft-delete column the table spells differently is still the
+  // column every partial index excludes rows by.
+  const partialWhere = softDelete ? `${resolve([SOFT_DELETE_COLUMN])} is null` : undefined;
   // Called once, here, so an unknown column throws while the entity is being declared.
   const invariants: readonly Invariant<Row>[] = (init.invariants?.(columnsExpr) ?? []).map((def) =>
     bindInvariant<Row>(def, resolve, partialWhere),
@@ -169,9 +182,11 @@ export const entity = <const C extends ColumnMap>(
     ...entries.flatMap(([property, column]) => {
       const meta = column.$meta;
       if (!meta.unique && !meta.index) return [];
-      const physical = [meta.kind === 'money' ? `${snake(property)}_minor` : snake(property)];
+      const physical = [
+        meta.kind === 'money' ? moneyColumns(property, meta).minor : columnName(property, meta),
+      ];
       return [
-        { name: indexName(name, physical, meta.unique), columns: physical, unique: meta.unique },
+        { name: indexName(table, physical, meta.unique), columns: physical, unique: meta.unique },
       ];
     }),
     ...(init.indexes ?? []).map((index) => {
@@ -191,7 +206,7 @@ export const entity = <const C extends ColumnMap>(
         );
       }
       return {
-        name: indexName(name, columns, unique),
+        name: indexName(table, columns, unique),
         columns,
         unique,
         ...(index.order === undefined ? {} : { order: index.order }),
@@ -208,6 +223,7 @@ export const entity = <const C extends ColumnMap>(
   const describe = (): EntityDescription =>
     describeEntity({
       name,
+      table,
       columns: entries,
       primaryKey,
       invariants,
@@ -251,7 +267,7 @@ export const entity = <const C extends ColumnMap>(
 
   const core: EntityCore<Row, C> = {
     $name: name,
-    $table: name,
+    $table: table,
     $columns: init.columns,
     $primaryKey: primaryKey,
     $indexes: indexes,
@@ -289,7 +305,7 @@ export const entity = <const C extends ColumnMap>(
     $references: references,
   };
 
-  registerEntity({ name, tableName: name, describe, references });
+  registerEntity({ name, tableName: table, describe, references });
   // The columns land on the entity itself so `orgs.id` is a column reference; every framework
   // member is `$`-prefixed, which is why a column may be called `name`.
   return Object.assign(core, init.columns);

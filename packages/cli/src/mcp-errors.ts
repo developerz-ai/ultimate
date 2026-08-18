@@ -93,6 +93,14 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_DB_MIGRATE_FAILED: 'x doctor --json   # cause carries the Postgres error verbatim',
   X_DB_BRANCH_FAILED: 'x db branch ls --json',
   X_DB_STUDIO_FAILED: 'x doctor --json',
+  // Runnable first, the narrowing behind a `#`, exactly as X_CLI_UNKNOWN_COMMAND above: naming
+  // the tier IS the consent, and which seed to consent to is the one thing this table cannot
+  // know — a bare `x db seed --tier dev` would seed every dev fixture in production to answer a
+  // refusal about one. The dry run is what lists them, and the raised error's own `fix:` already
+  // carries the fully named invocation. `ULTIMATE_SEED_TIER=<tier>` is the other half of the
+  // consent and stays in the cause: it is the answer only for a container with a fixed argv.
+  X_SEED_ENVIRONMENT:
+    'x db seed --dry-run --json   # then name the tier: x db seed <name> --tier dev --json',
   X_BOUNDARY_SITE_TO_APP:
     'x verify --json   # then: x fix boundary <the file the finding names> --json',
   X_BOUNDARY_SHARED_LEAF:

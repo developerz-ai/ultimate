@@ -69,8 +69,8 @@ export interface PurgeCount {
  * carry composite primary keys, so `Table.delete(id)` cannot name one — `singleKeyOf`
  * (packages/entity/src/plan.ts:16) refuses it — and `deleteWhere({})` is `X_DELETE_UNFILTERED`
  * rather than "every row". "Empty this join table" is therefore not expressible at all today. The
- * re-seed below still restores every seeded row of those tables — an insert overwrites by primary
- * key — so what survives a reset is join rows a visitor created, and nothing seeded.
+ * re-seed below leaves the seeded rows of those tables exactly where they are — nothing deletes
+ * them — so what survives a reset is join rows a visitor created, seeded ones included.
  */
 const CONTENT_TABLES = [
   {
@@ -130,9 +130,11 @@ export const restoreSeededGraph = async (): Promise<readonly PurgeCount[]> => {
     for (const row of rows) await entry.drop(row.id);
     counts.push({ table: entry.table, removed: rows.length });
   }
-  // The same seed `apps/web/api/index.ts` runs at boot, against the same driver. An insert
-  // overwrites by primary key, so replaying it puts every seeded row back at its seeded value —
-  // `media:orphan` included, which is what gives the next sweep something to collect.
+  // The same seed `apps/web/api/index.ts` runs at boot, against the same driver. A replay is
+  // `on conflict do nothing` (packages/entity/src/seed.ts:274), so it restores a seeded row that is
+  // GONE and leaves one that is still here — including one a visitor or a job changed. Nothing
+  // above deletes a seeded row, so this pass re-creates nothing today; it is what makes a reset
+  // safe against a store that was emptied, and what makes a boot on a fresh database seed it.
   await seedDemo();
   return counts;
 };

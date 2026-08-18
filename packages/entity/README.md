@@ -67,8 +67,58 @@ still imports one package: `import { entity, t } from '@ultimat3/entity'`.
 | `text({ max })`, `integer()`, `boolean()`, `url()` | `text`/`integer`/`boolean` + CHECK | format is enforced by the database too |
 
 Chain: `.primaryKey()` · `.nullable()` · `.unique()` · `.default(v)` · `.defaultNow()` ·
-`.onUpdateNow()` · `.references(() => other.id, { onDelete })` · `.tenant()`. Physical names are
-derived from the property key (`orgId` → `org_id`); a name is written once, or never.
+`.onUpdateNow()` · `.references(() => other.id, { onDelete })` · `.tenant()` · `.column(name)`.
+Physical names are derived from the property key (`orgId` → `org_id`); a name is written once, or
+never — `.column()` is the exception, and it exists for tables this framework did not create.
+
+## Wide columns
+
+The vocabulary an EXISTING schema needs. The blessed set above is a decision the framework made
+for a table it was going to create; these are the shapes a table already has, `As of 2026-08`.
+
+| Builder | Emits | Row type, and why |
+|---|---|---|
+| `json(schema)` | `jsonb` | the schema is **required**: a `json()` returning `unknown` is the `any` hole this framework forbids, and a column is the worst place for one — the value arrives from the database as often as from a caller. The object is bound as an object, never as JSON text |
+| `decimal({ precision, scale })` | `numeric(p, s)` | a `string`, the exact digits. Money is the one decimal with an opinion (integer minor units + a currency); this is every other one, and a value with more decimal places than the column stores is refused rather than rounded |
+| `date()` | `date` | `@ultimat3/time`'s `PlainDate` — a calendar date, no time, no zone. `effective_on` is the date a rate applies, and as a `timestamptz` it is a different date on either side of midnight for half the planet |
+| `bigint()` | `bigint` | a decimal `string`. A JS `bigint` is what `JSON.stringify` throws on and a `number` loses digits past 2^53 — which is exactly where a legacy `int8` key lives. Both driver spellings (a string from Bun's `sql`, a `bigint` from PGlite) arrive as one |
+| `bytes()` | `bytea` | a plain `Uint8Array`, normalised: Bun's `sql` returns a `Buffer` and PGlite a `Uint8Array`, and the two do not serialise alike |
+| `arrayOf(column)` | `<element>[]` | `readonly T[]`, each member parsed by the element column it was given. Money and nested arrays are refused — an element is one scalar column |
+
+## Adopting an existing table
+
+Three overrides, and together they are what makes a schema Ultimate did not generate declarable
+at all. Nothing here changes what an entity without them emits.
+
+```ts
+import { date, entity, money, text, uuid } from '@ultimat3/entity';
+
+export const accounts = entity('account', {
+  table: 'legacy_accounts',
+  columns: {
+    id: uuid().primaryKey().column('account_id'),
+    githubLogin: text({ max: 40 }).column('gh_login'),
+    balance: money({ columns: { minor: 'amount_cents', currency: 'currency', scale: null } }),
+    openedOn: date().column('opened_on'),
+  },
+});
+```
+
+| Override | What follows it |
+|---|---|
+| `entity(name, { table })` | every statement, index name and foreign key. The entity NAME stays the framework's key — the registry, the cache tag (`entity:account`), `x entities describe` and every relation are keyed by it, so renaming a table never moves a cache tag or a policy |
+| `.column(name)` | the DDL, the binding, the decoder, the predicate, the sort key, the cursor. Name it LAST in a chain — the link returns the general column, and only `uuid()` and `timestamp()` keep their own methods across it |
+| `money({ columns })` | per part, merged over `<name>_minor` / `<name>_currency` / `<name>_scale`, so a table that renamed one does not restate the other two. `scale: null` says the table has no scale column: every amount is then at the currency's own minor unit, which is what an absent scale already means |
+
+A physical name is checked where it is written — lower-case letters, digits and underscores, at
+most the 63 bytes Postgres truncates at — because it is spliced into every statement as an
+identifier.
+
+**What is not adoptable yet**, `As of 2026-08`: a `numeric` money column with no currency column
+beside it (`money()` is two columns by construction — declare it `decimal()` and keep the currency
+in the app), a Postgres `enum` TYPE (`enumerated()` emits a CHECK, not a `CREATE TYPE`), a
+composite type, and a live query over a renamed column — `@ultimat3/realtime` rebuilds a row from
+the physical names alone and would deliver `ghLogin` where the repository says `githubLogin`.
 
 ## Branded ids
 
@@ -514,9 +564,30 @@ the enforcement.
 
 ## Seeds
 
-`defineSeed('dev', async ({ insert, id }) => …)`. `id('post:tenancy')` is a UUID v5 of the label,
-so the same fixture graph gets the same ids on every machine. Rows go through the columns and
-the invariants, which makes a seed a test of the schema as well.
+`defineSeed(name, build, { tier })` — the fixture graph, written once and **replayed anywhere**: a
+second run writes nothing and raises nothing, against Postgres as well as against memory. Rows go
+through the columns and the invariants either way, which makes a seed a test of the schema as well.
+`x db seed [<name>]` is what applies it.
+
+Two write verbs, because only the author knows which key identifies a row:
+
+| Context member | Use it when | A replay |
+|---|---|---|
+| `insert(entity, rows)` | the seed chose the ids — `id('post:tenancy')` is a UUID v5 of the label, so the same graph gets the same ids on every machine | one `on conflict … do nothing` statement per call; a stored row is left alone and counted `skipped` |
+| `upsert(entity, { by, preserve? }, values)` | the table owns the id and only a natural key identifies the row | reads first, so an unchanged row is `'skipped'` with no statement; otherwise one `on conflict … do update`, which settles the race between two containers booting at once |
+| `exists(entity, where?)` / `count(entity, where?)` | bulk volume data, where the FILE is the unit of idempotency | the sentinel returns early and nothing is written |
+| `deleteWhere(entity, where)` | a scoped wipe before a regenerate | **refused on a soft-deleting entity**: the stamp keeps the row's unique key and no replay can clear it |
+| `id`, `now`, `environment`, `tier`, `dryRun`, `metrics` | — | `now` is one instant per run; `metrics` is `{ inserted, updated, skipped }` and `run()` returns it |
+
+Rules worth knowing before the first seed: `upsert` never overwrites `createdAt` (`preserve` names
+other columns to spare); `upsert` on a tenant-scoped entity needs the tenant column inside `by`,
+exactly as `upsertAll` does, while `insert` needs nothing because `do nothing` writes nothing to a
+row it does not own; and `insert` refuses a row that leaves a `uuid().primaryKey()` unnamed —
+`$parse` would fill it with a fresh uuid and every replay would insert one more copy.
+
+`tier` is `'dev'` (the default, fixture data) or `'reference'` (data the app is wrong without,
+which ships to production). The refusal is the CLI's, never `run()`'s: an app that seeds its own
+database from its boot code has decided to, and a library that overruled that would break it.
 
 ## Errors
 

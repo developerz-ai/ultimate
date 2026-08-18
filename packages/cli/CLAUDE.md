@@ -285,6 +285,7 @@ regex and `+` is a quantifier — `n1` is what actually selects these tests.
 | `drift.ts` | `checkSourceDrift`: the `.hash` sidecar `x verify`'s `drift` step compares, no database needed |
 | `db-destructive.ts` | `checkDestructiveMigrations`: the same step's second half — every committed `up` that drops, truncates or retypes must carry `-- destructive: true` |
 | `db-backfill.ts` | `x db backfill --list`: the flag parsing, the ledger read and the table |
+| `db-seed.ts` | `x db seed`, everything except the argv: `SEED_GLOBS` (where a seed is declared), `discoverSeeds`, `parseSeedTierFlag`, `selectSeeds` (which seeds this invocation runs, and its two refusals — `X_DECLARATION_UNKNOWN` and `X_SEED_ENVIRONMENT`), `runSeeds` (one transaction **per seed**, never one around the run) and the two renderers. The `db-backfill.ts` split repeated: a driver plus plain strings in, plain rows out, so every rule is testable with no `ParsedArgs` and no boot. Which tiers an environment takes is `@ultimat3/entity`'s `seedTiersFor` — two copies of "may this seed run" would be two answers |
 
 `jobs-driver.ts` is the ONE place a CLI command gets hold of the app's queue — `withJobDriver`,
 which `x jobs` and `x db backfill` both call. It reuses an ambient `jobDriver()` when a process
@@ -398,6 +399,29 @@ Generation opens no database. It diffs `describeEntities()` against `declaredSch
 with nothing running, and against a database three migrations behind. An app whose modules will not
 load generates **nothing**: a short registry is indistinguishable from deleted entities, and the
 diff would be a DROP nobody asked for.
+
+**An empty diff re-records the `.hash` sidecar, and that is what makes `X_DB_DRIFT` followable.**
+The hash `checkSourceDrift` compares covers every non-test file under `packages/db/src` — a seed, a
+helper, a decorator — not only the ones that imply DDL, and narrowing that glob would trade a loud
+error for a silent gap in the one check that catches "entities changed and no migration was
+generated". So detection stays broad and the REMEDY carries the weight: `x db gen "describe the
+change"` — the exact `fix:` the error hands out — records the current hash against the newest
+migration when the diff is empty, instead of writing nothing and leaving the gate red forever with
+hand-editing a generated file as the only way out. `GeneratedFiles.outcome` is the four things a run
+can be — `generated`, `hash-recorded`, `unchanged`, `blocked` — and `runGen` projects it onto
+`--json` on **every** branch: reporting `hash-recorded` as `generated` would name a migration nobody
+can apply, and reporting it as `unchanged` would hide a file this command wrote. That second one
+shipped: the no-migration branch hardcoded `data: { migration: null, files: [] }`, so the run that
+wrote the sidecar reported writing nothing to the machine reading the output.
+
+Nothing is masked, and the branch proves it rather than promising it: `loadApp` reported no findings
+(the registry is whole, never short), `declaredSchema` returned a real snapshot (`X_MIGRATION_SNAPSHOT_MISSING`
+otherwise), and the emptiness is `generateMigration`'s own verdict — the same call the written path
+takes. A migration with no migration id to record against writes nothing, which is the
+`x new --no-example` case: an entity against zero migrations is `create table` for all of it and
+never an empty diff. `reconcileSchemaHash` also declines to write when an OLDER migration already
+recorded the hash, because `checkSourceDrift` already answers clean there and restamping the newest
+sidecar would claim it produced a schema it did not — one predicate, `isRecorded`, read by both.
 
 One migration is one file, split by a lone `-- down` line. `<id>.down.sql` is a pre-1.2.0
 hand-written layout and `readMigrations` skips it — read as a migration it sorts next to its own

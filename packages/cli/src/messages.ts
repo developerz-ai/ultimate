@@ -46,10 +46,22 @@ const CATALOG = {
   'cli.db.branch.unknown': '-',
   'cli.db.gen.failed': 'migration not generated',
   'cli.db.gen.unchanged': 'entities and migrations agree — nothing to generate',
+  // A THIRD outcome, and it is neither of the other two: nothing to generate, but the sidecar the
+  // `drift` step reads did move — an edit under `packages/db/src` that implies no DDL. Rendering it
+  // as `written` would name a migration nobody can apply; as `unchanged`, it would hide a file this
+  // command wrote. `GeneratedFiles.outcome` is what `--json` carries the same distinction on.
+  'cli.db.gen.recorded': 'no migration needed — schema hash re-recorded in {file}',
   'cli.db.gen.written': 'migration {id} generated',
   'cli.db.migrate.applied': 'migrations applied',
   'cli.db.migrate.failed': 'migration failed',
   'cli.db.reset.done': 'database reset and migrated',
+  // Every seed counted per outcome, exactly as the backfill summary is: a replayed seed writes
+  // nothing and skips everything, and a total that hid that would make the second run look idle.
+  'cli.db.seed.done':
+    '{count} seed(s): {inserted} inserted, {updated} updated, {skipped} already stored',
+  'cli.db.seed.dryRun': '{count} seed(s) would run — nothing written while --dry-run is set',
+  'cli.db.seed.failed': '{failed} of {count} seed(s) failed',
+  'cli.db.seed.none': 'no seed matched — nothing to run',
   'cli.dev.ready': 'dev ready on {url} — /_x mounted ({panels} panels), {services}',
   // The mail and CDN halves of that boot line. Rendered text, so it lives here — while
   // `describeMail`/`describeCdn` keep the same wording as the fixed vocabulary `x dev --json`

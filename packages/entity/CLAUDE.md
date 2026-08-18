@@ -578,6 +578,76 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   ±2^53 message, where the value is a `number`, a `bigint` or a digits-only string, the amount is
   the only fact that repairs the row, and `@ultimat3/realtime` renders the same value the same way
   for the same reason. Changing either means changing both.
+- **A seed is replayable by construction, and `insert` is the verb that makes it so** — decided
+  2026-08. `defineSeed`'s context offered `insert` and nothing else, and a plain insert meant two
+  different things to the two drivers: the memory repository overwrites by primary key, Postgres
+  raises `23505`. So a seed replayed twice passed every test in this repo and killed the SECOND
+  boot of any container on a durable store, which is why both tracked apps had (or needed) a
+  hand-written `Driver` decorator over `insert`. `SeedContext.insert` now writes one
+  `upsertAll(rows, { onConflict: entity.$primaryKey, onMatch: 'nothing' })` per call. Four
+  properties, none optional. **`'nothing'`, never `'update'`**: `upsertPlan` refuses an updating
+  upsert whose target omits the tenant column (`X_TENANCY_UNSCOPED`), and a tenant-scoped entity
+  whose only unique keys are global — `posts` in the reference app — has no legal updating target
+  at all; `'nothing'` also skips the uneven-batch and nothing-to-set refusals, which a fixture
+  graph would otherwise have to satisfy. **One statement per call**, so the per-row `insert` loop
+  this replaced is no longer the N+1 of its own bulk form. **The metrics are the driver's answer**,
+  not a count of the input: `upsertAll` under `'nothing'` resolves with the rows it actually wrote,
+  so `skipped` is the replay, observed. **A generated primary key the row does not name is
+  refused** — `uuid().primaryKey()` carries `GENERATED_UUID`, so `$parse` fills it with a fresh
+  uuid, the conflict target matches nothing and run five leaves five copies; it is the one
+  duplication no other rule in this package can see.
+- **`upsert(entity, { by }, values)` is the second verb, and it exists because only the SEED AUTHOR
+  knows the natural key.** A seed writing into a table whose ids already exist — `banks` keyed by
+  `value`, `users` by `email`, `exchange_rates` by `(base, target, effective_on)` — cannot choose a
+  primary key, so keying replay on `$primaryKey` would be keying it on something Postgres does not
+  enforce. It reads first so an unchanged row can answer `'skipped'` with no statement, then writes
+  through ONE `on conflict … do update`: the read is for the report, never for the decision, or two
+  containers booting at once would race between the two. **`createdAt` is preserved on a match** —
+  the row handed to the update omits it, so `namedProperties` leaves it out of the `set` — because
+  a replay must not move when a row first arrived.
+- **The environment guard is the CLI's, not `run()`'s.** `seedTiersFor(environment, requested)` is
+  the one table (`reference` everywhere, `dev` everywhere but production) and `x db seed` is what
+  refuses. `run()` stays permissive on purpose: `dummy/social-media-clone/apps/web/api/index.ts`
+  seeds its own production demo database from its boot code and says out loud that this is an app
+  decision (axiom 8) — a library refusal would break it. A seed declares its tier as DATA, the way
+  a `backfill()` declares its environments.
+- **One resolver decides a physical name, and it is `columnName(property, meta)`** — decided
+  2026-08 with `entity(name, { table })` and `.column(name)`. Before them, `snake(property)` was
+  called in nine places and `$table` was the entity name, so a schema this framework did not
+  generate could not be declared at all: adoption meant a rewrite. Every projection now reads the
+  resolver — the DDL (`describe.ts`), the binding and the decoder (`pg-row.ts`), the predicate and
+  sort resolver, the index names, the invariant SQL, the soft-delete clause in `pg-sql.ts` and
+  `pg-driver.ts`. **A second `snake(property)` anywhere is a statement naming a column the table
+  does not have**, and the first table that proves it is somebody's production database. It is
+  additive by construction: with no override the resolver IS `snake(property)`.
+- **The entity NAME and the TABLE are different things.** The name stays the framework's key — the
+  registry, the cache tag (`entity:account`), `$tagFor`, every relation and every policy — and the
+  table is physical. Renaming a table must never move a cache tag. Index names are the TABLE's,
+  because an index is a physical object.
+- **Money's three columns are per-part and `scale: null` is a real answer.** `money({ columns })`
+  merges over `<base>_minor`/`<base>_currency`/`<base>_scale` one part at a time, so a table that
+  renamed one does not restate the other two. `scale: null` says the table has no scale column at
+  all — the ordinary shape of an amount written before scale existed — and then `columnsOf`
+  projects TWO names, `bindValues` writes two, and `decodeRow` folds two. That last one is why
+  `decodeRow` branches on `$meta.kind === 'money'` and not on how many names came back: reading a
+  two-column amount as a non-money column handed the caller a raw minor unit where a `Money` goes.
+- **A `jsonb` value is bound as TEXT and cast back, `::text::jsonb`** — and the double cast is
+  load-bearing, not defensive. The driver seam refuses a plain object as a parameter
+  (`X_SQL_UNSAFE`; `isBoundValue` takes scalars, `Date`, `Uint8Array` and arrays of those). With
+  `$1::jsonb` the server describes the parameter as `jsonb`, Bun's `sql` JSON-ENCODES the string it
+  was handed, and `{"a":1}` is stored as the JSON *string* — `jsonb_typeof` says `string`
+  (measured, Postgres 17.10). Pinning the parameter to `text` first makes the client send the
+  characters and the server parse them. An ARRAY is the other value that cannot cross as itself:
+  Bun serialises a JS array to `x,y`, which Postgres answers with `malformed array literal`, so
+  `bindValues` writes the `{…}` literal with every element quoted.
+- **The wide column types were chosen from what a driver actually returns, not from what reads
+  well.** `int8` is a string from Bun's `sql` and a `bigint` from PGlite; `numeric` is a string
+  from both; `date` is a `Date` at midnight UTC from both; `bytea` is a `Buffer` from one and a
+  `Uint8Array` from the other. Every one of those is normalised in `$parse` to a single row type,
+  because a row that means two things by driver is the drift this package's two-driver split exists
+  to refuse. `bigint()` and `decimal()` are STRINGS for the same reason `money.minor` is a
+  `number`: `JSON.stringify` throws on a bigint, and a `number` loses digits exactly where a legacy
+  `int8` key lives.
 - Never throw a bare `Error` — use `errors.ts`.
 - Tests restore the process-global registry in `afterAll` (`clearRegistry()`): a leaked registry
   breaks an unrelated package's tests, as it did in `@ultimat3/policy`.
@@ -587,7 +657,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | File | Job |
 |---|---|
 | `types.ts` | `Column`, `RowOf`, `Insertable`, `IdOf` — the type derivation |
-| `column.ts` / `columns.ts` | the chain + property-key binding; the blessed builders; `narrowMoney`, the one write-side narrowing both drivers run |
+| `column.ts` / `columns.ts` | the chain + property-key binding; the blessed builders; `columnName`/`moneyColumns`, the ONE physical-name resolver; `narrowMoney`, the one write-side narrowing both drivers run |
+| `columns-data.ts` | the wide vocabulary an existing schema needs: `json`, `decimal`, `date`, `bigint`, `bytes`, `arrayOf` |
 | `expr.ts` / `invariants.ts` | the `invariants: (c) => …` rule language; bind + `toSql()` DDL |
 | `entity.ts` / `describe.ts` | `entity()`, `$row`; the `EntityDescription` projection |
 | `view.ts` | `$view(keys)` — the row projection an action names as its `output` |
@@ -607,6 +678,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `registry.ts` | duplicate detection, `describeEntities()` for the manifest, `references()` per entry |
 | `relations.ts` | `relationMap()`/`relationsFor()`/`relationNamed()` — the FKs as a named `belongsTo`/`hasMany` map |
 | `n-plus-one.ts` | a repeated statement → the error whose `fix` is the preload or bulk call that ends it |
+| `seed.ts` | `defineSeed` — the replayable fixture graph: `insert` (the seed's own ids), `upsert` (a natural key), the sentinel reads, and the tier table `x db seed` refuses from |
 | `type-pins.ts` | compile-time assertions `tsc` checks — the column proxy, `Invariant` variance, the branded id |
 
 ## Commands

@@ -33,6 +33,7 @@
   "dependencies": {
     "@ultimat3/core": "2.0.0",
     "@ultimat3/db": "2.0.0",
-    "@ultimat3/schema": "2.0.0"
+    "@ultimat3/schema": "2.0.0",
+    "@ultimat3/time": "2.0.0"
   }
 }

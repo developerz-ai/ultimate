@@ -22,6 +22,7 @@
 | `schedule.ts` | `nextLocalSlot` — "09:00 local tomorrow" |
 | `business.ts` | weekends as config, holidays as local dates |
 | `context.ts` | request timezone: which source wins, and reading core's `Ctx.tz` back off the ALS |
+| `plain-date.ts` | `PlainDate` — a calendar date with no time and no zone, and the two conversions to an instant |
 
 ## Rules
 
@@ -50,6 +51,21 @@
   no seconds phrase, so a 6-field expression with a non-trivial seconds field is
   `X_CRON_NOT_DESCRIBABLE`. Adding a required field to `CronPhrases` would break every caller
   (`packages/cli/src/cmd-tasks.ts` builds one) to describe a schedule almost nobody writes.
+- **A `PlainDate` is a branded STRING, and the golden rule does not apply to it** — decided
+  2026-08 for `@ultimat3/entity`'s `date()` column. "Never format a date without a zone" is about
+  INSTANTS; a calendar date names no instant, so it needs no zone, and giving it one is the bug:
+  `effective_on` stored as a `timestamptz` is a different date on either side of midnight for half
+  the planet. Not a `Date` (that is an instant, and binding one to a Postgres `date` parameter
+  fails outright — `time zone "gmt-0500" not recognized`, measured on 17.10) and not
+  `{ year, month, day }` (an object sorts by nothing and JSON-stringifies as three fields). The ISO
+  string sorts lexicographically exactly as it sorts chronologically, which is why every cursor,
+  `orderBy` and `compare` in the framework handles it with no special case at all.
+- **`plainDateIn` takes a zone and `plainDateUtc` does not, and neither is a default for the
+  other.** An instant has a calendar date only in a zone; a `Date` a driver returns for a `date`
+  column is midnight UTC and reading its LOCAL fields loses a day west of Greenwich. `bun test`
+  pins the process to UTC, so that bug is invisible to every in-process test — `plain-date.test.ts`
+  spawns a subprocess with `TZ=America/Los_Angeles` for exactly one assertion, and that is the only
+  reason it can fail.
 - Never add `86_400_000` to cross a day boundary — use `addDaysInZone` / `fromZoned`.
 - Never take the clock from `Date.now()`; accept a `Clock` (`now(clock)`).
 - Cron and schedules iterate the **local wall clock**, then convert once with `fromZoned`.

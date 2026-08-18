@@ -10,11 +10,20 @@ import {
   isMoneyScale,
   MAX_MONEY_SCALE,
 } from '@ultimat3/schema';
-import { BARE, column, GENERATED_UUID, makeColumn, makeTimestamp } from './column';
+import {
+  assertColumnName,
+  BARE,
+  column,
+  GENERATED_UUID,
+  makeColumn,
+  makeTimestamp,
+} from './column';
 import { invariantViolated } from './errors';
 import type {
   Column,
   ColumnMap,
+  ColumnMeta,
+  MoneyColumnNames,
   MoneyInput,
   MoneyValue,
   TimestampColumn,
@@ -64,16 +73,22 @@ const parseBrandedUuid = <T extends string>(value: unknown): T => parseUuid(valu
  * derivation — row, insert, `findById`, `update`, `delete` — so mixing two entities' ids is a
  * compile error instead of a query that silently matches nothing.
  */
-export const uuid = <T extends string = string>(): UuidColumn<T> => ({
-  ...makeColumn<T, false>({ ...BARE, kind: 'uuid' }, parseBrandedUuid, false),
+export const uuid = <T extends string = string>(): UuidColumn<T> =>
+  uuidWith({ ...BARE, kind: 'uuid' });
+
+const uuidWith = <T extends string>(meta: ColumnMeta): UuidColumn<T> => ({
+  ...makeColumn<T, false>(meta, parseBrandedUuid, false),
   // Narrower than the generic chain: a uuid key is generated when omitted, so it is the one
   // primary key an insert may leave out.
   primaryKey: () =>
     makeColumn<T, true>(
-      { ...BARE, kind: 'uuid', primaryKey: true, default: GENERATED_UUID },
+      { ...meta, primaryKey: true, default: GENERATED_UUID },
       parseBrandedUuid,
       true,
     ),
+  // Overridden for the same reason `timestamp()`'s is: `uuid().column('user_id').primaryKey()`
+  // must still be the KEY form, which is optional on insert, rather than the general one.
+  column: (name) => uuidWith<T>({ ...meta, name: assertColumnName(name) }),
 });
 
 export interface TextOptions {
@@ -294,7 +309,34 @@ const parseMoney = (value: unknown): MoneyValue => {
  * silent 10,000x reinterpretation of a value the type system, `t.money` and `@ultimat3/money` all
  * carry. `null` in the column is "no explicit scale" and decodes to an ABSENT key, never to `0`.
  */
-export const money = (): Column<MoneyValue> => column<MoneyValue>('money', parseMoney);
+export interface MoneyOptions {
+  /**
+   * Where the three columns already live, for a table this framework did not create. Named per
+   * part and merged over `<name>_minor` / `<name>_currency` / `<name>_scale`, so a legacy
+   * `amount_cents` beside a `currency` is two words rather than three.
+   *
+   * `scale: null` says the table has no scale column at all. What that costs is stated where the
+   * option is declared (`MoneyColumnNames`): every amount is then at the currency's own minor
+   * unit. What it does NOT cost is correctness — an absent scale already means exactly that.
+   */
+  readonly columns?: MoneyColumnNames;
+}
+
+export const money = (options: MoneyOptions = {}): Column<MoneyValue> =>
+  column<MoneyValue>(
+    'money',
+    parseMoney,
+    options.columns === undefined ? {} : { parts: checkedParts(options.columns) },
+  );
+
+/** Every part named goes through the same identifier rule a `.column()` does. */
+const checkedParts = (columns: MoneyColumnNames): MoneyColumnNames => ({
+  ...(columns.minor === undefined ? {} : { minor: assertColumnName(columns.minor) }),
+  ...(columns.currency === undefined ? {} : { currency: assertColumnName(columns.currency) }),
+  ...(columns.scale === undefined || columns.scale === null
+    ? { ...(columns.scale === null ? { scale: null } : {}) }
+    : { scale: assertColumnName(columns.scale) }),
+});
 
 /**
  * Money is the one column whose write type is wider than its row type — `MoneyInput` takes a

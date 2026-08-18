@@ -23,10 +23,13 @@ import {
 import { isolateEntityRegistry } from '@ultimat3/testing/registry-isolation';
 import { DB_SUBCOMMANDS, dbCommand, driftFindings } from './cmd-db';
 import type { CommandContext } from './command';
+import { checkSourceDrift, schemaHash } from './drift';
 import { BadFlagError } from './errors';
 import { exec } from './exec';
 import { msg } from './messages';
+import { MIGRATIONS_DIR } from './migrations';
 import type { CommandResult } from './output';
+import { renderJson } from './output';
 import { flagBool, parseArgs } from './parse';
 import { SPECS } from './registry';
 
@@ -48,6 +51,20 @@ async function appRoot(): Promise<string> {
   return dir;
 }
 
+/** `x db gen`'s `--json` body, parsed — the shape an agent reading this command actually gets. */
+interface GenJson {
+  readonly ok: boolean;
+  readonly summary: string;
+  readonly data: {
+    readonly outcome: string;
+    readonly migration: string | null;
+    readonly files: readonly string[];
+    readonly schemaHash: string | null;
+  };
+}
+
+const sidecar = (file: string): string => `${MIGRATIONS_DIR}/${file}`;
+
 describe('unit · x db gen', () => {
   test('an unchanged schema generates nothing and still exits ok', async () => {
     // "Unchanged" means "no entity declares a table" — a premise this test used to inherit rather
@@ -60,6 +77,65 @@ describe('unit · x db gen', () => {
       const result = await dbCommand.run(ctxFor(['db', 'gen', 'nothing to do'], root));
       expect(result.ok).toBe(true);
       expect(result.data).toMatchObject({ migration: null });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      restoreEntities();
+    }
+  });
+
+  // At the COMMAND altitude, through `renderJson`, because `--json` is the surface an agent reads
+  // and the projection is where this went wrong: `runGen`'s no-migration branch hardcoded
+  // `{ migration: null, files: [] }`, so a run that wrote the sidecar reported writing nothing.
+  // Pinning `GeneratedFiles.outcome` alone would pin the data the projection reads, not the
+  // projection — and the projection was the half that lied.
+  test('--json names the sidecar it wrote and calls it hash-recorded, never unchanged', async () => {
+    const restoreEntities = isolateEntityRegistry();
+    const root = await appRoot();
+    try {
+      entity('cmd_db_gen_json_notes', { columns: { id: uuid().primaryKey() } });
+      await Bun.write(join(root, 'packages/db/src/schema.ts'), 'export const schema = 1;\n');
+
+      const first = await dbCommand.run(ctxFor(['db', 'gen', 'add notes'], root));
+      const written = JSON.parse(renderJson(first)) as GenJson;
+      expect(written.data.outcome).toBe('generated');
+      expect(written.data.migration).not.toBeNull();
+      expect(written.data.files).toHaveLength(3);
+
+      // A seed is not DDL. The hash covers it anyway, so `drift` goes red with nothing to generate.
+      await Bun.write(join(root, 'packages/db/src/seed.ts'), 'export const seed = () => {};\n');
+      expect(await checkSourceDrift(root)).toHaveLength(1);
+
+      const second = await dbCommand.run(ctxFor(['db', 'gen', 'describe the change'], root));
+      const recorded = JSON.parse(renderJson(second)) as GenJson;
+      expect(recorded.ok).toBe(true);
+      expect(recorded.data.outcome).toBe('hash-recorded');
+      expect(recorded.data.migration).toBeNull();
+      // The claim the old body could not make: a file was written, and `--json` names which.
+      expect(recorded.data.files).toEqual([`${written.data.migration}.hash`].map(sidecar));
+      expect(recorded.data.schemaHash).toBe(await schemaHash(root));
+      expect(recorded.summary).toBe(
+        msg('cli.db.gen.recorded', { file: recorded.data.files[0] ?? '' }),
+      );
+      expect(recorded.summary).not.toBe(msg('cli.db.gen.unchanged'));
+      // And the instruction `X_DB_DRIFT` hands out has actually been carried out.
+      expect(await checkSourceDrift(root)).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      restoreEntities();
+    }
+  });
+
+  // The third answer stays distinguishable from the second: nothing to generate AND nothing
+  // written is not the same run as nothing to generate but a sidecar re-recorded.
+  test('--json calls a run that wrote nothing at all unchanged, with an empty file list', async () => {
+    const restoreEntities = isolateEntityRegistry();
+    const root = await appRoot();
+    try {
+      const result = await dbCommand.run(ctxFor(['db', 'gen', 'nothing to do'], root));
+      const body = JSON.parse(renderJson(result)) as GenJson;
+      expect(body.data.outcome).toBe('unchanged');
+      expect(body.data.files).toEqual([]);
+      expect(body.summary).toBe(msg('cli.db.gen.unchanged'));
     } finally {
       rmSync(root, { recursive: true, force: true });
       restoreEntities();

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "4bfbd9c703f0a654427876a97dbc97e70363d4f4a87b49cc0e4193db308a6eef",
+  "buildId": "537dc6532a657d1409fd02eae4502ee98fe8293db082eadb60c46d61ab905c5d",
   "tiers": {
     "0": [
       "core",
@@ -1899,6 +1899,11 @@
       "code": "X_SECRETS_TAMPERED",
       "owner": "core",
       "at": "packages/core/src/secrets-errors.ts"
+    },
+    {
+      "code": "X_SEED_ENVIRONMENT",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_SEO_CANONICAL_MISMATCH",

@@ -6,7 +6,14 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { checkSourceDrift, DB_PACKAGE, recordedHashes, schemaHash, writeSchemaHash } from './drift';
+import {
+  checkSourceDrift,
+  DB_PACKAGE,
+  reconcileSchemaHash,
+  recordedHashes,
+  schemaHash,
+  writeSchemaHash,
+} from './drift';
 import { MIGRATIONS_DIR } from './migrations';
 
 const appRoot = (): string => mkdtempSync(join(tmpdir(), 'x-drift-'));
@@ -140,6 +147,53 @@ describe('unit · source drift', () => {
       rmSync(join(root, DB_PACKAGE, 'src', 'schema.ts'));
       await Bun.write(join(root, DB_PACKAGE, 'src', 'tables.ts'), 'export const posts = 1;\n');
       expect(await schemaHash(root)).not.toBe(before);
+    });
+  });
+
+  // The remedy half of the same contract. `X_DB_DRIFT`'s `fix:` is `x db gen "describe the
+  // change"`, and the generator can only follow it by re-recording the sidecar — so the predicate
+  // that decides "already recorded" is one function, shared with `checkSourceDrift`, or the fix
+  // reports written while the check still reports drift.
+  test('reconciling records the current hash against the named migration and clears the drift', async () => {
+    await withRoot(async (root) => {
+      await writeSchema(root, 'export const posts = 1;\n');
+      await generate(root, '0001_initial');
+      // A non-DDL file under `packages/db/src` — a seed, a helper — moves the hash and no DDL.
+      await Bun.write(join(root, DB_PACKAGE, 'src', 'seed.ts'), 'export const seed = 1;\n');
+      expect(await checkSourceDrift(root)).toHaveLength(1);
+
+      const reconciled = await reconcileSchemaHash(root, '0001_initial');
+      expect(reconciled).toEqual({ hash: await schemaHash(root), written: true });
+      expect(await checkSourceDrift(root)).toEqual([]);
+    });
+  });
+
+  test('reconciling a hash some migration already recorded writes nothing and says so', async () => {
+    await withRoot(async (root) => {
+      await writeSchema(root, 'export const posts = 1;\n');
+      const recorded = await generate(root, '0001_initial');
+      const reconciled = await reconcileSchemaHash(root, '0001_initial');
+      expect(reconciled).toEqual({ hash: recorded, written: false });
+    });
+  });
+
+  // The same rule `checkSourceDrift` answers clean on: a schema reverted to a state some OLDER
+  // migration recorded is not drift, so reconciling it must not stamp the newest migration with a
+  // hash it did not produce — the sidecar would then claim `0002` left behind `0001`'s schema.
+  test('reconciling an older recorded hash writes nothing — the sidecar is not restamped', async () => {
+    await withRoot(async (root) => {
+      await writeSchema(root, 'export const posts = 1;\n');
+      const first = await generate(root, '0001_initial');
+      await writeSchema(root, 'export const posts = 2;\n');
+      const second = await generate(root, '0002_change');
+      await writeSchema(root, 'export const posts = 1;\n');
+
+      expect(await reconcileSchemaHash(root, '0002_change')).toEqual({
+        hash: first,
+        written: false,
+      });
+      const records = await recordedHashes(root);
+      expect(records.map((record) => record.hash)).toEqual([first, second]);
     });
   });
 

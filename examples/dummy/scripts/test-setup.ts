@@ -48,13 +48,25 @@ const capturingDriver = (base: Driver, rows: Map<string, SeedRow>): Driver => {
   return {
     repo: <Row>(entity: EntityCore<Row>): Repo<Row> => {
       const inner = base.repo(entity);
+      const capture = (row: unknown): void => {
+        const id = idOf(row);
+        if (id !== undefined) rows.set(id, row as SeedRow);
+      };
       return {
         ...inner,
         insert: async (values, options) => {
           const row = await inner.insert(values, options);
-          const id = idOf(row);
-          if (id !== undefined) rows.set(id, row as SeedRow);
+          capture(row);
           return row;
+        },
+        // `defineSeed`'s `insert` is ONE `upsertAll(rows, { onMatch: 'nothing' })` per call — that
+        // is what makes a seed replayable on Postgres — so a seeded row never reaches `insert`.
+        // Captured from the INCOMING batch and not from the result: a row already stored is
+        // skipped and absent from `returning *`, and a fixture still needs to find it.
+        upsertAll: async (batch, args) => {
+          const written = await inner.upsertAll(batch, args);
+          for (const row of batch) capture(row);
+          return written;
         },
       };
     },

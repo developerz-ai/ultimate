@@ -4,7 +4,9 @@
 export type { Infer } from '@ultimat3/schema';
 export { t } from '@ultimat3/schema';
 export type { BatchIterator } from './batch';
-export type { TextOptions } from './columns';
+export type { MoneyColumns } from './column';
+export { columnName, moneyColumns, snake } from './column';
+export type { MoneyOptions, TextOptions } from './columns';
 export {
   boolean,
   enumerated,
@@ -18,11 +20,18 @@ export {
   url,
   uuid,
 } from './columns';
+// The vocabulary an EXISTING schema needs. Separate from the blessed builders on purpose: those
+// are decisions this framework made for a table it was going to create, and these are the shapes
+// a table already has (`docs`: Entities-And-Migrations, "Adopting an existing database").
+export type { DecimalOptions } from './columns-data';
+export { arrayOf, bigint, bytes, date, decimal, json } from './columns-data';
 // `crossTenantReason` stays internal: an app that could read the flag would have a second way to
 // reason about tenant scope — branch on it — next to the one way, which is entering the scope.
 export { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
 export type { Database, DatabaseOptions, Driver, EntitySet } from './database';
 export { database, defaultDriver, memoryDriver } from './database';
+export type { DescribeInput } from './describe';
+export { sqlTypeOf } from './describe';
 export type { Entity, EntityCore, EntityInit, IndexInit } from './entity';
 export { entity, SOFT_DELETE_COLUMN } from './entity';
 export type {
@@ -102,8 +111,18 @@ export type {
   UpsertArgs,
 } from './repo';
 export { memoryRepo, memoryTransactor } from './repo';
-export type { Seed, SeedContext, SeedOptions } from './seed';
-export { defineSeed, seedId } from './seed';
+export type {
+  Seed,
+  SeedContext,
+  SeedInit,
+  SeedKey,
+  SeedMetrics,
+  SeedOptions,
+  SeedRun,
+  SeedTier,
+  SeedWrite,
+} from './seed';
+export { defineSeed, isSeed, SEED_TIERS, seedId, seedTiersFor } from './seed';
 export type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
 export {
   assertRowTenant,
@@ -127,6 +146,7 @@ export type {
   IdOf,
   IndexDef,
   Insertable,
+  MoneyColumnNames,
   MoneyInput,
   MoneyValue,
   OnDelete,

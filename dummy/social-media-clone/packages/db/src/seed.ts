@@ -9,7 +9,6 @@
 
 import { defineSeed, seedId } from '@ultimat3/entity';
 import { driver } from './client';
-import { replayable, seededIds } from './replayable';
 import {
   blocks,
   comments,
@@ -24,6 +23,7 @@ import {
   posts,
   users,
 } from './schema';
+import { seededIds } from './seeded-ids';
 
 /**
  * The rows whose presence says "this store holds the demo's fixture graph, and nothing else's".
@@ -407,9 +407,14 @@ export const demo = defineSeed('demo', async ({ insert, id }) => {
 /**
  * Seeds into the SAME driver the app reads through, which is the whole reason `driver` is exported
  * from `client.ts` rather than left as the module-private default.
+ *
+ * No decorator over the driver any more: `defineSeed`'s `insert` is one
+ * `upsertAll(rows, { onConflict: <primary key>, onMatch: 'nothing' })`, so a replay is a no-op on
+ * Postgres as well as in memory (packages/entity/src/seed.ts:274). This app hand-wrote that
+ * decorator because the framework did not; it does.
  */
 export const seedDemo = async (): Promise<void> => {
-  await demo.run({ driver: replayable(driver) });
+  await demo.run({ driver });
 };
 
 /**
