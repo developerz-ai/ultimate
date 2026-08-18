@@ -137,10 +137,12 @@ X_DB_DRIFT: schema differs from migrations
 | live table, no migration | `table "T" is not present in any migration` | `x db gen "add T"` |
 | migrated table, not live | `table "T" is declared by migrations but does not exist` | `x db migrate` |
 
-`checkDrift()` returns every difference; `assertNoDrift()` throws the first. `x db migrate` reports
-them and exits non-zero; a `ROLE=migrate` container logs them and still exits 0, because its
-contract is "apply every migration, then exit" and a schema difference after a clean apply is a
-diagnostic, not a failed migration.
+`checkDrift()` returns every difference; `assertNoDrift()` throws the first. `x db migrate` renders
+them all as findings and exits non-zero; a `ROLE=migrate` container throws the first one
+(`assertNoDrift`, in `runRole`) and exits non-zero too, because the release phase has one channel —
+the exit code — and a deploy that rolled on past a schema nobody can reconstruct is the failure
+drift exists to catch. There is no `x db drift`, and `x verify`'s `drift` step is the *source*
+detector (`checkSourceDrift`), which needs no database and never calls this.
 
 ## The embedded database
 
@@ -197,6 +199,16 @@ The statement timeout is pinned per connection via libpq `options=-c statement_t
 does reach the backend: `client.live.test.ts` asserts `current_setting('statement_timeout')`, which
 is the only reading a DSN test cannot fake. `Bun.SQL` is reached lazily, so importing this package
 never opens a socket.
+
+**That setting is MERGED into the operator's own `options`, never assigned over them** (`As of
+2026-08`). `?options=-c search_path=app` in `DATABASE_URL` survives on every role, and the role's
+`statement_timeout` is appended to it; if the URL sets `statement_timeout` itself, the **role
+wins** — it is a bound the pool is sized around — and every other flag is kept. It is emitted for
+all six roles, `migrate`'s and `replicator`'s `0` included: `0` is "this role may take as long as
+it takes", and left unsaid a server-side `alter database … set statement_timeout` would kill the
+one role that has to outlive it. Before this, `set` replaced the whole value and only on the roles
+with a non-zero timeout, so a `search_path` survived on `migrate` and vanished on `web` — the role
+that runs the migrations and the role that serves the traffic reading different schemas.
 
 **`DATABASE_POOL_MAX` overrides `max`** (`As of 2026-08`), and it is the only pool knob an operator
 can turn without shipping an image — 400 `web` pods × the frozen `max: 20` is 8,000 backends. A

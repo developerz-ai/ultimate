@@ -4,8 +4,10 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import {
+  bigint,
   boolean,
   clearRegistry,
+  decimal,
   entity,
   enumerated,
   money,
@@ -13,9 +15,14 @@ import {
   timestamp,
   uuid,
 } from '@ultimat3/entity';
+import { memoryAuditLog } from './audit';
+import { type AdminActor, staticAuthz } from './authz';
+import type { CrudCtx } from './crud';
+import { adminColumnsOf } from './entity-columns';
 import { AdminFieldUnsupportedError } from './errors';
-import type { AdminColumnMeta, AdminEntity } from './registry';
+import type { AdminColumnMeta, AdminEntity, AdminFilter, AdminRepo, AdminRow } from './registry';
 import { adminResource, resourceFor } from './resource';
+import { adminSearch } from './search';
 
 const authors = entity('admin_res_author', {
   columns: { id: uuid().primaryKey(), name: text({ max: 80 }) },
@@ -34,6 +41,21 @@ const post = entity('admin_res_post', {
     price: money(),
     secret: text({ max: 64 }).nullable(),
     createdAt: timestamp().defaultNow(),
+  },
+});
+
+/**
+ * The shapes a migrated schema arrives with. `externalId` is the interesting one: a uuid that is
+ * neither the primary key nor a declared reference, so nothing upstream turns it into a relation
+ * and it derives as plain text.
+ */
+const legacy = entity('admin_res_legacy', {
+  columns: {
+    id: uuid().primaryKey(),
+    externalId: uuid(),
+    reference: text({ max: 40 }),
+    rate: decimal({ precision: 18, scale: 8 }),
+    legacyKey: bigint(),
   },
 });
 
@@ -121,6 +143,64 @@ describe('adminResource with zero config', () => {
   });
 });
 
+/**
+ * MEASURED on Postgres 17 (PGlite), one statement per column type: only `text` and `char` accept a
+ * `LIKE`. Every other kind answers `operator does not exist: <type> ~~ unknown`, and `bytea`
+ * answers `Invalid input for bytea type`. The driver compiles the admin's `contains` filter to
+ * `<column> like $1` with no cast (`packages/entity/src/pg-sql.ts`), so a searchable column of any
+ * other kind is a 500 on the admin's search box — not an empty result.
+ */
+describe('search targets are columns a LIKE can actually run against', () => {
+  const resource = adminResource(legacy);
+
+  test('a numeric, a bigint and a bare uuid are not search targets; text still is', () => {
+    expect(resource.searchFields.map((field) => field.name)).toEqual(['reference']);
+  });
+
+  /**
+   * The assertion that would have caught the original defect. A boolean flag on a field is not
+   * where this fails — the failure is a `contains` filter reaching the repo, and from there the
+   * driver, naming a column no `LIKE` can run against. So this reads the filters the repo was
+   * actually handed.
+   */
+  test('no contains filter is ever emitted against a column that cannot take one', async () => {
+    const seen: AdminFilter[] = [];
+    const recording: AdminRepo<AdminRow> = {
+      list: async (query): Promise<readonly AdminRow[]> => {
+        seen.push(...(query.where ?? []));
+        return [];
+      },
+      find: async (): Promise<AdminRow | null> => null,
+      create: async (input): Promise<AdminRow> => input,
+      update: async (_id, patch): Promise<AdminRow> => patch,
+      destroy: async (): Promise<void> => undefined,
+    };
+    const actor: AdminActor = { id: 'u_1' };
+    const authz = staticAuthz(['admin:read', 'admin_res_legacy:read']);
+    const ctx: CrudCtx = { actor, authz, audit: memoryAuditLog(), requestId: 'req_1' };
+
+    const result = await adminSearch({
+      term: '42',
+      resources: [adminResource(legacy, { repo: recording })],
+      ctx,
+    });
+
+    expect(result.searched).toEqual(['admin_res_legacy']);
+    expect(seen).toEqual([{ field: 'reference', op: 'contains', value: '42' }]);
+    // Said the other way round, so a future kind that is added to the mapping and forgotten here
+    // still trips this: every emitted `contains` names a column of a kind Postgres accepts. Read
+    // through `adminColumnsOf`, which is the same flattening the derivation itself reads.
+    const kindOf = new Map(adminColumnsOf(legacy).map((column) => [column.name, column.kind]));
+    const likeAble = new Set(['text', 'char']);
+    for (const filter of seen.filter((one) => one.op === 'contains')) {
+      expect([filter.field, likeAble.has(kindOf.get(filter.field) ?? '')]).toEqual([
+        filter.field,
+        true,
+      ]);
+    }
+  });
+});
+
 describe('adminResource overrides and failures', () => {
   test('a per-field override wins over the derivation', () => {
     const resource = adminResource(post, {
@@ -154,9 +234,13 @@ describe('adminResource overrides and failures', () => {
     $describe: () => ({ columns: [] }),
   });
 
-  test('the kinds no builder emits yet still map to their one widget', () => {
+  test('a column kind maps to exactly one widget, and big integers are not number inputs', () => {
     expect(adminResource(exotic('jsonb')).field('value').widget).toBe('json-editor');
-    expect(adminResource(exotic('bigint')).field('value').widget).toBe('number-input');
+    // Was `number-input`, decided before `bigint()` existed. That column's row value is decimal
+    // DIGITS — a JS number loses everything past 2^53 — and `number-input` renders anything that
+    // is not a JS number as null, so it blanked the field and saved the blank back over the id.
+    // The render → edit → save round trip is asserted against the builder in `fields.test.ts`.
+    expect(adminResource(exotic('bigint')).field('value').widget).toBe('text-input');
     expect(adminResource(exotic('char')).field('value').widget).toBe('text-input');
   });
 

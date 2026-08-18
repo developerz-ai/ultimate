@@ -562,6 +562,20 @@ itself all reach the caller, and every caller must handle that. Layers 3–4 (pr
 policy) live in `@ultimat3/mcp`, which must still never import this package — the CLI wires the
 two together.
 
+**`libpq-options.ts` merges the framework's `options` into the operator's, and `connectionUrl` may
+not `set` that key again.** `DATABASE_URL` is the operator's file: `url.searchParams.set('options',
+…)` REPLACED whatever they had written, and only on the roles whose `statementTimeoutMs` is
+non-zero — so `?options=-c search_path=app` survived on `migrate` and `replicator` and was dropped
+on `web`, `sync`, `worker` and `scheduler`, i.e. the role that runs the migrations and the role that
+serves the traffic looked at different schemas with nothing reporting it. Precedence is **the
+framework wins on the names it sets, the operator keeps every other flag**, and it is enforced by
+removing those names from the operator's tokens before appending, never by position: "the last `-c`
+wins" is backend argument-order behaviour nobody here measured. The bound is emitted for all six
+roles including the two whose value is `0` — `0` is `migrate` saying it may take as long as it
+takes, and left unsaid an `alter database … set statement_timeout` on the server kills the one role
+that must outlive it. The splitter honours libpq's backslash escape, so a `search_path=two\ words`
+survives the round trip whole.
+
 ```bash
 bun test                      # from packages/db
 bun run typecheck

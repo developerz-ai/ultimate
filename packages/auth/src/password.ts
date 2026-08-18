@@ -3,7 +3,7 @@
 // a migration. Verification always burns a full KDF even when the user does not exist —
 // otherwise response time answers "is this email registered?" for free.
 
-import { passwordWeak } from './errors';
+import { AuthError, passwordWeak } from './errors';
 import { kdfGate } from './kdf-gate';
 
 export interface PasswordParams {
@@ -100,10 +100,49 @@ export function needsRehash(
 }
 
 export interface VerifyPasswordInput {
-  /** `null` when no user matched. The KDF still runs, on a throwaway hash. */
+  /**
+   * `null` when no user matched. The KDF still runs, on a throwaway hash — and a stored hash Bun
+   * cannot read takes that same branch, so neither is separable from a wrong password.
+   */
   readonly hash: string | null;
   readonly password: string;
   readonly params?: PasswordParams | undefined;
+}
+
+/** The KDF the happy path would have burnt, then the one failure shape. Never a cheap answer. */
+async function burnAndFail(
+  password: string,
+  params: PasswordParams,
+): Promise<PasswordVerification> {
+  await hashPassword(password, params);
+  return FAILED;
+}
+
+/**
+ * `false` is a wrong password, `null` is a stored hash Bun cannot read at all.
+ *
+ * `Bun.password.verify` THROWS rather than answering on a hash it cannot parse — measured, bun
+ * 1.3.14: a Django `pbkdf2_sha256$...` row is `UnsupportedAlgorithm`, a truncated bcrypt string is
+ * `InvalidEncoding`. Letting that escape was two faults. A bare `Error` reached `login()`, so the
+ * caller answered 500 instead of the one credential failure; and it landed on exactly the rows
+ * that have not migrated off the legacy scheme, which makes "has this account been migrated" —
+ * and therefore "does this account exist" — readable from the outside. That is the enumeration
+ * oracle the whole file is built to close, on the one table where a foreign hash is normal.
+ *
+ * Supported-but-old is a different thing and stays a verdict: bcrypt verifies natively here and
+ * `needsRehash` flags it, which is the lever a legacy migration rewrites rows with.
+ *
+ * Nothing is logged. The algorithm of an unreadable hash is the oracle again, one layer down.
+ */
+async function verifyAgainst(password: string, hash: string): Promise<boolean | null> {
+  try {
+    return await kdfGate().run(async () => await Bun.password.verify(password, hash));
+  } catch (error) {
+    // The gate shedding (`X_OVERLOADED`) is load, never a verdict on the credential: swallowing it
+    // would answer "wrong password" for a request this process refused to do the work for.
+    if (error instanceof AuthError) throw error;
+    return null;
+  }
 }
 
 /**
@@ -113,13 +152,14 @@ export interface VerifyPasswordInput {
  */
 export async function verifyPassword(input: VerifyPasswordInput): Promise<PasswordVerification> {
   const params = input.params ?? DEFAULT_PASSWORD_PARAMS;
-  // Read into a local so the closure below narrows without a cast.
+  // Read into a local so the two branches below narrow it without a cast.
   const hash = input.hash;
-  if (hash === null) {
-    await hashPassword(input.password, params);
-    return FAILED;
-  }
-  const ok = await kdfGate().run(async () => await Bun.password.verify(input.password, hash));
+  // `''` joins the no-user branch rather than reaching the KDF: an account with no password
+  // credential (oauth-only) answers `false` from Bun for free, and a failure that costs nothing
+  // is a stopwatch away from "this address exists but has never set a password".
+  if (hash === null || hash === '') return await burnAndFail(input.password, params);
+  const ok = await verifyAgainst(input.password, hash);
+  if (ok === null) return await burnAndFail(input.password, params);
   if (!ok) return FAILED;
   return { ok: true, needsRehash: needsRehash(hash, params) };
 }

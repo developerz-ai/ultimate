@@ -1,6 +1,12 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { action, registerActions, resetRegistry as resetActionRegistry, t } from '@ultimat3/action';
-import { can } from '@ultimat3/policy';
+import {
+  can,
+  clearPermissions,
+  definePermissions,
+  knownPermissions,
+  type Permission,
+} from '@ultimat3/policy';
 import { from, query, registerQuery, resetRegistry as resetQueryRegistry } from '@ultimat3/query';
 import { type AdminActor, staticAuthz } from '../authz';
 import { defaultDevSources, staticDevSources } from './data';
@@ -13,6 +19,42 @@ import { cachePanel } from './panel-cache';
 afterEach(() => {
   resetActionRegistry();
   resetQueryRegistry();
+});
+
+/** The `can()` capabilities this file's fixture actions and queries declare. */
+const WIDGET_PERMISSIONS = ['widget:create', 'widget:delete', 'widget:read'] as const;
+
+let ambientPermissions: readonly string[] = [];
+
+// The permission registry is process-global too, and an EMPTY one means "every permission is
+// provisionally known" (`isKnownPermission`) — which is the only reason the `can('widget:*')`
+// calls below ever worked. `@ultimat3/admin`'s policy bridge registers its four `admin:*` names
+// at module scope, so any process that also loaded that barrel (`bun test` seats several files
+// in one) has already left permissive mode and every `can()` here throws X_PERMISSION_UNKNOWN.
+// Declaring the set this file uses removes the dependency on which files it is sharded with;
+// restoring the ambient set removes the mirror-image hazard for whatever runs next.
+beforeAll(() => {
+  ambientPermissions = knownPermissions();
+  definePermissions(WIDGET_PERMISSIONS);
+});
+
+afterAll(() => {
+  clearPermissions();
+  // Every member arrived through a `definePermissions` call, so it is a `resource:verb` already.
+  if (ambientPermissions.length > 0) definePermissions(ambientPermissions as readonly Permission[]);
+});
+
+describe('this file owns its permission set', () => {
+  test('a neighbouring module declaring its own set cannot make these permissions unknown', () => {
+    // Exactly what importing `@ultimat3/admin` does at module scope: it declares a set this file
+    // never asked for, and the registry stops answering "known" to everything.
+    definePermissions(['neighbour:read']);
+    expect(knownPermissions()).toContain('neighbour:read');
+
+    // Delete the `beforeAll` above and this line throws X_PERMISSION_UNKNOWN — the exact failure
+    // `bun test <this file> packages/cli/src/error-catalog.test.ts` produced before the fix.
+    expect(() => can('widget:read')).not.toThrow();
+  });
 });
 
 describe('unwired sources reject instead of throwing', () => {

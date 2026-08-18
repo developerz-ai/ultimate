@@ -294,7 +294,13 @@ export function driftError(difference: DriftDifference): DbError {
   });
 }
 
-/** Throws the first difference. `x verify` calls this; `x db drift --json` reads the report. */
+/**
+ * Throws the first difference. The one caller is the release phase — `runRole` in `@ultimat3/cli`
+ * under `ROLE=migrate`, where the exit code is the only channel a container has. `x db migrate`
+ * and `x db reset` hold the same report and render every difference as a finding instead
+ * (`driftFindings`), and `x verify`'s `drift` step is the *source* detector (`checkSourceDrift`),
+ * which never reaches this function. There is no `x db drift` command.
+ */
 export function assertNoDrift(report: DriftReport): void {
   const first = report.differences[0];
   if (first !== undefined) throw driftError(first);

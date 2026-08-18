@@ -7,6 +7,7 @@ import { type Role, resolveRole } from '@ultimat3/core';
 import { statementAttribution } from './attribution';
 import { DbError, dbUnavailable, driverError, poolAcquireTimeout, poolMaxInvalid } from './errors';
 import { expectedQueryLoopReason } from './expected-loop';
+import { mergeLibpqOptions } from './libpq-options';
 import { statementObserver } from './observe';
 import { type SqlFragment, sql } from './sql';
 import { withStatementSpan } from './statement-span';
@@ -172,10 +173,19 @@ function connectionUrl(options: PostgresClientOptions, profile: PoolProfile): st
   } catch (error) {
     throw dbUnavailable(`DATABASE_URL is not a valid url: ${raw}`, error);
   }
-  // libpq `options` is the portable way to pin a statement timeout for every pooled connection.
-  if (profile.statementTimeoutMs > 0) {
-    url.searchParams.set('options', `-c statement_timeout=${profile.statementTimeoutMs}`);
-  }
+  // libpq `options` is the portable way to pin a statement timeout for every pooled connection —
+  // MERGED into the operator's own, never assigned over it, and emitted for every role including
+  // the two whose bound is 0. `set` here dropped a `?options=-c search_path=app` on `web`, `sync`,
+  // `worker` and `scheduler` and kept it on `migrate` and `replicator`, so the role that runs the
+  // migrations and the role that serves the traffic read different schemas. 0 is a value, not a
+  // silence: it is `migrate` saying it may take as long as it takes, and left unsaid a server-side
+  // `alter database ... set statement_timeout` kills the one role that must outlive it.
+  url.searchParams.set(
+    'options',
+    mergeLibpqOptions(url.searchParams.get('options'), {
+      statement_timeout: String(profile.statementTimeoutMs),
+    }),
+  );
   url.searchParams.set('application_name', options.applicationName ?? 'ultimate');
   return url.toString();
 }
