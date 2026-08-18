@@ -130,6 +130,7 @@ export {
   CORE_ERROR_CODES,
   ConfigInvalidError,
   DEFAULT_ERROR_RETRY,
+  declaredErrorRetry,
   describeErrorCode,
   describeValue,
   EnvMissingError,

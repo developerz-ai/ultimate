@@ -18,7 +18,8 @@ import type { ClaimedJob, JobDriver } from './driver';
 import { JobAbortedError, JobTimeoutError } from './errors';
 import { eventBus } from './events';
 import type { AnyJobHandle } from './job';
-import { nextRetry } from './retry';
+import type { JobStopReason } from './retry-classification';
+import { nextRetryForError, recordedFailure } from './retry-classification';
 import type { EventLookup, StepRecord } from './steps';
 import { createStepRunner, isStepSuspension } from './steps';
 import { jobRunActor } from './tenant';
@@ -69,6 +70,8 @@ export interface JobExecution {
   readonly durationMs: number;
   readonly resumeAt?: number;
   readonly error?: string;
+  /** Why this attempt was the last. Absent while the job is still being retried. */
+  readonly stopReason?: JobStopReason;
   readonly steps: readonly StepRecord[];
   readonly replayed: readonly string[];
 }
@@ -166,10 +169,16 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     }
 
     const message = error instanceof Error ? error.message : String(error);
-    const decision = nextRetry(handle.retry, claimed.attempt);
+    // The ERROR decides too, not only the attempt count. A `terminal` code — a rotated password,
+    // a schema mismatch, a permission denial — fails identically on every remaining attempt, so
+    // spending them is a queue slot, a provider bill and, at a site that locks an account after
+    // three wrong passwords, the framework destroying what it was asked to read. A code nobody
+    // classified keeps the attempt-count path exactly as it was.
+    const decision = nextRetryForError(handle.retry, claimed.attempt, error);
+    const stop = decision.stoppedBy;
     await driver.nack(claimed.id, {
       delayMs: decision.delayMs,
-      error: message,
+      error: recordedFailure(message, decision),
       countsAsAttempt: true,
       deadLetter: !decision.retry && decision.deadLetter,
     });
@@ -178,6 +187,9 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
       jobId: claimed.id,
       attempt: claimed.attempt,
       retry: decision.retry,
+      // "stopped because terminal" and "stopped because the attempts ran out" are different
+      // incidents with the same `retry: false`, and only one of them is fixed by raising attempts.
+      ...(stop === undefined ? {} : { stop }),
       error: message,
     });
     // This package's ONE error-reporting call site, and it is here rather than in the loop because
@@ -195,6 +207,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
           runId: claimed.runId,
           attempt: claimed.attempt,
           retry: decision.retry,
+          ...(stop === undefined ? {} : { stop }),
         },
       },
     });
@@ -205,6 +218,7 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
       attempt: claimed.attempt,
       durationMs: nowMs(options.clock) - startedAt,
       error: message,
+      ...(stop === undefined ? {} : { stopReason: stop }),
       steps: [],
       replayed: [],
     });

@@ -32,6 +32,7 @@ export {
 export type { ErrorRetry } from '../error-retry';
 export {
   DEFAULT_ERROR_RETRY,
+  declaredErrorRetry,
   ERROR_RETRY_KINDS,
   isErrorRetry,
   registerErrorRetry,

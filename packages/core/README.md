@@ -73,6 +73,16 @@ registerErrorRetry({ X_OAUTH_EXCHANGE_FAILED: 'retryable', X_RATE_LIMITED: 'retr
 Core's own classifications are closed, exactly as `registerErrorStatus`'s framework table is: a
 second, different registration for one code throws `X_ERROR_RETRY_INVALID`.
 
+**Two readers, and the difference is load-bearing.** `retryFor(code)` answers *what to do* and
+fails closed — `terminal` for a code nobody classified. `declaredErrorRetry(code)` answers *what
+somebody actually declared*, and is `undefined` when nobody did. `UltimateError.retry` is
+`init.retry ?? retryFor(code)`, so every unclassified error already carries `terminal`: a caller
+deciding whether to stop work already in flight reads `declaredErrorRetry`, and the job executor
+that read `retryFor` instead would dead-letter attempt 1 of every job in every app whose codes
+nobody has classified. An instance-level `retry: 'terminal'` on an **unregistered** code is
+indistinguishable from that default and is read as unclassified — register the code
+(`registerErrorRetry({ X_YOUR_CODE: 'terminal' })`), which is the one way.
+
 | Code | Subclass |
 |---|---|
 | `X_CONFIG_INVALID` | `ConfigInvalidError` |
