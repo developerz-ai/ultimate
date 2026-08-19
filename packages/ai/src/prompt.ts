@@ -120,7 +120,12 @@ const PLACEHOLDER = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
 function render(template: string, vars: PromptVars, ref: string): string {
   const missing: string[] = [];
   const out = template.replace(PLACEHOLDER, (_match, name: string) => {
-    const value = vars[name];
+    // `Object.hasOwn`, never `vars[name] === undefined`: a plain object inherits `constructor`,
+    // `toString` and `valueOf`, so `{{constructor}}` in a template rendered JS SOURCE into the
+    // prompt instead of raising the unfilled-slot error this file promises — and that source was
+    // then hashed into the semantic cache key and paid for at the input rate. The discriminator
+    // `@ultimat3/flags`' `subject.ts` already uses, for the same reason.
+    const value = Object.hasOwn(vars, name) ? vars[name] : undefined;
     if (value === undefined) {
       missing.push(name);
       return '';

@@ -16,7 +16,7 @@ import { assertEnvelopeAddress } from './envelope-address';
 import { defineMail, send } from './mail';
 import { type SmtpSessionOptions, type SmtpStream, smtpDeliver } from './smtp-client';
 
-registerMailCatalog('en');
+registerMailCatalog();
 registerCatalog(
   'en',
   loadCatalog({

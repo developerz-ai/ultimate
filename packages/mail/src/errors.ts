@@ -2,7 +2,13 @@
 // Mail fails in production, not in tests — a wrong locale, an empty text part or an
 // unconfigured driver must name the exact call site edit that repairs it.
 
-import { type Environment, registerErrorCodes, UltimateError } from '@ultimat3/core';
+import {
+  type Environment,
+  type ErrorRetry,
+  registerErrorCodes,
+  registerErrorRetry,
+  UltimateError,
+} from '@ultimat3/core';
 
 export const MAIL_ERROR_CODES = [
   'X_MAIL_LOCALE_MISSING',
@@ -37,11 +43,35 @@ registerErrorCodes(
   Object.fromEntries(Object.entries(MAIL_ERROR_TITLES).map(([code, title]) => [code, { title }])),
 );
 
+/**
+ * The one code in this package a queue may retry, and it is registered rather than merely written
+ * down: `classifyThrown` reads a per-instance `terminal` only for a code somebody REGISTERED, so a
+ * table with no `registerErrorRetry` call behind it lets `sendMailJob` spend all five attempts on
+ * a 401 or a 550 hard bounce — the `cause` saying "permanent, retrying cannot help" while the
+ * worker retries it four more times.
+ *
+ * `retryable` is the table entry because a transport that cannot say is a transport that timed out;
+ * the permanent half arrives as the per-instance override `sendFailed` passes below, the shape
+ * `@ultimat3/scraping` uses for `X_SCRAPE_HTTP_FAILED`. Every other code here is a wiring or
+ * content fault that fails identically forever, and takes core's `terminal` default.
+ */
+export const MAIL_ERROR_RETRY = {
+  X_MAIL_SEND_FAILED: 'retryable',
+} as const satisfies Readonly<Partial<Record<MailErrorCode, ErrorRetry>>>;
+
+registerErrorRetry(MAIL_ERROR_RETRY);
+
 export interface MailErrorInit {
   readonly code: MailErrorCode;
   readonly cause: string;
   readonly fix: string;
   readonly meta?: Readonly<Record<string, unknown>> | undefined;
+  /**
+   * Per-instance override of the table above, for the one code that is genuinely both: a 421
+   * greylist and a 550 hard bounce are the same code, and only the transport that saw the reply
+   * knows which one it was.
+   */
+  readonly retry?: ErrorRetry | undefined;
 }
 
 export class MailError extends UltimateError {
@@ -54,6 +84,7 @@ export class MailError extends UltimateError {
       fix: init.fix,
       docs: `https://ultimate.dev/errors/${init.code}`,
       meta: init.meta,
+      ...(init.retry === undefined ? {} : { retry: init.retry }),
     });
   }
 }
@@ -220,6 +251,10 @@ export interface SendFailure {
 export const sendFailed = (failure: SendFailure): MailError =>
   new MailError({
     code: 'X_MAIL_SEND_FAILED',
+    // The classification the queue acts on. `meta.retryable` below is an operator-facing FACT and
+    // nothing reads it to make a decision — `nextRetryForError` reads `error.retry`, so a failure
+    // that only reported itself in `meta` was a failure the worker retried anyway.
+    retry: failure.retryable ? 'retryable' : 'terminal',
     cause:
       `${failure.driver} refused the message at ${failure.stage}` +
       `${failure.status === undefined ? '' : ` (${failure.status})`}: ${failure.detail} — ` +

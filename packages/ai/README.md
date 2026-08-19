@@ -108,6 +108,8 @@ for await (const chunk of ai.stream({ messages, maxTokens: 64_000 })) {
 | A `tool-call` chunk arrives whole | `input_json_delta` fragments are not arguments until the block closes |
 | `thinking` chunks never join `text` | concatenating every chunk must not ship the reasoning to the user |
 | A stream cut before `message_stop` **throws** | a truncated answer reporting `end_turn` is wrong with no signal |
+| `[DONE]` with a tool call still open **throws** | the OpenAI format has no per-call stop event, so the finish reason is the only close there is; the sentinel alone cannot tell "finished asking" from "cut mid-arguments" |
+| A body with no frame boundary in it **throws** | an SSE peer that never completes a frame is an unbounded allocation no read deadline interrupts |
 | An in-band `error` frame carries a status | `overloaded_error` mid-stream retries like a 529 on the handshake |
 
 ## Embeddings
@@ -600,7 +602,12 @@ nothing. `scoped()` only ever **tightens** — re-scoping to a different tenant 
 `X_VECTOR_SCOPE_WIDENED`, never a silent widening.
 
 `chunk()` is token-aware with overlap and splits at paragraph, then sentence, then hard wrap
-— a fact split across a boundary with no overlap is retrievable by neither chunk.
+— a fact split across a boundary with no overlap is retrievable by neither chunk. All three
+splits are load-bearing: the wrap is what bounds a UNIT (a base64 blob, a minified line, a CJK
+paragraph the sentence alphabet cannot see), and a unit larger than `size` is one the size check
+can never flush, so it rode every chunk after it — `As of 2026-08`, a ~1,000-token document
+indexed as nine chunks of the same sentence. The overlap carries a tail forward and never the
+whole buffer, for the same reason.
 
 ## Tools: the same projection as MCP
 

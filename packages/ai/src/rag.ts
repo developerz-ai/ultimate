@@ -31,9 +31,12 @@ export interface ChunkInput {
  * boundary lands at a meaning boundary whenever one is available within the budget.
  */
 export function chunk(input: ChunkInput): readonly Chunk[] {
-  const size = input.size ?? 512;
+  // Floored at one token: `size: 0` makes every comparison below meaningless and the wrap's cut
+  // point zero-width, which is a loop that never advances rather than a chunker that produces
+  // nothing. A budget under one token is not a budget.
+  const size = Math.max(1, Math.floor(input.size ?? 512));
   const overlap = Math.min(input.overlap ?? 64, size - 1);
-  const units = splitUnits(input.text);
+  const units = splitUnits(input.text, size);
   const chunks: Chunk[] = [];
   let buffer: string[] = [];
   let tokens = 0;
@@ -49,10 +52,14 @@ export function chunk(input: ChunkInput): readonly Chunk[] {
         metadata: { source: input.id, ...(input.metadata ?? {}) },
       });
     }
-    // Carry the tail forward as the overlap for the next chunk.
+    // Carry the tail forward as the overlap for the next chunk — at most every unit BUT THE
+    // FIRST. Walking back to index 0 re-seeded the next buffer with everything just flushed, so
+    // a single unit whose own size exceeds `overlap` became the whole of the next chunk, and the
+    // next, and the next: a ~1,000-token document indexed as nine chunks of the same sentence.
+    // The wrap above bounds a unit; this bounds the loop, and both are needed.
     const carried: string[] = [];
     let carriedTokens = 0;
-    for (let i = buffer.length - 1; i >= 0 && carriedTokens < overlap; i -= 1) {
+    for (let i = buffer.length - 1; i >= 1 && carriedTokens < overlap; i -= 1) {
       const unit = buffer[i] ?? '';
       carried.unshift(unit);
       carriedTokens += estimateChunkTokens(unit);
@@ -72,7 +79,7 @@ export function chunk(input: ChunkInput): readonly Chunk[] {
   return chunks;
 }
 
-function splitUnits(text: string): readonly string[] {
+function splitUnits(text: string, size: number): readonly string[] {
   const units: string[] = [];
   for (const paragraph of text.split(/\n{2,}/)) {
     const trimmed = paragraph.trim();
@@ -81,10 +88,63 @@ function splitUnits(text: string): readonly string[] {
     const sentences = trimmed.match(/[^.!?]+[.!?]*\s*/g) ?? [trimmed];
     for (const sentence of sentences) {
       const s = sentence.trim();
-      if (s !== '') units.push(s);
+      if (s !== '') units.push(...hardWrap(s, size));
     }
   }
   return units;
+}
+
+/**
+ * The third split the header promises, and the one that was missing: a unit no larger than the
+ * budget. Neither split above can guarantee it — a base64 blob, a minified line, a CJK paragraph
+ * this splitter's `[.!?]` alphabet cannot see and a legal 400-word sentence all survive both — and
+ * an oversized unit is a chunk the size check can never flush, because the check only fires when
+ * something is ALREADY in the buffer.
+ *
+ * Word boundaries first, so a chunk edge still lands at a meaning boundary when one exists within
+ * the budget; a run with no boundary in it is cut mid-word, because the alternative is no boundary
+ * at all.
+ */
+function hardWrap(unit: string, size: number): readonly string[] {
+  if (estimateChunkTokens(unit) <= size) return [unit];
+  const pieces: string[] = [];
+  let piece = '';
+  const flushPiece = (): void => {
+    if (piece !== '') pieces.push(piece);
+    piece = '';
+  };
+  for (const word of unit.split(/\s+/)) {
+    if (word === '') continue;
+    const candidate = piece === '' ? word : `${piece} ${word}`;
+    if (estimateChunkTokens(candidate) <= size) {
+      piece = candidate;
+      continue;
+    }
+    flushPiece();
+    if (estimateChunkTokens(word) <= size) {
+      piece = word;
+      continue;
+    }
+    pieces.push(...cutToBudget(word, size));
+  }
+  flushPiece();
+  return pieces;
+}
+
+/**
+ * One word longer than the whole budget, cut into pieces that fit. The estimator is linear in
+ * length, so the ratio over what is left gives the cut point directly — `Math.max(1, …)` is what
+ * keeps a pathological ratio from producing a zero-width cut and a loop that never advances.
+ */
+function cutToBudget(run: string, size: number): readonly string[] {
+  const pieces: string[] = [];
+  let rest = run;
+  while (rest !== '') {
+    const fit = Math.max(1, Math.floor((rest.length * size) / estimateChunkTokens(rest)));
+    pieces.push(rest.slice(0, fit));
+    rest = rest.slice(fit);
+  }
+  return pieces;
 }
 
 /** Index a document: chunk, embed, upsert. One call so no step is skipped by accident. */

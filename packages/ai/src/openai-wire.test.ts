@@ -6,7 +6,12 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { ChatCompletionStream, parseChatCompletion, parseOpenAiUsage } from './openai-wire';
+import {
+  ChatCompletionStream,
+  parseChatCompletion,
+  parseFinishReason,
+  parseOpenAiUsage,
+} from './openai-wire';
 import type { StreamChunk } from './provider';
 import type { SseFrame } from './sse';
 
@@ -183,6 +188,53 @@ describe('usage', () => {
   });
 });
 
+describe('a finish reason is looked up, never indexed', () => {
+  // `FINISH_REASONS['constructor']` on an object literal answers the `Object` FUNCTION, which was
+  // returned as a `StopReason` and treated by the stream reader as a finish — so `isComplete()`
+  // answered true for a stream that never finished.
+  test('an inherited property name is not a finish reason', () => {
+    expect(parseFinishReason('constructor')).toBeUndefined();
+    expect(parseFinishReason('toString')).toBeUndefined();
+    expect(parseFinishReason('__proto__')).toBeUndefined();
+    expect(parseFinishReason('stop')).toBe('end_turn');
+  });
+
+  test('a frame finishing with __proto__ does not report the stream complete', () => {
+    const { stream } = drive([
+      frame({ choices: [{ delta: { content: 'half an ans' }, finish_reason: '__proto__' }] }),
+    ]);
+    expect(stream.isComplete()).toBe(false);
+    // And the stop reason is untouched: nothing was learned about why the model stopped.
+    expect(stream.state().stopReason).toBe('end_turn');
+  });
+
+  test('an in-band error type off the prototype chain gets 500, never a function', () => {
+    let thrown: unknown;
+    try {
+      drive([frame({ error: { type: 'constructor', message: 'nope' } })]);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toMatchObject({ code: 'X_AI_PROVIDER_UNAVAILABLE', status: 500 });
+    expect(typeof (thrown as { status: unknown }).status).toBe('number');
+  });
+
+  test('a negative token count is floored, never credited to the ledger', () => {
+    // A negative count becomes a negative cost, and a negative debit is a CREDIT to the budget.
+    expect(parseOpenAiUsage({ prompt_tokens: -10, completion_tokens: -4 })).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+    // A negative CACHED count is the same fault by a different route: it is subtracted out of the
+    // input count, so an unclamped one inflates the tokens billed at the full input rate.
+    expect(
+      parseOpenAiUsage({ prompt_tokens: 100, prompt_tokens_details: { cached_tokens: -50 } }),
+    ).toMatchObject({ inputTokens: 100, cacheReadTokens: 0 });
+  });
+});
+
 describe('the stream ends', () => {
   test('a cut connection is incomplete, so the provider can refuse a truncated answer', () => {
     const { stream } = drive([frame({ choices: [{ delta: { content: 'half an ans' } }] })]);
@@ -209,6 +261,35 @@ describe('the stream ends', () => {
 
   test('an unreadable frame fails loudly rather than reading as an empty answer', () => {
     expect(() => drive([{ event: 'message', data: 'not json' }])).toThrow(/unreadable/);
+  });
+
+  test('[DONE] while a tool call is still open is NOT complete', () => {
+    // `onFinish` is the only drain of `pending`, so a `[DONE]` with no finish reason behind it
+    // dropped the whole call and left a successful, empty `end_turn` — a tool the model asked for
+    // that no layer below can tell was ever requested.
+    const { chunks, stream } = drive([
+      TOOL_STREAM[0] as SseFrame,
+      TOOL_STREAM[1] as SseFrame,
+      TOOL_STREAM[2] as SseFrame,
+      DONE,
+    ]);
+    expect(chunks.filter((chunk) => chunk.type === 'tool-call')).toHaveLength(0);
+    expect(stream.isComplete()).toBe(false);
+    expect(stream.state().toolCalls).toEqual([]);
+  });
+
+  test('[DONE] after the finish reason closed the call is complete', () => {
+    // The ordinary shape, and the one the exception above must not break: the call was emitted at
+    // the finish reason, so nothing is pending by the time the sentinel lands.
+    const { stream } = drive(TOOL_STREAM);
+    expect(stream.isComplete()).toBe(true);
+  });
+
+  test('[DONE] alone still ends a text-only answer', () => {
+    // The other half that must not break: a server in the family that sends `[DONE]` and never a
+    // finish reason has still delivered a whole answer when no tool call is open.
+    const { stream } = drive([frame({ choices: [{ delta: { content: 'hello' } }] }), DONE]);
+    expect(stream.isComplete()).toBe(true);
   });
 });
 

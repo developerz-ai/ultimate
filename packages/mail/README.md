@@ -125,7 +125,7 @@ Translating them = shipping `mail.*` keys in an app catalog. Never edit a templa
 | `X_MAIL_CREDENTIAL_MISSING` | set `SMTP_URL` (or `RESEND_API_KEY`) and `MAIL_FROM` in the deployment — an operations one |
 | `X_MAIL_HEADER_INVALID` | strip CR/LF from the interpolated value before it reaches a header |
 | `X_MAIL_ADDRESS_INVALID` | pass a bare `addr-spec` — an envelope address may hold no control character and no `<`/`>` |
-| `X_MAIL_SEND_FAILED` | the `cause` names the stage, the provider's status and whether a retry can help |
+| `X_MAIL_SEND_FAILED` | the `cause` names the stage, the provider's status and whether a retry can help — and so does `error.retry`, which is what `sendMailJob` acts on: `terminal` dead-letters a 550 or a rejected credential at attempt 1 instead of sending it four more times |
 
 ## Commands
 

@@ -42,7 +42,11 @@ export function parsePartialUsage(raw: unknown): Partial<TokenUsage> {
   const usage: Partial<Record<keyof TokenUsage, number>> = {};
   for (const [field, wire] of Object.entries(USAGE_FIELDS) as [keyof TokenUsage, string][]) {
     const value = record[wire];
-    if (typeof value === 'number') usage[field] = value;
+    // Floored at zero, and finite: usage is the provider's number, a negative one becomes a
+    // negative `cost`, and `MemoryBudgetStore.add` reads a negative debit as a CREDIT — releasing
+    // an unspent reservation is one — so an unclamped `-1` tops the ledger up instead of
+    // under-reporting it. `NaN` propagates the same way through every later sum.
+    if (typeof value === 'number' && Number.isFinite(value)) usage[field] = Math.max(0, value);
   }
   return usage;
 }
@@ -81,17 +85,23 @@ export function parseStopDetails(raw: unknown): StopDetails | undefined {
  * retry rule in the gateway: an overloaded provider is retryable whether it says so with a
  * 529 on the handshake or with an `overloaded_error` frame ten tokens in.
  */
-const ERROR_STATUS: Readonly<Record<string, number>> = {
-  invalid_request_error: 400,
-  authentication_error: 401,
-  permission_error: 403,
-  not_found_error: 404,
-  request_too_large: 413,
-  rate_limit_error: 429,
-  api_error: 500,
-  timeout_error: 504,
-  overloaded_error: 529,
-};
+// A `Map`, not an object literal: `type` is the PROVIDER's string on the one read below, and
+// `ERROR_STATUS['constructor']` on an object answers the `Object` FUNCTION where
+// `AiTransportError.status` is declared `number | undefined`. Same fix, same reason, as
+// `openai-wire.ts`'s twin and `core`'s `error-retry.ts`.
+const ERROR_STATUS: ReadonlyMap<string, number> = new Map(
+  Object.entries({
+    invalid_request_error: 400,
+    authentication_error: 401,
+    permission_error: 403,
+    not_found_error: 404,
+    request_too_large: 413,
+    rate_limit_error: 429,
+    api_error: 500,
+    timeout_error: 504,
+    overloaded_error: 529,
+  }),
+);
 
 /**
  * A 200 whose body carries an `error` object instead of an answer, refused — how a gateway in
@@ -298,7 +308,7 @@ function inBandFailure(error: Record<string, unknown>): AiTransportError {
   const message = typeof error['message'] === 'string' ? error['message'] : type;
   return new AiTransportError({
     provider: 'anthropic',
-    status: ERROR_STATUS[type],
+    status: ERROR_STATUS.get(type),
     detail: message,
   });
 }

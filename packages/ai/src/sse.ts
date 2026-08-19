@@ -5,6 +5,21 @@
 // stream is a boundary search and a field split, and the only interesting property — that a
 // frame may arrive split at any byte offset — is exactly what a library would hide.
 
+import { AiTransportError } from './errors';
+
+/**
+ * The most one unterminated frame may buffer. A peer that sends a body with no frame boundary in
+ * it — an HTML error page, a proxy answering on the model's port, a hung gateway — grows `buffer`
+ * without limit, and no read deadline interrupts it because every individual read SUCCEEDS. Coded
+ * failure > OOM, the same call `@ultimat3/mail`'s `createReplyParser` makes for the same shape.
+ *
+ * Counted in UTF-16 code units rather than bytes: `buffer` holds decoded text, and a decoded unit
+ * is never more than one byte of input, so the cap is conservative in the direction that matters.
+ * A megabyte is orders of magnitude above the largest single delta any provider in this package
+ * sends, so a legitimate stream can never reach it.
+ */
+export const MAX_FRAME_CHARS = 1024 * 1024;
+
 export interface SseFrame {
   /** The `event:` field, or `message` when the frame omits one — the spec's default. */
   readonly event: string;
@@ -57,7 +72,12 @@ function frameOf(block: string): SseFrame | undefined {
  * a stream cut mid-message must fail loudly at the consumer that parses it, and dropping the
  * tail silently would turn a truncated answer into a complete-looking one.
  */
-export async function* readSse(body: ReadableStream<Uint8Array>): AsyncGenerator<SseFrame> {
+export async function* readSse(
+  body: ReadableStream<Uint8Array>,
+  /** Named, never defaulted: the cap below fails as a transport error, and a transport error the
+   * caller reads has to say which endpoint it is about. */
+  provider: string,
+): AsyncGenerator<SseFrame> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -66,6 +86,7 @@ export async function* readSse(body: ReadableStream<Uint8Array>): AsyncGenerator
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
+      guard(buffer, provider);
       const decoded = decodeSse(buffer);
       buffer = decoded.rest;
       for (const frame of decoded.frames) yield frame;
@@ -78,4 +99,14 @@ export async function* readSse(body: ReadableStream<Uint8Array>): AsyncGenerator
     // this through the generator's `return()`, so an early `break` does not leak a connection.
     await reader.cancel().catch(() => undefined);
   }
+}
+
+function guard(buffer: string, provider: string): void {
+  if (buffer.length <= MAX_FRAME_CHARS) return;
+  throw new AiTransportError({
+    provider,
+    detail:
+      `the stream sent more than ${MAX_FRAME_CHARS} characters without completing one SSE ` +
+      'frame — the endpoint is answering with something that is not an event stream',
+  });
 }

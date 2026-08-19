@@ -6,7 +6,7 @@ import { registerMailCatalog } from './catalog';
 import { BASE_LAYOUT, MAIL_TOKENS, type MailToken } from './layout';
 import { type RenderableMail, renderMail } from './render';
 
-registerMailCatalog('en');
+registerMailCatalog();
 registerCatalog(
   'en',
   loadCatalog({

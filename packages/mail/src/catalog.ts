@@ -82,7 +82,27 @@ export const MAIL_CATALOG_SOURCE: NestedCatalog = {
 
 export const MAIL_CATALOG: Catalog = loadCatalog(MAIL_CATALOG_SOURCE);
 
-/** Called at boot next to `registerFrameworkCatalog()`. Idempotent. */
-export function registerMailCatalog(locale: Locale = DEFAULT_LOCALE): void {
-  registerCatalog(locale, MAIL_CATALOG);
+/** The one locale these strings are written in. */
+export const MAIL_CATALOG_LOCALE: Locale = DEFAULT_LOCALE;
+
+/**
+ * Register the mail templates' own strings under the ONE locale they are written in.
+ *
+ * **No locale parameter, and that is the fix**: this catalog is English, so `registerMailCatalog('es')`
+ * seated English subjects and headings under `es` where `isMiss` then read FALSE — a fallback locale
+ * chain wearing registration as a disguise, the same defect `registerFrameworkCatalog` carried until
+ * it lost its own parameter. A locale argument is now a compile error rather than a silent one.
+ *
+ * **Call it once, at boot.** This is NOT idempotent, and the comment here claimed it was:
+ * `registerCatalog` merges the existing entry first and its argument second, so a second call after
+ * an app has overridden `mail.*` keys puts the English strings back on top of exactly the keys that
+ * app cared enough to translate. Guarding on "has this locale a catalog" — the shape
+ * `registerFrameworkCatalog` uses — cannot work here, because the framework catalog has already
+ * claimed this locale by the time mail registers; a guard by CONTENT needs an i18n primitive that
+ * does not exist, and remembering the call in a module flag goes stale the moment
+ * `resetCatalogs()` runs (`packages/testing/src/registry-snapshot.ts`), which would silently stop
+ * registering altogether. Stating the limit beats inventing a guard that fails quietly.
+ */
+export function registerMailCatalog(): void {
+  registerCatalog(MAIL_CATALOG_LOCALE, MAIL_CATALOG);
 }

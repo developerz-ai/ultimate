@@ -14,7 +14,7 @@ import {
   welcomeMail,
 } from './templates';
 
-registerMailCatalog('en');
+registerMailCatalog();
 
 /** A key, not a sentence: lowercase dotted segments, never a space. */
 const KEY_RE = /^[a-z0-9]+(\.[a-z0-9-]+)+$/;

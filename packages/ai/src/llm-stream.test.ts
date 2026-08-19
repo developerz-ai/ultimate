@@ -6,6 +6,7 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx, t } from '@ultimat3/action';
+import { createContext } from '@ultimat3/core';
 import { allow, deny } from '@ultimat3/policy';
 import { BudgetLedger, withBudget } from './budget';
 import { createGateway } from './gateway';
@@ -181,6 +182,27 @@ describe('.stream() keeps everything llm() is for', () => {
     summarize.stream({ postId: POST_ID }, { ctx: anonymousCtx() });
     await Promise.resolve();
     expect(seen.length).toBe(0);
+  });
+
+  test("the caller's signal reaches the streamed request, inherited from the same base", async () => {
+    // The stream is where a disconnect is most likely and most expensive: the consumer stops
+    // pulling, and without a signal the socket stays open and the tokens keep being billed.
+    const { provider, seen } = streamer('a summary');
+    configureAi({ gateway: createGateway({ providers: [provider] }) });
+    const summarize = llm({
+      input: Input,
+      output: Prose,
+      prompt: promptFor(),
+      vars: ({ input }) => ({ postId: input.postId }),
+      policy: allow(),
+    }).named('cancellableStream');
+    const controller = new AbortController();
+
+    await collect(
+      summarize.stream({ postId: POST_ID }, { ctx: createContext({ signal: controller.signal }) }),
+    );
+
+    expect(seen[0]?.signal).toBe(controller.signal);
   });
 
   test('a renamed twin still streams — named() rebuilds the action, and would have dropped it', () => {

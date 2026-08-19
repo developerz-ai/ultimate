@@ -138,7 +138,7 @@ class OpenAiProvider implements Provider {
       });
     }
     const completion = new ChatCompletionStream(this.name);
-    for await (const frame of readSse(response.body)) {
+    for await (const frame of readSse(response.body, this.name)) {
       for (const chunk of completion.push(frame)) yield chunk;
     }
     // A connection cut mid-answer must fail, not resolve: partial text reads as a complete answer,

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { decodeSse, readSse, type SseFrame } from './sse';
+import { isUltimateError } from '@ultimat3/core';
+import { decodeSse, MAX_FRAME_CHARS, readSse, type SseFrame } from './sse';
 
 function streamOf(chunks: readonly string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
@@ -13,7 +14,7 @@ function streamOf(chunks: readonly string[]): ReadableStream<Uint8Array> {
 
 async function collect(body: ReadableStream<Uint8Array>): Promise<SseFrame[]> {
   const frames: SseFrame[] = [];
-  for await (const frame of readSse(body)) frames.push(frame);
+  for await (const frame of readSse(body, 'test')) frames.push(frame);
   return frames;
 }
 
@@ -92,10 +93,47 @@ describe('readSse', () => {
         cancelled = true;
       },
     });
-    for await (const frame of readSse(body)) {
+    for await (const frame of readSse(body, 'test')) {
       expect(frame.data).toBe('a');
       break;
     }
     expect(cancelled).toBe(true);
+  });
+
+  test('refuses a peer that never completes a frame instead of buffering it forever', async () => {
+    // No boundary is ever sent, so every read succeeds and nothing else in the pipeline can ever
+    // interrupt the growth — a read deadline included.
+    const encoder = new TextEncoder();
+    const filler = 'x'.repeat(64 * 1024);
+    let sent = 0;
+    // Finite, at twice the cap: an endless fixture would HANG rather than fail when the guard is
+    // removed, and a test whose failure mode is a hung CI job is a test nobody reads.
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent > MAX_FRAME_CHARS * 2) {
+          controller.close();
+          return;
+        }
+        sent += filler.length;
+        controller.enqueue(encoder.encode(filler));
+      },
+    });
+
+    const read = async (): Promise<void> => {
+      for await (const _frame of readSse(body, 'openai')) {
+        throw new Error('a frame was yielded from a body that carries no frame boundary');
+      }
+    };
+
+    const error: unknown = await read().then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+    expect(isUltimateError(error)).toBe(true);
+    if (!isUltimateError(error)) return;
+    expect(error.code).toBe('X_AI_PROVIDER_UNAVAILABLE');
+    expect(error.cause).toContain('openai');
+    // Bounded, and bounded by the cap rather than by the fixture running out of bytes.
+    expect(sent).toBeLessThanOrEqual(MAX_FRAME_CHARS + filler.length);
   });
 });

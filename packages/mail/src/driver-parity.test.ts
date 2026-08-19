@@ -25,7 +25,7 @@ import type { SmtpConnector, SmtpStream } from './smtp-client';
 const FROM = 'Postly <no-reply@postly.test>';
 const TO = 'ada@example.test';
 
-registerMailCatalog('en');
+registerMailCatalog();
 registerCatalog(
   'en',
   loadCatalog({

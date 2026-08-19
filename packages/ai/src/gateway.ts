@@ -127,8 +127,14 @@ class GatewayImpl implements Gateway {
     const ledger = currentBudget();
     const reservation = await ledger?.reserve(estimateSpend(resolved));
 
-    // A stream is not retried mid-flight: the consumer has already seen tokens, and
-    // replaying from the top would duplicate them. Only the handshake retries.
+    // The streaming path does not retry AT ALL — not mid-flight, and not on the handshake either.
+    // Mid-flight is the obvious one: the consumer has already been handed tokens, and replaying
+    // from the top would duplicate them. The handshake is not separable from it here, because
+    // `provider.stream()` is one call that yields — there is no point at which the connection is
+    // open and no chunk has been delivered for a retry to hide behind. So `providerFor` picks the
+    // single provider serving this model and that call stands or throws; `attempt`'s backoff and
+    // its fallback across providers belong to `generate` alone. A caller that wants either uses
+    // `generate`, or reconnects itself and knows what it has already shown.
     const provider = this.providerFor(model);
     let settled = false;
     try {

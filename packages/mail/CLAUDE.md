@@ -39,8 +39,14 @@
 - Never format a date without `options.tz`. The `Date:` header is UTC, stated as `+0000`.
 - New block kind: `MailBlock` + `blocks` + `htmlOf` + `textOf`, same commit.
 - A transport failure is `sendFailed({ stage, status, retryable, fix })` — never a bare throw, and
-  never a `retryable` guess. `stage` is the `SendStage` union in `errors.ts`; a new step goes there
-  first. The transient set is 4xx over SMTP, and 408/409/425/429 + 5xx over HTTP — that HTTP set
+  never a `retryable` guess. **`retryable` becomes the error's `retry` classification, and
+  `X_MAIL_SEND_FAILED` is REGISTERED** (`registerErrorRetry`, `As of 2026-08`) — both halves, because
+  `classifyThrown` honours a per-instance `terminal` only for a registered code. It rode in `meta`
+  alone and nothing read it, so `sendMailJob` spent all five attempts on a 401 or a 550 hard bounce
+  while its own `cause` said retrying cannot help. `errors.test.ts` asserts it through the QUEUE's
+  `nextRetryForError`, never against the table.
+  `stage` is the `SendStage` union in `errors.ts`; a new step goes there first.
+  The transient set is 4xx over SMTP, and 408/409/425/429 + 5xx over HTTP — that HTTP set
   lives in `RETRYABLE_STATUSES` (`driver-resend.ts`) and is edited there, never restated.
 - A transport is selected from the environment by `selectMailDriver`, never from an `app.config.ts`
   field — nothing loads that file's contents at runtime, so a `mail:` config block would be a

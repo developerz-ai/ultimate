@@ -257,7 +257,7 @@ export class AnthropicProvider implements Provider {
       });
     }
     const message = new MessageStream();
-    for await (const frame of readSse(response.body)) {
+    for await (const frame of readSse(response.body, this.name)) {
       for (const chunk of message.push(frame)) yield chunk;
     }
     // A connection cut mid-answer must fail, not resolve: the partial text reads as a complete
@@ -408,7 +408,7 @@ export class EchoProvider implements Provider {
   async generate(request: GenerateRequest): Promise<GenerateResult> {
     const model = request.model ?? DEFAULT_MODEL;
     const prompt = lastUserMessage(request.messages);
-    const text = this.config.replies?.[prompt] ?? this.config.fallback?.(prompt) ?? prompt;
+    const text = this.fixedReply(prompt) ?? this.config.fallback?.(prompt) ?? prompt;
     const usage: TokenUsage = {
       inputTokens: this.config.tokensPerCall ?? estimateTokens(request),
       outputTokens: estimateTextTokens(text),
@@ -424,6 +424,17 @@ export class EchoProvider implements Provider {
       usage,
       cost: costOf(model, usage),
     };
+  }
+
+  /**
+   * The fixture reply for this prompt. `Object.hasOwn`, never `replies?.[prompt]`: the key is
+   * MESSAGE TEXT, so a prompt of `toString` read a function off the prototype chain and returned
+   * it as the model's answer — a double that answers with JS source is worse than one that cannot.
+   */
+  private fixedReply(prompt: string): string | undefined {
+    const { replies } = this.config;
+    if (replies === undefined || !Object.hasOwn(replies, prompt)) return undefined;
+    return replies[prompt];
   }
 
   async *stream(request: GenerateRequest): AsyncIterable<StreamChunk> {
