@@ -18,7 +18,7 @@ import { gauge } from '@ultimat3/core';
 /** Seconds and not milliseconds: every Prometheus duration is seconds, and the alert is `> 300`. */
 export const queueOldestReady: Gauge = gauge('queue_oldest_ready_seconds', {
   unit: 's',
-  description: 'Age of the oldest claimable job, by queue — 0 when the queue is empty',
+  description: 'Age of the oldest job that is ready and due, by queue — 0 when none is',
 });
 
 export const queueDeadJobs: Gauge = gauge('queue_dead_jobs', {

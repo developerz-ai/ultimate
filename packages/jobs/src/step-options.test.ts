@@ -197,6 +197,8 @@ describe('the event poll actually paces a waiting step', () => {
     expect(execution.outcome).toBe('suspended');
     // Exact because the clock is frozen: `resumeAt` is `now + pollMs` and the nack's delay is
     // `resumeAt - now`. Undeclared, this row would have parked for the whole 30 seconds.
-    expect(harness.nacks()[0]).toEqual({ delayMs: 1_000, countsAsAttempt: false });
+    // `park: true` is what makes it a suspension; `countsAsAttempt: false` only says not to burn
+    // an attempt on it, and a limiter shed passes that one alone.
+    expect(harness.nacks()[0]).toEqual({ delayMs: 1_000, countsAsAttempt: false, park: true });
   });
 });

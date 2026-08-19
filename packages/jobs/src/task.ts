@@ -54,6 +54,7 @@ export interface TaskDefinition {
    */
   enqueue: (occurrenceMs: number) => readonly TaskEnqueueEntry[];
   readonly catchUp?: CatchUpPolicy;
+  /** Whole occurrences per round, one or more. Zero fires nothing at all, and `task()` refuses it. */
   readonly maxCatchUp?: number;
 }
 
@@ -98,6 +99,9 @@ export interface TaskHandle {
 const registry = new Map<string, TaskHandle>();
 let anonymous = 0;
 
+/** Occurrences one round may fire when neither the declaration nor a catch-up says otherwise. */
+const DEFAULT_MAX_CATCH_UP = 10;
+
 /** Job's store, for tasks: proof `task()` built the handle, plus whether it named itself. */
 interface TaskOrigin {
   readonly declaredName: boolean;
@@ -127,13 +131,26 @@ export function task(definition: TaskDefinition): TaskHandle {
     `use the full zone id on task("${name}"), e.g. tz: 'America/Bogota' — list the valid ones with: bun -e "console.log(Intl.supportedValuesOf('timeZone').join('\\n'))"`,
   );
 
+  // `maxCatchUp: 0` is not "no ceiling" — `occurrencesSince` walks
+  // `for (let i = 0; i < handle.maxCatchUp; i += 1)`, so zero (and any negative, and any fraction
+  // below one) returns an empty list on every round and the task NEVER fires: no error, no log
+  // line, no queue row, forever. Refused where it is written, exactly as `job()` refuses
+  // `concurrency: 0` and `createPacer` refuses `rate: 0`. `Number.isInteger` covers `NaN` and
+  // `Infinity` in the same predicate — an unbounded catch-up is a burst nobody declared.
+  assert(
+    definition.maxCatchUp === undefined ||
+      (Number.isInteger(definition.maxCatchUp) && definition.maxCatchUp >= 1),
+    `task "${name}" declares maxCatchUp ${String(definition.maxCatchUp)}, so no occurrence can ever fire`,
+    `set a whole maxCatchUp of 1 or more on task("${name}"), or omit the field for the default of ${DEFAULT_MAX_CATCH_UP}`,
+  );
+
   const handle: TaskHandle = {
     kind: 'task',
     name,
     cron: definition.cron,
     tz: definition.tz,
     catchUp: definition.catchUp ?? 'skip',
-    maxCatchUp: definition.maxCatchUp ?? 10,
+    maxCatchUp: definition.maxCatchUp ?? DEFAULT_MAX_CATCH_UP,
     // `nowMs()` and not `Date.now()`: every reading of time in this package goes through a
     // Clock so a frozen one cannot be bypassed.
     entries: (occurrenceMs: number = nowMs()) => definition.enqueue(occurrenceMs),

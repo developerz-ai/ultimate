@@ -321,7 +321,14 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
 
     async nack(jobId: string, nackOptions: NackOptions): Promise<void> {
       const counts = nackOptions.countsAsAttempt !== false;
-      const state = nackOptions.deadLetter === true ? 'dead' : counts ? 'ready' : 'suspended';
+      // The same three-way the memory driver takes, and it reads `park` rather than `counts`: the
+      // attempt counter and the ready bucket are two facts, and a shed only ever meant the first.
+      const state =
+        nackOptions.deadLetter === true
+          ? 'dead'
+          : nackOptions.park === true
+            ? 'suspended'
+            : 'ready';
       await exec().query(SQL_NACK, [
         jobId,
         state,

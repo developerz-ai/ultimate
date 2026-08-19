@@ -59,7 +59,9 @@ export async function describeSql(
   const entries: QuerySqlInfo[] = [];
   for (const target of queries) {
     const name = queryName(target);
-    const sample = samples[name];
+    // `Object.hasOwn`, because `samples` is a caller's object literal and a name it never carried
+    // — `constructor`, `toString` — would otherwise resolve to a FUNCTION and be parsed as input.
+    const sample = Object.hasOwn(samples, name) ? samples[name] : undefined;
     if (sample === undefined) {
       entries.push({ query: name, live: target.isLive, sql: null });
       continue;

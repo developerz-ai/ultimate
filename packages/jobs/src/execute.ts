@@ -1,5 +1,7 @@
 // One claimed job run to completion, suspension or failure and settled with the driver — the
-// single execution path the worker loop and `x jobs run` share. It owns the run's deadline, and
+// single execution path, shared by the worker loop (`worker-run.ts`) and by the one caller outside
+// this package, `@ultimat3/testing`'s job fixture. There is no `x jobs run` to share it with: the
+// subcommands are `ls`, `show`, `retry`, `cancel`, `drain`. It owns the run's deadline, and
 // a deadline here means CANCEL: the nack that follows makes the job claimable again, so a body
 // still running past it would be a second copy of one job, racing the attempt that replaced it.
 
@@ -87,7 +89,8 @@ export interface ExecuteJobOptions {
 
 /**
  * Run one claimed job to completion, suspension or failure, and settle it with the driver.
- * Shared by the worker loop and `x jobs run` so both take exactly the same code path.
+ * Shared by the worker loop and by `@ultimat3/testing`'s job fixture, so a job under test takes
+ * exactly the code path the worker takes.
  */
 export async function executeJob(options: ExecuteJobOptions): Promise<JobExecution> {
   const { driver, claimed, handle } = options;
@@ -159,8 +162,10 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
   } catch (error) {
     if (isStepSuspension(error)) {
       const delayMs = Math.max(0, error.resumeAt - nowMs(options.clock));
-      // countsAsAttempt: false — parking a run is not a failure.
-      await driver.nack(claimed.id, { delayMs, countsAsAttempt: false });
+      // `park: true` is the suspension itself — the row leaves the ready bucket — and
+      // `countsAsAttempt: false` only says not to burn an attempt on it. A limiter shed passes the
+      // second and not the first: it is a job still waiting, and it belongs in `queue_depth`.
+      await driver.nack(claimed.id, { delayMs, countsAsAttempt: false, park: true });
       return settle({
         outcome: 'suspended',
         jobId: claimed.id,
@@ -200,8 +205,8 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     // This package's ONE error-reporting call site, and it is here rather than in the loop because
     // this is the only frame that still holds the thrown value — the loop sees a message string.
     // A retry is a failure the framework recovered from, so it is a `warning`; a dead letter is
-    // one nobody recovered from. `x jobs run` takes this path too, which is the point: one
-    // execution path means one place a failed job can become visible.
+    // one nobody recovered from. A job driven by `@ultimat3/testing`'s fixture takes this path
+    // too, which is the point: one execution path means one place a failed job becomes visible.
     reportError(error, {
       source: 'job',
       severity: decision.retry ? 'warning' : 'error',

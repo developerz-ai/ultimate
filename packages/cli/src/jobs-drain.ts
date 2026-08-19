@@ -75,7 +75,12 @@ async function copySteps(source: JobDriver, target: JobDriver, runId: string): P
 /**
  * Hand a leased job back exactly as the drain found it. `countsAsAttempt: false` is the point:
  * a transfer that failed is not a failed attempt, and burning one per `x jobs drain` retry would
- * dead-letter a job nobody ever ran. It parks as `suspended`, which every driver claims.
+ * dead-letter a job nobody ever ran.
+ *
+ * It returns to `ready`, which is what "as the drain found it" means — the drain leased a ready
+ * job and could not move it. It used to land in `suspended`, not by intent but because
+ * `countsAsAttempt: false` was the only bit the drivers had and `step.sleep` had claimed it;
+ * `NackOptions.park` now carries the suspension, so the two callers no longer share one meaning.
  */
 async function releaseLease(source: JobDriver, id: string): Promise<void> {
   try {

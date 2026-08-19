@@ -71,6 +71,20 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   `stable.ts` could not simply be copied here; it needed the split first. Ordinary payloads are
   byte-identical between the two, so no idempotency record and no enqueued job moved.
   `stable.test.ts` pins both duties, including a `JSON.parse` of the document form.
+  **Three more values were folded onto `{}` until 2026-08, and the first is one `t.date` produces
+  on every parse.** A `Date`, a `Map` and a `Set` have no own enumerable key, so `Object.keys` was
+  empty and the object branch rendered all three `{}` — `fingerprint({ x: new Map([['a', 1]]) })`
+  equalled `fingerprint({ x: new Set([1, 2]) })` equalled `fingerprint({ x: {} })`, and an
+  `idempotent: true` action taking `t.object({ at: t.date })`, called twice under one key with two
+  DIFFERENT dates, handed the second caller the first one's stored response with no
+  `X_IDEMPOTENCY_CONFLICT` and the handler run once. The walk now branches on all three AHEAD of
+  the object branch, and the two forms disagree about them exactly as they disagree about numbers:
+  the document form is `JSON.stringify`'s own rendering (a Date's ISO string, `{}` for a Map and a
+  Set), because that string is published and re-parsed, and the hash form TAGS them —
+  `Date(<epoch>)`, `Map(k:v,...)`, `Set(v,...)` — extending the per-type tagging `hashNumber`
+  already uses for `NaN` and `-0`. The tag is not decoration: an untagged epoch is the same token
+  a `t.number` field holding that epoch emits, which is the collision being closed. Map and Set
+  entries are SORTED, as object keys are — insertion order is not part of what either holds.
 - **`tagKeys` is `@ultimat3/cache`'s, not this package's — moved 2026-08.** `packages/action/src/tags.ts`
   and `packages/query/src/tags.ts` were byte-identical, and both packages are tier 3, so neither can
   import the other and a copy in either is a second answer for the other. `tagKey` went with it: it
@@ -349,6 +363,15 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   the module for its own test and absent from `src/index.ts` exactly as `sortSchema` is; the
   shipped `toJsonSchema` cannot reach it today (it returns an object literal on every path), so
   the test drives the guard directly rather than pretending a converter can be swapped.
+- **A lookup table is read with `Object.hasOwn`, never with the index alone.** `IRREGULAR[word]`
+  in `naming.ts` and `BY_FORMAT[node.format]` in `sample-input.ts` both read the prototype chain:
+  `splitWords` lowercases, which keeps `toString` and `hasOwnProperty` out of reach, but
+  `constructor` is already lowercase and survived — so `pluralize('constructor')` answered the
+  `Object` FUNCTION where its return type says `string`, `derivePath('addConstructor')` mounted the
+  action at `/api/function Object() { [native code] }/add` and published that as its OpenAPI path
+  and `tags`, and a provider emitting `format: 'constructor'` put a function in the payload the
+  policy contract test invokes with. Both keys are caller- or provider-supplied, which is the whole
+  test for whether this applies. Same discriminator `packages/flags/src/subject.ts:75` uses.
 - App code reaches a projection through the action (`publishPost.tool()`), never through
   `.def` and never by importing the projection function. `facade.ts` is where a new method
   is bound; the projection itself keeps living in its own file.

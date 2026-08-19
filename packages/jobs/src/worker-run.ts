@@ -48,10 +48,13 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
   const handle = getJob(claimed.name);
   if (handle === undefined) {
     // Park it, do not burn attempts: the job may well be registered by the pod next to this one.
+    // A genuine park — no worker in this deploy can run it — so it leaves the ready bucket, unlike
+    // a limiter shed, which is a job this fleet will pick up on its next pass.
     await driver.nack(claimed.id, {
       delayMs: 30_000,
       error: `no job registered as "${claimed.name}"`,
       countsAsAttempt: false,
+      park: true,
     });
     return unknownJob(claimed);
   }

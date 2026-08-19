@@ -187,6 +187,42 @@ describe('the garbage assertion', () => {
     expect(failure).toBeUltimateError('X_CONTRACT_DRIFT');
     expect(causeOf(failure)).toContain('got X_UNAUTHENTICATED, expected X_INPUT_INVALID');
   });
+
+  /**
+   * `garbage` is the caller's, typed `unknown`, and it used to be rendered into the cause with
+   * `JSON.stringify` — which THROWS on a circular object and on a bigint. The throw happened on
+   * the way INTO the assertion, so the assertion never ran and the test reported the
+   * stringifier's `TypeError` in place of the schema's verdict.
+   */
+  test('a circular garbage value still gets its verdict from the schema', async () => {
+    const circular: Record<string, unknown> = { postId: 'not-a-uuid' };
+    circular.self = circular;
+
+    await garbage(publish(can('post:publish'), { garbage: circular })).run();
+  });
+
+  test('a garbage value the schema ACCEPTS is drift, even when it cannot be rendered', async () => {
+    // `t.object({})` accepts anything object-shaped, so this reaches the branch that REPORTS —
+    // the one that used to interpolate the value it cannot render.
+    const permissive = action({
+      input: t.object({}),
+      output: t.object({}),
+      policy: allow(),
+      handle: () => ({}),
+    }).named('acceptAnything');
+
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+
+    const failure = await garbage(contractTestsFor(permissive, { garbage: circular }))
+      .run()
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeUltimateError('X_CONTRACT_DRIFT');
+    // The value is a logger FIELD, never a rendered one: the cause names the action and the fix
+    // names the edit, and neither reaches for a value that refuses to be a string.
+    expect(fixOf(failure)).toContain('tighten `input:` in the acceptAnything definition');
+  });
 });
 
 describe('the OpenAPI assertion', () => {

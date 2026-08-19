@@ -457,8 +457,14 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   passes it to both calls. `markPublished` also gained `published_at is null`, so the stamp is
   first-writer-wins rather than a rewrite of an audit timestamp. The memory store fences the same
   way — per CLAIM there rather than per relay, because two relays there are two `claim()` calls on
-  ONE store, and a per-store id could not tell them apart. `undefined` is unfenced in both, for the
-  reason `release` is optional: a caller holding no token is one written before the fence.
+  ONE store, and a per-store id could not tell them apart. **An absent token is NOT one rule in
+  both**: `createMemoryOutboxStore`'s `owns(id, undefined)` answers `true` unconditionally, so a
+  caller with no token really is unfenced there — while `createPgOutboxStore` substitutes
+  `claimant ?? relayId` into `SQL_OUTBOX_RELEASE` and `SQL_OUTBOX_MARK_PUBLISHED`, both of which
+  carry `and claimed_by = $n`, so a token-less call fences on THIS store's relay id and no-ops
+  against a row some other relay holds. `outbox-pg.ts:159-165` is the honest comment. Neither store
+  refuses such a caller, which is the shared half: a caller holding no token is one written before
+  the fence.
   **`order by staged_at` was not a total order**: every row staged in one transaction shares a
   `staged_at`, so the tie was the planner's to break — which rows the `limit` takes, and in which
   order they publish, differed between two relays and between two runs of one. `, id` fixes it in
@@ -528,8 +534,20 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   `backfill-pass-fixture.ts` raises `BackfillHandleFailure`, a plain `Error` subclass on purpose:
   a backfill `handle` is app code and the pass propagates what it threw, so a framework code there
   would exercise a path no app takes.
-- Suspension is control flow: `StepSuspension` -> `nack({ countsAsAttempt: false })`.
-  Never log it as an error, never let it burn an attempt.
+- **Suspension is control flow, and a SHED is not a suspension** (`As of 2026-08`).
+  `StepSuspension` -> `nack({ countsAsAttempt: false, park: true })`; never log it as an error,
+  never let it burn an attempt. The two facts were ONE flag until 2026-08: a limiter shed and a
+  `job.concurrency` shed both handed the job back with `countsAsAttempt: false`, and both drivers
+  derived `deadLetter ? 'dead' : counts ? 'ready' : 'suspended'` — so a job that is merely WAITING
+  was filed beside a 3-day sleep. `SQL_STATS` and the memory `stats()` then counted it out of
+  `ready` and out of `oldest_ready_ms`, which `worker.ts` publishes as `queue_depth` and
+  `queue_oldest_ready_seconds`: 20 jobs at `concurrency: 10` behind `createLimiter({ global: 1 })`
+  read as a depth of 10 with 19 waiting, and under sustained overload the shed fraction approaches
+  100%, so the HPA signal and the "oldest job older than 5 minutes" page both go quiet exactly
+  when the queue is saturated. `park` is now the state and `countsAsAttempt` is the counter, only.
+  The shed also wrote `last_error = 'limited: …'`, so `x jobs show` reported a failure for a job
+  that never ran — it is a `jobs.worker.shed` log field now, and `worker.ts`'s one `shed()` is
+  where both sheds go. `driver-parity.test.ts` pins which bucket each lands in, in both drivers.
 - Step results are persisted BEFORE the step returns. Keep it that way or replay breaks.
 - All time is epoch ms from an injected `Clock`, read via `nowMs()` in `clock.ts`.
 - Drivers implement exactly the six `JobDriver` methods plus optional `introspect`, `backfills`

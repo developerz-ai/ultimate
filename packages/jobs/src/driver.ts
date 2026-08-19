@@ -114,10 +114,23 @@ export interface NackOptions {
   readonly delayMs: number;
   readonly error?: string;
   /**
-   * False for a suspension (`step.sleep`): parking a run is not a failure and must not burn
-   * a retry attempt, or a 3-day sleep would dead-letter the job.
+   * The ATTEMPT COUNTER, and nothing else. False for a suspension and for a shed alike: neither is
+   * a failure, and a 3-day sleep that burned an attempt would dead-letter the job.
    */
   readonly countsAsAttempt?: boolean;
+  /**
+   * True for a SUSPENSION — `step.sleep`, or a name this deploy does not know — which leaves the
+   * ready bucket and is counted `suspended`. Absent for a limiter or `job.concurrency` shed, which
+   * is a job still WAITING to run.
+   *
+   * The two were one flag until 2026-08: `countsAsAttempt: false` decided the state as well as the
+   * counter, so a shed was filed beside a 3-day sleep and `stats()` excluded it from `ready` and
+   * from `oldestReadyMs` — the two numbers the worker publishes as `queue_depth` and
+   * `queue_oldest_ready_seconds`. Under sustained overload the shed fraction approaches 100%, so
+   * the HPA signal and the "oldest job older than 5 minutes" page both went quiet exactly when the
+   * queue was saturated.
+   */
+  readonly park?: boolean;
   readonly deadLetter?: boolean;
 }
 
@@ -128,7 +141,11 @@ export interface QueueStats {
   readonly running: number;
   readonly suspended: number;
   readonly dead: number;
-  /** Age in ms of the oldest claimable job — the number that decides autoscaling. */
+  /**
+   * Age in ms of the oldest job that is READY and due — the number that decides autoscaling.
+   * Not "claimable": a `suspended` row is claimable once its `runAt` passes and is deliberately
+   * excluded here, which is exactly why a limiter shed may not be filed as a suspension.
+   */
   readonly oldestReadyMs: number;
 }
 

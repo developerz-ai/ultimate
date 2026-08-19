@@ -91,10 +91,14 @@ describe('fleet-wide job concurrency', () => {
     expect(started).toBe(1);
     expect(await leases.held(jobLeaseKey('rebuildSearchIndex'))).toBe(1);
 
-    // The refused job is parked, NOT failed: it must not burn an attempt for being over a cap.
-    const parked = await driverB.introspect?.list({ name: 'rebuildSearchIndex' });
-    expect(parked?.[0]?.state).toBe('suspended');
-    expect(parked?.[0]?.attempt).toBe(0);
+    // The refused job is handed back READY, not parked and not failed: it must not burn an attempt
+    // for being over a cap, and it is still work waiting to be claimed — a `suspended` row is one
+    // `stats()` leaves out of `ready` and out of `oldestReadyMs`, so the fleet gate would have
+    // switched off the queue's own depth signal.
+    const shed = await driverB.introspect?.list({ name: 'rebuildSearchIndex' });
+    expect(shed?.[0]?.state).toBe('ready');
+    expect(shed?.[0]?.attempt).toBe(0);
+    expect(shed?.[0]?.lastError).toBeUndefined();
 
     gate.resolve();
     await workerA.stop('test');

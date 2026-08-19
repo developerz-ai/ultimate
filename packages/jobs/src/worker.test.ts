@@ -16,6 +16,7 @@ import type { StandardSchemaV1 } from '@ultimat3/schema';
 import type { ClaimedJob, JobDriver, QueueStats } from './driver';
 import { createMemoryDriver } from './driver-memory';
 import { job, resetJobs } from './job';
+import { createLimiter } from './limits';
 import { createWorker } from './worker';
 
 function passthrough<T>(): StandardSchemaV1<unknown, T> {
@@ -114,6 +115,88 @@ describe('the worker publishes queue depth', () => {
     // depth still asked for work.
     expect(counting.calls().claim).toBe(1);
     expect(depthOf('default')).toBeUndefined();
+  });
+});
+
+/**
+ * The half of the gauge the limiter could switch off. A shed hands the job straight back — over a
+ * tenant, queue or global cap, or over `job.concurrency` — and it used to land in `suspended`
+ * beside a 3-day `step.sleep`, which `stats()` excludes from `ready` and from `oldestReadyMs`. So
+ * `queue_depth` FELL as the queue filled, and the pod that shed the work published the number the
+ * autoscaler used to decide no more pods were needed.
+ */
+describe('a job the worker shed is still backlog', () => {
+  const shedJob = (name: string): void => {
+    job({
+      tenant: 'none',
+      name,
+      input: passthrough<Record<string, never>>(),
+      idempotencyKey: () => `${name}:1`,
+      retry: { attempts: 3, jitter: false },
+      run: () => Promise.resolve(),
+    });
+  };
+
+  test('the depth gauge counts it, and it is not filed as a suspension', async () => {
+    const driver = createMemoryDriver();
+    // The global slot is taken by the test itself, so every claimed job is shed and no job body
+    // runs: the assertion is about the rows the tick leaves behind, and nothing else.
+    const limiter = createLimiter({ global: 1 });
+    expect(limiter.tryAcquire({ queue: 'default' })).toBeDefined();
+    for (const name of ['shedA', 'shedB', 'shedC']) {
+      shedJob(name);
+      await driver.enqueue({
+        name,
+        queue: 'default',
+        input: {},
+        idempotencyKey: `${name}:1`,
+        maxAttempts: 3,
+      });
+    }
+
+    const shedding = createWorker({
+      driver,
+      limiter,
+      concurrency: 4,
+      // The shed's own delay, so the row is claimable again the instant it lands and the bucket
+      // under test is not `delayed` for a quarter of a second first.
+      pollIntervalMs: 0,
+      context: () => createContext({ role: 'worker', buildId: 'test' }),
+      drainOnShutdown: false,
+    });
+    expect(await shedding.tick()).toEqual([]);
+
+    const stats = (await driver.stats())[0];
+    expect(stats?.ready).toBe(3);
+    expect(stats?.suspended).toBe(0);
+    expect(depthOf('default')).toBe(3);
+  });
+
+  test('it carries no lastError, because nothing about it failed', async () => {
+    const driver = createMemoryDriver();
+    const limiter = createLimiter({ global: 1 });
+    limiter.tryAcquire({ queue: 'default' });
+    shedJob('shedQuiet');
+    const { id } = await driver.enqueue({
+      name: 'shedQuiet',
+      queue: 'default',
+      input: {},
+      idempotencyKey: 'shedQuiet:1',
+      maxAttempts: 3,
+    });
+
+    await createWorker({
+      driver,
+      limiter,
+      concurrency: 4,
+      pollIntervalMs: 0,
+      context: () => createContext({ role: 'worker', buildId: 'test' }),
+      drainOnShutdown: false,
+    }).tick();
+
+    // `x jobs show` reads this field. A `limited: …` here is a job reported as having failed when
+    // it never ran at all.
+    expect((await driver.introspect?.job(id))?.lastError).toBeUndefined();
   });
 });
 
