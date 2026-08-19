@@ -101,6 +101,32 @@ the pin (`schema-error-codes-pin.test.ts`) lives in `@ultimat3/cli`, which may l
 `@ultimat3/storage` both need — core is the lowest tier both can reach, so the shared code lives
 here rather than in either package copying the other's file.
 
+`canonical-json.ts` is the same shape for the hash every SHARING key in the framework is taken
+over, `As of 2026-08`. `canonicalJson` is an INJECTIVE canonical form and `fingerprint` is
+SHA-256/16 of it, and three tier-3 packages needed exactly this while none may import another:
+`@ultimat3/action`'s `requestHash` and job dedupe key, `@ultimat3/query`'s `queryHash` (a
+read-cache entry, a cursor scope, a live query id) and `@ultimat3/realtime`'s `qid`. Each kept its
+own copy and the copies had **diverged in a way that leaked**: query's had no `Date` branch, so
+`Object.keys(date)` was `[]`, every date rendered `{}`, and one cache key, one cursor scope and one
+live window answered for every date window of a read — reachable straight off a query string, since
+`coerceQuery` turns a `t.date` member into a real `Date`. Injective is the whole requirement, not a
+formatting preference: every one of those keys decides which of two callers is served the other's
+answer. So `NaN`, `±Infinity` and `-0` are bare tokens the quoting `string` branch cannot spell,
+and a `Date`, a `Map` and a `Set` — the three values with no own enumerable key — are TAGGED. Never
+add a fourth copy, and never make it parseable: `@ultimat3/action`'s `stableStringify` is the
+DOCUMENT form for that (it publishes `openapi.json`), and it is a different function on purpose.
+
+`decimal-order.ts` is the third instance of the same rule, over a value rather than a shape.
+`compareDecimalText` is the exact ordering of two decimals however long the digits run — the order
+Postgres gives a `numeric` or an `int8` over the TEXT `@ultimat3/entity`'s `bigint()` and
+`decimal()` hand back, where `String(left) < String(right)` answers `["10","100","2","9"]` for
+`["2","9","10","100"]` and cuts a keyset page where the database does not. It answers **`undefined`**
+when either side is not a plain decimal, and that is the contract, not a convenience: a caller that
+knows the column's declared kind asks (`@ultimat3/entity`'s `compareByKind`), and a caller that does
+NOT — `@ultimat3/query`, whose `OrderKey` is a name and a direction — must never, because Postgres
+orders a `text` column of digits lexically and a comparator guessing would trade one disagreement
+with the SQL it printed for another.
+
 `mcp-exposure.ts` is the same shape for a declaration rather than an algorithm: `isMcpExposed` is
 the ONE answer to "did this primitive opt into being an MCP tool?", asked by `action`, `query`
 (t3), `mcp`, `ai`, `manifest` (t4) — five packages that cannot import each other, so core is the
