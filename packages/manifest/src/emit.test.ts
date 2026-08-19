@@ -183,6 +183,22 @@ describe('emitManifest', () => {
     });
   });
 
+  // `bytes` is a byte count, and a manifest carries app strings — a locale name, an entity
+  // description, a title in the app's own language. `String.length` counts UTF-16 code units, so
+  // it under-reports every one of them, and `agents-md.ts` measures the same thing with
+  // `Buffer.byteLength` one file away.
+  test('bytes counts the bytes on disk, not the code units in the string', async () => {
+    const accented = buildManifest({
+      ...sources,
+      app: { name: 'caf\u00e9-\u65e5\u672c-\ud83d\ude80', version: '1.4.2' },
+    });
+    await withTempDir(async (path) => {
+      const result = await emitManifest({ manifest: accented, path });
+      expect(result.bytes).toBe(Bun.file(path).size);
+      expect(result.bytes).toBeGreaterThan(manifestJson(accented).length);
+    });
+  });
+
   test('a changed manifest over the same path reports changed again', async () => {
     await withTempDir(async (path) => {
       await emitManifest({ manifest: fresh, path });

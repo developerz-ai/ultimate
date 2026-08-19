@@ -63,6 +63,34 @@ describe('unit · every published workspace is in the root build graph', () => {
     });
   });
 
+  // The false green this closes: `tsc` accepts JSONC and `Bun.file().json()` rejects it, so a root
+  // written the way `tsc --init` writes one was read as "this repo does not use project
+  // references" — the check went dark and `typecheck` stayed green over the packages it skipped.
+  test('a root written as JSONC is read, not silently treated as having no references', async () => {
+    const jsonc = [
+      '{',
+      '  // The build graph. https://www.typescriptlang.org/tsconfig#references',
+      '  "files": [], /* nothing is compiled from the root itself */',
+      '  "references": [',
+      '    { "path": "./packages/core" },',
+      '  ],',
+      '}',
+    ].join('\n');
+    await withRoot(jsonc, async (root) => {
+      const findings = await checkRootReferences(root, ['core', 'cli']);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.cause).toContain('packages/cli');
+    });
+  });
+
+  // A `//` inside a string is a URL, never a comment — and a `,` inside one is not trailing.
+  test('a comment marker inside a string value survives the strip', async () => {
+    const jsonc = '{"references":[{"path":"./packages/core"}],"x":"https://a.dev/b,]"}';
+    await withRoot(jsonc, async (root) => {
+      expect(await checkRootReferences(root, ['core'])).toEqual([]);
+    });
+  });
+
   // Axiom 4: the fix is the edit, naming the file and the exact entry to add.
   test('the fix names the file, the entry and the command that proves it', () => {
     const { fix } = unreferencedFinding('cli');

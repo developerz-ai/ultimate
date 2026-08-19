@@ -27,6 +27,7 @@ import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, validateAsync } from '@ultimat3/schema';
 import type { AgentFact } from './agent-facts';
 import { registerAgentFact } from './agent-facts';
+import { assistantTurn, repairTurn, toolResultTurn } from './agent-transcript';
 import type { BudgetLimits } from './budget';
 import { BudgetLedger, currentBudget, withBudget } from './budget';
 import {
@@ -42,7 +43,6 @@ import type { ModelId } from './models';
 import { DEFAULT_MODEL, moreCapableThan } from './models';
 import type { Prompt, PromptVars } from './prompt';
 import type {
-  AiContentBlock,
   AiMessage,
   GenerateRequest,
   GenerateResult,
@@ -277,6 +277,9 @@ async function run<
         throwIfAborted(args.ctx);
         const result = await gateway.generate({ ...base, messages });
         const requested = result.toolCalls.filter((call) => call.name !== RESPOND);
+        // The same turn's `respond` calls, kept rather than forgotten: they are never RUN, but
+        // `assistantTurn` replays them, and every replayed `tool_use` has to be answered.
+        const answers = result.toolCalls.filter((call) => call.name === RESPOND);
         span.setAttributes({
           'agent.turns': turn,
           'agent.tool_calls': calls,
@@ -309,7 +312,16 @@ async function run<
             requested.map((call) => runLlmToolCall(adapted.tools, call, actor)),
           );
           calls += requested.length;
-          messages = [...messages, assistantTurn(result), toolResults(results, chars)];
+          messages = [
+            ...messages,
+            assistantTurn(result),
+            // Parallel tool use — one turn asking for a tool AND answering — is normal, and the
+            // answer is speculative: it was written before the result it asked for existed. So
+            // the loop continues, and the answer is REJECTED on the wire rather than dropped,
+            // because a replayed `respond` block with no `tool_result` is a 400 and the whole run
+            // becomes an `X_AI_PROVIDER_UNAVAILABLE`.
+            toolResultTurn(results, chars, answers),
+          ];
           continue;
         }
 
@@ -321,7 +333,7 @@ async function run<
         if (result.stopReason === 'max_tokens') {
           throw new LlmTruncatedError({ prompt: name, maxTokens: base.maxTokens });
         }
-        messages = [...messages, assistantTurn(result), { role: 'user', content: repair(issues) }];
+        messages = [...messages, assistantTurn(result), repairTurn(answers, issues)];
       }
 
       // Two different exhaustions, so two different causes: a loop that kept calling tools and
@@ -366,47 +378,6 @@ function assertAnswerable(result: GenerateResult, name: string): void {
     category: result.stopDetails?.category,
     explanation: result.stopDetails?.explanation,
   });
-}
-
-/**
- * The model's turn, replayed as the transcript the next request needs. `tool_use` blocks survive
- * as themselves here — unlike `llm()`'s repair turn, which flattens them to text precisely
- * because it has no `tool_result` to follow them with, and the API demands one.
- */
-function assistantTurn(result: GenerateResult): AiMessage {
-  const blocks: AiContentBlock[] = [];
-  if (result.text !== '') blocks.push({ type: 'text', text: result.text });
-  for (const call of result.toolCalls) {
-    blocks.push({ type: 'tool_use', id: call.id, name: call.name, input: call.input });
-  }
-  // A turn with neither text nor a tool call would be an empty content array, which is a 400.
-  return blocks.length === 0
-    ? { role: 'assistant', content: '(no answer)' }
-    : { role: 'assistant', content: blocks };
-}
-
-function toolResults(results: readonly LlmToolResult[], chars: number): AiMessage {
-  return {
-    role: 'user',
-    content: results.map((result) => ({
-      type: 'tool_result' as const,
-      tool_use_id: result.toolUseId,
-      content: truncate(result.content, chars),
-      // A denial or a failure is an outcome the model should read and react to, flagged so it
-      // does not read as data.
-      ...(result.isError === true ? { is_error: true } : {}),
-    })),
-  };
-}
-
-/** Truncation says so. A silently shortened tool result is a model reasoning over half a table. */
-function truncate(text: string, chars: number): string {
-  if (text.length <= chars) return text;
-  return `${text.slice(0, chars)}\n[truncated: ${text.length - chars} more characters]`;
-}
-
-function repair(issues: string): string {
-  return `That answer failed its schema: ${issues}. Call the "${RESPOND}" tool with a value that satisfies it. Answer only through the tool.`;
 }
 
 function limitsOf<

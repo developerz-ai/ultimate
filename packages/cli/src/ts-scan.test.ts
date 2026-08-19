@@ -54,6 +54,19 @@ describe('maskLiterals', () => {
     const source = '<p>{a}</p><b name="x" />;';
     expect(maskLiterals(source)).toBe('<p>{a}</p><b name=" " />;');
   });
+
+  // The bug this guards: an apostrophe in JSX text read as a string opener, so masking ran to the
+  // next `'` in the FILE — in practice the next `fix:` literal — and blanked every declaration in
+  // between. A `'`/`"` that does not close on its own line is text: a JS string may not span one.
+  test('an apostrophe in JSX text is text, not a literal opener', () => {
+    const source = "<p>Don't panic</p>;\nconst a = 'x';";
+    expect(maskLiterals(source)).toBe("<p>Don't panic</p>;\nconst a = ' ';");
+  });
+
+  test('a template literal still spans lines', () => {
+    const source = 'const a = `one\ntwo`;\nconst b = 1;';
+    expect(maskLiterals(source)).toBe('const a = `   \n   `;\nconst b = 1;');
+  });
 });
 
 describe('scanFixes', () => {
@@ -89,6 +102,18 @@ describe('scanFixes', () => {
     const source = `const CODE_LITERAL = /(['"\`])(X_[A-Z0-9_]+)\\1/g;
 throw new E({ fix: 'x doctor --json' });`;
     expect(fixes(source)).toEqual(['x doctor --json']);
+  });
+
+  // Same masking desync, reached from JSX rather than from a regex: the file's `fix:` lines
+  // vanished wholesale, `x verify`'s `errors` step checked none of them, and `scanCodes` still
+  // found the code — so `X_ERROR_CODE_UNDOCUMENTED` passed and hid the hole.
+  test('an apostrophe in JSX text does not hide the declaration below it', () => {
+    const source =
+      'export function Panel() {\n' +
+      "  return <p>Don't panic</p>;\n" +
+      '}\n' +
+      "throw new E({ code: 'X_A', fix: 'x doctor --json' });";
+    expect(scanFixes(source, 'a.tsx')).toEqual([{ at: 'a.tsx', line: 4, fix: 'x doctor --json' }]);
   });
 
   test('an escape and a character class do not close the regex early', () => {

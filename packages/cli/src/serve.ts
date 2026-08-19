@@ -87,6 +87,20 @@ export function metricsPortFromEnv(env: Env): number {
 }
 
 /**
+ * The scrape port a boot uses, given the app port it already resolved. One expression, and it is
+ * exported because `x dev` is the second caller: `cmd-dev.ts` passed no `metricsPort` at all, so
+ * `METRICS_PORT` was honoured in the container and ignored on a laptop — the dev/prod parity break
+ * `dev-roles.ts`'s own header forbids, and a second copy of this rule would be the same break
+ * one edit later.
+ *
+ * An in-process caller asking for an ephemeral app port is a test, and a test that grabbed the
+ * fixed 9090 would fail the next suite to boot beside it. An environment that names the port still
+ * wins — that is the deploy talking.
+ */
+export const metricsPortFor = (env: Env, port: number, override?: number): number =>
+  override ?? (port === 0 && env['METRICS_PORT'] === undefined ? 0 : metricsPortFromEnv(env));
+
+/**
  * The one env var that turns error monitoring on, and the only vendor-shaped name in the boot
  * path. Not a platform primitive (axiom 7): the value is a URL to whatever the operator runs, the
  * wire format behind it is documented and self-hostable, and `SENTRY_DSN` is what every monitor
@@ -302,9 +316,7 @@ async function bootRoles(boot: {
   // An in-process caller asking for an ephemeral app port is a test, and a test that grabbed the
   // fixed 9090 would fail the next suite to boot beside it. An environment that names the port
   // still wins — that is the deploy talking.
-  const metricsPort =
-    options.metricsPort ??
-    (port === 0 && options.env['METRICS_PORT'] === undefined ? 0 : metricsPortFromEnv(options.env));
+  const metricsPort = metricsPortFor(options.env, port, options.metricsPort);
   const running = await startRoles({
     roles: [role],
     port,

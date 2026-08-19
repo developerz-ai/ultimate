@@ -16,6 +16,7 @@ import {
   branchNameOf,
   createExternalBranch,
   createPgliteBranch,
+  databaseNameOf,
   dropExternalBranch,
   dropPgliteBranch,
   isBranchName,
@@ -128,6 +129,23 @@ describe('unit · the embedded database', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('unit · the database a connection URL names', () => {
+  // The bug this guards: `url.split('/').at(-1)` took the query string with it, so the refusal on
+  // `x db branch drop` named `postly?sslmode=require_branch_x` — a database that does not exist,
+  // in a message whose whole job is to be checkable.
+  test('the name is the path, never the path plus the query string', () => {
+    expect(databaseNameOf('postgres://u:p@host:5432/postly?sslmode=require')).toBe('postly');
+    expect(databaseNameOf('postgres://u:p@host:5432/postly')).toBe('postly');
+    // A percent-encoded name is decoded, because that is the name `pg_database` holds.
+    expect(databaseNameOf('postgres://host/my%20db')).toBe('my db');
+  });
+
+  test('a URL with no database, and a string that is not a URL, fall back rather than throw', () => {
+    expect(databaseNameOf('postgres://u:p@host:5432/')).toBe('postgres');
+    expect(databaseNameOf('not a url at all')).toBe('postgres');
   });
 });
 

@@ -5,7 +5,7 @@ import type { AnyMcpTool, McpCaller, McpToolResult } from './registry';
 import { textResult } from './registry';
 import { frameworkResources } from './resources';
 import { createMcpServer } from './server';
-import { INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND } from './wire';
+import { INTERNAL_ERROR, INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND } from './wire';
 
 const agent = { kind: 'agent', id: 'agent-1' } as unknown as Actor;
 
@@ -235,5 +235,76 @@ describe('a framework error reaches the model in the shape the terminal prints',
       'X_FOREIGN\n  cause: a package that is not core threw\n  fix:   x errors explain X_FOREIGN',
     );
     expect(text).not.toContain('see docs');
+  });
+});
+
+// The transport's promise for anything that is NOT a framework error: `-32603`, no internals
+// leaked. It is reached past four property reads of a value an app's handler threw — a getter
+// call, or a `Proxy` trap — so the probe can raise where the catch block has nothing left to
+// answer with, and the JSON-RPC request then dies with no response at all.
+describe('a throw that fights being read is still an answer, never an escape', () => {
+  const hostile = (value: unknown): AnyMcpTool => ({
+    name: 'orders.hostile',
+    description: 'throws a value that traps every read',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    handle: () => Promise.reject(value),
+  });
+
+  test.each([
+    [
+      'a Proxy trapping get and getPrototypeOf',
+      new Proxy(
+        {},
+        {
+          get() {
+            throw new Error('trapped get');
+          },
+          getPrototypeOf() {
+            throw new Error('trapped getPrototypeOf');
+          },
+        },
+      ) as unknown,
+    ],
+    [
+      'an object whose code getter throws',
+      Object.defineProperty({}, 'code', {
+        get() {
+          throw new Error('trapped code');
+        },
+        enumerable: true,
+      }) as unknown,
+    ],
+    ['a symbol', Symbol('thrown') as unknown],
+  ])('%s becomes -32603, with the tool named and nothing leaked', async (_label, value) => {
+    const server = createMcpServer({ tools: [hostile(value)] });
+    const response = await server.handle(
+      call('tools/call', { name: 'orders.hostile', arguments: {} }),
+      caller(undefined, []),
+    );
+    const error = response?.error;
+    expect(error?.code).toBe(INTERNAL_ERROR);
+    expect(error?.message).toBe('tool "orders.hostile" failed unexpectedly');
+  });
+
+  // A null-prototype coded object is what a worker or a JSON round trip produces, and it still
+  // renders — the discriminator is the FIELD, never the prototype.
+  test('a null-prototype coded object still renders its three lines', async () => {
+    const flattened = Object.assign(Object.create(null), {
+      code: 'X_FOREIGN',
+      cause: 'a worker sent this back',
+      fix: 'x doctor',
+    });
+    const server = createMcpServer({ tools: [hostile(flattened)] });
+    const response = await server.handle(
+      call('tools/call', { name: 'orders.hostile', arguments: {} }),
+      caller(undefined, []),
+    );
+    const result = response?.result as
+      | { content: { text: string }[]; isError?: boolean }
+      | undefined;
+    expect(result?.isError).toBe(true);
+    expect(result?.content[0]?.text).toBe(
+      'X_FOREIGN\n  cause: a worker sent this back\n  fix:   x doctor',
+    );
   });
 });

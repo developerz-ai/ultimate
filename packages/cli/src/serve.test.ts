@@ -13,6 +13,7 @@ import {
   configureReporting,
   DEFAULT_PORT,
   ERROR_DSN_KEY,
+  metricsPortFor,
   metricsPortFromEnv,
   portFromEnv,
   releaseBoot,
@@ -66,6 +67,21 @@ test('a METRICS_PORT that is not a port names ITSELF, or the fix line edits the 
   expect(thrown.code).toBe('X_PORT_INVALID');
   expect(thrown.cause).toContain('METRICS_PORT="auto"');
   expect(thrown.fix).toContain('METRICS_PORT=9090');
+});
+
+// The bug this guards: `serve.ts` computed this inline and `cmd-dev.ts` passed nothing, so
+// `METRICS_PORT` was honoured in the container and ignored by `x dev` — the dev/prod parity break
+// `dev-roles.ts`'s own header forbids. One expression, both callers.
+test('metricsPortFor is the one answer both the container and x dev read', () => {
+  expect(metricsPortFor({}, 3000)).toBe(DEFAULT_METRICS_PORT);
+  expect(metricsPortFor({ METRICS_PORT: '9464' }, 3000)).toBe(9464);
+  // An in-process caller asking for an ephemeral app port is a test, and a test that grabbed the
+  // fixed 9090 would fail the next suite booting beside it.
+  expect(metricsPortFor({}, 0)).toBe(0);
+  // An environment that names the port still wins at port 0 — that is the deploy talking.
+  expect(metricsPortFor({ METRICS_PORT: '9464' }, 0)).toBe(9464);
+  // An explicit override outranks both.
+  expect(metricsPortFor({ METRICS_PORT: '9464' }, 0, 9999)).toBe(9999);
 });
 
 test('a container binds every interface, and dev does not', () => {

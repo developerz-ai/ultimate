@@ -42,6 +42,7 @@ import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { findingFrom } from './output';
 import { flagString } from './parse';
+import { metricsPortFor } from './serve';
 import { loopFacts, loopFinding, loopNotice } from './statement-loop';
 
 const DEFAULT_PORT = 3000;
@@ -185,6 +186,10 @@ export async function startDev(options: StartDevOptions): Promise<DevServer> {
   const running = await startRoles({
     roles: options.roles ?? DEV_ROLES,
     port: options.port,
+    // `serve.ts`'s expression, called rather than restated: `METRICS_PORT` was read in the
+    // container and ignored here, so the scrape port an operator moved was the one port `x dev`
+    // could not move — and the second `x dev` on a box died binding the hardcoded 9090.
+    metricsPort: metricsPortFor(options.env, options.port),
     buildId,
     runtime,
     routes,
@@ -266,14 +271,16 @@ export const devCommand: CliCommand = {
   spec: {
     name: 'dev',
     summary: 'all roles in one process: embedded services, sub-second reload, /_x mounted',
-    usage: 'x dev [--port 3000] [--role web,worker] [--json]',
+    usage: 'x dev [--port 3000] [--role web,worker] [--once] [--json]',
     requiresApp: true,
     flags: [
       { name: 'port', type: 'string', summary: 'HTTP port', default: String(DEFAULT_PORT) },
       {
         name: 'role',
         type: 'string',
-        summary: `roles to run (default: all of ${DEV_ROLES.join(',')})`,
+        // `replicator` is named because it is selectable and NOT default — it takes a replication
+        // slot on a shared database, which is not something every `x dev` should do by starting.
+        summary: `roles to run (default: all of ${DEV_ROLES.join(',')}; replicator is opt-in)`,
       },
       { name: 'once', type: 'boolean', summary: 'boot, report, exit — for smoke tests and CI' },
     ],

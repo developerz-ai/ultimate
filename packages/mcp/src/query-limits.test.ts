@@ -90,3 +90,26 @@ describe('capQueryRows reports every cut it makes', () => {
     expect(result.truncated).toBe(false);
   });
 });
+
+// The rows are a DRIVER's: `db.query` runs an agent-authored statement and the host hands back
+// whatever the driver decoded. `JSON.stringify` throws on a bigint — an `int8` column on a driver
+// that maps it faithfully — and on a cycle, so the cap that exists to protect the model's context
+// was the thing that raised, two frames from the tool that owes the agent an answer.
+describe('a row the driver decoded into something JSON cannot hold', () => {
+  const limits = resolveQueryLimits(10);
+
+  test('is dropped and reported as the byte ceiling, never raised', () => {
+    const source: QueryRows = {
+      columns: ['n'],
+      rows: [[1], [10n], [2]],
+      guards: [],
+    };
+    const result = capQueryRows(source, limits);
+    // The rows before it survive; the unserialisable one and everything after it do not, which is
+    // exactly what the byte ceiling already promises — and the answer still serialises.
+    expect(result.rowCount).toBe(1);
+    expect(result.truncated).toBe(true);
+    expect(result.truncatedBy).toBe('bytes');
+    expect(() => JSON.stringify(result)).not.toThrow();
+  });
+});

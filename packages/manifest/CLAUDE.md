@@ -47,6 +47,11 @@ by the CLI, not imported.
   section a truncated or hand-trimmed file happens not to carry was a bare `TypeError` two calls
   from the gate that exists to explain. The FACTS inside a section stay unwalked — a manifest
   written before a field existed is still readable, which is `MANIFEST_VERSION`'s rule.
+- **A byte count is `Buffer.byteLength`, never `String.length`.** `EmitResult.bytes` measures the
+  file on disk and a manifest carries the APP's strings — a locale name, an entity description, a
+  title in the app's own language — so UTF-16 code units under-report every non-ASCII one.
+  `agents-md.ts` measures the same quantity the same way. Nothing committed carries the number:
+  `writeAppManifest` is the only caller and it reads `path` alone, so correcting it is not drift.
 - **`--json` is awaited.** `emitManifest({ stdout: true })` writes through `await Bun.write(
   Bun.stdout, …)`: a write to a pipe is asynchronous and `process.exit()` discards the queue, and
   this is the largest payload the CLI prints. Same bug `scripts/stdout-truncation.test.ts` pins.

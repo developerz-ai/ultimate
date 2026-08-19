@@ -408,11 +408,25 @@ describe('unit · x verify', () => {
     });
   });
 
-  describe('roadmap only runs when a host registers it', () => {
+  describe('roadmap applies to a repo that HAS a roadmap', () => {
     const step = VERIFY_STEPS.find((candidate) => candidate.name === 'roadmap');
 
-    test('skipped with no host check registered', async () => {
+    test('skipped in a repo with no docs/idea/14-roadmap.md', async () => {
       expect(await step?.applies?.(ctx)).toBe(false);
+    });
+
+    // The bug this guards: `applies` keyed on a CALLER-supplied option, so a caller of the exported
+    // `runVerify(VERIFY_STEPS, ctx)` that passes no `hostChecks` — in a repo whose committed
+    // `x.verify.json` names `roadmap` — got `X_VERIFY_SUITE_VANISHED`, whose `fix:` is the command
+    // that just failed. Whether the step applies is a fact about the repo, never about the call.
+    test('applies on the file, not on the option', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'x-verify-roadmap-'));
+      try {
+        await Bun.write(join(root, 'docs', 'idea', '14-roadmap.md'), '# roadmap\n');
+        expect(await step?.applies?.({ ...ctx, root })).toBe(true);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
     });
 
     test('applies and surfaces the host findings once one is registered', async () => {
@@ -424,7 +438,6 @@ describe('unit · x verify', () => {
         fix: 'edit docs/idea/14-roadmap.md: put "✅" or "🚧" in the second cell of the row starting "| 3 |", then: bun run scripts/roadmap.ts --json',
       };
       const withHost: VerifyContext = { ...ctx, hostChecks: { roadmap: async () => [finding] } };
-      expect(await step?.applies?.(withHost)).toBe(true);
       const outcome = await step?.run(withHost);
       expect(outcome?.ok).toBe(false);
       expect(outcome?.findings).toEqual([finding]);

@@ -56,9 +56,21 @@ export function resolveQueryLimits(requested: unknown): QueryLimits {
 
 const encoder = new TextEncoder();
 
-/** Serialised size of one row, plus the separator it costs inside the JSON array. */
+/**
+ * Serialised size of one row, plus the separator it costs inside the JSON array.
+ *
+ * A row the driver decoded into something JSON cannot hold — a bigint from an `int8` column, a
+ * cycle — costs `Infinity`, which is not a fudge: the row cannot be returned to the agent at all,
+ * and the ceiling it blows is already the one whose answer ("select fewer columns") is the right
+ * one. Raising instead would take down the tool that owes the agent a reply, from inside the cap
+ * that exists to protect it.
+ */
 function rowBytes(row: readonly unknown[]): number {
-  return encoder.encode(JSON.stringify(row)).length + 1;
+  try {
+    return encoder.encode(JSON.stringify(row)).length + 1;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
 }
 
 /**

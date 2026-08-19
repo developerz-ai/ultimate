@@ -223,7 +223,25 @@ export function textResult(text: string, isError = false): McpToolResult {
   return isError ? { content, isError: true } : { content };
 }
 
-/** JSON payload as a text block — stable 2-space form so an agent can diff two calls. */
+/**
+ * JSON payload as a text block — stable 2-space form so an agent can diff two calls.
+ *
+ * TOTAL, because the value is an app's: `toolFromAction` hands an action's own return value
+ * straight here, and `JSON.stringify` answers `undefined` for a handler that returned nothing —
+ * a `text` that is not a string is an invalid MCP frame — and THROWS on a bigint, a cycle or a
+ * `toJSON` the value carries. A throw would leave the server's catch reporting a bug in the tool
+ * for a fault in the rendering, so the unreadable case is an ordinary `isError` result: the same
+ * three-line shape every other expected failure comes back as, and one an agent can act on.
+ */
 export function jsonResult(value: unknown): McpToolResult {
-  return textResult(JSON.stringify(value, null, 2));
+  let text: string | undefined;
+  try {
+    text = JSON.stringify(value, null, 2);
+  } catch {
+    return textResult(
+      'the tool ran, but its result is not JSON (a bigint, a cycle, or a toJSON that threw) — the tool has to return a JSON-serialisable value',
+      true,
+    );
+  }
+  return textResult(text ?? 'null');
 }

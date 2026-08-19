@@ -49,6 +49,28 @@ import. The CLI wires it.
   fails, every caller simply sees every tool.
 - Resolve order is visibility → scope → args → policy. Validating first leaks a schema;
   running the policy first decides a refusal from attacker-supplied input.
+- **A key's membership of a declared schema is `Object.hasOwn(properties, key)`, never
+  `properties[key] === undefined`.** The arguments of a `tools/call` are NAMED by the caller, and
+  `Object.prototype` supplies a value for `constructor`, `toString`, `hasOwnProperty` and
+  `__proto__` on every plain object — so the index read answered "declared" for four names no
+  schema declares, and `validate-args.ts` accepted them past an `additionalProperties: false` that
+  forbids them and then dropped them. Third instance of the class in the framework, after
+  `@ultimat3/i18n`'s catalog lookup and `@ultimat3/schema`'s `coerce`. Its twin: a validated key
+  lands on the result through `Object.defineProperty`, because `out[key] = v` for `__proto__` runs
+  the setter on `Object.prototype` and re-prototypes the record instead of adding a key.
+- **Anything a tool RETURNS is rendered totally.** `jsonResult` is handed an action's own return
+  value, and `JSON.stringify` answers `undefined` for a handler that returned nothing (a
+  `ContentBlock.text` that is not a string is an invalid frame) and THROWS on a bigint, a cycle or
+  a `toJSON` the value carries. Unreadable is an ordinary `isError` result, never an escape past
+  `server.ts`'s catch, which would report a bug in the tool for a fault in the rendering.
+  `query-limits.ts`' `rowBytes` holds the same line one layer earlier: a row the driver decoded
+  into a bigint costs `Infinity` and is cut by the byte ceiling, rather than raising inside the cap
+  that exists to protect the answer.
+- **A thrown value is read with `stringField` from `@ultimat3/core`, never `typeof e.code ===
+  'string'`.** `asFrameworkError` reads four fields off whatever an app's handler threw; each read
+  is a getter call, or a `Proxy` trap, inside the catch block that owes the caller a response — and
+  a probe that raises there leaves the JSON-RPC request with no answer at all, not even the
+  `-32603` the transport promises for a genuine bug.
 - A framework error rendered into a tool result is **byte-identical to
   `UltimateError.format()`** — one denial must not read one way over MCP and another in the
   terminal. `server.ts` renders it; the test pins it against `format()`, never a literal.

@@ -43,5 +43,8 @@ export const WORKER_CEILING = 8;
 /** Oversubscription factor. See the table above — it is measured, not chosen for roundness. */
 export const WORKER_OVERSUBSCRIBE = 1.5;
 
+/** The floor the paragraph above names: a 1-core box shards rather than reverting to serial. */
+export const WORKER_FLOOR = 2;
+
 export const defaultWorkers = (available: number = availableCpus()): number =>
-  Math.max(2, Math.min(WORKER_CEILING, Math.round(available * WORKER_OVERSUBSCRIBE)));
+  Math.max(WORKER_FLOOR, Math.min(WORKER_CEILING, Math.round(available * WORKER_OVERSUBSCRIBE)));

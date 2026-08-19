@@ -172,6 +172,33 @@ describe('unit · dev assets · responsive variants', () => {
     ).rejects.toBeUltimateError('X_IMAGE_UNSUPPORTED');
   });
 
+  // The bug this guards: the variant cache was keyed ENTIRELY on caller-supplied query values with
+  // no cap of its own, so an authenticated reader holding `storage:read` could mint one stored
+  // object per `?w=` on the app's only disk — `?w=1`, `?w=2`, … up to seo's `MAX_IMAGE_WIDTH`.
+  // The route is intentionally reachable by every signed-in tenant, so the write has to be bounded
+  // by what the framework can MINT, not by what a URL can ask for.
+  test('a width no srcset can mint is served but never written to the disk', async () => {
+    const routes = assetRoutes({ root, storage });
+    const cached = variantKey(SOURCE_KEY, { width: 7, format: 'png' });
+
+    const response = await call(routes, `${MEDIA_BASE_PATH}/${SOURCE_KEY}?w=7&f=png`);
+    // Still answered — refusing would break nothing an attacker cares about and would turn a
+    // cache decision into a new 4xx an app has to learn about.
+    expect(probeImage(new Uint8Array(await response.arrayBuffer())).width).toBe(7);
+    expect(await storage.disk().exists(cached)).toBe(false);
+  });
+
+  // `usableWidths` appends the SOURCE's own width when it is not one of `DEFAULT_WIDTHS`, so the
+  // widest entry of a real `srcset` is a width outside the closed set — clamping to that set alone
+  // would refuse a URL the framework itself mints.
+  test("the source's own intrinsic width is cacheable, because a srcset names it", async () => {
+    const routes = assetRoutes({ root, storage });
+    const cached = variantKey(SOURCE_KEY, { width: 1200, format: 'png' });
+
+    await call(routes, `${MEDIA_BASE_PATH}/${SOURCE_KEY}?w=1200&f=png`);
+    expect(await storage.disk().exists(cached)).toBe(true);
+  });
+
   test('an unusable width is refused before any byte is decoded', async () => {
     const routes = assetRoutes({ root, storage });
     await expect(call(routes, `${MEDIA_BASE_PATH}/${SOURCE_KEY}?w=0`)).rejects.toBeUltimateError(

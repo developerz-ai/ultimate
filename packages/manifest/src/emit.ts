@@ -54,6 +54,11 @@ export interface EmitResult {
 export async function emitManifest(input: EmitInput): Promise<EmitResult> {
   const path = input.path ?? `./${MANIFEST_FILENAME}`;
   const text = manifestJson(input.manifest);
+  // The bytes on disk, never `text.length`: a manifest carries the APP's strings — a locale name,
+  // an entity description, a title in the app's own language — and `String.length` counts UTF-16
+  // code units, so it under-reports every one of them and over-reports nothing. `agents-md.ts`
+  // measures the same quantity the same way.
+  const bytes = Buffer.byteLength(text, 'utf8');
 
   if (input.stdout === true) {
     // stdout is the wire in `--json` mode; nothing else may be written to it — and the write is
@@ -61,16 +66,16 @@ export async function emitManifest(input: EmitInput): Promise<EmitResult> {
     // is still queued. Unawaited, the largest payload the CLI prints was the one that lost bytes,
     // exactly as `scripts/stdout-truncation.test.ts` documents for the same bug elsewhere.
     await Bun.write(Bun.stdout, text);
-    return { path, bytes: text.length, buildId: input.manifest.buildId, changed: false };
+    return { path, bytes, buildId: input.manifest.buildId, changed: false };
   }
 
   const existing = await readIfExists(path);
   // Skip the write when nothing moved: an unchanged mtime keeps file watchers quiet.
   if (existing === text) {
-    return { path, bytes: text.length, buildId: input.manifest.buildId, changed: false };
+    return { path, bytes, buildId: input.manifest.buildId, changed: false };
   }
   await Bun.write(path, text);
-  return { path, bytes: text.length, buildId: input.manifest.buildId, changed: true };
+  return { path, bytes, buildId: input.manifest.buildId, changed: true };
 }
 
 /** Read and structurally validate a manifest. `undefined` when absent or unparseable. */

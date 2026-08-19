@@ -136,6 +136,106 @@ describe('runLlmToolCall renders a failure the model can act on', () => {
   });
 });
 
+// The values here are the ones the framework did not build: a tool's OUTPUT and a tool's THROW
+// both come from an app's own code, and `LlmToolResult.content` is typed `string` — the agent
+// loop truncates it, so anything else ends the whole run in a `TypeError` two frames away.
+describe('runLlmToolCall survives a result the framework did not build', () => {
+  test('a tool that returns nothing answers null, never a content that is not a string', async () => {
+    const silent = projectable('publishPost', { expose: true }, async () => undefined);
+    const result = await runLlmToolCall(
+      [silent],
+      { id: 'call-5', name: 'publishPost', input: { id: 'p1' } },
+      actor,
+    );
+    expect(result).toEqual({ toolUseId: 'call-5', content: 'null' });
+    expect(typeof result.content).toBe('string');
+  });
+
+  // `JSON.stringify` throws on a bigint and on a cycle, and RUNS any `toJSON` the value carries.
+  // The tool already ran, so telling the model it failed would buy a second run of its side
+  // effects — the result says the call succeeded and the value cannot be read.
+  test('an unserialisable result is reported as one, and never as a failed call', async () => {
+    for (const output of [
+      { total: 10n },
+      (() => {
+        const cycle: Record<string, unknown> = {};
+        cycle['self'] = cycle;
+        return cycle;
+      })(),
+      {
+        toJSON() {
+          throw new Error('no');
+        },
+      },
+    ]) {
+      const odd = projectable('publishPost', { expose: true }, async () => output);
+      const result = await runLlmToolCall(
+        [odd],
+        { id: 'call-6', name: 'publishPost', input: { id: 'p1' } },
+        actor,
+      );
+      expect(result.isError).toBe(true);
+      expect(result.content).toContain('not JSON');
+      expect(result.content).toContain('ran');
+    }
+  });
+
+  // The throw a `catch` block cannot read: `typeof error.code` is a getter call, and on a `Proxy`
+  // it is a trap. The branch that renders a denial must not be the branch that raises one.
+  test('a throw that fights being read is still a tool_result, not a raised TypeError', async () => {
+    const hostile: unknown[] = [
+      new Proxy(
+        {},
+        {
+          get() {
+            throw new Error('trapped get');
+          },
+          getPrototypeOf() {
+            throw new Error('trapped getPrototypeOf');
+          },
+        },
+      ),
+      Object.defineProperty(Object.create(null), 'code', {
+        get() {
+          throw new Error('trapped getter');
+        },
+        enumerable: true,
+      }),
+      Symbol('thrown'),
+    ];
+    for (const value of hostile) {
+      const boom = projectable('publishPost', { expose: true }, () => Promise.reject(value));
+      const result = await runLlmToolCall(
+        [boom],
+        { id: 'call-7', name: 'publishPost', input: { id: 'p1' } },
+        actor,
+      );
+      expect(result).toEqual({ toolUseId: 'call-7', content: 'tool failed', isError: true });
+    }
+  });
+
+  // A null-prototype error object is what a worker, a subprocess or a JSON round trip produces,
+  // and it still carries the three fields — reading them must not depend on a prototype.
+  test('a null-prototype error object still renders its code, cause and fix', async () => {
+    const flattened = Object.assign(Object.create(null), {
+      code: 'X_ORDER_LOCKED',
+      cause: 'order o-1 is closed',
+      fix: 'x db query "select * from orders"',
+    });
+    const boom = projectable('publishPost', { expose: true }, () => Promise.reject(flattened));
+    const result = await runLlmToolCall(
+      [boom],
+      { id: 'call-8', name: 'publishPost', input: { id: 'p1' } },
+      actor,
+    );
+    expect(result).toEqual({
+      toolUseId: 'call-8',
+      content: 'X_ORDER_LOCKED: order o-1 is closed (fix: x db query "select * from orders")',
+      isError: true,
+    });
+  });
+});
+
 describe('asProjectableAction', () => {
   const publishPost = () =>
     action({

@@ -20,7 +20,7 @@
 import type { AnyAction } from '@ultimat3/action';
 import { actionName, invoke, isAction } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
-import { isMcpExposed } from '@ultimat3/core';
+import { isMcpExposed, stringField } from '@ultimat3/core';
 import { toMcpInputSchema } from '@ultimat3/schema';
 
 /** The JSON Schema subset the framework emits for tool arguments. */
@@ -166,18 +166,47 @@ export async function runLlmToolCall(
   }
   try {
     const output = await action.run({ input: call.input, actor });
-    return { toolUseId: call.id, content: JSON.stringify(output) };
+    return resultOf(call.id, output);
   } catch (error) {
     // A policy denial is an outcome the model should read and react to, not a crash.
     return { toolUseId: call.id, content: describeFailure(error), isError: true };
   }
 }
 
+/**
+ * One tool's return value as the `tool_result` text. `content` is typed `string` and the agent
+ * loop TRUNCATES it, so anything else ends the run in a `TypeError` two frames away — and the
+ * value is an app's, so neither of `JSON.stringify`'s two other answers can be assumed away:
+ * `undefined` for a handler that returns nothing, and a throw on a bigint, a cycle or a `toJSON`
+ * of its own. A throw is reported as what it is — the call SUCCEEDED and its value cannot be
+ * read — never as a failure, because a model told the tool failed calls it again and buys its
+ * side effects twice.
+ */
+function resultOf(toolUseId: string, output: unknown): LlmToolResult {
+  let text: string | undefined;
+  try {
+    text = JSON.stringify(output);
+  } catch {
+    return {
+      toolUseId,
+      content:
+        'the tool ran, but its result is not JSON (a bigint, a cycle, or a toJSON that threw) — do not call it again',
+      isError: true,
+    };
+  }
+  return { toolUseId, content: text ?? 'null' };
+}
+
+/**
+ * The thrown value, read STRUCTURALLY and totally. `stringField` from `@ultimat3/core`, never
+ * `typeof e.code === 'string'`: the value is whatever an app's handler, its driver or its SDK
+ * threw, so each read is a getter call or a `Proxy` trap — and it runs inside the catch block
+ * that has nothing left to answer the model with if the probe itself raises.
+ */
 function describeFailure(error: unknown): string {
-  if (typeof error !== 'object' || error === null) return 'tool failed';
-  const e = error as { code?: unknown; cause?: unknown; fix?: unknown };
-  if (typeof e.code !== 'string') return 'tool failed';
-  const cause = typeof e.cause === 'string' ? e.cause : 'unknown';
-  const fix = typeof e.fix === 'string' ? e.fix : '';
-  return fix === '' ? `${e.code}: ${cause}` : `${e.code}: ${cause} (fix: ${fix})`;
+  const code = stringField(error, 'code');
+  if (code === undefined) return 'tool failed';
+  const cause = stringField(error, 'cause') ?? 'unknown';
+  const fix = stringField(error, 'fix') ?? '';
+  return fix === '' ? `${code}: ${cause}` : `${code}: ${cause} (fix: ${fix})`;
 }

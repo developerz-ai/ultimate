@@ -31,6 +31,7 @@ import { msg } from './messages';
 import type { CommandResult, Finding, StepResult } from './output';
 import { findingFrom } from './output';
 import type { ParsedArgs } from './parse';
+import { WORKER_CEILING, WORKER_FLOOR, WORKER_OVERSUBSCRIBE } from './test-workers';
 import {
   floorProblemFindings,
   floorRequires,
@@ -44,6 +45,9 @@ import { TEST_STEPS } from './verify-tests';
 import { checkFileSizes, checkPackageShape, hasWorkspacePackages } from './workspace-checks';
 
 /** The whole contract, in cost order. Every check the framework knows how to make lives here. */
+/** The one file that makes the `roadmap` step answerable, and therefore what `applies` reads. */
+const ROADMAP_FILE = join('docs', 'idea', '14-roadmap.md');
+
 export const VERIFY_STEPS: readonly VerifyStep[] = [
   {
     name: 'typecheck',
@@ -224,8 +228,11 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     name: 'roadmap',
     summary: "every roadmap milestone's status marker matches what is actually on disk",
     // A generated app ships no `docs/idea/14-roadmap.md` — only the framework monorepo does, so
-    // only a host that registers this check has anything for the step to verify.
-    applies: async (ctx) => ctx.hostChecks?.roadmap !== undefined,
+    // the FILE is what decides. It keyed on `ctx.hostChecks?.roadmap` until `As of 2026-08`, which
+    // is a fact about the CALL: a caller of the exported `runVerify(VERIFY_STEPS, ctx)` passing no
+    // `hostChecks`, in a repo whose committed `x.verify.json` names `roadmap`, got
+    // `X_VERIFY_SUITE_VANISHED` — whose `fix:` is the command that had just failed.
+    applies: async (ctx) => existsSync(join(ctx.root, ROADMAP_FILE)),
     run: async (ctx) => fromFindings(await hostFindings(ctx, 'roadmap')),
   },
 ];
@@ -390,7 +397,7 @@ export const verifyCommand: CliCommand = {
       {
         name: 'workers',
         type: 'string',
-        summary: 'test processes per parallel step (default: CPUs - 1, max 8)',
+        summary: `test processes per parallel step (default: ${WORKER_OVERSUBSCRIBE}x CPUs, min ${WORKER_FLOOR}, max ${WORKER_CEILING})`,
       },
     ],
   },
@@ -405,13 +412,24 @@ export const verifyCommand: CliCommand = {
   },
 };
 
-/** `x test --workers` refuses the same values for the same reason — and now through the same
- * reader, so the claim is enforced rather than asserted in a comment. */
-const readWorkers = (args: ParsedArgs): number | undefined =>
+/**
+ * Both bounds are the constants the flag summary already names, so `x help verify` and the reader
+ * cannot disagree. Exported for the test that pins them: the command's `run` reaches this only
+ * after the whole gate would have started.
+ *
+ * `max` is the ceiling. Without it `--workers 5000` parsed, `planShards` clamped only to the file
+ * count, and `runParallel` `Promise.all`ed one Bun process per test file. `min` is `WORKER_FLOOR`,
+ * the same number `defaultWorkers` will not go below — the gate spreads or it does not shard, and
+ * `--workers 1` was a serial run the summary said was impossible. `x test --workers 1` stays legal
+ * and is deliberately NOT this reader: `runShards` clamps the width to the file count, so a
+ * one-file corpus makes `X_TEST_SHARD_FAILED`'s own `fix:` say `--workers 1`.
+ */
+export const readWorkers = (args: ParsedArgs): number | undefined =>
   readIntFlag(args, {
     name: 'workers',
     command: 'verify',
-    min: 1,
+    min: WORKER_FLOOR,
+    max: WORKER_CEILING,
     example: 'x verify --workers 4',
   });
 

@@ -27,14 +27,16 @@ import {
 } from '@ultimat3/http';
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
 import type { Storage } from '@ultimat3/storage';
-import { defineStorage, localDriver, resetStorage, scopedKey, variantKey } from '@ultimat3/storage';
-import { assetRoutes, MEDIA_BASE_PATH } from './dev-assets';
 import {
-  AUTHORIZED_OBJECT_CACHE,
-  STORAGE_BASE_PATH,
-  STORAGE_READ_PERMISSION,
-  storageRoutes,
-} from './dev-storage';
+  DEFAULT_SIGNED_URL_BASE,
+  defineStorage,
+  localDriver,
+  resetStorage,
+  scopedKey,
+  variantKey,
+} from '@ultimat3/storage';
+import { assetRoutes, MEDIA_BASE_PATH } from './dev-assets';
+import { AUTHORIZED_OBJECT_CACHE, STORAGE_READ_PERMISSION, storageRoutes } from './dev-storage';
 
 /** A real PNG, because the `?w=` cases below decode it rather than refusing it as a bad image. */
 const BYTES = encodeImage(createRaster(64, 64, 'tenant-a-private'), 'png');
@@ -104,9 +106,9 @@ function mediaVerdict(key: string, actor: Actor, query = ''): Promise<Verdict> {
 /** The `/_storage` surface, same object, same actor. */
 function storageVerdict(key: string, actor: Actor): Promise<Verdict> {
   const route = storageRoutes({ storage })[0];
-  expect(route?.path).toBe(`${STORAGE_BASE_PATH}/:disk/*key`);
+  expect(route?.path).toBe(`${DEFAULT_SIGNED_URL_BASE}/:disk/*key`);
   const disk = storage.defaultDisk;
-  const url = new URL(`http://dev.test${STORAGE_BASE_PATH}/${disk}/${key}`);
+  const url = new URL(`http://dev.test${DEFAULT_SIGNED_URL_BASE}/${disk}/${key}`);
   const ctx = contextFor(url, { disk, key }, actor);
   return verdictOf(
     async () =>

@@ -9,9 +9,10 @@ import { readIntFlag } from './flag-number';
 import type { CommandResult } from './output';
 import type { ParsedArgs } from './parse';
 import { flagString } from './parse';
+import { quoteArg } from './shell-quote';
 import { discoverTests, missingSelection, readSample, readType, sampleFiles } from './test-select';
-import { quoteArg, runShards } from './test-shards';
-import { defaultWorkers } from './test-workers';
+import { runShards } from './test-shards';
+import { defaultWorkers, WORKER_CEILING, WORKER_FLOOR, WORKER_OVERSUBSCRIBE } from './test-workers';
 import type { TestType } from './verify-tests';
 import { TEST_TYPES } from './verify-tests';
 
@@ -25,6 +26,12 @@ const readIndex = (args: ParsedArgs, name: string, min: number): number | undefi
     name,
     command: 'test',
     min,
+    // The ceiling the summary already claimed and the reader never enforced: `--workers 5000` was
+    // accepted, `planShards` clamps only to the file count, and `runParallel` `Promise.all`s them —
+    // one Bun process per test FILE, each with the framework module graph and a cloned database.
+    // `--worker` is an index into that split, so the same bound holds it (the exact upper index is
+    // `workers - 1`, refused a line below by the check that knows the real width).
+    max: WORKER_CEILING,
     example: `x test --${name} ${Math.max(min, 1)}`,
   });
 
@@ -54,7 +61,11 @@ export const testCommand: CliCommand = {
     usage: `x test [${TEST_TYPES.join('|')}] [--filter text] [--sample N] [--workers N] [--worker I] [--json]`,
     positionalChoices: TEST_TYPES,
     flags: [
-      { name: 'workers', type: 'string', summary: 'process count (default: CPUs - 1, max 8)' },
+      {
+        name: 'workers',
+        type: 'string',
+        summary: `process count (default: ${WORKER_OVERSUBSCRIBE}x CPUs, min ${WORKER_FLOOR}, max ${WORKER_CEILING})`,
+      },
       {
         name: 'worker',
         type: 'string',

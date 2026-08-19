@@ -71,9 +71,27 @@ function requestFacts(root: ReadableSpan): { method: string; path: string } {
   };
 }
 
+/** `http.request_id` is stamped by the pipeline's root and by nothing else; the name is a fallback. */
 const isHttpRoot = (span: ReadableSpan): boolean =>
-  span.parentSpanId === undefined &&
-  (span.attributes['http.request_id'] !== undefined || /^[A-Z]+ \//.test(span.name));
+  span.attributes['http.request_id'] !== undefined || /^[A-Z]+ \//.test(span.name);
+
+/**
+ * The request's own span among a trace's. `parentSpanId === undefined` was a third CONDITION
+ * until `As of 2026-08`, and it dropped every request that arrived with an inbound
+ * `traceparent`: `pipeline.ts` passes `parent: correlation.parent`, so the root has a defined
+ * `parentSpanId`, `spans.find(isHttpRoot)` answered `undefined`, and the whole trace vanished
+ * from `/_x/timeline` for any caller behind an instrumented client, an ingress or a service
+ * mesh. It survives as the TIE-BREAK: the outermost candidate is the one whose parent is not
+ * itself in this recording, so a nested candidate can never outrank the request's own span.
+ */
+function httpRootOf(spans: readonly ReadableSpan[]): ReadableSpan | undefined {
+  const candidates = spans.filter(isHttpRoot);
+  const recorded = new Set(spans.map((span) => span.context.spanId));
+  const outermost = candidates.find(
+    (span) => span.parentSpanId === undefined || !recorded.has(span.parentSpanId),
+  );
+  return outermost ?? candidates[0];
+}
 
 function toTrace(root: ReadableSpan, spans: readonly ReadableSpan[]): RequestTrace {
   const { method, path } = requestFacts(root);
@@ -121,7 +139,11 @@ export function createTraceRecorder(options: { limit?: number } = {}): TraceReco
     const spans = byTrace.get(traceId);
     if (spans === undefined) {
       byTrace.set(traceId, [span]);
-      // Bounded by trace, not by span: dropping half a request would leave a flame with holes.
+      // Bounded by TRACE, not by span: dropping half a request would leave a flame with holes.
+      // The cost is stated rather than capped — one trace's span array has no bound of its own, so
+      // a request issuing 50k statements holds 50k `ReadableSpan`s until it is evicted. That is a
+      // dev-only recorder (`serve.ts` installs none), and a per-trace cap would silently produce
+      // the holed flame this bound exists to prevent.
       while (byTrace.size > limit) {
         const oldest = byTrace.keys().next();
         if (oldest.done === true) break;
@@ -137,7 +159,7 @@ export function createTraceRecorder(options: { limit?: number } = {}): TraceReco
     traces(): readonly RequestTrace[] {
       const traces: RequestTrace[] = [];
       for (const spans of byTrace.values()) {
-        const root = spans.find(isHttpRoot);
+        const root = httpRootOf(spans);
         if (root !== undefined) traces.push(toTrace(root, spans));
       }
       return traces.sort((a, b) => b.startedAt.localeCompare(a.startedAt));

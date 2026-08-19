@@ -150,6 +150,54 @@ describe('routing and retries', () => {
     expect(attempts).toBe(1);
   });
 
+  // A `Provider` is an APP's object — `createGateway({ providers })` takes whatever it is handed —
+  // so the value it rejects with is one the framework did not build. Both reads in the retry loop
+  // run on it: `isRetryable` indexes it, and the failure line renders it. A throw from either
+  // replaces `X_AI_PROVIDER_UNAVAILABLE` with a bare TypeError raised inside the catch block.
+  test('a provider that rejects with a value fighting to be read still ends in a coded error', async () => {
+    const hostile: readonly unknown[] = [
+      new Proxy(
+        {},
+        {
+          get() {
+            throw new Error('trapped get');
+          },
+          getPrototypeOf() {
+            throw new Error('trapped getPrototypeOf');
+          },
+        },
+      ),
+      Object.create(null),
+      Symbol('rejected'),
+    ];
+    for (const value of hostile) {
+      const rude: Provider = {
+        name: 'rude',
+        models: ANTHROPIC_MODEL_IDS,
+        generate: () => Promise.reject(value),
+        // biome-ignore lint/correctness/useYield: interface requires a generator shape
+        async *stream(): AsyncIterable<StreamChunk> {
+          throw new Error('unused');
+        },
+      };
+      const gateway = createGateway({
+        providers: [rude],
+        retry: { attempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
+        sleep: async () => undefined,
+      });
+      // `toThrow(Class)` passes in Bun 1.3.14 when a call merely RETURNS an error, so the code is
+      // asserted off the caught value instead.
+      let thrown: unknown;
+      try {
+        await gateway.generate({ messages: [{ role: 'user', content: 'x' }], maxTokens: 8 });
+      } catch (error) {
+        thrown = error;
+      }
+      expect((thrown as { code?: string } | undefined)?.code).toBe('X_AI_PROVIDER_UNAVAILABLE');
+      expect(typeof (thrown as { cause?: unknown } | undefined)?.cause).toBe('string');
+    }
+  });
+
   test('a cache hit skips the provider entirely', async () => {
     let calls = 0;
     const counting: Provider = {

@@ -123,6 +123,23 @@ export async function readBuildStats(root: string): Promise<BuildStats | undefin
 
 const SCRIPT_TAG = /<script(?<attrs>[^>]*)>(?<body>[\s\S]*?)<\/script>/g;
 const SRC_ATTR = /\ssrc="(?<src>[^"]*)"/;
+const TYPE_ATTR = /\stype="(?<type>[^"]*)"/;
+
+/**
+ * `application/ld+json`, `application/json`, any `…+json`: the body is data, not code — the rule
+ * `@ultimat3/render`'s `head.ts` already states, restated because its `carriesJson` reads a
+ * `HeadTag` and is not exported, and this side has an attribute string off the emitted document.
+ * Without it a page shipping only `meta.ld` structured data and island props measured 8kb of JS
+ * and failed a 2kb budget with a `fix:` naming an import chain that does not exist.
+ */
+const carriesJson = (attrs: string): boolean => {
+  // Everything from the first `;` is a MIME PARAMETER and not the type: a real document writes
+  // `type="application/ld+json; charset=utf-8"`, which does not END with `json`, so the suffix
+  // test alone charged an SEO structured-data block as executable JavaScript all over again.
+  const [type = ''] = (TYPE_ATTR.exec(attrs)?.groups?.['type'] ?? '').split(';');
+  return type.trim().toLowerCase().endsWith('json');
+};
+
 /**
  * An island's chunk is reached by `import()` from inside the hydration runtime, so it never appears
  * as a `<script src>` — and a document weighed by script tags alone was charged for the runtime and
@@ -144,8 +161,9 @@ export interface MeasuredJs {
 }
 
 /**
- * What a rendered document actually makes the browser execute: the bytes of every inline script,
- * the size of every file a `src` points at, and the size of every island chunk it boots. Measured
+ * What a rendered document actually makes the browser execute: the bytes of every inline script
+ * the parser will run, the size of every file a `src` points at, and the size of every island
+ * chunk it boots. A JSON-typed script is skipped — it is data the parser never runs. Measured
  * from the emitted HTML rather than from the declared graph, because the graph is what a route
  * *says* it ships and this gate exists to catch the case where those two disagree.
  */
@@ -162,7 +180,9 @@ export async function measureDocumentJs(html: string, out: string): Promise<Meas
   };
 
   for (const match of html.matchAll(SCRIPT_TAG)) {
-    const src = SRC_ATTR.exec(match.groups?.['attrs'] ?? '')?.groups?.['src'];
+    const attrs = match.groups?.['attrs'] ?? '';
+    if (carriesJson(attrs)) continue;
+    const src = SRC_ATTR.exec(attrs)?.groups?.['src'];
     if (src === undefined) {
       jsBytes += Buffer.byteLength(match.groups?.['body'] ?? '', 'utf8');
       continue;

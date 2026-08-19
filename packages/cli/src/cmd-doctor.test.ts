@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { DoctorProbe } from './cmd-doctor';
-import { OFFLINE_FALLBACK, probeFor, runDoctor } from './cmd-doctor';
+import { doctorCommand, doctorPort, OFFLINE_FALLBACK, probeFor, runDoctor } from './cmd-doctor';
 import { ICON_SOURCE } from './dev-assets';
+import { PORT_RANGE, parseIntFlag } from './flag-number';
+import type { ParsedArgs } from './parse';
+import { parseArgs } from './parse';
 
 const probe = (over: Partial<DoctorProbe> = {}): DoctorProbe => ({
   bunVersion: '1.3.14',
@@ -48,6 +51,44 @@ describe('unit · x doctor', () => {
     const findings = await runDoctor(probe({ portFree: async () => false }));
     expect(findings[0]?.code).toBe('X_PORT_IN_USE');
     expect(findings[0]?.fix).toBe('x dev --port 3001');
+  });
+
+  // The bug this guards: `port + 1` at the top of the range emitted `x dev --port 65536`, which
+  // `x dev` refuses with X_CLI_BAD_FLAG — a fix line that reproduces a failure instead of ending
+  // one. The neighbour below is a port; the one above does not exist.
+  test('the suggested port is one x dev accepts, at the top of the range too', async () => {
+    const top = await runDoctor(probe({ port: PORT_RANGE.max, portFree: async () => false }));
+    expect(top[0]?.fix).toBe(`x dev --port ${PORT_RANGE.max - 1}`);
+    // And the suggestion is still parseable by the reader it is handed to.
+    for (const port of [3000, PORT_RANGE.max]) {
+      const findings = await runDoctor(probe({ port, portFree: async () => false }));
+      const suggested = Number((findings[0]?.fix ?? '').split(' ').at(-1));
+      // `x dev`'s own flag config, so the assertion is that the READER of this line accepts it.
+      expect(
+        parseIntFlag(String(suggested), {
+          name: 'port',
+          command: 'dev',
+          ...PORT_RANGE,
+          example: 'x dev --port 3000',
+        }),
+      ).toBe(suggested);
+    }
+  });
+
+  // `Bun.serve({ port: 0 })` always succeeds, so `x doctor --port 0` ran a check that could not
+  // fail. 0 means "let the kernel pick" to `x dev` and means nothing at all to a probe.
+  test('--port 0 is refused: a port to TEST is never the kernel picking one', () => {
+    const args = (value: string): ParsedArgs =>
+      parseArgs(['doctor', '--port', value], [doctorCommand.spec]);
+    let caught: unknown;
+    try {
+      doctorPort(args('0'));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({ code: 'X_CLI_BAD_FLAG' });
+    expect(doctorPort(args('1'))).toBe(1);
+    expect(doctorPort(args(String(PORT_RANGE.max)))).toBe(PORT_RANGE.max);
   });
 
   test('running outside an app stops after the one finding that explains everything', async () => {

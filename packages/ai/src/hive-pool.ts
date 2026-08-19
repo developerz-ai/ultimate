@@ -5,9 +5,9 @@
 // happens to the siblings when one throws". Nothing here knows what a model is.
 
 import type { Ctx } from '@ultimat3/core';
-import { isUltimateError, withChildContext } from '@ultimat3/core';
+import { isThrownError, isUltimateError, stringField, withChildContext } from '@ultimat3/core';
 import type { HiveMember, HiveMemberError } from './hive-result';
-import { SKIPPED_ABORTED } from './hive-result';
+import { SKIPPED_ABORTED, SKIPPED_NO_INPUT } from './hive-result';
 
 export interface PoolInput<I, O> {
   readonly inputs: readonly I[];
@@ -45,8 +45,10 @@ export async function runPool<I, O>(input: PoolInput<I, O>): Promise<readonly Hi
       const payload = inputs[index];
       // Every index is claimed by exactly one worker and assigned exactly once, so the array has
       // no holes for a caller to trip over — `skipped` is a recorded outcome, never an absence.
+      // Two reasons, because they are two facts: the run stopped, or the split had nothing here.
       if (controller.signal.aborted || payload === undefined) {
-        members[index] = { status: 'skipped', index, reason: SKIPPED_ABORTED };
+        const reason = controller.signal.aborted ? SKIPPED_ABORTED : SKIPPED_NO_INPUT;
+        members[index] = { status: 'skipped', index, reason };
         continue;
       }
       try {
@@ -76,8 +78,13 @@ export async function runPool<I, O>(input: PoolInput<I, O>): Promise<readonly Hi
  */
 function failureOf(error: unknown): { readonly code: string; readonly reason: string } {
   if (isUltimateError(error)) return { code: error.code, reason: error.cause };
-  if (error instanceof Error && error.message !== '') {
-    return { code: 'unknown', reason: error.message };
+  // `isThrownError` and `stringField`, never `error instanceof Error` and `.message`: a member
+  // is an app's action, so the value is one the framework did not build — `instanceof` runs a
+  // `Proxy`'s `getPrototypeOf` trap and `.message` is a getter call. A throw HERE would take the
+  // whole hive down with it, which is the one outcome the three arms exist to prevent.
+  const message = stringField(error, 'message');
+  if (isThrownError(error) && message !== undefined && message !== '') {
+    return { code: 'unknown', reason: message };
   }
   return { code: 'unknown', reason: 'the member threw a value that is not an Error' };
 }

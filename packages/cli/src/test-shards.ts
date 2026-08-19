@@ -8,6 +8,7 @@ import type { Runner } from './exec';
 import { execOutput } from './exec';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue, StepResult } from './output';
+import { quoteArg } from './shell-quote';
 import type { TestFile } from './test-select';
 import { bySizeThenPath } from './test-select';
 import type { TestType } from './verify-tests';
@@ -63,16 +64,6 @@ export const shardArgs = (shard: Shard): readonly string[] => [
   ...SHARD_COMMAND_PREFIX,
   ...shard.files,
 ];
-
-const SHELL_SAFE = /^[\w@%+=:,./-]+$/;
-
-/**
- * POSIX single-quoting for the values a caller supplies. A `--filter` holding a space, a `$` or a
- * `;` pastes back as two arguments or as a second command, so an unquoted line would run something
- * other than the run it claims to reproduce. `'\''` is the only escape a single-quoted string has.
- */
-export const quoteArg = (value: string): string =>
-  SHELL_SAFE.test(value) ? value : `'${value.split("'").join("'\\''")}'`;
 
 export interface ReproduceOptions {
   /** The *effective* worker count: `planShards` clamps to the file count, and the split follows. */

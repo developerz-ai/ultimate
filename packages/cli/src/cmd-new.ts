@@ -67,7 +67,7 @@ export const newCommand: CliCommand = {
   spec: {
     name: 'new',
     summary: 'scaffold a new Ultimate monorepo that already runs',
-    usage: 'x new <name> [--dir path] [--no-example] [--dry-run] [--json]',
+    usage: 'x new <name> [--dir path] [--no-example] [--dry-run] [--force] [--json]',
     flags: [
       { name: 'dir', type: 'string', summary: 'parent directory (default: cwd)' },
       {

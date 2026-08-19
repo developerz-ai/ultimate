@@ -28,14 +28,23 @@ const REGEX_AFTER_WORDS = new Set(
   'await case delete do else in instanceof new of return throw typeof void yield'.split(' '),
 );
 
-/** Index just past the closing quote of the literal opening at `from`, or the end of the text. */
+/**
+ * Index just past the closing quote of the literal opening at `from`, or `from + 1` when a `'`/`"`
+ * does not close on its own line — which makes it text, not a literal. Only a template literal may
+ * span a newline, so the apostrophe in `<p>Don't panic</p>` is JSX text; read as an opener it ran
+ * forward to the next `'` in the FILE (the next `fix:` line) and blanked every declaration between,
+ * silently emptying the `errors` gate for the whole file. Same rule `endOfRegex` applies to a `/`.
+ * An escaped newline is still a continuation: the escape is consumed before the line test.
+ */
 function endOfLiteral(text: string, from: number): number {
   const quote = text[from] as string;
+  const spansLines = quote === '`';
   for (let i = from + 1; i < text.length; i += 1) {
     if (text[i] === '\\') i += 1;
     else if (text[i] === quote) return i + 1;
+    else if (!spansLines && text[i] === '\n') return from + 1;
   }
-  return text.length;
+  return spansLines ? text.length : from + 1;
 }
 
 /**
@@ -156,6 +165,8 @@ function valueLiterals(
     const ch = masked[i] as string;
     if (QUOTES.has(ch)) {
       const end = endOfLiteral(masked, i);
+      // A quote that never closes is one character of code, not an empty literal to report.
+      if (end === i + 1) continue;
       if (depth === 0) found.push({ value: source.slice(i + 1, end - 1), index: i });
       i = end - 1;
     } else if (OPENERS.has(ch)) depth += 1;

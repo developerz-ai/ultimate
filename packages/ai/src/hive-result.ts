@@ -60,6 +60,13 @@ export type HiveMemberError =
 export const SKIPPED_ABORTED = 'a sibling failed and onMemberError is abort';
 
 /**
+ * The OTHER way a member never runs, and a different fact: `split` produced nothing at this
+ * index. Its own string because `SKIPPED_ABORTED` named a cause that did not happen — a caller
+ * reading it retries the tail against a hive that stopped early, when the split is what to fix.
+ */
+export const SKIPPED_NO_INPUT = 'split produced no input at this index';
+
+/**
  * The member's `output` embedded verbatim in the `ok` arm, so a hive over `summarisePost` publishes
  * a summary in its OpenAPI response and its MCP `outputSchema` — not an opaque object.
  *
