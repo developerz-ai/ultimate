@@ -145,6 +145,37 @@ describe(testName('unit', 'factory traits'), () => {
     expect(thrown?.code).toBe('X_TEST_FACTORY_TRAIT_UNKNOWN');
     expect(thrown?.cause).toContain('popular, published');
   });
+
+  test('a trait named after an Object.prototype member is undeclared, not inherited', () => {
+    // Executed against the `traits[name] === undefined` read this replaced: `with('constructor')`
+    // did NOT throw and applied nothing, and `with('toString')` did NOT throw and built a row of
+    // 18 numeric columns — `overridesOf` called the inherited function with no receiver, got
+    // `"[object Undefined]"` and spread the string. `create()` then handed that to `persistRow`.
+    for (const inherited of ['constructor', 'toString', 'hasOwnProperty', 'valueOf']) {
+      const code = (() => {
+        try {
+          postFactory().with(inherited as 'published');
+          return 'accepted';
+        } catch (error: unknown) {
+          return (error as { code?: string }).code;
+        }
+      })();
+      expect(code).toBe('X_TEST_FACTORY_TRAIT_UNKNOWN');
+    }
+  });
+
+  test('an inherited-name trait cannot reach a built row', () => {
+    const built = (() => {
+      try {
+        return postFactory()
+          .with('toString' as 'published')
+          .build();
+      } catch {
+        return undefined;
+      }
+    })();
+    expect(built).toBeUndefined();
+  });
 });
 
 describe(testName('unit', 'factory associations'), () => {

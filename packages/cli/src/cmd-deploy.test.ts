@@ -4,7 +4,20 @@
 // arrangement this file exists to keep out.
 
 import { describe, expect, test } from 'bun:test';
-import { DEPLOY_ROLES, deployCommand, helmImageOverrides, planDeploy } from './cmd-deploy';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  DEPLOY_METHODS,
+  DEPLOY_ROLES,
+  deployCommand,
+  helmImageOverrides,
+  planDeploy,
+  readMethod,
+} from './cmd-deploy';
+import type { CommandContext } from './command';
+import { parseArgs } from './parse';
+import { SPECS } from './registry';
 
 const compose = (root = '/app') => planDeploy('repo/app:tag', 'compose', root);
 
@@ -89,5 +102,63 @@ describe('unit · the deploy plan', () => {
   test('the command declares every flag its own usage line names', () => {
     const flags = deployCommand.spec.flags?.map((flag) => flag.name) ?? [];
     for (const flag of ['image', 'method', 'dry-run', 'critical']) expect(flags).toContain(flag);
+  });
+});
+
+/** An app root, because `x deploy` resolves one before it reads a single flag. */
+function appRoot(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'x-deploy-'));
+  writeFileSync(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  return dir;
+}
+
+const contextFor = (argv: readonly string[], cwd: string): CommandContext => ({
+  args: parseArgs(argv, SPECS),
+  cwd,
+  // A refused `--method` must never reach a subprocess, and a `--dry-run` never does either: a
+  // call here is the failure, not a fixture.
+  runner: (command) => {
+    throw new Error(`x deploy spawned ${command.join(' ')}`);
+  },
+  env: {},
+  bunVersion: '1.3.0',
+});
+
+// `flagString(...) === 'helm' ? 'helm' : 'compose'` made every OTHER spelling a Compose deploy that
+// reported `ok: true, method: "compose"` — the operator asked for a Helm upgrade, got the six-step
+// Compose plan, and the report agreed with what ran rather than with what was asked.
+describe('unit · x deploy --method is a closed set', () => {
+  test('an unknown method is refused, never silently run as compose', async () => {
+    const root = appRoot();
+    for (const raw of ['helmm', 'Helm', 'kubectl', 'COMPOSE']) {
+      const thrown: unknown = await deployCommand
+        .run(
+          contextFor(['deploy', '--image', 'repo/app:1.2.3', '--method', raw, '--dry-run'], root),
+        )
+        .then(
+          (result) => result,
+          (error: unknown) => error,
+        );
+      expect([raw, (thrown as { code?: string }).code]).toEqual([raw, 'X_CLI_UNKNOWN_COMMAND']);
+      expect([raw, (thrown as { cause: string }).cause]).toEqual([
+        raw,
+        `"x deploy --method ${raw}" is not a command (known: compose, helm)`,
+      ]);
+      expect([raw, (thrown as { fix: string }).fix]).toEqual([raw, 'x deploy --method compose']);
+    }
+  });
+
+  test('both declared methods still resolve, and the absent flag is compose', () => {
+    expect(DEPLOY_METHODS).toEqual(['compose', 'helm']);
+    expect(readMethod(undefined)).toBe('compose');
+    for (const method of DEPLOY_METHODS) expect(readMethod(method)).toBe(method);
+  });
+
+  test('a compose dry run reports the method it actually planned', async () => {
+    const result = await deployCommand.run(
+      contextFor(['deploy', '--image', 'repo/app:1.2.3', '--dry-run'], appRoot()),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.data).toMatchObject({ method: 'compose' });
   });
 });

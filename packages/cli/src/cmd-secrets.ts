@@ -32,7 +32,7 @@ import { ENV_SCHEMA_EXPORT, loadEnvSchema } from './app-env';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import {
-  BadFlagError,
+  MissingPositionalError,
   SecretsEditFailedError,
   SecretsEditorMissingError,
   SecretsExistsError,
@@ -210,11 +210,11 @@ async function edit(ctx: CommandContext, io: SecretsIo): Promise<CommandResult> 
 async function set(ctx: CommandContext, io: SecretsIo): Promise<CommandResult> {
   const name = ctx.args.positionals[0];
   if (name === undefined) {
-    throw new BadFlagError({
-      flag: 'name',
-      command: 'secrets',
-      reason: 'x secrets set <NAME> needs the environment variable name to seal the value under',
-      fix: 'printf %s "$TOKEN" | x secrets set STRIPE_KEY --json',
+    // The name is the positional this command seals under, never a `--name` flag it does not have.
+    throw new MissingPositionalError({
+      command: 'secrets set',
+      positional: 'NAME',
+      example: 'printf %s "$TOKEN" | x secrets set STRIPE_KEY --json',
     });
   }
   const { root, key } = open(ctx, 'set');

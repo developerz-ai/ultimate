@@ -148,3 +148,35 @@ export function resetNetwork(): void {
   state.seen.length = 0;
   state.network = 'online';
 }
+
+/** Everything `resetNetwork` clears, as a value — so a nested scope can put it back instead. */
+export interface NetworkSnapshot {
+  readonly allowed: readonly string[];
+  readonly mocks: readonly MockRoute[];
+  readonly seen: readonly string[];
+  readonly network: NetworkState;
+}
+
+/**
+ * Capture before a nested install, restore after — the pair `captureDeterminism` /
+ * `restoreCapturedDeterminism` already ships for the clock, and for the same reason. `bun test` is
+ * ONE process: a `bootApp` that ended by CLEARING this gate took the outer scope's allow-list, its
+ * mocks and its offline state with it, so an outer fixture that was offline came back online
+ * because an inner boot finished. Teardown restores; it never uninstalls.
+ */
+export const captureNetwork = (): NetworkSnapshot => ({
+  allowed: [...state.allowed],
+  mocks: [...state.mocks],
+  seen: [...state.seen],
+  network: state.network,
+});
+
+export function restoreCapturedNetwork(snapshot: NetworkSnapshot): void {
+  state.allowed.clear();
+  for (const host of snapshot.allowed) state.allowed.add(host);
+  state.mocks.length = 0;
+  state.mocks.push(...snapshot.mocks);
+  state.seen.length = 0;
+  state.seen.push(...snapshot.seen);
+  state.network = snapshot.network;
+}

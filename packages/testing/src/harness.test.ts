@@ -5,9 +5,17 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isDeterminismInstalled, seededRandom } from './determinism';
+import { createTestNetwork } from './fixture-network';
 import type { AppOptions, BootedApp, HarnessDeps } from './harness';
 import { bootApp, describeApp, testApp } from './harness';
-import { isNetworkSealed, requestedUrls } from './sealed-network';
+import {
+  allowHost,
+  isNetworkSealed,
+  mockJson,
+  networkState,
+  requestedUrls,
+  resetNetwork,
+} from './sealed-network';
 import type { WorkerDatabase } from './template-db';
 import { testName } from './test-types';
 
@@ -327,5 +335,35 @@ describe(testName('unit', 'a boot that throws'), () => {
         },
       ),
     ).rejects.toThrow('the app refused to boot');
+  });
+});
+
+// Registered after the block above for the same reason it was registered last: this one INSTALLS
+// outer state on the process-global gate, so it has to run where nothing later reads it.
+describe(testName('unit', 'a boot restores the network gate it found, never clears it'), () => {
+  test('an outer mock, allow-list and offline state all survive a nested bootApp', async () => {
+    const network = createTestNetwork();
+    try {
+      mockJson('https://outer.test/ping', { pong: true });
+      allowHost(`127.0.0.1:${CLOSED_PORT}`);
+      network.offline();
+
+      const booted = await bootApp({ boot: async () => ({ fetch: () => new Response('ok') }) });
+      await booted.close();
+
+      // `resetNetwork()` in the teardown took all three with it: an outer fixture that was
+      // offline came back online, and a mocked Stripe stopped being mocked, because an INNER
+      // boot finished. `packages/testing/CLAUDE.md`: teardown restores, never uninstalls.
+      expect(networkState()).toBe('offline');
+      network.online();
+      const mocked = await fetch('https://outer.test/ping');
+      expect(await mocked.json()).toEqual({ pong: true });
+      expect(await failureCode(`http://127.0.0.1:${CLOSED_PORT}/x`)).not.toBe(
+        'X_TEST_NETWORK_SEALED',
+      );
+    } finally {
+      network[Symbol.dispose]();
+      resetNetwork();
+    }
   });
 });

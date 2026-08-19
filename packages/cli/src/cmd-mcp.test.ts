@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { UltimateError } from '@ultimat3/core';
 import { resetAppLoad } from './app-load';
 import type { McpHttpServer } from './cmd-mcp';
 import { mcpCommand, startMcpHttp } from './cmd-mcp';
@@ -73,6 +74,18 @@ afterAll(async () => {
   resetAppLoad();
 });
 
+/** The refusal itself, not its rendering: `cause` is what an agent reads back the typed value in. */
+async function refusalFor(argv: readonly string[]): Promise<UltimateError> {
+  const thrown: unknown = await mcpCommand.run(context(argv)).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  if (!(thrown instanceof UltimateError)) {
+    throw new Error(`expected x ${argv.join(' ')} to be refused, got ${String(thrown)}`);
+  }
+  return thrown;
+}
+
 describe('unit · x mcp tools', () => {
   test('prints the framework catalog, not a list the CLI keeps', async () => {
     const result = await mcpCommand.run(context(['mcp', 'tools', '--json']));
@@ -124,6 +137,22 @@ describe('unit · x mcp tools', () => {
     await expect(
       mcpCommand.run(context(['mcp', 'serve', '--transport', 'http', '--port', '70000'])),
     ).rejects.toThrow(/X_CLI_BAD_FLAG/);
+  });
+
+  // The range check alone passed every one of these, because `Number.parseInt` answers on a PREFIX:
+  // `1e5` bound port 1, `0x10` bound 0 — whichever port the kernel then chose — and `9229abc` bound
+  // 9229. A socket at an address the operator did not type is the one outcome `x mcp serve` must
+  // not have, and its whole output is the url it claims to be reachable at.
+  test('a --port that only prefix-parses is refused, never rounded into a real port', async () => {
+    for (const raw of ['9229abc', '1e5', '12.9', ' 42', '0x10', '+80']) {
+      const thrown = await refusalFor(['mcp', 'serve', '--transport', 'http', '--port', raw]);
+      expect([raw, thrown.code]).toEqual([raw, 'X_CLI_BAD_FLAG']);
+      expect([raw, thrown.cause]).toEqual([
+        raw,
+        `--port on "x mcp serve": expects an integer from 0 to 65535, got "${raw}"`,
+      ]);
+      expect([raw, thrown.fix]).toEqual([raw, 'x mcp serve --transport http --port 9229']);
+    }
   });
 });
 

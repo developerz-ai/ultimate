@@ -9,8 +9,10 @@ import { nearestTopics, scanInstalledDocs, searchDocs } from '@ultimat3/manifest
 import type { CliCommand, CommandContext } from './command';
 import { MissingPositionalError } from './errors';
 import { frameworkScopeDir } from './framework-scope';
+import { parseLimitFlag } from './jobs-report';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
+import { flagString } from './parse';
 
 /** Matches printed by default. Enough to choose between, few enough to read all of. */
 const DEFAULT_LIMIT = 5;
@@ -150,9 +152,11 @@ export const docsCommand: CliCommand = {
     }
 
     const entries = await scanInstalledDocs(scope);
-    const rawLimit = ctx.args.flags.get('limit');
-    const parsed = typeof rawLimit === 'string' ? Number.parseInt(rawLimit, 10) : Number.NaN;
-    const limit = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_LIMIT;
+    // `x jobs ls --limit`'s reader, and its `command` parameter exists for exactly this second
+    // caller. A local `Number.parseInt` accepted `--limit 1e9` as 1 and answered with one match,
+    // and fell silently through to the default for `abc`, `0` and `-3` — a bound other than the one
+    // typed, from the same binary that refuses all four one command over.
+    const limit = parseLimitFlag(flagString(ctx.args, 'limit'), 'docs') ?? DEFAULT_LIMIT;
     const hits = searchDocs(entries, query, limit);
     if (hits.length === 0) return missResult(query, entries);
 

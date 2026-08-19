@@ -201,4 +201,27 @@ describe('unit · template-db', () => {
       expect((error as { fix: string }).fix).toContain('TEST_DATABASE_URL');
     }
   });
+
+  test('a driver that rejects with an unrenderable value still reports X_TEST_DB_UNAVAILABLE', async () => {
+    // `String(Object.create(null))` THROWS: no `toString`, no `Symbol.toPrimitive`. The local
+    // `String(error)` helper this replaced raised a TypeError while FORMATTING the refusal, so
+    // the caller caught a TypeError where a named, fixable failure belongs — and `bun run
+    // error-render` cannot see a value laundered through a helper.
+    const hostile = Object.create(null) as Record<string, never>;
+    const connect = (): SqlRunner => ({
+      exec: async (sql: string) => {
+        if (sql.includes('TEMPLATE "')) throw hostile;
+      },
+      close: async () => undefined,
+    });
+    try {
+      await acquireWorkerDatabase(
+        { adminUrl: ADMIN },
+        { connect, env: { BUN_TEST_WORKER_ID: '0' } },
+      );
+      throw new Error('expected a throw');
+    } catch (error) {
+      expect(error).toBeUltimateError('X_TEST_DB_UNAVAILABLE');
+    }
+  });
 });

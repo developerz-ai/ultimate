@@ -58,6 +58,26 @@ describe('unit · redaction is BY VALUE, not by key name', () => {
     );
   });
 
+  test("attribute ORDER is the site's choice — value before type is blanked too", () => {
+    // The whole finding: `saveFailureArtifact` writes `page.html()` to object storage on every
+    // failed run, so a server-rendered password on a reversed-attribute form was durably kept.
+    expect(blankPasswordFields('<input value="hunter2" type="password">')).toBe(
+      '<input value="" type="password">',
+    );
+    expect(blankPasswordFields('<input name="p" value="hunter2" type=password >')).toBe(
+      '<input name="p" value="" type=password >',
+    );
+    expect(blankPasswordFields("<input value='hunter2' type='password'>")).toBe(
+      '<input value="" type=\'password\'>',
+    );
+  });
+
+  test('a non-password input keeps its value — the blank is structural, not a sweep', () => {
+    expect(
+      blankPasswordFields('<input value="ada" type="text"><input value="x" name="passwordish">'),
+    ).toBe('<input value="ada" type="text"><input value="x" name="passwordish">');
+  });
+
   test('safeHtml does both passes', () => {
     const secrets = bag({ P: 'hunter2' });
     expect(safeHtml('<input type=password value=hunter2><b>hunter2</b>', secrets)).toBe(

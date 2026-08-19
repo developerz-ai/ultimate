@@ -49,6 +49,18 @@ export interface HtmlTargetInit {
 
 const EMPTY: PageRecording = { url: 'about:blank', html: '' };
 
+/**
+ * A recorded map, read by a key that came out of the RECORDING's own markup — a selector, an
+ * expression, an `<iframe name>`. Plain indexing walks the prototype chain, so `name="constructor"`
+ * resolved to `Object` rather than to `undefined` and `fixtureMissing` never threw; the run then
+ * carried a function where an HTML string belongs. Offline driver only, and it is still worth
+ * closing: the confusing test failure it produces costs more to read than this line does.
+ */
+const recorded = (
+  map: Readonly<Record<string, string>> | undefined,
+  key: string,
+): string | undefined => (map !== undefined && Object.hasOwn(map, key) ? map[key] : undefined);
+
 /** Typed text is an overlay keyed by `id`, then `name`, then the selector used to type it. */
 const keyOf = (selector: string, element: ElementSnapshot | undefined): string => {
   if (element === undefined) return selector;
@@ -162,7 +174,8 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
     async click(selector: string, index: number): Promise<void> {
       const element = await at(selector, index);
       if (element === undefined) throw fixtureMissing(`${page.url} ${selector}`, init.source);
-      const download = page.downloads?.[selector] ?? page.downloads?.[element.attrs['id'] ?? ''];
+      const download =
+        recorded(page.downloads, selector) ?? recorded(page.downloads, element.attrs['id'] ?? '');
       if (download !== undefined) armed = download;
       const href =
         element.attrs['data-goto'] ?? (element.tag === 'a' ? element.attrs['href'] : undefined);
@@ -181,12 +194,12 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
     },
     evaluate(expression: string): Promise<unknown> {
       live();
-      const recorded = page.evaluate?.[expression];
+      const answer = recorded(page.evaluate, expression);
       // Unrecorded and therefore refused, for the same reason an unrecorded page is: an offline
       // driver that invented an answer here would make the assertion above it meaningless.
-      if (recorded === undefined)
+      if (answer === undefined)
         throw fixtureMissing(`${page.url} evaluate(${expression})`, init.source);
-      return Promise.resolve(JSON.parse(recorded) as unknown);
+      return Promise.resolve(JSON.parse(answer) as unknown);
     },
     screenshot: (_options: CaptureOptions): Promise<Uint8Array> => Promise.resolve(FAKE_PNG),
     pdf: (_options: CaptureOptions): Promise<Uint8Array> => Promise.resolve(FAKE_PDF),
@@ -207,7 +220,7 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
       for (const element of await queryHtml(page.html, 'iframe')) {
         const name = element.attrs['name'] ?? element.attrs['id'] ?? '';
         const src = element.attrs['src'] ?? '';
-        const html = page.frames?.[name] ?? page.frames?.[src];
+        const html = recorded(page.frames, name) ?? recorded(page.frames, src);
         if (html === undefined)
           throw fixtureMissing(`${page.url} iframe ${name || src}`, init.source);
         const url = src === '' ? page.url : new URL(src, page.url).toString();

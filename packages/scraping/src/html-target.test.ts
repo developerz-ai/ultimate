@@ -1,0 +1,98 @@
+// The offline target's recorded maps are keyed by strings the RECORDING chose — an `<iframe name>`,
+// a selector, an `evaluate()` expression. Every one of them can name an `Object.prototype` member,
+// and a lookup that walks the prototype chain answers a function where the fixture has nothing.
+
+import { describe, expect, test } from 'bun:test';
+import { testClock } from './clock';
+import { htmlTarget } from './html-target';
+import type { PageRecording } from './recording';
+
+const PAGE_URL = 'https://shop.test/orders';
+
+const targetOver = (recording: PageRecording) =>
+  htmlTarget({
+    driver: 'fixture',
+    lookup: (url) => Promise.resolve(url === recording.url ? recording : undefined),
+    rules: { allowHosts: ['shop.test'] },
+    clock: testClock(),
+    source: 'test/fixtures',
+    start: recording,
+  });
+
+const codeOf = async (run: () => Promise<unknown>): Promise<string | undefined> => {
+  try {
+    await run();
+    return undefined;
+  } catch (thrown) {
+    return (thrown as { code?: string }).code;
+  }
+};
+
+describe('unit · an unrecorded frame is missing, even when it is named after a prototype key', () => {
+  test('<iframe name="constructor"> with no recording throws X_SCRAPE_FIXTURE_MISSING', async () => {
+    // The map EXISTS and does not hold this key — which is the only shape the bug had: a bare
+    // `page.frames?.[name]` walked the prototype and answered `Object` for `constructor`.
+    const target = targetOver({
+      url: PAGE_URL,
+      html: '<iframe name="constructor"></iframe>',
+      frames: { sidebar: '<p>inner</p>' },
+    });
+    expect(await codeOf(() => target.frames())).toBe('X_SCRAPE_FIXTURE_MISSING');
+  });
+
+  test('a frame that IS recorded still resolves', async () => {
+    const target = targetOver({
+      url: PAGE_URL,
+      html: '<iframe name="constructor"></iframe>',
+      frames: { constructor: '<p>inner</p>' },
+    });
+    const frames = await target.frames();
+    expect(frames).toHaveLength(1);
+    expect(frames[0]?.name).toBe('constructor');
+  });
+});
+
+describe('unit · an unrecorded evaluate is missing, even for a prototype-key expression', () => {
+  test('evaluate("toString") with no recording throws rather than returning a function', async () => {
+    const target = targetOver({
+      url: PAGE_URL,
+      html: '<p>hi</p>',
+      evaluate: { 'window.total': '7' },
+    });
+    expect(await codeOf(() => target.evaluate('toString'))).toBe('X_SCRAPE_FIXTURE_MISSING');
+  });
+
+  test('a recorded expression still answers', async () => {
+    const target = targetOver({
+      url: PAGE_URL,
+      html: '<p>hi</p>',
+      evaluate: { 'window.total': '7' },
+    });
+    expect(await target.evaluate('window.total')).toBe(7);
+  });
+});
+
+describe('unit · a download is armed only by a RECORDED selector', () => {
+  test('clicking #constructor arms nothing, so download() refuses', async () => {
+    const target = targetOver({
+      url: PAGE_URL,
+      html: '<a id="constructor" href="">Export</a>',
+      downloads: { '#export': 'orders.csv:id,1' },
+    });
+    await target.click('#constructor', 0);
+    expect(await codeOf(() => target.download({ timeoutMs: 10 }))).toBe(
+      'X_SCRAPE_DOWNLOAD_TIMEOUT',
+    );
+  });
+
+  test('a recorded download still arms', async () => {
+    const target = targetOver({
+      url: PAGE_URL,
+      html: '<a id="export" href="">Export</a>',
+      downloads: { '#export': 'orders.csv:id,1' },
+    });
+    await target.click('#export', 0);
+    const file = await target.download({ timeoutMs: 10 });
+    expect(file.filename).toBe('orders.csv');
+  });
+});

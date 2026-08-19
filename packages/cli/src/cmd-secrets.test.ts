@@ -177,11 +177,21 @@ describe('unit · x secrets set', () => {
     ).rejects.toBeUltimateError('X_SECRETS_PLAINTEXT_INVALID');
   });
 
-  test('no name at all is a usage error naming the working invocation', async () => {
+  // The code is shared with every bad flag, so the cause is the assertion: `--name on "x secrets"`
+  // named a flag this command does not declare, for a value that arrives as a positional.
+  test('no name at all names the positional, not a flag', async () => {
     const root = await initialized('set-noname');
     const command = createSecretsCommand(stdin('value'));
-    await expect(command.run(context(['secrets', 'set'], root))).rejects.toBeUltimateError(
-      'X_CLI_BAD_FLAG',
+    const thrown: unknown = await command.run(context(['secrets', 'set'], root)).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(thrown).toBeUltimateError('X_CLI_BAD_FLAG');
+    expect((thrown as { cause: string }).cause).toBe(
+      '"x secrets set" needs a <NAME> positional and got none',
+    );
+    expect((thrown as { fix: string }).fix).toBe(
+      'printf %s "$TOKEN" | x secrets set STRIPE_KEY --json',
     );
   });
 });

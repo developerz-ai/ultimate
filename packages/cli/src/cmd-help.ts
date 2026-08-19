@@ -14,10 +14,31 @@ const flagLine = (flag: FlagSpec): string => {
   return `  ${short}${name.padEnd(24)} ${flag.summary}`;
 };
 
+/**
+ * The one resolution of a topic, read by both renderers. `--json` filtered on `spec.name === topic`
+ * of its own, so the two disagreed about exactly the inputs a caller is least sure of: `x help
+ * generate --json` answered `[]` — "that command does not exist" — while the page beside it printed
+ * `g`, and `x help nosuch --json` answered `[]` while the page printed the whole catalogue.
+ */
+const specFor = (
+  specs: readonly CommandSpec[],
+  topic: string | undefined,
+): CommandSpec | undefined =>
+  topic === undefined
+    ? undefined
+    : specs.find((entry) => entry.name === topic || (entry.aliases ?? []).includes(topic));
+
+/** What `--json` reports: the one resolved command, or — as the human render does — all of them. */
+export function helpTopic(
+  specs: readonly CommandSpec[],
+  topic: string | undefined,
+): readonly CommandSpec[] {
+  const spec = specFor(specs, topic);
+  return spec === undefined ? specs : [spec];
+}
+
 export function renderHelp(specs: readonly CommandSpec[], topic: string | undefined): string[] {
-  const spec = specs.find(
-    (entry) => entry.name === topic || (entry.aliases ?? []).includes(topic ?? ''),
-  );
+  const spec = specFor(specs, topic);
   if (spec === undefined) {
     // `cli.hint.help` is deliberately absent from this list: it is the command's own `summary`, and
     // `renderHuman` prints every line and THEN the summary — so the catalogue ended with the same
@@ -77,7 +98,7 @@ export function createHelpCommand(specs: () => readonly CommandSpec[]): CliComma
         command: 'help',
         summary: msg('cli.hint.help'),
         lines: renderHelp(all, topic),
-        data: topic === undefined ? catalogue(all) : catalogue(all.filter((s) => s.name === topic)),
+        data: catalogue(helpTopic(all, topic)),
       };
     },
   };

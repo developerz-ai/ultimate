@@ -3,6 +3,7 @@
 // transaction-rollback wrapper (which breaks anything that commits), no shared schema with a
 // `truncate` between tests (which serialises the suite and still leaks sequences).
 
+import { renderThrowable } from '@ultimat3/core';
 import { TestDatabaseUnavailableError } from './errors';
 
 export type DbKind = 'postgres' | 'pglite';
@@ -169,8 +170,14 @@ export async function acquireWorkerDatabase(
   };
 }
 
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
+/**
+ * Core's renderer, not a local `String(error)`. Both reads this feeds are inside a `catch` that
+ * owes its caller an answer, and `String(Object.create(null))` THROWS — a driver that rejects with
+ * a null-prototype object would have replaced `X_TEST_DATABASE_UNAVAILABLE` with a `TypeError`
+ * raised while formatting it. `bun run error-render` cannot see a value laundered through a local
+ * helper, which is exactly how this one survived.
+ */
+const messageOf = (error: unknown): string => renderThrowable(error);
 
 const alreadyExists = (error: unknown): boolean =>
   messageOf(error).toLowerCase().includes('already exists');

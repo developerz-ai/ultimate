@@ -10,7 +10,7 @@ import type { JobDriver } from '@ultimat3/jobs';
 import { createMemoryDriver, resetJobDriver, setJobDriver } from '@ultimat3/jobs';
 import { buildDrainTarget, JOBS_SUBCOMMANDS, jobsCommand } from './cmd-jobs';
 import type { CommandContext } from './command';
-import { BadFlagError } from './errors';
+import { BadFlagError, MissingPositionalError } from './errors';
 import { msg } from './messages';
 import type { CommandResult } from './output';
 
@@ -196,10 +196,23 @@ describe('unit · x jobs show and retry rendering', () => {
     );
   });
 
-  test('a missing id names the invocation that works', async () => {
+  // `MissingPositionalError`, and the CODE cannot say so — both classes raise X_CLI_BAD_FLAG. The
+  // cause is where `--id on "x jobs"` used to send a reader to a flag `x jobs` does not declare.
+  test('a missing id names the positional, and the fix is a command that lists ids', async () => {
     const driver = createMemoryDriver();
-    await expect(runJobs(driver, { subcommand: 'show' })).rejects.toThrow(BadFlagError);
-    await expect(runJobs(driver, { subcommand: 'retry' })).rejects.toThrow(BadFlagError);
+    for (const subcommand of ['show', 'retry']) {
+      const thrown: unknown = await runJobs(driver, { subcommand }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(thrown).toBeInstanceOf(MissingPositionalError);
+      const error = thrown as MissingPositionalError;
+      expect([subcommand, error.cause]).toEqual([
+        subcommand,
+        `"x jobs ${subcommand}" needs a <id> positional and got none`,
+      ]);
+      expect(error.fix).toBe('x jobs ls --json');
+    }
   });
 
   test('retry re-queues and reports the new state', async () => {
@@ -247,9 +260,9 @@ describe('unit · x jobs cancel', () => {
     expect((result.data as { id: string; state: string }).state).toBe('cancelled');
   });
 
-  test('a missing id names the invocation that works', async () => {
+  test('a missing id names the positional, for cancel as for show and retry', async () => {
     await expect(runJobs(createMemoryDriver(), { subcommand: 'cancel' })).rejects.toThrow(
-      BadFlagError,
+      MissingPositionalError,
     );
   });
 });

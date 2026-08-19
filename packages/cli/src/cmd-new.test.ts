@@ -14,6 +14,7 @@ import { catalogKeys, defineCatalogs, loadCatalog } from '@ultimat3/i18n';
 import { BuiltinImagePipeline } from '@ultimat3/pwa';
 import { newCommand, planNewApp, writeNewApp } from './cmd-new';
 import type { CommandContext } from './command';
+import { MissingPositionalError } from './errors';
 import { exec } from './exec';
 import { MIGRATIONS_DIR } from './migrations';
 import { parseArgs } from './parse';
@@ -101,6 +102,28 @@ describe('unit · x new · x db gen is the only writer of packages/db/migrations
   // migration — correct, and only useful if the scaffold's own next-steps line names the command
   // that clears it. Read off the rendered summary, not the catalog, so a message key that stops
   // being interpolated fails here too.
+  // The finding was hand-built here — the right code, and a cause (`x new needs a name`) written
+  // by hand beside the class that writes one. `MissingPositionalError` is the one declaration of
+  // what a missing positional says, so the refusal is the class and never a copy of its output.
+  test('no name is MissingPositionalError, not a hand-assembled finding', async () => {
+    const ctx: CommandContext = {
+      args: parseArgs(['new'], SPECS),
+      cwd: tmpdir(),
+      runner: exec,
+      env: {},
+      bunVersion: '1.3.0',
+    };
+    const thrown: unknown = await newCommand.run(ctx).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(thrown).toBeInstanceOf(MissingPositionalError);
+    const error = thrown as MissingPositionalError;
+    expect(error.code).toBe('X_CLI_BAD_FLAG');
+    expect(error.cause).toBe('"x new" needs a <name> positional and got none');
+    expect(error.fix).toBe('x new myapp');
+  });
+
   test('its next-steps summary names x db gen "initial"', async () => {
     const ctx: CommandContext = {
       args: parseArgs(['new', 'demo-app', '--dry-run'], SPECS),

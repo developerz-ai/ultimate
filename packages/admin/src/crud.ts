@@ -59,10 +59,20 @@ export function decideOperation(
   op: AdminOperation,
   ctx: CrudCtx,
   id?: string,
+  /**
+   * The row the surface ALREADY loaded, or `null` for "looked and found none". `undefined` means
+   * not loaded at all — a list page, a create form, a nav button — and is left off the subject
+   * entirely, because "there is no row here" and "there is a row and nobody loaded it" are
+   * different facts and only the second is a bug. Every admin decision used to be evaluated
+   * without one, so an ownership rule could not fire and the coarse `admin:read` + `<entity>:read`
+   * pair was the only gate on a single row.
+   */
+  row?: AdminRow | null,
 ): AdminDecision {
   return decideAll(ctx.authz, permissionsForOperation(resource.name, op), ctx.actor, {
     entity: resource.name,
     ...(id === undefined ? {} : { id }),
+    ...(row === undefined ? {} : { row }),
   });
 }
 
@@ -140,9 +150,12 @@ export async function adminDetail<Row extends AdminRow>(
   ctx: CrudCtx,
   id: string,
 ): Promise<CrudResult<Row>> {
-  const decision = decideOperation(resource, 'detail', ctx, id);
-  if (!decision.allowed) return refuse(resource, 'detail', ctx, decision, id);
+  // The row is loaded BEFORE the guard, the shape `packages/action/src/invoke.ts` uses for a
+  // row-level `policy`: a rule that decides about a row cannot decide without one, and the
+  // predicate has to stay synchronous. A denial still returns no row.
   const row = await repoOf(resource).find(id);
+  const decision = decideOperation(resource, 'detail', ctx, id, row);
+  if (!decision.allowed) return refuse(resource, 'detail', ctx, decision, id);
   return {
     ok: true,
     row,
@@ -196,11 +209,13 @@ export async function adminUpdate<Row extends AdminRow>(
   id: string,
   patch: Readonly<Record<string, unknown>>,
 ): Promise<CrudResult<Row>> {
-  const decision = decideOperation(resource, 'update', ctx, id);
-  if (!decision.allowed) return refuse(resource, 'update', ctx, decision, id);
-
+  // `before` was already loaded here, just after the guard rather than before it — so the rule
+  // that decides whether this actor may touch THIS row never saw the row.
   const repo = repoOf(resource);
   const before = await repo.find(id);
+  const decision = decideOperation(resource, 'update', ctx, id, before);
+  if (!decision.allowed) return refuse(resource, 'update', ctx, decision, id);
+
   const parsed = await validateInput(resource.entity.$schema, { ...(before ?? {}), ...patch });
   if (!parsed.ok) return invalid(resource, 'update', ctx, id, parsed.issues, decision);
 
@@ -208,9 +223,16 @@ export async function adminUpdate<Row extends AdminRow>(
   // strip (undeclared, or normalized to a different value) must never reach the repo. Scoped
   // to the keys actually submitted, so a partial update stays partial rather than rewriting
   // every field of `before` too.
+  // `Object.hasOwn`, not `key in`: `in` walks the prototype chain, so a patch naming `toString`,
+  // `constructor` or `__proto__` put an inherited member into the object handed to `repo.update`
+  // — the exact thing the paragraph above says cannot happen. Over MCP the transport refuses
+  // those keys (`additionalProperties: false`), but `callAdminTool` and `adminUpdate` are both
+  // public API and `mcp.ts` keeps its own gate for a direct call and a future transport.
   const submittedKeys = Object.keys(patch);
   const validatedPatch: Readonly<Record<string, unknown>> = Object.fromEntries(
-    submittedKeys.filter((key) => key in parsed.value).map((key) => [key, parsed.value[key]]),
+    submittedKeys
+      .filter((key) => Object.hasOwn(parsed.value, key))
+      .map((key) => [key, parsed.value[key]]),
   );
   const after = await repo.update(id, validatedPatch);
   return {
@@ -238,7 +260,9 @@ export async function adminDestroy<Row extends AdminRow>(
   id: string,
   confirmation: string | undefined,
 ): Promise<CrudResult<Row>> {
-  const decision = decideOperation(resource, 'delete', ctx, id);
+  const repo = repoOf(resource);
+  const before = await repo.find(id);
+  const decision = decideOperation(resource, 'delete', ctx, id, before);
   if (!decision.allowed) return refuse(resource, 'delete', ctx, decision, id);
 
   const expected = confirmationToken(resource.name, id);
@@ -258,8 +282,6 @@ export async function adminDestroy<Row extends AdminRow>(
     );
   }
 
-  const repo = repoOf(resource);
-  const before = await repo.find(id);
   await repo.destroy(id);
   return {
     ok: true,

@@ -2,7 +2,13 @@
 // is the one that shipped: a deployment configures a collector and the collector receives nothing.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { resetMetrics, resetTelemetry, shutdownHookCount, withSpan } from '@ultimat3/core';
+import {
+  exportMetrics,
+  resetMetrics,
+  resetTelemetry,
+  shutdownHookCount,
+  withSpan,
+} from '@ultimat3/core';
 import { startOtlpExport } from './otlp-export';
 
 let release: (() => void) | undefined;
@@ -69,5 +75,64 @@ describe('OTLP export is driven by the variable the chart already sets', () => {
     // The point of `configureTelemetry({ exporter })`: without it every span this process opens is
     // handed to core's no-op and the collector's dashboard stays empty forever.
     await expect(withSpan('otlp.smoke', async () => 'ok')).resolves.toBe('ok');
+  });
+});
+
+/**
+ * `configureTelemetry` and `configureMetrics` write PROCESS-GLOBAL state, so a release that only
+ * stops the timer and drops the drain hooks leaves the first boot's exporters installed — and a
+ * second `serveApp` in the same process then exports into them. `cmd-dev.ts`'s `stop()` restores
+ * `noopExporter` for exactly this reason and says so; this file did not.
+ *
+ * Both halves are observed through the exporter's own `fetch`, captured at construction: after the
+ * release nothing this process records may reach the released collector.
+ */
+describe('the release uninstalls the exporters, not only their timers', () => {
+  const captureFetch = (): { readonly urls: readonly string[]; restore: () => void } => {
+    const urls: string[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = ((input: string | URL | Request): Promise<Response> => {
+      urls.push(String(input instanceof Request ? input.url : input));
+      return Promise.resolve(new Response('', { status: 200 }));
+    }) as typeof globalThis.fetch;
+    return {
+      urls,
+      restore: () => {
+        globalThis.fetch = real;
+      },
+    };
+  };
+
+  test('a metric snapshot taken after the release reaches no collector', async () => {
+    const posted = captureFetch();
+    try {
+      startOtlpExport({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318' })();
+      // The push tick `startMetricExport` drives. Its timer is stopped by the release; the
+      // EXPORTER is what was left configured, and any later caller of one is enough to use it.
+      exportMetrics();
+      // Awaited: the POST is chained onto a settled promise, so a synchronous read of `urls` here
+      // is empty whatever the exporter is — an assertion that cannot fail.
+      await Bun.sleep(5);
+      expect(posted.urls).toEqual([]);
+    } finally {
+      posted.restore();
+    }
+  });
+
+  test('spans recorded after the release are not queued into the released exporter', async () => {
+    const posted = captureFetch();
+    try {
+      startOtlpExport({ OTEL_EXPORTER_OTLP_ENDPOINT: 'http://collector:4318' })();
+      // One batch's worth: the OTel default is 512 spans per POST, so the 512th is what makes a
+      // still-installed exporter visible — it drains itself into the collector it was built for.
+      for (let index = 0; index < 512; index += 1) {
+        await withSpan(`otlp.after-release.${index}`, async () => undefined);
+      }
+      // The drain is chained through microtasks, so give it a turn before reading the calls.
+      await Bun.sleep(5);
+      expect(posted.urls).toEqual([]);
+    } finally {
+      posted.restore();
+    }
   });
 });

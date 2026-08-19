@@ -8,7 +8,7 @@ import type { JobDriver } from '@ultimat3/jobs';
 import { cancelJob, createMemoryDriver, createNatsDriver, createRedisDriver } from '@ultimat3/jobs';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
-import { BadFlagError, JobUnknownError } from './errors';
+import { BadFlagError, JobUnknownError, MissingPositionalError } from './errors';
 import { drainJobs } from './jobs-drain';
 import { withJobDriver } from './jobs-driver';
 import {
@@ -33,10 +33,11 @@ const DRAIN_TARGETS = ['memory', 'redis', 'nats'] as const;
 function requireIdPositional(ctx: CommandContext, sub: string): string {
   const id = ctx.args.positionals[0];
   if (id === undefined) {
-    throw new BadFlagError({
-      flag: 'id',
-      command: 'jobs',
-      reason: `"x jobs ${sub}" needs a job id: x jobs ${sub} <id>`,
+    // `--id on "x jobs"` is a flag `x jobs` does not declare; the id is a positional and says so.
+    throw new MissingPositionalError({
+      command: `jobs ${sub}`,
+      positional: 'id',
+      example: 'x jobs ls --json',
     });
   }
   return id;

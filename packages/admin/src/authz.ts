@@ -11,6 +11,14 @@ import { ADMIN_PERMISSION_SPEC, type AdminPermission } from './permissions';
 
 export interface AdminActor {
   readonly id: string;
+  /**
+   * The tenant this operator acts under. NOT optional in practice on a multi-tenant app: the
+   * admin's subject reached `policyAuthz` with `orgId: undefined`, so an org-scoped rule could
+   * not fire and a role-only rule allowed — while `adminList`/`adminSearch` add no tenant
+   * predicate of their own. Absent still means "single-tenant app", which is why the type keeps
+   * it optional; a rule that reads it must fail closed on `undefined` like any other policy.
+   */
+  readonly orgId?: string;
   readonly roles?: readonly string[];
   /** BCP-47. Drives every `t()` call and every `Intl` format in the admin. */
   readonly locale?: string;
@@ -23,6 +31,16 @@ export interface AdminSubject {
   readonly entity?: string;
   readonly id?: string;
   readonly input?: unknown;
+  /**
+   * The already-loaded row, for a row-level rule. `null` means "no row was loaded", which the
+   * policy layer treats as no evidence of permission — same contract as an `action`'s `row:`
+   * loader. Absent entirely means the surface has no row to load (a list page, a create form).
+   *
+   * Without it every admin decision evaluated with `row: null` and `input = { entity, id }`, so
+   * an ownership rule could not fire at all and the coarse `admin:read` + `<entity>:read` pair
+   * was the only gate on a single row.
+   */
+  readonly row?: unknown;
 }
 
 export interface AdminDecision {

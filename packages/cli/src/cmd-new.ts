@@ -7,6 +7,7 @@ import { chmod } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { dedupe } from './cmd-generate';
 import type { CliCommand, CommandContext } from './command';
+import { MissingPositionalError } from './errors';
 import { msg } from './messages';
 import type { CommandResult } from './output';
 import { flagBool, flagString } from './parse';
@@ -82,20 +83,15 @@ export const newCommand: CliCommand = {
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
     const raw = ctx.args.positionals[0];
+    // The class, not a hand-built finding with the same code: `MissingPositionalError` is what
+    // names the missing POSITIONAL, and a finding assembled here is a second, unenforced copy of
+    // a cause the class already writes — one that said "x new needs a name" and not what a name is.
     if (raw === undefined) {
-      return {
-        ok: false,
+      throw new MissingPositionalError({
         command: 'new',
-        summary: msg('cli.usage'),
-        findings: [
-          {
-            code: 'X_CLI_BAD_FLAG',
-            cause: 'x new needs a name',
-            fix: 'x new myapp',
-            docs: 'https://ultimate.dev/errors/X_CLI_BAD_FLAG',
-          },
-        ],
-      };
+        positional: 'name',
+        example: 'x new myapp',
+      });
     }
     const app = names(raw);
     const target = resolve(parentDir(ctx.cwd, flagString(ctx.args, 'dir')), app.kebab);

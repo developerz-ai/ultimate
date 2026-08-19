@@ -46,6 +46,31 @@ describe('unit · x docs', () => {
     expect(error.fix).toContain('x docs');
   });
 
+  // The same `--limit` in the same binary, refused by `x jobs ls` and accepted here: `1e9` parsed
+  // as 1 and answered with ONE match, and `abc` / `0` / `-3` fell through to the default with no
+  // refusal at all — a bound other than the one typed, reported as if it were the one typed.
+  test('a --limit the jobs reader refuses is refused here too, and names x docs', async () => {
+    for (const raw of ['abc', '0', '-3', '1e9', '5.5']) {
+      const thrown: unknown = await run(['docs', 'job retry', '--limit', raw]).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect([raw, (thrown as { code?: string } | undefined)?.code]).toEqual([
+        raw,
+        'X_CLI_BAD_FLAG',
+      ]);
+      expect([raw, (thrown as { cause: string }).cause]).toEqual([
+        raw,
+        `--limit on "x docs": expects an integer from 1 to ${Number.MAX_SAFE_INTEGER}, got "${raw}"`,
+      ]);
+    }
+  });
+
+  test('a valid --limit bounds the matches, and its absence takes the default', async () => {
+    const bounded = await run(['docs', 'job', '--limit', '2']);
+    expect(matchesOf(bounded).length).toBeLessThanOrEqual(2);
+  });
+
   test('a question about nothing in the framework does not invent an answer', async () => {
     const result = await run(['docs', 'kubernetes ingress annotation rewrite-target']);
     expect(result.ok).toBe(false);

@@ -208,17 +208,25 @@ describe('unit · x actions|queries|entities · describe', () => {
 });
 
 describe('unit · x actions|queries|entities · errors', () => {
-  test('describe with no name is a bad-flag error naming the working invocation', async () => {
+  // `MissingPositionalError` raises the same CODE a `BadFlagError` does, so the cause is the only
+  // thing that can tell them apart — and the cause is the half that used to name `--name`, a flag
+  // no registry command declares, about a missing positional.
+  test('describe with no name names the positional and never a flag', async () => {
     const actionsThrown = await rejectedBy(() => actionsCommand.run(contextFor('describe', [])));
     expect(actionsThrown).toBeUltimateError('X_CLI_BAD_FLAG');
+    expect(actionsThrown.cause).toBe('"x actions describe" needs a <name> positional and got none');
     expect(actionsThrown.fix).toBe('x actions list --json');
 
     const queriesThrown = await rejectedBy(() => queriesCommand.run(contextFor('describe', [])));
     expect(queriesThrown).toBeUltimateError('X_CLI_BAD_FLAG');
+    expect(queriesThrown.cause).toBe('"x queries describe" needs a <name> positional and got none');
     expect(queriesThrown.fix).toBe('x queries list --json');
 
     const entitiesThrown = await rejectedBy(() => entitiesCommand.run(contextFor('describe', [])));
     expect(entitiesThrown).toBeUltimateError('X_CLI_BAD_FLAG');
+    expect(entitiesThrown.cause).toBe(
+      '"x entities describe" needs a <name> positional and got none',
+    );
     expect(entitiesThrown.fix).toBe('x entities list --json');
   });
 

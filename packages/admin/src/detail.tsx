@@ -33,6 +33,18 @@ export interface AdminDetailProps<Row extends AdminRow> {
   readonly onCancel?: () => void;
 }
 
+/**
+ * The audit row's verb. `operation` holds a CRUD verb for `kind: 'operation'` and the ACTION NAME
+ * for `kind: 'action'`, and the catalog declares only `admin.operation.{list,detail,search,create,
+ * update,delete,page}` — so an entry for `post.publish` rendered the literal key
+ * `admin.operation.post.publish` into the page. `admin.action.<name>` is the same key
+ * `action-gate.ts` gives the button that ran it, so the two read identically.
+ */
+export const operationLabel = (entry: AuditEntry): string =>
+  entry.kind === 'action'
+    ? t(`admin.action.${entry.operation}`)
+    : t(`admin.operation.${entry.operation}`);
+
 export function AdminDetail<Row extends AdminRow>(props: AdminDetailProps<Row>): JSX.Element {
   if (props.error !== null) {
     return <ErrorState error={adminErrorFrom(props.error)} />;
@@ -102,7 +114,7 @@ export function AdminDetail<Row extends AdminRow>(props: AdminDetailProps<Row>):
             {props.audit.map((entry) => (
               <li>
                 <code>{entry.at}</code> <span>{entry.actor.id}</span>{' '}
-                <span>{t(`admin.operation.${entry.operation}`)}</span>{' '}
+                <span>{operationLabel(entry)}</span>{' '}
                 <span data-outcome={entry.outcome}>
                   {t(`admin.audit.outcome.${entry.outcome}`)}
                 </span>

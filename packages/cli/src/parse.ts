@@ -47,7 +47,12 @@ export interface CommandSpec {
    */
   readonly subcommandPositionals?: Readonly<Record<string, readonly string[]>>;
   readonly flags?: readonly FlagSpec[];
-  /** Command needs an app root (`app.config.ts`) — the dispatcher enforces it. */
+  /**
+   * Command needs an app root (`app.config.ts`). The dispatcher enforces it — `dispatch.ts`, before
+   * `target.run` — and until 2026-08 nothing read this field at all: the guarantee was kept only by
+   * each of the 17 declaring commands remembering to call `requireAppRoot` itself, so a new command
+   * that declared it and forgot the call ran outside an app with no refusal.
+   */
   readonly requiresApp?: boolean;
 }
 

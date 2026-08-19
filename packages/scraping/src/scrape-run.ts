@@ -163,13 +163,39 @@ export async function runScrape<I, Row>(
     };
   } catch (thrown) {
     logger.error('scrape.failed', { code: errorCode(thrown) });
-    if (errorCode(thrown) === 'X_SCRAPE_AUTH_FAILED') await markRefused(plan);
-    else if (burnsSession(thrown)) await burnSession(plan);
+    if (errorCode(thrown) === 'X_SCRAPE_AUTH_FAILED') {
+      await recordSessionOutcome('session.refuse', logger, () => markRefused(plan));
+    } else if (burnsSession(thrown)) {
+      await recordSessionOutcome('session.burn', logger, () => burnSession(plan));
+    }
     if (definition.artifacts?.onFailure !== false) await saveFailureArtifact(session, artifact);
     throw thrown;
   } finally {
     // Always, and it never throws: `close()` ends the local connection AND the remote browser.
     await session.close();
+  }
+}
+
+/**
+ * The tombstone or the burn, on the way out — best effort, and it may NEVER replace the failure
+ * that caused it. `markRefused` reaches `store.save()` reaches `storage.put()`, so an S3 503 or an
+ * `X_STORAGE_PATH_UNSAFE` from a tenant whose key sanitises to nothing used to propagate out of
+ * the catch and REPLACE a terminal `X_SCRAPE_AUTH_FAILED` with a retryable one. Attempt 2 then
+ * found no tombstone — the save is what failed — and walked the same rejected password back to
+ * the login form; attempt 3 locks the account. Same rule as `saveFailureArtifact`, and the same
+ * reason: the run's own error is the one the reader needs.
+ */
+async function recordSessionOutcome(
+  step: 'session.refuse' | 'session.burn',
+  logger: ReturnType<typeof scrapeLogger>,
+  write: () => Promise<void>,
+): Promise<void> {
+  try {
+    await write();
+  } catch (thrown) {
+    // Logged rather than swallowed silently: the tombstone is missing, so the NEXT attempt will
+    // re-probe rather than refuse cheaply, and that is a fact an operator has to be able to see.
+    logger.error('scrape.session.write_failed', { step, code: errorCode(thrown) });
   }
 }
 

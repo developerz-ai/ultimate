@@ -187,3 +187,97 @@ describe('unit · the session jar is EVERY domain the browser touched, so scopin
     expect(calls[1]?.headers.cookie).toBe('sid=SECRET');
   });
 });
+
+describe('unit · the response body is bounded by BYTES, not only by time', () => {
+  const withBody = (body: string | ReadableStream<Uint8Array>, headers?: Headers) =>
+    httpOverFetch({
+      rules: { allowHosts: ['api.test'] },
+      clock: testClock(),
+      timeoutMs: 1_000,
+      network: createRing<NetworkEntry>(),
+      session: () => Promise.resolve(EMPTY_SESSION),
+      fetch: (() =>
+        Promise.resolve(
+          new Response(body, { status: 200, ...(headers === undefined ? {} : { headers }) }),
+        )) as unknown as typeof fetch,
+    });
+
+  test('a body past maxBytes is refused rather than buffered whole', async () => {
+    const http = withBody('x'.repeat(4_096));
+    expect(await codeOf(http.request('https://api.test/export', { maxBytes: 1_024 }))).toBe(
+      'X_SCRAPE_BODY_TOO_LARGE',
+    );
+  });
+
+  test('a body inside the cap is returned untouched', async () => {
+    const http = withBody('{"ok":true}');
+    const response = await http.request('https://api.test/orders', { maxBytes: 1_024 });
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
+  test('the cap is applied with no maxBytes on the call — the default is not optional', async () => {
+    // A stream that never ends is the shape that matters: `.text()` on it never returns, and the
+    // deadline it would eventually hit does not un-allocate what was already read.
+    let pushed = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pushed += 1;
+        if (pushed > 5_000) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(new Uint8Array(64 * 1024));
+      },
+    });
+    const http = httpOverFetch({
+      rules: { allowHosts: ['api.test'] },
+      clock: testClock(),
+      timeoutMs: 1_000,
+      network: createRing<NetworkEntry>(),
+      session: () => Promise.resolve(EMPTY_SESSION),
+      fetch: (() =>
+        Promise.resolve(new Response(endless, { status: 200 }))) as unknown as typeof fetch,
+    });
+    expect(await codeOf(http.request('https://api.test/firehose', { maxBytes: 256 * 1024 }))).toBe(
+      'X_SCRAPE_BODY_TOO_LARGE',
+    );
+  });
+});
+
+describe('unit · response headers are data, not a prototype the site can reach', () => {
+  const withHeaders = (headers: Headers) =>
+    httpOverFetch({
+      rules: { allowHosts: ['api.test'] },
+      clock: testClock(),
+      timeoutMs: 1_000,
+      network: createRing<NetworkEntry>(),
+      session: () => Promise.resolve(EMPTY_SESSION),
+      fetch: (() =>
+        Promise.resolve(new Response('{}', { status: 200, headers }))) as unknown as typeof fetch,
+    });
+
+  test('a site sending __proto__ and constructor gets both filed as ordinary keys', async () => {
+    const headers = new Headers();
+    headers.append('__proto__', 'evil');
+    headers.append('constructor', 'c');
+    headers.append('x-real', 'ok');
+    const response = await withHeaders(headers).request('https://api.test/orders');
+    expect([...Object.keys(response.headers)].sort()).toEqual([
+      '__proto__',
+      'constructor',
+      'x-real',
+    ]);
+    // Read through the descriptor: the assertion is that the site's header is an OWN key, and
+    // spelling `headers['__proto__']` in a test is the very accessor this fix routes around.
+    expect(Object.getOwnPropertyDescriptor(response.headers, '__proto__')?.value).toBe('evil');
+    expect(response.headers['constructor']).toBe('c');
+  });
+
+  test('a header the site never sent is not readable off the record', async () => {
+    const response = await withHeaders(new Headers({ 'x-real': 'ok' })).request(
+      'https://api.test/orders',
+    );
+    expect(response.headers['toString']).toBeUndefined();
+    expect(response.headers['hasOwnProperty']).toBeUndefined();
+  });
+});
