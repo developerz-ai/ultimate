@@ -37,8 +37,10 @@
     "@ultimat3/core": "3.0.0",
     "@ultimat3/db": "3.0.0",
     "@ultimat3/entity": "3.0.0",
+    "@ultimat3/i18n": "3.0.0",
     "@ultimat3/jobs": "3.0.0",
     "@ultimat3/mail": "3.0.0",
+    "@ultimat3/policy": "3.0.0",
     "@ultimat3/time": "3.0.0"
   }
 }

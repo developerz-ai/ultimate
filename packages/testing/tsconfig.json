@@ -21,10 +21,16 @@
       "path": "../entity"
     },
     {
+      "path": "../i18n"
+    },
+    {
       "path": "../jobs"
     },
     {
       "path": "../mail"
+    },
+    {
+      "path": "../policy"
     },
     {
       "path": "../time"

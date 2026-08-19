@@ -86,6 +86,10 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_GUARD_INVALID',
   'X_GUARD_FAILED',
   'X_GUARD_FINDING_INVALID',
+  // The CLI's own declarations, held to each other. A flag the parser accepts and no code reads
+  // is a promise in `x help` with nothing behind it — `x deploy --critical` said "forces clients
+  // to reload" and reached no reader outside the plan JSON it was written into.
+  'X_CLI_FLAG_UNREAD',
   // The two halves of `x secrets edit` that belong to the terminal rather than to the envelope.
   // `@ultimat3/core` owns every X_SECRETS_* code about the file and the key; an editor is the
   // CLI's problem alone, and core would have no `fix:` to offer for one.
@@ -179,6 +183,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_GUARD_INVALID: 'a file in guards/ exports no usable guard',
   X_GUARD_FAILED: 'an app guard threw instead of returning findings',
   X_GUARD_FINDING_INVALID: "an app guard's finding breaks the error contract",
+  X_CLI_FLAG_UNREAD: 'a command declares a flag no code reads',
   X_SECRETS_EDITOR_MISSING: 'no $EDITOR to open the decrypted secrets in',
   X_SECRETS_EDIT_FAILED: 'the editor exited non-zero, so nothing was resealed',
 };

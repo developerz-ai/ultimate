@@ -21,7 +21,8 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 | `fixture-{clock,mail,jobs,network,statements}.ts` | the five fixtures the framework builds in-process |
 | `fixture-drivers.ts` | the five it declares but a driver must build — `page` `budget` `signIn` `deploy` `subscribe` |
 | `framework-fixtures.ts` | registers both sets; the app registers only what it owns |
-| `registry-leak-guard.ts` | fails the run naming the FILE that left a process-global registry dirty |
+| `registry-leak-guard.ts` | fails the run naming the FILE that left a process-global registry dirty, and restores the ones that can be restored at the same boundary |
+| `registry-snapshot.ts` | `captureProcessRegistries()` / `restoreProcessRegistries()` — the locale config, the catalogs, the permission set and the role map, put back as a file inherited them. A module-scope declaration evaluates once per process, so a neighbour's `clearPermissions()` is otherwise permanent |
 | `registry-isolation.ts` | `isolateEntityRegistry()` — an empty entity registry, and the process's back after. Its own entry point (`@ultimat3/testing/registry-isolation`), never the barrel: it value-imports `@ultimat3/entity`, and the barrel is what a tier-0 test imports for `expect` |
 | `preload.ts` | the bunfig preload that installs all of the above |
 

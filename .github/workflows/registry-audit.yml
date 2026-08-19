@@ -1,0 +1,61 @@
+# Asks npm what it actually holds, and opens an issue when it disagrees with this tree.
+#
+# NOT a step of `x verify`, and it must never become one. The gate is the shippability contract and
+# runs on free runners; a step that resolves the network makes green depend on something the runner
+# does not control. More to the point, a gate step could not do this job anyway: the three states
+# this catches all appear BETWEEN commits, not at one.
+#
+# The state it exists for: a package added after a release run is unpublished until a human
+# bootstraps it, and nothing says so until the next release reaches it and aborts with everything
+# ahead of it already published irreversibly. `@ultimat3/flags` sat that way until 2.0.0 and
+# `@ultimat3/scraping` until 2026-08-19, each while the docs described the other.
+
+name: registry-audit
+
+on:
+  schedule:
+    # Daily, well away from the hour a release is likely to be cut by hand.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+# Read-only: it resolves npm and may open an issue. It never publishes, and it holds no
+# `id-token`, so it cannot be a path to the registry even if it is compromised.
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: registry-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+
+      - name: audit the registry
+        id: audit
+        run: bun run scripts/registry-audit.ts --json | tee audit.json
+        continue-on-error: true
+
+      - name: open an issue when the registry disagrees
+        if: steps.audit.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # One open issue at a time: a daily job that files a duplicate every morning trains everyone
+        # to ignore it, which is the failure mode this audit exists to correct.
+        run: |
+          existing="$(gh issue list --label registry-drift --state open --limit 1 --json number --jq '.[0].number // empty')"
+          summary="$(jq -r '.summary' audit.json)"
+          body="$(jq -r '"**" + .summary + "**\n\n" + ([.findings[] | "- `" + .code + "` " + (.at // "") + " — " + .cause + "\n  - fix: `" + .fix + "`"] | join("\n"))' audit.json)"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --label registry-drift --title "registry: $summary" --body "$body"
+          fi
+
+      - name: fail the run so the badge is honest
+        if: steps.audit.outcome == 'failure'
+        run: exit 1

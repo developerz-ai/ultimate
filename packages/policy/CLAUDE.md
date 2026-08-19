@@ -51,6 +51,11 @@ two differ, and it is why a surface that decides on input alone needs no edit.
   everything while nothing is declared, so the first declaration anywhere in the process turns
   strict checking on for everyone. A test that uses `can()` declares the set it uses and restores
   the one it found — never leans on the empty registry.
+- **`clearPermissions()` / `clearRoles()` are one-way; `restorePermissions()` / `restoreRoles()` are the
+  other halves.** Both declaration calls run at MODULE scope, and a module evaluates once per `bun test`
+  process — so a clear in one test file is permanent for every file after it, whose own `import` is a
+  cache hit that declares nothing. `restoreRoles` takes the declaration sites too: `defineRoles()` derives
+  them from the CALLER's stack, so restoring through it would make `X_ROLE_REDEFINED` name the harness.
 - **`not()` never inverts `X_UNAUTHENTICATED`.** A null actor is not a fact about this
   actor's grants; inverting it makes `not(can('order:internal'))` a public door into the
   internal one. Any denial carrying that code propagates unchanged.

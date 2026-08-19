@@ -107,6 +107,23 @@ export const clearRoles = (): void => {
 };
 
 /**
+ * `clearRoles()`'s other half, taking what `roleDefinitions()` and `roleDeclarationSites()`
+ * answer. `defineRoles()` runs at an app's MODULE scope and a module evaluates once per
+ * `bun test` process, so a clear in one test file is permanent for every file after it — the
+ * later file's `import` is a cache hit that declares nothing.
+ *
+ * `defineRoles()` cannot be the restore: it re-derives the declaration site from the CALLER's
+ * stack, so every role would report this frame as its origin and `X_ROLE_REDEFINED` would name a
+ * site no reader can open. The generation is bumped for `grant-index.ts`, whose per-actor memo is
+ * invalidated by that number alone.
+ */
+export const restoreRoles = (map: RoleMap, declaredAt: Readonly<Record<string, string>>): void => {
+  roleMap = { ...map };
+  sites = { ...declaredAt };
+  generation += 1;
+};
+
+/**
  * Depth-first expansion with a visited set: `owner -> admin -> editor` collapses to
  * one list, and `a -> b -> a` terminates instead of blowing the stack.
  */

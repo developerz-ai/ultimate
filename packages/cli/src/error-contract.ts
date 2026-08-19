@@ -8,10 +8,12 @@
 import { join } from 'node:path';
 import { docsFor } from './error-codes';
 import { citedCommandProblem, loadCommandCatalog } from './fix-command';
+import { createHelperResolver } from './fix-imports';
+import { scanFixSites } from './fix-scan';
 import type { Finding } from './output';
 import { eachSourceFile, isGenerated, isTest } from './source-files';
 import type { CodeSite, FixSite } from './ts-scan';
-import { isCodeRegistry, scanBorrowedCodes, scanCodes, scanFixes } from './ts-scan';
+import { isCodeRegistry, scanBorrowedCodes, scanCodes } from './ts-scan';
 
 /** Advice, not instruction. The list is the one in `docs/architecture/04-error-contract.md`. */
 export const BANNED_PHRASES: readonly RegExp[] = [
@@ -77,12 +79,33 @@ const fixFinding = (site: FixSite, problem: string): Finding => ({
  * The catalog is loaded ONCE per run rather than per fix line: it is a dynamic import (see
  * `fix-command.ts` for the cycle it breaks) and this walks every shipped source file.
  */
-export async function checkErrorFixes(root: string): Promise<readonly Finding[]> {
+export interface ErrorFixReport {
+  readonly findings: readonly Finding[];
+  /** Fix literals actually read, and held to both rules. */
+  readonly checked: number;
+  /**
+   * Fix arguments at a known builder that hold no single literal — a parameter passed through, a
+   * concatenation, a table lookup. The step prints it, because a gate that says "checked 412,
+   * could not read 27" is honest and one that says nothing is the false green this check exists to
+   * close. It does NOT cover a builder imported from another PACKAGE: `candidatePaths` resolves
+   * relative specifiers only, and that gap is 3 call sites across this repo, measured 2026-08.
+   */
+  readonly unreadable: number;
+}
+
+export async function checkErrorFixReport(root: string): Promise<ErrorFixReport> {
   const findings: Finding[] = [];
   const catalog = await loadCommandCatalog();
+  const imports = createHelperResolver(root);
+  let checked = 0;
+  let unreadable = 0;
   for await (const path of eachSourceFile(root)) {
     if (isTest(path) || isGenerated(path)) continue;
-    for (const site of scanFixes(await Bun.file(join(root, path)).text(), path)) {
+    const source = await Bun.file(join(root, path)).text();
+    const scan = scanFixSites(source, path, await imports(path, source));
+    checked += scan.sites.length;
+    unreadable += scan.unreadable;
+    for (const site of scan.sites) {
       // The interpolation-blanked form for both rules: `x ${name}` names no command this can
       // resolve, and reading `<value>` as one would be a finding nobody can act on.
       const fix = staticFix(site.fix);
@@ -90,8 +113,12 @@ export async function checkErrorFixes(root: string): Promise<readonly Finding[]>
       if (problem !== undefined) findings.push(fixFinding(site, problem));
     }
   }
-  return findings;
+  return { findings, checked, unreadable };
 }
+
+/** The findings alone, for every caller that reports no coverage line. */
+export const checkErrorFixes = async (root: string): Promise<readonly Finding[]> =>
+  (await checkErrorFixReport(root)).findings;
 
 /**
  * A code is documented when the reference page names it. Deliberately not "owns a table row": the

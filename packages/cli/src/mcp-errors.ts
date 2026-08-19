@@ -22,6 +22,11 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   // Runnable first, the narrowing behind a `#`: `x help <command> --json` pasted into a shell
   // is a redirect, not a command, and this table is copied verbatim by whoever reads it.
   X_CLI_BAD_FLAG: 'x help --json   # then narrow to the command the cause names',
+  // Not an `x` command: this rule is about the CLI's OWN declarations, it can only fire in this
+  // repo, and the suite that applies it is what reproduces the finding. A placeholder command
+  // would fail this table's own no-`<placeholder>` rule, and rightly — it would not run.
+  X_CLI_FLAG_UNREAD:
+    'bun test packages/cli/src/flag-reads.test.ts   # the finding names the flag and the file to read it in',
   X_VERIFY_FAILED: 'x verify --json',
   X_NOT_IN_APP: 'x new myapp --json && cd myapp',
   X_BUN_VERSION: 'bun upgrade',

@@ -115,6 +115,8 @@ describe('RegistryLeakError', () => {
 const SRC = import.meta.dir;
 const PRELOAD = join(SRC, 'preload.ts');
 const CACHE = join(SRC, '..', '..', 'cache', 'src', 'index.ts');
+const I18N = join(SRC, '..', '..', 'i18n', 'src', 'index.ts');
+const POLICY = join(SRC, '..', '..', 'policy', 'src', 'index.ts');
 
 /**
  * Absolute specifiers: the fixture lives in a temp dir with no `node_modules` to resolve through.
@@ -206,5 +208,59 @@ describe('the guard, across files, in one process', () => {
     expect(output).toContain('X_TEST_REGISTRY_LEAK');
     expect(output).toContain('boot.test.ts');
     expect(output).toContain('bootfixture');
+  }, 30_000);
+});
+
+/**
+ * The declaration a module makes ONCE. Both fixtures below import it, and a module evaluates once
+ * per process — so whichever file bun happens to run second gets a cache hit that declares
+ * nothing, and inherits whatever the first file left. That is the whole defect, in three lines.
+ */
+const DECLARE = `import { registerCatalog } from '${I18N}';
+import { definePermissions } from '${POLICY}';
+
+export const permissions = definePermissions(['leak:probe']);
+registerCatalog('en', { 'probe.title': 'Probe' });
+`;
+
+/**
+ * Deliberately IDENTICAL, so the assertion cannot depend on which one bun runs first: each file
+ * declares by import, asserts the declaration holds, and then does what a well-behaved suite here
+ * already does in cleanup — `clearPermissions()` (six CLI test files) and a narrowing
+ * `defineCatalogs()` (every test that loads an app). The second file to run is the victim.
+ */
+const restoreFixture = (name: string): string => `import { afterAll, expect, test } from 'bun:test';
+import { catalogFor, configureLocales, resetCatalogs, resolveLocale } from '${I18N}';
+import { clearPermissions, knownPermissions } from '${POLICY}';
+import './declare';
+
+test('${name} sees the process-scope declarations it inherited', () => {
+  expect(knownPermissions()).toContain('leak:probe');
+  expect(catalogFor('en')['probe.title']).toBe('Probe');
+  // \`de\` is in the framework's shipped set, so this is \`de\` unless a file narrowed it.
+  expect(resolveLocale({ header: 'de-DE,de;q=0.9,en;q=0.7' }).locale).toBe('de');
+});
+
+afterAll(() => {
+  clearPermissions();
+  resetCatalogs();
+  configureLocales({ supported: ['en'], fallback: 'en' });
+});
+`;
+
+describe('the restore, across files, in one process', () => {
+  // Not writable as an ordinary test: the leak only exists BETWEEN files of one process, and the
+  // module cache is what makes it unrepairable from inside the victim. `registry-snapshot.test.ts`
+  // pins the arithmetic; this pins that the guard actually applies it at the boundary.
+  test('a file that clears a module-scope declaration does not take it from the next file', async () => {
+    const { output, exitCode } = await runFixtures({
+      'declare.ts': DECLARE,
+      'first.test.ts': restoreFixture('first'),
+      'second.test.ts': restoreFixture('second'),
+    });
+
+    expect(output).toContain('2 pass');
+    expect(output).not.toContain('1 fail');
+    expect(exitCode).toBe(0);
   }, 30_000);
 });

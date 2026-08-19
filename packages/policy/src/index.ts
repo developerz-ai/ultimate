@@ -42,6 +42,7 @@ export {
   isKnownPermission,
   knownPermissions,
   resourceOf,
+  restorePermissions,
   verbOf,
 } from './permissions';
 export type {
@@ -70,6 +71,7 @@ export {
   defineRoles,
   expandRoles,
   grantMatches,
+  restoreRoles,
   roleDeclarationSites,
   roleDefinitions,
   roleMapGeneration,

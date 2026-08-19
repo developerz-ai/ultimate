@@ -54,11 +54,14 @@ export interface LocaleConfig {
  */
 const DEFAULT_ORDER: readonly LocaleSourceName[] = ['query', 'cookie', 'user', 'header'];
 
-let config: LocaleConfig = {
+/** Hoisted so `resetLocaleConfig` has one value to name, rather than a second literal to drift. */
+const DEFAULT_LOCALE_CONFIG: LocaleConfig = {
   supported: SUPPORTED_LOCALES,
   fallback: DEFAULT_LOCALE,
   order: DEFAULT_ORDER,
 };
+
+let config: LocaleConfig = DEFAULT_LOCALE_CONFIG;
 
 /** Called once at boot from `app.config.ts`. */
 export function configureLocales(partial: Partial<LocaleConfig>): LocaleConfig {
@@ -171,6 +174,19 @@ export function useI18n<TCatalog = Catalog>(): Translator<TCatalog> {
 /** The ambient `t` — what framework and app code calls. Never takes a locale. */
 export function t(key: string, vars?: TranslateVars): string {
   return useI18n()(key, vars);
+}
+
+/**
+ * Test/CLI seam: back to the shipped supported set, fallback and precedence.
+ *
+ * `defineCatalogs()` calls `configureLocales()` at an APP's module scope, and a module evaluates
+ * once per `bun test` process — so one file that loads an app narrows `supported` for every file
+ * after it, and `Accept-Language: de-DE` negotiates `en` in a file that never mentioned locales.
+ * `configureLocales` MERGES, so no partial call can widen the set back; only a value the framework
+ * owns can, which is why this is a reset and not a documented "remember to restore it".
+ */
+export function resetLocaleConfig(): void {
+  config = DEFAULT_LOCALE_CONFIG;
 }
 
 /** Test/CLI seam: drop every registered catalog. */

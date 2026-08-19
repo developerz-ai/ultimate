@@ -10,6 +10,7 @@ import {
   isKnownPermission,
   knownPermissions,
   resourceOf,
+  restorePermissions,
   verbOf,
 } from './permissions';
 
@@ -120,5 +121,45 @@ describe('clearPermissions()', () => {
     clearPermissions();
     expect(knownPermissions()).toEqual([]);
     expect(isKnownPermission('post:anything')).toBe(true);
+  });
+});
+
+describe('restorePermissions()', () => {
+  // `clearPermissions()` is one-way, and `definePermissions()` runs at MODULE scope —
+  // `@ultimat3/admin` declares `admin:*` on its barrel's import. A module evaluates once per
+  // `bun test` process, so a clear in one file is permanent for every file after it: the later
+  // file's own `await import('@ultimat3/admin')` is a cache hit that registers nothing, and its
+  // `can('admin:read')` throws X_PERMISSION_UNKNOWN for a permission the process did declare.
+  test('puts back a set clearPermissions destroyed, which re-importing cannot', () => {
+    definePermissions(['admin:read', 'admin:write']);
+    const captured = knownPermissions();
+
+    clearPermissions();
+    expect(knownPermissions()).toEqual([]);
+
+    restorePermissions(captured);
+    expect(knownPermissions()).toEqual(['admin:read', 'admin:write']);
+    expect(isKnownPermission('admin:read')).toBe(true);
+  });
+
+  test('replaces rather than merges — a captured set is the whole truth about the process', () => {
+    definePermissions(['post:read']);
+    const captured = knownPermissions();
+    definePermissions(['org:admin']);
+
+    restorePermissions(captured);
+
+    expect(knownPermissions()).toEqual(['post:read']);
+  });
+
+  test('an empty capture restores emptiness, which is what "nothing was declared" means', () => {
+    const captured = knownPermissions();
+    definePermissions(['post:read']);
+
+    restorePermissions(captured);
+
+    expect(knownPermissions()).toEqual([]);
+    // Empty is the "no app has declared its set" state, where every string is admitted.
+    expect(isKnownPermission('anything:at-all')).toBe(true);
   });
 });

@@ -119,7 +119,16 @@ export const deployCommand: CliCommand = {
       { name: 'image', type: 'string', summary: 'image reference to deploy' },
       { name: 'method', type: 'string', summary: 'compose | helm', default: 'compose' },
       { name: 'dry-run', type: 'boolean', summary: 'print the plan, run nothing' },
-      { name: 'critical', type: 'boolean', summary: 'security deploy: forces clients to reload' },
+      // Says what it does, not what it was going to do. "forces clients to reload" was read by
+      // nothing: the flag lands in the plan JSON below and no package reads that field, so an
+      // operator shipping a security patch was told an outcome that did not occur. Forcing a
+      // reload is `@ultimat3/pwa`'s `updateSignal({ reason: 'security' })`, which as of 2026-08
+      // has no runtime caller anywhere — wiring this flag to it is a change in that package.
+      {
+        name: 'critical',
+        type: 'boolean',
+        summary: 'record a security deploy in the plan (no client is forced to reload)',
+      },
     ],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {

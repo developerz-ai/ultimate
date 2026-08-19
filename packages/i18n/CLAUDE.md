@@ -22,6 +22,11 @@ Imported by every package that renders a string.
   `registerCatalog` / `configureLocales` are its internals — an app calling them is a second path.
 - Reading: `t('ns.key')` for one string, `useI18n<AppCatalog>()` where the keys must be typed.
   There is no `currentTranslator`; `useI18n` replaced it.
+- **`configureLocales` is process-global and MERGES, so `resetLocaleConfig()` is the only way back.**
+  `defineCatalogs()` calls it at an app's module scope; a module evaluates once per `bun test` process,
+  so one file that loads an app narrowed `supported` for every file after it and `Accept-Language: de-DE`
+  negotiated `en` in a file that never mentioned locales. No partial call can widen the set back. The
+  test harness restores it at each file boundary (`@ultimat3/testing`'s `registry-snapshot.ts`).
 - A miss renders `⟦key⟧`. Never add a fallback locale chain — it hides gaps.
 - Only an **own** property of `vars` is a variable — `interpolate` guards with `Object.hasOwn`.
   A plain object inherits `constructor`, `toString`, `valueOf` and `__proto__`, so a bare

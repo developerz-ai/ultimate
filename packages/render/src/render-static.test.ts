@@ -248,7 +248,10 @@ describe('renderStatic', () => {
     await expect(renderStatic(entry, render, { buildId: 'b1' })).rejects.toMatchObject({
       code: 'X_PRERENDER_FAILED',
       message: expect.stringContaining('rendering /blog/b failed:'),
-      fix: expect.stringContaining('x build --route /blog/b'),
+      // The fix names a command this build can run: `x build` declares target/tag/out and no
+      // --route, so the old line was an instruction that fails — caught once the errors gate
+      // learned to read a `fix:` handed to a factory in a sibling module (#157).
+      fix: expect.stringContaining('x build --target static --json'),
     });
   });
 

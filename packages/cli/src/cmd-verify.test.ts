@@ -326,6 +326,25 @@ describe('unit · x verify', () => {
     expect(result.steps?.[0]?.findings[0]?.code).toBe('X_BOUNDARY_VIOLATION');
   });
 
+  // A step that reports findings alone claims a completeness a parser-less scan does not have.
+  // The coverage line rides in `output`, which `--json` carries verbatim and `--verbose` prints.
+  test('the errors step reports what it read and what it could not', async () => {
+    const step = VERIFY_STEPS.find((candidate) => candidate.name === 'errors');
+    const root = await mkdtemp(join(tmpdir(), 'x-errors-'));
+    try {
+      await Bun.write(
+        join(root, 'packages', 'db', 'src', 'errors.ts'),
+        "export const raise = (cause: string, fix: string) => new E({ code: 'X_A', cause, fix });\n" +
+          "raise('one', 'x db migrate --json');\nraise('two', computed);\n",
+      );
+      const outcome = await step?.run({ ...ctx, root });
+      expect(outcome?.ok).toBe(true);
+      expect(outcome?.output).toBe('checked 1 fix line(s), could not read 1');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   // `openapi.json` is a published contract on its own — the typed client is generated from it —
   // so gating the step on `x.manifest.json` let a stale spec ship a wrong client unchecked.
   describe('contract-diff applies to either committed contract', () => {

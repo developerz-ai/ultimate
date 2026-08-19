@@ -91,7 +91,7 @@ The client is not broken and the server is not broken; they disagree about which
 | 2 | **Client sends its build ID on every request** | `X-Ultimate-Build` header on RPC, query, and WS handshake. The server can answer "you are stale" instead of guessing |
 | 3 | **N-deploy asset retention** | old builds' assets stay served for N deploys (default 10) or a minimum window (default 7d), whichever is longer. A build-A chunk resolves after six deploys |
 | 4 | **`AppUpdateAvailable` signal, not a 404** | a Solid signal flips when the server reports a newer build. The app renders its own "Update available — reload" affordance. **No forced navigation, no lost form state, no dinosaur** |
-| 5 | **Forced reload after a grace period** | security-flagged deploys (`x deploy --critical`) set a deadline. Client shows a countdown, saves in-flight state via the mutator queue, then reloads. Grace default 30m; a hard patch can set minutes |
+| 5 | **Forced reload after a grace period** | **designed, not wired `As of 2026-08`.** `updateSignal` computes the deadline and has no runtime caller; `x deploy --critical` records the intent in the plan JSON and nothing reads it. Wiring it needs a caller posting `AppUpdateAvailable` on a request carrying `BUILD_ID_HEADER`, plus a per-release reason on the container. Grace default is **6h**, and a forced deadline is `now` — there is no framework-run countdown |
 | 6 | **Skew is observable** | `/_x` and `x status --json` report the build-ID distribution of connected clients, so "how many users are three deploys behind" has an answer |
 | 7 | **Build ID scopes the SW cache** | preview/branch builds get their own cache namespace and SW scope, so a preview can never poison prod caches ([`09-ai-first.md`](./09-ai-first.md)) |
 
@@ -136,5 +136,5 @@ All of them are `route`/`action`/`job` primitives underneath ([`02-primitives.md
 - Never hand-edit `sw.js`. Change the route, rebuild.
 - Never cache an authenticated response without an explicit `offline` field on the route.
 - Never use a timestamp or `latest` as a build ID.
-- Never force-reload a user without a grace period, except on a `--critical` deploy.
+- Never force-reload a user without a grace period. The `--critical` exception is designed and not wired — see row 5.
 - `x verify` checks: precache budget, fallback presence, SW checksum, retention config, and that every `precache` route is actually prerenderable.

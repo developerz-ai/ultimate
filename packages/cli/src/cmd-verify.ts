@@ -24,7 +24,7 @@ import type { CliCommand, CommandContext } from './command';
 import { checkDestructiveMigrations } from './db-destructive';
 import { checkDocumentStyles, documentSurfaces } from './document-styles';
 import { checkSourceDrift } from './drift';
-import { checkErrorFixes } from './error-contract';
+import { checkErrorFixReport } from './error-contract';
 import { readIntFlag } from './flag-number';
 import { guardFindings } from './guards';
 import { msg } from './messages';
@@ -115,8 +115,21 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     summary: 'every X_* code has a runnable fix and a docs page',
     // The fix-line half runs anywhere source does. The docs half needs a reference page to check
     // against, and which file that is belongs to the host repo — hence `hostFindings`.
-    run: async (ctx) =>
-      fromFindings([...(await checkErrorFixes(ctx.root)), ...(await hostFindings(ctx, 'errors'))]),
+    //
+    // The coverage line rides in `output`, which `--json` carries verbatim: a scan without a
+    // parser cannot read every fix, and a step that reports only findings claims a completeness
+    // it does not have. "checked 412, could not read 27" is what a reader can act on.
+    async run(ctx) {
+      const report = await checkErrorFixReport(ctx.root);
+      const findings = [...report.findings, ...(await hostFindings(ctx, 'errors'))];
+      return {
+        ...fromFindings(findings),
+        output: msg('cli.verify.fixCoverage', {
+          checked: report.checked,
+          unreadable: report.unreadable,
+        }),
+      };
+    },
   },
   ...TEST_STEPS,
   {

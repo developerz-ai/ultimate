@@ -17,17 +17,6 @@
 
 </div>
 
-> **Status: 3.0.0 — repository, `v3.0.0` tag and npm all agree**, `As of 2026-08-19`. 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 30 in all — are **versioned** in lockstep at 3.0.0 (one version, one commit, one tag) and **published** at 3.0.0, every one by [`release.yml`](.github/workflows/release.yml) over OIDC with a provenance attestation. `bunx create-ultimate myapp` gives you 3.0.0. **3.0.0 is a major**: [CHANGELOG.md](CHANGELOG.md)'s 3.0.0 section carries 10 entries marked `BREAKING —` from a five-agent bug sweep, and no codemod ships with them, so each is a manual edit its entry names ([Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading)). 2.0.0 was the first major and carried 33. Semver applies — a breaking change to a documented API needs a major. That is what the version number means: a stable API under semver, not a promise about your infrastructure.
-
-| Fact | Check it, never this table |
-|---|---|
-| what npm serves | `npm view @ultimat3/core version` |
-| the tarball is attested, and by whom | `npm view @ultimat3/core@3.0.0 dist.attestations _npmUser` |
-| the 30 names that move together | `bun run scripts/release-workflow.ts --json` |
-| the repository is stamped at one version | `bun run scripts/release.ts --check 3.0.0` |
-
-Release history worth knowing: 1.0.0 was the manual bootstrap; 1.1.0 was the first release the workflow published over OIDC; **2.0.0 was hand-published** — no trusted publisher was attached for the OIDC exchange to verify against — so it is the one release whose tarballs carry no attestation; 3.0.0 is the first the workflow has published since 1.2.0. **No publication holes**: `@ultimat3/scraping` was the last one and it is closed, bootstrapped by hand at 2.0.0 (`npm publish --access public --provenance=false`), the one-time step every package needs before a trusted publisher can attach ([PUBLISHING.md](PUBLISHING.md)).
-
 ## Built by agents, for agents, maintained by agents
 
 Nobody writes this code by hand anymore, and the framework is designed for that rather than

@@ -26,6 +26,7 @@ export {
   registerCatalog,
   registeredLocales,
   resetCatalogs,
+  resetLocaleConfig,
   resolveLocale,
   t,
   translatorFor,

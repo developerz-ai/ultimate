@@ -169,6 +169,96 @@ describe('the checks, over a repo', () => {
     expect(await checkErrorFixes(root)).toEqual([]);
   });
 
+  // The hole that shipped four bad fix lines in `packages/ui/src/icons/build-icons.ts`: the
+  // helper is declared in a SIBLING module, so the same-file rule read the call site's argument as
+  // nobody's fix and the gate checked nothing. A per-package `errors.ts` full of factories is the
+  // house pattern, so this is the shape most fixes arrive in.
+  test('a fix handed to a factory in a sibling module is read', async () => {
+    await write(
+      'packages/ui/src/errors.ts',
+      'export function invalidIconDataError(found: string, fix: string) {\n' +
+        "  return new UiError({ code: 'X_UI_INVALID_VALUE', cause: found, fix });\n" +
+        '}\n',
+    );
+    await write(
+      'packages/ui/src/icons/build-icons.ts',
+      "import { invalidIconDataError } from '../errors';\n" +
+        "throw invalidIconDataError('bad', 'check the network, then re-run the generator');\n",
+    );
+    const [finding, ...rest] = await checkErrorFixes(root);
+    expect(rest).toEqual([]);
+    expect(finding?.code).toBe('X_ERROR_FIX_INVALID');
+    expect(finding?.at).toBe('packages/ui/src/icons/build-icons.ts:2');
+  });
+
+  // The other rule the same seam owes: a citation resolved against the registry, not just the
+  // text rule. `x ui icons` names a command, which is exactly why the text rule passes it.
+  test('a cross-file fix citing a command this build does not ship is a finding', async () => {
+    await write(
+      'packages/ui/src/errors.ts',
+      "const raise = (cause: string, fix: string) => new E({ code: 'X_A', cause, fix });\n" +
+        'export { raise };\n',
+    );
+    await write(
+      'packages/ui/src/icons/build-icons.ts',
+      "import { raise } from '../errors';\nraise('bad', 'x ui icons --json');\n",
+    );
+    const [finding] = await checkErrorFixes(root);
+    expect(finding?.cause).toContain('x ui');
+  });
+
+  // `@ultimat3/render`'s `errors.ts` declares fourteen classes taking `(cause, fix)` positionally
+  // and calls them from its own modules. Measured: zero SAME-file call sites, so the same-file
+  // rule was dead code for the entire form and 15 codes never had a fix line read.
+  test('a fix handed to an error class in a sibling module is read', async () => {
+    await write(
+      'packages/render/src/errors.ts',
+      'export class RouteModeInvalidError extends UltimateError {\n' +
+        "  static readonly code = 'X_ROUTE_MODE_INVALID' as const;\n" +
+        '  constructor(cause: string, fix: string) {\n' +
+        '    super({ code: RouteModeInvalidError.code, cause, fix });\n' +
+        '  }\n' +
+        '}\n',
+    );
+    await write(
+      'packages/render/src/modes.ts',
+      "import { RouteModeInvalidError } from './errors';\n" +
+        "throw new RouteModeInvalidError('static may not read the request', 'try another mode');\n",
+    );
+    const [finding, ...rest] = await checkErrorFixes(root);
+    expect(rest).toEqual([]);
+    expect(finding?.at).toBe('packages/render/src/modes.ts:2');
+  });
+
+  // The importer names the symbol; the declaration names the position. An alias is the one place
+  // those two disagree, and reading the declaration's name at the call site would resolve nothing.
+  test('an aliased import is resolved under the name the caller uses', async () => {
+    await write(
+      'packages/db/src/errors.ts',
+      "export function dbNotImplemented(cause: string, fix: string) { throw new E({ code: 'X_A', cause, fix }); }\n",
+    );
+    await write(
+      'packages/db/src/pglite-branch.ts',
+      "import { dbNotImplemented as unsupported } from './errors';\n" +
+        "unsupported('pglite has no branches', 'see the docs');\n",
+    );
+    const [finding] = await checkErrorFixes(root);
+    expect(finding?.at).toBe('packages/db/src/pglite-branch.ts:2');
+  });
+
+  test('a runnable cross-file fix is not a finding', async () => {
+    await write(
+      'packages/db/src/errors.ts',
+      "export function dbNotImplemented(cause: string, fix: string) { throw new E({ code: 'X_A', cause, fix }); }\n",
+    );
+    await write(
+      'packages/db/src/pglite-branch.ts',
+      "import { dbNotImplemented } from './errors';\n" +
+        "dbNotImplemented('pglite has no branches', 'x db branch ls --json');\n",
+    );
+    expect(await checkErrorFixes(root)).toEqual([]);
+  });
+
   // A test fixture asserting on a bad fix is a test, not a shipped error.
   test('checkErrorFixes skips tests and generated declarations', async () => {
     await write('packages/db/src/thing.test.ts', "expect(e.fix).toBe('check the connection');\n");
