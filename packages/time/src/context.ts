@@ -6,7 +6,7 @@
 
 import { tryUseContext } from '@ultimat3/core';
 import { canonicalTimeZone } from './zone-canonical';
-import { type TimeZone, UTC } from './zones';
+import { assertTimeZone, type TimeZone, UTC } from './zones';
 
 /** Header a client sets from `Intl.DateTimeFormat().resolvedOptions().timeZone`. */
 export const TIMEZONE_HEADER = 'x-timezone';
@@ -45,8 +45,25 @@ const DEFAULT_ORDER: readonly TimeZoneSourceName[] = ['user', 'cookie', 'query',
 
 let config: TimeConfig = { defaultZone: UTC, order: DEFAULT_ORDER };
 
+/**
+ * The default zone goes through `assertTimeZone`, which both VALIDATES and CANONICALIZES — the two
+ * halves `resolveTimeZone` already promises for every other source, on the one source that skipped
+ * them. Unchecked, `configureTime({ defaultZone: 'Mars/Olympus' })` was accepted at boot and first
+ * refused inside a formatter at render time, from a stack that names no configuration; and
+ * `'eUrOpE/bErLiN'` travelled the process as its own zone string, minting a permanent entry in
+ * every formatter cache it reached.
+ *
+ * It throws, where `resolveTimeZone` skips: a stale header from an old client must not fail a
+ * request, but a default nothing can fall back to is a boot-time mistake with no second answer.
+ */
 export function configureTime(partial: Partial<TimeConfig>): TimeConfig {
-  config = { ...config, ...partial };
+  const defaultZone =
+    partial.defaultZone === undefined ? undefined : assertTimeZone(partial.defaultZone);
+  config = {
+    ...config,
+    ...partial,
+    ...(defaultZone === undefined ? {} : { defaultZone }),
+  };
   return config;
 }
 

@@ -9,7 +9,7 @@
 
 import { flagExpiryInvalid } from './errors';
 import type { FlagTargeting } from './targeting';
-import { assertTargeting } from './targeting';
+import { assertTargeting } from './targeting-assert';
 
 export const FLAG_KINDS = ['permanent', 'temporary'] as const;
 
@@ -87,10 +87,7 @@ export function toFlag(def: FlagDef): Flag {
       owner: null,
     });
   }
-  // A bare ISO date parses as UTC midnight, so the deadline is the same instant on every node —
-  // no ambient zone, which is the framework's rule about dates applied to a deadline.
-  const expiresAtMs = Date.parse(def.expiresAt);
-  if (Number.isNaN(expiresAtMs)) throw flagExpiryInvalid(def.key, def.expiresAt);
+  const expiresAtMs = expiryMsOf(def.key, def.expiresAt);
   return Object.freeze({
     key: def.key,
     kind: def.kind,
@@ -106,4 +103,28 @@ export function toFlag(def: FlagDef): Flag {
 export function withTargeting(flag: Flag, targeting: FlagTargeting): Flag {
   assertTargeting(flag.key, targeting);
   return Object.freeze({ ...flag, targeting });
+}
+
+/**
+ * A time of day, and the zone it is stated in. `2026-12-01T00:00:00` without one is resolved by
+ * `Date.parse` through the PROCESS's zone: measured, that one string is 1796083200000 in UTC,
+ * 1796101200000 in America/New_York and 1796050800000 in Asia/Tokyo — fourteen hours of spread
+ * across a fleet, so `X_FLAG_EXPIRED` starts on a different DAY on different pods. A date-only
+ * form carries no clock time and is UTC by specification, so it passes.
+ *
+ * The same two patterns as `@ultimat3/time`'s `fromIso`, restated rather than imported: this
+ * package is tier 1 and may import `@ultimat3/core` only — a deadline is one date, and one date is
+ * not worth a tier edge. `flag.test.ts` spawns a `TZ=` subprocess per zone, because
+ * `scripts/test-setup.ts` pins the runner to UTC and the failure is invisible in process.
+ */
+const CLOCK_TIME = /[t ]\d{1,2}:\d{2}/i;
+const UTC_OFFSET = /(?:z|[+-]\d{2}:?\d{2})$/i;
+
+function expiryMsOf(key: string, expiresAt: string): number {
+  if (CLOCK_TIME.test(expiresAt) && !UTC_OFFSET.test(expiresAt)) {
+    throw flagExpiryInvalid(key, expiresAt);
+  }
+  const ms = Date.parse(expiresAt);
+  if (Number.isNaN(ms)) throw flagExpiryInvalid(key, expiresAt);
+  return ms;
 }

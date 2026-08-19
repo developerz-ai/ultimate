@@ -13,6 +13,7 @@ what lets `policy` (tier 2) call it from inside a predicate.
 | Errors | `src/errors.ts`, subclass `UltimateError`, never a bare `Error` |
 | Files | one responsibility each, < 200 lines, tests beside the source |
 | Subjects | `src/subject.ts` — one resolver; never a second allow list per record kind |
+| Validation | `src/targeting-assert.ts` — every declaration-time refusal. `targeting.ts` stays the evaluation path |
 
 ## Invariants
 
@@ -84,6 +85,35 @@ what lets `policy` (tier 2) call it from inside a predicate.
   `errors.test.ts` running the generated snippet through `new Function`.
 - **An unknown key throws.** Answering `false` is a branch that never runs and never says so.
 - `default: true` beside a `rollout` is refused: the two answer the same actors and disagree.
+- **`assertTargeting` establishes the argument is an OBJECT before reading a field, and every one
+  of the four lists goes through the same check** (`As of 2026-08`). It destructured first, so
+  `applyFlagSnapshot({ 'billing.new': null })` was a bare `TypeError` and `{ 'billing.new': 'off' }`
+  was ACCEPTED — `default`, `actors`, `rollout` and `subjects` are all `undefined` on a string.
+  `default` was the one required field with no shape check while `rollout` got `Number.isInteger`,
+  so `{}` answered `undefined` and `{ default: 'yes' }` answered `"yes"` through a declared
+  `boolean` return, silently changing the meaning of every `=== true` / `=== false` call site. And
+  the `Array.isArray` rule reached `subjects` only, while CLAUDE.md called the four lists one rank:
+  `actors: 'user_100'` matched by SUBSTRING (`isEnabled` answered `true` for `user_1`, `user_10`,
+  `ser_10` and `u`), `orgs` the same, and a non-array `roles` reached `.some()` as a bare
+  `TypeError` out of a path this file documents as pure and synchronous — inside a policy predicate.
+  `renderGiven` from `errors.ts` renders every rejected value; never `JSON.stringify` directly, for
+  the reason that file states.
+- **A temporary flag's `expiresAt` must carry no ambient zone** (`As of 2026-08`). `Date.parse`
+  alone honoured the PROCESS's zone for a clock-time form: `'2026-12-01T00:00:00'` measured as
+  1796083200000 in UTC, 1796101200000 in America/New_York and 1796050800000 in Asia/Tokyo — fourteen
+  hours of spread across a fleet, so `X_FLAG_EXPIRED` started on a different DAY on different pods,
+  against a comment claiming the opposite. `flag.ts` carries a local `CLOCK_TIME`/`UTC_OFFSET` pair
+  mirroring `@ultimat3/time`'s `fromIso`, restated rather than imported because this package is tier
+  1 and may import `@ultimat3/core` only. `scripts/test-setup.ts` pins the runner to UTC, so the
+  failure is invisible in process by construction and `flag.test.ts` spawns a `TZ=` subprocess per
+  zone — the same reason `packages/time/src/plain-date.test.ts` does.
+- **`configureFlags` clears the report watermarks when it swaps the clock, and only then.** A
+  monotonic reading is meaningful only against the clock that produced it: a process that reported
+  at monotonic 10,000,000 and then took a clock starting at 0 computed `now - previous` as
+  -10,000,000, below every interval, so that key could never report again — on a frozen test clock,
+  never. `resetFlagReporting()` always did this; `configureFlags` is what apps and test kits call.
+  An interval change re-reads the SAME clock and must NOT clear, or the rate limit becomes a
+  suggestion one configure call can bypass.
 
 ## Open
 

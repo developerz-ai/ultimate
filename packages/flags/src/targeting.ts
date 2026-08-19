@@ -3,10 +3,9 @@
 // touches a clock. Loading the store is somebody else's job (`applyFlagSnapshot`).
 import type { Actor } from '@ultimat3/core';
 import { hasRole } from '@ultimat3/core';
-import { BUCKETS, bucketOf } from './bucket';
-import { flagTargetingInvalid } from './errors';
+import { bucketOf } from './bucket';
 import type { FlagSubjects } from './subject';
-import { BUILT_IN_SUBJECT_KINDS, isBuiltInSubjectKind, subjectIdOf } from './subject';
+import { subjectIdOf } from './subject';
 
 export interface FlagTargeting {
   /** The answer when no allow list and no rollout claims this actor. `false` is off, `true` is on. */
@@ -37,77 +36,6 @@ export interface FlagTargeting {
    * answers exactly as it did.
    */
   readonly bucketBy?: string | undefined;
-}
-
-/**
- * Declaration-time validation, the way `can()` validates its permission rather than waiting for a
- * request. Each rule closes a way for a flag to look wired and decide nothing:
- *
- * | Rejected | Why |
- * |---|---|
- * | `rollout: 0.5` | read as a fraction it means "half", read as a percentage it means "nobody" |
- * | `default: true` with a `rollout` | the two answer the same actors and disagree; there is no reading of "on for everyone, and also on for 10%" |
- * | `bucketBy` with no `rollout` | it names what a rollout divides, and there is no rollout to divide |
- * | a blank `bucketBy` | names no kind at all |
- * | `subjects.actor` / `subjects.org` | `actors` and `orgs` are the one spelling; two would disagree |
- * | a `subjects` entry that is not a list of non-empty ids | reachable from a store snapshot, and it matches nothing while reading as an allow list |
- *
- * The `subjects` checks narrow by hand rather than through a schema: this package's other runtime
- * re-checks (`Number.isInteger`, `Date.parse`) do the same, and a dependency here would buy one
- * validation on a path that must stay allocation-free.
- */
-export function assertTargeting(key: string, targeting: FlagTargeting): void {
-  const { bucketBy, rollout } = targeting;
-  if (targeting.subjects !== undefined) assertSubjects(key, targeting.subjects);
-  if (bucketBy !== undefined) {
-    if (typeof bucketBy !== 'string' || bucketBy.trim() === '') {
-      throw flagTargetingInvalid(
-        key,
-        `bucketBy is ${JSON.stringify(bucketBy)}, which names no subject kind`,
-        `set bucketBy to a subject kind — '${BUILT_IN_SUBJECT_KINDS.join("', '")}', or one your call site passes — in defineFlag({ key: '${key}' })`,
-      );
-    }
-    if (rollout === undefined) {
-      throw flagTargetingInvalid(
-        key,
-        `bucketBy is '${bucketBy}' with no rollout, so it divides nothing`,
-        `add a rollout to defineFlag({ key: '${key}' }), or remove bucketBy`,
-      );
-    }
-  }
-  if (rollout === undefined) return;
-  if (!Number.isInteger(rollout)) {
-    const problem = `rollout is ${rollout}; a rollout is a whole percentage, not a fraction`;
-    throw flagTargetingInvalid(key, problem);
-  }
-  if (rollout < 0 || rollout > BUCKETS) {
-    throw flagTargetingInvalid(key, `rollout is ${rollout}, outside 0-${BUCKETS}`);
-  }
-  if (targeting.default) {
-    throw flagTargetingInvalid(key, `default is true and rollout is ${rollout}; the two disagree`);
-  }
-}
-
-function assertSubjects(key: string, subjects: Readonly<Record<string, readonly string[]>>): void {
-  const fix = `give each subjects entry a kind and a list of ids — { bank: ['bank_integration:bbva'] } — in defineFlag({ key: '${key}' })`;
-  for (const [kind, ids] of Object.entries<unknown>(subjects)) {
-    if (kind.trim() === '') throw flagTargetingInvalid(key, 'a subjects kind is blank', fix);
-    if (isBuiltInSubjectKind(kind)) {
-      throw flagTargetingInvalid(
-        key,
-        `subjects.${kind} restates a built-in kind`,
-        `use ${kind === 'org' ? 'orgs' : 'actors'} instead of subjects.${kind} in defineFlag({ key: '${key}' })`,
-      );
-    }
-    if (!Array.isArray(ids)) {
-      throw flagTargetingInvalid(key, `subjects.${kind} is not a list of ids`, fix);
-    }
-    for (const id of ids as readonly unknown[]) {
-      if (typeof id !== 'string' || id === '') {
-        throw flagTargetingInvalid(key, `subjects.${kind} holds an id that is not a string`, fix);
-      }
-    }
-  }
 }
 
 /**

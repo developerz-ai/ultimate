@@ -111,7 +111,7 @@ export const flagSubjectRequired = (init: {
  * something that is not `X_FLAG_EXPIRY_INVALID`. A cause only has to describe, so a value that
  * defeats rendering degrades to its type rather than destroying the refusal.
  */
-const renderGiven = (given: unknown): string => {
+export const renderGiven = (given: unknown): string => {
   if (given === undefined) return 'undefined';
   if (typeof given === 'bigint') return `${given}n`;
   if (typeof given === 'symbol') return String(given);

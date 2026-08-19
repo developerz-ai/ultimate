@@ -5,8 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
 import { userActor } from '@ultimat3/core';
-import type { FlagTargeting } from './targeting';
-import { assertTargeting, evaluateTargeting } from './targeting';
+import { evaluateTargeting } from './targeting';
 
 const caught = (run: () => unknown): unknown => {
   try {
@@ -313,99 +312,5 @@ describe('unit · arbitrary record subjects', () => {
         undefined,
       ),
     ).toBe(false);
-  });
-});
-
-describe('unit · assertTargeting', () => {
-  test('refuses a fractional rollout, which reads as half and means nobody', () => {
-    const thrown = caught(() => {
-      assertTargeting('a.flag', { default: false, rollout: 0.5 });
-    });
-    expect(thrown).toBeUltimateError('X_FLAG_TARGETING_INVALID');
-  });
-
-  test('refuses a rollout outside 0-100', () => {
-    expect(
-      caught(() => assertTargeting('a.flag', { default: false, rollout: -1 })),
-    ).toBeUltimateError('X_FLAG_TARGETING_INVALID');
-    expect(
-      caught(() => assertTargeting('a.flag', { default: false, rollout: 101 })),
-    ).toBeUltimateError('X_FLAG_TARGETING_INVALID');
-  });
-
-  test('refuses default:true beside a rollout — the two answer the same actors', () => {
-    expect(
-      caught(() => assertTargeting('a.flag', { default: true, rollout: 10 })),
-    ).toBeUltimateError('X_FLAG_TARGETING_INVALID');
-  });
-
-  test('refuses a subjects entry naming a built-in kind — orgs and actors are the one spelling', () => {
-    expect(
-      caught(() => assertTargeting('a.flag', { default: false, subjects: { org: ['org-a'] } })),
-    ).toBeUltimateError('X_FLAG_TARGETING_INVALID');
-    expect(
-      caught(() => assertTargeting('a.flag', { default: false, subjects: { actor: ['user-1'] } })),
-    ).toBeUltimateError('X_FLAG_TARGETING_INVALID');
-  });
-
-  test('refuses subject ids a store snapshot can carry but nothing can match', () => {
-    const emptyKind: unknown = { default: false, subjects: { '': ['x'] } };
-    expect(caught(() => assertTargeting('a.flag', emptyKind as FlagTargeting))).toBeUltimateError(
-      'X_FLAG_TARGETING_INVALID',
-    );
-    const notAList: unknown = { default: false, subjects: { bank: 'bbva' } };
-    expect(caught(() => assertTargeting('a.flag', notAList as FlagTargeting))).toBeUltimateError(
-      'X_FLAG_TARGETING_INVALID',
-    );
-    const emptyId: unknown = { default: false, subjects: { bank: [''] } };
-    expect(caught(() => assertTargeting('a.flag', emptyId as FlagTargeting))).toBeUltimateError(
-      'X_FLAG_TARGETING_INVALID',
-    );
-  });
-
-  test('refuses a blank bucketBy, which would name no kind at all', () => {
-    const blank: unknown = { default: false, rollout: 10, bucketBy: '  ' };
-    expect(caught(() => assertTargeting('a.flag', blank as FlagTargeting))).toBeUltimateError(
-      'X_FLAG_TARGETING_INVALID',
-    );
-  });
-
-  test('refuses a bucketBy with no rollout — it divides nothing', () => {
-    expect(
-      caught(() => assertTargeting('a.flag', { default: false, bucketBy: 'org' })),
-    ).toBeUltimateError('X_FLAG_TARGETING_INVALID');
-  });
-
-  test('accepts an app-declared bucketBy kind — the kind space is open, like a flag key', () => {
-    // There is no registry of kinds to check against, deliberately: a typo raises
-    // X_FLAG_SUBJECT_REQUIRED at the first evaluation, the same loud failure an undeclared flag
-    // key already gets from X_FLAG_UNKNOWN. A second declaration surface would buy little.
-    expect(
-      caught(() => assertTargeting('a.flag', { default: false, rollout: 10, bucketBy: 'bank' })),
-    ).toBeUndefined();
-  });
-
-  test('accepts the shapes a real declaration uses', () => {
-    expect(
-      caught(() => assertTargeting('a.flag', { default: false, orgs: ['org-a'] })),
-    ).toBeUndefined();
-    expect(
-      caught(() => assertTargeting('a.flag', { default: false, rollout: 10, bucketBy: 'org' })),
-    ).toBeUndefined();
-    expect(
-      caught(() =>
-        assertTargeting('a.flag', {
-          default: false,
-          subjects: { bank: ['bank_integration:bbva'] },
-        }),
-      ),
-    ).toBeUndefined();
-    expect(caught(() => assertTargeting('a.flag', { default: true }))).toBeUndefined();
-    expect(
-      caught(() => assertTargeting('a.flag', { default: false, rollout: 25 })),
-    ).toBeUndefined();
-    expect(
-      caught(() => assertTargeting('a.flag', { default: false, actors: ['x'], roles: ['admin'] })),
-    ).toBeUndefined();
   });
 });

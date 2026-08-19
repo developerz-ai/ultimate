@@ -51,16 +51,32 @@ describe('nextCronOccurrence', () => {
     expect(toIso(next)).toBe('2026-03-16T00:00:00.000Z'); // the Monday comes first
   });
 
-  test('an unmatchable date fails with the search budget it actually spent', () => {
-    // February never has a 30th, so the walk runs out of steps rather than looping forever.
+  // T9. This used to be answered by exhausting the 200,000-step budget: ~150 ms of blocking CPU
+  // per call, and `firedSince` — the scheduler leader loop's entry point — pays it every tick.
+  // The day/month combination is decidable from the parsed fields alone.
+  test('an unmatchable date is refused at PARSE time, in constant time', () => {
+    const started = performance.now();
     const error = errorOf(() =>
       nextCronOccurrence('0 0 30 2 *', UTC, fromIso('2026-03-14T00:00:00Z')),
     );
+    const spent = performance.now() - started;
     const cause = String(error.cause);
     expect(error.code).toBe('X_CRON_INVALID');
-    expect(cause).toContain('search steps');
-    // A step is a field advancement, so the guard cannot honestly promise a span in years.
-    expect(cause).not.toContain('years');
+    // The cause names the combination rather than the budget: a search that ran out of steps says
+    // nothing about WHY, and "30" and "february" are the two words a reader needs.
+    expect(cause).toContain('february');
+    expect(cause).not.toContain('search steps');
+    // Generous by two orders of magnitude — the point is that no walk happened at all.
+    expect(spent).toBeLessThan(20);
+  });
+
+  test('the search budget still guards the walk it was written for', () => {
+    // Untouched: the constant-time check answers the day/month case, and MAX_STEPS stays the
+    // backstop for anything it cannot see.
+    const error = errorOf(() =>
+      nextCronOccurrence('0 0 * * *', UTC, fromIso('2026-03-14T00:00:00Z')),
+    );
+    expect(error.code).toBe('no-throw');
   });
 });
 

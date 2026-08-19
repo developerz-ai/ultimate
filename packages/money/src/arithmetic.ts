@@ -39,9 +39,21 @@ export function subtract(left: Money, right: Money): Money {
   );
 }
 
-/** Every addend must share one currency; an empty list needs an explicit currency. */
+/**
+ * Every addend must share one currency; an empty list needs an explicit currency.
+ *
+ * A stated currency the first addend contradicts is `X_CURRENCY_MISMATCH`, not a silent win for
+ * the list: `sum([money(1, 'EUR')], 'USD')` used to answer `{ minor: 1, currency: 'EUR' }`, so a
+ * caller who wrote down USD received EUR and nothing refused — the exact failure this file's
+ * header exists to rule out, in the one entry point that treated its currency as a fallback rather
+ * than as an assertion.
+ */
 export function sum(amounts: readonly Money[], currency?: string): Money {
-  const base = amounts[0]?.currency ?? currency;
+  const first = amounts[0]?.currency;
+  if (first !== undefined && currency !== undefined && first !== currency) {
+    throw currencyMismatch(currency, first);
+  }
+  const base = first ?? currency;
   if (base === undefined) throw currencyRequired('sum([])');
   return amounts.reduce((total, amount) => add(total, amount), money(0, base));
 }

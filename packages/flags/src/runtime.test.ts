@@ -98,3 +98,41 @@ describe('unit · reportOnce', () => {
     expect(sink.events).toHaveLength(2);
   });
 });
+
+// F6. `resetFlagReporting` clears the map; `configureFlags` is what apps and test kits actually
+// call, and it swapped the clock underneath a watermark measured against the OLD one.
+describe('unit · swapping the clock', () => {
+  test('a fresh clock does not inherit the previous clock monotonic watermark', () => {
+    // A long-lived process reports at monotonic 10_000_000. A test kit — or a second
+    // `configureFlags` at boot — then installs a clock that starts at 0. `now - previous` is
+    // -10_000_000, which is below every interval, so this flag could never report again until the
+    // new clock passed the old one's reading: on a frozen test clock, never.
+    const running = frozenClock(0);
+    running.advance(10_000_000);
+    configureFlags({ clock: running, reportEveryMs: 1_000 });
+    expect(reportOnce('a.flag', build)).toBe(true);
+
+    configureFlags({ clock: frozenClock(0) });
+    expect(reportOnce('a.flag', build)).toBe(true);
+    expect(sink.events).toHaveLength(2);
+  });
+
+  test('the rate limit still holds within one clock', () => {
+    const clock = frozenClock(0);
+    configureFlags({ clock, reportEveryMs: 1_000 });
+    expect(reportOnce('a.flag', build)).toBe(true);
+    expect(reportOnce('a.flag', build)).toBe(false);
+    clock.advance(1_000);
+    expect(reportOnce('a.flag', build)).toBe(true);
+  });
+
+  test('re-configuring only the interval keeps the window it already opened', () => {
+    // The watermark is only stale when the CLOCK changes. An interval change re-reads the same
+    // clock, so clearing there would let a report through on every configure call.
+    const clock = frozenClock(0);
+    configureFlags({ clock, reportEveryMs: 1_000 });
+    expect(reportOnce('a.flag', build)).toBe(true);
+    configureFlags({ reportEveryMs: 5_000 });
+    expect(reportOnce('a.flag', build)).toBe(false);
+  });
+});

@@ -27,8 +27,22 @@ let clock: Clock = systemClock;
 let reportEveryMs = DEFAULT_REPORT_INTERVAL_MS;
 const lastReportedAt = new Map<string, number>();
 
+/**
+ * Swapping the clock CLEARS the watermarks, because a monotonic reading is only meaningful against
+ * the clock that produced it. A process that reported at monotonic 10_000_000 and then took a
+ * clock starting at 0 computed `now - previous` as -10_000_000 — below every interval, so that key
+ * could never report again until the new clock passed the old one's reading, which on a frozen
+ * test clock is never. `resetFlagReporting()` always did this; `configureFlags` is what apps and
+ * test kits actually call.
+ *
+ * Only the clock. An interval change re-reads the SAME clock, so clearing there would let a report
+ * through on every configure call and turn the rate limit into a suggestion.
+ */
 export function configureFlags(options: FlagsRuntimeOptions): void {
-  if (options.clock !== undefined) clock = options.clock;
+  if (options.clock !== undefined && options.clock !== clock) {
+    clock = options.clock;
+    lastReportedAt.clear();
+  }
   if (options.reportEveryMs !== undefined) reportEveryMs = options.reportEveryMs;
 }
 

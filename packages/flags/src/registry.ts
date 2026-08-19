@@ -5,7 +5,8 @@
 import { flagDuplicate, flagUnknown } from './errors';
 import type { Flag, FlagDef } from './flag';
 import { toFlag, withTargeting } from './flag';
-import { assertTargeting, type FlagTargeting } from './targeting';
+import type { FlagTargeting } from './targeting';
+import { assertTargeting } from './targeting-assert';
 
 const flags = new Map<string, Flag>();
 

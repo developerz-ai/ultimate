@@ -128,3 +128,40 @@ describe('businessDaysBetween counts [from, to)', () => {
     ).toBe(true);
   });
 });
+
+// T4. `plain-date.ts`'s `addPlainDays` is the in-package pattern: `Number.isSafeInteger` plus
+// `scheduleInvalid`. `addBusinessDays` had neither, so a fractional count moved a whole day and a
+// `NaN` — the shape a corrupted config takes — returned the input unchanged, which reads as
+// "no movement was needed" rather than as a failure.
+describe('addBusinessDays refuses a day count that is not whole', () => {
+  const monday = fromIso('2026-03-16T09:00:00Z');
+  const calendar = { zone: BERLIN };
+
+  test('a fraction is refused rather than silently moving a whole day', () => {
+    expect(codeOf(() => addBusinessDays(monday, 0.5, calendar))).toBe('X_SCHEDULE_INVALID');
+    expect(codeOf(() => addBusinessDays(monday, -1.5, calendar))).toBe('X_SCHEDULE_INVALID');
+  });
+
+  test('NaN is refused rather than reading as "no movement"', () => {
+    expect(codeOf(() => addBusinessDays(monday, Number.NaN, calendar))).toBe('X_SCHEDULE_INVALID');
+    expect(codeOf(() => addBusinessDays(monday, Number.POSITIVE_INFINITY, calendar))).toBe(
+      'X_SCHEDULE_INVALID',
+    );
+  });
+
+  test('whole counts, including zero and negatives, still answer exactly as before', () => {
+    expect(addBusinessDays(monday, 0, calendar)).toBe(monday);
+    expect(toZoned(addBusinessDays(monday, 1, calendar), BERLIN).day).toBe(17);
+    expect(toZoned(addBusinessDays(monday, 5, calendar), BERLIN).day).toBe(23);
+    expect(toZoned(addBusinessDays(monday, -1, calendar), BERLIN).day).toBe(13);
+  });
+});
+
+function codeOf(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return String((error as { code?: unknown }).code);
+  }
+  return 'no-throw';
+}
