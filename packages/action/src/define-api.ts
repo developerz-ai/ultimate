@@ -132,7 +132,14 @@ function moduleList(modules: ApiModules | undefined): readonly ApiModule[] {
  * a name no surface serves, and the last module exporting that name would win in silence.
  */
 function byRegisteredName(primitives: readonly RegisteredPrimitive[]): ApiModule {
-  const map: Record<string, RegisteredPrimitive> = {};
+  // A null-prototype map, because `name` is an export name and `map['__proto__'] = value` on a
+  // plain object runs the PROTOTYPE SETTER instead of adding a key: the primitive would vanish
+  // from `Object.keys`, from `api.actions` and from `rpc()`, while `registerPrimitive` reported
+  // it registered. `Object.create(null)` has no such accessor, so the assignment is a key.
+  const map: Record<string, RegisteredPrimitive> = Object.create(null) as Record<
+    string,
+    RegisteredPrimitive
+  >;
   for (const primitive of primitives) map[primitive.name] = primitive;
   return Object.freeze(map);
 }

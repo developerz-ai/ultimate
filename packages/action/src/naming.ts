@@ -40,8 +40,12 @@ export function splitWords(name: string): string[] {
  * alone, so `publishPosts` and `publishPost` agree on the `posts` resource.
  */
 export function pluralize(word: string): string {
-  const irregular = IRREGULAR[word];
-  if (irregular !== undefined) return irregular;
+  // `Object.hasOwn`, never a truthiness check on the read: `IRREGULAR['constructor']` is the
+  // `Object` FUNCTION off the prototype chain, not `undefined`, and `splitWords` lowercases —
+  // which keeps `toString` out of reach and lets `constructor` straight through. `pluralize` is
+  // public API returning `string`, and `derivePath` publishes what it answers as the action's
+  // HTTP path, its OpenAPI `paths` key and its `tags` entry.
+  if (Object.hasOwn(IRREGULAR, word)) return IRREGULAR[word] ?? word;
   if (word.endsWith('s')) return word;
   if (/(x|z|ch|sh)$/.test(word)) return `${word}es`;
   if (/[^aeiou]y$/.test(word)) return `${word.slice(0, -1)}ies`;

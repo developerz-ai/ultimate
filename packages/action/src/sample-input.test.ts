@@ -142,3 +142,28 @@ describe('sampleGaps', () => {
     expect(sampleGaps(foreign)).toEqual([]);
   });
 });
+
+/**
+ * The same prototype-chain read as `naming.ts`'s, one file over: `node.format` arrives from a
+ * schema provider's IR, and `BY_FORMAT['constructor']` is the `Object` function rather than
+ * `undefined`. It landed in the payload the policy contract test invokes with — a function where
+ * the type says `string` — so the assertion that is meant to reach a policy failed the parse
+ * instead.
+ */
+describe('a foreign format is looked up in the table, never on Object.prototype', () => {
+  const foreignFormat = (format: string): AnySchema =>
+    ({
+      node: { kind: 'string', format },
+      '~standard': { version: 1, vendor: 'other', validate: (value: unknown) => ({ value }) },
+    }) as unknown as AnySchema;
+
+  test('an unknown format samples the ordinary string, whatever the word is', () => {
+    for (const format of ['constructor', 'valueOf', 'toString', 'invented-by-a-provider']) {
+      expect(sampleInput(foreignFormat(format))).toBe('sample');
+    }
+  });
+
+  test('a format this build does know still answers with its own shape', () => {
+    expect(sampleInput(foreignFormat('email'))).toBe('sample@example.test');
+  });
+});

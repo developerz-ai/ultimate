@@ -1,6 +1,7 @@
-// Retry arithmetic, kept pure so the schedule is testable and printable. `x jobs schedule`
-// renders `retrySchedule()` verbatim — an agent should be able to see when attempt 5 lands
-// without running the queue.
+// Retry arithmetic, kept pure so the schedule is testable and printable. `x jobs show <id>`
+// renders `retrySchedule()` verbatim as `JobTrace.retryDelaysMs` — an agent should be able to see
+// when attempt 5 lands without running the queue. There is no `x jobs schedule`: the subcommands
+// are `ls`, `show`, `retry`, `cancel`, `drain`.
 
 import type { DurationInput } from './clock';
 import { toMs } from './clock';

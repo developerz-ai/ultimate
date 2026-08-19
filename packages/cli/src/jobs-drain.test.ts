@@ -84,7 +84,7 @@ describe('unit · drainJobs ownership', () => {
     expect(outcome.skipped).toEqual([]);
     expect(outcome.moved.map((record) => record.id).sort()).toEqual([readyId, suspendedId].sort());
     // The rows are reported as the drain found them, not mid-lease as `claim()` returns them.
-    expect(outcome.moved.map((record) => record.state).sort()).toEqual(['ready', 'suspended']);
+    expect(outcome.moved.map((record) => record.state).sort()).toEqual(['ready', 'ready']);
     expect((await source.introspect?.job(readyId))?.state).toBe('done');
     expect((await listJobs(target)).rows).toHaveLength(2);
   });
@@ -154,7 +154,7 @@ describe('unit · drainJobs ownership', () => {
     // retryable — the one thing a half-finished transfer must never cost is a retry budget.
     const after = await source.introspect?.job(id);
     expect(after?.attempt).toBe(0);
-    expect(after?.state).toBe('suspended');
+    expect(after?.state).toBe('ready');
     const reclaimed = await source.claim({
       queues: ['default'],
       limit: 5,

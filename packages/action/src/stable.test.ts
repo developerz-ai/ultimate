@@ -78,3 +78,74 @@ describe('stableStringify keeps the DOCUMENT duty: what it emits is valid JSON',
     expect(JSON.parse(document)).toEqual({ maximum: null, minimum: null });
   });
 });
+
+/**
+ * The other half of injectivity, and the one an app hits first: `t.date` parses an input field
+ * into a `Date`, which has no own enumerable key — so the object branch rendered it `{}`, and so
+ * did a `Map` and a `Set`. Two calls under one `Idempotency-Key` carrying two DIFFERENT dates were
+ * one `requestHash`: the second caller was handed the first one's stored response, with no
+ * `X_IDEMPOTENCY_CONFLICT` and the handler run once.
+ */
+describe('canonicalJson is injective over the values a PARSED input holds', () => {
+  test('two dates are two fingerprints, and neither is the empty object', () => {
+    const early = { at: new Date('2020-01-01T00:00:00.000Z') };
+    const late = { at: new Date('2021-06-30T12:00:00.000Z') };
+    expect(fingerprint(early)).not.toBe(fingerprint(late));
+    expect(fingerprint(early)).not.toBe(fingerprint({ at: {} }));
+  });
+
+  test('a date is not the number that spells its epoch, nor the string that spells it', () => {
+    const at = new Date('2020-01-01T00:00:00.000Z');
+    expect(fingerprint({ at })).not.toBe(fingerprint({ at: at.getTime() }));
+    expect(fingerprint({ at })).not.toBe(fingerprint({ at: at.toISOString() }));
+  });
+
+  test('an Invalid Date is its own value, not the NaN it holds', () => {
+    expect(fingerprint({ at: new Date(Number.NaN) })).not.toBe(fingerprint({ at: Number.NaN }));
+  });
+
+  test('a Map, a Set and an empty object are three fingerprints', () => {
+    const values: unknown[] = [
+      { x: new Map([['a', 1]]) },
+      { x: new Set([1, 2]) },
+      { x: {} },
+      { x: [] },
+    ];
+    expect(new Set(values.map(fingerprint)).size).toBe(4);
+  });
+
+  test('two maps differing only in a value are two fingerprints', () => {
+    expect(fingerprint({ x: new Map([['a', 1]]) })).not.toBe(
+      fingerprint({ x: new Map([['a', 2]]) }),
+    );
+  });
+
+  test('insertion order is not what a map holds, so one payload stays one record', () => {
+    const forward = new Map<string, number>([
+      ['a', 1],
+      ['b', 2],
+    ]);
+    const backward = new Map<string, number>([
+      ['b', 2],
+      ['a', 1],
+    ]);
+    expect(fingerprint({ x: forward })).toBe(fingerprint({ x: backward }));
+    expect(fingerprint({ x: new Set([1, 2]) })).toBe(fingerprint({ x: new Set([2, 1]) }));
+  });
+});
+
+/**
+ * And the document duty for the same three. `serializeOpenApi` publishes this string and
+ * `json-schema.ts` re-reads it with `JSON.parse`, so the hash form's tags may not appear here:
+ * what it emits for each is what `JSON.stringify` emits for it.
+ */
+describe('stableStringify keeps JSON own rendering of a Date, a Map and a Set', () => {
+  test('a date is its ISO string, and a map and a set are the empty object', () => {
+    const value = {
+      at: new Date('2020-01-01T00:00:00.000Z'),
+      m: new Map([['a', 1]]),
+      s: new Set([1]),
+    };
+    expect(JSON.parse(stableStringify(value))).toEqual(JSON.parse(JSON.stringify(value)));
+  });
+});

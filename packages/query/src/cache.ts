@@ -48,6 +48,17 @@ export function requestMemo(ctx: Ctx): Map<string, Promise<unknown>> {
 export type QueryCacheScope = 'actor' | 'tenant' | 'global';
 
 /**
+ * "This actor is inside no org", in all three spellings it arrives in. The parameter is widened
+ * past core's `Actor.orgId` (`string | undefined`) on purpose: `@ultimat3/policy`'s
+ * `PolicyActorFields` declares `string | null | undefined` and its `testActor` mints `orgId: null`,
+ * so a `null` does reach here — and it used to miss the `undefined`/`''` test below, which handed
+ * every org-less caller the single shared key `["org",null]` and served each one the rows of
+ * whoever asked first. `actorAuthority` already wrote `?? null` for the same reason.
+ */
+const orgless = (orgId: string | null | undefined): boolean =>
+  orgId === undefined || orgId === null || orgId === '';
+
+/**
  * The authority a read was answered under, as a key component.
  *
  * `sql(input, ctx)` is handed the context, and `@ultimat3/entity` derives every tenant predicate
@@ -67,9 +78,8 @@ export function readAuthority(actor: Actor, scope: QueryCacheScope): string {
       // An actor inside no org is not a shared tenant. Nothing here can prove two org-less callers
       // see the same rows, so the key narrows to the actor rather than widening to everyone —
       // declining instead of guessing, which is the only safe direction for a sharing key.
-      return actor.orgId === undefined || actor.orgId === ''
-        ? actorAuthority(actor)
-        : JSON.stringify(['org', actor.orgId]);
+      //
+      return orgless(actor.orgId) ? actorAuthority(actor) : JSON.stringify(['org', actor.orgId]);
     case 'actor':
       return actorAuthority(actor);
     default:

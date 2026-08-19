@@ -140,6 +140,36 @@ describe('task', () => {
     ).not.toThrow();
   });
 
+  /**
+   * The one knob of this family left unguarded. `occurrencesSince` is
+   * `for (let i = 0; i < handle.maxCatchUp; i += 1)`, so a declared `0` returns no occurrence on
+   * every round and the task NEVER fires — no error, no log line, no queue row. The same shape
+   * `job()` refuses `concurrency: 0` in and `createPacer` refuses `rate: 0` in.
+   */
+  test('a maxCatchUp no occurrence can fit through is refused where it is written', () => {
+    for (const maxCatchUp of [0, -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() =>
+        task({
+          name: `catchUp${maxCatchUp}`,
+          cron: '* * * * *',
+          tz: 'UTC',
+          maxCatchUp,
+          enqueue: () => [],
+        }),
+      ).toThrow('X_INVARIANT');
+    }
+  });
+
+  test('one occurrence is a legitimate ceiling, and the default stands when it is omitted', () => {
+    expect(
+      task({ name: 'justOne', cron: '* * * * *', tz: 'UTC', maxCatchUp: 1, enqueue: () => [] })
+        .maxCatchUp,
+    ).toBe(1);
+    expect(
+      task({ name: 'unset', cron: '* * * * *', tz: 'UTC', enqueue: () => [] }).maxCatchUp,
+    ).toBe(10);
+  });
+
   test('describe() is JSON-safe and lists its jobs in declaration order', () => {
     const nightly = task({
       name: 'nightlyDigest',

@@ -13,7 +13,7 @@ import {
   tag,
 } from '@ultimat3/cache';
 import { createContext, userActor } from '@ultimat3/core';
-import { allow } from '@ultimat3/policy';
+import { allow, testActor } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { cacheKeyFor, readAuthority } from './cache';
 import { query } from './query';
@@ -149,6 +149,18 @@ describe('the authority a cached read was answered under', () => {
       cacheKeyFor('feed', { q: 'all' }, [], readAuthority(other, 'actor')),
     );
     expect(readAuthority(actor, 'global')).toBe(readAuthority(other, 'global'));
+  });
+
+  // `@ultimat3/policy` widens `orgId` to `string | null | undefined`, and its `testActor` mints
+  // `null` — the one spelling of "no org" the tenant branch used to miss, which filed every
+  // org-less caller under the single key `["org",null]` and served each one the other's rows.
+  test("scope: 'tenant' narrows a null orgId to the actor, exactly as it does undefined", () => {
+    const nullOrg = testActor('u-a').actor;
+    const otherNullOrg = testActor('u-b').actor;
+    if (nullOrg === null || otherNullOrg === null) throw new Error('testActor mints an actor');
+
+    expect(readAuthority(nullOrg, 'tenant')).not.toBe(readAuthority(otherNullOrg, 'tenant'));
+    expect(readAuthority(nullOrg, 'tenant')).toBe(readAuthority(nullOrg, 'actor'));
   });
 
   test('two distinct actors never share an authority, however their ids are spelled', () => {

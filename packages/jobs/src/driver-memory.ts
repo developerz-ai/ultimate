@@ -206,7 +206,14 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): JobDriver
       const at = nowMs(clock);
       const counts = nackOptions.countsAsAttempt !== false;
       const patch: Partial<JobRecord> = {
-        state: nackOptions.deadLetter === true ? 'dead' : counts ? 'ready' : 'suspended',
+        // `park`, never `counts`: parking is what leaves the ready bucket, and burning an attempt
+        // is a separate fact. A shed sets neither and stays `ready`, which is what it is.
+        state:
+          nackOptions.deadLetter === true
+            ? 'dead'
+            : nackOptions.park === true
+              ? 'suspended'
+              : 'ready',
         runAt: at + nackOptions.delayMs,
         // A suspension must not burn an attempt, or a 3-day sleep dead-letters the run. Floored
         // where `SQL_NACK` floors it (`greatest(attempt - 1, 0)`): the fence above is what keeps

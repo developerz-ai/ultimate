@@ -289,7 +289,13 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   is the mechanism: declaring nothing gets the narrowest key. `'tenant'` and `'global'` are written
   statements about the rows — the `unenforced:` shape one field over — and `'tenant'` with no
   `orgId` narrows to the actor rather than widening to everyone, because nothing here can prove two
-  org-less callers share a tenant. The authority is JSON, never a joined string, for the reason
+  org-less callers share a tenant. **All THREE spellings of "no org" take that branch**, `As of
+  2026-08`: `undefined`, `''` and `null`. The last one missed it, so every org-less caller shared
+  the single key `["org",null]` and was served the rows of whoever asked first — core's `Actor`
+  declares `orgId?: string`, but `@ultimat3/policy`'s `PolicyActorFields` widens it to
+  `string | null | undefined` and its `testActor` mints `null`, which is why `orgless()` widens its
+  parameter rather than trusting the declared type. The authority is JSON, never a joined string,
+  for the reason
   `@ultimat3/entity`'s `scopeKey` gives: an actor id is app data and may carry the separator.
 - **`cache.ttlMs` is judged at `query()`, not on the first read.** Every `CacheTier` refuses a
   lease that is not positive and finite (`assertTtl`), and the read tier's one catch absorbs

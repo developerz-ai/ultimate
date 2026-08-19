@@ -6,20 +6,30 @@
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
-import type { JobDriver } from './driver';
+import type { JobDriver, NackOptions } from './driver';
 import { createMemoryDriver } from './driver-memory';
 import type { PgExecutor } from './driver-pg';
 import { createPgDriver } from './driver-pg';
 import { SQL_LEASE_RENEW, SQL_NACK, SQL_STATS } from './driver-pg-sql';
 import { createMemoryLeaseStore } from './leases';
 
-/** The pg driver compiles its SQL against this seam, so the statement it issues is readable. */
-function recordingExecutor(): PgExecutor & { readonly sql: string[] } {
+/**
+ * The pg driver compiles its SQL against this seam, so the statement it issues is readable — and
+ * its PARAMETERS with it, because a value the statement takes as `$n` (the state a nack writes) is
+ * decided in the driver and is invisible in the SQL.
+ */
+function recordingExecutor(): PgExecutor & {
+  readonly sql: string[];
+  readonly params: readonly unknown[][];
+} {
   const sql: string[] = [];
+  const params: unknown[][] = [];
   return {
     sql,
-    query<R>(text: string): Promise<readonly R[]> {
+    params,
+    query<R>(text: string, values: readonly unknown[] = []): Promise<readonly R[]> {
       sql.push(text);
+      params.push([...values]);
       return Promise.resolve([] as readonly R[]);
     },
   };
@@ -145,10 +155,7 @@ describe('stats puts a job in exactly one bucket', () => {
   const compactStats = () => SQL_STATS.replace(/\s+/g, ' ');
 
   /** Enqueue one job, claim it, and settle it the way `step.sleep` or a retry settles one. */
-  const settledOnce = async (
-    key: string,
-    options: { readonly delayMs: number; readonly countsAsAttempt: boolean },
-  ) => {
+  const settledOnce = async (key: string, options: NackOptions) => {
     const clock = frozenClock(1_700_000_000_000);
     const driver = createMemoryDriver({ clock });
     const { id } = await driver.enqueue({
@@ -168,7 +175,9 @@ describe('stats puts a job in exactly one bucket', () => {
     // `run_at` is what the unfenced pg filter counted a SECOND time, so the five buckets summed to
     // more rows than the table holds — and `x jobs` said one thing under `x dev` and another in
     // production, which is the number an operator sizes a worker fleet from.
-    expect(await settledOnce('sleeper:1', { delayMs: 3_600_000, countsAsAttempt: false })).toEqual({
+    expect(
+      await settledOnce('sleeper:1', { delayMs: 3_600_000, countsAsAttempt: false, park: true }),
+    ).toEqual({
       queue: 'default',
       ready: 0,
       delayed: 0,
@@ -196,5 +205,34 @@ describe('stats puts a job in exactly one bucket', () => {
       oldestReadyMs: 0,
     });
     expect(compactStats()).toContain(DELAYED_FILTER);
+  });
+
+  /**
+   * A limiter shed and a `step.sleep` were ONE flag: both handed the job back with
+   * `countsAsAttempt: false`, and both drivers read that as `suspended`. So `stats()` counted a job
+   * that is merely WAITING out of `ready` and out of `oldest_ready_ms` — the two numbers the HPA
+   * and the "oldest job older than 5 minutes" page read — and under sustained overload the shed
+   * fraction approaches 100%, so both signals go quiet exactly when the queue is saturated.
+   */
+  test('a limiter shed is still waiting, so it stays in the ready bucket, in both', async () => {
+    expect(await settledOnce('shed:1', { delayMs: 0, countsAsAttempt: false })).toEqual({
+      queue: 'default',
+      ready: 1,
+      delayed: 0,
+      running: 0,
+      suspended: 0,
+      dead: 0,
+      oldestReadyMs: 0,
+    });
+
+    // The pg half. The state is a PARAMETER of `SQL_NACK`, so the statement cannot carry the
+    // mapping and the driver has to be asked for it.
+    const executor = recordingExecutor();
+    const pg = createPgDriver({ executor });
+    await pg.nack('shed', { delayMs: 0, countsAsAttempt: false });
+    await pg.nack('sleep', { delayMs: 0, countsAsAttempt: false, park: true });
+    expect(executor.params.map((row) => row[1])).toEqual(['ready', 'suspended']);
+    // And `countsAsAttempt` still means only the counter: neither of them burns an attempt.
+    expect(executor.params.map((row) => row[2])).toEqual([false, false]);
   });
 });

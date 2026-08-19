@@ -161,6 +161,26 @@ export function createWorker(options: WorkerOptions): Worker {
       ...(options.events === undefined ? {} : { events: options.events }),
     });
 
+  /**
+   * A claimed job handed straight back over a cap. It is NOT a suspension and NOT a failure: no
+   * `park`, so the row stays where `queue_depth` and `queue_oldest_ready_seconds` can see it, and
+   * no `error`, so `x jobs show` does not report a `lastError` for a job that never ran. It was
+   * both of those until 2026-08 — parked beside a 3-day `step.sleep`, and stamped with a failure
+   * it never had — which is why the two sheds go through one function now.
+   */
+  const shed = async (
+    claimed: ClaimedJob,
+    detail: { readonly queue: string; readonly reason: string },
+  ): Promise<void> => {
+    logger.debug('jobs.worker.shed', {
+      workerId,
+      job: claimed.name,
+      jobId: claimed.id,
+      ...detail,
+    });
+    await options.driver.nack(claimed.id, { delayMs: pollIntervalMs, countsAsAttempt: false });
+  };
+
   /** The drain's one question: may this worker still take work off the queue? */
   const claiming = (): boolean => state !== 'draining' && state !== 'stopped';
 
@@ -196,11 +216,17 @@ export function createWorker(options: WorkerOptions): Worker {
           ...(job.tenantId === undefined ? {} : { tenantId: job.tenantId }),
         });
         if (lease === undefined) {
-          // Over a tenant/queue/global cap: hand it straight back for another worker.
-          await options.driver.nack(job.id, {
-            delayMs: pollIntervalMs,
-            countsAsAttempt: false,
-            error: `limited: ${limiter.blockedBy({ queue, ...(job.tenantId === undefined ? {} : { tenantId: job.tenantId }) }) ?? 'unknown'}`,
+          // Over a tenant/queue/global cap: hand it straight back for another worker. No `park`
+          // and no `error` — the row stays in the ready bucket the depth gauge reads, and nothing
+          // about this job failed, so `x jobs show` must not report a `lastError` for it. The
+          // reason is a log FIELD instead, where it costs nothing when nobody is asking.
+          await shed(job, {
+            queue,
+            reason:
+              limiter.blockedBy({
+                queue,
+                ...(job.tenantId === undefined ? {} : { tenantId: job.tenantId }),
+              }) ?? 'unknown',
           });
           continue;
         }
@@ -223,10 +249,9 @@ export function createWorker(options: WorkerOptions): Worker {
         }
         if (!granted) {
           lease.release();
-          await options.driver.nack(job.id, {
-            delayMs: pollIntervalMs,
-            countsAsAttempt: false,
-            error: `limited: job concurrency (${getJob(job.name)?.concurrency ?? 0})`,
+          await shed(job, {
+            queue,
+            reason: `job concurrency (${getJob(job.name)?.concurrency ?? 0})`,
           });
           continue;
         }

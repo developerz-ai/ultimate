@@ -33,7 +33,11 @@ function sampleString(node: SchemaNode): string {
   if (node.format !== undefined) {
     // A format value is already the exact shape its validator wants; padding or truncating it
     // to a length bound would break the only thing that makes it valid.
-    const known: string | undefined = BY_FORMAT[node.format];
+    // `Object.hasOwn`, never the read alone: `node.format` comes from a provider's IR, and
+    // `BY_FORMAT['constructor']` is the `Object` function off the prototype chain rather than
+    // `undefined` — a function in the payload the policy assertion invokes with, where the type
+    // says `string`. Same discriminator `naming.ts` uses on its irregular-plural table.
+    const known = Object.hasOwn(BY_FORMAT, node.format) ? BY_FORMAT[node.format] : undefined;
     return known ?? SAMPLE_STRING;
   }
   const min = node.minLength ?? 0;
@@ -172,6 +176,10 @@ function patternAt(node: SchemaNode | undefined, path: string): string | undefin
   if (node === undefined) return undefined;
   if (path === '' || path === ROOT_PATH) return node.pattern;
   const [head, ...rest] = path.split('.');
-  const child = head === undefined ? undefined : node.properties?.[head];
+  // `path` is the caller's — `describeSampleGap` is exported — so the same own-property read the
+  // format table takes: `properties['constructor']` is otherwise the `Object` function.
+  const properties = node.properties ?? {};
+  const child =
+    head === undefined || !Object.hasOwn(properties, head) ? undefined : properties[head];
   return child === undefined ? undefined : patternAt(child, rest.join('.'));
 }

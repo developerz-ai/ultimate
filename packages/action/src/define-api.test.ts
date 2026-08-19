@@ -92,6 +92,21 @@ describe('defineApi', () => {
     expect(api.actions.createPost.name).toBe('createPost');
   });
 
+  test('a primitive exported as __proto__ is a key of the map, not its prototype', () => {
+    // `map['__proto__'] = value` on a plain object runs the PROTOTYPE SETTER, so the primitive
+    // registered fine and then vanished from Object.keys, from api.queries and from rpc() —
+    // present to the registrar and absent from every surface that reads the map back.
+    const { registrar } = recordingQueryRegistrar();
+    registerPrimitiveRegistrar('query', registrar);
+
+    const api = defineApi({ queries: [{ ['__proto__']: fakeQuery() }] });
+
+    // Read through a descriptor, not `api.queries['__proto__']`: the member access is the very
+    // accessor this test exists to prove is not in play, and Biome refuses it (`noProto`).
+    expect(Object.keys(api.queries)).toEqual(['__proto__']);
+    expect(Object.getOwnPropertyDescriptor(api.queries, '__proto__')?.value).toBeDefined();
+  });
+
   test('two features exporting one name collide with X_ACTION_DUPLICATE', () => {
     let code = '';
     try {

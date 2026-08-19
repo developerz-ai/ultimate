@@ -5,7 +5,7 @@
  */
 
 import type { Ctx } from '@ultimat3/core';
-import { createContext, isUltimateError } from '@ultimat3/core';
+import { createContext, isUltimateError, logger } from '@ultimat3/core';
 import type { AnyAction } from './action';
 import { ActionDeniedError, ContractDriftError } from './errors';
 import { actionName, invoke } from './invoke';
@@ -51,8 +51,9 @@ export function contractTestsFor(
         await expectThrow(
           () => invoke(target, garbage, { ctx, surface: 'http' }),
           'X_INPUT_INVALID',
-          `${name} accepted ${JSON.stringify(garbage) ?? 'undefined'} as input`,
+          `${name} accepted the value this assertion sent as garbage`,
           `tighten \`input:\` in the ${name} definition`,
+          { action: name, garbage },
         );
       },
     },
@@ -163,12 +164,21 @@ async function expectDenied(
   );
 }
 
+/**
+ * `fields` and not a rendered value: `garbage` is the caller's, typed `unknown`, and it was
+ * interpolated into `cause` with `JSON.stringify` — which throws on a circular object and on a
+ * `bigint`. That throw happened on the way INTO this helper, so the assertion never ran and the
+ * failure reported was the stringifier's, not the schema's. The logger takes the value as a field
+ * and shapes it itself, the way `cache-gate.ts` and `idempotency.ts` hand it their `error`.
+ */
 async function expectThrow(
   run: () => Promise<unknown>,
   code: string,
   cause: string,
   fix: string,
+  fields: Readonly<Record<string, unknown>>,
 ): Promise<void> {
+  const report = (): void => logger.error('action.contract.assertion-failed', { ...fields, code });
   try {
     await run();
   } catch (error) {
@@ -179,7 +189,9 @@ async function expectThrow(
     // answers it. It keeps its own code and its own runnable fix — the same rule `expectDenied`
     // follows for every code it cannot attribute to `input:`.
     if (error.code === 'X_AUDIT_SINK_MISSING') throw error;
+    report();
     throw new ContractDriftError(`${cause} (got ${error.code}, expected ${code})`, fix);
   }
+  report();
   throw new ContractDriftError(cause, fix);
 }

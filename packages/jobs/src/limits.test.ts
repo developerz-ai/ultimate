@@ -163,11 +163,17 @@ describe('worker concurrency', () => {
     expect(await worker.tick()).toEqual([]);
     expect(ran).toEqual([]);
 
-    const parked = (await driver.introspect?.list({ state: 'suspended' })) ?? [];
-    expect(parked.length).toBe(1);
-    // Being over a cap must not burn a retry attempt.
-    expect(parked[0]?.attempt).toBe(0);
-    expect(parked[0]?.lastError).toBe('limited: per-tenant');
+    // `ready`, not `suspended`: a job over a cap is still WAITING, and a row hidden in the
+    // suspended bucket is a row `queue_depth` and `queue_oldest_ready_seconds` do not count.
+    const shed = (await driver.introspect?.list({ state: 'ready' })) ?? [];
+    expect(shed.length).toBe(1);
+    expect((await driver.introspect?.list({ state: 'suspended' })) ?? []).toEqual([]);
+    // Being over a cap must not burn a retry attempt — that fact is `countsAsAttempt`, and it is
+    // the only one of the two the shed still asserts.
+    expect(shed[0]?.attempt).toBe(0);
+    // And it never ran, so it failed at nothing: the reason is a log field, not a `lastError`
+    // `x jobs show` renders as this job's own failure.
+    expect(shed[0]?.lastError).toBeUndefined();
 
     for (const lease of held) lease?.release();
     clock.advance(1_000); // past the re-delivery delay the nack set
