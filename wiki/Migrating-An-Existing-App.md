@@ -7,7 +7,7 @@
 | You want | Page |
 |---|---|
 | move an app **from another framework** to Ultimate | this page |
-| move an app **from `@ultimat3/*` 1.x to 2.0.0** | [Upgrading](Upgrading) |
+| move an app **from `@ultimat3/*` 1.x or 2.x to the current major** | [Upgrading](Upgrading) |
 | what is unfinished in the release being adopted | [Known gaps](Known-Gaps) |
 | every `X_*` code named below | [Error codes](Error-Codes) |
 

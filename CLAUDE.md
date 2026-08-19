@@ -12,32 +12,50 @@ This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x`
 
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
-**Status:** 2.0.0 — **versioned, tagged, pushed and on npm**, `As of 2026-08`. `v2.0.0` is on
-origin and the registry's `latest` is 2.0.0. 29 `@ultimat3/*` packages plus the unscoped
-`create-ultimate` — 30 in all — are **versioned** in lockstep: one version, one commit, one tag.
-2.0.0 is the **first major**: the 2.0.0 section of [`CHANGELOG.md`](CHANGELOG.md) carries 33 entries
-marked `BREAKING —` and ships no codemod, so each one is a manual edit its own entry names. 1.1.0
-was the first release published by
-[`.github/workflows/release.yml`](.github/workflows/release.yml) over OIDC trusted publishing,
-provenance attached; 1.0.0 was the manual bootstrap. **2.0.0 was not**: no package has a trusted
-publisher attached (`trust-publishers.ts --check` answers 0 of 30), so the OIDC exchange has nothing
-to verify against and 2.0.0 was published by hand — `_npmUser: sebyx07`, no `dist.attestations`,
-where 1.1.0 and 1.2.0 carry both. Semver applies — a breaking change to a
-documented API needs a major, and the eight primitive shapes, the `x` CLI surface and the tier table
-are as stable as the `X_*` codes already were.
+**Status:** 3.0.0 in the repository, `As of 2026-08`. 29 `@ultimat3/*` packages plus the unscoped
+`create-ultimate` — 30 in all — **versioned** in lockstep: one version, one commit, one tag.
 
-**Publication is not in lockstep, and one package is behind: `@ultimat3/scraping` has never been
-published.** The registry answers 404, not a stale version — so 29 of the 30 are on npm and
-`bun add @ultimat3/scraping` fails. It is not opting out (`packages/scraping/package.json` declares
-the same `publishConfig` as the rest) and nothing in the repo notices, because every consumer
-resolves it through the workspace. The cause is timing: it landed after the 2.0.0 publish run, so
-the run never saw it. That is exactly the hole `@ultimat3/flags` used to be — closed at 2.0.0, which
-is `flags`' only version on the registry, by the one-time manual bootstrap every package needs
-before a trusted publisher can attach. **It costs the next release run.** `scraping` is **27th of
-30** in the derived publish order (`bun run scripts/release-workflow.ts --json`), so the run reaches
-it and dies there with **26 packages already published irreversibly**. The bootstrap is
-[`PUBLISHING.md`](PUBLISHING.md) step 1; the list is derived so the failure is loud rather than a
-silent skip.
+**The registry is one release behind the repository between a bump and its workflow run — that is
+where this commit sits.** Never read a number here as the installable one; run the command beside it.
+
+| Fact | State, `As of 2026-08-19` | Read it yourself |
+|---|---|---|
+| Repository version | 3.0.0, every workspace stamped | `bun run scripts/release.ts --check 3.0.0` |
+| Publishable workspaces | 30 | `bun run scripts/release-workflow.ts --json` |
+| On the registry | **all 30**, no holes | `bun run scripts/release-workflow.ts --json   # the derived list; check every name against npm view` |
+| npm `latest` | **2.0.0** — the `v3.0.0` tag and the publish run follow this commit | `npm view @ultimat3/core version` |
+| OIDC trusted publisher | attached to all 30 | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
+
+**`@ultimat3/scraping` is on the registry, and it was the last publication hole.** It was bootstrapped
+by hand at 2.0.0 on 2026-08-19 — `npm publish --access public --provenance=false`, the one-time step
+every package needs before a trusted publisher can attach — and npm now answers `E403 … cannot
+publish over the previously published versions: 2.0.0` on a retry. `@ultimat3/flags` was the same
+shape and was closed the same way at 2.0.0. Publication is a step apart from versioning; the publish
+list is **derived** from `scripts/list-workspaces.ts`, which is what keeps a new package from being
+silently absent from it. Step 1 of [`PUBLISHING.md`](PUBLISHING.md) comes due again for the next
+package added after a release run, and nothing else.
+
+**3.0.0 is a major** because a five-agent bug sweep landed breaking changes to documented APIs:
+`mfa.required` refused and narrowed to the literal `false`, `enrolTotp(auth, input)`, `appErrorStatus`
+removed, `SocketRegistry.sweepIdle()` → `idle()`, `SyncSocket.lastSeenAt` → `lastSeenMonotonicMs`,
+two `SQL_OUTBOX_*` constants gaining a parameter, `DESCRIPTION_MIN_LENGTH` deleted, and a metric
+redeclared with different bounds now refused. The 3.0.0 section of [`CHANGELOG.md`](CHANGELOG.md)
+carries **10** entries marked `BREAKING —` and ships no codemod, so each one is a manual edit its own
+entry names. 2.0.0 was the **first** major and carried 33.
+
+**Every package has an OIDC trusted publisher, attached 2026-08-19 — for the first time.**
+`developerz-ai` / `ultimate` / `release.yml` / environment `npm-publish`, publish permission, all 30,
+verified per package with `npx -y npm@12 trust list <pkg> --json` — `npm trust` shipped in **npm 12**
+and Bun's bundled npm answers it as an unknown command, which is why `scripts/trust-publishers.ts`
+pins the runner. **That is why 2.0.0 has no provenance**: with no publisher attached the OIDC
+exchange had nothing to verify against, so the workflow could not publish and 2.0.0 went out by
+hand — `_npmUser: sebyx07`, no `dist.attestations`, where 1.1.0 and 1.2.0 carry both. 1.1.0 was the
+first release [`.github/workflows/release.yml`](.github/workflows/release.yml) published over OIDC;
+1.0.0 was the manual bootstrap. 3.0.0 is the first release since 1.2.0 that **can** run through the
+workflow — whether it did is `npm view @ultimat3/core@3.0.0 dist.attestations`, not a sentence here.
+
+Semver applies — a breaking change to a documented API needs a major, and the eight primitive shapes,
+the `x` CLI surface and the tier table are as stable as the `X_*` codes already were.
 
 Realtime capacity is **measured on one node, in two halves that answer different questions**.
 
@@ -225,7 +243,7 @@ Everything in the framework is one of these. **If a feature doesn't fit one of t
 
 ## CI
 
-Free GitHub Actions runners (`ubuntu-latest`) — never a paid runner. `ci.yml` runs three jobs, each answering a question no other job answers: `verify` (the gate, `x verify` verbatim — lint, typecheck, boundaries and every suite are its steps, never a second job), `reference-app-verify` (the app gate, on its ratchet) and `scaffold-smoke` (`x new` → `bun install` → `x verify` outside the checkout). Target under 5 minutes. Every job starts with `./.github/actions/setup` — bun, the install cache, a frozen install. Releases publish to npm via **OIDC trusted publishing**, with provenance — that is what the workflow does, and it is not what 2.0.0 did: with 0 of 30 trusted publishers attached it cannot run, so 2.0.0 was hand-published without attestations. See [`PUBLISHING.md`](PUBLISHING.md), which names the two steps that are owed.
+Free GitHub Actions runners (`ubuntu-latest`) — never a paid runner. `ci.yml` runs three jobs, each answering a question no other job answers: `verify` (the gate, `x verify` verbatim — lint, typecheck, boundaries and every suite are its steps, never a second job), `reference-app-verify` (the app gate, on its ratchet) and `scaffold-smoke` (`x new` → `bun install` → `x verify` outside the checkout). Target under 5 minutes. Every job starts with `./.github/actions/setup` — bun, the install cache, a frozen install. Releases publish to npm via **OIDC trusted publishing**, with provenance — which 2.0.0 did not get, because no trusted publisher existed for the exchange to verify against. All 30 were attached on 2026-08-19, so 3.0.0 is the first release since 1.2.0 that can run through the workflow. See [`PUBLISHING.md`](PUBLISHING.md).
 
 ## Note
 

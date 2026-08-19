@@ -8,23 +8,24 @@ Releases use **OIDC trusted publishing** from GitHub Actions
 mints a short-lived token from the run's OIDC identity and attaches a provenance attestation
 automatically.
 
-**`As of 2026-08`: 30 workspaces publish; 29 are on the registry, all at 2.0.0.** `v2.0.0` is
-tagged and pushed and npm's `latest` is 2.0.0. **`@ultimat3/scraping` has never been published** —
-the registry answers 404, not a stale version. It is not opting out:
-`packages/scraping/package.json` declares the same `publishConfig` as the other 29, and every
-consumer resolves it through the workspace, so nothing in the repo noticed. The cause is timing, not
-the workflow: `scraping` landed after the 2.0.0 publish run, so the run never saw it. Its first
-publish is a human step — see
-[Human steps outside this file](#human-steps-outside-this-file).
+**`As of 2026-08-19`: 30 workspaces publish and all 30 are on the registry.** `v2.0.0` is tagged
+and pushed and npm's `latest` is 2.0.0; the repository is at 3.0.0, which the workflow has not
+published yet.
 
-`@ultimat3/flags` was the previous instance, for the opposite reason: the workflow listed its `-w`
-flags by hand and omitted it. That list is now **derived** from `scripts/list-workspaces.ts`, so
-`flags` and every package added since are in it by construction — which is why the 2.0.0 run
-published `flags` for the first time, and why the next run will reach `scraping` and fail on it
-loudly.
+**There is no publication hole today, and there have been two.** `@ultimat3/flags` was the first:
+the workflow listed its `-w` flags by hand and omitted it. That list is now **derived** from
+`scripts/list-workspaces.ts`, so every package is in it by construction — which is why the 2.0.0 run
+published `flags` for the first time. `@ultimat3/scraping` was the second, for the opposite reason:
+it landed *after* the 2.0.0 run, so no run had ever seen it. It was bootstrapped by hand on
+2026-08-19 (step 1 below).
 
-The counts and the 404 are a snapshot and go stale the moment step 1 below is done; that the list is
-derived is a rule and does not.
+The pattern is the point: **a package added after a release run is unpublished until someone
+bootstraps it**, and the derived list guarantees the *next* run fails loudly on it rather than
+skipping it silently. Expect this again for the next new package.
+
+The counts are a snapshot and go stale on the next release; that the list is derived is a rule and
+does not. Read the state — `bun run scripts/release-workflow.ts --json` for the order,
+`npm view <pkg> version` for what the registry holds — never this paragraph.
 
 ## Lockstep versioning — the rule
 
@@ -107,16 +108,24 @@ approval-gated environment, which is the half GitHub cannot enforce, and it must
 
 ## Human steps outside this file
 
-**`As of 2026-08` steps 1 and 2 are done and steps 3 and 4 are NOT, measured against the registry.**
-`bun run scripts/trust-publishers.ts --check` answers `0/30 packages trust
-developerz-ai/ultimate/release.yml` — every one reports `X_TRUST_PUBLISHER_MISSING`. This file
-claimed all four were done until 2026-08.
+**`As of 2026-08-19` all four are done, for all 30 packages** — steps 3 and 4 for the first time.
+Until then no package had a trusted publisher at all, and this file claimed otherwise.
 
-**That is why 2.0.0 has no provenance.** With no trusted publisher attached, the OIDC exchange has
-nothing to verify against, so the workflow cannot publish and 2.0.0 went out by hand instead: every
+**That is why 2.0.0 has no provenance.** With no trusted publisher attached, the OIDC exchange had
+nothing to verify against, so the workflow could not publish and 2.0.0 went out by hand: every
 `@ultimat3/*` package at 2.0.0 carries `_npmUser: sebyx07` and **no `dist.attestations`**, while
-1.1.0 and 1.2.0 carry attestations and `_npmUser: GitHub Actions`. The releases that ran through
-the workflow are the older ones. Read the state, never this sentence:
+1.1.0 and 1.2.0 carry attestations and `_npmUser: GitHub Actions`. 3.0.0 is the first release since 1.2.0
+that *can* run through the workflow — confirm it did with
+`npm view @ultimat3/core@3.0.0 dist.attestations`, never from this sentence.
+
+**Two traps met while doing steps 3 and 4, both worth knowing before you redo them:**
+
+| Trap | What happens |
+|---|---|
+| `npm trust list` itself needs an OTP | so `--check` without one reports **every** package missing. A `0/30` is not evidence of anything until a code is supplied — and the script takes it as `NPM_CONFIG_OTP=<code>`, never a `--otp` flag, which it does not parse |
+| One OTP does not cover 30 packages | a code lasts 30s and npm rate-limits verification (`E429 … OTP verification failed`). Attach in batches on fresh codes; an already-attached package answers `E409 … already exists`, which is a success, not a failure |
+
+Read the state, never this sentence:
 
 ```sh
 bun run scripts/trust-publishers.ts --check --json
@@ -124,8 +133,8 @@ npm view @ultimat3/core@<version> dist.attestations
 ```
 
 Step 2 is once per repository and stays done; **steps 1, 3 and 4 are once per package** and come due
-again for every package added after a release run — all three are owed for `@ultimat3/scraping`, and
-step 1 is the one that breaks a release.
+again for every package added after a release run — all three were owed for `@ultimat3/scraping` and were done on 2026-08-19; step 1 is the
+one that breaks a release.
 
 **Three of the four are scriptable, and this file said otherwise until 2.0.0.** Only step 2's
 *reviewer* choice is genuinely a human decision:
@@ -143,27 +152,43 @@ it breaks it deep into the run, after packages have published irreversibly. **St
 `As of 2026-08`: it is a per-package step, and every package added after a release run needs its own
 bootstrap before the next one.
 
-### 1. Publish `@ultimat3/scraping` by hand — do this first
+### 1. Bootstrap a never-published package by hand — do this first
+
+**`As of 2026-08-19` nothing is owed here**: `@ultimat3/scraping` was bootstrapped and all 30 are on
+the registry. This is the procedure for the next package that needs it, which is every package added
+after a release run.
 
 ```sh
-npm login                                    # as an @ultimat3 org member
-npm publish -w @ultimat3/scraping --access public --provenance=false
+npm publish -w <pkg> --access public --provenance=false
 ```
 
-Then attach its trusted publisher exactly as in
-[the section above](#one-time-configure-the-trusted-publisher-per-package).
+**npm reads the credential from an `.npmrc`, not from a bare environment variable.** Setting
+`npm_config__authToken` or `NODE_AUTH_TOKEN` alone is not enough: the bootstrap of `scraping`
+answered `E404 Not Found - PUT` with a full session token belonging to an org **owner**, which reads
+as a permissions problem and is not one. Either `npm login`, or point npm at the variable — never a
+literal token in a file:
 
-**Why first.** `scraping` has never been on the registry — `npm view @ultimat3/scraping` answers
-404, verified `As of 2026-08`. It landed after the 2.0.0 publish run, and the workflow's publish
-list is derived, so it is included from the next release on. Trusted publishing cannot bootstrap a
-package that does not exist yet, so the workflow will fail on it.
+```sh
+printf '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n' > "$HOME/.npmrc"
+```
+
+npm interpolates `${NODE_AUTH_TOKEN}` at read time, so the secret stays in the environment. Keep any
+`.npmrc` you create out of source control and out of the package — `files` already excludes it, and
+a token written literally into one is a credential leak waiting for a `git add`.
+
+**A 404 immediately afterwards is propagation, not failure.** The public packument lagged the
+publish by minutes. `npm access list packages @ultimat3` showed the record first, and a retry
+answering `E403 … cannot publish over the previously published versions` is the confirmation.
+
+**Why first.** Trusted publishing cannot bootstrap a package that does not exist yet, so a release
+run reaches the new package and fails on it.
 
 **Cost of skipping: an irreversible partial release.** The workflow publishes tier by tier and
-aborts on the first failure. Measured against the derived list `As of 2026-08`
-(`bun run scripts/release-workflow.ts --json`), `scraping` is **27th of 30**, tier 5, between `cli`
-and `testing` — so **26 packages are already on the registry** at the new version when the run dies,
-and npm publishes cannot be undone. You would be recovering by hand, with 26 of 30 packages a
-version ahead of the other 4.
+aborts on the first failure, so every package ahead of the missing one is already on the registry at
+the new version when the run dies, and npm publishes cannot be undone. The ordinal is derived, never
+typed out — `bun run scripts/release-workflow.ts --json` prints the order, and reading it is the
+only way to know the cost. When `scraping` was the hole it was 27th of 30, i.e. 26 published before
+the abort.
 
 **A bootstrap cannot carry provenance.** `publishConfig.provenance: true` is on every package, and
 npm can only attest from CI — a local publish dies with `EUSAGE — Automatic provenance generation

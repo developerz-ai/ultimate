@@ -73,7 +73,7 @@ Better Auth, wrapped. Sessions live in Postgres. Authorization is **not** here �
 
 | field | type | default | notes |
 |---|---|---|---|
-| `jobs.driver` | `'postgres' \| 'redis' \| 'nats'` | `'postgres'` | `postgres` needs no extra infra and is the only shipped production driver. **`redis` and `nats` are not in 2.0.0** — the stubs throw `X_NOT_IMPLEMENTED` ([Jobs and workflows](Jobs-And-Workflows)) |
+| `jobs.driver` | `'postgres' \| 'redis' \| 'nats'` | `'postgres'` | `postgres` needs no extra infra and is the only shipped production driver. **`redis` and `nats` are not in 3.0.0** — the stubs throw `X_NOT_IMPLEMENTED` ([Jobs and workflows](Jobs-And-Workflows)) |
 | `jobs.queues` | `string[]` | `['default']` | a `worker` runs one pool per queue in `WORKER_QUEUES` |
 | `jobs.concurrency` | `number` | `8` | per pool, per process |
 | `jobs.retry.attempts` | `number` | `5` | per-job `retry` overrides |
@@ -90,7 +90,7 @@ Better Auth, wrapped. Sessions live in Postgres. Authorization is **not** here �
 | field | type | default | notes |
 |---|---|---|---|
 | `realtime.enabled` | `boolean` | `false` | off unless the app turns it on |
-| `realtime.tier` | `'channels' \| 'live-queries' \| 'local-first'` | `'channels'` | **names, not numbers**. `channels` and `live-queries` ship; `local-first` is not in 2.0.0 ([Realtime](Realtime)) |
+| `realtime.tier` | `'channels' \| 'live-queries' \| 'local-first'` | `'channels'` | **names, not numbers**. `channels` and `live-queries` ship; `local-first` is not in 3.0.0 ([Realtime](Realtime)) |
 | `realtime.transport` | `'memory' \| 'nats' \| 'redis'` | `'memory'` | `memory` = in-process, single node, dev and small deploys. `redis` type-checks and is never built — `selectTransport` resolves in-process or NATS only |
 | `realtime.urlEnv` | `string` | — | the **env key name**, never a URL. Required unless `memory`; missing → `X_CONFIG_INVALID` |
 | `realtime.heartbeatMs` | `number` | `15000` | **read by nothing** `As of 2026-08` → [Known gaps](Known-Gaps). The socket heartbeat is the client's: `new LiveClient({ heartbeatMs })`, same 15s default, kept equal by hand because browser code cannot read server config ([Realtime](Realtime)) |

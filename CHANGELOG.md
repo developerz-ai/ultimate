@@ -8,6 +8,20 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+## 3.0.0 - 2026-08-19
+
+The first release *able* to go through the workflow since 1.2.0: every package now has an OIDC
+trusted publisher, and none had one before. 2.0.0 was hand-published without provenance precisely
+because there was nothing for the exchange to verify against. `@ultimat3/scraping` â€” 404 since it
+landed after the 2.0.0 run â€” was bootstrapped by hand at 2.0.0 so the derived publish list can
+reach it here.
+
+Whether this release *did* publish with provenance is a fact about the registry, not about this
+file: `npm view @ultimat3/core@3.0.0 dist.attestations` answers it.
+
+A major because a five-agent bug sweep landed breaking changes to documented APIs. The
+entries below are that sweep; each names the manual edit it costs.
+
 ### Added
 
 - **`agent()` â€” the tool loop, as an action factory.** The third instance of the rule after `llm()`
@@ -607,6 +621,32 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   `jobs.inspect`); `queue.depth` and `verify.run` ship and were absent from the table. An agent
   that trusted that page called five tools the server answers ToolNotFound for. The table is now
   the thirteen `devTools(host)` declares, with each one's scope.
+
+### Merged pull requests
+
+The prose above says what changed and why; this is which pull request carried it.
+
+**Added**
+
+- browser automation as a job factory, with zero new dependencies (#140)
+- an agent's tool can be a real action, and a hive of agents is an action (#139)
+- adopt an existing database, and make a seed replayable (#137)
+
+**Fixed**
+
+- an apostrophe in JSX text turned the errors gate off for a whole file (#158)
+- a crafted icon executed at import, and a session cookie went to the wrong host (#152)
+- the outbox claim locked nothing, and a drain released nothing (#148)
+- the contracts that said "never throws" threw, and a gate that was never enforced (#147)
+- an unreadable password hash was an enumeration oracle (#141)
+- a terminal error is retried, because the executor never reads the classification (#138)
+- the trusted publisher was attached without its environment, and the check could never see it (#136)
+
+**Changed**
+
+- the release status said the opposite of the registry, in ten files (#159)
+- agents, and a migration guide an AI agent can execute (#142)
+
 
 ## 2.0.0 - 2026-08-17
 
