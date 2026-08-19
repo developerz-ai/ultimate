@@ -72,7 +72,7 @@ export type SubscribeTarget =
  * The opening frame, and the heartbeat's. It carries **no cursors**: resume is decided per
  * subscription by `subscribe`, whose target already carries the cursor and whose `(name, input)`
  * is what the node needs to authorize the read and reach the retained window at all. A cursor's
- * `qid` is `qidOf(name, input)` — a digest, not an input — so a resume list here could never be
+ * `qid` is `queryHash(name, input)` — a digest, not an input — so a resume list here could never be
  * more than a second, unauthorized restatement of that decision, and it cost every reconnect a
  * duplicate copy of up to `CURSOR_ID_LIMIT` ids per subscription during the exact restart storm
  * `thundering-herd.ts` exists to bound. Removing it needs no `PROTOCOL_VERSION` bump: `decode`
@@ -375,7 +375,7 @@ function list(obj: JsonObject, key: string, max: number, label = key): JsonValue
 
 /**
  * A client-supplied value, walked ITERATIVELY to its limits. Iteratively because the thing being
- * refused is a stack overflow: `qidOf` -> `canonicalJson` recurses over exactly this value, so a
+ * refused is a stack overflow: `queryHash` -> `canonicalJson` recurses over exactly this value, so a
  * depth check that recursed would be the same crash one frame earlier.
  */
 function bounded(value: JsonValue, label: string): JsonValue {

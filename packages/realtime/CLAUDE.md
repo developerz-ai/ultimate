@@ -445,20 +445,33 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   channel's lsn is the publishing hub's own per-node counter, so a client cannot tell a gap from a
   message that came via another node. Declared in `socket.ts`, not core's `runtime-metrics.ts`:
   that file is the series every process emits, this one exists only where channels do.
-- **`qidOf` is `stableDigest` (SHA-256, 16 hex) and never `fnv1a`.** The qid is a *sharing* key —
-  a hit hands back the existing entry and the seated window, carrying the first subscriber's input
-  and rows — and input is client-chosen, so 32 bits is a collision found offline in seconds and one
-  client served out of another's window. `fnv1a` stays the cursor's result-set digest, where a
-  collision costs a missed re-sort.
-- **`canonicalJson` is injective over the values it accepts, and `JSON.stringify` is not.**
-  `JSON.stringify` answers `"null"` for `NaN` and `±Infinity` and `"0"` for `-0`, so four distinct
-  inputs hashed to one qid — and a qid *hit* hands the joiner the first subscriber's compiled
-  source, matcher and seated window. Bare `NaN` / `Infinity` / `-Infinity` / `-0` tokens are emitted
-  instead; they are not valid JSON, which is correct, because this output is hashed and never
-  parsed. Exposure is narrower than it looks and the tests say so rather than overclaiming: `NaN`
-  and `±Infinity` have no JSON spelling and so cannot arrive on a `subscribe` frame — they reach
-  `qidOf` only from a caller building `input` in JS. **`-0` is wire-reachable**: `JSON.parse('{"a":-0}')`
-  answers `-0`.
+- **A qid is `@ultimat3/query`'s `queryHash(name, input)`, and this package derives none of its
+  own — `As of 2026-08`.** `qidOf` was the same two lines over a local copy of the canonical form
+  (`stableDigest(canonicalJson(input))`), and `canonicalJson`/`stableDigest` were this package's
+  third copy of what `@ultimat3/action` and `@ultimat3/query` also each held. They had already
+  diverged: `{ a: undefined, b: 1 }` gave `feed:eb8ed3ccb5023093` from `queryHash` and
+  `feed:c0bf82ad036cb0a5` from `qidOf`, because query's walk drops an `undefined`-valued key and
+  this one rendered `"a":null`. The two are COMPARED in one flow — `@ultimat3/query`'s `planResume`
+  decides refetch-vs-resume by comparing a cursor's `queryHash` against the query's, while
+  `liveQueryDefinition` keys the shared window by the qid — so keeping both correct was never the
+  option; the first time either moved, every resume decision and every window lookup were keyed
+  differently. `realtime -> query` is the one declared sideways edge and this package already
+  imports it. **`fnv1a` stays here**, and only it: its job is the cursor's result-set digest, where
+  a collision costs a missed re-sort and never one client served out of another's window.
+  `live-contract.test.ts` is the pin — it reads `registry.subscriberCount(queryHash(name, input))`
+  through a real subscribe, so a local derivation fails it. Cost of the move: none observable on the
+  server. Every qid a node computes comes from a DECODED frame, and `JSON.parse` produces no
+  `undefined`, no `Date`, no `Map` and no `Set` — the four values the two forms disagree about — so
+  no live subscription re-keyed and nothing re-snapshotted.
+- **The canonical form is injective over the values it accepts, and `JSON.stringify` is not** —
+  the reason that survives the move, now `@ultimat3/core`'s to enforce. `JSON.stringify` answers
+  `"null"` for `NaN` and `±Infinity` and `"0"` for `-0`, so four distinct inputs hashed to one qid
+  — and a qid *hit* hands the joiner the first subscriber's compiled source, matcher and seated
+  window. Bare `NaN` / `Infinity` / `-Infinity` / `-0` tokens are emitted instead; they are not
+  valid JSON, which is correct, because that output is hashed and never parsed. Exposure is
+  narrower than it looks and the tests say so rather than overclaiming: `NaN` and `±Infinity` have
+  no JSON spelling and so cannot arrive on a `subscribe` frame — they reach the hash only from a
+  caller building `input` in JS. **`-0` is wire-reachable**: `JSON.parse('{"a":-0}')` answers `-0`.
 - **Refusing new sockets and draining the ones you have are two shutdown phases.** `stopAccepting()`
   is the `accept` phase: `ready = false`, `/readyz` 503, a late upgrade shed with `retry-after-ms`,
   and every socket untouched — a draining node still owes its clients their patches, and `stop()` is
@@ -499,7 +512,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   every client on open and read by nobody — the node replied `resume: []` and decided resume per
   subscription from the `subscribe` frame — so every reconnect shipped each cursor twice, up to 512
   ids each, in the restart storm this package is measured on. Wiring it was the wrong half of the
-  choice: a cursor's `qid` is `` `${name}:${stableDigest(input)}` ``, so a node reading a resume list
+  choice: a cursor's `qid` is `` `${name}:${fingerprint(input)}` ``, so a node reading a resume list
   recovers the query **name** — it is the plaintext prefix — but never the `input`, which is the half
   every decision needs. Without it `definition.authorize({ actor, input })` cannot run and no entry
   can be built; the qid names a window but not a decision, and the retained window holds pre-policy
@@ -645,8 +658,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `client-contract.ts` | the client's injected shapes — `ClientSocket`, `LiveClientOptions`, `LiveHandle` — declared apart from the class that consumes them |
 | `policy-gate.ts` | the only authz seam |
 | `subscriber-gate.ts` | the per-subscriber pass of a definition's row policy, and its two counters — `rowsDenied` and `gateFailures`. Evaluates no policy of its own |
-| `live-contract.ts` | what a live query IS: `qidOf`, `LiveQueryDefinition`, `SnapshotResult`, `LiveSubscription`. Four modules need the shape and none of them needs the registry that runs it |
-| `json.ts` | the wire's value types, `canonicalJson`, and the two hashes — `stableDigest` (sharing keys) and `fnv1a` (drift). Tested in `json.test.ts`, beside the declarations: a `qidOf` test proves the qid, not the primitive under it |
+| `live-contract.ts` | what a live query IS: `LiveQueryDefinition`, `SnapshotResult`, `LiveSubscription`. Four modules need the shape and none of them needs the registry that runs it. The **id** is not here and not anywhere in this package — it is `@ultimat3/query`'s `queryHash` |
+| `json.ts` | the wire's value types and `fnv1a` (drift), the one hash still owned here. The canonical form and the sharing-key hash are `@ultimat3/core`'s (`canonicalJson`, `fingerprint`) — `json.test.ts` pins that `fnv1a` is never mistakable for one |
 | `live-definition.ts` | the only bridge from a declared `query({ live: true })` to a registrable definition — and `policy-gate.ts`'s only caller |
 | `matcher-bridge.ts` | the only `@ultimat3/query` matcher seam |
 

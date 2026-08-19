@@ -9,10 +9,10 @@
 // every time. Collapsing the second onto the first is privilege escalation with a cache hit rate.
 
 import type { Ctx } from '@ultimat3/core';
-import { type AnyQuery, queryName } from '@ultimat3/query';
+import { type AnyQuery, queryHash, queryName } from '@ultimat3/query';
 import { LiveRowUnidentifiedError } from './errors';
 import { isRow, type JsonValue, type Row } from './json';
-import { type LiveQueryDefinition, qidOf, type SnapshotResult } from './live-contract';
+import type { LiveQueryDefinition, SnapshotResult } from './live-contract';
 import { type IncrementalMatcher, matcherFor } from './matcher-bridge';
 import { authorizeWithPolicy, visibleWithPolicy } from './policy-gate';
 
@@ -73,7 +73,7 @@ export function liveQueryDefinition(
   const windows = new Map<string, SharedWindow>();
 
   const resolve = async (input: JsonValue): Promise<SharedWindow> => {
-    const qid = qidOf(name, input);
+    const qid = queryHash(name, input);
     const seated = windows.get(qid);
     if (seated !== undefined) return seated;
     const live = await target.live(input, {
@@ -113,10 +113,10 @@ export function liveQueryDefinition(
       const window = await resolve(input);
       return { rows: await window.read(), lsn: options.lsn?.() ?? '' };
     },
-    matcher: (input) => windows.get(qidOf(name, input))?.matcher ?? UNRESOLVED,
+    matcher: (input) => windows.get(queryHash(name, input))?.matcher ?? UNRESOLVED,
     // Read off the same resolved window as the matcher, so the scope the client keys rows under and
     // the entity the matcher patches them from can never be two different names.
-    rowEntity: (input) => windows.get(qidOf(name, input))?.rowEntity ?? null,
+    rowEntity: (input) => windows.get(queryHash(name, input))?.rowEntity ?? null,
     // The two per-subscriber gates, both through the package's one authz seam. Neither result is
     // memoised anywhere: `authorize` runs on every subscribe, `visible` on every row of every
     // delivery, and there is no key here an actor could share with another actor.

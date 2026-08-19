@@ -4,11 +4,11 @@
 
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
+import { queryHash } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
 import { ChannelHub, type Topic, topic } from './channel';
 import { InProcessTransport } from './fanout';
 import type { Row } from './json';
-import { qidOf } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { PresenceRegistry } from './presence';
 import { CLOSE, SocketRegistry } from './socket';
@@ -18,7 +18,7 @@ import { decode, encode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 const BUILD_ID = 'build-1';
 const ROOM: Topic = topic('org', 'o1', 'cursors');
 const INPUT = { orgId: 'o1' };
-const QID = qidOf('liveFeed', INPUT);
+const QID = queryHash('liveFeed', INPUT);
 const ROWS: readonly Row[] = [{ id: 'p1', orgId: 'o1' }];
 
 class RecordingWs implements SyncWs {
