@@ -12,7 +12,14 @@
 
 Each entry changes a surface the table below covers.
 
-> **The pin you can move to today is 2.0.0** `As of 2026-08-19`. `npm view @ultimat3/core version` answers **2.0.0**, and **all 30** workspaces resolve at it — `@ultimat3/scraping` included, since its one-time bootstrap landed at 2.0.0 ([Known gaps](Known-Gaps)). The repository is at 3.0.0 and the `v3.0.0` tag and its publish run follow this page's commit, so a 3.0.0 pin does not resolve until they land. Resolve before you pin: `npm view @ultimat3/core version`.
+> **The pin to move to is 3.0.0** `As of 2026-08-19`. All 30 workspaces resolve at it — 29 `@ultimat3/*` plus the unscoped `create-ultimate`, `@ultimat3/scraping` and `@ultimat3/flags` included — and every 3.0.0 tarball was published by the release workflow with a provenance attestation. Resolve before you pin, never take it from this page:
+
+| Check | Command | Answer that means "go" |
+|---|---|---|
+| what `latest` is | `npm view @ultimat3/core version` | `3.0.0` |
+| that a package resolves at it | `npm view @ultimat3/scraping@3.0.0 version` | `3.0.0`, not `E404` |
+| that the tarball is attested | `npm view @ultimat3/core@3.0.0 dist.attestations` | a `provenance` object |
+| every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
 
 ## 2.0.0 → 3.0.0, entry by entry
 
@@ -57,7 +64,7 @@ Ten `BREAKING —` entries, all from one bug sweep. Each was a documented surfac
 |---|---|
 | Pinned exact versions | no `^`, no `~`, in the framework or in a generated app. A range is a silent upgrade |
 | Lockstep releases | one release bumps all 30 packages — 29 `@ultimat3/*` plus the unscoped `create-ultimate` — to the same version. One version, one commit, one tag. A mixed set is unsupported |
-| Published with provenance | npm via OIDC trusted publishing |
+| Published with provenance | npm via OIDC trusted publishing. Every 3.0.0 tarball carries an attestation; **2.0.0's do not** — that release went out by hand. Per version: `npm view @ultimat3/core@<version> dist.attestations` |
 | Breaking changes land with codemods | if `x upgrade` cannot codemod it, the changelog carries the manual step |
 | Dependency upgrades are framework work | Solid is pinned to **`1.9.14`, the stable line** — Solid 2 is still prerelease (`2.0.0-beta.N`, DOM renderer split into `@solidjs/web`) and every app inherits whatever core this repo pins. Bumping it is a framework release, never an app-level `bun update`. There is no ArkType or Drizzle pin to carry: `@ultimat3/schema` ships dependency-free builtin validators (ArkType is an optional provider you adapt yourself) and `@ultimat3/entity` ships its own `postgresDriver()` |
 | Bun floor | `>=1.3`, target 2.0. Below the floor → `X_BUN_VERSION` |
@@ -116,7 +123,7 @@ A client running build `A` requesting an asset from build `B` is the failure mod
 | Client sends its build ID | `X-Ultimate-Build` on RPC, query, and WS handshake — so the server answers "you are stale" instead of guessing |
 | N-deploy asset retention | the last **3** builds' assets stay served — `retentionPlan(deploys, keep = 3)` in [`packages/pwa/src/version-skew.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/pwa/src/version-skew.ts). A count of deploys, with **no time component**: there is no 7-day half, and **no `pwa.retention` field** — `PwaConfig` is `{ enabled, offline, installPrompt, backgroundSync, push }`. Pass `keep` at the call site to hold more |
 | `AppUpdateAvailable` signal | a Solid signal flips when the server reports a newer build. Your app renders its own "Update available — reload". No forced navigation, no lost form state |
-| `x deploy --critical` | sets a forced-reload deadline. Client shows a countdown, drains in-flight state through the mutator queue, then reloads. Grace default 30m |
+| Forced reload | `updatePolicy({ graceMs = 6h, forceOn = ['security'] })` + `updateSignal()` from `@ultimat3/pwa`: past the grace, the signal carries `forced: true` and `deadlineAt: now`. The app renders the countdown and the drain — the framework runs neither. `x deploy --critical` is echoed into the deploy plan and read by nothing |
 | Skew is observable | the `/_x` live panel reports the build-ID distribution of connected clients. `x status --json` is **planned**, not shipped |
 
 Server behavior on a stale build ID:

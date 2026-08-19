@@ -106,10 +106,10 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| White screen after a deploy, 404 on a lazy chunk | version skew — a build-`A` client asked for a build-`B` asset outside retention | raise `pwa.retention.deploys` / `.window` (default 10 deploys or 7d, whichever is longer) |
+| White screen after a deploy, 404 on a lazy chunk | version skew — a build-`A` client asked for a build-`B` asset outside retention. Retention is the last **3** builds, a count with no time component | pass a larger `keep` at the call site: `retentionPlan(deploys, 10)` from `@ultimat3/pwa`. There is **no `pwa.retention` config field** to raise → [PWA and offline](PWA-And-Offline) |
 | `X_BUILD_SKEW` on an action | the input schema changed incompatibly since the client's build | the `fix:` line names the action; version the action instead of changing it in place |
 | Users stuck on an old version | your app never renders the `AppUpdateAvailable` affordance | subscribe to the signal and show "Update available — reload". The framework never force-navigates |
-| Need everyone off a build now | security patch | `x deploy --critical` sets a grace deadline (default 30m); clients count down, drain state, then reload |
+| Need everyone off a build now | security patch | your app calls `updateSignal({ ..., reason: 'security' })` from `@ultimat3/pwa` and reloads on `forced: true` — past `graceMs` (default **6h**) the signal carries `deadlineAt: now`. `x deploy --critical` sets nothing: the flag is echoed into the deploy plan and read by nothing |
 | `X_SW_HAND_EDITED` | `sw.js` was edited — its checksum no longer matches | revert it and change the **route**; `sw.js` is a build artifact |
 | `X_SW_UNCACHEABLE` | `offline: 'precache'` on an `ssr` route | caching a per-request render is a correctness bug. Use `runtime` or `network-only` |
 | Precache budget failure | too many `precache` routes or oversized assets | `x build --json` reports the set; drop routes to `runtime` |
