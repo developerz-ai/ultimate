@@ -11,10 +11,25 @@ import type {
   AnyColumn,
   Column,
   ColumnDefault,
+  ColumnMap,
   ColumnMeta,
   MoneyColumnNames,
   TimestampColumn,
 } from './types';
+
+/**
+ * The column a NAME resolves to, or `undefined` — the ONE read of a column map by a name that came
+ * from outside it.
+ *
+ * `columns[property]` alone walks `Object.prototype`: an app's column map is a plain object
+ * literal, so `columns['constructor']` answers the `Object` FUNCTION, every `=== undefined` guard
+ * downstream passes, and the next `.$meta.kind` is a bare `TypeError` where the caller was owed
+ * `X_INVARIANT_VIOLATED` naming the columns that do exist. The name is caller data on every path
+ * that reaches here — a predicate column, a sort key, an `onConflict` target, a `select` list — so
+ * the discriminator lives in one place. Same read `tenancy.ts` already does for the tenant column.
+ */
+export const columnFor = (columns: ColumnMap, property: string): AnyColumn | undefined =>
+  Object.hasOwn(columns, property) ? columns[property] : undefined;
 
 export const snake = (value: string): string =>
   value.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();

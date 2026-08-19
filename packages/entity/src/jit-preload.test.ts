@@ -15,6 +15,7 @@ import { MAX_IDS_PER_STATEMENT } from './batch-read';
 import { text, timestamp, uuid } from './columns';
 import { CROSS_TENANT_SCOPE, crossTenant } from './cross-tenant';
 import { entity } from './entity';
+import { MAX_SIBLING_KEYS, siblingKeysHeld } from './jit-preload';
 import { postgresRepo } from './pg-driver';
 import { clearRegistry } from './registry';
 
@@ -298,6 +299,52 @@ describe('the scope a preloaded row may be served to', () => {
     });
 
     expect(client.statements).toHaveLength(3);
+  });
+});
+
+// The store outlives every page and dies with the ctx — which for a job is the whole attempt, not
+// a request. `MAX_IDS_PER_STATEMENT` bounded the statement and nothing bounded the store: measured
+// at 1,000 pages x 1,000 distinct keys, 159.3 MB retained against a 2.7 MB control, which is ~2 GB
+// on a 12M-row `backfill()` and an OOM in the worker on the DEFAULT configuration.
+describe('the store a page leaves behind is bounded', () => {
+  const PAGE = 600;
+  const PAGES = 5;
+
+  /** A page whose every row names a different author, so each one files its own key. */
+  const pageOf = (from: number): readonly unknown[] =>
+    Array.from({ length: PAGE }, (_, index) =>
+      postRow(idAt(500_000 + from + index), idAt(from + index)),
+    );
+
+  test('many pages hold a few pages’ worth of keys, never every page’s', async () => {
+    const ctx = createContext({ actor: userActor({ id: idAt(90), orgId: ORG }) });
+    client.on('from "jit_test_users"', { rows: [] });
+
+    await runWithContext(ctx, async () => {
+      for (let page = 0; page < PAGES; page += 1) {
+        client.on('from "jit_test_posts"', { rows: pageOf(page * PAGE) });
+        await postRepo().findMany({ orgId: ORG, limit: PAGE });
+      }
+
+      expect(PAGE * PAGES).toBeGreaterThan(MAX_SIBLING_KEYS);
+      expect(siblingKeysHeld(ctx)).toBeLessThanOrEqual(MAX_SIBLING_KEYS);
+      expect(siblingKeysHeld(ctx)).toBeGreaterThan(0);
+
+      // The oldest page's keys went first, so a lookup for one of them reads the statement it
+      // always read — declining is the behaviour every other guard in this file falls back to.
+      await userRepo().findById(idAt(0), { orgId: ORG });
+      expect(client.statements.at(-1)?.values).toEqual([idAt(0), ORG, 1]);
+
+      // The newest page still resolves its WHOLE page — one bind per id, in as many whole
+      // statements as `MAX_IDS_PER_STATEMENT` allows, which is what a page's keys buy while the
+      // store still holds them. Every statement carries the tenant and the limit besides.
+      const before = client.statements.length;
+      await userRepo().findById(idAt(PAGE * PAGES - 1), { orgId: ORG });
+      const idsBound = client.statements
+        .slice(before)
+        .reduce((total, statement) => total + statement.values.length - 2, 0);
+      expect(idsBound).toBe(PAGE);
+    });
   });
 });
 

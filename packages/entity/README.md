@@ -381,6 +381,13 @@ database({ orgs, posts }, { driver: postgresDriver() });   // production
 | For | tests, `x dev` before the first migration | production |
 | Transaction | `memoryTransactor()` — undo closures | `postgresTransactor()` — real `BEGIN`/`COMMIT` |
 | `reset()` | empties every repository it built | not implemented — the rows are the app's |
+| A predicate | `memory-match.ts`, by the column's declared KIND | the SQL `pg-sql.ts` compiles |
+
+Both answer the same predicate the same way, and the kind is what decides — never the JS type of
+the value: `bigint()`/`decimal()` hold decimal STRINGS and order by their digits (`2, 9, 10, 100`),
+a `uuid` compares case-insensitively because Postgres compares it as a value, `\` escapes a `%` or
+a `_` inside a `like`, and `in` takes a list or nothing (a scalar matches no rows; a list carrying
+a `null` also matches the NULL rows, which `col = null` never does).
 
 `database()` called with no driver takes the process default, and `defaultDriver()` is that same
 object — the one seam a test harness needs, `As of 2026-08`:

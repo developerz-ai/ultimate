@@ -5,7 +5,9 @@
 //
 // The trigger carries an id, not a row, so what a page leaves behind is an index of its foreign
 // key VALUES rather than a map keyed by row identity: an id is a thing that can be looked up in
-// it, and it holds values, so it pins no rows for the request's lifetime.
+// it, and a page therefore costs its keys rather than its rows. That was true PER PAGE and false
+// across them until `MAX_SIBLING_KEYS` — the store outlives every page and dies with the ctx,
+// which for a job is the whole attempt, so both maps here are bounded and evict the oldest page.
 //
 // The scope guard is a security boundary, not a tuning knob. A preloaded row is served only to a
 // lookup with the same scope key, the same client and no write since — anything else reads the
@@ -14,7 +16,15 @@
 import type { Ctx } from '@ultimat3/core';
 import { tryUseContext } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
-import { type Answer, keyOf, type PointRead, readByIds, statementChunks } from './batch-read';
+import {
+  type Answer,
+  keyOf,
+  MAX_IDS_PER_STATEMENT,
+  type PointRead,
+  readByIds,
+  statementChunks,
+} from './batch-read';
+import { columnFor } from './column';
 import type { EntityCore } from './entity';
 
 /** The rows one page's worth of foreign keys resolved to, under one scope. */
@@ -53,9 +63,53 @@ const storeFor = (ctx: Ctx): Store => {
   return created;
 };
 
+/**
+ * How many id keys ONE edge may hold, and how many rows one bucket may keep — a few pages' worth,
+ * the way `MAX_IDS_PER_STATEMENT` bounds a statement.
+ *
+ * `MAX_IDS_PER_STATEMENT` bounded the statement and nothing bounded the STORE: every page merged
+ * its keys in and the store died only with the ctx, which for a job is the whole attempt. Measured
+ * at 1,000 pages x 1,000 rows with distinct foreign keys, rows dropped after each call and
+ * `Bun.gc(true)` either side: **159.3 MB retained**, against 2.7 MB with the tagging off — so a
+ * 12M-row `backfill()` retains ~2 GB and OOMs the worker on the DEFAULT configuration, since
+ * `jitPreload` defaults to true and `backfill()` names no driver option.
+ *
+ * Four statements' worth. The keys of one page are filed contiguously, so the survivors are the
+ * newest pages' and the arrays every evicted key referenced go with them — which is what makes the
+ * bound a bound on bytes and not only on entries. Past it a lookup DECLINES, and declining is the
+ * old behaviour everywhere else in this file: the caller reads the statement it always read.
+ */
+export const MAX_SIBLING_KEYS = MAX_IDS_PER_STATEMENT * 4;
+
+/**
+ * Newest wins, oldest goes. A `Map` iterates in insertion order, so its first key is the oldest
+ * page's — and the page a sequential `for … of` loop is walking is the newest one, which is the
+ * only page this store exists to answer for. Re-filed rather than overwritten, so a key a later
+ * page carries again moves to the newest end instead of ageing out under it.
+ */
+const remember = <V>(index: Map<string, V>, key: string, value: V, cap: number): void => {
+  index.delete(key);
+  index.set(key, value);
+  while (index.size > cap) {
+    const oldest = index.keys().next();
+    if (oldest.done === true) return;
+    index.delete(oldest.value);
+  }
+};
+
 /** Both ends of the edge: a key pointing at another column of the same entity is another edge. */
 const siblingKey = (targetEntity: string, targetProperty: string): string =>
   JSON.stringify([targetEntity, targetProperty]);
+
+/** TEST SEAM: id keys this request is holding, across every edge. A bound nothing can observe is a
+ * bound nothing can pin, and `MAX_SIBLING_KEYS` is the number this answers against. */
+export const siblingKeysHeld = (ctx: Ctx): number => {
+  const store = requests.get(ctx);
+  if (store === undefined) return 0;
+  let held = 0;
+  for (const index of store.siblings.values()) held += index.size;
+  return held;
+};
 
 const writesTo = (store: Store, entity: string): number => store.writes.get(entity) ?? 0;
 
@@ -80,7 +134,7 @@ export const tagSiblings = <Row>(entity: EntityCore<Row>, rows: readonly Row[]):
   for (const reference of references) {
     // The declaring column's own kind: a foreign key mirrors the key it points at, and a value is
     // filed here exactly as `findById` will spell it when it comes looking.
-    const kind = entity.$columns[reference.property]?.$meta.kind;
+    const kind = columnFor(entity.$columns, reference.property)?.$meta.kind;
     if (kind === undefined) continue;
     const ids: unknown[] = [];
     const keys = new Set<string>();
@@ -96,7 +150,7 @@ export const tagSiblings = <Row>(entity: EntityCore<Row>, rows: readonly Row[]):
     if (ids.length === 0) continue;
     const at = siblingKey(reference.targetEntity, reference.targetProperty);
     const index = store.siblings.get(at) ?? new Map<string, readonly unknown[]>();
-    for (const key of keys) index.set(key, ids);
+    for (const key of keys) remember(index, key, ids, MAX_SIBLING_KEYS);
     store.siblings.set(at, index);
   }
 };
@@ -165,12 +219,14 @@ const preload = <Row>(read: PointRead<Row>, bucket: Bucket, ids: readonly unknow
     if (bucket.rows.has(at)) continue;
     // The executor runs synchronously, so `settle` is assigned before the promise is stored.
     let settle!: (answer: Answer) => void;
-    bucket.rows.set(
-      at,
-      new Promise<Answer>((resolve) => {
-        settle = resolve;
-      }),
-    );
+    const answer = new Promise<Answer>((resolve) => {
+      settle = resolve;
+    });
+    // Bounded for the reason the sibling index is: a bucket holds ROWS, so a long request that
+    // preloads page after page retains every row it ever resolved. An evicted entry still settles
+    // — `fill` holds its own settler — and a lookup that no longer finds one reads its own
+    // statement, which is what it would have read had no page indexed the id at all.
+    remember(bucket.rows, at, answer, MAX_SIBLING_KEYS);
     settlers.set(at, settle);
     wanted.push(id);
   }

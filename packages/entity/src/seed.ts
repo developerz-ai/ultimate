@@ -4,7 +4,8 @@
 // every machine), `upsert` where the table owns it and a natural key is all there is.
 
 import { createHash } from 'node:crypto';
-import { type Environment, resolveEnvironment, systemClock } from '@ultimat3/core';
+import { type Environment, resolveEnvironment } from '@ultimat3/core';
+import { entityNow } from './clock';
 import type { Driver } from './database';
 import { memoryDriver } from './database';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
@@ -325,7 +326,7 @@ export const defineSeed = (
         },
 
         id: seedId,
-        now: systemClock.now(),
+        now: entityNow(),
         environment: resolveEnvironment({ env: options.env }),
         tier,
         dryRun,
