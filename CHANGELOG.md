@@ -8,9 +8,112 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Three bug sweeps since 3.0.0. The second was six independent auditors over the packages the 3.0.0
+sweep did not reach; the third added a whole-repo security pass and an architecture review, and
+found more than the first two combined. **Twelve** of the entries below are breaking changes to
+documented APIs and one needs a migration run, so the next release is a major.
+
+Three findings are worth reading even if you skip the rest, because each was a guarantee the code
+stated in a comment and did not keep: every authenticated websocket carried `actor: null`, every
+`Date` in a query input collided into one cache key, and the scraping wedge watchdog's abort
+signal was built and handed to nobody.
+
+### Changed — BREAKING (third sweep)
+
+- **BREAKING — `llm()`'s `cache.semantic.scope` receives `{ input, ctx }` and defaults to the
+  calling actor.** It took the bare parsed `input` and defaulted to the literal `'global'`, and a
+  semantic lookup is a cosine nearest-neighbour with no tenant predicate — so one shared store
+  answered one tenant with another tenant's completion, which by construction contains that
+  tenant's rows. Reproduced at similarity 1.0.
+
+  **The edit:** `scope: (input) => input.orgId` becomes `scope: ({ ctx }) => ctx.actor.orgId ?? 'none'`,
+  or delete the `scope` and take the actor-narrow default. A deliberately shared cache is now
+  `scope: () => 'global'` — written down rather than inherited.
+
+- **BREAKING — `@ultimat3/realtime` no longer exports `qidOf` or `canonicalJson`.** A qid is
+  `queryHash(name, input)` from `@ultimat3/query`; the canonical form and its hash are
+  `canonicalJson` / `fingerprint` from `@ultimat3/core`. The two spellings had already diverged on
+  an input carrying an `undefined`-valued key.
+
+  **The edit:** change the import. **No live subscription re-keys and nothing re-snapshots** — every
+  qid a node computes comes from a `JSON.parse` result, and the two spellings differed only on
+  values JSON cannot carry.
+
+- **BREAKING — a read whose input carries a `Date`, `Map` or `Set` gets a new cache key and cursor
+  scope, once.** `queryHash`'s canonical form had no `Date` branch, and `Object.keys(date)` is
+  `[]`, so every date rendered `{}` and one key answered for every date window a read ever served.
+
+  **The edit:** none. Affected cursors answer `X_CURSOR_INVALID` once with "request the first page
+  again", and those cache entries are cold once. Ordinary inputs are byte-identical.
+
+- **BREAKING — `@ultimat3/seo` no longer exports `extensionOf`.** It had no caller anywhere in the
+  tree. **The edit:** delete the import; `parseImageQuery` reads the format off the query.
+
+- **BREAKING — `ordinal(value)` takes no locale.** It selected the plural category with the
+  caller's locale and appended the English suffix regardless, so `ordinal(1, 'de')` was `'1th'`.
+  **The edit:** delete the second argument.
+
+- **BREAKING — `isValidCron` / `parseCron` refuse an unsatisfiable day/month pair** such as
+  `'0 0 30 2 *'`. It used to parse clean and then cost ~184ms of blocking CPU before
+  `nextCronOccurrence` threw — paid per tick by the scheduler's leader loop.
+  **The edit:** fix the expression; the refusal names the pair.
+
+- **BREAKING — `requiresApp` is enforced by the dispatcher.** The field was documented "the
+  dispatcher enforces it" and the dispatcher never read it; the guarantee held only because all 17
+  declaring commands happened to call `requireAppRoot` themselves. Outside an app, `x secrets set`
+  and its siblings now answer `X_NOT_IN_APP` rather than a refusal naming a flag that does not
+  exist. **The edit:** none, unless a script matched on the old message.
+
+### Migration — run this
+
+- **The `x_jobs` idempotency index gains the tenant.** It was `(name, idempotency_key)` while the
+  row already carried `tenant_id`, so two tenants deriving the same natural key — every shape the
+  docs suggest, such as `` `invoice:${input.invoiceId}` `` — shared one dedupe slot: one tenant's
+  work never ran, with no error and no dead letter, and its caller received the other tenant's job
+  id, which `cancelJob` accepts with no tenant predicate.
+
+  Re-run the boot install of `SQL_JOBS_TABLE` (`x db migrate`, or the release-phase `ROLE=migrate`
+  step). It drops the old index and creates `(name, coalesce(tenant_id, ''), idempotency_key)` —
+  `coalesce` because a null compares unequal to every other null under a unique index, which would
+  lose dedupe entirely for an untenanted queue. Every statement is `if exists` / `if not exists`,
+  and there is **no data backfill**: existing rows already carry `tenant_id`.
+
+  Two operational notes. The `create unique index` is **not** `concurrently`, so on a large
+  `x_jobs` it is a brief blocking build — apply it in the release phase, not under load. And the
+  window between the drop and the create is unprotected, so a duplicate enqueue landing in it
+  inserts two live rows. A rolling deploy is otherwise safe: old pods keep their own SQL and dedupe
+  more coarsely until they cycle out.
+
+### Fixed — the third sweep
+
+Each PR names the defect it closes; these are the ones an operator would have seen. Every
+authenticated websocket carried `actor: null`, because Bun runs `websocket.open` synchronously
+*inside* `server.upgrade()` and the grant was recorded on the next line — so every channel
+subscribe on an authenticated client was denied, per-row visibility decided about nobody, and
+`maxPerTenant` never applied. The scraping wedge watchdog's abort half was never wired and its
+`kill()` is a no-op on the attach path, which is incident #1 in that file's own header, still open.
+Admin authorization was evaluated with `orgId: undefined` and `row: null`, so an org-scoped or
+ownership rule could not fire. `resources/list` and `resources/read` took no caller at all, so any
+token could enumerate and read every resource. A thrown code named `toString` made
+`Pipeline.handle` reject. `localDriver.list()` omitted every dot-prefixed key, so the orphan sweep
+reported a clean run over objects still on disk. A flag allow list delivered as a string did a
+**substring** match. And every app tool call over stdio answered `X_NO_CONTEXT`, because nothing
+installed a root context.
+
+### Also changed, no migration
+
+`parseDuration` accepts `PT0S` / `PT0H0M0S` / `PT0M` / `P0W`; `toSeconds('-1500ms')` is now −2
+(was −1); `formatDuration(…, { maxUnits: 0 })` throws rather than rendering `"0 sec"`;
+`addBusinessDays` refuses a fractional or `NaN` count; `configureTime({ defaultZone })` refuses an
+unknown zone at boot instead of at render time; `t.date` refuses a date-time with no offset;
+`applyFlagSnapshot` refuses malformed targeting it used to accept; `in` with a non-array operand
+matches no rows on **both** drivers; `ctx.signal` now aborts when the caller disconnects and not
+only when the deadline passes; and the entity write path reads `ctx.clock`.
+
+### Changed — BREAKING (second sweep)
+
 A second bug sweep, run by six independent auditors over the packages the 3.0.0 sweep did not
-reach. Three of the entries below are **breaking changes to documented APIs**, so the next release
-is a major.
+reach. Five of the entries below are **breaking changes to documented APIs**.
 
 ### Changed — BREAKING
 
