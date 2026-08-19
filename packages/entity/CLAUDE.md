@@ -39,7 +39,14 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `String(left) < String(right)` — `["10","100","2","9"]` against Postgres' `2, 9, 10, 100`, and a
   keyset page cut where the database cuts none, since the seek compares the stored string against
   a revived `BigInt`. The comparison is exact at any width (the fractions are padded and both sides
-  become one integer), which no `Number()` is. **A `uuid` is a VALUE**: Postgres parses it and
+  become one integer), which no `Number()` is — and `As of 2026-08` it is **`@ultimat3/core`'s
+  `compareDecimalText`**, not this file's, because the text arrives in more than one package while
+  the declared kind does not. What stays here is `DECIMAL_TEXT` (which kinds are decimal text) and
+  the decision to ask; core's function answers `undefined` for a pair that is not two plain
+  decimals, so a caller with no kinds — `@ultimat3/query`, whose `OrderKey` is a name and a
+  direction — deliberately never calls it: Postgres orders a `text` column of digits lexically, and
+  a comparator guessing "both sides look like decimals" would trade this agreement for that
+  disagreement. That residual gap is `@ultimat3/query`'s `shape-order.test.ts` `DECLARED_GAP`. **A `uuid` is a VALUE**: Postgres parses it and
   prints it lower-cased, so `findById(UPPER)` reads the row there and answered `null` here, and
   `update(UPPER)` was `X_NOT_FOUND` against a row that exists — `keyOf(kind, value)`
   (`batch-read.ts`), which already carried that rule for a batched read, now spells the memory
@@ -705,7 +712,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 
 | File | Job |
 |---|---|
-| `types.ts` | `Column`, `RowOf`, `Insertable`, `IdOf` — the type derivation |
+| `types.ts` | `Column`, `RowOf`, `Insertable`, `IdOf` — the type derivation. `COLUMN_KINDS` is the runtime array `ColumnKind` DERIVES from (the shape core's `PRIMITIVE_KINDS` uses), so a package answering "one case per kind" reads a real list rather than spelling its own |
 | `column.ts` / `columns.ts` | the chain + property-key binding; the blessed builders; `columnName`/`moneyColumns`, the ONE physical-name resolver; `narrowMoney`, the one write-side narrowing both drivers run |
 | `columns-data.ts` | the wide vocabulary an existing schema needs: `json`, `decimal`, `date`, `bigint`, `bytes`, `arrayOf` |
 | `expr.ts` / `invariants.ts` | the `invariants: (c) => …` rule language; bind + `toSql()` DDL |
@@ -713,7 +720,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `view.ts` | `$view(keys)` — the row projection an action names as its `output` |
 | `query.ts` / `database.ts` | chainable read to a cursor page; `database()` + `Driver` |
 | `clock.ts` | `entityNow()` — the ONE clock read on the write path, `ctx.clock` else the system's |
-| `memory-match.ts` | what a `Predicate` means in the memory driver: compare/equal/LIKE, by the column's kind |
+| `memory-match.ts` | what a `Predicate` means in the memory driver: compare/equal/LIKE, by the column's kind. The decimal comparison itself is `@ultimat3/core`'s `compareDecimalText` |
 | `repo.ts` / `tenancy.ts` | `Repo<T>` + `memoryDriver`'s repo, tx rollback; `QueryPlan` + `scopedPlan()` for a read and `assertRowTenant()` for a write — one actor-derived tenant guard, both halves |
 | `cross-tenant.ts` | `crossTenant(reason, fn)` — the capability-gated scope that lifts it |
 | `plan.ts` / `cursor.ts` | the plan both drivers execute; the one keyset cursor codec |

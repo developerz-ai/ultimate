@@ -143,13 +143,20 @@ the package, and rotating the secret is what invalidates every open cursor. This
 the only thing that is its business — the scope, `queryHash(name, input)` — and re-exports
 `CursorInvalidError` so the failure keeps its name on this surface.
 
-The scope's hash is **SHA-256, first 16 hex** (`fingerprint` in `stable.ts`), the primitive and
-width `@ultimat3/realtime`'s `stableDigest` and `@ultimat3/entity`'s `planScope` already use. It
-was FNV-1a/32 until 2026-08 — 4×10⁹ values over input a client chooses, brute-forceable offline in
-seconds, and a fingerprint here is a *sharing* key: which read-cache entry two callers are served
-from, and which scope a cursor is bound to. The canonical serialization did not change, only the
-hash, so a cursor issued before it fails its scope check as `X_CURSOR_INVALID` with "request the
-first page again" as its fix, and a warm read cache is cold once.
+The scope's hash is **SHA-256, first 16 hex** — `fingerprint` from `@ultimat3/core`, the primitive
+and width `@ultimat3/entity`'s `planScope` already uses, and the same function
+`@ultimat3/action`'s `requestHash` and `@ultimat3/realtime`'s `qid` are taken over `As of 2026-08`.
+It was FNV-1a/32 until 2026-08 — 4×10⁹ values over input a client chooses, brute-forceable offline
+in seconds, and a fingerprint here is a *sharing* key: which read-cache entry two callers are served
+from, and which scope a cursor is bound to.
+
+The canonical form is **injective**, which is the other half of the same requirement. It had no
+`Date` branch until 2026-08: `Object.keys(date)` is `[]`, so every date rendered `{}` and one key
+answered for every date window a read ever served — a real leak on the ordinary HTTP path, since
+`coerceQuery` turns a `t.date` member into a `Date` and `input-shape.ts` permits `date` members. A
+`Date`, a `Map` and a `Set` are tagged now. Ordinary inputs are byte-identical, so the cost is
+confined to reads whose input carries one of the three: those cursors answer `X_CURSOR_INVALID`
+once, with "request the first page again" as their fix, and their cache entries are cold once.
 
 A cursor names a **position in the ordering**, never a row and never a count. Both seek paths
 answer "is this row after that position?" through the one predicate, `isAfterKey`: `Builder.seek()`

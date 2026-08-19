@@ -38,15 +38,19 @@ describe('pg queue SQL', () => {
     expect(SQL_CLAIM).toContain('attempt    = j.attempt + 1');
   });
 
-  test('idempotency is enforced per JOB by a partial unique index over live states only', () => {
-    // `(name, idempotency_key)`. A global key namespace was silent data loss: two jobs deriving
-    // the same natural key deduped against each other and the second one never ran.
+  test('idempotency is enforced per JOB and per TENANT by a partial unique index over live states only', () => {
+    // `(name, coalesce(tenant_id, ''), idempotency_key)`. A global key namespace was silent data
+    // loss — two jobs deriving the same natural key deduped against each other and the second one
+    // never ran — and a tenant-blind one was that plus a cross-tenant job id handed to the caller.
     expect(SQL_JOBS_TABLE).toContain(
-      'create unique index if not exists x_jobs_name_idempotency_live_idx',
+      'create unique index if not exists x_jobs_name_tenant_idempotency_live_idx',
     );
-    expect(SQL_JOBS_TABLE).toContain('on x_jobs (name, idempotency_key)');
+    expect(SQL_JOBS_TABLE).toContain(
+      "on x_jobs (name, (coalesce(tenant_id, '')), idempotency_key)",
+    );
     expect(SQL_JOBS_TABLE).toContain("where state in ('ready', 'delayed', 'running', 'suspended')");
-    expect(SQL_ENQUEUE).toContain('on conflict (name, idempotency_key)');
+    // The conflict target must spell the index expression exactly, or Postgres cannot infer it.
+    expect(SQL_ENQUEUE).toContain("on conflict (name, (coalesce(tenant_id, '')), idempotency_key)");
     expect(SQL_ENQUEUE).toContain('do nothing');
   });
 

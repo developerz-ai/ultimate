@@ -4,14 +4,13 @@
  * a value or a failure — and a concurrent duplicate is refused rather than run twice, because a
  * double charge is worse than a 409.
  */
-import { isUltimateError, logger } from '@ultimat3/core';
+import { fingerprint, isUltimateError, logger } from '@ultimat3/core';
 import {
   IdempotencyConflictError,
   IdempotencyNotSharedError,
   IdempotencyReplayedFailureError,
 } from './errors';
 import { MemoryIdempotencyStore } from './idempotency-memory';
-import { fingerprint } from './stable';
 
 /**
  * Where a store's records live. Declared by the driver, never inferred — the same rule

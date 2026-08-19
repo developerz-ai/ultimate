@@ -15,20 +15,30 @@
  * and a `bytea` blob cannot be declared at all without them, and an entity that cannot be declared
  * is a rewrite instead of an adoption.
  */
-export type ColumnKind =
-  | 'uuid'
-  | 'text'
-  | 'char'
-  | 'boolean'
-  | 'integer'
-  | 'bigint'
-  | 'numeric'
-  | 'timestamptz'
-  | 'date'
-  | 'jsonb'
-  | 'bytea'
-  | 'array'
-  | 'money';
+export const COLUMN_KINDS = [
+  'uuid',
+  'text',
+  'char',
+  'boolean',
+  'integer',
+  'bigint',
+  'numeric',
+  'timestamptz',
+  'date',
+  'jsonb',
+  'bytea',
+  'array',
+  'money',
+] as const;
+
+/**
+ * Derived from the array and never written twice — the same shape `PRIMITIVE_KINDS` in
+ * `@ultimat3/core`'s `registrar.ts` uses, and for the same reason: a package that has to answer
+ * "one case per kind" needs a RUNTIME list, and a list written beside the type is one that drifts
+ * from it. `@ultimat3/query`'s `shape-order.test.ts` spelled its own out and counted nine against
+ * thirteen — `9 === 9`, a test that could not fail.
+ */
+export type ColumnKind = (typeof COLUMN_KINDS)[number];
 
 export type ColumnDefault =
   | { readonly kind: 'value'; readonly value: string | number | boolean | null }

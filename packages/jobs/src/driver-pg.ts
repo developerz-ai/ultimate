@@ -271,19 +271,22 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
         return { id: inserted.id, runId: inserted.run_id, deduped: false };
       }
 
-      // `do nothing` fired: a live job OF THIS NAME already owns this idempotency key. The name
-      // is in the lookup because it is in the index — without it this returned whichever other
-      // job happened to derive the same natural key, and the caller's work silently never ran.
+      // `do nothing` fired: a live job OF THIS NAME, IN THIS TENANT, already owns this idempotency
+      // key. Both are in the lookup because both are in the index — without the name this returned
+      // whichever other job derived the same natural key; without the tenant it returned another
+      // TENANT's row, so the caller's work silently never ran AND the caller was handed an id it
+      // has no right to, on a surface (`cancel`) that takes an id with no tenant predicate.
       const existing = await exec().query<{ id: string; run_id: string }>(SQL_FIND_LIVE_BY_KEY, [
         request.name,
         request.idempotencyKey,
+        request.tenantId ?? null,
       ]);
       const found = existing[0];
       if (found === undefined) {
         throw new DriverUnavailableError({
           driver: 'pg',
           cause: `enqueue of "${request.name}" was rejected but no live row holds its idempotency key`,
-          fix: 'x db migrate   # reapplies SQL_JOBS_TABLE, whose x_jobs_name_idempotency_live_idx is what this lookup reads',
+          fix: 'x db migrate   # reapplies SQL_JOBS_TABLE, whose x_jobs_name_tenant_idempotency_live_idx is what this lookup reads',
         });
       }
       if (request.onConflict === 'error') {

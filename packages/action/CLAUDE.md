@@ -35,7 +35,7 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
 | `audit.ts` | the audit seam: `AuditRecord`, `AuditSink`, the memory sink, the installed-sink store |
 | `audit-gate.ts` | **the only** file that calls a sink, and where the two failure policies live |
 | `type-pins.ts` | compile-time assertions `tsc` checks — what the erased view projects, and why `client()` is not part of it |
-| `naming.ts`, `validate.ts`, `json-schema.ts`, `stable.ts` | pure helpers |
+| `naming.ts`, `validate.ts`, `json-schema.ts`, `stable.ts` | pure helpers. `stable.ts` is the DOCUMENT serializer only — the hash form is `@ultimat3/core`'s `canonicalJson`/`fingerprint` |
 
 ## Invariants
 
@@ -61,30 +61,32 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   author, and never reach the evaluation that had the row. `meta.policy` stays set — dropping
   it would read as "this action is unguarded" in `x routes` and the manifest. `http.test.ts`
   drives a row-level action over the real pipeline and counts the evaluations: exactly one.
-- **`stable.ts` holds TWO serializers, and they are not one function.** `stableStringify` is the
-  DOCUMENT form: `serializeOpenApi` publishes it as `openapi.json` and `json-schema.ts` re-reads it
-  with `JSON.parse`, so a non-finite number has to be `null` — the bare token `NaN` would make a
-  published spec unparseable. `canonicalJson` is the HASH form `fingerprint` is taken over, and it
-  must be INJECTIVE: `NaN`, `±Infinity` and JSON `null` all encoded as `'null'` and `String(-0)` is
-  `"0"`, so four distinct inputs shared one `requestHash` — one caller handed another's stored
-  response on replay — and one job dedupe key. That is why the fix `@ultimat3/query` made in its own
-  `stable.ts` could not simply be copied here; it needed the split first. Ordinary payloads are
-  byte-identical between the two, so no idempotency record and no enqueued job moved.
-  `stable.test.ts` pins both duties, including a `JSON.parse` of the document form.
-  **Three more values were folded onto `{}` until 2026-08, and the first is one `t.date` produces
-  on every parse.** A `Date`, a `Map` and a `Set` have no own enumerable key, so `Object.keys` was
-  empty and the object branch rendered all three `{}` — `fingerprint({ x: new Map([['a', 1]]) })`
-  equalled `fingerprint({ x: new Set([1, 2]) })` equalled `fingerprint({ x: {} })`, and an
-  `idempotent: true` action taking `t.object({ at: t.date })`, called twice under one key with two
-  DIFFERENT dates, handed the second caller the first one's stored response with no
-  `X_IDEMPOTENCY_CONFLICT` and the handler run once. The walk now branches on all three AHEAD of
-  the object branch, and the two forms disagree about them exactly as they disagree about numbers:
-  the document form is `JSON.stringify`'s own rendering (a Date's ISO string, `{}` for a Map and a
-  Set), because that string is published and re-parsed, and the hash form TAGS them —
-  `Date(<epoch>)`, `Map(k:v,...)`, `Set(v,...)` — extending the per-type tagging `hashNumber`
-  already uses for `NaN` and `-0`. The tag is not decoration: an untagged epoch is the same token
-  a `t.number` field holding that epoch emits, which is the collision being closed. Map and Set
-  entries are SORTED, as object keys are — insertion order is not part of what either holds.
+- **`stable.ts` holds the DOCUMENT form and NOTHING else, `As of 2026-08`.** `stableStringify` is
+  published as `openapi.json` by `serializeOpenApi` and re-read with `JSON.parse` by
+  `json-schema.ts`, so a non-finite number has to be `null` and a `Date` has to be its ISO string —
+  the bare token `NaN` would make a published spec unparseable. The HASH form left this file:
+  `canonicalJson` + `fingerprint` are **`@ultimat3/core`'s**, because `@ultimat3/query` and
+  `@ultimat3/realtime` each held their own copy of the identical function and all three are tier 3,
+  so no two of them could import each other and a copy in any was a second answer for the other
+  two. They had already diverged — query's had no `Date` branch, so every date window of a read
+  shared one cache key. Nothing about this package's keys moved: `fingerprint` is the same code at
+  the same width, `stable.test.ts` still pins the document duty (a `JSON.parse` of what it emits)
+  and now pins the byte-equality against core's form for an ordinary payload, which is what says no
+  idempotency record and no enqueued job moved.
+  **Why the hash form must be a separate function at all** — the reason that survives the move.
+  `NaN`, `±Infinity` and JSON `null` all encoded as `'null'` and `String(-0)` is `"0"`, so four
+  distinct inputs shared one `requestHash` (one caller handed another's stored response on replay)
+  and one job dedupe key. And three more values folded onto `{}`, the first of which `t.date`
+  produces on every parse: a `Date`, a `Map` and a `Set` have no own enumerable key, so
+  `Object.keys` was empty and the object branch rendered all three `{}` —
+  `fingerprint({ x: new Map([['a', 1]]) })` equalled `fingerprint({ x: new Set([1, 2]) })` equalled
+  `fingerprint({ x: {} })`, and an `idempotent: true` action taking `t.object({ at: t.date })`,
+  called twice under one key with two DIFFERENT dates, handed the second caller the first one's
+  stored response with no `X_IDEMPOTENCY_CONFLICT` and the handler run once. The two forms disagree
+  about all four exactly as they disagree about numbers: the document form is `JSON.stringify`'s own
+  rendering, and the hash form TAGS them — `Date(<epoch>)`, `Map(k:v,...)`, `Set(v,...)`. The tag is
+  not decoration: an untagged epoch is the same token a `t.number` field holding that epoch emits.
+  Map and Set entries are SORTED, as object keys are.
 - **`tagKeys` is `@ultimat3/cache`'s, not this package's — moved 2026-08.** `packages/action/src/tags.ts`
   and `packages/query/src/tags.ts` were byte-identical, and both packages are tier 3, so neither can
   import the other and a copy in either is a second answer for the other. `tagKey` went with it: it
@@ -215,8 +217,11 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   can drive it by hand and still get the action's parse + policy. **The missing halves are
   `tenant` and `retry`**, both required on `JobDefinition` with deliberately no default, so "zero
   rewriting" was never reachable regardless of wiring. The bridge is one `job({ … })` call, and it
-  belongs in the app or at tier 4+: `action` and `jobs` are both tier 3. Not built here — that is
-  code, and this was a comment correction.
+  belongs in the app or at tier 4+: `action` and `jobs` are both tier 3. **It exists, `As of
+  2026-08`** — `agentJob()` in `@ultimat3/ai` (`agent-job.ts`), tier 4, which takes an `Action` and
+  nothing agent-specific and supplies the two missing halves as its own options. So "nothing in the
+  framework consumes it", which `job-handle.ts`'s header said until this was checked, is false: it
+  has one consumer, and an app writes the same three lines.
 - An action has no `.def`. Inside the package read it with `defOf(target)`; outside,
   read the lifted `.input`/`.output`/`.policy`/`.mcp` or `describe()`.
 - **`AnyAction` projects every surface, `client()` excepted.** The registry answers in the erased

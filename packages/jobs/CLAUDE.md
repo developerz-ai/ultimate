@@ -35,16 +35,35 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   A look-alike never registers. Deliberately not a registry lookup — the registry is what
   registration rewrites.
 - `idempotencyKey` is NON-OPTIONAL in `JobDefinition`. Never relax it, never default it.
-- **The idempotency namespace is `(name, idempotency_key)`, never the key alone** (`As of
-  2026-08`). It was the key alone, and that is silent data loss with no error anywhere: two jobs
-  that derive the same natural key from the same input — `sendWelcomeEmail` and
-  `provisionWorkspace` both keyed `user:${id}` — shared one namespace, so the second enqueue hit
-  `on conflict do nothing`, fell through to `SQL_FIND_LIVE_BY_KEY`, found the FIRST job's row and
-  returned `{ id: <A's>, deduped: true }`. The workspace was never provisioned and `x jobs ls`
-  showed one healthy job. Three places have to agree and a test pins them together: the index, the
-  conflict target, and the live-row lookup. `x_jobs` SHIPPED, so the DDL `drop index if exists`es
-  the old one — left in place it would keep enforcing exactly the collision this fixes. The
-  scheduler's occurrence key already prefixes the task name and is unaffected.
+- **The idempotency namespace is `(name, coalesce(tenant_id, ''), idempotency_key)`, never the key
+  alone and never name-only** (`As of 2026-08`). Two rounds of the same defect, and both are silent
+  data loss with no error anywhere.
+
+  It was the key alone: two jobs deriving the same natural key from the same input —
+  `sendWelcomeEmail` and `provisionWorkspace` both keyed `user:${id}` — shared one namespace, so
+  the second enqueue hit `on conflict do nothing`, fell through to `SQL_FIND_LIVE_BY_KEY`, found
+  the FIRST job's row and returned `{ id: <A's>, deduped: true }`. The workspace was never
+  provisioned and `x jobs ls` showed one healthy job.
+
+  Then it was name-only, while the row already carried `tenant_id` as `$9` of the same insert.
+  Every natural key the docs suggest is unique only WITHIN a tenant — `` `invoice:${input.invoiceId}` ``,
+  `` `order:${input.orderNumber}` `` — so tenant B enqueuing while tenant A held that key deduped
+  into tenant A's row: B's work never ran AND B's caller received A's job id, which is valid on
+  every id-addressed surface (`cancelJob(driver, jobId)` takes an id with no tenant predicate, so
+  an app wiring the returned id to a cancel button gave B cancellation of A's job). The sibling
+  projection in `@ultimat3/action` (`idempotency-key.ts`) had folded the actor's org in all along.
+  `coalesce`, not the bare column: a null `tenant_id` compares unequal to every other null under a
+  unique index, so a tenantless queue would lose its dedupe entirely — all tenantless rows share
+  one namespace instead, which is what they had before tenancy existed.
+
+  Three places have to agree and a test pins them together: the index, the conflict target, and the
+  live-row lookup. The conflict target must spell the index EXPRESSION exactly —
+  `(name, (coalesce(tenant_id, '')), idempotency_key)` — or Postgres cannot infer the index at all.
+  `driver-memory.ts` mirrors it with `(record.tenantId ?? '')`, which is the parity that turned a
+  gap into a confirmed one rather than catching it. `x_jobs` SHIPPED, so the DDL
+  `drop index if exists`es BOTH superseded indexes — each is strictly narrower than its successor,
+  so either left in place would keep enforcing exactly the collision this fixes. The scheduler's
+  occurrence key already prefixes the task name and is unaffected.
 - **`SQL_JOBS_TABLE` is the ONE install point, and every durable table this package owns is in
   it** (`As of 2026-08`): `x_jobs`, `x_job_steps`, `x_backfills`, `x_outbox`, `x_scheduler_state`,
   `x_scheduler_leader`, `x_job_leases`, `x_job_events`. Four of those were subsystems that shipped
