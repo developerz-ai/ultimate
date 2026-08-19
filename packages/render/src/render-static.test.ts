@@ -251,7 +251,11 @@ describe('renderStatic', () => {
       // The fix names a command this build can run: `x build` declares target/tag/out and no
       // --route, so the old line was an instruction that fails — caught once the errors gate
       // learned to read a `fix:` handed to a factory in a sibling module (#157).
-      fix: expect.stringContaining('x build --target static --json'),
+      fix: expect.stringMatching(
+        // Both halves: the command has to be one this build runs, AND it has to name the route that
+        // failed — a fix that reproduces the wrong page reproduces nothing.
+        /x build --target static --json[\s\S]*\/blog\/b/,
+      ),
     });
   });
 

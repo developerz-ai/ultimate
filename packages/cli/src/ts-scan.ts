@@ -19,9 +19,10 @@ export interface CodeSite extends SourceSite {
   readonly code: string;
 }
 
-export const QUOTES = new Set(["'", '"', '`']);
-export const OPENERS = new Set(['(', '[', '{']);
-export const CLOSERS = new Set([')', ']', '}']);
+// `ReadonlySet`, so a consumer cannot mutate what every scan in this package reads.
+export const QUOTES: ReadonlySet<string> = new Set(["'", '"', '`']);
+export const OPENERS: ReadonlySet<string> = new Set(['(', '[', '{']);
+export const CLOSERS: ReadonlySet<string> = new Set([')', ']', '}']);
 const WORD = /[\w$]/;
 
 /** After one of these words a `/` opens a regex; after any other identifier it divides. */

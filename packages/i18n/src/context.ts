@@ -61,7 +61,22 @@ const DEFAULT_LOCALE_CONFIG: LocaleConfig = {
   order: DEFAULT_ORDER,
 };
 
-let config: LocaleConfig = DEFAULT_LOCALE_CONFIG;
+/**
+ * A fresh object AND fresh arrays, every time. Handing out `DEFAULT_LOCALE_CONFIG` itself made the
+ * live config the shipped default, so one caller writing through `localeConfig()` corrupted the
+ * value `resetLocaleConfig()` restores FROM — and the reset replayed the corruption for the rest of
+ * the process. `readonly` in the type stops a compiler, not a caller, and this seam exists because
+ * callers do what the types did not expect.
+ */
+function freshDefaultConfig(): LocaleConfig {
+  return {
+    supported: [...DEFAULT_LOCALE_CONFIG.supported],
+    fallback: DEFAULT_LOCALE_CONFIG.fallback,
+    order: [...DEFAULT_LOCALE_CONFIG.order],
+  };
+}
+
+let config: LocaleConfig = freshDefaultConfig();
 
 /** Called once at boot from `app.config.ts`. */
 export function configureLocales(partial: Partial<LocaleConfig>): LocaleConfig {
@@ -186,7 +201,7 @@ export function t(key: string, vars?: TranslateVars): string {
  * owns can, which is why this is a reset and not a documented "remember to restore it".
  */
 export function resetLocaleConfig(): void {
-  config = DEFAULT_LOCALE_CONFIG;
+  config = freshDefaultConfig();
 }
 
 /** Test/CLI seam: drop every registered catalog. */

@@ -1,3 +1,8 @@
+// One rule: every flag a command declares is read by something in the CLI's own source, the four
+// global flags excepted. The last describe runs it over THIS build's registry rather than a
+// fixture — a rule proved only against fixtures is a utility, and `x deploy --critical` shipped
+// because nothing ever asked the shipped specs the question.
+
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -109,6 +114,37 @@ describe('checkFlagReads', () => {
         root,
       ),
     ).toHaveLength(1);
+  });
+
+  test('a root that does not exist decides nothing, rather than raising ENOENT', async () => {
+    expect(await checkFlagReads(SPECS, join(root, 'nowhere', 'src'))).toEqual([]);
+  });
+
+  // The absent root is `Bun.Glob.scan`'s alone. A file the scan FOUND and this cannot read is a
+  // half of the source the rule did not see, and answering [] there is the false green the whole
+  // check exists to remove — so the read is outside the `try` and the failure travels.
+  // White-box on purpose: `Bun.file` is the reader, and no file a glob yields can be made
+  // unreadable without `chmod`, which decides differently as root and on a CI runner.
+  test('a file that cannot be read fails the check, it does not answer no findings', async () => {
+    await write('cmd-deploy.ts', `export const deployCommand = { spec: { ${DECLARED} } };\n`);
+    const bun: { file: typeof Bun.file } = Bun;
+    const real = bun.file;
+    bun.file = ((path: string) => ({
+      text: (): Promise<string> => Promise.reject(new Error(`EACCES: permission denied, ${path}`)),
+    })) as unknown as typeof Bun.file;
+    let raised: unknown;
+    try {
+      await checkFlagReads(
+        [spec('deploy', [{ name: 'critical', type: 'boolean', summary: 'forces a reload' }])],
+        root,
+      );
+    } catch (error) {
+      raised = error;
+    } finally {
+      bun.file = real;
+    }
+    expect(raised).toBeInstanceOf(Error);
+    expect((raised as Error).message).toContain('EACCES');
   });
 
   // A test asserting on a flag is not a command reading one; the suite is not shipped behaviour.

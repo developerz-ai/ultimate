@@ -76,16 +76,22 @@ export async function checkFlagReads(
   specs: readonly CommandSpec[],
   srcDir: string,
 ): Promise<readonly Finding[]> {
-  const texts = new Map<string, string>();
+  const paths: string[] = [];
   try {
     for await (const path of new Bun.Glob('**/*.ts').scan({ cwd: srcDir, absolute: false })) {
-      if (/\.test\.tsx?$/.test(path)) continue;
-      texts.set(path, stripComments(await Bun.file(join(srcDir, path)).text()));
+      if (!/\.test\.tsx?$/.test(path)) paths.push(path);
     }
   } catch {
     // The directory is not there. `Bun.Glob.scan` raises rather than yielding nothing, so the
     // absent case has to be caught here — see the `texts.size` guard below for why it answers [].
+    // The scan is ALL that is inside the `try`, deliberately: a file the scan found and this
+    // cannot read must propagate, or an unreadable source answers "no findings" and the rule
+    // reports green over the half it could not see.
     return [];
+  }
+  const texts = new Map<string, string>();
+  for (const path of paths) {
+    texts.set(path, stripComments(await Bun.file(join(srcDir, path)).text()));
   }
   // No CLI source under this root: the rule holds two halves against each other and only one is
   // here, so there is nothing it can decide. Derived, not "is this the framework repo" — the same

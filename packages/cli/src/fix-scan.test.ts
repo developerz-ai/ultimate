@@ -1,3 +1,8 @@
+// Three shapes a `fix:` arrives in, one describe each: under a key, positionally at a local error
+// builder's parameter, and at an error class constructor's — plus the same builder resolved from
+// another file. Each gap shipped stale lines the gate could not see: `@ultimat3/mcp`'s two
+// `x db branch <name>` through the positional helper, `@ultimat3/ui`'s four through the imported one.
+
 import { describe, expect, test } from 'bun:test';
 import { scanFixes, scanFixSites } from './fix-scan';
 

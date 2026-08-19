@@ -477,5 +477,8 @@ describe('this repo', () => {
   // the test, so the timeout is what moves. Same shape as `scripts/verify.test.ts`.
   test('every shipped fix line is runnable', async () => {
     expect(await checkErrorFixes(root)).toEqual([]);
-  }, 30_000);
+    // 90s, matching `scripts/lib/run.ts`'s `REPO_SCAN_TIMEOUT_MS`. The number is duplicated rather
+    // than imported because `packages/cli` cannot reach `scripts/` — a package may not depend on
+    // the repo that ships it. Raise both together; ~5s alone, ~30s under eight competing workers.
+  }, 90_000);
 });

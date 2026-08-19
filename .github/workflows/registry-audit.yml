@@ -37,7 +37,13 @@ jobs:
 
       - name: audit the registry
         id: audit
-        run: bun run scripts/registry-audit.ts --json | tee audit.json
+        # `pipefail` is load-bearing: without it `tee` decides the step's exit status, the audit's
+        # non-zero is discarded, `outcome` is always `success`, and every step below that keys on
+        # `failure` never runs — a workflow that reports clean whatever npm says.
+        shell: bash
+        run: |
+          set -o pipefail
+          bun run scripts/registry-audit.ts --json | tee audit.json
         continue-on-error: true
 
       - name: open an issue when the registry disagrees

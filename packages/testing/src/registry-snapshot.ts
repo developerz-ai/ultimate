@@ -1,14 +1,7 @@
-// WHAT the harness puts back at a test-file boundary; `registry-leak-guard.ts` owns WHEN.
-// A process global written at MODULE scope cannot be replayed — a module evaluates once per
-// `bun test` process — so a file that clears or narrows one decides what every file after it
-// sees, and the failure lands on an innocent suite in another package.
-//
-// Relative specifiers, for `scripts/test-setup.ts`'s own reason: this module is reached from a
-// preload, which runs before anything else and must not depend on workspace symlinks. Both edges
-// point DOWN the tier table (testing is 5, i18n is 1, policy is 2), so nothing here is sideways.
-// Module by module rather than through either barrel, for the reason `src/index.ts` states over
-// `isolateEntityRegistry`: `registry-leak-guard.ts` IS on that barrel, so a `packages/core` test
-// importing this package for `expect` alone would otherwise flatten `catalogs/en.json` on the way.
+// The process registries a test file inherits, captured and handed back at the file boundary;
+// `registry-leak-guard.ts` owns WHEN. A snapshot rather than a reset to defaults, because what a
+// module declares at MODULE scope evaluates once per `bun test` process — a neighbour's clear is
+// permanent and there is no second evaluation left to redo it.
 
 import type { Catalog, Locale, LocaleConfig } from '@ultimat3/i18n';
 import {

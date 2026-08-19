@@ -1,12 +1,7 @@
-// Cross-file state pollution, caught at the boundary it crosses — and, where it can be, repaired
-// there. `bun test` runs every file of one invocation in ONE process — only `--isolate` gives each
-// file its own module registry — so a file that leaves a process-global registry dirty changes what
-// every file after it sees, and the failure lands on an innocent suite in another package.
-//
-// Two duties over ONE file boundary, because a boundary is all Bun gives: only the first `onLoad`
-// handler matching a path runs, so a second plugin for `.test.ts` would be shadowed and a second
-// install point is not available. What is REPORTED and what is RESTORED are deliberately disjoint
-// sets — see `RegistrySample` below and `registry-snapshot.ts`.
+// Cross-file state pollution, caught at the boundary it crosses and — where a registry can be put
+// back — repaired there. `bun test` runs one invocation in ONE process, so a file that leaves a
+// process-global registry dirty changes what every file after it sees and the failure lands on an
+// innocent suite in another package. What is REPORTED and what is RESTORED are disjoint sets.
 
 import { afterAll } from 'bun:test';
 import { knownTags, registeredTiers } from '@ultimat3/cache';

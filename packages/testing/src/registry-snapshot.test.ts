@@ -15,7 +15,12 @@ import {
   definePermissions,
   knownPermissions,
 } from '../../policy/src/permissions';
-import { clearRoles, defineRoles, roleDefinitions } from '../../policy/src/roles';
+import {
+  clearRoles,
+  defineRoles,
+  roleDeclarationSites,
+  roleDefinitions,
+} from '../../policy/src/roles';
 import { captureProcessRegistries, restoreProcessRegistries } from './registry-snapshot';
 
 /** Every test here mutates process globals; each one hands them back the way it found them. */
@@ -81,14 +86,20 @@ describe('captureProcessRegistries / restoreProcessRegistries', () => {
   test('the role map and its declaration sites both come back', () =>
     around(() => {
       defineRoles({ editor: { grants: ['post:publish'] } });
+      // The site is THIS file, captured before the clear: it is what makes `X_ROLE_REDEFINED`
+      // name the app's own declaration rather than whatever frame restored the map.
+      const declaredAt = roleDeclarationSites()['editor'];
+      expect(declaredAt).toBeString();
       const snapshot = captureProcessRegistries();
 
       clearRoles();
       expect(roleDefinitions()).toEqual({});
+      expect(roleDeclarationSites()).toEqual({});
 
       restoreProcessRegistries(snapshot);
 
       expect(roleDefinitions()['editor']).toEqual({ grants: ['post:publish'] });
+      expect(roleDeclarationSites()['editor']).toBe(declaredAt);
     }));
 
   test('a catalog registered after the capture is gone, and one captured is back', () =>

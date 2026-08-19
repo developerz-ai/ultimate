@@ -1,3 +1,8 @@
+// The resolver's fixtures are real files, because the thing under test is opening one: `node:fs`
+// builds an isolated tree per test and removes it, so two runs cannot share a module cache or a
+// stale `errors.ts` — the four bad `fix:` lines this closes lived in a file that imported its
+// builder, and a fixture in memory would prove nothing about resolving the specifier.
+
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
