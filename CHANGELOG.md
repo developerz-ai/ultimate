@@ -302,6 +302,45 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   the throws that caused it reached the job retry classifier as bare `Error`s with no code; and
   restored `localStorage` was written on `about:blank` where it can never reach the site's origin.
 
+- **An apostrophe in JSX text silently disabled the `errors` gate for a whole file, and it was not
+  hypothetical.** `maskLiterals` treated `'` as a literal opener and blanked everything up to the
+  next one, so `scanFixes` returned nothing for the rest of the file — while `scanCodes` kept
+  passing, masking the hole. `packages/http/src/errors.ts` contains
+  `…already route "${input.otherRoute}"'s`, so **eight real `fix:` lines in that file had never been
+  checked**. All eight pass now. One test asserted "nothing in the installed framework raises
+  `X_DRAINING`" — disproved by `draining()` in the very file the gate had stopped reading.
+
+- **A page with zero executable JavaScript could fail its JS budget**, with a `fix:` line naming an
+  import that does not exist. Every inline `<script>` body was counted, including
+  `application/ld+json` (which the SEO helpers emit) and island props. `@ultimat3/render`'s `head.ts`
+  already owned the rule: *"the body is data, not code."*
+
+- **`x verify --workers 5000` was accepted** although both flag summaries say "max 8", and
+  `planShards` clamps only to the file count — 842 concurrent Bun processes, each with the framework
+  module graph and a cloned database. Both summaries also named `CPUs - 1` as the default, a value
+  the code measured and rejected as *"slower than not sharding at all"*.
+
+- **`agent()` sent the Anthropic API a transcript it rejects, in two places.** A turn emitting a tool
+  call **and** `respond` replayed the `respond` `tool_use` with no matching `tool_result` → 400. The
+  repair path had the same hole and is more reachable: **any** output-schema mismatch in an `agent()`
+  run was a 400. The loop now answers the superseded `respond` with an `is_error` result telling the
+  model to read the tool results and answer again — rather than discarding a block the model emitted,
+  or using an answer composed before the tools it called had run.
+
+- **MCP `additionalProperties: false` accepted and dropped every argument named after an
+  `Object.prototype` member** (`constructor`, `__proto__`, `toString`), because the check walked the
+  prototype chain. Third instance of this class in one release, after `@ultimat3/i18n`'s catalog and
+  `@ultimat3/schema`'s coercion. `Object.hasOwn` alone was **not** sufficient: it turns the
+  `__proto__` *drop* into a `__proto__` *re-prototype* of the record the handler reads, so every
+  write now goes through `Object.defineProperty`.
+
+- Also: a request arriving with an inbound `traceparent` never appeared in `/_x/timeline`; a second
+  `x dev` died with a bare `Error` on a port collision and `METRICS_PORT` was honoured in the
+  container but ignored in dev; a missing binary produced `fix: x doctor --json`, which checks
+  nothing about missing binaries; a root `tsconfig.json` written as JSONC silently disabled
+  `X_PACKAGE_UNREFERENCED`; and `x doctor --port 65535` suggested `--port 65536`, which `x dev`
+  refuses.
+
 - **The outbox relay's claim locked nothing, so two relays could publish one batch and a job could
   run twice.** `SQL_OUTBOX_CLAIM` ends in `for update skip locked`, but the relay issues it on a
   **pooled** connection with no transaction — a bare statement runs in an implicit transaction that

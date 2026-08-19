@@ -14,7 +14,7 @@ import { applyCacheHeaders } from '@ultimat3/http';
 import type { IconPlan } from '@ultimat3/pwa';
 import { BuiltinImagePipeline, PwaIconMissingError, planIcons } from '@ultimat3/pwa';
 import type { ImageQuery, ImageTransformDriver } from '@ultimat3/seo';
-import { builtinImageDriver, parseImageQuery } from '@ultimat3/seo';
+import { builtinImageDriver, DEFAULT_WIDTHS, parseImageQuery } from '@ultimat3/seo';
 import type { ImageFormat, ImageTransform, Storage } from '@ultimat3/storage';
 import { IMAGE_FORMATS, isTenantScoped, variantKey } from '@ultimat3/storage';
 import {
@@ -48,6 +48,24 @@ export const MEDIA_BASE_PATH = '/media';
  * immutable hint is a fact about the key. It is NOT a fact about this route — see `mediaCache`.
  */
 const IMMUTABLE_IMAGE: CacheHint = { mode: 'immutable' };
+
+/**
+ * Whether a variant is one the framework itself can MINT, and therefore one worth storing.
+ *
+ * The cache key is built entirely from caller-supplied query values, and a signed-in reader
+ * holding `storage:read` may ask for any of them on their own objects — so `?w=1`, `?w=2`, … each
+ * wrote a new object to the app's only disk. `@ultimat3/seo`'s `MAX_IMAGE_WIDTH` (8192) bounds the
+ * blast radius and does not close it: 8192 stored objects per source, per format, is amplification
+ * a tenant drives with a `for` loop.
+ *
+ * The set is `DEFAULT_WIDTHS` **plus the source's intrinsic width**, which is exactly what
+ * `usableWidths` puts in a `srcset` — clamping to the constant alone would refuse the widest entry
+ * of every image whose intrinsic width is not one of the eight, a URL the framework mints itself.
+ * Anything outside it is still SERVED: this decides what is written, not what is answered, so no
+ * caller gains a new 4xx and the disk stops growing on a stranger's key.
+ */
+const isMintableWidth = (width: number | undefined, intrinsic: number): boolean =>
+  width === undefined || width === intrinsic || DEFAULT_WIDTHS.includes(width);
 
 const imageResponse = (bytes: Uint8Array, contentType: string, cache: CacheHint): Response =>
   applyCacheHeaders(
@@ -112,6 +130,7 @@ async function transformedVariant(
   }
 
   const source = await disk.get(key);
+  const intrinsic = probeImage(source.bytes).width;
   // The seam is WHICH driver transforms, not who resolves the bytes: `TransformRequest.width` is
   // required, and a request with no `?w=` gets its width from the source's own header — so the
   // read happens either way and a supplied driver is handed the same resolved request the builtin
@@ -122,11 +141,11 @@ async function transformedVariant(
     src: key,
     // A header read, not a decode: `?f=webp` alone still needs a width, and the source's own is
     // the only one that does not resize an image the caller never asked to resize.
-    width: query.width ?? probeImage(source.bytes).width,
+    width: query.width ?? intrinsic,
     ...(query.format === undefined ? {} : { format: query.format }),
     ...(query.quality === undefined ? {} : { quality: query.quality }),
   });
-  if (cached !== undefined) {
+  if (cached !== undefined && isMintableWidth(query.width, intrinsic)) {
     await disk.put(cached, variant.bytes, { contentType: variant.contentType });
   }
   return imageResponse(variant.bytes, variant.contentType, cache);

@@ -2,6 +2,10 @@
 // owns keys, bytes and the tenant boundary and owns no `Response`; `@ultimat3/policy` owns the
 // one authz decision; this file is where those two meet a `Route` — the same shape `dev-assets.ts`
 // uses for `/icons` and `/media`, so `x dev` and `apps/web/server.ts` mount one read path, not two.
+//
+// The base path is `@ultimat3/storage`'s `DEFAULT_SIGNED_URL_BASE`, imported and never restated:
+// `localDriver` SIGNS `/_storage/<disk>/<key>`, so a local `'/_storage'` here is a second statement
+// of one constant — and a signer and a reader that disagree serve 404 for every signed URL.
 
 import { actorOf } from '@ultimat3/action';
 import type { Actor } from '@ultimat3/core';
@@ -12,14 +16,12 @@ import { can, codeOf, evaluate, forbidden, reasonOf } from '@ultimat3/policy';
 import type { Storage, StorageRead } from '@ultimat3/storage';
 import {
   assertSafeKey,
+  DEFAULT_SIGNED_URL_BASE,
   isTenantScoped,
   isWithinOrg,
   objectNotFound,
   orgMismatch,
 } from '@ultimat3/storage';
-
-/** `localDriver` signs `/_storage/<disk>/<key>`, so the read half hangs off the same base. */
-export const STORAGE_BASE_PATH = '/_storage';
 
 /**
  * The one capability that gates reading a stored object, on every disk. A permission and not a
@@ -223,7 +225,7 @@ export function storageRoutes(options: StorageRoutesOptions): readonly Route[] {
   return [
     {
       method: 'GET',
-      path: `${STORAGE_BASE_PATH}/:disk/*key`,
+      path: `${DEFAULT_SIGNED_URL_BASE}/:disk/*key`,
       meta: {
         name: 'storage.read',
         auth: 'required',

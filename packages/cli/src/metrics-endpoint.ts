@@ -8,7 +8,9 @@ import {
   METRICS_PATH,
   markListening,
   metricsText,
+  UltimateError,
 } from '@ultimat3/core';
+import { docsFor } from './error-codes';
 
 /**
  * A port of its own, and NOT the role's HTTP port, for one reason the chart makes concrete:
@@ -24,6 +26,27 @@ import {
  * 9090 is Prometheus's own convention, so a scrape config that assumes it needs no edit.
  */
 export const DEFAULT_METRICS_PORT = 9090;
+
+/**
+ * `X_PORT_IN_USE` is the code the CLI already registers for "this dev port is taken", and the
+ * scrape port is one — a synonym here would be a second code for one condition. The fix moves the
+ * port rather than naming a process to kill, because `METRICS_PORT` is the one knob both `x dev`
+ * and the container read (`serve.ts`'s `metricsPortFromEnv`).
+ */
+export class MetricsPortInUseError extends UltimateError {
+  constructor(input: { port: number }) {
+    super({
+      code: 'X_PORT_IN_USE',
+      cause: `the metrics port ${input.port} is already bound, so no role could open its scrape listener`,
+      fix: `METRICS_PORT=${input.port + 1} x dev --json`,
+      docs: docsFor('X_PORT_IN_USE'),
+    });
+  }
+}
+
+/** Bun surfaces the bind failure as an `Error` carrying the libc code; nothing else is ours. */
+const isAddressInUse = (error: unknown): boolean =>
+  error instanceof Error && (error as { code?: unknown }).code === 'EADDRINUSE';
 
 export interface MetricsEndpointOptions {
   /** 0 asks the kernel for an ephemeral port, which is what a test wants. */
@@ -45,20 +68,32 @@ export interface MetricsEndpoint {
  * signal at the moment of load is worse than no autoscaler.
  */
 export function startMetricsEndpoint(options: MetricsEndpointOptions = {}): MetricsEndpoint {
-  const server = Bun.serve({
-    port: options.port ?? DEFAULT_METRICS_PORT,
-    hostname: options.hostname ?? 'localhost',
-    fetch(request: Request): Response {
-      if (new URL(request.url).pathname !== METRICS_PATH) {
-        return new Response('not found', { status: 404 });
-      }
-      // `collectMetrics()` is cumulative and never reset by a read, so two scrapers cannot steal
-      // each other's samples — but a cache would hand the second one a stale window.
-      return new Response(metricsText(), {
-        headers: { 'content-type': METRICS_CONTENT_TYPE, 'cache-control': 'no-store' },
+  const port = options.port ?? DEFAULT_METRICS_PORT;
+  // `startRoles` opens this FIRST, before any role, so `Bun.serve`'s own bare `Error` was what a
+  // second `x dev` on one machine reported: no code, no fix, at the boot path this package owns.
+  // The return type is inferred, keeping `Bun.serve`'s own shape stated once.
+  function listen() {
+    try {
+      return Bun.serve({
+        port,
+        hostname: options.hostname ?? 'localhost',
+        fetch(request: Request): Response {
+          if (new URL(request.url).pathname !== METRICS_PATH) {
+            return new Response('not found', { status: 404 });
+          }
+          // `collectMetrics()` is cumulative and never reset by a read, so two scrapers cannot
+          // steal each other's samples — but a cache would hand the second one a stale window.
+          return new Response(metricsText(), {
+            headers: { 'content-type': METRICS_CONTENT_TYPE, 'cache-control': 'no-store' },
+          });
+        },
       });
-    },
-  });
+    } catch (error) {
+      if (!isAddressInUse(error)) throw error;
+      throw new MetricsPortInUseError({ port });
+    }
+  }
+  const server = listen();
   // Same rule as every other socket the framework opens: announce it, so a request back to it is
   // recognisably this process calling itself rather than egress the test seal must refuse.
   const stopListening = markListening(server.url.origin);

@@ -3,6 +3,7 @@
 // and an already-resolved caller, and returns a response or `null` for a notification.
 // Both transports (http, stdio) and every test drive this one function.
 
+import { stringField } from '@ultimat3/core';
 import { formatIssues } from '@ultimat3/schema';
 import { auditToolCall, outcomeForCode } from './audit';
 import { McpScopeDeniedError } from './errors';
@@ -242,17 +243,21 @@ interface FrameworkError {
  * transport must stay independent of which package threw.
  */
 function asFrameworkError(error: unknown): FrameworkError | undefined {
-  if (typeof error !== 'object' || error === null) return undefined;
-  const e = error as { code?: unknown; title?: unknown; cause?: unknown; fix?: unknown };
-  if (typeof e.code !== 'string' || !e.code.startsWith('X_')) return undefined;
+  // `stringField` from `@ultimat3/core`, never `typeof e.code === 'string'`: the value is whatever
+  // an app's handler, its driver or its SDK threw, so each read is a getter call or a `Proxy`
+  // trap. This runs inside the catch block that owes the caller an answer, and a probe that
+  // raises here leaves the JSON-RPC request with no response at all — not even the `-32603` the
+  // header promises for a genuine bug.
+  const code = stringField(error, 'code');
+  if (code === undefined || !code.startsWith('X_')) return undefined;
   return {
-    code: e.code,
-    title: typeof e.title === 'string' ? e.title : '',
-    cause: typeof e.cause === 'string' ? e.cause : 'unknown',
+    code,
+    title: stringField(error, 'title') ?? '',
+    cause: stringField(error, 'cause') ?? 'unknown',
     // A substituted fix is still a fix an agent will act on, so it has to be runnable. `see docs`
-    // named no docs and no command; `e.code` is already narrowed to an `X_` string by the guard
+    // named no docs and no command; `code` is already narrowed to an `X_` string by the guard
     // above, so the substitute is the one command that explains exactly this code.
-    fix: typeof e.fix === 'string' ? e.fix : `x errors explain ${e.code}`,
+    fix: stringField(error, 'fix') ?? `x errors explain ${code}`,
   };
 }
 

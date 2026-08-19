@@ -3,7 +3,7 @@
 // Every span below arrives through `withSpan`, exactly as `x dev` receives them.
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { FrozenClock } from '@ultimat3/core';
+import type { FrozenClock, SpanContext } from '@ultimat3/core';
 import { configureTelemetry, frozenClock, resetTelemetry, withSpan } from '@ultimat3/core';
 import { STATEMENT_ATTRIBUTE } from '@ultimat3/db';
 import { createTraceRecorder } from './dev-traces';
@@ -20,7 +20,7 @@ const install = (
 /** One request, exactly as the HTTP pipeline opens it: root span, `http.*` attributes, children. */
 function request(
   clock: FrozenClock,
-  facts: { id: string; method?: string; path: string; status?: number },
+  facts: { id: string; method?: string; path: string; status?: number; parent?: SpanContext },
   children: readonly string[] = [],
   statements: readonly string[] = [],
 ): void {
@@ -53,9 +53,18 @@ function request(
         'http.status_code': facts.status ?? 200,
       });
     },
-    { kind: 'server' },
+    // Exactly `pipeline.ts`'s own call: `parent: correlation.parent`, which is defined whenever the
+    // caller sent a `traceparent` and `undefined` when it did not.
+    { kind: 'server', ...(facts.parent === undefined ? {} : { parent: facts.parent }) },
   );
 }
+
+/** A caller's span, as `parseTraceparent` hands one back off an inbound `traceparent` header. */
+const inbound: SpanContext = {
+  traceId: '4bf92f3577b34da6a3ce929d0e0e4736',
+  spanId: '00f067aa0ba902b7',
+  traceFlags: 1,
+};
 
 afterEach(() => {
   resetTelemetry();
@@ -119,6 +128,24 @@ describe('unit · the /_x timeline source', () => {
     const spans = recorder.traces()[0]?.spans ?? [];
     expect(spans[0]?.startMs).toBe(0);
     expect(spans.every((span) => span.startMs >= 0)).toBe(true);
+  });
+
+  // The bug this guards: `isHttpRoot` also required `parentSpanId === undefined`, and
+  // `packages/http/src/pipeline.ts` passes `parent: correlation.parent` — so a request from an
+  // instrumented client, an ingress or a service mesh had a defined parent, `spans.find` answered
+  // `undefined`, and the whole trace vanished from `/_x/timeline`.
+  test('a request that arrived with an inbound traceparent is still a request', () => {
+    const { recorder, clock } = install();
+    request(clock, { id: 'req_1', path: '/feed', parent: inbound }, ['query.feed']);
+
+    const [trace] = recorder.traces();
+    expect(recorder.traces()).toHaveLength(1);
+    expect(trace?.requestId).toBe('req_1');
+    expect(trace?.path).toBe('/feed');
+    // The root still anchors the flame at depth 0, whatever it arrived with.
+    const root = trace?.spans.find((span) => span.parentId === null);
+    expect(root?.kind).toBe('http');
+    expect(trace?.spans.filter((span) => span.parentId === null)).toHaveLength(1);
   });
 
   test('spans that never got an http root are not reported as requests', () => {

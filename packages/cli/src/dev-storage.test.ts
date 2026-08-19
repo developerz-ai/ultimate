@@ -14,14 +14,14 @@ import type { RequestContext, Route } from '@ultimat3/http';
 import { createRequestContext, defineHttpConfig, UltimateRequest } from '@ultimat3/http';
 import { clearPermissions, clearRoles, definePermissions, defineRoles } from '@ultimat3/policy';
 import type { Storage } from '@ultimat3/storage';
-import { defineStorage, localDriver, resetStorage, scopedKey } from '@ultimat3/storage';
 import {
-  etagMatches,
-  parseByteRange,
-  STORAGE_BASE_PATH,
-  STORAGE_READ_PERMISSION,
-  storageRoutes,
-} from './dev-storage';
+  DEFAULT_SIGNED_URL_BASE,
+  defineStorage,
+  localDriver,
+  resetStorage,
+  scopedKey,
+} from '@ultimat3/storage';
+import { etagMatches, parseByteRange, STORAGE_READ_PERMISSION, storageRoutes } from './dev-storage';
 
 const BYTES = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 const KEY = scopedKey('org-1', 'avatars', 'a.png');
@@ -46,10 +46,10 @@ interface CallInit {
  */
 async function call(routes: readonly Route[], init: CallInit = {}): Promise<Response> {
   const route = routes[0];
-  expect(route?.path).toBe(`${STORAGE_BASE_PATH}/:disk/*key`);
+  expect(route?.path).toBe(`${DEFAULT_SIGNED_URL_BASE}/:disk/*key`);
   if (route === undefined) throw new Error('no route');
   const key = init.key ?? KEY;
-  const url = new URL(`http://dev.test${STORAGE_BASE_PATH}/${init.disk ?? 'local'}/${key}`);
+  const url = new URL(`http://dev.test${DEFAULT_SIGNED_URL_BASE}/${init.disk ?? 'local'}/${key}`);
   const ctx: RequestContext = createRequestContext({
     url,
     method: 'GET',
@@ -158,7 +158,7 @@ describe('unit · dev storage · authorization', () => {
     // holding the same line on its own, with the code the decision carried rather than a
     // flattened 403 — so the guarantee does not depend on which surface called it.
     const route = storageRoutes({ storage })[0];
-    const url = new URL(`http://dev.test${STORAGE_BASE_PATH}/local/${KEY}`);
+    const url = new URL(`http://dev.test${DEFAULT_SIGNED_URL_BASE}/local/${KEY}`);
     const ctx = createRequestContext({
       url,
       method: 'GET',

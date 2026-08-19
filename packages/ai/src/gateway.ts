@@ -4,6 +4,7 @@
 // budgeted, and cost-accounted in integer minor units. Everything an app does with a model
 // goes through here, so budgets and accounting cannot be bypassed by a stray fetch.
 
+import { renderThrowable } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import type { BudgetLimits, BudgetStore } from './budget';
 import { BudgetLedger, currentBudget, estimateSpend, withBudget } from './budget';
@@ -183,7 +184,11 @@ class GatewayImpl implements Gateway {
         try {
           return { ...(await call(provider)), provider: provider.name };
         } catch (error) {
-          failures.push(`${provider.name}#${attempt}: ${messageOf(error)}`);
+          // `renderThrowable`, never `error.message` or `String(error)`: this line becomes the
+          // `cause` of `X_AI_PROVIDER_UNAVAILABLE`, and a renderer that throws replaces the coded
+          // refusal with a `TypeError` nothing downstream can catch by code. It bounds the text
+          // too — a provider's 1MB body is not a cause.
+          failures.push(`${provider.name}#${attempt}: ${renderThrowable(error)}`);
           if (!isRetryable(error) || attempt === this.retry.attempts) break;
           await this.sleep(backoffMs(this.retry, attempt));
         }
@@ -205,14 +210,17 @@ export function backoffMs(policy: RetryPolicy, attempt: number): number {
  */
 export function isRetryable(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
-  const e = error as { status?: unknown; code?: unknown };
-  if (typeof e.status === 'number') return e.status === 429 || e.status >= 500;
-  return e.code === 'ETIMEDOUT' || e.code === 'ECONNRESET';
-}
-
-function messageOf(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
+  // A `Provider` is the APP's object, so the value it rejected with is one the framework did not
+  // build: `e.status` is a getter call and, on a `Proxy`, a trap. A value that fights being read
+  // cannot be SHOWN to be retryable, and this runs inside the catch block that has nothing left
+  // to answer with — so it fails closed rather than raising.
+  try {
+    const e = error as { status?: unknown; code?: unknown };
+    if (typeof e.status === 'number') return e.status === 429 || e.status >= 500;
+    return e.code === 'ETIMEDOUT' || e.code === 'ECONNRESET';
+  } catch {
+    return false;
+  }
 }
 
 /**

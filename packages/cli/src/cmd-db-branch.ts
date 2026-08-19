@@ -11,6 +11,7 @@ import {
   branchDatabaseName,
   createExternalBranch,
   createPgliteBranch,
+  databaseNameOf,
   dropExternalBranch,
   dropPgliteBranch,
   isBranchName,
@@ -27,6 +28,7 @@ import { MissingPositionalError, UnknownCommandError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import { flagString, nearest } from './parse';
+import { portFromEnv } from './serve';
 import { renderTable } from './table';
 
 /**
@@ -145,7 +147,9 @@ async function runCreate(
   services: DevServices,
   name: string,
 ): Promise<CommandResult> {
-  const port = Number.parseInt(ctx.env['PORT'] ?? '3000', 10);
+  // `portFromEnv`, never a bare `Number.parseInt`: the latter reads `PORT=abc` as `NaN` and put
+  // `http://feat.localhost:NaN` in `data.preview` — a machine-readable field naming no port.
+  const port = portFromEnv(ctx.env);
   let branch: BranchRow;
   try {
     branch =
@@ -205,7 +209,7 @@ function notABranch(services: DevServices, name: string): CommandResult {
   const target =
     services.db.mode === 'embedded'
       ? pgliteBranchLocation(services.db.url, name)
-      : branchDatabaseName(services.db.url.split('/').at(-1) ?? 'postgres', name);
+      : branchDatabaseName(databaseNameOf(services.db.url), name);
   return failure(msg('cli.db.branch.failed'), {
     code: 'X_DB_BRANCH_FAILED',
     cause: `"${name}" is not a branch of this database, so nothing was dropped (it would be ${target})`,

@@ -48,6 +48,24 @@ export function isBranchName(value: string): boolean {
   }
 }
 
+/**
+ * The database a connection URL names. `url.split('/').at(-1)` took the query string with it, so
+ * a refusal built from it named `postly?sslmode=require_branch_x` — a database that does not exist
+ * — in a message whose whole point is that a reader can check it. `pathname` is the one part that
+ * IS the database, and it arrives percent-encoded, which `pg_database` does not.
+ *
+ * Falls back rather than throwing: the caller is already reporting a failure, and a second throw
+ * from the reporter replaces a checkable refusal with a stack trace.
+ */
+export function databaseNameOf(url: string, fallback = 'postgres'): string {
+  try {
+    const name = decodeURIComponent(new URL(url).pathname.replace(/^\//, ''));
+    return name === '' ? fallback : name;
+  } catch {
+    return fallback;
+  }
+}
+
 /** Where a branch's app answers once something serves it — the preview half of the design. */
 export const previewUrl = (branch: string, port: number): string =>
   `http://${branch}.localhost:${port}`;

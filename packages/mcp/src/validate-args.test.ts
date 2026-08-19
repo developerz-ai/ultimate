@@ -272,3 +272,69 @@ describe('validateArgs: default schema type', () => {
     });
   });
 });
+
+// A `tools/call` names its arguments, and an agent — or whatever is driving one — chooses those
+// names. `Object.prototype` supplies a value for `constructor`, `toString` and `__proto__` on
+// every plain object, so a membership test that reads the prototype chain answers "declared" for
+// three names no schema declared: the arguments were accepted and then dropped, which is the one
+// outcome nothing downstream can detect. Third instance of the class in this sweep, after
+// `@ultimat3/i18n`'s catalog lookup and `@ultimat3/schema`'s `coerce`.
+describe('validateArgs: a property named after one of Object.prototype', () => {
+  const strict: JsonSchema = {
+    type: 'object',
+    properties: { id: { type: 'string' } },
+    required: ['id'],
+    additionalProperties: false,
+  };
+
+  test('additionalProperties false refuses it, exactly as it refuses any other unknown key', () => {
+    for (const key of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf']) {
+      expect(validateArgs(strict, { id: 'a', [key]: 1 })).toEqual({
+        ok: false,
+        issues: [{ path: key, message: 'unknown property' }],
+      });
+    }
+  });
+
+  test('an open schema carries it through as an OWN key, never dropped', () => {
+    const open: JsonSchema = { type: 'object', properties: { id: { type: 'string' } } };
+    const result = validateArgs(open, { id: 'a', constructor: 1, toString: 2 });
+    expect(result.ok).toBe(true);
+    const value = result.ok ? result.value : {};
+    expect(Object.hasOwn(value, 'constructor')).toBe(true);
+    expect(value['constructor']).toBe(1);
+    expect(value['toString']).toBe(2);
+  });
+
+  // The half the `hasOwn` fix would otherwise turn from a drop into a pollution: `out[key] = v`
+  // for `__proto__` runs the setter on `Object.prototype` and REPLACES the result's prototype
+  // instead of adding a key, so the arguments a handler reads carry properties nobody sent.
+  test('an open schema cannot have the result object re-prototyped by a __proto__ argument', () => {
+    const open: JsonSchema = { type: 'object', properties: { id: { type: 'string' } } };
+    const result = validateArgs(open, JSON.parse('{"id":"a","__proto__":{"isAdmin":true}}'));
+    expect(result.ok).toBe(true);
+    const value = result.ok ? result.value : {};
+    expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+    expect(value['isAdmin']).toBeUndefined();
+    expect(Object.hasOwn(value, '__proto__')).toBe(true);
+  });
+
+  // A schema that really does declare one of those names is the reason the discriminator is
+  // `Object.hasOwn` rather than a deny-list: declared is declared, and it still validates.
+  test('a schema that declares such a property validates it like any other', () => {
+    const declared: JsonSchema = {
+      type: 'object',
+      properties: { constructor: { type: 'string' } },
+      required: ['constructor'],
+      additionalProperties: false,
+    };
+    expect(validateArgs(declared, { constructor: 'ctor' })).toEqual({
+      ok: true,
+      value: { constructor: 'ctor' },
+    });
+    expect(validateArgs(declared, { constructor: 7 })).toEqual({
+      ok: false,
+      issues: [{ path: 'constructor', message: 'must be a string' }],
+    });
+  });
+});

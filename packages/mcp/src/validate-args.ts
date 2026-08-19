@@ -78,27 +78,41 @@ function object(
   const out: Record<string, unknown> = {};
 
   for (const key of Object.keys(source)) {
-    if (properties[key] === undefined) {
+    // `Object.hasOwn`, never `properties[key] === undefined`: the second walks the prototype
+    // chain, so `constructor`, `toString` and `__proto__` read as DECLARED on every schema and an
+    // argument named after one was accepted past an `additionalProperties: false` that forbids it,
+    // then silently dropped. Same discriminator as the loop below, which always had it right.
+    if (!Object.hasOwn(properties, key)) {
       if (schema.additionalProperties === false) {
         issues.push({ path: join(path, key), message: 'unknown property' });
         continue;
       }
-      out[key] = source[key];
+      put(out, key, source[key]);
     }
   }
   for (const [key, child] of Object.entries(properties)) {
     const at = join(path, key);
     const present = Object.hasOwn(source, key) && source[key] !== undefined;
     if (!present) {
-      if (child.default !== undefined) out[key] = child.default;
+      if (child.default !== undefined) put(out, key, child.default);
       else if (schema.required?.includes(key) === true) {
         issues.push({ path: at, message: 'is required' });
       }
       continue;
     }
-    out[key] = walk(child, source[key], at, issues);
+    put(out, key, walk(child, source[key], at, issues));
   }
   return out;
+}
+
+/**
+ * One validated key onto the result. `out[key] = value` is not an assignment for exactly one
+ * name: `__proto__` runs `Object.prototype`'s setter and REPLACES the object's prototype instead
+ * of adding a key, so a caller-chosen argument name decides what the handler's `args.isAdmin`
+ * reads. `defineProperty` writes a plain own data property whatever the name is.
+ */
+function put(out: Record<string, unknown>, key: string, value: unknown): void {
+  Object.defineProperty(out, key, { value, writable: true, enumerable: true, configurable: true });
 }
 
 function array(schema: JsonSchema, input: unknown, path: string, issues: ArgIssue[]): unknown {

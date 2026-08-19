@@ -104,6 +104,14 @@ let server: DevServer;
  */
 const BOOT_TIMEOUT_MS = 60_000;
 
+/** Bound and released: `METRICS_PORT` is read as a NAMED port, so it can be neither 0 nor 9090. */
+const METRICS_PORT = ((): number => {
+  const probe = Bun.serve({ port: 0, hostname: 'localhost', fetch: () => new Response('') });
+  const port = Number(new URL(probe.url).port);
+  probe.stop(true);
+  return port;
+})();
+
 beforeAll(async () => {
   await rm(ROOT, { recursive: true, force: true });
   for (const [path, contents] of Object.entries(FILES)) {
@@ -111,7 +119,9 @@ beforeAll(async () => {
   }
   resetRegistries();
   // Port 0 asks the OS for a free one, so this suite never collides with a running `x dev`.
-  server = await startDev({ root: ROOT, port: 0, env: {}, roles: ['web', 'worker', 'scheduler'] });
+  // `METRICS_PORT` is named, because `x dev` ignoring it is the thing under test.
+  const env = { METRICS_PORT: String(METRICS_PORT) };
+  server = await startDev({ root: ROOT, port: 0, env, roles: ['web', 'worker', 'scheduler'] });
 }, BOOT_TIMEOUT_MS);
 
 /**
@@ -153,6 +163,13 @@ describe('unit · x dev boots the app', () => {
     expect(server.running.scheduler).not.toBeNull();
     expect(server.running.syncUrl).toBeNull();
     expect(server.findings).toEqual([]);
+  });
+
+  // `cmd-dev.ts` passed no `metricsPort`, so `METRICS_PORT` moved the scrape port in the container
+  // and did nothing here — where it bound 9090 and the second `x dev` on the box died on it.
+  test('x dev honours METRICS_PORT, the same variable the container reads', async () => {
+    expect(new URL(server.running.metricsUrl).port).toBe(String(METRICS_PORT));
+    expect((await fetch(`${server.running.metricsUrl}/metrics`)).status).toBe(200);
   });
 
   test('the app loaded cleanly and its actions are mounted as HTTP routes', async () => {

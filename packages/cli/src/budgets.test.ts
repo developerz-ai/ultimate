@@ -120,6 +120,27 @@ describe('unit · measureJsBytes weighs the document, not the graph', () => {
     await Bun.write(join(dir, 'chunk.js'), 'console.log(1)');
     expect(await measureJsBytes('<script src="/chunk.js"></script>', dir)).toBe(14);
   });
+
+  // The bug this guards: a document that makes the browser execute NOTHING failed its JS budget,
+  // with a `fix:` telling the author to move an import that does not exist. `@ultimat3/seo` emits
+  // `application/ld+json` for structured data and `@ultimat3/render` emits `application/json` for
+  // island props — both are data the parser never runs.
+  test('a JSON-typed script is data, so a page of only data ships zero JS', async () => {
+    const document =
+      '<script type="application/ld+json">{"@type":"Article","headline":"a long headline"}</script>' +
+      '<script type="application/json" data-x-props="i1">{"title":"another long string"}</script>';
+    expect(await measureJsBytes(document, out)).toBe(0);
+  });
+
+  test('the rule is the type ending in json, not the one literal type', async () => {
+    expect(await measureJsBytes('<script type="importmap+json">{"a":1}</script>', out)).toBe(0);
+    expect(await measureJsBytes('<script type="APPLICATION/LD+JSON"> {"a":1} </script>', out)).toBe(
+      0,
+    );
+    // A module is code, and so is a type nobody declared.
+    expect(await measureJsBytes('<script type="module">let a=1</script>', out)).toBe(7);
+    expect(await measureJsBytes('<script>let a=1</script>', out)).toBe(7);
+  });
 });
 
 describe('unit · writeBuildStats is what makes X_BUDGET_UNMEASURED reachable', () => {

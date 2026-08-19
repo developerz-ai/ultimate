@@ -6,8 +6,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { OPENAPI_FILE } from './app-openapi';
-import { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
+import { readWorkers, runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 import { exitCodeFor } from './output';
+import type { ParsedArgs } from './parse';
+import { parseArgs } from './parse';
+import { WORKER_CEILING } from './test-workers';
 import { VERIFY_FLOOR_FILE } from './verify-floor';
 import type { VerifyContext, VerifyStep } from './verify-step';
 import { VERIFY_STEP_NAMES } from './verify-step';
@@ -303,6 +306,32 @@ describe('unit · x verify', () => {
     expect(verifyCommand.spec.usage).toBe('x verify [--workers N] [--json]');
   });
 
+  // The bug this guards: the summary said "max 8" and `readWorkers` passed no `max`, so
+  // `--workers 5000` was accepted and every parallel step spawned one Bun process per test file.
+  test('--workers is bounded by the ceiling the summary names', () => {
+    const args = (value: string): ParsedArgs =>
+      parseArgs(['verify', '--workers', value], [verifyCommand.spec]);
+    expect(readWorkers(args(String(WORKER_CEILING)))).toBe(WORKER_CEILING);
+    expect(readWorkers(parseArgs(['verify'], [verifyCommand.spec]))).toBeUndefined();
+    // `toThrow(Class)` passes in Bun 1.3.14 when the callee merely RETURNS an error, so the code
+    // is asserted off a caught value instead.
+    let caught: unknown;
+    try {
+      readWorkers(args(String(WORKER_CEILING + 1)));
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toMatchObject({ code: 'X_CLI_BAD_FLAG', fix: 'x verify --workers 4' });
+  });
+
+  // `x help verify` derives from the spec, and `cpus - 1` is the default `test-workers.ts`
+  // measured and rejected — slower than not sharding at all.
+  test('the flag summary names the default the code actually computes', () => {
+    const summary = verifyCommand.spec.flags?.[0]?.summary ?? '';
+    expect(summary).not.toContain('CPUs - 1');
+    expect(summary).toContain(`max ${WORKER_CEILING}`);
+  });
+
   test('a host check adds findings to the step it was registered for', async () => {
     const withHost: readonly VerifyStep[] = [
       {
@@ -408,11 +437,25 @@ describe('unit · x verify', () => {
     });
   });
 
-  describe('roadmap only runs when a host registers it', () => {
+  describe('roadmap applies to a repo that HAS a roadmap', () => {
     const step = VERIFY_STEPS.find((candidate) => candidate.name === 'roadmap');
 
-    test('skipped with no host check registered', async () => {
+    test('skipped in a repo with no docs/idea/14-roadmap.md', async () => {
       expect(await step?.applies?.(ctx)).toBe(false);
+    });
+
+    // The bug this guards: `applies` keyed on a CALLER-supplied option, so a caller of the exported
+    // `runVerify(VERIFY_STEPS, ctx)` that passes no `hostChecks` — in a repo whose committed
+    // `x.verify.json` names `roadmap` — got `X_VERIFY_SUITE_VANISHED`, whose `fix:` is the command
+    // that just failed. Whether the step applies is a fact about the repo, never about the call.
+    test('applies on the file, not on the option', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'x-verify-roadmap-'));
+      try {
+        await Bun.write(join(root, 'docs', 'idea', '14-roadmap.md'), '# roadmap\n');
+        expect(await step?.applies?.({ ...ctx, root })).toBe(true);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
     });
 
     test('applies and surfaces the host findings once one is registered', async () => {
@@ -424,7 +467,6 @@ describe('unit · x verify', () => {
         fix: 'edit docs/idea/14-roadmap.md: put "✅" or "🚧" in the second cell of the row starting "| 3 |", then: bun run scripts/roadmap.ts --json',
       };
       const withHost: VerifyContext = { ...ctx, hostChecks: { roadmap: async () => [finding] } };
-      expect(await step?.applies?.(withHost)).toBe(true);
       const outcome = await step?.run(withHost);
       expect(outcome?.ok).toBe(false);
       expect(outcome?.findings).toEqual([finding]);

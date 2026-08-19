@@ -9,6 +9,7 @@
 import { join } from 'node:path';
 import { docsFor } from './error-codes';
 import type { Finding } from './output';
+import { maskLiterals, stripComments } from './ts-scan';
 
 const ROOT_TSCONFIG = 'tsconfig.json';
 
@@ -23,14 +24,38 @@ export const normalizeReferencePath = (path: string): string =>
   path.replace(/^\.\//, '').replace(/\/+$/, '');
 
 /**
+ * A tsconfig is JSONC and `JSON.parse` is not, so the comments and trailing commas `tsc` accepts —
+ * and `tsc --init` writes — are removed before the parse. `Bun.file().json()` rejects both, and
+ * the rejection was mapped to "this root does not use project references": the check went dark on
+ * exactly the roots most likely to have been written by hand, while `typecheck` stayed green over
+ * every package it then skipped. `stripComments` is `ts-scan.ts`'s, so a `//` inside a string is a
+ * URL and not a comment; the trailing-comma pass reads MASKED text for the same reason.
+ */
+function parseJsonc(text: string): unknown {
+  const uncommented = stripComments(text);
+  const masked = maskLiterals(uncommented);
+  const chars = [...uncommented];
+  for (let i = 0; i < masked.length; i += 1) {
+    if (masked[i] !== ',') continue;
+    let next = i + 1;
+    while (next < masked.length && /\s/.test(masked[next] as string)) next += 1;
+    if (masked[next] === '}' || masked[next] === ']') chars[i] = ' ';
+  }
+  return JSON.parse(chars.join('')) as unknown;
+}
+
+/**
  * `undefined` means "this root does not use project references" — a different repo shape, not an
  * empty graph. A scaffolded app is that shape (`extends` + `include`, no references at all), and
  * telling its author to add an entry to a list that does not exist is a fix that makes the build
- * worse. A tsconfig that will not parse is `typecheck`'s to report, with tsc's own message.
+ * worse. A tsconfig that will not parse EVEN AS JSONC is `typecheck`'s to report, with tsc's own
+ * message — this check has no code that would mean "the file is broken" and must not borrow one
+ * that means something else.
  */
 async function referencedPaths(root: string): Promise<ReadonlySet<string> | undefined> {
   const payload: unknown = await Bun.file(join(root, ROOT_TSCONFIG))
-    .json()
+    .text()
+    .then(parseJsonc)
     .catch(() => undefined);
   const references =
     typeof payload === 'object' && payload !== null

@@ -53,6 +53,7 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
 | `llm.ts` | `llm()` — the model call, declared as an `action`; and what a streamed answer must satisfy |
 | `llm-stream.ts` | `.stream()`'s plumbing: the sink, the ambient mark, the one-turn drive |
 | `agent.ts` | `agent()` — the tool loop, declared as an `action` |
+| `agent-transcript.ts` | what one turn leaves in the transcript: the assistant replay, the tool results, the correction |
 | `agent-facts.ts` | `describeAgents()` — the agent registry and the row a manifest publishes |
 | `agent-job.ts` | `agentJob()` — an agent as a real `JobHandle`, composed from `job()` |
 | `hive.ts` | `hive()` — one action fanned out over many inputs, declared as an `action` |
@@ -102,6 +103,12 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   zero leaks the ceiling upward on every release.
 - Cost is `Money` (integer minor units), rounded **up**. Never a float, never a division
   that loses a fraction.
+- **The gateway's two reads of a provider's throw are total.** A `Provider` is the APP's object, so
+  the value it rejects with is one the framework did not build: `isRetryable` indexes it (a getter,
+  or a `Proxy` trap) and fails closed if the read raises, and the failure line goes through core's
+  `renderThrowable` rather than `error.message` / `String(error)` — a renderer that throws replaces
+  `X_AI_PROVIDER_UNAVAILABLE` with a bare `TypeError` nothing catches by code, and it bounds a
+  provider's 1MB body out of the `cause`.
 - Every non-2xx and every in-band `error` frame becomes `AiTransportError`, which carries a real
   `status` field — that field IS the gateway's retry rule. A body parsed as a message would read
   as an empty, successful answer, which is the one outcome nothing downstream can detect.
@@ -317,6 +324,26 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
     contract from turns in a loop, and half-shipping it would be the second path axiom 1 refuses.
   - **No semantic cache on `agent()`.** Similar prompts do not have similar answers once the answer
     depends on what `lookupOrder` returned this second.
+  - **Every `tool_use` block the transcript replays is answered by a `tool_result` in the very next
+    message** — the Messages API's own rule, and `agent-transcript.ts` owns both halves of it for
+    that reason. Two paths broke it, both through `respond`, which is filtered out of the calls
+    that RUN and replayed like any other block: a turn emitting a tool call AND `respond` together
+    (ordinary parallel tool use), and a `respond` whose input failed the output schema, followed by
+    a plain user message. Both were a 400 (`tool_use ids were found without tool_result blocks`),
+    i.e. `X_AI_PROVIDER_UNAVAILABLE` in place of a completed run, and `agent.test.ts` never mixed
+    the two so neither shipped visible. An unaccepted `respond` now comes back as its own
+    `tool_result`, `is_error`, saying why — the answer is SUPERSEDED, not wrong: it was written
+    before the results of the tools the same turn asked for existed, so the loop continues and the
+    model answers again with them in hand. Discarding the block instead would have been the other
+    legal fix and loses the record; USING the speculative answer would skip the tool results the
+    model itself asked for, after those tools already ran.
+  - **A tool result is rendered totally.** `runLlmToolCall` returns `content: string` and the loop
+    TRUNCATES it, so `JSON.stringify`'s other two answers both have to be handled: `undefined` for
+    an action that returns nothing (`'null'`), and a throw on a bigint, a cycle or a `toJSON` of
+    the value's own — reported as "the tool ran and its result is not JSON", never as a failure,
+    because a model told the tool failed calls it again and buys its side effects twice. The throw
+    it catches is read with `stringField`, never `typeof error.code === 'string'`: the value is an
+    app's, so the probe is a getter call or a `Proxy` trap inside the catch block.
   - `AiMessage.content` widened to `string | readonly AiContentBlock[]` for this: a `tool_result`
     has to name the `tool_use` it answers and a string has nowhere to put the id. The block field
     names are the Messages API's, so `body()` passes them through untouched.
@@ -347,6 +374,13 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
     parallelism because `reserve` DEBITS on the root's turnstile before the call. Three members
     against a ceiling only one fits leave exactly one `ok`; that is asserted through the hive
     rather than asserted about the ledger, because the ledger already promised it.
+  - **A member's throw is RECORDED, whatever it is.** `failureOf` reads it with `isThrownError` and
+    `stringField` from core, never `error instanceof Error` and `.message`: a member is an app's
+    action, so a `Proxy` makes `instanceof` run a `getPrototypeOf` trap, and a throw there takes
+    down the whole hive — the one outcome the three arms exist to prevent. `skipped` has two
+    reasons, because they are two facts: `SKIPPED_ABORTED` (a sibling failed under `'abort'`) and
+    `SKIPPED_NO_INPUT` (the split produced nothing at that index). One string for both sent a
+    caller to retry a tail that was never cut.
   - **`onMemberError` is required.** `'abort'` stops and leaves the rest `skipped`; `'collect'`
     harvests. Both are right for somebody, so neither may be inherited silently.
   - `concurrency` defaults to 4 and `minMembers` to 2, and neither number is measured off any run —

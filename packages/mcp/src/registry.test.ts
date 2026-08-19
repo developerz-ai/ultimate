@@ -252,4 +252,34 @@ describe('textResult / jsonResult', () => {
       { type: 'text', text: JSON.stringify({ b: 1, a: 2 }, null, 2) },
     ]);
   });
+
+  // The value is an ACTION's return value — `toolFromAction` hands `primitive.run`'s output
+  // straight here — so `JSON.stringify`'s two non-string answers are both reachable from an app:
+  // `undefined` for a handler that returns nothing, and a throw on a bigint, a cycle or a
+  // `toJSON` of its own. A `ContentBlock.text` that is not a string is an invalid MCP frame, and
+  // a throw here escapes the server's own catch as a bug it did not cause.
+  test('a tool result that is not JSON becomes an isError block, never a throw', () => {
+    const cycle: Record<string, unknown> = {};
+    cycle['self'] = cycle;
+    for (const value of [
+      { total: 10n },
+      cycle,
+      {
+        toJSON: () => {
+          throw new Error('no');
+        },
+      },
+    ]) {
+      const result = jsonResult(value);
+      expect(result.isError).toBe(true);
+      expect(typeof result.content[0]?.text).toBe('string');
+      expect(result.content[0]?.text).toContain('not JSON');
+    }
+  });
+
+  test('a tool that returns nothing renders null, not a block with no text', () => {
+    const result = jsonResult(undefined);
+    expect(result.content).toEqual([{ type: 'text', text: 'null' }]);
+    expect('isError' in result).toBe(false);
+  });
 });

@@ -14,6 +14,7 @@ import { checkSourceDrift } from './drift';
 import { intFlagOr, PORT_RANGE } from './flag-number';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
+import type { ParsedArgs } from './parse';
 
 /**
  * The injection seam `runDoctor` reads instead of the environment. Not a semver surface —
@@ -126,7 +127,7 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
       finding(
         'X_PORT_IN_USE',
         `port ${probe.port} is already listening`,
-        `x dev --port ${probe.port + 1}`,
+        `x dev --port ${neighbouringPort(probe.port)}`,
       ),
     );
   }
@@ -164,6 +165,26 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   findings.push(...(await probe.snapshots()));
   return findings;
 }
+
+/**
+ * A free-port suggestion `x dev` will actually accept. `port + 1` at the top of the range emitted
+ * `x dev --port 65536`, which `x dev` refuses with `X_CLI_BAD_FLAG` — a fix line that reproduces a
+ * failure rather than ending one. The neighbour below is a port; the one above does not exist.
+ */
+const neighbouringPort = (port: number): number =>
+  port < PORT_RANGE.max ? port + 1 : PORT_RANGE.max - 1;
+
+/**
+ * The port to TEST, and the one place `x doctor` reads it. `PORT_RANGE.min` is 0 because `x dev
+ * --port 0` means "let the kernel pick"; here 0 means nothing, and `Bun.serve({ port: 0 })` always
+ * succeeds — so the port check could not fail, which is worse than not running it.
+ */
+export const doctorPort = (args: ParsedArgs): number =>
+  intFlagOr(
+    args,
+    { name: 'port', command: 'doctor', ...PORT_RANGE, min: 1, example: 'x doctor --port 3000' },
+    DEFAULT_DOCTOR_PORT,
+  );
 
 const portFree = async (port: number): Promise<boolean> => {
   try {
@@ -213,11 +234,7 @@ export const doctorCommand: CliCommand = {
     ],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
-    const port = intFlagOr(
-      ctx.args,
-      { name: 'port', command: 'doctor', ...PORT_RANGE, example: 'x doctor --port 3000' },
-      DEFAULT_DOCTOR_PORT,
-    );
+    const port = doctorPort(ctx.args);
     const findings = await runDoctor(probeFor(ctx.cwd, ctx.bunVersion, port));
     return {
       ok: findings.length === 0,

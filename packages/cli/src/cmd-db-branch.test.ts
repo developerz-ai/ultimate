@@ -15,11 +15,15 @@ import { exec } from './exec';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
 
-const ctxFor = (argv: readonly string[], cwd: string): CommandContext => ({
+const ctxFor = (
+  argv: readonly string[],
+  cwd: string,
+  env: Readonly<Record<string, string>> = {},
+): CommandContext => ({
   args: parseArgs(argv, SPECS),
   cwd,
   runner: exec,
-  env: {},
+  env,
   bunVersion: '1.3.0',
 });
 
@@ -63,6 +67,28 @@ describe('unit · x db branch', () => {
       const dropped = await dbCommand.run(ctxFor(['db', 'branch', 'drop', 'feat-x'], root));
       expect(dropped.ok).toBe(true);
       expect(existsSync(join(root, '.x', 'pgdata-feat-x'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // The bug this guards: `Number.parseInt(ctx.env['PORT'] ?? '3000', 10)` — the bare form
+  // `flag-number.ts` exists to eliminate — put `http://feat.localhost:NaN` in `data.preview`, a
+  // machine-readable field naming no port at all.
+  test('PORT decides the preview url, and a PORT that is not one fails before the clone', async () => {
+    const root = await appRoot();
+    try {
+      const created = await dbCommand.run(
+        ctxFor(['db', 'branch', 'create', 'feat-p'], root, { PORT: '4000' }),
+      );
+      expect(created.data).toMatchObject({ preview: 'http://feat-p.localhost:4000' });
+
+      const refused = await thrownBy(
+        dbCommand.run(ctxFor(['db', 'branch', 'create', 'feat-bad'], root, { PORT: 'abc' })),
+      );
+      expect(refused).toMatchObject({ code: 'X_PORT_INVALID' });
+      // Nothing was cloned: the refusal happens before the branch is made.
+      expect(existsSync(join(root, '.x', 'pgdata-feat-bad'))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

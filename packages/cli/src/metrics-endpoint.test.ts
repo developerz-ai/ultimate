@@ -12,7 +12,11 @@ import {
   resetListeners,
   resetMetrics,
 } from '@ultimat3/core';
-import { type MetricsEndpoint, startMetricsEndpoint } from './metrics-endpoint';
+import {
+  type MetricsEndpoint,
+  MetricsPortInUseError,
+  startMetricsEndpoint,
+} from './metrics-endpoint';
 
 let endpoint: MetricsEndpoint | undefined;
 
@@ -57,6 +61,25 @@ describe('the scrape endpoint', () => {
   test('answers only its own path — it is not a second router', async () => {
     expect((await scrape('/')).status).toBe(404);
     expect((await scrape('/healthz')).status).toBe(404);
+  });
+
+  // The bug this guards: a second `x dev` died on `Bun.serve`'s own bare `Error` — no `X_*` code,
+  // no `fix:` — at the FIRST thing `startRoles` opens, so the boot path this package owns handed
+  // back a stack trace instead of an instruction.
+  test('a port already bound is a coded refusal naming the port, never a bare Error', () => {
+    const taken = Number(new URL(endpoint?.url ?? 'http://localhost:0').port);
+    let caught: unknown;
+    try {
+      startMetricsEndpoint({ port: taken }).stop();
+    } catch (error) {
+      caught = error;
+    }
+    // `expect(fn).toThrow(Class)` passes in Bun 1.3.14 when the callee merely RETURNS an error, so
+    // the identity is asserted off the caught value.
+    expect(caught).toBeInstanceOf(MetricsPortInUseError);
+    expect(caught).toMatchObject({ code: 'X_PORT_IN_USE' });
+    expect((caught as { cause: string }).cause).toContain(String(taken));
+    expect((caught as { fix: string }).fix).toContain('METRICS_PORT=');
   });
 
   test('a scrape does not reset the counters it read', async () => {

@@ -294,9 +294,11 @@ export async function startRoles(options: StartRolesOptions): Promise<RunningRol
     // — every enqueue in a request handler silently becomes a job that never runs.
     //
     // On `worker`, and on `worker` alone: it is the role that exists wherever jobs run at all, and
-    // a relay is safe to duplicate (publish-then-mark is at-least-once and the idempotency key
-    // collapses the repeat) but pointless to spread. A deployment with no `worker` has no one to
-    // run the jobs either way.
+    // a relay is safe to duplicate — the claim is a LEASE taken in the statement that locks the
+    // row, so two relays never hold one batch — but pointless to spread. The idempotency key is
+    // not the reason and never was: its conflict target is a partial index over live states, so it
+    // collapses a repeat only while the first job is still live. A deployment with no `worker` has
+    // no one to run the jobs either way.
     const relay: OutboxRelay | null = selected.includes('worker')
       ? createOutboxRelay({ store: options.runtime.outbox, driver: options.runtime.jobs })
       : null;

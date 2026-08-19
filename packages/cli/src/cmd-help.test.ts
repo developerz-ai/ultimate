@@ -46,6 +46,25 @@ describe('unit · x help', () => {
     }
   });
 
+  // `x help <cmd>` renders `spec.flags` directly, so a flag missing from `usage` is NOT invisible
+  // there — but the usage line and `wiki/CLI-Reference.md` still disagreed about `x new --force`
+  // and `x dev --once`, and the wiki is the surface an agent reads first. Two commands, named,
+  // because five others (`g`, `db`, `deploy`, `manifest`, `jobs`) still omit flags from a usage
+  // line this rule would have to be widened across in one commit.
+  test('x new and x dev name every flag they declare in their own usage line', () => {
+    for (const name of ['new', 'dev']) {
+      const spec = SPECS.find((candidate) => candidate.name === name);
+      expect(spec).toBeDefined();
+      for (const flag of spec?.flags ?? []) {
+        // A boolean declared `example` is written `--no-example`: the negation IS the mention.
+        const named =
+          spec?.usage.includes(`--${flag.name}`) === true ||
+          spec?.usage.includes(`--no-${flag.name}`) === true;
+        expect([name, flag.name, named]).toEqual([name, flag.name, true]);
+      }
+    }
+  });
+
   // One command's page is a different shape: the hint is the summary there too, but it is not in
   // the body at all, so nothing about this change may add it back.
   test('one command page carries its usage and no catalogue hint', () => {

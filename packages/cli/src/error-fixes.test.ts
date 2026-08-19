@@ -7,7 +7,8 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadErrorCatalog } from './error-catalog';
+import { loadErrorCatalog, registeredErrorCodes } from './error-catalog';
+import { CLI_ERROR_CODES } from './error-codes';
 import { fixProblem } from './error-contract';
 import {
   codeFixes,
@@ -196,6 +197,28 @@ describe('unit · errors.explain projects the throw site', () => {
   );
 });
 
+/**
+ * A registered, non-CLI code the throw-site index holds no entry for — DERIVED, never named.
+ *
+ * `X_DRAINING` was the literal here until `endOfLiteral` stopped reading a lone apostrophe as a
+ * string opener: the desync blanked the rest of `packages/http/src/errors.ts`, so `draining()` at
+ * its line 426 was invisible and this suite asserted a premise the source disproves. Any code with
+ * no readable site exercises the same branch, and no single code gaining one falsifies it again.
+ * A CLI code is excluded because `CLI_FIXES` answers those and the fallback never runs.
+ */
+async function unindexedCode(): Promise<string> {
+  const [registered] = await Promise.all([registeredErrorCodes(), loadCodeFixes()]);
+  const found = [...registered]
+    .sort()
+    .find(
+      (code) => !codeFixes().has(code) && !(CLI_ERROR_CODES as readonly string[]).includes(code),
+    );
+  // Not a silent skip: every code having a readable site is a real change to what this branch
+  // means, and it should be read here rather than pass as a test that stopped testing anything.
+  expect(found).toBeDefined();
+  return found ?? '';
+}
+
 describe('unit · the three honest fallbacks', () => {
   test(
     'a code whose throw site computes its fix leads with the file, and with no verb',
@@ -215,16 +238,16 @@ describe('unit · the three honest fallbacks', () => {
   );
 
   // Loaded, NOT reset. `resetCodeFixes()` empties the index for every code alike, so the assertion
-  // would have held for a reason that has nothing to do with X_DRAINING — it would still pass if
-  // core grew a readable throw site for it tomorrow.
+  // would have held for a reason that has nothing to do with the branch under test — it would
+  // still pass if the framework grew a readable throw site for the code tomorrow.
   test(
-    'a code nothing in the installed framework raises says exactly that',
+    'a code the throw-site index holds nothing for says so instead of naming a command',
     async () => {
-      await Promise.all([loadErrorCatalog(), loadCodeFixes()]);
-      expect(codeFixes().get('X_DRAINING')).toBeUndefined();
+      const code = await unindexedCode();
+      expect(codeFixes().get(code)).toBeUndefined();
       expect(codeFixScan()).toBe('read');
-      const fix = explainErrorCode('X_DRAINING')?.fix ?? '';
-      expect(fix).toContain('nothing in the installed framework raises X_DRAINING');
+      const fix = explainErrorCode(code)?.fix ?? '';
+      expect(fix).toContain(`nothing in the installed framework raises ${code}`);
       expect(fixProblem(fix)).toBeUndefined();
     },
     REPO_SCAN_MS,
@@ -233,12 +256,17 @@ describe('unit · the three honest fallbacks', () => {
   // The third case is the one an empty index used to be indistinguishable from: nothing LOOKED.
   // Asserting the same code both ways is what proves the two lines are chosen by `codeFixScan()`
   // and not by the code. Last in the file, because it leaves the index reset.
-  test('an unread index says the packages could not be read, never that nothing raises the code', () => {
-    resetCodeFixes();
-    expect(codeFixScan()).toBe('unread');
-    const fix = explainErrorCode('X_DRAINING')?.fix ?? '';
-    expect(fix).toContain('could not be read');
-    expect(fix).not.toContain('nothing in the installed framework raises');
-    expect(fixProblem(fix)).toBeUndefined();
-  });
+  test(
+    'an unread index says the packages could not be read, never that nothing raises the code',
+    async () => {
+      const code = await unindexedCode();
+      resetCodeFixes();
+      expect(codeFixScan()).toBe('unread');
+      const fix = explainErrorCode(code)?.fix ?? '';
+      expect(fix).toContain('could not be read');
+      expect(fix).not.toContain('nothing in the installed framework raises');
+      expect(fixProblem(fix)).toBeUndefined();
+    },
+    REPO_SCAN_MS,
+  );
 });

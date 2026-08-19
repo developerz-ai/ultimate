@@ -14,6 +14,7 @@ import type { Runner } from './exec';
 import { parseArgs } from './parse';
 import { discoverTests } from './test-select';
 import { SHARD_COMMAND_PREFIX } from './test-shards';
+import { defaultWorkers, WORKER_CEILING, WORKER_FLOOR } from './test-workers';
 import type { TestType } from './verify-tests';
 import { TEST_TYPES } from './verify-tests';
 
@@ -143,6 +144,45 @@ describe('unit · x test type selection', () => {
     expect(names).toContain('filter');
     expect(names).toContain('sample');
     expect(testCommand.spec.usage).toContain('--sample');
+  });
+});
+
+describe('unit · x test --workers is bounded by the ceiling it documents', () => {
+  // The bug this guards: the summary said "max 8" and the reader passed no `max` at all, so
+  // `--workers 5000` was accepted and `planShards` clamped only to the file count — 842 concurrent
+  // Bun processes over this repo, each with the framework module graph and its own database.
+  test('a width above WORKER_CEILING is refused before a single process starts', async () => {
+    const { runner, calls } = recorder();
+    await expect(
+      testCommand.run(
+        context(['test', '--workers', String(WORKER_CEILING + 1)], import.meta.dir, runner),
+      ),
+    ).rejects.toMatchObject({ code: 'X_CLI_BAD_FLAG', fix: 'x test --workers 1' });
+    expect(calls.length).toBe(0);
+  });
+
+  test('the ceiling itself is accepted — the bound is inclusive', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-x-test-ceiling-'));
+    try {
+      await Bun.write(join(root, 'a.test.ts'), 'export {};\n');
+      const { runner, calls } = recorder();
+      await testCommand.run(context(['test', '--workers', String(WORKER_CEILING)], root, runner));
+      expect(calls.length).toBe(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // `x help test` derives from the spec, so a summary naming a default the code measured and
+  // REJECTED (`test-workers.ts`: `cpus - 1` is slower than not sharding at all) sends an agent to
+  // a number no run ever uses.
+  test('the summary names the default the code actually computes', () => {
+    const summary = (testCommand.spec.flags ?? []).find((flag) => flag.name === 'workers')?.summary;
+    expect(summary).not.toContain('CPUs - 1');
+    expect(summary).toContain(`max ${WORKER_CEILING}`);
+    expect(defaultWorkers(4)).toBe(6);
+    expect(defaultWorkers(1)).toBe(WORKER_FLOOR);
+    expect(defaultWorkers(64)).toBe(WORKER_CEILING);
   });
 });
 

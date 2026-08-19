@@ -12,7 +12,7 @@ Tier 5. May import tiers 0–4. Nothing imports this except `create-ultimate`.
 | I/O | only `dispatch.ts` renders or exits; commands return `CommandResult` |
 | Staying up | a command still listening when `run` resolves returns `hold` (`hold.ts`), or `bin.ts` exits out from under it |
 | `--json` | every command, no exceptions — same data as the human render |
-| Errors | codes + titles in `src/error-codes.ts`, classes in `src/errors.ts`, subclass `UltimateError`, never a bare `Error` |
+| Errors | codes + titles in `src/error-codes.ts`, classes in `src/errors.ts`, subclass `UltimateError`, never a bare `Error`. A class may sit beside its one thrower when `errors.ts` has no room under the 500-line ceiling — `db-seed.ts` and `metrics-endpoint.ts` do |
 | Subprocesses | only through `exec.ts`, so a test can inject a fake `Runner` |
 | Templates | `templates/*.ts` return strings; no fixture files on disk |
 | Strings | rendered output through `messages.ts`, missing key renders `⟦key⟧` — see below for what is *not* rendered output |
@@ -512,8 +512,10 @@ session-scoped and the grant dies when the connection returns to the pool, so ev
 itself as leader and a rolling update double-fires every task.
 
 The relay runs on `worker` and only `worker` — the role that exists wherever jobs run at all.
-Duplicating it is safe (publish-then-mark is at-least-once and the idempotency key collapses the
-repeat) but pointless.
+Duplicating it is safe — the claim is a **lease** taken in the statement that locks the row
+(`@ultimat3/jobs`' `outbox-pg.ts`, fenced on `claimed_by`), so two relays never hold one batch —
+but pointless. The idempotency key is not the reason and never was: its conflict target is a
+partial index over live states, so it collapses a repeat only while the first job is still live.
 
 `SQL_IDEMPOTENCY_TABLE` is applied beside `SQL_JOBS_TABLE`, and the store is installed by the boot
 rather than by the app, even though `@ultimat3/action` documents
@@ -604,6 +606,16 @@ alone is satisfied by both surfaces failing open together. Cacheability follows 
 route: a tenant-scoped key takes `AUTHORIZED_OBJECT_CACHE` (`private, max-age=0`, varying on
 `authorization`/`cookie`), and only a key no tenant owns keeps `immutable`. A genuinely public image
 belongs under `apps/web/site/`, which is a static asset and never touches that disk.
+
+**A variant is CACHED only at a width the framework can mint.** The cache key is built entirely
+from caller-supplied query values, so `?w=1`, `?w=2`, … each wrote a new object to the app's only
+disk, on a route every signed-in tenant may reach for their own keys. `@ultimat3/seo`'s
+`MAX_IMAGE_WIDTH` (8192) bounds that and does not close it. `isMintableWidth` is the bound:
+`DEFAULT_WIDTHS` **plus the source's own intrinsic width**, which is exactly the set `usableWidths`
+puts in a `srcset` — the constant alone would refuse the widest entry of any image whose intrinsic
+width is not one of the eight. Anything outside it is still served; only the `put` is refused, so
+no caller gains a new 4xx. `?q=` is deliberately still unbounded here — the closed set for quality
+is `@ultimat3/seo`'s to declare, not this file's.
 
 `ICON_SOURCE` lives here, not in `cmd-doctor.ts`, because this is the module that reads it: the
 diagnostic checks what `x dev` serves, so one constant cannot pass the check and serve nothing.
