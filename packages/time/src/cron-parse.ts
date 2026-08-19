@@ -77,7 +77,7 @@ export function parseCron(expression: string): CronExpression {
   // 0 and 7 are both Sunday in cron; ISO calls Sunday 7.
   const daysOfWeek = [...new Set(rawDow.map((day) => (day === 0 ? 7 : day)))].sort((a, b) => a - b);
 
-  return {
+  const parsed: CronExpression = {
     source: expanded,
     seconds,
     minutes,
@@ -88,6 +88,52 @@ export function parseCron(expression: string): CronExpression {
     dayOfMonthRestricted: isRestricted(domField ?? '*'),
     dayOfWeekRestricted: isRestricted(dowField ?? '*'),
   };
+  assertReachableDate(expression, parsed);
+  return parsed;
+}
+
+/** Longest each month can be. February is 29 because leap years happen — 29 CAN fire, 30 cannot. */
+const LONGEST_MONTH: readonly number[] = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+const MONTH_LABELS = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+];
+
+/**
+ * A grammatically valid expression whose day and month fields can never both match — `0 0 30 2 *`,
+ * a 30th of February. Decidable from the parsed fields in a bounded 12 x 31 scan, and decided
+ * HERE, because the alternative was `nextCronOccurrence` exhausting its 200,000-step walk: ~150 ms
+ * of blocking CPU, paid by `firedSince` on every tick of the scheduler's leader loop, to reach a
+ * refusal that `isValidCron` had already answered `true` for.
+ *
+ * Only when day-of-month is restricted and day-of-week is NOT. Vixie's OR rule is why: with both
+ * restricted, `0 0 30 2 5` means "the 30th of February OR any Friday in February", which fires
+ * every Friday in February — refusing it would break a working schedule.
+ */
+function assertReachableDate(expression: string, cron: CronExpression): void {
+  if (!cron.dayOfMonthRestricted || cron.dayOfWeekRestricted) return;
+  for (const month of cron.months) {
+    const longest = LONGEST_MONTH[month - 1] ?? 31;
+    for (const day of cron.daysOfMonth) {
+      if (day <= longest) return;
+    }
+  }
+  const months = cron.months.map((month) => MONTH_LABELS[month - 1] ?? String(month)).join(', ');
+  throw cronInvalid(
+    expression,
+    `day ${cron.daysOfMonth.join(',')} never occurs in ${months}, so this expression can never fire`,
+  );
 }
 
 export function isValidCron(expression: string): boolean {

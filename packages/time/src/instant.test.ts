@@ -1,6 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
-import { differenceMs, epoch, fromIso, instant, isInstant, now, toIso } from './instant';
+import {
+  addMs,
+  differenceMs,
+  epoch,
+  fromEpochMs,
+  fromEpochSeconds,
+  fromIso,
+  instant,
+  isInstant,
+  now,
+  subtractMs,
+  toEpochMs,
+  toIso,
+} from './instant';
 
 describe('instant', () => {
   test('round-trips ISO-8601 in UTC', () => {
@@ -58,6 +71,51 @@ describe('instant', () => {
     expect(isInstant(new Date('nope'))).toBe(false);
     expect(isInstant('2026-03-14T08:00:00Z')).toBe(false);
     expect(isInstant(null)).toBe(false);
+  });
+});
+
+// T1. `Number.isFinite` is not the `Date` range. Every constructor below reached `new Date(ms)`
+// with a finite number outside +/-8.64e15 and branded the Invalid Date that came back as an
+// `Instant` — a value `isInstant` then answers `false` for, and `toIso` throws a bare `RangeError`
+// out of, from a package whose every other refusal carries a code.
+describe('the epoch constructors', () => {
+  test('round-trip an epoch, in milliseconds and in seconds', () => {
+    expect(toIso(fromEpochMs(1_773_478_800_000))).toBe('2026-03-14T09:00:00.000Z');
+    expect(toEpochMs(fromEpochMs(1_773_478_800_000))).toBe(1_773_478_800_000);
+    expect(toIso(fromEpochSeconds(1_773_478_800))).toBe('2026-03-14T09:00:00.000Z');
+    expect(toIso(addMs(fromEpochMs(0), 86_400_000))).toBe('1970-01-02T00:00:00.000Z');
+    expect(toIso(subtractMs(fromEpochMs(86_400_000), 86_400_000))).toBe('1970-01-01T00:00:00.000Z');
+  });
+
+  test('refuse an epoch outside the Date range rather than branding an Invalid Date', () => {
+    expect(codeOf(() => fromEpochMs(8.64e15 + 1))).toBe('X_INSTANT_INVALID');
+    expect(codeOf(() => fromEpochMs(-8.64e15 - 1))).toBe('X_INSTANT_INVALID');
+    expect(codeOf(() => fromEpochMs(1e16))).toBe('X_INSTANT_INVALID');
+    expect(codeOf(() => fromEpochMs(Number.NaN))).toBe('X_INSTANT_INVALID');
+    expect(codeOf(() => fromEpochMs(Number.POSITIVE_INFINITY))).toBe('X_INSTANT_INVALID');
+  });
+
+  test('the refusal reaches every caller that builds an instant from a number', () => {
+    // Each of these used to hand back a branded Invalid Date instead.
+    expect(codeOf(() => fromEpochSeconds(1e13))).toBe('X_INSTANT_INVALID');
+    expect(codeOf(() => addMs(epoch(), 1e16))).toBe('X_INSTANT_INVALID');
+    expect(codeOf(() => subtractMs(epoch(), 1e16))).toBe('X_INSTANT_INVALID');
+    const runaway: Clock = { now: () => 1e16, monotonic: () => 0 };
+    expect(codeOf(() => now(runaway))).toBe('X_INSTANT_INVALID');
+  });
+
+  test('the boundary itself is a valid instant — the check is the range, not a smaller one', () => {
+    expect(toEpochMs(fromEpochMs(8.64e15))).toBe(8.64e15);
+    expect(isInstant(fromEpochMs(8.64e15))).toBe(true);
+    expect(isInstant(fromEpochMs(-8.64e15))).toBe(true);
+  });
+
+  test("a certified instant satisfies the type's own predicate, which is what failed", () => {
+    // `isInstant(fromEpochMs(1e16))` used to be `false`: the constructor certified a value the
+    // predicate rejects, so nothing downstream could tell a checked instant from an unchecked one.
+    for (const ms of [0, 1_773_478_800_000, -1_000]) {
+      expect(isInstant(fromEpochMs(ms))).toBe(true);
+    }
   });
 });
 

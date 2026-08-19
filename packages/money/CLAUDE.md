@@ -40,6 +40,12 @@ shape is still additive and this is still a minor version.
 - Never `/ 100`, and never `exponentOf(amount.currency)` for a value's own precision — that is
   `moneyScale(amount)`, which falls back to the currency and is right for both. `exponentOf` and
   `scaleOf` still answer for a *currency*, which is a different question.
+- **A stated currency is an ASSERTION, never a fallback.** `sum(amounts, currency)` used its
+  second argument only when the list was empty and ignored it entirely once a first addend existed:
+  `sum([money(1, 'EUR')], 'USD')` answered `{ minor: 1, currency: 'EUR' }`, so a caller who wrote
+  down USD received EUR with nothing refused — in the one entry point of a file whose header is
+  "Integer arithmetic that refuses to mix currencies". A stated currency the first addend
+  contradicts is `X_CURRENCY_MISMATCH`.
 - **Two scales meet at the finer one, never the coarser.** `add`, `subtract` and `compare`
   widen through `minorAt` (bigint, exact) before they do anything else, so a sub-cent fee added to
   a cent survives and a comparison answers where storing the widened value would rightly be

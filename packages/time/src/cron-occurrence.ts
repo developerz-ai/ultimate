@@ -106,9 +106,12 @@ export function nextCronOccurrence(
     carry(cursor);
   }
 
+  // The backstop, not the primary check. An impossible day/month pair — `0 0 30 2 *`, a 30th of
+  // February — is refused by `parseCron` in constant time, because reaching it here cost ~150ms of
+  // blocking CPU per call and `firedSince` pays that per tick of the scheduler's leader loop.
   throw cronInvalid(
     typeof expression === 'string' ? expression : cron.source,
-    `no occurrence after ${MAX_STEPS} search steps — the date fields can never all match (e.g. "0 0 30 2 *", a 30th of February)`,
+    `no occurrence after ${MAX_STEPS} search steps — the date fields can never all match`,
   );
 }
 

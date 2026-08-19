@@ -3,6 +3,7 @@
  * much of the Gulf, Sunday-only in parts of Asia, Saturday/Sunday in the West.
  */
 
+import { scheduleInvalid } from './errors';
 import type { Instant } from './instant';
 import { addDaysInZone, daysBetween, isoDateInZone, toZoned } from './zoned';
 import type { TimeZone } from './zones';
@@ -44,8 +45,16 @@ export function isBusinessDay(at: Instant, calendar: BusinessCalendar): boolean 
  * Move `days` business days forward (or back, if negative), keeping the local wall-clock
  * time. `days === 0` returns the input untouched, even on a weekend — callers that want
  * "the next business day" should ask for 1.
+ *
+ * The count is a WHOLE number of days, checked the way `plain-date.ts`'s `addPlainDays` checks its
+ * own: `0.5` used to reach `Math.abs(days)` as a loop bound and move a whole day, and a `NaN` —
+ * the shape a corrupted config or a failed parse takes — failed `remaining > 0` on the first test
+ * and returned the input, which reads as "no movement was needed" rather than as a failure.
  */
 export function addBusinessDays(at: Instant, days: number, calendar: BusinessCalendar): Instant {
+  if (!Number.isSafeInteger(days)) {
+    throw scheduleInvalid('days', days, 'a whole number of business days');
+  }
   if (days === 0) return at;
   const step = days > 0 ? 1 : -1;
   let remaining = Math.abs(days);

@@ -72,6 +72,47 @@
   this package exists to abolish, inside its own entry point. `Z` or an offset, or `X_INSTANT_INVALID`;
   wall-clock input is `fromZoned(wall, zone)`, which names its zone. A date-only form carries no
   clock time and is UTC by specification, so it still parses.
+- **`fromEpochMs` checks the `Date` RANGE, not `Number.isFinite`.** ±8.64e15 ms is the limit, so a
+  finite `1e16` used to hand back an Invalid Date branded as an `Instant` — a value `isInstant`
+  answers `false` for (the type's own predicate rejecting what its constructor certified) and
+  `toIso` throws a bare `RangeError` out of. `fromEpochSeconds`, `addMs`, `subtractMs` and
+  `now(clock)` all reach it and none re-checks, so the one test is `new Date(ms).getTime()` being
+  NaN — exactly what `instant()` already does.
+- **`configureTime({ defaultZone })` goes through `assertTimeZone`**, which validates AND
+  canonicalizes. It did neither: `'Mars/Olympus'` was accepted at boot and first refused inside a
+  formatter at render time, from a stack naming no configuration, and `'eUrOpE/bErLiN'` travelled
+  the process as its own zone string minting a permanent entry in every formatter cache. It throws
+  where `resolveTimeZone` skips — a stale header must not fail a request, a default nothing can
+  fall back to is a boot-time mistake with no second answer.
+- **`formatIsoDate` is built from `isoDateInZone`, never from `Intl` directly.** `year: 'numeric'`
+  neither zero-pads a year below 1000 nor carries the era, so it answered `'50-01-01'` where
+  `isoDateInZone` answered `'0050-01-01'` — two functions in one package answering one question
+  differently, and the short form matches no ISO pattern and is rejected by the `<input type="date">`
+  it exists for. One padding rule, in one place.
+- **`ordinal(value)` takes no locale.** It used to accept one, select the plural CATEGORY with it,
+  and append the ENGLISH suffix for that category regardless: `ordinal(1, 'de')` was `'1th'`. A
+  parameter that cannot change the answer correctly is removed, so a caller wanting a localized
+  ordinal hears it from `tsc`. **Breaking.**
+- **A day count is a whole number, and `formatDuration`'s `maxUnits` is at least 1.**
+  `addBusinessDays(at, 0.5)` moved a whole day and `NaN` returned the input unchanged, which reads
+  as "no movement was needed"; `maxUnits: 0` made the ceiling test true before the first unit, so
+  every duration rendered as "0 sec". Both refuse through `scheduleInvalid`, the in-package generic
+  range refusal `addPlainDays` already uses — not clamped, for the reason that error's own fix line
+  gives.
+- **`toSeconds` carries the sign out and rounds the MAGNITUDE.** `Math.round` breaks ties toward
+  `+Infinity`, so `'1500ms'` was 2 and `'-1500ms'` was -1. `@ultimat3/money`'s `rounding.ts` is the
+  framework's statement of this, and its `signed()` is why zero never comes back as `-0`.
+- **`parseDuration` rejects an ISO body by its GROUPS, never by its total.** `'PT0S'` — the
+  canonical zero most emitters write — was refused along with `'PT0H0M0S'` and `'P0W'`, while
+  `'P0D'` was let through by a special case. `ISO_8601` already requires a component group for any
+  body past a bare `'P'`, which is the case the guard was written for.
+- **An impossible day/month pair is refused by `parseCron`, in constant time.**
+  `isValidCron('0 0 30 2 *')` answered `true` and the refusal arrived ~150 ms later out of
+  `nextCronOccurrence`, after 200,000 walk steps — a cost `firedSince` pays on every tick of the
+  scheduler's leader loop. February is 29 in the table because leap years happen, and the check
+  applies ONLY when day-of-month is restricted and day-of-week is not: Vixie's OR means
+  `0 0 30 2 5` fires every Friday in February, so refusing it would break a working schedule.
+  `MAX_STEPS` stays as the backstop for what the check cannot see.
 - Never add `86_400_000` to cross a day boundary — use `addDaysInZone` / `fromZoned`.
 - Never take the clock from `Date.now()`; accept a `Clock` (`now(clock)`).
 - Cron and schedules iterate the **local wall clock**, then convert once with `fromZoned`.

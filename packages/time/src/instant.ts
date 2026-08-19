@@ -53,9 +53,17 @@ export function toIsoDateUtc(at: Instant): string {
   return at.toISOString().slice(0, 10);
 }
 
+/**
+ * The SAME test `instant()` performs, and for the same reason. `Number.isFinite` is not the `Date`
+ * range: `+/-8.64e15` ms is the limit, so a finite `1e16` produced an Invalid Date branded as an
+ * `Instant` — a value `isInstant` answers `false` for (the type's own predicate rejecting what its
+ * constructor certified) and `toIso` throws a bare `RangeError` out of. Reached through
+ * `fromEpochSeconds`, `addMs`, `subtractMs` and `now(clock)`, none of which re-check.
+ */
 export function fromEpochMs(ms: number): Instant {
-  if (!Number.isFinite(ms)) throw instantInvalid(String(ms));
-  return new Date(ms) as Instant;
+  const at = new Date(ms);
+  if (Number.isNaN(at.getTime())) throw instantInvalid(String(ms));
+  return at as Instant;
 }
 
 export function toEpochMs(at: Instant): number {

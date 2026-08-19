@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { formatDate, formatIsoDate, formatRelative, formatWithOffset, ordinal } from './format';
 import { fromIso } from './instant';
+import { isoDateInZone } from './zoned';
 
 const at = fromIso('2026-03-14T08:00:00Z');
 
@@ -56,5 +57,56 @@ describe('ordinal', () => {
     expect(ordinal(11)).toBe('11th');
     expect(ordinal(22)).toBe('22nd');
     expect(ordinal(101)).toBe('101st');
+  });
+
+  // T7. It took a `locale`, selected the plural CATEGORY with it, and then appended the English
+  // suffix for that category regardless — `ordinal(1, 'de')` was `'1th'`, which is a word in no
+  // language. A parameter that cannot change the answer correctly is removed, so a caller who
+  // wanted a localized ordinal finds out at BUILD time rather than in a rendered page.
+  test('takes no locale at all, so it can never append a suffix no language uses', () => {
+    // A locale used to reach `Intl.PluralRules` and pick the CATEGORY, while the suffix table
+    // stayed English: `ordinal(1, 'de')` was `'1th'`. Passing one is now a compile error, and the
+    // cast below is the runtime half of the same statement — the second argument cannot change
+    // the answer at all, so nothing can select the German category any more.
+    const loose = ordinal as unknown as (value: number, locale?: string) => string;
+    expect(loose(1, 'de')).toBe('1st');
+    expect(loose(3, 'de')).toBe('3rd');
+    expect(loose(1, 'fr')).toBe('1st');
+  });
+});
+
+describe('formatIsoDate', () => {
+  test('the parts are ISO, in the zone, for the day the zone is on', () => {
+    // Midnight UTC on the 14th is still the 13th in New York.
+    expect(formatIsoDate(fromIso('2026-03-14T00:30:00Z'), 'UTC')).toBe('2026-03-14');
+    expect(formatIsoDate(fromIso('2026-03-14T00:30:00Z'), 'America/New_York')).toBe('2026-03-13');
+    expect(formatIsoDate(fromIso('2026-03-14T00:30:00Z'), 'Asia/Tokyo')).toBe('2026-03-14');
+  });
+
+  // T3. `year: 'numeric'` neither zero-pads a year below 1000 nor carries an era, so this
+  // answered `'50-01-01'` where `isoDateInZone` — the other function in this package that answers
+  // the same question — answered `'0050-01-01'`. `'50-01-01'` matches no ISO pattern and is
+  // rejected by `<input type="date">`, which is one of the two callers named in the doc.
+  test('pads a year below 1000, and agrees with isoDateInZone', () => {
+    const early = fromIso('0050-01-01T12:00:00Z');
+    expect(formatIsoDate(early, 'UTC')).toBe('0050-01-01');
+    expect(formatIsoDate(early, 'UTC')).toBe(isoDateInZone(early, 'UTC'));
+    expect(formatIsoDate(early, 'UTC')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  test('the two functions agree across zones and eras — one question, one answer', () => {
+    const zones = ['UTC', 'Europe/Berlin', 'America/New_York', 'Asia/Kathmandu', 'Pacific/Apia'];
+    const instants = [
+      '0050-01-01T12:00:00Z',
+      '0999-12-31T23:30:00Z',
+      '1000-01-01T00:30:00Z',
+      '2026-03-14T00:30:00Z',
+      '2026-11-01T05:30:00Z',
+    ];
+    for (const iso of instants) {
+      for (const zone of zones) {
+        expect(formatIsoDate(fromIso(iso), zone)).toBe(isoDateInZone(fromIso(iso), zone));
+      }
+    }
   });
 });

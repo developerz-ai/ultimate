@@ -123,3 +123,71 @@ describe('unit · withTargeting', () => {
     );
   });
 });
+
+// F5. The header above `Date.parse` claims the deadline is "the same instant on every node — no
+// ambient zone". Only the bare-date form has that property: `Date.parse('2026-12-01T00:00:00')`
+// resolves through the PROCESS's zone, which spreads one declared deadline across fourteen hours
+// of a fleet, so `X_FLAG_EXPIRED` starts on different days on different pods.
+describe('unit · toFlag refuses an expiry that has no zone in it', () => {
+  const temporary = (expiresAt: string) => ({
+    kind: 'temporary' as const,
+    key: 'checkout.new-tax-engine',
+    description: 'scaffolding',
+    owner: 'payments',
+    expiresAt,
+    targeting: { default: false },
+  });
+
+  test('a bare local clock time is refused where it is declared', () => {
+    expect(caught(() => toFlag(temporary('2026-12-01T00:00:00')))).toBeUltimateError(
+      'X_FLAG_EXPIRY_INVALID',
+    );
+    expect(caught(() => toFlag(temporary('2026-12-01 09:30')))).toBeUltimateError(
+      'X_FLAG_EXPIRY_INVALID',
+    );
+  });
+
+  test('a bare date, a Z and an explicit offset all stay accepted', () => {
+    expect(toFlag(temporary('2026-12-01')).expiresAtMs).toBe(Date.UTC(2026, 11, 1));
+    expect(toFlag(temporary('2026-12-01T00:00:00Z')).expiresAtMs).toBe(Date.UTC(2026, 11, 1));
+    expect(toFlag(temporary('2026-12-01T00:00:00+01:00')).expiresAtMs).toBe(
+      Date.UTC(2026, 10, 30, 23),
+    );
+  });
+
+  test('every accepted form answers the SAME instant in three process zones', () => {
+    // `scripts/test-setup.ts` pins this process to UTC, so the whole failure is invisible in
+    // process by construction — the zone has to come from outside the runner, exactly as
+    // `packages/time/src/plain-date.test.ts` spawns one for the same reason.
+    const source = [
+      `import { toFlag } from '${import.meta.dir}/flag';`,
+      "const forms = ['2026-12-01', '2026-12-01T00:00:00Z', '2026-12-01T00:00:00+01:00', '2026-12-01T00:00:00'];",
+      'const answers = {};',
+      'for (const expiresAt of forms) {',
+      '  try {',
+      "    answers[expiresAt] = toFlag({ kind: 'temporary', key: 'k', description: 'd', owner: 'o',",
+      '      expiresAt, targeting: { default: false } }).expiresAtMs;',
+      '  } catch { answers[expiresAt] = "refused"; }',
+      '}',
+      'console.log(JSON.stringify({ zone: Intl.DateTimeFormat().resolvedOptions().timeZone, answers }));',
+    ].join('\n');
+    const readIn = (zone: string): { zone: string; answers: Record<string, unknown> } => {
+      const run = Bun.spawnSync(['bun', '-e', source], { env: { ...process.env, TZ: zone } });
+      return JSON.parse(new TextDecoder().decode(run.stdout).trim()) as {
+        zone: string;
+        answers: Record<string, unknown>;
+      };
+    };
+
+    const utc = readIn('UTC');
+    const newYork = readIn('America/New_York');
+    const tokyo = readIn('Asia/Tokyo');
+
+    // The control: the subprocesses really do carry different zones, so a zone-sensitive parse
+    // WOULD answer three different instants.
+    expect([utc.zone, newYork.zone, tokyo.zone]).toEqual(['UTC', 'America/New_York', 'Asia/Tokyo']);
+    expect(newYork.answers).toEqual(utc.answers);
+    expect(tokyo.answers).toEqual(utc.answers);
+    expect(utc.answers['2026-12-01T00:00:00']).toBe('refused');
+  });
+});

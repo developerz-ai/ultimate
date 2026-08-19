@@ -26,6 +26,25 @@ describe('cross-currency safety', () => {
     expect(sum([], 'JPY')).toEqual({ minor: 0, currency: 'JPY' });
     expect(codeOf(() => sum([]))).toBe('X_CURRENCY_UNKNOWN');
   });
+
+  // M1. The file header is "Integer arithmetic that REFUSES to mix currencies", and every other
+  // entry point does. `sum` took the explicit currency as a FALLBACK for an empty list and then
+  // ignored it entirely once a first addend existed: `sum([money(1, 'EUR')], 'USD')` answered
+  // `{ minor: 1, currency: 'EUR' }` — a caller who stated USD and got EUR back, with no refusal.
+  test('sum refuses an explicit currency the first addend contradicts', () => {
+    expect(codeOf(() => sum([money(1, 'EUR')], 'USD'))).toBe('X_CURRENCY_MISMATCH');
+    expect(codeOf(() => sum([money(1, 'EUR'), money(2, 'EUR')], 'USD'))).toBe(
+      'X_CURRENCY_MISMATCH',
+    );
+  });
+
+  test('sum keeps every shape that already worked', () => {
+    // Agreement is not a mismatch, an absent currency is still inferred, and an empty list still
+    // takes the declared one.
+    expect(sum([money(1, 'EUR')], 'EUR')).toEqual({ minor: 1, currency: 'EUR' });
+    expect(sum([money(1, 'EUR')])).toEqual({ minor: 1, currency: 'EUR' });
+    expect(sum([], 'USD')).toEqual({ minor: 0, currency: 'USD' });
+  });
 });
 
 describe('integer arithmetic', () => {

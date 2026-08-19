@@ -3,7 +3,7 @@
  * `step.sleep('3d')` in @ultimat3/jobs and every `retry.backoff` value comes through here.
  */
 
-import { durationInvalid } from './errors';
+import { durationInvalid, scheduleInvalid } from './errors';
 
 export const MS = 1;
 export const SECOND = 1000;
@@ -65,8 +65,17 @@ export function toMs(duration: string | number): number {
   return typeof duration === 'number' ? duration : parseDuration(duration);
 }
 
+/**
+ * `Math.round` breaks ties toward `+Infinity`, which is asymmetric across zero: `'1500ms'` was 2
+ * and `'-1500ms'` was -1, so a signed duration and its mirror did not answer mirrored seconds.
+ * The sign is carried out and the MAGNITUDE rounded — `packages/money/src/rounding.ts` is the
+ * framework's one statement of this, and `signed()` there is why zero never comes back as `-0`.
+ */
 export function toSeconds(duration: string | number): number {
-  return Math.round(toMs(duration) / SECOND);
+  const ms = toMs(duration);
+  const seconds = Math.round(Math.abs(ms) / SECOND);
+  if (seconds === 0) return 0;
+  return ms < 0 ? -seconds : seconds;
 }
 
 export interface FormatDurationOptions {
@@ -95,6 +104,14 @@ export function formatDuration(
 ): string {
   const style = options.style ?? 'short';
   const maxUnits = options.maxUnits ?? 2;
+  // Refused, not clamped, for the reason `scheduleInvalid`'s own fix line gives: `maxUnits: 0`
+  // made `pieces.length >= maxUnits` true before the first unit was measured, so EVERY duration
+  // fell through to the zero fallback and 9,000,000 ms rendered as "0 sec". A caller that asked
+  // for no units wanted something this function cannot express, and a silently wrong number on a
+  // screen is worse than a failed render.
+  if (!Number.isInteger(maxUnits) || maxUnits < 1) {
+    throw scheduleInvalid('maxUnits', maxUnits, 'at least 1');
+  }
   let remaining = Math.abs(Math.round(ms));
   const pieces: string[] = [];
 
@@ -141,13 +158,25 @@ function parseIso8601Duration(body: string, original: string): number {
   const match = ISO_8601.exec(body);
   if (match === null) throw durationInvalid(original);
   const [, weeks, days, hours, minutes, seconds] = match;
+  // The guard is on the GROUPS, not on the total. `'P'` and `'PT'` name no duration and must be
+  // refused; `'PT0S'` — the canonical zero most emitters write — names one, and testing
+  // `total === 0` rejected it along with `'PT0H0M0S'` and `'P0W'` while `'P0D'` was let through
+  // by a special case. `ISO_8601` already requires a component group for any body past bare `P`.
+  if (
+    weeks === undefined &&
+    days === undefined &&
+    hours === undefined &&
+    minutes === undefined &&
+    seconds === undefined
+  ) {
+    throw durationInvalid(original);
+  }
   const total =
     number(weeks) * WEEK +
     number(days) * DAY +
     number(hours) * HOUR +
     number(minutes) * MINUTE +
     number(seconds) * SECOND;
-  if (total === 0 && body.toUpperCase() !== 'P0D') throw durationInvalid(original);
   return Math.round(total);
 }
 

@@ -129,3 +129,49 @@ function fixOf(run: () => unknown): string {
   }
   return 'no-throw';
 }
+
+// T9. `isValidCron('0 0 30 2 *')` answered `true` for an expression that can never fire, and the
+// refusal only arrived ~150 ms later, from `nextCronOccurrence`, after 200,000 walk steps. The
+// combination is decidable from the parsed fields, so it is decided where the fields are parsed.
+describe('parseCron refuses a day that no selected month has', () => {
+  test('the 30th of February can never fire, and is refused where it is written', () => {
+    expect(isValidCron('0 0 30 2 *')).toBe(false);
+    expect(isValidCron('0 0 31 2 *')).toBe(false);
+    expect(isValidCron('0 0 31 4,6,9,11 *')).toBe(false);
+    expect(codeOf(() => parseCron('0 0 30 2 *'))).toBe('X_CRON_INVALID');
+    expect(String(errorOf(() => parseCron('0 0 30 2 *')).cause)).toContain('february');
+  });
+
+  test('the 29th of February stays valid — leap years exist', () => {
+    expect(isValidCron('0 0 29 2 *')).toBe(true);
+    expect(isValidCron('0 0 31 1,3,5,7,8,10,12 *')).toBe(true);
+    expect(isValidCron('0 0 30 4 *')).toBe(true);
+  });
+
+  test('one reachable month in the list is enough', () => {
+    // `30 2,3 *` fires every 30 March. Only a list where NO month can hold the day is impossible.
+    expect(isValidCron('0 0 30 2,3 *')).toBe(true);
+    expect(isValidCron('0 0 31 2,4 *')).toBe(false);
+  });
+
+  test("a restricted day-of-week keeps it valid — Vixie's OR gives it a way to fire", () => {
+    // `0 0 30 2 5` means "the 30th of February OR any Friday in February", which is every Friday
+    // in February. Refusing it would break a working schedule.
+    expect(isValidCron('0 0 30 2 5')).toBe(true);
+    expect(isValidCron('0 0 30 2 mon-fri')).toBe(true);
+  });
+
+  test('an unrestricted day-of-month is never impossible', () => {
+    expect(isValidCron('0 0 * 2 *')).toBe(true);
+    expect(isValidCron('0 0 ? 2 5')).toBe(true);
+  });
+});
+
+function errorOf(run: () => unknown): { cause?: unknown } {
+  try {
+    run();
+  } catch (error) {
+    return error as { cause?: unknown };
+  }
+  return { cause: 'no-throw' };
+}

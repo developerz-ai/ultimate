@@ -6,6 +6,7 @@
 
 import { cachedFormatter, canonicalLocale } from '@ultimat3/core';
 import { differenceMs, type Instant } from './instant';
+import { isoDateInZone } from './zoned';
 import { assertTimeZone, type TimeZone } from './zones';
 
 export type DateTimeStyle = 'short' | 'medium' | 'long' | 'full';
@@ -86,15 +87,17 @@ export function formatWithOffset(at: Instant, options: FormatDateTimeOptions): s
   return offset === '' ? text : `${text} (${offset})`;
 }
 
-/** ISO-8601 date parts in a zone, for `<input type="date">` and CSV columns. */
+/**
+ * ISO-8601 date parts in a zone, for `<input type="date">` and CSV columns.
+ *
+ * Built from `isoDateInZone`, not from `Intl`: `year: 'numeric'` neither zero-pads a year below
+ * 1000 nor carries the era, so this answered `'50-01-01'` where `isoDateInZone` answered
+ * `'0050-01-01'` — two functions in one package answering one question differently, and the short
+ * form matches no ISO pattern and is rejected by the very input this exists for. One padding rule,
+ * in one place.
+ */
 export function formatIsoDate(at: Instant, zone: TimeZone): string {
-  const parts = formatterFor('en-CA', {
-    timeZone: assertTimeZone(zone),
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(at);
-  return parts.replace(/\//g, '-');
+  return isoDateInZone(at, assertTimeZone(zone));
 }
 
 export interface FormatRelativeOptions extends Omit<FormatContext, 'zone'> {
@@ -155,12 +158,18 @@ const ORDINAL_SUFFIX: Record<Intl.LDMLPluralRule, string> = {
 };
 
 /**
- * `Intl` renders `November 5, 2011`, never `5th of November`. When a design asks for the
- * ordinal, build it from `Intl.PluralRules` with `type: 'ordinal'` — English-only by
- * nature, which is why it is a helper and not the default date format.
+ * `Intl` renders `November 5, 2011`, never `5th of November`. When a design asks for the ordinal,
+ * build it from `Intl.PluralRules` with `type: 'ordinal'` — **English only**, which is why it is a
+ * helper and not the default date format.
+ *
+ * It takes NO locale, and that is the enforcement rather than a note. It used to accept one, pick
+ * the plural category with it, and then append the ENGLISH suffix for that category: `ordinal(1,
+ * 'de')` was `'1th'`, a word in no language. A parameter that cannot change the answer correctly
+ * is removed, so a caller who wants a localized ordinal finds out from `tsc` instead of from a
+ * rendered page. **Breaking: the `locale` parameter is gone.**
  */
-export function ordinal(value: number, locale = 'en'): string {
-  const category = new Intl.PluralRules(locale, { type: 'ordinal' }).select(value);
+export function ordinal(value: number): string {
+  const category = new Intl.PluralRules('en', { type: 'ordinal' }).select(value);
   return `${value}${ORDINAL_SUFFIX[category]}`;
 }
 
