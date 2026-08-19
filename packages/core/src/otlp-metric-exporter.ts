@@ -1,6 +1,8 @@
 // Single responsibility: a `MetricExporter` that POSTs OTLP/HTTP JSON to a collector. No batching
 // — `collectMetrics()` already produces one whole snapshot per tick, so a tick is a request.
 
+import { renderThrowable } from './error-render';
+import { logger } from './logger';
 import type {
   HistogramPoint,
   MetricCollection,
@@ -124,10 +126,31 @@ export function otlpMetricExporter(options: OtlpMetricExporterOptions = {}): Otl
   return {
     export(collection: MetricCollection): void {
       startedAtMs ??= collection.at;
-      const body = JSON.stringify(otlpMetricsRequest(collection, startedAtMs));
+      let body: string;
+      try {
+        // `export` is called from a timer, not awaited by anyone, so this throw had nowhere to go
+        // but into the metric loop that called it: `MetricAttributeValue` is a compile-time claim,
+        // and an attribute the app spelled as an object or a bigint reaches `otlpAttributes` as a
+        // TypeError. Dropped with a line, the same degradation `postOtlp` already applies to a
+        // collector that is down — telemetry is best-effort and must never end the process.
+        body = JSON.stringify(otlpMetricsRequest(collection, startedAtMs));
+      } catch (failure) {
+        logger.warn('otlp metric snapshot dropped', {
+          url,
+          metrics: collection.metrics.length,
+          error: renderThrowable(failure),
+        });
+        return;
+      }
       // Chained, so a slow collector cannot make two snapshots arrive out of order and turn a
-      // cumulative counter into an apparent reset.
-      inflight = inflight.then(() => postOtlp({ url, headers, body, timeoutMs, fetch: send }));
+      // cumulative counter into an apparent reset. Chained on a SETTLED shadow, for the reason
+      // `otlp-span-exporter.ts` spells out: a chain that carries a rejection forward stops calling
+      // `postOtlp` for the life of the process, in silence.
+      const settled = inflight.then(
+        () => undefined,
+        () => undefined,
+      );
+      inflight = settled.then(() => postOtlp({ url, headers, body, timeoutMs, fetch: send }));
     },
     flush(): Promise<void> {
       return inflight;

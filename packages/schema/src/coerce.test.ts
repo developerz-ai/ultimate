@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { coerceInput, coerceNode, coerceQuery } from './coerce';
-import { parse } from './standard';
+import { parse, validate } from './standard';
 import { t } from './t';
 
 const listPosts = t.object({
@@ -63,6 +63,22 @@ describe('coerceQuery', () => {
     const parsed = parse(listPosts, coerced);
     expect(parsed.page).toBe(3);
     expect(parsed.tags).toEqual(['alpha', 'beta']);
+  });
+
+  test('leaves a zone-less date-time a string, so validation states the real refusal', () => {
+    // The one path where a caller's string reaches `t.date`. Converted here it would resolve
+    // through the container's `TZ`: `?since=2026-08-19T10:00` is 14:00Z on one pod, 10:00Z on
+    // the next, and the two would agree only by accident.
+    const coerced = coerceQuery(listPosts, new URLSearchParams('since=2026-08-19T10:00'));
+    expect(coerced['since']).toBe('2026-08-19T10:00');
+    const issues = validate(listPosts, coerced).issues ?? [];
+    expect(issues.map((issue) => issue.message).join(' | ')).toContain('an offset or Z');
+  });
+
+  test('an instant that names its own zone is coerced to a Date', () => {
+    const coerced = coerceQuery(listPosts, new URLSearchParams('since=2026-08-19T10:00:00Z'));
+    expect(coerced['since']).toBeInstanceOf(Date);
+    expect((coerced['since'] as Date).toISOString()).toBe('2026-08-19T10:00:00.000Z');
   });
 
   test('promotes a single repeated param into an array', () => {

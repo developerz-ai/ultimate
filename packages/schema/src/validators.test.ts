@@ -1,7 +1,10 @@
-// Single responsibility: pins the builtin validators' accept/reject contract at the public
+// Single responsibility: pins the schema COMBINATORS' accept/reject contract at the public
 // `validate()` boundary — the same seam actions, jobs and MCP tools trust. WHY there and not
 // against the checks directly: a loosened rule has to fail here, as a red test, rather than
 // downstream as a mass-assigned field, a float Money row or an unparseable date.
+//
+// The builtin scalars live in `validators-builtins.test.ts`; together the two were over the
+// 500-line ceiling.
 
 import { describe, expect, test } from 'bun:test';
 import { validate } from './standard';
@@ -59,6 +62,39 @@ describe('objectSchema', () => {
     if (result.issues === undefined) {
       expect(Object.keys(result.value)).toEqual([]);
       expect('a' in result.value).toBe(false);
+    }
+  });
+
+  test('reads a declared field as an OWN property, never off `Object.prototype`', () => {
+    // `value['toString']` found the INHERITED function for an input that never carried the key, so
+    // an optional field named after a prototype member was unsatisfiable for every input — and
+    // `coerceNode`, which already guards with `Object.hasOwn`, disagreed about the same payload.
+    const schema = objectSchema({
+      toString: optionalSchema(builtinT.string),
+      title: builtinT.string,
+    });
+    const result = validate(schema, { title: 'hi' });
+    expect(result.issues).toBeUndefined();
+    if (result.issues === undefined) expect(result.value).toEqual({ title: 'hi' });
+  });
+
+  test('a prototype-named field falls back to its `.default()` when the caller omits it', () => {
+    const schema = objectSchema({ valueOf: builtinT.string.default('fallback') });
+    const result = validate(schema, {});
+    expect(result.issues).toBeUndefined();
+    if (result.issues === undefined) expect(result.value).toEqual({ valueOf: 'fallback' });
+  });
+
+  test('a declared `__proto__` field lands as an own key, not through the prototype setter', () => {
+    // On a `{}` literal `out['__proto__'] = value` hits the SETTER: the parse answered `{}` whose
+    // prototype was the caller's object, so a handler reading any key of it got attacker data.
+    const schema = objectSchema({ ['__proto__']: recordSchema(builtinT.string) });
+    const result = validate(schema, JSON.parse('{"__proto__":{"a":"b"}}'));
+    expect(result.issues).toBeUndefined();
+    if (result.issues === undefined) {
+      const value: unknown = result.value;
+      expect(Object.getPrototypeOf(value)).toBe(null);
+      expect(Object.getOwnPropertyDescriptor(value, '__proto__')?.value).toEqual({ a: 'b' });
     }
   });
 
@@ -275,213 +311,5 @@ describe('optionalSchema', () => {
     const schema = optionalSchema(builtinT.number);
     expect(validate(schema, 5).issues).toBeUndefined();
     expect(validate(schema, 'nope').issues).toBeDefined();
-  });
-});
-
-describe('builtinT.string', () => {
-  test('rejects an empty string by default', () => {
-    expect(validate(builtinT.string, '').issues).toBeDefined();
-  });
-
-  test('rejects non-strings', () => {
-    expect(validate(builtinT.string, 123).issues).toBeDefined();
-  });
-
-  test('a pattern keeps its flags, in the check and in the message', () => {
-    // The node held `regex.source` alone, so `new RegExp(node.pattern)` was a DIFFERENT regex:
-    // `/^[a-z]+$/i` refused `ABC` and the error quoted the pattern that would have matched it.
-    const insensitive = builtinT.string.pattern(/^[a-z]+$/i);
-    expect(insensitive.node.patternFlags).toBe('i');
-    expect(validate(insensitive, 'ABC').issues).toBeUndefined();
-    expect(validate(insensitive, 'abc').issues).toBeUndefined();
-    expect(validate(insensitive, 'A1').issues).toBeDefined();
-    expect(validate(insensitive, 'A1').issues?.[0]?.message).toContain('/^[a-z]+$/i');
-    // An unflagged pattern carries no flags field and its message is unchanged.
-    const plain = builtinT.string.pattern(/^[a-z]+$/);
-    expect(plain.node.patternFlags).toBeUndefined();
-    expect(validate(plain, 'ABC').issues).toBeDefined();
-  });
-
-  test('min/max/pattern chain onto a new schema without mutating the original', () => {
-    const withMin = builtinT.string.min(3);
-    expect(withMin.node.minLength).toBe(3);
-    expect(builtinT.string.node.minLength).toBe(1);
-
-    const withMax = builtinT.string.max(5);
-    expect(withMax.node.maxLength).toBe(5);
-    expect(builtinT.string.node.maxLength).toBeUndefined();
-
-    const withPattern = builtinT.string.pattern(/^[a-z]+$/);
-    expect(withPattern.node.pattern).toBe('^[a-z]+$');
-    expect(builtinT.string.node.pattern).toBeUndefined();
-  });
-
-  test('min/max count characters, the unit the emitted JSON Schema promises', () => {
-    // JSON Schema defines `minLength`/`maxLength` over CODE POINTS, and the message already said
-    // "chars" — but the check counted UTF-16 code units, so `t.string.max(1)` refused a value a
-    // human, the published schema and Postgres' `char_length` all read as one character.
-    expect(validate(builtinT.string.max(1), '👍').issues).toBeUndefined();
-    expect(validate(builtinT.string.max(1), '👍👍').issues).toBeDefined();
-    expect(validate(builtinT.string.min(2), '👍👍').issues).toBeUndefined();
-    expect(validate(builtinT.string.min(2), '👍').issues).toBeDefined();
-  });
-
-  test('a global pattern gives the same verdict every time it is asked', () => {
-    // The RegExp is compiled once per schema now; a `g` flag carries `lastIndex` between calls,
-    // so the second `.test()` of an identical value would answer `false`.
-    const global = builtinT.string.pattern(/[a-z]+/g);
-    expect(validate(global, 'abc').issues).toBeUndefined();
-    expect(validate(global, 'abc').issues).toBeUndefined();
-    expect(validate(global, 'abc').issues).toBeUndefined();
-  });
-
-  test('enforces min/max/pattern once chained', () => {
-    const schema = builtinT.string
-      .min(3)
-      .max(5)
-      .pattern(/^[a-z]+$/);
-    expect(validate(schema, 'ab').issues).toBeDefined();
-    expect(validate(schema, 'abcdef').issues).toBeDefined();
-    expect(validate(schema, 'AB').issues).toBeDefined();
-    expect(validate(schema, 'abc').issues).toBeUndefined();
-  });
-});
-
-describe('builtinT.number', () => {
-  test('accepts finite numbers, rejects non-finite and non-numbers', () => {
-    expect(validate(builtinT.number, 5).issues).toBeUndefined();
-    expect(validate(builtinT.number, Number.POSITIVE_INFINITY).issues).toBeDefined();
-    expect(validate(builtinT.number, Number.NaN).issues).toBeDefined();
-    expect(validate(builtinT.number, '5').issues).toBeDefined();
-  });
-
-  test('min/max/int chain onto a new schema without mutating the original', () => {
-    const withMin = builtinT.number.min(5);
-    expect(withMin.node.minimum).toBe(5);
-    expect(builtinT.number.node.minimum).toBeUndefined();
-
-    const withMax = builtinT.number.max(10);
-    expect(withMax.node.maximum).toBe(10);
-    expect(builtinT.number.node.maximum).toBeUndefined();
-
-    const withInt = builtinT.number.int();
-    expect(withInt.node.integer).toBe(true);
-    expect(builtinT.number.node.integer).toBeUndefined();
-  });
-
-  test('enforces min/max/int once chained', () => {
-    const schema = builtinT.number.min(1).max(10).int();
-    expect(validate(schema, 0).issues).toBeDefined();
-    expect(validate(schema, 11).issues).toBeDefined();
-    expect(validate(schema, 5.5).issues).toBeDefined();
-    expect(validate(schema, 5).issues).toBeUndefined();
-  });
-});
-
-describe('builtinT.boolean', () => {
-  test('accepts booleans only', () => {
-    expect(validate(builtinT.boolean, true).issues).toBeUndefined();
-    expect(validate(builtinT.boolean, false).issues).toBeUndefined();
-    expect(validate(builtinT.boolean, 'true').issues).toBeDefined();
-  });
-});
-
-describe('builtinT.uuid', () => {
-  test('accepts a valid uuid', () => {
-    expect(validate(builtinT.uuid, UUID).issues).toBeUndefined();
-  });
-
-  test('rejects a malformed uuid', () => {
-    expect(validate(builtinT.uuid, 'not-a-uuid').issues).toBeDefined();
-    expect(validate(builtinT.uuid, '018f4a1c-1b2c-7d3e-8f90-abcdef01234').issues).toBeDefined();
-  });
-});
-
-describe('builtinT.email', () => {
-  test('accepts a valid email address', () => {
-    expect(validate(builtinT.email, 'dev@tesote.com').issues).toBeUndefined();
-  });
-
-  test('rejects a malformed email address', () => {
-    expect(validate(builtinT.email, 'not-an-email').issues).toBeDefined();
-    expect(validate(builtinT.email, 'missing-domain@').issues).toBeDefined();
-  });
-});
-
-describe('builtinT.url', () => {
-  test('accepts a valid absolute URL', () => {
-    expect(validate(builtinT.url, 'https://example.com/path').issues).toBeUndefined();
-  });
-
-  test('rejects a relative path', () => {
-    expect(validate(builtinT.url, '/path/to/thing').issues).toBeDefined();
-  });
-});
-
-describe('builtinT.date', () => {
-  test('accepts a Date, an ISO string and a timestamp number', () => {
-    expect(validate(builtinT.date, new Date('2024-01-01')).issues).toBeUndefined();
-    expect(validate(builtinT.date, '2024-01-01T00:00:00.000Z').issues).toBeUndefined();
-    expect(validate(builtinT.date, Date.now()).issues).toBeUndefined();
-  });
-
-  test('an invalid Date instance fails gracefully instead of throwing', () => {
-    // `expected()` -> `describeValue()` used to call `.toISOString()` unconditionally, which
-    // throws a RangeError for an invalid Date — this asserts the fixed, graceful behavior.
-    const result = validate(builtinT.date, new Date('not-a-date'));
-    expect(result.issues).toBeDefined();
-    expect(result.issues?.[0]?.message).toContain('invalid Date');
-  });
-
-  test('rejects a string that produces NaN when parsed', () => {
-    expect(validate(builtinT.date, 'definitely not a date').issues).toBeDefined();
-  });
-
-  test('rejects other types entirely', () => {
-    expect(validate(builtinT.date, true).issues).toBeDefined();
-    expect(validate(builtinT.date, null).issues).toBeDefined();
-  });
-});
-
-describe('builtinT.timezone', () => {
-  test('accepts a valid IANA time zone', () => {
-    expect(validate(builtinT.timezone, 'America/New_York').issues).toBeUndefined();
-  });
-
-  test('rejects an unknown time zone', () => {
-    expect(validate(builtinT.timezone, 'Not/AZone').issues).toBeDefined();
-  });
-});
-
-describe('builtinT.locale', () => {
-  test('accepts a valid BCP-47 locale', () => {
-    expect(validate(builtinT.locale, 'es-419').issues).toBeUndefined();
-  });
-
-  test('rejects a malformed locale tag', () => {
-    expect(validate(builtinT.locale, '!!!not-a-locale!!!').issues).toBeDefined();
-  });
-});
-
-describe('builtinT.slug', () => {
-  test('accepts a lowercase-hyphenated slug', () => {
-    expect(validate(builtinT.slug, 'hello-world').issues).toBeUndefined();
-  });
-
-  test('rejects spaces, uppercase and leading/trailing hyphens', () => {
-    expect(validate(builtinT.slug, 'Hello World').issues).toBeDefined();
-    expect(validate(builtinT.slug, '-hello').issues).toBeDefined();
-    expect(validate(builtinT.slug, 'hello--world').issues).toBeDefined();
-  });
-});
-
-describe('builtinT.cursor', () => {
-  test('accepts a base64url-ish opaque cursor', () => {
-    expect(validate(builtinT.cursor, 'abc123_-XYZ').issues).toBeUndefined();
-  });
-
-  test('rejects characters outside the base64url alphabet', () => {
-    expect(validate(builtinT.cursor, 'abc 123').issues).toBeDefined();
-    expect(validate(builtinT.cursor, 'abc+123').issues).toBeDefined();
   });
 });

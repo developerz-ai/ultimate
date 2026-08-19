@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from './errors';
 import { OTLP_ENDPOINT_KEY } from './otlp';
 import { otlpSpanExporter, otlpTraceRequest } from './otlp-span-exporter';
-import type { ReadableSpan } from './telemetry';
+import type { AttributeValue, ReadableSpan } from './telemetry';
 
 const RESOURCE = { serviceName: 'web', serviceVersion: '1.2.0' };
 
@@ -109,6 +109,36 @@ describe('otlpSpanExporter', () => {
     expect((sent.resourceSpans[0]?.scopeSpans[0]?.spans ?? []).map((one) => one.name)).toEqual([
       'middle',
       'newest',
+    ]);
+    await exporter.shutdown();
+  });
+
+  /**
+   * `AttributeValue` is a compile-time claim and the exporter is handed whatever an app put on a
+   * span, so `anyValue`'s fallthrough (`value.map(...)`) throws SYNCHRONOUSLY for a value it cannot
+   * spell. That throw was the one thing that could reject `inflight`, and the chain carried the
+   * rejection forever: `post` was never called again while the queue kept emptying — every later
+   * span dropped in silence — and each interval tick minted a fresh unhandled rejection, which Bun
+   * ends the process on. Telemetry is best-effort; it must never be the exit code.
+   */
+  test('a batch that cannot be serialised is dropped, and the next one still exports', async () => {
+    const sink = capture();
+    const exporter = otlpSpanExporter({ ...ENV, fetch: sink.fetch });
+    const unspellable = { nested: 'not an AttributeValue' } as unknown as AttributeValue;
+    exporter.export(span({ attributes: { bad: unspellable } }));
+
+    // Rejected before the fix — and this is the `void drainQueue()` the timer runs, so the
+    // rejection had nobody to reach but the process.
+    await exporter.flush();
+
+    expect(sink.calls).toHaveLength(0);
+    exporter.export(span({ name: 'after' }));
+    await exporter.flush();
+    const sent = JSON.parse(sink.calls[0]?.body ?? '{}') as {
+      resourceSpans: { scopeSpans: { spans: { name: string }[] }[] }[];
+    };
+    expect((sent.resourceSpans[0]?.scopeSpans[0]?.spans ?? []).map((one) => one.name)).toEqual([
+      'after',
     ]);
     await exporter.shutdown();
   });

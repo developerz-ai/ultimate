@@ -15,7 +15,9 @@ Tier 0. **Imports no `@ultimat3/*` package — not even `@ultimat3/core`.**
 
 Module order (no cycles):
 `describe-value → node → builder → money-value → validators → discriminated-union → provider → t`.
-`standard.ts` and `errors.ts` depend on nothing but each other.
+`standard.ts` and `errors.ts` depend on nothing but each other. `iso-date.ts` imports nothing and
+is imported by `validators.ts` and `coerce.ts` — the two doors a `t.date` string comes through, so
+the rule that a clock time must carry an offset or `Z` has one copy, not one per door.
 
 **An issue message is a public surface.** `@ultimat3/http` folds it into `X_BODY_INVALID`'s `cause`,
 which is returned to the caller AND interpolated into the log line — and core's logger redacts by
@@ -75,6 +77,14 @@ Gotchas:
   present on output. Object key optionality is derived from that — don't hand-roll it.
 - `AnySchema = Schema<unknown, unknown>` is the general constraint. Never `any`.
 - Unknown object keys are dropped by design; JSON Schema says `additionalProperties: false`.
+- **An object parse reads every declared field with `Object.hasOwn` and answers a null-prototype
+  object** — the same two halves `recordSchema` has. A raw `value[key]` read `toString` off the
+  PROTOTYPE, so a field named after one was unsatisfiable for every input and its `.default()`
+  never fired; a `{}` output let a declared `__proto__` field write through the setter. Never
+  reintroduce either half, and never assume a parsed object has `Object.prototype` on it.
+- `t.date` refuses a clock time with no offset and no `Z` (`iso-date.ts`): a zone-less string is a
+  different instant per host `TZ`, and `coerceQuery` puts it one query parameter from the wire.
+  A date-only string carries no clock time and is UTC by spec, so it still parses.
 - Adding a `SchemaKind` means updating `json-schema.ts` and `coerce.ts` in the same commit.
 - **Prefer a new `SchemaNode` FIELD to a new `SchemaKind`.** Every consumer that switches on `kind`
   has a `default:` that degrades quietly — `json-schema.ts` emits `{}`, `coerce.ts` passes the raw

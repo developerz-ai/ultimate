@@ -59,6 +59,46 @@ describe('otlpMetricExporter', () => {
     expect(bodies).toHaveLength(1);
     expect(JSON.parse(bodies[0] ?? '{}')).toHaveProperty('resourceMetrics');
   });
+
+  test('a snapshot that cannot be serialised is dropped, and the next tick still exports', async () => {
+    const bodies: string[] = [];
+    const exporter = otlpMetricExporter({
+      endpoint: 'http://collector:4318/v1/metrics',
+      startedAtMs: STARTED,
+      fetch: ((_url: string, init?: RequestInit) => {
+        bodies.push(String(init?.body ?? ''));
+        return Promise.resolve(new Response('', { status: 200 }));
+      }) as unknown as typeof globalThis.fetch,
+    });
+    // `MetricAttributeValue` is a compile-time claim; a bigint reaches the serialiser at runtime.
+    // `export` is called from a timer and awaited by nobody, so before the guard this TypeError
+    // was thrown straight into the metric loop — telemetry ending the process it measures.
+    const unspellable = 1n as unknown as string;
+    expect(() =>
+      exporter.export(
+        collection([
+          {
+            descriptor: { name: 'bad_total', kind: 'counter', unit: '{x}', description: 'bad' },
+            points: [{ attributes: { queue: unspellable }, value: 1 }],
+          },
+        ]),
+      ),
+    ).not.toThrow();
+    await exporter.flush();
+    expect(bodies).toHaveLength(0);
+
+    exporter.export(
+      collection([
+        {
+          descriptor: { name: 'after_total', kind: 'counter', unit: '{x}', description: 'after' },
+          points: [{ attributes: {}, value: 2 }],
+        },
+      ]),
+    );
+    await exporter.flush();
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toContain('after_total');
+  });
 });
 
 describe('otlpMetricsRequest', () => {

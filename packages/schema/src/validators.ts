@@ -19,6 +19,7 @@ import {
 } from './builder';
 import { expected } from './describe-value';
 import { discriminatedUnionSchema } from './discriminated-union';
+import { isZonelessDateTime } from './iso-date';
 import { type MoneyValue, moneySchema } from './money-value';
 import type { SchemaNode } from './node';
 import type { InferInput, InferOutput, StandardIssue } from './standard';
@@ -172,9 +173,19 @@ export function objectSchema<S extends Shape>(shape: S): ObjectSchema<S> {
   const check: Check<ShapeOutput<S>> = (value, path) => {
     if (!isPlainObject(value)) return fail(path, expected('an object', value));
     const issues: StandardIssue[] = [];
-    const out: Record<string, unknown> = {};
+    // `Object.create(null)`, for `recordSchema`'s reason one screen down: on a `{}` literal
+    // `out['__proto__'] = value` hits the `Object.prototype` SETTER, so a DECLARED `__proto__`
+    // field parsed to `{}` whose prototype was the caller's object — every key of it then read
+    // back off a value nobody sent.
+    const out: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
     for (const [key, memberCheck] of checks) {
-      const result = memberCheck(value[key], [...path, key]);
+      // `Object.hasOwn`, never a raw index — the guard `coerce.ts` already applies to the same
+      // read. `value['toString']` answered the INHERITED function for an input that carried no
+      // such key, so a field named after a prototype member was unsatisfiable for every input,
+      // its `.default()` could never fire, and the HTTP path and this one disagreed about what
+      // the caller sent.
+      const raw = Object.hasOwn(value, key) ? value[key] : undefined;
+      const result = memberCheck(raw, [...path, key]);
       if (result.ok) {
         // Unknown keys are dropped, never forwarded — no mass assignment through an action.
         if (result.value !== undefined) out[key] = result.value;
@@ -349,6 +360,13 @@ const dateSchema: Schema<Date | string | number, Date> = makeSchema<Date | strin
         : pass(value);
     }
     if (typeof value === 'string' || typeof value === 'number') {
+      // Enforced, not documented: the node publishes `format: 'date-time'` and this refusal has
+      // always said ISO-8601, while `new Date` resolved a zone-less clock time through the host
+      // process's zone — reachable from the wire, since `coerceQuery` routes a `t.date` field
+      // here and a container's `TZ` then decided which instant a query parameter meant.
+      if (typeof value === 'string' && isZonelessDateTime(value)) {
+        return fail(path, expected('an ISO-8601 date-time with an offset or Z', value));
+      }
       const parsed = new Date(value);
       return Number.isNaN(parsed.getTime())
         ? fail(path, expected('an ISO-8601 date-time', value))
