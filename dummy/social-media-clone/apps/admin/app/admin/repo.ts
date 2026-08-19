@@ -31,7 +31,12 @@ const predicateOf = (filter: AdminFilter): Predicate => ({
  * wrong place. So the bound is coerced back to the column's own kind before it becomes a predicate.
  */
 const coerce = (columns: ColumnMap, field: string, value: string): unknown => {
-  const kind = columns[field]?.$meta.kind;
+  // `Object.hasOwn`, because `field` arrives from the request's sort/filter parameters and
+  // `columns['constructor']` on a plain object answers the `Object` FUNCTION, not `undefined` —
+  // whose `.$meta` is undefined, so the optional chain degrades to `value` rather than throwing.
+  // Quiet today; the same read one layer down in @ultimat3/entity was a bare TypeError, and the
+  // guard costs one call.
+  const kind = Object.hasOwn(columns, field) ? columns[field]?.$meta.kind : undefined;
   if (kind === 'timestamptz') return new Date(value);
   if (kind === 'integer' || kind === 'bigint') return Number(value);
   if (kind === 'boolean') return value === 'true';

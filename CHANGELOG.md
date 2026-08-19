@@ -8,6 +8,71 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+A second bug sweep, run by six independent auditors over the packages the 3.0.0 sweep did not
+reach. Three of the entries below are **breaking changes to documented APIs**, so the next release
+is a major.
+
+### Changed — BREAKING
+
+- **BREAKING — `NackOptions.countsAsAttempt: false` no longer files a job `suspended`.** Both
+  drivers derived state as `deadLetter ? 'dead' : counts ? 'ready' : 'suspended'`, so "do not burn
+  an attempt" and "this is a `step.sleep` suspension" were one flag — and the worker's limiter and
+  `job.concurrency` sheds use `countsAsAttempt: false`, because a shed is not a failed attempt. Those
+  rows were then excluded from `ready` and `oldest_ready_ms`, which `worker.ts` publishes as
+  `queue_depth` and `queue_oldest_ready_seconds`: measured at 20 jobs with `concurrency: 10` and
+  `createLimiter({ global: 1 })`, `ready` fell 20 → 10 while 19 were still waiting. Under sustained
+  overload the scaling signal and the "oldest job older than five minutes" page both go quiet
+  exactly when the queue is saturated.
+
+  **The edit:** a genuine suspension now passes `park: true`; `countsAsAttempt: false` means only
+  "do not increment the attempt counter". Every caller inside the framework is updated. A
+  hand-rolled `JobDriver` that ignores `park` keeps its old behaviour, so the change is opt-in for
+  a third-party driver and mandatory only for callers of `nack`.
+
+- **BREAKING — `registerFrameworkCatalog()` takes no `locale`.** It was
+  `registerFrameworkCatalog(locale)`, and `defineCatalogs` called it once per locale — registering
+  the English-only framework catalog under every locale an app declared. An app shipping only `es`
+  served `Page not found` and English `ui.*` chrome with `isMiss` reading **false**, so nothing
+  downstream could see the gap; `assertCatalogsComplete` could not either, because `CatalogSet.catalogs`
+  carries app strings only. That is a fallback locale chain, which `packages/i18n/CLAUDE.md` forbids
+  by name.
+
+  **The edit:** delete the argument — `registerFrameworkCatalog()`. **An app shipping a locale it
+  has not fully translated now renders `⟦key⟧` for the framework keys it is missing**, which is the
+  golden rule working. Translate those keys into the app's own catalog, which is the same merge an
+  override already is. The function is also genuinely idempotent now; it was documented as such and
+  was not, so a second call used to revert every app override of a framework key.
+
+- **BREAKING — `t.date` refuses a date-time with no offset and no `Z`.** It accepted
+  `2026-08-19T10:00` and resolved it against the **host process's** zone, so one wire value meant
+  `14:00Z` on one pod and `10:00Z` on another — reachable from a request, since `coerceQuery` routes
+  a `t.date` field through the same case, and published as `format: 'date-time'`, which RFC 3339
+  requires an offset for. This is the repo's "no date without an explicit IANA `timeZone`, no
+  ambient default anywhere" non-negotiable failing at the parse end.
+
+  **The edit:** send an offset or `Z` — `2026-08-19T10:00:00Z`. A date-only form (`2026-08-19`)
+  carries no clock time and still passes, being UTC by specification.
+
+- **BREAKING — `in` with a non-array operand matches no rows on both drivers.** It matched one row
+  in Postgres (the scalar was wrapped into a one-element list) and none in memory. `in` with a NULL
+  in the list was the same disagreement in the other direction: the NULL row matched in memory and
+  nothing in Postgres, because `col = NULL` is UNKNOWN. Both now answer as `@ultimat3/query` already
+  documented, and the SQL emits `(col in (…) or col is null)`.
+
+- **BREAKING — `registerMailCatalog()` takes no `locale`.** Same defect as the framework catalog:
+  it seated English subjects and headings under whatever locale it was handed. Not idempotent, and
+  its comment claimed it was — stated plainly in the source now rather than guarded, because a guard
+  by content needs an i18n primitive that does not exist and a remembered flag goes stale the moment
+  `resetCatalogs()` runs.
+
+### Fixed
+
+- The entity write path reads `ctx.clock`. `defaultNow`, `touch`, the soft-delete stamp, `removal`
+  and `seed.now` all read `systemClock` directly, so a frozen test clock drove nothing the framework
+  wrote. Byte-identical outside a request.
+- Everything else in PRs #179–#186, each of which names the defect it closes.
+
+
 ## 3.0.0 - 2026-08-19
 
 The first release the workflow has published since 1.2.0. Every package has an OIDC trusted
