@@ -4,6 +4,7 @@
 // JS type of whichever value is in hand: the database decides by the column's type, so a driver
 // deciding by `typeof` is answering a different question.
 
+import { compareDecimalText } from '@ultimat3/core';
 import { keyOf } from './batch-read';
 import { kindOf, valueAt } from './cursor';
 import type { EntityCore } from './entity';
@@ -20,54 +21,18 @@ import type { ColumnKind } from './types';
  * and a `bigint`/`bigint` case and neither fired for these, so both fell to
  * `String(left) < String(right)`: memory answered `["10","100","2","9"]` where Postgres answers
  * `["2","9","10","100"]`, and a keyset page boundary was cut where the database never cuts one.
- * `@ultimat3/query`'s `compareValues` fixed the same defect for `bigint` VALUES and pinned it in
- * `shape-order.test.ts`; this is the half that had to be decided by the kind instead.
+ *
+ * This SET is the whole of what this package contributes; the comparison itself is
+ * `@ultimat3/core`'s `compareDecimalText`. The split is the point — the text arrives in more than
+ * one package and the DECLARED KIND does not, so a caller with no column kinds
+ * (`@ultimat3/query`, whose `OrderKey` is a name and a direction) deliberately never asks: a
+ * `text` column holding `"10"` and `"9"` is ordered lexically by Postgres, and a comparator
+ * guessing "both sides look like decimals" would trade this disagreement for that one.
  */
 const DECIMAL_TEXT: ReadonlySet<ColumnKind> = new Set<ColumnKind>(['bigint', 'numeric']);
 
-/** A decimal, split so two of them can be compared exactly however long the digits run. */
-interface Decimal {
-  readonly negative: boolean;
-  readonly whole: string;
-  readonly fraction: string;
-}
-
-const DECIMAL_SHAPE = /^([+-]?)(\d+)(?:\.(\d*))?$/;
-
-/**
- * The digits, or `undefined` for anything that is not a plain decimal — an exponent
- * (`String(1e21)` is `"1e+21"`), a `NaN`, an empty string. Those fall through to the ordinary
- * comparison below rather than being guessed at, because a value a `numeric` column cannot hold is
- * not a value Postgres would be ordering either.
- */
-const decimalOf = (value: unknown): Decimal | undefined => {
-  const text =
-    typeof value === 'bigint' || typeof value === 'number'
-      ? String(value)
-      : typeof value === 'string'
-        ? value.trim()
-        : undefined;
-  const parts = text === undefined ? null : DECIMAL_SHAPE.exec(text);
-  const whole = parts?.[2];
-  if (parts === null || whole === undefined) return undefined;
-  return { negative: parts[1] === '-', whole, fraction: parts[3] ?? '' };
-};
-
 const sign = <T extends number | bigint | string>(left: T, right: T): number =>
   left < right ? -1 : left > right ? 1 : 0;
-
-/**
- * Exact at any width: the fractions are padded to one length and both sides become one integer, so
- * a 38-digit `numeric` orders by its digits rather than by whatever a `Number` rounded it to.
- */
-const compareDecimal = (left: Decimal, right: Decimal): number => {
-  if (left.negative !== right.negative) return left.negative ? -1 : 1;
-  const width = Math.max(left.fraction.length, right.fraction.length);
-  const scaled = (value: Decimal): bigint =>
-    BigInt(`${value.whole}${value.fraction.padEnd(width, '0')}`);
-  const order = sign(scaled(left), scaled(right));
-  return left.negative ? -order : order;
-};
 
 /**
  * Two values of one column, ordered as Postgres orders that column. `-1`, `0` or `1` — never a
@@ -80,9 +45,10 @@ export const compareByKind = (
 ): number => {
   if (left instanceof Date && right instanceof Date) return sign(left.getTime(), right.getTime());
   if (kind !== undefined && DECIMAL_TEXT.has(kind)) {
-    const [first, second] = [decimalOf(left), decimalOf(right)];
-    // Both, or neither: one decimal against a value that is not one is not a numeric comparison.
-    if (first !== undefined && second !== undefined) return compareDecimal(first, second);
+    // `undefined` when either side is not a plain decimal — that pair is not a numeric comparison,
+    // so it falls through to the branches below rather than being guessed at.
+    const exact = compareDecimalText(left, right);
+    if (exact !== undefined) return exact;
   }
   if (typeof left === 'number' && typeof right === 'number') return sign(left, right);
   if (typeof left === 'bigint' && typeof right === 'bigint') return sign(left, right);

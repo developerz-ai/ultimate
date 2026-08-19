@@ -46,12 +46,20 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): JobDriver
     options.leases ?? createMemoryLeaseStore(options.clock === undefined ? {} : { clock });
   const jobs = new Map<string, JobRecord>();
 
-  // Keyed by NAME and key, exactly as `x_jobs_name_idempotency_live_idx` is. A global key
-  // namespace let two unrelated jobs that derived the same natural key dedupe against each
-  // other: the second enqueue returned the first's id and its work never ran.
-  const liveByKey = (name: string, key: string): JobRecord | undefined => {
+  // Keyed by NAME, TENANT and key, exactly as `x_jobs_name_tenant_idempotency_live_idx` is. A
+  // global key namespace let two unrelated jobs that derived the same natural key dedupe against
+  // each other: the second enqueue returned the first's id and its work never ran. A tenant-blind
+  // one did the same ACROSS tenants, where the id handed back belongs to somebody else and is
+  // valid on every id-addressed surface. `?? ''` mirrors the index's `coalesce`, so all tenantless
+  // rows share one namespace rather than each becoming its own.
+  const liveByKey = (name: string, key: string, tenantId?: string): JobRecord | undefined => {
     for (const record of jobs.values()) {
-      if (record.name === name && record.idempotencyKey === key && LIVE_STATES.has(record.state)) {
+      if (
+        record.name === name &&
+        record.idempotencyKey === key &&
+        (record.tenantId ?? '') === (tenantId ?? '') &&
+        LIVE_STATES.has(record.state)
+      ) {
         return record;
       }
     }
@@ -124,7 +132,7 @@ export function createMemoryDriver(options: MemoryDriverOptions = {}): JobDriver
     introspect,
 
     enqueue(request: EnqueueRequest): Promise<EnqueueResult> {
-      const existing = liveByKey(request.name, request.idempotencyKey);
+      const existing = liveByKey(request.name, request.idempotencyKey, request.tenantId);
       if (existing !== undefined) {
         if (request.onConflict === 'error') {
           throw new JobDuplicateError({

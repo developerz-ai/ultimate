@@ -9,6 +9,7 @@
 import type { CacheTag } from '@ultimat3/cache';
 import { tagKeys } from '@ultimat3/cache';
 import type { Actor, Ctx } from '@ultimat3/core';
+import { fingerprint } from '@ultimat3/core';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import type { QueryCacheScope } from './cache';
 import type { QueryClientMethod, QueryClientOptions } from './client';
@@ -23,7 +24,6 @@ import type { QueryPolicy, QuerySurface } from './policy-gate';
 import { policyCapability, policyPermissions } from './policy-gate';
 import { hasDef, queryName, runQuery, stashDef } from './read';
 import type { SqlSource } from './source';
-import { fingerprint } from './stable';
 
 export interface QueryCache {
   /** Tags this read depends on. An action's `invalidates` drops exactly these keys. */

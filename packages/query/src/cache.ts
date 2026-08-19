@@ -8,8 +8,7 @@
 import type { CacheStack, CacheTag, CacheTier } from '@ultimat3/cache';
 import { createCacheStack, registeredTiers, tagKeys } from '@ultimat3/cache';
 import type { Actor, Clock, Ctx } from '@ultimat3/core';
-import { assertNever } from '@ultimat3/core';
-import { fingerprint } from './stable';
+import { assertNever, fingerprint } from '@ultimat3/core';
 
 /**
  * A `cache:` block with no `ttlMs`. Tag invalidation is the primary eviction, so this is the

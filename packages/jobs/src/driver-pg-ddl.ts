@@ -39,19 +39,33 @@ alter table x_jobs add column if not exists traceparent text;
 
 alter table x_jobs add column if not exists enqueued_by text;
 
--- Partial unique index: one LIVE job per (name, idempotency key). Completed rows stay for
+-- Partial unique index: one LIVE job per (name, tenant, idempotency key). Completed rows stay for
 -- history, so re-running the same work tomorrow is allowed and re-delivering it today is not.
 --
 -- The NAME is in the key, and its absence was silent data loss: two jobs that happened to derive
 -- the same natural key from the same input ("user:42") shared one namespace, so the second
 -- enqueue deduped against the FIRST jobs row and returned its id. The work never ran, no error
--- was raised, and the queue showed one healthy job. The old index is dropped rather than left
--- beside the new one — it is strictly narrower, so keeping it would keep enforcing exactly the
--- collision this fixes.
+-- was raised, and the queue showed one healthy job.
+--
+-- The TENANT is in the key for that same argument with one word substituted, and it is the worse
+-- half. Every natural key an app writes is unique only WITHIN a tenant, invoice:1001 and
+-- order:5540 being the shapes the docs suggest, so tenant B enqueuing while tenant A held that
+-- key deduped into tenant A row: tenant B work never ran, and tenant B caller received tenant A
+-- job id, which is valid on every id-addressed surface. Cancel takes an id with no tenant
+-- predicate.
+--
+-- coalesce rather than the bare column, because a null tenant_id compares unequal to every other
+-- null under a unique index and a tenantless queue would lose its dedupe entirely. All tenantless
+-- rows share one namespace instead, which is exactly what they had before tenancy existed.
+--
+-- Each superseded index is dropped rather than left beside the new one. Each is strictly narrower,
+-- so keeping it would keep enforcing exactly the collision this fixes.
 drop index if exists x_jobs_idempotency_live_idx;
 
-create unique index if not exists x_jobs_name_idempotency_live_idx
-  on x_jobs (name, idempotency_key)
+drop index if exists x_jobs_name_idempotency_live_idx;
+
+create unique index if not exists x_jobs_name_tenant_idempotency_live_idx
+  on x_jobs (name, (coalesce(tenant_id, '')), idempotency_key)
   where state in ('ready', 'delayed', 'running', 'suspended');
 
 create index if not exists x_jobs_claim_idx

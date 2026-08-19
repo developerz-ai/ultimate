@@ -17,17 +17,26 @@ values
   ($1, $2, $3, $4::jsonb, $5, $6, $7,
    case when to_timestamp($8 / 1000.0) > now() then 'delayed' else 'ready' end,
    to_timestamp($8 / 1000.0), $9, $10, $11)
-on conflict (name, idempotency_key)
+on conflict (name, (coalesce(tenant_id, '')), idempotency_key)
   where state in ('ready', 'delayed', 'running', 'suspended')
   do nothing
 returning id, run_id
 `.trim();
 
-/** Scoped by NAME as well as key — the index is, so a lookup that was not would find a stranger. */
+/**
+ * Scoped by NAME and TENANT as well as key, because the index is — a lookup narrower than the
+ * index it reads answers with whichever stranger holds the key, and `{ deduped: true, id: <another
+ * tenant's> }` is a cross-tenant handle, not just a missed run.
+ *
+ * `coalesce` on both sides, matching the index expression exactly: a bare `tenant_id = $3` never
+ * matches a null row, so every tenantless enqueue would fall through to the "rejected but no live
+ * row holds its idempotency key" refusal instead of finding its own live job.
+ */
 export const SQL_FIND_LIVE_BY_KEY = `
 select id, run_id from x_jobs
  where name = $1
    and idempotency_key = $2
+   and coalesce(tenant_id, '') = coalesce($3::text, '')
    and state in ('ready', 'delayed', 'running', 'suspended')
  limit 1
 `.trim();

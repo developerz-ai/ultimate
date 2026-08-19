@@ -63,12 +63,17 @@ describe('the queue DDL', () => {
     ]);
   });
 
-  test('the old global idempotency index is DROPPED, not left beside the new one', () => {
-    // Left in place it would keep enforcing exactly the collision the new one fixes: two
-    // different jobs deriving the same natural key, the second silently deduped into the first.
+  test('every superseded idempotency index is DROPPED, not left beside the new one', () => {
+    // Left in place, either would keep enforcing exactly the collision the new one fixes: the
+    // key-only index across two different jobs, the name-only index across two different TENANTS.
+    // Each is strictly narrower than its successor, so both drops are load-bearing.
     expect(SQL_JOBS_TABLE).toContain('drop index if exists x_jobs_idempotency_live_idx');
-    expect(SQL_JOBS_TABLE).toContain('on x_jobs (name, idempotency_key)');
+    expect(SQL_JOBS_TABLE).toContain('drop index if exists x_jobs_name_idempotency_live_idx');
+    expect(SQL_JOBS_TABLE).toContain(
+      "on x_jobs (name, (coalesce(tenant_id, '')), idempotency_key)",
+    );
     expect(SQL_JOBS_TABLE).not.toMatch(/on x_jobs \(idempotency_key\)/);
+    expect(SQL_JOBS_TABLE).not.toMatch(/on x_jobs \(name, idempotency_key\)/);
   });
 
   test('the standalone x_outbox constant matches the one inside the install point', () => {

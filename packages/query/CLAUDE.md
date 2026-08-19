@@ -213,10 +213,25 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   `["10", "100", "9"]`. `bigint` is the physical type of every `<p>_minor` column and
   `@ultimat3/entity`'s `count-by.ts` lists it as groupable, so the in-memory source, the live
   matcher and the seek fallback ALL disagreed with the database on any bigint-ordered read.
-  `shape-order.test.ts` is the pin: one case per `ColumnKind`, each asserting the order Postgres
-  returns, plus the NULL rule and the cursor round trip. The kind list is spelled out rather than
-  imported — `tsconfig.json` excludes `*.test.ts`, so a `satisfies Record<ColumnKind, …>` written
-  in a test is a type assertion `tsc` never reads; a runtime count is the enforceable half.
+  `shape-order.test.ts` is the pin, and `As of 2026-08` it reads a REAL kind list: `COLUMN_KINDS`
+  is the runtime array `@ultimat3/entity`'s `ColumnKind` derives from, and entity is tier 2 so a
+  test here may import it as a VALUE — which is what a `satisfies Record<ColumnKind, …>` could not
+  be, since `tsconfig.json` excludes `*.test.ts` and `tsc` never reads one. It had a spelled-out
+  list and `const COUNT = 9` beside a union of THIRTEEN members: `9 === 9`, a test that could not
+  fail, with `numeric`, `date`, `bytea` and `array` carrying no case at all.
+- **`numeric` and the TEXT form of `bigint` are a DECLARED gap here, and closing it is a
+  declaration change** (`shape-order.test.ts`, `As of 2026-08`). `@ultimat3/entity`'s `bigint()`
+  and `decimal()` hand digits back as strings, so `["9","10","100","2"]` sorts to
+  `["10","100","2","9"]` here and `["2","9","10","100"]` in the database — and a cursor's revived
+  `bigint` against a stored decimal string (`compareValues(9n, "10")` → `1`) cuts page two where
+  the database does not. It is **not** fixed by calling `@ultimat3/core`'s `compareDecimalText`
+  from `compareValues`: that function answers only for a caller holding the column's declared kind
+  (`@ultimat3/entity`'s `compareByKind`), and `QueryShape.orderBy` is a name and a direction —
+  nothing here can tell a `numeric` holding `"10"` from a `text` holding `"10"`, which Postgres
+  orders lexically, so a comparator guessing would trade one disagreement with the SQL it prints
+  for another. The fix is an `OrderKey` that carries a kind, from `sourceFor` down. Until then the
+  `DECLARED_GAP` block asserts both halves, so the gap cannot be silently re-discovered or
+  silently widened.
 - **A read's `input:` must survive a query STRING, and `query()` refuses one that cannot**
   (`input-shape.ts`, `X_QUERY_INPUT_UNENCODABLE`, `As of 2026-08`). `client.ts` encoded a nested
   member as `JSON.stringify(item)` and skipped a `null`, while `coerceQuery` has no inverse for
@@ -258,11 +273,23 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   `@ultimat3/http`. `tagKey` went with it: `serializeTag` under a second name, zero call sites.
   `@ultimat3/render` exports a *different* function under the same name (declaration order kept);
   never import that one here.
-- **A fingerprint is an identity, so two different inputs may not share one** (`stable.ts`).
-  `NaN`, `±Infinity` and JSON `null` all encoded as `'null'`, and `String(-0)` is `"0"` — so four
-  distinct inputs shared one read-cache entry and one cursor scope. They are bare tokens now
-  (`NaN`, `Infinity`, `-Infinity`, `-0`), which the `string` branch cannot spell because it always
-  quotes. Ordinary numbers are byte-identical, so no existing cursor scope moved.
+- **A fingerprint is an identity, so two different inputs may not share one — and it is
+  `@ultimat3/core`'s, not this package's, `As of 2026-08`.** `canonicalJson` + `fingerprint` moved
+  down to tier 0 because `@ultimat3/action` and `@ultimat3/realtime` needed the identical function
+  and all three are tier 3, so a copy in any of them was a second answer for the other two — and
+  the copies had already diverged. This one had **no `Date` branch**: `Object.keys(date)` is `[]`,
+  so the object branch rendered every date as `{}` and `queryHash({from: 2020…, to: 2020…})`
+  equalled `queryHash({from: 2026…, to: 2026…})`. Reachable on the ordinary HTTP path — `http.ts`
+  decodes a query string through `coerceQuery`, which turns a `t.date` member into a real `Date`,
+  and `input-shape.ts` permits `date` members — so ONE read-cache entry answered every date window
+  of that read for the TTL, page two of range A was served from range B's cursor scope, and every
+  date window shared one live query id. The hash form tags a `Date`, a `Map` and a `Set`
+  (`Date(<epoch>)`, `Map(…)`, `Set(…)`) beside the bare `NaN` / `±Infinity` / `-0` tokens it
+  already emitted, all for the reason a bare token exists: `'null'` collided with JSON `null` and
+  `String(-0)` is `"0"`. `stable.ts` keeps `isJsonObject`/`columnOf` and nothing else. Ordinary
+  inputs are byte-identical, so the durable-key cost is confined to reads whose input carries a
+  `Date`, a `Map` or a `Set`: those cursors answer `X_CURSOR_INVALID` once, and their cache entries
+  are cold once. `query-hash.test.ts` is the pin, at `queryHash` and at `cacheKeyFor`.
 - The cursor codec is `@ultimat3/core`'s (`encodeCursor` / `decodeCursor` / `configureCursorSigning`).
   This package supplies only the scope a cursor is bound to — `queryHash(name, input)` — and never
   signs, encodes or parses one itself. An unverified or foreign cursor is `X_CURSOR_INVALID`, thrown
@@ -302,12 +329,13 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   `X_CACHE_TOO_LARGE` only — so `ttlMs: Infinity` turned a typo into a permanently failing business
   read whose cause named a cache key. `X_QUERY_CACHE_TTL_INVALID`, on the line that wrote it. It
   restates `assertTtl`'s bar as a refusal and never as a second resolution.
-- **`fingerprint` is SHA-256/16, never a 32-bit hash** (`stable.ts`, `As of 2026-08`). It is a
+- **`fingerprint` is SHA-256/16, never a 32-bit hash** (`@ultimat3/core`, `As of 2026-08`). It is a
   SHARING key over client-chosen input — which read-cache entry two callers are served from, which
   scope a cursor is bound to — so FNV-1a/32's 4×10⁹ values are a collision found offline in
-  seconds. Same primitive and width as `@ultimat3/realtime`'s `stableDigest`. `stableStringify` did
-  not move, so the only cost is one cold cache and every open cursor answering `X_CURSOR_INVALID`
-  with its own "request the first page again" fix.
+  seconds. `@ultimat3/realtime`'s `stableDigest` was the same primitive at the same width and is
+  gone with the rest of that copy: a `qid` is `queryHash(name, input)` now, imported across the
+  declared `realtime -> query` edge, so the two hashes cannot drift apart while `planResume`
+  compares one against a cursor's.
 - **A fill is FENCED, and the fence is `@ultimat3/cache`'s** (`As of 2026-08`). `run()` answers with
   rows it read in the past: a mutator committing in between busts a key not yet in the tier, so the
   drop is a no-op reporting `errors: []`, and the fill then publishes the pre-write rows for the
