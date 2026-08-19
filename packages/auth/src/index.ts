@@ -74,6 +74,7 @@ export {
   kdfOverloaded,
   mfaRequired,
   mfaRequiredUnenforceable,
+  mfaSecretInvalid,
   oauthAccountNotLinked,
   oauthDenied,
   oauthExchangeFailed,

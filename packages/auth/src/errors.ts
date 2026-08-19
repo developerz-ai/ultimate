@@ -16,6 +16,7 @@ export const AUTH_OWNED_ERROR_CODES = [
   'X_UNAUTHENTICATED',
   'X_SESSION_EXPIRED',
   'X_MFA_REQUIRED',
+  'X_MFA_SECRET_INVALID',
   'X_OAUTH_STATE_INVALID',
   'X_OAUTH_EXCHANGE_FAILED',
   'X_OAUTH_TOKEN_INVALID',
@@ -60,6 +61,7 @@ export const AUTH_ERROR_TITLES: Readonly<Record<AuthOwnedErrorCode, string>> = {
   X_UNAUTHENTICATED: 'no authenticated actor for this request',
   X_SESSION_EXPIRED: 'session passed its idle or absolute expiry',
   X_MFA_REQUIRED: 'a second factor is required before this session is usable',
+  X_MFA_SECRET_INVALID: 'the totp secret is not base32, so it carries no key to check a code with',
   X_OAUTH_STATE_INVALID: 'oauth state, nonce or pkce verifier did not match',
   X_OAUTH_EXCHANGE_FAILED: 'the oauth provider refused the exchange or returned no usable identity',
   X_OAUTH_TOKEN_INVALID: 'id token failed its signature, issuer, audience or expiry check',
@@ -172,6 +174,26 @@ export const mfaRequired = (userId: string): AuthError =>
     cause: 'this account has TOTP enrolled and the second factor has not been satisfied',
     fix: 'no second-factor route ships yet — catch X_MFA_REQUIRED in your sign-in handler, check the code with verifyTotp({ secret: user.mfaSecret, code, at }), then mint the session with createSession(auth.sessions, { userId, mfaSatisfied: true })',
     meta: { userId },
+  });
+
+/**
+ * A stored or imported TOTP secret the decoder cannot read. `base32Decode` answers zero bytes for
+ * any character outside the alphabet AND for `''`, and an HMAC keyed with zero bytes is a valid
+ * HMAC — so `totpCode` was handing out a six-digit code derived from no secret at all, one shared
+ * stream every malformed row in the table verified against. A code nobody had to know a secret to
+ * compute is not a second factor, so there is no code to hand back: this refuses instead.
+ *
+ * `verifyTotp` does NOT throw it. A login checking a broken row is the generic failure, exactly as
+ * `verifyAgainst` treats a stored hash Bun cannot read — a coded throw out of the verify path is a
+ * 500 where a credential refusal belongs, and it answers "this account's secret is malformed" to
+ * whoever asked. The secret itself never reaches `cause:` or `fix:`: it is a credential, and both
+ * are logged.
+ */
+export const mfaSecretInvalid = (surface: string): AuthError =>
+  new AuthError({
+    code: 'X_MFA_SECRET_INVALID',
+    cause: `${surface} was given a totp secret that is not RFC 4648 base32, so it decodes to zero bytes`,
+    fix: 'issue a fresh one and store it: const { secret } = enrolTotp(auth, { account: user.email }) — an imported secret must be base32 (A-Z and 2-7, padding, spaces and dashes ignored) and decode to at least one byte',
   });
 
 /**

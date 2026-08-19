@@ -167,6 +167,50 @@ describe('SubscriberGate — patches', () => {
     expect(seen[0]).toEqual({ id: 'p2', ownerId: 'bob', title: 'edited' });
   });
 
+  /**
+   * The leak this file exists to stop, in its simplest form: `patch()` returned a delete
+   * unconditionally, so a row alice's own `visible` rule had never let her see arrived on her
+   * socket the instant bob deleted it — the row id and the deletion time, for every other tenant's
+   * row in the shared window, for the life of the subscription. `holds` is the discriminator two
+   * branches below already use for exactly this question.
+   */
+  test('a delete for a row this subscriber never held is withheld, and counted', async () => {
+    const denials: RowDenied[] = [];
+    const gate = new SubscriberGate({ onRowDenied: (event) => denials.push(event) });
+    // The gate reads the window AFTER `applyToWindow` landed the change, so a deleted row is gone
+    // from it — there is no row left to put in front of the rule, and `holds` is the whole answer.
+    const target = targetFor(({ row, actor }) => row['ownerId'] === actor?.id, [rows[0] as Row]);
+
+    await expect(gate.patch(target, who, patchOf('p2', null), false)).resolves.toBeNull();
+
+    expect(gate.rowsDenied).toBe(1);
+    expect(denials).toEqual([{ qid: 'liveFeed:1', sid: 's1', actorId: 'alice', rowId: 'p2' }]);
+  });
+
+  /**
+   * The whole scenario, through the entry point the fanout calls: alice never receives bob's row,
+   * so she must never receive its deletion either. `held` is `subscription.cursor.ids` — the ids
+   * this subscriber was actually sent — which is what makes the two answers agree.
+   */
+  test('a row never delivered is never withdrawn, insert and delete alike', async () => {
+    const gate = new SubscriberGate({});
+    const mine = ({ row, actor }: { row: Row; actor: Actor | null }): boolean =>
+      row['ownerId'] === actor?.id;
+    const insert: RowPatch = { op: 'insert', id: 'p2', row: rows[1] as Row, lsn: '2' };
+
+    const first = await gate.filterPatches(targetFor(mine), who, [insert], new Set(['p1']));
+    expect(first).toEqual([]);
+
+    // bob deletes it: the shared window drops the row, and alice holds nothing to withdraw.
+    const second = await gate.filterPatches(
+      targetFor(mine, [rows[0] as Row]),
+      who,
+      [patchOf('p2', null)],
+      new Set(['p1']),
+    );
+    expect(second).toEqual([]);
+  });
+
   test('a held row that leaves the policy becomes a delete; an unheld one is dropped', async () => {
     const gate = new SubscriberGate({});
     const target = targetFor(() => false);

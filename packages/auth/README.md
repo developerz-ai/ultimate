@@ -244,7 +244,20 @@ export function secondFactorHolds(userId: string, secret: string, code: string):
 | `createTotpReplayGuard(drift?, maxSubjects?)` | the in-process `{ isUsed, remember, size }`; a fleet passes a Redis-backed pair of the same two methods |
 | `generateRecoveryCodes(count = 10)` | `{ codes, hashes }`. `codes` is shown once and is never re-derivable |
 | `redeemRecoveryCode(code, hashes)` | the **remaining** hashes, or `null`. Persisting that array is what makes a code single-use |
-| `totpStep(at, stepSeconds?)` / `totpCode(secret, step, digits?)` | the RFC 6238 halves, for a test that has to mint a valid code |
+| `totpStep(at, stepSeconds?)` / `totpCode(secret, step, digits?)` | the RFC 6238 halves, for a test that has to mint a valid code. `totpCode` throws `X_MFA_SECRET_INVALID` on a secret that decodes to zero bytes |
+
+**A secret the decoder cannot read verifies nothing, `As of 2026-08`.** `base32Decode` answers
+zero bytes for any character outside the alphabet and for `''`, and an HMAC keyed with zero bytes
+is a valid HMAC — so `totpCode` used to hand back a six-digit code derived from no secret at all,
+one stream *every* malformed row in the table verified against, computable by anyone. Three
+answers now, and they differ because their callers do: `verifyTotp` returns `{ ok: false, step:
+null }` (a broken stored credential is the generic failure, the rule `verifyAgainst` follows for a
+hash Bun cannot read — never a throw into the login path, never an oracle); `totpCode` throws
+`X_MFA_SECRET_INVALID`, because there is no code an unreadable secret is entitled to; and
+`enrolTotp` throws the same code on an imported `secret`, so a value nothing can ever check never
+reaches the table. A minted secret is readable by construction. Note the direction of the failure:
+a `mfa_secret text not null default ''` column now locks that account out of its second factor
+instead of accepting a code nobody had to know — re-enrol it with `enrolTotp(auth, { account })`.
 
 `TOTP_DIGITS` (6), `TOTP_STEP_SECONDS` (30) and `TOTP_DRIFT_STEPS` (±1 window) are exported so an
 app's own copy of the parameters cannot disagree with the verifier's.

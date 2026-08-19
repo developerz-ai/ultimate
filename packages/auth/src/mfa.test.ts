@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { defineAuth } from './auth';
-import { mfaRequired } from './errors';
+import { AuthError, mfaRequired } from './errors';
 import { MemoryAdapter } from './memory-adapter';
 import {
   base32Decode,
@@ -22,6 +22,26 @@ const authWith = (issuer: string) => defineAuth({ adapter: new MemoryAdapter(), 
 // The secret every authenticator-app tutorial uses; keeps the vectors reproducible.
 const SECRET = 'JBSWY3DPEHPK3PXP';
 const AT = new Date(1_700_000_000_000);
+
+/** The code an `UltimateError` carried, or the throw itself if it was not one. */
+const codeOf = (work: () => unknown): string => {
+  try {
+    work();
+  } catch (error) {
+    if (error instanceof AuthError) return error.code;
+    throw error;
+  }
+  return 'no throw';
+};
+
+const messageOf = (work: () => unknown): string => {
+  try {
+    work();
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  return 'no throw';
+};
 
 describe('totp', () => {
   test('base32 round trips', () => {
@@ -64,6 +84,71 @@ describe('totp', () => {
     expect(replay).toEqual({ ok: false, step });
     expect(guard.isUsed('user-1', step)).toBe(true);
     expect(guard.isUsed('user-2', step)).toBe(false);
+  });
+
+  /**
+   * The secret is the ONLY thing a TOTP check knows, and an unreadable one leaves it knowing
+   * nothing: `base32Decode` answers zero bytes for any character outside the alphabet, and an
+   * HMAC keyed with zero bytes is a perfectly valid HMAC — so every malformed secret in the table
+   * collapsed onto ONE code stream that anybody can compute without holding any secret. The code
+   * below is derived independently, deliberately NOT through `totpCode`: once `totpCode` refuses
+   * a zero-length key, deriving it through the function under test would make this vacuous.
+   */
+  const emptyKeyCode = (step: number): string => {
+    const counter = new Uint8Array(8);
+    let remaining = step;
+    for (let index = 7; index >= 0; index -= 1) {
+      counter[index] = remaining % 256;
+      remaining = Math.floor(remaining / 256);
+    }
+    const mac = Uint8Array.from(
+      new Bun.CryptoHasher('sha1', new Uint8Array(0)).update(counter).digest(),
+    );
+    const offset = (mac[mac.length - 1] as number) & 0x0f;
+    const binary =
+      (((mac[offset] as number) & 0x7f) << 24) |
+      (((mac[offset + 1] as number) & 0xff) << 16) |
+      (((mac[offset + 2] as number) & 0xff) << 8) |
+      ((mac[offset + 3] as number) & 0xff);
+    return String(binary % 1_000_000).padStart(6, '0');
+  };
+
+  test('the empty-key code authenticates no secret the decoder cannot read', () => {
+    const step = totpStep(AT);
+    const code = emptyKeyCode(step);
+    // '' is the reachable one: a `mfa_secret text not null default ''` column is not null, so
+    // `login()` still demands a second factor and then had to be shown one derived from nothing.
+    for (const secret of ['not base32 !!!', 'JBSWY3DP!!!!!!!!', '', 'A']) {
+      expect(verifyTotp({ secret, code, at: AT })).toEqual({ ok: false, step: null });
+    }
+  });
+
+  test('a secret that decodes to nothing produces no code at all', () => {
+    const step = totpStep(AT);
+    // Two different malformed secrets used to answer the same six digits. A refusal is the only
+    // answer that cannot be one: there is no code an unreadable secret is entitled to.
+    for (const secret of ['not base32 !!!', 'JBSWY3DP!!!!!!!!', '', 'A']) {
+      expect(() => totpCode(secret, step)).toThrow(AuthError);
+      expect(codeOf(() => totpCode(secret, step))).toBe('X_MFA_SECRET_INVALID');
+    }
+    // The secret never reaches the message: it is a credential, and the message is logged.
+    expect(codeOf(() => totpCode('JBSWY3DP!!!!!!!!', step))).toBe('X_MFA_SECRET_INVALID');
+    expect(messageOf(() => totpCode('JBSWY3DP!!!!!!!!', step))).not.toContain('JBSWY3DP');
+  });
+
+  test('an imported secret is refused at enrolment, before it reaches the table', () => {
+    expect(
+      codeOf(() => enrolTotp(authWith('Postly'), { account: 'ada@example.test', secret: '' })),
+    ).toBe('X_MFA_SECRET_INVALID');
+    expect(
+      codeOf(() =>
+        enrolTotp(authWith('Postly'), { account: 'ada@example.test', secret: 'not base32 !!!' }),
+      ),
+    ).toBe('X_MFA_SECRET_INVALID');
+    // A minted secret is always readable, so the common path is untouched.
+    expect(enrolTotp(authWith('Postly'), { account: 'ada@example.test' }).secret).toMatch(
+      /^[A-Z2-7]+$/,
+    );
   });
 
   test('enrolment produces an otpauth URI the app can scan', () => {

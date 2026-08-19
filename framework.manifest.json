@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "27841743eb56d4eab25f194cb87cf188492844fc82821cca94743d13ad9ddf21",
+  "buildId": "c33e08d1babe5d277b21e190a791736c0626f78c358f870ed83c245e96dc32b0",
   "tiers": {
     "0": [
       "core",
@@ -1339,6 +1339,11 @@
     },
     {
       "code": "X_MFA_REQUIRED",
+      "owner": "auth",
+      "at": "packages/auth/src/errors.ts"
+    },
+    {
+      "code": "X_MFA_SECRET_INVALID",
       "owner": "auth",
       "at": "packages/auth/src/errors.ts"
     },
