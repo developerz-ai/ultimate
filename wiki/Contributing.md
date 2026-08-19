@@ -77,7 +77,7 @@ A package may import from **strictly lower** tiers only — never sideways withi
 | 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail` | tier 0–3 |
 | 5 | `ui`, `admin`, `testing`, `cli` | tier 0–4 |
 
-[`scripts/lib/tiers.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/lib/tiers.ts) is the executable copy of that table — change it there first. Four sideways edges are declared and no others: `admin → ui`, `realtime → query`, `cli → admin`, `create-ultimate → cli`.
+[`scripts/lib/tiers.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/lib/tiers.ts) is the executable copy of that table — change it there first. Four sideways edges are declared and no others: `realtime → query`, `cli → admin`, `cli → testing`, `create-ultimate → cli`. `admin → ui` was deleted 2026-08-19 by moving `ui` to tier 4.
 
 Enforced by [`scripts/boundaries.ts`](https://github.com/developerz-ai/ultimate/blob/main/scripts/boundaries.ts): `bun run boundaries`. A violation is `X_BOUNDARY_VIOLATION` with the **transitive chain**, not just the offending line. It runs on pre-push and inside `x verify` — a lint warning would not count as enforcement.
 

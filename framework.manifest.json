@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "0811867c1cf00b63c789066004de085d7662e2974f8b78b991517771c85b3765",
+  "buildId": "45e1f7998146f13aaf1137817b5eac0a4c0269927a7aa45b815062d8bf3a8855",
   "tiers": {
     "0": [
       "core",
@@ -34,10 +34,10 @@
       "mcp",
       "ai",
       "manifest",
-      "mail"
+      "mail",
+      "ui"
     ],
     "5": [
-      "ui",
       "admin",
       "testing",
       "cli",
@@ -190,6 +190,12 @@
       "private": false
     },
     {
+      "name": "@ultimat3/ui",
+      "version": "3.0.0",
+      "tier": 4,
+      "private": false
+    },
+    {
       "name": "@ultimat3/admin",
       "version": "3.0.0",
       "tier": 5,
@@ -209,12 +215,6 @@
     },
     {
       "name": "@ultimat3/testing",
-      "version": "3.0.0",
-      "tier": 5,
-      "private": false
-    },
-    {
-      "name": "@ultimat3/ui",
       "version": "3.0.0",
       "tier": 5,
       "private": false

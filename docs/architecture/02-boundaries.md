@@ -23,7 +23,7 @@ that the framework cannot know.
 
 The **executable** tier table is [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts), and the prose
 copy in the root `CLAUDE.md` must agree with it — `tier-table-drift.test.ts` asserts them row for
-row. The five declared sideways edges are `admin → ui`, `realtime → query`, `cli → admin`,
+row. The four declared sideways edges are `realtime → query`, `cli → admin`,
 `cli → testing` and `create-ultimate → cli`. **`schema → core` is not one of them and never was**:
 `packages/schema/src/errors.ts` states outright that schema may not import `@ultimat3/core`, because
 core's error machinery would make tier 0 a cycle.

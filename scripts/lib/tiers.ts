@@ -11,24 +11,30 @@ export const TIERS: Readonly<Record<number, readonly string[]>> = {
   1: ['i18n', 'money', 'time', 'cache', 'seo', 'db', 'storage', 'flags'],
   2: ['entity', 'policy', 'http', 'auth'],
   3: ['action', 'query', 'jobs', 'realtime'],
-  4: ['render', 'pwa', 'mcp', 'ai', 'manifest', 'mail'],
-  5: ['ui', 'admin', 'testing', 'cli', 'scraping'],
+  4: ['render', 'pwa', 'mcp', 'ai', 'manifest', 'mail', 'ui'],
+  5: ['admin', 'testing', 'cli', 'scraping'],
 };
 
 /**
  * Declared sideways edges — the contract allows same-tier imports only when they are listed, and
- * each of these earns its line:
+ * each of these earns its line.
+ *
+ * `admin -> ui` used to be here and is GONE, because it was never about composition: `ui` imports
+ * `core`, `i18n`, `money` and `time`, so tier 2 is the lowest its real imports allow and tier 5
+ * was two tiers too high. The exception existed only to undo that placement. `ui` sits at 4 rather
+ * than at its floor so that `render -> ui` stays forbidden (both at 4), which
+ * `packages/render/CLAUDE.md` requires — the static bundle graph may not reach the design system.
+ * An exception line in an enforcement table is a rule with a hole in it; deleting the hole beats
+ * arguing for it.
  *
  * | Edge | Why it is not a lower-tier extraction |
  * |---|---|
- * | `admin -> ui` | the admin dashboard *is* the ui kit, composed; inverting it would mean shipping every widget through props |
  * | `realtime -> query` | tier 3 is one feature: a live query is a query plus a subscription, and splitting it would duplicate the SQL shape |
  * | `create-ultimate -> cli` | a published shim whose whole job is to call `x new`; the alternative is a second copy of the templates |
  * | `cli -> admin` | `x dev` MOUNTS the `/_x` dashboard, it does not reimplement it; the panels are a product of the same tier, and the alternative is a second dev dashboard living in the CLI |
  * | `cli -> testing` | `@ultimat3/testing` IS the framework's harness, and `serve.live.test.ts` spawns the scaffolded `server.ts` as a child and has to let one real port through the seal. It was already live as `../../testing/src/sealed-network` — a relative specifier the checker could not see — and the alternatives are worse: core's `markListening()` would announce a socket a CHILD opened, and a second unseal in the CLI is a second sealed-network |
  */
 export const SIDEWAYS_ALLOW: Readonly<Record<string, readonly string[]>> = {
-  admin: ['ui'],
   realtime: ['query'],
   cli: ['admin', 'testing'],
   'create-ultimate': ['cli'],

@@ -352,6 +352,18 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_STYLES_GLOBAL_MISSING',
     'X_SURFACE_BOUNDARY',
   ],
+  // tier 4 as of 2026-08-19 — `ui` moved 5 -> 4 to delete the `admin -> ui` sideways exception,
+  // which brought its codes into this rule's scope for the first time. Same class as `render`
+  // above: author errors raised while a component is DECLARED or rendered, not answers to a
+  // caller. A bad design token, an unknown theme and a missing Solid runtime are all wrong-code
+  // faults an author fixes once, and none of them is a status a client should act on.
+  //
+  // `X_UI_INVALID_VALUE` is the one to look at first if this group shrinks: `@ultimat3/admin`
+  // renders these components INSIDE a request, so a column value a widget cannot render — a
+  // float where `Money` belongs, a timestamptz with no zone — raises it with a request waiting.
+  // It answers 500 today, which is honest for a server-side data fault; it is pinned rather than
+  // mapped because a row here would be asserting a status nobody has chosen on purpose.
+  ui: ['X_THEME_INVALID', 'X_TOKEN_UNKNOWN', 'X_UI_INVALID_VALUE', 'X_UI_RUNTIME_MISSING'],
 };
 
 /** Every pinned code, flat. The owner grouping is for the reader; the rule is per code. */

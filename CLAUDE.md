@@ -180,10 +180,25 @@ A package may import from strictly lower tiers. Never sideways within a tier, ne
 | 1 | `i18n`, `money`, `time`, `cache`, `seo`, `db`, `storage`, `flags` |
 | 2 | `entity`, `policy`, `http`, `auth` |
 | 3 | `action`, `query`, `jobs`, `realtime` |
-| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail` |
-| 5 | `ui`, `admin`, `testing`, `cli`, `scraping` |
+| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail`, `ui` |
+| 5 | `admin`, `testing`, `cli`, `scraping` |
 
-Declared sideways edges, each earning its line: `admin → ui`, `realtime → query`, `cli → admin`, `cli → testing`, `create-ultimate → cli`.
+Declared sideways edges, each earning its line: `realtime → query`, `cli → admin`, `cli → testing`, `create-ultimate → cli`.
+
+**`admin → ui` is gone, and `ui` moved 5 → 4, decided 2026-08-19.** The edge was justified on
+composition grounds — "the admin dashboard *is* the ui kit" — which is true and was never the
+reason it was needed: `ui` imports `core`, `i18n`, `money` and `time`, so tier **2** is the lowest
+its real imports allow and tier 5 was two tiers too high. The exception existed only to undo that
+placement. `ui` sits at 4 rather than at its floor so `render → ui` stays forbidden (both at 4),
+which [`packages/render/CLAUDE.md`](packages/render/CLAUDE.md) requires — the static bundle graph
+may not reach the design system, which is axiom 6. An exception line in an enforcement table is a
+rule with a hole in it, and deleting the hole beats arguing for it.
+
+`scripts/lib/tiers.ts` claims each package sits "at the lowest tier their real imports allow —
+checked by this file's own rule, not by opinion", and **no such check exists**: `boundaries.ts`
+enforces the ceiling only. `render`, `pwa` and `scraping` also sit above their floors `As of
+2026-08-19`. Adding a floor rule is deliberately not done yet — it reds three more packages the
+day it lands, and that is its own piece of work rather than a rider on this one.
 
 **`cli → testing` was declared 2026-08**, when `bun run boundaries` learned to follow relative specifiers. `packages/cli/src/serve.live.test.ts` had been importing `../../testing/src/sealed-network` with a comment saying the package specifier "is a sideways import the boundary check refuses" — an evasion the check could not see. `@ultimat3/testing` was already a runtime `dependencies` entry of `@ultimat3/cli`, so the manifest had crossed the edge all along; declaring it makes the rule enforce what shipping already assumed. `create-ultimate` sits above the table at tier 6 and its declared edge is its *only* permitted import.
 
