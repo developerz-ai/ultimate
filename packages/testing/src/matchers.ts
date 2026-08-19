@@ -3,6 +3,7 @@
 // a test ends up asserting on the wrong branch.
 
 import { expect } from 'bun:test';
+import { describeValue, isUltimateError, stringField } from '@ultimat3/core';
 import { TestJobExpectedError, TestSchemaExpectedError } from './errors';
 import type { OpenApiLike } from './test-types';
 
@@ -14,10 +15,27 @@ export interface MatcherResult {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
+/**
+ * The Ultimate error code carried by `value`, or `undefined` for anything that is not one.
+ *
+ * Three parts, not one. "An object with a string `code`" passed a Node `ENOENT` — so a suite
+ * pinning "never throw a bare Error" stayed green through exactly the regression it guards. The
+ * contract is `X_SCREAMING_SNAKE` + a cause + an executable fix, which is the same two-part
+ * discriminator `packages/cli/src/output.ts` uses to decide what the terminal shows.
+ *
+ * `stringField` and not a bare index: a matcher is asked about a value a test caught, and a
+ * throwing getter or a `Proxy` here would raise INSIDE the assertion — replacing the test's real
+ * failure with the matcher's.
+ */
 const codeOf = (value: unknown): string | undefined => {
-  if (!isRecord(value)) return undefined;
-  const code = value['code'];
-  return typeof code === 'string' ? code : undefined;
+  const code = stringField(value, 'code');
+  if (code === undefined || !code.startsWith('X_')) return undefined;
+  // A branded error is one by construction; a plain object has to show all three fields, which is
+  // what a `{ code, cause, fix }` literal in a test fixture already does.
+  if (isUltimateError(value)) return code;
+  const complete =
+    stringField(value, 'cause') !== undefined && stringField(value, 'fix') !== undefined;
+  return complete ? code : undefined;
 };
 
 /** Standard Schema is the validation contract, so every blessed schema exposes `~standard`. */
@@ -146,7 +164,10 @@ expect.extend({
   toBeUltimateError(received: unknown, code?: string) {
     const actual = codeOf(received);
     if (actual === undefined) {
-      return result(false, `expected an UltimateError, received ${typeof received}`);
+      return result(
+        false,
+        `expected an UltimateError (an X_ code with a cause and a fix), received ${describeValue(received)}`,
+      );
     }
     if (code === undefined) return result(true, `expected not to be an UltimateError`);
     return result(actual === code, `expected error code ${code}, received ${actual}`);

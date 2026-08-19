@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "c33e08d1babe5d277b21e190a791736c0626f78c358f870ed83c245e96dc32b0",
+  "buildId": "c92d7cc177a16b675183ba4698d9be1573b64f6fee4042e6434e66ea4222bfae",
   "tiers": {
     "0": [
       "core",
@@ -266,6 +266,11 @@
       "code": "X_ACTION_UNREGISTERED",
       "owner": "action",
       "at": "packages/action/src/errors.ts"
+    },
+    {
+      "code": "X_ADMIN_ACTION_DUPLICATE",
+      "owner": "admin",
+      "at": "packages/admin/src/errors.ts"
     },
     {
       "code": "X_ADMIN_DENIED",

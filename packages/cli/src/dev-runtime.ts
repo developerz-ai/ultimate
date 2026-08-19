@@ -6,7 +6,7 @@
 import { mkdirSync } from 'node:fs';
 import type { PurgeDriver } from '@ultimat3/cache';
 import { isNoopPurgeDriver, selectPurgeDriver } from '@ultimat3/cache';
-import { isLocal, resolveEnvironment } from '@ultimat3/core';
+import { isLocal, renderThrowable, resolveEnvironment } from '@ultimat3/core';
 import type { EventBus, JobDriver, OutboxStore } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
 import {
@@ -167,7 +167,7 @@ export function startStorage(services: DevServices, env: Env, override?: Storage
   try {
     mkdirSync(root, { recursive: true });
   } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause);
+    const detail = renderThrowable(cause);
     throw new StorageUnwritableError(
       `the embedded storage disk needs ${root} and it could not be created: ${detail}`,
       `mount a writable volume at ${root}, or set S3_ENDPOINT and S3_BUCKET to use object storage instead`,

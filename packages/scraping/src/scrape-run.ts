@@ -94,13 +94,21 @@ export async function runScrape<I, Row>(
   // Read BEFORE the browser opens: a refused credential must not reach a login form again, and
   // opening a session first would already have spent an identity on a run that cannot succeed.
   const restored = await restorableSession(plan);
+  const pageTimeoutMs = toMillis(definition.pageTimeout, DEFAULT_PAGE_TIMEOUT_MS);
   const session = await driver.open({
     name: definition.name,
     rules,
     clock,
-    timeoutMs: toMillis(definition.pageTimeout, DEFAULT_PAGE_TIMEOUT_MS),
+    timeoutMs: pageTimeoutMs,
     secrets,
-    robots: createRobotsGate({ policy: definition.robots ?? 'obey' }),
+    // The gate reads `/robots.txt` over the network, so it gets the run's deadline and the run's
+    // cancellation like every other call this package makes. Without them a hung origin parks
+    // every later navigation to it on one cached promise, unreachable by `ctx.signal`.
+    robots: createRobotsGate({
+      policy: definition.robots ?? 'obey',
+      timeoutMs: pageTimeoutMs,
+      signal: args.ctx.signal,
+    }),
     signal: args.ctx.signal,
     restore: restored,
     pace: (signal) => pace(signal),

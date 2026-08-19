@@ -213,7 +213,9 @@ function pickListFields(
           entity: entityName,
           field: name,
           cause: 'listed in listFields but not a column of the entity',
-          fix: `remove "${name}" from listFields, or add the column with x g migration`,
+          // `x db gen` and NOT `x g migration`: there is no `migration` generator, and the fix
+          // line an operator pastes has to be a command the CLI actually dispatches.
+          fix: `remove "${name}" from listFields, or add the column with x db gen "add ${name} to ${entityName}"`,
         });
       }
       return field;

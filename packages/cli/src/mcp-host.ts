@@ -4,7 +4,7 @@
 // is a second catalog of routes, entities, actions, queries or jobs.
 
 import { join } from 'node:path';
-import { agentActor, isUltimateError, UltimateError } from '@ultimat3/core';
+import { agentActor, isUltimateError, renderThrowable, UltimateError } from '@ultimat3/core';
 import type { DbClient } from '@ultimat3/db';
 import {
   ensureReadOnlyRole,
@@ -199,7 +199,9 @@ function capabilities(input: DevHostInput, lazy: LazyServices): DevCapabilities 
         if (isUltimateError(error)) throw error;
         throw new UltimateError({
           code: 'X_DB_MIGRATE_FAILED',
-          cause: error instanceof Error ? error.message : String(error),
+          // The blessed total renderer: `String(error)` runs the value's own `toString`, and
+          // this is the last hop before an agent is handed the three-line result.
+          cause: renderThrowable(error),
           fix: 'x db reset',
         });
       }

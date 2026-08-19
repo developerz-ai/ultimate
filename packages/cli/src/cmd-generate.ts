@@ -286,7 +286,12 @@ type WritePlan =
   | { readonly kind: 'skip' }
   | { readonly kind: 'conflict'; readonly finding: Finding };
 
-function planFile(file: GeneratedFile, absolute: string, force: boolean): WritePlan {
+function planFile(
+  file: GeneratedFile,
+  absolute: string,
+  force: boolean,
+  invocation: string,
+): WritePlan {
   // A foundation file belongs to the slice, not to the generator that needs it: several generators
   // emit the same `repo.ts`, so an existing one is the author's — never a conflict, and never
   // overwritten, `--force` included. `--force` is about the primitive the author named; clobbering
@@ -303,7 +308,10 @@ function planFile(file: GeneratedFile, absolute: string, force: boolean): WriteP
       finding: {
         code: 'X_GENERATE_CONFLICT',
         cause: `${file.path} already exists`,
-        fix: `x g --force to overwrite, or pass a different name`,
+        // The caller's own invocation, not `x g <kind>`: `x g --force` is X_CLI_UNKNOWN_COMMAND
+        // when run, and a `fix:` is copied and pasted verbatim. Same construction as
+        // `generate-kinds.ts`'s `assertSurfaceSupported`.
+        fix: `${invocation} --force   # overwrites ${file.path}, or pass a different name`,
         docs: 'https://ultimate.dev/errors/X_GENERATE_CONFLICT',
         at: file.path,
       },
@@ -325,12 +333,20 @@ export async function writeFiles(
   root: string,
   files: readonly GeneratedFile[],
   force: boolean,
+  /**
+   * The command line that produced these files, so a conflict's `fix:` can hand it back with
+   * `--force` on the end. Optional for a caller assembling files itself; the fallback is the
+   * shape, not a runnable line, and every generator path supplies the real one.
+   */
+  invocation = 'x g <kind> <name>',
 ): Promise<WriteReport> {
   const plans: WritePlan[] = [];
   for (const file of files) {
     const absolute = containedPath(root, file.path);
     plans.push(
-      file.merge === 'json' ? await planJsonMerge(file, absolute) : planFile(file, absolute, force),
+      file.merge === 'json'
+        ? await planJsonMerge(file, absolute)
+        : planFile(file, absolute, force, invocation),
     );
   }
   const conflicts = plans.flatMap((plan) => (plan.kind === 'conflict' ? [plan.finding] : []));
@@ -381,6 +397,10 @@ export const generateCommand: CliCommand = {
     // drifted — it omitted `backfill` — and a usage line that can disagree with the list it
     // describes is exactly the second source of truth axiom 2 forbids.
     usage: `x g ${GENERATORS.join('|')} <name> [--feature f]`,
+    // Declared from the SAME constant `readKind` validates against: without it `fix-command.ts`
+    // has no set to judge the word after `x g`, and two shipped `@ultimat3/admin` fix lines said
+    // `x g migration` — a generator that has never existed — straight through the `errors` gate.
+    positionalChoices: GENERATORS,
     requiresApp: true,
     flags: [
       { name: 'feature', type: 'string', summary: 'feature slice to write into' },
@@ -425,7 +445,12 @@ export const generateCommand: CliCommand = {
         lines: files.map((file) => msg('cli.file.added', { path: file.path })),
       };
     }
-    const report = await writeFiles(root, files, flagBool(ctx.args, 'force'));
+    const report = await writeFiles(
+      root,
+      files,
+      flagBool(ctx.args, 'force'),
+      `x g ${kind} ${name}`,
+    );
     // A locale's catalog existing on disk and the app being able to select it are two different
     // facts — see `syncI18nIndex`. Runs before the manifest load below so a route or resource
     // this same invocation just wrote never gets projected against a stale catalog registration.

@@ -6,6 +6,8 @@
 // There is no boolean, because `robots: false` is a decision with no author.
 
 import { robotsDisallowed } from './error-throws';
+import type { RobotsFetchInit } from './robots-fetch';
+import { robotsFetcher } from './robots-fetch';
 
 export type RobotsPolicy = 'obey' | { readonly ignore: string };
 
@@ -56,14 +58,47 @@ export function parseRobots(text: string, agent: string): RobotsRules {
   return { rules: groups.get(wanted) ?? groups.get('*') ?? [] };
 }
 
-const escaped = (literal: string): string => literal.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-/** `/private/*.pdf$` — the two wildcards robots.txt defines, and no others. */
+/**
+ * `/private/*.pdf$` — the two wildcards robots.txt defines, and no others, matched by WALKING the
+ * pattern rather than by compiling one.
+ *
+ * The rule text is remote: robots.txt belongs to the site being scraped, and `robotsAllows` runs on
+ * every navigation and every HTTP-leg request, synchronously, on the worker's only thread. A regex
+ * built as `body.split('*').join('.*')` backtracks catastrophically on a non-matching path — a rule
+ * with 24 wildcards did not return inside 60s, past `ctx.signal`, the watchdog and the job timeout,
+ * all of which are downstream of a `return` that never happens. This walk is O(pattern × path) with
+ * no backtracking beyond the LAST star, so the class is removed rather than bounded.
+ */
 const patternMatches = (pattern: string, path: string): boolean => {
   const anchored = pattern.endsWith('$');
-  const body = anchored ? pattern.slice(0, -1) : pattern;
-  const source = body.split('*').map(escaped).join('.*');
-  return new RegExp(`^${source}${anchored ? '$' : ''}`).test(path);
+  // Unanchored means "matches a PREFIX of the path", which is the same statement as a full match
+  // against the pattern with one more `*` on the end — one code path instead of two.
+  const body = anchored ? pattern.slice(0, -1) : `${pattern}*`;
+  let p = 0;
+  let s = 0;
+  let star = -1;
+  let resume = 0;
+  while (s < path.length) {
+    if (p < body.length && body[p] === '*') {
+      star = p;
+      p += 1;
+      resume = s;
+      continue;
+    }
+    if (p < body.length && body[p] === path[s]) {
+      p += 1;
+      s += 1;
+      continue;
+    }
+    if (star === -1) return false;
+    // Only the most recent star is ever retried, which is what keeps this linear per star instead
+    // of exponential across all of them.
+    p = star + 1;
+    resume += 1;
+    s = resume;
+  }
+  while (p < body.length && body[p] === '*') p += 1;
+  return p === body.length;
 };
 
 /**
@@ -93,14 +128,10 @@ export interface RobotsGate {
 
 export type RobotsFetch = (robotsUrl: string) => Promise<string | undefined>;
 
-const fetchRobots: RobotsFetch = async (robotsUrl) => {
-  const response = await fetch(robotsUrl);
-  return response.ok ? await response.text() : undefined;
-};
-
-export interface RobotsGateInit {
+export interface RobotsGateInit extends RobotsFetchInit {
   readonly policy: RobotsPolicy;
   readonly agent?: string | undefined;
+  /** A caller-supplied read. With none, `robotsFetcher` builds the deadlined, capped default. */
   readonly fetchText?: RobotsFetch | undefined;
 }
 
@@ -116,7 +147,7 @@ export function createRobotsGate(init: RobotsGateInit): RobotsGate {
     return { assertAllowed: () => Promise.resolve(), ignoredBecause: init.policy.ignore };
   }
   const agent = init.agent ?? DEFAULT_ROBOTS_AGENT;
-  const read = init.fetchText ?? fetchRobots;
+  const read = init.fetchText ?? robotsFetcher(init);
   const cache = new Map<string, Promise<RobotsRules>>();
   return {
     ignoredBecause: undefined,

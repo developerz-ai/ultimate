@@ -28,8 +28,15 @@ import { GLOBAL_FLAGS } from './parse';
 // in `@ultimat3/mcp` — is `X_CLI_UNKNOWN_COMMAND` when run and resolved clean while a placeholder
 // was invisible to the reader. Second and fourth slots are open positionals (`x new my-app`,
 // `x db branch drop <name>`), where a placeholder is exactly right.
-const CITATION =
-  /(?:^|[\s;|&("'`])x\s+([a-z][a-z\d-]*)(?:\s+([a-z][a-z\d-]*))?(?:\s+([a-z][a-z\d-]*|<[^>]*>))?/g;
+// A `:` is part of a word only when a letter follows it, which is what separates the shipped
+// positional `admin:page` from prose that ends a citation with a colon (`x verify: the gate`).
+// Read without it, `x g admin:page` cites `x g admin` — a positional the CLI does not ship —
+// and the one documented invocation of the admin-page generator was a standing false finding.
+const WORD = String.raw`[a-z][a-z\d-]*(?::[a-z][a-z\d-]*)?`;
+const CITATION = new RegExp(
+  String.raw`(?:^|[\s;|&("'\x60])x\s+(${WORD})(?:\s+(${WORD}))?(?:\s+(${WORD}|<[^>]*>))?`,
+  'g',
+);
 
 /**
  * A long flag, `--` stripped. `--no-<name>` is the parser's negation of a boolean, so it resolves

@@ -35,6 +35,30 @@ describe('unit · matchers', () => {
     expect('X_DB_DRIFT').not.toBeUltimateError();
   });
 
+  test('toBeUltimateError rejects a Node errno — a string `code` is not the contract', () => {
+    // The regression this matcher exists to catch, walking straight through it: `ENOENT` is a
+    // string `code`, so "any object with a string code" passed a suite whose whole job is
+    // pinning "never throw a bare Error". A code is `X_*` and carries a cause and a fix.
+    const enoent = Object.assign(new Error('no such file'), { code: 'ENOENT' });
+    expect(enoent).not.toBeUltimateError();
+    expect(enoent).not.toBeUltimateError('ENOENT');
+    expect({ code: 'ECONNRESET' }).not.toBeUltimateError();
+    // An `X_` code with no cause and no fix is not the contract either — the three travel together.
+    expect({ code: 'X_MADE_UP' }).not.toBeUltimateError();
+    expect({ code: 'X_MADE_UP', cause: 'c' }).not.toBeUltimateError();
+  });
+
+  test('toBeUltimateError reads through a hostile getter instead of raising inside the matcher', () => {
+    // A matcher that throws on `received.code` fails the whole file with the wrong error, and
+    // `.not.toBeUltimateError()` on such a value is exactly what a hardening test asserts.
+    const hostile = {
+      get code(): string {
+        throw new TypeError('nope');
+      },
+    };
+    expect(hostile).not.toBeUltimateError();
+  });
+
   test('toDenyPolicy passes on a denial and fails on an allow', async () => {
     await expect(policy(false)).toDenyPolicy({ actor: null });
     await expect(policy(true)).not.toDenyPolicy({ actor: { id: 'a' } });

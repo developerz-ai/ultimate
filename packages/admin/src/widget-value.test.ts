@@ -85,6 +85,19 @@ describe('money never renders as a float', () => {
     }
   });
 
+  test('the float refusal cites a command that exists', () => {
+    // Same class as the `listFields` fix: `x g migration` is not a generator, and an operator
+    // reading this line pastes it and gets X_CLI_UNKNOWN_COMMAND on top of the money bug.
+    try {
+      widgetProps(field({ currency: 'EUR' }), 19.99, ctx);
+      throw new Error('expected the money refusal');
+    } catch (error) {
+      const thrown = error as { fix?: string };
+      expect(thrown.fix).toContain('x db gen');
+      expect(thrown.fix).not.toContain('x g migration');
+    }
+  });
+
   test('non-integer minor units are refused', () => {
     expect(() => widgetProps(field({}), { minor: 19.5, currency: 'EUR' }, ctx)).toThrow(
       /minor units are integers/,
