@@ -41,6 +41,7 @@ export type {
 export {
   AccountSchema,
   authenticate,
+  DEFAULT_MFA_ISSUER,
   defineAuth,
   login,
   logout,
@@ -72,6 +73,7 @@ export {
   forbidden,
   kdfOverloaded,
   mfaRequired,
+  mfaRequiredUnenforceable,
   oauthAccountNotLinked,
   oauthDenied,
   oauthExchangeFailed,
@@ -120,6 +122,7 @@ export {
 export { MemoryAdapter } from './memory-adapter';
 export type {
   EnrolTotpInput,
+  MemoryTotpReplayGuard,
   RecoveryCodeSet,
   TotpEnrolment,
   TotpReplayGuard,
@@ -130,6 +133,7 @@ export {
   base32Decode,
   base32Encode,
   createTotpReplayGuard,
+  DEFAULT_MAX_TOTP_SUBJECTS,
   enrolTotp,
   generateRecoveryCodes,
   generateTotpSecret,

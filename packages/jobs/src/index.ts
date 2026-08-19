@@ -107,6 +107,7 @@ export {
   SQL_NACK,
   SQL_OUTBOX_CLAIM,
   SQL_OUTBOX_MARK_PUBLISHED,
+  SQL_OUTBOX_RELEASE,
   SQL_OUTBOX_STAGE,
   SQL_OUTBOX_TABLE,
   SQL_SCHEDULER_STATE_GET,
@@ -191,6 +192,7 @@ export {
 export type {
   EnqueueOptions,
   JobsFacade,
+  MemoryOutboxOptions,
   MemoryOutboxStore,
   OutboxDeps,
   OutboxRecord,
@@ -207,6 +209,9 @@ export {
   resetJobsFacade,
   setJobsFacade,
 } from './outbox';
+// One definition of the lease, consumed by both stores — a memory default and a pg default that
+// could drift are two answers to "how long is a claim mine for", and the shorter one duplicates.
+export { DEFAULT_OUTBOX_CLAIM_LEASE_MS } from './outbox-lease';
 export type { PgOutboxOptions } from './outbox-pg';
 export { createPgOutboxStore } from './outbox-pg';
 

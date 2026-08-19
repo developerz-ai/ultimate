@@ -168,6 +168,7 @@ wire.
 | distinct channel topics per node | 10,000 | `new ChannelHub({ maxTopicsPerNode })` | `X_SUBSCRIPTION_LIMIT` |
 | outbound bytes buffered on one socket | 1 MiB | `createSyncNode({ maxBufferedBytes })` | the frame is dropped and `send` answers `false` |
 | dropped frames before that socket is closed | 32 | `createSyncNode({ maxDroppedFrames })` | close `1013` (`overloaded`), reason `backpressure` |
+| time one socket may route no frame | 120s | `createSyncNode({ idleTimeoutMs })` | close `4001` (`idle`), reason `idle timeout` |
 | retained patch bytes per node | 64 MiB | `new RingChangeBuffer({ maxBytes, maxBytesPerQuery })` | eviction, then a re-snapshot on resume |
 | array lengths and `input` nesting in a frame | `FRAME_LIMITS` | none — a hard ceiling | `X_PROTOCOL_VERSION` |
 
@@ -362,6 +363,18 @@ wire twice by a reconnect that raced an ack.
   revoked grant — every topic on every re-authenticated socket, silently, with the client never told
   to resubscribe. The initial `subscribe` is deliberately not split that way: there is no
   subscription to keep, so a guard that raises refuses that subscribe and the client hears about it.
+- **An idle socket is swept, and the sweep is an APPLICATION budget, not Bun's.** Bun's own
+  `idleTimeout` is renewed by its ping/pong, so a client whose frame loop is wedged answers pings
+  and keeps its grant, its live subscriptions and its topic membership indefinitely. `start()`
+  arms one `.unref()`ed pass every `idleTimeoutMs / 4` (floored at a second, derived rather than
+  configured) and evicts anything past the budget the same way a close does — through the node's
+  `teardown`, never `SocketRegistry.remove`. `SocketRegistry.idle()` is a *query* for that reason:
+  the socket table is three of the five things a socket holds, and the other two are its live
+  subscriptions and its presence membership on the shared set. `sweepIdle` — which closed and
+  removed here, and had no caller at all — is gone. The budget is measured on `Clock.monotonic()`,
+  so `SyncSocket.lastSeenMonotonicMs` is a duration's start and not an instant: an NTP step forward
+  would otherwise evict every socket that is talking, and a step backward would spare every socket
+  that is dead. `openedAt` stays on the wall clock — it is a value a human reads.
 - **A `sync` node shuts down in two phases.** The `accept` phase calls `stopAccepting()`: `/readyz`
   answers 503 and a late upgrade is shed with `retry-after-ms`, while **every socket the node holds
   keeps its patch stream**. The `close` phase is `drain()` then `stop()`. Registered with no phase it
@@ -381,7 +394,10 @@ wire twice by a reconnect that raced an ack.
   caller.
 - **A cold subscribe reads once per query id.** Subscribers arriving during a read join it and each
   runs its own policy pass over the result. A read that resolves behind a change already fanned out
-  is discarded rather than written back: the window only ever moves forwards.
+  is discarded rather than written back: the window only ever moves forwards. Two reads are ordered
+  by a monotonic **read generation** and never by lsn — a definition with no lsn provider answers
+  `''` for every read, and `'' >= ''` let the older of two concurrent reads land on top of the
+  newer one's gap repair, with `stale` already cleared and therefore nothing left to re-read.
 - **A denial drops a row; a gate that could not decide does not.** A policy answer (`X_FORBIDDEN`,
   `X_UNAUTHENTICATED`) is a decision and costs the row, counted as `rowsDenied`. Anything else a
   gate throws — a rule whose lookup timed out, a predicate with a typo — is counted as

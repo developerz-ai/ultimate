@@ -158,6 +158,64 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Changed
 
+- **BREAKING — `defineAuth({ mfa: { required: true } })` is refused at boot** with
+  `X_CONFIG_INVALID`, and `AuthMfaPolicy.required` is narrowed from `boolean` to the literal `false`
+  so the same refusal is a type error. Nothing read the flag: `login()` branches only on
+  `user.mfaSecret !== null` and mints `mfaSatisfied: true` otherwise, so a user who never enrolled
+  got a fully-privileged session under a setting that reads *"this deployment requires a second
+  factor"*. **Enforcing it at login was rejected as a lockout**: the half-authenticated actor that
+  exists so a request can reach the finish-MFA route and nothing else is, by construction,
+  unavailable to an un-enrolled user (`policy-bridge.ts` gates it on `mfaSecret !== null`), and the
+  framework ships no enrolment route — so refusing at login closes the only door to the app's own
+  enrolment handler. A guarantee that cannot be shown to hold is refused where it is declared, the
+  `assertAuthLimiterPolicy` / `assertRateLimitScope` precedent. **Manual edit:** delete
+  `mfa.required`; enforce the requirement in your own enrolment flow. A test now pins that an
+  un-enrolled user can still sign in, so re-adding the login check fails the build.
+
+- **BREAKING — `enrolTotp(input)` is now `enrolTotp(auth, input)`**, and `input.issuer` is optional,
+  defaulting to `auth.mfa.issuer`. The configured issuer — advertised in the README as the product
+  name shown in the authenticator app — never reached an `otpauth://` URI, because `enrolTotp` read
+  only its own argument. **Manual edit:** pass the `auth` you built with `defineAuth`.
+
+- **BREAKING — `@ultimat3/http` no longer exports `appErrorStatus()`.** It was documented as feeding
+  `x errors list` and the manifest and was called by neither — and could not have been:
+  `registerErrorStatus()` fills a process-global map from the app's own imports, while both surfaces
+  are build artefacts derived from source, so in a CLI or manifest process it answered `{}`.
+  `registerErrorStatus()` and `statusFor()` are unchanged. **Manual edit:** read your own
+  registration module instead.
+
+- **BREAKING — `SyncSocket.lastSeenAt` is renamed `lastSeenMonotonicMs`**, and idle tracking now
+  reads `Clock.monotonic()` rather than the wall clock. An NTP correction otherwise either evicted
+  sockets that were actively talking (clock steps forward) or spared long-dead ones (steps
+  backward) — newly load-bearing, because this release wired the idle sweep for the first time.
+  The field is renamed rather than quietly re-based so that `new Date(socket.lastSeenAt)` becomes a
+  compile error instead of a silently wrong date. `openedAt` stays wall-clock: a human reads it.
+  **Manual edit:** rename the read; if you were formatting it as a date, you were already wrong.
+
+- **BREAKING — `SQL_OUTBOX_RELEASE` and `SQL_OUTBOX_MARK_PUBLISHED` take one more parameter each**
+  (1 → 2 and 2 → 3): the claimant, so both are fenced on `claimed_by`. Without it a relay whose
+  lease had already lapsed could release rows a **newer** claimant was actively publishing, letting
+  a third relay claim them mid-batch — the same duplicate the claim lease exists to prevent.
+  `SQL_OUTBOX_MARK_PUBLISHED` also gains `published_at is null`, which it never had, making the
+  stamp first-writer-wins instead of rewriting an audit timestamp. **Manual edit:** pass the
+  claimant; `OutboxStore.release`/`markPublished` take it as an optional trailing argument, so a
+  store that does not fence still compiles.
+
+- **BREAKING — `SocketRegistry.sweepIdle()` is replaced by `idle()`**, which returns the sockets past
+  the budget and removes nothing. The old method had no caller anywhere, so `idleTimeoutMs` (120s)
+  configured nothing and `SyncSocket.touch()`/`idleFor` existed for a dead path — and wiring it as
+  written would have reproduced the drain leak below, one object down. Eviction now belongs to
+  `sync-node`, which routes it through `teardown`. `createSyncNode({ idleTimeoutMs })` reaches it;
+  the sweep period is derived (a quarter of the budget, floored at 1s) rather than configured,
+  because a second number can disagree with the one it is a fraction of. **Manual edit:** call
+  `idle()` and evict through the node, or set the budget through `createSyncNode`.
+
+- **`stepTimeout` and `eventPoll` are declarable on `job()`.** Both were implemented, tested and
+  unreachable: `execute.ts` never passed them and `JobDefinition` had no per-step key, so the only
+  exercise was a runner built by hand in a test. A non-positive value is refused at declaration —
+  `withStepTimeout` reads `<= 0` as "no ceiling", the `concurrency: 0` trap. They are deliberately
+  **not** in `JobDescriptor`, which would drift both tracked apps' committed `x.manifest.json`.
+
 - **BREAKING — `DESCRIPTION_MIN_LENGTH` is deleted from `@ultimat3/seo`.** It was exported,
   documented as *"validate.ts enforces it"*, and read by no validator anywhere in the repo — a
   length bound whose only effect was to be importable. Enforcing it instead would have needed a new
@@ -193,6 +251,109 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   keys, and it still reads first so the answer can be `'skipped'`.
 
 ### Fixed
+
+- **The outbox relay's claim locked nothing, so two relays could publish one batch and a job could
+  run twice.** `SQL_OUTBOX_CLAIM` ends in `for update skip locked`, but the relay issues it on a
+  **pooled** connection with no transaction — a bare statement runs in an implicit transaction that
+  commits the instant it returns, so every row lock was released before `claim()` resolved, and
+  there was no `claimed_at` column to fence the batch either. Two relay replicas one `intervalMs`
+  apart therefore received the identical rows. The duplicate is not collapsed by the idempotency
+  key the way `dev-roles.ts` claimed: `SQL_ENQUEUE`'s conflict target is a **partial** index over
+  live states only, so once the first job reaches a terminal state the second insert matches nothing
+  and the handler runs again.
+
+  The claim is now a lease taken in the statement that locks the row — a CTE whose `update` and
+  `for update skip locked` select commit together — with `claimed_at`/`claimed_by` added additively
+  (`add column if not exists`) and a reclaim window that returns a crashed relay's rows. **An
+  existing deployment re-applies `SQL_JOBS_TABLE`**; the alters are additive and idempotent, so
+  re-applying is safe. The outer `order by staged_at` is load-bearing: `update … returning` has no
+  defined row order and the relay publishes in the order it is handed rows. `OutboxStore.release`
+  is new and optional — without it the lease would turn a one-tick pool blip into a 30-second stall
+  of all committed work, a failure mode the fix would otherwise have introduced.
+
+  The claim's sort key is now total — `order by staged_at, id` — because rows staged in one
+  transaction share a `staged_at` and a tie left the batch composition arbitrary. `id` is a UUIDv7
+  primary key, monotonic and bytewise-comparable, so the tiebreak *is* stage order and **no DDL was
+  needed** for it.
+
+  **What is proven and what is argued**, because the difference matters here: that
+  `for update skip locked` fences nothing outside a transaction is Postgres semantics and is
+  demonstrated; the ownership fence and the total order are proven as statement text plus the
+  parameters the store binds, and behaviourally in the memory store, which is built to answer the
+  same question. That the second publish lands *after* the first job reached a terminal state is a
+  timing argument, not reproduced — it needs two worker processes and a live server.
+
+- **`drain()` closed every socket without releasing anything it held.** It inlined three of
+  `teardown`'s five steps, so `registry.unsubscribeSocket`, `hub.unsubscribe` and `presence.leave`
+  never ran, and Bun's `close` callback could not cover for it — `sockets.remove` runs synchronously
+  on the next line, so the callback takes its early return. The `QueryEntry` (matcher, shared row
+  window, `WindowLock`) was never dropped and `source.forget(qid)` never called; worse, presence
+  lives in the shared store with a 30s TTL, so during a **rolling restart** every room rendered each
+  user twice — once under the drained socket id, once under the reconnected one. Two auditors proved
+  it independently. `evict()` is now the one eviction path, and the idle sweep routes through it.
+
+- **A live query with a `limit` stopped sending patches for a window that was never full.**
+  `removeAt` emitted a `refill` on every removal whenever `limit !== null`, naming a position
+  outside the result set (`from: 49` for a 3-row window). The bridge folds any refill into
+  `BridgeResult.refill`, and the fanout then marks the entry stale and `continue`s past every
+  subscriber — **no frame that round**. On a quiet feed the client kept rendering the deleted row
+  until some unrelated change to the same query arrived. The refill is now gated on the window
+  having actually been full.
+
+- **A read issued before a change-stream gap could overwrite the refill that repaired it.** The
+  never-backwards guard was expressed purely in lsn terms, but a definition with no lsn provider
+  answers `''` and `'' >= ''` is true — so a stale read landing last won, and `startRead` had
+  already cleared `stale`, so the fanout's repair never fired again. Every subscriber of that query
+  stayed permanently stale on a healthy socket. Reads now carry a monotonic generation and apply
+  only if still newest: identity against another read, lsn against a change.
+
+- **A clean job completion reported a lost lease.** `stop()` cleared the interval but did not fence
+  a renewal already on the wire, so a heartbeat landing after `ack` found the row out of `running`,
+  answered `false`, and logged `jobs.lease.lost` at error while calling `recordLeaseLost` — the one
+  signal that means *"the queue re-delivered a job this process was still running"*. A page for a
+  non-event, and the window widened exactly when the pool was slow. `worker-fleet-slots` had the
+  identical defect; both now share one `startRenewalTimer` helper whose `stopped()` latch is
+  re-read after the await.
+
+- **A `subscribe` landing after `close()` joined the socket to a topic with no bridge**, silently:
+  it received nothing on that topic for the life of the connection, with no error on either side.
+  It now refuses with `X_TRANSPORT_UNAVAILABLE` so the client redials. Releasing a bridge now
+  verifies identity too, which closes the same latent bug on the pre-existing authorize-throws path.
+
+- **`Pipeline.handle` could reject instead of resolving to a `Response`.** Two independent escapes,
+  both the tier-0/1 pattern one tier up: `recoverWith` — documented *"Never throws, by
+  construction"* — interpolated `String(failure)`, and `factsOf` read `source[key]` on a caught
+  value. The second is the live one: `error-map` **is** the recover-phase stage, so a throwable
+  whose `code` read throws broke the stage *and* the `problem(ctx.error)` the guard degrades to.
+  `auditOutcomeFor` in `@ultimat3/action` had the third instance — its `instanceof
+  ActionDeniedError` probe ran a `Proxy` trap from the frame holding the app's error, handing the
+  caller a `TypeError` in place of its own throwable. It now fails closed to `failed`: a value that
+  refuses to be examined is not evidence of a policy denial.
+
+- **`createTotpReplayGuard`'s subject map grew forever** — one permanent entry per user who ever
+  completed a TOTP check. Every sibling table in the framework carries a cap for exactly this. The
+  guard is now swept and bounded, and the eviction order is part of the guarantee: a subject whose
+  every remembered step has left the drift window is *forgotten* (free — it already answered as a
+  missing one), and only then does the cap evict, furthest-from-the-live-window first, tie-broken
+  least-recently-seen. Eviction can only make an already-spent step reusable, so the subject who
+  just authenticated is the last one out.
+
+- **A throw between clearing the batch and issuing it left every coalesced `findById` caller's
+  promise unsettled forever**, plus an unhandled rejection Bun ends the process on. The whole flush
+  body is now guarded and fails every waiting entry. Latent rather than reachable —
+  `statementChunks` is a numeric loop over a plain array — but the failure mode is severe and the
+  guard now covers anything a later edit puts there.
+
+- **`registeredJobs()`/`registeredTasks()` sorted with `localeCompare`**, and that ordering reaches
+  `x.manifest.json`, which the `drift` gate step compares byte for byte. `localeCompare` with no
+  locale depends on the runtime's ICU collation, so the artefact was machine-dependent.
+  `@ultimat3/http`'s router had already written the rule down.
+
+- **`@ultimat3/action`'s `X_SCHEMA_UNSUPPORTED` told the reader to configure a provider whose
+  `toJsonSchema` returns an object** — a member `SchemaProvider` does not declare. The user-visible
+  half of a doc clause deleted from `@ultimat3/schema` in the same release; it survived because it
+  lived in another package. `x verify`'s `errors` step checks a `fix:` line's *shape*, never whether
+  the API it names exists.
 
 - **SECURITY — a signed storage key differing only in the case of its `org/` prefix escaped the
   tenancy gate.** `isTenantScoped` compared the first segment exactly, so `Org/org-2/secret.png`

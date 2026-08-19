@@ -1,16 +1,23 @@
 import { describe, expect, test } from 'bun:test';
+import { defineAuth } from './auth';
 import { mfaRequired } from './errors';
+import { MemoryAdapter } from './memory-adapter';
 import {
   base32Decode,
   base32Encode,
   createTotpReplayGuard,
+  DEFAULT_MAX_TOTP_SUBJECTS,
   enrolTotp,
   generateRecoveryCodes,
   redeemRecoveryCode,
+  TOTP_DRIFT_STEPS,
+  TOTP_STEP_SECONDS,
   totpCode,
   totpStep,
   verifyTotp,
 } from './mfa';
+
+const authWith = (issuer: string) => defineAuth({ adapter: new MemoryAdapter(), mfa: { issuer } });
 
 // The secret every authenticator-app tutorial uses; keeps the vectors reproducible.
 const SECRET = 'JBSWY3DPEHPK3PXP';
@@ -60,8 +67,7 @@ describe('totp', () => {
   });
 
   test('enrolment produces an otpauth URI the app can scan', () => {
-    const enrolment = enrolTotp({
-      issuer: 'Ultimate',
+    const enrolment = enrolTotp(authWith('Ultimate'), {
       account: 'ada@example.test',
       secret: SECRET,
     });
@@ -69,6 +75,112 @@ describe('totp', () => {
     expect(enrolment.uri).toContain(`secret=${SECRET}`);
     expect(enrolment.uri).toContain('algorithm=SHA1');
     expect(enrolment.uri).toContain('period=30');
+  });
+
+  /**
+   * `defineAuth({ mfa: { issuer } })` is documented as the product name the authenticator app
+   * shows, and it reached no URI at all until `enrolTotp` was given the `auth` every other entry
+   * point in this package already takes — the option was a string the framework wrote down and
+   * never read.
+   */
+  test('the issuer in the URI is the one defineAuth declared', () => {
+    const uri = enrolTotp(authWith('Postly'), { account: 'ada@example.test' }).uri;
+    expect(uri.startsWith('otpauth://totp/Postly:ada%40example.test?')).toBe(true);
+    expect(uri).toContain('issuer=Postly');
+  });
+
+  test('an explicit issuer overrides the declared one for the one call that names it', () => {
+    const uri = enrolTotp(authWith('Postly'), {
+      issuer: 'Postly Admin',
+      account: 'ada@example.test',
+    }).uri;
+    expect(uri).toContain('issuer=Postly+Admin');
+  });
+});
+
+/**
+ * The table is bounded for the same reason every other in-memory table in the framework is
+ * (`DEFAULT_MAX_AUTH_LIMIT_KEYS`, `DEFAULT_MAX_RATE_LIMIT_KEYS`, `DEFAULT_MAX_IDEMPOTENCY_KEYS`):
+ * a per-subject map that only ever grows is one process' lifetime away from an OOM. Eviction is
+ * the delicate half — dropping a subject makes their remembered steps replayable again — so the
+ * order is asserted here, not just the bound.
+ */
+describe('the replay guard table', () => {
+  test('a subject whose every step has left the drift window is forgotten', () => {
+    const guard = createTotpReplayGuard();
+    guard.remember('alice', totpStep(AT), AT);
+    expect(guard.size).toBe(1);
+
+    // Five minutes on: alice's step is far below the floor, so `verifyTotp` can never offer it
+    // again and her entry answers exactly as a missing one. Keeping it is pure growth.
+    const later = new Date(AT.getTime() + 5 * 60_000);
+    guard.remember('bob', totpStep(later), later);
+    expect(guard.size).toBe(1);
+    expect(guard.isUsed('bob', totpStep(later))).toBe(true);
+  });
+
+  test('the cap evicts the subject furthest from the live window, never the newest', () => {
+    const guard = createTotpReplayGuard(TOTP_DRIFT_STEPS, 4);
+    const step = totpStep(AT);
+    for (const subject of ['a', 'b', 'c', 'd']) guard.remember(subject, step, AT);
+    expect(guard.size).toBe(4);
+
+    // One step on, over the cap, and nothing is dead yet — so live state goes, oldest first.
+    const next = new Date(AT.getTime() + TOTP_STEP_SECONDS * 1000);
+    guard.remember('e', totpStep(next), next);
+
+    expect(guard.size).toBeLessThan(5);
+    // The subject who just authenticated is the last one out: evicting them is what would hand
+    // an attacker a replay of the code that subject just used.
+    expect(guard.isUsed('e', totpStep(next))).toBe(true);
+    expect(guard.isUsed('d', step)).toBe(true);
+    // The least recently seen is the first one out.
+    expect(guard.isUsed('a', step)).toBe(false);
+  });
+
+  /**
+   * `maxSubjects` is the caller's number and the cap arithmetic ran on it unchecked, so the two
+   * values JavaScript hands you when a config read goes wrong each defeat the bound in their own
+   * way — one silently, one catastrophically. Both fall back to the default now.
+   */
+  describe('a maxSubjects that is not a positive finite integer', () => {
+    test('Infinity does not disable the bound it was passed as', () => {
+      const guard = createTotpReplayGuard(TOTP_DRIFT_STEPS, Number.POSITIVE_INFINITY);
+      const step = totpStep(AT);
+      // One past the default, at a single step so nothing is forgotten by drift: the only thing
+      // that can hold this table down is the cap.
+      for (let index = 0; index <= DEFAULT_MAX_TOTP_SUBJECTS; index += 1) {
+        guard.remember(`subject-${index}`, step, AT);
+      }
+
+      // `used.size > Infinity` is never true, so this is the exact unbounded map the cap exists
+      // to prevent — reintroduced by a caller who meant "no limit".
+      expect(guard.size).toBeLessThanOrEqual(DEFAULT_MAX_TOTP_SUBJECTS);
+    });
+
+    test('NaN does not make the guard forget the code it just accepted', () => {
+      const guard = createTotpReplayGuard(TOTP_DRIFT_STEPS, Number.NaN);
+      const step = totpStep(AT);
+      guard.remember('alice', step, AT);
+
+      // Every comparison against NaN is false, so `used.size <= evictTo` never stops the eviction
+      // loop and the sweep empties the table — including the subject who just authenticated.
+      // That is a replay of the six digits still on their screen, not merely a lost bound.
+      expect(guard.isUsed('alice', step)).toBe(true);
+      expect(guard.size).toBe(1);
+    });
+
+    test('zero is a misread config, not an instruction to remember one subject', () => {
+      const guard = createTotpReplayGuard(TOTP_DRIFT_STEPS, 0);
+      const step = totpStep(AT);
+      guard.remember('alice', step, AT);
+      guard.remember('bob', step, AT);
+
+      // `Math.max(1, 0)` made the table hold exactly one subject, so alice's live step became
+      // replayable the moment bob signed in.
+      expect(guard.isUsed('alice', step)).toBe(true);
+      expect(guard.size).toBe(2);
+    });
   });
 });
 

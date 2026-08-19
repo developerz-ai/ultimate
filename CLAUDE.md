@@ -44,8 +44,14 @@ sequence gaps** — no gap, no duplicate, no rewind on any client. A **lower bou
 zero loss: a hole is only visible between two frames one connection received, so anything lost before
 a connection's first message or after its last is invisible, as is a connection that received nothing. It needs its own counter because a channel topic has
 no cursor and no re-snapshot: a frame `SyncSocket.send` drops under backpressure is unrecoverable,
-and `SocketRegistry.deliver` and `ChannelHub`'s bridge both discard the `false` that would have said
-so. `As of 2026-08` this is the only run with delivery accounting — the 50,000-client result predates
+and `ChannelHub`'s bridge discards the `false` that would have said so. **`SocketRegistry.deliver`
+does not** — this file claimed it did until 2026-08, and
+[`packages/realtime/src/socket.ts`](packages/realtime/src/socket.ts) counts the drop, increments
+`channel_frames_dropped_total`, logs `channel.frames_dropped` and exposes `droppedChannelFrames`.
+Counted in three places and repaired in none is the accurate statement, and
+[`packages/realtime/CLAUDE.md`](packages/realtime/CLAUDE.md) always carried it; the bridge
+(`channel.ts`) is the one caller that still throws the answer away.
+`As of 2026-08` this is the only run with delivery accounting — the 50,000-client result predates
 the counter and carries no delivery number at all.
 
 Per-node recovery in both: neither run crossed NATS and neither subscribes to a live query, so no

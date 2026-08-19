@@ -109,6 +109,15 @@ create table if not exists x_outbox (
 create index if not exists x_outbox_unpublished_idx
   on x_outbox (staged_at) where published_at is null;
 
+-- The relays claim lease. A claim stamped in the same statement that locks the row is what stops
+-- two relays publishing one row twice: for update skip locked holds its locks only until that
+-- statement ends, which under autocommit is before claim returns. claimed_at is also what gives
+-- back the rows of a relay that died mid-batch, since a claim nothing can expire strands them.
+-- Added by alter because x_outbox shipped without them.
+alter table x_outbox add column if not exists claimed_at timestamptz;
+
+alter table x_outbox add column if not exists claimed_by text;
+
 -- The scheduler watermark. Without a durable one a redeployed scheduler has no idea what the
 -- pod it replaced already fired, so runRound takes the arming branch and every occurrence
 -- between the two processes is dropped with nothing logged.
@@ -177,4 +186,6 @@ create table if not exists x_outbox (
 );
 create index if not exists x_outbox_unpublished_idx
   on x_outbox (staged_at) where published_at is null;
+alter table x_outbox add column if not exists claimed_at timestamptz;
+alter table x_outbox add column if not exists claimed_by text;
 `.trim();

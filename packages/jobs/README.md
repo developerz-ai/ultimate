@@ -315,6 +315,20 @@ Nothing can kill a body that ignores the signal, so the durable state is fenced:
 cancel every step write is refused with `X_ABORTED`, and a run that finishes anyway is logged
 as `jobs.timeout.abandoned` — the one way to find a handler that never reads `ctx.signal`.
 
+Three ceilings, declared on the job and nowhere else (`As of 2026-08` — `stepTimeout` and
+`eventPoll` had been implemented in the step runner since 1.0 with no declaration able to reach
+them, so no `job()` could ask for either):
+
+| Field | Bounds | Absent |
+|---|---|---|
+| `timeout` | the whole attempt — aborts `ctx.signal`, then fails it | no attempt deadline |
+| `stepTimeout` | ONE `step.run` — aborts that step's signal, then fails the step | no per-step ceiling |
+| `eventPoll` | how long a `step.waitForEvent` parks between polls | 30s |
+
+A zero or negative `stepTimeout` / `eventPoll` is refused at declaration, the way `concurrency: 0`
+is: `withStepTimeout` reads `<= 0` as "no ceiling at all", which is the opposite of what the author
+wrote.
+
 ## The transactional outbox
 
 ```ts
@@ -334,10 +348,15 @@ it after commit. The bug class this removes:
 
 Both are load-dependent, both pass every test you would write, and both produce "the email
 went out but the order isn't in the database". Joining the transaction closes the window.
-The relay publishes *then* marks published, so a crash re-publishes — collapsed by the
-idempotency key. A publish that FAILS stops the batch rather than letting later rows overtake it:
-`claim()` returns rows in `staged_at` order, so an app that stages `createInvoice` then
-`chargeCard` in one transaction must never have the charge run first. Set `mode: 'required'` to
+The relay publishes *then* marks published, so a crash re-publishes — and **that repeat is
+collapsed only while the first job is still live** (`As of 2026-08`): `SQL_ENQUEUE`'s conflict
+target is a partial index over `ready`/`delayed`/`running`/`suspended`, so a re-publish landing
+after the first job reached a terminal state inserts a second row and the handler runs again.
+**Handlers are at-least-once. Write them idempotent** — that is the standing contract, not a
+caveat on this paragraph. A publish that FAILS stops the batch rather than letting later rows
+overtake it: `claim()` returns rows in `staged_at, id` order — total, so two relays compose the
+same batch in the same order — and an app that stages `createInvoice` then `chargeCard` in one
+transaction must never have the charge run first. Set `mode: 'required'` to
 make an enqueue outside a transaction an `X_OUTBOX_NO_TX` error instead of a direct publish.
 
 **It is not on by default, and it is not on until you install it** (`As of 2026-08`). Three
@@ -354,6 +373,34 @@ transactional: `stage()` runs on the CALLER'S connection, never the pool. With n
 `jobsFacade()` answers a fallback whose `currentTx` is `() => undefined` and every enqueue
 publishes straight to the driver — deliberate, so a script and a test enqueue with no wiring, but
 it is a fallback and not the guarantee.
+
+`claim()` is a **claim, not a read** (`As of 2026-08`). `for update skip locked` in a bare select
+holds its row locks only until that statement ends — under autocommit, before `claim()` even
+resolves — so two relays polling 200ms apart read the same unpublished rows and both publish them.
+`SQL_ENQUEUE` collapses that repeat only while the first job is still LIVE, because its conflict
+target is a partial index over the live states: a second publish landing after that job finished
+inserts a second row and **the handler runs twice**. So the claim stamps `claimed_at` in the same
+statement that locks the row, and that stamp is a lease — `claimLeaseMs` (a positive whole number
+of ms, default 30s; anything else is `X_INVARIANT` at construction) is how long the rows of a relay
+that DIED mid-batch wait before any relay may take them again. A batch a failed publish stopped is
+handed back at once through `release`, so a pool blip still costs one poll interval and not a lease
+window.
+
+**Every outbox mutation is fenced on the claimant, not just the claim** (`As of 2026-08`).
+`release` and `markPublished` both match on `claimed_by`, and `claim()` hands the token back on
+each record as `claimedBy`. A relay that stalls past its lease wakes up owning nothing: its late
+`release` would otherwise unclaim rows the relay that reclaimed them is mid-publish on (a third
+relay claims and republishes them), and its late `markPublished` would retire a row nobody has
+published yet — losing the job outright. Both are no-ops now, in the pg store and in the memory
+store alike.
+
+What the lease buys, precisely:
+
+| It stops | It does not stop |
+|---|---|
+| two relays holding one batch — a committed row cannot be claimed twice inside its lease | the handler running twice |
+| a lapsed claimant releasing or retiring a newer claimant's rows | a crash between publish and `markPublished` re-publishing after the first job is terminal |
+| a relay that died mid-batch stranding its rows forever | anything a **non-idempotent** handler does on its second run |
 
 The memory store (`createMemoryOutboxStore`, `x dev` and tests) **drops** a published row —
 `retained()` is the relay's backlog, not a running total; the pg store keeps `published_at` as
@@ -507,6 +554,13 @@ The second one means the queue is free to hand that job to another worker while 
 still running it — at-least-once turning into twice. Alert on any non-zero rate. The window is
 measured from the last renewal that **landed**, on this process's clock, so a driver whose
 heartbeat hangs is caught the same as one that rejects.
+
+Neither fires for a job that finished (`As of 2026-08`). `stop()` is terminal for the renewal
+already **on the wire**, not only for the next one: a clean completion acks the row out of
+`running`, so the fenced UPDATE already in flight comes back `false` — and reported, that was
+`jobs.lease.lost` at error plus the counter, a page for a non-event, on every completed job whose
+pool was slow enough. The fleet slot's `jobs.worker.slot-lost` had the same shape and the same
+fix (`renewal-timer.ts`).
 
 ## Introspection
 

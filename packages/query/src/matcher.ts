@@ -61,7 +61,7 @@ export function match<TRow extends object>(
   const belongs = event.op !== 'delete' && matchesFilters(event.row, shape.filters);
 
   if (event.op === 'delete' || (inSet && !belongs)) {
-    return inSet ? removeAt(shape, index, id, true) : [];
+    return inSet ? removeAt(shape, index, id, true, rows.length) : [];
   }
   if (!belongs) return [];
   if (!inSet) return insert(shape, rows, event.row);
@@ -84,9 +84,12 @@ export function match<TRow extends object>(
   // too, so the refill covers both.
   const wasFull = shape.limit !== null && rows.length >= shape.limit;
   if (wasFull && positionFor(shape, without, event.row) >= without.length) {
-    return removeAt<TRow>(shape, index, id, true);
+    return removeAt<TRow>(shape, index, id, true, rows.length);
   }
-  return [...removeAt<TRow>(shape, index, id, false), ...insert(shape, without, event.row)];
+  return [
+    ...removeAt<TRow>(shape, index, id, false, rows.length),
+    ...insert(shape, without, event.row),
+  ];
 }
 
 function insert<TRow extends object>(
@@ -107,15 +110,28 @@ function insert<TRow extends object>(
   return patches;
 }
 
+/**
+ * `held` is how many rows the window actually holds, and it is the whole condition on the refill.
+ *
+ * A refill says the tail is unknown to the client, and it is answered by a full re-read: the bridge
+ * folds it into `BridgeResult.refill`, and the fanout then sends NO patch frame that round —
+ * suppressing the `remove` beside it and leaving a deleted row on screen until the next change to
+ * the same query. A window under `limit` has no unknown tail: the source served fewer rows than it
+ * was allowed to, so what the client holds IS the result set. Unconditional, this also named a
+ * position no result set has — `limit: 50` over three rows emitted `{ refill, from: 49 }`.
+ */
 function removeAt<TRow extends object>(
   shape: QueryShape,
   index: number,
   id: string,
   refill: boolean,
+  held: number,
 ): readonly Patch<TRow>[] {
   const patches: Patch<TRow>[] = [{ kind: 'remove', position: index, id }];
-  // A limited window may now be one row short, and the tail lives on the server.
-  if (refill && shape.limit !== null) patches.push({ kind: 'refill', from: shape.limit - 1 });
+  // A window that WAS full is now one row short, and that row lives on the server.
+  if (refill && shape.limit !== null && held >= shape.limit) {
+    patches.push({ kind: 'refill', from: shape.limit - 1 });
+  }
   return patches;
 }
 

@@ -39,6 +39,28 @@ const refusesHeaders = (response: Response, allowedReads: number): Response => {
   return response;
 };
 
+/**
+ * Two throwables that fight being READ, in two different places. A null-prototype object carries
+ * no `Symbol.toPrimitive` and no `toString`, so `String(it)` is itself a `TypeError`; a `Proxy`
+ * throws out of `getPrototypeOf` (which `instanceof` calls) and out of `get` (which any property
+ * read calls). An ordinary `Error` proves nothing about this tail — every guard here survives one
+ * already.
+ */
+const nullPrototype = (): unknown => Object.create(null) as unknown;
+
+const unreadable = (): unknown =>
+  new Proxy(
+    {},
+    {
+      getPrototypeOf: (): never => {
+        throw new TypeError('the prototype is not for you');
+      },
+      get: (): never => {
+        throw new TypeError('the properties are not for you');
+      },
+    },
+  );
+
 const routes: readonly Route[] = [
   {
     method: 'GET',
@@ -74,6 +96,16 @@ const routes: readonly Route[] = [
     path: '/ok',
     meta: { name: 'ok', auth: 'public' },
     handler: () => text('ok'),
+  },
+  {
+    method: 'GET',
+    path: '/hostile',
+    meta: { name: 'hostile', auth: 'public' },
+    // Not an `Error`: the recover stage has to RENDER whatever a handler threw, and a value that
+    // refuses every property read is the one it cannot ask `factsOf` about twice.
+    handler: () => {
+      throw unreadable();
+    },
   },
   {
     method: 'GET',
@@ -259,5 +291,65 @@ describe('a recover stage that throws', () => {
 
     expect(response.status).toBe(500);
     expect((await bodyOf(response))['code']).toBe('X_INTERNAL');
+  });
+});
+
+/**
+ * The class of defect, not one instance of it: a documented total contract reached past an
+ * unguarded `String(x)`, `${x}` or `instanceof` on a value the framework did not build. Both
+ * guards in this tail are total or `handle()` has no answer at all.
+ */
+describe('a throwable that fights being read', () => {
+  const reporter = memoryErrorReporter();
+
+  beforeEach(() => {
+    resetErrorReporting();
+    reporter.reset();
+    configureErrorReporting({ reporter });
+  });
+
+  afterEach(() => {
+    resetErrorReporting();
+  });
+
+  // Before: `recoverWith`'s catch built its log line with `String(failure)`, so an `onError` sink
+  // throwing a null-prototype object threw a second `TypeError` out of the guard documented
+  // "never throws, by construction" — and `handle()` rejected.
+  test('an onError hook throwing a null-prototype object still answers', async () => {
+    const response = await pipelineWith({
+      onError: () => {
+        throw nullPrototype();
+      },
+    }).handle(get('/boom'), { role: 'web' });
+
+    expect(response.status).toBe(500);
+    const body = await bodyOf(response);
+    expect(body['code']).toBe('X_INTERNAL');
+    expect(body['cause']).toContain('undefined is not a function');
+  });
+
+  test('an onError hook throwing a Proxy that traps getPrototypeOf still answers', async () => {
+    const response = await pipelineWith({
+      onError: () => {
+        throw unreadable();
+      },
+    }).handle(get('/boom'), { role: 'web' });
+
+    expect(response.status).toBe(500);
+    expect((await bodyOf(response))['code']).toBe('X_INTERNAL');
+  });
+
+  // The same class one layer down: `factsOf` read `record['code']` unguarded, so a handler
+  // throwing this value threw out of the recover stage AND out of the `problem()` the guard
+  // answers with — two renderings of one hostile value, neither of which could complete.
+  test('a handler throwing an unreadable value is answered, not dropped', async () => {
+    const response = await pipelineWith().handle(get('/hostile'), { role: 'web' });
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get('content-type')).toContain('application/problem+json');
+    const body = await bodyOf(response);
+    expect(body['code']).toBe('X_INTERNAL');
+    expect(body['cause']).toBe('a object that cannot be rendered');
+    expect(reporter.events).toHaveLength(1);
   });
 });

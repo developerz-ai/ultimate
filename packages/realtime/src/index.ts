@@ -263,6 +263,7 @@ export {
   createEntry,
   fillWindow,
   orgIdOf,
+  type PendingRead,
   type QueryEntry,
   refillWindowInLane,
 } from './query-window';
@@ -299,8 +300,10 @@ export {
   actorIdOf,
   CLOSE,
   DEFAULT_FRAME_BURST,
+  DEFAULT_IDLE_TIMEOUT_MS,
   DEFAULT_MAX_BUFFERED_BYTES,
   DEFAULT_MAX_FRAMES_PER_SECOND,
+  idleSweepPeriodMs,
   SocketRegistry,
   type SocketRegistryOptions,
   SyncSocket,

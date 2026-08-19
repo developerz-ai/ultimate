@@ -425,8 +425,74 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   A SIGTERM landing between `driver.enqueue` and `markPublished` returned to a caller that then
   closed the database under the row it was about to mark. `OutboxRelay.stop(): Promise<void>` — a
   caller that does not await gets what it always got (the chain carries its own `catch`), so the
-  join is only as good as the `await`: **`packages/cli/src/dev-roles.ts` still calls it without
-  one**, in both teardown paths.
+  join is only as good as the `await`. Both of `packages/cli/src/dev-roles.ts`'s paths take it
+  today (`:306` returns `() => relay.stop()` so the rollback awaits it, `:356` is
+  `await relay?.stop()`); this file claimed the opposite until 2026-08.
+- **The outbox claim is a LEASE, and one statement is what makes it one** (`As of 2026-08`).
+  `SQL_OUTBOX_CLAIM` was a bare `select ... for update skip locked` run on the POOLED executor, and
+  those row locks last only for their own statement — under autocommit they are gone before
+  `claim()` resolves, and `x_outbox` had no claimed column, so nothing fenced the batch at all. Two
+  relays 200ms apart read the identical rows and both published them. **The idempotency key does
+  not collapse that in general**: `SQL_ENQUEUE`'s conflict target is the PARTIAL index over
+  `('ready','delayed','running','suspended')`, so a repeat landing after the first job reached a
+  terminal state inserts a second row and the handler runs twice. The mechanism is Postgres
+  semantics; the second-publish-after-terminal ordering was argued, never reproduced — say it that
+  way, in a comment or a changelog. The claim now stamps `claimed_at`/`claimed_by` in the same
+  statement that locks (the CTE shape `SQL_CLAIM` already used), and the outer
+  `select ... order by staged_at, id` is load-bearing: `update ... returning` has no defined row
+  order and the relay publishes in the order it is handed rows. `claimed_at` is a LEASE and not a
+  flag — without a reclaim window a relay that died mid-batch strands its rows forever — and
+  `OutboxStore.release` (optional, so a store written before this still compiles) hands back the
+  batch a failed publish stopped, or one pool blip would park committed work for a whole lease
+  window instead of one poll interval. `createMemoryOutboxStore` answers the SAME question, on an
+  injected clock, and `outbox-claim.test.ts` pins the two side by side.
+- **The lease is fenced on EVERY outbox mutation, and the sort key is TOTAL** (`As of 2026-08`).
+  Two holes the first version of the lease left open, both reachable without a second relay
+  process. `SQL_OUTBOX_RELEASE` and `SQL_OUTBOX_MARK_PUBLISHED` matched on `id` alone, so a relay
+  that stalled past its own lease still spoke for rows another relay had reclaimed: its late
+  `release` unclaimed a batch mid-publish (a third relay claims it, publishes it again — the
+  duplicate the lease exists to prevent, reached the long way round) and its late `markPublished`
+  retired a row nobody had published, losing the job with nothing to notice. Both now carry
+  `and claimed_by = $n`, `claim()` hands the token back as `OutboxRecord.claimedBy`, and the relay
+  passes it to both calls. `markPublished` also gained `published_at is null`, so the stamp is
+  first-writer-wins rather than a rewrite of an audit timestamp. The memory store fences the same
+  way — per CLAIM there rather than per relay, because two relays there are two `claim()` calls on
+  ONE store, and a per-store id could not tell them apart. `undefined` is unfenced in both, for the
+  reason `release` is optional: a caller holding no token is one written before the fence.
+  **`order by staged_at` was not a total order**: every row staged in one transaction shares a
+  `staged_at`, so the tie was the planner's to break — which rows the `limit` takes, and in which
+  order they publish, differed between two relays and between two runs of one. `, id` fixes it in
+  the CTE and in the projection, and needed NO DDL: `id` is a UUIDv7 minted by `uuid()`, monotonic
+  and already the primary key, so the tiebreak IS stage order. `byClaimOrder` in `outbox.ts` is the
+  memory store's copy of that key.
+- **`claimLeaseMs` is normalised in ONE place — `outbox-lease.ts`** (`As of 2026-08`). Both stores
+  call `resolveClaimLeaseMs`, which owns `DEFAULT_OUTBOX_CLAIM_LEASE_MS` and refuses anything that
+  is not a positive whole number of ms with `X_INVARIANT` (the generic, no new code: same borrow
+  `@ultimat3/db` makes). A memory default and a pg default that could drift are two answers to
+  "how long is a claim mine for", and the shorter one publishes a row twice. `0` expires before
+  `claim()` resolves and `Infinity` never expires, so both are refused at CONSTRUCTION, not at the
+  first tick where the only trace is a log line.
+- **A renewal is decided against `stopped()`, not only against the interval** (`As of 2026-08`).
+  `renewal-timer.ts` is the one shape, read by `heartbeat.ts` and `worker-fleet-slots.ts`, and it
+  exists because both files reported a LOSS for a job that had finished cleanly: `stop()` cleared
+  the interval, which does nothing to the request already on the wire, so the fenced statement came
+  back `false` — the row left `running` when `executeJob` acked it — and that answer took the loss
+  branch. `jobs.lease.lost` at error plus `recordLeaseLost(queue)` is the one signal meaning the
+  queue re-delivered a job this process was still running, so a false one is a page for a
+  non-event, and the window widens exactly when the pool is slow. Re-read the flag AFTER every
+  await and inside the reporter, the way `settleWithin`'s `decided` does in core.
+- **`stepTimeout` and `eventPoll` are DECLARED on the job, and `execute.ts` is the only place they
+  are forwarded** (`As of 2026-08`). `StepRunnerOptions` carried both, `withStepTimeout`
+  implemented the ceiling and `steps.test.ts` exercised it by building a runner BY HAND — while the
+  only production construction passed neither and `JobDefinition` had no field that could. Same
+  verdict as `job.concurrency`: a documented guarantee that silently does nothing is the worst of
+  the three options, so it is threaded rather than deleted. Both are refused at declaration when
+  non-positive, because `withStepTimeout` reads `<= 0` as "no ceiling at all".
+- **`registeredJobs()`/`registeredTasks()` sort by CODE UNITS, never `localeCompare`.** The list is
+  projected by `describeJobs()` into `x.manifest.json`, which both tracked apps commit and
+  `x verify`'s `drift` step diffs byte for byte; `localeCompare` with no locale argument answers
+  from the runtime's ICU default and collation version. Same rule as `@ultimat3/http`'s
+  `describeRoutes`, restated locally rather than imported — `http` is not below this package.
 - **A driver's semantics are pinned in ONE test with the pg statement beside them.**
   `driver-parity.test.ts` asserts the memory driver's behaviour and the SQL that has to mean the
   same thing in a single test, so neither side can move alone. `introspect.list` answered
@@ -543,6 +609,7 @@ picture from the other side.
 | `steps.ts` | `StepStore`, `StepApi`, memoized-replay executor, `StepSuspension` |
 | `outbox.ts` | staging in a `Tx`, the relay, the ambient `JobsFacade` slot |
 | `outbox-pg.ts` | `createPgOutboxStore` — `stage()` on the caller's OWN connection, claim on the pool |
+| `outbox-lease.ts` | the claim lease's one definition and its one normalisation, for both stores |
 | `leases.ts` | `LeaseStore` — fleet-wide slots, the memory one, `jobLeaseKey` |
 | `metrics.ts` | `queue_oldest_ready_seconds` and `queue_dead_jobs`, the two alertable gauges |
 | `scheduler-pg.ts` | `pgSchedulerState` (the durable watermark) + `createPgLeaseLeader` |
@@ -557,6 +624,7 @@ picture from the other side.
 | `retry-classification.ts` | the OTHER half of that decision: what the thrown error says, and the stop reason the row and the log carry |
 | `execute.ts` | `executeJob` — one claimed job run and settled, and the run's deadline/cancel |
 | `heartbeat.ts` | one claimed job's lease: the renewal interval and the loss it reports |
+| `renewal-timer.ts` | the interval a renewal runs on, and the `stopped()` latch every branch after an await re-reads |
 | `worker.ts` | `worker` role, claim loop, drain |
 | `worker-run.ts` | one claimed job, wired: its heartbeat, its slot renewal, its run signal and its span, started together and handed back in one `finally` |
 | `run-signal.ts` | the signal ONE run is cancelled by — composition that can be handed back, and that the worker can abort itself |

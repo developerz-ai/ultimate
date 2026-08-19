@@ -71,6 +71,29 @@ afterAll(() => {
 });
 
 const repo = () => postgresRepo(invoices);
+
+/**
+ * `Promise.allSettled` with a deadline. A caller a batch never settles hangs, and a hang reaches
+ * the test runner as a timeout with no line number — so the deadline turns "unsettled forever",
+ * the one failure mode these tests exist to refuse, into a named assertion failure.
+ */
+const settledWithin = async <T>(
+  promises: readonly Promise<T>[],
+  ms: number,
+): Promise<readonly PromiseSettledResult<T>[]> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${promises.length} lookups were still unsettled after ${ms}ms`)),
+      ms,
+    );
+  });
+  try {
+    return await Promise.race([Promise.allSettled(promises), deadline]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+};
 // The tenant is the actor's, so a request that reads a tenant-scoped table is a request with an
 // actor that carries one — `{ orgId: ORG }` on the call below is now a restatement of it.
 const inRequest = <T>(work: () => Promise<T>): Promise<T> =>
@@ -245,6 +268,39 @@ describe('findById coalescing', () => {
       await held;
     });
     expect(sent).toBe(1);
+  });
+
+  /**
+   * The same claim across a batch wide enough to SPLIT: one chunk's failure is that chunk's, and
+   * no caller of any chunk is left holding a promise nothing will settle. The deadline is the
+   * assertion — everything below it is about which way each lookup settled, not whether it did.
+   */
+  test('a chunk that fails settles its own callers and strands none of the others', async () => {
+    let sent = 0;
+    const query = (): Promise<never[]> => {
+      sent += 1;
+      // The second statement, so the first chunk has already settled every caller in it.
+      if (sent === 2) throw new RangeError('boom');
+      return Promise.resolve([]);
+    };
+    // A point read only ever sends `query`; the other two are here because `DbClient` has them.
+    const unreached = (): Promise<never> => Promise.reject(new Error('a point read sends query'));
+    const flaky: DbClient = { query, one: unreached, execute: unreached };
+    const pinned = postgresRepo(invoices, { client: flaky });
+    const ids = Array.from({ length: MAX_IDS_PER_STATEMENT + 2 }, (_, at) => idAt(200 + at));
+
+    await inRequest(async () => {
+      const settled = await settledWithin(
+        ids.map((id) => pinned.findById(id, { orgId: ORG })),
+        2_000,
+      );
+      const first = settled.slice(0, MAX_IDS_PER_STATEMENT);
+      const second = settled.slice(MAX_IDS_PER_STATEMENT);
+      expect(second).toHaveLength(2);
+      expect(first.every((result) => result.status === 'fulfilled')).toBe(true);
+      expect(second.every((result) => result.status === 'rejected')).toBe(true);
+    });
+    expect(sent).toBe(2);
   });
 });
 

@@ -233,6 +233,47 @@ describe('a lease that lapses is named', () => {
   });
 });
 
+describe('a clean completion is not a lost lease', () => {
+  test('the renewal already on the wire when stop() lands reports nothing', async () => {
+    const error = spyOn(logger, 'error');
+    // The real ordering, and it needs a driver that answers on demand: the interval fires, the
+    // heartbeat UPDATE is in flight, the body returns, `executeJob` acks the row out of
+    // `running`, `worker-run.ts`'s `finally` calls `stop()` — and only THEN does the fenced
+    // statement come back `false`, for a job that completed. `stop()` cleared the interval and
+    // nothing else, so that answer took the `held === false` branch: `jobs.lease.lost` at ERROR
+    // plus `recordLeaseLost`, which is a page for a non-event on the one signal that means the
+    // queue re-delivered a job this process was still running.
+    let land = (_held: boolean): void => undefined;
+    const heartbeat = startLeaseHeartbeat({
+      driver: {
+        heartbeat: () =>
+          new Promise<boolean>((resolve) => {
+            land = resolve;
+          }),
+      },
+      claimed,
+      visibilityTimeoutMs: VISIBILITY_MS,
+      intervalMs: 3_600_000,
+      workerId: 'worker-1',
+      clock: frozenClock(0),
+    });
+
+    void heartbeat.renew();
+    heartbeat.stop();
+    land(false);
+    await Bun.sleep(1);
+
+    const lost = error.mock.calls.filter((call) => call[0] === 'jobs.lease.lost');
+    error.mockRestore();
+
+    expect(lost).toEqual([]);
+    expect(heartbeat.lost()).toBe(false);
+    // And the run's signal is untouched: the body it would unwind has already finished.
+    expect(heartbeat.signal.aborted).toBe(false);
+    expect(lostCount('emails')).toBeUndefined();
+  });
+});
+
 describe('the interval drives it without the test touching a timer', () => {
   test('a live lease renews on its own, and stop() really stops', async () => {
     let renewals = 0;

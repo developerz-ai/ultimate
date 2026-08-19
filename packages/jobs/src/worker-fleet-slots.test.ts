@@ -3,15 +3,17 @@
 // in-process slot it was taken under, and a renewal that answers `false` — another worker holds
 // this slot now — must stop the run rather than let two of them share one `job.concurrency`.
 
-import { afterEach, describe, expect, test } from 'bun:test';
-import { type Ctx, createContext, isUltimateError } from '@ultimat3/core';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { type Ctx, createContext, isUltimateError, logger } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
+import type { ClaimedJob } from './driver';
 import { createMemoryDriver } from './driver-memory';
 import { job, resetJobs } from './job';
 import type { HeldLease, LeaseStore } from './leases';
 import { createMemoryLeaseStore } from './leases';
 import { createLimiter } from './limits';
 import { createWorker } from './worker';
+import { createFleetSlots } from './worker-fleet-slots';
 
 const context = (): Ctx => createContext({ role: 'worker', buildId: 'test' });
 
@@ -162,5 +164,59 @@ describe('a fleet-slot renewal that answers false', () => {
     const atLoss = renewals;
     await Bun.sleep(20);
     expect(renewals).toBe(atLoss);
+  });
+});
+
+describe('a fleet-slot renewal that answers false AFTER the run settled', () => {
+  test('is not a lost slot — stop() is terminal for the answer already on the wire', async () => {
+    job({
+      tenant: 'none',
+      name: 'settledJob',
+      input: passthrough<Record<string, never>>(),
+      idempotencyKey: () => 'settled',
+      retry: { attempts: 1, jitter: false },
+      concurrency: 1,
+      run: () => Promise.resolve(),
+    });
+
+    // The ordering `worker.ts` produces on every clean completion: `worker-run.ts`'s `finally`
+    // stops the renewal, `worker.ts` releases the slot, and the renewal already in flight then
+    // finds the row gone. `stop()` cleared the interval and nothing else, so that answer still
+    // took the loss branch: `jobs.worker.slot-lost` at ERROR and an abort on a controller
+    // `runSignal.dispose()` had already torn down.
+    const backing = createMemoryLeaseStore();
+    let land = (_renewed: boolean): void => undefined;
+    const leases: LeaseStore = {
+      ...backing,
+      renew: () =>
+        new Promise<boolean>((resolve) => {
+          land = resolve;
+        }),
+    };
+    const slots = createFleetSlots({
+      leases,
+      workerId: 'worker-1',
+      ttlMs: 30_000,
+      renewIntervalMs: 1,
+    });
+    const claimed = { id: 'job-1', name: 'settledJob' } as ClaimedJob;
+    expect(await slots.acquire(claimed)).toBe(true);
+
+    const error = spyOn(logger, 'error');
+    let lost: HeldLease | undefined;
+    const stop = slots.startRenewal(claimed.id, (slot) => {
+      lost = slot;
+    });
+    // The interval fires and the renewal is on the wire.
+    await Bun.sleep(5);
+    stop();
+    await slots.release(claimed.id);
+    land(false);
+    await Bun.sleep(5);
+    const slotLost = error.mock.calls.filter((call) => call[0] === 'jobs.worker.slot-lost');
+    error.mockRestore();
+
+    expect(lost).toBeUndefined();
+    expect(slotLost).toEqual([]);
   });
 });

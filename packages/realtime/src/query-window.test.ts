@@ -174,3 +174,84 @@ describe('the gap repair, end to end', () => {
     expect(socket.desynced.has(subscription.sid)).toBe(false);
   });
 });
+
+/**
+ * Two reads in flight over one entry, landing out of order. The never-backwards rule was expressed
+ * purely in lsn terms, and a definition with no lsn provider answers `''` for every read — so
+ * `'' >= ''` let the OLDER read overwrite the newer one, with `stale` already cleared by the newer
+ * one's issue. Nothing re-reads after that: `fanoutChange`'s repair only fires on `entry.stale`, so
+ * every subscriber of that query id is served out of the pre-gap window for the life of the entry.
+ */
+describe('an older read never lands on a window a newer one already replaced', () => {
+  /** One entry whose snapshot is resolved by the test, in whatever order it likes. */
+  function deferred(): { entry: QueryEntry; answer: (at: number, rows: readonly Row[]) => void } {
+    const gate: ((result: SnapshotResult) => void)[] = [];
+    const entry = entryWith(
+      async () =>
+        await new Promise<SnapshotResult>((resolve) => {
+          gate.push(resolve);
+        }),
+    );
+    return {
+      entry,
+      answer: (at, answered) => {
+        // No lsn: the shape `toLiveQuery` produces for a definition with no lsn provider, and the
+        // one the guard could not tell apart from "older".
+        gate[at]?.({ rows: answered, lsn: '' });
+      },
+    };
+  }
+
+  const preGap: readonly Row[] = [{ id: 'pre-gap' }];
+  const fresh: readonly Row[] = [{ id: 'fresh' }];
+
+  test('the pre-gap read that resolves last is discarded, not applied over the repair', async () => {
+    const { entry, answer } = deferred();
+
+    // T0 — a cold subscriber: nothing in flight and nothing stale, so this issues read P1.
+    const first = fillWindow(entry);
+    // T1 — the change stream skipped a sequence: `registry.invalidate()` marks every window.
+    entry.stale = true;
+    // T2 — a second cold subscriber forces its own read, P2, clearing the mark on the way in.
+    const second = fillWindow(entry);
+    expect(entry.stale).toBe(false);
+
+    // T3 — P2 answers with the post-gap rows, which is the repair.
+    answer(1, fresh);
+    await expect(second).resolves.toEqual({ rows: fresh, lsn: '' });
+    // T4 — the OLDER read finally answers.
+    answer(0, preGap);
+
+    await expect(first).resolves.toEqual({ rows: fresh, lsn: '' });
+    expect(entry.rows).toEqual(fresh);
+  });
+
+  test('a refill in the lane is not overwritten by a read issued before it', async () => {
+    const { entry, answer } = deferred();
+
+    const joining = fillWindow(entry);
+    const repair = refillWindowInLane(entry);
+    answer(1, fresh);
+    await expect(repair).resolves.toBeUndefined();
+    answer(0, preGap);
+
+    await expect(joining).resolves.toEqual({ rows: fresh, lsn: '' });
+    expect(entry.rows).toEqual(fresh);
+  });
+
+  test('the newest read still lands — the guard discards older reads, not every read', async () => {
+    const { entry, answer } = deferred();
+
+    const first = fillWindow(entry);
+    entry.stale = true;
+    const second = fillWindow(entry);
+
+    // The older one answers FIRST this time, so the forced read is still the newest to land.
+    answer(0, preGap);
+    await expect(first).resolves.toEqual({ rows: preGap, lsn: '' });
+    answer(1, fresh);
+
+    await expect(second).resolves.toEqual({ rows: fresh, lsn: '' });
+    expect(entry.rows).toEqual(fresh);
+  });
+});

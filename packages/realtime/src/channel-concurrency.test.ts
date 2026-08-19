@@ -173,7 +173,7 @@ describe('one topic is one transport subscription, however many sockets arrive a
     expect(hub.topicCount).toBe(1);
     await hub.close();
     transport.gate.resolve();
-    await subscribing;
+    await subscribing.catch(() => undefined);
     await Promise.resolve();
 
     // The open landed on a bridge `#bridges.clear()` had already dropped, so nothing could name it:
@@ -182,6 +182,59 @@ describe('one topic is one transport subscription, however many sockets arrive a
     expect(transport.live).toBe(0);
     await hub.publish(name, { x: 1, y: 1 });
     expect(alice.ws.frames).toHaveLength(0);
+  });
+
+  test('a subscribe landing after close() joins nothing, and tells the client so', async () => {
+    const transport = new SlowTransport();
+    const sockets = new SocketRegistry();
+    const hub = new ChannelHub({ transport, sockets });
+    hub.guard('org.>', () => true);
+    const name = topic('org', 'o1', 'cursors');
+    const alice = connect(sockets, actor('alice'));
+
+    const subscribing = hub.subscribe(alice.socket, name);
+    await hub.close();
+    transport.gate.resolve();
+
+    // `#open` closed its own subscription and dropped the entry, then RETURNED — so `subscribe`
+    // fell through to `joinTopic` and the socket became a member of a topic nothing on this node
+    // is subscribed to: no message for the life of the connection, no error on either side, and
+    // no reason for the client to redial. Reachable between `hub.close()` inside `node.drain()`
+    // and the last in-flight subscribe.
+    const thrown = await subscribing.then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect((thrown as { code?: string } | null)?.code).toBe('X_TRANSPORT_UNAVAILABLE');
+    expect(alice.socket.topics.has(name)).toBe(false);
+    expect(sockets.subscriberCount(name)).toBe(0);
+    expect(hub.topicCount).toBe(0);
+  });
+
+  test('and the refusal it answers with carries a fix that is a COMMAND, not advice', async () => {
+    const transport = new SlowTransport();
+    const sockets = new SocketRegistry();
+    const hub = new ChannelHub({ transport, sockets });
+    hub.guard('org.>', () => true);
+    const name = topic('org', 'o1', 'cursors');
+    const alice = connect(sockets, actor('alice'));
+
+    const subscribing = hub.subscribe(alice.socket, name);
+    await hub.close();
+    transport.gate.resolve();
+    const thrown = await subscribing.then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    // Axiom 4 is "stable code + cause + exact fix command". The reader of THIS refusal is a
+    // browser websocket client that cannot run a CLI, so the shape is `http/src/error-map.ts`'s:
+    // a command that ships first, the human instruction as a trailing comment. Prose alone left
+    // an agent reading the error with nothing to execute.
+    const fix = (thrown as { fix?: string } | null)?.fix ?? '';
+    expect(fix).toStartWith('x errors explain X_TRANSPORT_UNAVAILABLE --json');
+    expect(fix).toContain('#');
+    expect(fix).toContain('reconnect and resubscribe');
   });
 
   test('a guard that denies one of two concurrent subscribers leaves the bridge to the other', async () => {

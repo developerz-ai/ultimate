@@ -219,7 +219,9 @@ describe('the relay loop', () => {
         }
         return inner.claim(limit);
       },
-      markPublished: (id, at) => inner.markPublished(id, at),
+      // Forwards the CLAIMANT too: a delegate that dropped it would silently unfence the store
+      // it wraps, and this file's relay tests would stop exercising the fence at all.
+      markPublished: (id, at, claimant) => inner.markPublished(id, at, claimant),
       pendingCount: () => inner.pendingCount(),
     };
   }

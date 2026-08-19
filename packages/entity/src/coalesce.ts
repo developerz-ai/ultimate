@@ -81,7 +81,10 @@ const openBatch = (
   // mid-flight opens the next batch instead of joining ids already on the wire.
   queueMicrotask(() => {
     if (batches.get(key) === batch) batches.delete(key);
-    void flush(batch);
+    // `flush` settles every caller itself, so a rejection escaping it has nobody left to hand it
+    // to — and an unhandled rejection ends the Bun process, which turns one bad batch into the
+    // whole node. Nothing is swallowed here that a caller was not already given.
+    void flush(batch).catch(() => undefined);
   });
   return batch;
 };
@@ -89,23 +92,34 @@ const openBatch = (
 const flush = async (batch: Batch): Promise<void> => {
   const waiting = [...batch.pending.values()];
   batch.pending.clear();
-  // One statement at a time: a batch wide enough to split must not take the pool with it.
-  for (const chunk of statementChunks(waiting)) {
-    try {
-      const answers = await batch.load(chunk.map((entry) => entry.id));
-      for (const entry of chunk) {
-        const answer = answers.get(entry.key);
-        // An id the statement did not answer for is a row that is not there — `findById`'s `null`,
-        // never a rejection, and never another caller's row.
-        if (answer === undefined) entry.settle(null);
-        else if ('error' in answer) entry.fail(answer.error);
-        else entry.settle(answer.row);
+  try {
+    // One statement at a time: a batch wide enough to split must not take the pool with it.
+    for (const chunk of statementChunks(waiting)) {
+      try {
+        const answers = await batch.load(chunk.map((entry) => entry.id));
+        for (const entry of chunk) {
+          const answer = answers.get(entry.key);
+          // An id the statement did not answer for is a row that is not there — `findById`'s
+          // `null`, never a rejection, and never another caller's row.
+          if (answer === undefined) entry.settle(null);
+          else if ('error' in answer) entry.fail(answer.error);
+          else entry.settle(answer.row);
+        }
+      } catch (error) {
+        // The statement failed, so everyone in it gets the failure the single statement would
+        // have handed them. Every one was returned to a caller, so none goes unhandled.
+        for (const entry of chunk) entry.fail(error);
       }
-    } catch (error) {
-      // The statement failed, so everyone in it gets the failure the single statement would have
-      // handed them. Every one of these promises was returned to a caller, so none goes unhandled.
-      for (const entry of chunk) entry.fail(error);
     }
+  } catch (error) {
+    // Every promise in `waiting` was handed to a caller before this batch was ever scheduled, so
+    // anything escaping the loop above — `statementChunks` itself, or whatever a later edit puts
+    // beside it — would leave them awaiting a row that can no longer arrive. Unsettled forever is
+    // strictly worse than failed: a rejection is a stack trace, a hang is a request that never
+    // answers. Failing an entry an earlier chunk already settled is a no-op, so this is safe over
+    // the whole list. `jit-preload.ts` gets the same property by construction, settling with an
+    // `Answer` rather than a rejection; this path has a real promise per caller and cannot.
+    for (const entry of waiting) entry.fail(error);
   }
 };
 

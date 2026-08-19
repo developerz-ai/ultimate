@@ -80,6 +80,22 @@ export interface JobDefinition<I> {
    */
   readonly concurrency?: number;
   readonly timeout?: DurationInput;
+  /**
+   * Ceiling for ONE `step.run`, where `timeout` is the ceiling for the whole attempt. Folded into
+   * the signal the step body is handed, so a body reads one signal and sees whichever deadline
+   * lands first — and it ABORTS before it rejects, because the attempt that replaces this one is
+   * claimable the moment the nack lands.
+   *
+   * Declared here and nowhere else: the runner has implemented this ceiling since 1.0 and no
+   * declaration could ask for it, which is a documented guarantee that does nothing.
+   */
+  readonly stepTimeout?: DurationInput;
+  /**
+   * How long a `step.waitForEvent` parks between polls. Default 30s. Lower it for a wait a user
+   * is watching; the step suspends for exactly this long each time, so it is also the resolution
+   * of the resume, never a busy loop.
+   */
+  readonly eventPoll?: DurationInput;
   run(args: JobRunArgs<I>): Promise<unknown>;
 }
 
@@ -114,6 +130,10 @@ export interface JobHandle<I = unknown> {
   readonly retry: RetryPolicy;
   readonly concurrency: number | undefined;
   readonly timeoutMs: number | undefined;
+  /** The declared per-step ceiling in ms; `executeJob` hands it to the step runner. */
+  readonly stepTimeoutMs: number | undefined;
+  /** The declared event-poll interval in ms; `undefined` leaves the runner's 30s default. */
+  readonly eventPollMs: number | undefined;
   readonly input: StandardSchemaV1<unknown, I>;
   parse(raw: unknown): I;
   idempotencyKeyFor(input: I): string;
@@ -183,6 +203,28 @@ export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
     `set a whole concurrency of 1 or more on job("${name}"), or omit the field for no cap at all`,
   );
 
+  const stepTimeoutMs =
+    definition.stepTimeout === undefined ? undefined : toMs(definition.stepTimeout);
+  const eventPollMs = definition.eventPoll === undefined ? undefined : toMs(definition.eventPoll);
+  // `withStepTimeout` reads `<= 0` as "no ceiling at all" and a poll of zero is a suspension that
+  // resumes immediately, forever. Both are an author who asked for a limit and got the opposite,
+  // so they are refused where they are written — the same answer `concurrency: 0` gets.
+  //
+  // FINITE, not merely positive: `> 0` admits `Infinity`, which is the same defect spelled the
+  // other way. `eventPoll: Infinity` parks a waiting step and schedules the poll that would wake
+  // it for never; `stepTimeout: Infinity` is a ceiling no step can reach. `NaN` fails `> 0` on its
+  // own, and is covered here so the predicate says what it means rather than passing by accident.
+  assert(
+    stepTimeoutMs === undefined || (Number.isFinite(stepTimeoutMs) && stepTimeoutMs > 0),
+    `job "${name}" declares stepTimeout ${String(definition.stepTimeout)}, which is no ceiling at all`,
+    `set a finite positive stepTimeout on job("${name}") — "30s" or 30_000 — or omit the field for no per-step ceiling`,
+  );
+  assert(
+    eventPollMs === undefined || (Number.isFinite(eventPollMs) && eventPollMs > 0),
+    `job "${name}" declares eventPoll ${String(definition.eventPoll)}, which parks a waiting step for no time at all`,
+    `set a finite positive eventPoll on job("${name}") — "5s" or 5_000 — or omit the field for the 30s default`,
+  );
+
   const handle: JobHandle<I> = {
     kind: 'job',
     name,
@@ -190,6 +232,8 @@ export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
     retry: { ...DEFAULT_RETRY, ...definition.retry },
     concurrency: definition.concurrency,
     timeoutMs: definition.timeout === undefined ? undefined : toMs(definition.timeout),
+    stepTimeoutMs,
+    eventPollMs,
     input: definition.input,
     parse(raw: unknown): I {
       return parse(definition.input, raw) as I;
@@ -311,8 +355,18 @@ export function getJob(name: string): AnyJobHandle | undefined {
   return registry.get(name);
 }
 
+/**
+ * Code-unit compare, never `localeCompare`. This list is projected into `x.manifest.json`, which
+ * both tracked apps COMMIT and `x verify`'s drift step diffs byte for byte — and `localeCompare`
+ * with no locale argument answers from the runtime's ICU default and collation version, so the
+ * same source could sort two ways on two machines. `@ultimat3/http`'s `describeRoutes` states the
+ * same rule; the comparator is restated rather than imported because `http` is not below this
+ * package on the tier table.
+ */
+const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 export function registeredJobs(): readonly AnyJobHandle[] {
-  return [...registry.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return [...registry.values()].sort((a, b) => byName(a.name, b.name));
 }
 
 export function resetJobs(): void {

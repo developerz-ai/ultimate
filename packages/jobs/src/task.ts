@@ -215,8 +215,18 @@ export function nameTasks(record: Readonly<Record<string, TaskHandle>>): void {
   for (const [exportName, handle] of Object.entries(record)) registerTask(exportName, handle);
 }
 
+/**
+ * Code-unit compare, never `localeCompare`. This list is projected into `x.manifest.json`, which
+ * both tracked apps COMMIT and `x verify`'s drift step diffs byte for byte — and `localeCompare`
+ * with no locale argument answers from the runtime's ICU default and collation version, so the
+ * same source could sort two ways on two machines. `@ultimat3/http`'s `describeRoutes` states the
+ * same rule; the comparator is restated rather than imported because `http` is not below this
+ * package on the tier table.
+ */
+const byName = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 export function registeredTasks(): readonly TaskHandle[] {
-  return [...registry.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return [...registry.values()].sort((a, b) => byName(a.name, b.name));
 }
 
 export function getTask(name: string): TaskHandle | undefined {

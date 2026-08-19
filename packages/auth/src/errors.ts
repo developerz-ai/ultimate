@@ -175,6 +175,26 @@ export const mfaRequired = (userId: string): AuthError =>
   });
 
 /**
+ * `defineAuth({ mfa: { required: true } })`, refused where it is declared. The option read as a
+ * security guarantee — "this deployment requires a second factor" — and nothing in this package
+ * could make it true: `login()` and `signInWithOAuth()` branch on `user.mfaSecret` alone, so a
+ * user who never enrolled was handed a fully-privileged session under it, and `actorFromUser`
+ * strips privileges only for a user who HAS a secret, so there is no half-authenticated actor to
+ * hand them instead. Enforcing it inside `login()` would refuse exactly the people with nothing to
+ * offer, with no enrolment route shipped to send them to — a permanent lockout, not a second
+ * factor. So the declaration is refused at boot, exactly as `assertAuthLimiterPolicy` refuses a
+ * per-process limiter under a fleet-wide lockout: a guarantee this package cannot show holds is
+ * never assumed. `X_CONFIG_INVALID` is core's code, borrowed rather than re-declared.
+ */
+export const mfaRequiredUnenforceable = (): AuthError =>
+  new AuthError({
+    code: 'X_CONFIG_INVALID',
+    cause:
+      'defineAuth({ mfa: { required: true } }) declares a second factor this package does not enforce: login() mints a full session for any user whose mfaSecret is null',
+    fix: 'drop required from defineAuth({ mfa }) and gate it in your own sign-in handler, which is where the enrolment route lives: if (user.mfaSecret === null) send them to enrolTotp(auth, { account: user.email }) instead of createSession(auth.sessions, ...)',
+  });
+
+/**
  * The `fix:` quotes `oauthStartPath` rather than a hand-written path. That is not tidiness: this
  * line shipped naming `GET /auth/oauth/<provider>` while `@ultimat3/auth` mounted no route at all,
  * so every caller who followed it hit a 404. One declaration, read by the mount and by the fix,

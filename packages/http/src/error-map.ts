@@ -1,7 +1,7 @@
 // The one place a framework error code becomes an HTTP status. A table, not a
 // switch chain: adding a code elsewhere in the framework means adding a row here,
 // and a missing row is a loud 500 rather than a silently wrong 200.
-import { renderCauseValue } from '@ultimat3/core';
+import { renderCauseValue, stringField } from '@ultimat3/core';
 import { errorStatusInvalid, HTTP_ERROR_TITLES } from './errors';
 
 /**
@@ -232,10 +232,6 @@ export const registerErrorStatus = (statuses: Readonly<Record<string, number>>):
 /** Test seam. Production registers once at boot and never unregisters. */
 export const resetErrorStatus = (): void => APP_ERROR_STATUS.clear();
 
-/** Every status the app declared, for `x errors list` and the manifest. */
-export const appErrorStatus = (): Readonly<Record<string, number>> =>
-  Object.fromEntries([...APP_ERROR_STATUS].sort(([a], [b]) => a.localeCompare(b)));
-
 // Framework table first: `registerErrorStatus` already refuses those codes, so the order is
 // belt-and-braces — but it is the belt that makes "the framework's statuses are fixed" true
 // even if a future caller reaches the map some other way.
@@ -254,13 +250,17 @@ export interface ErrorFacts {
   readonly stack: string | undefined;
 }
 
-const str = (source: Record<string, unknown>, key: string): string | undefined => {
-  const value = source[key];
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
+/**
+ * One string field off the throwable, through core's `stringField`. The read is a getter call —
+ * or a `Proxy`'s `get` trap — on a value the framework did not build, and it throws in the one
+ * place with nothing left to answer with: `factsOf` is called by the RECOVER stage, and again by
+ * the `problem()` that `recoverWith` degrades to, so a value that refuses to be read took both
+ * renderings and `handle()` rejected against its own contract.
+ */
+const str = (source: unknown, key: string): string | undefined => {
+  const value = stringField(source, key);
+  return value !== undefined && value.length > 0 ? value : undefined;
 };
-
-const asRecord = (value: unknown): Record<string, unknown> =>
-  typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
 
 /**
  * Normalises any throwable into the framework's error contract. Non-Ultimate
@@ -268,21 +268,20 @@ const asRecord = (value: unknown): Record<string, unknown> =>
  * hold for the accidental `TypeError` too.
  */
 export const factsOf = (error: unknown): ErrorFacts => {
-  const record = asRecord(error);
-  const code = str(record, 'code') ?? 'X_INTERNAL';
+  const code = str(error, 'code') ?? 'X_INTERNAL';
   // The error's own title first: every `UltimateError` resolves one from the code registry at
   // construction, so this renders the OWNING package's title — including the codes http only
   // borrows (`X_FORBIDDEN` is policy's, `X_UNAUTHENTICATED` is auth's) and so cannot title itself.
   // Falling through to `message` here shipped the code twice: `X_FORBIDDEN: policy denied… — …`.
   const title =
-    str(record, 'title') ??
+    str(error, 'title') ??
     HTTP_ERROR_TITLES[code as keyof typeof HTTP_ERROR_TITLES] ??
-    str(record, 'message') ??
+    str(error, 'message') ??
     'unhandled server error';
   // The last fallback is the only one that touches the throwable whole, and every throwable a
   // request produces reaches it. `String()` runs the value's own `toString`, so the value that
   // took the request down took the 500 renderer with it and the server had nothing left to send.
-  const cause = str(record, 'cause') ?? str(record, 'message') ?? renderCauseValue(error);
+  const cause = str(error, 'cause') ?? str(error, 'message') ?? renderCauseValue(error);
   return {
     code,
     title,
@@ -290,11 +289,10 @@ export const factsOf = (error: unknown): ErrorFacts => {
     // `x logs tail` is in `PLANNED_COMMANDS` — it exits `X_NOT_IMPLEMENTED`. A fix line naming a
     // command that throws is axiom 4 inverted: the one instruction the reader is given fails.
     // `x errors explain` ships, and it is the command that answers "what is this code".
-    fix:
-      str(record, 'fix') ?? `x errors explain ${code} --json   # then fix the throwing call site`,
-    docs: str(record, 'docs') ?? `https://ultimate.dev/errors/${code}`,
+    fix: str(error, 'fix') ?? `x errors explain ${code} --json   # then fix the throwing call site`,
+    docs: str(error, 'docs') ?? `https://ultimate.dev/errors/${code}`,
     status: statusFor(code),
-    stack: str(record, 'stack'),
+    stack: str(error, 'stack'),
   };
 };
 

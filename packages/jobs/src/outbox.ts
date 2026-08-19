@@ -31,6 +31,7 @@ import type { EnqueueResult, JobDriver } from './driver';
 import { DEFAULT_QUEUE, jobDriver } from './driver';
 import { DriverUnavailableError, OutboxNoTxError } from './errors';
 import type { JobHandle } from './job';
+import { resolveClaimLeaseMs } from './outbox-lease';
 
 export interface OutboxRecord {
   readonly id: string;
@@ -46,6 +47,11 @@ export interface OutboxRecord {
   readonly traceparent?: string;
   readonly enqueuedBy?: string;
   readonly publishedAt?: number;
+  /**
+   * Stamped by `claim()`, absent on a staged row. Hand it back to `release`/`markPublished`: it is
+   * the FENCE, so a claimant whose lease lapsed cannot touch the rows a newer one is publishing.
+   */
+  readonly claimedBy?: string;
 }
 
 export interface OutboxStore {
@@ -55,10 +61,42 @@ export interface OutboxStore {
   commit(tx: Tx): Promise<readonly OutboxRecord[]>;
   /** Called by the tx runner after ROLLBACK. Staged rows vanish with the transaction. */
   rollback(tx: Tx): Promise<void>;
-  /** Unpublished, committed rows — the relay's work queue. */
+  /**
+   * CLAIM unpublished, committed rows — the relay's work queue, and a lease rather than a read.
+   * A store that hands the same rows to two relays hands the same job to two workers, and the
+   * idempotency key only collapses that while the first job is still live.
+   */
   claim(limit: number): Promise<readonly OutboxRecord[]>;
-  markPublished(id: string, at: number): Promise<void>;
+  /**
+   * Hand a claim back before its lease runs out, for the batch a failed publish stopped. OPTIONAL
+   * so a store written before the claim became a lease still compiles: without it those rows wait
+   * out the whole lease, which is slower, never wrong.
+   *
+   * `claimant` is the `claimedBy` the claim stamped. Passing it is what makes a lapsed relay's
+   * late release a no-op instead of an unclaim of somebody else's live batch.
+   */
+  release?(ids: readonly string[], claimant?: string): Promise<void>;
+  /** `claimant` fences the same way, and here it is worse to miss: this retires the row. */
+  markPublished(id: string, at: number, claimant?: string): Promise<void>;
   pendingCount(): Promise<number>;
+}
+
+/**
+ * The claim's sort key, and it is TOTAL: `id` after `stagedAt`, exactly what `SQL_OUTBOX_CLAIM`
+ * orders by. Every row staged in one transaction shares a `stagedAt`, so the key ties for the
+ * batch that most depends on order — and a tie leaves both which rows a limit takes and the order
+ * they publish in to whatever the store iterated first. Code units, never `localeCompare`, for
+ * the reason `registeredJobs()` sorts that way.
+ */
+function byClaimOrder(a: OutboxRecord, b: OutboxRecord): number {
+  if (a.stagedAt !== b.stagedAt) return a.stagedAt - b.stagedAt;
+  if (a.id === b.id) return 0;
+  return a.id < b.id ? -1 : 1;
+}
+
+export interface MemoryOutboxOptions {
+  readonly clock?: Clock;
+  readonly claimLeaseMs?: number;
 }
 
 export interface MemoryOutboxStore extends OutboxStore {
@@ -75,11 +113,29 @@ export interface MemoryOutboxStore extends OutboxStore {
  * transaction" guarantee needs no cooperation from the DB layer and rollback is a delete.
  * The pg store swaps this for a real `x_outbox` table written by the same connection.
  */
-export function createMemoryOutboxStore(): MemoryOutboxStore {
+export function createMemoryOutboxStore(options: MemoryOutboxOptions = {}): MemoryOutboxStore {
   const staged = new WeakMap<object, OutboxRecord[]>();
   const committed = new Map<string, OutboxRecord>();
+  /** Each claimed row's lease: when it was taken and by whom. Absent is `claimed_at is null`. */
+  const claims = new Map<string, { at: number; by: string }>();
+  const leaseMs = resolveClaimLeaseMs(options.claimLeaseMs);
+  // A token per CLAIM, where the pg store stamps one per RELAY. Two relays there are two stores
+  // with two ids; here they are two `claim()` calls on one store, so the claim is the only
+  // granularity at which this store can answer "is this mutation from the current holder".
+  let claimSeq = 0;
 
   const key = (tx: Tx): object => tx as unknown as object;
+  const free = (id: string, at: number): boolean => {
+    const claim = claims.get(id);
+    return claim === undefined || at - claim.at >= leaseMs;
+  };
+  /**
+   * A mutation from a claimant that no longer holds the row is a NO-OP. `undefined` is the caller
+   * that holds no token at all — a store-level caller, or one written before the fence — and is
+   * left unfenced rather than silently dropped, the way `release` itself is optional.
+   */
+  const owns = (id: string, claimant: string | undefined): boolean =>
+    claimant === undefined || claims.get(id)?.by === claimant;
 
   return {
     stage(tx, record) {
@@ -98,19 +154,36 @@ export function createMemoryOutboxStore(): MemoryOutboxStore {
       staged.delete(key(tx));
       return Promise.resolve();
     },
+    /**
+     * The same question `SQL_OUTBOX_CLAIM` answers, and it has to stay the same one: a row this
+     * store hands back is CLAIMED for `leaseMs`, so a second relay polling the same store gets
+     * nothing, and a claim whose holder died is reclaimable once the window passes.
+     */
     claim(limit) {
+      const at = nowMs(options.clock);
+      claimSeq += 1;
+      const by = `claim-${claimSeq}`;
       const ready = [...committed.values()]
-        .filter((record) => record.publishedAt === undefined)
-        .sort((a, b) => a.stagedAt - b.stagedAt)
+        .filter((record) => record.publishedAt === undefined && free(record.id, at))
+        .sort(byClaimOrder)
         .slice(0, limit);
-      return Promise.resolve(ready);
+      for (const record of ready) claims.set(record.id, { at, by });
+      return Promise.resolve(ready.map((record) => ({ ...record, claimedBy: by })));
     },
-    markPublished(id, _at) {
+    release(ids, claimant) {
+      for (const id of ids) {
+        if (owns(id, claimant)) claims.delete(id);
+      }
+      return Promise.resolve();
+    },
+    markPublished(id, _at, claimant) {
+      if (!owns(id, claimant)) return Promise.resolve();
       // Deleted, not stamped. A published row is out of the relay's reach either way, and the
       // pg store's `published_at` column is a retained audit trail this map is not: rewriting
       // it in place held every payload ever enqueued — arbitrary job input — for the life of
       // the process, and made `claim()` and `pendingCount()` walk all of them every 200ms.
       committed.delete(id);
+      claims.delete(id);
       return Promise.resolve();
     },
     pendingCount() {
@@ -331,7 +404,10 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
           ...(record.traceparent === undefined ? {} : { traceparent: record.traceparent }),
           ...(record.enqueuedBy === undefined ? {} : { enqueuedBy: record.enqueuedBy }),
         });
-        await options.store.markPublished(record.id, nowMs(options.clock));
+        // The claim's own token goes back with the mark. Without it a relay whose lease lapsed
+        // mid-stall retires a row the relay that reclaimed it has not published yet — the row is
+        // gone and nothing publishes it.
+        await options.store.markPublished(record.id, nowMs(options.clock), record.claimedBy);
         published += 1;
       } catch (error) {
         // STOP the batch. `claim()` returns rows in `staged_at` order and the loop used to log
@@ -347,6 +423,13 @@ export function createOutboxRelay(options: RelayOptions): OutboxRelay {
           remaining: batch.length - published,
           error: error instanceof Error ? error.message : String(error),
         });
+        // Hand the rest of the batch back rather than sit on a claim nobody is publishing. The
+        // claim is a lease now, so without this a single pool timeout parks every committed row
+        // behind it for the whole lease window instead of for one poll interval.
+        await options.store.release?.(
+          batch.slice(published).map((row) => row.id),
+          record.claimedBy,
+        );
         break;
       }
     }

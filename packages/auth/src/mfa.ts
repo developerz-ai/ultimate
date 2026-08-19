@@ -3,6 +3,7 @@
 // phishing page stays valid for the rest of its 30 seconds. Recovery codes are hashed at rest
 // and single-use, so a database dump is not a permanent MFA bypass.
 
+import type { Auth } from './auth';
 import { randomBytes, sha256Hex, timingSafeEqual } from './tokens';
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -63,17 +64,28 @@ export interface TotpEnrolment {
 }
 
 export interface EnrolTotpInput {
-  readonly issuer: string;
+  /**
+   * Omitted, the issuer is `auth.mfa.issuer` — one declaration, at `defineAuth`, so the product
+   * name an authenticator app shows is not restated at every enrolment. Named here only when one
+   * call needs a different one (a separate admin console entry, say).
+   */
+  readonly issuer?: string | undefined;
   readonly account: string;
   readonly secret?: string | undefined;
 }
 
-export function enrolTotp(input: EnrolTotpInput): TotpEnrolment {
+/**
+ * Takes the `Auth` every other entry point in this package takes, and for the same reason: the
+ * issuer is configuration, and a pure function that could not read the configuration is what made
+ * `defineAuth({ mfa: { issuer } })` a string the framework wrote down and never read.
+ */
+export function enrolTotp(auth: Auth, input: EnrolTotpInput): TotpEnrolment {
   const secret = input.secret ?? generateTotpSecret();
-  const label = `${encodeURIComponent(input.issuer)}:${encodeURIComponent(input.account)}`;
+  const issuer = input.issuer ?? auth.mfa.issuer;
+  const label = `${encodeURIComponent(issuer)}:${encodeURIComponent(input.account)}`;
   const query = new URLSearchParams({
     secret,
-    issuer: input.issuer,
+    issuer,
     algorithm: 'SHA1',
     digits: String(TOTP_DIGITS),
     period: String(TOTP_STEP_SECONDS),
@@ -148,23 +160,106 @@ export interface TotpReplayGuard {
   remember(subject: string, step: number, at: Date): void;
 }
 
+/** What `createTotpReplayGuard` returns: the interface, plus the bound it keeps, observable. */
+export interface MemoryTotpReplayGuard extends TotpReplayGuard {
+  readonly size: number;
+}
+
+/**
+ * Hard bound on tracked subjects. One entry is one user who has completed a TOTP check inside the
+ * last drift window, so the natural cardinality is far below this — the cap is the backstop, the
+ * same one `DEFAULT_MAX_AUTH_LIMIT_KEYS` is for the limiter's table.
+ */
+export const DEFAULT_MAX_TOTP_SUBJECTS = 10_000;
+
+/** An idle guard still sweeps this often, so one burst's subjects do not sit until the next. */
+const SWEEP_EVERY_STEPS = 2;
+
+/**
+ * The cap arithmetic ran on the caller's number unchecked, and the two values a misread config
+ * hands you each defeated the bound in their own way: `Infinity` makes `used.size > cap` never
+ * true, so the table is exactly as unbounded as before it was capped; `NaN` makes EVERY comparison
+ * false, so `used.size <= evictTo` never stops the eviction loop and one sweep empties the table —
+ * including the subject who just authenticated, whose step is then replayable. Anything that is
+ * not a positive finite integer is a config the caller did not mean, so it takes the default
+ * rather than a bound derived from it. A fraction still floors: `2.5` is a caller who meant 2.
+ */
+function boundedSubjects(maxSubjects: number): number {
+  if (!Number.isFinite(maxSubjects) || maxSubjects < 1) return DEFAULT_MAX_TOTP_SUBJECTS;
+  return Math.floor(maxSubjects);
+}
+
+/** The last step this subject has spent — how close their entry still is to the live window. */
+const newestStep = (steps: ReadonlySet<number>): number => {
+  let newest = Number.NEGATIVE_INFINITY;
+  for (const step of steps) newest = Math.max(newest, step);
+  return newest;
+};
+
 /**
  * In-memory by default because a single web process is the common case; a multi-process
  * deployment passes a Redis-backed guard with the same two methods. Steps older than the
  * drift window are dropped — nothing outside it can be replayed anyway.
+ *
+ * Bounded, because the subject map only ever grew: pruning happened inside one subject's `Set`
+ * and never revisited a subject who stopped signing in, so the table carried one permanent entry
+ * per user for the life of the process. Two rules keep it flat, and the ORDER is the guarantee —
+ * evicting a subject makes a step they have already spent replayable again, so it may never be
+ * the subject who just authenticated. A subject whose every step has fallen below the drift floor
+ * is *forgotten*, not evicted: `verifyTotp` only ever offers a step within ±drift of now, so that
+ * entry answers exactly as a missing one and dropping it changes no decision. Only if forgetting
+ * is not enough does the cap evict live state, furthest from the live window first — the shape
+ * `createAuthLimiter` evicts by, where a live lockout is the last bucket to go.
  */
-export function createTotpReplayGuard(drift: number = TOTP_DRIFT_STEPS): TotpReplayGuard {
+export function createTotpReplayGuard(
+  drift: number = TOTP_DRIFT_STEPS,
+  maxSubjects: number = DEFAULT_MAX_TOTP_SUBJECTS,
+): MemoryTotpReplayGuard {
   const used = new Map<string, Set<number>>();
+  const cap = boundedSubjects(maxSubjects);
+  // Batched down to 90% of the cap so the sort below is paid once per 10% of it, not per check.
+  const evictTo = Math.max(1, Math.floor(cap * 0.9));
+  let lastSweepStep = Number.NEGATIVE_INFINITY;
+
+  const prune = (steps: Set<number>, floor: number): void => {
+    for (const known of steps) {
+      if (known < floor) steps.delete(known);
+    }
+  };
+
+  const sweep = (now: number, floor: number): void => {
+    lastSweepStep = now;
+    for (const [subject, steps] of used) {
+      prune(steps, floor);
+      if (steps.size === 0) used.delete(subject);
+    }
+    if (used.size <= cap) return;
+    // Map iteration is insertion order and `remember` re-files the subject it touches, so this
+    // sort — stable by specification — breaks a tie on the newest step by least recently seen.
+    // Both keys point the same way: the subject who just proved a code is the last one out.
+    const furthest = [...used.entries()].sort((a, b) => newestStep(a[1]) - newestStep(b[1]));
+    for (const [subject] of furthest) {
+      if (used.size <= evictTo) break;
+      used.delete(subject);
+    }
+  };
+
   return {
+    get size() {
+      return used.size;
+    },
     isUsed: (subject, step) => used.get(subject)?.has(step) === true,
     remember: (subject, step, at) => {
+      const now = totpStep(at);
+      const floor = now - drift;
       const steps = used.get(subject) ?? new Set<number>();
-      const floor = totpStep(at) - drift;
-      for (const known of steps) {
-        if (known < floor) steps.delete(known);
-      }
+      prune(steps, floor);
       steps.add(step);
+      // Deleted before it is set, so this subject moves to the back of the iteration order and
+      // that order is least-recently-remembered first. Nothing else observes it.
+      used.delete(subject);
       used.set(subject, steps);
+      if (used.size > cap || now - lastSweepStep >= SWEEP_EVERY_STEPS) sweep(now, floor);
     },
   };
 }
