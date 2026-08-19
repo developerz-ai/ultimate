@@ -150,6 +150,50 @@ describe('routing and retries', () => {
     expect(attempts).toBe(1);
   });
 
+  test('a stream is not retried and does not fall over — the comment says so, this proves it', async () => {
+    // A retryable failure on `generate` reaches the healthy provider above. On `stream` it must
+    // not: there is no point at which the connection is open and no chunk has been delivered, so
+    // a "handshake only" retry cannot be told from replaying tokens the consumer already read.
+    let attempts = 0;
+    let fellOver = false;
+    const flaky: Provider = {
+      name: 'flaky',
+      models: ANTHROPIC_MODEL_IDS,
+      generate: () => Promise.reject(new Error('unused')),
+      // biome-ignore lint/correctness/useYield: the failure happens before the first chunk
+      async *stream(): AsyncIterable<StreamChunk> {
+        attempts += 1;
+        throw Object.assign(new Error('rate limited'), { status: 429 });
+      },
+    };
+    const healthy: Provider = {
+      name: 'healthy',
+      models: ANTHROPIC_MODEL_IDS,
+      generate: (request) => echo.generate(request),
+      async *stream(request): AsyncIterable<StreamChunk> {
+        fellOver = true;
+        yield* echo.stream(request);
+      },
+    };
+    const gateway = createGateway({
+      providers: [flaky, healthy],
+      retry: { attempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
+      sleep: async () => undefined,
+    });
+
+    const drain = async (): Promise<void> => {
+      for await (const _chunk of gateway.stream({
+        messages: [{ role: 'user', content: 'ping' }],
+        maxTokens: 16,
+      })) {
+        // the failure lands on the first pull
+      }
+    };
+    await expect(drain()).rejects.toThrow(/rate limited/);
+    expect(attempts).toBe(1);
+    expect(fellOver).toBe(false);
+  });
+
   // A `Provider` is an APP's object — `createGateway({ providers })` takes whatever it is handed —
   // so the value it rejects with is one the framework did not build. Both reads in the retry loop
   // run on it: `isRetryable` indexes it, and the failure line renders it. A throw from either

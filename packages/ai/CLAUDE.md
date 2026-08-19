@@ -135,6 +135,15 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   *as* differences rather than flattening them.
 - A stream that ends without `message_stop` throws. A truncated answer that returns `end_turn`
   is a confidently wrong answer with no signal, which the budget rule already forbids.
+- **`readSse` caps the unterminated buffer** (`MAX_FRAME_CHARS`, `As of 2026-08`) and refuses with
+  `AiTransportError`. A peer that never sends a frame boundary — an HTML error page, a proxy on the
+  model's port — grew it without limit and no read deadline interrupted it, because every read
+  SUCCEEDED. Same call `@ultimat3/mail`'s `createReplyParser` makes: coded failure > OOM. `provider`
+  is a required argument for that reason — a transport error names the endpoint it is about.
+- **`llm()` forwards `ctx.signal` onto `GenerateRequest`**, `As of 2026-08`, the way `agent()`
+  always did. Without it a model call had no cancellation and no deadline: a caller that hung up
+  left the provider call in flight, billed and unread, and the repair turn bought a second one.
+  `.stream()` inherits it from the same `base`, which is where it matters most.
 - A tool call is emitted whole. `input_json_delta` fragments are not arguments until the block
   closes, so nothing partial reaches a caller.
 - Thinking chunks are never appended to `text`. A consumer concatenating every chunk must not
@@ -217,7 +226,13 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
     per-block stop event in this format.
   - `isComplete()` accepts `[DONE]` **or** a finish reason: plenty of servers in the family close
     the socket straight after the finish chunk, and a finish reason is the model saying why it
-    stopped, which a cut connection cannot produce.
+    stopped, which a cut connection cannot produce. **With one exception, `As of 2026-08`:
+    `[DONE]` while tool-call fragments are still pending is NOT complete.** `onFinish` is the only
+    drain of `pending` and the finish reason is the only close this format has, so the sentinel
+    alone cannot tell "the model finished asking" from "the connection died mid-arguments" —
+    reporting complete discarded a whole tool call and answered an empty, successful `end_turn`.
+    Refused rather than flushed, exactly as the Anthropic half refuses a missing `message_stop`:
+    emitting the fragments would run a tool's side effects from half a JSON object.
   - `role: 'system'`, not `developer` — the newer role is OpenAI's alone and every other server in
     the family knows only `system`.
   - **Only three models are priced** (`gpt-5.6-sol` / `-terra` / `-luna`, list price read
@@ -481,6 +496,17 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   recorded — one no test asserts, one whose `baseline:` is a cwd-relative string — would otherwise
   satisfy `X_EVAL_MISSING` while gating on nothing.
 - Retrieval is hybrid by default. Do not add a vector-only convenience path.
+- **`chunk()` performs all three splits its header names — paragraph, sentence, HARD WRAP** (`As of
+  2026-08`). The wrap is what bounds a unit, and an oversized unit is one the size check can never
+  flush (it only fires when something is already in the buffer), so it re-seeded every following
+  chunk: a ~1,000-token document indexed as nine chunks totalling ~9,000, each carrying the same
+  sentence. The overlap carry stops at `buffer.length - 1` for the same reason — a flushed unit may
+  never become the whole of the next buffer.
+- **A caller's string is never used as an object KEY.** A `Record` lookup on one answers
+  `constructor`, `toString` and `valueOf` off the prototype chain, and every read here is of a
+  string a provider, a template author or a test fixture chose: the two wire tables are `Map`s,
+  `prompt.render` uses `Object.hasOwn` (a `{{constructor}}` slot rendered JS source into a billed
+  prompt and hashed it into the cache key), and so does `EchoProvider`'s `replies`.
 - `PgVectorStore` is the ONLY production vector path — pgvector and Postgres FTS in the app's own
   Postgres, never a second datastore. `MemoryVectorStore` is the dev twin and enforces the same
   envelope; a leak that only reproduces against real Postgres is a leak nobody finds.

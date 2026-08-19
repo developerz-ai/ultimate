@@ -13,7 +13,7 @@ import {
 } from './driver';
 import { defineMail, type SendOptions, send, sendById } from './mail';
 
-registerMailCatalog('en');
+registerMailCatalog();
 registerCatalog(
   'en',
   loadCatalog({

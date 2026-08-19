@@ -45,6 +45,18 @@ describe('usage and stop reason', () => {
     expect(parseStopReason('refusal')).toBe('refusal');
     expect(parseStopReason('something_new')).toBe('end_turn');
   });
+
+  test('a negative or non-finite token count is floored, never credited to the ledger', () => {
+    // `MemoryBudgetStore.add` reads a negative debit as a CREDIT on purpose (that is how an
+    // unspent reservation is released), so a provider — or a proxy in front of one — reporting
+    // `-1` here would TOP UP the ceiling it was supposed to consume.
+    expect(parsePartialUsage({ input_tokens: -5, output_tokens: -1 })).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+    expect(parsePartialUsage({ input_tokens: Number.NaN })).toEqual({});
+    expect(parseUsage({ input_tokens: -100 }).inputTokens).toBe(0);
+  });
 });
 
 describe('MessageStream', () => {
@@ -165,6 +177,23 @@ describe('MessageStream', () => {
     expect(() => message.push({ event: 'message_delta', data: '{"delta":' })).toThrow(
       /unreadable "message_delta" frame/,
     );
+  });
+
+  test('an in-band error type off the prototype chain maps to no status, never a function', () => {
+    // `ERROR_STATUS['constructor']` on an object literal answers the `Object` FUNCTION, where
+    // `AiTransportError.status` is declared `number | undefined` — `isRetryable` then answers
+    // false for what may be a 429, and the function's source lands in the operator-facing cause.
+    const message = new MessageStream();
+    let thrown: unknown;
+    try {
+      message.push(frame({ type: 'error', error: { type: 'constructor', message: 'nope' } }));
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toMatchObject({ code: 'X_AI_PROVIDER_UNAVAILABLE' });
+    expect(typeof (thrown as { status: unknown }).status).not.toBe('function');
+    expect((thrown as { status: unknown }).status).toBeUndefined();
+    expect(String((thrown as { cause: unknown }).cause)).not.toContain('function');
   });
 
   test('tool arguments that never parse are a transport failure', () => {

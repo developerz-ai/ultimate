@@ -250,6 +250,10 @@ async function generate<
       maxTokens: def.maxTokens ?? DEFAULT_MAX_TOKENS,
       ...(prompt.effort === undefined ? {} : { effort: prompt.effort }),
       ...(prompt.thinking === undefined ? {} : { thinking: prompt.thinking }),
+      // The caller's own signal, forwarded to the transport exactly as `agent()` does — and
+      // inherited by `streamedAnswer` from this same `base`. Without it a disconnected caller left
+      // the provider call in flight, billed and unread, and the repair turn bought a SECOND one.
+      signal: args.ctx.signal,
     };
     const request: GenerateRequest = { ...base, tools: [respond] };
 

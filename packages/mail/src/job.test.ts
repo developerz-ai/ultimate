@@ -10,7 +10,7 @@ import { sendMailJob } from './job';
 import { renderMessage, type SendOptions } from './mail';
 import { welcomeMail } from './templates';
 
-registerMailCatalog('en');
+registerMailCatalog();
 
 const TO: SendOptions = { to: 'ada@example.test', locale: 'en', tz: 'UTC' };
 

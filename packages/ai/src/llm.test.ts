@@ -7,7 +7,7 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx, isAction, t } from '@ultimat3/action';
-import { PRIMITIVE_KINDS } from '@ultimat3/core';
+import { createContext, PRIMITIVE_KINDS } from '@ultimat3/core';
 import { allow, deny } from '@ultimat3/policy';
 import { createGateway } from './gateway';
 import { llm } from './llm';
@@ -429,6 +429,33 @@ describe('the ambient runtime', () => {
       cause: expect.stringContaining('ungatewayed@1.0.0'),
       fix: expect.stringContaining('configureAi'),
     });
+  });
+});
+
+describe('cancellation', () => {
+  test("the caller's own signal is forwarded to the provider request", async () => {
+    // Without it a model call has no cancellation and no deadline: a caller that hung up leaves
+    // the provider call in flight, billed and read by nobody — and the repair turn buys a second.
+    const { provider, seen } = stub(ANSWER);
+    install(provider);
+    const summarize = declare(promptFor());
+    const controller = new AbortController();
+
+    await summarize({ postId: POST_ID }, { ctx: createContext({ signal: controller.signal }) });
+
+    expect(seen[0]?.signal).toBe(controller.signal);
+  });
+
+  test('the repair turn carries it too — the second call is the expensive one', async () => {
+    const { provider, seen } = stub({ summary: 42 }, ANSWER);
+    install(provider);
+    const summarize = declare(promptFor());
+    const controller = new AbortController();
+
+    await summarize({ postId: POST_ID }, { ctx: createContext({ signal: controller.signal }) });
+
+    expect(seen.length).toBe(2);
+    expect(seen[1]?.signal).toBe(controller.signal);
   });
 });
 

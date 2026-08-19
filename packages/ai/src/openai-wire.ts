@@ -24,34 +24,46 @@ export interface ChatAnswer {
   readonly usage: TokenUsage | undefined;
 }
 
-const FINISH_REASONS: Readonly<Record<string, StopReason>> = {
-  stop: 'end_turn',
-  length: 'max_tokens',
-  tool_calls: 'tool_use',
-  // The legacy name for the same event; LiteLLM and older self-hosted servers still send it.
-  function_call: 'tool_use',
-  content_filter: 'refusal',
-};
+// A `Map`, not an object literal: `raw` is the PROVIDER's string on every read, and
+// `FINISH_REASONS['constructor']` on an object answers the `Object` FUNCTION — which
+// `parseFinishReason` returned as a `StopReason`, and which the stream reader below then treated
+// as a finish, so `isComplete()` answered true for a stream that never finished. Same fix core
+// made in `error-retry.ts` for the same shape.
+const FINISH_REASONS: ReadonlyMap<string, StopReason> = new Map(
+  Object.entries({
+    stop: 'end_turn',
+    length: 'max_tokens',
+    tool_calls: 'tool_use',
+    // The legacy name for the same event; LiteLLM and older self-hosted servers still send it.
+    function_call: 'tool_use',
+    content_filter: 'refusal',
+  } as const),
+);
 
 /**
  * In-band error frames carry a type, not a status, and the gateway's retry rule reads a status.
  * Same mapping job as wire.ts's, over this format's own vocabulary.
  */
-const ERROR_STATUS: Readonly<Record<string, number>> = {
-  invalid_request_error: 400,
-  authentication_error: 401,
-  permission_error: 403,
-  not_found_error: 404,
-  rate_limit_exceeded: 429,
-  insufficient_quota: 429,
-  server_error: 500,
-  api_error: 500,
-  overloaded_error: 503,
-};
+// A `Map`, for the reason `FINISH_REASONS` above is one: `type` is the provider's string, and a
+// function where `AiTransportError.status` is declared `number | undefined` makes `isRetryable`
+// answer false for a 429-class frame and interpolates JS source into the operator-facing `cause`.
+const ERROR_STATUS: ReadonlyMap<string, number> = new Map(
+  Object.entries({
+    invalid_request_error: 400,
+    authentication_error: 401,
+    permission_error: 403,
+    not_found_error: 404,
+    rate_limit_exceeded: 429,
+    insufficient_quota: 429,
+    server_error: 500,
+    api_error: 500,
+    overloaded_error: 503,
+  }),
+);
 
 /** A finish reason this format knows, or `undefined` for `null` — which means "still going". */
 export function parseFinishReason(raw: unknown): StopReason | undefined {
-  return typeof raw === 'string' ? FINISH_REASONS[raw] : undefined;
+  return typeof raw === 'string' ? FINISH_REASONS.get(raw) : undefined;
 }
 
 /**
@@ -64,10 +76,10 @@ export function parseFinishReason(raw: unknown): StopReason | undefined {
 export function parseOpenAiUsage(raw: unknown): TokenUsage | undefined {
   const record = asRecord(raw);
   if (record === undefined) return undefined;
-  const prompt = numberOf(record['prompt_tokens']);
-  const completion = numberOf(record['completion_tokens']);
+  const prompt = countOf(record['prompt_tokens']);
+  const completion = countOf(record['completion_tokens']);
   if (prompt === undefined && completion === undefined) return undefined;
-  const cached = numberOf(asRecord(record['prompt_tokens_details'])?.['cached_tokens']) ?? 0;
+  const cached = countOf(asRecord(record['prompt_tokens_details'])?.['cached_tokens']) ?? 0;
   return {
     inputTokens: Math.max((prompt ?? 0) - cached, 0),
     // `completion_tokens` already contains `reasoning_tokens`; adding them is a double count.
@@ -194,7 +206,17 @@ export class ChatCompletionStream {
     // Either sentinel counts. `[DONE]` is the format's own end marker, but plenty of servers in
     // the family close the socket straight after the finish-reason chunk — and a finish reason IS
     // the model saying why it stopped, which is the fact a truncated stream cannot produce.
-    return this.done || this.finished;
+    //
+    // One exception, and it is REFUSAL rather than a flush: `[DONE]` while tool-call fragments are
+    // still open. This format has no per-call stop event, so the finish reason is the only thing
+    // that ever closes a call and `onFinish` is the only drain of `pending` — which means `[DONE]`
+    // alone cannot tell "the model finished asking" from "the connection died mid-arguments".
+    // Reporting complete discarded a whole tool call and answered an empty, successful `end_turn`;
+    // emitting the fragments anyway would run a tool's side effects from arguments that may be
+    // half a JSON object, and would report `end_turn` for a turn that stopped to call one. So the
+    // stream is refused exactly as the Anthropic half refuses a missing `message_stop`
+    // (`provider.ts`), and `openai-provider.ts`'s existing truncation guard is what raises it.
+    return this.finished || (this.done && this.pending.size === 0);
   }
 
   /** What the stream accumulated. `cost` is applied by the provider, which owns prices. */
@@ -320,7 +342,8 @@ function throwInBandError(payload: Record<string, unknown>, provider: string): v
   const message = typeof error['message'] === 'string' ? error['message'] : type;
   throw new AiTransportError({
     provider,
-    status: ERROR_STATUS[type] ?? (code === undefined ? undefined : ERROR_STATUS[code]) ?? 500,
+    status:
+      ERROR_STATUS.get(type) ?? (code === undefined ? undefined : ERROR_STATUS.get(code)) ?? 500,
     detail: message,
   });
 }
@@ -336,4 +359,15 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function numberOf(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * A token count, floored at zero. Usage is the PROVIDER's number and a proxy in front of one can
+ * send anything: a negative count becomes a negative `cost`, and `MemoryBudgetStore.add` takes a
+ * negative debit as a credit deliberately (releasing an unspent reservation IS one) — so an
+ * unclamped `-1` here does not under-report spend, it TOPS THE LEDGER UP. Twin of `wire.ts`'s.
+ */
+function countOf(value: unknown): number | undefined {
+  const count = numberOf(value);
+  return count === undefined ? undefined : Math.max(0, count);
 }

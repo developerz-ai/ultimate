@@ -83,6 +83,31 @@ describe('rendering', () => {
     expect(String(thrown.cause)).toContain('sentences');
   });
 
+  test('a placeholder naming an inherited property is UNFILLED, not JS source', () => {
+    // `vars['constructor']` answers `Object` off the prototype chain, so the template rendered a
+    // function's source into the prompt, hashed it into the semantic cache key, and billed it —
+    // where the whole point of this file is that an unfilled slot is loud.
+    const prompt = definePrompt({
+      id: 'inherited',
+      version: '1.0.0',
+      template: 'Answer as {{constructor}} would, in {{toString}} words.',
+    });
+    const thrown = capture(() => prompt.render({}));
+    expect(thrown.code).toBe('X_AI_PROMPT_VERSION');
+    expect(String(thrown.cause)).toContain('constructor');
+    expect(String(thrown.cause)).toContain('toString');
+  });
+
+  test('an own property whose value is falsy still renders', () => {
+    // The guard is about OWNERSHIP, not truthiness: `0` and `false` are answers.
+    const prompt = definePrompt<{ count: number; flag: boolean }>({
+      id: 'falsy',
+      version: '1.0.0',
+      template: '{{count}}/{{flag}}',
+    });
+    expect(prompt.render({ count: 0, flag: false })).toBe('0/false');
+  });
+
   test('getPrompt lists available versions when the requested one is absent', () => {
     definePrompt<{ sentences: number; document: string }>(base);
     const thrown = capture(() => getPrompt('summarize', '2.0.0'));
