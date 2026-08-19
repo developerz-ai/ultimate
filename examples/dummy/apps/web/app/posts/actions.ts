@@ -93,9 +93,10 @@ export const summarize = llm({
     const post = await ctx.posts.byId(postId(input.postId));
     return { title: post.title, body: post.body, locale: ctx.locale };
   },
-  // `scope` is not optional in a multi-tenant app: cosine similarity has no notion of a tenant, so
-  // one shared cache would answer one org with another's summary.
-  cache: { semantic: { threshold: 0.97, ttl: '7d', scope: ({ orgId }) => orgId } },
+  // No `scope`, and that is now the safe answer: the default partitions on the calling ACTOR.
+  // Cosine similarity has no notion of a tenant, so the old `'global'` default answered one org
+  // with another's summary — a shared store has to be written down (`scope: () => 'global'`).
+  cache: { semantic: { threshold: 0.97, ttl: '7d' } },
   // Refused before a token is spent, never truncated after — a runaway loop costs one refusal
   // instead of a bill.
   budget: { tokensIn: 8000, costPerCall: { minor: 5, currency: 'USD' } },

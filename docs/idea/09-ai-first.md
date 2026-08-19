@@ -90,7 +90,7 @@ export const summarize = llm({
   output: t.object({ summary: t.string, tags: t.array(t.string) }),
   prompt: summarizePrompt,                       // versioned artifact
   vars:   async ({ input, ctx }) => ({ body: await ctx.posts.body(input.postId) }),
-  cache:  { semantic: { threshold: 0.97, ttl: '7d', scope: ({ orgId }) => orgId } },
+  cache:  { semantic: { threshold: 0.97, ttl: '7d' } }, // partitions on the ACTOR by default
   budget: { tokensIn: 8000, costPerCall: { minor: 5, currency: 'USD' } },
   policy: postRead,                              // declared once in the feature's policy.ts
 });
@@ -103,8 +103,12 @@ inline `can('post:read')`: the inline form carries the grant and drops the tenan
 in the feature's `actions.ts`, not beside the prompt — `prompts/` holds the artifact, its evals and
 its baseline.
 
-`scope` is not optional in a multi-tenant app: cosine similarity has no notion of a tenant, so one
-shared semantic cache answers one org with another org's summary.
+`scope` partitions the semantic cache, and its default is the calling **actor** — the narrowest
+key, which is always correct. Cosine similarity has no notion of a tenant, so the default used to
+be `'global'` and one shared store answered one org with another org's summary; a deliberately
+shared cache is now `scope: () => 'global'`, written down rather than inherited. `scope` receives
+`{ input, ctx }`, so the partition comes from the ambient actor and never from a value the caller
+sent.
 
 `vars` is the one declared place a model call loads data: the input is an id, the prompt needs
 the row behind it, and a reader can see exactly what was sent.
