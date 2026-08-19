@@ -17,6 +17,16 @@ describe('parseCron', () => {
     expect(parseCron('0 0 * * 7').daysOfWeek).toEqual([7]);
   });
 
+  test('refuses an Object.prototype key with X_CRON_INVALID, not a bare TypeError', () => {
+    // `MACROS[trimmed]` reached the prototype chain, so `'constructor'` expanded to a FUNCTION and
+    // died in `.split()` — a bare Error out of the one function whose contract is a coded refusal,
+    // and `error.code === 'X_CRON_INVALID'` matched nothing.
+    for (const key of ['constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty']) {
+      expect(codeOf(() => parseCron(key))).toBe('X_CRON_INVALID');
+      expect(isValidCron(key)).toBe(false);
+    }
+  });
+
   test('parses a 6-field expression with seconds and the @macros', () => {
     expect(parseCron('30 0 3 * * *')).toMatchObject({ seconds: [30], minutes: [0], hours: [3] });
     expect(parseCron('@daily')).toMatchObject({ minutes: [0], hours: [0] });

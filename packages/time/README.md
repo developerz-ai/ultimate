@@ -28,6 +28,11 @@ canonicalization as a distinct string, so the key bounds nothing on its own. Bot
 `canonicalLocale` and `cachedFormatter` — are `@ultimat3/core`'s as of 2.0.0, so `@ultimat3/money`
 reads the same bound rather than a copy of it.
 
+`fromIso` refuses a bare local timestamp. `2026-03-14T09:00` names a different instant on every
+pod, because `new Date` resolves it through the process's zone — so a clock time reaches an
+`Instant` only with `Z` or an offset beside it (`X_INSTANT_INVALID`), and wall-clock input goes
+through `fromZoned(wall, zone)`, which names the zone it is stated in.
+
 Every value this package hands back is its own object: `instant(date)` copies rather than branding
 the caller's `Date`, and `epoch()` is a function — the `EPOCH` constant it replaces was one shared
 mutable `Date` that a single `setUTCFullYear` corrupted for the whole process.

@@ -3,9 +3,44 @@
 // always on, a no-op exporter by default, and the wire format supplied by a driver, never here.
 
 import { type Clock, systemClock } from './clock';
+import { renderThrowable } from './error-render';
 import { type CodedErrorInit, UltimateError } from './errors';
 import { logger } from './logger';
-import { type SpanResource, serviceResource } from './telemetry';
+import type {
+  Counter,
+  Gauge,
+  GaugeOptions,
+  Histogram,
+  HistogramOptions,
+  InstrumentOptions,
+  MetricAttributes,
+  MetricCollection,
+  MetricDescriptor,
+  MetricExporter,
+  MetricKind,
+  MetricPoint,
+} from './metrics-types';
+import { serviceResource } from './telemetry';
+
+// The data model is a module of its own; the public surface is unchanged, so nothing that imports
+// a metric type from here has to learn a second path.
+export type {
+  Counter,
+  Gauge,
+  GaugeOptions,
+  Histogram,
+  HistogramOptions,
+  HistogramPoint,
+  InstrumentOptions,
+  MetricAttributes,
+  MetricAttributeValue,
+  MetricCollection,
+  MetricDescriptor,
+  MetricExporter,
+  MetricKind,
+  MetricPoint,
+  ReadableMetric,
+} from './metrics-types';
 
 export class MetricNameInvalidError extends UltimateError {
   static readonly code = 'X_METRIC_NAME_INVALID';
@@ -29,103 +64,6 @@ export class MetricCardinalityError extends UltimateError {
   constructor(init: CodedErrorInit) {
     super({ ...init, code: MetricCardinalityError.code });
   }
-}
-
-export type MetricKind = 'counter' | 'gauge' | 'histogram';
-
-/**
- * Narrower than a span attribute on purpose: metric attributes become time-series labels, every
- * distinct combination is a stored series, and an array label has no meaning in any exposition
- * format. Keep the cardinality low — a user id here is an outage, and `maxSeries` is the ceiling
- * that makes "keep it low" a mechanism instead of this sentence.
- */
-export type MetricAttributeValue = string | number | boolean;
-
-export interface MetricAttributes {
-  readonly [key: string]: MetricAttributeValue;
-}
-
-export interface MetricDescriptor {
-  readonly name: string;
-  readonly kind: MetricKind;
-  /** UCUM, as OTel spells it: `1`, `s`, `By`, `{request}`. */
-  readonly unit: string;
-  readonly description: string;
-}
-
-export interface MetricPoint {
-  readonly attributes: MetricAttributes;
-  /** Counter: cumulative sum since process start. Gauge: last value. Histogram: sum. */
-  readonly value: number;
-}
-
-export interface HistogramPoint extends MetricPoint {
-  readonly count: number;
-  readonly min: number;
-  readonly max: number;
-  /** Explicit upper bounds; `buckets` is one longer, the last being the `+Inf` overflow. */
-  readonly bounds: readonly number[];
-  readonly buckets: readonly number[];
-}
-
-export interface ReadableMetric {
-  readonly descriptor: MetricDescriptor;
-  readonly points: readonly MetricPoint[];
-}
-
-export interface MetricCollection {
-  /** Epoch milliseconds, from the configured clock. */
-  readonly at: number;
-  readonly resource: SpanResource;
-  readonly metrics: readonly ReadableMetric[];
-}
-
-/** The driver seam. OTLP, Prometheus remote-write or a vendor SDK all arrive as one of these. */
-export interface MetricExporter {
-  export(collection: MetricCollection): void;
-}
-
-export interface Counter {
-  add(value?: number, attributes?: MetricAttributes): void;
-}
-
-export interface Gauge {
-  /** Set the current value. */
-  record(value: number, attributes?: MetricAttributes): void;
-  /** Move the current value — `+1` on connect, `-1` on disconnect. */
-  add(delta: number, attributes?: MetricAttributes): void;
-}
-
-export interface Histogram {
-  record(value: number, attributes?: MetricAttributes): void;
-}
-
-export interface InstrumentOptions {
-  readonly unit?: string | undefined;
-  readonly description?: string | undefined;
-  /**
-   * Distinct label sets this instrument may store. Past it every new set folds into one overflow
-   * series. Defaults to `DEFAULT_MAX_SERIES`; the first declaration of a name wins.
-   */
-  readonly maxSeries?: number | undefined;
-}
-
-export interface GaugeOptions extends InstrumentOptions {
-  /**
-   * Async instrument: read at collection time instead of being pushed. Never stale.
-   * Stated twice for one name with two different callbacks is `X_METRIC_NAME_INVALID`, not a
-   * silent win for the first — see `assertSameDeclaration`.
-   */
-  readonly observe?: (() => number) | undefined;
-}
-
-export interface HistogramOptions extends InstrumentOptions {
-  /**
-   * Explicit bucket boundaries, ascending. Defaults to the OTel latency-in-seconds set.
-   * Stated twice for one name with two different sets is `X_METRIC_NAME_INVALID`, not a silent
-   * win for the first — see `assertSameDeclaration`.
-   */
-  readonly bounds?: readonly number[] | undefined;
 }
 
 /**
@@ -204,6 +142,8 @@ interface Instrument {
   readonly maxSeries: number;
   /** Reported once. A cardinality blow-up is one bug, not one log line per call. */
   overflowed: boolean;
+  /** Reported once, for the same reason: a scrape every 15s must not become a log every 15s. */
+  observeFailed: boolean;
 }
 
 const instruments = new Map<string, Instrument>();
@@ -230,6 +170,7 @@ export function resetMetrics(): void {
   for (const instrument of instruments.values()) {
     instrument.series.clear();
     instrument.overflowed = false;
+    instrument.observeFailed = false;
   }
 }
 
@@ -294,6 +235,7 @@ function declare(name: string, kind: MetricKind, options: GaugeOptions & Histogr
     observe: options.observe,
     maxSeries,
     overflowed: false,
+    observeFailed: false,
   };
   instruments.set(name, instrument);
   return instrument;
@@ -346,6 +288,26 @@ function reportOverflow(instrument: Instrument): void {
     cause: `${name} reached its ceiling of ${instrument.maxSeries} label set(s); every further label set folds into one ${OVERFLOW_ATTRIBUTE}="true" series`,
     fix: `drop the unbounded label from the ${name} call site (an id, a path, an email is never a label), or raise it deliberately: ${kind}('${name}', { maxSeries: ${instrument.maxSeries * 2} })`,
     meta: { metric: name, maxSeries: instrument.maxSeries },
+  });
+  logger.error(error.format(), { code: error.code, metric: name });
+}
+
+/**
+ * Reported through the logger for `reportOverflow`'s reason and once for the same one — a scrape
+ * runs on a timer, so a permanently broken observer would otherwise write a log line every
+ * interval forever. A recurrence after the first is therefore silent by design; the missing series
+ * is the signal that outlives the line.
+ */
+function reportObserveFailure(instrument: Instrument, thrown: unknown): void {
+  if (instrument.observeFailed) return;
+  instrument.observeFailed = true;
+  const { name, kind } = instrument.descriptor;
+  const error = new MetricValueInvalidError({
+    // `renderThrowable`, never `${thrown}`: the value is whatever the app's callback threw, and a
+    // `.message` read on it is the one that throws where there is nothing left to answer with.
+    cause: `the observe() callback of ${name} did not produce a value: ${renderThrowable(thrown)}; this instrument contributes no point until it does`,
+    fix: `make the observe() callback of ${name} total — return a finite number when the resource it reads is gone, e.g. ${kind}('${name}', { observe: () => pool?.size ?? 0 })`,
+    meta: { metric: name },
   });
   logger.error(error.format(), { code: error.code, metric: name });
 }
@@ -433,8 +395,19 @@ export function histogram(name: string, options?: HistogramOptions): Histogram {
 }
 
 function pointsOf(instrument: Instrument): readonly MetricPoint[] {
-  if (instrument.observe !== undefined) {
-    return [{ attributes: {}, value: instrument.observe() }];
+  const observe = instrument.observe;
+  if (observe !== undefined) {
+    try {
+      return [{ attributes: {}, value: finite(instrument.descriptor.name, observe()) }];
+    } catch (thrown) {
+      // The callback is the app's, run at SCRAPE time with no call site to blame: `() => pool.size`
+      // after a drain throws, and an unguarded read here took every other instrument down with it
+      // — /metrics 500s, `http_requests_total` goes invisible, and `startMetricExport`'s timer
+      // callback raises where nothing can catch it. One hostile observer costs its own point only,
+      // the same degradation `readinessChecks()` and the logger's per-key walk already make.
+      reportObserveFailure(instrument, thrown);
+      return [];
+    }
   }
   return [...instrument.series.values()].map((series) =>
     instrument.descriptor.kind === 'histogram'

@@ -27,15 +27,20 @@ export const DEFAULT_ERROR_RETRY: ErrorRetry = 'terminal';
  * app whose clients stop retrying a rolling restart, which is the one case retrying always wins.
  * Only the exceptions are listed — everything else is `terminal` by the default above.
  */
-const CORE_ERROR_RETRY: Readonly<Record<string, ErrorRetry>> = Object.freeze({
-  X_DRAINING: 'retryable',
-  // A deadline that expired is the canonical back-off-and-try-again case: nothing about the
-  // request was wrong, the budget ran out. Deliberately NOT `retry-after` — that spelling means
-  // the responder named a time, and a timeout by definition produced no such answer. Its twin
-  // `X_ABORTED` (the caller went away) is left to the `terminal` DEFAULT rather than listed here:
-  // the answer is the same, and listing it would close a door nobody has asked to open.
-  X_TIMEOUT: 'retryable',
-});
+// A `Map`, not a frozen object: `code` is a caller's string on every read below, and
+// `CORE_ERROR_RETRY['constructor']` on an object literal answers the `Object` FUNCTION — which
+// `retryFor` then returned as an `ErrorRetry`, into every `UltimateError.retry` and `toJSON()`.
+const CORE_ERROR_RETRY: ReadonlyMap<string, ErrorRetry> = new Map(
+  Object.entries({
+    X_DRAINING: 'retryable',
+    // A deadline that expired is the canonical back-off-and-try-again case: nothing about the
+    // request was wrong, the budget ran out. Deliberately NOT `retry-after` — that spelling means
+    // the responder named a time, and a timeout by definition produced no such answer. Its twin
+    // `X_ABORTED` (the caller went away) is left to the `terminal` DEFAULT rather than listed here:
+    // the answer is the same, and listing it would close a door nobody has asked to open.
+    X_TIMEOUT: 'retryable',
+  } as const),
+);
 
 const REGISTERED = new Map<string, ErrorRetry>();
 
@@ -70,7 +75,7 @@ export function registerErrorRetry(retries: Readonly<Record<string, ErrorRetry>>
     if (!isErrorRetry(retry)) {
       throw retryInvalid(code, `"${String(retry)}" is not ${ERROR_RETRY_KINDS.join(' | ')}`);
     }
-    const core = CORE_ERROR_RETRY[code];
+    const core = CORE_ERROR_RETRY.get(code);
     if (core !== undefined) {
       throw retryInvalid(code, `the framework already classifies it as ${core}`);
     }
@@ -99,7 +104,7 @@ export function resetErrorRetry(): void {
  * Core table first, for the same belt-and-braces reason `retryFor` had it first.
  */
 export function declaredErrorRetry(code: string): ErrorRetry | undefined {
-  return CORE_ERROR_RETRY[code] ?? REGISTERED.get(code);
+  return CORE_ERROR_RETRY.get(code) ?? REGISTERED.get(code);
 }
 
 export function retryFor(code: string): ErrorRetry {

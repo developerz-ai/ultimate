@@ -343,6 +343,7 @@ collectMetrics();       // the same numbers as data, for a MetricExporter
 | Names | lowercase `snake_case`, the intersection every exposition format accepts. Dotted OTel names survive OTLP and die at a Prometheus scrape |
 | Attributes | `string \| number \| boolean` only — each distinct set is a stored series, so a user id here is an outage |
 | Cardinality | enforced, not advised: `maxSeries` per instrument (default `DEFAULT_MAX_SERIES`), and past it every new label set folds into one `otel_metric_overflow="true"` series with `X_METRIC_CARDINALITY` logged once, naming the instrument |
+| Async gauges | an `observe()` that throws, or answers a non-finite number, costs that instrument its point and **nothing beside it** — `X_METRIC_VALUE_INVALID` logged once, naming the instrument. Unguarded it took the whole `/metrics` body down with it, and `startMetricExport`'s timer callback raised where nothing can catch it |
 | Driver seam | `MetricExporter`, defaulting to a no-op. `memoryMetricExporter()` for tests, `startMetricExport(ms)` for a periodic push, `otlpMetricExporter()` for a collector |
 
 `runtime-metrics.ts` holds the series every process emits, and `SCALING_METRICS` maps each

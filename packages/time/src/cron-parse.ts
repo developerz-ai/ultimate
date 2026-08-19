@@ -20,15 +20,20 @@ export interface CronExpression {
   dayOfWeekRestricted: boolean;
 }
 
-const MACROS: Readonly<Record<string, string>> = {
-  '@yearly': '0 0 1 1 *',
-  '@annually': '0 0 1 1 *',
-  '@monthly': '0 0 1 * *',
-  '@weekly': '0 0 * * 0',
-  '@daily': '0 0 * * *',
-  '@midnight': '0 0 * * *',
-  '@hourly': '0 * * * *',
-};
+// A `Map`, not an object literal: the key is a caller's string, and `MACROS['constructor']` on a
+// plain object answers `Object` — a function that reached `.split()` as a bare `TypeError` out of
+// the one function whose entire contract is a coded refusal.
+const MACROS: ReadonlyMap<string, string> = new Map(
+  Object.entries({
+    '@yearly': '0 0 1 1 *',
+    '@annually': '0 0 1 1 *',
+    '@monthly': '0 0 1 * *',
+    '@weekly': '0 0 * * 0',
+    '@daily': '0 0 * * *',
+    '@midnight': '0 0 * * *',
+    '@hourly': '0 * * * *',
+  }),
+);
 
 const MONTH_NAMES = [
   'jan',
@@ -49,7 +54,7 @@ const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 /** Parse 5 fields (`m h dom mon dow`) or 6 with a leading seconds field. */
 export function parseCron(expression: string): CronExpression {
   const trimmed = expression.trim().toLowerCase();
-  const expanded = MACROS[trimmed] ?? trimmed;
+  const expanded = MACROS.get(trimmed) ?? trimmed;
   const fields = expanded.split(/\s+/).filter((field) => field !== '');
 
   if (fields.length !== 5 && fields.length !== 6) {

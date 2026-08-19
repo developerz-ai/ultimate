@@ -4,7 +4,9 @@
  */
 
 import { invariant } from '@ultimat3/core';
-import { notRoundable } from './errors';
+import { MAX_MONEY_SCALE } from '@ultimat3/schema';
+import { digitsInvalid, notRoundable } from './errors';
+import { factorFraction } from './factor';
 
 export type RoundingMode =
   /** 0.5 away from zero — the commercial default most invoicing rules specify. */
@@ -103,12 +105,25 @@ export function roundRatio(
 /**
  * Round to `digits` decimal places, used when converting a decimal string whose
  * precision exceeds the currency's minor unit.
+ *
+ * Over `roundRatio`, never `roundToInteger(value * factor, mode)` — that product is the bug this
+ * package documents as forbidden: `1.005 * 100` is 100.49999999999999, so half-up answered 1.00
+ * where 1.01 is owed. The value reaches the mode as the exact fraction its shortest round-trip
+ * decimal names, which is the same path `multiply` and `convert` already take.
  */
 export function roundToDigits(
   value: number,
   digits: number,
   mode: RoundingMode = DEFAULT_ROUNDING,
 ): number {
-  const factor = 10 ** digits;
-  return roundToInteger(value * factor, mode) / factor;
+  if (!Number.isInteger(digits) || Math.abs(digits) > MAX_MONEY_SCALE) throw digitsInvalid(digits);
+  const { numerator, denominator } = factorFraction(value);
+  const scale = 10n ** BigInt(Math.abs(digits));
+  // A negative digit count rounds to tens or hundreds, so the power moves to the other side of the
+  // fraction rather than becoming a fractional bigint, which has no spelling.
+  const rounded =
+    digits >= 0
+      ? roundRatio(numerator * scale, denominator, mode)
+      : roundRatio(numerator, denominator * scale, mode);
+  return digits >= 0 ? rounded / Number(scale) : rounded * Number(scale);
 }
