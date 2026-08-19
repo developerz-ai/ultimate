@@ -3,7 +3,8 @@
 // it purges), and two credentials resolving to a winner (one edge left serving a stale page).
 
 import { describe, expect, test } from 'bun:test';
-import { CDN_PURGE_ENV_KEYS, isNoopPurgeDriver, selectPurgeDriver } from './purge-env';
+import { isNoopPurgeDriver } from './cdn';
+import { CDN_PURGE_ENV_KEYS, selectPurgeDriver } from './purge-env';
 
 const FASTLY = { FASTLY_API_TOKEN: 'fastly-token', FASTLY_SERVICE_ID: 'svc_1' };
 const CLOUDFLARE = { CLOUDFLARE_API_TOKEN: 'cf-token', CLOUDFLARE_ZONE_ID: 'zone_1' };

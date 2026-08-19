@@ -35,7 +35,7 @@ export const useT = (): Translator<AppCatalog> => useI18n<AppCatalog>();
 | One call | Because |
 |---|---|
 | validates + flattens every locale before registering any | a malformed catalog fails the boot whole, never half |
-| registers the framework catalog first, the app's second | later wins, so app strings override framework strings |
+| registers the framework catalog under `en` first, the app's second | later wins, so app strings override framework strings |
 | `configureLocales({ supported, fallback })` | the locale set is declared once, not twice |
 | returns `{ default, locales, catalogs, keys() }` | the app's key space, for tests and tooling |
 
@@ -89,6 +89,13 @@ wins, which is how an app overrides `errors.notFound.title` without forking the 
 
 `src/catalogs/en.json` ships the framework's own strings: `errors.*`, `auth.*`,
 `pagination.*`, `admin.*`, `validation.*`, `common.*`, `time.cron.*`.
+
+**It is registered under `en` and no other locale** — the golden rule applies to framework strings
+too. An app shipping `es` that has not translated `errors.notFound.title` renders
+`⟦errors.notFound.title⟧` there, not `Page not found`: filling every locale with the English
+catalog is a fallback chain, it reads as `isMiss === false`, and `assertCatalogsComplete` cannot
+see it because `CatalogSet.catalogs` carries app strings only. Translate the framework keys your
+app renders into your own catalog — that is the one path, and it is the same merge an override is.
 
 ## Enforcement
 

@@ -1,7 +1,7 @@
 // Public API of @ultimat3/cache. Explicit, no `export *`.
 
 export type { CacheHeaderOptions, CdnTierOptions, PurgeDriver } from './cdn';
-export { cacheHeaders, createCdnTier, noopPurgeDriver } from './cdn';
+export { cacheHeaders, createCdnTier, isNoopPurgeDriver, noopPurgeDriver } from './cdn';
 export type { CacheErrorCode } from './errors';
 export {
   CACHE_ERROR_CODES,
@@ -55,7 +55,7 @@ export {
   cloudflarePurgeDriver,
 } from './purge-cloudflare';
 export type { PurgeEnvironment, PurgeSelection } from './purge-env';
-export { CDN_PURGE_ENV_KEYS, isNoopPurgeDriver, selectPurgeDriver } from './purge-env';
+export { CDN_PURGE_ENV_KEYS, selectPurgeDriver } from './purge-env';
 export type { FastlyPurgeOptions } from './purge-fastly';
 export { FASTLY_API_URL, FASTLY_MAX_KEYS_PER_REQUEST, fastlyPurgeDriver } from './purge-fastly';
 export type { PurgeFetch } from './purge-http';

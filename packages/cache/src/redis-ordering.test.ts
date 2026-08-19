@@ -74,7 +74,8 @@ describe('a bust racing a write, on the wire', () => {
       .map((entry) => entry.slice(2));
     // Only what actually died leaves the bucket. `x:c:stuck` is still a member, still tagged,
     // and the retry the error asks for — `invalidateTags([tag('post', '1')])` — reaches it.
-    expect(removed).toEqual([['x:c:gone'], ['x:c:gone']]);
+    // Three buckets: the row's, the collection's, and the entity index the row bust never reads.
+    expect(removed).toEqual([['x:c:gone'], ['x:c:gone'], ['x:c:gone']]);
   });
 
   test('a bust that succeeded empties the buckets it read, member by member', async () => {
@@ -89,7 +90,29 @@ describe('a bust racing a write, on the wire', () => {
     expect(client.sent.filter((entry) => entry[0] === 'SREM')).toEqual([
       ['SREM', 'x:t:{post}:1', 'x:c:feed'],
       ['SREM', 'x:t:{post}', 'x:c:feed'],
+      ['SREM', 'x:e:{post}', 'x:c:feed'],
     ]);
+  });
+
+  test('a ROW bust leaves the entity index, which it never reads, with no corpse in it', async () => {
+    // Asymmetric on purpose. READING `x:e:{post}` for a row bust returns every post-tagged key
+    // in the store and would delete them all — the over-reach the second bucket exists to stop.
+    // SREMing from it cannot over-reach: only the members this bust actually deleted leave. Left
+    // alone, the deleted value key kept its membership there for ever while `TAG_MEMBER_SCRIPT`
+    // renewed the index's lease on every write — the unbounded `SMEMBERS` the lease was added to
+    // prevent, rebuilt out of dead keys.
+    const client = fakeRedis();
+    const tier = tierFor(client);
+    await tier.set('feed', 'a', { ttlMs: 60_000, tags: [tag('post', '1')] });
+    client.answerEval(REDIS_INVALIDATE_SCRIPT, ['x:c:feed']);
+    client.sent.length = 0;
+
+    await tier.invalidateTags([tag('post', '1')]);
+
+    const read = client.sent.filter((entry) => entry[0] === 'EVAL').flatMap(keysOf);
+    expect(read).not.toContain('x:e:{post}');
+    const swept = client.sent.filter((entry) => entry[0] === 'SREM').map((entry) => entry[1]);
+    expect(swept).toContain('x:e:{post}');
   });
 
   test('a key that expires between GET and PTTL is a miss, not a full-lease promotion', async () => {

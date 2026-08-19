@@ -138,7 +138,12 @@ export function localeCookieOf(cookieHeader?: string | null): string | undefined
  */
 export function currentLocale(): Locale {
   const locale = tryUseContext()?.locale;
-  return locale === undefined || locale === '' ? config.fallback : locale;
+  if (locale === undefined || locale === '') return config.fallback;
+  // Normalised HERE, the same call `resolveLocale` makes for every source it reads. `Ctx.locale`
+  // is a plain string core never validates, and every distinct one it holds bought a PERMANENT
+  // `Translator` in `translators` plus a permanent `Intl.PluralRules` in `interpolate`'s
+  // `rulesCache` — two unbounded module-level maps keyed by whatever a request carried.
+  return normalizeLocale(locale, config.supported, config.fallback);
 }
 
 export function currentDirection(): Direction {
@@ -156,6 +161,15 @@ export function registerCatalog(locale: Locale, catalog: Catalog): void {
   const existing = registry.get(locale);
   registry.set(locale, existing === undefined ? catalog : mergeCatalogs(existing, catalog));
   translators.delete(locale);
+}
+
+/**
+ * Whether this locale has a catalog at all. Distinct from `catalogFor`, which answers `{}` for
+ * "registered but empty" and for "never registered" alike — `registerFrameworkCatalog` needs to
+ * tell those apart to stay idempotent.
+ */
+export function hasCatalog(locale: Locale): boolean {
+  return registry.has(locale);
 }
 
 export function registeredLocales(): Locale[] {

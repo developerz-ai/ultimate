@@ -102,6 +102,9 @@ describe.skipIf(!hasRedis)('live · redis · both Lua scripts, executed by a rea
     // reached by a path where a failure leaves the membership behind instead of orphaning it.
     expect(await count(client, 'EXISTS', bucket)).toBe(0);
     expect(await count(client, 'EXISTS', `${PREFIX}:c:swept`)).toBe(0);
+    // The entity index too, which a ROW bust deliberately never READS: `set` joined it, so a
+    // membership left behind here is a corpse in a set every later write renews the lease on.
+    expect(await count(client, 'EXISTS', `${PREFIX}:e:{swept}`)).toBe(0);
   });
 
   test('a bust landing between the join and the write leaves no unreachable row', async () => {

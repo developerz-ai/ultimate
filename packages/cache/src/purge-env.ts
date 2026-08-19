@@ -41,9 +41,6 @@ const nonEmpty = (value: string | undefined): string | undefined =>
 const configuredKeys = (env: PurgeEnvironment): readonly string[] =>
   CDN_PURGE_ENV_KEYS.filter((key) => nonEmpty(env[key]) !== undefined);
 
-/** A driver that reaches no CDN, so a caller can report "purges nothing" without a name match. */
-export const isNoopPurgeDriver = (driver: PurgeDriver): boolean => driver.name === 'noop';
-
 /**
  * Either key selects its provider, and the other is then required: a `FASTLY_SERVICE_ID` with no
  * token is a half-finished deploy, and treating it as "no CDN" is how an environment ships
