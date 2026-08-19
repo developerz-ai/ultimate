@@ -61,6 +61,59 @@ Reproduce it: `bun run scripts/bench/restart-bench.ts --clients 10000 --probe-in
 
 ---
 
+## How much code you do not write
+
+An agent's scarcest resource is context, and most of it goes on infrastructure that has nothing to
+do with the product. The framework's job is to have already decided those things — so the agent
+spends its budget on the feature, and on a floor whose failure modes were found once, here, rather
+than once per app.
+
+**The worked example is [`dummy/social-media-clone`](dummy/social-media-clone/)** — a deployed demo
+with feed, profiles, follows, direct messages, notifications, media upload and an admin. `As of
+2026-08-19`, measured with `find … | wc -l`, not estimated:
+
+| Measured | |
+|---|---|
+| The app | **9,829 lines** of TypeScript, TSX and SCSS across 168 files |
+| Its tests | 3,607 lines |
+| What it declares | 13 entities · 11 actions · 1 query · 3 jobs · 2 tasks · 16 routes · 33 policies · 11 error codes |
+| What it **projects** from those declarations | a 1,324-line `openapi.json` and an 1,844-line `x.manifest.json` — neither hand-written, both regenerated and drift-checked by `x verify` |
+| Framework it imports | 19 of the 30 packages, **93,219 lines** of runtime source (120,938 counting `cli` and `testing`, which are dev-time) |
+
+So roughly **nine and a half lines of mechanism per line of application** — sessions and MFA, the
+policy engine, the entity layer and its two drivers, the job queue with leases and retries, the
+realtime `sync` node, the cache tiers, the render pipeline, the admin, the MCP surface.
+
+**The estimate, and it is an estimate.** A hand-rolled equivalent is not 93,219 lines — you would
+build a fraction of the generality, and skip the parts this app never reaches. Taking only the
+subsystems this app actually exercises, at the depth it exercises them, a team building the same
+product on a general-purpose stack writes on the order of **12,000–20,000 lines of infrastructure**
+before the first feature: auth and sessions, an authorization layer, migrations and a query seam,
+background jobs with retry and idempotency, a websocket fanout with reconnect, cache invalidation,
+an admin, plus the wiring that keeps an OpenAPI spec and a typed client honest. That is the number
+this framework removes. It is a judgement, not a measurement, and it is stated as one — see
+**Measured, and only this much** above for the line this file holds between the two.
+
+**The larger win is not the lines.** It is that the bugs are found once. The sweeps recorded in
+[`CHANGELOG.md`](CHANGELOG.md) and in PRs #174–#186 closed defects like these — in the *framework*,
+where a fix reaches every app at once:
+
+| Found once, here | What it would have cost an app |
+|---|---|
+| Every authenticated websocket carried `actor: null`, because Bun runs `websocket.open` inside `server.upgrade()` | every channel subscribe on an authed client denied; per-row visibility deciding about nobody |
+| An unreadable TOTP secret verified against a code that needs no secret | one shared code stream across every broken secret in the table |
+| A `delete` bypassed the subscriber's own visibility rule | row ids leaking across tenants on the socket |
+| An ISR route with a policy served the first actor's HTML to everybody | one actor's page cached under a bare pathname |
+| A limiter shed vanished from `queue_depth` | the autoscaler and the backlog page going quiet exactly when the queue saturated |
+| `t.date` resolved a zone-less string against the container's timezone | one wire value meaning two instants on two pods |
+
+Each of those is the kind of defect that ships, sits quietly, and surfaces as an incident. Finding
+them is slow, specialised work. Doing it once in a framework is the difference between paying that
+cost per-app and paying it per-ecosystem — and it is why the sweeps are described here rather than
+tidied out of the history.
+
+---
+
 ## Why Bun, why SolidJS
 
 Two picks that are load-bearing rather than fashionable, and both for the same reason: they remove
