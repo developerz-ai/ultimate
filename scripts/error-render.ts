@@ -9,9 +9,14 @@
 // `const cause =` in the same top-level declaration, by bare interpolation, `JSON.stringify` or
 // `String()`.
 //
-// WHAT IT CANNOT SEE, and no static scan of this kind can: a value laundered through a local
-// helper first (`const message = String(error)` two lines above, then `cause: message` — which is
-// what `@ultimat3/ui`'s `ErrorState.tsx` and `@ultimat3/jobs`' `scheduler.ts` do); a value read
+// It ALSO sees one laundered shape, added after it let six through: a file-local helper whose
+// whole body is `error instanceof Error ? error.message : String(error)`. A call to one of those
+// is a call to `String()` with a name in front, and reading the name instead of the shape is why
+// `render-html.ts`, `render-static.ts`, `css-modules.ts`, `module-loader.ts`, `template-db.ts`
+// and admin's `/_x` panel all shipped it while this gate stayed green.
+//
+// WHAT IT CANNOT SEE: a value laundered through any OTHER local helper (`const message =
+// String(error)` two lines above, then `cause: message`); a value read
 // off an object property (`init.given`); a `cause` assembled by a function that returns it; a
 // value that is `unknown` by inference rather than by annotation; and a renderer that is on the
 // allowlist by NAME but is not actually total. It is a floor, not a proof.
@@ -58,6 +63,10 @@ export interface UnsafeRender {
 const SAFE_RENDERERS: ReadonlySet<string> = new Set([
   'renderCauseValue',
   'renderFixLiteral',
+  'renderThrowable', // @ultimat3/core — the most-used of the three, and absent from this list
+  // until 2026-08-19. It changed nothing (an unlisted callee already fell
+  // through to `undefined`), but a list that claims to name the total
+  // renderers and omits one is a list a reader cannot trust.
   'renderValue', // @ultimat3/entity
   'asLiteral', // @ultimat3/entity
   'renderGiven', // @ultimat3/flags
@@ -244,10 +253,39 @@ const lineOf = (text: string, index: number): number => {
 };
 
 /** The two calls that render a value and can throw doing it. Anything else is not this check's. */
-const CONVERTERS: Readonly<Record<string, UnsafeKind>> = {
-  'JSON.stringify': 'stringify',
-  String: 'conversion',
-};
+// A `Map`, not an object literal: `callee` is a name parsed out of arbitrary source, so
+// `CONVERTERS['toString']` on an object answers `Object.prototype.toString` — a FUNCTION where an
+// `UnsafeKind` belongs, which reports a finding with a garbage kind against code that is fine.
+const CONVERTERS: ReadonlyMap<string, UnsafeKind> = new Map(
+  Object.entries({
+    'JSON.stringify': 'stringify',
+    String: 'conversion',
+  } as const),
+);
+
+/**
+ * A file-local helper whose whole body IS the duck-type render — `error instanceof Error ?
+ * error.message : String(error)`, in any of its spellings. Calls to it are calls to `String()`
+ * with a name in front, and reading the name instead of the shape is what let six of these ship:
+ * `render-html.ts`, `render-static.ts`, `css-modules.ts`, `module-loader.ts`, `template-db.ts` and
+ * `admin`'s `/_x` panel all laundered an `unknown` through one and the gate saw nothing.
+ *
+ * Deliberately narrow. It matches the exact shape, not "a function that returns a string": a
+ * helper doing real work is a helper this scan has no opinion about, and a false finding on one
+ * would teach an agent to ignore the check — the failure `isBareValue` above is written to avoid.
+ */
+const LOCAL_DUCK_RENDERER =
+  /(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?:[:=][^=]*?)?=\s*\(?[^)=;]*\)?\s*(?::[^=]*?)?=>\s*[^;]*?instanceof\s+Error\s*\?[^;]*?String\s*\(|function\s+([A-Za-z_$][\w$]*)\s*\([^)]*\)[^{]*\{\s*return\s+[^;]*?instanceof\s+Error\s*\?[^;]*?String\s*\(/g;
+
+/** The names in this file that render an `unknown` by duck-typing it. */
+export function localDuckRenderers(code: string): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const match of code.matchAll(LOCAL_DUCK_RENDERER)) {
+    const name = match[1] ?? match[2];
+    if (name !== undefined) names.add(name);
+  }
+  return names;
+}
 
 /**
  * The binding ITSELF, not a property of it. `${error.message}` and `cause: error.cause` are reads
@@ -274,12 +312,17 @@ function mechanismAt(
   at: number,
   length: number,
   interpolated: boolean,
+  ducks: ReadonlySet<string> = new Set(),
 ): UnsafeKind | undefined {
   if (!isBareValue(text, at, length)) return undefined;
   const callee = enclosingCallee(text, at);
   if (callee === undefined) return interpolated ? 'interpolation' : undefined;
+  // The duck check runs FIRST, deliberately: `SAFE_RENDERERS` allowlists by NAME, which its own
+  // doc calls the check's weakest joint, so a file-local helper that happens to be called
+  // `renderValue` and is a duck-type would otherwise be waved through by the name alone.
+  if (ducks.has(callee)) return 'conversion';
   if (SAFE_RENDERERS.has(callee)) return undefined;
-  return CONVERTERS[callee];
+  return CONVERTERS.get(callee);
 }
 
 /** Every way an `unknown` binding reaches one `cause:` / `fix:` value, read over the code mask. */
@@ -289,6 +332,7 @@ function unsafeUses(
   field: 'cause' | 'fix',
   bindings: ReadonlySet<string>,
   file: string,
+  ducks: ReadonlySet<string>,
 ): readonly UnsafeRender[] {
   const text = mask.code.slice(span.start, span.end);
   const found: UnsafeRender[] = [];
@@ -302,7 +346,7 @@ function unsafeUses(
         (one) =>
           at >= one.start && at < one.end && mask.code.slice(one.start, one.end).trim() === binding,
       );
-      const kind = mechanismAt(text, match.index, binding.length, interpolated);
+      const kind = mechanismAt(text, match.index, binding.length, interpolated, ducks);
       if (kind === undefined) continue;
       found.push({ file, line: lineOf(mask.code, at), field, binding, kind });
     }
@@ -326,6 +370,7 @@ export function checkFile(file: SourceFile): readonly UnsafeRender[] {
           .map((match) => match[1] as string),
       ),
   );
+  const ducks = localDuckRenderers(mask.code);
   const found: UnsafeRender[] = [];
   for (const key of mask.code.matchAll(FIELD_KEY)) {
     const index = segments.findIndex((segment) => key.index < segment.end);
@@ -339,6 +384,7 @@ export function checkFile(file: SourceFile): readonly UnsafeRender[] {
         key[1] as 'cause' | 'fix',
         names,
         file.path,
+        ducks,
       ),
     );
   }

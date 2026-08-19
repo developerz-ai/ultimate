@@ -64,6 +64,63 @@ describe('checkErrorRendering catches the shape that shipped three times', () =>
   });
 });
 
+describe('a value laundered through a file-local duck-type helper', () => {
+  test('an arrow helper whose whole body is the duck-type is a render', () => {
+    // The shape that shipped SIX times and the gate could not see, because it followed a direct
+    // interpolation and not a value handed to a local name first.
+    const found = scan(`
+      const describe = (error: unknown): string =>
+        error instanceof Error ? error.message : String(error);
+
+      export function prerenderFailed(file: string, error: unknown): RenderError {
+        return new RenderError({
+          code: 'X_PRERENDER_FAILED',
+          cause: \`\${file} threw while rendering: \${describe(error)}\`,
+          fix: 'run bun test against the component',
+        });
+      }
+    `);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.kind).toBe('conversion');
+    expect(found[0]?.binding).toBe('error');
+  });
+
+  test('a function-declaration helper of the same shape counts too', () => {
+    const found = scan(`
+      function describe(error: unknown) {
+        return error instanceof Error ? error.message : String(error);
+      }
+
+      export function loadFailed(error: unknown): RenderError {
+        return new RenderError({
+          code: 'X_ROUTE_LOAD_FAILED',
+          cause: \`load threw: \${describe(error)}\`,
+          fix: 'return a value from load()',
+        });
+      }
+    `);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.kind).toBe('conversion');
+  });
+
+  test('a helper that does real work is NOT a duck-type and is left alone', () => {
+    // Deliberately narrow: a false finding here is a rule an agent learns to skip, which is the
+    // failure this file's header names.
+    const found = scan(`
+      const summarise = (error: unknown): string => renderThrowable(error).slice(0, 80);
+
+      export function loadFailed(error: unknown): RenderError {
+        return new RenderError({
+          code: 'X_ROUTE_LOAD_FAILED',
+          cause: \`load threw: \${summarise(error)}\`,
+          fix: 'return a value from load()',
+        });
+      }
+    `);
+    expect(found).toEqual([]);
+  });
+});
+
 describe('what it deliberately lets through', () => {
   test('a value already routed through a total renderer', () => {
     expect(

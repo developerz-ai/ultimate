@@ -614,7 +614,7 @@ Regenerates the generated facts: routes, entities, actions, mutators, queries, j
 ## x routes
 
 ```bash
-x routes [--surface site|app] [--json]
+x routes [--surface site|app|api|shared] [--json]
 ```
 
 ```bash
