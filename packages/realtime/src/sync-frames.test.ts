@@ -13,21 +13,26 @@ import { InProcessTransport } from './fanout';
 import type { Row } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
-import { SocketRegistry, SyncSocket, type WsLike } from './socket';
+import { CLOSE, SocketRegistry, SyncSocket, type WsLike } from './socket';
 import { ackRefOf, createFrameRouter, type MutationHandler } from './sync-frames';
 import { decode, type Frame, PROTOCOL_VERSION } from './sync-protocol';
 
 class FakeWs implements WsLike {
   readonly frames: Frame[] = [];
+  readonly closes: (readonly [number, string])[] = [];
+  /** Queued bytes this socket claims. Over the ceiling, `SyncSocket.send` declines and returns false. */
+  buffered = 0;
   send(data: string): number {
     this.frames.push(decode(data));
     return data.length;
   }
-  close(): void {}
+  close(code = 0, reason = ''): void {
+    this.closes.push([code, reason]);
+  }
   subscribe(): void {}
   unsubscribe(): void {}
   getBufferedAmount(): number {
-    return 0;
+    return this.buffered;
   }
 }
 
@@ -59,6 +64,8 @@ function rig(
   options: {
     snapshot?: () => Promise<{ rows: readonly Row[]; lsn: string }>;
     onMutate?: MutationHandler;
+    /** Bytes already queued on the socket, so every `send` below is refused by backpressure. */
+    buffered?: number;
   } = {},
 ): Rig {
   const transport = new InProcessTransport();
@@ -72,12 +79,14 @@ function rig(
   };
   const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(definition);
   const ws = new FakeWs();
+  ws.buffered = options.buffered ?? 0;
   const socket = new SyncSocket({
     ws,
     id: 'sock-1',
     clientBuildId: 'build-1',
     serverBuildId: 'build-1',
     actor: alice,
+    maxBufferedBytes: 1_024,
   });
   sockets.add(socket);
   const route = createFrameRouter({
@@ -304,5 +313,61 @@ describe('ackRefOf', () => {
         'sock-1',
       ),
     ).toBe('sock-1');
+  });
+});
+
+/**
+ * `send` answers `false` when backpressure dropped the frame, and this file's four sends threw that
+ * answer away. The subscription is the repairable one and the one that was silently wrong: the
+ * registry has already seated it and cleared its desync mark by the time the reply is written, so a
+ * dropped snapshot left the server believing a client holding no rows was in sync — every later
+ * change delivered to it as a PATCH folded onto nothing, forever, on a socket that has since
+ * drained.
+ */
+describe('a reply the socket refuses is not a reply that was delivered', () => {
+  test('a dropped subscribe reply desyncs the subscription it seated', async () => {
+    const target = rig({ buffered: 4_096 });
+
+    await target.route(subscribeQuery('S', 'add'));
+
+    // The subscription IS seated — that is what makes the lost frame dangerous rather than merely
+    // unlucky — so the mark is the only thing that makes the next change re-snapshot it.
+    expect(target.registry.subscription('sock-1', 'S')).toBeDefined();
+    expect(target.ws.frames).toHaveLength(0);
+    expect([...target.socket.desynced]).toEqual(['S']);
+  });
+
+  test('a delivered subscribe reply leaves nothing marked', async () => {
+    const target = rig();
+
+    await target.route(subscribeQuery('S', 'add'));
+
+    expect(target.ws.frames.map((frame) => frame.type)).toEqual(['snapshot']);
+    expect([...target.socket.desynced]).toEqual([]);
+  });
+
+  test('a settlement the socket refuses closes it, so the client requeues and replays', async () => {
+    const target = rig({ buffered: 4_096, onMutate: async () => ({ lsn: formatLsn(1) }) });
+
+    await target.route(mutate('m1', 1));
+
+    // Nothing on the node holds a mutation after `onMutate` returns, and a client only hands an
+    // `inflight` mutation back to its queue when the connection dies. Left open, that write is
+    // never retired and never retried, with the server believing it settled.
+    expect(target.ws.frames).toHaveLength(0);
+    expect(target.ws.closes).toEqual([[CLOSE.overloaded, 'settlement undeliverable']]);
+  });
+
+  test('a dropped rebase is never followed by the ack that would retire it', async () => {
+    const target = rig({
+      buffered: 4_096,
+      onMutate: async () => ({ lsn: formatLsn(1), entity: 'posts', row: { id: 'p1' } }),
+    });
+
+    await target.route(mutate('m1', 1));
+
+    // The ack retires the client's rebase-log entry. Acking a rebase that never left is the same
+    // divergence the rebase-before-ack order exists to prevent, one frame later.
+    expect(target.ws.closes).toHaveLength(1);
   });
 });

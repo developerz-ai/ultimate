@@ -23,7 +23,13 @@ import { GrantBook, type SyncAuthenticator, sweepGrants } from './sync-auth';
 import { ackRefOf, createFrameRouter, type MutationHandler } from './sync-frames';
 import { decode, type Frame, PROTOCOL_VERSION, toWireError } from './sync-protocol';
 import { handleUpgrade, type UpgradeTarget, type WsData } from './sync-upgrade';
-import { AcceptBudget, drainPlan, type Rng, reconnectFrame } from './thundering-herd';
+import {
+  AcceptBudget,
+  type DrainedSocket,
+  drainPlan,
+  type Rng,
+  reconnectFrame,
+} from './thundering-herd';
 
 /** Declared with the upgrade that builds it — this file only ever reads one. */
 export type { UpgradeTarget, WsData } from './sync-upgrade';
@@ -133,7 +139,7 @@ export interface SyncNode {
     close(ws: SyncWs): void;
   };
   /** Sends every client a distinct reconnect delay, then closes. Returns the plan for tests/logs. */
-  drain(options?: { graceMs?: number }): Promise<readonly { socketId: string; afterMs: number }[]>;
+  drain(options?: { graceMs?: number }): Promise<readonly DrainedSocket[]>;
 }
 
 export function createSyncNode(options: SyncNodeOptions): SyncNode {
@@ -357,6 +363,9 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
           newSocketId: () => uuid(),
           authenticate: options.authenticate,
           onGranted: (socketId, grant) => grants.set(socketId, grant),
+          // The other half of recording the grant before the upgrade: an upgrade that never took
+          // gets no `close` callback, so this is the only thing that can free its entry.
+          onUngranted: (socketId) => grants.delete(socketId),
         },
         request,
         server,
@@ -444,15 +453,24 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       },
     },
 
-    async drain(drainOptions = {}): Promise<readonly { socketId: string; afterMs: number }[]> {
+    async drain(drainOptions = {}): Promise<readonly DrainedSocket[]> {
       ready = false;
       const ids = [...sockets.all()].map((socket) => socket.id);
-      const plan = drainPlan(ids, {
+      const spread = drainPlan(ids, {
         spreadMs: options.drainSpreadMs ?? 30_000,
         ...(options.rng ? { rng: options.rng } : {}),
       });
-      for (const entry of plan) {
-        sockets.get(entry.socketId)?.send(reconnectFrame(entry.afterMs, 'drain'));
+      // The answer is read, not assumed: this frame IS the socket's slot, so a client that never
+      // received one reconnects on its own backoff — the herd the spread exists to break, minus
+      // that client. Nothing repairs it, so what the drop owes is a count.
+      const plan: DrainedSocket[] = spread.map((entry) => ({
+        ...entry,
+        notified:
+          sockets.get(entry.socketId)?.send(reconnectFrame(entry.afterMs, 'drain')) === true,
+      }));
+      const notified = plan.reduce((total, entry) => total + (entry.notified ? 1 : 0), 0);
+      if (notified < plan.length) {
+        logger.warn('sync.drain_frames_dropped', { sockets: plan.length, notified });
       }
       const graceMs = drainOptions.graceMs ?? 5_000;
       if (graceMs > 0) await new Promise((resolve) => setTimeout(resolve, graceMs));

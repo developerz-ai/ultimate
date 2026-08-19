@@ -72,6 +72,16 @@ export interface DrainPlanEntry {
   readonly afterMs: number;
 }
 
+/**
+ * A plan entry and what became of it — what `SyncNode.drain` returns. `notified: false` means
+ * backpressure dropped that socket's `reconnect` frame: the frame is what carries the slot, nothing
+ * re-sends it, so that client reconnects on its own backoff and the count is the only place a log
+ * can say how much of the spread actually shipped.
+ */
+export interface DrainedSocket extends DrainPlanEntry {
+  readonly notified: boolean;
+}
+
 export interface DrainPlanOptions {
   /** Window across which reconnects are spread. Must exceed the node's own drain grace period. */
   readonly spreadMs?: number;

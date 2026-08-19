@@ -4,7 +4,7 @@
 // which is the KV bucket under NATS and the in-process map under `x dev`.
 
 import { describe, expect, spyOn, test } from 'bun:test';
-import { frozenClock } from '@ultimat3/core';
+import { frozenClock, logger } from '@ultimat3/core';
 import { RingChangeBuffer } from './change-buffer';
 import { ChannelHub, type Topic, topic } from './channel';
 import { InProcessTransport } from './fanout';
@@ -24,7 +24,7 @@ class RecordingWs implements SyncWs {
   readyState = 1;
 
   constructor(id: string) {
-    this.data = { socketId: id, clientBuildId: BUILD_ID, actorId: null };
+    this.data = { socketId: id, clientBuildId: BUILD_ID };
   }
 
   send(message: string): number {
@@ -38,8 +38,10 @@ class RecordingWs implements SyncWs {
 
   subscribe(): void {}
   unsubscribe(): void {}
+  /** Bytes this socket claims are queued. Over the ceiling, `SyncSocket.send` declines. */
+  buffered = 0;
   getBufferedAmount(): number {
-    return 0;
+    return this.buffered;
   }
 
   frames(op: string): Frame[] {
@@ -115,6 +117,30 @@ describe('the sync node speaks presence', () => {
     ]);
     // ...and the member is on the shared set, which is the only thing another node can read.
     expect((await app.presence.list(ROOM)).map((member) => member.id)).toEqual(['s1', 's2']);
+  });
+
+  /**
+   * The roster is the one presence frame the node cannot repair: a topic has no cursor and no
+   * re-snapshot, and `presence.join` has already written this member to the shared set. So the
+   * answer is read for the only thing left to do with it — say so. Sent fire-and-forget, a client
+   * rendering an empty room it is a member of left no trace anywhere.
+   */
+  test('a roster the socket refuses is reported, not assumed delivered', async () => {
+    const app = harness();
+    const ws = app.connect('s1');
+    ws.buffered = 4 * 1024 * 1024;
+    const warn = spyOn(logger, 'warn');
+    try {
+      await app.join(ws);
+
+      expect(ws.sent).toHaveLength(0);
+      expect(warn.mock.calls.map(([message]) => message)).toContain('sync.presence_roster_dropped');
+    } finally {
+      warn.mockRestore();
+    }
+    // The membership itself is correct — the client is in the room and every other node can see
+    // it. What it lost is one frame's view of who else is, until its next heartbeat re-rosters.
+    expect((await app.presence.list(ROOM)).map((member) => member.id)).toEqual(['s1']);
   });
 
   test('a join is announced to everyone already in the room', async () => {

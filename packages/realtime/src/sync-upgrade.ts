@@ -37,8 +37,22 @@ export interface UpgradeDeps {
   socketCount(): number;
   newSocketId(): string;
   readonly authenticate?: SyncAuthenticator | undefined;
-  /** Recorded only after the upgrade took: a grant for a socket that never opened is never closed. */
+  /**
+   * Recorded BEFORE `server.upgrade`, because Bun runs `websocket.open` synchronously inside it
+   * (measured on bun 1.3.14) and `open` is where the node reads this grant to build the socket's
+   * actor. Recorded after, every authenticated socket carried `actor: null` — the topic guard,
+   * `authorize`, `visible` and the per-tenant cap all deciding about nobody — and it never
+   * repaired, because the re-auth sweep only visits grants with an `expiresAt`.
+   */
   onGranted(socketId: string, grant: SyncGrant): void;
+  /**
+   * The grant given back on the one path that will never open a socket. Recording first is only
+   * safe because this exists: nothing but a `close` callback deletes a grant, and there is no
+   * callback for an upgrade that never took. Required, not optional — a host that reserves and
+   * cannot release is a leak the type refuses rather than a rule a reviewer has to remember. The
+   * same "reserve, then release" shape `channel.ts` uses for a topic slot.
+   */
+  onUngranted(socketId: string): void;
 }
 
 /**
@@ -97,10 +111,14 @@ export async function handleUpgrade(
     socketId: deps.newSocketId(),
     clientBuildId: url.searchParams.get('build') ?? deps.buildId,
   };
+  // Before the upgrade, never after: `server.upgrade` runs `websocket.open` synchronously and does
+  // not return until it has, so a grant recorded on the next line is one the socket was already
+  // built without.
+  if (grant) deps.onGranted(data.socketId, grant);
   if (!server.upgrade(request, { data })) {
+    deps.onUngranted(data.socketId);
     return new Response('expected websocket', { status: 426 });
   }
-  if (grant) deps.onGranted(data.socketId, grant);
   return undefined;
 }
 

@@ -30,6 +30,9 @@ class RecordingWs implements SyncWs {
     this.data = { socketId: id, clientBuildId: BUILD_ID };
   }
 
+  /** Bytes this socket claims are queued. Over the ceiling, `SyncSocket.send` declines. */
+  buffered = 0;
+
   send(message: string): number {
     this.sent.push(decode(message));
     return message.length;
@@ -42,7 +45,7 @@ class RecordingWs implements SyncWs {
   subscribe(): void {}
   unsubscribe(): void {}
   getBufferedAmount(): number {
-    return 0;
+    return this.buffered;
   }
 }
 
@@ -171,6 +174,32 @@ describe('a socket the node evicts is released the way a closed one is', () => {
     // for them and `source.forget(qid)` is never called.
     expect(await held(app, 's1')).toEqual(NOTHING);
     expect(ws.closedWith).toBe(CLOSE.goingAway);
+  });
+
+  /**
+   * The `reconnect` frame IS this socket's slot in the spread — there is no cursor behind it and
+   * nothing re-sends it — so a client that never received one reconnects on its own backoff, into
+   * the herd the spread exists to break. Sent fire-and-forget, a drain that reached half its
+   * clients returned a plan claiming it reached all of them.
+   */
+  test('a reconnect frame the socket refuses is counted, not claimed as delivered', async () => {
+    const app = harness();
+    const reachable = await app.seat('s1');
+    const drowning = await app.seat('s2');
+    drowning.buffered = 4 * 1024 * 1024;
+
+    const plan = await app.node.drain({ graceMs: 0 });
+
+    expect(
+      [...plan]
+        .map((entry) => [entry.socketId, entry.notified])
+        .sort((a, b) => (a[0] < b[0] ? -1 : 1)),
+    ).toEqual([
+      ['s1', true],
+      ['s2', false],
+    ]);
+    expect(reachable.sent.some((frame) => frame.type === 'reconnect')).toBe(true);
+    expect(drowning.sent.some((frame) => frame.type === 'reconnect')).toBe(false);
   });
 
   test('the idle sweep releases them too, and it has a caller at all', async () => {

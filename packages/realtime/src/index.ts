@@ -377,6 +377,7 @@ export {
   type AcceptBudgetOptions,
   type BackoffPolicy,
   backoffDelay,
+  type DrainedSocket,
   type DrainPlanEntry,
   type DrainPlanOptions,
   defaultBackoff,
