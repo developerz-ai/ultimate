@@ -1,6 +1,7 @@
-// Modal built on native <dialog>: the platform gives us the top layer, the
-// backdrop, inert background content, and Escape-to-close for free. We add the
-// labelled heading, the close affordance, and body scroll locking.
+// Modal built on native <dialog>: the platform gives us the top layer, the backdrop, inert
+// background content, and Escape-to-close for free. We add the labelled heading and the close
+// affordance. Body scroll locking is one CSS rule in `tokens/reset.scss` (`html:has(dialog:modal)`)
+// rather than anything here, so it covers Drawer too and cannot leak when a close path throws.
 
 import type { JSX } from 'solid-js';
 import { useId } from '../a11y';

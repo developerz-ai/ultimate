@@ -58,6 +58,8 @@ export async function openOfflineSession(init: OfflineSessionInit): Promise<Scra
       network: target.network,
       clock: init.session.clock,
       source: init.source,
+      // The same gate the page above holds, from the same field: two legs, one robots decision.
+      robots: init.session.robots,
       maxAgeMs: init.maxAgeMs,
     }),
     close: () => target.close(),

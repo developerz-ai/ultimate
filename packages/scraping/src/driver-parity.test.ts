@@ -187,6 +187,41 @@ describe('unit · where the drivers genuinely cannot agree, pinned in one place'
     expect(boxes).toEqual({ fake: false, fixture: false, puppeteer: true });
   });
 
+  test('SessionSnapshot.headers is answerable OFFLINE and empty on the real driver', async () => {
+    const restore = {
+      cookies: [],
+      headers: { 'x-csrf': 'tok' },
+      storage: {},
+      userAgent: 'agent',
+      origin: 'https://shop.test',
+    };
+    const withRestore = (driver: ScrapeDriver): Promise<ScrapeSession> =>
+      driver.open({
+        name: 'orders',
+        rules: { allowHosts: ['shop.test'], block: ['image'] },
+        clock: testClock(),
+        timeoutMs: 5_000,
+        restore,
+      });
+    const offline = await withRestore(fakeBrowser(PAGES, { http: HTTP }));
+    const real = await withRestore(
+      localBrowser({ launcher: fakeCdpLauncher({ url: URL_A, html: HTML_A }) }),
+    );
+    try {
+      expect((await offline.page.session()).headers).toEqual({ 'x-csrf': 'tok' });
+      // PINNED, and it is a divergence rather than a bug: CDP exposes no "headers this site now
+      // expects" to read back. The alternative considered was capturing observed request headers —
+      // rejected, because that persists a `cookie`/`authorization` into the session record and
+      // `httpOverFetch` spreads `session.headers` onto EVERY allowed host, which is a wider leak
+      // than the empty field. So a fixture may assert on headers the real driver will not send:
+      // put a token the HTTP leg must carry in the request's own `headers`, never in the session.
+      expect((await real.page.session()).headers).toEqual({});
+    } finally {
+      await offline.close();
+      await real.close();
+    }
+  });
+
   test('only the offline drivers refuse an unrecorded request', async () => {
     const fixture = await open(fixtureBrowser(dir));
     try {

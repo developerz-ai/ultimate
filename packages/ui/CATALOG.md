@@ -146,7 +146,7 @@ Native checkbox with a token-drawn indicator. The label element wraps the input,
 | `name` | `string` | — |  |
 | `value` | `string` | — |  |
 | `checked` | `boolean` | — |  |
-| `indeterminate` | `boolean` | — | Tri-state for "some children selected". Mirrored to `aria-checked`. |
+| `indeterminate` | `boolean` | — | Tri-state for "some children selected". The ONLY thing mirrored to `aria-checked`. |
 | `disabled` | `boolean` | — |  |
 | `required` | `boolean` | — |  |
 | `description` | `string` | — |  |
@@ -230,7 +230,7 @@ Renders <time datetime="<ISO instant>"> with text formatted in the context time 
 
 ### Dialog
 
-Modal built on native <dialog>: the platform gives us the top layer, the backdrop, inert background content, and Escape-to-close for free. We add the labelled heading, the close affordance, and body scroll locking.
+Modal built on native <dialog>: the platform gives us the top layer, the backdrop, inert background content, and Escape-to-close for free. We add the labelled heading and the close affordance. Body scroll locking is one CSS rule in `tokens/reset.scss` (`html:has(dialog:modal)`) rather than anything here, so it covers Drawer too and cannot leak when a close path throws.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -355,7 +355,7 @@ A file picker that keeps the platform control and dresses it. The native button 
 
 ### Form
 
-Form shell. Owns the one thing every form needs and always forgets: a top-of-form error summary that is focusable and announced on submit.
+Form shell. Owns the one thing every form needs and always forgets: a top-of-form error summary that is announced (the Alert inside it is a live region) and that TAKES focus when an error arrives — the focus move is what makes the summary reachable at all, since its id is internal.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -680,7 +680,7 @@ Flex layout primitive. Gap comes from the space scale as a custom property, so t
 
 ### Switch
 
-Boolean toggle with immediate effect (as opposed to Checkbox, which is part of a form submit). `role="switch"` on a native checkbox keeps keyboard behaviour.
+Boolean toggle with immediate effect (as opposed to Checkbox, which is part of a form submit). `role="switch"` on a native checkbox keeps keyboard behaviour — and its checked state, which is why nothing here writes `aria-checked`: `role="switch"` maps the host `checked` state on its own, and an attribute mirroring it never updates on the no-JS path, where ARIA would then outrank the truth and announce the switch stuck in whichever position it was rendered in.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -770,18 +770,19 @@ Theme control. `toggle` flips light/dark; `select` also offers "system", which c
 
 ### ToastRegion
 
-Transient notification. ToastRegion is the single live region for the app; individual Toasts are its children, so announcements are not duplicated and the region exists before the first message (screen readers require that).
+Transient notification. ToastRegion is the single live region for the app; individual Toasts are its children, so announcements are not duplicated and the region exists before the first message. That ordering is the whole point: a live region created with its content already in it is not announced by most screen readers, which is why `aria-live` sits on the persistent <ol> here and NOT on the <li> each Toast renders.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
 | `children` | `JSX.Element` | yes |  |
 | `label` | `string` | yes | Already-translated landmark name, e.g. "Notifications". |
+| `politeness` | `Politeness` | — | How the region announces. `polite` waits for a pause and is right for everything an app routinely confirms; `assertive` interrupts whatever the user is being read, so it belongs only to a region that carries errors alone. One region, one politeness — mixing tones inside one list cannot work, because the live semantics belong to the list, not to the message. |
 | `placement` | `'block-end-inline-end' \| 'block-start-inline-end' \| 'block-end-center'` | — |  |
 | `class` | `string` | — |  |
 
 ### Toast
 
-Transient notification. ToastRegion is the single live region for the app; individual Toasts are its children, so announcements are not duplicated and the region exists before the first message (screen readers require that).
+Transient notification. ToastRegion is the single live region for the app; individual Toasts are its children, so announcements are not duplicated and the region exists before the first message. That ordering is the whole point: a live region created with its content already in it is not announced by most screen readers, which is why `aria-live` sits on the persistent <ol> here and NOT on the <li> each Toast renders.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|
@@ -795,7 +796,7 @@ Transient notification. ToastRegion is the single live region for the app; indiv
 
 ### Toolbar
 
-The control strip above a table or a list: filters and search at the inline start, actions at the inline end. `role="toolbar"` with the same roving-tabindex helper Tabs uses, so arrow keys move between controls and the strip costs one Tab stop instead of a dozen.
+The control strip above a table or a list: filters and search at the inline start, actions at the inline end. `role="toolbar"` with the same roving-tabindex helper Tabs uses, so arrow keys move between the strip's buttons. It is NOT one tab stop: the strip holds arbitrary children it cannot reach into to set an initial `tabindex`, and a search field at the inline start keeps its own arrow keys, so making the strip a single stop would strand every control past it.
 
 | Prop | Type | Required | Notes |
 |---|---|---|---|

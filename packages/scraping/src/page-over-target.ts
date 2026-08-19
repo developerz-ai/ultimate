@@ -210,5 +210,6 @@ export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePa
     session: () => target.session(),
     console: () => target.console.entries(),
     network: () => target.network.entries(),
+    networkDropped: () => target.network.dropped,
   };
 }

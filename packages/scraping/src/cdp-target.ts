@@ -55,12 +55,37 @@ const asRequest = (payload: unknown): CdpRequestLike | undefined => {
     : undefined;
 };
 
-const readString = (value: unknown): string | undefined =>
-  typeof value === 'function'
-    ? readString((value as () => unknown)())
-    : typeof value === 'string'
-      ? value
-      : undefined;
+/**
+ * CDP's console levels, mapped onto this package's five. `warning` is the library's spelling of
+ * `warn`, `verbose` of `debug`, and everything structural (`table`, `startGroup`, `dir`) is a log
+ * line with a shape — never its own level, because `ConsoleLine.level` is what an author filters on.
+ */
+const CONSOLE_LEVELS: Readonly<Record<string, ConsoleLine['level']>> = {
+  error: 'error',
+  assert: 'error',
+  warning: 'warn',
+  warn: 'warn',
+  info: 'info',
+  debug: 'debug',
+  verbose: 'debug',
+};
+
+/**
+ * Reads a string out of somebody else's event payload, calling an accessor THROUGH ITS OWNER.
+ *
+ * `HTTPRequest.method()` and `ConsoleMessage.type()`/`.text()` read `this` — they are methods on
+ * the library's own objects, not closures over a value. Handing the bare function to a helper
+ * (`readString(request.method)`) drops the receiver, so the accessor answers against `undefined`:
+ * on one build that throws inside the interception handler, on another it answers wrong.
+ */
+const readStringFrom = (owner: unknown, key: string): string | undefined => {
+  if (typeof owner !== 'object' || owner === null) return undefined;
+  const value = (owner as Record<string, unknown>)[key];
+  if (typeof value === 'string') return value;
+  if (typeof value !== 'function') return undefined;
+  const answer = (value as (this: unknown) => unknown).call(owner);
+  return typeof answer === 'string' ? answer : undefined;
+};
 
 export interface CdpTargetInit {
   readonly page: CdpPageLike;
@@ -87,28 +112,31 @@ async function arm(
     if (request === undefined) return;
     const url = request.url();
     const type = asResourceType(request.resourceType());
+    // The METHOD the browser is actually sending. Recording every request as a GET made
+    // `page.network()` — which `X_SCRAPE_HTTP_FAILED`'s own fix line tells the reader to open —
+    // misreport every POST and PUT the page made.
+    const method = readStringFrom(request, 'method') ?? 'GET';
     const verdict = interceptVerdict(url, type, init.rules);
     const at = init.clock.now().getTime();
     if (verdict === 'allow') {
-      network.push({ method: 'GET', url, resourceType: type, at });
+      network.push({ method, url, resourceType: type, at });
       void request.continue();
       return;
     }
-    network.push(refusalEntry(url, type, verdict, at));
+    network.push(refusalEntry(url, type, verdict, at, method));
     void request.abort();
   });
   init.page.on('console', (payload) => {
-    const record = payload as { type?: unknown; text?: unknown };
     console_.push({
-      level: 'log',
-      text: readString(record.text) ?? '',
+      level: CONSOLE_LEVELS[(readStringFrom(payload, 'type') ?? '').toLowerCase()] ?? 'log',
+      text: readStringFrom(payload, 'text') ?? '',
       at: init.clock.now().getTime(),
     });
   });
   // A renderer that dies must be a CODE, not a hang: every later call answers X_SCRAPE_PAGE_CRASHED
   // instead of waiting out its own timeout against a tab that is gone.
   init.page.on('error', (payload) => {
-    crashed.value = readString((payload as { message?: unknown }).message) ?? 'renderer crashed';
+    crashed.value = readStringFrom(payload, 'message') ?? 'renderer crashed';
   });
 }
 
@@ -117,6 +145,35 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
   const network = createRing<NetworkEntry>(init.ringCapacity);
   const crashed: { value: string | undefined } = { value: undefined };
   await arm(init, network, console_, crashed);
+  let pendingStorage: SessionSnapshot | undefined;
+
+  const originOf = (url: string): string => {
+    try {
+      return new URL(url).origin;
+    } catch {
+      return '';
+    }
+  };
+
+  /**
+   * `localStorage` is PER ORIGIN, and `restore()` runs before the first navigation — on
+   * `about:blank`, an opaque origin with no storage to write to. So the storage half waits for the
+   * navigation that reaches the origin the session belongs to, and lands there.
+   *
+   * The origin has to MATCH: applying it to whatever page loaded first would write the site's
+   * bearer token — `session-state.ts` says this is where most sites keep it — into a different
+   * site's storage. A session whose origin is never visited simply keeps its storage, which is
+   * the same answer a browser gives.
+   */
+  const applyPendingStorage = async (): Promise<void> => {
+    const pending = pendingStorage;
+    if (pending === undefined) return;
+    if (originOf(init.page.url()) !== pending.origin || pending.origin === '') return;
+    pendingStorage = undefined;
+    await init.page.evaluate(
+      `(() => { const entries = ${JSON.stringify(pending.storage)}; for (const key of Object.keys(entries)) localStorage.setItem(key, entries[key]); })()`,
+    );
+  };
 
   const live = (): void => {
     if (crashed.value !== undefined) throw pageCrashed(init.page.url());
@@ -158,6 +215,7 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
     goto: (url: string, options: GotoOptions) =>
       guard('goto', async () => {
         await init.page.goto(url, { timeout: options.timeoutMs });
+        await applyPendingStorage();
       }),
     content: () => guard('content', () => init.page.content()),
     query: (selector) =>
@@ -243,17 +301,16 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
       }),
     restore: (session: SessionSnapshot) =>
       guard('restore', async () => {
+        // Two halves, because they belong to two different moments: cookies are the browser's and
+        // can be put back now, storage is an ORIGIN's and cannot exist until one is loaded.
         const source = init.browser as {
           setCookie?: (...cookies: readonly unknown[]) => Promise<void>;
         };
         if (typeof source.setCookie === 'function' && session.cookies.length > 0) {
           await source.setCookie(...session.cookies);
         }
-        if (Object.keys(session.storage).length > 0) {
-          await init.page.evaluate(
-            `(() => { const entries = ${JSON.stringify(session.storage)}; for (const key of Object.keys(entries)) localStorage.setItem(key, entries[key]); })()`,
-          );
-        }
+        pendingStorage = Object.keys(session.storage).length > 0 ? session : undefined;
+        await applyPendingStorage();
       }),
     close: async (): Promise<void> => {
       await init.page.close();

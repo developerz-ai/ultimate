@@ -21,9 +21,11 @@ export interface TableProps {
 
 export function Table(props: TableProps): JSX.Element {
   return (
-    // tabindex makes the scroll region keyboard-reachable, which is required
-    // whenever a scrollable element has no focusable children.
-    <section class={cx(styles['scroller'], props.class)} tabindex="0" aria-label={props.caption}>
+    // tabindex makes the scroll region keyboard-reachable, which is required whenever a scrollable
+    // element has no focusable children. No `aria-label`: it would OVERRIDE the <caption> as the
+    // accessible name rather than add to it, naming the scroll box the same thing as the table
+    // inside it — and a <section> with no name is generic, so the table keeps its own caption.
+    <section class={cx(styles['scroller'], props.class)} tabindex="0">
       <table
         class={cx(
           styles['table'],

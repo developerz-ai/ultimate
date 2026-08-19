@@ -38,8 +38,11 @@ export interface SelectProps {
  * is also what keeps an unset field unsubmittable: that option is `disabled`.
  */
 export function Select(props: SelectProps): JSX.Element {
-  const current = props.value ?? '';
-  const matched = props.options.some((option) => option.value === current);
+  // Thunks, not setup-time reads: a prop read once at setup never tracks, so under a client Solid
+  // runtime the selection would freeze at whatever the first render saw (ThemeToggle already feeds
+  // this a signal). Every other value-formatting component in the package wraps its read the same way.
+  const current = (): string => props.value ?? '';
+  const matched = (): boolean => props.options.some((option) => option.value === current());
   return (
     <span class={cx(styles['wrap'], styles[`size-${props.size ?? 'md'}`], props.class)}>
       <select
@@ -54,7 +57,7 @@ export function Select(props: SelectProps): JSX.Element {
         onChange={props.onChange}
       >
         {props.placeholder === undefined ? null : (
-          <option value="" disabled selected={!matched}>
+          <option value="" disabled selected={!matched()}>
             {props.placeholder}
           </option>
         )}
@@ -62,7 +65,7 @@ export function Select(props: SelectProps): JSX.Element {
           <option
             value={option.value}
             disabled={option.disabled === true}
-            selected={option.value === current}
+            selected={option.value === current()}
           >
             {option.label}
           </option>

@@ -5,13 +5,27 @@
 import { describe, expect, test } from 'bun:test';
 import type { IconGlyph } from '../components/icon-glyph';
 import { iconElements } from '../components/icon-glyph';
+import { UI_ERROR_CODES } from '../errors';
 import {
   GLYPHS_DIR,
   identifierFor,
+  LUCIDE_ICON_NODES_URL,
   LUCIDE_VERSION,
   moduleSource,
   parseIconNodes,
+  SAFE_ATTR_VALUE,
 } from './build-icons';
+
+/** `expect(fn).toThrow(Class)` passes in Bun 1.3.14 when `fn` merely RETURNS an error, so the
+ * code is read off the caught value instead (issue #150). */
+function caught(run: () => unknown): { code?: unknown; cause?: unknown; fix?: unknown } {
+  try {
+    run();
+  } catch (error) {
+    return error as { code?: unknown };
+  }
+  throw new Error('expected the call to throw, and it returned');
+}
 
 const NODES = JSON.stringify({
   search: [
@@ -36,6 +50,37 @@ describe('parseIconNodes', () => {
   test('a JSON array is not an icon table', () => {
     expect(() => parseIconNodes('[]')).toThrow(/icon-nodes\.json/);
   });
+
+  // Malformed upstream data is X_UI_INVALID_VALUE, never X_UI_RUNTIME_MISSING: the operator who
+  // reads "is not available in this environment" goes and audits their environment for a fault
+  // that is in the file they just downloaded. The generator's real environment faults — no
+  // network, no biome binary — keep the runtime code.
+  test('bad upstream data is an invalid VALUE, not a missing runtime', () => {
+    expect(caught(() => parseIconNodes('[]')).code).toBe(UI_ERROR_CODES.invalidValue);
+    expect(caught(() => parseIconNodes(JSON.stringify({ empty: [] }))).code).toBe(
+      UI_ERROR_CODES.invalidValue,
+    );
+  });
+
+  test('an attribute value that is not glyph geometry never reaches the generator', () => {
+    const hostile = JSON.stringify({
+      evil: [['path', { d: "M0 0');console.log('pwned" }]],
+    });
+    const error = caught(() => parseIconNodes(hostile));
+    expect(error.code).toBe(UI_ERROR_CODES.invalidValue);
+    expect(String(error.fix)).toContain('bun run --filter @ultimat3/ui icons');
+  });
+});
+
+describe('SAFE_ATTR_VALUE', () => {
+  test('accepts glyph geometry and refuses anything that could close a string literal', () => {
+    expect(SAFE_ATTR_VALUE.test('m21 21-4.34-4.34')).toBe(true);
+    expect(SAFE_ATTR_VALUE.test('12 2 2 7 12 12 22 7 12 2')).toBe(true);
+    expect(SAFE_ATTR_VALUE.test('currentColor')).toBe(true);
+    expect(SAFE_ATTR_VALUE.test("M0 0');x()//")).toBe(false);
+    expect(SAFE_ATTR_VALUE.test('M0 0"')).toBe(false);
+    expect(SAFE_ATTR_VALUE.test('M0 0\\')).toBe(false);
+  });
 });
 
 describe('identifierFor', () => {
@@ -53,7 +98,38 @@ describe('moduleSource', () => {
     expect(source).toContain('Lucide contributors, ISC');
     expect(source).toContain("import type { IconGlyph } from '../../components/icon-glyph';");
     expect(source).toContain('export const iconSearch: IconGlyph = [');
-    expect(source).toContain("['path', { d: 'M0 0' }],");
+    // Double quotes here, single quotes on disk: `format()` runs Biome over the written files, so
+    // the committed set is byte-identical to what it was before the escaping changed.
+    expect(source).toContain('[\'path\', { d: "M0 0" }],');
+  });
+
+  /**
+   * The value is network-fetched data on its way into a TypeScript module that every app importing
+   * that icon EXECUTES at import — a code sink, not an attribute sink. The payload below is a
+   * WORKING escape from the old `'${value}'`: it closes the string, the object and the array
+   * element, runs a statement, and reopens all three so the module still parses. Evaluated here
+   * rather than pattern-matched, because a substring assertion is satisfied by escaping that only
+   * looks right.
+   */
+  test('an attribute value is emitted as DATA, never as source it could break out of', () => {
+    const payload = "x' }], (globalThis.__uiIconPwned = true), ['path', { d: 'y";
+    const source = moduleSource('evil', [['path', { d: payload }]]);
+    const js = new Bun.Transpiler({ loader: 'ts' })
+      .transformSync(source)
+      .replace('export const', 'const');
+
+    const glyph: unknown = new Function(`${js}\nreturn iconEvil;`)();
+
+    expect(Reflect.get(globalThis, '__uiIconPwned')).toBeUndefined();
+    expect(glyph).toEqual([['path', { d: payload }]]);
+  });
+
+  test('a value carrying a quote or a backslash round-trips as the same string', () => {
+    for (const value of ["a'b", 'a\\b', 'a\nb', 'a"b']) {
+      const source = moduleSource('probe', [['path', { d: value }]]);
+      const literal = /\{ d: (.*) \}/.exec(source)?.[1] ?? '';
+      expect(JSON.parse(literal)).toBe(value);
+    }
   });
 });
 
@@ -77,11 +153,56 @@ describe('the committed glyph set', () => {
       // The namespace is `unknown`-valued on purpose: `iconElements` is what decides whether
       // what the module exported is renderable, and it throws when it is not.
       if (iconElements(glyph as IconGlyph).length === 0) broken.push(`${name}: empty glyph`);
+      for (const [, attrs] of glyph as IconGlyph) {
+        for (const [key, value] of Object.entries(attrs)) {
+          // The guard, measured against the artwork it has to let through: all 1767 committed
+          // glyphs pass, so `SAFE_ATTR_VALUE` refuses no legitimate Lucide icon.
+          if (!SAFE_ATTR_VALUE.test(value)) broken.push(`${name}: ${key}="${value}"`);
+        }
+      }
     }
     expect(broken).toEqual([]);
   });
 
   test('the pinned upstream version is a real semver, so a bump is visible in the diff', () => {
     expect(LUCIDE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});
+
+// Axiom 4: a `fix:` is what its reader RUNS. Everything that decides whether running it helps —
+// which URL served the file, which pinned version published the glyph — is the CAUSE's job, so
+// these assert the two halves separately rather than that the sentence reads well.
+describe('the generator’s errors are instructions', () => {
+  /** What a shell would execute: the line up to the `#` that opens a comment. */
+  const runnable = (fix: unknown): string => String(fix).split('#')[0]?.trim() ?? '';
+
+  const ICONS = 'bun run --filter @ultimat3/ui icons';
+
+  test('every fix line is the generator’s command, with nothing in front of it to read past', () => {
+    for (const bad of [
+      '[]',
+      JSON.stringify({ empty: [] }),
+      JSON.stringify({ evil: [['path', { d: "M0 0');x" }]] }),
+    ]) {
+      expect(runnable(caught(() => parseIconNodes(bad)).fix)).toBe(ICONS);
+    }
+  });
+
+  test('the URL that served the wrong file is named in the cause, not the fix', () => {
+    const error = caught(() => parseIconNodes('[]'));
+    expect(String(error.cause)).toContain(LUCIDE_ICON_NODES_URL);
+    expect(String(error.fix)).not.toContain(LUCIDE_ICON_NODES_URL);
+  });
+
+  test('data the pin cannot fix says which pin, and the fix says to move it first', () => {
+    const error = caught(() =>
+      parseIconNodes(JSON.stringify({ evil: [['path', { d: "M0 0');x" }]] })),
+    );
+    // Re-running against the same pin repeats this error, so the cause has to name the pin.
+    expect(String(error.cause)).toContain(LUCIDE_VERSION);
+    expect(String(error.fix)).toContain('LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts');
+    expect(String(caught(() => parseIconNodes(JSON.stringify({ empty: [] }))).cause)).toContain(
+      LUCIDE_VERSION,
+    );
   });
 });

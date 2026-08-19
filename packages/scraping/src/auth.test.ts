@@ -121,6 +121,16 @@ describe('unit · validate decides, and an invalid session is burned before the 
 });
 
 describe('unit · a refused credential is never presented twice', () => {
+  test('reuse: false still refuses — the tombstone is read BEFORE the reuse decision', async () => {
+    const store = memorySessionStore();
+    // `reuse: false` means "do not restore this session", never "present the rejected credential
+    // again": a second wrong password is what locks the account, and the record is the only thing
+    // that knows it was wrong.
+    const plan = planFor<unknown>({ login: () => Promise.resolve(), store, reuse: false });
+    await markRefused(plan);
+    expect(await codeOf(restorableSession(plan))).toBe('X_SCRAPE_AUTH_FAILED');
+  });
+
   test('the refusal is written down, and the NEXT attempt fails before reaching a login form', async () => {
     const store = memorySessionStore();
     const plan = planFor<unknown>({ login: () => Promise.resolve(), store });

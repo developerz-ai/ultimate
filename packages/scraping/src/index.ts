@@ -25,6 +25,12 @@ export type { CdpTargetInit } from './cdp-target';
 export { CDP_DRIVER, cdpTarget } from './cdp-target';
 export type { Deadline, ScrapeClock, TestScrapeClock } from './clock';
 export { deadline, systemScrapeClock, testClock, throwIfAborted } from './clock';
+export {
+  cookieDomainMatches,
+  cookieHeaderFor,
+  cookiePathMatches,
+  cookiesForUrl,
+} from './cookie-scope';
 export type { ScrapeDriver, ScrapeSession, SessionInit } from './driver';
 export { resetScrapeDriver, scrapeDriver, setScrapeDriver } from './driver';
 export type { BrowserOptions, LocalBrowserOptions, RemoteBrowserOptions } from './driver-cdp';

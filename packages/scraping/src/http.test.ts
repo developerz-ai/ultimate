@@ -142,3 +142,48 @@ describe('unit · reading a response', () => {
     expect(await response.json()).toEqual({ id: 7 });
   });
 });
+
+describe('unit · the session jar is EVERY domain the browser touched, so scoping is a security rule', () => {
+  const hostOnly = (domain: string, path = '/') => ({
+    ...EMPTY_SESSION,
+    cookies: [{ name: 'sid', value: 'SECRET', domain, path, httpOnly: true, secure: true }],
+  });
+
+  test('a host-only bank.test cookie never reaches evilbank.test — a suffix is not a domain', async () => {
+    const { http, calls } = transport({ status: 200, body: '{}' }, hostOnly('bank.test'), ['*']);
+    await http.request('https://evilbank.test/a');
+    expect(calls[0]?.headers.cookie).toBeUndefined();
+  });
+
+  test('a host-only bank.test cookie never reaches sub.bank.test — host-only means the host', async () => {
+    const { http, calls } = transport({ status: 200, body: '{}' }, hostOnly('bank.test'), ['*']);
+    await http.request('https://sub.bank.test/a');
+    expect(calls[0]?.headers.cookie).toBeUndefined();
+  });
+
+  test('the cookie DOES reach the host it belongs to', async () => {
+    const { http, calls } = transport({ status: 200, body: '{}' }, hostOnly('bank.test'), ['*']);
+    await http.request('https://bank.test/a');
+    expect(calls[0]?.headers.cookie).toBe('sid=SECRET');
+  });
+
+  test('a domain-scoped .bank.test cookie DOES reach a subdomain, and still not evilbank.test', async () => {
+    const { http, calls } = transport({ status: 200, body: '{}' }, hostOnly('.bank.test'), ['*']);
+    await http.request('https://sub.bank.test/a');
+    await http.request('https://evilbank.test/a');
+    expect(calls[0]?.headers.cookie).toBe('sid=SECRET');
+    expect(calls[1]?.headers.cookie).toBeUndefined();
+  });
+
+  test('a cookie scoped to /admin is not sent to /public', async () => {
+    const { http, calls } = transport(
+      { status: 200, body: '{}' },
+      hostOnly('bank.test', '/admin'),
+      ['*'],
+    );
+    await http.request('https://bank.test/public');
+    await http.request('https://bank.test/admin/users');
+    expect(calls[0]?.headers.cookie).toBeUndefined();
+    expect(calls[1]?.headers.cookie).toBe('sid=SECRET');
+  });
+});

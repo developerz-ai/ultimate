@@ -13,6 +13,7 @@ import type { InterceptRules } from './intercept';
 import { interceptVerdict } from './intercept';
 import type { HttpRecording } from './recording';
 import type { NetworkRing } from './rings';
+import type { RobotsGate } from './robots';
 
 export type HttpRecordingLookup = (
   method: string,
@@ -25,6 +26,12 @@ export interface RecordedHttpInit {
   readonly network: NetworkRing;
   readonly clock: ScrapeClock;
   readonly source: string;
+  /**
+   * The SAME gate the page leg holds. Without it a hybrid scrape whose JSON endpoint is
+   * `Disallow:`ed replayed green offline and threw terminal `X_SCRAPE_ROBOTS_DISALLOWED` on its
+   * first real attempt — the identical argument the host rule below already makes for itself.
+   */
+  readonly robots?: RobotsGate | undefined;
   readonly maxAgeMs?: number | undefined;
 }
 
@@ -46,6 +53,7 @@ export function recordedHttp(init: RecordedHttpInit): ScrapeHttp {
       if (interceptVerdict(url, 'fetch', init.rules) !== 'allow') {
         throw hostBlocked(url, init.rules.allowHosts);
       }
+      await init.robots?.assertAllowed(url);
       const found = await init.lookup(method, url);
       if (found === undefined) throw fixtureMissing(`${method} ${url}`, init.source);
       if (init.maxAgeMs !== undefined && found.recordedAt !== undefined) {

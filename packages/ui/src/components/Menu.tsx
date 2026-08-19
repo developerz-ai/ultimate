@@ -2,8 +2,9 @@
 // Distinct from Select — a menu runs commands, it does not hold a form value.
 
 import type { JSX } from 'solid-js';
-import { createRovingTabindex, useId } from '../a11y';
+import { createFocusTrap, createRovingTabindex, useId } from '../a11y';
 import { cx } from '../cx';
+import { MENU_ITEM_SELECTOR, tabStopIndex } from '../roving';
 import { useUi } from '../theme/context';
 import { solid } from '../theme/solid-adapter';
 import styles from './Menu.module.scss';
@@ -42,11 +43,14 @@ export function Menu(props: MenuProps): JSX.Element {
   let root: HTMLDivElement | undefined;
   let list: HTMLDivElement | undefined;
 
+  // Disabled items are excluded from BOTH answers — the list arrows walk and the one item that
+  // carries the tab stop — because `focus()` on a disabled button silently does nothing.
   const onKeyDown = createRovingTabindex(
     () =>
-      list === undefined ? [] : Array.from(list.querySelectorAll<HTMLElement>('[role="menuitem"]')),
+      list === undefined ? [] : Array.from(list.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR)),
     { orientation: 'vertical', dir: ui.dir },
   );
+  const tabStop = (): number => tabStopIndex(props.items);
 
   rt.createEffect(() => {
     if (!props.open || typeof document === 'undefined') return;
@@ -58,9 +62,15 @@ export function Menu(props: MenuProps): JSX.Element {
     };
     document.addEventListener('pointerdown', onPointerDown, true);
     document.addEventListener('keydown', onEscape);
+    // Closing unmounts the panel with focus inside it, which resets focus to <body> and makes the
+    // next Tab restart at the top of the document. The trap moves focus in on open and hands it
+    // back to the trigger on close, so Escape returns the user where they were.
+    const trap = list === undefined ? undefined : createFocusTrap(list);
+    trap?.activate();
     rt.onCleanup(() => {
       document.removeEventListener('pointerdown', onPointerDown, true);
       document.removeEventListener('keydown', onEscape);
+      trap?.release();
     });
   });
 
@@ -93,7 +103,7 @@ export function Menu(props: MenuProps): JSX.Element {
               type="button"
               role="menuitem"
               class={cx(styles['item'], item.destructive === true && styles['destructive'])}
-              tabindex={index === 0 ? 0 : -1}
+              tabindex={index === tabStop() ? 0 : -1}
               disabled={item.disabled === true}
               onClick={() => {
                 item.onSelect();

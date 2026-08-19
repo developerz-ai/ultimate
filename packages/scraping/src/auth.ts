@@ -64,7 +64,12 @@ export interface ScrapeAuth<I> {
   validate?(context: AuthContext<I>): Promise<boolean>;
   /** Where sessions live. Omitted means no reuse at all — every run logs in. */
   readonly store?: ScrapeSessionStore | undefined;
-  /** Distinguishes two sessions for one scrape and one tenant — a second account, say. */
+  /**
+   * The DISCRIMINATOR inside this tenant's key space — a second account, say. It is one segment of
+   * `sessionKeyFor({ scrape, tenant, discriminator })` and never the whole key: a value that
+   * replaced the key would put two tenants declaring the same account name on one authenticated
+   * session. Sanitised like every other segment, so it cannot escape the key space either.
+   */
   key?(input: I): string;
   /** Reuse a stored session. `false` forces a fresh login every run. Defaults to `true`. */
   readonly reuse?: boolean | undefined;
@@ -106,10 +111,14 @@ export async function restorableSession<I>(
   plan: AuthPlanInput<I>,
 ): Promise<SessionState | undefined> {
   const store = plan.auth?.store;
-  if (store === undefined || plan.auth?.reuse === false) return undefined;
+  if (store === undefined) return undefined;
   const found = await store.load(plan.key);
   if (found === undefined) return undefined;
+  // The tombstone is read BEFORE `reuse` is honoured. `reuse: false` says "do not restore this
+  // session"; it does not say "present the rejected credential again", and reading it first meant
+  // a `reuse: false` scrape walked a refused password back to the login form on every requeue.
   if (found.refusedAt !== undefined) throw authFailed(plan.scrape, `refused at ${found.refusedAt}`);
+  if (plan.auth?.reuse === false) return undefined;
   const maxAge = plan.auth?.maxAge;
   if (maxAge !== undefined) {
     const age = plan.clock.now().getTime() - new Date(found.savedAt).getTime();

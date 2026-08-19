@@ -129,3 +129,18 @@ export function invalidValueError(kind: string, value: unknown, expected: string
     fix: `pass ${expected} — parse or validate the value in the loader, not in the component`,
   });
 }
+
+/**
+ * The icon generator was handed upstream data it cannot turn into a glyph module. No new code:
+ * malformed data is exactly what X_UI_INVALID_VALUE already names, and a code is stable forever
+ * once shipped. It is NOT X_UI_RUNTIME_MISSING, which says a host capability is absent and sends
+ * an operator to audit their environment for a fault that is in the file they just downloaded.
+ * The generator's environment faults — no network, no biome binary — keep that code.
+ */
+export function invalidIconDataError(found: string, fix: string): UiError {
+  return new UiError({
+    code: UI_ERROR_CODES.invalidValue,
+    cause: `lucide icon data ${found}`,
+    fix,
+  });
+}

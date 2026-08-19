@@ -95,6 +95,11 @@ export interface YieldGuardInput {
  * exists to prevent, one level up.
  */
 export async function guardYield(input: YieldGuardInput): Promise<void> {
+  // No `expect` is no baseline either, deliberately: with no floor and no drop rule there is
+  // nothing deciding whether a run was good, so recording it would let a stretch of silent
+  // zero-row runs become the median an `expect` added later is measured against. The cost is that
+  // `maxDrop` needs `MIN_BASELINE_RUNS` runs after it is declared before it can fire — a delay,
+  // not a hole. `expect.test.ts` pins both halves.
   if (input.expect === undefined) return;
   const window = input.expect.window ?? DEFAULT_YIELD_WINDOW;
   const history =

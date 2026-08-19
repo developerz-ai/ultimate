@@ -1,9 +1,11 @@
-// Form shell. Owns the one thing every form needs and always forgets: a
-// top-of-form error summary that is focusable and announced on submit.
+// Form shell. Owns the one thing every form needs and always forgets: a top-of-form error summary
+// that is announced (the Alert inside it is a live region) and that TAKES focus when an error
+// arrives — the focus move is what makes the summary reachable at all, since its id is internal.
 
 import type { JSX } from 'solid-js';
 import { useId } from '../a11y';
 import { cx } from '../cx';
+import { solid } from '../theme/solid-adapter';
 import { Alert } from './Alert';
 import styles from './Form.module.scss';
 import type { SpaceStep } from './variants';
@@ -25,7 +27,17 @@ export interface FormProps {
 }
 
 export function Form(props: FormProps): JSX.Element {
+  const rt = solid();
   const summaryId = useId('form-error');
+  let summary: HTMLDivElement | undefined;
+
+  // `tabindex="-1"` alone was a focus target nothing ever aimed at: `summaryId` is internal, so no
+  // caller could move focus here, and the component never did either. A failed submit that leaves
+  // focus on the button leaves a keyboard user to hunt for what went wrong.
+  rt.createEffect(() => {
+    if (props.error !== undefined) summary?.focus();
+  });
+
   return (
     <form
       class={cx(styles['form'], props.class)}
@@ -38,7 +50,14 @@ export function Form(props: FormProps): JSX.Element {
       onSubmit={props.onSubmit}
     >
       {props.error === undefined ? null : (
-        <div id={summaryId} tabindex="-1" class={styles['summary']}>
+        <div
+          ref={(el: HTMLDivElement) => {
+            summary = el;
+          }}
+          id={summaryId}
+          tabindex="-1"
+          class={styles['summary']}
+        >
           <Alert tone="danger" title={props.errorTitle}>
             {props.error}
           </Alert>

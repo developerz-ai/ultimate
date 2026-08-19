@@ -27,7 +27,14 @@ export function Pagination(props: PaginationProps): JSX.Element {
   const ui = useUi();
   const previous = (): string => props.labelPrevious ?? ui.t(UI_KEYS.previous);
   const next = (): string => props.labelNext ?? ui.t(UI_KEYS.next);
-  const cursorMode = (): boolean => props.page === undefined || props.totalPages === undefined;
+  // A cursor present means cursor mode, exactly as `page`'s own doc says. The inverted form —
+  // "cursor mode when a number is MISSING" — silently dropped the cursor and paged by number the
+  // moment a caller passed both, which is the shape a list that knows its total naturally has.
+  const cursorMode = (): boolean =>
+    props.nextCursor !== undefined ||
+    props.prevCursor !== undefined ||
+    props.page === undefined ||
+    props.totalPages === undefined;
 
   return (
     <nav class={cx(styles['pagination'], props.class)} aria-label={ui.t(UI_KEYS.page)}>

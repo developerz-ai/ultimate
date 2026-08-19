@@ -156,7 +156,10 @@ describe('unit · the login path', () => {
         secrets: ['SHOP_PASSWORD'],
         auth: {
           store,
-          key: () => 'org-1/orders',
+          // A DISCRIMINATOR, not the key: the tenant and the scrape name are the framework's to
+          // put in front of it (`sessionKeyFor`), so two tenants naming one account never share
+          // an authenticated session.
+          key: () => 'account-a',
           login: async ({ page }) => {
             logins += 1;
             await page.goto(URL_A);
@@ -173,7 +176,7 @@ describe('unit · the login path', () => {
     const report = (await handle.run(runArgs({ page: 1 }))) as ScrapeReport<{ id: string }>;
     expect(logins).toBe(1);
     expect(report.rows).toHaveLength(2);
-    expect(await store.load('org-1/orders')).toBeDefined();
+    expect(await store.load('no-tenant/orders/account-a')).toBeDefined();
     delete process.env.SHOP_PASSWORD;
   });
 
@@ -183,7 +186,7 @@ describe('unit · the login path', () => {
     const definition = define({
       auth: {
         store,
-        key: () => 'org-1/orders',
+        key: () => 'account-a',
         login: () => {
           logins += 1;
           // What a body throws when the site says "wrong password".

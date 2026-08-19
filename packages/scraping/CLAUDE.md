@@ -51,6 +51,10 @@ and a value cannot leak. `driver-parity.test.ts` runs the real driver's code pat
 | the fake never drifts from the real driver | `driver-parity.test.ts` runs one suite against `fake`, `fixture` and the puppeteer path, and pins the one honest divergence (no layout engine offline, so no box and no hit-target) |
 | an unrecorded request throws | `html-target.ts` and `http-recorded.ts` — an offline driver that fell through to the network would make a green suite secretly live |
 | `allowHosts` is enforced, never advisory | `intercept.ts` is the single decision, asked by every driver AND by the HTTP leg, before a byte leaves |
+| robots is enforced on BOTH legs | `http-recorded.ts` takes the gate too (`http-recorded.test.ts`) — the offline leg is the one every test runs, so a `Disallow:`ed endpoint that only the live leg refuses is a rule no suite can see |
+| a session cookie reaches one host | `cookie-scope.ts`, RFC 6265 §5.1.3/§5.1.4, pinned in `cookie-scope.test.ts`. The jar is `browser.cookies()` — every domain the session touched — so the boundary is a dot in both directions: `evilbank.test` is not `bank.test`, and a host-only cookie is not a subdomain's |
+| a launched browser is never orphaned | `driver-cdp.ts`'s `opened()` rolls back with `browser.close()` on any throw between the launch and the `WedgeGuard` (`driver-cdp.test.ts`) — `runScrape`'s `finally` cannot close a session `open()` never returned |
+| restored `localStorage` lands on its ORIGIN | `cdp-target.ts` defers the storage half to the first navigation that reaches `session.origin` (`cdp-target.test.ts`); `restore()` runs on `about:blank`, which has no storage to write to and is not the site |
 | Chrome is never needed for `bun test` | `fakeBrowser`/`fakePage` run on Bun's own `HTMLRewriter` |
 
 ## Logging
@@ -66,7 +70,12 @@ never a value.
 - `secrets:` on the definition holds **names**; values are resolved in the worker, per attempt.
 - A `Secret` typed into a page **taints** it: `screenshot()` and `pdf()` then refuse
   (`X_SCRAPE_SECRET_EXPOSED`). Pixels cannot be redacted after the fact; `page.html()` can, and is.
-- A session is credential material: tenant-scoped key, never logged, never an artifact.
+- A session is credential material: tenant-scoped key, never logged, never an artifact. The key is
+  ALWAYS `sessionKeyFor({ scrape, tenant, discriminator })` — `auth.key` supplies the
+  discriminator and never the whole key, or two tenants naming one account share one authenticated
+  session, and a key that is also a storage path goes unsanitised (`scrape-run.test.ts`).
+- The refusal tombstone is read BEFORE `reuse` is honoured: `reuse: false` means "do not restore
+  this session", never "present the rejected credential again" (`auth.ts`).
 - `X_SCRAPE_AUTH_FAILED` is registered `terminal`, so `executeJob` dead-letters it on the attempt
   that threw it (`packages/jobs/src/retry-classification.ts` — `nextRetryForError`). It ALSO writes
   a refusal into the session record, which is a different distance: `restorableSession()` reads it

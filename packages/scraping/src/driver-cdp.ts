@@ -14,8 +14,10 @@ import type { CdpBrowserLike, CdpLauncherLike } from './cdp-port';
 import { CDP_DRIVER, cdpTarget } from './cdp-target';
 import type { ScrapeDriver, ScrapeSession, SessionInit } from './driver';
 import { browserUnreachable, cdpAttachFailed, remoteRequired } from './error-throws';
+import { isScrapeError } from './errors';
 import { httpOverFetch } from './http';
 import { pageOverTarget } from './page-over-target';
+import type { ScrapeTarget } from './target';
 import { createWedgeGuard } from './watchdog';
 
 export { CDP_DRIVER } from './cdp-target';
@@ -45,19 +47,37 @@ export interface RemoteBrowserOptions extends BrowserOptions {
   readonly cdpUrl: string;
 }
 
+/**
+ * The page, its interception and its restored session — or a closed browser and the failure.
+ * A throw from here is classified before it leaves: `newPage()` and `setRequestInterception()` are
+ * outside `cdpTarget`'s own `guard()`, so a bare library `Error` would otherwise reach the job's
+ * retry classifier with no code at all.
+ */
+async function opened(browser: CdpBrowserLike, init: SessionInit): Promise<ScrapeTarget> {
+  try {
+    const page = await browser.newPage();
+    const target = await cdpTarget({ page, browser, rules: init.rules, clock: init.clock });
+    if (init.restore !== undefined) await target.restore(init.restore);
+    return target;
+  } catch (thrown) {
+    // Best effort, and it may never replace the failure that caused it: a close that also throws
+    // would hide the tab limit or the refused interception the reader actually needs.
+    await browser.close().catch(() => undefined);
+    throw isScrapeError(thrown) ? thrown : browserUnreachable(CDP_DRIVER, thrown);
+  }
+}
+
 async function sessionOver(
   browser: CdpBrowserLike,
   init: SessionInit,
   options: BrowserOptions,
 ): Promise<ScrapeSession> {
-  const page = await browser.newPage();
-  const target = await cdpTarget({
-    page,
-    browser,
-    rules: init.rules,
-    clock: init.clock,
-  });
-  if (init.restore !== undefined) await target.restore(init.restore);
+  // Acquire, then roll back on ANY throw — the shape `releaseBoot` uses in `packages/cli/src/
+  // serve.ts`. Between the launch and the `WedgeGuard` below, nothing else holds this browser:
+  // `runScrape`'s `finally { session.close() }` never runs for a session `open()` did not return,
+  // so a tab limit, a refused interception or a restore that threw left a real Chrome process —
+  // or a remote session somebody is billing for — running per attempt, unattributed.
+  const target = await opened(browser, init);
   const guard = createWedgeGuard({
     clock: init.clock,
     what: `scrape "${init.name}"`,
