@@ -210,6 +210,10 @@ export const createPipeline = (deps: PipelineDeps): Pipeline => {
         config,
         method: raw.method.toUpperCase(),
         pathname: url.pathname,
+        // The caller-went-away half of `ctx.signal`, which `context.ts` documented and nothing
+        // wired: without it a closed tab kept its handler, its pool slot and its vendor
+        // connection alive for the whole `requestTimeoutMs`.
+        clientSignal: raw.signal,
       });
       const forwarded = {
         headers: raw.headers,

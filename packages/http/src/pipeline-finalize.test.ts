@@ -12,8 +12,11 @@ import {
   resetMetrics,
 } from '@ultimat3/core';
 import { defineHttpConfig } from './config';
+import type { RequestContext } from './context';
+import { recoverWith } from './finalize';
 import type { ServerHooks } from './hooks';
 import { createPipeline } from './pipeline';
+import type { UltimateRequest } from './request';
 import { text } from './response';
 import { createRouter, type Route } from './router';
 
@@ -351,5 +354,37 @@ describe('a throwable that fights being read', () => {
     expect(body['code']).toBe('X_INTERNAL');
     expect(body['cause']).toBe('a object that cannot be rendered');
     expect(reporter.events).toHaveLength(1);
+  });
+});
+
+/**
+ * The line `recoverWith` ENDS on, which sat outside its own `try`. Reached directly, because a
+ * pipeline can no longer produce a value that breaks it: `statusFor` read a status off
+ * `Object.prototype` until 3.0.x, so an app throwing `{ code: 'toString' }` handed `new Response`
+ * a function and this exact line raised a `RangeError` — out of the one frame with nothing above
+ * it, so `handle()` rejected and the socket got whatever the runtime printed. `error-map.ts` fixes
+ * that read; this pins that the frame itself is guarded, for the next reader that is not total.
+ */
+describe("recoverWith's own fallback is inside the guard", () => {
+  test('a context whose fields refuse to be read still answers a 500 problem document', async () => {
+    const ctx = { requestId: 'r-1', error: new TypeError('the original defect') };
+    Object.defineProperty(ctx, 'url', {
+      get: (): never => {
+        throw new TypeError('the url is not for you');
+      },
+    });
+
+    const response = await recoverWith(undefined)(
+      {} as unknown as UltimateRequest,
+      ctx as unknown as RequestContext,
+    );
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get('content-type')).toContain('application/problem+json');
+    const body = await bodyOf(response);
+    expect(body['code']).toBe('X_INTERNAL');
+    // The `fix` names where the swallowed renderer failure went, because this document cannot
+    // carry it: an instruction that stops at "something failed" is not one.
+    expect(body['fix']).toContain('pipeline.problem_failed');
   });
 });

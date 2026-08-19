@@ -85,7 +85,7 @@ describe('builtinImageDriver', () => {
 
   test('a string that names no format is the same failure, and the fix lists the real ones', async () => {
     const driver = builtinImageDriver({ read: reader(OPAQUE).read });
-    // 'jpg' is the near-miss `extensionOf()` hands back: one code, and the fix names 'jpeg'.
+    // 'jpg' is the near-miss a filename hands back: one code, and the fix names 'jpeg'.
     await expect(
       driver.transform({ src: '/img/hero.png', width: 32, format: 'jpg' }),
     ).rejects.toMatchObject({ code: 'X_IMAGE_UNSUPPORTED', fix: expect.stringContaining('jpeg') });

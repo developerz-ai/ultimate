@@ -46,6 +46,9 @@ export {
   DEFAULT_CONTENT_TYPE,
   DEFAULT_LIST_LIMIT,
   etagOf,
+  // Exported for the same reason `toBytes` is: a driver written outside this package has to
+  // refuse a `limit` the same way both shipped ones do, or it is a third answer to one question.
+  resolveListLimit,
   sha256Base64,
   toBytes,
 } from './driver';

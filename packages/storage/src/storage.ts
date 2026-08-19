@@ -40,12 +40,18 @@ export function defineStorage(config: StorageConfig): Storage {
       fix: `set storage.default to one of: ${names.join(', ')} in app.config.ts`,
     });
   }
+  // A Map, and the SAME own-keys read `names` above is built from. `config.disks[wanted]` walked
+  // the prototype chain, so `disk('constructor')` answered with the `Object` function and the next
+  // `.put()` was a bare `TypeError` inside app code — `diskUnknown` unreachable for `constructor`,
+  // `toString`, `valueOf`, `hasOwnProperty` and `__proto__`. One function was already answering
+  // one question two ways: `default: 'constructor'` is refused above, off `Object.keys`.
+  const disks = new Map(Object.entries(config.disks));
   const storageInstance: Storage = {
     defaultDisk,
     diskNames: Object.freeze([...names]),
     disk(name?: string): StorageDriver {
       const wanted = name ?? defaultDisk;
-      const driver = config.disks[wanted];
+      const driver = disks.get(wanted);
       if (driver === undefined) throw diskUnknown(wanted, names);
       return driver;
     },

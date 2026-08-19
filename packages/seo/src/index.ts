@@ -30,7 +30,6 @@ export type {
 } from './images';
 export {
   DEFAULT_WIDTHS,
-  extensionOf,
   FORMAT_ORDER,
   IMAGE_QUERY_KEYS,
   inlineBlur,

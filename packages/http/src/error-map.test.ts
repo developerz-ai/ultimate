@@ -118,6 +118,36 @@ describe('an app declares the status for its own codes', () => {
   });
 });
 
+// Both tables are object literals, so every name on `Object.prototype` reads as a member of them.
+// `ERROR_STATUS['toString']` was a FUNCTION where a status belongs, and `new Response(body, {
+// status })` raised `RangeError: The status provided (0) must be 101 or in the range of [200, 599]`
+// — inside `recoverWith`'s fallback, the one frame with nothing above it, so `Pipeline.handle`
+// REJECTED against its own contract and the socket got whatever the runtime printed. A `code` is a
+// string off a throwable this package did not build; an app that throws `{ code: 'toString' }` is
+// all it takes. `scripts/error-map.ts` reads the same table through `Object.hasOwn` already.
+describe('a code that is also a name on Object.prototype', () => {
+  afterEach(resetErrorStatus);
+
+  const INHERITED = ['toString', 'constructor', 'valueOf', 'hasOwnProperty', '__proto__'];
+
+  test('is an ordinary unmapped code: 500, a string title, and no function anywhere', () => {
+    for (const code of INHERITED) {
+      expect(statusFor(code), `statusFor(${code})`).toBe(500);
+      const facts = factsOf({ code, message: 'x' });
+      expect(typeof facts.title, `title for ${code}`).toBe('string');
+      expect(typeof facts.status, `status for ${code}`).toBe('number');
+      expect(() => new Response(null, { status: facts.status })).not.toThrow();
+    }
+  });
+
+  test('and the app may declare a status for it, because the framework maps no such code', () => {
+    // The refusal read `the framework already maps it to function toString() { [native code] }`,
+    // so an app whose own code collided with a prototype name could never register one at all.
+    registerErrorStatus({ toString: 401 });
+    expect(statusFor('toString')).toBe(401);
+  });
+});
+
 describe('factsOf', () => {
   test('keeps code, cause and fix from an UltimateError', () => {
     const facts = factsOf(routeNotFound('GET', '/missing'));

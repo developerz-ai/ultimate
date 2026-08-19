@@ -11,7 +11,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { frozenClock } from '@ultimat3/core';
+import { frozenClock, isUltimateError } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
 import { localDriver } from './driver-local';
 import { s3Driver } from './driver-s3';
@@ -19,6 +19,10 @@ import { bytesOf, catchError, codeOf, FakeS3Client, s3Error } from './driver-s3-
 import { SIGNED_URL_PARAMS } from './signed-url';
 
 const KEY = 'org/org-1/a.txt';
+
+/** The code off ANY coded throwable: a refused list limit is core's `X_INVARIANT`, not a `StorageError`. */
+const anyCodeOf = (caught: unknown): string =>
+  isUltimateError(caught) ? caught.code : `not-a-coded-error: ${String(caught)}`;
 const clock = frozenClock('2026-07-26T12:00:00.000Z');
 
 let root = '';
@@ -61,6 +65,53 @@ describe('a REFUSED listing is a refusal on both disks, never an empty page', ()
     const unwritten = localDriver({ root: `${root}/never-created`, signingSecret: 's', clock });
     expect(await unwritten.list()).toEqual({ objects: [], truncated: false });
     expect(await s3.list()).toEqual({ objects: [], truncated: false });
+  });
+});
+
+describe('a listing returns every key the key rules allow, dot-prefixed ones included', () => {
+  test('both disks list a dot-prefixed key, and the local disk still hides its sidecars', async () => {
+    // `Bun.Glob('**/*')` never matches a dot-prefixed entry, so the local listing silently omitted
+    // every object with one — while `put`/`get`/`exists` handled them normally, `isSafeKey` calls
+    // them legal (`.metadata/a.json` is pinned in `path.test.ts`) and the s3 listing returns them.
+    // `sweepOrphans` pages through `list({ prefix: pendingPrefix(orgId) })`, so a pending upload
+    // named `.x.png` was invisible to it and the sweep answered `{ deleted: [...], failed: [] }`
+    // over bytes still on disk — a false erasure report arriving by omission instead of a
+    // swallowed catch, which is the exact outcome `list()`'s error classification exists to stop.
+    const keys = ['plain.txt', '.hidden.txt', 'org/o1/.hidden.txt', 'org/o1/pending/.x.png'];
+    for (const key of keys) await local.put(key, bytesOf('x'));
+    expect((await local.list()).objects.map((object) => object.key).sort()).toEqual(
+      [...keys].sort(),
+    );
+    expect((await local.list({ prefix: 'org/o1/pending/' })).objects.map((o) => o.key)).toEqual([
+      'org/o1/pending/.x.png',
+    ]);
+
+    // The skip one line below the glob: `put()` writes `<root>/.meta/<key>.json` beside every
+    // object, and with the glob finally yielding dot-prefixed entries that skip is the only thing
+    // keeping the sidecar namespace out of the object namespace. It was unreachable until now.
+    expect((await local.list()).objects.some((object) => object.key.startsWith('.meta'))).toBe(
+      false,
+    );
+
+    fake.listResult = { contents: [{ key: 'org/o1/.hidden.txt', size: 1, eTag: 'e' }] };
+    expect((await s3.list()).objects.map((object) => object.key)).toEqual(['org/o1/.hidden.txt']);
+  });
+});
+
+describe('a list limit is a page size or a refusal, never a silently empty page', () => {
+  test('both disks refuse limit: 0 rather than reporting a complete, empty listing', async () => {
+    // The local disk sliced `[0, 0)` and then dropped its own `truncated` — `truncated && last !==
+    // undefined` is false when the page is empty — so `list({ limit: 0 })` over a full disk read as
+    // "complete, and there is nothing here". The s3 disk handed `maxKeys: 0` to the provider, so
+    // the two disagreed about the same call. `sweepOrphans` pages through `list()`, so a page that
+    // is empty AND claims to be complete is the false erasure report one call to the left.
+    await local.put(KEY, bytesOf('x'));
+    for (const limit of [0, -1, 1.5, Number.NaN]) {
+      expect(anyCodeOf(await catchError(() => local.list({ limit })))).toBe('X_INVARIANT');
+      expect(anyCodeOf(await catchError(() => s3.list({ limit })))).toBe('X_INVARIANT');
+    }
+    expect(await local.list({ limit: 1 })).toMatchObject({ truncated: false });
+    expect(fake.listCalls.every((call) => (call.maxKeys ?? 1) > 0)).toBe(true);
   });
 });
 

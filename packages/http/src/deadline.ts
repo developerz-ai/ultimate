@@ -52,9 +52,21 @@ export const startDeadline = (input: {
   readonly config: HttpConfig;
   readonly method: string;
   readonly pathname: string;
+  /**
+   * The INBOUND `Request.signal` — the caller-went-away half of `ctx.signal`. Optional because a
+   * context can exist without a request (a job, a test), never because a server may skip it.
+   */
+  readonly clientSignal?: AbortSignal | undefined;
 }): Deadline => {
   const timeoutMs = resolveTimeoutMs(input.headers, input.config);
-  if (timeoutMs <= 0) return NO_DEADLINE;
+  const client = input.clientSignal;
+  // The caller's own signal, not the shared never-aborted one: with no deadline configured every
+  // request used to share a module-level singleton, so a handler that added an `abort` listener
+  // accumulated one per request for the life of the process — and no request could learn its
+  // caller had gone. `NO_DEADLINE` is left for the callers that genuinely have no client.
+  if (timeoutMs <= 0) {
+    return client === undefined ? NO_DEADLINE : { ...NO_DEADLINE, signal: client };
+  }
 
   const controller = new AbortController();
   let fire: (() => void) | undefined;
@@ -71,7 +83,12 @@ export const startDeadline = (input: {
   }, timeoutMs);
 
   return {
-    signal: controller.signal,
+    // Both halves, or the doc on `ctx.signal` is half true — which it was: nothing in this package
+    // read the inbound signal, so a browser closing the tab left the request holding its pool slot
+    // and its vendor connection for the whole budget, for a caller that is gone. `expired` stays
+    // the TIMER's alone: it is what answers the socket, and a socket the caller already closed has
+    // nothing to answer.
+    signal: client === undefined ? controller.signal : AbortSignal.any([client, controller.signal]),
     expired,
     timeoutMs,
     clear: () => clearTimeout(timer),

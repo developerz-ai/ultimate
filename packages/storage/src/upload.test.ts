@@ -68,6 +68,25 @@ describe('validateUpload', () => {
     expect(result.checksum.length).toBeGreaterThan(0);
   });
 
+  // The ORDER the doc comment states, pinned: key, size, type, checksum. It said "size, key, type,
+  // checksum" while the body asserted the key first, so a caller reading the comment expected
+  // X_STORAGE_TOO_LARGE for a candidate that is both unsafe and oversized. Which constraint a
+  // rejected upload reports is what the client retries on, so the order is behaviour, not prose —
+  // and the key comes first because a key nothing may store makes the other three moot.
+  test('reports the key before the size when a candidate violates both', () => {
+    const code = codeOf(() =>
+      validateUpload(
+        {
+          key: '../../etc/passwd',
+          declaredContentType: 'image/png',
+          bytes: genuinePng(4096),
+        },
+        IMAGES,
+      ),
+    );
+    expect(code).toBe('X_STORAGE_PATH_UNSAFE');
+  });
+
   test('normalises the declared type before matching it', () => {
     const result = validateUpload(
       {

@@ -327,3 +327,77 @@ describe('the csrf stage', () => {
     expect(await response.text()).toBe('written');
   });
 });
+
+// --- H12: `handle` answers, whatever the app threw ---------------------------------------------
+// `statusFor` read `ERROR_STATUS[code]` off the PROTOTYPE chain, so a throwable carrying
+// `code: 'toString'` produced a function where a status belongs. `new Response(body, { status })`
+// then raised a `RangeError` inside `recoverWith`'s fallback — outside its own `try`, in the one
+// frame with nothing above it — so `Pipeline.handle` REJECTED, `server.ts`'s `dispatch` rejected
+// with it, and the socket got whatever the runtime printed. A `code` is a string read off a value
+// this package did not build: one app throwing an object literal is the whole exploit.
+describe('a throwable whose code is a name on Object.prototype', () => {
+  const INHERITED = ['toString', 'constructor', 'valueOf', 'hasOwnProperty'];
+
+  test('is answered with the coded 500, never a rejected handle()', async () => {
+    for (const code of INHERITED) {
+      const pipeline = pipelineFor(() => {
+        // Deliberately not an `UltimateError`: the defect is that nothing here built the value.
+        throw { code, message: 'thrown by the app' };
+      });
+      const response = await call(pipeline);
+      expect(response.status, `status for ${code}`).toBe(500);
+      expect(((await response.json()) as { code: string }).code).toBe(code);
+    }
+  });
+});
+
+// --- H13: `ctx.signal` is BOTH halves it is documented as ---------------------------------------
+// `context.ts` promised "aborted when the caller goes away or the request deadline passes" and
+// only the deadline half existed: nothing in the package read the inbound `Request.signal`, so a
+// browser closing the tab left the handler running for the whole `requestTimeoutMs` — 30s of a DB
+// pool slot and a vendor connection held for a caller that is gone.
+describe('a caller that goes away', () => {
+  const abortable = (): {
+    pipeline: ReturnType<typeof createPipeline>;
+    client: AbortController;
+  } => {
+    const client = new AbortController();
+    const pipeline = pipelineFor(async () => {
+      // The tab closes mid-handler; the handler then reaches the next checkpoint, exactly as an
+      // app is told to write it (`fetch(url, { signal: ctx.signal })`, `throwIfAborted(ctx)`).
+      client.abort();
+      await Bun.sleep(0);
+      throwIfAborted();
+      return json({ finished: true });
+    });
+    return { pipeline, client };
+  };
+
+  test('aborts ctx.signal, so the handler unwinds with X_ABORTED instead of finishing', async () => {
+    const { pipeline, client } = abortable();
+    const response = await pipeline.handle(
+      new Request('http://app.test/probe', { signal: client.signal }),
+      { role: 'web' },
+    );
+    expect(response.status).toBe(499);
+    expect(((await response.json()) as { code: string }).code).toBe('X_ABORTED');
+  });
+
+  test('and with requestTimeoutMs: 0 too — no deadline is not "no signal"', async () => {
+    const client = new AbortController();
+    const pipeline = pipelineFor(
+      async () => {
+        client.abort();
+        await Bun.sleep(0);
+        throwIfAborted();
+        return json({ finished: true });
+      },
+      { requestTimeoutMs: 0 },
+    );
+    const response = await pipeline.handle(
+      new Request('http://app.test/probe', { signal: client.signal }),
+      { role: 'web' },
+    );
+    expect(response.status).toBe(499);
+  });
+});

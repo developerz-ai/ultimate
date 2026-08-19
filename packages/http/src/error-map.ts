@@ -200,6 +200,19 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
 export const DEFAULT_STATUS = 500;
 
 /**
+ * The framework's row for a code, or `undefined` — through `Object.hasOwn`, never `[code]`.
+ *
+ * `code` is a STRING read off a throwable this package did not build, and `ERROR_STATUS` is an
+ * object literal, so it holds every name on `Object.prototype`: an app throwing
+ * `{ code: 'toString' }` read a FUNCTION out of this table. `statusFor` handed it to
+ * `new Response(body, { status })` — a `RangeError` raised inside `recoverWith`'s fallback, the
+ * one frame with nothing above it, so `Pipeline.handle` REJECTED against its own contract.
+ * `scripts/error-map.ts` reads the same table this way already.
+ */
+const frameworkStatus = (code: string): number | undefined =>
+  Object.hasOwn(ERROR_STATUS, code) ? ERROR_STATUS[code] : undefined;
+
+/**
  * Statuses for codes the APP owns. The table above is closed — it has to be, it is the
  * framework's own contract — and every code outside it fell to 500, so a wrong password was an
  * incident: `pipeline.ts` reports `status >= 500` to the error monitor, and a user's typo paged
@@ -224,8 +237,12 @@ export const registerErrorStatus = (statuses: Readonly<Record<string, number>>):
     }
     // The framework's own codes are not negotiable: an app that could map `X_UNAUTHENTICATED`
     // to 200 would be an app whose 401 contract every client already depends on, changed.
-    if (ERROR_STATUS[code] !== undefined) {
-      throw errorStatusInvalid(code, `the framework already maps it to ${ERROR_STATUS[code]}`);
+    // Through `frameworkStatus`, so this refusal cannot answer for a code the framework does not
+    // own: `registerErrorStatus({ toString: 401 })` was rejected with a cause reading `the
+    // framework already maps it to function toString() { [native code] }`.
+    const framework = frameworkStatus(code);
+    if (framework !== undefined) {
+      throw errorStatusInvalid(code, `the framework already maps it to ${framework}`);
     }
     const existing = APP_ERROR_STATUS.get(code);
     if (existing !== undefined && existing !== status) {
@@ -241,8 +258,10 @@ export const resetErrorStatus = (): void => APP_ERROR_STATUS.clear();
 // Framework table first: `registerErrorStatus` already refuses those codes, so the order is
 // belt-and-braces — but it is the belt that makes "the framework's statuses are fixed" true
 // even if a future caller reaches the map some other way.
+// `APP_ERROR_STATUS` is a `Map`, which is why its half never had `frameworkStatus`'s defect —
+// prefer one for anything keyed by a value a caller chose.
 export const statusFor = (code: string): number =>
-  ERROR_STATUS[code] ?? APP_ERROR_STATUS.get(code) ?? DEFAULT_STATUS;
+  frameworkStatus(code) ?? APP_ERROR_STATUS.get(code) ?? DEFAULT_STATUS;
 
 /** Everything a renderer (problem+json, overlay, terminal) needs from a throwable. */
 export interface ErrorFacts {
@@ -281,7 +300,12 @@ export const factsOf = (error: unknown): ErrorFacts => {
   // Falling through to `message` here shipped the code twice: `X_FORBIDDEN: policy denied… — …`.
   const title =
     str(error, 'title') ??
-    HTTP_ERROR_TITLES[code as keyof typeof HTTP_ERROR_TITLES] ??
+    // `Object.hasOwn` for `statusFor`'s reason, one table over: `code: 'toString'` read the
+    // function off the prototype and put it in `title`, which is rendered into the problem
+    // document and the terminal.
+    (Object.hasOwn(HTTP_ERROR_TITLES, code)
+      ? HTTP_ERROR_TITLES[code as keyof typeof HTTP_ERROR_TITLES]
+      : undefined) ??
     str(error, 'message') ??
     'unhandled server error';
   // The last fallback is the only one that touches the throwable whole, and every throwable a

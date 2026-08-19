@@ -6,11 +6,11 @@
 import { type Clock, isLocal, resolveEnvironment, stringField, systemClock } from '@ultimat3/core';
 import {
   DEFAULT_CONTENT_TYPE,
-  DEFAULT_LIST_LIMIT,
   etagOf,
   type ListOptions,
   type ListPage,
   type PutOptions,
+  resolveListLimit,
   type SignedUrlOptions,
   type StorageBody,
   type StorageDriver,
@@ -297,13 +297,27 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
 
     async list(listOptions?: ListOptions): Promise<ListPage> {
       const prefix = listOptions?.prefix ?? '';
-      const limit = listOptions?.limit ?? DEFAULT_LIST_LIMIT;
+      const limit = resolveListLimit(listOptions?.limit);
       const cursor = listOptions?.cursor;
       const keys: string[] = [];
       try {
-        for await (const entry of new Bun.Glob('**/*').scan({ cwd: root, onlyFiles: true })) {
+        // `dot: true`, and it is load-bearing: without it a glob matches no dot-prefixed entry, so
+        // every object whose key has one — `.hidden.txt`, `org/o1/pending/.x.png`, the
+        // `.metadata/a.json` `path.test.ts` pins as legal — was absent from the listing while
+        // `put`/`get`/`exists` handled it normally and the s3 listing returned it. `sweepOrphans`
+        // pages through `list()`, so those objects were swept as if they did not exist: a false
+        // erasure report by omission, which is what the classification below exists to prevent.
+        for await (const entry of new Bun.Glob('**/*').scan({
+          cwd: root,
+          onlyFiles: true,
+          dot: true,
+        })) {
           const key = entry.replaceAll('\\', '/');
-          if (key.startsWith(`${META_DIR}/`)) continue;
+          // The real filter now, not a second line of defence: the glob above yields the sidecar
+          // tree, and this is the one thing keeping `.meta/<key>.json` out of the object
+          // namespace. Folded like `assertSafeKey`'s reservation — `.META/` and `.meta/` are one
+          // directory on APFS and NTFS, and listing a key `get()` would refuse is the worse half.
+          if (key.toLowerCase().startsWith(`${META_DIR}/`)) continue;
           if (!key.startsWith(prefix)) continue;
           // The cursor IS the last key of the previous page — lexicographic order keeps it stable.
           if (cursor !== undefined && key <= cursor) continue;
@@ -332,6 +346,9 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         if (object !== undefined) objects.push(object);
       }
       const truncated = keys.length > page.length;
+      // `limit` is a positive integer, so a truncated page always HAS a last key: the guard is the
+      // type's and not a second condition. It used to be one, and `limit: 0` fell through it —
+      // an empty page reported as complete over a disk that was not.
       const last = page.at(-1);
       return truncated && last !== undefined
         ? { objects, truncated, cursor: last }

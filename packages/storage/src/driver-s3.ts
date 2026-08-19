@@ -6,10 +6,10 @@
 import { ConfigInvalidError, EnvMissingError, stringField } from '@ultimat3/core';
 import {
   DEFAULT_CONTENT_TYPE,
-  DEFAULT_LIST_LIMIT,
   type ListOptions,
   type ListPage,
   type PutOptions,
+  resolveListLimit,
   type SignedUrlOptions,
   type StorageBody,
   type StorageDriver,
@@ -306,13 +306,16 @@ export function s3Driver(options: S3DriverOptions): StorageDriver {
 
     async list(listOptions?: ListOptions): Promise<ListPage> {
       const prefix = listOptions?.prefix ?? '';
+      // Refused at the seam both drivers share, before the provider is asked: `maxKeys: 0` used to
+      // go straight through, while the local disk answered a complete-looking empty page.
+      const maxKeys = resolveListLimit(listOptions?.limit);
       // `conn()` OUTSIDE the try: a missing credential or an absent `Bun.S3Client` is this disk
       // misconfigured, and it already answers with its own code and its own fix.
       const client = conn();
       let result: S3ListResultLike;
       try {
         result = await client.list({
-          maxKeys: listOptions?.limit ?? DEFAULT_LIST_LIMIT,
+          maxKeys,
           ...(listOptions?.prefix === undefined ? {} : { prefix: listOptions.prefix }),
           ...(listOptions?.cursor === undefined ? {} : { continuationToken: listOptions.cursor }),
         });
