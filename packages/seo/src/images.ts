@@ -69,10 +69,6 @@ export interface ResponsiveImageOptions {
   urlFor?: (src: string, width: number, format?: string) => string;
 }
 
-export function extensionOf(src: string): string {
-  return (src.split('?')[0]?.split('.').pop() ?? '').toLowerCase();
-}
-
 /**
  * The one spelling of the transform query keys. `defaultUrlFor` writes them and
  * `parseImageQuery` reads them back — a literal `'w'` in one place and a literal `'w'` in the

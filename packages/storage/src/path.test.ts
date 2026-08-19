@@ -128,4 +128,21 @@ describe('the sidecar namespace is reserved', () => {
     expect(assertSafeKey('org/o1/.meta/a.json')).toBe('org/o1/.meta/a.json');
     expect(assertSafeKey('.metadata/a.json')).toBe('.metadata/a.json');
   });
+
+  // The reservation was exact-case, so `.META/a.txt.json` was a legal key that `put()` wrote to
+  // `<root>/.META/a.txt.json` — which on APFS or NTFS IS `<root>/.meta/a.txt.json`, the sidecar
+  // for object `a.txt`. The whole attack the reservation closes, spelled with a shift key.
+  // `isTenantScoped` folds for the same filesystem reason; this is that argument applied here.
+  test('a case-folded .meta is the same reserved segment', () => {
+    expect(codeOf(() => assertSafeKey('.META/a/b.json'))).toBe(UNSAFE);
+    expect(codeOf(() => assertSafeKey('.Meta/a.txt.json'))).toBe(UNSAFE);
+    expect(codeOf(() => assertSafeKey('.META'))).toBe(UNSAFE);
+  });
+
+  // The fold matches the SEGMENT, never a prefix of one: `.metadata/a.json` is asserted legal one
+  // test up, and a `startsWith` would have made this fix delete a key space the tests already pin.
+  test('and a segment that merely starts with .meta is still legal', () => {
+    expect(assertSafeKey('.METADATA/a.json')).toBe('.METADATA/a.json');
+    expect(assertSafeKey('.metaphor.txt')).toBe('.metaphor.txt');
+  });
 });

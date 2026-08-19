@@ -40,7 +40,14 @@ function unsafeReason(key: string): string | undefined {
   if (key.startsWith('/')) return 'is absolute (leading "/")';
   if (ENCODED_SEPARATOR.test(key)) return 'contains a percent-encoded separator (%2e/%2f/%5c)';
   const segments = key.split('/');
-  if (segments[0] === META_DIR) return `starts with the reserved "${META_DIR}" segment`;
+  // Case-FOLDED, exactly as `isTenantScoped` folds and for the same filesystem: `.META/a.txt.json`
+  // and `.meta/a.txt.json` are one file on APFS and NTFS, so an exact-case reservation accepted a
+  // key that writes another object's sidecar — the whole attack this reservation closes, spelled
+  // with a shift key. The whole SEGMENT is compared, never a prefix of one: `.metadata/a.json` is
+  // an ordinary key and stays one.
+  if (segments[0]?.toLowerCase() === META_DIR) {
+    return `starts with the reserved "${META_DIR}" segment`;
+  }
   for (const segment of segments) {
     if (segment.length === 0) return 'contains an empty segment ("//" or a trailing "/")';
     if (segment === '.' || segment === '..') return `contains a "${segment}" segment`;

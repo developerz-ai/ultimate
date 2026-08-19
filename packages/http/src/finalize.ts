@@ -13,6 +13,32 @@ import type { Stage } from './stages';
 export type Recover = (request: UltimateRequest, ctx: RequestContext) => Promise<Response>;
 
 /**
+ * The answer when even rendering the problem document failed. Literals and one `new Response`,
+ * calling nothing that could fail in turn — a last resort that shares a code path with the thing
+ * that just broke is not one. Restating the RFC-9457 shape here is the cost of that: the client
+ * still gets a document its parser understands, with a code it can look up.
+ */
+const lastResort = (): Response =>
+  new Response(
+    JSON.stringify({
+      type: 'https://ultimate.dev/errors/X_INTERNAL',
+      title: 'unhandled server error',
+      status: 500,
+      detail: 'the error renderer itself failed, so nothing of the original error survives here',
+      code: 'X_INTERNAL',
+      cause: 'the error renderer itself failed, so nothing of the original error survives here',
+      fix: 'grep the logs for pipeline.problem_failed — it carries the renderer failure this reply could not',
+    }),
+    {
+      status: 500,
+      headers: {
+        'content-type': 'application/problem+json; charset=utf-8',
+        'cache-control': 'no-store',
+      },
+    },
+  );
+
+/**
  * The recover stage is the single place a throw becomes a status — so a throw INSIDE it (an app's
  * `onError` sink, a `devNotices` producer) has nothing left to render it. Rethrowing would break
  * the one guarantee `handle` makes, so the problem document is built here instead, from the error
@@ -35,7 +61,21 @@ export const recoverWith =
       // uses, so the value stays redactable by key.
       logger.error('pipeline.recover_failed', { requestId: ctx.requestId, error: failure });
     }
-    return problem(ctx.error, { instance: ctx.url.pathname, requestId: ctx.requestId });
+    // INSIDE a guard, not beside it — and that is this file's whole promise. The line renders a
+    // value nobody here built, so "never throws" rested on every reader below it being total, and
+    // one was not: `statusFor` read `ERROR_STATUS['toString']` off the prototype chain and handed
+    // `new Response(body, { status })` a function, so an app throwing `{ code: 'toString' }` made
+    // `handle()` REJECT from the one frame with nothing above it. That read is fixed in
+    // `error-map.ts`; this guard is what keeps the contract from depending on the next one.
+    try {
+      return problem(ctx.error, { instance: ctx.url.pathname, requestId: ctx.requestId });
+    } catch (failure) {
+      // No `ctx` read in this branch, deliberately: it is reached because reading `ctx` or the
+      // value on it threw, so reaching for one more field is how a guard throws out of the guard.
+      // `logger.emit` degrades a hostile field per key and never rethrows.
+      logger.error('pipeline.problem_failed', { error: failure });
+      return lastResort();
+    }
   };
 
 /**

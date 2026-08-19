@@ -3,6 +3,7 @@
 // strings — a base64 round trip through JSON is how a "small" upload becomes a 33%-larger OOM —
 // and never unbounded, which is the same failure with the sender choosing the size.
 
+import { assert } from '@ultimat3/core';
 import { putTooLarge } from './errors';
 
 export type StorageBody = Uint8Array | ReadableStream<Uint8Array> | Blob;
@@ -120,6 +121,27 @@ export interface StorageDriver {
 
 export const DEFAULT_CONTENT_TYPE = 'application/octet-stream';
 export const DEFAULT_LIST_LIMIT = 1000;
+
+/**
+ * The page size a `list()` honours — refused rather than clamped when it cannot be one.
+ *
+ * At the `ListOptions` seam and not inside a driver, because the two answered a non-positive
+ * limit differently: the local disk sliced `[0, 0)` and then dropped its own `truncated` flag, so
+ * `list({ limit: 0 })` over a full disk reported a COMPLETE empty listing, while the s3 disk
+ * handed `maxKeys: 0` straight to the provider. `sweepOrphans` pages through `list()`, so a page
+ * that is empty and claims to be complete is a false erasure report — the same lie a swallowed
+ * listing error tells, one call to the left. A fraction is refused for `chunk()`'s reason: a
+ * `slice` truncates it, so the pages silently stop being the size that was asked for.
+ */
+export function resolveListLimit(limit: number | undefined): number {
+  if (limit === undefined) return DEFAULT_LIST_LIMIT;
+  assert(
+    Number.isSafeInteger(limit) && limit > 0,
+    `a list limit must be a positive integer, got ${String(limit)}: a page of zero objects cannot be told apart from a disk that has none`,
+    `pass a positive limit — disk.list({ limit: ${DEFAULT_LIST_LIMIT} }), or omit it and take DEFAULT_LIST_LIMIT`,
+  );
+  return limit;
+}
 
 /** What `toBytes` needs to refuse a body: the ceiling, and the key to name in the refusal. */
 export interface ByteLimit {

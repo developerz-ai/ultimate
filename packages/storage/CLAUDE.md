@@ -50,6 +50,33 @@ Gotchas:
   in a single `test()` per claim, so neither disk can move alone. Where the two genuinely cannot
   agree it pins the DIVERGENCE, with the reason — that is the honest form, and it still fails the
   day either half changes.
+- **The local `list()` globs with `dot: true`, and the `META_DIR` skip is the REAL filter**
+  (`As of 2026-08`). `Bun.Glob('**/*')` matches no dot-prefixed entry, so every object whose key
+  had one — `.hidden.txt`, `org/o1/pending/.x.png`, the `.metadata/a.json` `path.test.ts` pins as
+  legal — was missing from the listing while `put`/`get`/`exists` handled it normally and
+  `s3Driver.list()` returned it: the key space and the listing disagreed by construction.
+  `sweepOrphans` pages through `list()`, so those objects were reported as erased while still on
+  disk — a false erasure report by OMISSION, the same lie a swallowed listing error tells. The
+  `.meta/` skip one line below was unreachable until this landed and this file called it "a second
+  line of defence"; it is now the only thing keeping the sidecar tree out of the object namespace,
+  and it folds case for `isSafeKey`'s reason. Pinned in `driver-parity.test.ts`.
+- **A `list({ limit })` is a positive integer or a refusal** — `resolveListLimit` at the
+  `ListOptions` seam, so both disks answer one way. `limit: 0` used to slice `[0, 0)` on the local
+  disk and then drop its own `truncated` flag (`truncated && last !== undefined`, with an empty
+  page), so a paging caller read "complete, and there is nothing here" over a full disk, while the
+  s3 disk handed `maxKeys: 0` to the provider. Core's `assert` (`X_INVARIANT`), for the reason
+  `@ultimat3/seo`'s `chunk()` uses it: a bound with no code of its own is still a coded refusal.
+- **`META_DIR` is reserved case-INSENSITIVELY** (`As of 2026-08`), exactly as `isTenantScoped`
+  folds and for the same filesystem: `.META/a.txt.json` was a legal key that writes
+  `<root>/.META/a.txt.json`, which on APFS and NTFS IS `<root>/.meta/a.txt.json` — the sidecar for
+  object `a.txt` — so a caller able to name a key rewrote another object's recorded `contentType`.
+  The whole SEGMENT is compared, never a prefix: `.metadata/a.json` is an ordinary key and stays
+  one, and `path.test.ts` pins both halves.
+- **`disk(name)` resolves through a `Map`, never `config.disks[name]`.** The bracket read walked
+  the prototype chain, so `disk('constructor')` handed back the `Object` function and the next
+  `.put()` was a bare `TypeError` — `X_STORAGE_DISK_UNKNOWN` unreachable for `constructor`,
+  `toString`, `valueOf`, `hasOwnProperty` and `__proto__`, in a function whose own
+  `default:` check already read `Object.keys`.
 - **`list()` is idempotent for an EMPTY disk and for nothing else** (`As of 2026-08`) — exactly
   `delete()`'s rule, one call to the left, and both drivers broke it in opposite directions. The
   local one caught EVERYTHING and answered `{ objects: [], truncated: false }`, so `EACCES` on the
@@ -113,7 +140,8 @@ Gotchas:
   itself a legal key, so an uploader could rewrite another object's recorded `contentType` to
   `text/html` and have a route serve attacker HTML from the app's origin. Reserved in
   `assertSafeKey`, so it holds for S3 too — a key valid on one driver and refused on another is two
-  key rules. The `list()` skip stays as a second line of defence.
+  key rules, and the reservation folds case — see above. The `list()` skip is not a second line of
+  defence but the only one: the glob yields the sidecar tree.
 - **`localDriver` refuses to construct outside development without a usable signing secret**
   (`X_ENV_MISSING`, borrowed from core). Usable means neither the `signingSecret` option nor
   `STORAGE_SIGNING_SECRET` is missing, empty **or** the published `DEV_SIGNING_SECRET` — pasting

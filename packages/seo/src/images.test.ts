@@ -174,3 +174,20 @@ describe('the width ceiling', () => {
     expect(parseImageQuery(new URLSearchParams('w=1920'))).toEqual({ width: 1920 });
   });
 });
+
+/**
+ * The same rule `DESCRIPTION_MIN_LENGTH` and `checkBudgets` were deleted under, applied to a
+ * helper: `extensionOf` was exported from `index.ts` with no caller anywhere in the tree — not in
+ * this package, not in `render`, `cli` or either tracked app. A published symbol nothing calls is
+ * a second way to answer a question this package does not ask (`parseImageQuery` reads the FORMAT
+ * off the query, never off the path), and `meta.test.ts` pins the exported bounds for the reason
+ * this pins the barrel: re-adding one is a failing test, not a review comment.
+ */
+describe('the barrel carries no callerless helper', () => {
+  test('extensionOf is gone from the public surface', async () => {
+    const exported = Object.keys(await import('./index'));
+    expect(exported).not.toContain('extensionOf');
+    // The control: this test reads a real barrel, not an empty object it mistook for one.
+    expect(exported).toContain('parseImageQuery');
+  });
+});

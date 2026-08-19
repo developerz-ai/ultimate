@@ -170,7 +170,11 @@ export function contentTypeMatches(declared: string, sniffed: string): boolean {
   return false;
 }
 
-/** Throws the first violated constraint. Order is cheapest-first: size, key, type, checksum. */
+/**
+ * Throws the first violated constraint, in this order: key, size, type, checksum. The key comes
+ * before the size because a key nothing may store makes the other three moot, and which
+ * constraint a rejected upload reports is what the client retries on — `upload.test.ts` pins it.
+ */
 export function validateUpload(
   candidate: UploadCandidate,
   policy: UploadPolicy = uploadPolicy(),

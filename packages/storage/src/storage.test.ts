@@ -87,6 +87,26 @@ describe('disk()', () => {
     expect(error?.fix).toContain('app.config.ts');
   });
 
+  // `config.disks[wanted]` walked the PROTOTYPE chain, so `disk('constructor')` answered with the
+  // `Object` function and the next `.put()` was a bare `TypeError` from inside app code — the
+  // opposite of "throws rather than lazily inventing a disk behind your back". `defineStorage`'s
+  // own `names.includes(default)` check reads `Object.keys`, so `default: 'constructor'` was
+  // refused while `disk('constructor')` was not: one function, two answers to one question.
+  test('a name off Object.prototype is an unknown disk, not a function', () => {
+    defineStorage({ disks: { uploads, media } });
+    for (const name of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__']) {
+      let caught: unknown;
+      try {
+        disk(name);
+      } catch (error) {
+        caught = error;
+      }
+      expect(isStorageError(caught) ? caught.code : `no-throw for ${name}`).toBe(
+        'X_STORAGE_DISK_UNKNOWN',
+      );
+    }
+  });
+
   test('using storage before defineStorage is a config error, not undefined', () => {
     let caught: unknown;
     try {

@@ -1,5 +1,7 @@
-// @ultimat3/seo error codes. SEO in Ultimate is enforced, not documented: these
-// are build errors, so every one names the exact route file and the exact fix.
+// @ultimat3/seo error codes. Every one names the exact route file and the exact edit, because an
+// SEO rule that cannot say which route broke it is a rule nobody acts on. What they are NOT, `As
+// of 2026-08`, is a build gate: no step of `x verify` calls the asserts that throw them (see
+// `README.md`), so they fail the app that calls one itself and nothing else.
 
 import { registerErrorCodes, UltimateError } from '@ultimat3/core';
 // errors.ts <-> images.ts: images.ts throws imageQueryInvalid() and this file spells its fix

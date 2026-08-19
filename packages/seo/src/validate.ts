@@ -142,7 +142,12 @@ function duplicates(index: Map<string, string[]>, field: string): MetaIssue[] {
   return out;
 }
 
-/** Fails the build on the first issue. `x verify` calls this. */
+/**
+ * Throws on the first issue. `x verify` does NOT call this — `As of 2026-08` nothing outside this
+ * package imports it, and wiring it is a `HostCheck` on an existing step in
+ * `packages/cli/src/cmd-verify.ts`. Today it fails an app that calls it itself, which is what
+ * `README.md` says and what this line claimed the opposite of.
+ */
 export function assertMeta(report: MetaValidationReport): void {
   const first = report.issues[0];
   if (first === undefined) return;

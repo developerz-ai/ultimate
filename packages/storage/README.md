@@ -50,6 +50,12 @@ The etag follows the same rule: a listed object with no sidecar reports `etag: '
 answering otherwise means reading and hashing the whole object — which is what the local `list()`
 used to do, once per sidecar-less row, sequentially. `get()` hashes out of bytes it already holds.
 
+**A listing returns every key the key rules allow**, dot-prefixed segments included
+(`.hidden.txt`, `org/o1/pending/.x.png`) — the local glob was blind to them until 2026-08, so a
+disk answered `exists()` true and `list()` nothing for the same object. **`limit` is a positive
+integer or a refusal** (`X_INVARIANT`, at the `ListOptions` seam): `limit: 0` used to read back as
+a complete, empty page on the local disk and as `maxKeys: 0` on s3.
+
 ## `put()` is for objects that fit in memory
 
 `put()` buffers the whole body — size and checksum have to be known before the object exists —

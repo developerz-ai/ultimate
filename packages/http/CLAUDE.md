@@ -55,8 +55,16 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   a caller may SHORTEN it with `x-request-timeout-ms`, never lengthen it. Two halves, both needed:
   the abort is what cooperative code unwinds on, and the race in `execute` is what answers the
   socket when a handler never looked at the signal. `X_TIMEOUT` is borrowed (core's concept) and
-  already mapped to 504. Always `deadline.clear()` in the `finally` — a live timer keeps the event
-  loop from going idle, so a process that answered everything still refuses to exit.
+  already mapped to 504. **`ctx.signal` is the deadline OR the caller going away**, `As of
+  2026-08`: `pipeline.ts` hands `startDeadline` the inbound `Request.signal` and the two are joined
+  with `AbortSignal.any`, which is what `context.ts` had documented and nothing wired — a closed
+  tab held its handler, its pool slot and its vendor connection for the whole 30s. `expired` stays
+  the timer's alone: it answers the SOCKET, and a caller that hung up has no socket to answer.
+  With `requestTimeoutMs: 0` the caller's signal is handed through as-is rather than the shared
+  never-aborted singleton, which every such request used to share — one `abort` listener per
+  request, accumulating for the life of the process. Always `deadline.clear()` in the `finally` —
+  a live timer keeps the event loop from going idle, so a process that answered everything still
+  refuses to exit.
 - **`admit` is the second stage, and it refuses before ANY work.** `isDraining()` had no reader in
   this package while this file claimed the layer answered 503 on it; past `config.maxInflight`
   (1000, `0` disables) a request is shed `X_OVERLOADED` with `retry-after`. Both set the header on
@@ -203,6 +211,23 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   comes off the throwable through core's `stringField`. Never spell either read inline again:
   `String(x)`, `${x}` and a bare property read on a caught value are all the same defect, and
   `error-render.ts` names seven prior instances.
+- **A table keyed by a `code` is read with `Object.hasOwn`, never `[code] !== undefined`** (`As of
+  2026-08`). `code` is a string off a throwable this package did not build, so `ERROR_STATUS` and
+  `HTTP_ERROR_TITLES` — object literals, and therefore holders of every name on
+  `Object.prototype` — answered `'toString'`, `'constructor'`, `'valueOf'` and `'hasOwnProperty'`
+  with a FUNCTION. `statusFor` handed that to `new Response(body, { status })`, a `RangeError`
+  raised inside `recoverWith`'s fallback, and `handle()` rejected: the same defect class as the
+  reads above, arriving through a lookup instead of a property. `registerErrorStatus` had the third
+  copy, refusing an app code named `toString` with a cause reading `the framework already maps it
+  to function toString() { [native code] }`. `scripts/error-map.ts` reads this table correctly and
+  always has. `APP_ERROR_STATUS` is a `Map`, which is why it never had the bug — prefer one for
+  anything keyed by a value a caller chose.
+- **`recoverWith`'s fallback is INSIDE its `try`.** `return problem(ctx.error, …)` sat beside the
+  guard, so the file whose one promise is "never throws, by construction" rested on every reader
+  below that line being total. The degraded answer is a literal `problem+json` document naming
+  `X_INTERNAL`, built with no call that could fail in turn, and the renderer's own failure goes to
+  the log as `pipeline.problem_failed` — a last resort sharing a code path with what just broke is
+  not one.
 - **The memory rate-limit store is bounded, and the eviction order is part of the guarantee.**
   The key falls back to the connection address (`rateLimitKey`), so a scan rotating through an
   IPv6 /64 mints one entry per request — an unbounded map hands the flood the process. Every

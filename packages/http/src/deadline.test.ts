@@ -73,3 +73,49 @@ describe('startDeadline', () => {
     expect(deadline.signal.aborted).toBe(false);
   });
 });
+
+// The other half of `ctx.signal`, and the one that was documented and never wired: `context.ts`
+// promised "aborted when the caller goes away OR the request deadline passes", nothing in the
+// package read the inbound `Request.signal`, and a browser closing the tab left the request
+// running for the full 30s budget — holding the DB pool slot and the vendor connection for a
+// caller that is gone, which is the exact cost this file exists to stop.
+describe('the caller going away', () => {
+  const start = (requestTimeoutMs: number, clientSignal?: AbortSignal) =>
+    startDeadline({
+      headers: new Headers(),
+      config: config(requestTimeoutMs),
+      method: 'GET',
+      pathname: '/slow',
+      ...(clientSignal === undefined ? {} : { clientSignal }),
+    });
+
+  test('a client abort aborts the request signal, long before the budget', () => {
+    const client = new AbortController();
+    const deadline = start(30_000, client.signal);
+    expect(deadline.signal.aborted).toBe(false);
+    client.abort(new Error('the tab was closed'));
+    expect(deadline.signal.aborted).toBe(true);
+    deadline.clear();
+  });
+
+  test('and the timer still fires for a caller that stays', async () => {
+    const client = new AbortController();
+    const deadline = start(5, client.signal);
+    const outcome = await deadline.expired?.catch((error: unknown) => error);
+    expect((outcome as { code: string }).code).toBe('X_TIMEOUT');
+    expect(deadline.signal.aborted).toBe(true);
+    deadline.clear();
+  });
+
+  // With no deadline configured EVERY request used to share one module-level, never-aborted
+  // signal, so a handler adding an `abort` listener accumulated them for the life of the process
+  // — and no request could ever learn its caller had gone.
+  test("timeoutMs 0 hands back the caller's OWN signal, never a shared singleton", () => {
+    const first = new AbortController();
+    const second = new AbortController();
+    expect(start(0, first.signal).signal).toBe(first.signal);
+    expect(start(0, second.signal).signal).not.toBe(start(0, first.signal).signal);
+    first.abort();
+    expect(start(0, first.signal).signal.aborted).toBe(true);
+  });
+});

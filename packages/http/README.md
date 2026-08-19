@@ -59,6 +59,7 @@ What the lifecycle refuses on the caller's behalf, `As of 2026-08`:
 | `trustProxy: true` with no `trustedProxyHops` | `X_TRUST_PROXY_UNSET` at `defineHttpConfig`. **Breaking, `As of 2026-08`**: `trustProxy` now defaults to `false`, and `x-forwarded-for` is read at `entries.length - hops` — never at `[0]`, which is whatever the client typed |
 | a credentialed unsafe method that cannot be shown to be same-origin | `X_CSRF_BLOCKED` (403). `sec-fetch-site: same-origin`, `Origin` equal to this app, or an `Origin` in `cors.origins` — anything else is refused before the body is read |
 | a request past `requestTimeoutMs` (30s) | `ctx.signal` aborts and the socket is answered `X_TIMEOUT` (504); a caller may shorten the deadline with `x-request-timeout-ms`, never lengthen it |
+| the caller going away mid-request | `ctx.signal` aborts on the inbound `Request.signal` too, so a closed tab unwinds cooperative work instead of holding its pool slot for the rest of the budget. Both halves are one signal (`AbortSignal.any`), and `requestTimeoutMs: 0` still delivers the caller's |
 | a request while the process is draining | `X_DRAINING` (503) + `retry-after`, which is what `isDraining()` was always documented to do here and had no reader for |
 | a request past `maxInflight` (1000) | `X_OVERLOADED` (503) + `retry-after`, shed in the `admit` stage before any work |
 
