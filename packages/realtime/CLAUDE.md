@@ -311,6 +311,33 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   double presence membership, double fanout — until the tab closed. `#socket` is nulled before the
   close so the corpse's `onClose` takes its early return, and `onMessage` carries the same identity
   guard `onClose` already had.
+- **The grant is recorded BEFORE `server.upgrade`, and released on the path that never opens.**
+  Bun runs `websocket.open` SYNCHRONOUSLY inside `server.upgrade` and does not return until it has
+  (bun 1.3.14), and `open` is where `sync-node` reads the `GrantBook` for the socket's actor.
+  Recorded on the line after the upgrade — which it was — every authenticated socket on a real node
+  carried `actor: null`: `ChannelHub.#authorize` denied every topic with `X_TOPIC_FORBIDDEN`,
+  `authorize`/`visible` decided about nobody, `maxPerTenant` never applied and `hello.actorId` was
+  null. It did not self-repair, because `GrantBook.expired()` skips a grant with no `expiresAt` —
+  the shape `authenticate: async () => ({ actor })` produces. `onUngranted` is what makes the
+  correct order safe (only a `close` callback deletes a grant, and an upgrade that never took gets
+  no callback); it is REQUIRED on `UpgradeDeps`, so a second host of `handleUpgrade` cannot forget
+  it. The harness is half the rule: `sync-node-auth.test.ts`'s `upgradeTarget()` returned `true`
+  without ever calling `open`, so the bug was invisible to every test here — it now opens the socket
+  inside `upgrade()`, the way Bun does.
+- **Every `socket.send` on the node reads its answer, and what a `false` costs is decided per
+  frame.** A subscribe reply is REPAIRABLE and was the silent one: `registry.subscribe` has already
+  seated the subscription and cleared its desync mark, so a dropped snapshot left the server
+  believing a client holding no rows was in sync, and every later change reached it as a patch
+  folded onto nothing — on a healthy socket, forever. It is marked desynced, exactly as
+  `live-fanout` marks a lost patch. A `rebase`/`ack` has nothing to mark (the node keeps no
+  per-mutation state) and a client only returns an `inflight` mutation to its queue when the
+  connection dies, so an undeliverable settlement **closes the socket**: the reconnect requeues and
+  replays it under the same idempotency key, and acking a rebase that never left is the
+  rebase-before-ack order defeated one frame later. A presence roster has no repair at all — the
+  membership is already on the shared set and the client's next heartbeat re-rosters — so it is
+  logged (`sync.presence_roster_dropped`). The drain's `reconnect` frame is the socket's slot in the
+  spread and nothing re-sends it, so `drain()` returns `DrainedSocket[]` with `notified` per socket
+  and logs `sync.drain_frames_dropped`.
 - **A socket's actor comes from `createSyncNode({ authenticate })` and from nowhere else.** The node
   imports no authenticator — the app supplies one, exactly as it supplies `onMutate` — and it runs
   on the upgrade *before* `server.upgrade`, so a refused credential never costs a websocket.

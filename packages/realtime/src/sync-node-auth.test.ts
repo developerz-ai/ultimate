@@ -73,12 +73,26 @@ const ownFeed: LiveQueryDefinition = {
   },
 };
 
-/** Accepts every upgrade and remembers the data the node attached. */
-function upgradeTarget(): UpgradeTarget & { data: WsData | null } {
+/**
+ * Accepts every upgrade, remembers the data the node attached — and OPENS THE SOCKET INSIDE
+ * `upgrade()`, synchronously, before returning, which is what Bun does (measured on bun 1.3.14).
+ *
+ * This stub returned `true` and left `open` to the test, several statements later, so the node
+ * could record a socket's grant after the upgrade and still look right here: by the time a test
+ * called `node.websocket.open(...)` by hand, the book it reads was full. Under Bun it is empty,
+ * and every authenticated socket carried `actor: null`. A harness that is easier on the code than
+ * the runtime is a regression test that cannot fail.
+ */
+function upgradeTarget(node: SyncNode): UpgradeTarget & { data: WsData | null; ws: FakeWs | null } {
   return {
     data: null,
+    ws: null,
     upgrade(_request: Request, options: { data: WsData }): boolean {
       this.data = options.data;
+      const ws = new FakeWs();
+      ws.data = options.data;
+      this.ws = ws;
+      node.websocket.open(ws as unknown as SyncWs);
       return true;
     },
   };
@@ -128,7 +142,7 @@ describe('the sync node authenticates an upgrade', () => {
   test('a refused credential never becomes a websocket, and says so as a wire error', async () => {
     const { node } = nodeWith(async () => null);
     await node.start();
-    const server = upgradeTarget();
+    const server = upgradeTarget(node);
 
     const response = await node.fetch(upgradeRequest, server);
 
@@ -146,7 +160,7 @@ describe('the sync node authenticates an upgrade', () => {
       throw new Error('token service unreachable');
     });
     await node.start();
-    const server = upgradeTarget();
+    const server = upgradeTarget(node);
 
     const response = await node.fetch(upgradeRequest, server);
 
@@ -161,16 +175,15 @@ describe('the sync node authenticates an upgrade', () => {
     seenBy.length = 0;
     const { node, sockets } = nodeWith(async () => ({ actor: alice }));
     await node.start();
-    const server = upgradeTarget();
+    const server = upgradeTarget(node);
 
     expect(await node.fetch(upgradeRequest, server)).toBeUndefined();
     const data = server.data;
-    if (!data) throw new Error('the upgrade was refused');
+    const ws = server.ws;
+    if (!data || !ws) throw new Error('the upgrade was refused');
 
-    const ws = new FakeWs();
-    ws.data = data;
-    node.websocket.open(ws as unknown as SyncWs);
-
+    // Read with no `open` call of its own: the socket already exists, because `upgrade()` opened
+    // it. Which is the whole failure — the grant has to be in the book by then, not after.
     expect(sockets.get(data.socketId)?.actor).toBe(alice);
     expect(sockets.get(data.socketId)?.actorId).toBe('alice');
 
@@ -197,13 +210,10 @@ describe('the sync node authenticates an upgrade', () => {
     const { node, sockets, hub } = nodeWith(async () => ({ actor: alice }));
     hub.guard('org.*.feed', ({ actor, segments }) => actor?.orgId === segments[1]);
     await node.start();
-    const server = upgradeTarget();
+    const server = upgradeTarget(node);
     await node.fetch(upgradeRequest, server);
     const data = server.data;
     if (!data) throw new Error('the upgrade was refused');
-    const ws = new FakeWs();
-    ws.data = data;
-    node.websocket.open(ws as unknown as SyncWs);
     const socket = sockets.get(data.socketId);
     if (!socket) throw new Error('the socket was never registered');
 
@@ -226,7 +236,7 @@ describe('the sync node authenticates an upgrade', () => {
       return { actor: alice };
     });
     await node.start();
-    const server = upgradeTarget();
+    const server = upgradeTarget(node);
 
     // Past the readiness check at the top of `fetch` and parked in the app's token service.
     const upgrading = node.fetch(upgradeRequest, server);
@@ -248,14 +258,11 @@ describe('the sync node authenticates an upgrade', () => {
   test('with no authenticator the node still accepts, and every socket is anonymous', async () => {
     const { node, sockets } = nodeWith();
     await node.start();
-    const server = upgradeTarget();
+    const server = upgradeTarget(node);
 
     expect(await node.fetch(upgradeRequest, server)).toBeUndefined();
     const data = server.data;
     if (!data) throw new Error('the upgrade was refused');
-    const ws = new FakeWs();
-    ws.data = data;
-    node.websocket.open(ws as unknown as SyncWs);
 
     expect(sockets.get(data.socketId)?.actor).toBeNull();
     await node.stop();
@@ -277,13 +284,11 @@ describe('a grant the node cannot renew', () => {
       reauthenticateIntervalMs: 1,
     });
     await node.start();
-    const server = upgradeTarget();
+    const server = upgradeTarget(node);
     await node.fetch(upgradeRequest, server);
     const data = server.data;
-    if (!data) throw new Error('the upgrade was refused');
-    const ws = new FakeWs();
-    ws.data = data;
-    node.websocket.open(ws as unknown as SyncWs);
+    const ws = server.ws;
+    if (!data || !ws) throw new Error('the upgrade was refused');
     expect(sockets.get(data.socketId)).toBeDefined();
 
     await until(() => ws.closes.length > 0);
