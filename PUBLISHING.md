@@ -8,16 +8,22 @@ Releases use **OIDC trusted publishing** from GitHub Actions
 mints a short-lived token from the run's OIDC identity and attaches a provenance attestation
 automatically.
 
-**`As of 2026-08`: 29 workspaces publish; 28 are on the registry.** `@ultimat3/flags` has never been
-published — the registry answers 404, not a stale version. It is not opting out:
-`packages/flags/package.json` declares the same `publishConfig` as the other 28, and every consumer
-resolves it through the workspace, so nothing in the repo noticed. The cause was the workflow, which
-listed its `-w` flags by hand and omitted it; that list is now **derived** from
-`scripts/list-workspaces.ts`, so `flags` and every future package are in it by construction. The
-first publish of `flags` is still a human step — see
+**`As of 2026-08`: 30 workspaces publish; 29 are on the registry, all at 2.0.0.** `v2.0.0` is
+tagged and pushed and npm's `latest` is 2.0.0. **`@ultimat3/scraping` has never been published** —
+the registry answers 404, not a stale version. It is not opting out:
+`packages/scraping/package.json` declares the same `publishConfig` as the other 29, and every
+consumer resolves it through the workspace, so nothing in the repo noticed. The cause is timing, not
+the workflow: `scraping` landed after the 2.0.0 publish run, so the run never saw it. Its first
+publish is a human step — see
 [Human steps outside this file](#human-steps-outside-this-file).
 
-The count and the 404 are a snapshot and go stale the moment step 1 below is done; that the list is
+`@ultimat3/flags` was the previous instance, for the opposite reason: the workflow listed its `-w`
+flags by hand and omitted it. That list is now **derived** from `scripts/list-workspaces.ts`, so
+`flags` and every package added since are in it by construction — which is why the 2.0.0 run
+published `flags` for the first time, and why the next run will reach `scraping` and fail on it
+loudly.
+
+The counts and the 404 are a snapshot and go stale the moment step 1 below is done; that the list is
 derived is a rule and does not.
 
 ## Lockstep versioning — the rule
@@ -70,10 +76,10 @@ bun run scripts/list-workspaces.ts --json \
   | while read -r args; do npm publish $args --access public; done
 ```
 
-To bootstrap **one** package — which is what `@ultimat3/flags` needs — publish just that one:
+To bootstrap **one** package — which is what `@ultimat3/scraping` needs — publish just that one:
 
 ```sh
-npm publish -w @ultimat3/flags --access public --provenance=false
+npm publish -w @ultimat3/scraping --access public --provenance=false
 ```
 
 ## One-time: configure the trusted publisher (per package)
@@ -101,8 +107,25 @@ approval-gated environment, which is the half GitHub cannot enforce, and it must
 
 ## Human steps outside this file
 
-**`As of 2026-08` all four are done, at 2.0.0.** What follows is what each one is for and how to
-redo it, not a to-do list.
+**`As of 2026-08` steps 1 and 2 are done and steps 3 and 4 are NOT, measured against the registry.**
+`bun run scripts/trust-publishers.ts --check` answers `0/30 packages trust
+developerz-ai/ultimate/release.yml` — every one reports `X_TRUST_PUBLISHER_MISSING`. This file
+claimed all four were done until 2026-08.
+
+**That is why 2.0.0 has no provenance.** With no trusted publisher attached, the OIDC exchange has
+nothing to verify against, so the workflow cannot publish and 2.0.0 went out by hand instead: every
+`@ultimat3/*` package at 2.0.0 carries `_npmUser: sebyx07` and **no `dist.attestations`**, while
+1.1.0 and 1.2.0 carry attestations and `_npmUser: GitHub Actions`. The releases that ran through
+the workflow are the older ones. Read the state, never this sentence:
+
+```sh
+bun run scripts/trust-publishers.ts --check --json
+npm view @ultimat3/core@<version> dist.attestations
+```
+
+Step 2 is once per repository and stays done; **steps 1, 3 and 4 are once per package** and come due
+again for every package added after a release run — all three are owed for `@ultimat3/scraping`, and
+step 1 is the one that breaks a release.
 
 **Three of the four are scriptable, and this file said otherwise until 2.0.0.** Only step 2's
 *reviewer* choice is genuinely a human decision:
@@ -115,29 +138,32 @@ redo it, not a to-do list.
 | 4 · the environment ON each publisher | the same script; it passes `--environment npm-publish` |
 
 **None of them fails loudly if you skip it** — that is the whole problem, and it is why each is
-written out with what skipping it actually costs. Do them in this order: step 1 is the only one that
-breaks a release, and it breaks it *after four packages* have already published irreversibly
-(`core`, `schema`, `cache`, `db` — the publish order is tiered, and `flags` is fifth).
+written out with what skipping it actually costs. Step 1 is the only one that breaks a release, and
+it breaks it deep into the run, after packages have published irreversibly. **Step 1 is owed again**
+`As of 2026-08`: it is a per-package step, and every package added after a release run needs its own
+bootstrap before the next one.
 
-### 1. Publish `@ultimat3/flags` by hand — do this first
+### 1. Publish `@ultimat3/scraping` by hand — do this first
 
 ```sh
 npm login                                    # as an @ultimat3 org member
-npm publish -w @ultimat3/flags --access public --provenance=false
+npm publish -w @ultimat3/scraping --access public --provenance=false
 ```
 
 Then attach its trusted publisher exactly as in
 [the section above](#one-time-configure-the-trusted-publisher-per-package).
 
-**Why first.** `flags` has never been on the registry, and the workflow's publish list is now
-derived, so it is included from this release on. Trusted publishing cannot bootstrap a package that
-does not exist yet, so the workflow will fail on it.
+**Why first.** `scraping` has never been on the registry — `npm view @ultimat3/scraping` answers
+404, verified `As of 2026-08`. It landed after the 2.0.0 publish run, and the workflow's publish
+list is derived, so it is included from the next release on. Trusted publishing cannot bootstrap a
+package that does not exist yet, so the workflow will fail on it.
 
 **Cost of skipping: an irreversible partial release.** The workflow publishes tier by tier and
-aborts on the first failure. Measured against the derived list at 2.0.0, `flags` is **fifth** — so
-`@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/cache` and `@ultimat3/db` are already on the
-registry at the new version when the run dies, and npm publishes cannot be undone. You would be
-recovering by hand, with 4 of 29 packages a version ahead of the other 25.
+aborts on the first failure. Measured against the derived list `As of 2026-08`
+(`bun run scripts/release-workflow.ts --json`), `scraping` is **27th of 30**, tier 5, between `cli`
+and `testing` — so **26 packages are already on the registry** at the new version when the run dies,
+and npm publishes cannot be undone. You would be recovering by hand, with 26 of 30 packages a
+version ahead of the other 4.
 
 **A bootstrap cannot carry provenance.** `publishConfig.provenance: true` is on every package, and
 npm can only attest from CI — a local publish dies with `EUSAGE — Automatic provenance generation
@@ -146,8 +172,13 @@ not supported for provider: null`. Pass `--provenance=false` on that one invocat
 degrades them all silently. The bootstrapped version is the one version of that package with no
 attestation.
 
-**Do not "fix" this by removing `flags` from the list.** The list is derived precisely so no package
-can be silently absent again; the loud failure is the feature.
+**Do not "fix" this by removing `scraping` from the list.** The list is derived precisely so no
+package can be silently absent again; the loud failure is the feature.
+
+**This happened once already, and was closed.** `@ultimat3/flags` was the same shape — never
+published, in the derived list, fifth of 29 — and 2.0.0 closed it with exactly this command. `2.0.0`
+is `flags`' only version on the registry, so the bootstrap is visible in its version history: one
+version with no attestation, every later one with provenance.
 
 ### 2. Create the `npm-publish` environment with required reviewers
 
@@ -198,7 +229,7 @@ whether or not anyone updates this table.
 | 2 | `auth` `entity` `http` `policy` |
 | 3 | `action` `jobs` `query` `realtime` |
 | 4 | `ai` `mail` `manifest` `mcp` `pwa` `render` |
-| 5 | `admin` `cli` `testing` `ui` |
+| 5 | `admin` `cli` `scraping` `testing` `ui` |
 | 6 | `create-ultimate` (depends on `@ultimat3/cli`) |
 
 ## Ongoing releases (automated)
@@ -231,7 +262,7 @@ whether or not anyone updates this table.
 
 ### Why `--check` is a separate gate from `verify`
 
-The lockstep rule compares the 29 packages **to each other**, so 29 manifests all reading `1.2.0`
+The lockstep rule compares the 30 packages **to each other**, so 30 manifests all reading `1.2.0`
 pass `verify` while the tag says `v1.10.1` — and every publish then dies `EPUBLISHCONFLICT` on a
 version already on the registry, one package at a time, halfway through a release. `--check` anchors
 the comparison to the version read off the tag.
@@ -261,7 +292,7 @@ them halves the install: `@ultimat3/cli` 974kB → 541kB, `@ultimat3/core` 348kB
 `LICENSE` is a **real file in each package directory**, not a pointer at the repo root's copy. npm
 silently skips a `files` entry with no file behind it, so a package can declare `"license": "MIT"`,
 name `LICENSE` in `files`, and ship the grant in neither — which is what every package did until the
-gate learned to check. `As of 2026-08` all 29 carry one (`ls packages/*/LICENSE`).
+gate learned to check. `As of 2026-08` all 30 carry one (`ls packages/*/LICENSE`).
 `bun run scripts/new-package.ts` writes it, so a new package cannot regress.
 
 Both halves are enforced by `x verify`'s **package-shape** step, per axiom 3 — a published package

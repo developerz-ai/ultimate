@@ -4,7 +4,7 @@
 
 **2.0.0 is that major.** [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `2.0.0` section carries **33** entries marked `BREAKING —`, and each one changes a surface the table below covers. Read all 33 before you move a pin from 1.x — **no codemod ships with 2.0.0**, so each is a manual edit named by its entry.
 
-> **You cannot move that pin yet** `As of 2026-08`. 2.0.0 is versioned in the repository and published nowhere: `npm view @ultimat3/core version` answers **1.2.0**, and a `2.0.0` pin resolves to nothing. Read the 33 now, edit when the publish lands — it is blocked on `@ultimat3/flags`, which has never reached npm at any version ([Known gaps](Known-Gaps)).
+> **You can move that pin** `As of 2026-08`. 2.0.0 is tagged and on npm: `npm view @ultimat3/core version` answers **2.0.0**, and 29 of the 30 workspaces resolve at it. The exception is `@ultimat3/scraping`, which has never reached npm at any version — a `@ultimat3/scraping` pin resolves to nothing at 1.x or 2.x alike ([Known gaps](Known-Gaps)).
 
 ## What semver covers
 
@@ -29,7 +29,7 @@
 | Rule | Detail |
 |---|---|
 | Pinned exact versions | no `^`, no `~`, in the framework or in a generated app. A range is a silent upgrade |
-| Lockstep releases | one release bumps all 29 packages — 28 `@ultimat3/*` plus the unscoped `create-ultimate` — to the same version. One version, one commit, one tag. A mixed set is unsupported |
+| Lockstep releases | one release bumps all 30 packages — 29 `@ultimat3/*` plus the unscoped `create-ultimate` — to the same version. One version, one commit, one tag. A mixed set is unsupported |
 | Published with provenance | npm via OIDC trusted publishing |
 | Breaking changes land with codemods | if `x upgrade` cannot codemod it, the changelog carries the manual step |
 | Dependency upgrades are framework work | Solid is pinned to **`1.9.14`, the stable line** — Solid 2 is still prerelease (`2.0.0-beta.N`, DOM renderer split into `@solidjs/web`) and every app inherits whatever core this repo pins. Bumping it is a framework release, never an app-level `bun update`. There is no ArkType or Drizzle pin to carry: `@ultimat3/schema` ships dependency-free builtin validators (ArkType is an optional provider you adapt yourself) and `@ultimat3/entity` ships its own `postgresDriver()` |
