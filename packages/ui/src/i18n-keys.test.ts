@@ -46,3 +46,44 @@ describe('UI_KEYS', () => {
     expect(names.every((name) => name.length > 0)).toBe(true);
   });
 });
+
+/**
+ * The third direction, and the one the two above cannot see: a table entry that IS in the catalog
+ * and that nothing ever hands to `ui.t()`. `errorCode` and `error` sat there while `<ErrorState>`
+ * emitted the code with no label and rendered the untranslated registry title — both halves passed
+ * every assertion above, because both halves only compared two lists to each other.
+ *
+ * A key no component resolves is either dead or deliberately app-facing, and which one it is is a
+ * decision rather than a scan result — so the deliberate ones are DECLARED here and everything
+ * else fails.
+ */
+describe('every UI_KEYS entry is resolved by something', () => {
+  /**
+   * Keys this package publishes for an APP to resolve, never for a component to. Each is a default
+   * label for a control whose text is a prop the app passes. Adding a name here is a claim that no
+   * component should be rendering it.
+   */
+  const APP_FACING: readonly string[] = ['cancel', 'confirm', 'menu', 'more'];
+
+  test('a key nothing calls ui.t() with is dead, unless it is declared app-facing', async () => {
+    const files = [...new Bun.Glob('**/*.{ts,tsx}').scanSync({ cwd: import.meta.dir })].filter(
+      (file) => !file.includes('.test.'),
+    );
+    const sources = await Promise.all(
+      files.map((file) => Bun.file(`${import.meta.dir}/${file}`).text()),
+    );
+    // The call site is always `UI_KEYS.<prop>` — components read the table, never the string, which
+    // is what makes the property name the thing to look for.
+    const resolved = new Set(
+      sources.flatMap((text) => [...text.matchAll(/UI_KEYS\.(\w+)/g)].map((m) => m[1] ?? '')),
+    );
+    const unresolved = Object.keys(UI_KEYS).filter(
+      (name) => !resolved.has(name) && !APP_FACING.includes(name),
+    );
+    expect(unresolved).toEqual([]);
+  });
+
+  test('an app-facing key is still a real entry in the table', () => {
+    expect(APP_FACING.filter((name) => !Object.hasOwn(UI_KEYS, name))).toEqual([]);
+  });
+});

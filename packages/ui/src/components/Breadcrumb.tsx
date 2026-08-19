@@ -32,10 +32,15 @@ export function Breadcrumb(props: BreadcrumbProps): JSX.Element {
       <ol class={styles['list']}>
         {props.items.map((item, index) => (
           <li class={styles['item']}>
-            {item.href === undefined || index === props.items.length - 1 ? (
+            {/* POSITION decides `aria-current`, never the presence of an href: an ancestor with no
+                link is still an ancestor, and a second `aria-current="page"` in one nav announces
+                the current page on a node that is not it. A trail carries exactly one. */}
+            {index === props.items.length - 1 ? (
               <span class={styles['current']} aria-current="page">
                 {item.label}
               </span>
+            ) : item.href === undefined ? (
+              <span class={styles['text']}>{item.label}</span>
             ) : (
               <a class={styles['link']} href={linkTarget(item.href).href}>
                 {item.label}

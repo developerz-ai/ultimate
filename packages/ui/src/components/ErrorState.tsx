@@ -63,10 +63,17 @@ export function ErrorState(props: ErrorStateProps): JSX.Element {
   return (
     <div class={cx(styles['error'], props.class)} role="alert">
       <p class={styles['head']}>
-        <code class={styles['code']}>{parts().code}</code>
-        <span class={styles['title']}>{parts().title}</span>
+        {/* The heading is the ONE string here the design system owns, so it is translated;
+            `parts()` carries the error's own three, which are English by construction — a code's
+            registry title, its cause and its fix are the same text the terminal prints. */}
+        <span class={styles['title']}>{ui.t(UI_KEYS.error)}</span>
       </p>
       <dl class={styles['detail']}>
+        {/* A bare code with no label reads as noise to anyone who is not the author of the throw. */}
+        <dt>{ui.t(UI_KEYS.errorCode)}</dt>
+        <dd>
+          <code class={styles['code']}>{parts().code}</code> {parts().title}
+        </dd>
         <dt>{ui.t(UI_KEYS.errorCause)}</dt>
         <dd>{parts().cause}</dd>
         <dt>{ui.t(UI_KEYS.errorFix)}</dt>

@@ -14,6 +14,7 @@ import {
   moduleSource,
   parseIconNodes,
   SAFE_ATTR_VALUE,
+  SAFE_ICON_NAME,
 } from './build-icons';
 
 /** `expect(fn).toThrow(Class)` passes in Bun 1.3.14 when `fn` merely RETURNS an error, so the
@@ -204,5 +205,53 @@ describe('the generator’s errors are instructions', () => {
     expect(String(caught(() => parseIconNodes(JSON.stringify({ empty: [] }))).cause)).toContain(
       LUCIDE_VERSION,
     );
+  });
+});
+
+/**
+ * The map KEY is the third sink and the one that was unguarded: it becomes a filesystem path
+ * (`Bun.write(`${GLYPHS_DIR}${name}.ts`)`), a TypeScript identifier and a `//` banner comment. A
+ * traversing key writes outside the glyph directory — and `buildIcons` clears that directory
+ * first, so a poisoned key set deletes the tree and then overwrites repo files.
+ */
+describe('the icon NAME is validated before it reaches a sink', () => {
+  test('a traversing key never reaches the map', () => {
+    const hostile = JSON.stringify({ '../../index': [['path', { d: 'M0 0' }]] });
+    const error = caught(() => parseIconNodes(hostile));
+    expect(error.code).toBe(UI_ERROR_CODES.invalidValue);
+    // The `fix:` is a line its reader RUNS: the command first, the rest behind a `#`.
+    expect(String(error.fix).split('#')[0]?.trim()).toBe('bun run --filter @ultimat3/ui icons');
+    expect(String(error.cause)).toContain(LUCIDE_VERSION);
+  });
+
+  test('a key that would carry code into the emitted module is refused', () => {
+    for (const key of [
+      'a = 0; export const OWNED = ((globalThis as any).x = 1); const u',
+      'a\nexport const pwned = 1',
+      'Search',
+      'a--b',
+      '-a',
+      'a-',
+      '',
+      'a_b',
+      'a.b',
+    ]) {
+      expect(
+        caught(() => parseIconNodes(JSON.stringify({ [key]: [['path', { d: 'M0 0' }]] }))).code,
+      ).toBe(UI_ERROR_CODES.invalidValue);
+    }
+  });
+
+  test('SAFE_ICON_NAME accepts the shape the committed set actually uses', () => {
+    for (const name of ['search', 'circle-alert', 'a-arrow-down', 'square-3', 'x']) {
+      expect(SAFE_ICON_NAME.test(name)).toBe(true);
+    }
+  });
+
+  test('every committed glyph file name passes the allowlist', () => {
+    const names = [...new Bun.Glob('*.ts').scanSync({ cwd: GLYPHS_DIR })].map((f) =>
+      f.slice(0, -3),
+    );
+    expect(names.filter((name) => !SAFE_ICON_NAME.test(name))).toEqual([]);
   });
 });
