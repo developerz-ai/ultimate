@@ -60,14 +60,15 @@ Consequences of each in [`00-thesis.md`](./00-thesis.md); axiom 8 in full in [`1
 
 ## Status
 
-`As of 2026-08`: **2.0.0 is versioned, tagged and on npm.** Publication is not in lockstep with versioning, and one package is behind.
+`As of 2026-08`: **the repository is at 3.0.0 and npm's `latest` is 2.0.0.** The registry is one release behind the repository between a version bump and its publish run, which is where this commit sits. Resolve every row below rather than believing it.
 
-| Fact | State |
-|---|---|
-| Versioned | 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 30 in all — at 2.0.0 in lockstep, one commit. The first major: 33 changelog entries marked `BREAKING —`, no codemod |
-| Tagged | **yes**. `v2.0.0`, on origin |
-| Published | **yes**. `npm view @ultimat3/core version` answers `2.0.0`, and that is what `bunx create-ultimate myapp` installs today |
-| Not published | `@ultimat3/scraping` — 404 at every version, because it landed after the 2.0.0 publish run. It is 27th of 30 in the derived publish list, so the next release run dies there with 26 packages already published irreversibly; the one-time manual bootstrap is [`PUBLISHING.md`](../../PUBLISHING.md) step 1 |
+| Fact | State, `As of 2026-08-19` | Read it yourself |
+|---|---|---|
+| Versioned | 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 30 in all — at 3.0.0 in lockstep, one commit. A major: 10 changelog entries marked `BREAKING —` from a five-agent bug sweep, no codemod. 2.0.0 was the first major and carried 33 | `bun run scripts/release.ts --check 3.0.0` |
+| Tagged | `v2.0.0` is on origin; `v3.0.0` follows this commit | `git tag --list 'v3.*'` |
+| Published | **`latest` is 2.0.0** — that is what `bunx create-ultimate myapp` installs today | `npm view @ultimat3/core version` |
+| Publication holes | **none.** All 30 workspaces are on the registry. `@ultimat3/scraping` was the last one and was bootstrapped by hand at 2.0.0, exactly as `@ultimat3/flags` had been — the one-time step in [`PUBLISHING.md`](../../PUBLISHING.md) that every package needs before a trusted publisher can attach | `npm view @ultimat3/scraping version` |
+| OIDC trusted publisher | attached to all 30 on 2026-08-19, for the first time — which is why 2.0.0 carries no provenance and 3.0.0 can publish over OIDC at all | `npm view @ultimat3/core@2.0.0 dist.attestations` |
 
 Docs `00`–`15`, `18` and `19` describe what exists; `16` and `17` are design only and say so in every claim.
 

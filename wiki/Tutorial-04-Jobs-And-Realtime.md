@@ -139,7 +139,7 @@ A dead job is never filtered out of view.
 | `retry <id> --from-step <name>` | drops that step so it re-executes; everything before it replays from storage |
 | `drain --to memory\|redis\|nats` | moves `ready`/`delayed`/`suspended` jobs to another driver; enqueues on the target **before** acking the source |
 
-The Redis and NATS **job** drivers are not in 2.0.0 — each throws `X_NOT_IMPLEMENTED` behind an interface that already ships, rather than pretending to work. Postgres is the shipped driver, and it is the one `x dev` boots.
+The Redis and NATS **job** drivers are not in 3.0.0 — each throws `X_NOT_IMPLEMENTED` behind an interface that already ships, rather than pretending to work. Postgres is the shipped driver, and it is the one `x dev` boots.
 
 ## A live query
 
@@ -230,7 +230,7 @@ bunx x dev --once --port 3100
 
 Both are per-node recovery — neither run crossed NATS, so neither is a multi-node result nor a throughput figure. Detail and limits: [Realtime](Realtime).
 
-Realtime tier 3 (local-first, `persist: true`) is not in 2.0.0.
+Realtime tier 3 (local-first, `persist: true`) is not in 3.0.0.
 
 ## Next
 

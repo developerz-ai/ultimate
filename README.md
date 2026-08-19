@@ -13,11 +13,11 @@
 [![CI](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml/badge.svg)](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/bun-%E2%89%A5%201.3-black.svg?logo=bun)](https://bun.sh)
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](CHANGELOG.md)
 
 </div>
 
-> **Status: 2.0.0, tagged and on npm**, `As of 2026-08`. `v2.0.0` is tagged and pushed, and npm's `latest` is **2.0.0** — which is what `bunx create-ultimate myapp` gives you today. 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 30 in all — are **versioned** in lockstep: one version, one commit, one tag. **The first major**: [CHANGELOG.md](CHANGELOG.md)'s 2.0.0 section carries 33 entries marked `BREAKING —`, and no codemod ships with them, so each is a manual edit its entry names ([Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading)). **29 of the 30 are on the registry**: `@ultimat3/scraping` has never been published — it landed after the 2.0.0 run — so `bun add @ultimat3/scraping` answers 404 and browser automation is reachable only from a checkout. It needs the one-time manual bootstrap every package gets before a trusted publisher can attach, and it is 27th of 30 in the derived publish list, so the next release run dies there with 26 packages already published irreversibly ([PUBLISHING.md](PUBLISHING.md) step 1). 1.1.0 was the **first release published by the workflow**, over OIDC trusted publishing with provenance attached; 1.0.0 was the manual bootstrap. **2.0.0 was hand-published too** — no package has a trusted publisher attached, so the workflow's OIDC exchange has nothing to verify against, and every 2.0.0 tarball carries no attestation. Semver applies — a breaking change to a documented API needs a major. That is what the version number means: a stable API under semver, not a promise about your infrastructure.
+> **Status: 3.0.0 in the repository, 2.0.0 on npm**, `As of 2026-08`. 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 30 in all — are **versioned** in lockstep at 3.0.0: one version, one commit, one tag. **`bunx create-ultimate myapp` still gives you 2.0.0** — the `v3.0.0` tag and its publish run follow this commit, and the registry is one release behind the repository until they land. Check, never trust this line: `npm view @ultimat3/core version`. **All 30 workspaces are on the registry** `As of 2026-08-19` — `@ultimat3/scraping` was the last hole and it is closed, bootstrapped by hand at 2.0.0 (`npm publish --access public --provenance=false`), the one-time step every package needs before a trusted publisher can attach. **3.0.0 is a major**: [CHANGELOG.md](CHANGELOG.md)'s 3.0.0 section carries 10 entries marked `BREAKING —` from a five-agent bug sweep, and no codemod ships with them, so each is a manual edit its entry names ([Upgrading](https://github.com/developerz-ai/ultimate/wiki/Upgrading)). 2.0.0 was the first major and carried 33. 1.1.0 was the **first release published by the workflow**, over OIDC trusted publishing with provenance attached; 1.0.0 was the manual bootstrap. **2.0.0 was hand-published** — no package had a trusted publisher attached, so the workflow's OIDC exchange had nothing to verify against, and every 2.0.0 tarball carries no attestation. All 30 publishers were attached on 2026-08-19, for the first time, which is what makes 3.0.0 able to publish over OIDC at all ([PUBLISHING.md](PUBLISHING.md)). Semver applies — a breaking change to a documented API needs a major. That is what the version number means: a stable API under semver, not a promise about your infrastructure.
 
 ## Built by agents, for agents, maintained by agents
 
@@ -51,13 +51,13 @@ are the difference between an agent that ships and one that thrashes.
 
 Reproduce it: `bun run scripts/bench/restart-bench.ts --clients 10000 --probe-interval-ms 200` — the committed report and the run's own transcript are in [`scripts/bench/results/`](scripts/bench/results/).
 
-**Not claimed at 2.0.0:**
+**Not claimed at 3.0.0:**
 
 | Open | Where it stands |
 |---|---|
 | **Two-platform deploy proof** | 1.1.0 gave a scaffolded app a real deployable artifact — `x new` writes `apps/web/server.ts`, `prerender.ts`, a Dockerfile and `docker-compose.prod.yml`, and `ROLE=migrate` runs release-phase migrations. The **proof** is still open: the demo app on Compose **and** K8s from one image, with an invisible rolling restart, is [milestone 11](docs/idea/14-roadmap.md) and has not been demonstrated |
 | **Known gaps shipped in 1.1.0** | all four are fixed in 2.0.0 — but a fix and a proof are different things, and one of the four still lacks the proof. `x build --target binary` no longer crashes at import — the version read is lazy and `x build` passes `--define ULTIMATE_FRAMEWORK_VERSION`, and [`docker/Dockerfile`](docker/Dockerfile) passes it too and ends in `/out/app --version`, so a binary that cannot answer fails the image build rather than the first command an operator runs. The target is still unproven end to end: booting is not serving, and no scaffolded app has been compiled and served from a bare VM · `docker-compose.prod.yml` no longer pairs a published host port with `replicas` above 1: `web` and `sync` declare `replicas: 1` in all four files and each header names the two ways up, which makes the one-box ceiling declared rather than broken, not lifted · the shared cache tier's Lua invalidation no longer `DEL`s keys it never declares in `KEYS` · `resolveEnvironment` exists only in `core`, and `@ultimat3/seo` exports neither it nor `SeoEnvironment` — a **breaking** change, which is part of why 2.0.0 is a major. Detail in [CHANGELOG.md](CHANGELOG.md), per-row workarounds for the 1.x packages in [Known gaps](https://github.com/developerz-ai/ultimate/wiki/Known-Gaps) |
-| **Deferred past 2.0.0** | realtime tier 3 local-first (`persist: true`), the plugin API, multi-region replication, the Redis/NATS **job** drivers — none of them ships in 2.0.0, each behind the interface that ships today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
+| **Deferred past 3.0.0** | realtime tier 3 local-first (`persist: true`), the plugin API, multi-region replication, the Redis/NATS **job** drivers — none of them ships in 3.0.0 either, each behind the interface that ships today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
 
 **Never claimed:** no adoption numbers, no production deployments, no testimonials. None exist yet, and this file will say so until they do.
 
@@ -223,13 +223,13 @@ Render mode is a route-level property, not a global one. A landing page is stati
 
 ## Realtime — a ladder, not a cliff
 
-Three tiers, the same mutator shape at every rung. Tier 2 → tier 3 is a config flag, not a rewrite. Tiers 1–2 ship today; tier 3 is not in 2.0.0 and lands in a later major, behind the interfaces that are already here.
+Three tiers, the same mutator shape at every rung. Tier 2 → tier 3 is a config flag, not a rewrite. Tiers 1–2 ship today; tier 3 is not in 3.0.0 and lands in a later major, behind the interfaces that are already here.
 
 | Tier | What | Covers |
 |---|---|---|
 | 1 · **Channels** | `ctx.publish(topic, msg)` over Bun's native WS pub/sub | presence, cursors, notifications |
 | 2 · **Live queries** | declare server-side with a policy, receive a Solid signal | **90% of "realtime app"** |
-| 3 · **Local-first** *(not in 2.0.0)* | optimistic mutators, OPFS SQLite, offline queue, rebase | offline writes that reconcile |
+| 3 · **Local-first** *(not in 3.0.0)* | optimistic mutators, OPFS SQLite, offline queue, rebase | offline writes that reconcile |
 
 → [Realtime design and its honest limits](docs/idea/03-realtime.md)
 
@@ -260,7 +260,7 @@ The same app code on one PaaS dyno and on a replicated cluster. Climbing is a dr
 | Auth | **Better Auth**, wrapped | MIT, self-hosted, with our policy layer on top |
 | Frontend | **SolidJS, pinned `1.9.14`** + our own router | fine-grained reactivity on the stable line; Solid 2 is still `2.0.0-beta.N`, and we vendor the router rather than track an alpha |
 | Styling | **SCSS modules + design tokens** | no Tailwind (diff noise), no CSS-in-JS (runtime cost) |
-| Jobs | Postgres queue default; Redis/NATS drivers not in 2.0.0 | zero-infra start, a real scale path behind one interface |
+| Jobs | Postgres queue default; Redis/NATS drivers not in 3.0.0 | zero-infra start, a real scale path behind one interface |
 | Observability | **OpenTelemetry, always on** | one trace across HTTP → job → live query |
 
 **Excluded on purpose:** GraphQL · multi-runtime · multi-ORM · a second CSS solution · React Server Components · a plugin API in 1.x · vendor edge/KV primitives.

@@ -107,7 +107,7 @@ Point `OTEL_EXPORTER_OTLP_ENDPOINT` at your collector's **HTTP** receiver, `:431
 | Concern | Interface | Decided by |
 |---|---|---|
 | rows | `@ultimat3/db` · `DbClient` | `DATABASE_URL` — unset is PGlite, and PGlite is `x dev` only |
-| job queue | `@ultimat3/jobs` · `JobDriver` | `jobs.driver: 'postgres'`. Redis and NATS drivers are interface-complete stubs that throw `X_NOT_IMPLEMENTED` — not in 2.0.0 |
+| job queue | `@ultimat3/jobs` · `JobDriver` | `jobs.driver: 'postgres'`. Redis and NATS drivers are interface-complete stubs that throw `X_NOT_IMPLEMENTED` — not in 3.0.0 |
 | realtime fanout | `@ultimat3/realtime` · `Transport` | `NATS_URL` |
 | change feed | `@ultimat3/realtime` · `ChangeFeed` | `REPLICATION_*` |
 | cache | `@ultimat3/cache` · `CacheTier` | `cache.tiers` + `REDIS_URL` |
@@ -139,7 +139,7 @@ Named rather than left to be discovered:
 | a custom-metrics adapter, which the chart's HPAs need and the framework never ships | 3–4 |
 | `x logs` planned — `X_NOT_IMPLEMENTED`, with `x dev` → the `/_x` timeline panel as its fix | any |
 | Redis and NATS **job** drivers throw `X_NOT_IMPLEMENTED` | any |
-| realtime tier 3 (local-first, `persist: true`), the plugin API, multi-region replication | not in 2.0.0 |
+| realtime tier 3 (local-first, `persist: true`), the plugin API, multi-region replication | not in 3.0.0 |
 
 Each sits behind an interface that ships today and fails loudly, rather than pretending to work. The full list, with a workaround per row: [Known gaps](Known-Gaps).
 

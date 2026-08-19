@@ -2,9 +2,36 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**2.0.0 is that major.** [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `2.0.0` section carries **33** entries marked `BREAKING —`, and each one changes a surface the table below covers. Read all 33 before you move a pin from 1.x — **no codemod ships with 2.0.0**, so each is a manual edit named by its entry.
+**There are two majors to cross.** [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; neither ships a codemod, so every entry is a manual edit the entry itself names.
 
-> **You can move that pin** `As of 2026-08`. 2.0.0 is tagged and on npm: `npm view @ultimat3/core version` answers **2.0.0**, and 29 of the 30 workspaces resolve at it. The exception is `@ultimat3/scraping`, which has never reached npm at any version — a `@ultimat3/scraping` pin resolves to nothing at 1.x or 2.x alike ([Known gaps](Known-Gaps)).
+| From → to | Breaking entries | Read |
+|---|---|---|
+| 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
+| 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
+| 1.x → 3.0.0 | **43** | both sections, oldest first |
+
+Each entry changes a surface the table below covers.
+
+> **The pin you can move to today is 2.0.0** `As of 2026-08-19`. `npm view @ultimat3/core version` answers **2.0.0**, and **all 30** workspaces resolve at it — `@ultimat3/scraping` included, since its one-time bootstrap landed at 2.0.0 ([Known gaps](Known-Gaps)). The repository is at 3.0.0 and the `v3.0.0` tag and its publish run follow this page's commit, so a 3.0.0 pin does not resolve until they land. Resolve before you pin: `npm view @ultimat3/core version`.
+
+## 2.0.0 → 3.0.0, entry by entry
+
+Ten `BREAKING —` entries, all from one bug sweep. Each was a documented surface that did nothing, or did the wrong thing; the fix is the edit named beside it. Full rationale per row in [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `3.0.0` section.
+
+| Surface | The edit |
+|---|---|
+| `defineAuth({ mfa: { required: true } })` — refused at boot (`X_CONFIG_INVALID`), and `AuthMfaPolicy.required` narrowed to the literal `false` | delete `mfa.required`; enforce the requirement in your own enrolment flow. Nothing ever read the flag, so a user who never enrolled got a fully-privileged session under it |
+| `enrolTotp(input)` → `enrolTotp(auth, input)`; `input.issuer` is now optional | pass the `auth` you built with `defineAuth`. The configured issuer never reached the `otpauth://` URI before |
+| `@ultimat3/http` no longer exports `appErrorStatus()` | read your own registration module. `registerErrorStatus()` and `statusFor()` are unchanged |
+| `SyncSocket.lastSeenAt` → `lastSeenMonotonicMs`, on `Clock.monotonic()` | rename the read. If you were formatting it as a date you were already wrong — the rename makes `new Date(...)` a compile error |
+| `SQL_OUTBOX_RELEASE` and `SQL_OUTBOX_MARK_PUBLISHED` take one more parameter each (1 → 2, 2 → 3): the claimant | pass the claimant. `OutboxStore.release`/`markPublished` take it as an optional trailing argument, so an unfenced store still compiles |
+| `SocketRegistry.sweepIdle()` → `idle()`, which returns the over-budget sockets and removes nothing | call `idle()` and evict through the node, or set the budget with `createSyncNode({ idleTimeoutMs })` |
+| `DESCRIPTION_MIN_LENGTH` deleted from `@ultimat3/seo` | delete the import. There is no replacement and no minimum description length is checked — the constant was documented as enforced and was read by no validator |
+| A metric redeclared with different `bounds` or a different `observe` is refused (`X_METRIC_NAME_INVALID`) | make the second declaration state the same `bounds`/`observe`, or fetch the handle without options — `gauge(name)` is unchanged |
+| `Seed.run()` resolves with `SeedRun` instead of `void` | re-type the result if you typed it `void`. Awaiting it for the side effect alone is unaffected |
+| `SeedContext.insert` skips a stored row instead of overwriting it | expect `skipped`, not an overwrite. `upsert` is the verb for a row the table keys |
+
+`cachedFormatter` and `canonicalLocale` moved from `@ultimat3/time` to `@ultimat3/core` and are re-exported from `time`, so **no import breaks** — it is listed here because the move is real, not because it costs an edit.
 
 ## What semver covers
 
@@ -34,7 +61,7 @@
 | Breaking changes land with codemods | if `x upgrade` cannot codemod it, the changelog carries the manual step |
 | Dependency upgrades are framework work | Solid is pinned to **`1.9.14`, the stable line** — Solid 2 is still prerelease (`2.0.0-beta.N`, DOM renderer split into `@solidjs/web`) and every app inherits whatever core this repo pins. Bumping it is a framework release, never an app-level `bun update`. There is no ArkType or Drizzle pin to carry: `@ultimat3/schema` ships dependency-free builtin validators (ArkType is an optional provider you adapt yourself) and `@ultimat3/entity` ships its own `postgresDriver()` |
 | Bun floor | `>=1.3`, target 2.0. Below the floor → `X_BUN_VERSION` |
-| Not in 2.0.0, behind the interfaces that ship today | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — the last throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
+| Not in 3.0.0, behind the interfaces that ship today | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — the last throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
 
 Do not upgrade a transitive dependency of a `@ultimat3/*` package by hand. Open an issue instead — the pin is deliberate.
 
@@ -103,7 +130,7 @@ Server behavior on a stale build ID:
 
 Full detail: [PWA and offline](PWA-And-Offline).
 
-## Migrating jobs between drivers — **not in 2.0.0**
+## Migrating jobs between drivers — **not in 3.0.0**
 
 `jobs.driver` accepts **`postgres` \| `redis` \| `nats`**, and `postgres` is the only one implemented — `redis` and `nats` are interface-complete stubs that throw `X_NOT_IMPLEMENTED`. So **there is no driver migration to perform** `As of 2026-08`: `x jobs drain --to redis` constructs the target and fails on its first enqueue.
 
@@ -126,7 +153,7 @@ Job code never changes across a driver: `steps` is a driver member, so step pers
 | From → to | Change | Notes |
 |---|---|---|
 | tier 1 → tier 2 | `live: true` on the query | needs a `replicator` role and `orderBy` + `limit` on the `sql` |
-| tier 2 → tier 3 | `persist: true` on the query | not in 2.0.0. No new mutators, no new authz, no new server code |
+| tier 2 → tier 3 | `persist: true` on the query | not in 3.0.0. No new mutators, no new authz, no new server code |
 | `memory` → `nats` transport | `realtime.transport`, and **`realtime.urlEnv`** — the env *key name*, not a URL. There is no `realtime.url` field | roll `sync` and `replicator`; clients reconnect with server-directed backoff. What actually decides the transport at boot is **`NATS_URL` being set**: `selectTransport(env)` never reads `config.realtime.transport`, so the config field documents intent and the env var makes the switch ([Configuration](Configuration)) |
 
 ## Where the facts live

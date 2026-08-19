@@ -1,6 +1,6 @@
 {
   "name": "create-ultimate",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "bunx create-ultimate myapp — scaffold an Ultimate monorepo",
   "license": "MIT",
   "type": "module",
@@ -34,6 +34,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/cli": "2.0.0"
+    "@ultimat3/cli": "3.0.0"
   }
 }

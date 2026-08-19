@@ -6,19 +6,19 @@ Honest answers. Where something is not built yet, it says so.
 
 ### Is it production ready?
 
-**`As of 2026-08`.** Stable API, semver from here. 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — **30 in all** — are **versioned** in lockstep: one version, one commit, one tag. 2.0.0 is versioned, tagged and published.
+**`As of 2026-08`.** Stable API, semver from here. 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — **30 in all** — are **versioned** in lockstep: one version, one commit, one tag.
 
-**Publication is a separate step from versioning, and it is not in lockstep.** One package is behind:
+**Publication is a separate step from versioning, so the registry runs one release behind the repository until a tag's workflow run lands.** That is where 3.0.0 sits. There are no publication holes left — every one of the 30 is on npm.
 
-| Fact | State, verified against the registry `As of 2026-08` |
-|---|---|
-| What you can install | **2.0.0** — `npm view @ultimat3/core version` answers it, and `bunx create-ultimate myapp` gives you it |
-| Tagged | `v2.0.0`, pushed to origin |
-| On the registry | **29 of the 30**, all at 2.0.0 |
-| `@ultimat3/scraping` | on npm at **no version** — the registry answers 404. It landed after the 2.0.0 publish run, so the run never saw it, and nothing in the repo notices because every consumer resolves it through the workspace. `bun add @ultimat3/scraping` fails ([Known gaps](Known-Gaps)) |
-| What that costs | it is **27th of 30** in the derived publish list, so the next release run dies on it with 26 packages already published irreversibly. Its first publish is a manual bootstrap — a trusted publisher cannot attach to a package that does not exist |
+| Fact | State `As of 2026-08-19` | Resolve it yourself |
+|---|---|---|
+| What you can install | **2.0.0** — `bunx create-ultimate myapp` gives you it | `npm view @ultimat3/core version` |
+| Repository version | **3.0.0**, all 30 stamped in one commit | the top section of [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) |
+| Tagged | `v2.0.0` is on origin; `v3.0.0` follows the commit this page was written from | [the repository's tags](https://github.com/developerz-ai/ultimate/tags) |
+| On the registry | **all 30**, at 2.0.0 | `npm view @ultimat3/scraping version` |
+| Provenance | 1.1.0 and 1.2.0 carry an attestation; **2.0.0 does not** | `npm view @ultimat3/core@2.0.0 dist.attestations` |
 
-1.1.0 was the first release the workflow published over OIDC trusted publishing, with provenance; 1.0.0 was the manual bootstrap. `@ultimat3/flags` was the previous never-published package and 2.0.0 closed it — `2.0.0` is its only version on the registry.
+1.1.0 was the first release the workflow published over OIDC trusted publishing, with provenance; 1.0.0 was the manual bootstrap. 2.0.0 was hand-published, because **no package had a trusted publisher attached** and the OIDC exchange had nothing to verify against; all 30 were attached on 2026-08-19, for the first time, which is what lets 3.0.0 publish over OIDC at all. `@ultimat3/scraping` and `@ultimat3/flags` were the two never-published packages and both are closed — each by the one-time manual bootstrap every package needs before a trusted publisher can attach.
 
 That is exactly what the version claims — a stable API under semver, not a promise about your infrastructure.
 
@@ -28,7 +28,7 @@ What it does **not** claim:
 |---|---|
 | A multi-node realtime result | the 50k forced-restart benchmark **is** measured and committed, but on **one** `sync` node over `InProcessTransport` — it never crossed NATS. Fanout across nodes, throughput, and per-node socket capacity are all still targets, not results ([Realtime](Realtime)) |
 | The two-platform deploy proof | all three build targets ship — `x build --target docker`, `x build --target binary`, `x build --target static` — and so do the compose files and the Helm chart. The demo app running on Compose **and** K8s from one image, with a rolling restart invisible to connected clients, is milestone 11's remaining item ([Deployment](Deployment)) |
-| Not in 2.0.0 | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — all behind the interfaces that ship today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` line rather than pretending to work |
+| Not in 3.0.0 | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — all behind the interfaces that ship today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` line rather than pretending to work |
 
 ### What is actually finished?
 
@@ -118,7 +118,7 @@ Yes. `realtime.tier: 1` with `transport: 'memory'` is the default, and a tier-1 
 
 ### What happens if the sync engine doesn't work out?
 
-It is roughly **70% of total effort** and the single largest risk. Tiers 1–2 shipped in milestone 6 and are under semver; tier 3 local-first is not in 2.0.0. The reconnect benchmark that gated topology — 50k sockets, a forced `sync` restart, recovery time and DB load — **is measured at 1.1.0**: all 50,000 reconnected, 49,981 received a channel patch inside the window, p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path ([Realtime](Realtime)). That is **reachability** — first patch on the reconnected socket — not consistency; the delivery half is a separate 10,000-client run, **1,666,882 patches received, 0 observed sequence gaps** — a lower bound, since a hole is only visible between two frames one connection received ([Realtime](Realtime)) — and `As of 2026-08` the only run that counts lost patches at all. Both were run on **one** node, so multi-node fanout is still unproven. If the incremental matcher turns out to be the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback.
+It is roughly **70% of total effort** and the single largest risk. Tiers 1–2 shipped in milestone 6 and are under semver; tier 3 local-first is not in 3.0.0. The reconnect benchmark that gated topology — 50k sockets, a forced `sync` restart, recovery time and DB load — **is measured at 1.1.0**: all 50,000 reconnected, 49,981 received a channel patch inside the window, p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path ([Realtime](Realtime)). That is **reachability** — first patch on the reconnected socket — not consistency; the delivery half is a separate 10,000-client run, **1,666,882 patches received, 0 observed sequence gaps** — a lower bound, since a hole is only visible between two frames one connection received ([Realtime](Realtime)) — and `As of 2026-08` the only run that counts lost patches at all. Both were run on **one** node, so multi-node fanout is still unproven. If the incremental matcher turns out to be the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback.
 
 ### Why ship realtime last if it's the differentiator?
 
@@ -132,7 +132,7 @@ Stated risk, not a hidden one. `As of 2026-08` long-running Bun processes are le
 
 ### Where do plugins fit?
 
-Nowhere — the plugin API is not in 1.x and not in 2.0.0. Semver covers the documented surface, not internals, and a plugin API freezes internals permanently. Fork the blessed path if you need something else; extension points earn their existence from real forks, not from speculation.
+Nowhere — the plugin API is not in 1.x, not in 2.x and not in 3.0.0. Semver covers the documented surface, not internals, and a plugin API freezes internals permanently. Fork the blessed path if you need something else; extension points earn their existence from real forks, not from speculation.
 
 ### Will you add an adapter for my host or my ORM?
 

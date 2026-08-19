@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/ai",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "LLM gateway, versioned prompts, evals as tests, embeddings, hybrid vector search, RAG",
   "license": "MIT",
   "type": "module",
@@ -31,14 +31,14 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/action": "2.0.0",
-    "@ultimat3/cache": "2.0.0",
-    "@ultimat3/core": "2.0.0",
-    "@ultimat3/db": "2.0.0",
-    "@ultimat3/jobs": "2.0.0",
-    "@ultimat3/money": "2.0.0",
-    "@ultimat3/policy": "2.0.0",
-    "@ultimat3/schema": "2.0.0",
-    "@ultimat3/time": "2.0.0"
+    "@ultimat3/action": "3.0.0",
+    "@ultimat3/cache": "3.0.0",
+    "@ultimat3/core": "3.0.0",
+    "@ultimat3/db": "3.0.0",
+    "@ultimat3/jobs": "3.0.0",
+    "@ultimat3/money": "3.0.0",
+    "@ultimat3/policy": "3.0.0",
+    "@ultimat3/schema": "3.0.0",
+    "@ultimat3/time": "3.0.0"
   }
 }
