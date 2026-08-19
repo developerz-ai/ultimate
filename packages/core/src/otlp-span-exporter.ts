@@ -1,6 +1,8 @@
 // Single responsibility: a `SpanExporter` that POSTs OTLP/HTTP JSON to a collector. Batched,
 // because `SpanExporter.export` is one span and a request per span is a second load generator.
 
+import { renderThrowable } from './error-render';
+import { logger } from './logger';
 import {
   OTLP_SCOPE,
   type OtlpKeyValue,
@@ -134,15 +136,38 @@ export function otlpSpanExporter(options: OtlpSpanExporterOptions = {}): OtlpSpa
   const post = (batch: readonly ReadableSpan[]): Promise<void> => {
     const first = batch[0];
     if (first === undefined) return Promise.resolve();
-    const body = JSON.stringify(otlpTraceRequest(batch, first.resource));
+    let body: string;
+    try {
+      // The one synchronous throw on this path, and the only way `inflight` can reject at all:
+      // `AttributeValue` is a compile-time claim, so an attribute the app spelled as an object, a
+      // bigint or a cycle reaches `anyValue`'s `value.map(...)` as a TypeError. Dropped with a
+      // line, the same degradation `postOtlp` already applies to a collector that is down —
+      // telemetry is best-effort and must never become the process's exit code.
+      body = JSON.stringify(otlpTraceRequest(batch, first.resource));
+    } catch (failure) {
+      logger.warn('otlp span batch dropped', {
+        url,
+        spans: batch.length,
+        error: renderThrowable(failure),
+      });
+      return Promise.resolve();
+    }
     return postOtlp({ url, headers, body, timeoutMs, fetch: send });
   };
 
   const drainQueue = (): Promise<void> => {
     const batch = queue.splice(0, queue.length);
     // Chained, not concurrent: a collector reordering batches from one process turns a parent's
-    // span arriving after its child into a broken trace on the read side.
-    inflight = inflight.then(() => post(batch));
+    // span arriving after its child into a broken trace on the read side. Chained on a SETTLED
+    // shadow, because a chain that carries a rejection forward is poisoned for the life of the
+    // process: `post` is never called again while the queue keeps emptying, so every later span is
+    // dropped in silence and every timer tick mints a fresh unhandled rejection — which Bun ends
+    // the process on. Same shape as `offline-queue.ts`'s drain chain.
+    const settled = inflight.then(
+      () => undefined,
+      () => undefined,
+    );
+    inflight = settled.then(() => post(batch));
     return inflight;
   };
 
