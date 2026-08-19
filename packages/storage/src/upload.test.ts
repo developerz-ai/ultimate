@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { isStorageError } from './errors';
-import { sniffContentType, uploadPolicy, validateUpload } from './upload';
+import {
+  contentTypeMatches,
+  normalizeContentType,
+  sniffContentType,
+  uploadPolicy,
+  validateUpload,
+} from './upload';
 
 function codeOf(fn: () => unknown): string {
   try {
@@ -33,6 +39,21 @@ describe('sniffContentType', () => {
       'image/svg+xml',
     );
     expect(sniffContentType(bytesOf('id,name\n1,a\n'))).toBe('text/plain');
+  });
+});
+
+describe('normalizeContentType', () => {
+  test('an Object.prototype key normalises to itself, never to a function', () => {
+    // `ALIASES[base] ?? base` reached the prototype chain, so a `Content-Type: constructor` header
+    // came back as the `Object` FUNCTION through a `: string` signature — reachable from
+    // `acceptSignedUpload` with the transport's own header, where the refusal's `cause` and
+    // `meta.declared` then carried a function's source instead of a media type.
+    for (const key of ['constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty']) {
+      expect(normalizeContentType(key)).toBe(key.toLowerCase());
+      expect(typeof normalizeContentType(key)).toBe('string');
+    }
+    expect(normalizeContentType('IMAGE/JPG; charset=binary')).toBe('image/jpeg');
+    expect(contentTypeMatches('constructor', 'text/plain')).toBe(false);
   });
 });
 

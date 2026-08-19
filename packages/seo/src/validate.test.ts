@@ -28,6 +28,44 @@ describe('validateMeta', () => {
     );
   });
 
+  test('a titleTemplate with no %s slot is a build error naming the file', () => {
+    // Without the slot the template cannot place the title, so every page in the app renders the
+    // brand as its <title> — and the duplicate-title check is the only thing that would ever
+    // notice, weeks later, in Search Console.
+    const report = validateMeta([
+      route({
+        path: '/about',
+        file: 'apps/web/site/about/page.tsx',
+        meta: {
+          title: 'About',
+          description: 'Who we are and what we ship.',
+          titleTemplate: 'Ultimate',
+        },
+      }),
+    ]);
+    expect(report.ok).toBe(false);
+    const issue = report.issues[0];
+    expect(issue?.code).toBe(SEO_ERROR_CODES.metaMissing);
+    expect(issue?.file).toBe('apps/web/site/about/page.tsx');
+    expect(issue?.cause).toContain('%s');
+    expect(issue?.fix).toContain('%s — Ultimate');
+  });
+
+  test('a titleTemplate that has the slot is not an issue', () => {
+    const report = validateMeta([
+      route({
+        path: '/about',
+        file: 'apps/web/site/about/page.tsx',
+        meta: {
+          title: 'About',
+          description: 'Who we are and what we ship.',
+          titleTemplate: '%s — Ultimate',
+        },
+      }),
+    ]);
+    expect(report.ok).toBe(true);
+  });
+
   test('assertMeta throws X_SEO_META_MISSING carrying the same strings', () => {
     const report = validateMeta([route({ path: '/x', file: 'site/x/page.tsx' })]);
     try {

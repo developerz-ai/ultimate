@@ -49,6 +49,12 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
   Never invert that default and never re-read the key here.
 - **Required schema.org fields are required in the input type.** Runtime `required()` only catches empty strings from a CMS; the type is the primary gate.
 - **No ambient defaults for meta.** A missing description is an error, never a fallback string.
+- **`applyTitleTemplate` is TOTAL; `validateMeta` is where a broken template is refused.**
+  `'Ultimate'.replace('%s', title)` on a template with no slot is a no-op that returned the BRAND,
+  so every route's `<title>` became the brand and the page's own title was discarded — visible only
+  as a duplicate-title issue, weeks later. The renderer runs per request, so it falls back to the
+  title rather than throwing; the refusal is `titleTemplateSlotMissing`, `X_SEO_META_MISSING`,
+  naming the file. Same split as every other check here: the renderer degrades, the gate refuses.
 - **Head tags are CONSTRUCTED here and serialised nowhere here.** `renderMeta` returns data;
   `HeadTag.text` is raw, and `@ultimat3/render`'s `renderHead` picks the escape from the element
   (raw text for code, the total `\uXXXX` JSON rule for a `type` ending in `json`). `meta.ts` had a

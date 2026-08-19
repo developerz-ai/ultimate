@@ -10,8 +10,9 @@ import {
   metaTooLong,
   SeoError,
   type SeoErrorCode,
+  titleTemplateSlotMissing,
 } from './errors';
-import { applyTitleTemplate, DESCRIPTION_MAX_LENGTH, TITLE_MAX_LENGTH } from './meta';
+import { applyTitleTemplate, DESCRIPTION_MAX_LENGTH, TITLE_MAX_LENGTH, TITLE_SLOT } from './meta';
 import { indexableRoutes, isDynamic, type RouteRecord } from './routes';
 import { absoluteUrl } from './xml';
 
@@ -61,6 +62,14 @@ export function validateMeta(
     if (meta.title === undefined || meta.title.trim() === '') {
       issues.push(issueOf(metaMissing(route.file, route.path, 'title'), route.path, route.file));
     } else {
+      // An empty template is "no template" and applies nothing; a non-empty one that cannot place
+      // the title silently discards it, which is the one the renderer cannot report.
+      const template = meta.titleTemplate ?? '';
+      if (template !== '' && !template.includes(TITLE_SLOT)) {
+        issues.push(
+          issueOf(titleTemplateSlotMissing(route.file, route.path), route.path, route.file),
+        );
+      }
       const rendered = applyTitleTemplate(meta.title, meta.titleTemplate);
       if (rendered.length > titleMax) {
         issues.push(

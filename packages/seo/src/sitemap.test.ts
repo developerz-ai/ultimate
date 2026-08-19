@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { RouteRecord } from './routes';
-import { buildSitemap, SITEMAP_MAX_URLS, sitemapUrls } from './sitemap';
+import { buildSitemap, chunk, SITEMAP_MAX_URLS, sitemapUrls } from './sitemap';
 
 const BASE = { baseUrl: 'https://ultimate.dev' } as const;
 
@@ -89,6 +89,16 @@ describe('buildSitemap', () => {
     expect(result.index?.xml).toContain('https://ultimate.dev/sitemap-3.xml');
   });
 
+  test('a maxUrls that is not a positive count is refused, never a loop that never ends', async () => {
+    // `chunk` advances by `size`, so `size <= 0` never moves the cursor: one config typo turned a
+    // build into an infinite loop allocating empty slices until the box ran out of memory.
+    const routes = [route({ path: '/', file: 'site/page.tsx' })];
+    for (const maxUrls of [0, -1, 2.5, Number.NaN]) {
+      expect(await codeOf(() => buildSitemap(routes, { ...BASE, maxUrls }))).toBe('X_INVARIANT');
+    }
+    expect(codeOfSync(() => chunk([1, 2, 3], 0))).toBe('X_INVARIANT');
+  });
+
   test('the protocol limit is the documented 50,000', () => {
     expect(SITEMAP_MAX_URLS).toBe(50_000);
   });
@@ -101,3 +111,21 @@ describe('buildSitemap', () => {
     expect(result.files[0]?.xml).toContain('a=1&amp;b=2');
   });
 });
+
+async function codeOf(run: () => Promise<unknown>): Promise<string> {
+  try {
+    await run();
+  } catch (error) {
+    return String((error as { code?: unknown }).code);
+  }
+  return 'no-throw';
+}
+
+function codeOfSync(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return String((error as { code?: unknown }).code);
+  }
+  return 'no-throw';
+}

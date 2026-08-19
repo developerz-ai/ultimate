@@ -106,6 +106,41 @@ describe('createPostgresClient', () => {
     );
   });
 
+  test('the operator keeps the application_name they wrote, in either spelling', async () => {
+    // `searchParams.set` over a key the operator may have written is the silent overwrite
+    // `libpq-options.ts` exists to refuse — and it names `application_name` as an example of a
+    // setting that must survive. An operator's `pg_stat_activity` filter, a pooler routing rule
+    // and an audit rule all stop matching, silently, when 'ultimate' lands on top of it.
+    const pool = installFakeSql();
+    await createPostgresClient({
+      url: `${TEST_URL}?application_name=billing-api`,
+      role: 'worker',
+    }).query(sql`select 1`);
+    expect(pool.urls[0]).toContain('application_name=billing-api');
+    expect(pool.urls[0]).not.toContain('application_name=ultimate');
+
+    // The other spelling of the same setting. Two spellings that disagree is worse than either,
+    // because which one the backend honours is argument order nobody here measured.
+    await createPostgresClient({
+      url: `${TEST_URL}?options=-c+application_name%3Dbilling-api`,
+      role: 'worker',
+    }).query(sql`select 1`);
+    expect(pool.urls[1]).toContain('application_name%3Dbilling-api');
+    expect(pool.urls[1]).not.toContain('application_name=ultimate');
+  });
+
+  test('an explicit applicationName wins over the url, and wins in both spellings', async () => {
+    const pool = installFakeSql();
+    await createPostgresClient({
+      url: `${TEST_URL}?options=-c+application_name%3Dbilling-api`,
+      role: 'worker',
+      applicationName: 'ultimate-worker',
+    }).query(sql`select 1`);
+
+    expect(pool.urls[0]).toContain('application_name=ultimate-worker');
+    expect(pool.urls[0]).not.toContain('application_name%3Dbilling-api');
+  });
+
   /**
    * The role's bound is emitted for EVERY role, `migrate`'s 0 included. 0 is not "say nothing" —
    * it is "this role may take as long as it takes", and a server-side `alter database ... set

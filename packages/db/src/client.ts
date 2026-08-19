@@ -7,7 +7,7 @@ import { type Role, renderThrowable, resolveRole } from '@ultimat3/core';
 import { statementAttribution } from './attribution';
 import { DbError, dbUnavailable, driverError, poolAcquireTimeout, poolMaxInvalid } from './errors';
 import { expectedQueryLoopReason } from './expected-loop';
-import { mergeLibpqOptions } from './libpq-options';
+import { declaresLibpqOption, mergeLibpqOptions } from './libpq-options';
 import { statementObserver } from './observe';
 import { type SqlFragment, sql } from './sql';
 import { withStatementSpan } from './statement-span';
@@ -180,13 +180,25 @@ function connectionUrl(options: PostgresClientOptions, profile: PoolProfile): st
   // migrations and the role that serves the traffic read different schemas. 0 is a value, not a
   // silence: it is `migrate` saying it may take as long as it takes, and left unsaid a server-side
   // `alter database ... set statement_timeout` kills the one role that must outlive it.
-  url.searchParams.set(
-    'options',
-    mergeLibpqOptions(url.searchParams.get('options'), {
-      statement_timeout: String(profile.statementTimeoutMs),
-    }),
-  );
-  url.searchParams.set('application_name', options.applicationName ?? 'ultimate');
+  // `application_name` is a LABEL, not a bound: 'ultimate' is a DEFAULT, and a default may not
+  // overwrite what the operator wrote — `?application_name=billing-api` is the filter their
+  // `pg_stat_activity` query, their pooler rule and their audit rule all match on, and losing it
+  // is silent. Both spellings count, or the URL parameter and a `-c application_name=` in
+  // `options` disagree and which one the backend honours is argument order nobody here measured.
+  const named = options.applicationName;
+  const settings: Record<string, string> = {
+    statement_timeout: String(profile.statementTimeoutMs),
+  };
+  const inOptions = declaresLibpqOption(url.searchParams.get('options'), 'application_name');
+  // An explicit `applicationName` is a deliberate call by the role that opened the pool, so it
+  // wins. Only then is the setting named to the merge, and only when the operator wrote the other
+  // spelling: `mergeLibpqOptions` drops their assignment before appending, so the two cannot
+  // disagree — and a URL with no assignment in it keeps the exact `options` it always had.
+  if (named !== undefined && inOptions) settings['application_name'] = named;
+  const declared = url.searchParams.has('application_name') || inOptions;
+  url.searchParams.set('options', mergeLibpqOptions(url.searchParams.get('options'), settings));
+  if (named !== undefined) url.searchParams.set('application_name', named);
+  else if (!declared) url.searchParams.set('application_name', 'ultimate');
   return url.toString();
 }
 

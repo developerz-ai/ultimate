@@ -207,6 +207,16 @@ export async function withTransaction<T>(
   fn: (tx: DbTx) => Promise<T>,
   options: TransactionOptions = {},
 ): Promise<T> {
+  // Before anything opens. `attempts = retry + 1` turned a negative, fractional or NaN budget into
+  // a loop that never ran its body: `fn` was called ZERO times and the caller was handed
+  // `X_DB_SERIALIZATION_FAILURE` — "lost its serialization race on all 0 attempts" — for a
+  // transaction that was never begun. `Number(process.env.DB_RETRY)` on an unset var is how the
+  // NaN arrives, and the nested branch below already refuses a budget it cannot honour.
+  assert(
+    options.retry === undefined || (Number.isInteger(options.retry) && options.retry >= 0),
+    `withTransaction({ retry }) needs a whole number of extra attempts, 0 or more; a budget that is not one opens nothing and runs fn zero times`,
+    "pass an integer — withTransaction(fn, { retry: 3, isolation: 'serializable' }) — and parse it before you pass it: Number(process.env.DB_RETRY) is NaN when the variable is unset",
+  );
   const outer = storage.getStore();
   if (outer !== undefined) {
     // A nested scope is a SAVEPOINT, and a savepoint cannot survive the thing `retry` exists for:
