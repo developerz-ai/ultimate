@@ -116,6 +116,19 @@ function countFractionDigits(value: string): number {
   return value.trim().split('.')[1]?.length ?? 0;
 }
 
+/**
+ * A `roundToDigits` digit count that names no decimal place. Reported as `X_MONEY_SCALE_INVALID`
+ * because a digit count IS a scale — `10 ** 1.5` is not a power of ten, and `BigInt(1.5)` is a
+ * bare `RangeError` out of a function whose every other refusal is coded.
+ */
+export function digitsInvalid(digits: number): MoneyError {
+  return new MoneyError({
+    code: 'X_MONEY_SCALE_INVALID',
+    cause: `a digit count must be a whole number between -${MAX_MONEY_SCALE} and ${MAX_MONEY_SCALE}, got ${String(digits)}`,
+    fix: "pass an integer digit count — roundToDigits(value, 2, 'half-up') for two decimal places",
+  });
+}
+
 /** A scale outside 0…MAX_MONEY_SCALE names no decimal place a `minor` could count in. */
 export function scaleInvalid(scale: number): MoneyError {
   return new MoneyError({

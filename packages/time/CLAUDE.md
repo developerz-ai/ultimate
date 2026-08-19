@@ -67,6 +67,11 @@
   pins the process to UTC, so that bug is invisible to every in-process test — `plain-date.test.ts`
   spawns a subprocess with `TZ=America/Los_Angeles` for exactly one assertion, and that is the only
   reason it can fail.
+- **`fromIso` refuses a clock time with no offset.** `new Date('2026-03-14T09:00')` is the
+  PROCESS's 09:00, so one CSV row imported on two pods becomes two instants — the ambient default
+  this package exists to abolish, inside its own entry point. `Z` or an offset, or `X_INSTANT_INVALID`;
+  wall-clock input is `fromZoned(wall, zone)`, which names its zone. A date-only form carries no
+  clock time and is UTC by specification, so it still parses.
 - Never add `86_400_000` to cross a day boundary — use `addDaysInZone` / `fromZoned`.
 - Never take the clock from `Date.now()`; accept a `Clock` (`now(clock)`).
 - Cron and schedules iterate the **local wall clock**, then convert once with `fromZoned`.

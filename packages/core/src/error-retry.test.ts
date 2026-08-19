@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import {
   DEFAULT_ERROR_RETRY,
+  declaredErrorRetry,
   isErrorRetry,
   registerErrorRetry,
   registeredErrorRetry,
@@ -129,6 +130,20 @@ describe('X_TIMEOUT', () => {
     expect(codeOf(() => registerErrorRetry({ X_TIMEOUT: 'terminal' }))).toBe(
       'X_ERROR_RETRY_INVALID',
     );
+  });
+
+  test('an Object.prototype key is unclassified, never Object itself', () => {
+    // `CORE_ERROR_RETRY[code]` reached the prototype chain, so `retryFor('constructor')` answered
+    // the `Object` FUNCTION through an `ErrorRetry` return type — and `UltimateError`'s
+    // constructor calls `retryFor` unconditionally, so the function landed in `.retry` and in
+    // `toJSON().retry`.
+    for (const key of ['constructor', '__proto__', 'toString', 'valueOf']) {
+      expect(retryFor(key)).toBe('terminal');
+      expect(declaredErrorRetry(key)).toBeUndefined();
+    }
+    const error = new UltimateError({ code: 'constructor', cause: 'c', fix: 'f' });
+    expect(error.retry).toBe('terminal');
+    expect(JSON.parse(JSON.stringify(error.toJSON())).retry).toBe('terminal');
   });
 
   test('renders a real title, not the humanised fallback', () => {

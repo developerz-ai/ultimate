@@ -10,6 +10,9 @@ import { isSecret, REDACTED } from './secret';
 // it without importing the logger, and two constants spelled the same is one rename from a leak.
 export { REDACTED } from './secret';
 
+/** What a `Date` this file cannot render says instead — the line survives, the value is named. */
+const INVALID_DATE = 'an invalid Date';
+
 export const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent'] as const;
 
 export type LogLevel = (typeof LOG_LEVELS)[number];
@@ -133,7 +136,7 @@ function serialise(value: unknown, depth: number): unknown {
   // `toISOString()` THROWS on an invalid Date, and an invalid Date is exactly the value worth
   // logging when a schedule went wrong.
   if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? 'an invalid Date' : value.toISOString();
+    return Number.isNaN(value.getTime()) ? INVALID_DATE : value.toISOString();
   }
   if (isUltimateError(value)) return value.toJSON();
   if (value instanceof Error) return { name: value.name, message: value.message };
@@ -198,6 +201,22 @@ function renderLine(
   }
 }
 
+/**
+ * The one value in a line that is not the caller's, and it was the one read left unguarded:
+ * `toISOString()` raises `RangeError` on an invalid `Date`, and a `Clock` is injected — a frozen
+ * clock set from a bad string, or a clock whose `now()` throws, took the whole line with it. The
+ * same marker `serialise` gives an invalid `Date` in a FIELD, so one vocabulary covers both.
+ */
+function timestamp(clock: Clock): string {
+  try {
+    const at = clock.now();
+    if (at instanceof Date && !Number.isNaN(at.getTime())) return at.toISOString();
+  } catch {
+    // A clock that fights being read is exactly the moment a line is worth keeping.
+  }
+  return INVALID_DATE;
+}
+
 function envLevel(): LogLevel {
   const raw = process.env['LOG_LEVEL'];
   return raw !== undefined && (LOG_LEVELS as readonly string[]).includes(raw)
@@ -215,7 +234,7 @@ export function createLogger(options?: LoggerOptions): Logger {
   function emit(lineLevel: LogLevel, message: string, fields?: LogFields): void {
     if (LEVEL_WEIGHT[lineLevel] < threshold) return;
     const line = {
-      ts: clock.now().toISOString(),
+      ts: timestamp(clock),
       level: lineLevel,
       msg: message,
       ...redactFields(bound),

@@ -62,6 +62,30 @@ describe('gauge', () => {
     depth = 9;
     expect(pointsOf('test_observed')[0]?.value).toBe(9);
   });
+
+  test('one throwing observer costs its own point and nothing beside it', () => {
+    // `observe: () => pool.size` after the pool is torn down threw straight out of
+    // `collectMetrics()`, so /metrics 500'd, EVERY other instrument went invisible with it, and
+    // `startMetricExport`'s timer callback raised an uncaught exception that ends the process.
+    counter('test_survivor_total').add(4);
+    gauge('test_hostile', {
+      observe: () => {
+        throw new Error('the pool is gone');
+      },
+    });
+
+    expect(() => collectMetrics()).not.toThrow();
+    expect(pointsOf('test_hostile')).toHaveLength(0);
+    expect(pointsOf('test_survivor_total')[0]?.value).toBe(4);
+  });
+
+  test('an observer answering NaN is dropped, exactly as record(NaN) is refused', () => {
+    counter('test_neighbour_total').add(2);
+    gauge('test_not_a_number', { observe: () => Number.NaN });
+
+    expect(pointsOf('test_not_a_number')).toHaveLength(0);
+    expect(pointsOf('test_neighbour_total')[0]?.value).toBe(2);
+  });
 });
 
 describe('histogram', () => {

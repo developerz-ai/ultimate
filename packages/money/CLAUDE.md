@@ -30,7 +30,7 @@ shape is still additive and this is still a minor version.
 | `arithmetic.ts` | add/subtract/multiply/compare, refuses mixed currencies |
 | `allocate.ts` | largest-remainder splits that preserve the total |
 | `factor.ts` | the exact fraction a scaling factor's decimal spelling names. `factorFraction` is internal — never exported; the `Fraction` **type** is public, because `ExchangeRate.ratio` is one |
-| `rounding.ts` | explicit modes, no implicit default, over a float (`roundToInteger`) or a ratio (`roundRatio`) |
+| `rounding.ts` | explicit modes, no implicit default, over a float (`roundToInteger`) or a ratio (`roundRatio`, and `roundToDigits` through it) |
 | `format.ts` | `Intl.NumberFormat` only, digits from the exponent |
 | `convert.ts` | explicit rate + `RateProvider`, records provenance |
 
@@ -63,7 +63,11 @@ shape is still additive and this is still a minor version.
   100.49999999999999 `100 * 1.005` produces. A new scaling entry point goes through the same pair
   — `roundToInteger(a * b, mode)` is the bug, written again. `fromDecimal` was the last float
   path and it is the one every user-typed price goes through: `Number('0.4999999999999999999')`
-  is exactly 0.5, so `half-up` saw a tie the written decimal does not have.
+  is exactly 0.5, so `half-up` saw a tie the written decimal does not have. **`roundToDigits` was
+  that rule broken in this very file** — its body was literally `roundToInteger(value * factor,
+  mode) / factor`, so `roundToDigits(1.005, 2, 'half-up')` answered 1.00 where 1.01 is owed. It
+  goes through `factorFraction` + `roundRatio` as of 2026-08, and a digit count that is not a whole
+  number of decimal places is `X_MONEY_SCALE_INVALID`, never a bare `RangeError` out of `BigInt`.
 - **`convert` preserves the amount's own `scale`.** `exponentOf(target)` decides the natural scale
   of a value that names none; a value that names one keeps it, because narrowing $0.000002 to
   EUR's two decimals is the 10,000x reinterpretation `scale` was added to prevent. Same rule as

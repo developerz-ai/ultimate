@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { frozenClock } from './clock';
+import { type Clock, frozenClock } from './clock';
 import { UltimateError } from './errors';
 import { createLogger, REDACTED, redactKeys } from './logger';
 
@@ -23,6 +23,49 @@ describe('logger', () => {
       msg: 'post published',
       postId: 'p1',
     });
+  });
+
+  test('emits the line even when the clock cannot say when', () => {
+    // `clock.now().toISOString()` sat outside every guard the rest of this file was made total
+    // for: an invalid `Date` raises `RangeError`, and a log line must never replace the event it
+    // describes — `lifecycle.ts` logs the value a shutdown hook threw, so a throw here means
+    // SIGTERM hangs.
+    const lines: Record<string, unknown>[] = [];
+    const logger = createLogger({
+      clock: frozenClock('not-a-date'),
+      writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
+    });
+    logger.info('post published', { postId: 'p1' });
+    expect(lines[0]).toEqual({
+      ts: 'an invalid Date',
+      level: 'info',
+      msg: 'post published',
+      postId: 'p1',
+    });
+  });
+
+  test('survives a clock that throws, or answers something that is not a Date', () => {
+    const lines: Record<string, unknown>[] = [];
+    const hostile: Clock = {
+      now: () => {
+        throw new Error('the clock is gone');
+      },
+      monotonic: () => 0,
+    };
+    const logger = createLogger({
+      clock: hostile,
+      writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
+    });
+    logger.error('drain hook threw');
+    expect(lines[0]).toEqual({ ts: 'an invalid Date', level: 'error', msg: 'drain hook threw' });
+
+    const notADate = { now: () => 0, monotonic: () => 0 } as unknown as Clock;
+    const second = createLogger({
+      clock: notADate,
+      writer: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
+    });
+    second.error('still a line');
+    expect(lines[1]).toEqual({ ts: 'an invalid Date', level: 'error', msg: 'still a line' });
   });
 
   test('filters below the threshold', () => {

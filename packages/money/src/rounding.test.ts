@@ -27,11 +27,29 @@ describe('roundToInteger', () => {
   });
 
   test('rounds to a digit count', () => {
-    // Binary-exact inputs only: a decimal like 1.2355 is already not itself as a float,
-    // which is why money never goes through this path — minor units do.
     expect(roundToDigits(1.25, 1, 'half-up')).toBe(1.3);
     expect(roundToDigits(1.25, 1, 'half-even')).toBe(1.2);
     expect(roundToDigits(1.75, 1, 'half-even')).toBe(1.8);
+  });
+
+  test('rounds the decimal the caller wrote, not the float it scaled to', () => {
+    // `roundToInteger(value * factor, mode)` is the bug this package documents as forbidden,
+    // written again: `1.005 * 100` is 100.49999999999999, so half-up answered 1.00 — a 0.5% fee
+    // billed as nothing, on the shortest-round-trip decimals a price list actually contains.
+    expect(roundToDigits(1.005, 2, 'half-up')).toBe(1.01);
+    expect(roundToDigits(1.005, 2, 'half-even')).toBe(1);
+    expect(roundToDigits(1.015, 2, 'half-even')).toBe(1.02);
+    expect(roundToDigits(-1.005, 2, 'half-up')).toBe(-1.01);
+    expect(roundToDigits(1.005, 2, 'down')).toBe(1);
+    expect(roundToDigits(1.0001, 2, 'up')).toBe(1.01);
+    expect(roundToDigits(8.165, 2, 'half-up')).toBe(8.17);
+  });
+
+  test('refuses a digit count that names no decimal place', () => {
+    expect(codeOf(() => roundToDigits(1.5, 1.5))).toBe('X_MONEY_SCALE_INVALID');
+    expect(codeOf(() => roundToDigits(1.5, Number.NaN))).toBe('X_MONEY_SCALE_INVALID');
+    expect(codeOf(() => roundToDigits(1.5, 16))).toBe('X_MONEY_SCALE_INVALID');
+    expect(codeOf(() => roundToDigits(Number.POSITIVE_INFINITY, 2))).toBe('X_MONEY_NOT_INTEGER');
   });
 });
 
@@ -67,3 +85,12 @@ describe('roundRatio', () => {
     expect(code).toBe('X_INVARIANT');
   });
 });
+
+function codeOf(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return String((error as { code?: unknown }).code);
+  }
+  return 'no-throw';
+}

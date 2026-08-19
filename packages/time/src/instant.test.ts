@@ -13,6 +13,23 @@ describe('instant', () => {
     expect(codeOf(() => fromIso(''))).toBe('X_INSTANT_INVALID');
   });
 
+  test('refuses a bare local timestamp, which resolves through the process zone', () => {
+    // `new Date('2026-03-14T09:00:00')` is the SERVER's 09:00: the same CSV row imported on a
+    // pod in America/Bogota and a pod in UTC becomes two different instants, five hours apart.
+    expect(codeOf(() => fromIso('2026-03-14T09:00:00'))).toBe('X_INSTANT_INVALID');
+    expect(codeOf(() => fromIso('2026-03-14T09:00'))).toBe('X_INSTANT_INVALID');
+    expect(codeOf(() => fromIso('2026-03-14T09:00:00.123'))).toBe('X_INSTANT_INVALID');
+    expect(codeOf(() => fromIso('March 14, 2026 09:00:00'))).toBe('X_INSTANT_INVALID');
+  });
+
+  test('keeps every spelling that names one point on the timeline', () => {
+    // A date-only ISO form is UTC by specification, so it carries no ambient zone and stays in.
+    expect(toIso(fromIso('2026-03-14'))).toBe('2026-03-14T00:00:00.000Z');
+    expect(toIso(fromIso('2026-03-14t08:00:00z'))).toBe('2026-03-14T08:00:00.000Z');
+    expect(toIso(fromIso('2026-03-14T09:00:00+0100'))).toBe('2026-03-14T08:00:00.000Z');
+    expect(toIso(fromIso('2026-03-14T09:00:00.500-05:00'))).toBe('2026-03-14T14:00:00.500Z');
+  });
+
   test('takes its clock by injection, so tests can freeze time', () => {
     const frozen: Clock = { now: () => new Date('2026-03-14T08:00:00Z') };
     expect(toIso(now(frozen))).toBe('2026-03-14T08:00:00.000Z');
