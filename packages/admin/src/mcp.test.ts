@@ -207,3 +207,70 @@ describe('the admin MCP catalog is computed per caller', () => {
     expect(payload.term).toBe('hello');
   });
 });
+
+describe('one action name addresses one handler', () => {
+  const second = entity('admin_mcp_page', {
+    columns: {
+      id: uuid().primaryKey(),
+      title: text({ max: 120 }),
+      createdAt: timestamp().defaultNow(),
+    },
+  });
+
+  const collidingActions: readonly AdminAction[] = [
+    {
+      name: 'republish',
+      permission: 'admin_mcp_post:publish',
+      entity: 'admin_mcp_post',
+      async handle(): Promise<unknown> {
+        return { from: 'post' };
+      },
+    },
+    {
+      name: 'republish',
+      permission: 'admin_mcp_page:publish',
+      entity: 'admin_mcp_page',
+      async handle(): Promise<unknown> {
+        return { from: 'page' };
+      },
+    },
+  ];
+
+  test('two actions sharing a name are refused at defineAdmin, not at the first agent call', () => {
+    // The tool name, the default label key and `actionByName`'s lookup are all derived from
+    // `AdminAction.name`, so a collision made `callAdminTool` dispatch to whichever resource
+    // came first — a call that SUCCEEDS against the wrong handler and reports nothing. Nothing
+    // refused it until `adminMcp()` was called, so an admin-UI-only app shipped it silently.
+    let thrown: unknown;
+    try {
+      defineAdmin({
+        entities: [post, second],
+        actions: collidingActions,
+        auth: { actor: () => null, authz: perActorAuthz },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    const seen = thrown as { code?: string; cause?: string; fix?: string } | undefined;
+    expect(seen?.code).toBe('X_ADMIN_ACTION_DUPLICATE');
+    expect(seen?.cause).toContain('republish');
+    expect(seen?.cause).toContain('admin_mcp_post');
+    expect(seen?.cause).toContain('admin_mcp_page');
+    expect(seen?.fix).toContain('republish');
+  });
+
+  test('the same action object attached twice is not a collision', () => {
+    // `defineAdmin` hands `input.actions` to the entity it names AND `resources[e].actions`
+    // appends its own; an author who spells the same object in both meant one action.
+    const shared = collidingActions[0] as AdminAction;
+    expect(() =>
+      defineAdmin({
+        entities: [post],
+        actions: [shared],
+        resources: { admin_mcp_post: { actions: [shared] } },
+        auth: { actor: () => null, authz: perActorAuthz },
+      }),
+    ).not.toThrow();
+  });
+});

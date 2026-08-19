@@ -74,6 +74,22 @@ describe('unit · x g writes inside the app and nowhere else', () => {
     });
   });
 
+  test('a conflict names the invocation that would overwrite it, verbatim', async () => {
+    await withRoot(async (root) => {
+      const file = { path: 'apps/web/app/posts/actions.ts', contents: 'export {};' };
+      await Bun.write(join(root, file.path), 'mine');
+
+      const report = await writeFiles(root, [file], false, 'x g action publishPost');
+
+      // `x g --force` was the shipped fix line and it is not a command: `x g` with no generator
+      // is X_CLI_UNKNOWN_COMMAND. A `fix:` is copied and run verbatim, and the conflict path has
+      // both the kind and the name in hand — the same construction `generate-kinds.ts` uses.
+      expect(report.conflicts[0]?.code).toBe('X_GENERATE_CONFLICT');
+      expect(report.conflicts[0]?.fix).toContain('x g action publishPost --force');
+      expect(report.conflicts[0]?.fix).not.toContain('x g --force');
+    });
+  });
+
   test('writeFiles merges a catalog: a human-edited value wins, and missing keys are added', async () => {
     await withRoot(async (root) => {
       const path = 'packages/i18n/catalogs/en.json';

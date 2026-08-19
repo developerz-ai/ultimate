@@ -137,6 +137,12 @@ export type {
 export { createRing, DEFAULT_RING_CAPACITY, RESOURCE_TYPES } from './rings';
 export type { RobotsFetch, RobotsGate, RobotsGateInit, RobotsPolicy, RobotsRules } from './robots';
 export { createRobotsGate, DEFAULT_ROBOTS_AGENT, parseRobots, robotsAllows } from './robots';
+export type { RobotsFetchInit } from './robots-fetch';
+export {
+  DEFAULT_ROBOTS_MAX_BYTES,
+  DEFAULT_ROBOTS_TIMEOUT_MS,
+  robotsFetcher,
+} from './robots-fetch';
 export type {
   ScrapeArtifacts,
   ScrapeDefinition,

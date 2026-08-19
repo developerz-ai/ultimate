@@ -21,6 +21,10 @@ export const ADMIN_OWNED_ERROR_CODES = [
   // screen, is a defect the author must never be able to deploy.
   'X_ADMIN_PAGE_UNGUARDED',
   'X_ADMIN_PAGE_PATH_INVALID',
+  // `AdminAction.name` addresses one handler in three places at once — the MCP tool name, the
+  // default label key, and `callAdminTool`'s lookup. Two actions sharing it is refused where the
+  // admin is DECLARED, so an app that never wires MCP still cannot ship the ambiguity.
+  'X_ADMIN_ACTION_DUPLICATE',
 ] as const;
 
 /**
@@ -48,6 +52,7 @@ export const ADMIN_ERROR_TITLES: Readonly<Record<AdminOwnedErrorCode, string>> =
   X_ADMIN_INVALID: "an admin tool's arguments failed the resource schema",
   X_ADMIN_PAGE_UNGUARDED: 'a custom admin page declared no permissions',
   X_ADMIN_PAGE_PATH_INVALID: 'a custom admin page has an unusable or already-taken path',
+  X_ADMIN_ACTION_DUPLICATE: 'two admin actions share one name',
 };
 
 // One unconditional call, so a second package claiming one of admin's codes throws
@@ -86,6 +91,25 @@ export class AdminFieldUnsupportedError extends UltimateError {
       cause: `${input.entity}.${input.field}: ${input.cause}`,
       fix: input.fix,
       docs: docsFor('X_ADMIN_FIELD_UNSUPPORTED'),
+    });
+  }
+}
+
+/**
+ * Two registered actions carry one `name`. Refused at `defineAdmin`, not at the first call: the
+ * name is the MCP tool name, the default label key AND the key `callAdminTool` resolves a handler
+ * by, so a collision is a call that succeeds against the wrong action and reports nothing.
+ */
+export class AdminActionDuplicateError extends UltimateError {
+  constructor(input: { name: string; entities: readonly string[] }) {
+    const where = input.entities.length > 0 ? input.entities.join(' and ') : 'the global toolbar';
+    super({
+      code: 'X_ADMIN_ACTION_DUPLICATE',
+      cause: `two admin actions are named "${input.name}" (on ${where}); an action name addresses one handler`,
+      // The convention the framework's own examples already follow, made into the instruction:
+      // an entity-qualified name is unique by construction.
+      fix: `rename one in defineAdmin's actions — name: '<entity>.${input.name}' — so "${input.name}" belongs to one of them`,
+      docs: docsFor('X_ADMIN_ACTION_DUPLICATE'),
     });
   }
 }

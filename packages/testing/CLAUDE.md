@@ -21,6 +21,7 @@ is its own entry point and not part of the barrel.
 | Offline is a state, not a mock | `network.offline()` / `.drop()` fail every request as `X_TEST_NETWORK_OFFLINE`, ahead of the mocks — the app's own offline path runs |
 | One way offline | the `network` fixture. `setNetworkState` is the gate's only writer and is not exported — setting it from a test body skips the fixture's disposal and leaves every later file offline |
 | No retries | a flake is fixed or deleted the day it flakes; there is no `retry: 3` |
+| `toBeUltimateError` reads THREE fields | an `X_` code plus a `cause` plus a `fix`, all through core's `stringField`. `typeof value.code === 'string'` alone passed a Node `ENOENT` — so a suite pinning "never throw a bare `Error`" stayed green through exactly the regression it guards (`matchers.test.ts`). Same discriminator `packages/cli/src/output.ts` uses to decide what the terminal shows, and a hostile getter answers `undefined` instead of raising inside the assertion |
 | Test names | the filename picks the step; `testName(type, name)` on the outer `describe` puts that type on every failure line under it. Never on the inner `test` too — the prefix would print twice |
 | Injection | `SqlRunner` and `connect` are parameters, so unit tests need no server |
 | Fixtures | the preload registers the whole framework bag — an app registers only what the framework cannot know (`seed`, `actorFor`) |

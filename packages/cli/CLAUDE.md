@@ -148,6 +148,8 @@ declared from the constant the command validates against), because `x jobs show 
 working invocations. `positionalChoices` cannot express it: `fix-command.ts` reads that field only
 where a command declares no subcommands at all.
 
+**A command with no subcommands must still declare `positionalChoices`, or its second word is unjudged.** `x g migration` shipped in two `@ultimat3/admin` fix lines — a generator that has never existed, answered with `X_CLI_UNKNOWN_COMMAND` when run — because the `g` spec declared none and `fix-command.ts` returns `undefined` for an absent set. The third instance of this class (#131, then `x db branch <name>`). `cmd-generate.ts` now declares `positionalChoices: GENERATORS`, from the SAME constant `readKind` validates against, exactly as `cmd-test.ts` declares `TEST_TYPES` — `fix-command.test.ts` pins `x g migration` as a finding against the real catalog. A new command whose first positional is a closed set and does not declare it is a hole this rule cannot see.
+
 **And in that one slot, a `<placeholder>` is a finding too.** `x db branch <name>` is what two
 `@ultimat3/mcp` fix lines said; the citation reader does not read `<name>` as a word, so the slot
 was never examined and the line resolved clean while running it answers `X_CLI_UNKNOWN_COMMAND` —

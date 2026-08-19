@@ -29,7 +29,13 @@ const catalog: CommandCatalog = {
       usage: '',
       flags: [{ name: 'example', type: 'boolean', summary: '' }],
     },
-    { name: 'generate', summary: '', usage: '', aliases: ['g'] },
+    {
+      name: 'generate',
+      summary: '',
+      usage: '',
+      aliases: ['g'],
+      positionalChoices: ['route', 'island', 'admin:page'],
+    },
     { name: 'logs', summary: '', usage: '' },
     { name: 'test', summary: '', usage: '', positionalChoices: ['unit', 'eval'] },
   ],
@@ -143,6 +149,25 @@ describe('the rule is conditional, not universal', () => {
     ]);
   });
 
+  test('a colon is part of a word when a letter follows it — `x g admin:page`', () => {
+    // Read without the colon, the CLI reference's one admin-page line cited `x g admin`, which is
+    // not a positional `generate` ships, and the gate reported a standing false finding on a
+    // documented invocation that runs.
+    expect(fixCitations('x g admin:page ops')).toEqual([
+      { command: 'g', sub: 'admin:page', positional: 'ops', flags: [] },
+    ]);
+    expect(citedCommandProblem('x g admin:page ops', catalog)).toBeUndefined();
+  });
+
+  test('a colon that ends a sentence does not extend the word', () => {
+    // `x db migrate: the release phase runs it` cites `x db migrate` and stops there — the
+    // colon is not whitespace, so the third slot never opens and `the` is not read as a positional.
+    expect(fixCitations('x db migrate: the release phase runs it')).toEqual([
+      { command: 'db', sub: 'migrate', positional: undefined, flags: [] },
+    ]);
+    expect(citedCommandProblem('x db migrate: the release phase runs it', catalog)).toBeUndefined();
+  });
+
   test('`x` with nothing after it cites nothing', () => {
     expect(fixCitations('run x')).toEqual([]);
     expect(fixCitations('x --json')).toEqual([]);
@@ -208,6 +233,24 @@ describe('the catalog is the registry, never a copy of it', () => {
       'x db branch drop feature_x   # then re-create, or pick another name',
       'x db branch create <name>   # lowercase letters, digits, underscore and dash only',
     ]) {
+      expect(citedCommandProblem(fix, real)).toBeUndefined();
+    }
+  });
+
+  test('`x g <kind>` is judged against the generator list, so a made-up generator is a finding', async () => {
+    // The third instance of the same class (#131, and `x db branch <name>`): two shipped fix lines
+    // in `@ultimat3/admin` said `x g migration`, a generator that has never existed — the real
+    // command is `x db gen "<description>"`. `x g` declares no subcommands, so without
+    // `positionalChoices` the word after it was never judged at all.
+    const real = await loadCommandCatalog();
+    const problem = citedCommandProblem('x g migration money', real);
+    expect(problem).toContain('not one of');
+    expect(problem).toContain('resource');
+  });
+
+  test('every generator `x g` really ships still resolves', async () => {
+    const real = await loadCommandCatalog();
+    for (const fix of ['x g resource post', 'x g backfill fill-slugs', 'x g route blog']) {
       expect(citedCommandProblem(fix, real)).toBeUndefined();
     }
   });

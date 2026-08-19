@@ -87,6 +87,7 @@ export {
 export {
   ADMIN_ERROR_CODES,
   ADMIN_ERROR_TITLES,
+  AdminActionDuplicateError,
   AdminEntityUnknownError,
   type AdminErrorCode,
   type AdminErrorParts,

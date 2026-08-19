@@ -6,6 +6,7 @@ import { type AuditLog, memoryAuditLog } from './audit';
 import type { AdminActor, AdminAuthz } from './authz';
 import type { CrudCtx } from './crud';
 import { permissionsForOperation } from './crud';
+import { AdminActionDuplicateError } from './errors';
 import { adminNav, type NavGroup, type NavItem, type NavOptions, visibleNav } from './nav';
 import { type AdminCustomPage, type AdminPageComponent, pageNavItems, pageRoutes } from './pages';
 import type { AdminOperation } from './permissions';
@@ -124,6 +125,37 @@ function resourceRoutes(basePath: string, resource: AdminResource): readonly Adm
   return routes;
 }
 
+/**
+ * One `AdminAction.name`, one handler. The name is the MCP tool name (`admin.action.<name>`), the
+ * default label key (`admin.action.<name>`) AND the key `callAdminTool` resolves a handler by, so
+ * two actions sharing it dispatch to whichever `.find()` reached first — a call that succeeds
+ * against the wrong action and reports nothing. Refused here rather than in `adminMcp()`, because
+ * an app that renders the dashboard and never wires MCP has the same two broken label keys and
+ * the same ambiguous dispatch.
+ *
+ * Identity, not name, is what "already seen" means: `defineAdmin` attaches `input.actions` to the
+ * entity each one names AND appends `resources[<entity>].actions`, so an author who spelled the
+ * same object in both meant one action, not two.
+ */
+function assertUniqueActionNames(
+  resources: readonly AdminResource[],
+  declared: readonly AdminAction[],
+): void {
+  const seen = new Map<string, { readonly action: AdminAction; readonly entities: string[] }>();
+  // `declared` is every action the caller passed, not just the global ones: an action naming an
+  // entity that is not in `entities` reaches neither list, and its name still has to be unique.
+  for (const action of [...resources.flatMap((resource) => resource.actions), ...declared]) {
+    const found = seen.get(action.name);
+    if (found === undefined) {
+      seen.set(action.name, { action, entities: [action.entity ?? 'the global toolbar'] });
+      continue;
+    }
+    if (found.action === action) continue;
+    found.entities.push(action.entity ?? 'the global toolbar');
+    throw new AdminActionDuplicateError({ name: action.name, entities: found.entities });
+  }
+}
+
 /** Derive the whole admin from the registries. */
 export function defineAdmin(input: DefineAdminInput): AdminApp {
   const basePath = input.basePath ?? '/admin';
@@ -140,6 +172,8 @@ export function defineAdmin(input: DefineAdminInput): AdminApp {
       actions: [...(opts?.actions ?? []), ...own],
     });
   });
+
+  assertUniqueActionNames(resources, actions);
 
   const pages = input.pages ?? [];
   const navOptions = input.nav ?? {};

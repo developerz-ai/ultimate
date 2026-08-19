@@ -92,7 +92,8 @@ export function assertMoney(field: AdminField, value: unknown): Money | null {
     return fail(
       field,
       `money value arrived as the number ${value}; money is integer minor units + an ISO currency`,
-      `store ${field.name} as { minor, currency } — x g migration "money ${field.entity}.${field.name}"`,
+      // `x db gen` writes migrations; `x g migration` is not a generator and never was.
+      `store ${field.name} as { minor, currency } — x db gen "change ${field.entity}.${field.name} to money"`,
     );
   }
   if (typeof value !== 'object') {

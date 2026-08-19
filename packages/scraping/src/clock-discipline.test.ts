@@ -4,9 +4,10 @@
 
 import { describe, expect, test } from 'bun:test';
 
-/** The one file allowed to make time pass, and the one allowed to hand a deadline to `fetch`. */
+/** The one file allowed to make time pass, and the ones allowed to hand a deadline to `fetch`. */
 const CLOCK_FILE = 'clock.ts';
-const DEADLINE_FILE = 'http.ts';
+/** Every file that dials the platform's own `fetch`, and no others. */
+const DEADLINE_FILES = new Set(['http.ts', 'robots-fetch.ts']);
 
 const TIMERS = /\b(?:setTimeout|setInterval|Bun\.sleep|AbortSignal\.timeout)\s*\(/;
 
@@ -21,10 +22,11 @@ describe('unit · no file but clock.ts may make time pass', () => {
       // scan reads code only — a rule that could be defeated by a comment is not a rule.
       const code = source.replaceAll(/\/\/[^\n]*|\/\*[\S\s]*?\*\//g, '');
       if (!TIMERS.test(code)) continue;
-      // `http.ts` hands ONE deadline to the platform's own `fetch`, which is not a wait this
+      // These hand ONE deadline each to the platform's own `fetch`, which is not a wait this
       // package performs — and under a test clock a slept deadline fires on the next microtask
-      // and cancels every request. Pinned here, in one place, with the reason.
-      if (path === DEADLINE_FILE && !/\b(?:setTimeout|setInterval|Bun\.sleep)\s*\(/.test(code)) {
+      // and cancels every request. Pinned here, in one place, with the reason. The exemption is
+      // for `AbortSignal.timeout` ALONE: a real timer in one of these files still offends.
+      if (DEADLINE_FILES.has(path) && !/\b(?:setTimeout|setInterval|Bun\.sleep)\s*\(/.test(code)) {
         continue;
       }
       offenders.push(path);

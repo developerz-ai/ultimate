@@ -8,6 +8,7 @@
 // root-relative POSIX shape every CLI-reported path is keyed by.
 import { existsSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { renderThrowable } from '@ultimat3/core';
 import type { Catalog, Extraction, ExtractReport, Locale } from '@ultimat3/i18n';
 import {
   auditCatalogs,
@@ -51,7 +52,7 @@ function parseCatalogJson(path: string, raw: string): unknown {
   try {
     return JSON.parse(raw);
   } catch (error) {
-    throw catalogInvalid(path, error instanceof Error ? error.message : String(error));
+    throw catalogInvalid(path, renderThrowable(error));
   }
 }
 
