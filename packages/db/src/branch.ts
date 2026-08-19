@@ -134,7 +134,17 @@ export async function reapBranches(options: ReapOptions): Promise<readonly strin
   const dropped: string[] = [];
   for (const branch of branches) {
     if (branch.createdAt === null) continue;
-    if (new Date(branch.createdAt).getTime() > cutoff) continue;
+    const createdAtMs = Date.parse(branch.createdAt);
+    // `NaN > cutoff` is `false`, which is the same answer "older than the cutoff" gives — so a
+    // truncated or hand-edited comment used to be a database DROPPED on the next sweep, whatever
+    // `maxAgeMs` said. An age nothing can read is not an old age.
+    if (!Number.isFinite(createdAtMs)) continue;
+    // Finite is not enough: `'2026-08-18T10:00'` parses as LOCAL time, so a truncated comment
+    // names an instant hours from the one it reads as, and the sweep acts on a date nobody wrote.
+    // `createBranch` writes `toISOString()` and nothing else does, so a value that does not round
+    // trip through it is not ours — there is no legitimate non-canonical comment to strand.
+    if (new Date(createdAtMs).toISOString() !== branch.createdAt) continue;
+    if (createdAtMs > cutoff) continue;
     await dropBranch(branch.name, options);
     dropped.push(branch.name);
   }

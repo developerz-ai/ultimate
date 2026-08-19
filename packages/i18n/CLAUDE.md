@@ -29,6 +29,14 @@ Imported by every package that renders a string.
   for. Same reach `catalog.ts` shuts off by nesting into null-prototype nodes; never reintroduce
   either. The `interpolate` fast path must test **both** braces: `}}` un-escapes with no `{` in
   sight, and a `{`-only check gave one escape two meanings.
+- **A catalog is read through `Object.hasOwn`, never a raw index, and every catalog this package
+  builds is `Object.create(null)`** — `flattenCatalog`, `mergeCatalogs` and `nestCatalog` all are.
+  On a `{}` catalog `catalog['valueOf']` resolved to the INHERITED function, so `t('valueOf')`
+  threw inside `interpolate`, `t('constructor')` returned a function through a signature typed
+  `string`, and `isMiss(t('__proto__'))` threw on an object — all three reachable wherever a key
+  travels as data (`t(row.labelKey)`). Both halves are load-bearing: the guard in `translator.ts`
+  makes it true of a catalog this package did not build, the null prototype makes `__proto__` an
+  ordinary key instead of one the setter silently swallows. Never reintroduce either.
 - Plural selection is `Intl.PluralRules`. Never `count === 1`. Variants are underscore suffixes on
   the leaf — a CLDR category (`_zero _one _two _few _many _other`), or `n` / `n_plural` as the
   two-form shortcut; pair `n_one` with `n_other`, never with `n_plural`. Never a nested

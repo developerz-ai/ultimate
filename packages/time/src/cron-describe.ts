@@ -4,10 +4,9 @@
  * ship English to every locale that forgot the argument — so injection is mandatory, not opt-in.
  */
 
+import { cachedFormatter, canonicalLocale } from '@ultimat3/core';
 import { type CronExpression, parseCronOnce } from './cron-parse';
 import { cronNotDescribable, localeInvalid } from './errors';
-import { cachedFormatter } from './intl-cache';
-import { canonicalLocale } from './locale-canonical';
 
 export interface CronPhrases {
   everyMinute: string;
@@ -134,8 +133,9 @@ function fill(template: string, vars: Readonly<Record<string, string | number>>)
  * header. `canonicalLocale` collapses the spellings of one locale — `EN-us`, `en-latn-us` — but it
  * still returns a distinct string for every unknown `-u-` extension value, so the key alone does
  * not bound anything and only the cap keeps the key space finite. Neither half is redundant. The
- * cap and its FIFO live in `intl-cache.ts`, because `zones.ts` and `format.ts` needed the same
- * rule and a hazard documented in one file is a hazard the other two repeat.
+ * cap and its FIFO live in `@ultimat3/core`'s `intl-cache.ts`, because `zones.ts`, `format.ts` and
+ * `@ultimat3/money`'s formatter all need the same rule, and a hazard documented in one file is a
+ * hazard every other one repeats.
  *
  * Both caches are fed the canonical `tag` by `describeCron` alone, never a caller string.
  */

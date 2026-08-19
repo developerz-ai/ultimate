@@ -10,6 +10,7 @@ import {
   isolateTiers,
   recentInvalidations,
   registeredTiers,
+  registerInvalidationBroadcast,
   registerRevalidator,
   registerTier,
   resetTiers,
@@ -219,6 +220,60 @@ describe('invalidateTags fan-out', () => {
     expect([...revalidated].sort()).toEqual(['/blog', '/blog/hello']);
   });
 
+  /**
+   * "Never throws for a tier failure" is the contract at the top of `invalidateTags`, and it held
+   * only for refusals the framework itself built: a tier, a revalidator and a broadcast are all
+   * app-supplied, so the value they reject with is app-supplied too. `instanceof` runs a `Proxy`'s
+   * `getPrototypeOf` trap and `String()` runs `Symbol.toPrimitive`, so rendering the refusal for
+   * `report.errors` used to raise INSTEAD of the refusal — and the raise lands on the write that
+   * triggered the bust, which is the one caller this whole path exists to protect.
+   */
+  describe('a refusal that fights being rendered still lands in report.errors', () => {
+    const trapped = (): unknown =>
+      new Proxy(
+        {},
+        {
+          getPrototypeOf() {
+            throw new TypeError('proxy trap');
+          },
+        },
+      );
+
+    test('a tier rejecting with a hostile throwable', async () => {
+      registerTier({
+        name: 'redis',
+        get: () => Promise.resolve(undefined),
+        set: () => Promise.resolve(),
+        del: () => Promise.resolve(),
+        invalidateTags: () => Promise.reject(trapped()),
+      });
+
+      const report = await invalidateTags([tag('post')]);
+
+      expect(report.errors.map((entry) => entry.tier)).toEqual(['redis']);
+      expect(typeof report.errors[0]?.message).toBe('string');
+    });
+
+    test('a revalidator rejecting with a hostile throwable', async () => {
+      registerDependent([tag('post')], { kind: 'isr-route', id: '/blog' });
+      registerRevalidator(() => Promise.reject(Object.create(null) as unknown));
+
+      const report = await invalidateTags([tag('post')]);
+
+      expect(report.errors.map((entry) => entry.tier)).toEqual(['isr']);
+      expect(report.isr).toEqual(['/blog']);
+    });
+
+    test('a broadcast rejecting with a hostile throwable', async () => {
+      registerInvalidationBroadcast(() => Promise.reject(trapped()));
+
+      const report = await invalidateTags([tag('post')]);
+
+      expect(report.errors.map((entry) => entry.tier)).toEqual(['broadcast']);
+      expect(typeof report.errors[0]?.message).toBe('string');
+    });
+  });
+
   test('an undeclared tag fails loudly once entities have been declared', async () => {
     declareTags(['post', 'user']);
     await expect(invalidateWireTags(['pots'])).rejects.toThrow(CacheTagUnknownError);
@@ -415,7 +470,7 @@ describe('the suite baseline this file hands back', () => {
     restore();
 
     expect(recentInvalidations().map((event) => event.tags)).toEqual([['post']]);
-    expect(recentTierFailures()[0]?.message).toBe('neighbour boom');
+    expect(recentTierFailures()[0]?.message).toBe('Error: neighbour boom');
 
     // The revalidator has no reader anywhere, so the only proof it is back is that it runs.
     revalidated.length = 0;

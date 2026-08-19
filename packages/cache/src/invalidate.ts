@@ -4,7 +4,7 @@
 // the returned report is what the `/_x` cache panel renders, so "did it actually clear?" is
 // answerable without a log dive.
 
-import { currentSpan, logger, systemClock, withSpan } from '@ultimat3/core';
+import { currentSpan, logger, renderThrowable, systemClock, withSpan } from '@ultimat3/core';
 import { markInvalidated } from './fence';
 import { dependentsOfKind } from './graph';
 import type { CacheTag } from './tags';
@@ -222,10 +222,11 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
       try {
         tiers.push(await tier.invalidateTags(tags));
       } catch (error) {
-        errors.push({
-          tier: tier.name,
-          message: error instanceof Error ? error.message : String(error),
-        });
+        // `renderThrowable`, never `error.message`: a tier is app-supplied, so the value it
+        // rejects with is too, and both `instanceof` and `String()` RUN app code on it. A render
+        // that throws here rejects the whole fan-out — the failure the line above promises not to
+        // let reach the write that triggered the bust.
+        errors.push({ tier: tier.name, message: renderThrowable(error) });
       }
     }
     // The report is read order, not clear order: it is what the `/_x` panel renders, and a ladder
@@ -240,10 +241,7 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
       try {
         await revalidator?.(path);
       } catch (error) {
-        errors.push({
-          tier: 'isr',
-          message: error instanceof Error ? error.message : String(error),
-        });
+        errors.push({ tier: 'isr', message: renderThrowable(error) });
       }
     }
 
@@ -255,10 +253,7 @@ function fanOut(tags: readonly CacheTag[], options: FanOutOptions): Promise<Inva
       try {
         await broadcast(wire);
       } catch (error) {
-        errors.push({
-          tier: 'broadcast',
-          message: error instanceof Error ? error.message : String(error),
-        });
+        errors.push({ tier: 'broadcast', message: renderThrowable(error) });
       }
     }
 

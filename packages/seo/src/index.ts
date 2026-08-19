@@ -84,7 +84,6 @@ export type {
 export {
   applyTitleTemplate,
   DESCRIPTION_MAX_LENGTH,
-  DESCRIPTION_MIN_LENGTH,
   hreflangSet,
   renderMeta,
   robotsContent,

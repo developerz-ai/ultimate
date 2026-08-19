@@ -6,7 +6,7 @@ import { type Clock, systemClock } from './clock';
 import { UltimateError } from './errors';
 import { settleWithin } from './lifecycle-deadline';
 import { lifecycleDrained } from './lifecycle-errors';
-import { type Logger, logger as rootLogger } from './logger';
+import { type LogFields, type Logger, logger as rootLogger } from './logger';
 
 export type HealthState = 'starting' | 'ready' | 'draining' | 'stopped';
 
@@ -165,6 +165,33 @@ export function readinessCheckCount(): number {
   return readiness.size;
 }
 
+/**
+ * Every line this file emits, and the only way it emits one. `log` is an injection seam
+ * (`configureLifecycle({ logger })`), so an app's `Logger` decides whether a log call can throw —
+ * and a throw here does not lose a line, it replaces the event. Inside `drain()` it rejected
+ * `drainPromise`: `state` never reached 'stopped', the memo re-rejected for every later caller,
+ * and on Bun the unhandled rejection ended the process the drain was trying to end cleanly.
+ * Inside `readinessChecks()` it replaced the probe's answer with a throw.
+ *
+ * A lifecycle that cannot report is still a lifecycle: the line falls back to core's own
+ * `rootLogger`, which is total by construction (`logger.ts`), and failing that is dropped.
+ */
+function report(level: 'info' | 'warn' | 'error', message: string, fields: LogFields): void {
+  try {
+    log[level](message, fields);
+    return;
+  } catch {
+    // Fall through — the injected sink is gone, and the fallback below is the last one there is.
+  }
+  if (log === rootLogger) return;
+  try {
+    rootLogger[level](message, fields);
+  } catch {
+    // Both sinks are gone. Dropping the line is the only remaining option that still ends the
+    // process, which is the outcome every caller of this file depends on.
+  }
+}
+
 /** Every check, run now, by name. A check that throws is `failing` — never an unhandled error. */
 export function readinessChecks(): Readonly<Record<string, ReadinessStatus>> {
   const results: Record<string, ReadinessStatus> = {};
@@ -173,7 +200,7 @@ export function readinessChecks(): Readonly<Record<string, ReadinessStatus>> {
       results[name] = check() ? 'ok' : 'failing';
     } catch (thrown) {
       results[name] = 'failing';
-      log.warn('readiness check threw', { check: name, error: thrown });
+      report('warn', 'readiness check threw', { check: name, error: thrown });
     }
   }
   return results;
@@ -278,7 +305,7 @@ async function runPhase(phase: ShutdownPhase, reason: ShutdownReason): Promise<v
   for (const registration of registrations.filter((entry) => entry.phase === phase)) {
     const outcome = await settleWithin(() => registration.hook(reason), remainingBudget(reason));
     if (outcome.kind === 'failed') {
-      log.error('shutdown hook failed', {
+      report('error', 'shutdown hook failed', {
         hook: registration.name,
         phase,
         error: outcome.error,
@@ -290,7 +317,7 @@ async function runPhase(phase: ShutdownPhase, reason: ShutdownReason): Promise<v
       // SIGKILL this process — the every-deploy duplicate that draining exists to prevent — so
       // the drain moves on and the hook is left running with nobody reading it. The cost of that
       // choice is real and named in the cause: a write it had in flight may be half done.
-      log.warn('X_SHUTDOWN_TIMEOUT', {
+      report('warn', 'X_SHUTDOWN_TIMEOUT', {
         code: 'X_SHUTDOWN_TIMEOUT',
         cause: `the "${registration.name}" shutdown hook (phase: ${phase}) was still running at the ${deadlineMs}ms drain deadline and has been ABANDONED — the process exits without it, so anything it had in flight may be incomplete`,
         fix: `raise the budget past the work this hook does — configureLifecycle({ deadlineMs: 600_000 }) for a 10-minute job — and set terminationGracePeriodSeconds to at least as many seconds, or make the "${registration.name}" hook return once it has stopped accepting work rather than once it has finished`,
@@ -308,25 +335,34 @@ export function drain(signal = 'manual'): Promise<void> {
   const reason: ShutdownReason = { signal, deadlineAt: systemClock.monotonic() + deadlineMs };
 
   drainPromise = (async () => {
-    log.info('draining', { signal, deadlineMs, inflight });
-    await runPhase('accept', reason);
+    try {
+      report('info', 'draining', { signal, deadlineMs, inflight });
+      await runPhase('accept', reason);
 
-    // Real monotonic, like `deadlineAt` itself: `waitForIdle` sleeps on a real `setTimeout`, and a
-    // budget read off an injected clock is a number that timer will never honour.
-    const remaining = Math.max(0, reason.deadlineAt - systemClock.monotonic());
-    const idle = await waitForIdle(remaining);
-    if (!idle) {
-      log.warn('X_SHUTDOWN_TIMEOUT', {
-        code: 'X_SHUTDOWN_TIMEOUT',
-        cause: `${inflight} in-flight operations still running after ${deadlineMs}ms`,
-        fix: 'raise the budget past the slowest handler — configureLifecycle({ deadlineMs: 600_000 }) for a 10-minute one — and set terminationGracePeriodSeconds to at least as many seconds, or shorten the handler',
-      });
+      // Real monotonic, like `deadlineAt` itself: `waitForIdle` sleeps on a real `setTimeout`, and
+      // a budget read off an injected clock is a number that timer will never honour.
+      const remaining = Math.max(0, reason.deadlineAt - systemClock.monotonic());
+      const idle = await waitForIdle(remaining);
+      if (!idle) {
+        report('warn', 'X_SHUTDOWN_TIMEOUT', {
+          code: 'X_SHUTDOWN_TIMEOUT',
+          cause: `${inflight} in-flight operations still running after ${deadlineMs}ms`,
+          fix: 'raise the budget past the slowest handler — configureLifecycle({ deadlineMs: 600_000 }) for a 10-minute one — and set terminationGracePeriodSeconds to at least as many seconds, or shorten the handler',
+        });
+      }
+
+      await runPhase('inflight', reason);
+      await runPhase('close', reason);
+    } catch (thrown) {
+      // Nothing above should reach here — every hook is caught by `settleWithin` and every line
+      // goes through `report`. If something does, the drain still ENDS: a rejected `drainPromise`
+      // is a memo that re-rejects for every later caller and an unhandled rejection that kills the
+      // process mid-drain, which is strictly worse than a drain that finished badly and said so.
+      report('error', 'drain failed', { signal, error: thrown });
+    } finally {
+      state = 'stopped';
     }
-
-    await runPhase('inflight', reason);
-    await runPhase('close', reason);
-    state = 'stopped';
-    log.info('stopped', { signal });
+    report('info', 'stopped', { signal });
   })();
 
   return drainPromise;
@@ -345,9 +381,14 @@ export function installSignalHandlers(options?: SignalHandlerOptions): () => voi
 
   for (const signal of signals) {
     const handler = (): void => {
-      void drain(signal).then(() => {
+      // Attached on BOTH settle paths, for the reason `settleWithin` gives: an unhandled rejection
+      // ends the process before the drain does, and the exit is what the kubelet is waiting for.
+      // `drain()` cannot reject today — that is the `try/finally` above, not luck — and this is
+      // the one line that keeps it true when someone changes the body.
+      const done = (): void => {
         if (options?.exit === true) process.exit(0);
-      });
+      };
+      void drain(signal).then(done, done);
     };
     handlers.set(signal, handler);
     process.on(signal, handler);

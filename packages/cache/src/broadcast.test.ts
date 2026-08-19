@@ -89,7 +89,9 @@ describe('cross-instance invalidation', () => {
 
     const report = await invalidateTags([tag('post')]);
 
-    expect(report.errors).toEqual([{ tier: 'broadcast', message: 'nats is down' }]);
+    // `renderThrowable`'s shape: the renderer that cannot itself throw is the only one a catch
+    // block absorbing an app-supplied refusal may use, and it carries the name.
+    expect(report.errors).toEqual([{ tier: 'broadcast', message: 'Error: nats is down' }]);
     // The local tiers still cleared: a partial bust, honestly reported.
     expect(report.tiers.map((entry) => entry.tier)).toEqual(['lru']);
     expect(await lru.get('feed')).toBeUndefined();

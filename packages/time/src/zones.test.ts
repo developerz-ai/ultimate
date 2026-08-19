@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test';
 // the test measures *JavaScript heap* growth, and `Bun.unsafe.memoryFootprint()` reports the
 // process footprint, which moves with allocator behaviour rather than with retained formatters.
 import { memoryUsage } from 'node:process';
+import { isUltimateError, type UltimateError } from '@ultimat3/core';
 import { fromIso } from './instant';
 import { canonicalTimeZone } from './zone-canonical';
 import {
@@ -66,24 +67,24 @@ describe('isValidTimeZone', () => {
   });
 });
 
-describe('one zone is one key', () => {
-  // `Intl` accepts every casing of an IANA name, and both formatter caches were keyed on the raw
-  // string. `x-timezone: eUrOpE/bErLiN` therefore minted a permanent `Intl.DateTimeFormat` per
-  // casing — 2^12 of them for a 13-letter zone, from a request header.
-  const CASINGS = 4096;
+// `Intl` accepts every casing of an IANA name, and every formatter cache was keyed on the raw
+// string. `x-timezone: eUrOpE/bErLiN` therefore minted a permanent `Intl.DateTimeFormat` per
+// casing — 2^12 of them for a 13-letter zone, from a request header.
+const CASINGS = 4096;
 
-  function casing(zone: string, mask: number): string {
-    const chars = [...zone];
-    let bit = 0;
-    for (let index = 0; index < chars.length; index += 1) {
-      const char = chars[index] ?? '';
-      if (!/[a-z]/i.test(char)) continue;
-      chars[index] = (mask >> bit) & 1 ? char.toUpperCase() : char.toLowerCase();
-      bit += 1;
-    }
-    return chars.join('');
+function casing(zone: string, mask: number): string {
+  const chars = [...zone];
+  let bit = 0;
+  for (let index = 0; index < chars.length; index += 1) {
+    const char = chars[index] ?? '';
+    if (!/[a-z]/i.test(char)) continue;
+    chars[index] = (mask >> bit) & 1 ? char.toUpperCase() : char.toLowerCase();
+    bit += 1;
   }
+  return chars.join('');
+}
 
+describe('one zone is one key', () => {
   test('every casing canonicalizes to the same name', () => {
     expect(canonicalTimeZone('eUrOpE/bErLiN')).toBe('Europe/Berlin');
     expect(canonicalTimeZone('utc')).toBe('UTC');
@@ -120,5 +121,23 @@ describe('zoneAbbrev', () => {
   test('labels the zone for the user', () => {
     expect(zoneAbbrev('Europe/Berlin', summer, 'en-US', 'shortOffset')).toBe('GMT+2');
     expect(zoneAbbrev('Asia/Kathmandu', summer, 'en-US', 'shortOffset')).toBe('GMT+5:45');
+  });
+
+  test('refuses an unknown zone with X_TIMEZONE_INVALID, like every other entry point', () => {
+    // It built its own `Intl.DateTimeFormat` on the caller's raw string, so the one label an app
+    // renders from an `x-timezone` header answered a bare `RangeError` with no code and no fix.
+    let caught: unknown;
+    try {
+      zoneAbbrev('Mars/Olympus', summer);
+    } catch (error) {
+      caught = error;
+    }
+    expect(isUltimateError(caught)).toBe(true);
+    expect((caught as UltimateError).code).toBe('X_TIMEZONE_INVALID');
+  });
+
+  test('every casing answers one label, because the key is the canonical name', () => {
+    expect(zoneAbbrev('eUrOpE/bErLiN', summer, 'en-US', 'shortOffset')).toBe('GMT+2');
+    expect(zoneAbbrev('europe/berlin', summer, 'en-US', 'shortOffset')).toBe('GMT+2');
   });
 });

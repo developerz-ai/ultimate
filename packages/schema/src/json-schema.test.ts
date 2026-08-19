@@ -155,6 +155,20 @@ describe('toJsonSchema', () => {
     }
   });
 
+  test('a provider supplying toJsonSchema is not an alternative to introspect', () => {
+    configureSchemaProvider({
+      vendor: 'phantom',
+      t: builtinT,
+      // @ts-expect-error — `SchemaProvider` has no `toJsonSchema` member. The doc clause that
+      // said `introspect` could be omitted "if the provider also supplies toJsonSchema"
+      // described an API that never existed: this path throws on every OpenAPI and MCP
+      // projection. If the member is ever really added, this line stops erroring and fails.
+      toJsonSchema: () => ({ type: 'object' }),
+    });
+
+    expect(() => toJsonSchema({ notASchema: true })).toThrow(/X_SCHEMA_UNSUPPORTED/);
+  });
+
   test('a swapped provider actually backs t', () => {
     let calls = 0;
     configureSchemaProvider({

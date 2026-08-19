@@ -91,7 +91,7 @@ describe('the post-commit cache bust', () => {
 
     const report = await bustAfterCommit('publishPost', [tag('post')]);
 
-    expect(report?.errors).toEqual([{ tier: 'redis', message: 'redis is down' }]);
+    expect(report?.errors).toEqual([{ tier: 'redis', message: 'Error: redis is down' }]);
     // The tier that answered still cleared, and the caller still got a report to render.
     expect(report?.tiers.map((entry) => entry.tier)).toEqual(['lru']);
   });

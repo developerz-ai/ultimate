@@ -11,8 +11,10 @@ export interface SchemaProvider {
   readonly vendor: string;
   readonly t: TNamespace;
   /**
-   * Return the IR for one of this provider's schemas. Required for OpenAPI and MCP tool
-   * schemas; omit it only if the provider also supplies `toJsonSchema`.
+   * Return the IR for one of this provider's schemas. Required for OpenAPI, MCP tool schemas
+   * and the admin form generator: `toJsonSchema()` calls it unconditionally and throws
+   * `X_SCHEMA_UNSUPPORTED` without it. There is no second way to describe a schema — the IR is
+   * the one projection surface, and every generator reads it.
    */
   introspect?(schema: unknown): SchemaNode | undefined;
 }

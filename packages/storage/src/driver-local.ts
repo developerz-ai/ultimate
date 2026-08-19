@@ -29,7 +29,7 @@ import {
   storageNotImplemented,
 } from './errors';
 import { assertSafeKey, META_DIR } from './path';
-import { buildSignedUrl } from './signed-url';
+import { buildSignedUrl, signedUrlBaseFor } from './signed-url';
 import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
 const DRIVER_NAME = 'local';
@@ -130,7 +130,7 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
   const root = options.root.replace(/\/+$/, '');
   const maxPutBytes = options.maxPutBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
   const clock = options.clock ?? systemClock;
-  const baseUrl = options.baseUrl ?? `/_storage/${DRIVER_NAME}`;
+  const baseUrl = options.baseUrl ?? signedUrlBaseFor(DRIVER_NAME);
   // A dev disk must work with zero config. Outside development the fallback is refused rather
   // than used: the literal is published, so signing with it hands every reader the power to mint
   // a PUT for any key with any size and type limit — which `acceptSignedUpload` then trusts over

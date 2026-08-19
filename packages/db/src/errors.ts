@@ -32,8 +32,17 @@ export const DB_OWNED_ERROR_CODES = [
  * `@ultimat3/core`'s. Never titled here, never registered here. `X_ENV_MISSING` is core's word for
  * "a variable this process was given is missing or invalid", and `DATABASE_POOL_MAX` is one — a
  * db-local code for it would be a second answer to a question core already answers.
+ *
+ * `X_INVARIANT` is core's own "the generic code, for checks that have no dedicated code yet"
+ * (`assert()` in `core/src/assert.ts`), borrowed the same way `@ultimat3/money`'s `roundRatio`
+ * borrows it: an argument a caller built wrong is not a fact about the ledger or the schema, so
+ * none of the `X_MIGRATION_*` codes above describes one.
  */
-export const DB_BORROWED_ERROR_CODES = ['X_NOT_IMPLEMENTED', 'X_ENV_MISSING'] as const;
+export const DB_BORROWED_ERROR_CODES = [
+  'X_NOT_IMPLEMENTED',
+  'X_ENV_MISSING',
+  'X_INVARIANT',
+] as const;
 
 /** Every code db can throw: the ones it owns plus the ones it borrows. */
 export const DB_ERROR_CODES = [...DB_OWNED_ERROR_CODES, ...DB_BORROWED_ERROR_CODES] as const;
@@ -248,6 +257,21 @@ export const migrationConflict = (cause: string, fix: string): DbError =>
 
 export const migrationIrreversible = (cause: string, fix: string): DbError =>
   new DbError({ code: 'X_MIGRATION_IRREVERSIBLE', cause, fix });
+
+/**
+ * A rollback step count this build cannot honour. `steps` reaches `Array.prototype.slice`, where a
+ * negative count counts from the END: `steps: -1` selected every applied migration except the
+ * newest and reversed four of five, which is the one class of mistake a rollback cannot undo.
+ * Refused rather than coerced, exactly as `DATABASE_POOL_MAX` is — a number silently reinterpreted
+ * as a different one is the failure a validated argument exists to prevent.
+ */
+export const rollbackStepsInvalid = (received: number): DbError =>
+  new DbError({
+    code: 'X_INVARIANT',
+    cause: `rollback was asked to reverse ${String(received)} migrations, which is not a positive integer`,
+    fix: 'rollback({ migrations, steps: 1 })   # a whole number of migrations, newest first',
+    meta: { steps: received },
+  });
 
 /**
  * `packages/db/migrations/0000_initial.snapshot.json` → `packages/db/migrations/0000_initial.*` —

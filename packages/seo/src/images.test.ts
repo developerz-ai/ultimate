@@ -30,6 +30,27 @@ describe('responsiveImage', () => {
     expect(responsiveImage(INPUT).img.srcset).not.toContain('1536w');
   });
 
+  test('the no-srcset fallback is the LARGEST width, whatever order the caller gave', () => {
+    // `widths[widths.length - 1]` was the largest only because `DEFAULT_WIDTHS` happens to
+    // ascend; `usableWidths` preserves the caller's order, so a descending list handed every
+    // browser without `srcset` support the SMALLEST variant of a full-width image.
+    const descending = responsiveImage(INPUT, { widths: [1200, 640] });
+    const ascending = responsiveImage(INPUT, { widths: [640, 1200] });
+
+    expect(descending.img.src).toContain(`${IMAGE_QUERY_KEYS.width}=1200`);
+    expect(descending.img.src).toBe(ascending.img.src);
+    // The srcset still carries the caller's order — only the fallback is chosen by size.
+    expect(descending.img.srcset).toBe('/img/hero.jpg?w=1200 1200w, /img/hero.jpg?w=640 640w');
+  });
+
+  test('the fallback never upscales past the intrinsic width', () => {
+    // `usableWidths` drops 1920 and appends the intrinsic width, so the largest usable width
+    // is 1200 — `Math.max` over the usable list, never over what the caller asked for.
+    expect(responsiveImage(INPUT, { widths: [1920, 320] }).img.src).toContain(
+      `${IMAGE_QUERY_KEYS.width}=1200`,
+    );
+  });
+
   test('a priority image is eager with high fetch priority', () => {
     const image = responsiveImage({ ...INPUT, priority: true });
     expect(image.img.loading).toBe('eager');

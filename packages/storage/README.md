@@ -89,7 +89,9 @@ fixing was built wrong.
 `scopedKey('org-1', 'avatars', 'a.png')` is `org/org-1/avatars/a.png`; guard every
 client-supplied key with `isWithinOrg(key, ctx.actor.orgId)`. A surface that serves objects pairs
 it with `isTenantScoped(key)`: only a key already inside `org/` is another tenant's to refuse, so
-`disk().put('brand/logo.png', …)` stays reachable while `org/org-2/…` never is.
+`disk().put('brand/logo.png', …)` stays reachable while `org/org-2/…` never is. `accept.ts` asks
+the pair too. `isTenantScoped` folds case (`Org/`, `ORG/`) and `isWithinOrg` does not, so a
+case-variant prefix — one directory, not two, on APFS or NTFS — is refused rather than matched.
 
 ## Signed URLs
 
@@ -144,8 +146,10 @@ const { key } = await uploadFile({ file, grant: (request) => api.requestUpload(r
 
 // 3. server, in the route mounted at `/_storage`: take it back, or refuse
 const object = await acceptSignedUpload({
-  url: request.url, secret, baseUrl: '/_storage/local',
-  disk: disk('uploads'), orgId: ctx.actor.orgId,
+  url: request.url,                  // baseUrl defaults to signedUrlBaseFor(disk.name) — the
+  secret,                            // same base the driver signed under. Pass one only for a
+  disk: disk('uploads'),             // route mounted somewhere other than /_storage/<driver>.
+  orgId: ctx.actor.orgId,
   bytes, declaredContentType: request.headers.get('content-type') ?? undefined,
   policy: uploadPolicy({ maxBytes: 5e6 }),
 });
@@ -154,7 +158,12 @@ const object = await acceptSignedUpload({
 `acceptSignedUpload` refuses on any of: a signature that does not verify, an expired grant, a
 `PUT` grant replayed as a `GET`, a key outside the actor's org, more bytes than the signature
 granted, a `Content-Type` the signature does not cover, or magic bytes that contradict it.
-`readSignedObject` is the GET half and applies the same verification and the same org check.
+`readSignedObject` is the GET half and applies the same verification and the same org check —
+which is the `isTenantScoped`/`isWithinOrg` pair, so an app's own un-scoped `brand/logo.png` is
+readable through a URL it signed and `org/org-2/…` still is not.
+`uploadPolicy({ requireChecksum: true })` needs the request's declared hash, which travels as
+`checksum` exactly as the content type travels as `declaredContentType`: a header the route reads
+and hands over, hashed again here and refused on any disagreement.
 Neither owns a `Request`, a `Response` or a status number — mounting is the host's job, and
 `@ultimat3/http` is the only layer that turns an `X_*` code into a status.
 

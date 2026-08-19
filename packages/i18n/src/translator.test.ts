@@ -35,6 +35,36 @@ describe('createTranslator', () => {
     expect(isMiss(t('nav.home'))).toBe(false);
   });
 
+  test('an Object.prototype member is a miss, not the inherited value', () => {
+    // A `{}`-literal catalog, because that is what a raw index would read through: the whole
+    // point is that the translator no longer depends on who built the catalog.
+    const t = createTranslator({ greeting: 'Hi' }, 'en');
+
+    // Reached wherever a key travels as data — `t(row.labelKey)`, `t(titleKey)`. A raw index
+    // returned `Object.prototype.valueOf` here and `interpolate` threw on a non-string.
+    expect(t('valueOf', { n: 1 })).toBe('⟦valueOf⟧');
+    expect(t('constructor')).toBe('⟦constructor⟧');
+    expect(t('__proto__')).toBe('⟦__proto__⟧');
+    expect(t('toString')).toBe('⟦toString⟧');
+    expect(t('hasOwnProperty')).toBe('⟦hasOwnProperty⟧');
+    // `isMiss` is the documented probe, and it threw on the object `__proto__` resolved to.
+    expect([t('valueOf'), t('constructor'), t('__proto__')].every(isMiss)).toBe(true);
+
+    // The probes agree with the render — no key, no template.
+    expect(t.has('constructor')).toBe(false);
+    expect(t.raw('constructor')).toBeUndefined();
+    expect(t.raw('__proto__')).toBeUndefined();
+    expect(t.raw('valueOf')).toBeUndefined();
+    // And a real key still renders.
+    expect(t('greeting')).toBe('Hi');
+  });
+
+  test('plural selection cannot resolve onto a prototype member either', () => {
+    const t = createTranslator(flattenCatalog({ greeting: 'Hi' }), 'en');
+    expect(t('valueOf', { count: 1 })).toBe('⟦valueOf⟧');
+    expect(t('constructor', { count: 3 })).toBe('⟦constructor⟧');
+  });
+
   test('interpolates and reports a missing variable loudly too', () => {
     const t = createTranslator(en, 'en');
     expect(t('greeting', { name: 'Ada', count: 1 })).toBe('Hi Ada, you have 1 message');

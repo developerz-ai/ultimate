@@ -11,7 +11,7 @@ import {
   isReservable,
   poolProfileFor,
 } from './client';
-import { migrateConcurrent, migrationConflict } from './errors';
+import { migrateConcurrent, migrationConflict, rollbackStepsInvalid } from './errors';
 import { expectedQueryLoop } from './expected-loop';
 import type { SchemaDescription } from './introspect';
 import { raw, sql } from './sql';
@@ -149,7 +149,13 @@ export function auditLedger(
 ): void {
   const known = new Map(migrations.map((migration) => [migration.id, migration]));
 
-  const foreign = ledger.filter((row) => !known.has(row.id) && row.app_version !== appVersion);
+  // The predicate is "this build does not ship it" and NOTHING else. It used to also require
+  // `row.app_version !== appVersion`, which switched the audit off wherever the two agree —
+  // `runningAppVersion()` answers `dev` for every development build, so a migration applied by an
+  // earlier `dev` build and since deleted was invisible here, and `expectedSchema` then dropped
+  // its table from the drift comparison: `ok: true` against a database that still has the table.
+  // The version is a detail of the ANSWER, so it moved into the cause.
+  const foreign = ledger.filter((row) => !known.has(row.id));
   const first = foreign[0];
   if (first !== undefined) {
     throw migrationConflict(
@@ -374,6 +380,7 @@ export async function migrate(options: MigrateOptions): Promise<MigrationReport>
 export interface RollbackOptions {
   readonly migrations: readonly Migration[];
   readonly client?: DbClient | undefined;
+  /** How many applied migrations to reverse, newest first. A positive integer; defaults to 1. */
   readonly steps?: number | undefined;
   /** Skip the advisory lock. Only `x db branch` does this, against a private database. */
   readonly lock?: boolean | undefined;
@@ -387,6 +394,9 @@ export interface RollbackOptions {
 export async function rollback(options: RollbackOptions): Promise<readonly string[]> {
   const client = options.client ?? baseClient();
   const steps = options.steps ?? 1;
+  // Before the lock and before the ledger read: `slice(0, -1)` is "all but the newest", not
+  // "one fewer", so an unvalidated count reverses migrations nobody asked about.
+  if (!Number.isSafeInteger(steps) || steps < 1) throw rollbackStepsInvalid(steps);
   const lockTimeoutMs = migrationLockTimeoutMs(options.lockTimeoutMs);
   const known = new Map(options.migrations.map((migration) => [migration.id, migration]));
 

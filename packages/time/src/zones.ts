@@ -4,9 +4,9 @@
  * is no offset table to keep in sync and no `date-fns-tz` dependency.
  */
 
+import { cachedFormatter, canonicalLocale } from '@ultimat3/core';
 import { timezoneInvalid } from './errors';
 import type { Instant } from './instant';
-import { cachedFormatter } from './intl-cache';
 import { canonicalTimeZone } from './zone-canonical';
 
 /** An IANA identifier: `Europe/Berlin`, `Asia/Kathmandu`, `UTC`. Never `CET`, never `+01:00`. */
@@ -117,13 +117,22 @@ export function zoneAbbrev(
   locale = 'en-US',
   style: 'short' | 'long' | 'shortOffset' | 'longOffset' = 'short',
 ): string {
-  const formatter = new Intl.DateTimeFormat(locale, {
-    timeZone: zone,
-    timeZoneName: style,
-    hourCycle: 'h23',
+  const canonical = assertTimeZone(zone);
+  // A tag `Intl` cannot parse falls through unchanged, exactly as in `format.ts`: this decides a
+  // cache key, never whether a locale is acceptable.
+  const tag = canonicalLocale(locale) ?? locale;
+  // The one `Intl` construction in this package that escaped the shared cache: it built a formatter
+  // per call on the caller's raw zone and locale, so an `x-timezone` an app renders a label from
+  // paid for a fresh `Intl.DateTimeFormat` every time and an unknown one escaped as a `RangeError`.
+  const formatter = cachedFormatter(labelFormatters, `${canonical}|${tag}|${style}`, () => {
+    return new Intl.DateTimeFormat(tag, {
+      timeZone: canonical,
+      timeZoneName: style,
+      hourCycle: 'h23',
+    });
   });
   const label = formatter.formatToParts(at).find((part) => part.type === 'timeZoneName')?.value;
-  return label ?? offsetLabel(offsetAt(zone, at));
+  return label ?? offsetLabel(offsetAt(canonical, at));
 }
 
 /**
@@ -145,6 +154,7 @@ export function observesDst(zone: TimeZone, at: Instant): boolean {
 }
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
+const labelFormatters = new Map<string, Intl.DateTimeFormat>();
 
 function partsFormatterFor(zone: TimeZone): Intl.DateTimeFormat {
   // Keyed on the canonical name, so 4,096 casings of one zone are one entry rather than 4,096.

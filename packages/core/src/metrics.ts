@@ -111,12 +111,20 @@ export interface InstrumentOptions {
 }
 
 export interface GaugeOptions extends InstrumentOptions {
-  /** Async instrument: read at collection time instead of being pushed. Never stale. */
+  /**
+   * Async instrument: read at collection time instead of being pushed. Never stale.
+   * Stated twice for one name with two different callbacks is `X_METRIC_NAME_INVALID`, not a
+   * silent win for the first — see `assertSameDeclaration`.
+   */
   readonly observe?: (() => number) | undefined;
 }
 
 export interface HistogramOptions extends InstrumentOptions {
-  /** Explicit bucket boundaries, ascending. Defaults to the OTel latency-in-seconds set. */
+  /**
+   * Explicit bucket boundaries, ascending. Defaults to the OTel latency-in-seconds set.
+   * Stated twice for one name with two different sets is `X_METRIC_NAME_INVALID`, not a silent
+   * win for the first — see `assertSameDeclaration`.
+   */
   readonly bounds?: readonly number[] | undefined;
 }
 
@@ -263,6 +271,7 @@ function declare(name: string, kind: MetricKind, options: GaugeOptions & Histogr
         meta: { name, declared: existing.descriptor.kind, requested: kind },
       });
     }
+    assertSameDeclaration(name, existing, options);
     return existing;
   }
   const maxSeries = options.maxSeries ?? DEFAULT_MAX_SERIES;
@@ -289,6 +298,39 @@ function declare(name: string, kind: MetricKind, options: GaugeOptions & Histogr
   instruments.set(name, instrument);
   return instrument;
 }
+
+/**
+ * A second declaration that STATES a different shape is refused. The first declaration wins, so a
+ * second `histogram(name, { bounds })` recorded into buckets another module chose and a second
+ * `gauge(name, { observe })` was collected through the first module's observer — silently, in both
+ * cases, which is the whole failure. An OMITTED option is not a conflict: `gauge(name)` is how a
+ * module takes a handle on an instrument someone else declared, and `maxSeries` keeps its shipped
+ * first-declaration-wins rule because it decides a ceiling rather than what gets recorded.
+ */
+function assertSameDeclaration(
+  name: string,
+  existing: Instrument,
+  options: GaugeOptions & HistogramOptions,
+): void {
+  const { bounds, observe } = options;
+  if (bounds !== undefined && !sameBounds(existing.bounds, bounds)) {
+    throw new MetricNameInvalidError({
+      cause: `"${name}" is already declared with bounds [${existing.bounds.join(', ')}] and is redeclared with [${bounds.join(', ')}]; the first declaration wins, so the second set would never be used`,
+      fix: `declare "${name}" once and export the handle — import it where you record — or give the second instrument its own name`,
+      meta: { name, declared: existing.bounds.join(','), requested: bounds.join(',') },
+    });
+  }
+  if (observe !== undefined && observe !== existing.observe) {
+    throw new MetricNameInvalidError({
+      cause: `"${name}" is already declared with an observe() callback and is redeclared with a different one; the first declaration wins, so the second callback would never be read`,
+      fix: `declare "${name}" once and export the handle — import it where you read — or give the second gauge its own name`,
+      meta: { name },
+    });
+  }
+}
+
+const sameBounds = (left: readonly number[], right: readonly number[]): boolean =>
+  left.length === right.length && left.every((bound, index) => bound === right[index]);
 
 /**
  * Reported through the logger rather than thrown: the call site is `orderCounter.add(1, …)` deep

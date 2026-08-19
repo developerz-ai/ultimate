@@ -433,6 +433,34 @@ never a silently wrong page.
 | `usesDevCursorSecret()` | true while the shipped dev key is in use |
 | `resetCursorSigning()` | test seam: forget `configureCursorSigning` and fall back to the environment |
 
+## One bounded cache for every `Intl` formatter
+
+```ts
+import { cachedFormatter, canonicalLocale } from '@ultimat3/core';
+
+const cache = new Map<string, Intl.NumberFormat>();
+
+export function euroFormatter(locale: string): Intl.NumberFormat {
+  // `EN-us` and `en-latn-us` collapse to one key, so one locale cannot evict itself.
+  const tag = canonicalLocale(locale) ?? locale;
+  return cachedFormatter(
+    cache,
+    `${tag}|EUR`,
+    () => new Intl.NumberFormat(tag, { style: 'currency', currency: 'EUR' }),
+  );
+}
+```
+
+A locale arrives from `Accept-Language` and a zone from `x-timezone`, so an unbounded `Map` keyed
+on that string is **memory the client chooses**. Measured `As of 2026-08`: 4,096 casings of one
+zone name retained 31 MB, and 20,000 valid `en-US-x-*` tags through `formatMoney` retained 55.1 MB.
+The bound
+(`MAX_CACHED_FORMATTERS`, 512, FIFO) and the canonical key are two halves of one rule and neither
+is sufficient alone — an unknown `-u-` extension value survives canonicalization as a distinct
+string, and the cap alone lets one locale evict itself under three spellings. A miss costs one
+`Intl` construction, never a wrong answer, which is what makes the bound safe. It lives here rather
+than in `@ultimat3/time` because `@ultimat3/money` needs it too and tier 1 may not import sideways.
+
 ## One image pipeline, everywhere
 
 ```ts

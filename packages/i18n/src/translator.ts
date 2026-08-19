@@ -64,7 +64,13 @@ export function createTranslator(catalog: Catalog, locale: Locale = DEFAULT_LOCA
   };
 
   const translate = (key: string, vars?: TranslateVars): string => {
-    const template = catalog[resolveKey(key, vars)];
+    // Through `hasExact`, never a raw index: a key travels as data (`t(row.labelKey)`), and on a
+    // `{}`-prototyped catalog `catalog['valueOf']` resolves to the INHERITED function instead of
+    // reading as absent — so `interpolate` threw on a non-string, `t('constructor')` returned a
+    // function through a signature typed `string`, and `isMiss(t('__proto__'))` threw on an object.
+    // Catalogs are null-prototyped now; this guard is what makes that true of any catalog.
+    const resolved = resolveKey(key, vars);
+    const template = hasExact(resolved) ? catalog[resolved] : undefined;
     if (template === undefined) return `⟦${key}⟧`;
     return vars === undefined ? template : interpolate(template, vars);
   };
@@ -75,7 +81,7 @@ export function createTranslator(catalog: Catalog, locale: Locale = DEFAULT_LOCA
       hasExact(`${key}_other`) ||
       hasExact(`${key}_plural`) ||
       hasExact(`${key}_one`),
-    raw: (key: string): string | undefined => catalog[key],
+    raw: (key: string): string | undefined => (hasExact(key) ? catalog[key] : undefined),
     keys: (): string[] => Object.keys(catalog).sort(),
     locale,
   });

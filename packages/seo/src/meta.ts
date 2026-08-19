@@ -4,9 +4,12 @@
 
 import { absoluteUrl } from './xml';
 
-/** Search results truncate past this; validate.ts enforces it. */
+/**
+ * Search results truncate past these; `validate.ts` enforces both, and only these two exist for
+ * that reason — a `DESCRIPTION_MIN_LENGTH` shipped here with no validator reading it, so the
+ * comment promised a gate that never ran. A bound with no enforcer does not ship.
+ */
 export const TITLE_MAX_LENGTH = 60;
-export const DESCRIPTION_MIN_LENGTH = 50;
 export const DESCRIPTION_MAX_LENGTH = 160;
 
 export interface RobotsDirectives {

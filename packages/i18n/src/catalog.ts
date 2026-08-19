@@ -16,9 +16,14 @@ const KEY_SEGMENT = /^[A-Za-z0-9_-]+$/;
 /**
  * Depth-first flatten. Throws `X_CATALOG_INVALID` on a non-string leaf (arrays and
  * numbers are the two mistakes translators actually make) or a duplicate flat key.
+ *
+ * `Object.create(null)`, for the reason `nestCatalog` states below: a catalog is untrusted input
+ * read off disk. On a `{}` literal `out['__proto__'] = 'Hello'` hits the `Object.prototype` SETTER
+ * and the key vanishes silently, and every other member of `Object.prototype` reads back as
+ * present when it is not.
  */
 export function flattenCatalog(source: NestedCatalog, prefix = ''): Catalog {
-  const flat: Record<string, string> = {};
+  const flat = Object.create(null) as Record<string, string>;
   walk(source, prefix, flat);
   return flat;
 }
@@ -89,7 +94,9 @@ export function nestCatalog(catalog: Catalog): NestedCatalog {
  * app can override `errors.notFound.title` without forking the framework catalog.
  */
 export function mergeCatalogs(...catalogs: readonly Catalog[]): Catalog {
-  const merged: Record<string, string> = {};
+  // Null-prototyped like every catalog this package builds — a merge must not hand back an
+  // object on which `catalog['toString']` reads as a function.
+  const merged = Object.create(null) as Record<string, string>;
   for (const catalog of catalogs) {
     for (const key of Object.keys(catalog)) {
       const value = catalog[key];

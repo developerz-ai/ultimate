@@ -3,7 +3,7 @@
 // to return, so every swallowed refusal lands in one bounded log plus one `warn` — a stack
 // running degraded stays answerable instead of merely looking slow.
 
-import { logger, systemClock, UltimateError } from '@ultimat3/core';
+import { logger, renderThrowable, systemClock, UltimateError } from '@ultimat3/core';
 import type { TierLabel } from './tiers';
 
 /** The three tier calls a stack makes on the value path. `invalidateTags` reports its own. */
@@ -77,14 +77,35 @@ export async function bestEffort<T>(
   }
 }
 
+/**
+ * The `X_*` code when the tier threw an `UltimateError`, and `undefined` for every other answer —
+ * "the probe itself threw" included. `instanceof` RUNS a `Proxy`'s `getPrototypeOf` trap and the
+ * read past it is a getter call, both on a value this package did not build; the one place the
+ * question is asked is the catch block absorbing a refusal, which has nothing left to answer with
+ * if asking it raises. Core's `isThrownError` is this guard for `Error` and `stringField` is it for
+ * a loose field — neither fits here, because a driver error's `code` is a SQLSTATE and must never
+ * be reported as an `X_*` one.
+ */
+function ultimateCode(error: unknown): string | undefined {
+  try {
+    if (!(error instanceof UltimateError)) return undefined;
+    return typeof error.code === 'string' ? error.code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function record(tier: TierLabel, op: TierOperation, key: string, error: unknown): void {
+  const code = ultimateCode(error);
   const failure: TierFailure = {
     at: systemClock.now().toISOString(),
     tier,
     op,
     key,
-    ...(error instanceof UltimateError ? { code: error.code } : {}),
-    message: error instanceof Error ? error.message : String(error),
+    ...(code === undefined ? {} : { code }),
+    // Never `error.message`: a rendering that throws replaces the absorbed refusal with a
+    // `TypeError` on the business read this function exists to keep alive.
+    message: renderThrowable(error),
   };
   failureLog.unshift(failure);
   failureLog.length = Math.min(failureLog.length, MAX_TIER_FAILURES);

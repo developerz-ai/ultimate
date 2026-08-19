@@ -62,6 +62,7 @@ shape against a locally declared sample interface for exactly that reason.
 | `.env.example` | `env-example.ts` | a projection of the schema, never hand-maintained |
 | loading `.env` | **Bun**, not us | `envFileCandidates()` documents the measured order; there is no `.env.staging` |
 | a value that must not be printed | `secret.ts` | redacted by VALUE; `revealSecret()` is the one way out, on purpose greppable |
+| an `Intl` formatter cache | `intl-cache.ts` (`cachedFormatter`, `canonicalLocale`, `MAX_CACHED_FORMATTERS`) | a locale and a zone arrive from a request header, so the key must be canonical AND the cache bounded — never a second copy of either half |
 | the committed encrypted values | `secrets.ts` (envelope) + `secrets-store.ts` (files, `installSecrets`) | plaintext is a flat map of ENV NAMES; there is no `secrets.get()` |
 
 `installSecrets()` is the ONLY path from `secrets.enc.json` to an app value, and it lands in
@@ -69,6 +70,16 @@ shape against a locally declared sample interface for exactly that reason.
 `.env.example` row, one mask and one reader. A second accessor would be five second
 implementations. The real environment always wins, which is what lets one image run in Compose and
 on K8s off one committed file.
+
+`intl-cache.ts` is tier 0 because two tier-1 packages need it and tier 1 may not import sideways.
+It was `@ultimat3/time`'s, internal, until 2.0.0, when `@ultimat3/money`'s `formatMoney` was found
+keyed raw on the caller's locale into an unbounded `Map` — 20,000 valid `en-US-x-*` tags from one
+`Accept-Language` header retained +55.1 MB of RSS (measured `As of 2026-08`). Copying the FIFO into
+`money` would have been a second answer to one question (axiom 1); `money → time` is a sideways
+import `bun run boundaries` refuses. The bound and the canonical key are **two halves of one rule**
+and live in one file for that reason: a canonical key bounds nothing (an unknown `-u-` extension
+value survives canonicalization as a distinct string) and the cap alone lets one locale evict
+itself under three spellings. Never build an `Intl` formatter on a caller string without both.
 
 `secrets-errors.ts` registers its seven codes through `registerErrorCodes()` rather than joining
 `CORE_CODE_TITLES` — the codes and the module that throws them ship together, and `registerErrorCodes`

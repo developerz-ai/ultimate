@@ -33,6 +33,18 @@ describe('nextCronOccurrence', () => {
     expect(toIso(next)).toBe('2026-03-16T09:00:00.000Z');
   });
 
+  test('a wrapping stepped weekday range fires on the days it names, and no others', () => {
+    // 2026-03-14 is a Saturday. `sat-tue/2` is Saturday and Monday; a task on this schedule used
+    // to fire on Sunday and Tuesday instead, every week, because the stride walked an 8-day week.
+    const times = nextCronOccurrences('0 3 * * sat-tue/2', UTC, fromIso('2026-03-14T00:00:00Z'), 4);
+    expect(times.map(toIso)).toEqual([
+      '2026-03-14T03:00:00.000Z', // Saturday
+      '2026-03-16T03:00:00.000Z', // Monday
+      '2026-03-21T03:00:00.000Z', // Saturday
+      '2026-03-23T03:00:00.000Z', // Monday
+    ]);
+  });
+
   test('day-of-month and day-of-week OR together (Vixie semantics)', () => {
     // "1st of the month OR any Monday" — both restricted means either matches.
     const next = nextCronOccurrence('0 0 1 * MON', UTC, fromIso('2026-03-14T00:00:00Z'));
