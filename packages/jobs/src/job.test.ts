@@ -6,7 +6,7 @@ import type { JobDriver } from './driver';
 import { resetJobDriver, setJobDriver } from './driver';
 import { createMemoryDriver } from './driver-memory';
 import type { JobHandle } from './job';
-import { describeJobs, getJob, job, resetJobs } from './job';
+import { describeJobs, getJob, job, registeredJobs, resetJobs } from './job';
 import { resetJobsFacade } from './outbox';
 
 /** Minimal Standard Schema so these tests do not depend on the shipped provider's surface. */
@@ -225,6 +225,31 @@ describe('describe', () => {
         retry: { attempts: 3, backoff: 'exponential' },
         steps: [],
       },
+    ]);
+  });
+
+  test('the order is CODE UNITS, not the runtime locale', () => {
+    // `describeJobs()` is mapped straight into `x.manifest.json`, which both tracked apps commit
+    // and `x verify`'s drift step diffs byte for byte. `localeCompare` with no locale argument
+    // answers from the runtime's ICU default and collation version, so the same source built on
+    // two machines could emit two orders — `'a'.localeCompare('B')` is -1 and `'a' < 'B'` is
+    // false. The rule is `@ultimat3/http`'s, already written down for `describeRoutes`.
+    for (const name of ['aOrg', 'BOrg', '_internal']) {
+      job<OrgInput>({
+        tenant: 'none',
+        name,
+        input: passthrough<OrgInput>(),
+        idempotencyKey: ({ orgId }) => `${name}:${orgId}`,
+        retry: { attempts: 1 },
+        run: () => Promise.resolve(),
+      });
+    }
+
+    expect(registeredJobs().map((handle) => handle.name)).toEqual([
+      'BOrg',
+      '_internal',
+      'aOrg',
+      'notifySubscribers',
     ]);
   });
 

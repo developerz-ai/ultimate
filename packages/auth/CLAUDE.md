@@ -194,6 +194,32 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `auth.limiter` around `verifyTotp` — today it is wired only into `login`, so a six-digit code
   would be the one credential in this package with no lockout. `TotpReplayGuard` is already built
   and must be the completion's, not a second one.
+- **`mfa.required` is the literal `false`, and `defineAuth` refuses a `true` that reaches it
+  anyway** (`X_CONFIG_INVALID`, borrowed from core), `As of 2026-08`. It resolved onto the frozen
+  `Auth` and **nothing read it** — `login()` and `signInWithOAuth()` branch on `user.mfaSecret`
+  alone and mint `mfaSatisfied: true` otherwise, so `required: true` handed a user who had never
+  enrolled a fully-privileged session while reading as "this deployment requires a second factor".
+  Enforcing it was the tempting fix and is a **lockout**: `actorFromUser` degrades a session only
+  when `mfaSecret !== null`, so an un-enrolled user has no half-authenticated actor to enrol
+  through, this package ships no enrolment route to send them to, and `mfaRequired()`'s own `fix:`
+  (`verifyTotp({ secret: user.mfaSecret, … })`) cannot be followed with a null secret — a dead
+  `fix:`, the defect `oauth-paths.ts` exists to stop. So the unenforceable declaration is refused
+  where it is written, exactly as `assertAuthLimiterPolicy` refuses a per-process limiter under a
+  fleet-wide lockout. The literal type is the build error and the runtime check is for the JS
+  caller and the JSON config the type cannot reach, the split `invariantColumns()`'s Proxy keeps.
+  `mfa.issuer` is the half that stayed, and it now has a reader: `enrolTotp(auth, { account })`
+  takes the `Auth` every other entry point takes, so the product name an authenticator app shows
+  is declared once at `defineAuth` instead of restated at every enrolment.
+- **`createTotpReplayGuard`'s table is bounded, and the eviction ORDER is the guarantee.** It
+  pruned steps inside one subject's `Set` and never revisited a subject who stopped signing in, so
+  the map carried one permanent entry per user for the life of the process. Evicting a subject
+  makes a step they have already spent replayable again, so the order cannot be recency of
+  insertion: a subject whose every step has fallen below the drift floor is **forgotten** (nothing
+  outside ±drift is ever offered to `verifyTotp`, so that entry answers exactly as a missing one),
+  and only if that is not enough does `DEFAULT_MAX_TOTP_SUBJECTS` evict live state, sorted by
+  newest spent step ascending with a least-recently-seen tie-break — the subject who just proved a
+  code is always the last one out. Same shape as the limiter's "a live lockout outranks its own
+  deadline". `remember` re-files its subject so the map's iteration order IS that tie-break.
 - SAML is out of scope permanently: XML-DSig canonicalisation has no Bun native and would need a
   real dependency. Put an OIDC-speaking bridge in front and register that.
 

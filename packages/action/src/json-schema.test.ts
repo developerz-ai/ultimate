@@ -8,7 +8,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { t } from '@ultimat3/schema';
-import { jsonSchemaOf, mcpSchemaOf, sortSchema } from './json-schema';
+import { jsonSchemaOf, mcpSchemaOf, normalizeJsonSchema, sortSchema } from './json-schema';
 
 const Schema = t.object({ postId: t.uuid, title: t.string });
 
@@ -73,5 +73,43 @@ describe('sortSchema', () => {
     const sorted = sortSchema(schema);
 
     expect('description' in sorted).toBe(false);
+  });
+});
+
+/**
+ * A fix line is PASTED, so one naming an API that does not exist is worse than none — axiom 4.
+ * `x verify`'s `errors` step checks a `fix:` for SHAPE and never for whether the member it names
+ * is real, which is how "configure a provider whose toJsonSchema returns an object" shipped:
+ * `SchemaProvider` has no such member and `toJsonSchema()` calls `introspect()` unconditionally.
+ */
+describe('the refusal a non-object conversion earns', () => {
+  /** The error itself, so its `fix:` can be read rather than matched against a message. */
+  const refusalFrom = (convert: () => unknown): Record<string, unknown> => {
+    try {
+      normalizeJsonSchema(convert);
+      return {};
+    } catch (error) {
+      return error as unknown as Record<string, unknown>;
+    }
+  };
+
+  test('keeps the shipped code and names the value it got', () => {
+    const refusal = refusalFrom(() => 42);
+
+    expect(refusal['code']).toBe('X_SCHEMA_UNSUPPORTED');
+    expect(refusal['cause']).toContain('number');
+  });
+
+  test('the fix names introspect(), and no toJsonSchema member', () => {
+    const fix = refusalFrom(() => null)['fix'];
+
+    expect(fix).toContain('introspect');
+    // The member that does not exist. `provider.ts` is the file that decides this, and the two
+    // must agree: `introspect()` returning a `SchemaNode` is the whole of the provider seam.
+    expect(fix).not.toContain('toJsonSchema');
+  });
+
+  test('an array is refused too — a JSON Schema object is never a list', () => {
+    expect(refusalFrom(() => [])['code']).toBe('X_SCHEMA_UNSUPPORTED');
   });
 });

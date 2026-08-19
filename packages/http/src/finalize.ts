@@ -26,9 +26,14 @@ export const recoverWith =
       const rendered = await stage?.run(request, ctx);
       if (rendered !== undefined) return rendered;
     } catch (failure) {
-      logger.error(
-        `the recover stage threw and cannot render itself [${ctx.requestId}]: ${String(failure)}`,
-      );
+      // FIELDS, never interpolation — and this is the file whose one promise is that it cannot
+      // itself throw. `String(failure)` runs the value's own coercion, so a null-prototype object
+      // (`Cannot convert object to primitive value`) or a `Proxy` threw a SECOND time out of the
+      // guard, and `handle`'s "always resolves to a Response" died in the one frame with nothing
+      // above it. `logger.emit` degrades a hostile field per key and never rethrows, which is
+      // exactly what a value nobody here built needs; it is also the shape `error-map` already
+      // uses, so the value stays redactable by key.
+      logger.error('pipeline.recover_failed', { requestId: ctx.requestId, error: failure });
     }
     return problem(ctx.error, { instance: ctx.url.pathname, requestId: ctx.requestId });
   };

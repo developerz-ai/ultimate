@@ -220,9 +220,28 @@ export class SyncSocket {
   }
 }
 
+/**
+ * How long a socket may route no frame before `sync-node` evicts it. It is an APPLICATION
+ * inactivity budget and not Bun's transport one: Bun's `idleTimeout` is renewed by its own
+ * ping/pong, so a client whose TCP stack still answers pings while its frame loop is wedged holds
+ * its grant, its subscriptions and its topic membership forever. A beating client sends a `hello`
+ * every `DEFAULT_HEARTBEAT_MS` (15s), so this is eight missed beats.
+ */
+export const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
+
+/**
+ * How often to ask. A quarter of the budget, floored at a second: a socket is evicted within 25%
+ * of its window of going quiet, and a node holding 50,000 of them pays one pass over the table
+ * four times per window rather than once a second. Derived rather than configured — a second knob
+ * is a second number that can disagree with the one it is a fraction of.
+ */
+export function idleSweepPeriodMs(idleTimeoutMs: number): number {
+  return Math.max(1_000, Math.floor(idleTimeoutMs / 4));
+}
+
 export interface SocketRegistryOptions {
   readonly clock?: Clock;
-  /** Bun also enforces its own `idleTimeout`; this sweep catches half-open connections. */
+  /** Bun's own `idleTimeout` is renewed by its ping/pong; this budget counts routed FRAMES. */
   readonly idleTimeoutMs?: number;
 }
 
@@ -244,7 +263,7 @@ export class SocketRegistry {
 
   constructor(options: SocketRegistryOptions = {}) {
     this.#clock = options.clock ?? systemClock;
-    this.#idleTimeoutMs = options.idleTimeoutMs ?? 120_000;
+    this.#idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   }
 
   /**
@@ -310,19 +329,24 @@ export class SocketRegistry {
     return this.#sockets.size;
   }
 
-  /** Closes and returns everything past the idle budget. Called on an interval by `sync-node`. */
-  sweepIdle(): SyncSocket[] {
+  /** The budget `idle()` answers against, so a caller can size its own sweep from one number. */
+  get idleTimeoutMs(): number {
+    return this.#idleTimeoutMs;
+  }
+
+  /**
+   * Everything past the idle budget. A QUERY, and deliberately not an eviction: this table is three
+   * of the five things a socket holds, and the other two — its live subscriptions and its presence
+   * membership on the SHARED set — are only reachable from `sync-node`'s `teardown`. A sweep that
+   * closed and `remove`d here left a member every other node renders until its TTL and a
+   * `QueryEntry` whose `subscribers` map never empties. `sync-node` is the one caller and it
+   * releases each one the way the close callback does.
+   */
+  idle(): SyncSocket[] {
     const now = this.#clock.now().getTime();
-    const closed: SyncSocket[] = [];
-    for (const socket of this.#sockets.values()) {
-      if (socket.idleFor(now) > this.#idleTimeoutMs) {
-        socket.close(CLOSE.idle, 'idle timeout');
-        // Through `remove`, not the map: the sweep is exactly the abnormal close a gauge leaks on.
-        this.remove(socket.id);
-        closed.push(socket);
-      }
-    }
-    return closed;
+    return [...this.#sockets.values()].filter(
+      (socket) => socket.idleFor(now) > this.#idleTimeoutMs,
+    );
   }
 
   /**

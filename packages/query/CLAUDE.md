@@ -229,6 +229,17 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   `"null"`. Refused: a structural member (`object`, `record`, `money`, or an array/union of one),
   a REQUIRED nullable member, and a top-level input that is not an object. A schema
   `tryIntrospect` cannot read is left alone, or `configureSchemaProvider` would be unusable.
+- **A refill is owed by a FULL window and by nothing else** (`matcher.ts`, `As of 2026-08`).
+  `removeAt` pushed one whenever `shape.limit !== null`, with no reference to how many rows the
+  window holds: three rows under `limit: 50`, delete one, and the patch list was
+  `[{remove, position:1}, {refill, from:49}]` — a position no two-row result set has. It is not a
+  harmless extra: `@ultimat3/realtime`'s `matcher-bridge` folds any refill into
+  `BridgeResult.refill`, and `live-fanout` then sends **no patch frame at all** that round, marking
+  every subscriber desynced instead — so on a quiet feed the deleted row stays rendered until some
+  other change to the same query id arrives, and on a busy one it is a full DB re-read plus one
+  snapshot per subscriber per delete. A window under `limit` has no unknown tail: the source served
+  fewer rows than it was allowed to, so what the client holds IS the result set. `held >=
+  shape.limit` is the gate, and it is `wasFull` one branch away, already written.
 - **A move OUT of a full window is a `refill`, never an `add`** (`matcher.ts`). `insert()` places a
   moved row among the `limit - 1` rows the client still holds, so its position can never reach
   `shape.limit` and the `position >= shape.limit` bail is unreachable on that path — the row was

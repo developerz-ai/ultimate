@@ -20,9 +20,23 @@ export function auditSinkFor(action: string): AuditSink {
   return sink;
 }
 
-/** An authz refusal is `denied`; everything else that threw is `failed`, an unparsed input included. */
+/**
+ * An authz refusal is `denied`; everything else that threw is `failed`, an unparsed input
+ * included.
+ *
+ * TOTAL, the same rule core's `isThrownError` states: `instanceof` runs a `Proxy`'s
+ * `getPrototypeOf` trap, and both callers ask this question inside a `catch` that is still
+ * holding the app's own error — `execute`'s span attribute and the one place the `failed` record
+ * is produced. A probe that threw there REPLACED the caller's throwable with its own `TypeError`,
+ * so an app catching by `instanceof` upstream stopped matching. A value that refuses to be
+ * examined is not evidence of a policy denial, so it fails closed to `failed`.
+ */
 export function auditOutcomeFor(error: unknown): AuditOutcome {
-  return error instanceof ActionDeniedError ? 'denied' : 'failed';
+  try {
+    return error instanceof ActionDeniedError ? 'denied' : 'failed';
+  } catch {
+    return 'failed';
+  }
 }
 
 export function auditFailureFor(error: unknown): AuditFailure {

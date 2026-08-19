@@ -5,7 +5,15 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import type { AuthAdapter } from './adapter';
-import { type Auth, authenticate, defineAuth, login, logout, register } from './auth';
+import {
+  type Auth,
+  type AuthConfigInput,
+  authenticate,
+  defineAuth,
+  login,
+  logout,
+  register,
+} from './auth';
 import { AuthError } from './errors';
 import { MemoryAdapter } from './memory-adapter';
 import type { PasswordParams } from './password';
@@ -66,6 +74,25 @@ describe('defineAuth', () => {
     const auth = defineAuth({ adapter: new MemoryAdapter(), mfa: { issuer: 'Postly' } });
     expect(auth.mfa).toEqual({ issuer: 'Postly', required: false });
   });
+
+  /**
+   * `mfa: { required: true }` reads as "this deployment requires a second factor" and nothing in
+   * this package could ever have made it true: `login()` branches on `user.mfaSecret` alone, so an
+   * un-enrolled user was handed a fully-privileged session under it. A declaration whose guarantee
+   * cannot be shown to hold is refused where it is made — `assertAuthLimiterPolicy`, called three
+   * lines above it in `defineAuth`, is the same refusal for the same reason.
+   */
+  test('a declared mfa.required is refused at boot, never believed at a login', async () => {
+    // The field's type is the literal `false`, so this is the JS caller and the JSON-sourced
+    // config the compile error cannot reach — the half the runtime refusal exists for.
+    const declared = { required: true } as unknown as AuthConfigInput['mfa'];
+    const error = await caught(async () =>
+      defineAuth({ adapter: new MemoryAdapter(), mfa: declared }),
+    );
+    expect(error?.code).toBe('X_CONFIG_INVALID');
+    // The fix has to be executable: it names the check an app writes instead.
+    expect(error?.fix).toContain('mfaSecret');
+  });
 });
 
 describe('register', () => {
@@ -123,6 +150,30 @@ describe('login', () => {
     const error = await caught(() => login(auth, { email: EMAIL, password: PASSWORD }));
     expect(error?.code).toBe('X_MFA_REQUIRED');
     expect(await auth.adapter.listSessions(user.id)).toHaveLength(0);
+  });
+
+  /**
+   * The lockout analysis, executable. Refusing an un-enrolled user inside `login()` would refuse
+   * exactly the people with no second factor to offer, and this package ships no enrolment route,
+   * no pending-MFA credential and no half-authenticated actor for them — `actorFromUser` strips
+   * privileges only when `mfaSecret !== null`. A session is therefore the only door to enrolment,
+   * and this test is what stops a later "enforce it" change from closing that door for good.
+   */
+  test('a user with no second factor still signs in, so enrolment stays reachable', async () => {
+    const auth = defineAuth({
+      adapter: new MemoryAdapter(),
+      clock: frozenClock(1_700_000_000_000),
+      password: { minLength: 12, params: FAST_PARAMS },
+      mfa: { issuer: 'Postly' },
+    });
+    const user = await register(auth, { email: EMAIL, password: PASSWORD });
+    expect(user.mfaSecret).toBeNull();
+
+    const result = await login(auth, { email: EMAIL, password: PASSWORD });
+    expect(result.session.mfaSatisfied).toBe(true);
+    // The enrolment write the app's own route makes with that session, and it still resolves.
+    const enrolled = await auth.adapter.updateUser(user.id, { mfaSecret: 'JBSWY3DPEHPK3PXP' });
+    expect(enrolled?.mfaSecret).toBe('JBSWY3DPEHPK3PXP');
   });
 
   test('a hash written under weaker parameters is upgraded in place on a successful login', async () => {

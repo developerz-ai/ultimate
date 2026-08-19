@@ -8,6 +8,7 @@ import type { ClaimedJob } from './driver';
 import { getJob } from './job';
 import type { HeldLease, LeaseStore } from './leases';
 import { jobLeaseKey } from './leases';
+import { startRenewalTimer } from './renewal-timer';
 
 /**
  * A renewal that REJECTED is not a lost slot: there is a TTL behind it and the interval gets
@@ -79,21 +80,25 @@ export function createFleetSlots(options: FleetSlotOptions): FleetSlots {
     startRenewal(jobId, onLost) {
       const slot = held.get(jobId);
       if (slot === undefined) return noop;
-      const stop = (): void => {
-        clearInterval(timer);
-      };
       // Renewed on the lease heartbeat's own interval and released in the same `finally`: one
       // clock for "this worker still owns the job" and "this worker still owns the slot" is one
-      // fewer way for them to disagree.
-      const timer = setInterval(() => {
-        void options.leases
+      // fewer way for them to disagree — and `timer.stopped()` is the same latch `heartbeat.ts`
+      // reads, for the same reason.
+      const timer = startRenewalTimer(options.renewIntervalMs, () =>
+        options.leases
           ?.renew(slot, options.ttlMs)
           .then((renewed) => {
             // `=== false`, never `!renewed`, for the reason `heartbeat.ts` reads `held` that way:
             // a store written before this return value existed resolves `undefined`, and treating
             // that as a loss would cancel every job on every renewal. Only an explicit no is one.
-            if (renewed !== false) return;
-            stop();
+            //
+            // `stopped()` re-read AFTER the await for the other half: the run settles, this timer
+            // is stopped and `worker.ts` releases the slot — so the renewal already on the wire
+            // finds the row gone and answers `false` for a job that FINISHED. Reported, that is
+            // `jobs.worker.slot-lost` at error and an abort on a controller `runSignal.dispose()`
+            // has already torn down: noise about a run nobody lost.
+            if (renewed !== false || timer.stopped()) return;
+            timer.stop();
             logger.error('jobs.worker.slot-lost', {
               workerId: options.workerId,
               jobId,
@@ -102,9 +107,9 @@ export function createFleetSlots(options: FleetSlotOptions): FleetSlots {
             });
             onLost?.(slot);
           })
-          .catch(noop);
-      }, options.renewIntervalMs);
-      return stop;
+          .catch(noop),
+      );
+      return () => timer.stop();
     },
 
     async release(jobId) {

@@ -8,6 +8,7 @@ import { logger, recordLeaseLost } from '@ultimat3/core';
 import { nowMs } from './clock';
 import type { ClaimedJob, JobDriver } from './driver';
 import { LeaseLostError } from './errors';
+import { startRenewalTimer } from './renewal-timer';
 
 export interface LeaseHeartbeatOptions {
   /** Only `heartbeat` is used — a lease renews itself and settles nothing. */
@@ -49,13 +50,7 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
   let renewedAt = now();
   let renewing = false;
   let lost = false;
-  let timer: ReturnType<typeof setInterval> | undefined;
   const gone = new AbortController();
-
-  const stop = (): void => {
-    if (timer !== undefined) clearInterval(timer);
-    timer = undefined;
-  };
 
   const lapsed = (): boolean => now() - renewedAt >= visibilityTimeoutMs;
 
@@ -65,9 +60,14 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
    * ticked once per interval would count intervals, not jobs.
    */
   const reportLost = (error?: unknown, reason?: 'expired' | 'not-ours'): void => {
-    if (lost) return;
+    // `stopped()` as well as `lost`, and it is the difference between a page and a fact: a clean
+    // completion acks the row out of `running` and `worker-run.ts` stops the heartbeat, so a
+    // renewal already in flight comes back `false` for a job that FINISHED. Reported, that is
+    // `jobs.lease.lost` at error plus `recordLeaseLost(queue)` — the one signal meaning the queue
+    // re-delivered a job this process was still running — raised for a run nobody re-delivered.
+    if (lost || timer.stopped()) return;
     lost = true;
-    stop();
+    timer.stop();
     logger.error('jobs.lease.lost', {
       workerId,
       job: claimed.name,
@@ -86,7 +86,7 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
   };
 
   const renew = async (): Promise<void> => {
-    if (lost) return;
+    if (lost || timer.stopped()) return;
     // Expiry is decided BEFORE the driver is asked, because the failure that loses a lease most
     // quietly is the one that never answers: a heartbeat hung on a dead connection neither
     // resolves nor rejects, so a check that ran only on rejection would never run at all.
@@ -100,6 +100,10 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
     renewing = true;
     try {
       const held = await options.driver.heartbeat(claimed.id, { visibilityTimeoutMs, workerId });
+      // Re-read AFTER the await, never only before it: the whole point of the flag is the answer
+      // that lands past `stop()`. Every branch below decides something about a lease this process
+      // may no longer be running under.
+      if (timer.stopped()) return;
       // The driver answered, and it said the row is not ours. That is a DIFFERENT fact from an
       // expired window and the only one an operator can cause on purpose: `x jobs cancel` writes
       // a terminal state, and the renewal that misses it is what tells this attempt to stop. It
@@ -138,9 +142,7 @@ export function startLeaseHeartbeat(options: LeaseHeartbeatOptions): LeaseHeartb
     }
   };
 
-  timer = setInterval(() => {
-    void renew();
-  }, options.intervalMs);
+  const timer = startRenewalTimer(options.intervalMs, renew);
 
-  return { renew, lost: () => lost, signal: gone.signal, stop };
+  return { renew, lost: () => lost, signal: gone.signal, stop: () => timer.stop() };
 }

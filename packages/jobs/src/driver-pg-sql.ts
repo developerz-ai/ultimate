@@ -271,16 +271,59 @@ values ($1, $2, $3, $4::jsonb, $5, $6, to_timestamp($7 / 1000.0), to_timestamp($
         $9, $10, $11)
 `.trim();
 
+/**
+ * The claim, and it has to be ONE statement. `for update skip locked` in a bare select holds its
+ * row locks only until that statement ends — under autocommit, before `claim()` even resolves — so
+ * two relays polling 200ms apart read the same unpublished rows and both hand them to `enqueue`.
+ * `SQL_ENQUEUE` collapses the repeat only while the first job is still LIVE: its conflict target
+ * is a partial index over the live states, so a second publish landing after that job reached a
+ * terminal state inserts a second row and the handler runs again. (The mechanism is Postgres
+ * semantics; how often the two orderings line up in a deployment was never measured.)
+ *
+ * So the lock and the claim commit together, the CTE shape `SQL_CLAIM` already uses, and
+ * `claimed_at` is a LEASE: `$2` is the window after which a row a dead relay was holding is
+ * claimable again, because a claim nothing can expire strands its rows forever.
+ *
+ * The outer `select ... order by staged_at` is not cosmetic. `update ... returning` has no defined
+ * row order and the relay publishes in the order it is handed rows, so an app staging
+ * `createInvoice` then `chargeCard` in one transaction depends on this line.
+ */
 export const SQL_OUTBOX_CLAIM = `
+with claimable as (
+  select id
+    from x_outbox
+   where published_at is null
+     and (claimed_at is null
+          or claimed_at <= now() - ($2::bigint * interval '1 millisecond'))
+   order by staged_at
+   limit $1
+     for update skip locked
+), claimed as (
+  update x_outbox o
+     set claimed_at = now(), claimed_by = $3
+    from claimable c
+   where o.id = c.id
+  returning o.id, o.job, o.queue, o.input, o.idempotency_key, o.max_attempts, o.tenant_id,
+            o.traceparent, o.enqueued_by, o.run_at, o.staged_at
+)
 select id, job, queue, input, idempotency_key, max_attempts, tenant_id,
        traceparent, enqueued_by,
        (extract(epoch from run_at) * 1000)::bigint    as run_at,
        (extract(epoch from staged_at) * 1000)::bigint as staged_at
-  from x_outbox
- where published_at is null
+  from claimed
  order by staged_at
- limit $1
-   for update skip locked
+`.trim();
+
+/**
+ * Hand a claim back early. The relay stops its batch on the first publish that fails, and without
+ * this the rows behind it would wait out the whole lease before any relay could retry them — a
+ * pool blip during a failover becoming tens of seconds of unpublished, committed work. Fenced on
+ * `published_at is null` so it can never unclaim a row some other pass already published.
+ */
+export const SQL_OUTBOX_RELEASE = `
+update x_outbox
+   set claimed_at = null, claimed_by = null
+ where id = any($1::uuid[]) and published_at is null
 `.trim();
 
 export const SQL_OUTBOX_MARK_PUBLISHED = `

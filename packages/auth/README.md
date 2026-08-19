@@ -11,7 +11,7 @@ export const auth = defineAuth({
   adapter: new BuiltinAdapter(),          // or MemoryAdapter, or your Better Auth binding
   session: { absoluteTtlMs: 30 * 864e5, idleTtlMs: 7 * 864e5 },
   password: { minLength: 12 },
-  mfa: { issuer: 'Acme' },
+  mfa: { issuer: 'Acme' },                // the name an authenticator app shows; no `required` key
   providers: ['github', 'google'],
   link: 'verified-email',                 // the default; `'never'` is the only other value
 });
@@ -215,10 +215,13 @@ rows, because `AuthAdapter` has no MFA member and adding one would break every t
 adapter.
 
 ```ts
+import type { Auth } from '@ultimat3/auth';
 import { createTotpReplayGuard, enrolTotp, generateRecoveryCodes, verifyTotp } from '@ultimat3/auth';
 import { systemClock } from '@ultimat3/core';
 
-const enrolment = enrolTotp({ issuer: 'Acme', account: 'ada@example.com' });
+declare const auth: Auth;   // the `defineAuth` at the top — `enrolTotp` reads `auth.mfa.issuer`
+
+const enrolment = enrolTotp(auth, { account: 'ada@example.com' });   // issuer: auth.mfa.issuer
 // enrolment.uri  -> otpauth://…  the QR code
 // enrolment.secret -> base32, store it against the user
 
@@ -236,9 +239,9 @@ export function secondFactorHolds(userId: string, secret: string, code: string):
 
 | Call | Answers |
 |---|---|
-| `enrolTotp({ issuer, account, secret? })` | `{ secret, uri, digits, periodSeconds }` — `secret` omitted mints one |
+| `enrolTotp(auth, { account, issuer?, secret? })` | `{ secret, uri, digits, periodSeconds }` — `issuer` omitted is `auth.mfa.issuer`, `secret` omitted mints one |
 | `verifyTotp({ secret, code, at, drift?, usedSteps? })` | `{ ok, step }`. `step` is the window the code belonged to, `null` on no match |
-| `createTotpReplayGuard(drift?)` | the in-process `{ isUsed, remember }`; a fleet passes a Redis-backed pair of the same two methods |
+| `createTotpReplayGuard(drift?, maxSubjects?)` | the in-process `{ isUsed, remember, size }`; a fleet passes a Redis-backed pair of the same two methods |
 | `generateRecoveryCodes(count = 10)` | `{ codes, hashes }`. `codes` is shown once and is never re-derivable |
 | `redeemRecoveryCode(code, hashes)` | the **remaining** hashes, or `null`. Persisting that array is what makes a code single-use |
 | `totpStep(at, stepSeconds?)` / `totpCode(secret, step, digits?)` | the RFC 6238 halves, for a test that has to mint a valid code |
@@ -250,6 +253,21 @@ A step is remembered per **subject**, not globally: a code is valid for `drift` 
 side of now, so without the guard the same six digits log in twice inside a minute. `verifyTotp`
 answers `{ ok: false, step }` — the step still named — when `usedSteps` already holds it, which is
 how a replay is told apart from a wrong code.
+
+The guard's table is **bounded** (`DEFAULT_MAX_TOTP_SUBJECTS`, 10,000), because a per-subject map
+that only ever grows is one process' lifetime away from an OOM. A subject whose every remembered
+step has fallen below the drift floor is *forgotten* — `verifyTotp` can never offer that step
+again, so the entry answers exactly as a missing one — and only if that is not enough does the cap
+evict live state, furthest from the live window first. The order is the guarantee: evicting a
+subject makes a step they have already spent replayable, so the subject who just authenticated is
+always the last one out.
+
+**`mfa.required` does not exist, and that is deliberate.** The field is typed as the literal
+`false` and `defineAuth` refuses a `true` reaching it from JavaScript or from JSON
+(`X_CONFIG_INVALID`): both credential paths branch on `user.mfaSecret` alone, so an un-enrolled
+user would be handed a full session under it, and refusing them at `login()` instead would lock
+them out of an enrolment route this package does not ship. Gate it in your own sign-in handler —
+`if (user.mfaSecret === null)` send them to `enrolTotp` before you call `createSession`.
 
 **The second leg of login is the app's, `As of 2026-08`.** `login()` and `completeOAuthLogin()`
 throw `X_MFA_REQUIRED` before any session exists; finishing the flow is `verifyTotp` followed by

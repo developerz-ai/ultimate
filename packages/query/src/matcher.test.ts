@@ -56,7 +56,10 @@ describe('incremental matcher', () => {
   });
 
   test('an update that leaves the filter removes and asks for a refill', () => {
-    const patches = match('feed', shape, rows, {
+    // A FULL window on purpose: the tail only exists on the server once the client holds `limit`
+    // rows, and that is the whole condition the refill is owed under.
+    const full: readonly Post[] = [...rows, { id: 'c', orgId: 'org-1', createdAt: 30 }];
+    const patches = match('feed', shape, full, {
       entity: 'posts',
       op: 'update',
       row: { id: 'b', orgId: 'org-2', createdAt: 20 },
@@ -189,10 +192,9 @@ describe('a change enters and leaves the set on SQL NULL semantics', () => {
       op: 'update',
       row: { id: 'a', orgId: ORG, score: 9 },
     });
-    expect(patches).toEqual([
-      { kind: 'remove', position: 0, id: 'a' },
-      { kind: 'refill', from: 2 },
-    ]);
+    // One row under a limit of three: the client held the whole result set, so the remove IS the
+    // whole answer and no tail was lost.
+    expect(patches).toEqual([{ kind: 'remove', position: 0, id: 'a' }]);
   });
 
   test('a comparison never admits a null column — unknown is not a match', () => {
@@ -283,6 +285,61 @@ describe('a move out of a full window is the server tail, not an add', () => {
     expect(patches).toEqual([
       { kind: 'remove', position: 0, id: 'a' },
       { kind: 'add', position: 2, row: { id: 'a', orgId: ORG, score: 99 } },
+    ]);
+  });
+});
+
+/**
+ * `Patch.refill` means "the window lost a row and the tail is unknown to the client". A window the
+ * source never filled to `limit` has no unknown tail — what the client holds IS the result set — so
+ * a refill there is a claim the shape contradicts, and it costs the `remove` that rode in with it:
+ * `matcher-bridge` folds any refill into `BridgeResult.refill`, and `live-fanout` then sends NO
+ * patch frame that round and marks every subscriber desynced instead. On a quiet feed the deleted
+ * row stays on screen until some other change to the same query id arrives.
+ */
+describe('a refill is only owed by a window that was full', () => {
+  const short: readonly Post[] = [
+    { id: 'a', orgId: ORG, createdAt: 10 },
+    { id: 'b', orgId: ORG, createdAt: 20 },
+  ];
+  const full: readonly Post[] = [...short, { id: 'c', orgId: ORG, createdAt: 30 }];
+  const remove = (row: Post): ChangeEvent<Post> => ({ entity: 'posts', op: 'delete', row });
+
+  test('deleting from a window under the limit is a remove and nothing else', () => {
+    expect(match('feed', shape, short, remove({ id: 'b', orgId: ORG, createdAt: 20 }))).toEqual([
+      { kind: 'remove', position: 1, id: 'b' },
+    ]);
+  });
+
+  test('deleting from a full window still asks the server for the tail', () => {
+    expect(match('feed', shape, full, remove({ id: 'b', orgId: ORG, createdAt: 20 }))).toEqual([
+      { kind: 'remove', position: 1, id: 'b' },
+      { kind: 'refill', from: 2 },
+    ]);
+  });
+
+  test('a wide limit over three rows names no position outside the result set', () => {
+    // The reported reproduction: `limit: 50`, three rows held, delete `b`. The emitted
+    // `{ kind: 'refill', from: 49 }` addressed row 49 of a two-row set.
+    const wide: QueryShape = { ...shape, limit: 50 };
+    expect(match('feed', wide, full, remove({ id: 'b', orgId: ORG, createdAt: 20 }))).toEqual([
+      { kind: 'remove', position: 1, id: 'b' },
+    ]);
+  });
+
+  test('a row leaving the filter follows the same rule as a delete', () => {
+    const left: ChangeEvent<Post> = {
+      entity: 'posts',
+      op: 'update',
+      row: { id: 'b', orgId: 'org-2', createdAt: 20 },
+    };
+    expect(match('feed', shape, short, left)).toEqual([{ kind: 'remove', position: 1, id: 'b' }]);
+  });
+
+  test('an unlimited window never asks for a tail it does not have', () => {
+    const unlimited: QueryShape = { ...shape, limit: null };
+    expect(match('feed', unlimited, full, remove({ id: 'a', orgId: ORG, createdAt: 10 }))).toEqual([
+      { kind: 'remove', position: 0, id: 'a' },
     ]);
   });
 });

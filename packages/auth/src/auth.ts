@@ -7,7 +7,7 @@ import { type Clock, systemClock, uuid } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import type { AuthAdapter, AuthSession, AuthUser } from './adapter';
 import { normaliseEmail } from './email';
-import { mfaRequired, sessionUnknown } from './errors';
+import { mfaRequired, mfaRequiredUnenforceable, sessionUnknown } from './errors';
 import type { OAuthProviderId } from './oauth';
 import { oauthProviderIds } from './oauth-registry';
 import {
@@ -106,10 +106,25 @@ export const VerificationSchema = t.object({
  */
 export type OAuthLinkPolicy = 'verified-email' | 'never';
 
+/** The product name an authenticator app shows when the app declared none. */
+export const DEFAULT_MFA_ISSUER = 'Ultimate';
+
 export interface AuthMfaPolicy {
-  /** Shown in the authenticator app. Usually the product name. */
+  /**
+   * Shown in the authenticator app. Usually the product name, and `enrolTotp(auth, …)` reads it
+   * from here so it is written once — a call may still name its own for the one enrolment.
+   */
   readonly issuer: string;
-  readonly required: boolean;
+  /**
+   * The literal `false`, so `required: true` is a type error rather than a comment — the shape
+   * `OAuthProvider.usesPkce` has, and for the same reason: the value nothing enforces has to be
+   * unrepresentable, not discouraged. This package cannot make a second factor mandatory. Both
+   * credential paths branch on `user.mfaSecret` alone and `actorFromUser` degrades only a user
+   * who HAS a secret, so a user who never enrolled has no half-authenticated actor to enrol
+   * through and no enrolment route to reach — refusing them at `login()` locks them out for good.
+   * `defineAuth` refuses the declaration outright; the app gates its own sign-in handler.
+   */
+  readonly required: false;
 }
 
 export interface AuthConfigInput {
@@ -166,6 +181,13 @@ export function defineAuth(config: AuthConfigInput): Auth {
   const orgLimits = orgRateLimit(rateLimit);
   const orgLimiter = config.orgLimiter ?? createAuthLimiter(clock, orgLimits);
   if (config.orgLimiter !== undefined) assertAuthLimiterPolicy(orgLimits, config.orgLimiter);
+  // Read through a widened local on purpose: the field's type is the literal `false`, so this
+  // branch is unreachable from TypeScript and reachable from every JS caller and every config
+  // parsed out of JSON — the same split `invariantColumns()` keeps its Proxy behind a compile
+  // error for. A declaration this package cannot enforce is refused where it is written.
+  const declaredMfa: { readonly required?: unknown } = config.mfa ?? {};
+  if (declaredMfa.required === true) throw mfaRequiredUnenforceable();
+  const mfa: AuthMfaPolicy = { issuer: config.mfa?.issuer ?? DEFAULT_MFA_ISSUER, required: false };
   return Object.freeze({
     adapter: config.adapter,
     clock,
@@ -177,7 +199,7 @@ export function defineAuth(config: AuthConfigInput): Auth {
     // exactly when the app declared 'shared' and left this limiter to the default.
     orgRateLimit: orgLimiter.policy,
     orgLimiter,
-    mfa: { issuer: config.mfa?.issuer ?? 'Ultimate', required: config.mfa?.required ?? false },
+    mfa,
     providers: config.providers ?? oauthProviderIds(),
     link: config.link ?? 'verified-email',
   });

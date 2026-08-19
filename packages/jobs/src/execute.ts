@@ -108,6 +108,11 @@ export async function executeJob(options: ExecuteJobOptions): Promise<JobExecuti
     jobName: handle.name,
     store: driver.steps,
     signal,
+    // The DECLARED per-step ceiling and event poll. Passed here or nowhere: this is the only
+    // production construction of a runner, so a `StepRunnerOptions` field it omits is a feature
+    // no `job()` can reach — which both of these were until 2026-08.
+    ...(handle.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: handle.stepTimeoutMs }),
+    ...(handle.eventPollMs === undefined ? {} : { eventPollMs: handle.eventPollMs }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
     events: options.events ?? eventBus(),
   });

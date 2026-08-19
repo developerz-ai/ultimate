@@ -332,6 +332,23 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   `X_AUDIT_SINK_FAILED` fell into the failure branch and wrote a *second* record saying the
   action `failed` — for a handler that had committed. An audit trail lying about a write is
   worse than no audit trail; `audit.test.ts` counts the records a refusing sink was offered.
+- **`auditOutcomeFor` is TOTAL, because both callers ask inside a `catch`.**
+  `error instanceof ActionDeniedError` runs a `Proxy`'s `getPrototypeOf` trap, and the two call
+  sites are `execute`'s span attribute and the one place the `failed` record is produced — so a
+  handler throwing such a value made the probe throw *from the frame holding the app's error*,
+  and the caller got a `TypeError` in place of its own throwable. It fails closed to `failed`: a
+  value that refuses to be examined is not evidence of a policy denial. Same rule as core's
+  `isThrownError` / `isUltimateError`, and the same defect `@ultimat3/http`'s `finalize.ts` and
+  `factsOf` carried; `audit.test.ts` asserts the caller's throwable by IDENTITY, which is the only
+  assertion that catches a replacement.
+- **`json-schema.ts`'s refusal names `introspect()`, never a `toJsonSchema` member.**
+  `SchemaProvider` declares no such member and `toJsonSchema()` calls `introspect()`
+  unconditionally, so the old `fix:` told a reader to implement an API that does not exist —
+  axiom 4 inverted, and invisible to `x verify`'s `errors` step, which checks a fix line's shape
+  and never whether the API it names is real. The guard is `normalizeJsonSchema`, exported from
+  the module for its own test and absent from `src/index.ts` exactly as `sortSchema` is; the
+  shipped `toJsonSchema` cannot reach it today (it returns an object literal on every path), so
+  the test drives the guard directly rather than pretending a converter can be swapped.
 - App code reaches a projection through the action (`publishPost.tool()`), never through
   `.def` and never by importing the projection function. `facade.ts` is where a new method
   is bound; the projection itself keeps living in its own file.

@@ -8,7 +8,6 @@ import {
 import { CURRENCY_CODE_PATTERN, isCurrencyCode } from '@ultimat3/schema';
 import { defineHttpConfig } from './config';
 import {
-  appErrorStatus,
   ERROR_STATUS,
   factsOf,
   registerErrorStatus,
@@ -116,11 +115,6 @@ describe('an app declares the status for its own codes', () => {
     expect(() => registerErrorStatus({ X_CREDENTIALS_INVALID: 403 })).toThrow(
       'X_ERROR_STATUS_INVALID',
     );
-  });
-
-  test('appErrorStatus projects what the app declared, sorted', () => {
-    registerErrorStatus({ X_SIGNUP_CLOSED: 403, X_CREDENTIALS_INVALID: 401 });
-    expect(Object.keys(appErrorStatus())).toEqual(['X_CREDENTIALS_INVALID', 'X_SIGNUP_CLOSED']);
   });
 });
 

@@ -107,6 +107,7 @@ export {
   SQL_NACK,
   SQL_OUTBOX_CLAIM,
   SQL_OUTBOX_MARK_PUBLISHED,
+  SQL_OUTBOX_RELEASE,
   SQL_OUTBOX_STAGE,
   SQL_OUTBOX_TABLE,
   SQL_SCHEDULER_STATE_GET,
@@ -191,6 +192,7 @@ export {
 export type {
   EnqueueOptions,
   JobsFacade,
+  MemoryOutboxOptions,
   MemoryOutboxStore,
   OutboxDeps,
   OutboxRecord,
@@ -202,6 +204,7 @@ export {
   createJobsFacade,
   createMemoryOutboxStore,
   createOutboxRelay,
+  DEFAULT_OUTBOX_CLAIM_LEASE_MS,
   enqueueInTx,
   jobsFacade,
   resetJobsFacade,

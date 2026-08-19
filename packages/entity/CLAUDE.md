@@ -48,7 +48,15 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   sent, which is why `findById` keeps its signature and there is no `batch()` to opt into. The
   window closes before the statement goes out, so a lookup arriving mid-flight opens the next batch
   instead of joining ids already on the wire, and past `MAX_IDS_PER_STATEMENT` a batch becomes
-  several whole statements rather than one Postgres refuses for its bind count. A sequential
+  several whole statements rather than one Postgres refuses for its bind count. **No caller of a
+  batch is ever left unsettled** — every promise `coalesceFindById` returns was handed out before
+  the flush was scheduled, so `flush` settles the whole of `waiting` in a catch of its own rather
+  than only the chunk that failed, and the scheduled `flush` carries a `.catch`: a rejection there
+  has nobody left to hand it to and an unhandled one ends the Bun process. Unsettled forever is
+  strictly worse than failed — a rejection is a stack trace and a hang is a request that never
+  answers — which is why `coalesce.test.ts` races its assertions against a deadline instead of
+  letting the runner time out. `jit-preload.ts` has the same property by construction, settling
+  with an `Answer` rather than a rejection. A sequential
   `for … of` loop shares no microtask — its `await` ends the window — which is what the sibling
   preload below is for.
 - **A page batches the loop it causes, and a preloaded row is only ever served to the statement

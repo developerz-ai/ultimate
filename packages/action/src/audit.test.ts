@@ -321,3 +321,59 @@ describe('the audit seam', () => {
     expect(publishPost(false).describe().audited).toBe(false);
   });
 });
+
+/**
+ * The same defect class the tail of `@ultimat3/http` shipped: a documented total path reached
+ * past an unguarded `instanceof`. `auditOutcomeFor` asks `error instanceof ActionDeniedError`
+ * inside the one catch that produces the `failed` record, and a `Proxy` answers that question
+ * with a throw of its own — from the frame that is holding the app's error.
+ */
+describe('a handler that throws a value which fights being read', () => {
+  const unreadable = (): unknown =>
+    new Proxy(
+      {},
+      {
+        getPrototypeOf: (): never => {
+          throw new TypeError('the prototype is not for you');
+        },
+        get: (): never => {
+          throw new TypeError('the properties are not for you');
+        },
+      },
+    );
+
+  const hostile = unreadable();
+
+  const throwsHostile = () =>
+    action({
+      input: Input,
+      output: Output,
+      policy: can('post:publish'),
+      audit: true,
+      handle: (): never => {
+        throw hostile;
+      },
+    }).named('publishPost');
+
+  test('the caller keeps its own throwable, and the attempt is still recorded as failed', async () => {
+    const sink = memoryAuditSink();
+    setAuditSink(sink);
+
+    // `try`/`catch`, never `.then(_, (error) => error)`: returning the value from a rejection
+    // handler resolves the outer promise WITH it, and the promise resolution procedure reads
+    // `.then` off it — the test would trip its own trap and prove nothing about the invocation.
+    let caught: unknown;
+    try {
+      await throwsHostile()({ postId: POST_ID }, { ctx: editor });
+    } catch (error) {
+      caught = error;
+    }
+
+    // Identity: the probe used to replace the app's error with its own `TypeError`, so whatever
+    // an app catches by `instanceof` upstream stopped matching.
+    expect(caught).toBe(hostile);
+    expect(sink.records()).toHaveLength(1);
+    expect(sink.records()[0]?.outcome).toBe('failed');
+    expect(sink.records()[0]?.failure?.code).toBeNull();
+  });
+});

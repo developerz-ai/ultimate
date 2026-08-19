@@ -79,6 +79,21 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   prevent. A lane that fails now desyncs its own subscribers and the first failure still reaches
   the caller, but it costs one query id. The lane chains on a settled shadow of each task: one
   fanout that threw must not reject every fanout behind it.
+- **Two reads of one entry are ordered by a READ GENERATION, never by an lsn.** `QueryEntry.lsn`
+  is optional — a definition with no lsn provider answers `''` from every snapshot — so the
+  never-backwards rule expressed purely in lsn terms read `'' >= ''` as "newer" and let the older
+  of two concurrent reads land on top of the newer one's window. The interleaving: a cold
+  subscriber issues P1; the change stream skips a sequence and `registry.invalidate()` marks the
+  entry; a second cold subscriber forces P2, which **clears `stale` on the way in**; P2 lands with
+  the post-gap rows; P1 lands last and overwrites them. `stale` is false, so `fanoutChange`'s
+  repair never fires, the next change patches the pre-gap window and re-snapshots every desynced
+  subscriber out of it — permanently stale on a healthy socket, which is the exact outcome `stale`
+  exists to prevent. `entry.generation` is bumped in `startRead` and `entry.applied` records the
+  newest read whose rows are on the window: an *identity* check, the same one `startRead` makes on
+  `entry.reading` one function down and `packages/cache/src/single-flight.ts:70` makes for the same
+  reason. The lsn guard stays beside it for the other question — a read that resolved behind a
+  *change* the fanout already folded — because those are two orderings and neither answers the
+  other.
 - **The definition's read is once per entry, not once per subscriber.** A cold subscriber arriving
   while another's read is in flight joins that read — N cold subscribers on one query id being N
   reads is the shared window not existing. It is a share, not a cache: the in-flight promise is
@@ -141,6 +156,28 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   could reach a different one than the container it is standing in for. The KV bucket and the
   presence TTL come back with the transport for the same reason: they are one decision.
 - `sync` is stateless: no sticky sessions, nothing on a socket survives a restart.
+- **A socket the node evicts ITSELF is released through `teardown`, never through
+  `sockets.remove`.** Bun's `close` callback runs `teardown`; a drain and the idle sweep have no
+  callback behind them — Bun's fires a tick later and `sockets.get` misses by then — so whatever
+  they do instead *is* the whole release. `drain()` inlined three of `teardown`'s five steps
+  (`close`, `sockets.remove`, `grants.delete`) and skipped the two the rest of the fleet can see:
+  `registry.unsubscribeSocket` and `presence.leave` per topic. What that left is a `QueryEntry`
+  whose `subscribers` map never empties — matcher, shared window and `WindowLock` pinned, and
+  `source.forget(qid)` never called — and, worse because it is cross-node, a presence member every
+  other node renders for a full TTL. During a **rolling restart** that is every room showing each
+  user twice for up to 30s, beside the same client's reconnection under a new socket id. One
+  `evict(socket, code, reason)`, and every path that ends a socket without a callback takes it.
+- **The idle sweep exists, is armed by `start()`, and its budget is an APPLICATION one.**
+  `SocketRegistry.sweepIdle` had no caller for as long as it existed, so `touch()`, `idleFor` and
+  the 120s default decided nothing and `idleTimeoutMs` was unreachable from `createSyncNode`. The
+  only live guard was `websocket.idleTimeout: 120` handed to Bun — which Bun's own ping/pong
+  renews, so a client whose frame loop is wedged answers pings and keeps its `GrantBook` entry,
+  its `SubscriptionBook` entries and its `#byTopic` membership forever. It is now
+  `SocketRegistry.idle()`, a **query**: this table is three of the five things a socket holds, so
+  the object that can evict one is the node and not the registry. `start()` arms one `.unref()`ed
+  pass every `idleSweepPeriodMs(idleTimeoutMs)` — a quarter of the budget, floored at a second,
+  derived rather than configured because a second knob is a second number that can disagree with
+  the one it is a fraction of — and `release()` clears it beside the presence sweep.
 - **`drain()` and `stop()` both release what `start()` acquired, and releasing twice is a no-op.**
   A `drain()` is terminal on its own — it closes the hub and evicts every socket — and nothing
   obliges a `stop()` to follow it, so leaving the change subscription and the presence sweep to
@@ -321,6 +358,13 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   `Bridge` comment describes, one state earlier. So `close()` sets `#closed` **before** the walk and
   `#open` closes its own subscription when it lands after one, dropping the entry with it so a
   second post-close subscribe opens and closes its own rather than double-unsubscribing this handle.
+  It then **raises** `X_TRANSPORT_UNAVAILABLE` rather than returning: returning let `subscribe` fall
+  through to `joinTopic`, so the socket became a member of a topic nothing on this node is bridged
+  to — silent for the life of the connection, no error on either side, and no reason for the client
+  to redial. Reachable between `hub.close()` inside `node.drain()` and the last in-flight subscribe.
+  `#release` takes the bridge the caller reserved for the same reason: after `close()` cleared the
+  table, that topic name may hold a bridge a LATER subscribe opened, and releasing by name alone
+  decrements somebody else's refcount.
 - Deny by default on topics. No guard = `X_TOPIC_FORBIDDEN`.
 - **A guard that FAILS is not a guard that denied — the hub's copy of the rule the row gate already
   follows.** On `onActorChange` (the re-auth pass) only a denial unsubscribes; anything else keeps

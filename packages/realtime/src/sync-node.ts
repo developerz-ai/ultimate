@@ -14,6 +14,7 @@ import { CHANGE_SUBJECT_PREFIX, parseEnvelope, SeqGapDetector } from './replicat
 import {
   CLOSE,
   DEFAULT_MAX_BUFFERED_BYTES,
+  idleSweepPeriodMs,
   SocketRegistry,
   SyncSocket,
   type WsLike,
@@ -76,6 +77,12 @@ export interface SyncNodeOptions {
    */
   readonly maxBufferedBytes?: number;
   readonly maxDroppedFrames?: number;
+  /**
+   * How long a socket may route no frame before this node evicts it. Every ceiling on a socket
+   * `sync` builds has to be reachable from here, and this one was not: `SocketRegistry`'s default
+   * was only settable by constructing the registry yourself, and nothing swept it either way.
+   */
+  readonly idleTimeoutMs?: number;
   readonly onMutate?: MutationHandler;
   /**
    * Who is dialling. Injected for the same reason `onMutate` is: `sync` owns no business logic and
@@ -131,7 +138,11 @@ export interface SyncNode {
 
 export function createSyncNode(options: SyncNodeOptions): SyncNode {
   const sockets =
-    options.sockets ?? new SocketRegistry({ ...(options.clock ? { clock: options.clock } : {}) });
+    options.sockets ??
+    new SocketRegistry({
+      ...(options.clock ? { clock: options.clock } : {}),
+      ...(options.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: options.idleTimeoutMs }),
+    });
   const clock = options.clock ?? systemClock;
   const accept = options.accept ?? new AcceptBudget({ perSecond: 500, burst: 2000, clock });
   const maxConnections = options.maxConnections ?? DEFAULT_MAX_CONNECTIONS;
@@ -143,6 +154,7 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
   let changes: TransportSubscription | null = null;
   let sweeping: ReturnType<typeof setInterval> | null = null;
   let reauthing: ReturnType<typeof setInterval> | null = null;
+  let idling: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Work nobody is waiting on — a presence leave from a synchronous close, a sweep on a timer, a
@@ -178,6 +190,8 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     sweeping = null;
     if (reauthing !== null) clearInterval(reauthing);
     reauthing = null;
+    if (idling !== null) clearInterval(idling);
+    idling = null;
     gaps.forget();
   };
 
@@ -198,6 +212,17 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
     if (presence) {
       for (const name of topics) detach(presence.leave(name, socket.id), 'presence.leave', name);
     }
+  };
+
+  /**
+   * The node's one eviction: close, then release everything the socket held. Every path that ends
+   * a socket without a `close` callback behind it — the drain, the idle sweep — goes through it,
+   * because dropping the socket from the table is three of `teardown`'s five steps and the two it
+   * misses are the ones another node can see.
+   */
+  const evict = (socket: SyncSocket, code: number, reason: string): void => {
+    socket.close(code, reason);
+    teardown(socket);
   };
 
   /**
@@ -277,6 +302,14 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
         );
         sweeping.unref();
       }
+      // The half-open connection Bun's own `idleTimeout` renews through its ping/pong: a client
+      // whose frame loop is wedged answers pings and keeps its grant, its subscriptions and its
+      // topic membership. `sweepIdle` was written for this and never called, so `touch()` and the
+      // 120s budget under it decided nothing.
+      idling = setInterval(() => {
+        for (const socket of sockets.idle()) evict(socket, CLOSE.idle, 'idle timeout');
+      }, idleSweepPeriodMs(sockets.idleTimeoutMs));
+      idling.unref();
       if (options.authenticate) {
         reauthing = setInterval(
           () => detach(reauthenticate(), 'sync.reauthenticate'),
@@ -419,11 +452,13 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       }
       const graceMs = drainOptions.graceMs ?? 5_000;
       if (graceMs > 0) await new Promise((resolve) => setTimeout(resolve, graceMs));
-      for (const socket of [...sockets.all()]) {
-        socket.close(CLOSE.goingAway, 'drain');
-        sockets.remove(socket.id);
-        grants.delete(socket.id);
-      }
+      // Through `evict`, never `sockets.remove` + `grants.delete`: those are three of `teardown`'s
+      // five steps, and the two they skip are the ones the rest of the fleet can see. A drained
+      // socket that never left its presence set is a member every other node renders for a full
+      // TTL — during a rolling restart, beside the same client's reconnection under a new id —
+      // and its live subscriptions stay in the registry, so `entry.subscribers` never empties and
+      // the matcher, the shared window and the retained ring are pinned for the process's life.
+      for (const socket of [...sockets.all()]) evict(socket, CLOSE.goingAway, 'drain');
       // Released once the sockets are gone rather than at the top: a client is entitled to its
       // patches for the whole grace window, and it is entitled to them *before* the hub the
       // fanout writes through is closed.

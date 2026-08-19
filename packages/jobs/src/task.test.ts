@@ -90,6 +90,20 @@ describe('task', () => {
     expect(registeredTasks().map((handle) => handle.name)).toEqual(['nightlyDigest']);
   });
 
+  test('registeredTasks() orders by CODE UNITS, not by the runtime locale', () => {
+    // Same reason as `registeredJobs()`: this list reaches a committed build artefact, and
+    // `localeCompare` with no locale argument is a function of the runtime's ICU collation.
+    for (const name of ['aDigest', 'BDigest', '_sweep']) {
+      task({ name, cron: '0 3 * * *', tz: 'UTC', enqueue: () => [[sendDigest, {}]] });
+    }
+
+    expect(registeredTasks().map((handle) => handle.name)).toEqual([
+      'BDigest',
+      '_sweep',
+      'aDigest',
+    ]);
+  });
+
   test('an empty tz is refused at runtime as well as by the type', () => {
     expect(() => task({ name: 'bad', cron: '0 3 * * *', tz: '', enqueue: () => [] })).toThrow();
   });

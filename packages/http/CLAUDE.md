@@ -156,7 +156,12 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 - Statuses live in `error-map.ts` only. No other file writes a status number. The framework's
   table (`ERROR_STATUS`) is closed; an app declares its own codes' statuses with
   `registerErrorStatus()`, which refuses a code the framework already holds. Without that half,
-  every app code was 500 and `pipeline.ts` paged the on-call for a wrong password.
+  every app code was 500 and `pipeline.ts` paged the on-call for a wrong password. There is
+  deliberately **no projection of the app's half**: `appErrorStatus()` was exported for "`x errors
+  list` and the manifest" and neither ever called it (deleted 2026-08). It could not have worked —
+  `APP_ERROR_STATUS` is process-global runtime state filled by the app's own imports, while both
+  named surfaces are build artefacts derived from source, so in a CLI process it answers `{}`.
+  Wiring one means deriving it from source, not re-exporting the map.
 - **The context carries the inbound headers, never the `Request`.** `ctx.requestHeaders` is set
   once at construction; `useRequestHeader` / `useRequestCookie` are what app code reads, and
   `UltimateRequest.cookie()` is what `hooks.authenticate` reads. A `Request` on the context is a
@@ -187,6 +192,17 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   hit: the stage that renders a throw has nothing left to render its own. Every degraded answer goes
   *through* the recover stage, never around it — reporting, logging and the overlay each keep one
   call site.
+- **Both guards in that tail are TOTAL against a throwable that fights being read** (`As of
+  2026-08`). `recoverWith`'s catch built its log line with `String(failure)`, which is itself a
+  `TypeError` on a null-prototype object — thrown out of the one guard documented "never throws, by
+  construction", from the frame with nothing above it. It is a log FIELD now, the same rule the
+  `error-map` stage already follows, and `logger.emit` degrades a hostile field per key. The second
+  half is `factsOf`: it read `record['code']` directly, and that read is a getter call or a
+  `Proxy`'s `get` trap on a value the framework did not build — so a handler throwing one took the
+  recover stage AND the `problem()` the guard degrades to, and `handle()` rejected. Every field
+  comes off the throwable through core's `stringField`. Never spell either read inline again:
+  `String(x)`, `${x}` and a bare property read on a caught value are all the same defect, and
+  `error-render.ts` names seven prior instances.
 - **The memory rate-limit store is bounded, and the eviction order is part of the guarantee.**
   The key falls back to the connection address (`rateLimitKey`), so a scan rotating through an
   IPv6 /64 mints one entry per request — an unbounded map hands the flood the process. Every

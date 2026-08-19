@@ -25,7 +25,6 @@ export type { Deadline } from './deadline';
 export { REQUEST_TIMEOUT_HEADER, resolveTimeoutMs, startDeadline } from './deadline';
 export type { ErrorFacts, ProblemDocument } from './error-map';
 export {
-  appErrorStatus,
   DEFAULT_STATUS,
   ERROR_STATUS,
   factsOf,

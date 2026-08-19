@@ -6,7 +6,12 @@
 
 import { type Actor, logger, renderThrowable } from '@ultimat3/core';
 import { formatLsn } from './changefeed';
-import { isPolicyDenial, SubscriptionLimitError, TopicForbiddenError } from './errors';
+import {
+  isPolicyDenial,
+  SubscriptionLimitError,
+  TopicForbiddenError,
+  TransportUnavailableError,
+} from './errors';
 import { subjectMatches, type Transport, type TransportSubscription } from './fanout';
 import type { JsonObject } from './json';
 import type { SocketRegistry, SyncSocket } from './socket';
@@ -152,8 +157,11 @@ export class ChannelHub {
       await this.#authorize(socket.actor, name);
       await this.#open(name, bridge);
     } catch (error) {
-      // The slot this subscribe took, given back on the one path that will never fill it.
-      this.#release(name);
+      // The slot this subscribe took, given back on the one path that will never fill it — and
+      // given back to the bridge this subscribe actually reserved. `close()` clears the table, so
+      // a later subscribe may have put a DIFFERENT bridge under this name in the meantime, and
+      // decrementing that one's refs releases a topic somebody else is holding.
+      this.#release(name, bridge);
       throw error;
     } finally {
       const held = this.#claimed.get(socket) ?? 1;
@@ -164,7 +172,7 @@ export class ChannelHub {
     // membership this socket's close will give back, so the reference taken above has to go now or
     // it is a bridge nothing will ever release.
     if (socket.topics.has(name)) {
-      this.#release(name);
+      this.#release(name, bridge);
       return;
     }
     // Through the registry, never `socket.subscribeTopic` directly: membership and the index the
@@ -297,12 +305,27 @@ export class ChannelHub {
     if (this.#closed) {
       unsubscribeWhenOpen(bridge);
       if (this.#bridges.get(name) === bridge) this.#bridges.delete(name);
+      // RAISED, not returned. Returning let `subscribe` fall through to `joinTopic`, so the socket
+      // became a member of a topic nothing on this node is bridged to: silent for the life of the
+      // connection, with no error on either side and nothing telling the client to redial. The
+      // same refusal the transport itself answers when it is gone, because from the client's side
+      // that is what happened — this node's bus for that topic is closed.
+      throw new TransportUnavailableError({
+        transport: 'channel',
+        reason: `the hub closed while "${name}" was opening`,
+        fix: 'reconnect and resubscribe — this node is draining',
+      });
     }
   }
 
-  #release(name: Topic): void {
+  /**
+   * `expected` is the bridge the caller reserved. Without it a release looks the topic up by name,
+   * and after a `close()` cleared the table that name may hold a bridge a LATER subscribe opened.
+   */
+  #release(name: Topic, expected?: Bridge): void {
     const bridge = this.#bridges.get(name);
     if (!bridge) return;
+    if (expected !== undefined && bridge !== expected) return;
     bridge.refs -= 1;
     if (bridge.refs > 0) return;
     unsubscribeWhenOpen(bridge);
