@@ -8,9 +8,17 @@ Releases use **OIDC trusted publishing** from GitHub Actions
 mints a short-lived token from the run's OIDC identity and attaches a provenance attestation
 automatically.
 
-**`As of 2026-08-19`: 30 workspaces publish and all 30 are on the registry.** `v2.0.0` is tagged
-and pushed and npm's `latest` is 2.0.0; the repository is at 3.0.0, which the workflow has not
-published yet.
+**`As of 2026-08-19`: 30 workspaces publish, all 30 are on the registry at 3.0.0, and every 3.0.0
+tarball carries a provenance attestation.** `v3.0.0` is tagged and pushed, its GitHub Release is
+published, and the run that Release triggered is what put those 30 versions on npm — the first
+workflow-published release since 1.2.0.
+
+| Fact | Read it yourself |
+|---|---|
+| what npm serves | `npm view @ultimat3/core version` |
+| attested, and by whom | `npm view @ultimat3/core@3.0.0 dist.attestations _npmUser` |
+| the derived publish list, in order | `bun run scripts/release-workflow.ts --json` |
+| the repository is stamped at one version | `bun run scripts/release.ts --check 3.0.0` |
 
 **There is no publication hole today, and there have been two.** `@ultimat3/flags` was the first:
 the workflow listed its `-w` flags by hand and omitted it. That list is now **derived** from
@@ -77,11 +85,15 @@ bun run scripts/list-workspaces.ts --json \
   | while read -r args; do npm publish $args --access public; done
 ```
 
-To bootstrap **one** package — which is what `@ultimat3/scraping` needs — publish just that one:
+To bootstrap **one** package — the usual case, and what `@ultimat3/scraping` needed on 2026-08-19 —
+publish just that one:
 
 ```sh
-npm publish -w @ultimat3/scraping --access public --provenance=false
+npm publish -w <pkg> --access public --provenance=false
 ```
+
+Which name to put there: the one in `bun run scripts/release-workflow.ts --json` that
+`npm view <pkg> version` answers `E404` for. `As of 2026-08-19` there is none.
 
 ## One-time: configure the trusted publisher (per package)
 
@@ -97,9 +109,10 @@ On npmjs.com, for **each** package: `npmjs.com/package/<name>` → **Settings** 
 
 The GitHub org is `developerz-ai` with a hyphen; the npm scope is `@ultimat3`. Both are correct.
 
-`Environment` is the row that changed. It was **blank on the registry until 2.0.0**, on all 29
-packages — this table says what it must be, and `bun run scripts/trust-publishers.ts` is what makes
-it so; `--check` refuses a publisher that carries none. Blank means *any* environment: npm accepts a
+`Environment` is the row that changed. It was **blank on the registry until 2026-08-19**, on every
+package that had a publisher at all — this table says what it must be, and
+`bun run scripts/trust-publishers.ts` is what makes it so; `--check` refuses a publisher that
+carries none. Blank means *any* environment: npm accepts a
 token from any run of `release.yml`, whatever job produced it and whatever approval it did or did
 not pass. Setting it to `npm-publish` makes the registry itself refuse a token minted outside the
 approval-gated environment, which is the half GitHub cannot enforce, and it must match
@@ -108,15 +121,19 @@ approval-gated environment, which is the half GitHub cannot enforce, and it must
 
 ## Human steps outside this file
 
-**`As of 2026-08-19` all four are done, for all 30 packages** — steps 3 and 4 for the first time.
-Until then no package had a trusted publisher at all, and this file claimed otherwise.
+**`As of 2026-08-19` all four are done, for all 30 packages, and 3.0.0 went out through the
+workflow because of it** — every 3.0.0 tarball carries an attestation and `_npmUser: GitHub Actions`
+(`npm view @ultimat3/core@3.0.0 dist.attestations _npmUser`).
 
-**That is why 2.0.0 has no provenance.** With no trusted publisher attached, the OIDC exchange had
-nothing to verify against, so the workflow could not publish and 2.0.0 went out by hand: every
-`@ultimat3/*` package at 2.0.0 carries `_npmUser: sebyx07` and **no `dist.attestations`**, while
-1.1.0 and 1.2.0 carry attestations and `_npmUser: GitHub Actions`. 3.0.0 is the first release since 1.2.0
-that *can* run through the workflow — confirm it did with
-`npm view @ultimat3/core@3.0.0 dist.attestations`, never from this sentence.
+**2.0.0 is the exception in the line, and its cause was step 3.** With no trusted publisher
+attached, the OIDC exchange had nothing to verify against, so the workflow could not publish and
+2.0.0 went out by hand: every `@ultimat3/*` package at 2.0.0 carries `_npmUser: sebyx07` and **no
+`dist.attestations`**, while 1.1.0, 1.2.0 and 3.0.0 carry both.
+
+**Steps 3 and 4 on 2026-08-19 were not the first publishers this repo ever had.** 1.1.0 and 1.2.0
+published under earlier ones — `npm view @ultimat3/core@1.2.0 _npmUser.trustedPublisher` answers an
+`oidcConfigId`, and it is a *different* id from 3.0.0's, per package. What was new on 2026-08-19 is
+that all 30 carry one **and** carry `Environment: npm-publish` with it.
 
 **Two traps met while doing steps 3 and 4, both worth knowing before you redo them:**
 
@@ -148,9 +165,11 @@ one that breaks a release.
 
 **None of them fails loudly if you skip it** — that is the whole problem, and it is why each is
 written out with what skipping it actually costs. Step 1 is the only one that breaks a release, and
-it breaks it deep into the run, after packages have published irreversibly. **Step 1 is owed again**
-`As of 2026-08`: it is a per-package step, and every package added after a release run needs its own
-bootstrap before the next one.
+it breaks it deep into the run, after packages have published irreversibly. **Nothing is owed
+today** `As of 2026-08-19` — the 3.0.0 run reached all 30. Steps 1, 3 and 4 come due again for the
+next package added after a release run: `bun run scripts/release-workflow.ts --json` lists what the next
+run will reach, and `npm view <pkg> version` on a name it lists is how you find the one that is not
+there yet.
 
 ### 1. Bootstrap a never-published package by hand — do this first
 
@@ -201,9 +220,10 @@ attestation.
 package can be silently absent again; the loud failure is the feature.
 
 **This happened once already, and was closed.** `@ultimat3/flags` was the same shape — never
-published, in the derived list, fifth of 29 — and 2.0.0 closed it with exactly this command. `2.0.0`
-is `flags`' only version on the registry, so the bootstrap is visible in its version history: one
-version with no attestation, every later one with provenance.
+published, in the derived list, fifth of 29 — and 2.0.0 closed it with exactly this command. Its
+version history is the shape a bootstrap leaves behind, and it is two versions long: `npm view
+@ultimat3/flags versions` answers `2.0.0` (hand-published, no attestation) and `3.0.0` (the
+workflow, with provenance). `@ultimat3/scraping` reads identically.
 
 ### 2. Create the `npm-publish` environment with required reviewers
 
@@ -233,11 +253,12 @@ On npmjs.com, for **each** published package: `npmjs.com/package/<name>` → **S
 **Trusted Publisher** → set the **Environment** field to `npm-publish`. It must match
 `environment.name` in `release.yml` exactly.
 
-**Cost of skipping: the registry enforces nothing about which job published.** The field is blank
-today, and blank means *any* environment — npm accepts a token minted by any run of `release.yml`,
-whichever job produced it and whatever approval it did or did not pass. Steps 2 and 3 are GitHub
-refusing to start the job; this is npm refusing the token. Without it, a change to this workflow
-that drops the `environment:` line loses the gate with nothing outside the repo noticing.
+**Cost of skipping: the registry enforces nothing about which job published.** Blank — which every
+publisher was until 2026-08-19 — means *any* environment: npm accepts a token minted by any run of
+`release.yml`, whichever job produced it and whatever approval it did or did not pass. Steps 2 and
+3 are GitHub refusing to start the job; this is npm refusing the token. Without it, a change to
+this workflow that drops the `environment:` line loses the gate with nothing outside the repo
+noticing.
 
 ## Publish order (dependency tiers)
 
@@ -292,10 +313,13 @@ pass `verify` while the tag says `v1.10.1` — and every publish then dies `EPUB
 version already on the registry, one package at a time, halfway through a release. `--check` anchors
 the comparison to the version read off the tag.
 
-`As of 2026-08` this repo was in exactly that state: `git describe` answered `v1.10.1-37-g837adfa`
-with every `package.json` at `1.2.0`, and the workflow ran no such check despite
-`scripts/release.ts` claiming it did. The drift is the snapshot; that the tag and the manifests must
-agree before a publish is the rule.
+`As of 2026-08-19` `git describe` answers `v3.0.0` and `bun run scripts/release.ts --check 3.0.0`
+passes, and the check itself is a step of the workflow
+([`.github/workflows/release.yml`](.github/workflows/release.yml), the `bun run scripts/release.ts
+--check` run). Earlier in 2026-08 this repo was in exactly the broken state: `git describe` answered
+`v1.10.1-37-g837adfa` with every `package.json` at `1.2.0`, and the workflow ran no such check
+despite `scripts/release.ts` claiming it did. The drift is the snapshot; that the tag and the
+manifests must agree before a publish is the rule.
 
 ## What is published
 

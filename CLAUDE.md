@@ -12,19 +12,22 @@ This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x`
 
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
-**Status:** 3.0.0 in the repository, `As of 2026-08`. 29 `@ultimat3/*` packages plus the unscoped
-`create-ultimate` — 30 in all — **versioned** in lockstep: one version, one commit, one tag.
+**Status:** 3.0.0, released, `As of 2026-08-19`. 29 `@ultimat3/*` packages plus the unscoped
+`create-ultimate` — 30 in all — **versioned** in lockstep and **published** in lockstep: one version,
+one commit, one tag, 30 tarballs.
 
-**The registry is one release behind the repository between a bump and its workflow run — that is
-where this commit sits.** Never read a number here as the installable one; run the command beside it.
+**Repository, tag and registry agree.** Never read a number here as the installable one; run the
+command beside it — that is the only thing here that cannot go stale.
 
 | Fact | State, `As of 2026-08-19` | Read it yourself |
 |---|---|---|
 | Repository version | 3.0.0, every workspace stamped | `bun run scripts/release.ts --check 3.0.0` |
 | Publishable workspaces | 30 | `bun run scripts/release-workflow.ts --json` |
-| On the registry | **all 30**, no holes | `bun run scripts/release-workflow.ts --json   # the derived list; check every name against npm view` |
-| npm `latest` | **2.0.0** — the `v3.0.0` tag and the publish run follow this commit | `npm view @ultimat3/core version` |
-| OIDC trusted publisher | attached to all 30 | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
+| On the registry | **all 30 at 3.0.0**, no holes | `bun run scripts/release-workflow.ts --json   # the derived list; check every name against npm view` |
+| npm `latest` | **3.0.0** — `bunx create-ultimate myapp` installs it | `npm view @ultimat3/core version` |
+| Provenance | every 3.0.0 tarball attested, `_npmUser: GitHub Actions` | `npm view @ultimat3/core@3.0.0 dist.attestations _npmUser` |
+| Tag and Release | `v3.0.0` pushed, GitHub Release published — the Release is what triggers the workflow | `git tag --list 'v3.*'` |
+| OIDC trusted publisher | attached to all 30, with `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
 
 **`@ultimat3/scraping` is on the registry, and it was the last publication hole.** It was bootstrapped
 by hand at 2.0.0 on 2026-08-19 — `npm publish --access public --provenance=false`, the one-time step
@@ -43,16 +46,21 @@ redeclared with different bounds now refused. The 3.0.0 section of [`CHANGELOG.m
 carries **10** entries marked `BREAKING —` and ships no codemod, so each one is a manual edit its own
 entry names. 2.0.0 was the **first** major and carried 33.
 
-**Every package has an OIDC trusted publisher, attached 2026-08-19 — for the first time.**
+**Every package has an OIDC trusted publisher, re-attached 2026-08-19 with the environment set.**
 `developerz-ai` / `ultimate` / `release.yml` / environment `npm-publish`, publish permission, all 30,
 verified per package with `npx -y npm@12 trust list <pkg> --json` — `npm trust` shipped in **npm 12**
 and Bun's bundled npm answers it as an unknown command, which is why `scripts/trust-publishers.ts`
-pins the runner. **That is why 2.0.0 has no provenance**: with no publisher attached the OIDC
-exchange had nothing to verify against, so the workflow could not publish and 2.0.0 went out by
-hand — `_npmUser: sebyx07`, no `dist.attestations`, where 1.1.0 and 1.2.0 carry both. 1.1.0 was the
-first release [`.github/workflows/release.yml`](.github/workflows/release.yml) published over OIDC;
-1.0.0 was the manual bootstrap. 3.0.0 is the first release since 1.2.0 that **can** run through the
-workflow — whether it did is `npm view @ultimat3/core@3.0.0 dist.attestations`, not a sentence here.
+pins the runner. That attachment is what let [`.github/workflows/release.yml`](.github/workflows/release.yml)
+publish 3.0.0: 30 tarballs, each attested, `_npmUser: GitHub Actions`.
+
+**2.0.0 is the one release with no provenance**: no publisher was attached, so the OIDC exchange had
+nothing to verify against, the workflow could not publish, and 2.0.0 went out by hand —
+`_npmUser: sebyx07`, no `dist.attestations`, where 1.1.0, 1.2.0 and 3.0.0 carry both. Not "for the
+first time" — this file said that until 2026-08-19 and `CHANGELOG.md`'s 3.0.0 header still does:
+1.1.0 and 1.2.0 published under **earlier** publisher configurations, one per package, and
+`npm view @ultimat3/core@1.2.0 _npmUser.trustedPublisher` answers an `oidcConfigId` that differs from
+3.0.0's. What is new on 2026-08-19 is that all 30 carry a publisher **and** carry
+`Environment: npm-publish` with it. 1.0.0 was the manual bootstrap.
 
 Semver applies — a breaking change to a documented API needs a major, and the eight primitive shapes,
 the `x` CLI surface and the tier table are as stable as the `X_*` codes already were.
@@ -243,7 +251,7 @@ Everything in the framework is one of these. **If a feature doesn't fit one of t
 
 ## CI
 
-Free GitHub Actions runners (`ubuntu-latest`) — never a paid runner. `ci.yml` runs three jobs, each answering a question no other job answers: `verify` (the gate, `x verify` verbatim — lint, typecheck, boundaries and every suite are its steps, never a second job), `reference-app-verify` (the app gate, on its ratchet) and `scaffold-smoke` (`x new` → `bun install` → `x verify` outside the checkout). Target under 5 minutes. Every job starts with `./.github/actions/setup` — bun, the install cache, a frozen install. Releases publish to npm via **OIDC trusted publishing**, with provenance — which 2.0.0 did not get, because no trusted publisher existed for the exchange to verify against. All 30 were attached on 2026-08-19, so 3.0.0 is the first release since 1.2.0 that can run through the workflow. See [`PUBLISHING.md`](PUBLISHING.md).
+Free GitHub Actions runners (`ubuntu-latest`) — never a paid runner. `ci.yml` runs three jobs, each answering a question no other job answers: `verify` (the gate, `x verify` verbatim — lint, typecheck, boundaries and every suite are its steps, never a second job), `reference-app-verify` (the app gate, on its ratchet) and `scaffold-smoke` (`x new` → `bun install` → `x verify` outside the checkout). Target under 5 minutes. Every job starts with `./.github/actions/setup` — bun, the install cache, a frozen install. Releases publish to npm via **OIDC trusted publishing**, with provenance — which 2.0.0 did not get, because no trusted publisher existed for the exchange to verify against. All 30 were attached on 2026-08-19, and 3.0.0 is the first release since 1.2.0 that the workflow published: `npm view @ultimat3/core@3.0.0 dist.attestations _npmUser`. See [`PUBLISHING.md`](PUBLISHING.md).
 
 ## Note
 

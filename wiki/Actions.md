@@ -125,7 +125,7 @@ export const likePost = mutator({
 | Authz | the `server` half carries the policy; the `local` half is presentation only and never a security boundary |
 | Never | let `local` do I/O, randomness, or `Date.now()` |
 
-**Replayability rule:** `local` is re-executed on every rebase — after each server confirmation, on reconnect, and when a conflicting remote write arrives. It must be a pure function of `(tx, input)`. I/O, `Math.random()`, `crypto.randomUUID()`, or a wall-clock read makes the local timeline diverge from the server's, and the divergence surfaces as flicker, then as wrong data. Ids and timestamps come from the input, generated once at call time. Tier 3 local-first (`persist: true`) is not in 2.0.0; mutators work today at realtime tiers 1–2 ([Realtime](Realtime)).
+**Replayability rule:** `local` is re-executed on every rebase — after each server confirmation, on reconnect, and when a conflicting remote write arrives. It must be a pure function of `(tx, input)`. I/O, `Math.random()`, `crypto.randomUUID()`, or a wall-clock read makes the local timeline diverge from the server's, and the divergence surfaces as flicker, then as wrong data. Ids and timestamps come from the input, generated once at call time. Tier 3 local-first (`persist: true`) is not in 3.0.0; mutators work today at realtime tiers 1–2 ([Realtime](Realtime)).
 
 ## Errors
 

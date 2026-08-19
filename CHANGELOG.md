@@ -10,9 +10,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## 3.0.0 - 2026-08-19
 
-The first release *able* to go through the workflow since 1.2.0: every package now has an OIDC
-trusted publisher, and none had one before. 2.0.0 was hand-published without provenance precisely
-because there was nothing for the exchange to verify against. `@ultimat3/scraping` — 404 since it
+The first release the workflow has published since 1.2.0. Every package has an OIDC trusted
+publisher again — **re-attached, not attached for the first time**, and this time with
+`Environment: npm-publish` set. The registry records the history: `@ultimat3/core@1.1.0` and
+`@1.2.0` were published under `oidc:b02ce1e0…`, `@2.0.0` under no publisher at all, and `@3.0.0`
+under a new `oidc:53a7edab…`. So a publisher existed, was lost or removed before 2.0.0 — which is
+why that release was hand-published with no attestation — and nothing noticed until now. `@ultimat3/scraping` — 404 since it
 landed after the 2.0.0 run — was bootstrapped by hand at 2.0.0 so the derived publish list can
 reach it here.
 

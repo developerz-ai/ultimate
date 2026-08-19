@@ -8,17 +8,18 @@ Honest answers. Where something is not built yet, it says so.
 
 **`As of 2026-08`.** Stable API, semver from here. 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — **30 in all** — are **versioned** in lockstep: one version, one commit, one tag.
 
-**Publication is a separate step from versioning, so the registry runs one release behind the repository until a tag's workflow run lands.** That is where 3.0.0 sits. There are no publication holes left — every one of the 30 is on npm.
+**Publication is a separate step from versioning, and 3.0.0's has run.** Repository, tag and registry are the same version; there are no publication holes — every one of the 30 is on npm.
 
 | Fact | State `As of 2026-08-19` | Resolve it yourself |
 |---|---|---|
-| What you can install | **2.0.0** — `bunx create-ultimate myapp` gives you it | `npm view @ultimat3/core version` |
+| What you can install | **3.0.0** — `bunx create-ultimate myapp` gives you it | `npm view @ultimat3/core version` |
 | Repository version | **3.0.0**, all 30 stamped in one commit | the top section of [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) |
-| Tagged | `v2.0.0` is on origin; `v3.0.0` follows the commit this page was written from | [the repository's tags](https://github.com/developerz-ai/ultimate/tags) |
-| On the registry | **all 30**, at 2.0.0 | `npm view @ultimat3/scraping version` |
-| Provenance | 1.1.0 and 1.2.0 carry an attestation; **2.0.0 does not** | `npm view @ultimat3/core@2.0.0 dist.attestations` |
+| Tagged | `v3.0.0` is on origin, and the GitHub Release for it is published | [the repository's tags](https://github.com/developerz-ai/ultimate/tags) |
+| On the registry | **all 30**, at 3.0.0 | `npm view @ultimat3/scraping version` |
+| Provenance | 1.1.0, 1.2.0 and 3.0.0 carry an attestation; **2.0.0 does not** | `npm view @ultimat3/core@3.0.0 dist.attestations` |
+| Who published it | `GitHub Actions`, over OIDC, on all 30 at 3.0.0 | `npm view @ultimat3/core@3.0.0 _npmUser` |
 
-1.1.0 was the first release the workflow published over OIDC trusted publishing, with provenance; 1.0.0 was the manual bootstrap. 2.0.0 was hand-published, because **no package had a trusted publisher attached** and the OIDC exchange had nothing to verify against; all 30 were attached on 2026-08-19, for the first time, which is what lets 3.0.0 publish over OIDC at all. `@ultimat3/scraping` and `@ultimat3/flags` were the two never-published packages and both are closed — each by the one-time manual bootstrap every package needs before a trusted publisher can attach.
+3.0.0 is the first release the workflow published since 1.2.0. 2.0.0 is the exception in the line: it was hand-published, with no trusted publisher attached for the OIDC exchange to verify against, so its tarballs carry no attestation and `_npmUser: sebyx07`. 1.0.0 was the manual bootstrap. `@ultimat3/scraping` and `@ultimat3/flags` were the two never-published packages and both are closed — each by the one-time manual bootstrap every package needs before a trusted publisher can attach.
 
 That is exactly what the version claims — a stable API under semver, not a promise about your infrastructure.
 

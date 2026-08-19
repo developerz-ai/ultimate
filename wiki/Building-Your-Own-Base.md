@@ -9,7 +9,7 @@ wait for.
 Everything downstream treats the result identically — registry, manifest, projections, admin,
 MCP, `x verify`.
 
-**Re-run against 2.0.0** `As of 2026-08`: every fenced example on this page compiles under the
+**Re-run against 3.0.0** `As of 2026-08-19`: every fenced example on this page compiles under the
 repository's own `tsconfig.base.json` (`strict`, `exactOptionalPropertyTypes`,
 `noUncheckedIndexedAccess`, `verbatimModuleSyntax`), and both compile errors quoted under
 [Two caveats](#two-caveats) are `tsc`'s verbatim words at that setting. The `tenantEntity` example

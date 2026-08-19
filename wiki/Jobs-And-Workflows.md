@@ -183,7 +183,7 @@ Two implementations ship in 1.0.0. Two more are **not in 3.0.0** — interface-c
 
 `jobs.driver` in `app.config.ts` accepts `'postgres' | 'redis' | 'nats'` — and only `'postgres'` runs. Setting it to `redis` or `nats` typechecks and boots, then throws on the first enqueue: deliberate, and why the stubs exist instead of an absent export.
 
-`x jobs drain --to <driver>` moves in-flight rows between drivers, and `--to memory` is the only target that completes today: `--to redis` and `--to nats` construct the target and fail on the first enqueue with `X_NOT_IMPLEMENTED`. The cross-driver migration procedure is not in 2.0.0 — see [Upgrading](Upgrading).
+`x jobs drain --to <driver>` moves in-flight rows between drivers, and `--to memory` is the only target that completes today: `--to redis` and `--to nats` construct the target and fail on the first enqueue with `X_NOT_IMPLEMENTED`. The cross-driver migration procedure is not in 3.0.0 — see [Upgrading](Upgrading).
 
 ## Dead letter
 

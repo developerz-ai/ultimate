@@ -496,7 +496,7 @@ x deploy --image repo/app:tag [--method compose|helm] [--dry-run] [--critical] [
 | `--image` | string | `ultimate-app:dev` | image reference to deploy |
 | `--method` | string | `compose` | `compose` or `helm` |
 | `--dry-run` | boolean | `false` | print the plan, run nothing |
-| `--critical` | boolean | `false` | security deploy: clients are forced to reload after the grace period |
+| `--critical` | boolean | `false` | **echoed into the plan only.** It lands in `x deploy --json`'s `critical` field and nothing in `packages/` reads it — no deadline is set and no client is forced to reload ([`packages/cli/src/cmd-deploy.ts:139`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/cmd-deploy.ts)). Forcing a reload is your app calling `updateSignal()` from `@ultimat3/pwa` → [PWA and offline](PWA-And-Offline) |
 
 `compose` is six ordered steps against `docker/docker-compose.prod.yml` — `run --rm migrate` to
 completion, then `up -d` for `web`, `sync`, `worker`, `scheduler`, then `run --rm backfill` last.

@@ -249,4 +249,4 @@ Two design-only companions — **specification, not shipped behaviour**: [`docs/
 
 ## Rollback
 
-Redeploy the previous image tag. Previous builds' assets stay served under the N-deploy retention window (default 10 deploys or 7d, whichever is longer), so a rollback does not 404 anyone mid-session. Version-skew handling: [Upgrading](Upgrading). Failure symptoms: [Troubleshooting](Troubleshooting).
+Redeploy the previous image tag. The last **3** builds' assets stay served — `retentionPlan(deploys, keep = 3)`, a count of deploys with no time component and no `pwa.retention` config field — so a rollback one release back does not 404 anyone mid-session. Version-skew handling: [Upgrading](Upgrading). Failure symptoms: [Troubleshooting](Troubleshooting).
