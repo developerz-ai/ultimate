@@ -73,11 +73,20 @@ export class McpToolUnknownError extends UltimateError {
 export class McpScopeDeniedError extends UltimateError {
   readonly scope: string;
 
-  constructor(input: { name: string; scope: string }) {
+  /**
+   * `subject` names WHICH surface refused, because the two are declared in different places: a
+   * tool's scope comes from `defineAppMcp({ scopes })`, a resource's is a field on the resource.
+   * A fix line naming the wrong declaration is an instruction that cannot be followed.
+   */
+  constructor(input: { name: string; scope: string; subject?: 'tool' | 'resource' }) {
+    const subject = input.subject ?? 'tool';
     super({
       code: 'X_MCP_SCOPE_DENIED',
-      cause: `tool "${input.name}" requires scope "${input.scope}", which this connection's token does not carry`,
-      fix: `reconnect with a token whose scopes include "${input.scope}" — the app's resolveToken(token) is what returns them — or drop "${input.scope}" from defineAppMcp({ scopes }); scopes are fixed for the life of a connection`,
+      cause: `${subject} "${input.name}" requires scope "${input.scope}", which this connection's token does not carry`,
+      fix:
+        subject === 'tool'
+          ? `reconnect with a token whose scopes include "${input.scope}" — the app's resolveToken(token) is what returns them — or drop "${input.scope}" from defineAppMcp({ scopes }); scopes are fixed for the life of a connection`
+          : `reconnect with a token whose scopes include "${input.scope}" — the app's resolveToken(token) is what returns them — or drop scope: '${input.scope}' from the resource declaring "${input.name}"; scopes are fixed for the life of a connection`,
       docs: docsFor('X_MCP_SCOPE_DENIED'),
     });
     this.scope = input.scope;

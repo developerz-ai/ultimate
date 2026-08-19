@@ -6,6 +6,7 @@ import {
   holeMarker,
   REVEAL_SCRIPT,
   renderStreamHtml,
+  revealChunk,
 } from './render-stream';
 
 function deferred(): {
@@ -224,5 +225,68 @@ describe('a hole that never settles', () => {
 
   test('the default deadline is declared, not implicit', () => {
     expect(DEFAULT_HOLE_TIMEOUT_MS).toBe(15_000);
+  });
+});
+
+/**
+ * Both are public exports that build an attribute AND a `<script>` body out of a hole id. Author-
+ * controlled today — the same status `emitIslandAttributes` had until a sweep found it raw. A `")`
+ * in the id closes the `$X(` call and everything after it is executable on the page's own origin.
+ */
+describe('a hole id that would break out', () => {
+  test('the marker attribute is escaped, so the quote cannot close it', () => {
+    const marker = holeMarker('a" onload="alert(1)', 'fallback');
+    expect(marker).not.toContain('onload="alert(1)"');
+    expect(marker).toContain('&quot;');
+  });
+
+  test('the reveal template attribute is escaped too', () => {
+    const chunk = revealChunk('a" data-evil="1', '<p>x</p>');
+    expect(chunk).not.toContain('data-evil="1"');
+    expect(chunk).toContain('&quot;');
+  });
+
+  test('the script argument is a JS string literal, never raw interpolation', () => {
+    const chunk = revealChunk('a");alert(1);//', '<p>x</p>');
+    expect(chunk).not.toContain('$X("x:a");alert(1);//")');
+    expect(chunk).toContain('alert(1);//');
+    expect(chunk).toContain(String.raw`$X("x:a\");alert(1);//")`);
+  });
+
+  test('a closing tag inside the id cannot end the script element', () => {
+    const chunk = revealChunk('a</script><script>alert(1)</script', '<p>x</p>');
+    expect(chunk).not.toContain('</script><script>alert(1)');
+  });
+
+  test('an ordinary id still round-trips between the marker and the reveal', () => {
+    expect(holeMarker('feed', 'f')).toBe('<x-hole id="x:feed">f</x-hole>');
+    expect(revealChunk('feed', '<p>x</p>')).toBe(
+      '<template data-x-hole="x:feed"><p>x</p></template><script>$X("x:feed")</script>',
+    );
+  });
+});
+
+/**
+ * A hole is application code, and a rejection VALUE is whatever it threw. The rejection handler
+ * rendered it with `error instanceof Error ? error.message : String(error)` — which raises on a
+ * null-prototype object, inside the handler whose next line reveals the fallback. The hole then
+ * never revealed at all, and the response held open until its deadline.
+ */
+describe('a hole that rejects with a value String() cannot render', () => {
+  test('still reveals the error fallback', async () => {
+    const plan: StreamPlan = {
+      head: '<html><body>',
+      shell: holeMarker('feed', '<div>skeleton</div>'),
+      holes: [
+        {
+          id: 'feed',
+          fallback: '<div>skeleton</div>',
+          resolve: () => Promise.reject(Object.create(null)),
+        },
+      ],
+    };
+    const html = await collectStream(renderStreamHtml(plan, { buildId: 'b1' }));
+    expect(html).toContain('data-x-hole="x:feed"');
+    expect(html).toContain('$X("x:feed")');
   });
 });

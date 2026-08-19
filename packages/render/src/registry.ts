@@ -369,8 +369,12 @@ export function matchRoute(pathname: string): RouteMatch | null {
  * `undefined` for a malformed percent-escape. A pathname is whatever the client typed, and
  * `decodeURIComponent('%zz')` throws a bare `URIError` — no code, no fix line — which escaped
  * `matchRoute` as a 500 and an error-monitor page for somebody's typo.
+ *
+ * Exported for `router-client.ts`, which answers the same question about the same pathname on the
+ * other side of the wire: two decoders is how the client throws out of a popstate listener for an
+ * address the server 404s.
  */
-function decodeSegment(value: string): string | undefined {
+export function decodeSegment(value: string): string | undefined {
   try {
     return decodeURIComponent(value);
   } catch {

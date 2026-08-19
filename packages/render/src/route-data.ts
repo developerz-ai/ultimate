@@ -26,6 +26,11 @@ export async function routeDataFor<TData = RouteData>(
   // `RouteContext` satisfies `TData` on this line. One narrowing assertion backed by a build
   // error, in place of the `as unknown as` that used to hand back any shape a caller named.
   if (config.load === undefined) return ctx as RouteContext & TData;
+  // Read BEFORE the try, and never inside the catch: `new URL('/posts/7')` is a bare `TypeError`,
+  // and `ctx.url` is relative on every path that builds one by hand — a prerender pass, `x build`,
+  // a test harness. Computing it in the catch replaced `X_ROUTE_LOAD_FAILED` with that TypeError
+  // on the ONE path whose job is to produce a coded error.
+  const path = pathnameOf(ctx.url);
   try {
     return await config.load(ctx);
   } catch (cause) {
@@ -40,9 +45,21 @@ export async function routeDataFor<TData = RouteData>(
     // that and a page with no error at all.
     const detail = renderThrowable(cause);
     throw new RouteLoadFailedError(
-      `load() threw while rendering ${new URL(ctx.url).pathname}: ${detail}`,
-      `fix the load function for ${new URL(ctx.url).pathname}, or return a fallback so the page can render`,
+      `load() threw while rendering ${path}: ${detail}`,
+      `fix the load function for ${path}, or return a fallback so the page can render`,
     );
+  }
+}
+
+/**
+ * The pathname of a route URL, absolute or relative, and never a throw: this value only ever
+ * appears in an error message, so a reader that raises would cost the caller the whole error.
+ */
+function pathnameOf(url: string): string {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url.split(/[?#]/)[0] ?? url;
   }
 }
 

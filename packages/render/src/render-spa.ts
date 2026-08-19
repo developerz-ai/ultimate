@@ -6,6 +6,7 @@
  */
 
 import { RouteModeInvalidError } from './errors';
+import { escapeAttribute } from './html';
 import type { RouteEntry } from './registry';
 import { contentHash } from './render-static';
 import type { RenderResult } from './route';
@@ -37,18 +38,22 @@ export function renderSpaShell(input: SpaShellInput): SpaShell {
     );
   }
 
-  const rootId = input.rootId ?? SPA_ROOT_ID;
+  // Every attribute value through `html.ts`'s ONE escaper — the package's own escaping rule, and
+  // the same repair `emitIslandAttributes` took. `head` is the exception by construction: it is
+  // already-merged markup from `head.ts`, which escaped it on the way in.
+  const rootId = escapeAttribute(input.rootId ?? SPA_ROOT_ID);
   const preloads = input.chunks
-    .map((chunk) => `<link rel="modulepreload" href="${chunk}">`)
+    .map((chunk) => `<link rel="modulepreload" href="${escapeAttribute(chunk)}">`)
     .join('');
   const scripts = input.chunks
-    .map((chunk) => `<script type="module" src="${chunk}"></script>`)
+    .map((chunk) => `<script type="module" src="${escapeAttribute(chunk)}"></script>`)
     .join('');
 
   const html =
-    `<!doctype html><html lang="${input.lang}" dir="${input.dir ?? 'ltr'}">` +
+    `<!doctype html><html lang="${escapeAttribute(input.lang)}" ` +
+    `dir="${escapeAttribute(input.dir ?? 'ltr')}">` +
     `<head>${input.head}${preloads}` +
-    `<meta name="x-ultimate-build" content="${input.buildId}">` +
+    `<meta name="x-ultimate-build" content="${escapeAttribute(input.buildId)}">` +
     `</head><body><div id="${rootId}"></div>${scripts}</body></html>`;
 
   return { html, hash: contentHash(html) };

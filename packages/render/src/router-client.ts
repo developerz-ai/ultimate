@@ -7,7 +7,7 @@
  */
 
 import type { CompiledPattern } from './registry';
-import { compilePattern } from './registry';
+import { compilePattern, decodeSegment } from './registry';
 import type { RouteParams } from './route';
 
 export interface RouterRoute {
@@ -108,10 +108,21 @@ export function createRouter(options: RouterOptions): Router {
       const match = candidate.pattern.regex.exec(rawPath);
       if (match === null) continue;
       const params: Record<string, string> = {};
+      let undecodable = false;
       candidate.pattern.keys.forEach((key, index) => {
         const value = match[index + 1];
-        if (value !== undefined) params[key] = decodeURIComponent(value);
+        if (value === undefined) return;
+        // `decodeSegment`, the server router's own reader: `decodeURIComponent('%zz')` is a bare
+        // `URIError`, and `resolve` is called from the signal initialiser, from `navigate`, from a
+        // `mouseenter` prefetch and from the popstate handler — so a typo in the address bar took
+        // the whole SPA down at boot instead of failing this one branch.
+        const decoded = decodeSegment(value);
+        if (decoded === undefined) undecodable = true;
+        else params[key] = decoded;
       });
+      // Fails only the branch that would have decoded it, exactly as `matchRoute` answers: a
+      // literal route matching the same text still wins, and an unclaimed pathname is a non-match.
+      if (undecodable) continue;
       return {
         route: candidate.route,
         params,

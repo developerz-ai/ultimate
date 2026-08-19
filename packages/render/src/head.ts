@@ -168,10 +168,14 @@ export const THEME_SCRIPT_MAX_BYTES = 512;
 export function themeScript(options: ThemeScriptOptions = {}): HeadTag {
   const attribute = options.attribute ?? 'data-theme';
   const storageKey = options.storageKey ?? 'x-theme';
+  // `JSON.stringify`, never a value pasted between two quotes: both options land INSIDE a JS
+  // string in a `<script>` body, where one `"` ends the string and the rest is code the page runs.
+  // Author-supplied today — the same status every `emitIslandAttributes` value had before it was
+  // routed through `html.ts`. The element's own raw-text rule is applied by `renderTag` below.
   const source =
-    `try{var t=localStorage.getItem("${storageKey}")||` +
+    `try{var t=localStorage.getItem(${JSON.stringify(storageKey)})||` +
     `(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");` +
-    `document.documentElement.setAttribute("${attribute}",t)}catch(e){}`;
+    `document.documentElement.setAttribute(${JSON.stringify(attribute)},t)}catch(e){}`;
 
   const bytes = new TextEncoder().encode(source).byteLength;
   const cap = options.maxBytes ?? THEME_SCRIPT_MAX_BYTES;

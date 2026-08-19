@@ -88,6 +88,7 @@ export type {
   McpResource,
   ResourceContents,
   ResourceListEntry,
+  ResourceResolution,
 } from './resources';
 export {
   frameworkResources,

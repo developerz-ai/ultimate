@@ -5,6 +5,13 @@
 // keyword the server ignores is worse than omitting it — the agent obeys a rule nothing checks and
 // gets a silent pass. So this is a real projection, not a cast: a keyword outside the subset is
 // dropped here, and `tools/list` publishes only what the resolver will hold a call to.
+//
+// `format` is the keyword that rule is easiest to get wrong on: it is expressive, and it is a NAME
+// whose meaning lives in `@ultimat3/schema` — enforcing it here would be a second definition of
+// `uuid`/`email`/`iana-time-zone` that can only drift from the parse the action itself runs. So it
+// is dropped, and `wire.ts` types it `never` so re-adding it does not compile. `pattern` is kept
+// for the mirror-image reason: the rule travels with the schema, so this server can hold a call
+// to it. A tool needing a format enforced declares a `pattern` beside it.
 
 import type { JsonSchema as RichJsonSchema } from '@ultimat3/schema';
 import { toMcpInputSchema } from '@ultimat3/schema';
@@ -29,7 +36,6 @@ function narrow(source: RichJsonSchema): JsonSchema {
     ...(source.enum === undefined ? {} : { enum: source.enum }),
     ...(source.const === undefined ? {} : { const: source.const }),
     ...(source.default === undefined ? {} : { default: source.default }),
-    ...(source.format === undefined ? {} : { format: source.format }),
     ...(source.minimum === undefined ? {} : { minimum: source.minimum }),
     ...(source.maximum === undefined ? {} : { maximum: source.maximum }),
     ...(source.minLength === undefined ? {} : { minLength: source.minLength }),

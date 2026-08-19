@@ -72,11 +72,15 @@ export function escapeJsonContent(json: string): string {
  * JSX prop name → attribute name. Solid authors write the HTML spelling (`class`, `for`), but the
  * React spellings compile too, and an author who writes one and gets no attribute has a bug with
  * no error message.
+ *
+ * A `Map` like the two sets above, never a record: an object lookup walks the prototype chain, so
+ * `<div {...row} />` with a column named `toString` resolved the alias to a FUNCTION and the URL
+ * check below called `.toLowerCase()` on it — a bare TypeError, no code, no fix, and the page 500s.
  */
-const ATTRIBUTE_ALIASES: Readonly<Record<string, string>> = {
-  className: 'class',
-  htmlFor: 'for',
-};
+const ATTRIBUTE_ALIASES: ReadonlyMap<string, string> = new Map([
+  ['className', 'class'],
+  ['htmlFor', 'for'],
+]);
 
 /** Props the tree consumes rather than emits. `innerHTML` is emitted as content, not an attribute. */
 const NON_ATTRIBUTES: ReadonlySet<string> = new Set([
@@ -86,6 +90,30 @@ const NON_ATTRIBUTES: ReadonlySet<string> = new Set([
   'innerHTML',
   'textContent',
 ]);
+
+/**
+ * Attributes a browser FOLLOWS, beyond the four `@ultimat3/core` names for the anchor case. Kept
+ * here rather than in `safe-url.ts` only because that file is another package's; the scheme check
+ * is one rule and every attribute a scheme can execute from belongs under it. `data` is
+ * `<object data>`, `poster` is `<video poster>`, `xlink:href` executes on click inside inline SVG,
+ * and `ping` is a URL the browser POSTs to on activation.
+ */
+const URL_BEARING_ATTRIBUTES: ReadonlySet<string> = new Set([
+  ...URL_ATTRIBUTES,
+  'data',
+  'ping',
+  'poster',
+  'xlink:href',
+]);
+
+/**
+ * Attributes that carry MARKUP, not text or a URL, and are therefore never emitted. `srcdoc` is
+ * entity-DECODED and then parsed as HTML, so `escapeAttribute`'s `&lt;script&gt;` becomes a live
+ * `<script>` inside the iframe — on this origin, with this session's cookie. Escaping cannot make
+ * it inert, so the attribute is refused instead, the same way `innerHTML` above stays the one
+ * explicit escape hatch rather than a prop anyone can spread in from a row.
+ */
+const REFUSED_ATTRIBUTES: ReadonlySet<string> = new Set(['srcdoc']);
 
 const cssProperty = (name: string): string =>
   name.startsWith('--') ? name : name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
@@ -111,7 +139,8 @@ export function attributePair(name: string, value: unknown): string | null {
   if (typeof value === 'function') return null;
   if (name.startsWith('on') && name.length > 2) return null;
 
-  const attribute = ATTRIBUTE_ALIASES[name] ?? name;
+  const attribute = ATTRIBUTE_ALIASES.get(name) ?? name;
+  if (REFUSED_ATTRIBUTES.has(attribute.toLowerCase())) return null;
   if (value === true) return attribute;
   if (attribute === 'style') {
     const style = styleValue(value);
@@ -123,7 +152,7 @@ export function attributePair(name: string, value: unknown): string | null {
   // module is the single place injection is prevented and an href off a database row is the shape
   // every app writes. A refused URL emits no attribute at all — an anchor with no `href` is inert
   // and still renders its text, where a blanked one is a live link nobody checked.
-  if (URL_ATTRIBUTES.includes(attribute.toLowerCase())) {
+  if (URL_BEARING_ATTRIBUTES.has(attribute.toLowerCase())) {
     const url = safeUrl(text, attribute.toLowerCase());
     if (url === null) return null;
     return `${attribute}="${escapeAttribute(url)}"`;

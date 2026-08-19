@@ -67,12 +67,58 @@ describe('renderComponent', () => {
       throw new TypeError('boom');
     };
     expect(renderComponent(Broken, {}, 'apps/web/site/page.tsx')).rejects.toThrow(
-      /apps\/web\/site\/page\.tsx threw: boom/,
+      /apps\/web\/site\/page\.tsx threw: TypeError: boom/,
     );
   });
 
   test('passes the props straight through', async () => {
     const Echo = (props: Record<string, unknown>): unknown => h('p', null, String(props['url']));
     expect(await renderComponent(Echo, { url: '/x' }, 'apps/web/site/page.tsx')).toBe('<p>/x</p>');
+  });
+});
+
+/**
+ * A component is app code and may throw a value that fights being read. Every one of these has to
+ * come back as `X_PRERENDER_FAILED` naming the file — `error instanceof Error ? error.message :
+ * String(error)` answered a bare `TypeError` for the first and a bare `Error` for the second, so
+ * the one frame that owes the build a coded failure produced none.
+ */
+describe('renderComponent when the thrown value fights being read', () => {
+  const codeOf = (error: unknown): unknown =>
+    typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
+
+  async function thrownBy(value: unknown): Promise<unknown> {
+    const Broken = (): unknown => {
+      throw value;
+    };
+    try {
+      await renderComponent(Broken, {}, 'apps/web/site/page.tsx');
+    } catch (error) {
+      return error;
+    }
+    return undefined;
+  }
+
+  test('a null-prototype object is X_PRERENDER_FAILED, not a TypeError from String()', async () => {
+    const error = await thrownBy(Object.create(null));
+    expect(codeOf(error)).toBe('X_PRERENDER_FAILED');
+    expect(String((error as { cause: string }).cause)).toContain('apps/web/site/page.tsx');
+  });
+
+  test('an Error whose message getter throws is X_PRERENDER_FAILED too', async () => {
+    const hostile = new Error('never read');
+    Object.defineProperty(hostile, 'message', {
+      get() {
+        throw new TypeError('message is a trap');
+      },
+    });
+    const error = await thrownBy(hostile);
+    expect(codeOf(error)).toBe('X_PRERENDER_FAILED');
+  });
+
+  test('a thrown string still reaches the cause', async () => {
+    const error = await thrownBy('plain failure');
+    expect(codeOf(error)).toBe('X_PRERENDER_FAILED');
+    expect(String((error as { cause: string }).cause)).toContain('plain failure');
   });
 });

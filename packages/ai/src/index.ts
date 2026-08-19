@@ -97,15 +97,9 @@ export type { HiveDef, HiveSplitArgs } from './hive';
 export { hive } from './hive';
 export { HiveEmptyError } from './hive-errors';
 export type { HiveMember, HiveMemberError, HiveOutput, HiveResult } from './hive-result';
-export type {
-  LlmAction,
-  LlmBudget,
-  LlmCache,
-  LlmDef,
-  LlmSemanticCache,
-  LlmVarsArgs,
-} from './llm';
+export type { LlmAction, LlmBudget, LlmDef, LlmVarsArgs } from './llm';
 export { llm } from './llm';
+export type { LlmCache, LlmScopeArgs, LlmSemanticCache } from './llm-cache';
 export type { LlmStreamChunk } from './llm-stream';
 export type { Effort, ModelId, ModelReasoning, ModelSpec, ThinkingMode } from './models';
 export {
@@ -196,6 +190,7 @@ export {
   aiGateway,
   aiRedactor,
   configureAi,
+  MAX_SEMANTIC_CACHE_SCOPES,
   resetAiRuntime,
   semanticCacheFor,
 } from './runtime';

@@ -4,7 +4,7 @@
  * the precache revision in `sw.js`, and the asset filename suffix.
  */
 
-import { useContext } from '@ultimat3/core';
+import { renderThrowable, useContext } from '@ultimat3/core';
 import { PrerenderFailedError, RouteModeInvalidError } from './errors';
 import type { RouteEntry } from './registry';
 import type { RenderResult, RouteParams } from './route';
@@ -69,7 +69,9 @@ export async function enumeratePrerender(entry: RouteEntry): Promise<readonly Ro
     produced = await prerender();
   } catch (error) {
     throw new PrerenderFailedError(
-      `prerender() for ${entry.path} threw: ${describe(error)}`,
+      // `renderThrowable`, never `.message`/`String()`: `prerender` is app code and may throw a
+      // value whose read raises in turn — this frame is what makes the build failure a coded one.
+      `prerender() for ${entry.path} threw: ${renderThrowable(error)}`,
       `fix prerender in ${entry.file} — it runs at build time with no request context`,
     );
   }
@@ -119,7 +121,7 @@ export async function renderStatic(
       html = await render({ path, params });
     } catch (error) {
       throw new PrerenderFailedError(
-        `rendering ${path} failed: ${describe(error)}`,
+        `rendering ${path} failed: ${renderThrowable(error)}`,
         `x build --target static --json   # reproduces ${path}, then fix ${entry.file}`,
       );
     }
@@ -163,8 +165,4 @@ export function fillPath(pattern: string, params: RouteParams): string {
       .join('/')
       .replace(/\/+$/, '') || '/'
   );
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

@@ -4,6 +4,7 @@
  * component — `static` at build time, `ssr`/`stream` per request, all through `renderToHtml`.
  */
 
+import { renderThrowable } from '@ultimat3/core';
 import {
   IslandInvalidError,
   IslandNotHydratedError,
@@ -29,9 +30,6 @@ const MAX_DEPTH = 500;
 export interface RenderHtmlOptions {
   readonly islands?: IslandCollector;
 }
-
-const describe = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 /**
  * A thunk is called, not stringified. Solid's reactive reads are accessors (`count()`), and a
@@ -142,7 +140,10 @@ export async function renderComponent(
     if (error instanceof IslandPropsInvalidError) throw error;
     if (error instanceof IslandNotHydratedError) throw error;
     throw new PrerenderFailedError(
-      `rendering the component in ${file} threw: ${describe(error)}`,
+      // `renderThrowable`, never `.message`/`String()`: a component is app code and may throw a
+      // null-prototype object (`String()` raises) or an Error whose `message` getter does — and
+      // this frame is the last thing between that and a build failure with no code at all.
+      `rendering the component in ${file} threw: ${renderThrowable(error)}`,
       `run \`bun test ${file.replace(/\.tsx?$/, '.test.ts')}\` to reproduce, then fix ${file}`,
     );
   }

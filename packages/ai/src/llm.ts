@@ -28,10 +28,8 @@ import { withSpan } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import type { InferInput, InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
 import { formatIssues, toMcpInputSchema, validateAsync } from '@ultimat3/schema';
-import { parseDuration } from '@ultimat3/time';
 import type { BudgetLimits } from './budget';
 import { BudgetLedger, currentBudget, withBudget } from './budget';
-import { embedOne, fnv1a } from './embeddings';
 import {
   LlmOutputInvalidError,
   LlmRefusedError,
@@ -39,6 +37,8 @@ import {
   LlmTruncatedError,
 } from './errors';
 import type { Gateway } from './gateway';
+import type { LlmCache } from './llm-cache';
+import { openCache } from './llm-cache';
 import type { LlmSink, LlmStreamChunk } from './llm-stream';
 import { currentLlmSink, llmStream, streamOneTurn, withLlmSink } from './llm-stream';
 import type { ModelId } from './models';
@@ -46,7 +46,7 @@ import { DEFAULT_MODEL, moreCapableThan } from './models';
 import type { Prompt, PromptVars } from './prompt';
 import type { AiMessage, GenerateRequest, GenerateResult } from './provider';
 import { assertNoSecrets } from './redaction';
-import { aiEmbedder, aiGateway, aiRedactor, semanticCacheFor } from './runtime';
+import { aiGateway, aiRedactor } from './runtime';
 import type { LlmTool } from './tools';
 
 /**
@@ -64,27 +64,6 @@ const ATTEMPTS = 2;
  * makes the worst-case cost estimate so large that every `costPerCall` budget refuses.
  */
 const DEFAULT_MAX_TOKENS = 4_096;
-
-export interface LlmSemanticCache<TParsed> {
-  /** Cosine floor. Below ~0.9 unrelated prompts collide and the cache answers the wrong one. */
-  readonly threshold?: number;
-  /** Entry lifetime as a duration string — `'7d'`, `'12h'`. `@ultimat3/time` owns the grammar. */
-  readonly ttl?: string;
-  /**
-   * Partition key, from the parsed input. Each scope is a separate cache: cosine similarity
-   * has no notion of a tenant, so a shared cache answers one tenant with another's data.
-   */
-  readonly scope?: (input: TParsed) => string;
-}
-
-export interface LlmCache<TParsed> {
-  readonly semantic: LlmSemanticCache<TParsed>;
-  // `05-caching.md` also declares `invalidates: [tag.post]` here. It is deliberately absent
-  // until `@ultimat3/cache`'s fan-out can reach something that is not a `CacheTier`: storing
-  // tags that the ONE invalidation path never visits would read as wired and silently not be.
-  // Today the invalidation story is the prompt version (a bump reaches a different store) and
-  // `ttl`.
-}
 
 /** Per-call ceilings, checked before the provider is reached. Never truncates — refuses. */
 export interface LlmBudget {
@@ -235,7 +214,13 @@ async function generate<
     // A cached answer is still data of unknown provenance, so it goes through the schema like
     // any other. One that no longer fits — the schema moved under it — is a miss, not a
     // failure: the model can produce a fresh answer, and refusing would be worse than paying.
-    const cache = await openCache(def, args.input, rendered);
+    const cache = await openCache({
+      cache: def.cache,
+      prompt: { ref: prompt.ref, hash: prompt.hash },
+      input: args.input,
+      ctx: args.ctx,
+      rendered,
+    });
     const hit = await accept(def.output, await cache?.lookup());
     span.setAttribute('llm.cache.hit', hit !== undefined);
     if (hit !== undefined) return hit.value;
@@ -450,45 +435,4 @@ function parseJsonish(text: string): unknown {
   } catch {
     return undefined;
   }
-}
-
-interface PromptCache {
-  lookup(): Promise<unknown>;
-  remember(value: unknown): Promise<void>;
-}
-
-/**
- * The semantic cache for one declaration, or `undefined` when none was declared. The instance
- * is partitioned by prompt VERSION as well as scope, which is what makes "editing a prompt
- * requires a version bump" invalidate the cache: a bumped version reaches a different store,
- * so an old answer cannot survive a prompt edit no matter how similar the text.
- */
-async function openCache<
-  TInput extends StandardSchemaV1,
-  TOutput extends StandardSchemaV1,
-  V extends PromptVars,
->(
-  def: LlmDef<TInput, TOutput, V>,
-  input: InferOutput<TInput>,
-  rendered: string,
-): Promise<PromptCache | undefined> {
-  const semantic = def.cache?.semantic;
-  if (semantic === undefined) return undefined;
-  const scope = semantic.scope?.(input) ?? 'global';
-  const store = semanticCacheFor(`${def.prompt.ref}#${def.prompt.hash}::${scope}`);
-  const embedding = Array.from(await embedOne(aiEmbedder(), rendered));
-  const ttlMs = semantic.ttl === undefined ? undefined : parseDuration(semantic.ttl);
-  return {
-    async lookup(): Promise<unknown> {
-      return (await store.lookup(embedding, semantic.threshold))?.value;
-    },
-    remember(value: unknown): Promise<void> {
-      return store.remember(
-        `${def.prompt.hash}:${fnv1a(rendered).toString(16)}`,
-        embedding,
-        value,
-        ttlMs === undefined ? {} : { ttlMs },
-      );
-    },
-  };
 }

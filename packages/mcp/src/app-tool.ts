@@ -10,12 +10,14 @@
 // tool therefore has no authz of its own — it borrows the action tier's, so a rule change cannot
 // apply to routes and miss tools.
 
-import { actorOf, guard } from '@ultimat3/action';
+import { actorOf, guard, InputInvalidError } from '@ultimat3/action';
 import type { Ctx } from '@ultimat3/core';
-import { useContext, withChildContext } from '@ultimat3/core';
+import { useContext } from '@ultimat3/core';
 import type { KnownPermission } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import type { InferOutput, StandardSchemaV1 } from '@ultimat3/schema';
+import { formatIssues, validateAsync } from '@ultimat3/schema';
+import { asCallerContext } from './caller-context';
 import { McpToolUnsafeError } from './errors';
 import type { ProjectablePrimitive } from './from-action';
 import { toWireSchema } from './input-schema';
@@ -94,10 +96,34 @@ export function appToolPrimitive(name: string, def: AnyAppToolDefinition): Proje
       // The caller is the actor for the WHOLE call. A child context is how the framework
       // impersonates, so the policy subject and whatever `handle` reads off `ctx.actor` are
       // the same identity by construction rather than by two call sites agreeing.
-      withChildContext({ actor }, async () => {
+      asCallerContext(actor, async () => {
         const ctx = useContext();
-        guard(policy, { actor: actorOf(ctx), input, ctx, action: name }, 'mcp');
-        return def.handle({ input, ctx });
+        // The AUTHORITATIVE parse, in the same slot `invoke` puts it: before the policy, before
+        // the handler. A projected action re-parses inside `invoke`; a hand-written tool has no
+        // second parse, so `handle` was typed `InferOutput<TInput>` and handed whatever
+        // `validate-args.ts` let past the wire subset — which carries no `format`, so a `t.uuid`
+        // arrived as any string at all. `InputInvalidError` because a tool argument is an action
+        // input by another name: one code, X_INPUT_INVALID, whichever surface the call came in on.
+        const parsed = await parseInput(def.input, input, name);
+        guard(policy, { actor: actorOf(ctx), input: parsed, ctx, action: name }, 'mcp');
+        return def.handle({ input: parsed, ctx });
       }),
   };
+}
+
+/**
+ * `@ultimat3/action`'s `validateInput` is not exported from its index, so this is the same three
+ * lines against the same helpers and the same error class — never a second failure shape. Delete
+ * it the day `validateInput` is exported.
+ */
+async function parseInput(
+  schema: StandardSchemaV1,
+  raw: unknown,
+  name: string,
+): Promise<InferOutput<StandardSchemaV1>> {
+  const result = await validateAsync(schema, raw);
+  if (result.issues !== undefined) {
+    throw new InputInvalidError(name, formatIssues(result.issues).join('; '));
+  }
+  return result.value;
 }

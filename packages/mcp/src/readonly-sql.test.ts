@@ -388,3 +388,47 @@ describe('assertBranchDatabase', () => {
     ).toThrowError(expect.objectContaining(notBranch));
   });
 });
+
+/**
+ * `SELECT ... INTO` is `CREATE TABLE AS` in another spelling, and `setval`/`nextval` advance a
+ * sequence — three writes with a read leader and no mutating word between them. Layer 2's
+ * `BEGIN READ ONLY` refuses them on the wired path; the point of this layer is that it must not be
+ * the thing that waves them through, and `@ultimat3/admin`'s `/_x` panel is a second caller.
+ */
+describe('assertReadOnlyQuery refuses a write wearing a read leader', () => {
+  test('SELECT INTO creates a table', () => {
+    expect(() => assertReadOnlyQuery('select * into evil from posts')).toThrow();
+    expect(() => assertReadOnlyQuery('select 1 into x')).toThrow();
+    expect(caught(() => assertReadOnlyQuery('select * into evil from posts'))).toMatchObject(
+      refusal,
+    );
+  });
+
+  test('the refusal names the keyword, so the author knows which word to delete', () => {
+    expect(caught(() => assertReadOnlyQuery('select * into evil from posts')).cause).toContain(
+      '"into"',
+    );
+  });
+
+  test('a sequence-advancing call is refused as a family, not as a name', () => {
+    for (const sql of [
+      "select setval('s',1)",
+      "select nextval('s')",
+      "select pg_catalog.nextval('s')",
+      `select "setval"('s',1)`,
+    ]) {
+      expect(caught(() => assertReadOnlyQuery(sql))).toMatchObject(refusal);
+    }
+  });
+
+  test('an ordinary read that merely mentions the words in a literal still runs', () => {
+    expect(assertReadOnlyQuery("select 'into' as note")).toBe("select 'into' as note");
+    expect(assertReadOnlyQuery("select 'nextval' as note")).toBe("select 'nextval' as note");
+  });
+
+  test('a column whose name merely starts with a family prefix is still readable', () => {
+    expect(assertReadOnlyQuery('select nextval_seen from posts')).toBe(
+      'select nextval_seen from posts',
+    );
+  });
+});

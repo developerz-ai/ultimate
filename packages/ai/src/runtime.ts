@@ -9,6 +9,7 @@
 
 import type { SemanticCache } from '@ultimat3/cache';
 import { createMemorySemanticCache } from '@ultimat3/cache';
+import { cachedFormatter, MAX_CACHED_FORMATTERS } from '@ultimat3/core';
 import type { Embedder } from './embeddings';
 import { HashEmbedder } from './embeddings';
 import { AiGatewayMissingError } from './errors';
@@ -86,17 +87,30 @@ export function aiRedactor(): Redactor {
 }
 
 /**
+ * How many scopes hold a live cache instance at once. Core's bound, not a second one — the name
+ * `MAX_CACHED_FORMATTERS` is about `cachedFormatter`'s first caller, never about its contract,
+ * and a second FIFO map written here would be two answers to one question (axiom 1).
+ */
+export const MAX_SEMANTIC_CACHE_SCOPES = MAX_CACHED_FORMATTERS;
+
+/**
  * The cache for one scope. Scopes are separate CACHE INSTANCES, never a filter over a shared
  * one: cosine similarity has no notion of a tenant, so two tenants asking near-identical
  * questions of a shared cache is one tenant reading the other's answer. Partitioning is the
  * only thing that makes that structurally impossible.
+ *
+ * BOUNDED, and that is new with `llm()`'s actor-derived default scope: the default was the single
+ * string `'global'`, so this map held one entry no matter how many callers there were, and the
+ * narrowest-key default makes it one entry per ACTOR in a process that never restarts. Eviction
+ * costs nothing but a rebuild — a `SemanticCache` is a handle, so the durable ones (pgvector) lose
+ * no entries at all and the memory one loses a cache.
  */
 export function semanticCacheFor(scope: string): SemanticCache {
-  const existing = caches.get(scope);
-  if (existing !== undefined) return existing;
-  const created = runtime?.semanticCache(scope) ?? createMemorySemanticCache();
-  caches.set(scope, created);
-  return created;
+  return cachedFormatter(
+    caches,
+    scope,
+    () => runtime?.semanticCache(scope) ?? createMemorySemanticCache(),
+  );
 }
 
 /** Test-only reset. Module-level state otherwise leaks between test files. */

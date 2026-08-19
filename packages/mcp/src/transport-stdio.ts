@@ -10,7 +10,17 @@
 
 import type { McpCaller } from './registry';
 import type { McpServer } from './server';
-import { errorResponse, PARSE_ERROR } from './wire';
+import { errorResponse, INVALID_REQUEST, PARSE_ERROR } from './wire';
+
+/**
+ * Characters held for ONE message that has not ended yet. `transport-http.ts` caps the same wire at
+ * 1 MiB with `readWithinLimit`, and two transports must not answer one question two ways: the peer
+ * launched this process and is trusted, but a bug in it is not — a stream with no newline in it
+ * grew this buffer until the process died, with no frame written for the request already in flight.
+ * Characters rather than bytes because characters are what is retained here; one is never less than
+ * one byte on the wire, so the cap bounds both.
+ */
+export const DEFAULT_STDIO_LINE_LIMIT = 1_048_576;
 
 export interface StdioTransportInput {
   readonly server: McpServer;
@@ -20,6 +30,8 @@ export interface StdioTransportInput {
   readonly input?: ReadableStream<Uint8Array>;
   /** Defaults to writing `Bun.stdout`. */
   write?(chunk: string): Promise<void> | void;
+  /** Characters buffered for one unterminated message. Defaults to `DEFAULT_STDIO_LINE_LIMIT`. */
+  readonly lineLimitBytes?: number | undefined;
 }
 
 /**
@@ -29,23 +41,58 @@ export interface StdioTransportInput {
 export async function serveStdio(config: StdioTransportInput): Promise<void> {
   const stream = config.input ?? Bun.stdin.stream();
   const write = config.write ?? defaultWrite;
+  const limit = config.lineLimitBytes ?? DEFAULT_STDIO_LINE_LIMIT;
   const decoder = new TextDecoder();
   let buffer = '';
+  // The rest of an over-long message is dropped, not parsed: whatever follows it on the same line
+  // is the tail of a message this transport refused, never a message of its own.
+  let discarding = false;
 
   for await (const chunk of stream) {
     buffer += decoder.decode(chunk, { stream: true });
+    if (discarding) {
+      const end = buffer.indexOf('\n');
+      if (end === -1) {
+        buffer = '';
+        continue;
+      }
+      buffer = buffer.slice(end + 1);
+      discarding = false;
+    }
     let newline = buffer.indexOf('\n');
     while (newline !== -1) {
       const line = buffer.slice(0, newline);
       buffer = buffer.slice(newline + 1);
-      await handleLine(config.server, config.caller, line, write);
+      // Checked before the parse, never inside it: a line already over the cap costs a `JSON.parse`
+      // over the whole of it, which is the work the cap exists to refuse.
+      if (line.length > limit) await write(`${JSON.stringify(overLimit(limit))}\n`);
+      else await handleLine(config.server, config.caller, line, write);
       newline = buffer.indexOf('\n');
     }
+    if (buffer.length > limit) {
+      await write(`${JSON.stringify(overLimit(limit))}\n`);
+      buffer = '';
+      discarding = true;
+    }
   }
-  // A trailing message with no newline is still a message.
-  if (buffer.trim().length > 0) {
-    await handleLine(config.server, config.caller, buffer, write);
+  // A trailing message with no newline is still a message — unless it is the tail being dropped.
+  if (!discarding && buffer.trim().length > 0) {
+    if (buffer.length > limit) await write(`${JSON.stringify(overLimit(limit))}\n`);
+    else await handleLine(config.server, config.caller, buffer, write);
   }
+}
+
+/** Answered once per over-long message, and the `fix` is what the peer has to change. */
+function overLimit(limit: number): ReturnType<typeof errorResponse> {
+  return errorResponse(
+    null,
+    INVALID_REQUEST,
+    `a single message exceeded ${limit} characters and was dropped`,
+    {
+      limit,
+      fix: `send one JSON-RPC message per line, each under ${limit} characters — split a large tool result into paged calls`,
+    },
+  );
 }
 
 async function handleLine(

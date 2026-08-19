@@ -61,6 +61,8 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
 | `hive-errors.ts` | the `X_HIVE_*` class; its code and title stay in `errors.ts` |
 | `redaction.ts` | the one gate between `vars()` and the provider: a `Secret` never reaches a prompt |
 | `eval-errors.ts` | the five `X_EVAL_*` classes; their codes and titles stay in `errors.ts` |
+| `llm-cache.ts` | the semantic cache half of `llm()`: what a declaration may partition on, and the store it reaches |
+| `llm-fixture.ts` | the harness `llm.test.ts` and `llm-cache.test.ts` share. Not shipped (`!src/**/*-fixture.ts`) |
 | `runtime.ts` | the ambient gateway / embedder / semantic caches an `llm()` reaches |
 | `fix-line.ts` / `fix-line.evals.ts` / `fix-line.v1.baseline.json` / `fix-line.eval.test.ts` | the package's own dogfood eval — the first framework-level `*.eval.test.ts`, proving the `defineEval`/baseline convention actually fails a build |
 
@@ -78,6 +80,21 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
 - Semantic scopes are separate cache INSTANCES, never a filter over a shared one — cosine
   similarity has no notion of a tenant. The instance key carries the prompt hash too, which is
   what makes a version bump invalidate the cache.
+- **The default scope is the calling ACTOR, and `scope` receives `{ input, ctx }`** (`As of
+  2026-08`). It defaulted to the literal string `'global'` and took the bare `input`, so the rule
+  in the bullet above was contradicted by the very default that shipped: `cache: { semantic: { ttl:
+  '1h' } }` put every tenant in one store, and `lookup` is a nearest neighbour with no tenant
+  predicate — proven by execution, tenant B asking a prompt within 0.92 cosine of tenant A's
+  received A's completion verbatim. And with only `input` to decide from, the one thing a partition
+  may never be chosen by (a value the caller sends) was the only thing it could be chosen by, while
+  `vars()` on the same declaration already took the pair. The default is
+  `JSON.stringify([actor.kind, actor.id, actor.orgId ?? null])` — `@ultimat3/query`'s
+  `readAuthority` rule, verbatim: a declaration that says nothing gets the NARROWEST key, and
+  widening is a written statement about what the answers are (`scope: () => 'global'`). **Breaking**
+  in both halves. `semanticCacheFor`'s instance map is bounded as a consequence
+  (`MAX_SEMANTIC_CACHE_SCOPES`, which IS core's `MAX_CACHED_FORMATTERS` — one bounded FIFO map in
+  the framework, whose name is about its first caller and not its contract): one entry per actor in
+  a process that never restarts is a leak where one entry per process was not.
 - A per-call budget `derive`s from the ambient ledger, so it can only TIGHTEN the actor and org
   ceilings it runs inside. Widening them from a declaration would be a budget that is not one.
   **A derived ledger reports back up the chain**: every debit and every recorded cost lands on it

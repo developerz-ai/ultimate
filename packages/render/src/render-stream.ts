@@ -11,7 +11,8 @@
  * contains no interactive island costs literally zero JS.
  */
 
-import { logger } from '@ultimat3/core';
+import { logger, renderThrowable } from '@ultimat3/core';
+import { escapeAttribute, escapeRawTextContent } from './html';
 import type { RenderResult } from './route';
 
 export interface StreamHole {
@@ -42,9 +43,16 @@ export function holeId(id: string): string {
   return `${HOLE_PREFIX}${id}`;
 }
 
-/** The placeholder that sits in the first flush, holding the fallback markup. */
+/**
+ * The placeholder that sits in the first flush, holding the fallback markup.
+ *
+ * `html.ts`'s escaper, not raw interpolation, for the reason `emitIslandAttributes` states: a `"`
+ * in the id closes the attribute and the rest is markup. Author-controlled today — which is why it
+ * costs nothing to route through the ONE escaper now, rather than after an id starts being derived
+ * from a param. `fallback` is already-rendered HTML and stays verbatim.
+ */
 export function holeMarker(id: string, fallback: string): string {
-  return `<x-hole id="${holeId(id)}">${fallback}</x-hole>`;
+  return `<x-hole id="${escapeAttribute(holeId(id))}">${fallback}</x-hole>`;
 }
 
 /**
@@ -57,7 +65,15 @@ export const REVEAL_SCRIPT =
 
 export function revealChunk(id: string, html: string): string {
   const key = holeId(id);
-  return `<template data-x-hole="${key}">${html}</template><script>$X("${key}")</script>`;
+  // Two contexts, two encoders — the attribute takes `escapeAttribute`, and the script argument is
+  // built by `JSON.stringify` so the id is a JS string LITERAL rather than text pasted between two
+  // quotes: `a");alert(1);//` closed the call and ran on the page's own origin. `</script` inside
+  // it would still end the element, so the raw-text rule applies over the top, as `html.ts` says.
+  const argument = escapeRawTextContent(JSON.stringify(key));
+  return (
+    `<template data-x-hole="${escapeAttribute(key)}">${html}</template>` +
+    `<script>$X(${argument})</script>`
+  );
 }
 
 /**
@@ -166,9 +182,10 @@ export function renderStreamHtml(
             reveal(html);
           },
           (error: unknown) => {
-            logger.warn(
-              `stream hole ${hole.id} rejected: ${error instanceof Error ? error.message : String(error)}`,
-            );
+            // `renderThrowable`, never `.message`/`String()`: the value is whatever the hole threw,
+            // and a read that raises here skips the `reveal` below — the hole never fills and the
+            // response is held to its deadline for a failure that was already handled.
+            logger.warn(`stream hole ${hole.id} rejected: ${renderThrowable(error)}`);
             reveal(errorFallback(hole.id));
           },
         );
