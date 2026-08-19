@@ -6,10 +6,11 @@
 
 import { describe, expect, test } from 'bun:test';
 import { type Actor, userActor } from '@ultimat3/core';
+import { queryHash } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
 import type { JsonValue, Row } from './json';
-import { type LiveQueryDefinition, qidOf } from './live-contract';
+import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
 import { SyncSocket, type WsLike } from './socket';
@@ -115,7 +116,7 @@ describe('a socket that goes away mid-subscribe', () => {
     await pending;
 
     expect(registry.subscription('sock-1', 'sid-1')).toBeUndefined();
-    expect(registry.subscriberCount(qidOf('liveFeed', input))).toBe(0);
+    expect(registry.subscriberCount(queryHash('liveFeed', input))).toBe(0);
     // The entry itself, not just its subscriber list: a leaked one holds a matcher, a shared row
     // window and a retained change buffer, and pays a matcher pass on every change forever.
     await registry.deliver(change);

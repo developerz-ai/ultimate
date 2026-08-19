@@ -1,26 +1,19 @@
-// What a live query IS: the id one is keyed by, the contract a definition satisfies, and the
-// subscription one socket holds. Split from `live-query.ts` because four modules need the shape
-// and none of them needs the registry that runs it — and because one file runs one job.
+// What a live query IS: the contract a definition satisfies and the subscription one socket holds.
+// Split from `live-query.ts` because four modules need the shape and none of them needs the
+// registry that runs it — and because one file runs one job.
+//
+// The id is NOT here, and no longer anywhere in this package: a `qid` is `@ultimat3/query`'s
+// `queryHash(name, input)`, imported across the declared `realtime -> query` edge. `qidOf` was the
+// same two lines over this package's own copy of the canonical form, and the two had already
+// diverged on an `undefined`-valued key — while `planResume` compares a cursor's `queryHash` and
+// `liveQueryDefinition` keys the shared window by the qid, so a divergence is every resume
+// decision and every window lookup keyed differently.
 
 import type { Actor } from '@ultimat3/core';
 import type { LiveCursor } from './cursor';
-import { canonicalJson, type JsonValue, type Row, stableDigest } from './json';
+import type { JsonValue, Row } from './json';
 import type { IncrementalMatcher } from './matcher-bridge';
 import type { SyncSocket } from './socket';
-
-/**
- * `qid` = hash(query name, input). Fanout subjects and change windows are keyed by it.
- *
- * The hash is a **sharing** key, which is why it is `stableDigest` and not `fnv1a`: `#entryFor`
- * answers a hit with the EXISTING entry and `liveQueryDefinition` answers with the seated
- * `SharedWindow`, both carrying the first subscriber's input, compiled source and rows. Input is
- * client-chosen, so a second input colliding with the first passes `authorize` against its own
- * arguments and is then served out of somebody else's window — and 32 bits is a collision found
- * offline in seconds.
- */
-export function qidOf(name: string, input: JsonValue): string {
-  return `${name}:${stableDigest(canonicalJson(input))}`;
-}
 
 export interface SnapshotResult<R extends Row = Row> {
   readonly rows: readonly R[];

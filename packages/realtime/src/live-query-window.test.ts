@@ -5,11 +5,12 @@
 
 import { describe, expect, test } from 'bun:test';
 import { type Actor, frozenClock, userActor } from '@ultimat3/core';
+import { queryHash } from '@ultimat3/query';
 import { RingChangeBuffer } from './change-buffer';
 import { type ChangeEvent, formatLsn } from './changefeed';
 import { makeCursor, type ResumeSource } from './cursor';
 import type { JsonValue, Row, RowPatch } from './json';
-import { type LiveQueryDefinition, qidOf, type SnapshotResult } from './live-contract';
+import type { LiveQueryDefinition, SnapshotResult } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
 import { SyncSocket, type WsLike } from './socket';
@@ -320,7 +321,7 @@ describe('a delta resume decides about whole rows', () => {
         },
       }),
     );
-    const qid = qidOf('liveFeed', input);
+    const qid = queryHash('liveFeed', input);
     // The retained window holds pre-policy patches, and an update patch is the changed column plus
     // the id — never the whole row. Nothing has read this entry, so the shared window is empty.
     source.append(qid, { op: 'update', id: 'p2', row: { id: 'p2', likes: 1 }, lsn: formatLsn(2) });

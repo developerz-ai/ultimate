@@ -7,6 +7,7 @@
 // otherwise.
 
 import { type Actor, type Clock, systemClock, uuid } from '@ultimat3/core';
+import { queryHash } from '@ultimat3/query';
 import type { ChangeEvent } from './changefeed';
 import {
   type LiveCursor,
@@ -17,12 +18,7 @@ import {
 } from './cursor';
 import { isPolicyDenial, LiveQueryUnknownError, SubscriptionLimitError } from './errors';
 import type { JsonValue } from './json';
-import {
-  type LiveQueryDefinition,
-  type LiveSubscription,
-  qidOf,
-  type SnapshotResult,
-} from './live-contract';
+import type { LiveQueryDefinition, LiveSubscription, SnapshotResult } from './live-contract';
 import { type FanoutDeps, fanoutChange, snapshotFrame } from './live-fanout';
 import { createEntry, fillWindow, type QueryEntry } from './query-window';
 import type { SyncSocket } from './socket';
@@ -176,7 +172,7 @@ export class LiveQueryRegistry {
     // may not subscribe is work an unauthorized client gets to schedule.
     await definition.prepare?.(args.input);
 
-    const qid = qidOf(args.name, args.input);
+    const qid = queryHash(args.name, args.input);
     const entry = this.#entryFor(qid, definition, args.input);
     const now = this.#clock.now().getTime();
 

@@ -351,12 +351,18 @@ wire twice by a reconnect that raced an ack.
   `mutate` is one lane per socket; `subscribe` is one lane per sid, or per topic name; `hello` and
   the server-authored kinds are unlaned. A lane exists only while work is queued on it, because a
   lane keyed by a client-chosen sid that outlived its work is an unbounded map one socket can grow.
-- **`qid` is `<name>:<first 16 hex of SHA-256(canonicalJson(input))>`** — 64 bits `As of 2026-08`,
-  where it was a 32-bit FNV-1a. It is a *sharing* key: a hit is answered with the existing entry and
-  the seated window, both holding the first subscriber's input and rows, and input is client-chosen,
-  so a collision is one client served out of another's window. A rolling deploy across that change
-  costs one bounded snapshot per subscription — a cursor minted under the old format names a ring
-  entry the new node never held, so the resume falls back correctly rather than silently.
+- **`qid` is `@ultimat3/query`'s `queryHash(name, input)`** — `<name>:<first 16 hex of
+  SHA-256(canonicalJson(input))>`, 64 bits `As of 2026-08` where it was a 32-bit FNV-1a. It is a
+  *sharing* key: a hit is answered with the existing entry and the seated window, both holding the
+  first subscriber's input and rows, and input is client-chosen, so a collision is one client served
+  out of another's window. This package derives none of its own — `qidOf` was a second spelling of
+  `queryHash` while `@ultimat3/query`'s `planResume` compares a cursor's `queryHash` against the
+  query's, so the two had to be one function or every resume decision and every window lookup would
+  be keyed differently the first time either moved. A rolling deploy across the *hash* change costs
+  one bounded snapshot per subscription — a cursor minted under the old format names a ring entry
+  the new node never held, so the resume falls back correctly rather than silently; the `qidOf`
+  removal itself costs nothing, because every qid a node computes comes from a decoded frame and
+  `JSON.parse` produces none of the values the two spellings disagreed about.
 - **A topic guard that *fails* keeps the topic.** On the re-auth pass, only a denial
   (`X_TOPIC_FORBIDDEN`, or a policy denial) unsubscribes; anything else increments `hub.guardFailures`
   and logs `channel.guard_failed`. `catch { unsubscribe }` reported a store that timed out as a

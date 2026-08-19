@@ -136,7 +136,6 @@ export {
 } from './identity-map';
 // ---- shared value domain ---------------------------------------------------------------------
 export {
-  canonicalJson,
   changedColumns,
   fnv1a,
   isJsonObject,
@@ -147,11 +146,10 @@ export {
   type RowOp,
   type RowPatch,
 } from './json';
-export {
-  type LiveQueryDefinition,
-  type LiveSubscription,
-  qidOf,
-  type SnapshotResult,
+export type {
+  LiveQueryDefinition,
+  LiveSubscription,
+  SnapshotResult,
 } from './live-contract';
 export { type LiveDefinitionOptions, liveQueryDefinition } from './live-definition';
 export {
