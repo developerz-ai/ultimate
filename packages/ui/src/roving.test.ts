@@ -1,3 +1,8 @@
+// The rules are asked here with nothing attached and nothing rendered — the `ArrowKeyElement` and
+// `RovingItem` interfaces are structural precisely so this file can. `a11y.test.ts` asks the other
+// question, against `fake-dom`: a correct answer that is then focused into a control which refuses
+// focus looks identical from in here, so neither file replaces the other.
+
 import { describe, expect, test } from 'bun:test';
 import { handlesOwnArrowKeys, MENU_ITEM_SELECTOR, TAB_SELECTOR, tabStopIndex } from './roving';
 

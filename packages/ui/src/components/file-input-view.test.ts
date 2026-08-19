@@ -4,7 +4,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
   acceptMatches,
+  adoptDroppedFiles,
   type FileCandidate,
+  type FileTarget,
   formatBytes,
   progressPercent,
   selectFiles,
@@ -91,5 +93,47 @@ describe('formatBytes', () => {
   test('a negative or non-finite size is 0, never a bar that renders NaN', () => {
     expect(formatBytes(-1, 'en-US')).toBe('0 byte');
     expect(formatBytes(Number.NaN, 'en-US')).toBe('0 byte');
+  });
+});
+
+// The half a component test could never reach: a `<Dropzone name="avatar" required>` showed the
+// file it accepted and then refused to submit, because `onSelect` fired and `input.files` stayed
+// empty. `FileList` is a host type with no constructor, so the doubles below are structural — the
+// only field this rule reads is `length`.
+describe('adoptDroppedFiles', () => {
+  const fileList = (length: number): FileList => ({ length }) as unknown as FileList;
+  const target = (files: FileList | null = null): FileTarget => ({ files });
+
+  test('a dropped file becomes the input’s own, so the form posts it', () => {
+    const input = target();
+    const dropped = fileList(1);
+    adoptDroppedFiles(input, dropped);
+    // Identity, not a copy: `files` takes the DataTransfer's own FileList, which is the supported
+    // way to make a drop participate in the form.
+    expect(input.files).toBe(dropped);
+  });
+
+  test('an empty drop leaves an earlier pick alone, exactly as the browser does', () => {
+    const picked = fileList(2);
+    const input = target(picked);
+    adoptDroppedFiles(input, fileList(0));
+    expect(input.files).toBe(picked);
+  });
+
+  test('no dataTransfer at all — undefined or null — clears nothing', () => {
+    const picked = fileList(2);
+    const undefinedDrop = target(picked);
+    adoptDroppedFiles(undefinedDrop, undefined);
+    expect(undefinedDrop.files).toBe(picked);
+
+    const nullDrop = target(picked);
+    adoptDroppedFiles(nullDrop, null);
+    expect(nullDrop.files).toBe(picked);
+  });
+
+  test('an unmounted input is not an error: the ref is undefined before the effect runs', () => {
+    expect(() => {
+      adoptDroppedFiles(undefined, fileList(1));
+    }).not.toThrow();
   });
 });

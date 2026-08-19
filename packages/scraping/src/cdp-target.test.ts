@@ -129,13 +129,27 @@ describe('unit · restored localStorage lands on the session ORIGIN, never on ab
 });
 
 describe('unit · a network entry says what the request actually was', () => {
-  const request = (url: string, method: string | undefined) => ({
-    url: () => url,
-    resourceType: () => 'fetch',
-    ...(method === undefined ? {} : { method: () => method }),
-    abort: () => Promise.resolve(),
-    continue: () => Promise.resolve(),
-  });
+  // RECEIVER-DEPENDENT on purpose. puppeteer's `HTTPRequest.method()` reads the request's own
+  // internals, so a fake that closed over a constant would answer the same whether the framework
+  // called `request.method()` or handed the bare function to a helper — and the second one is
+  // `undefined` against the real library. `DETACHED` is what a lost `this` looks like here.
+  const request = (url: string, method: string | undefined) => {
+    const base = {
+      url: () => url,
+      resourceType: () => 'fetch',
+      abort: () => Promise.resolve(),
+      continue: () => Promise.resolve(),
+    };
+    return method === undefined
+      ? base
+      : {
+          ...base,
+          verb: method,
+          method(this: { readonly verb?: string } | undefined): string {
+            return typeof this?.verb === 'string' ? this.verb : 'DETACHED';
+          },
+        };
+  };
 
   test('a POST is recorded as a POST — page.network() is what X_SCRAPE_HTTP_FAILED points at', async () => {
     const { rec, target } = open();
@@ -167,12 +181,23 @@ describe('unit · a network entry says what the request actually was', () => {
 });
 
 describe('unit · a console line keeps its level', () => {
+  // Same rule as the request fake: `ConsoleMessage.type()` and `.text()` read `this`, so these
+  // answer out of the payload rather than out of a closure.
+  const message = (level: string) => ({
+    level,
+    type(this: { readonly level?: string } | undefined): string {
+      return typeof this?.level === 'string' ? this.level : 'DETACHED';
+    },
+    text(this: { readonly level?: string } | undefined): string {
+      return typeof this?.level === 'string' ? `a ${this.level}` : 'DETACHED';
+    },
+  });
+
   test('the four levels below log are reachable on the real driver', async () => {
     const { rec, target } = open();
     const page = await target;
-    for (const type of ['error', 'warning', 'info', 'debug', 'table']) {
-      rec.emit('console', { type: () => type, text: () => `a ${type}` });
-    }
+    for (const type of ['error', 'warning', 'info', 'debug', 'table'])
+      rec.emit('console', message(type));
     expect(page.console.entries().map((line) => line.level)).toEqual([
       'error',
       'warn',
@@ -180,5 +205,12 @@ describe('unit · a console line keeps its level', () => {
       'debug',
       'log',
     ]);
+  });
+
+  test('and its text — an accessor is called THROUGH the message, not bare', async () => {
+    const { rec, target } = open();
+    const page = await target;
+    rec.emit('console', message('warning'));
+    expect(page.console.entries().map((line) => line.text)).toEqual(['a warning']);
   });
 });

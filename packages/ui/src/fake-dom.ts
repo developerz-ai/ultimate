@@ -49,6 +49,9 @@ class Listeners {
   }
 }
 
+const NATIVELY_FOCUSABLE = new Set(['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'SUMMARY']);
+const LINK_TAGS = new Set(['A', 'AREA']);
+
 /** An element that behaves like the real thing in the two ways this package's bugs depend on. */
 export class FakeElement extends Listeners {
   readonly tagName: string;
@@ -85,9 +88,14 @@ export class FakeElement extends Listeners {
     return this;
   }
 
-  /** The bug's mechanism, faithfully: focusing a disabled control does NOTHING and reports nothing. */
+  /** The bug's mechanism, faithfully: focusing a disabled control does NOTHING and reports nothing.
+   * A tag that is not natively focusable and carries no `tabindex` refuses in exactly the same
+   * silence — `<div>.focus()` is the no-op behind the focus trap's empty-panel fallback. */
   focus(): void {
     if (this.getAttribute('disabled') !== null) return;
+    // `tabindex="-1"` IS focusable programmatically; it is only out of the TAB order.
+    const declared = this.getAttribute('tabindex') !== null;
+    if (!declared && !this.nativelyFocusable()) return;
     this.focusCount += 1;
     const doc = this.document();
     if (doc !== null) doc.activeElement = this;
@@ -115,6 +123,13 @@ export class FakeElement extends Listeners {
 
   getClientRects(): readonly unknown[] {
     return [{}];
+  }
+
+  /** Focusable with no `tabindex` at all. `A`/`AREA` only with an `href` — the same condition
+   * `FOCUSABLE_SELECTOR` spells `a[href]`. */
+  private nativelyFocusable(): boolean {
+    if (NATIVELY_FOCUSABLE.has(this.tagName)) return true;
+    return LINK_TAGS.has(this.tagName) && this.getAttribute('href') !== null;
   }
 
   private document(): FakeDocument | null {

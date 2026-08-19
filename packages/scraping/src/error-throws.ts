@@ -22,7 +22,7 @@ export const driverUnknown = (
     cause:
       scrape === undefined
         ? `no scrape driver named "${name ?? 'none'}" is installed; installed: ${installed.join(', ') || 'none'}`
-        : `scrape "${scrape}" has no browser driver: nothing called setScrapeDriver() and the definition declares no driver:; installed: ${installed.join(', ') || 'none'}`,
+        : `scrape "${scrape}" has no browser driver: nothing called setScrapeDriver() and the definition declares no driver; installed: ${installed.join(', ') || 'none'}`,
     fix: 'call setScrapeDriver(localBrowser()) at boot, or pass driver: fakeBrowser() on the scrape() definition',
     meta: { driver: name ?? 'none', ...(scrape === undefined ? {} : { scrape }) },
   });

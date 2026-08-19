@@ -9,6 +9,7 @@ import { UI_ERROR_CODES } from '../errors';
 import {
   GLYPHS_DIR,
   identifierFor,
+  LUCIDE_ICON_NODES_URL,
   LUCIDE_VERSION,
   moduleSource,
   parseIconNodes,
@@ -165,5 +166,43 @@ describe('the committed glyph set', () => {
 
   test('the pinned upstream version is a real semver, so a bump is visible in the diff', () => {
     expect(LUCIDE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});
+
+// Axiom 4: a `fix:` is what its reader RUNS. Everything that decides whether running it helps —
+// which URL served the file, which pinned version published the glyph — is the CAUSE's job, so
+// these assert the two halves separately rather than that the sentence reads well.
+describe('the generator’s errors are instructions', () => {
+  /** What a shell would execute: the line up to the `#` that opens a comment. */
+  const runnable = (fix: unknown): string => String(fix).split('#')[0]?.trim() ?? '';
+
+  const ICONS = 'bun run --filter @ultimat3/ui icons';
+
+  test('every fix line is the generator’s command, with nothing in front of it to read past', () => {
+    for (const bad of [
+      '[]',
+      JSON.stringify({ empty: [] }),
+      JSON.stringify({ evil: [['path', { d: "M0 0');x" }]] }),
+    ]) {
+      expect(runnable(caught(() => parseIconNodes(bad)).fix)).toBe(ICONS);
+    }
+  });
+
+  test('the URL that served the wrong file is named in the cause, not the fix', () => {
+    const error = caught(() => parseIconNodes('[]'));
+    expect(String(error.cause)).toContain(LUCIDE_ICON_NODES_URL);
+    expect(String(error.fix)).not.toContain(LUCIDE_ICON_NODES_URL);
+  });
+
+  test('data the pin cannot fix says which pin, and the fix says to move it first', () => {
+    const error = caught(() =>
+      parseIconNodes(JSON.stringify({ evil: [['path', { d: "M0 0');x" }]] })),
+    );
+    // Re-running against the same pin repeats this error, so the cause has to name the pin.
+    expect(String(error.cause)).toContain(LUCIDE_VERSION);
+    expect(String(error.fix)).toContain('LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts');
+    expect(String(caught(() => parseIconNodes(JSON.stringify({ empty: [] }))).cause)).toContain(
+      LUCIDE_VERSION,
+    );
   });
 });

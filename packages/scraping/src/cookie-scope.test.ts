@@ -96,6 +96,34 @@ describe('unit · the jar a request may see', () => {
     );
   });
 
+  test('the header is ordered longest path first — RFC 6265 §5.4', () => {
+    // Two cookies of ONE name, and a server reading the first occurrence must get the specific
+    // one. Jar order here is the wrong order on purpose: `/` was stored first, as a browser
+    // filling a jar usually does.
+    const duplicated = [
+      cookie({ name: 'sid', value: 'ROOT', path: '/' }),
+      cookie({ name: 'sid', value: 'ADMIN', path: '/admin' }),
+    ];
+    expect(cookieHeaderFor(duplicated, 'https://bank.test/admin/users')).toBe(
+      'sid=ADMIN; sid=ROOT',
+    );
+  });
+
+  test('an equal path keeps jar order — the sort is stable, not a reshuffle', () => {
+    const same = [
+      cookie({ name: 'first', path: '/admin' }),
+      cookie({ name: 'second', path: '/admin' }),
+    ];
+    expect(cookieHeaderFor(same, 'https://bank.test/admin')).toBe('first=SECRET; second=SECRET');
+    // An absent path IS `/`, so it can never outrank a real one on raw string length.
+    expect(
+      cookieHeaderFor(
+        [cookie({ name: 'rootish', path: '' }), cookie({ name: 'deep', path: '/a' })],
+        'https://bank.test/a',
+      ),
+    ).toBe('deep=SECRET; rootish=SECRET');
+  });
+
   test('a URL that will not parse gets nothing — the same fail-closed rule hostDecision uses', () => {
     expect(cookiesForUrl(jar, 'not a url')).toEqual([]);
     expect(cookieHeaderFor(jar, 'not a url')).toBeUndefined();

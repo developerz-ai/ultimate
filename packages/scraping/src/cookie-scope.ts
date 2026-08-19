@@ -77,8 +77,21 @@ export function cookiesForUrl(
   );
 }
 
-/** The `cookie:` header this URL earns, or `undefined` when the jar has nothing for it. */
+/** An absent path is `/` here too — §5.1.4's rule, so it cannot outrank a real path on length. */
+const pathLength = (path: string): number => (path === '' ? 1 : path.length);
+
+/**
+ * The `cookie:` header this URL earns, or `undefined` when the jar has nothing for it.
+ *
+ * ORDERED, RFC 6265 §5.4: longer paths first. Two cookies may share a name — a `sid` at `/` and a
+ * `sid` at `/admin` — and a server reading the first occurrence has to see the specific one; jar
+ * order is an accident of how the browser filled it. The sort is stable, so a tie keeps jar order,
+ * which is the nearest thing this jar has to §5.4's creation-time tiebreak (`ScrapeCookie` carries
+ * no creation time, and CDP's cookie shape has none to carry).
+ */
 export function cookieHeaderFor(cookies: readonly ScrapeCookie[], url: string): string | undefined {
-  const jar = cookiesForUrl(cookies, url);
+  const jar = [...cookiesForUrl(cookies, url)].sort(
+    (left, right) => pathLength(right.path) - pathLength(left.path),
+  );
   return jar.length === 0 ? undefined : jar.map((c) => `${c.name}=${c.value}`).join('; ');
 }

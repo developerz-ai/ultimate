@@ -30,13 +30,40 @@ function h(
   return { inert: true, type, props: base } as unknown as ProbeNode;
 }
 
+/**
+ * How many probes are live, and what `globalThis.React` was before the first one. A harness that
+ * DELETED the property on the way out destroyed a binding it did not create, and a nested or
+ * repeated probe tore the factory out from under the suite still using it — the counter is what
+ * makes the last unprobe the only one that restores.
+ */
+let depth = 0;
+let saved: PropertyDescriptor | undefined;
+
 /** Install the classic-factory global these `.tsx` files fall back to. Paired with `unprobe()`. */
 export function probe(): void {
-  Object.assign(globalThis, { React: { createElement: h } });
+  if (depth === 0) {
+    // The descriptor, not the value: the property may be a getter or non-writable, and `assign`
+    // onto either throws or silently loses. `defineProperty` installs over both.
+    saved = Object.getOwnPropertyDescriptor(globalThis, 'React');
+    Object.defineProperty(globalThis, 'React', {
+      value: { createElement: h },
+      configurable: true,
+      writable: true,
+      enumerable: true,
+    });
+  }
+  depth += 1;
 }
 
+/** Undo the matching `probe()`. Unbalanced calls are inert: nothing this did not install is torn
+ * down, because the binding at depth 0 belongs to somebody else. */
 export function unprobe(): void {
-  Reflect.deleteProperty(globalThis, 'React');
+  if (depth === 0) return;
+  depth -= 1;
+  if (depth > 0) return;
+  if (saved === undefined) Reflect.deleteProperty(globalThis, 'React');
+  else Object.defineProperty(globalThis, 'React', saved);
+  saved = undefined;
 }
 
 /**

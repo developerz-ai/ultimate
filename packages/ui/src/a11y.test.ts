@@ -4,6 +4,7 @@ import {
   createFocusTrap,
   createRovingTabindex,
   FOCUSABLE_SELECTOR,
+  focusableWithin,
   nextRovingIndex,
   resetIdCounter,
   useId,
@@ -178,6 +179,45 @@ describe('createFocusTrap', () => {
       trap.release();
       // Without the restore, closing leaves focus on <body> and the next Tab restarts the document.
       expect(dom.document.activeElement).toBe(trigger);
+    } finally {
+      dom.restore();
+    }
+  });
+
+  // `Menu` hands the trap a `<div role="menu">` and `Popover` a `<div>`; neither carries a
+  // tabindex, and `focus()` on such an element is a no-op that reports nothing. So the fallback
+  // that exists to keep focus inside an empty panel left it wherever it already was — outside.
+  test('an empty panel takes focus itself, which a plain <div> can only do once told to', () => {
+    const root = new FakeElement('div', { role: 'menu' });
+    const trigger = new FakeElement('button');
+    const page = new FakeElement('div').append(trigger, root);
+    const dom = installFakeDom(page);
+    try {
+      trigger.focus();
+      const trap = createFocusTrap(root as unknown as HTMLElement);
+      trap.activate();
+      expect(root.getAttribute('tabindex')).toBe('-1');
+      expect(dom.document.activeElement).toBe(root);
+      // -1, never 0: the root is reachable programmatically and is not a Tab stop of its own, so
+      // `focusableWithin` still answers with the trigger alone.
+      expect(focusableWithin(page as unknown as ParentNode)).toHaveLength(1);
+      // And the Tab branch keeps it there rather than letting the key escape the empty panel.
+      dom.document.activeElement = trigger;
+      dom.document.dispatch('keydown', keydown('Tab'));
+      expect(dom.document.activeElement).toBe(root);
+    } finally {
+      dom.restore();
+    }
+  });
+
+  test('a root that already declares a tabindex keeps the one it was given', () => {
+    const root = new FakeElement('div', { role: 'dialog', tabindex: '0' });
+    const page = new FakeElement('div').append(root);
+    const dom = installFakeDom(page);
+    try {
+      createFocusTrap(root as unknown as HTMLElement).activate();
+      expect(root.getAttribute('tabindex')).toBe('0');
+      expect(dom.document.activeElement).toBe(root);
     } finally {
       dom.restore();
     }

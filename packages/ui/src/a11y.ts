@@ -79,12 +79,24 @@ export interface FocusTrap {
 export function createFocusTrap(root: HTMLElement): FocusTrap {
   let previous: HTMLElement | null = null;
 
+  /**
+   * The empty-panel fallback, and the reason it needs a line of its own: a plain `<div>` is not
+   * focusable, so `focus()` on it is a no-op that reports nothing — and `Menu` and `Popover` both
+   * hand this trap exactly that. `tabindex="-1"` is the one value that makes an element reachable
+   * programmatically without putting it in the Tab order, so the root never becomes a stop of its
+   * own (`FOCUSABLE_SELECTOR` excludes `-1`). A root that already declares one keeps it.
+   */
+  function focusRoot(): void {
+    if (root.getAttribute('tabindex') === null) root.tabIndex = -1;
+    root.focus();
+  }
+
   function onKeyDown(event: KeyboardEvent): void {
     if (event.key !== 'Tab') return;
     const items = focusableWithin(root);
     if (items.length === 0) {
       event.preventDefault();
-      root.focus();
+      focusRoot();
       return;
     }
     const first = items[0] as HTMLElement;
@@ -104,7 +116,9 @@ export function createFocusTrap(root: HTMLElement): FocusTrap {
     activate() {
       previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       document.addEventListener('keydown', onKeyDown);
-      (focusableWithin(root)[0] ?? root).focus();
+      const first = focusableWithin(root)[0];
+      if (first === undefined) focusRoot();
+      else first.focus();
     },
     release() {
       document.removeEventListener('keydown', onKeyDown);

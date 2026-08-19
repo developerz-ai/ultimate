@@ -70,12 +70,22 @@ const CONSOLE_LEVELS: Readonly<Record<string, ConsoleLine['level']>> = {
   verbose: 'debug',
 };
 
-const readString = (value: unknown): string | undefined =>
-  typeof value === 'function'
-    ? readString((value as () => unknown)())
-    : typeof value === 'string'
-      ? value
-      : undefined;
+/**
+ * Reads a string out of somebody else's event payload, calling an accessor THROUGH ITS OWNER.
+ *
+ * `HTTPRequest.method()` and `ConsoleMessage.type()`/`.text()` read `this` — they are methods on
+ * the library's own objects, not closures over a value. Handing the bare function to a helper
+ * (`readString(request.method)`) drops the receiver, so the accessor answers against `undefined`:
+ * on one build that throws inside the interception handler, on another it answers wrong.
+ */
+const readStringFrom = (owner: unknown, key: string): string | undefined => {
+  if (typeof owner !== 'object' || owner === null) return undefined;
+  const value = (owner as Record<string, unknown>)[key];
+  if (typeof value === 'string') return value;
+  if (typeof value !== 'function') return undefined;
+  const answer = (value as (this: unknown) => unknown).call(owner);
+  return typeof answer === 'string' ? answer : undefined;
+};
 
 export interface CdpTargetInit {
   readonly page: CdpPageLike;
@@ -105,7 +115,7 @@ async function arm(
     // The METHOD the browser is actually sending. Recording every request as a GET made
     // `page.network()` — which `X_SCRAPE_HTTP_FAILED`'s own fix line tells the reader to open —
     // misreport every POST and PUT the page made.
-    const method = readString(request.method) ?? 'GET';
+    const method = readStringFrom(request, 'method') ?? 'GET';
     const verdict = interceptVerdict(url, type, init.rules);
     const at = init.clock.now().getTime();
     if (verdict === 'allow') {
@@ -117,17 +127,16 @@ async function arm(
     void request.abort();
   });
   init.page.on('console', (payload) => {
-    const record = payload as { type?: unknown; text?: unknown };
     console_.push({
-      level: CONSOLE_LEVELS[(readString(record.type) ?? '').toLowerCase()] ?? 'log',
-      text: readString(record.text) ?? '',
+      level: CONSOLE_LEVELS[(readStringFrom(payload, 'type') ?? '').toLowerCase()] ?? 'log',
+      text: readStringFrom(payload, 'text') ?? '',
       at: init.clock.now().getTime(),
     });
   });
   // A renderer that dies must be a CODE, not a hang: every later call answers X_SCRAPE_PAGE_CRASHED
   // instead of waiting out its own timeout against a tab that is gone.
   init.page.on('error', (payload) => {
-    crashed.value = readString((payload as { message?: unknown }).message) ?? 'renderer crashed';
+    crashed.value = readStringFrom(payload, 'message') ?? 'renderer crashed';
   });
 }
 

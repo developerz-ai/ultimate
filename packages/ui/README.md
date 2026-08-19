@@ -61,7 +61,7 @@ Four composites cover the frame of an app screen. Below them are `Container`,
 | `AppShell` | skip link + `header` / `nav` / `main` / `footer` landmarks on a CSS grid | the frame every screen sits in — one per document |
 | `PageHeader` | breadcrumbs, the page's one `h1`, description, actions | the top of a screen |
 | `Section` | a labelled `section` with a real heading and `aria-labelledby` | second-level structure inside a page |
-| `Toolbar` | `role="toolbar"` strip, start + end slots, arrow-key roving between its buttons | filters and actions above a table or list |
+| `Toolbar` | `role="toolbar"` strip, start + end slots, arrow-key roving between its buttons (`As of 2026-08`) | filters and actions above a table or list |
 
 `AppShell` holds no state: below `md` the sidebar becomes a band above the content,
 and an off-canvas menu is `Drawer` — the one component that already does that.
@@ -264,8 +264,9 @@ no variants it was not given, no dimensions it did not measure.
 
 ## Keyboard groups
 
-A roving group — `Menu`, `Tabs`, `Toolbar` — is one Tab stop into a set of controls, and arrows
-move within it. Three rules, all of them in `src/roving.ts` and all of them enforced by tests:
+`As of 2026-08`: a roving group — `Menu`, `Tabs`, `Toolbar` — is one Tab stop into a set of
+controls, and arrows move within it. Three rules, all of them in `src/roving.ts` and all of them
+enforced by tests:
 
 | Rule | Why |
 |---|---|
@@ -277,8 +278,8 @@ move within it. Three rules, all of them in `src/roving.ts` and all of them enfo
 into to set an initial `tabindex`, and a search field at its inline start keeps its own arrows —
 one stop there would strand every control past it.
 
-`ToastRegion` owns the live region, not `Toast`: the `<ol>` carries `aria-live` and outlives every
-message, because a region created with its content already inside it is not announced. One region,
+`As of 2026-08`, `ToastRegion` owns the live region, not `Toast`: the `<ol>` carries `aria-live`
+and outlives every message, because a region created with its content already inside it is not announced. One region,
 one politeness — `politeness="assertive"` for a region that carries errors alone.
 
 ## Theme resolution
@@ -299,7 +300,7 @@ Content-Security-Policy: script-src 'self' 'sha256-…'   # themeInlineScriptCsp
 | `X_TOKEN_UNKNOWN` | a token role the SCSS source does not define — including a `defineTheme()` override of a role, radius or font slot that is not in the scale |
 | `X_THEME_INVALID` | a theme other than `light` / `dark` |
 | `X_UI_RUNTIME_MISSING` | a DOM render with no registered Solid runtime, `<UiProvider>` on the server, or `browserThemeEnv()` off-DOM. A server render with no runtime is **not** one of them — it gets `INERT_SOLID_RUNTIME` |
-| `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors or one dimension without the other, a heading level off 1–6, a `defineTheme()` value that is not a token value, an `<Icon>` glyph with a tag/attribute/colour outside `ICON_TAGS`, two `Accordion` items sharing an id, `InfiniteScroll` with `hasMore` and no `nextHref`, a negative `debounce` window, or upstream icon data `bun run icons` refuses (not an object, no renderable nodes, an attribute value that is not glyph geometry) |
+| `X_UI_INVALID_VALUE` | `<Money>` given a float, `<DateTime>` given an unparseable instant, `<Image>` given mixed `w`/`x` descriptors or one dimension without the other, a heading level off 1–6, a `defineTheme()` value that is not a token value, an `<Icon>` glyph with a tag/attribute/colour outside `ICON_TAGS`, two `Accordion` items sharing an id, `InfiniteScroll` with `hasMore` and no `nextHref`, a negative `debounce` window, or (`As of 2026-08`) upstream icon data `bun run icons` refuses (not an object, no renderable nodes, an attribute value that is not glyph geometry) |
 
 ## Commands
 

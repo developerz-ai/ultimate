@@ -31,8 +31,8 @@ export function parseIconNodes(text: string): ReadonlyMap<string, IconGlyph> {
   // `typeof [] === 'object'`, and an array of icons is a different upstream format, not this one.
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw invalidIconDataError(
-      `parsed as ${renderCauseValue(parsed)}, not the object of name to nodes that icon-nodes.json publishes`,
-      `check ${LUCIDE_ICON_NODES_URL} still serves icon-nodes.json, then re-run: bun run --filter @ultimat3/ui icons`,
+      `parsed as ${renderCauseValue(parsed)}, not the object of name to nodes that icon-nodes.json publishes; ${LUCIDE_ICON_NODES_URL} served something else`,
+      'bun run --filter @ultimat3/ui icons',
     );
   }
   const out = new Map<string, IconGlyph>();
@@ -65,8 +65,8 @@ function toGlyph(name: string, value: unknown): IconGlyph {
       // no legitimate Lucide artwork.
       if (!SAFE_ATTR_VALUE.test(text)) {
         throw invalidIconDataError(
-          `for the icon "${name}" carries ${renderCauseValue(text)} as "${key}", which is not glyph geometry`,
-          'bump LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts, then: bun run --filter @ultimat3/ui icons',
+          `for the icon "${name}" carries ${renderCauseValue(text)} as "${key}", which is not glyph geometry; lucide-static@${LUCIDE_VERSION} is the pin that published it, so a re-run against the same pin repeats this`,
+          'bun run --filter @ultimat3/ui icons   # after raising LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts',
         );
       }
       attrs[key] = text;
@@ -78,8 +78,8 @@ function toGlyph(name: string, value: unknown): IconGlyph {
   iconElements(glyph);
   if (glyph.length === 0) {
     throw invalidIconDataError(
-      `for the icon "${name}" carries no renderable node data`,
-      'bump LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts, then: bun run --filter @ultimat3/ui icons',
+      `for the icon "${name}" carries no renderable node data; lucide-static@${LUCIDE_VERSION} is the pin that published it, so a re-run against the same pin repeats this`,
+      'bun run --filter @ultimat3/ui icons   # after raising LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts',
     );
   }
   return glyph;
