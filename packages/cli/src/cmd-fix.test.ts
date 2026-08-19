@@ -73,7 +73,29 @@ afterAll(async () => {
   await rm(ROOT, { recursive: true, force: true });
 });
 
+/** The same context with no positional at all — what a bare `x fix` reaches `run` with. */
+const withNoFile = (): CommandContext => ({
+  ...contextFor('unused'),
+  args: { ...contextFor('unused').args, positionals: [] },
+});
+
 describe('unit · x fix boundary', () => {
+  // A bare `x fix` passed `''` into the resolver, so the refusal was about a FILE named `""` —
+  // `"" is not one of the 42 source file(s) under apps/*/{site,app,api,shared}` — and `nearest('')`
+  // answers `undefined`, so its `fix:` degraded to `x routes --json` for a caller who had simply
+  // not said which file. The missing thing is the positional, and that is what has to be named.
+  test('a bare x fix names the missing positional, not a file called ""', async () => {
+    const thrown: unknown = await fixCommand.run(withNoFile()).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect((thrown as { code?: string }).code).toBe('X_CLI_BAD_FLAG');
+    expect((thrown as { cause: string }).cause).toBe(
+      '"x fix boundary" needs a <file> positional and got none',
+    );
+    expect((thrown as { cause: string }).cause).not.toContain('source file(s)');
+  });
+
   test('a site/ page reaching app/ through two hops of shared/ names one cut and its full chain', async () => {
     const result = await fixCommand.run(contextFor('apps/s1/site/pricing.tsx'));
     expect(result.ok).toBe(false);

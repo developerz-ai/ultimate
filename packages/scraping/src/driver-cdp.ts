@@ -67,6 +67,19 @@ async function opened(browser: CdpBrowserLike, init: SessionInit): Promise<Scrap
   }
 }
 
+/**
+ * The run's cancellation and the watchdog's, as ONE signal handed to every wait.
+ *
+ * The guard's abort half had no reader: both legs below were passed `init.signal`, so the
+ * watchdog's only production effect was `kill()` — and `Browser.process()` answers `null` for a
+ * browser obtained through `connect()`, which is `remoteBrowser()`, this file's primary path. A
+ * wedge therefore killed nothing and aborted a signal nobody composed, and the blocked await on
+ * the CDP socket stayed blocked past `ctx.signal` and past the watchdog. Verbatim incident #1 in
+ * `watchdog.ts`, unfixed for the attach path until the composition below.
+ */
+const withWedgeSignal = (run: AbortSignal | undefined, guard: AbortSignal): AbortSignal =>
+  run === undefined ? guard : AbortSignal.any([run, guard]);
+
 async function sessionOver(
   browser: CdpBrowserLike,
   init: SessionInit,
@@ -99,6 +112,7 @@ async function sessionOver(
     guard.touch();
     init.onActivity?.();
   };
+  const signal = withWedgeSignal(init.signal, guard.signal);
   return {
     driver: CDP_DRIVER,
     page: pageOverTarget(target, {
@@ -107,7 +121,7 @@ async function sessionOver(
       defaultTimeoutMs: init.timeoutMs,
       secrets: init.secrets,
       robots: init.robots,
-      signal: init.signal,
+      signal,
       onActivity,
       pace: init.pace,
     }),
@@ -121,7 +135,7 @@ async function sessionOver(
       session: () => target.session(),
       robots: init.robots,
       pace: init.pace,
-      signal: init.signal,
+      signal,
       onActivity,
       proxy: options.proxy,
     }),

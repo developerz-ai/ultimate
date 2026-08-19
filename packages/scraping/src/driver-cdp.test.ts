@@ -5,6 +5,7 @@
 // the attempt with nobody holding a handle to it.
 
 import { describe, expect, test } from 'bun:test';
+import { fakeCdpLauncher } from './cdp-fake';
 import type { CdpBrowserLike, CdpLauncherLike, CdpPageLike } from './cdp-port';
 import { testClock } from './clock';
 import type { SessionInit } from './driver';
@@ -124,5 +125,65 @@ describe('unit · a browser that was launched is closed when open() cannot finis
     expect(launcher.closes()).toBe(0);
     await session.close();
     expect(launcher.closes()).toBe(1);
+  });
+});
+
+describe('unit · the wedge watchdog reaches the waits — incident #1, on the attach path', () => {
+  const wedgeInit = (over: Partial<SessionInit> = {}): SessionInit =>
+    init({ watchdog: { idleMs: 1_000 }, ...over });
+
+  /** Enough microtask turns for the guard's poll loop to cross `idleMs` on the test clock. */
+  const untilWedged = async (): Promise<void> => {
+    for (let tick = 0; tick < 40; tick += 1) await new Promise((r) => queueMicrotask(() => r(0)));
+  };
+
+  test('a wedge aborts a page wait — not X_SCRAPE_SELECTOR_MISSING minutes later', async () => {
+    const launcher = fakeCdpLauncher({ url: 'https://shop.test/', html: '<p>hi</p>' });
+    // `remoteBrowser`, deliberately: `Browser.process()` is null for an attached browser, so the
+    // guard's `kill()` is a no-op and the abort half is the ONLY thing that can end the wait.
+    const session = await remoteBrowser({ launcher, cdpUrl: 'ws://browser.test/1' }).open(
+      wedgeInit(),
+    );
+    await untilWedged();
+    const code = await session.page
+      .waitFor('.never-appears')
+      .then(() => 'resolved')
+      .catch((thrown: unknown) => (thrown as { code?: string }).code);
+    expect(code).toBe('X_SCRAPE_WEDGED');
+  });
+
+  test('a wedge aborts the HTTP leg — the same guard, the second transport', async () => {
+    const launcher = fakeCdpLauncher({ url: 'https://shop.test/', html: '<p>hi</p>' });
+    let handed: AbortSignal | undefined;
+    const session = await remoteBrowser({ launcher, cdpUrl: 'ws://browser.test/1' }).open(
+      // `pace` runs before the fetch, so what it is handed is what the request would carry — and
+      // it refuses, which is what keeps this assertion off the network.
+      wedgeInit({
+        pace: (signal) => {
+          handed = signal;
+          return Promise.reject(new Error('paced: no request leaves this test'));
+        },
+      }),
+    );
+    await untilWedged();
+    await session.http.request('https://shop.test/api/orders').catch(() => undefined);
+    expect(handed?.aborted).toBe(true);
+    expect((handed?.reason as { code?: string } | undefined)?.code).toBe('X_SCRAPE_WEDGED');
+  });
+
+  test("the run's own signal still aborts a wait — the guard is composed, never a swap", async () => {
+    const launcher = fakeCdpLauncher({ url: 'https://shop.test/', html: '<p>hi</p>' });
+    const run = new AbortController();
+    const session = await remoteBrowser({ launcher, cdpUrl: 'ws://browser.test/1' }).open(
+      // A long wait budget, so the poll below reaches `clock.sleep(ms, signal)` rather than
+      // expiring first — the watchdog's own poll advances this test clock while the wait runs.
+      init({ watchdog: { idleMs: 600_000 }, timeoutMs: 600_000, signal: run.signal }),
+    );
+    run.abort(new Error('the job was cancelled'));
+    const message = await session.page
+      .waitFor('.never-appears')
+      .then(() => 'resolved')
+      .catch((thrown: unknown) => (thrown as { message?: string }).message);
+    expect(message).toBe('the job was cancelled');
   });
 });

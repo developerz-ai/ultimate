@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
-import { BadFlagError, CliNotImplementedError } from './errors';
+import { BadFlagError, CliNotImplementedError, UnknownCommandError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagBool, flagString } from './parse';
@@ -32,6 +32,29 @@ import { flagBool, flagString } from './parse';
  * `templates/scaffold-container.ts` scaffolds — still owe that service and that condition.
  */
 export const DEPLOY_ROLES = ['migrate', 'web', 'sync', 'worker', 'scheduler', 'backfill'] as const;
+
+/** The two ways to run the plan. Closed, and read three ways: the default, the check, the refusal. */
+export const DEPLOY_METHODS = ['compose', 'helm'] as const;
+
+export type DeployMethod = (typeof DEPLOY_METHODS)[number];
+
+/**
+ * Refused, never defaulted. `=== 'helm' ? 'helm' : 'compose'` made every other spelling a Compose
+ * deploy that reported `ok: true` and `method: "compose"` — so `x deploy --method helmm` (or
+ * `Helm`, or `kubectl`) ran the six-step Compose plan against a cluster whose operator had asked
+ * for a Helm upgrade, and the report agreed with the plan rather than with the request.
+ * `cmd-build.ts`'s `readTarget` is the same shape for the same reason.
+ */
+export function readMethod(raw: string | undefined): DeployMethod {
+  const methods: readonly string[] = DEPLOY_METHODS;
+  if (raw === undefined) return 'compose';
+  if (methods.includes(raw)) return raw as DeployMethod;
+  throw new UnknownCommandError({
+    path: `deploy --method ${raw}`,
+    known: DEPLOY_METHODS,
+    suggestion: 'deploy --method compose',
+  });
+}
 
 /** The roles that run to completion and exit, as against the ones that stay up serving. */
 const ONE_SHOT_ROLES: readonly string[] = ['migrate', 'backfill'];
@@ -62,7 +85,7 @@ export function helmImageOverrides(image: string): readonly string[] {
     : ['--set', `image.repository=${repository}`, '--set', `image.tag=${tag}`];
 }
 
-export function planDeploy(image: string, method: 'compose' | 'helm', root: string): DeployPlan {
+export function planDeploy(image: string, method: DeployMethod, root: string): DeployPlan {
   if (method === 'helm') {
     // `repo@sha256:…` is a reference this chart cannot express: it renders `repository:tag` and
     // has no digest branch, so passing one through would deploy `repo@sha256:…:<appVersion>` —
@@ -134,7 +157,7 @@ export const deployCommand: CliCommand = {
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('deploy', ctx.cwd).dir;
     const image = flagString(ctx.args, 'image') ?? 'ultimate-app:dev';
-    const method = flagString(ctx.args, 'method') === 'helm' ? 'helm' : 'compose';
+    const method = readMethod(flagString(ctx.args, 'method'));
     if (method === 'helm' && !existsSync(join(root, 'docker', 'helm'))) {
       throw new CliNotImplementedError({
         feature: 'helm deploy without docker/helm in the app',

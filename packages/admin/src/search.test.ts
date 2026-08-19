@@ -112,3 +112,61 @@ describe('adminSearch over an entity the admin derived', () => {
     expect(expectedQueryLoopReason()).toBeUndefined();
   });
 });
+
+// `permissions.ts` carries `audited: true` for `search` ("Never false"), `audit.ts` says denied
+// attempts are logged too, and `CLAUDE.md` says "every admin operation is audited, reads
+// included". Search read rows out of every readable entity and never touched `ctx.audit`.
+describe('adminSearch is audited, allowed or refused', () => {
+  test('an allowed search writes one entry per searched resource, keyed on the table', async () => {
+    const app = adminOver(repoOver(new Map([[POST_ID, row()]])));
+    const context = ctx();
+    const found = await adminSearch({
+      term: 'First',
+      resources: [app.resource('admin_search_post')],
+      ctx: context,
+    });
+
+    expect(found.audit.map((entry) => entry.operation)).toEqual(['search']);
+    const entries = context.audit.entries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.outcome).toBe('allowed');
+    expect(entries[0]?.entity).toBe('admin_search_post');
+    expect(entries[0]?.entityId).toBeNull();
+    expect(entries[0]?.actor.id).toBe('u_1');
+    expect(entries[0]?.requestId).toBe('req_1');
+  });
+
+  test('a refused resource leaves the record of the refusal, not just a skipped entry', async () => {
+    const app = adminOver(repoOver(new Map([[POST_ID, row()]])));
+    const context: CrudCtx = { ...ctx(), authz: staticAuthz([]) };
+    const found = await adminSearch({
+      term: 'First',
+      resources: [app.resource('admin_search_post')],
+      ctx: context,
+    });
+
+    expect(found.hits).toEqual([]);
+    expect(found.skipped).toEqual([
+      { entity: 'admin_search_post', reason: 'admin.search.skipped.forbidden' },
+    ]);
+    const entries = context.audit.entries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.outcome).toBe('denied');
+    expect(entries[0]?.operation).toBe('search');
+    expect(entries[0]?.entity).toBe('admin_search_post');
+    expect(found.audit).toEqual(entries);
+  });
+
+  test('an empty term decides nothing, so it logs nothing', async () => {
+    const app = adminOver(repoOver(new Map([[POST_ID, row()]])));
+    const context = ctx();
+    const found = await adminSearch({
+      term: '   ',
+      resources: [app.resource('admin_search_post')],
+      ctx: context,
+    });
+
+    expect(found.audit).toEqual([]);
+    expect(context.audit.entries()).toEqual([]);
+  });
+});

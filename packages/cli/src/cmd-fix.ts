@@ -8,7 +8,7 @@ import { requireAppRoot } from './app-root';
 import type { BoundaryCut } from './boundary-cuts';
 import { planBoundaryCuts } from './boundary-cuts';
 import type { CliCommand, CommandContext } from './command';
-import { BadFlagError, FixTargetUnknownError } from './errors';
+import { BadFlagError, FixTargetUnknownError, MissingPositionalError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import { nearest } from './parse';
@@ -103,10 +103,22 @@ export const fixCommand: CliCommand = {
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('fix', ctx.cwd).dir;
+    // Refused before the scan, never defaulted to `''`: an empty string reached `resolveTarget` as
+    // a file NAME, so a bare `x fix` answered X_FIX_TARGET_UNKNOWN with `"" is not one of the 42
+    // source file(s)…` — and `nearest('')` almost never suggests anything, so the fix degraded to
+    // `x routes --json` for a caller who had simply not said which file.
+    const file = ctx.args.positionals[0];
+    if (file === undefined) {
+      throw new MissingPositionalError({
+        command: 'fix boundary',
+        positional: 'file',
+        example: 'x routes --json   # every registered route file, app-root-relative',
+      });
+    }
     const files = await readAppSources(root);
     const target = resolveTarget(
-      ctx.args.positionals[0] ?? '',
-      files.map((file) => file.path),
+      file,
+      files.map((source) => source.path),
     );
     const cuts = planBoundaryCuts(target, appImportGraph(files));
 

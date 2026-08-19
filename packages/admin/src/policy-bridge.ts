@@ -15,7 +15,10 @@ export const adminPermissions = definePermissions(ADMIN_PERMISSIONS);
  * mapping lives here because this file is the only one allowed to speak to the policy layer.
  */
 const policyActor = (actor: AdminActor): Actor =>
-  userActor({ id: actor.id, roles: actor.roles ?? [] });
+  // `orgId` rides along, and its absence used to be silent: every admin decision was evaluated
+  // with `actor.orgId === undefined`, so an org-scoped rule could not fire and a role-only rule
+  // allowed a row from another tenant.
+  userActor({ id: actor.id, roles: actor.roles ?? [], orgId: actor.orgId });
 
 /**
  * `evaluate()`'s result is read structurally: the policy layer owns its own decision type,
@@ -55,9 +58,13 @@ export function policyAuthz(input: PolicyAuthzInput): AdminAuthz {
       // `EvaluateArgs` carries exactly one payload. An admin subject with no action input IS
       // that payload: a row-level rule has nothing but the entity and id to decide on.
       const payload = subject?.input ?? subject;
+      // `row` is passed through only when the surface LOADED one. Omitting it and passing
+      // `row: undefined` are different facts to `evaluate`, and a rule that reads `row` must see
+      // `null` — "no row was loaded" — rather than a value the admin invented from `input`.
+      const row = subject === undefined || !('row' in subject) ? undefined : { row: subject.row };
       return readDecision(
         permission,
-        evaluate(policy, { actor: policyActor(actor), input: payload }),
+        evaluate(policy, { actor: policyActor(actor), input: payload, ...row }),
       );
     },
   };

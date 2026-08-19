@@ -33,6 +33,7 @@ export const SCRAPE_OWNED_ERROR_CODES = [
   'X_SCRAPE_RECOVER_REFUSED',
   'X_SCRAPE_SECRET_EXPOSED',
   'X_SCRAPE_HTTP_FAILED',
+  'X_SCRAPE_BODY_TOO_LARGE',
   'X_SCRAPE_AUTH_FAILED',
   'X_SCRAPE_SESSION_EXPIRED',
   'X_SCRAPE_PROMPT_UNANSWERED',
@@ -77,6 +78,7 @@ export const SCRAPE_ERROR_TITLES: Readonly<Record<ScrapeOwnedErrorCode, string>>
   X_SCRAPE_RECOVER_REFUSED: 'the recovery hook declined to recover this failure',
   X_SCRAPE_SECRET_EXPOSED: 'an artifact would have carried a secret this run typed',
   X_SCRAPE_HTTP_FAILED: 'the site answered the HTTP leg with a non-2xx status',
+  X_SCRAPE_BODY_TOO_LARGE: 'the HTTP response body passed its byte cap',
   X_SCRAPE_AUTH_FAILED: 'the credentials were rejected',
   X_SCRAPE_SESSION_EXPIRED: 'the restored session is no longer valid and nothing can renew it',
   X_SCRAPE_PROMPT_UNANSWERED: 'a login step asked for a code and nothing answered',
@@ -126,6 +128,9 @@ export const SCRAPE_ERROR_RETRY = {
   // half-submitted form is the incident, not the recovery.
   X_SCRAPE_PAGE_CRASHED: 'terminal',
   X_SCRAPE_OUTPUT_INVALID: 'terminal',
+  // A response size is a property of the endpoint, not of the moment: attempt 2 buffers the same
+  // gigabyte and dies the same way. The fix is a number on the request, so a human decides it.
+  X_SCRAPE_BODY_TOO_LARGE: 'terminal',
   X_SCRAPE_YIELD_COLLAPSED: 'terminal',
   X_SCRAPE_ROBOTS_DISALLOWED: 'terminal',
   X_SCRAPE_FIXTURE_MISSING: 'terminal',

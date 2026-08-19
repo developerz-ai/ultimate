@@ -267,10 +267,15 @@ describe('unit · x i18n add', () => {
     expect(result.findings?.map((finding) => finding.at)).toContain('packages/i18n/src/index.ts');
   });
 
-  test('a locale with no positional is refused before touching disk', async () => {
+  // Same code as a bad flag, so the cause is what separates them: `--locale on "x i18n"` is what
+  // a MALFORMED locale reports (the test below), and it is exactly wrong for one that is absent —
+  // there is no `--locale` flag to supply.
+  test('a locale with no positional is refused before touching disk, naming the positional', async () => {
     const appRoot = await seedApp();
     const thrown = await rejectedBy(() => i18nCommand.run(contextFor(appRoot, ['add'])));
     expect(thrown).toBeUltimateError('X_CLI_BAD_FLAG');
+    expect(thrown.cause).toBe('"x i18n add" needs a <locale> positional and got none');
+    expect(thrown.fix).toBe('x i18n add es');
   });
 
   test('a malformed BCP-47 locale is refused, and the fix names this command', async () => {

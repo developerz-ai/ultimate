@@ -2,6 +2,7 @@
 // draws — and because `data()` returns plain JSON, `--json` and the rendered tab are the
 // same facts by construction.
 
+import { renderThrowable, stringField } from '@ultimat3/core';
 import type { DevSources } from './facts';
 
 export interface DevPanel<Data = unknown> {
@@ -25,12 +26,6 @@ export type PanelPayload =
       readonly error: { readonly code: string; readonly cause: string; readonly fix: string };
     };
 
-interface ErrorFields {
-  readonly code?: unknown;
-  readonly cause?: unknown;
-  readonly fix?: unknown;
-}
-
 /**
  * A panel whose source is not wired must say so in the panel, with the fix line — the same
  * payload the CLI prints. A blank tab would read as "nothing is happening".
@@ -43,19 +38,18 @@ export async function panelPayload(
   try {
     return { panel: panel.key, ok: true, data: await panel.data(sources, params) };
   } catch (error) {
-    const fields = (error ?? {}) as ErrorFields;
+    // Core's total readers, not `String(error)` and a raw property read. This catch owes its
+    // caller a `/_x` RESPONSE: `String(Object.create(null))` throws, and so does a getter or a
+    // Proxy trap on `error.code` — either turns a rendered failure panel into an unhandled
+    // rejection on the request. `stringField` answers `undefined` for absent, wrong type and
+    // threw alike, which is what every branch below already meant.
     return {
       panel: panel.key,
       ok: false,
       error: {
-        code: typeof fields.code === 'string' ? fields.code : 'X_NOT_IMPLEMENTED',
-        cause:
-          typeof fields.cause === 'string'
-            ? fields.cause
-            : error instanceof Error
-              ? error.message
-              : String(error),
-        fix: typeof fields.fix === 'string' ? fields.fix : 'x dev --help',
+        code: stringField(error, 'code') ?? 'X_NOT_IMPLEMENTED',
+        cause: stringField(error, 'cause') ?? renderThrowable(error),
+        fix: stringField(error, 'fix') ?? 'x dev --help',
       },
     };
   }

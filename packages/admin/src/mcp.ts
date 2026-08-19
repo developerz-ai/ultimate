@@ -2,7 +2,14 @@
 // `defineAppMcp` so the user's agents drive the user's app. Same authz, same audit, same
 // confirmation rules as the buttons — this file adds a transport, not a second back door.
 
-import { agentActor } from '@ultimat3/core';
+import type { Actor } from '@ultimat3/core';
+import {
+  agentActor,
+  createContext,
+  hasContext,
+  runWithContext,
+  withChildContext,
+} from '@ultimat3/core';
 import {
   type AnyMcpTool,
   type AppMcp,
@@ -257,6 +264,28 @@ function allowedToolNames(
   return names;
 }
 
+/**
+ * Run the call AS the MCP caller — the ambient actor, not only the `CrudCtx` one.
+ *
+ * `AdminApp.ctx()` builds a plain `CrudCtx` and never touches core's async context, so everything
+ * deriving from `tryUseContext()` — entity's tenant guard, the query cache authority, the
+ * jit-preload store — saw whatever actor the TRANSPORT's surrounding request installed rather than
+ * the token's. Over `mcpHttpRoute` mounted in a pipeline that resolves a session cookie, an agent
+ * token authorized as agent X while the repo reads ran as cookie-user Y's tenant; over stdio there
+ * was no context at all, so `actorTenant` was `undefined` and `assertRowTenant` became a no-op and
+ * an admin `create` could name any `orgId`. Same rule as `@ultimat3/mcp`'s `app-tool.ts`: the
+ * caller is the actor for the WHOLE call, by construction rather than by two call sites agreeing.
+ *
+ * Two spellings, one rule, because there are two transports: a child context when a request is
+ * already in flight (it keeps the parent's `requestId` and rebuilds the managed services against
+ * the child's actor), a fresh ROOT context over stdio — where `withChildContext` would throw
+ * `X_NO_CONTEXT` from its own `useContext()`.
+ */
+const asCaller = <T>(actor: Actor, requestId: string, run: () => Promise<T>): Promise<T> =>
+  hasContext()
+    ? withChildContext({ actor }, run)
+    : runWithContext(createContext({ actor, requestId }), run);
+
 function toMcpTool(opts: AdminMcpOptions, requestId: () => string, tool: AdminMcpTool): AnyMcpTool {
   return {
     name: tool.name,
@@ -270,8 +299,11 @@ function toMcpTool(opts: AdminMcpOptions, requestId: () => string, tool: AdminMc
     visibleTo: (caller: McpCaller): boolean =>
       allowedToolNames(opts, requestId, caller).has(tool.name),
     async handle(args: ToolArgs, caller: McpCaller): Promise<McpToolResult> {
-      const ctx = opts.app.ctx({ actor: adminActorOf(caller), requestId: requestId() });
-      const result = await callAdminTool(opts.app, ctx, tool.name, args);
+      const id = requestId();
+      const ctx = opts.app.ctx({ actor: adminActorOf(caller), requestId: id });
+      const result = await asCaller(caller.actor, id, () =>
+        callAdminTool(opts.app, ctx, tool.name, args),
+      );
       if (result.ok) return jsonResult(result.data);
       // An expected outcome the model should reason about (a policy said no), not a
       // protocol error: the transport still answers 200 with the denial in the body.

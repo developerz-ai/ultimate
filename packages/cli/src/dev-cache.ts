@@ -79,25 +79,25 @@ export function startCacheTiers(options: CacheTiersOptions): () => Promise<void>
   registerInvalidationBroadcast(async (wireTags) => {
     await options.transport.publish(CACHE_INVALIDATE_SUBJECT, JSON.stringify(wireTags));
   });
-  let subscription: TransportSubscription | undefined;
-  // Not awaited: the boot must not block on a subscribe, and a bus that refuses one is a process
-  // that misses peer invalidations, never a process that fails to start.
-  void options.transport
+  // Not awaited HERE: the boot must not block on a subscribe, and a bus that refuses one is a
+  // process that misses peer invalidations, never a process that fails to start. The PROMISE is
+  // held rather than a handle assigned inside a `.then`, because the release ran first whenever
+  // `stop()` beat the round trip — a NATS bus plus a boot that throws in `bootRoles`, or a test
+  // that boots and stops immediately — and the subscription that landed afterwards was live with
+  // nobody left holding it. `mcp-host.ts`'s lazy `started` is the same shape.
+  const subscribing: Promise<TransportSubscription | undefined> = options.transport
     .subscribe(CACHE_INVALIDATE_SUBJECT, (payload: string) => {
       void applyBroadcast(payload);
     })
-    .then((handle) => {
-      subscription = handle;
-    })
     .catch((error: unknown) => {
       logger.warn('cache.broadcast.subscribe-failed', { error: messageOf(error) });
+      return undefined;
     });
 
   // `resetTiers()` drops the registry AND the broadcast in one call: this boot is the only thing
   // that registers either, and a tier left behind would purge for a process that has stopped.
   return async () => {
-    subscription?.unsubscribe();
-    subscription = undefined;
+    (await subscribing)?.unsubscribe();
     resetTiers();
   };
 }

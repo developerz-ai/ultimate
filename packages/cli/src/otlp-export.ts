@@ -7,6 +7,8 @@ import {
   configureMetrics,
   configureTelemetry,
   logger,
+  noopExporter,
+  noopMetricExporter,
   onShutdown,
   otlpMetricExporter,
   otlpSpanExporter,
@@ -29,6 +31,14 @@ export const METRIC_EXPORT_INTERVAL_MS = 60_000;
  * Both are registered with `onShutdown(..., { phase: 'close' })`: the last spans of a drain are
  * the ones that explain the drain, and a process that exits with a full queue loses exactly the
  * window an operator went looking for.
+ *
+ * The release UNINSTALLS what it installed, per signal. `configureTelemetry`/`configureMetrics`
+ * merge into process-global state, so stopping the timer and dropping the drain hooks left the
+ * first boot's exporter configured: a second `serveApp` in the same process exported its spans
+ * into a released exporter — queued against a collector nothing will flush to, on a timer nothing
+ * clears. `cmd-dev.ts`'s `stop()` hands back `noopExporter` for exactly this reason. Per signal and
+ * never unconditionally: `x dev` configures a trace RECORDER before calling this, and a boot that
+ * installed no exporter must not uninstall one it never owned.
  */
 export function startOtlpExport(env: Env = process.env): () => void {
   const releases: (() => void)[] = [];
@@ -41,6 +51,9 @@ export function startOtlpExport(env: Env = process.env): () => void {
   if (traces !== undefined) {
     const exporter = otlpSpanExporter({ endpoint: traces });
     configureTelemetry({ exporter });
+    // Pushed first, so the reversed run below applies it LAST — after the drain hook is dropped,
+    // the same order `cmd-dev.ts` releases the recorder in.
+    releases.push(() => configureTelemetry({ exporter: noopExporter }));
     releases.push(onShutdown('otlp-traces', () => exporter.shutdown(), { phase: 'close' }));
     logger.info('ultimate otlp traces', { endpoint: traces });
   }
@@ -49,6 +62,7 @@ export function startOtlpExport(env: Env = process.env): () => void {
   if (metrics !== undefined) {
     const exporter = otlpMetricExporter({ endpoint: metrics });
     configureMetrics({ exporter });
+    releases.push(() => configureMetrics({ exporter: noopMetricExporter }));
     // The push loop, and not only the exporter: `configureMetrics` names where a snapshot goes
     // and nothing decides when one is taken, so without this the collector receives one export —
     // the drain's — for the whole life of the process.

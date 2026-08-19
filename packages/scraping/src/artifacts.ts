@@ -30,17 +30,26 @@ export interface ArtifactWriterInit {
 
 export const DEFAULT_ARTIFACT_PREFIX = 'scrape';
 
-const CONTENT_TYPES: Readonly<Record<string, string>> = {
-  html: 'text/html; charset=utf-8',
-  png: 'image/png',
-  pdf: 'application/pdf',
-  json: 'application/json',
-  csv: 'text/csv',
-  txt: 'text/plain; charset=utf-8',
-};
+export const DEFAULT_CONTENT_TYPE = 'application/octet-stream';
+
+/**
+ * A `Map`, not an object literal — the same choice `failures.ts` makes, for the same reason. The
+ * extension comes off a caller-supplied filename, and on a download that filename came off the
+ * site's own `Content-Disposition`: indexing a plain object with it answered a FUNCTION for
+ * `report.constructor` and an object for `report.__proto__`, where the type says `string`, and
+ * that non-string went on to be `ref.contentType` and an S3 header.
+ */
+const CONTENT_TYPES: ReadonlyMap<string, string> = new Map([
+  ['html', 'text/html; charset=utf-8'],
+  ['png', 'image/png'],
+  ['pdf', 'application/pdf'],
+  ['json', 'application/json'],
+  ['csv', 'text/csv'],
+  ['txt', 'text/plain; charset=utf-8'],
+]);
 
 export const contentTypeFor = (name: string): string =>
-  CONTENT_TYPES[name.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream';
+  CONTENT_TYPES.get(name.split('.').pop()?.toLowerCase() ?? '') ?? DEFAULT_CONTENT_TYPE;
 
 /**
  * A writer with no storage driver is a NO-OP that still answers a key — never a throw. An app

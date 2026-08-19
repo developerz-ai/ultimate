@@ -4,11 +4,12 @@
 // The rows are `@ultimat3/render`'s own `describeRoutes()`: the CLI prints the route table, it
 // does not keep a second one.
 
-import type { RouteDescriptor } from '@ultimat3/render';
-import { describeRoutes } from '@ultimat3/render';
+import type { RouteDescriptor, Surface } from '@ultimat3/render';
+import { describeRoutes, SURFACES } from '@ultimat3/render';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
+import { BadFlagError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagString } from './parse';
@@ -43,18 +44,40 @@ const routeJson = (routes: readonly RouteDescriptor[]): JsonValue =>
     budget: { js: route.budgetJs, lcp: route.budgetLcp },
   }));
 
+/**
+ * A closed set, because the filter was a bare `===`: `x routes --surface App` and `--surface pages`
+ * matched no row and reported `0 routes` with exit 0, which is the same output an app with no
+ * routes gives — so a typo and an empty route table are indistinguishable, and only one of them is
+ * a bug the caller can see. `SURFACES` is `@ultimat3/render`'s own declaration of what a surface
+ * is; a list restated here would be a second answer to it (`x g --surface` is `generate-kinds.ts`'s
+ * narrower question — which surface to SCAFFOLD onto — and takes site|app alone).
+ */
+export function readSurfaceFilter(raw: string | undefined): Surface | undefined {
+  const surfaces: readonly string[] = SURFACES;
+  if (raw === undefined) return undefined;
+  if (surfaces.includes(raw)) return raw as Surface;
+  throw new BadFlagError({
+    flag: 'surface',
+    command: 'routes',
+    reason: `"${raw}" is not a surface (known: ${SURFACES.join(', ')})`,
+    fix: 'x routes --surface app --json',
+  });
+}
+
 export const routesCommand: CliCommand = {
   spec: {
     name: 'routes',
     summary: 'the route table: path, surface, render mode, hydrate, offline',
-    usage: 'x routes [--surface site|app] [--json]',
+    usage: 'x routes [--surface site|app|api|shared] [--json]',
     requiresApp: true,
     flags: [{ name: 'surface', type: 'string', summary: 'filter by surface' }],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('routes', ctx.cwd).dir;
+    // Read before the app is loaded: a typo must not cost a boot to report, the rule `x mcp`'s
+    // `--transport` already follows.
+    const surface = readSurfaceFilter(flagString(ctx.args, 'surface'));
     const { findings } = await loadApp(root);
-    const surface = flagString(ctx.args, 'surface');
     const routes = describeRoutes().filter(
       (route) => surface === undefined || route.surface === surface,
     );

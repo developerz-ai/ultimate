@@ -127,6 +127,25 @@ describe('admin mutations are audited with a before/after diff', () => {
     expect(store.get(POST_ID)?.['isAdmin']).toBeUndefined();
   });
 
+  test('a patch naming a prototype member reaches the repo with nothing extra', async () => {
+    // Executed against the `key in parsed.value` filter this replaced: the patch handed to
+    // `repo.update` was `{ title: 'ok', toString: [Function], constructor: [class Object],
+    // __proto__: [Object: null prototype] {} }` — inherited members, past validation, into a write.
+    const store = new Map<string, AdminRow>([
+      [POST_ID, { id: POST_ID, title: 'Draft', createdAt: '2026-07-01T00:00:00.000Z' }],
+    ]);
+    const ctx = ctxWith(['admin:write', 'admin_crud_post:write']);
+    const patch = JSON.parse(
+      '{"title":"Published","toString":1,"constructor":2,"__proto__":3}',
+    ) as Record<string, unknown>;
+
+    const result = await adminUpdate(bound(store), ctx, POST_ID, patch);
+
+    expect(result.ok).toBe(true);
+    expect(Object.keys(store.get(POST_ID) ?? {}).sort()).toEqual(['createdAt', 'id', 'title']);
+    expect(store.get(POST_ID)?.['title']).toBe('Published');
+  });
+
   test('a denied update writes nothing and still leaves a record', async () => {
     const store = new Map<string, AdminRow>([[POST_ID, { id: POST_ID, title: 'Draft' }]]);
     const ctx = ctxWith(['admin:read']);

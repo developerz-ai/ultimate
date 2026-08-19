@@ -5,7 +5,7 @@
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
-import { BadFlagError, DeclarationUnknownError } from './errors';
+import { DeclarationUnknownError, MissingPositionalError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import { nearest } from './parse';
@@ -74,11 +74,13 @@ function declarationLines(declaration: DeclarationExplanation): readonly string[
 function requireSubject(ctx: CommandContext): string {
   const name = ctx.args.positionals[0];
   if (name === undefined) {
-    throw new BadFlagError({
-      flag: 'subject',
-      command: 'policy',
-      reason: 'x policy explain <subject> needs a permission, action, query or route path',
-      fix: 'x policy list --json',
+    // Never `BadFlagError`: its cause read `--subject on "x policy"`, and the next thing an agent
+    // typed was `x policy explain --subject posts:read`, which is a second X_CLI_BAD_FLAG for a
+    // flag this command does not declare. The positional is what is missing, so it is what is named.
+    throw new MissingPositionalError({
+      command: 'policy explain',
+      positional: 'subject',
+      example: 'x policy list --json',
     });
   }
   return name;

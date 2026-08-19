@@ -10,11 +10,12 @@
 // guarantee the page vocabulary makes — and a different exit IP mid-session is exactly what
 // anti-bot systems look for.
 
+import { readWithinLimit } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse } from '@ultimat3/schema';
 import type { ScrapeClock } from './clock';
 import { cookieHeaderFor } from './cookie-scope';
-import { hostBlocked, httpFailed, scrapeTimeout } from './error-throws';
+import { bodyTooLarge, hostBlocked, httpFailed, scrapeTimeout } from './error-throws';
 import type { InterceptRules } from './intercept';
 import { interceptVerdict } from './intercept';
 import type { NetworkRing } from './rings';
@@ -27,7 +28,20 @@ export interface HttpRequestInit {
   readonly body?: string | undefined;
   /** Milliseconds. Falls back to the session's own default. */
   readonly timeout?: number | undefined;
+  /**
+   * Response-body ceiling in bytes. Falls back to `DEFAULT_HTTP_MAX_BYTES`. Never absent: a
+   * deadline bounds time and a scraped endpoint is somebody else's, so the only thing standing
+   * between a hostile stream and the worker's heap is a number.
+   */
+  readonly maxBytes?: number | undefined;
 }
+
+/**
+ * Generous for the JSON endpoint behind a paginated page — the reason this transport exists — and
+ * far under what OOM-kills a worker. Raised per call with `{ maxBytes }`, never globally: a run
+ * that genuinely pulls a large export says so at the call site that pulls it.
+ */
+export const DEFAULT_HTTP_MAX_BYTES = 32 * 1024 * 1024;
 
 export interface ScrapeResponse {
   readonly url: string;
@@ -69,10 +83,23 @@ export interface HttpTransportInit {
   readonly fetch?: typeof fetch | undefined;
 }
 
+/**
+ * Response headers as data, on a NULL prototype and written with `defineProperty`.
+ *
+ * The header set on a scraping leg is entirely the site's. `out[key] = value` on a plain object
+ * DROPS `__proto__` — a legal HTTP field-name token — because the setter it hits refuses a string
+ * and files no own key, and it leaves `headers['toString']` answering a function the site never
+ * sent. Both make `Readonly<Record<string, string>>` a lie the caller cannot see through.
+ */
 const headerRecord = (headers: Headers): Record<string, string> => {
-  const out: Record<string, string> = {};
+  const out = Object.create(null) as Record<string, string>;
   headers.forEach((value, key) => {
-    out[key] = value;
+    Object.defineProperty(out, key, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
   });
   return out;
 };
@@ -143,7 +170,13 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
           resourceType: 'fetch',
           at: init.clock.now().getTime(),
         });
-        const body = await response.text();
+        // Counted as it arrives rather than `.text()`, which materialises first and checks never:
+        // a 30s stream at 50MB/s is a 1.5GB allocation the worker does not get back, and it takes
+        // every other job on that worker with it. The same read `robots-fetch.ts` performs.
+        const maxBytes = request.maxBytes ?? DEFAULT_HTTP_MAX_BYTES;
+        const capped = await readWithinLimit(response.body, maxBytes);
+        if ('over' in capped) throw bodyTooLarge(url, capped.over, maxBytes);
+        const body = new TextDecoder().decode(capped.bytes);
         return responseOver(url, response.status, headerRecord(response.headers), () =>
           Promise.resolve(body),
         );

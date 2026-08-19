@@ -8,6 +8,7 @@ import { mcpHttpRoute, serveStdio } from '@ultimat3/mcp';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import { BadFlagError } from './errors';
+import { intFlagOr, PORT_RANGE } from './flag-number';
 import { holdUntilShutdown } from './hold';
 import type { CliMcpServer } from './mcp-host';
 import { createDevMcpServer, DEV_TOOL_SCOPES } from './mcp-host';
@@ -128,19 +129,22 @@ async function serveOverStdio(host: CliMcpServer): Promise<CommandResult> {
   };
 }
 
-function readPort(ctx: CommandContext): number {
-  const raw = flagString(ctx.args, 'port') ?? String(DEFAULT_PORT);
-  const port = Number.parseInt(raw, 10);
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new BadFlagError({
-      flag: 'port',
+/**
+ * `flag-number.ts`'s reader, never a bare `Number.parseInt`: the range check alone accepted every
+ * prefix parse, so `--port 1e5` bound port 1 and `--port 0x10` bound 0 — a socket at an address the
+ * operator did not type, on the transport whose whole output is the url it is reachable at.
+ */
+const readPort = (ctx: CommandContext): number =>
+  intFlagOr(
+    ctx.args,
+    {
+      name: 'port',
       command: 'mcp serve',
-      reason: `expects a port in 0..65535, got "${raw}"`,
-      fix: `x mcp serve --transport http --port ${DEFAULT_PORT}`,
-    });
-  }
-  return port;
-}
+      ...PORT_RANGE,
+      example: `x mcp serve --transport http --port ${DEFAULT_PORT}`,
+    },
+    DEFAULT_PORT,
+  );
 
 export const mcpCommand: CliCommand = {
   spec: {

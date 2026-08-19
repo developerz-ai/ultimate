@@ -14,6 +14,7 @@ import {
 } from '@ultimat3/cache';
 import { createContext } from '@ultimat3/core';
 import { readThrough } from '@ultimat3/query';
+import type { Transport } from '@ultimat3/realtime';
 import { InProcessTransport } from '@ultimat3/realtime';
 import { CACHE_INVALIDATE_SUBJECT, startCacheTiers } from './dev-cache';
 
@@ -81,6 +82,66 @@ describe('which tiers a boot registers', () => {
     });
     expect(registeredTiers().length).toBeGreaterThan(0);
     await stop();
+    expect(registeredTiers()).toEqual([]);
+  });
+});
+
+/**
+ * A transport whose `subscribe` does not resolve until the test says so — the round trip a release
+ * used to beat. Reachable in production with a NATS bus and a boot that throws in `bootRoles`, and
+ * in any test that boots and stops immediately.
+ */
+function slowTransport(): {
+  readonly transport: Transport;
+  readonly land: () => void;
+  readonly unsubscribed: () => boolean;
+} {
+  const inner = new InProcessTransport();
+  let unsubscribed = false;
+  let land = (): void => {};
+  const roundTrip = new Promise<void>((resolve) => {
+    land = resolve;
+  });
+  const transport: Transport = {
+    name: 'slow',
+    shared: inner.shared,
+    publish: (subject, payload) => inner.publish(subject, payload),
+    close: () => inner.close(),
+    async subscribe(subject, handler) {
+      const real = await inner.subscribe(subject, handler);
+      await roundTrip;
+      return {
+        subject: real.subject,
+        unsubscribe: () => {
+          unsubscribed = true;
+          real.unsubscribe();
+        },
+      };
+    },
+  };
+  return { transport, land: () => land(), unsubscribed: () => unsubscribed };
+}
+
+describe('the release owns the subscription even when it beats the subscribe', () => {
+  // The handle was assigned INSIDE a floating `.then`, so a release that ran first read `undefined`
+  // and returned — and the subscription that landed a moment later was live on a bus with nobody
+  // left holding it, for the life of the process.
+  test('a release that runs before the subscribe resolves still unsubscribes', async () => {
+    restore = isolateTiers();
+    const bus = slowTransport();
+    const stop = startCacheTiers({
+      env: {},
+      purge: noopPurgeDriver(),
+      transport: bus.transport,
+    });
+
+    const releasing = stop();
+    expect(bus.unsubscribed()).toBe(false);
+    // The subscribe lands AFTER the release was asked for, which is the whole race.
+    bus.land();
+    await releasing;
+
+    expect(bus.unsubscribed()).toBe(true);
     expect(registeredTiers()).toEqual([]);
   });
 });

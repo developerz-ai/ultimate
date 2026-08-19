@@ -13,7 +13,7 @@ import { describeQueries, getQuery } from '@ultimat3/query';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
-import { BadFlagError, DeclarationUnknownError } from './errors';
+import { DeclarationUnknownError, MissingPositionalError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import type { CommandSpec } from './parse';
@@ -143,11 +143,12 @@ function describeResult<D extends { readonly name: string }, Raw extends { descr
 ): CommandResult {
   const name = ctx.args.positionals[0];
   if (name === undefined) {
-    throw new BadFlagError({
-      flag: 'name',
-      command: kind.kind,
-      reason: `x ${kind.kind} describe <name> needs a name`,
-      fix: `x ${kind.kind} list --json`,
+    // A positional, so `MissingPositionalError` — `--name on "x actions"` named a flag no registry
+    // command declares, and reading it as one is a second refusal for the first one's advice.
+    throw new MissingPositionalError({
+      command: `${kind.kind} describe`,
+      positional: 'name',
+      example: `x ${kind.kind} list --json`,
     });
   }
   const raw = kind.find(name);

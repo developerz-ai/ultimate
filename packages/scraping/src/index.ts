@@ -5,7 +5,12 @@
 export type { ActionabilityState, ActionabilityWait } from './actionability';
 export { actionabilityProblem, awaitActionable, DEFAULT_POLL_MS, isStable } from './actionability';
 export type { ArtifactRef, ArtifactWriter, ArtifactWriterInit } from './artifacts';
-export { contentTypeFor, createArtifactWriter, DEFAULT_ARTIFACT_PREFIX } from './artifacts';
+export {
+  contentTypeFor,
+  createArtifactWriter,
+  DEFAULT_ARTIFACT_PREFIX,
+  DEFAULT_CONTENT_TYPE,
+} from './artifacts';
 export type {
   AuthContext,
   PromptHandler,
@@ -42,6 +47,7 @@ export { FIXTURE_DRIVER, fixtureBrowser, recordingFilename } from './driver-fixt
 export {
   authFailed,
   blocked,
+  bodyTooLarge,
   browserUnreachable,
   cdpAttachFailed,
   downloadTimeout,
@@ -97,7 +103,7 @@ export { markupRequests } from './html-requests';
 export type { HtmlTargetInit, RecordingLookup } from './html-target';
 export { htmlTarget } from './html-target';
 export type { HttpRequestInit, HttpTransportInit, ScrapeHttp, ScrapeResponse } from './http';
-export { httpOverFetch, responseOver } from './http';
+export { DEFAULT_HTTP_MAX_BYTES, httpOverFetch, responseOver } from './http';
 export type { HttpRecordingLookup, RecordedHttpInit } from './http-recorded';
 export { httpRecordingFilename, httpRecordingsOf, recordedHttp } from './http-recorded';
 export type { InterceptRules, InterceptVerdict } from './intercept';

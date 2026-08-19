@@ -73,3 +73,28 @@ describe('unit · x help', () => {
     expect(lines.some((line) => line.includes(msg('cli.hint.help')))).toBe(false);
   });
 });
+
+// `--json` filtered on `spec.name === topic` while the page beside it resolved aliases and fell
+// back to the catalogue, so the two renderers answered different questions: `x help generate --json`
+// said `[]` — which an agent reads as "no such command" — about the page printed next to it.
+describe('unit · x help --json carries what the page renders', () => {
+  const jsonNames = async (topic?: string): Promise<readonly string[]> => {
+    const argv = topic === undefined ? ['help', '--json'] : ['help', topic, '--json'];
+    const result = await helpCommand.run(contextFor(argv));
+    const entries = result.data as readonly { readonly name: string }[];
+    return entries.map((entry) => entry.name);
+  };
+
+  test('an ALIAS resolves to the same one command the page prints', async () => {
+    // Not a tautology: `g` declares `aliases: ['generate']`, and the page for either is `g`'s.
+    expect(renderHelp(SPECS, 'generate')[0]).toContain('g —');
+    expect(await jsonNames('generate')).toEqual(['g']);
+    expect(await jsonNames('g')).toEqual(['g']);
+  });
+
+  test('an unknown topic answers the whole catalogue, exactly as the page does', async () => {
+    expect(renderHelp(SPECS, 'nosuch')).toEqual(renderHelp(SPECS, undefined));
+    expect(await jsonNames('nosuch')).toEqual(await jsonNames());
+    expect((await jsonNames('nosuch')).length).toBe(SPECS.length);
+  });
+});

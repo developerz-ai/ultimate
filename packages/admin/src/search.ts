@@ -3,8 +3,10 @@
 // the same `admin:read` + `<entity>:read` pair gates the hit and the detail page it links to.
 
 import { expectedQueryLoop } from '@ultimat3/db';
+import { type AuditEntry, deniedDraft } from './audit';
+import { denied } from './authz';
 import type { CrudCtx } from './crud';
-import { canOperate } from './crud';
+import { decideOperation } from './crud';
 import type { AdminFilter, AdminRow } from './registry';
 import { rowId } from './registry';
 import { type AdminResource, repoOf } from './resource';
@@ -29,6 +31,14 @@ export interface AdminSearchResult {
   readonly searched: readonly string[];
   /** Resources left out, and why — so an operator is never silently shown a subset. */
   readonly skipped: readonly { readonly entity: string; readonly reason: string }[];
+  /**
+   * One entry per resource this call decided about: allowed, or refused. Search read rows out of
+   * every readable entity and wrote NOTHING, on either path — while `permissions.ts` carries
+   * `audited: true` for it, `audit.ts` says denied attempts are logged too, and `CLAUDE.md` says
+   * "every admin operation is audited, reads included". Shaped like `adminList`'s: the subject is
+   * the table, so there is no `entityId`.
+   */
+  readonly audit: readonly AuditEntry[];
 }
 
 export interface AdminSearchInput {
@@ -89,20 +99,45 @@ function labelOf(row: AdminRow, resource: AdminResource): string {
   return rowId(row, resource.idField);
 }
 
+const SKIPPED_FORBIDDEN = 'admin.search.skipped.forbidden';
+
 export async function adminSearch(input: AdminSearchInput): Promise<AdminSearchResult> {
+  const { ctx } = input;
   const term = input.term.trim();
   const limit = input.limitPerResource ?? DEFAULT_LIMIT_PER_RESOURCE;
   const searched: string[] = [];
   const skipped: { entity: string; reason: string }[] = [];
   const hits: AdminSearchHit[] = [];
+  const audit: AuditEntry[] = [];
 
-  if (term === '') return { term, hits: [], searched: [], skipped: [] };
+  // Nothing was decided and nothing was read, so there is nothing to log: an empty term never
+  // reaches a repo.
+  if (term === '') return { term, hits: [], searched: [], skipped: [], audit: [] };
 
   for (const resource of input.resources) {
-    if (!canOperate(resource, 'search', input.ctx)) {
-      skipped.push({ entity: resource.name, reason: 'admin.search.skipped.forbidden' });
+    const offered = resource.operations.includes('search');
+    const decision = decideOperation(resource, 'search', ctx);
+    if (!offered || !decision.allowed) {
+      skipped.push({ entity: resource.name, reason: SKIPPED_FORBIDDEN });
+      audit.push(
+        await ctx.audit.append(
+          deniedDraft({
+            requestId: ctx.requestId,
+            actor: ctx.actor,
+            operation: 'search',
+            kind: 'operation',
+            entity: resource.name,
+            entityId: null,
+            // A resource that does not OFFER search was refused by the registry, not by a policy,
+            // and the decision object would otherwise read `allow` on a denied entry.
+            decision: offered ? decision : denied(decision.permission, SKIPPED_FORBIDDEN),
+          }),
+        ),
+      );
       continue;
     }
+    // Neither of these is an authorization event: the resource is searchable in principle and has
+    // no text index or no repo to ask. They stay in `skipped` and out of the log.
     if (resource.searchFields.length === 0) {
       skipped.push({ entity: resource.name, reason: 'admin.search.skipped.no-text-fields' });
       continue;
@@ -112,8 +147,23 @@ export async function adminSearch(input: AdminSearchInput): Promise<AdminSearchR
       continue;
     }
     searched.push(resource.name);
+    // Appended BEFORE the read, so a repo that throws still leaves the record that the rows were
+    // asked for — `audit.ts`: if it isn't logged, it didn't happen.
+    audit.push(
+      await ctx.audit.append({
+        requestId: ctx.requestId,
+        actor: ctx.actor,
+        operation: 'search',
+        kind: 'operation',
+        entity: resource.name,
+        entityId: null,
+        permission: decision.permission,
+        outcome: 'allowed',
+        reason: decision.reason,
+      }),
+    );
     hits.push(...(await searchResource(resource, term, limit)));
   }
 
-  return { term, hits, searched, skipped };
+  return { term, hits, searched, skipped, audit };
 }

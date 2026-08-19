@@ -6,8 +6,9 @@ import { afterAll, beforeAll, describe, test } from 'bun:test';
 import { captureDeterminism, installDeterminism, restoreCapturedDeterminism } from './determinism';
 import {
   allowHost,
+  captureNetwork,
   isNetworkSealed,
-  resetNetwork,
+  restoreCapturedNetwork,
   sealNetwork,
   unsealNetwork,
 } from './sealed-network';
@@ -73,6 +74,10 @@ export async function bootApp(
   // `bun test` is one process. Restore only what this boot actually changed.
   const determinism = captureDeterminism();
   const sealedBefore = isNetworkSealed();
+  // The gate's own contents, not just whether it was installed. `resetNetwork()` here CLEARED the
+  // allow-list, the mocks and the offline state — the one line in this teardown that uninstalled
+  // instead of restoring, while everything around it put back what it captured.
+  const networkBefore = captureNetwork();
 
   // Only when this boot has something of its own to say. A run configured with ULTIMATE_TEST_NOW /
   // ULTIMATE_TEST_SEED (`preload.ts`) is otherwise reset to the defaults by the first describeApp.
@@ -88,7 +93,7 @@ export async function bootApp(
   // What `close` puts back, named once: the boot has to run it too, and two copies of this list is
   // how one of them ends up missing the allow-list.
   const restoreProcessState = (): void => {
-    resetNetwork();
+    restoreCapturedNetwork(networkBefore);
     if (!sealedBefore) unsealNetwork();
     restoreCapturedDeterminism(determinism);
   };

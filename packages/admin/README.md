@@ -201,7 +201,10 @@ shape already is, written down once so two apps do not invent two layouts. `x g 
 | Every mutation and every denial is on the audit log, with a before/after diff | `audit.ts` |
 | Branding aliases tokens only — `accent: '#7c3aed'` is a compile error | `theme.ts` |
 
-Single-row reads are audited; list pages are not (volume).
+Reads are audited too, and on both branches: `adminDetail` keys its entry on the row,
+`adminList` and `adminSearch` key theirs on the table (`entityId: null`), and a refusal is an
+entry of its own. `AdminSearchResult.audit` carries one entry per resource the call decided
+about — searched or refused — so a jump box that walked every readable entity leaves a trace.
 
 ## AI-first
 

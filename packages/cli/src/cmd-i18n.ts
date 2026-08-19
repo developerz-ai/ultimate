@@ -12,7 +12,7 @@ import { catalogKeys, catalogMissingKeys } from '@ultimat3/i18n';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
-import { BadFlagError, CatalogExistsError } from './errors';
+import { BadFlagError, CatalogExistsError, MissingPositionalError } from './errors';
 import {
   auditApp,
   loadCatalogs,
@@ -64,10 +64,13 @@ async function writeNewCatalog(absolute: string, locale: string, contents: strin
 function requireLocalePositional(ctx: CommandContext, sub: string): string {
   const raw = ctx.args.positionals[0];
   if (raw === undefined) {
-    throw new BadFlagError({
-      flag: 'locale',
-      command: 'i18n',
-      reason: `"x i18n ${sub}" needs a locale: x i18n ${sub} <locale>`,
+    // The locale is a positional. `--locale on "x i18n"` is the cause a MALFORMED one takes, from
+    // the shared validator below — and there the flag name is what `resolveLocales` was told to
+    // report; here there is no value at all, and naming a flag sends the retry to a flag loop.
+    throw new MissingPositionalError({
+      command: `i18n ${sub}`,
+      positional: 'locale',
+      example: `x i18n ${sub} es`,
     });
   }
   return raw;

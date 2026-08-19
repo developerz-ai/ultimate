@@ -3,7 +3,7 @@
 // path as results, so a failure is machine-readable exactly like a success.
 
 import { isAbsolute, resolve } from 'node:path';
-import { requireBunVersion } from './app-root';
+import { requireAppRoot, requireBunVersion } from './app-root';
 import { createHelpCommand } from './cmd-help';
 import type { CommandContext } from './command';
 import { UnknownCommandError } from './errors';
@@ -85,6 +85,15 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
   };
 
   try {
+    // The reader `CommandSpec.requiresApp` never had. Its doc said "the dispatcher enforces it" and
+    // `dispatch` did not read the field at all: the guarantee held only because all 17 declaring
+    // commands happen to call `requireAppRoot` themselves, so a new command that declares it and
+    // forgets the call ran outside an app with no refusal. Each of those 17 calls stays — they are
+    // what hands a command the root it works in, and several name a subcommand this cannot see
+    // (`env init`, `secrets set`) — but the DECLARATION is now what decides, ahead of any check a
+    // command makes about its own arguments. `--help` is exempt because `target` is then the help
+    // command, which declares nothing: usage for a command must be readable from anywhere.
+    if (target.spec.requiresApp === true) requireAppRoot(target.spec.name, ctx.cwd);
     const result = await target.run(ctx);
     options.write(render(result, args.json, args.flags.get('verbose') === true));
     // `x dev` and `x mcp serve --transport http` are still listening here: report first, so the

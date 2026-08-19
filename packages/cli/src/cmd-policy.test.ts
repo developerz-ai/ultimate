@@ -276,9 +276,14 @@ describe('unit · x policy explain', () => {
 });
 
 describe('unit · x policy errors', () => {
-  test('explain with no positional names the working invocation', async () => {
+  // The CODE is the same either way, so it proves nothing on its own: what a `BadFlagError` here
+  // produced was `--subject on "x policy"`, and `x policy explain --subject posts:read` is then a
+  // second X_CLI_BAD_FLAG for a flag this command does not declare. The cause is the assertion.
+  test('explain with no positional names the POSITIONAL, never a flag', async () => {
     const thrown = await rejectedBy(() => policyCommand.run(contextFor('explain', [])));
     expect(thrown).toBeUltimateError('X_CLI_BAD_FLAG');
+    expect(thrown.cause).toBe('"x policy explain" needs a <subject> positional and got none');
+    expect(thrown.cause).not.toContain('--');
     expect(thrown.fix).toBe('x policy list --json');
   });
 

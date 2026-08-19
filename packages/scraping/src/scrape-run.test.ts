@@ -12,6 +12,7 @@ import { t } from '@ultimat3/schema';
 import { testClock } from './clock';
 import { resetScrapeDriver } from './driver';
 import { fakeBrowser } from './driver-fake';
+import { authFailed, blocked } from './error-throws';
 import type { ScrapeDefinition, ScrapeReport } from './scrape';
 import { runScrape } from './scrape-run';
 import type { ScrapeSessionStore, SessionState } from './session-state';
@@ -159,5 +160,49 @@ describe('unit · a run with no driver at all says so', () => {
     // hunting for a driver called "orders" — the scrape's own name.
     expect(cause).toContain('scrape "orders"');
     expect(cause).not.toContain('named "orders"');
+  });
+});
+
+describe('unit · a failed session write never replaces the failure that caused it', () => {
+  /** Rejects the way object storage does: a 503, or `X_STORAGE_PATH_UNSAFE` on a tenant key. */
+  const brokenStore = (broken: 'save' | 'burn'): ScrapeSessionStore => ({
+    load: () => Promise.resolve(undefined),
+    save: () =>
+      broken === 'save' ? Promise.reject(new Error('s3: 503 slow down')) : Promise.resolve(),
+    burn: () =>
+      broken === 'burn' ? Promise.reject(new Error('s3: 503 slow down')) : Promise.resolve(),
+  });
+
+  const codeFrom = async (definition: ScrapeDefinition<{ page: number }, { id: string }>) => {
+    try {
+      await runScrape(definition, runArgs('org-1'));
+      return 'resolved';
+    } catch (thrown) {
+      return (thrown as { code?: string }).code;
+    }
+  };
+
+  test('a rejected markRefused leaves X_SCRAPE_AUTH_FAILED terminal, not a retryable store error', async () => {
+    // The whole incident: swapping the code makes the queue retry a credential the site already
+    // rejected, and there is no tombstone to stop it — the save is what failed.
+    const code = await codeFrom(
+      define({
+        auth: {
+          store: brokenStore('save'),
+          login: () => Promise.reject(authFailed('orders', 'the password was rejected')),
+        },
+      }),
+    );
+    expect(code).toBe('X_SCRAPE_AUTH_FAILED');
+  });
+
+  test('a rejected burnSession leaves X_SCRAPE_BLOCKED as the failure the queue classifies', async () => {
+    const code = await codeFrom(
+      define({
+        auth: { store: brokenStore('burn'), login: () => Promise.resolve() },
+        run: () => Promise.reject(blocked('orders', URL_A, 'captcha wall')),
+      }),
+    );
+    expect(code).toBe('X_SCRAPE_BLOCKED');
   });
 });

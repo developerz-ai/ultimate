@@ -117,8 +117,13 @@ export function defineFactory<TRow extends object, TTraits extends TraitMap<TRow
     number: () => Math.floor(random() * 1_000_000),
   };
 
+  // `Object.hasOwn`, not `traits[name] === undefined`: the plain read walked the prototype chain,
+  // so `f.with('toString')` was ACCEPTED and applied `Object.prototype.toString` — `overridesOf`
+  // called it with no receiver, got `"[object Undefined]"` and spread a string, producing a row
+  // with 18 numeric columns that `create()` then handed to `persistRow`. `f.with('constructor')`
+  // was accepted the same way and applied nothing at all.
   const assertTrait = (name: string): string => {
-    if (traits[name] === undefined) {
+    if (!Object.hasOwn(traits, name)) {
       throw new FactoryTraitUnknownError({ table: entity.table, trait: name, declared });
     }
     return name;

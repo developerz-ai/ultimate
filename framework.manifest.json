@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "5ca9f8f8e46f66c57c74bac0181e597cebf5deb2956935eea0b7fe10adda7883",
+  "buildId": "0811867c1cf00b63c789066004de085d7662e2974f8b78b991517771c85b3765",
   "tiers": {
     "0": [
       "core",
@@ -1929,6 +1929,11 @@
     },
     {
       "code": "X_SCRAPE_BLOCKED",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_BODY_TOO_LARGE",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
     },

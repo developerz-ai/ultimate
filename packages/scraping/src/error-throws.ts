@@ -204,6 +204,19 @@ export const httpFailed = (url: string, status: number, body: string): ScrapeErr
   });
 
 /**
+ * The body outgrew its cap. `AbortSignal.timeout` bounds TIME, not bytes — a 30s stream at 50MB/s
+ * is a 1.5GB allocation — so a hostile or merely paginated endpoint could OOM-kill the worker
+ * mid-run, taking every other job on it with it.
+ */
+export const bodyTooLarge = (url: string, readBytes: number, maxBytes: number): ScrapeError =>
+  new ScrapeError({
+    code: 'X_SCRAPE_BODY_TOO_LARGE',
+    cause: `${url} sent more than ${String(maxBytes)} bytes (${String(readBytes)} read before the read was cancelled)`,
+    fix: `raise the cap on this one call — http.request(url, { maxBytes: ${String(maxBytes * 2)} }) — or ask the endpoint for a page instead of the whole collection`,
+    meta: { url, readBytes, maxBytes },
+  });
+
+/**
  * TERMINAL, and the retry table cannot be talked out of it. A site that locks an account after
  * three wrong attempts turns a retrying framework into the thing that destroys the user's
  * account, so this failure ends the run — no backoff, no recovery hook, no second attempt.

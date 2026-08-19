@@ -78,11 +78,25 @@ export function redactSecrets(text: string, secrets: ScrapeSecrets | undefined):
   return out;
 }
 
-/** `<input type="password" value="hunter2">` -> `value=""`, whatever the value happened to be. */
+/** Every `<input …>` tag, whole, so the rewrite below never has to reason about attribute order. */
+const INPUT_TAG = /<input\b[^>]*>/gi;
+/** `type=password`, quoted either way or bare. */
+const PASSWORD_TYPE = /\btype\s*=\s*(?:"password"|'password'|password)(?=[\s/>])/i;
+const VALUE_ATTR = /\bvalue\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi;
+
+/**
+ * `<input type="password" value="hunter2">` -> `value=""`, whatever the value happened to be —
+ * and whatever ORDER the site wrote the attributes in.
+ *
+ * One regex over the whole tag required `type` to precede `value`, so `<input value="hunter2"
+ * type="password">` came through untouched. Attribute order is the site's choice, and
+ * `saveFailureArtifact` writes `page.html()` to object storage on every failed run: a
+ * server-rendered password on a reversed-attribute form was durably persisted. So: match the TAG
+ * first, then rewrite `value` inside it.
+ */
 export function blankPasswordFields(html: string): string {
-  return html.replaceAll(
-    /(<input\b[^>]*\btype\s*=\s*['"]?password['"]?[^>]*?)\bvalue\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi,
-    '$1value=""',
+  return html.replaceAll(INPUT_TAG, (tag) =>
+    PASSWORD_TYPE.test(tag) ? tag.replaceAll(VALUE_ATTR, 'value=""') : tag,
   );
 }
 
