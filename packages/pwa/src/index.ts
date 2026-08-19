@@ -29,6 +29,10 @@ export {
   PwaIconMissingError,
   PwaManifestInvalidError,
   PwaNoOfflineFallbackError,
+  // `staleWhileRevalidate` is public and throws this, so an app that catches it can name it. The
+  // two X_PWA_SYNC_* classes are not here on purpose: the emitted `sw.js` builds its own local
+  // class in a realm with no bundler, so no instance of theirs can ever reach an app.
+  PwaStrategyExhaustedError,
   SwScopeInvalidError,
 } from './errors';
 export type {

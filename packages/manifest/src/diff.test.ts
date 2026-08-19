@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import type { ManifestSources } from './build';
 import { buildManifest } from './build';
 import { diffManifest } from './diff';
+import { fixtureManifest } from './diff-fixtures';
 import type { Manifest } from './schema';
+import { ARRAY_SECTIONS } from './schema';
 import { verifyContract } from './verify';
 
 // `permissions` is what a rule matches on and `policy` is only the label it renders, so the
@@ -332,4 +334,50 @@ describe('the version gate', () => {
     });
     expect(() => verifyContract({ before, after })).toThrow();
   });
+});
+
+describe('queries', () => {
+  test('a changed cache tag is internal, the way an action’s invalidation list is', () => {
+    const before = buildManifest(base);
+    const after = withQueries([{ ...query('feed', 'feed:read'), cacheTags: ['post', 'feed'] }]);
+    const diff = diffManifest(before, after);
+    expect(diff.hasBreaking).toBe(false);
+    expect(diff.internal.map((c) => c.path)).toContain('queries.feed.cacheTags');
+  });
+});
+
+/**
+ * The rule `manifest/CLAUDE.md` states — "a new manifest field ⇒ a `diff.ts` rule for it" — as a
+ * failing test rather than a sentence. `ARRAY_SECTIONS` is the list `isManifest` already walks, so
+ * a section added to the schema with no classifier here has nowhere to hide: it needs a mutation
+ * in this table, and that mutation has to produce a change whose path names the section.
+ *
+ * Two whole sections and ten fields were unread when this was written, and every one of them
+ * reported the same thing: `[{ kind: 'internal', path: 'buildId' }]`, `hasBreaking: false`.
+ */
+describe('no section of the manifest is unread', () => {
+  const mutations: Readonly<Record<(typeof ARRAY_SECTIONS)[number], Partial<ManifestSources>>> = {
+    routes: { routes: [] },
+    entities: { entities: [] },
+    actions: { actions: [] },
+    queries: { queries: [] },
+    jobs: { jobs: [] },
+    tasks: { tasks: [] },
+    policies: { policies: [] },
+    // `permissions` is derived, so it moves by removing what declares it.
+    permissions: { policies: [], actions: [], queries: [] },
+    locales: { locales: [] },
+    errorCodes: { errorCodes: [] },
+  };
+
+  for (const section of ARRAY_SECTIONS) {
+    test(`emptying ${section} is classified, not waved through as a buildId change`, () => {
+      const diff = diffManifest(fixtureManifest(), fixtureManifest(mutations[section]));
+      const seen = diff.changes.filter(
+        (c) => c.path === section || c.path.startsWith(`${section}.`),
+      );
+      expect(seen.length).toBeGreaterThan(0);
+      expect(diff.changes.map((c) => c.path)).not.toEqual(['buildId']);
+    });
+  }
 });

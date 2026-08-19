@@ -58,9 +58,19 @@ whole mechanism.
 
 | Class | Examples |
 |---|---|
-| **breaking** | action/query/route/job/entity removed; input or output schema changed; policy changed; **an operation gained a required permission**; **a rate limit was tightened or introduced**; MCP exposure withdrawn; column removed, retyped, or made NOT NULL; live query became non-live |
-| **additive** | primitive added; nullable column added; a required permission dropped; a rate limit loosened or removed; MCP exposure granted; locale added |
-| **internal** | cache tags changed; render mode changed; job steps reordered; `buildId` |
+| **breaking** | action/query/route/job/**task**/entity/**policy**/**error code** removed; input or output schema changed; policy changed; **an operation gained a required permission**; **a policy gained an enforcement site**; **a rate limit was tightened or introduced**; MCP exposure withdrawn; column removed, retyped, or made NOT NULL; **a column's `primaryKey` or `references` changed in either direction**; **an entity's `table` renamed**; **an invariant added**; **a job's `queue` moved or its `retry.attempts` lowered**; **a route's `surface` changed**; live query became non-live |
+| **additive** | primitive added; nullable column added; a required permission dropped; an enforcement site dropped; **an invariant dropped**; a rate limit loosened or removed; **more retry attempts**; MCP exposure granted; locale added |
+| **internal** | cache tags changed (actions **and queries**); render mode changed; **a route's `offline`/`hydrate`/`budget`/`revalidateTags`**; **a task's `cron`/`tz`/`enqueues`**; **a job's `retry.backoff`**; job steps reordered; **an error code's owning package**; `buildId` |
+
+Every top-level section is classified, and that is checked rather than promised:
+`diff.test.ts` walks `ARRAY_SECTIONS` from `schema.ts` and fails on a section nothing reads. Two
+of them — `tasks` and `errorCodes` — were unread until 2026-08, along with ten fields, so deleting
+every scheduled task reported `internal buildId: content changed` and passed the gate.
+
+One classifier per section, each in its own file: `diff-operations.ts` (actions, queries,
+permissions), `diff-rate-limit.ts`, `diff-entities.ts`, `diff-work.ts` (jobs, tasks),
+`diff-routes.ts`, `diff-registries.ts` (policies, error codes), over the shared vocabulary in
+`diff-change.ts`. `diff.ts` is the orchestrator and nothing else.
 
 `verifyContract()` is the gate: a breaking change fails unless the app's **major** version
 moved. An unparseable version counts as "not bumped" — fail-closed.

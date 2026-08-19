@@ -411,7 +411,8 @@
       "name": "@ultimat3/pwa",
       "version": "3.0.0",
       "dependencies": {
-        "@ultimat3/core": "1.2.0",
+        "@ultimat3/core": "3.0.0",
+        "@ultimat3/seo": "3.0.0",
       },
     },
     "packages/query": {
@@ -463,7 +464,7 @@
       "name": "@ultimat3/seo",
       "version": "3.0.0",
       "dependencies": {
-        "@ultimat3/core": "1.2.0",
+        "@ultimat3/core": "3.0.0",
       },
     },
     "packages/storage": {

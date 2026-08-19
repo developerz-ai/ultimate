@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { CAPABILITY_SW_MARKERS } from './capabilities';
+import { CAPABILITIES, CAPABILITY_SW_MARKERS } from './capabilities';
 import { PwaNoOfflineFallbackError, SwScopeInvalidError } from './errors';
 import type { ServiceWorkerConfig } from './service-worker';
-import { generateServiceWorker } from './service-worker';
+import { assertScope, generateServiceWorker } from './service-worker';
 import type { PwaRoute } from './strategies';
 import { cacheNamespace } from './version-skew';
 
@@ -306,5 +306,113 @@ describe('the emitted install block, executed', () => {
 
     await sw.request('/pricing');
     expect(sw.fetched).toHaveLength(afterInstall);
+  });
+});
+
+/**
+ * A precache URL that already carries a query. `PrecacheAsset.url` is public API and a bundler
+ * emits `?v=<hash>` on its own, so `url+'?v='+revision` produced `...?locale=en?v=build-1`: a
+ * second `?` inside the query string. Either the server answers non-200 — and `cache.addAll` is
+ * all-or-nothing, so the whole `install` rejects and the worker never activates — or it answers
+ * 200 for a URL that is not the asset. Both are invisible in the emitted text.
+ */
+describe('a precache URL that already has a query', () => {
+  const queried: ServiceWorkerConfig = {
+    ...config,
+    assets: [
+      { url: '/_x/data/pricing.json?locale=en', revision: 'aaaa1111' },
+      { url: '/assets/app.js?v=deadbeef', revision: 'bbbb2222' },
+    ],
+  };
+
+  test('the revision is appended with & so the asset’s own query survives', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker([], queried, 'build-1').source);
+    await sw.install();
+
+    expect(sw.fetched).toContain('https://app.test/_x/data/pricing.json?locale=en&v=aaaa1111');
+    expect(sw.fetched).toContain('https://app.test/assets/app.js?v=deadbeef&v=bbbb2222');
+    // The shape that shipped: a query string holding a second `?`.
+    expect(sw.fetched.filter((url) => url.includes('?v=aaaa1111'))).toEqual([]);
+  });
+
+  test('the entry is still re-keyed under the URL the strategies look up', async () => {
+    const sw = swHarness();
+    sw.load(generateServiceWorker([], queried, 'build-1').source);
+    await sw.install();
+
+    const cache = sw.caches.get(cacheNamespace('build-1', 'precache'));
+    expect([...(cache?.entries.keys() ?? [])]).toContain(
+      'https://app.test/_x/data/pricing.json?locale=en',
+    );
+  });
+});
+
+/**
+ * A `swPath` with no `/` at all made `directory` the empty string, and `scope.startsWith('')` is
+ * true for every scope — so the one check that catches "why is my PWA not working" passed
+ * vacuously for the config most likely to be wrong.
+ */
+describe('assertScope', () => {
+  test('a relative swPath is refused rather than silently accepted', () => {
+    expect(() => assertScope('sw.js', '/admin/')).toThrow(SwScopeInvalidError);
+    expect(() => assertScope('assets/sw.js', '/')).toThrow(SwScopeInvalidError);
+  });
+
+  test('the refusal names the absolute form to serve it from', () => {
+    let fix = '';
+    try {
+      assertScope('sw.js', '/admin/');
+    } catch (error) {
+      fix = String((error as { fix?: unknown }).fix);
+    }
+    expect(fix).toContain('/admin/sw.js');
+  });
+
+  test('an absolute path at or above the scope still passes', () => {
+    expect(() => assertScope('/sw.js', '/')).not.toThrow();
+    expect(() => assertScope('/sw.js', '/admin/')).not.toThrow();
+    expect(() => assertScope('/admin/sw.js', '/admin/')).not.toThrow();
+  });
+});
+
+/**
+ * The marker table is a CLAIM about the emitted worker — "this capability ships these bytes" — and
+ * until it was checked in both directions it could name code the generator does not write:
+ * `shareTarget` listed `/_x/share-target`, which no block has ever emitted, so an installed app
+ * declared itself a share target with nothing behind it. A capability with an empty marker list is
+ * the honest way to say "manifest member only", the way `fileHandlers` already does.
+ */
+describe('CAPABILITY_SW_MARKERS against the worker it describes', () => {
+  const all: ServiceWorkerConfig = {
+    ...config,
+    capabilities: {
+      push: true,
+      backgroundSync: true,
+      badging: true,
+      shareTarget: true,
+      fileHandlers: true,
+      protocolHandlers: true,
+    },
+  };
+
+  test('every marker a capability declares is in the worker when it is enabled', () => {
+    const source = generateServiceWorker(routes, all, 'build-1').source;
+    const missing = CAPABILITIES.flatMap((capability) =>
+      CAPABILITY_SW_MARKERS[capability]
+        .filter((marker) => !source.includes(marker))
+        .map((marker) => `${capability}: ${marker}`),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  test('none of them is in the worker when every capability is off', () => {
+    const source = generateServiceWorker(routes, config, 'build-1').source;
+    const leaked = CAPABILITIES.flatMap((capability) =>
+      CAPABILITY_SW_MARKERS[capability]
+        .filter((marker) => source.includes(marker))
+        .map((marker) => `${capability}: ${marker}`),
+    );
+    expect(leaked).toEqual([]);
   });
 });

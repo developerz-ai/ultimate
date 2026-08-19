@@ -158,8 +158,13 @@ export function isCompatible(manifest: { manifestVersion: number }): boolean {
   return manifest.manifestVersion === MANIFEST_VERSION;
 }
 
-/** Every top-level section the type declares as an array. Checked, never assumed. */
-const ARRAY_SECTIONS: readonly (keyof Manifest)[] = [
+/**
+ * Every top-level section the type declares as an array. Checked, never assumed — and exported
+ * because `diff.test.ts` walks it to prove each one is classified: a section added here with no
+ * rule in the diff is a failing test, which is the enforcement half of "a new manifest field ⇒ a
+ * diff rule for it".
+ */
+export const ARRAY_SECTIONS = [
   'routes',
   'entities',
   'actions',
@@ -170,7 +175,7 @@ const ARRAY_SECTIONS: readonly (keyof Manifest)[] = [
   'permissions',
   'locales',
   'errorCodes',
-];
+] as const satisfies readonly (keyof Manifest)[];
 
 /**
  * Structural check for a value read off disk, before it is trusted as a `Manifest`.
