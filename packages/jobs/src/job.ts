@@ -209,15 +209,20 @@ export function job<I>(definition: JobDefinition<I>): JobHandle<I> {
   // `withStepTimeout` reads `<= 0` as "no ceiling at all" and a poll of zero is a suspension that
   // resumes immediately, forever. Both are an author who asked for a limit and got the opposite,
   // so they are refused where they are written — the same answer `concurrency: 0` gets.
+  //
+  // FINITE, not merely positive: `> 0` admits `Infinity`, which is the same defect spelled the
+  // other way. `eventPoll: Infinity` parks a waiting step and schedules the poll that would wake
+  // it for never; `stepTimeout: Infinity` is a ceiling no step can reach. `NaN` fails `> 0` on its
+  // own, and is covered here so the predicate says what it means rather than passing by accident.
   assert(
-    stepTimeoutMs === undefined || stepTimeoutMs > 0,
+    stepTimeoutMs === undefined || (Number.isFinite(stepTimeoutMs) && stepTimeoutMs > 0),
     `job "${name}" declares stepTimeout ${String(definition.stepTimeout)}, which is no ceiling at all`,
-    `set a positive stepTimeout on job("${name}") — "30s" or 30_000 — or omit the field for no per-step ceiling`,
+    `set a finite positive stepTimeout on job("${name}") — "30s" or 30_000 — or omit the field for no per-step ceiling`,
   );
   assert(
-    eventPollMs === undefined || eventPollMs > 0,
+    eventPollMs === undefined || (Number.isFinite(eventPollMs) && eventPollMs > 0),
     `job "${name}" declares eventPoll ${String(definition.eventPoll)}, which parks a waiting step for no time at all`,
-    `set a positive eventPoll on job("${name}") — "5s" or 5_000 — or omit the field for the 30s default`,
+    `set a finite positive eventPoll on job("${name}") — "5s" or 5_000 — or omit the field for the 30s default`,
   );
 
   const handle: JobHandle<I> = {

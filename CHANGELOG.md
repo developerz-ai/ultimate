@@ -184,6 +184,23 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   `registerErrorStatus()` and `statusFor()` are unchanged. **Manual edit:** read your own
   registration module instead.
 
+- **BREAKING — `SyncSocket.lastSeenAt` is renamed `lastSeenMonotonicMs`**, and idle tracking now
+  reads `Clock.monotonic()` rather than the wall clock. An NTP correction otherwise either evicted
+  sockets that were actively talking (clock steps forward) or spared long-dead ones (steps
+  backward) — newly load-bearing, because this release wired the idle sweep for the first time.
+  The field is renamed rather than quietly re-based so that `new Date(socket.lastSeenAt)` becomes a
+  compile error instead of a silently wrong date. `openedAt` stays wall-clock: a human reads it.
+  **Manual edit:** rename the read; if you were formatting it as a date, you were already wrong.
+
+- **BREAKING — `SQL_OUTBOX_RELEASE` and `SQL_OUTBOX_MARK_PUBLISHED` take one more parameter each**
+  (1 → 2 and 2 → 3): the claimant, so both are fenced on `claimed_by`. Without it a relay whose
+  lease had already lapsed could release rows a **newer** claimant was actively publishing, letting
+  a third relay claim them mid-batch — the same duplicate the claim lease exists to prevent.
+  `SQL_OUTBOX_MARK_PUBLISHED` also gains `published_at is null`, which it never had, making the
+  stamp first-writer-wins instead of rewriting an audit timestamp. **Manual edit:** pass the
+  claimant; `OutboxStore.release`/`markPublished` take it as an optional trailing argument, so a
+  store that does not fence still compiles.
+
 - **BREAKING — `SocketRegistry.sweepIdle()` is replaced by `idle()`**, which returns the sockets past
   the budget and removes nothing. The old method had no caller anywhere, so `idleTimeoutMs` (120s)
   configured nothing and `SyncSocket.touch()`/`idleFor` existed for a dead path — and wiring it as
@@ -254,9 +271,16 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   is new and optional — without it the lease would turn a one-tick pool blip into a 30-second stall
   of all committed work, a failure mode the fix would otherwise have introduced.
 
+  The claim's sort key is now total — `order by staged_at, id` — because rows staged in one
+  transaction share a `staged_at` and a tie left the batch composition arbitrary. `id` is a UUIDv7
+  primary key, monotonic and bytewise-comparable, so the tiebreak *is* stage order and **no DDL was
+  needed** for it.
+
   **What is proven and what is argued**, because the difference matters here: that
   `for update skip locked` fences nothing outside a transaction is Postgres semantics and is
-  demonstrated; that the second publish lands *after* the first job reached a terminal state is a
+  demonstrated; the ownership fence and the total order are proven as statement text plus the
+  parameters the store binds, and behaviourally in the memory store, which is built to answer the
+  same question. That the second publish lands *after* the first job reached a terminal state is a
   timing argument, not reproduced — it needs two worker processes and a live server.
 
 - **`drain()` closed every socket without releasing anything it held.** It inlined three of

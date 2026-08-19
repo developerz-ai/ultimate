@@ -90,6 +90,10 @@ describe('defineAuth', () => {
       defineAuth({ adapter: new MemoryAdapter(), mfa: declared }),
     );
     expect(error?.code).toBe('X_CONFIG_INVALID');
+    // NAMES THE KEY, because the field exists — `README.md` says so, and an upgrader arriving
+    // from a config that set it must read a refusal about `required`, not an unknown-key error
+    // about a field that was deleted.
+    expect(error?.cause).toContain('required');
     // The fix has to be executable: it names the check an app writes instead.
     expect(error?.fix).toContain('mfaSecret');
   });

@@ -220,6 +220,12 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   newest spent step ascending with a least-recently-seen tie-break — the subject who just proved a
   code is always the last one out. Same shape as the limiter's "a live lockout outranks its own
   deadline". `remember` re-files its subject so the map's iteration order IS that tie-break.
+  `maxSubjects` is **normalised before any of that arithmetic runs** (`boundedSubjects`): the cap
+  ran on the caller's number unchecked, so `Infinity` left the table exactly as unbounded as it was
+  before it was capped, and `NaN` — every comparison against which is false — made the eviction
+  loop's `used.size <= evictTo` never true, emptying the table on the first sweep and handing back
+  a replay of the code the subject had just spent. Anything that is not a positive finite integer
+  takes `DEFAULT_MAX_TOTP_SUBJECTS`; a fraction still floors.
 - SAML is out of scope permanently: XML-DSig canonicalisation has no Bun native and would need a
   real dependency. Put an OIDC-speaking bridge in front and register that.
 

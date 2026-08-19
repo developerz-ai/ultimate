@@ -121,6 +121,28 @@ describe('the declaration reaches the handle', () => {
       }),
     ).toThrow(/stepTimeout/);
   });
+
+  test.each([
+    ['stepTimeout', Number.POSITIVE_INFINITY],
+    ['stepTimeout', Number.NaN],
+    ['eventPoll', Number.POSITIVE_INFINITY],
+    ['eventPoll', Number.NaN],
+  ])('a non-finite %s is refused too, not carried into the runner', (field, value) => {
+    // `> 0` lets `Infinity` through, and `eventPoll: Infinity` is a suspension that resumes never:
+    // the run parks and the poll that would wake it is scheduled past the end of the universe.
+    // A ceiling of `Infinity` is the `stepTimeout: 0` bug spelled the other way round.
+    expect(() =>
+      job<{ n: number }>({
+        tenant: 'none',
+        name: `non-finite-${field}-${String(value)}`,
+        input: passthrough<{ n: number }>(),
+        idempotencyKey: () => 'non-finite',
+        retry: { attempts: 1 },
+        [field]: value,
+        run: () => Promise.resolve(),
+      }),
+    ).toThrow(new RegExp(field));
+  });
 });
 
 describe('the per-step ceiling actually stops a step', () => {

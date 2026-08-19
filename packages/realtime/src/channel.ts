@@ -313,7 +313,11 @@ export class ChannelHub {
       throw new TransportUnavailableError({
         transport: 'channel',
         reason: `the hub closed while "${name}" was opening`,
-        fix: 'reconnect and resubscribe — this node is draining',
+        // The reader is a browser websocket client, which cannot run a CLI — so pure command
+        // advice would be worse than prose here. The shape that satisfies axiom 4 anyway is
+        // `http/src/error-map.ts`'s: a command that SHIPS (`x errors explain`, unlike the planned
+        // `x logs tail`) for whoever is holding a terminal, then the instruction as a comment.
+        fix: 'x errors explain X_TRANSPORT_UNAVAILABLE --json   # then reconnect and resubscribe: this node is draining',
       });
     }
   }

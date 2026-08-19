@@ -140,7 +140,7 @@ describe('the per-socket frame budget', () => {
       sessionId: null,
       actorId: null,
     });
-    const touchedAt = socket.lastSeenAt;
+    const touchedAt = socket.lastSeenMonotonicMs;
     await expect(
       route({
         type: 'hello',
@@ -150,7 +150,7 @@ describe('the per-socket frame budget', () => {
         actorId: null,
       }),
     ).rejects.toMatchObject({ code: 'X_FRAME_RATE_LIMIT' });
-    expect(socket.lastSeenAt).toBe(touchedAt);
+    expect(socket.lastSeenMonotonicMs).toBe(touchedAt);
   });
 
   test('the default burst admits a client subscribing its whole per-socket cap at once', () => {

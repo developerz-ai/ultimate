@@ -6,6 +6,7 @@ import {
   base32Decode,
   base32Encode,
   createTotpReplayGuard,
+  DEFAULT_MAX_TOTP_SUBJECTS,
   enrolTotp,
   generateRecoveryCodes,
   redeemRecoveryCode,
@@ -135,6 +136,51 @@ describe('the replay guard table', () => {
     expect(guard.isUsed('d', step)).toBe(true);
     // The least recently seen is the first one out.
     expect(guard.isUsed('a', step)).toBe(false);
+  });
+
+  /**
+   * `maxSubjects` is the caller's number and the cap arithmetic ran on it unchecked, so the two
+   * values JavaScript hands you when a config read goes wrong each defeat the bound in their own
+   * way — one silently, one catastrophically. Both fall back to the default now.
+   */
+  describe('a maxSubjects that is not a positive finite integer', () => {
+    test('Infinity does not disable the bound it was passed as', () => {
+      const guard = createTotpReplayGuard(TOTP_DRIFT_STEPS, Number.POSITIVE_INFINITY);
+      const step = totpStep(AT);
+      // One past the default, at a single step so nothing is forgotten by drift: the only thing
+      // that can hold this table down is the cap.
+      for (let index = 0; index <= DEFAULT_MAX_TOTP_SUBJECTS; index += 1) {
+        guard.remember(`subject-${index}`, step, AT);
+      }
+
+      // `used.size > Infinity` is never true, so this is the exact unbounded map the cap exists
+      // to prevent — reintroduced by a caller who meant "no limit".
+      expect(guard.size).toBeLessThanOrEqual(DEFAULT_MAX_TOTP_SUBJECTS);
+    });
+
+    test('NaN does not make the guard forget the code it just accepted', () => {
+      const guard = createTotpReplayGuard(TOTP_DRIFT_STEPS, Number.NaN);
+      const step = totpStep(AT);
+      guard.remember('alice', step, AT);
+
+      // Every comparison against NaN is false, so `used.size <= evictTo` never stops the eviction
+      // loop and the sweep empties the table — including the subject who just authenticated.
+      // That is a replay of the six digits still on their screen, not merely a lost bound.
+      expect(guard.isUsed('alice', step)).toBe(true);
+      expect(guard.size).toBe(1);
+    });
+
+    test('zero is a misread config, not an instruction to remember one subject', () => {
+      const guard = createTotpReplayGuard(TOTP_DRIFT_STEPS, 0);
+      const step = totpStep(AT);
+      guard.remember('alice', step, AT);
+      guard.remember('bob', step, AT);
+
+      // `Math.max(1, 0)` made the table hold exactly one subject, so alice's live step became
+      // replayable the moment bob signed in.
+      expect(guard.isUsed('alice', step)).toBe(true);
+      expect(guard.size).toBe(2);
+    });
   });
 });
 

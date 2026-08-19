@@ -22,7 +22,7 @@ import {
   SQL_OUTBOX_STAGE,
 } from './driver-pg-sql';
 import type { OutboxRecord, OutboxStore } from './outbox';
-import { DEFAULT_OUTBOX_CLAIM_LEASE_MS } from './outbox';
+import { resolveClaimLeaseMs } from './outbox-lease';
 
 interface OutboxRow {
   readonly id: string;
@@ -36,6 +36,7 @@ interface OutboxRow {
   readonly tenant_id: string | null;
   readonly traceparent: string | null;
   readonly enqueued_by: string | null;
+  readonly claimed_by?: string | null;
 }
 
 export interface PgOutboxOptions {
@@ -57,7 +58,14 @@ export interface PgOutboxOptions {
    * through `release`.
    */
   readonly claimLeaseMs?: number;
-  /** Written to `claimed_by`. Diagnostics — which relay is sitting on a batch. */
+  /**
+   * Written to `claimed_by`, and read back as the FENCE on `release` and `markPublished` — so it
+   * must be UNIQUE PER PROCESS. Two replicas passing one literal are one claimant to Postgres, and
+   * each can then release or retire the other's live batch. Omit it: the default is
+   * `relay-<uuid>`, minted once per store, which is unique by construction. Diagnostics second —
+   * it is what an operator reads to see which relay is sitting on a batch, and a value that
+   * changed every tick would answer nobody.
+   */
   readonly relayId?: string;
 }
 
@@ -74,6 +82,7 @@ function toRecord(row: OutboxRow): OutboxRecord {
     ...(row.tenant_id === null ? {} : { tenantId: row.tenant_id }),
     ...(row.traceparent === null ? {} : { traceparent: row.traceparent }),
     ...(row.enqueued_by === null ? {} : { enqueuedBy: row.enqueued_by }),
+    ...(typeof row.claimed_by === 'string' ? { claimedBy: row.claimed_by } : {}),
   };
 }
 
@@ -85,7 +94,11 @@ export function createPgOutboxStore(options: PgOutboxOptions): OutboxStore {
   const key = (tx: Tx): object => tx as unknown as object;
   // One id per store, minted here rather than per claim: `claimed_by` is read by an operator
   // asking which relay is sitting on a batch, and a value that changed every tick answers nobody.
+  // Per-store is also the granularity the fence needs — two relays are two processes, two stores.
   const relayId = options.relayId ?? `relay-${uuid()}`;
+  // Resolved once, at construction, so a lease this store could never honour fails where it was
+  // written instead of inside a relay tick whose only trace is a log line nobody reads.
+  const claimLeaseMs = resolveClaimLeaseMs(options.claimLeaseMs);
 
   return {
     async stage(tx, record) {
@@ -137,19 +150,31 @@ export function createPgOutboxStore(options: PgOutboxOptions): OutboxStore {
     async claim(limit) {
       const rows = await options.executor.query<OutboxRow>(SQL_OUTBOX_CLAIM, [
         limit,
-        options.claimLeaseMs ?? DEFAULT_OUTBOX_CLAIM_LEASE_MS,
+        claimLeaseMs,
         relayId,
       ]);
       return rows.map(toRecord);
     },
 
-    async release(ids) {
+    /**
+     * Fenced on the CLAIMANT, not only on the ids. A relay that stalled past its lease wakes into
+     * a world where its batch belongs to another relay, and an unfenced release frees rows that
+     * relay is mid-publish on — a third relay claims them and publishes them again. `relayId` is
+     * the fallback because it is what this store stamped: a caller with no token is this store's
+     * own relay, and one holding somebody else's token could not have got it from here.
+     */
+    async release(ids, claimant) {
       if (ids.length === 0) return;
-      await options.executor.query(SQL_OUTBOX_RELEASE, [ids]);
+      await options.executor.query(SQL_OUTBOX_RELEASE, [ids, claimant ?? relayId]);
     },
 
-    async markPublished(id, at) {
-      await options.executor.query(SQL_OUTBOX_MARK_PUBLISHED, [id, at || nowMs(options.clock)]);
+    /** Same fence, and worse to miss: marking a row published is losing the job behind it. */
+    async markPublished(id, at, claimant) {
+      await options.executor.query(SQL_OUTBOX_MARK_PUBLISHED, [
+        id,
+        at || nowMs(options.clock),
+        claimant ?? relayId,
+      ]);
     },
 
     async pendingCount() {

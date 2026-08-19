@@ -371,7 +371,10 @@ wire twice by a reconnect that raced an ack.
   `teardown`, never `SocketRegistry.remove`. `SocketRegistry.idle()` is a *query* for that reason:
   the socket table is three of the five things a socket holds, and the other two are its live
   subscriptions and its presence membership on the shared set. `sweepIdle` — which closed and
-  removed here, and had no caller at all — is gone.
+  removed here, and had no caller at all — is gone. The budget is measured on `Clock.monotonic()`,
+  so `SyncSocket.lastSeenMonotonicMs` is a duration's start and not an instant: an NTP step forward
+  would otherwise evict every socket that is talking, and a step backward would spare every socket
+  that is dead. `openedAt` stays on the wall clock — it is a value a human reads.
 - **A `sync` node shuts down in two phases.** The `accept` phase calls `stopAccepting()`: `/readyz`
   answers 503 and a late upgrade is shed with `retry-after-ms`, while **every socket the node holds
   keeps its patch stream**. The `close` phase is `drain()` then `stop()`. Registered with no phase it

@@ -439,13 +439,39 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   semantics; the second-publish-after-terminal ordering was argued, never reproduced — say it that
   way, in a comment or a changelog. The claim now stamps `claimed_at`/`claimed_by` in the same
   statement that locks (the CTE shape `SQL_CLAIM` already used), and the outer
-  `select ... order by staged_at` is load-bearing: `update ... returning` has no defined row order
-  and the relay publishes in the order it is handed rows. `claimed_at` is a LEASE and not a flag —
-  without a reclaim window a relay that died mid-batch strands its rows forever — and
+  `select ... order by staged_at, id` is load-bearing: `update ... returning` has no defined row
+  order and the relay publishes in the order it is handed rows. `claimed_at` is a LEASE and not a
+  flag — without a reclaim window a relay that died mid-batch strands its rows forever — and
   `OutboxStore.release` (optional, so a store written before this still compiles) hands back the
   batch a failed publish stopped, or one pool blip would park committed work for a whole lease
   window instead of one poll interval. `createMemoryOutboxStore` answers the SAME question, on an
   injected clock, and `outbox-claim.test.ts` pins the two side by side.
+- **The lease is fenced on EVERY outbox mutation, and the sort key is TOTAL** (`As of 2026-08`).
+  Two holes the first version of the lease left open, both reachable without a second relay
+  process. `SQL_OUTBOX_RELEASE` and `SQL_OUTBOX_MARK_PUBLISHED` matched on `id` alone, so a relay
+  that stalled past its own lease still spoke for rows another relay had reclaimed: its late
+  `release` unclaimed a batch mid-publish (a third relay claims it, publishes it again — the
+  duplicate the lease exists to prevent, reached the long way round) and its late `markPublished`
+  retired a row nobody had published, losing the job with nothing to notice. Both now carry
+  `and claimed_by = $n`, `claim()` hands the token back as `OutboxRecord.claimedBy`, and the relay
+  passes it to both calls. `markPublished` also gained `published_at is null`, so the stamp is
+  first-writer-wins rather than a rewrite of an audit timestamp. The memory store fences the same
+  way — per CLAIM there rather than per relay, because two relays there are two `claim()` calls on
+  ONE store, and a per-store id could not tell them apart. `undefined` is unfenced in both, for the
+  reason `release` is optional: a caller holding no token is one written before the fence.
+  **`order by staged_at` was not a total order**: every row staged in one transaction shares a
+  `staged_at`, so the tie was the planner's to break — which rows the `limit` takes, and in which
+  order they publish, differed between two relays and between two runs of one. `, id` fixes it in
+  the CTE and in the projection, and needed NO DDL: `id` is a UUIDv7 minted by `uuid()`, monotonic
+  and already the primary key, so the tiebreak IS stage order. `byClaimOrder` in `outbox.ts` is the
+  memory store's copy of that key.
+- **`claimLeaseMs` is normalised in ONE place — `outbox-lease.ts`** (`As of 2026-08`). Both stores
+  call `resolveClaimLeaseMs`, which owns `DEFAULT_OUTBOX_CLAIM_LEASE_MS` and refuses anything that
+  is not a positive whole number of ms with `X_INVARIANT` (the generic, no new code: same borrow
+  `@ultimat3/db` makes). A memory default and a pg default that could drift are two answers to
+  "how long is a claim mine for", and the shorter one publishes a row twice. `0` expires before
+  `claim()` resolves and `Infinity` never expires, so both are refused at CONSTRUCTION, not at the
+  first tick where the only trace is a log line.
 - **A renewal is decided against `stopped()`, not only against the interval** (`As of 2026-08`).
   `renewal-timer.ts` is the one shape, read by `heartbeat.ts` and `worker-fleet-slots.ts`, and it
   exists because both files reported a LOSS for a job that had finished cleanly: `stop()` cleared
@@ -583,6 +609,7 @@ picture from the other side.
 | `steps.ts` | `StepStore`, `StepApi`, memoized-replay executor, `StepSuspension` |
 | `outbox.ts` | staging in a `Tx`, the relay, the ambient `JobsFacade` slot |
 | `outbox-pg.ts` | `createPgOutboxStore` — `stage()` on the caller's OWN connection, claim on the pool |
+| `outbox-lease.ts` | the claim lease's one definition and its one normalisation, for both stores |
 | `leases.ts` | `LeaseStore` — fleet-wide slots, the memory one, `jobLeaseKey` |
 | `metrics.ts` | `queue_oldest_ready_seconds` and `queue_dead_jobs`, the two alertable gauges |
 | `scheduler-pg.ts` | `pgSchedulerState` (the durable watermark) + `createPgLeaseLeader` |

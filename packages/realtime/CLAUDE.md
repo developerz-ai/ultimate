@@ -177,7 +177,13 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   the object that can evict one is the node and not the registry. `start()` arms one `.unref()`ed
   pass every `idleSweepPeriodMs(idleTimeoutMs)` — a quarter of the budget, floored at a second,
   derived rather than configured because a second knob is a second number that can disagree with
-  the one it is a fraction of — and `release()` clears it beside the presence sweep.
+  the one it is a fraction of — and `release()` clears it beside the presence sweep. **It measures
+  on `Clock.monotonic()`**, the clock `AcceptBudget` already uses: the sweep compares a DURATION,
+  and a duration read off `now().getTime()` is decided by whatever NTP last wrote — a step forward
+  evicts every socket that is talking, a step backward makes `idleFor` negative and spares every
+  socket that is dead, and the sweep had only just gained its first caller when both became
+  reachable. The field is named `lastSeenMonotonicMs` so nobody hands it to `new Date()`;
+  `openedAt` is the wall-clock one and stays that way, because a human reads it.
 - **`drain()` and `stop()` both release what `start()` acquired, and releasing twice is a no-op.**
   A `drain()` is terminal on its own — it closes the hub and evicts every socket — and nothing
   obliges a `stop()` to follow it, so leaving the change subscription and the presence sweep to

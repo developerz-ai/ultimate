@@ -10,7 +10,7 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import type { Tx } from '@ultimat3/entity';
 import type { PgExecutor } from './driver-pg';
-import { SQL_OUTBOX_CLAIM, SQL_OUTBOX_RELEASE } from './driver-pg-sql';
+import { SQL_OUTBOX_CLAIM, SQL_OUTBOX_MARK_PUBLISHED, SQL_OUTBOX_RELEASE } from './driver-pg-sql';
 import type { OutboxRecord } from './outbox';
 import { createMemoryOutboxStore } from './outbox';
 import { createPgOutboxStore } from './outbox-pg';
@@ -86,13 +86,91 @@ describe('the memory store claims a row, it does not merely read it', () => {
     const clock = frozenClock(0);
     const store = await committed(clock, ['row-a']);
 
-    await store.claim(10);
-    await store.markPublished('row-a', 0);
+    const [claimed] = await store.claim(10);
+    await store.markPublished('row-a', 0, claimed?.claimedBy);
     clock.advance(LEASE_MS * 2);
 
     expect(await store.claim(10)).toEqual([]);
     expect(await store.pendingCount()).toBe(0);
     expect(store.retained()).toBe(0);
+  });
+});
+
+describe('a lapsed claimant may not touch the rows a newer one holds', () => {
+  test('a stale release does NOT unclaim the batch the new claimant is publishing', async () => {
+    const clock = frozenClock(0);
+    const store = await committed(clock, ['row-a', 'row-b']);
+
+    // T0 relay A claims. T1 A stalls past the whole window. T2 relay B reclaims and starts
+    // publishing. T3 A wakes on a publish failure and hands ITS batch back.
+    const a = await store.claim(10);
+    clock.advance(LEASE_MS);
+    const b = await store.claim(10);
+    expect(b.map((record) => record.id)).toEqual(['row-a', 'row-b']);
+
+    await store.release?.(
+      a.map((record) => record.id),
+      a[0]?.claimedBy,
+    );
+
+    // Unfenced, A's release freed rows B is mid-batch on, and relay C claims them: the duplicate
+    // publish the lease exists to prevent, reached the long way round.
+    expect(await store.claim(10)).toEqual([]);
+    expect(await store.pendingCount()).toBe(2);
+  });
+
+  test('a stale markPublished does NOT retire a row the new claimant has not published', async () => {
+    const clock = frozenClock(0);
+    const store = await committed(clock, ['row-a']);
+
+    const a = await store.claim(10);
+    clock.advance(LEASE_MS);
+    const b = await store.claim(10);
+
+    await store.markPublished('row-a', clock.now().getTime(), a[0]?.claimedBy);
+
+    // Unfenced this loses the row outright: A never published it and B is only about to.
+    expect(await store.pendingCount()).toBe(1);
+    expect(store.retained()).toBe(1);
+
+    // And the holder's own mark still lands.
+    await store.markPublished('row-a', clock.now().getTime(), b[0]?.claimedBy);
+    expect(await store.pendingCount()).toBe(0);
+  });
+
+  test('the holder may still release its own batch — the fence is ownership, not a freeze', async () => {
+    const clock = frozenClock(0);
+    const store = await committed(clock, ['row-a']);
+
+    const a = await store.claim(10);
+    await store.release?.(['row-a'], a[0]?.claimedBy);
+
+    expect((await store.claim(10)).map((record) => record.id)).toEqual(['row-a']);
+  });
+});
+
+describe('the claim order is TOTAL, so two relays compose the same batch', () => {
+  test('rows sharing a staged_at claim in id order, every time', async () => {
+    const clock = frozenClock(0);
+    const store = createMemoryOutboxStore({ clock, claimLeaseMs: LEASE_MS });
+    const open = tx('tx-1');
+    // One transaction: `stagedAt` is stamped once per enqueue from the same clock reading, so
+    // every row in it ties. Staged out of id order, which is what makes the tie observable.
+    await store.stage(open, row('row-b', 5));
+    await store.stage(open, row('row-a', 5));
+    await store.commit(open);
+
+    const first = await store.claim(10);
+    await store.release?.(
+      first.map((record) => record.id),
+      first[0]?.claimedBy,
+    );
+    const second = await store.claim(10);
+
+    // `id` is a UUIDv7 in every real row — minted by `uuid()`, monotonic — so the tiebreak is
+    // stage order and not an arbitrary one, and it needs no column that is not already there.
+    expect(first.map((record) => record.id)).toEqual(['row-a', 'row-b']);
+    expect(second.map((record) => record.id)).toEqual(['row-a', 'row-b']);
   });
 });
 
@@ -106,13 +184,24 @@ describe('the pg statement answers the same question', () => {
     expect(SQL_OUTBOX_CLAIM).toContain('claimed_at is null');
     // `update ... returning` has no defined row order and the relay publishes in the order it is
     // handed rows — an app staging `createInvoice` then `chargeCard` in one transaction.
-    expect(SQL_OUTBOX_CLAIM.trimEnd().endsWith('order by staged_at')).toBe(true);
+    expect(SQL_OUTBOX_CLAIM.trimEnd().endsWith('order by staged_at, id')).toBe(true);
+    // And the same TOTAL key inside the CTE: `staged_at` alone ties for every row staged in one
+    // transaction, so which rows a `limit` takes would be the planner's choice, not an order.
+    expect(SQL_OUTBOX_CLAIM.match(/order by staged_at, id/g)).toHaveLength(2);
   });
 
-  test('the release is fenced on `published_at is null`', () => {
-    // It may never unclaim a row another pass already published.
+  test('the release is fenced on `published_at is null` AND on the claimant', () => {
+    // It may never unclaim a row another pass already published — nor one a NEWER claimant now
+    // holds: a relay whose lease lapsed mid-batch would otherwise free rows another is publishing.
     expect(SQL_OUTBOX_RELEASE).toContain('published_at is null');
     expect(SQL_OUTBOX_RELEASE).toContain('set claimed_at = null');
+    expect(SQL_OUTBOX_RELEASE).toContain('claimed_by = $2');
+  });
+
+  test('the mark is fenced on the claimant too, so a stale relay cannot retire a live row', () => {
+    // Marking published is losing the row: the relay that holds it has not published it yet.
+    expect(SQL_OUTBOX_MARK_PUBLISHED).toContain('claimed_by = $3');
+    expect(SQL_OUTBOX_MARK_PUBLISHED).toContain('published_at is null');
   });
 
   test('the store passes the lease window and a claimant with the limit', async () => {
@@ -132,9 +221,15 @@ describe('the pg statement answers the same question', () => {
 
     await store.claim(25);
     await store.release?.(['row-a']);
+    await store.markPublished('row-a', 9_000);
 
     expect(calls[0]).toEqual({ sql: SQL_OUTBOX_CLAIM, params: [25, LEASE_MS, 'relay-7'] });
-    expect(calls[1]).toEqual({ sql: SQL_OUTBOX_RELEASE, params: [['row-a']] });
+    // The claimant rides on every mutation, not only on the claim: the fence is in the WHERE.
+    expect(calls[1]).toEqual({ sql: SQL_OUTBOX_RELEASE, params: [['row-a'], 'relay-7'] });
+    expect(calls[2]).toEqual({
+      sql: SQL_OUTBOX_MARK_PUBLISHED,
+      params: ['row-a', 9_000, 'relay-7'],
+    });
   });
 
   test('release with no ids issues no statement at all', async () => {

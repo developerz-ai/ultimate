@@ -126,7 +126,13 @@ export class SyncSocket {
   readonly frameBudget: AcceptBudget;
 
   actor: Actor | null;
-  lastSeenAt: number;
+  /**
+   * MONOTONIC milliseconds, not an instant — the idle sweep measures a duration, and a duration
+   * read off the wall clock is decided by whatever NTP last wrote. A step forward evicts sockets
+   * that are talking; a step backward makes `idleFor` negative and spares sockets that are dead.
+   * Named for the units so nobody hands it to `new Date()`; `openedAt` is the wall-clock one.
+   */
+  lastSeenMonotonicMs: number;
   droppedFrames = 0;
   sentFrames = 0;
 
@@ -150,8 +156,10 @@ export class SyncSocket {
       burst: options.frameBurst ?? DEFAULT_FRAME_BURST,
       clock: this.#clock,
     });
+    // Two clocks on purpose: `openedAt` is an instant a human reads, `lastSeenMonotonicMs` is the
+    // start of a duration only this process compares.
     this.openedAt = this.#clock.now().getTime();
-    this.lastSeenAt = this.openedAt;
+    this.lastSeenMonotonicMs = this.#clock.monotonic();
   }
 
   get actorId(): string | null {
@@ -206,11 +214,12 @@ export class SyncSocket {
   }
 
   touch(): void {
-    this.lastSeenAt = this.#clock.now().getTime();
+    this.lastSeenMonotonicMs = this.#clock.monotonic();
   }
 
-  idleFor(now: number): number {
-    return now - this.lastSeenAt;
+  /** `nowMonotonicMs` comes from the SAME clock — `Clock.monotonic()`, never `now().getTime()`. */
+  idleFor(nowMonotonicMs: number): number {
+    return nowMonotonicMs - this.lastSeenMonotonicMs;
   }
 
   close(code: number = CLOSE.normal, reason = ''): void {
@@ -343,7 +352,9 @@ export class SocketRegistry {
    * releases each one the way the close callback does.
    */
   idle(): SyncSocket[] {
-    const now = this.#clock.now().getTime();
+    // Monotonic, because this is the one comparison an operator's clock could otherwise decide:
+    // `sync-node` hands this registry and every socket it builds the same `Clock`.
+    const now = this.#clock.monotonic();
     return [...this.#sockets.values()].filter(
       (socket) => socket.idleFor(now) > this.#idleTimeoutMs,
     );

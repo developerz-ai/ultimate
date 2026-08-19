@@ -11,7 +11,7 @@ export const auth = defineAuth({
   adapter: new BuiltinAdapter(),          // or MemoryAdapter, or your Better Auth binding
   session: { absoluteTtlMs: 30 * 864e5, idleTtlMs: 7 * 864e5 },
   password: { minLength: 12 },
-  mfa: { issuer: 'Acme' },                // the name an authenticator app shows; no `required` key
+  mfa: { issuer: 'Acme' },                // the authenticator app's name; `required` only as `false`
   providers: ['github', 'google'],
   link: 'verified-email',                 // the default; `'never'` is the only other value
 });
@@ -262,11 +262,14 @@ evict live state, furthest from the live window first. The order is the guarante
 subject makes a step they have already spent replayable, so the subject who just authenticated is
 always the last one out.
 
-**`mfa.required` does not exist, and that is deliberate.** The field is typed as the literal
-`false` and `defineAuth` refuses a `true` reaching it from JavaScript or from JSON
-(`X_CONFIG_INVALID`): both credential paths branch on `user.mfaSecret` alone, so an un-enrolled
-user would be handed a full session under it, and refusing them at `login()` instead would lock
-them out of an enrolment route this package does not ship. Gate it in your own sign-in handler —
+**`mfa.required` is accepted only as `false`, and that is deliberate.** The field exists and is
+typed as the literal `false`, so `required: true` is a compile error; a `true` that reaches
+`defineAuth` from JavaScript or from JSON — where the type cannot — is refused at boot with
+`X_CONFIG_INVALID` naming the key, never an unknown-key error and never a silent accept. Nothing
+read it: both credential paths branch on `user.mfaSecret` alone, so an un-enrolled user was handed
+a full session under a config that read as "this deployment requires a second factor". Enforcing it
+at `login()` instead is a lockout — `actorFromUser` degrades only a user who HAS a secret, and this
+package ships no enrolment route to send the rest to. Gate it in your own sign-in handler —
 `if (user.mfaSecret === null)` send them to `enrolTotp` before you call `createSession`.
 
 **The second leg of login is the app's, `As of 2026-08`.** `login()` and `completeOAuthLogin()`

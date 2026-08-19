@@ -175,6 +175,20 @@ export const DEFAULT_MAX_TOTP_SUBJECTS = 10_000;
 /** An idle guard still sweeps this often, so one burst's subjects do not sit until the next. */
 const SWEEP_EVERY_STEPS = 2;
 
+/**
+ * The cap arithmetic ran on the caller's number unchecked, and the two values a misread config
+ * hands you each defeated the bound in their own way: `Infinity` makes `used.size > cap` never
+ * true, so the table is exactly as unbounded as before it was capped; `NaN` makes EVERY comparison
+ * false, so `used.size <= evictTo` never stops the eviction loop and one sweep empties the table —
+ * including the subject who just authenticated, whose step is then replayable. Anything that is
+ * not a positive finite integer is a config the caller did not mean, so it takes the default
+ * rather than a bound derived from it. A fraction still floors: `2.5` is a caller who meant 2.
+ */
+function boundedSubjects(maxSubjects: number): number {
+  if (!Number.isFinite(maxSubjects) || maxSubjects < 1) return DEFAULT_MAX_TOTP_SUBJECTS;
+  return Math.floor(maxSubjects);
+}
+
 /** The last step this subject has spent — how close their entry still is to the live window. */
 const newestStep = (steps: ReadonlySet<number>): number => {
   let newest = Number.NEGATIVE_INFINITY;
@@ -202,7 +216,7 @@ export function createTotpReplayGuard(
   maxSubjects: number = DEFAULT_MAX_TOTP_SUBJECTS,
 ): MemoryTotpReplayGuard {
   const used = new Map<string, Set<number>>();
-  const cap = Math.max(1, Math.floor(maxSubjects));
+  const cap = boundedSubjects(maxSubjects);
   // Batched down to 90% of the cap so the sort below is paid once per 10% of it, not per check.
   const evictTo = Math.max(1, Math.floor(cap * 0.9));
   let lastSweepStep = Number.NEGATIVE_INFINITY;
