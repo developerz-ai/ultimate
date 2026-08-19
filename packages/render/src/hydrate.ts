@@ -5,7 +5,7 @@
  * answered instead of swallowed.
  */
 
-import { escapeJsonContent } from './html';
+import { escapeAttribute, escapeJsonContent } from './html';
 import type { HydrateStrategy } from './route';
 
 export interface IslandDirective {
@@ -34,14 +34,22 @@ export const DEFAULT_REPLAY_EVENTS = ['click', 'input', 'change', 'submit', 'key
  * runtime below is never emitted for that island.
  */
 export function emitIslandAttributes(directive: IslandDirective): string {
-  const attrs = [`data-x-island="${directive.islandId}"`, `data-x-hydrate="${directive.strategy}"`];
+  // `html.ts`'s escaper, not raw interpolation: a `"` in any of these values closes the attribute
+  // and the rest of the string is markup. Author-controlled today — which is why it costs nothing
+  // to route through the ONE escaper now, rather than after a build id or a prop-derived margin
+  // starts carrying something the author did not type.
+  const attr = (name: string, value: string): string => `${name}="${escapeAttribute(value)}"`;
+  const attrs = [
+    attr('data-x-island', directive.islandId),
+    attr('data-x-hydrate', directive.strategy),
+  ];
   if (directive.strategy !== 'never') {
-    attrs.push(`data-x-entry="${directive.entry}"`);
+    attrs.push(attr('data-x-entry', directive.entry));
     if (directive.rootMargin !== undefined) {
-      attrs.push(`data-x-margin="${directive.rootMargin}"`);
+      attrs.push(attr('data-x-margin', directive.rootMargin));
     }
     if (directive.events !== undefined && directive.events.length > 0) {
-      attrs.push(`data-x-events="${directive.events.join(' ')}"`);
+      attrs.push(attr('data-x-events', directive.events.join(' ')));
     }
   }
   return attrs.join(' ');

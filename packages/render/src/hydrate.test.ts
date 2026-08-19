@@ -53,6 +53,25 @@ describe('emitIslandAttributes', () => {
     expect(withoutMargin).not.toContain('data-x-margin');
   });
 
+  test('every value goes through the shared attribute escaper, never into raw HTML', () => {
+    // Author-controlled today, which is exactly when the escaping is cheap to add. `head.ts`
+    // imports `escapeAttribute` and this file did not — so `render/CLAUDE.md`'s Escaping row
+    // ("both now import") was true of one of the two files it named.
+    const attrs = emitIslandAttributes(
+      directive({
+        islandId: 'x"1',
+        strategy: 'visible',
+        entry: '/chunks/a".js"><script>alert(1)</script>',
+        rootMargin: '5px"',
+        events: ['cl"ick'],
+      }),
+    );
+    expect(attrs).not.toContain('<script>');
+    expect(attrs).toContain('&quot;');
+    // A quote closing an attribute is the whole bug: none may survive outside the delimiters.
+    expect(attrs.replaceAll(/="[^"]*"/g, '')).not.toContain('"');
+  });
+
   test('events is included as a space-joined attr only when non-empty', () => {
     const withEvents = emitIslandAttributes(
       directive({ strategy: 'interaction', events: ['click', 'keydown'] }),

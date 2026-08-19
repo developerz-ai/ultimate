@@ -146,13 +146,30 @@ export class McpToolUndeclaredError extends UltimateError {
  * a call that succeeds against the wrong handler and reports nothing.
  */
 export class McpToolDuplicateError extends UltimateError {
-  constructor(input: { name: string }) {
+  /**
+   * Which declaration each copy came from, when the projector knows — carried the way
+   * `McpScopeUnknownError` carries `projected`, so a caller can show it without re-parsing
+   * `cause`.
+   */
+  readonly declaredBy: readonly string[];
+
+  constructor(input: { name: string; declaredBy?: readonly string[] | undefined }) {
+    // The old `fix:` named "the primitive's export name, or the `tools` record key" for every
+    // raiser. On `@ultimat3/admin`'s path the colliding string is an `AdminAction.name` and
+    // neither of those exists, so the reader was sent to two places that do not hold it. Where
+    // the projector knows the sources, the fix names THEM instead of guessing.
+    const sites = input.declaredBy ?? [];
+    const from = sites.length > 0 ? ` (declared by ${sites.join(' and ')})` : '';
     super({
       code: 'X_MCP_TOOL_DUPLICATE',
-      cause: `two primitives project to the MCP tool "${input.name}"`,
-      fix: "rename one: the tool name is the primitive's export name, or the `tools` record key",
+      cause: `two primitives project to the MCP tool "${input.name}"${from}`,
+      fix:
+        sites.length > 0
+          ? `rename one — "${input.name}" is projected by ${sites.join(' and ')}; change the name at one of them`
+          : "rename one: the tool name is the primitive's export name, the `tools` record key, or an admin action's `name`",
       docs: docsFor('X_MCP_TOOL_DUPLICATE'),
     });
+    this.declaredBy = sites;
   }
 }
 

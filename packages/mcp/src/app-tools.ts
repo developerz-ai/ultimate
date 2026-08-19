@@ -125,10 +125,18 @@ export function defineAppMcp<TSchemas extends AppToolSchemas>(
   // so `include` fills the gaps rather than colliding with what the caller already spelled out.
   const included =
     input.include === 'exposed' ? notNamed(toolsFrom(exposedPrimitives()), listed) : [];
-  const named = [...listed, ...included, ...handWritten(input.tools)];
+  const written = handWritten(input.tools);
+  const named = [...listed, ...included, ...written];
   // Unique names FIRST: the scope map addresses tools by name, so a duplicate would make
   // "which tool did this scope gate?" unanswerable before the question is worth asking.
-  assertUniqueNames(named);
+  //
+  // Each list is tagged with the option that produced it, because "rename one" is only an
+  // instruction if the reader knows which two declarations to look at.
+  assertUniqueNames([
+    { source: 'actions:/queries:', tools: listed },
+    { source: "include: 'exposed'", tools: included },
+    { source: 'tools:', tools: written },
+  ]);
   const projected = withScopes(named, input.scopes);
 
   const config: CreateMcpServerInput = {
@@ -179,12 +187,20 @@ function notNamed(
  * to one name means the agent silently reaches the wrong one, which is the worst failure
  * mode available. Boot-time, loud, and named.
  */
-function assertUniqueNames(tools: readonly AnyMcpTool[]): void {
-  const seen = new Set<string>();
-  for (const tool of tools) {
-    if (seen.has(tool.name)) {
-      throw new McpToolDuplicateError({ name: tool.name });
+function assertUniqueNames(
+  groups: readonly { readonly source: string; readonly tools: readonly AnyMcpTool[] }[],
+): void {
+  const seen = new Map<string, string>();
+  for (const group of groups) {
+    for (const tool of group.tools) {
+      const first = seen.get(tool.name);
+      if (first !== undefined) {
+        throw new McpToolDuplicateError({
+          name: tool.name,
+          declaredBy: first === group.source ? [first] : [first, group.source],
+        });
+      }
+      seen.set(tool.name, group.source);
     }
-    seen.add(tool.name);
   }
 }

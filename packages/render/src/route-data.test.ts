@@ -115,6 +115,33 @@ describe('routeDataFor', () => {
     expect(error.fix).toContain('/posts/7');
   });
 
+  test('a hostile thrown value is rendered, not read — the frame must survive app code', async () => {
+    // `load` is APP code and may throw anything. `cause.message` is a property read and
+    // `String(cause)` runs the value's own `toString`, so both hazards live on the one line that
+    // is supposed to be turning a failure into an instruction. `renderThrowable` is core's total
+    // renderer and is what every other last-resort site in the framework uses.
+    const hostile = {
+      get message(): string {
+        throw new TypeError('message getter');
+      },
+      toString(): string {
+        throw new TypeError('toString');
+      },
+    };
+    Object.setPrototypeOf(hostile, Error.prototype);
+    const config = defineRoute({
+      ...base,
+      load: () => {
+        throw hostile;
+      },
+      meta: () => ({ title: 't' }),
+    });
+
+    const failure = await routeDataFor(config, CTX).catch((error: unknown) => error);
+    expect((failure as UltimateError).code).toBe('X_ROUTE_LOAD_FAILED');
+    expect((failure as UltimateError).cause).toContain('/posts/7');
+  });
+
   test("a loader's own UltimateError survives — its code and fix beat a generic wrapper", async () => {
     // A policy denial or a missing row already knows what went wrong and how to fix it. Burying
     // that under X_ROUTE_LOAD_FAILED would cost the caller both.

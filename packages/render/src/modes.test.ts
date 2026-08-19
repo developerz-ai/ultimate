@@ -63,6 +63,38 @@ describe('per-mode registration invariants', () => {
     ).not.toThrow();
   });
 
+  test('isr cannot be gated — one cached document cannot answer two actors', () => {
+    // The hole `static` was already refused for, one mode over. An ISR route resolves `load`
+    // with THIS request's `Ctx`, renders actor A's document, and `isr.serve(pathname, …)` stores
+    // it under the bare pathname — so every later actor who passes the same policy is served
+    // A's HTML. The query string is not in the key either.
+    let fix = '';
+    try {
+      defineRoute({
+        render: 'isr',
+        revalidate: { ttl: '5m' },
+        policy: { permission: 'post:read' },
+        offline: 'precache',
+        hydrate: 'never',
+        meta,
+      });
+    } catch (error) {
+      fix = fixOf(error);
+    }
+    expect(fix).toContain("'ssr'");
+
+    expect(() =>
+      defineRoute({
+        render: 'isr',
+        revalidate: { ttl: '5m' },
+        policy: { permission: 'post:read' },
+        offline: 'precache',
+        hydrate: 'never',
+        meta,
+      }),
+    ).toThrow(RouteModeInvalidError);
+  });
+
   test('ssr cannot be prerendered', () => {
     let fix = '';
     try {

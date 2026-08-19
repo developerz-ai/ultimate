@@ -19,6 +19,7 @@
 // narrow token; a token holding every scope still cannot see a tool its role may not.
 
 import type { Actor } from '@ultimat3/core';
+import { McpToolDuplicateError } from './errors';
 import type { ArgIssue } from './validate-args';
 import { validateArgs } from './validate-args';
 import type { JsonSchema } from './wire';
@@ -142,7 +143,10 @@ export class ToolRegistry {
 
   register(tool: AnyMcpTool): this {
     if (this.#tools.has(tool.name)) {
-      throw new McpDuplicateToolError(tool.name);
+      // The SAME code the resource twin throws. One package cannot answer "this name is taken"
+      // two ways, and a bare `Error` here reached the CLI as X_CLI_UNEXPECTED with
+      // `fix: x doctor --json` — the actual cause discarded at the last hop.
+      throw new McpToolDuplicateError({ name: tool.name });
     }
     this.#tools.set(tool.name, tool);
     return this;
@@ -205,14 +209,6 @@ export class ToolRegistry {
     const tool = this.#tools.get(name);
     if (tool === undefined) return 'write';
     return tool.destructive === true ? 'write' : 'read';
-  }
-}
-
-/** Registration is a boot-time programming error, so it throws rather than returning. */
-class McpDuplicateToolError extends Error {
-  constructor(name: string) {
-    super(`MCP tool already registered: ${name}`);
-    this.name = 'McpDuplicateToolError';
   }
 }
 
