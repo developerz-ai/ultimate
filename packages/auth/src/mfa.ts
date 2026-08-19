@@ -4,6 +4,7 @@
 // and single-use, so a database dump is not a permanent MFA bypass.
 
 import type { Auth } from './auth';
+import { mfaSecretInvalid } from './errors';
 import { randomBytes, sha256Hex, timingSafeEqual } from './tokens';
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -30,8 +31,16 @@ export function base32Encode(bytes: Uint8Array): string {
 }
 
 /**
- * Tolerant by design: padding, spaces and the dashes authenticator apps display are skipped,
- * and any other character fails the decode closed (empty output -> no code ever matches).
+ * Tolerant by design: padding, spaces and the dashes authenticator apps display are skipped, and
+ * any other character answers zero bytes.
+ *
+ * Zero bytes is NOT a decode that failed closed — this comment claimed it was, and it was the
+ * whole defect. An HMAC keyed with zero bytes is a perfectly valid HMAC, so `totpCode` derived a
+ * six-digit code from no secret at all and every unreadable secret in the table shared that one
+ * stream: a code an attacker computes without knowing anything verified against all of them.
+ * Zero bytes is therefore refused by both callers that need a key (`totpCode`, `enrolTotp`) and
+ * read as a non-verdict by `verifyTotp`. The decoder itself still answers rather than throwing,
+ * because "can this be read" is a question `enrolTotp` asks about a value it has not accepted yet.
  */
 export function base32Decode(value: string): Uint8Array {
   const bytes: number[] = [];
@@ -81,6 +90,10 @@ export interface EnrolTotpInput {
  */
 export function enrolTotp(auth: Auth, input: EnrolTotpInput): TotpEnrolment {
   const secret = input.secret ?? generateTotpSecret();
+  // Defence in depth, on the one path that puts a caller's own bytes in front of the table: a
+  // secret nothing can ever derive a code from is refused before it is written, not after a user
+  // is locked out by it. A minted secret is readable by construction, so only an import gets here.
+  if (base32Decode(secret).length === 0) throw mfaSecretInvalid('enrolTotp');
   const issuer = input.issuer ?? auth.mfa.issuer;
   const label = `${encodeURIComponent(issuer)}:${encodeURIComponent(input.account)}`;
   const query = new URLSearchParams({
@@ -115,6 +128,10 @@ function counterBytes(step: number): Uint8Array {
 /** HMAC-SHA1 + RFC 4226 dynamic truncation. SHA1 here is a spec requirement, not a choice. */
 export function totpCode(secret: string, step: number, digits: number = TOTP_DIGITS): string {
   const key = base32Decode(secret);
+  // A zero-length key is not a weak key, it is no key: the hasher below accepts it and answers a
+  // code every other unreadable secret answers too. There is no code an unreadable secret is
+  // entitled to, so this returns none.
+  if (key.length === 0) throw mfaSecretInvalid('totpCode');
   const mac = Uint8Array.from(
     new Bun.CryptoHasher('sha1', key).update(counterBytes(step)).digest(),
   );
@@ -143,6 +160,12 @@ export interface VerifyTotpInput {
 }
 
 export function verifyTotp(input: VerifyTotpInput): TotpVerification {
+  // A non-verdict, not a verdict and not a throw. It is the rule `verifyAgainst` (`password.ts`)
+  // follows for a stored hash Bun cannot read: a broken stored credential is the generic failure,
+  // because a coded throw out of a verify path is a 500 where a refusal belongs and it answers
+  // "this account's secret is malformed" to whoever asked. It also keeps `totpCode`'s refusal off
+  // the login path entirely — nothing below can reach it with a zero-length key.
+  if (base32Decode(input.secret).length === 0) return { ok: false, step: null };
   const drift = input.drift ?? TOTP_DRIFT_STEPS;
   const current = totpStep(input.at);
   const candidate = input.code.replaceAll(' ', '');

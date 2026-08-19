@@ -14,7 +14,8 @@ import type { Row } from './json';
 import type { LiveQueryDefinition } from './live-contract';
 import { LiveQueryRegistry } from './live-query';
 import { patchFromChange } from './matcher-bridge';
-import { SocketRegistry, type WsLike } from './socket';
+import { CLOSE, SocketRegistry, type WsLike } from './socket';
+import type { SyncGrant } from './sync-auth';
 import {
   createSyncNode,
   type SyncNode,
@@ -29,12 +30,16 @@ const alice: Actor = userActor({ id: 'alice', orgId: 'o1' });
 
 class FakeWs implements WsLike {
   readonly frames: Frame[] = [];
+  /** Every close the CLIENT would have seen, in order — the first one is the only one it gets. */
+  readonly closes: (readonly [number, string])[] = [];
   data!: WsData;
   send(raw: string): number {
     this.frames.push(decode(raw));
     return raw.length;
   }
-  close(): void {}
+  close(code = 0, reason = ''): void {
+    this.closes.push([code, reason]);
+  }
   subscribe(): void {}
   unsubscribe(): void {}
   getBufferedAmount(): number {
@@ -79,7 +84,10 @@ function upgradeTarget(): UpgradeTarget & { data: WsData | null } {
   };
 }
 
-function nodeWith(authenticate?: (request: Request) => Promise<null | { actor: Actor }>): {
+function nodeWith(
+  authenticate?: (request: Request) => Promise<SyncGrant | null>,
+  extra: { reauthenticateIntervalMs?: number } = {},
+): {
   node: SyncNode;
   sockets: SocketRegistry;
   hub: ChannelHub;
@@ -97,6 +105,7 @@ function nodeWith(authenticate?: (request: Request) => Promise<null | { actor: A
     sockets,
     clock: frozenClock(0),
     ...(authenticate ? { authenticate } : {}),
+    ...extra,
   });
   return { node, sockets, hub };
 }
@@ -249,6 +258,39 @@ describe('the sync node authenticates an upgrade', () => {
     node.websocket.open(ws as unknown as SyncWs);
 
     expect(sockets.get(data.socketId)?.actor).toBeNull();
+    await node.stop();
+  });
+});
+
+/**
+ * A grant with no way to renew it is the one eviction path that did not go through `evict`. It ran
+ * `teardown(socket)` and *then* `socket.close(1008)` — but `teardown` reaches
+ * `SocketRegistry.remove`, which closes the socket itself with `1001 connection closed`, and
+ * `SyncSocket.close` returns early once it is closed. So the client was told `goingAway`: a normal
+ * shutdown, which a client retries against the same node with the same dead credential, instead of
+ * `1008 policy` — the code `packages/realtime/CLAUDE.md` documents for "no refresh = close with
+ * 1008 and let the client re-dial".
+ */
+describe('a grant the node cannot renew', () => {
+  test('closes the client with 1008, not the goingAway the socket table hands it', async () => {
+    const { node, sockets } = nodeWith(async () => ({ actor: alice, expiresAt: 0 }), {
+      reauthenticateIntervalMs: 1,
+    });
+    await node.start();
+    const server = upgradeTarget();
+    await node.fetch(upgradeRequest, server);
+    const data = server.data;
+    if (!data) throw new Error('the upgrade was refused');
+    const ws = new FakeWs();
+    ws.data = data;
+    node.websocket.open(ws as unknown as SyncWs);
+    expect(sockets.get(data.socketId)).toBeDefined();
+
+    await until(() => ws.closes.length > 0);
+
+    expect(ws.closes).toEqual([[CLOSE.policy, 'grant expired']]);
+    // And the release still happened: the socket is out of the table, not merely closed.
+    expect(sockets.get(data.socketId)).toBeUndefined();
     await node.stop();
   });
 });

@@ -410,6 +410,11 @@ wire twice by a reconnect that raced an ack.
   `undefined` and answer as if the row had said so. A patch whose row the shared window does not
   hold is withheld — the window *is* the result set — and a subscriber holding that row gets the
   one `delete` that says so. It counts as neither a denial nor a gate failure: nothing decided.
+- **A `delete` is withheld too, and `holds` is the whole decision** (`As of 2026-08`). It carries no
+  row, so there is nothing to put in front of the rule — and it was forwarded unconditionally, so
+  every subscriber learned the id and the instant of every *other* tenant's row as it was deleted,
+  on a query whose `visible` rule had never let them see one. A subscriber that holds the row is
+  told it is gone; one that does not gets nothing, counted as `rowsDenied`.
 - **`PgLogicalReplicationFeed` decodes `pgoutput` off a real slot** — its own Postgres v3 client
   (SCRAM-SHA-256, in-band TLS, CopyBoth), no driver dependency. It preflights `wal_level`, the
   publication and the slot, creates the slot when there is none, and confirms the slot as it goes so

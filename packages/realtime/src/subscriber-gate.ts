@@ -129,7 +129,24 @@ export class SubscriberGate {
     patch: RowPatch,
     holds: boolean,
   ): Promise<RowPatch | null> {
-    if (patch.op === 'delete' || patch.row === null) return patch;
+    // A delete carries no row, so there is nothing to put in front of the rule — `holds` IS the
+    // decision, the same one the two branches below take for a row a rule has just refused.
+    // Returned unconditionally it was a leak with no upper bound: the shared window is pre-policy,
+    // so every subscriber learned the id and the instant of every OTHER tenant's row as it was
+    // deleted, on a query whose `visible` rule had never let them see one of them.
+    //
+    // `holds` comes from `subscription.cursor.ids`, truncated at `CURSOR_ID_LIMIT` — so on a window
+    // wider than 512 rows a legitimate delete past position 512 is dropped and that row stays on
+    // screen until the subscriber re-snapshots. That is the trade the denied-update branch below
+    // already makes, and it is the right way round: a stale row is a bug, a row id leaked to
+    // another tenant is a breach.
+    if (patch.op === 'delete' || patch.row === null) {
+      if (holds) return patch;
+      // Counted, or a withheld delete is invisible in exactly the way `onRowDenied` exists to
+      // stop — and the rate of it is how an operator sees a window shared across tenants at all.
+      this.#denied(target.qid, who, patch.id);
+      return null;
+    }
     const full = target.rows.find((row) => row.id === patch.id);
     // No whole row means no decision to take. An update patch carries the changed columns only, so
     // a rule reading `row.ownerId` on one reads `undefined` and answers as if the row had said so —

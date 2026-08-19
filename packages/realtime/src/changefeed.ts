@@ -126,13 +126,25 @@ export class InMemoryChangeFeed implements ChangeFeed {
   async #deliver(event: ChangeEvent): Promise<void> {
     const handler = this.#handler;
     if (!handler) return;
-    this.#tail = this.#tail.then(async () => {
+    const result = this.#tail.then(async () => {
       await handler(event);
       this.#lastLsn = event.lsn;
     });
-    await this.#tail;
+    // The lane chains on a SETTLED shadow, never on `result` — `window-lock.ts` solves the same
+    // problem the same way. Chained on the live tail, one rejected link poisoned every link behind
+    // it: later changes rejected with the FIRST error, the handler was never called again and
+    // `lastLsn()` froze. Reachable on any single-node deployment, because `createReplicator`'s
+    // `onChange` awaits `transport.publish(...)` and a closed `InProcessTransport` refuses — one
+    // transient publish failure ended change delivery for the life of the process. The rejection
+    // still reaches the caller that pushed THAT event, and only it; `stop()` awaits the shadow, so
+    // a teardown reports the teardown rather than re-raising a failure already handed over.
+    this.#tail = result.then(ignore, ignore);
+    await result;
   }
 }
+
+/** Settles the shadow lane whichever way the delivery went. Nothing observes the value. */
+const ignore = (): void => undefined;
 
 export interface PgLogicalReplicationOptions {
   /** Connection string for a role with REPLICATION: `postgres://user:pass@host:5432/db`. */

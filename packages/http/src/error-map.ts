@@ -101,6 +101,12 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   // the same class as `X_BODY_INVALID` and `X_INVARIANT_VIOLATED` above. Unmapped, a visitor
   // choosing "password" at a signup form was reported to the on-call monitor as a server fault.
   X_PASSWORD_WEAK: 422,
+  // 422 for the same reason as the row above, and deliberately not 500: `enrolTotp` throws it for a
+  // secret the CALLER supplied — an import from another MFA system, or a value off a form — and
+  // what failed is that value's content, not the server. `verifyTotp` never throws it (an
+  // unreadable stored secret is a non-verdict there, the rule `verifyAgainst` follows for a hash
+  // Bun cannot read), so a login checking a broken row cannot reach this status at all.
+  X_MFA_SECRET_INVALID: 422,
   // @ultimat3/entity
   X_NOT_FOUND: 404,
   X_ENTITY_DUPLICATE: 409,

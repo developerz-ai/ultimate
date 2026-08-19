@@ -247,8 +247,12 @@ export function createSyncNode(options: SyncNodeOptions): SyncNode {
       onRevoked: (socketId) => {
         const socket = sockets.get(socketId);
         if (!socket) return;
-        teardown(socket);
-        socket.close(CLOSE.policy, 'grant expired');
+        // Through `evict`, which closes BEFORE it releases. The other order was a close that never
+        // happened: `teardown` reaches `sockets.remove`, which closes the socket itself with
+        // `1001 connection closed`, and `SyncSocket.close` returns once `#closed` — so a revoked
+        // grant reached the client as a normal shutdown, which it retries against this node with
+        // the same dead credential, instead of the `1008` that tells it to re-dial with a new one.
+        evict(socket, CLOSE.policy, 'grant expired');
       },
       onRefreshFailed: (socketId, error) => {
         // Not a denial: the grant is kept and retried next pass. Reported because a socket nobody

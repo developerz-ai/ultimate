@@ -210,6 +210,23 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   `mfa.issuer` is the half that stayed, and it now has a reader: `enrolTotp(auth, { account })`
   takes the `Auth` every other entry point takes, so the product name an authenticator app shows
   is declared once at `defineAuth` instead of restated at every enrolment.
+- **A TOTP secret that decodes to zero bytes is not a weak key, it is NO key** (`As of 2026-08`).
+  `base32Decode` answers `new Uint8Array(0)` for any character outside the alphabet and for `''`,
+  and `new Bun.CryptoHasher('sha1', new Uint8Array(0))` is a perfectly valid HMAC — so `totpCode`
+  returned a six-digit code derived from nothing, every malformed secret in the table shared that
+  one stream, and `verifyTotp` accepted a code an attacker computes without knowing any secret.
+  Reachable: `enrolTotp(auth, { account, secret })` takes an imported secret, `builtin-adapter.ts`
+  maps the column straight through, and a `mfa_secret text not null default ''` column is not
+  `null`, so `login()` still demanded a second factor and then accepted the empty-key code. The
+  file's own header comment asserted the opposite ("fails the decode closed") for as long as it was
+  wrong. Three answers now, one per caller: `verifyTotp` returns `{ ok: false, step: null }` — the
+  **generic failure**, the same rule `verifyAgainst` follows for a stored hash Bun cannot read, so
+  a broken row is neither a 500 nor an oracle; `totpCode` throws `X_MFA_SECRET_INVALID`, because
+  there is no code an unreadable secret is entitled to; `enrolTotp` throws it too, so the value
+  never reaches the table. The secret never reaches `cause:` or `fix:` — it is a credential and
+  both are logged. No minimum LENGTH is enforced beyond one byte: 10-byte secrets are what several
+  authenticator apps issue, so a 16-byte floor would refuse real enrolments to close nothing the
+  zero-byte rule leaves open.
 - **`createTotpReplayGuard`'s table is bounded, and the eviction ORDER is the guarantee.** It
   pruned steps inside one subject's `Set` and never revisited a subject who stopped signing in, so
   the map carried one permanent entry per user for the life of the process. Evicting a subject
