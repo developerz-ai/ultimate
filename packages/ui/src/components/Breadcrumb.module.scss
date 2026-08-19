@@ -43,3 +43,9 @@
   color: t.role('fg-strong');
   font-weight: t.weight(medium);
 }
+
+// An ancestor with no href: reads as trail, not as a control, and carries no
+// `aria-current` — only the last item is the current page.
+.text {
+  color: t.role('fg-muted');
+}

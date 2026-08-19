@@ -37,10 +37,27 @@ export function parseIconNodes(text: string): ReadonlyMap<string, IconGlyph> {
   }
   const out = new Map<string, IconGlyph>();
   for (const [name, value] of Object.entries(parsed as Record<string, unknown>)) {
+    // Checked BEFORE the map holds it: the key reaches three sinks downstream — a filesystem path,
+    // a TypeScript identifier and a `//` banner — and `buildIcons` clears GLYPHS_DIR before it
+    // writes, so `../../index` is a delete plus an overwrite of a hand-written module.
+    if (!SAFE_ICON_NAME.test(name)) {
+      throw invalidIconDataError(
+        `carries ${renderCauseValue(name)} as an icon name, which is not the kebab-case shape every Lucide icon uses; the name becomes a file path and an exported identifier, so it cannot be escaped. lucide-static@${LUCIDE_VERSION} is the pin that published it, so a re-run against the same pin repeats this`,
+        'bun run --filter @ultimat3/ui icons   # after raising LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts',
+      );
+    }
     out.set(name, toGlyph(name, value));
   }
   return out;
 }
+
+/**
+ * An icon name, as characters: lowercase kebab-case, no leading, trailing or doubled hyphen. The
+ * same allowlist-over-a-sink shape as `SAFE_ATTR_VALUE`, one layer up — the name is interpolated
+ * into a PATH and an IDENTIFIER, neither of which has an escape, so refusing is the only move.
+ * Measured against the whole committed set: all 1767 names pass (`build-icons.test.ts` asserts it).
+ */
+export const SAFE_ICON_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /**
  * Glyph geometry, as characters: digits, the path-command letters, `currentColor`/`none`, and the
