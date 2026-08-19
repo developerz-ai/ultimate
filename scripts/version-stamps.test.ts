@@ -114,6 +114,56 @@ describe('the rule cannot quietly stop being one', () => {
   });
 });
 
+describe('lockstep is a claim about dependencies and about the lockfile', () => {
+  test('a package depending on an older sibling breaks lockstep', () => {
+    // `@ultimat3/admin@3.0.0` depending on `@ultimat3/core@1.2.0` is the mixed-version install
+    // CHANGELOG.md calls a combination nobody tested — and nothing checked it until now.
+    const gaps = checkVersionStamps({
+      files: [footer(stamped)],
+      versions: lockstep,
+      internalDeps: { admin: { '@ultimat3/core': '0.9.0' } },
+    });
+    expect(gaps.map((gap) => gap.kind)).toEqual(['dependency']);
+    expect(gaps[0]?.at).toBe('packages/admin/package.json');
+  });
+
+  test('a range that matches the shipped version is silent', () => {
+    expect(
+      checkVersionStamps({
+        files: [footer(stamped)],
+        versions: lockstep,
+        internalDeps: { admin: { '@ultimat3/core': '1.2.0' } },
+      }),
+    ).toEqual([]);
+  });
+
+  test('a lockfile recording a range its package.json does not is a finding', () => {
+    // The drift that was actually on disk: 90 entries at 1.2.0 and 2.0.0 against manifests that
+    // all said 3.0.0. `bun install --frozen-lockfile` accepted every one of them, because a
+    // workspace edge resolves by name and the recorded range is never read back.
+    const gaps = checkVersionStamps({
+      files: [footer(stamped)],
+      versions: lockstep,
+      internalDeps: { admin: { '@ultimat3/core': '1.2.0' } },
+      lockedDeps: { admin: { '@ultimat3/core': '2.0.0' } },
+    });
+    expect(gaps.map((gap) => gap.kind)).toEqual(['lockfile']);
+    expect(gaps[0]?.at).toBe('bun.lock');
+  });
+
+  test('a lockfile edge no package.json declares is not judged', () => {
+    // A stale edge is `bun install`'s to remove; this rule only compares what both files carry.
+    expect(
+      checkVersionStamps({
+        files: [footer(stamped)],
+        versions: lockstep,
+        internalDeps: { admin: {} },
+        lockedDeps: { admin: { '@ultimat3/gone': '1.2.0' } },
+      }),
+    ).toEqual([]);
+  });
+});
+
 describe('against this repo', () => {
   test('the footer is on disk and this rule reads it', async () => {
     const pages = await readStampPages(repoRoot());

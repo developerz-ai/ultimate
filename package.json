@@ -20,6 +20,8 @@
     "format": "biome format --write .",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
+    "lockfile": "bun run scripts/lockfile-pins.ts",
+    "lockfile:fix": "bun run scripts/lockfile-pins.ts --write",
     "manifest": "bun run scripts/manifest.ts",
     "setup": "bun run scripts/setup.ts",
     "test": "bun test --isolate --path-ignore-patterns='**/dist/**' --path-ignore-patterns='**/examples/**' --path-ignore-patterns='**/dummy/**'",

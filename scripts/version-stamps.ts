@@ -78,7 +78,13 @@ export function readStamps(file: MarkdownFile): readonly VersionStamp[] {
  * `vacuous` is the false green: no footer, or a footer that stamps nothing, means this rule
  * compared the shipped version against no sentence at all.
  */
-export type VersionGapKind = 'stale' | 'duplicate' | 'lockstep' | 'vacuous';
+export type VersionGapKind =
+  | 'stale'
+  | 'duplicate'
+  | 'lockstep'
+  | 'dependency'
+  | 'lockfile'
+  | 'vacuous';
 
 export interface VersionGap {
   readonly kind: VersionGapKind;
@@ -90,6 +96,20 @@ export interface VersionInput {
   readonly files: readonly MarkdownFile[];
   /** Every workspace's declared version, keyed by package name — `listWorkspaces`' own answer. */
   readonly versions: Readonly<Record<string, string>>;
+  /**
+   * Each workspace's `@ultimat3/*` dependency ranges, keyed by package name. Lockstep is a claim
+   * about what a package DEPENDS on as much as what it declares itself: `@ultimat3/admin@3.0.0`
+   * depending on `@ultimat3/core@1.2.0` is a mixed-version install, which `CHANGELOG.md` calls a
+   * combination nobody tested.
+   */
+  readonly internalDeps?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  /**
+   * What `bun.lock` records for those same edges. A third committed file that has to agree, and
+   * the one nothing checked: `bun install` only refreshes a workspace block whose `package.json`
+   * changed, so 90 entries sat at 1.2.0 and 2.0.0 against manifests that all said 3.0.0, and
+   * `--frozen-lockfile` accepted every one of them.
+   */
+  readonly lockedDeps?: Readonly<Record<string, Readonly<Record<string, string>>>>;
 }
 
 /** Pure, so the negative case is a fixture rather than a hand-edit to a published page. */
@@ -113,6 +133,31 @@ export function checkVersionStamps(input: VersionInput): readonly VersionGap[] {
       detail: `${shipped} everywhere except ${named.join(', ')}`,
     });
   }
+  for (const [pkg, deps] of Object.entries(input.internalDeps ?? {})) {
+    for (const [dep, range] of Object.entries(deps)) {
+      if (range !== shipped) {
+        gaps.push({
+          kind: 'dependency',
+          at: `packages/${pkg}/package.json`,
+          detail: `it depends on ${dep}@${range} while the workspaces ship ${shipped}`,
+        });
+      }
+    }
+  }
+  for (const [pkg, deps] of Object.entries(input.lockedDeps ?? {})) {
+    const declared = input.internalDeps?.[pkg] ?? {};
+    for (const [dep, locked] of Object.entries(deps)) {
+      const want = declared[dep];
+      if (want !== undefined && want !== locked) {
+        gaps.push({
+          kind: 'lockfile',
+          at: 'bun.lock',
+          detail: `it records packages/${pkg} depending on ${dep}@${locked}, and that package.json says ${want}`,
+        });
+      }
+    }
+  }
+
   const stamps = input.files.flatMap((file) => [...readStamps(file)]);
   const onPage = stamps.filter((stamp) => stamp.path === STAMP_PAGE);
   if (onPage.length === 0) {
@@ -151,6 +196,26 @@ const duplicateFinding = (gap: VersionGap): Finding => ({
   at: gap.at,
 });
 
+const dependencyFinding = (gap: VersionGap, shipped: string): Finding => ({
+  code: 'X_VERSION_LOCKSTEP_BROKEN',
+  cause: `${gap.at} breaks lockstep — ${gap.detail}`,
+  fix: `set that "@ultimat3/*" range to ${shipped} in ${gap.at}, then bun install`,
+  at: gap.at,
+});
+
+/**
+ * A third committed file in the agreement, and the one that had drifted. `bun install` refreshes
+ * only a workspace block whose `package.json` changed, so a version bump leaves every untouched
+ * block recording the old number — and `--frozen-lockfile` accepts it, because a workspace edge
+ * resolves by name and never reads the range back.
+ */
+const lockfileFinding = (gap: VersionGap): Finding => ({
+  code: 'X_LOCKFILE_STALE',
+  cause: `bun.lock disagrees with a package.json it was generated from — ${gap.detail}`,
+  fix: 'bun run scripts/lockfile-pins.ts --write, then bun install --frozen-lockfile to confirm',
+  at: gap.at,
+});
+
 const lockstepFinding = (gap: VersionGap): Finding => ({
   code: 'X_VERSION_LOCKSTEP_BROKEN',
   cause: `the workspaces declare more than one version — ${gap.detail} — and a release is one version, one commit, one tag`,
@@ -169,11 +234,56 @@ export function versionGapFindingFor(gap: VersionGap, shipped: string): Finding 
   if (gap.kind === 'stale') return staleFinding(gap, shipped);
   if (gap.kind === 'duplicate') return duplicateFinding(gap);
   if (gap.kind === 'lockstep') return lockstepFinding(gap);
+  if (gap.kind === 'dependency') return dependencyFinding(gap, shipped);
+  if (gap.kind === 'lockfile') return lockfileFinding(gap);
   return vacuousFinding(gap);
 }
 
 const readVersions = async (root: string): Promise<Readonly<Record<string, string>>> =>
   Object.fromEntries((await listWorkspaces(root)).map((one) => [one.name, one.version]));
+
+/** Each workspace's own `@ultimat3/*` ranges, keyed by DIRECTORY — the key `bun.lock` uses. */
+export async function readInternalDeps(
+  root: string,
+): Promise<Readonly<Record<string, Readonly<Record<string, string>>>>> {
+  const out: Record<string, Record<string, string>> = {};
+  for (const path of new Bun.Glob('packages/*/package.json').scanSync({ cwd: root })) {
+    const dir = path.split('/')[1] as string;
+    const json = (await Bun.file(`${root}/${path}`).json()) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    const merged = { ...json.dependencies, ...json.devDependencies };
+    const internal = Object.fromEntries(
+      Object.entries(merged).filter(([name]) => name.startsWith('@ultimat3/')),
+    );
+    if (Object.keys(internal).length > 0) out[dir] = internal;
+  }
+  return out;
+}
+
+/**
+ * What `bun.lock` records for the same edges. Read with a regex rather than parsed: the file is
+ * JSONC with trailing commas, and this rule needs one field out of it — a parser dependency for
+ * that is the trade `docs/idea/18-build-vs-wrap.md` refuses.
+ */
+export async function readLockedDeps(
+  root: string,
+): Promise<Readonly<Record<string, Readonly<Record<string, string>>>>> {
+  const file = Bun.file(`${root}/bun.lock`);
+  if (!(await file.exists())) return {};
+  const text = await file.text();
+  const out: Record<string, Record<string, string>> = {};
+  for (const block of text.matchAll(/"packages\/([a-z-]+)":\s*\{(.*?)\n {4}\},/gs)) {
+    const dir = block[1] as string;
+    const deps: Record<string, string> = {};
+    for (const dep of (block[2] as string).matchAll(/"(@ultimat3\/[a-z-]+)":\s*"([^"]+)"/g)) {
+      deps[dep[1] as string] = dep[2] as string;
+    }
+    if (Object.keys(deps).length > 0) out[dir] = deps;
+  }
+  return out;
+}
 
 export const readStampPages = async (root: string): Promise<readonly MarkdownFile[]> => {
   const seen = new Map<string, MarkdownFile>();
@@ -187,9 +297,12 @@ export const readStampPages = async (root: string): Promise<readonly MarkdownFil
 export async function versionStampFindings(root: string): Promise<readonly Finding[]> {
   const versions = await readVersions(root);
   const shipped = [...new Set(Object.values(versions))].sort()[0] ?? '0.0.0';
-  return checkVersionStamps({ files: await readStampPages(root), versions }).map((gap) =>
-    versionGapFindingFor(gap, shipped),
-  );
+  return checkVersionStamps({
+    files: await readStampPages(root),
+    versions,
+    internalDeps: await readInternalDeps(root),
+    lockedDeps: await readLockedDeps(root),
+  }).map((gap) => versionGapFindingFor(gap, shipped));
 }
 
 if (import.meta.main) {
@@ -197,7 +310,12 @@ if (import.meta.main) {
   const root = repoRoot();
   const versions = await readVersions(root);
   const shipped = [...new Set(Object.values(versions))].sort()[0] ?? '0.0.0';
-  const gaps = checkVersionStamps({ files: await readStampPages(root), versions });
+  const gaps = checkVersionStamps({
+    files: await readStampPages(root),
+    versions,
+    internalDeps: await readInternalDeps(root),
+    lockedDeps: await readLockedDeps(root),
+  });
   report(
     {
       ok: gaps.length === 0,
