@@ -36,6 +36,17 @@ describe('unit · the CLI subprocess boundary', () => {
     expect(String(thrown['fix'])).not.toBe('x doctor --json');
   });
 
+  // Axiom 4 inverted a second way: the program name was interpolated into the fix line twice,
+  // unquoted, so a name holding a space pasted back as two arguments and `command -v` answered
+  // about the first word. `quoteArg` is the CLI's one POSIX quoter and both references take it.
+  test('a program name with a space still produces a runnable fix', async () => {
+    const name = 'definitely not a real binary xyz';
+    const thrown = await thrownBy(() => exec([name, '--help'], { cwd: import.meta.dir }));
+    expect(thrown['code']).toBe('X_CLI_UNEXPECTED');
+    expect(String(thrown['fix'])).toContain(`command -v '${name}'`);
+    expect(String(thrown['fix'])).toContain(`install '${name}'`);
+  });
+
   test('an empty command is a caller bug, coded like every other CLI failure', async () => {
     const thrown = await thrownBy(() => exec([], { cwd: import.meta.dir }));
     expect(thrown['code']).toBe('X_CLI_UNEXPECTED');

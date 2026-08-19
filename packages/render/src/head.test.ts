@@ -236,6 +236,25 @@ describe('JSON-LD content', () => {
     expect(parsed).toEqual({ '@type': 'WebSite', name });
   });
 
+  test('a charset parameter does not downgrade the JSON escaper to the raw-text one', () => {
+    // A real document writes `application/ld+json; charset=utf-8`. That does not end in `json`, so
+    // the suffix test alone sent the block built from route data — the path attacker text takes —
+    // to `escapeRawTextContent`, which escapes `</` and nothing else. `<`, `>` and `&` survived.
+    const html = renderHead([
+      {
+        kind: 'script',
+        key: 'script:ld+json',
+        attrs: { type: 'application/ld+json; charset=utf-8' },
+        content: JSON.stringify({ '@type': 'WebSite', name: '<a> & </b>' }),
+      },
+    ]);
+
+    expect(html).toContain('\\u003c');
+    expect(html).toContain('\\u0026');
+    expect(html).not.toContain('<a>');
+    expect(html).not.toContain(' & ');
+  });
+
   test('the JSON escape is \\u-form, never an HTML entity — an entity is not decoded here', () => {
     const html = ldHead({ '@type': 'WebSite', name: '<a> & </b>' });
     expect(html).not.toContain('&lt;');

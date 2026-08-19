@@ -12,6 +12,7 @@ import {
   UltimateError,
 } from '@ultimat3/core';
 import { docsFor } from './error-codes';
+import { neighbouringPort } from './flag-number';
 
 /**
  * A port of its own, and NOT the role's HTTP port, for one reason the chart makes concrete:
@@ -33,13 +34,16 @@ export const DEFAULT_METRICS_PORT = 9090;
  * scrape port is one — a synonym here would be a second code for one condition. The fix moves the
  * port rather than naming a process to kill, because `METRICS_PORT` is the one knob both `x dev`
  * and the container read (`serve.ts`'s `metricsPortFromEnv`).
+ *
+ * The port it names comes from `neighbouringPort`, never `port + 1`: at the top of the range
+ * that is 65536, and an instruction that cannot run is the failure this code exists to end.
  */
 export class MetricsPortInUseError extends UltimateError {
   constructor(input: { port: number }) {
     super({
       code: 'X_PORT_IN_USE',
       cause: `the metrics port ${input.port} is already bound, so no role could open its scrape listener`,
-      fix: `METRICS_PORT=${input.port + 1} x dev --json`,
+      fix: `METRICS_PORT=${neighbouringPort(input.port)} x dev --json`,
       docs: docsFor('X_PORT_IN_USE'),
     });
   }

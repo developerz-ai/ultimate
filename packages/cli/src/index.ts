@@ -219,6 +219,7 @@ export {
   runRole,
   serveApp,
 } from './serve';
+export { quoteArg } from './shell-quote';
 export {
   eachSourceFile,
   isGenerated,
@@ -231,7 +232,7 @@ export { countsOf } from './test-counts';
 export type { TestFile } from './test-select';
 export { belongsToType, discoverTests, sampleFiles } from './test-select';
 export type { ReproduceOptions, RunShardsOptions, Shard } from './test-shards';
-export { planShards, quoteArg, reproduceFor, runShards, shardArgs } from './test-shards';
+export { planShards, reproduceFor, runShards, shardArgs } from './test-shards';
 export { availableCpus, defaultWorkers, WORKER_CEILING } from './test-workers';
 export type { CodeFixSite, CodeSite, FixSite, SourceSite } from './ts-scan';
 export {

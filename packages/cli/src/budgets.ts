@@ -132,8 +132,14 @@ const TYPE_ATTR = /\stype="(?<type>[^"]*)"/;
  * Without it a page shipping only `meta.ld` structured data and island props measured 8kb of JS
  * and failed a 2kb budget with a `fix:` naming an import chain that does not exist.
  */
-const carriesJson = (attrs: string): boolean =>
-  (TYPE_ATTR.exec(attrs)?.groups?.['type'] ?? '').trim().toLowerCase().endsWith('json');
+const carriesJson = (attrs: string): boolean => {
+  // Everything from the first `;` is a MIME PARAMETER and not the type: a real document writes
+  // `type="application/ld+json; charset=utf-8"`, which does not END with `json`, so the suffix
+  // test alone charged an SEO structured-data block as executable JavaScript all over again.
+  const [type = ''] = (TYPE_ATTR.exec(attrs)?.groups?.['type'] ?? '').split(';');
+  return type.trim().toLowerCase().endsWith('json');
+};
+
 /**
  * An island's chunk is reached by `import()` from inside the hydration runtime, so it never appears
  * as a `<script src>` — and a document weighed by script tags alone was charged for the runtime and

@@ -132,6 +132,21 @@ describe('unit · measureJsBytes weighs the document, not the graph', () => {
     expect(await measureJsBytes(document, out)).toBe(0);
   });
 
+  // A real document writes the charset: `<script type="application/ld+json; charset=utf-8">` is
+  // what a CMS and half the structured-data guides emit, and it does not END with `json` — so the
+  // budget charged an SEO block as executable JS again, which is the bug the case above closes.
+  test('a MIME parameter does not turn structured data back into code', async () => {
+    const withCharset = '<script type="application/ld+json; charset=utf-8">{"a":1}</script>';
+    expect(await measureJsBytes(withCharset, out)).toBe(0);
+    expect(
+      await measureJsBytes('<script type="application/json;charset=utf-8">1</script>', out),
+    ).toBe(0);
+    // And the parameter cannot make code data: the suffix test still decides, on the type alone.
+    expect(
+      await measureJsBytes('<script type="text/javascript; charset=utf-8">let a=1</script>', out),
+    ).toBe(7);
+  });
+
   test('the rule is the type ending in json, not the one literal type', async () => {
     expect(await measureJsBytes('<script type="importmap+json">{"a":1}</script>', out)).toBe(0);
     expect(await measureJsBytes('<script type="APPLICATION/LD+JSON"> {"a":1} </script>', out)).toBe(

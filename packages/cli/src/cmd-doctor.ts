@@ -11,7 +11,7 @@ import type { CliCommand, CommandContext } from './command';
 import { checkMigrationSnapshots } from './db-snapshot';
 import { ICON_SOURCE } from './dev-assets';
 import { checkSourceDrift } from './drift';
-import { intFlagOr, PORT_RANGE } from './flag-number';
+import { intFlagOr, neighbouringPort, PORT_RANGE } from './flag-number';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
 import type { ParsedArgs } from './parse';
@@ -165,14 +165,6 @@ export async function runDoctor(probe: DoctorProbe): Promise<readonly Finding[]>
   findings.push(...(await probe.snapshots()));
   return findings;
 }
-
-/**
- * A free-port suggestion `x dev` will actually accept. `port + 1` at the top of the range emitted
- * `x dev --port 65536`, which `x dev` refuses with `X_CLI_BAD_FLAG` — a fix line that reproduces a
- * failure rather than ending one. The neighbour below is a port; the one above does not exist.
- */
-const neighbouringPort = (port: number): number =>
-  port < PORT_RANGE.max ? port + 1 : PORT_RANGE.max - 1;
 
 /**
  * The port to TEST, and the one place `x doctor` reads it. `PORT_RANGE.min` is 0 because `x dev

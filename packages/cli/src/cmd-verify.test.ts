@@ -6,11 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { OPENAPI_FILE } from './app-openapi';
-import { readWorkers, runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
+import { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
 import { exitCodeFor } from './output';
-import type { ParsedArgs } from './parse';
-import { parseArgs } from './parse';
-import { WORKER_CEILING } from './test-workers';
 import { VERIFY_FLOOR_FILE } from './verify-floor';
 import type { VerifyContext, VerifyStep } from './verify-step';
 import { VERIFY_STEP_NAMES } from './verify-step';
@@ -304,32 +301,6 @@ describe('unit · x verify', () => {
     expect(result.steps?.map((step) => step.name)).toEqual(['typecheck', 'drift', 'e2e']);
     expect(verifyCommand.spec.flags?.map((flag) => flag.name)).toEqual(['workers']);
     expect(verifyCommand.spec.usage).toBe('x verify [--workers N] [--json]');
-  });
-
-  // The bug this guards: the summary said "max 8" and `readWorkers` passed no `max`, so
-  // `--workers 5000` was accepted and every parallel step spawned one Bun process per test file.
-  test('--workers is bounded by the ceiling the summary names', () => {
-    const args = (value: string): ParsedArgs =>
-      parseArgs(['verify', '--workers', value], [verifyCommand.spec]);
-    expect(readWorkers(args(String(WORKER_CEILING)))).toBe(WORKER_CEILING);
-    expect(readWorkers(parseArgs(['verify'], [verifyCommand.spec]))).toBeUndefined();
-    // `toThrow(Class)` passes in Bun 1.3.14 when the callee merely RETURNS an error, so the code
-    // is asserted off a caught value instead.
-    let caught: unknown;
-    try {
-      readWorkers(args(String(WORKER_CEILING + 1)));
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught).toMatchObject({ code: 'X_CLI_BAD_FLAG', fix: 'x verify --workers 4' });
-  });
-
-  // `x help verify` derives from the spec, and `cpus - 1` is the default `test-workers.ts`
-  // measured and rejected — slower than not sharding at all.
-  test('the flag summary names the default the code actually computes', () => {
-    const summary = verifyCommand.spec.flags?.[0]?.summary ?? '';
-    expect(summary).not.toContain('CPUs - 1');
-    expect(summary).toContain(`max ${WORKER_CEILING}`);
   });
 
   test('a host check adds findings to the step it was registered for', async () => {

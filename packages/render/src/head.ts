@@ -134,10 +134,20 @@ function contentOf(tag: HeadTag, raw: string): string {
   return carriesJson(tag) ? escapeJsonContent(raw) : escapeRawTextContent(raw);
 }
 
-/** `application/ld+json`, `application/json`, any `…+json`: the body is data, not code. */
+/**
+ * `application/ld+json`, `application/json`, any `…+json`: the body is data, not code.
+ *
+ * The MIME parameter is cut before the suffix test, because a real document writes
+ * `type="application/ld+json; charset=utf-8"` and that does not end in `json` — so the block built
+ * from route data, which is the path attacker text takes, silently took the raw-text escaper
+ * instead of the total one. `</` is escaped either way, so this was a weakened boundary rather than
+ * a break-out; the JSON rule is total on purpose, and a `charset` is not a reason to leave it.
+ */
 function carriesJson(tag: HeadTag): boolean {
-  const type = tag.attrs?.['type'];
-  return typeof type === 'string' && type.trim().toLowerCase().endsWith('json');
+  const declared = tag.attrs?.['type'];
+  if (typeof declared !== 'string') return false;
+  const [type = ''] = declared.split(';');
+  return type.trim().toLowerCase().endsWith('json');
 }
 
 export interface ThemeScriptOptions {

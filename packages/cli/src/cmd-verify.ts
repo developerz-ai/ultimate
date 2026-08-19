@@ -413,18 +413,22 @@ export const verifyCommand: CliCommand = {
 };
 
 /**
- * `x test --workers` refuses the same values for the same reason — and now through the same
- * reader, so the claim is enforced rather than asserted in a comment. Exported for the test that
- * pins the bound: the command's `run` reaches it only after the whole gate would have started.
+ * Both bounds are the constants the flag summary already names, so `x help verify` and the reader
+ * cannot disagree. Exported for the test that pins them: the command's `run` reaches this only
+ * after the whole gate would have started.
  *
- * `max` is the ceiling the summary already claimed. Without it `--workers 5000` parsed, `planShards`
- * clamped only to the file count, and `runParallel` `Promise.all`ed one Bun process per test file.
+ * `max` is the ceiling. Without it `--workers 5000` parsed, `planShards` clamped only to the file
+ * count, and `runParallel` `Promise.all`ed one Bun process per test file. `min` is `WORKER_FLOOR`,
+ * the same number `defaultWorkers` will not go below — the gate spreads or it does not shard, and
+ * `--workers 1` was a serial run the summary said was impossible. `x test --workers 1` stays legal
+ * and is deliberately NOT this reader: `runShards` clamps the width to the file count, so a
+ * one-file corpus makes `X_TEST_SHARD_FAILED`'s own `fix:` say `--workers 1`.
  */
 export const readWorkers = (args: ParsedArgs): number | undefined =>
   readIntFlag(args, {
     name: 'workers',
     command: 'verify',
-    min: 1,
+    min: WORKER_FLOOR,
     max: WORKER_CEILING,
     example: 'x verify --workers 4',
   });

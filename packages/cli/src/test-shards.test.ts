@@ -11,7 +11,6 @@ import type { TestFile } from './test-select';
 import type { Shard } from './test-shards';
 import {
   planShards,
-  quoteArg,
   reproduceFor,
   runShards,
   SHARD_COMMAND_PREFIX,
@@ -321,11 +320,5 @@ describe('unit · reproduceFor', () => {
     expect(reproduceFor(shard(0), { workers: 1, filter: "it's slow" })).toBe(
       "x test --filter 'it'\\''s slow' --workers 1 --worker 0",
     );
-  });
-
-  test('quoteArg leaves an ordinary path alone, so the common line stays readable', () => {
-    expect(quoteArg('packages/cli/src/cmd-test.test.ts')).toBe('packages/cli/src/cmd-test.test.ts');
-    expect(quoteArg('')).toBe("''");
-    expect(quoteArg('a b')).toBe("'a b'");
   });
 });

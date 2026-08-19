@@ -12,6 +12,7 @@ import {
   resetListeners,
   resetMetrics,
 } from '@ultimat3/core';
+import { PORT_RANGE } from './flag-number';
 import {
   isAddressInUse,
   type MetricsEndpoint,
@@ -112,6 +113,16 @@ describe('the scrape endpoint', () => {
     // `METRICS_PORT` is the one knob both `x dev` and the container read, so the fix has to name it.
     expect(refusal.fix).toContain('METRICS_PORT=');
     expect(refusal.fix).toContain(String(taken + 1));
+  });
+
+  // The same defect `x doctor` shipped and this release closed one file over: `port + 1` at the
+  // top of the range names 65536, which is not a port — so the one instruction the reader is
+  // given fails. The neighbour below is a port; the one above does not exist.
+  test('the port the fix names is one that exists, at the top of the range too', () => {
+    expect(new MetricsPortInUseError({ port: 3000 }).fix).toContain('METRICS_PORT=3001 ');
+    const top = new MetricsPortInUseError({ port: PORT_RANGE.max });
+    expect(top.fix).toContain(`METRICS_PORT=${PORT_RANGE.max - 1} `);
+    expect(top.fix).not.toContain(String(PORT_RANGE.max + 1));
   });
 
   test('a scrape does not reset the counters it read', async () => {

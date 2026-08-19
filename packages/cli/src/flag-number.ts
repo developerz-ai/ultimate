@@ -54,3 +54,14 @@ export const intFlagOr = (args: ParsedArgs, flag: IntFlag, fallback: number): nu
  * free port. Two ranges for one concept is the drift this constant exists to prevent.
  */
 export const PORT_RANGE = { min: 0, max: 65_535 } as const;
+
+/**
+ * A free-port suggestion the thing being fixed will actually accept. `port + 1` at the top of the
+ * range names 65536, which is not a port — so a `fix:` built that way reproduces a failure instead
+ * of ending one: `x doctor` emitted `x dev --port 65536`, which `x dev` refuses with
+ * `X_CLI_BAD_FLAG`. The neighbour below is a port; the one above does not exist. Here rather than
+ * beside either caller, because two ports-are-bounded rules is the drift `PORT_RANGE` above
+ * already exists to prevent.
+ */
+export const neighbouringPort = (port: number): number =>
+  port < PORT_RANGE.max ? port + 1 : PORT_RANGE.max - 1;

@@ -82,6 +82,7 @@ is held to the same error contract shipped source is (`X_GUARD_INVALID`, `X_GUAR
 | `dispatch.ts` | parse → run → render → exit; the only I/O boundary |
 | `parse.ts` | flags, subcommands, `--json`, `--help`, suggestions |
 | `flag-number.ts` | the one integer-flag reader — `--port`, `--workers`, `--shard` |
+| `shell-quote.ts` | the one POSIX quoter for a value pasted into a `fix:` or a reproduce line |
 | `output.ts` | one data shape, two renderers, the 3-line error format |
 | `registry.ts` | the one command list |
 | `generate-kinds.ts` | which generators exist, and how a command line names one |
