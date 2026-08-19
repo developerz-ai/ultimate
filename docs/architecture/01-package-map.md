@@ -13,8 +13,8 @@ tier 0  core, schema
 tier 1  i18n, money, time, cache, seo, db, storage, flags   (may import tier 0)
 tier 2  entity, policy, http, auth                   (may import tier 0-1)
 tier 3  action, query, jobs, realtime                (may import tier 0-2)
-tier 4  render, pwa, mcp, ai, manifest, mail         (may import tier 0-3)
-tier 5  ui, admin, testing, cli, scraping           (may import tier 0-4)
+tier 4  render, pwa, mcp, ai, manifest, mail, ui     (may import tier 0-3)
+tier 5  admin, testing, cli, scraping               (may import tier 0-4)
 ```
 
 [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) is the executable copy of this block; `bun run boundaries` reads that one. Prose and code must agree.
@@ -61,13 +61,13 @@ Decided **2026-08**, when the Postgres entity driver needed a home. `db` imports
 | `query` | 3 | reads, optionally live; tag acquisition from touched tables | `query()`, snapshot execution, tag inference, live registration | write, enqueue, or send mail |
 | `jobs` | 3 | durable background work, steps, drivers, outbox, scheduler | step executor, `JobDriver` implementations, claim loop, cron dispatch | serve HTTP; assume exactly-once |
 | `realtime` | 3 | three-tier realtime over one protocol and one mutator shape | change feed, incremental matcher, wire protocol, client store | authorize on its own — it calls `policy` |
-| `render` | 4 | five render modes, islands, streaming envelope, ISR | mode implementations, hydration emit, streaming protocol, ISR single-flight | contain business logic; import `ui` (higher tier) |
+| `render` | 4 | five render modes, islands, streaming envelope, ISR | mode implementations, hydration emit, streaming protocol, ISR single-flight | contain business logic; import `ui` (same tier, and not a declared edge) |
 | `pwa` | 4 | `sw.js`, manifest, icons, offline strategies, skew handling | SW codegen + checksum, precache set derivation, build-ID scoping | emit a hand-editable service worker |
 | `mcp` | 4 | actions/queries as MCP tools; the dev-server tool set; `defineAppMcp` | tool registry, transport, scope gate, visibility rules | introduce a second authz path |
 | `ai` | 4 | `llm()` primitive, versioned prompts, evals, embeddings | provider adapters, structured-output retry, cost accounting, semantic cache | spend past `budget`; inline a prompt string |
 | `manifest` | 4 | `x.manifest.json` + `openapi.json` emit and drift detection | the manifest schema, generation, contract diff | generate prose documentation |
 | `mail` | 4 | transactional email as data: one template renders HTML and text | block templates, i18n-only strings, token-only colours, transport adapters | send inline — delivery is a job |
-| `ui` | 5 | Solid components + design tokens + SCSS modules | primitives, `<Image>`, token source of truth, `data-theme` application | fetch, hold business logic, or run its own authz |
+| `ui` | 4 | Solid components + design tokens + SCSS modules | primitives, `<Image>`, token source of truth, `data-theme` application | fetch, hold business logic, or run its own authz |
 | `admin` | 5 | generated admin dashboard, itself an Ultimate app with MCP on | admin screens derived from entities, its MCP surface | bypass `policy`; ship in the app bundle graph |
 | `testing` | 5 | the six test runners, template DB, frozen clock, sealed network | fixture shapes, DB cloning, seeded RNG, egress trap | appear in a production bundle |
 | `cli` | 5 | the `x` binary: generators, dev server, `verify` orchestration | command surface, `--json` output, generator templates, composition wiring | contain framework logic — it delegates |
