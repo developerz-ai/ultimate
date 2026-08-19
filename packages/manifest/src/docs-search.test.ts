@@ -147,3 +147,55 @@ describe('unit · searchDocs', () => {
     expect(capped[0]?.entry.topic).toBe(all[0]?.entry.topic);
   });
 });
+
+// `nearestTopics` is the consolation path — what an agent reads when its question matched
+// nothing. Its ranking had never been exercised with more than one candidate, so the comparator
+// that decides which suggestion comes first ran zero times.
+describe('unit · nearestTopics ranking', () => {
+  test('a topic matching more of the question outranks one matching less', () => {
+    // `jobs.retry` contains both words, `jobs.job` only one.
+    expect(nearestTopics(corpus, 'retry job')).toEqual(['jobs.retry', 'jobs.job']);
+  });
+
+  test('an equal score breaks on the topic name, not on scan order', () => {
+    const tied: readonly DocEntry[] = [
+      entry({ topic: 'b.retry' }),
+      entry({ topic: 'a.retry' }),
+      entry({ topic: 'c.retry' }),
+    ];
+    expect(nearestTopics(tied, 'retry')).toEqual(['a.retry', 'b.retry', 'c.retry']);
+    expect(nearestTopics([...tied].reverse(), 'retry')).toEqual(['a.retry', 'b.retry', 'c.retry']);
+  });
+
+  test('a prefix match is worth strictly less than the whole word', () => {
+    // `retries` is not a substring of `a.retry`, but its first four characters are — worth 1,
+    // where `z.retries` carries the whole token and is worth 2. The topics are lettered so that
+    // a prefix scoring the SAME as a whole word would flip the order via the alphabetical
+    // tie-break rather than leaving it alone.
+    const entries: readonly DocEntry[] = [
+      entry({ topic: 'a.retry' }),
+      entry({ topic: 'z.retries' }),
+    ];
+    expect(nearestTopics(entries, 'retries')).toEqual(['z.retries', 'a.retry']);
+    // And a prefix match is still a match — the half-relevant topic is offered, not dropped.
+    expect(nearestTopics([entry({ topic: 'jobs.retry' })], 'retries')).toEqual(['jobs.retry']);
+    // A word sharing nothing with the topic earns nothing.
+    expect(nearestTopics([entry({ topic: 'jobs.retry' })], 'kubernetes')).toEqual([]);
+  });
+
+  test('one topic is suggested once, however many entries carry it', () => {
+    const duplicated: readonly DocEntry[] = [
+      entry({ topic: 'jobs.retry', source: 'src/a.ts' }),
+      entry({ topic: 'jobs.retry', source: 'src/b.ts' }),
+    ];
+    expect(nearestTopics(duplicated, 'retry')).toEqual(['jobs.retry']);
+  });
+
+  test('limit caps the suggestions from the top, not from the middle', () => {
+    const many: readonly DocEntry[] = ['a', 'b', 'c', 'd', 'e', 'f'].map((letter) =>
+      entry({ topic: `${letter}.retry` }),
+    );
+    expect(nearestTopics(many, 'retry')).toHaveLength(5);
+    expect(nearestTopics(many, 'retry', 2)).toEqual(['a.retry', 'b.retry']);
+  });
+});

@@ -209,7 +209,9 @@ describe('describe', () => {
     });
 
     // Pinned literally: `x.manifest.json` is committed and diffed, so this shape moving is a
-    // change to every app's build output, not just to this package.
+    // change to every app's build output, not just to this package. `idempotent` is `true` on
+    // both because `job()` refuses a definition without an `idempotencyKey` — the guarantee is
+    // published; the key never is, because it is computed from an input and is app data.
     expect(describeJobs()).toEqual([
       {
         name: 'archiveOrg',
@@ -217,6 +219,7 @@ describe('describe', () => {
         queue: 'maintenance',
         retry: { attempts: 5, backoff: 'linear' },
         steps: [],
+        idempotent: true,
       },
       {
         name: 'notifySubscribers',
@@ -224,6 +227,7 @@ describe('describe', () => {
         queue: 'default',
         retry: { attempts: 3, backoff: 'exponential' },
         steps: [],
+        idempotent: true,
       },
     ]);
   });

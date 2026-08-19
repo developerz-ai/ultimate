@@ -213,3 +213,84 @@ describe('unit · x new · the suite floor the app is gated on', () => {
     expect(parseVerifyFloor(emitted(VERIFY_FLOOR_FILE, true)).steps).not.toContain('e2e');
   });
 });
+
+describe('unit · x new · writing into the parent directory', () => {
+  const newContext = (argv: readonly string[], cwd: string): CommandContext => ({
+    args: parseArgs(argv, SPECS),
+    cwd,
+    runner: exec,
+    env: {},
+    bunVersion: '1.3.0',
+  });
+
+  test('the app lands under <parent>/<kebab-name>, and the report counts what it wrote', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'x-new-run-'));
+    try {
+      // A name that is NOT already kebab: the directory is the kebab form, never the argument.
+      const result = (await newContext(['new', 'Demo App'], parent)) satisfies CommandContext;
+      const written = await newCommand.run(result);
+      expect(written.ok).toBe(true);
+      const target = join(parent, 'demo-app');
+      const data = written.data as { dir: string; files: readonly string[] };
+      expect(data.dir).toBe(target);
+      expect(existsSync(join(target, 'app.config.ts'))).toBe(true);
+      // Every planned file is on disk, and the plan is what the report names.
+      expect(data.files).toEqual(
+        planNewApp({ name: 'Demo App', example: true }).map((f) => f.path),
+      );
+      expect(written.lines).toEqual([`  ${data.files.length} files in ${target}`]);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('a directory that already exists is refused with --force as the fix, and writes nothing', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'x-new-run-'));
+    try {
+      const target = join(parent, 'demo-app');
+      await Bun.write(join(target, 'KEEP.txt'), 'do not overwrite me');
+      const result = await newCommand.run(newContext(['new', 'demo-app'], parent));
+      expect(result.ok).toBe(false);
+      const finding = result.findings?.[0];
+      expect(finding?.code).toBe('X_GENERATE_CONFLICT');
+      expect(finding?.cause).toBe(`${target} already exists`);
+      expect(finding?.fix).toBe('x new demo-app --force, or choose another name');
+      expect(finding?.at).toBe(target);
+      // Refused BEFORE writing: nothing but the file the test put there.
+      expect(readdirSync(target)).toEqual(['KEEP.txt']);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  test('--force writes into the directory that was refused', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'x-new-run-'));
+    try {
+      const target = join(parent, 'demo-app');
+      await Bun.write(join(target, 'KEEP.txt'), 'kept');
+      const result = await newCommand.run(newContext(['new', 'demo-app', '--force'], parent));
+      expect(result.ok).toBe(true);
+      expect(existsSync(join(target, 'app.config.ts'))).toBe(true);
+      // --force adds; it does not clear the directory first.
+      expect(existsSync(join(target, 'KEEP.txt'))).toBe(true);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('--dir is resolved against the cwd when it is relative, and taken whole when absolute', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'x-new-run-'));
+    try {
+      const relative = await newCommand.run(
+        newContext(['new', 'demo-app', '--dir', 'nested', '--dry-run'], parent),
+      );
+      expect((relative.data as { dir: string }).dir).toBe(join(parent, 'nested', 'demo-app'));
+      const absolute = await newCommand.run(
+        newContext(['new', 'demo-app', '--dir', parent, '--dry-run'], tmpdir()),
+      );
+      expect((absolute.data as { dir: string }).dir).toBe(join(parent, 'demo-app'));
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+});

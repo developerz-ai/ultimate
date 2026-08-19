@@ -20,14 +20,22 @@ export interface CliCommand {
   run(ctx: CommandContext): Promise<CommandResult>;
 }
 
+/**
+ * `ok` is written AFTER the spread in both helpers, and that order is the whole contract: the
+ * function's NAME is the verdict, and `extra` may carry every other field. Spread last, a caller
+ * passing `{ ok: true }` to `failed()` got a result `exitCodeFor` exits 0 on while its own summary
+ * says it failed — a green CI over a red command. `command` and `summary` stay before the spread
+ * on purpose: those are arguments a caller may legitimately refine, and only the verdict is the
+ * helper's to keep.
+ */
 export const ok = (
   command: string,
   summary: string,
   extra: Partial<CommandResult> = {},
-): CommandResult => ({ ok: true, command, summary, ...extra });
+): CommandResult => ({ command, summary, ...extra, ok: true });
 
 export const failed = (
   command: string,
   summary: string,
   extra: Partial<CommandResult> = {},
-): CommandResult => ({ ok: false, command, summary, ...extra });
+): CommandResult => ({ command, summary, ...extra, ok: false });

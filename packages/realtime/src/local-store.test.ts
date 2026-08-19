@@ -94,6 +94,44 @@ describe('MemoryLocalStore', () => {
     expect(identity.peek('posts', 'p1')).toEqual({ id: 'p1', title: 'h', likes: 1 });
   });
 
+  test('an optimistic delete is journalled, so rollback puts the row back', () => {
+    const local = store();
+    local.apply('k1', (tx) => tx.posts.delete('p1'));
+
+    expect(local.tx.posts.get('p1')).toBeUndefined();
+    expect(local.snapshot('posts')).toEqual([]);
+
+    local.rollback('k1');
+    expect(local.tx.posts.get('p1')).toEqual({ id: 'p1', title: 'hello', likes: 1 });
+  });
+
+  test('deleting a row the table does not hold is a no-op, not a journal entry', () => {
+    const local = store();
+    local.apply('k1', (tx) => tx.posts.delete('missing'));
+    // Nothing was written, so there is nothing to undo — and undoing it must not resurrect a row.
+    local.rollback('k1');
+    expect(local.snapshot('posts')).toEqual([{ id: 'p1', title: 'hello', likes: 1 }]);
+  });
+
+  test('a deleted row is released from the identity map unless a window still holds it', () => {
+    const identity = new IdentityMap();
+    const local = new MemoryLocalStore<Tables>(
+      { posts: [{ id: 'p1', title: 'h', likes: 1 }] },
+      identity,
+    );
+    local.apply('k1', (tx) => tx.posts.delete('p1'));
+    expect(identity.peek('posts', 'p1')).toBeUndefined();
+
+    const held = new IdentityMap();
+    const other = new MemoryLocalStore<Tables>(
+      { posts: [{ id: 'p2', title: 'h', likes: 1 }] },
+      held,
+    );
+    held.retain('posts', 'p2');
+    other.apply('k1', (tx) => tx.posts.delete('p2'));
+    expect(held.peek('posts', 'p2')).toEqual({ id: 'p2', title: 'h', likes: 1 });
+  });
+
   test('reset releases what it held, so a reset store leaves no rows behind in the map', () => {
     const local = store();
     expect(local.identity.size).toBe(1);

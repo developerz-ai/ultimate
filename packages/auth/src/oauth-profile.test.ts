@@ -172,3 +172,62 @@ describe('oauthProfile', () => {
     expect(isUltimateError(error) && error.cause).toContain('no userinfo endpoint');
   });
 });
+
+describe('the userinfo call, when it does not come back', () => {
+  // Distinct from a 4xx: `fetch` REJECTS on DNS failure, a refused connection or the abort — no
+  // status exists, and the naked rejection would escape every coded path in this package.
+  test('a rejected fetch names the host that never answered and the curl that checks it', async () => {
+    const error = await rejection(
+      oauthProfile('google', tokensWith(claimsWithoutEmail()), {
+        fetch: async () => {
+          throw new TypeError('Unable to connect. Is the computer able to access the url?');
+        },
+      }),
+    );
+    expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    expect(isUltimateError(error) && error.meta).toEqual({ provider: 'google', stage: 'userinfo' });
+    expect(isUltimateError(error) && error.cause).toContain('Unable to connect');
+    expect(isUltimateError(error) && error.cause).toContain('egress, DNS or TLS');
+    expect(isUltimateError(error) && error.fix).toContain(
+      `curl -sS -m 5 -o /dev/null ${GOOGLE_USERINFO}`,
+    );
+  });
+
+  test('a rejection that is not an Error still gets a sentence, never [object Object]', async () => {
+    const error = await rejection(
+      oauthProfile('google', tokensWith(claimsWithoutEmail()), {
+        fetch: async () => {
+          throw { name: 'AbortError' } as unknown as Error;
+        },
+      }),
+    );
+    expect(isUltimateError(error) && error.cause).toContain('the request failed before a response');
+    expect(isUltimateError(error) && error.cause).not.toContain('[object Object]');
+  });
+
+  test('a 200 whose body is not a JSON object is refused, not read as an empty profile', async () => {
+    const { fetch } = routed({
+      // A proxy or a captive portal answering 200 with something that is not a profile.
+      [GOOGLE_USERINFO]: () => json(['sub', 'google-sub']),
+    });
+    const error = await rejection(
+      oauthProfile('google', tokensWith(claimsWithoutEmail()), { fetch }),
+    );
+    expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    expect(isUltimateError(error) && error.cause).toContain('not a JSON object');
+    expect(isUltimateError(error) && error.fix).toContain(GOOGLE_USERINFO);
+  });
+
+  test('a 200 that is not JSON at all is the same refusal, never a bare SyntaxError', async () => {
+    const error = await rejection(
+      oauthProfile('google', tokensWith(claimsWithoutEmail()), {
+        fetch: async () =>
+          new Response('<!doctype html><title>Sign in</title>', {
+            headers: { 'content-type': 'text/html' },
+          }),
+      }),
+    );
+    expect(isUltimateError(error) && error.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    expect(isUltimateError(error) && error.cause).toContain('not a JSON object');
+  });
+});

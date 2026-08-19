@@ -4,7 +4,7 @@
 // arrangement this file exists to keep out.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -160,5 +160,113 @@ describe('unit · x deploy --method is a closed set', () => {
     );
     expect(result.ok).toBe(true);
     expect(result.data).toMatchObject({ method: 'compose' });
+  });
+});
+
+/** A runner that records, and answers with the exit code the test asked for. */
+function recordingRunner(failing?: { role: string; code: number }): {
+  runner: CommandContext['runner'];
+  ran: string[][];
+} {
+  const ran: string[][] = [];
+  const runner: CommandContext['runner'] = async (command) => {
+    ran.push([...command]);
+    const code = failing !== undefined && command.at(-1) === failing.role ? failing.code : 0;
+    return { command, code, ok: code === 0, stdout: '', stderr: '', durationMs: 3 };
+  };
+  return { runner, ran };
+}
+
+const runContext = (
+  argv: readonly string[],
+  cwd: string,
+  runner: CommandContext['runner'],
+): CommandContext => ({ args: parseArgs(argv, SPECS), cwd, runner, env: {}, bunVersion: '1.3.0' });
+
+describe('unit · x deploy actually runs the plan it printed', () => {
+  test('every step is spawned, in plan order, in the app root', async () => {
+    const root = appRoot();
+    const { runner, ran } = recordingRunner();
+    const result = await deployCommand.run(
+      runContext(['deploy', '--image', 'repo/app:1.2.3'], root, runner),
+    );
+    expect(result.ok).toBe(true);
+    expect(ran.map((command) => command.at(-1))).toEqual([...DEPLOY_ROLES]);
+    // The plan in `--json` is the plan that ran: same commands, joined.
+    const data = result.data as { steps: readonly { role: string; command: string }[] };
+    expect(data.steps.map((step) => step.command)).toEqual(ran.map((command) => command.join(' ')));
+  });
+
+  test('a step that exits non-zero stops the deploy and names the command to rerun', async () => {
+    const root = appRoot();
+    const { runner, ran } = recordingRunner({ role: 'worker', code: 137 });
+    const result = await deployCommand.run(
+      runContext(['deploy', '--image', 'repo/app:1.2.3'], root, runner),
+    );
+    expect(result.ok).toBe(false);
+    const finding = result.findings?.[0];
+    expect(finding?.code).toBe('X_DEPLOY_FAILED');
+    expect(finding?.cause).toBe('role "worker" step exited 137');
+    // The fix is the exact argv that failed — copy, paste, see the output.
+    expect(finding?.fix).toBe(
+      `${(ran.at(-1) ?? []).join(' ')}   # run it directly to see the full output`,
+    );
+    // and nothing after `worker` was attempted.
+    expect(ran.at(-1)?.at(-1)).toBe('worker');
+    expect(ran).toHaveLength(DEPLOY_ROLES.indexOf('worker') + 1);
+  });
+
+  test('--critical is recorded in the plan the report carries', async () => {
+    const root = appRoot();
+    const { runner } = recordingRunner();
+    const plain = await deployCommand.run(
+      runContext(['deploy', '--image', 'repo/app:1.2.3'], root, runner),
+    );
+    expect(plain.data).toMatchObject({ critical: false });
+    const critical = await deployCommand.run(
+      runContext(['deploy', '--image', 'repo/app:1.2.3', '--critical'], root, runner),
+    );
+    expect(critical.data).toMatchObject({ critical: true });
+  });
+});
+
+describe('unit · x deploy --method helm needs the chart to be there', () => {
+  test('an app with no docker/helm is refused before anything is spawned', async () => {
+    const root = appRoot();
+    const { runner, ran } = recordingRunner();
+    const thrown: unknown = await deployCommand
+      .run(runContext(['deploy', '--image', 'repo/app:1.2.3', '--method', 'helm'], root, runner))
+      .then(
+        (result) => result,
+        (error: unknown) => error,
+      );
+    expect((thrown as { code?: string }).code).toBe('X_NOT_IMPLEMENTED');
+    expect((thrown as { fix?: string }).fix).toBe(
+      'copy docker/helm from the framework repo, or use: x deploy --method compose',
+    );
+    expect(ran).toEqual([]);
+  });
+
+  test('with the chart present the one helm upgrade is spawned', async () => {
+    const root = appRoot();
+    mkdirSync(join(root, 'docker', 'helm'), { recursive: true });
+    const { runner, ran } = recordingRunner();
+    const result = await deployCommand.run(
+      runContext(['deploy', '--image', 'ghcr.io/org/app:1.2.3', '--method', 'helm'], root, runner),
+    );
+    expect(result.ok).toBe(true);
+    expect(ran).toEqual([
+      [
+        'helm',
+        'upgrade',
+        '--install',
+        'app',
+        join(root, 'docker', 'helm'),
+        '--set',
+        'image.repository=ghcr.io/org/app',
+        '--set',
+        'image.tag=1.2.3',
+      ],
+    ]);
   });
 });

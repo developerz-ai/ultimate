@@ -330,3 +330,30 @@ describe('a sender that throws a value the queue cannot render', () => {
     });
   });
 });
+
+describe('clear', () => {
+  test('empties the queue and persists the empty state, so a reload does not resurrect it', async () => {
+    const { queue, store } = await seeded();
+    expect(queue.size).toBe(3);
+
+    await queue.clear();
+
+    expect(queue.size).toBe(0);
+    expect(queue.pending()).toEqual([]);
+    // The durable half: a fresh queue over the same store must see nothing.
+    const reopened = await OfflineQueue.open(store);
+    expect(reopened.size).toBe(0);
+    expect(reopened.pending()).toEqual([]);
+  });
+
+  test('the next enqueue after a clear keeps counting, so a cleared key is not re-collapsed', async () => {
+    const { queue } = await seeded();
+    await queue.clear();
+    await queue.enqueue({ key: 'like:p1', name: 'likePost', input: { postId: 'p1' } });
+
+    expect(queue.size).toBe(1);
+    expect(queue.collapsed).toBe(0);
+    // Sequence numbers are monotonic across a clear: they are the drain order, not an index.
+    expect(queue.pending().map((mutation) => mutation.seq)).toEqual([4]);
+  });
+});

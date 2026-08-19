@@ -90,3 +90,143 @@ describe('discoverOAuthProvider', () => {
     expect(error?.fix).toContain(discoveryUrl('https://sso.bigco.test'));
   });
 });
+
+describe('every way the document can fail to describe an OP', () => {
+  const causeOf = async (body: unknown, status = 200): Promise<string> => {
+    const served = serving(body, status);
+    try {
+      await discoverOAuthProvider({
+        id: 'bigco',
+        issuer: 'https://sso.bigco.test',
+        fetch: served.fetch,
+      });
+    } catch (error) {
+      return error instanceof AuthError ? error.cause : `not-an-AuthError: ${String(error)}`;
+    }
+    return 'did-not-throw';
+  };
+
+  test('a body that is not a JSON object is refused before any field is read', async () => {
+    expect(await causeOf([DOCUMENT])).toContain('not a JSON object');
+    expect(await causeOf('a login page')).toContain('not a JSON object');
+    expect(await causeOf(null)).toContain('not a JSON object');
+  });
+
+  test('a body that is not JSON at all is the same refusal, never a bare SyntaxError', async () => {
+    const thrown = await discoverOAuthProvider({
+      id: 'bigco',
+      issuer: 'https://sso.bigco.test',
+      // What an SSO portal actually serves at a path it does not recognise.
+      fetch: async () =>
+        new Response('<!doctype html><title>Sign in</title>', {
+          headers: { 'content-type': 'text/html' },
+        }),
+    }).catch((error: unknown) => error);
+    const error = thrown instanceof AuthError ? thrown : null;
+    expect(error?.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    expect(error?.cause).toContain('not a JSON object');
+    expect(error?.fix).toContain('not a login page');
+  });
+
+  test.each(['issuer', 'authorization_endpoint', 'token_endpoint'])(
+    'a document missing %s builds no handshake',
+    async (field) => {
+      const partial = { ...DOCUMENT };
+      delete (partial as Record<string, unknown>)[field];
+      const cause = await causeOf(partial);
+      expect(cause).toContain('missing issuer, authorization_endpoint or token_endpoint');
+    },
+  );
+
+  test.each(['issuer', 'authorization_endpoint', 'token_endpoint', 'jwks_uri'])(
+    'an empty string at %s counts as absent, not as a value',
+    async (field) => {
+      // `''` is what a template that rendered nothing publishes; it is not an endpoint.
+      const cause = await causeOf({ ...DOCUMENT, [field]: '' });
+      expect(cause).not.toBe('did-not-throw');
+      expect(cause).toContain(field === 'jwks_uri' ? 'no jwks_uri' : 'missing issuer');
+    },
+  );
+
+  test('a non-string endpoint counts as absent too', async () => {
+    expect(await causeOf({ ...DOCUMENT, token_endpoint: 42 })).toContain('missing issuer');
+  });
+});
+
+describe('an issuer the process cannot reach', () => {
+  // Distinct from a 404: `fetch` REJECTS on DNS failure, a refused connection or the timeout
+  // abort, so there is no status to read and the naked rejection would escape every coded path.
+  test('a rejected fetch is coded, carries the runtime message and the reproducing curl', async () => {
+    const thrown = await discoverOAuthProvider({
+      id: 'bigco',
+      issuer: 'https://sso.bigco.test',
+      timeoutMs: 50,
+      fetch: async () => {
+        throw new Error('The operation timed out.');
+      },
+    }).catch((error: unknown) => error);
+    const error = thrown instanceof AuthError ? thrown : null;
+    expect(error?.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    expect(error?.cause).toContain('The operation timed out.');
+    expect(error?.fix).toContain(discoveryUrl('https://sso.bigco.test'));
+  });
+
+  test('a rejection that is not an Error still gets a sentence', async () => {
+    const thrown = await discoverOAuthProvider({
+      id: 'bigco',
+      issuer: 'https://sso.bigco.test',
+      fetch: async () => {
+        throw { name: 'AbortError' } as unknown as Error;
+      },
+    }).catch((error: unknown) => error);
+    const error = thrown instanceof AuthError ? thrown : null;
+    expect(error?.cause).toContain('the request failed before a response arrived');
+    expect(error?.cause).not.toContain('[object Object]');
+  });
+});
+
+describe('what the caller may override, and what it may not', () => {
+  test('scopes and both env var names are the caller’s, and default when absent', async () => {
+    const custom = await discoverOAuthProvider({
+      id: 'bigco',
+      issuer: 'https://sso.bigco.test',
+      scopes: ['openid', 'groups'],
+      clientIdEnv: 'SSO_ID',
+      clientSecretEnv: 'SSO_SECRET',
+      fetch: serving(DOCUMENT).fetch,
+    });
+    expect(custom.scopes).toEqual(['openid', 'groups']);
+    expect(custom.clientIdEnv).toBe('SSO_ID');
+    expect(custom.clientSecretEnv).toBe('SSO_SECRET');
+
+    const defaults = await discoverOAuthProvider({
+      id: 'bigco',
+      issuer: 'https://sso.bigco.test',
+      fetch: serving(DOCUMENT).fetch,
+    });
+    expect(defaults.scopes).toEqual(['openid', 'email', 'profile']);
+  });
+
+  test('an id with punctuation still yields one legal env var prefix', async () => {
+    const provider = await discoverOAuthProvider({
+      id: 'big-co.sso',
+      issuer: 'https://sso.bigco.test',
+      fetch: serving(DOCUMENT).fetch,
+    });
+    expect(provider.clientIdEnv).toBe('BIG_CO_SSO_CLIENT_ID');
+    expect(provider.clientSecretEnv).toBe('BIG_CO_SSO_CLIENT_SECRET');
+  });
+
+  test('a document with no userinfo_endpoint yields null rather than an empty string', async () => {
+    const partial = { ...DOCUMENT };
+    delete (partial as Record<string, unknown>)['userinfo_endpoint'];
+    const provider = await discoverOAuthProvider({
+      id: 'bigco',
+      issuer: 'https://sso.bigco.test',
+      fetch: serving(partial).fetch,
+    });
+    expect(provider.userInfoUrl).toBe(null);
+    // GitHub's second call has no equivalent in OIDC discovery, so it is always null here.
+    expect(provider.userEmailsUrl).toBe(null);
+  });
+});

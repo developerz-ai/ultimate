@@ -371,3 +371,46 @@ describe('a reply the socket refuses is not a reply that was delivered', () => {
     expect(target.ws.closes).toHaveLength(1);
   });
 });
+
+/**
+ * A node built without `onMutate` is a read-only node. A client that mutates against one has to
+ * be TOLD — dropped, its optimistic write stays `inflight` forever: never rolled back, never
+ * retried, and invisible to the queue that would have done either.
+ */
+describe('a node with no mutation handler', () => {
+  test('answers a mutate with a failure ack that names the missing wiring', async () => {
+    const target = rig();
+
+    await target.route(mutate('like:p1', 1));
+
+    const ack = target.ws.frames[0];
+    expect(ack?.type).toBe('ack');
+    if (ack?.type !== 'ack') return;
+    expect(ack.ref).toBe('like:p1');
+    expect(ack.lsn).toBeNull();
+    expect(ack.error?.code).toBe('X_NOT_IMPLEMENTED');
+    // A receipt has to be actionable: the fix names the one construction site that adds it.
+    expect(ack.error?.fix).toContain('createSyncNode({ onMutate })');
+    expect(target.ws.closes).toEqual([]);
+  });
+
+  test('every mutate gets its own receipt, keyed by the client key it arrived under', async () => {
+    const target = rig();
+
+    await target.route(mutate('like:p1', 1));
+    await target.route(mutate('like:p2', 2));
+
+    const refs = target.ws.frames.map((frame) => (frame.type === 'ack' ? frame.ref : frame.type));
+    expect(refs).toEqual(['like:p1', 'like:p2']);
+  });
+
+  test('a receipt the socket refuses closes it, exactly as a real settlement would', async () => {
+    const target = rig({ buffered: 4_096 });
+
+    await target.route(mutate('like:p1', 1));
+
+    // Undelivered, the client keeps an `inflight` write that only a dead connection releases.
+    expect(target.ws.frames).toHaveLength(0);
+    expect(target.ws.closes).toEqual([[CLOSE.overloaded, 'settlement undeliverable']]);
+  });
+});

@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import {
   interpolate,
+  PLURAL_CATEGORIES,
   placeholdersOf,
   pluralCategory,
   pluralKeyCandidates,
+  pluralVariantsOf,
   selectPluralKey,
 } from './interpolate';
 
@@ -101,5 +103,54 @@ describe('plural selection', () => {
     expect(selectPluralKey('items', 5, 'ru', (key) => twoForm.has(key))).toBe('items_plural');
     expect(selectPluralKey('items', 1, 'ru', (key) => twoForm.has(key))).toBe('items');
     expect(selectPluralKey('nope', 5, 'ru', () => false)).toBe('nope');
+  });
+});
+
+describe('pluralVariantsOf', () => {
+  test('is the two-form shortcut plus every CLDR category, in probe order', () => {
+    expect(pluralVariantsOf('items')).toEqual([
+      'items_plural',
+      'items_zero',
+      'items_one',
+      'items_two',
+      'items_few',
+      'items_many',
+      'items_other',
+    ]);
+    expect(pluralVariantsOf('items')).toHaveLength(PLURAL_CATEGORIES.length + 1);
+    // The bare key is NOT a variant — a variant is a suffixed spelling of it.
+    expect(pluralVariantsOf('items')).not.toContain('items');
+  });
+
+  test('covers every candidate any locale and count can ask for', () => {
+    // The contract that matters: a tool deleting "variants" must not delete a key a lookup
+    // would still probe. `ar` reaches zero/two, `ru` reaches few/many, `en` reaches one/other.
+    const variants = new Set(pluralVariantsOf('items'));
+    for (const locale of ['en', 'ru', 'ar', 'pl', 'ja', 'cy']) {
+      for (const count of [0, 1, 2, 3, 5, 11, 100]) {
+        for (const candidate of pluralKeyCandidates('items', count, locale)) {
+          if (candidate === 'items') continue;
+          expect(variants.has(candidate)).toBe(true);
+        }
+      }
+    }
+  });
+});
+
+describe('pluralRulesFor', () => {
+  test('an unparseable locale tag degrades to English instead of breaking the render', () => {
+    // `new Intl.PluralRules('this is not a tag')` throws a RangeError, and a render must not
+    // 500 because a header carried junk.
+    expect(() => new Intl.PluralRules('this is not a tag')).toThrow(RangeError);
+    expect(pluralCategory(1, 'this is not a tag')).toBe('one');
+    expect(pluralCategory(7, 'this is not a tag')).toBe('other');
+    // Cached under the bad tag, so the second call answers the same without re-throwing.
+    expect(pluralCategory(1, 'this is not a tag')).toBe('one');
+    expect(pluralKeyCandidates('items', 1, 'this is not a tag')).toEqual([
+      'items_one',
+      'items',
+      'items_plural',
+      'items_other',
+    ]);
   });
 });

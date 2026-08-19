@@ -199,3 +199,111 @@ describe('shape compatibility', () => {
     expect(isCompatible(older)).toBe(true);
   });
 });
+
+// Every collection is sorted before it is written, and each one has its OWN sort key. The
+// fixture above carries a single entity, query, job, task, policy and error code, so
+// `Array.sort` never calls those six key extractors — a key reading the wrong field sorts a
+// one-element list correctly and churns the committed file the day a second fact arrives.
+describe('every collection is sorted by its own key', () => {
+  const pairs: ManifestSources = {
+    app: { name: 'acme', version: '1.4.2' },
+    entities: [
+      { name: 'zebra', table: 'aaa_zebras', columns: [], invariants: [] },
+      { name: 'apple', table: 'zzz_apples', columns: [], invariants: [] },
+    ],
+    queries: [
+      {
+        name: 'zeta',
+        input: {},
+        policy: 'a:read',
+        permissions: ['a:read'],
+        live: false,
+        cacheTags: [],
+      },
+      {
+        name: 'alpha',
+        input: {},
+        policy: 'z:read',
+        permissions: ['z:read'],
+        live: false,
+        cacheTags: [],
+      },
+    ],
+    jobs: [
+      {
+        name: 'zulu',
+        input: {},
+        queue: 'aaa',
+        retry: { attempts: 1, backoff: 'fixed' },
+        steps: [],
+      },
+      {
+        name: 'alfa',
+        input: {},
+        queue: 'zzz',
+        retry: { attempts: 1, backoff: 'fixed' },
+        steps: [],
+      },
+    ],
+    tasks: [
+      { name: 'zeta', cron: '0 1 * * *', tz: 'UTC', enqueues: ['b', 'a'] },
+      { name: 'alpha', cron: '0 2 * * *', tz: 'UTC', enqueues: ['d', 'c'] },
+    ],
+    // `enforcedIn` is ordered opposite to `permission` on purpose: a sort keyed off the first
+    // enforcement site instead of the permission produces the reverse order, not the same one.
+    policies: [
+      { permission: 'z:write', enforcedIn: ['http', 'mcp'] },
+      { permission: 'a:write', enforcedIn: ['mcp', 'http'] },
+    ],
+    errorCodes: [
+      { code: 'X_AAA', package: 'zzz' },
+      { code: 'X_ZZZ', package: 'aaa' },
+    ],
+  };
+
+  test('entities by name, queries by name, jobs by name, tasks by name', () => {
+    const manifest = buildManifest(pairs);
+    // Each `table`/`queue` is the reverse of its `name`, so a key reading the neighbouring
+    // field produces the opposite order rather than an equal one.
+    expect(manifest.entities.map((e) => e.name)).toEqual(['apple', 'zebra']);
+    expect(manifest.queries.map((q) => q.name)).toEqual(['alpha', 'zeta']);
+    expect(manifest.jobs.map((j) => j.name)).toEqual(['alfa', 'zulu']);
+    expect(manifest.tasks.map((t) => t.name)).toEqual(['alpha', 'zeta']);
+  });
+
+  test('policies by permission, and error codes by package THEN code', () => {
+    const manifest = buildManifest(pairs);
+    expect(manifest.policies.map((p) => p.permission)).toEqual(['a:write', 'z:write']);
+    // `zzz` owns the alphabetically-first code and still sorts last: the key is the owner
+    // first, so a file grouped by package stays grouped.
+    expect(manifest.errorCodes.map((e) => `${e.package}:${e.code}`)).toEqual([
+      'aaa:X_ZZZ',
+      'zzz:X_AAA',
+    ]);
+  });
+
+  test('a task’s enqueues and a policy’s enforcedIn are sorted too', () => {
+    const manifest = buildManifest(pairs);
+    expect(manifest.tasks.map((t) => t.enqueues)).toEqual([
+      ['c', 'd'],
+      ['a', 'b'],
+    ]);
+    expect(manifest.policies.map((p) => p.enforcedIn)).toEqual([
+      ['http', 'mcp'],
+      ['http', 'mcp'],
+    ]);
+  });
+
+  test('reversing the input changes nothing about the output bytes', () => {
+    const reversed: ManifestSources = {
+      ...pairs,
+      entities: [...(pairs.entities ?? [])].reverse(),
+      queries: [...(pairs.queries ?? [])].reverse(),
+      jobs: [...(pairs.jobs ?? [])].reverse(),
+      tasks: [...(pairs.tasks ?? [])].reverse(),
+      policies: [...(pairs.policies ?? [])].reverse(),
+      errorCodes: [...(pairs.errorCodes ?? [])].reverse(),
+    };
+    expect(manifestJson(buildManifest(reversed))).toBe(manifestJson(buildManifest(pairs)));
+  });
+});

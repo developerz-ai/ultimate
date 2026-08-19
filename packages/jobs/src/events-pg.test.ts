@@ -5,7 +5,12 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { PgExecutor } from './driver-pg';
-import { SQL_EVENT_FIND, SQL_EVENT_PUBLISH } from './driver-pg-sql';
+import {
+  SQL_EVENT_FIND,
+  SQL_EVENT_LIST,
+  SQL_EVENT_PUBLISH,
+  SQL_EVENT_PURGE,
+} from './driver-pg-sql';
 import { createPgEventBus } from './events-pg';
 
 function recorder(rows: readonly unknown[] = []) {
@@ -63,5 +68,93 @@ describe('the pg event bus', () => {
     expect(await createPgEventBus({ executor, clock }).find('never.published', undefined, 0)).toBe(
       undefined,
     );
+  });
+});
+
+describe('the pg event bus, read back and swept', () => {
+  test('list() decodes every column and drops a null correlation key rather than keeping it', async () => {
+    // A `correlationKey: null` on the record would not equal the memory bus's absent key, and
+    // `find` compares them — a run keyed on `undefined` must not match a row keyed on `null`.
+    const { executor, calls } = recorder([
+      {
+        id: 'ev-1',
+        name: 'invoice.paid',
+        payload: { invoice: 'in_1' },
+        correlation_key: 'org-1',
+        published_at: '1000000',
+        expires_at: '1604800000',
+      },
+      {
+        id: 'ev-2',
+        name: 'invoice.paid',
+        payload: null,
+        correlation_key: null,
+        published_at: 2_000_000,
+        expires_at: 3_000_000,
+      },
+    ]);
+
+    const events = await createPgEventBus({ executor, clock, listLimit: 25 }).list('invoice.paid');
+
+    expect(events).toEqual([
+      {
+        id: 'ev-1',
+        name: 'invoice.paid',
+        payload: { invoice: 'in_1' },
+        correlationKey: 'org-1',
+        publishedAt: 1_000_000,
+        expiresAt: 1_604_800_000,
+      },
+      {
+        id: 'ev-2',
+        name: 'invoice.paid',
+        payload: null,
+        publishedAt: 2_000_000,
+        expiresAt: 3_000_000,
+      },
+    ]);
+    expect(Object.hasOwn(events[1] as object, 'correlationKey')).toBe(false);
+    expect(calls[0]?.sql).toBe(SQL_EVENT_LIST);
+    expect(calls[0]?.params).toEqual(['invoice.paid', 25]);
+  });
+
+  test('an unfiltered list passes a null name, never a missing predicate', async () => {
+    const { executor, calls } = recorder([]);
+    await createPgEventBus({ executor, clock }).list();
+    expect(calls[0]?.params).toEqual([null, 1_000]);
+  });
+
+  test('purgeExpired fires the DELETE and answers 0 — this bus keeps no count', async () => {
+    const { executor, calls } = recorder([]);
+    const bus = createPgEventBus({ executor, clock });
+    expect(bus.purgeExpired()).toBe(0);
+    // Synchronous by signature, a round trip in fact: the statement is issued, not awaited.
+    await Promise.resolve();
+    expect(calls.map((call) => call.sql)).toEqual([SQL_EVENT_PURGE]);
+    expect(calls[0]?.params).toEqual([]);
+  });
+
+  test('a failed purge never rejects into a caller — housekeeping does not break a publish', async () => {
+    const executor: PgExecutor = {
+      query<R>(sql: string): Promise<readonly R[]> {
+        return sql === SQL_EVENT_PURGE
+          ? Promise.reject(new Error('deadlock detected'))
+          : Promise.resolve([] as readonly R[]);
+      },
+    };
+    const bus = createPgEventBus({ executor, clock });
+    expect(bus.purgeExpired()).toBe(0);
+    // An unhandled rejection here would fail the process, not this call: the assertion is that a
+    // publish issued in the same turn still settles normally.
+    await expect(bus.publish('invoice.paid', { invoice: 'in_2' })).resolves.toMatchObject({
+      name: 'invoice.paid',
+    });
+  });
+
+  test('size() is -1, the honest "not a number this bus keeps" — never 0, which reads as empty', async () => {
+    const { executor } = recorder([]);
+    const bus = createPgEventBus({ executor, clock });
+    await bus.publish('invoice.paid', {});
+    expect(bus.size()).toBe(-1);
   });
 });

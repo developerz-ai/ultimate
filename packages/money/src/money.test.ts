@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  currencyOf,
   equals,
   formatMoneyDebug,
   fromDecimal,
@@ -166,6 +167,16 @@ function codeOf(run: () => unknown): string {
   }
   return 'no-throw';
 }
+
+describe('currencyOf', () => {
+  test('reads the code the value carries, whatever built it and whatever its scale', () => {
+    expect(currencyOf(money(1299, 'EUR'))).toBe('EUR');
+    expect(currencyOf(zero('JPY'))).toBe('JPY');
+    expect(currencyOf(fromDecimal('1.234', 'KWD'))).toBe('KWD');
+    // Scale is a separate axis and must not leak into the currency.
+    expect(currencyOf(money(2, 'USD', 6))).toBe('USD');
+  });
+});
 
 function fixOf(run: () => unknown): string {
   try {

@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import type { CommandResult } from './output';
+import type { UltimateErrorShape } from '@ultimat3/core';
+import { msg } from './messages';
+import type { CommandResult, StepResult } from './output';
 import {
   exitCodeFor,
   findingFrom,
@@ -7,6 +9,7 @@ import {
   renderFinding,
   renderHuman,
   renderJson,
+  renderUltimateError,
 } from './output';
 
 const failing: CommandResult = {
@@ -113,5 +116,92 @@ describe('unit · output', () => {
   test('a failed result exits non-zero', () => {
     expect(exitCodeFor(failing)).toBe(1);
     expect(exitCodeFor({ ok: true, command: 'verify', summary: 'ok' })).toBe(0);
+  });
+});
+
+describe('unit · renderUltimateError', () => {
+  const error = (over: Partial<UltimateErrorShape> = {}) =>
+    ({
+      code: 'X_DB_DRIFT',
+      message: 'schema differs from migrations',
+      cause: 'table "posts" has column "publish_at" not present in any migration',
+      fix: 'x db gen "add publish_at"',
+      ...over,
+    }) as UltimateErrorShape;
+
+  test('the head is the code and its summary, and every contract line follows', () => {
+    expect(renderUltimateError(error({ docs: 'https://ultimate.dev/errors/X_DB_DRIFT' }))).toBe(
+      [
+        'X_DB_DRIFT: schema differs from migrations',
+        '  cause: table "posts" has column "publish_at" not present in any migration',
+        '  fix:   x db gen "add publish_at"',
+        '  docs:  https://ultimate.dev/errors/X_DB_DRIFT',
+      ].join('\n'),
+    );
+  });
+
+  test('no docs means no docs line — never an "undefined" one', () => {
+    const rendered = renderUltimateError(error());
+    expect(rendered.split('\n')).toHaveLength(3);
+    expect(rendered).not.toContain('docs');
+  });
+
+  // `message` defaults to the code on a framework error, and `X_DB_DRIFT: X_DB_DRIFT` is a head
+  // that says one thing twice.
+  test('a message equal to the code, or empty, leaves the head as the bare code', () => {
+    expect(renderUltimateError(error({ message: 'X_DB_DRIFT' })).split('\n')[0]).toBe('X_DB_DRIFT');
+    expect(renderUltimateError(error({ message: '' })).split('\n')[0]).toBe('X_DB_DRIFT');
+  });
+
+  test('the indent applies to every line, head included', () => {
+    for (const line of renderUltimateError(error(), '    ').split('\n')) {
+      expect(line.startsWith('    ')).toBe(true);
+    }
+  });
+});
+
+describe('unit · renderHuman says how a step was run', () => {
+  const stepResult = (over: Partial<StepResult>): StepResult => ({
+    name: 'unit',
+    ok: true,
+    durationMs: 40,
+    findings: [],
+    ...over,
+  });
+
+  test('one worker reads as serial, more than one names the width', () => {
+    const serial = renderHuman({
+      ok: true,
+      command: 'verify',
+      summary: 'ok',
+      steps: [stepResult({ workers: 1 })],
+    });
+    expect(serial).toContain(msg('cli.verify.serial'));
+
+    const parallel = renderHuman({
+      ok: true,
+      command: 'verify',
+      summary: 'ok',
+      steps: [stepResult({ workers: 8 })],
+    });
+    expect(parallel).toContain(msg('cli.verify.workers', { workers: 8 }));
+    expect(parallel).not.toContain(msg('cli.verify.serial'));
+  });
+
+  test('a step that did not run says nothing about workers, and is marked skipped', () => {
+    const skipped = renderHuman({
+      ok: true,
+      command: 'verify',
+      summary: 'ok',
+      steps: [stepResult({ workers: 8, skipped: true })],
+    });
+    expect(skipped).not.toContain(msg('cli.verify.workers', { workers: 8 }));
+    expect(skipped).toContain('- unit');
+  });
+
+  test('a step with no workers field says nothing either', () => {
+    expect(
+      renderHuman({ ok: true, command: 'verify', summary: 'ok', steps: [stepResult({})] }),
+    ).not.toContain(msg('cli.verify.serial'));
   });
 });

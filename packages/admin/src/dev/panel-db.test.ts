@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { assertReadOnly } from './panel-db';
+import { DevSourceUnavailableError } from '../errors';
+import { staticDevSources } from './data';
+import type { DriftFact, SqlResult, TableFact } from './facts';
+import { assertReadOnly, dbPanel } from './panel-db';
 
 describe('assertReadOnly', () => {
   test('admits a plain SELECT', () => {
@@ -111,5 +114,135 @@ describe('assertReadOnly', () => {
     const refusal = assertReadOnly("select '; delete from members") ?? '';
     expect(refusal).toContain('Fix the statement, or');
     expect(refusal).toContain('x db psql --write');
+  });
+});
+
+describe('dbPanel.data', () => {
+  const TABLES: readonly TableFact[] = [
+    { name: 'members', columns: [{ name: 'id', type: 'uuid', nullable: false }] },
+  ];
+  const DRIFT: readonly DriftFact[] = [
+    { table: 'members', column: 'nickname', issue: 'column missing in the database' },
+  ];
+  const RESULT: SqlResult = { columns: ['id'], rows: [['m_1']], elapsedMs: 3 };
+
+  /** Records every statement handed to the SQL tool, so "was it run at all" is assertable. */
+  function sources(over: Partial<Parameters<typeof staticDevSources>[0]> = {}): {
+    readonly sources: ReturnType<typeof staticDevSources>;
+    readonly ran: string[];
+  } {
+    const ran: string[] = [];
+    return {
+      ran,
+      sources: staticDevSources({
+        tables: () => Promise.resolve(TABLES),
+        drift: () => Promise.resolve(DRIFT),
+        runSql: (sql: string) => {
+          ran.push(sql);
+          return Promise.resolve(RESULT);
+        },
+        ...over,
+      }),
+    };
+  }
+
+  test('the schema and the drift render with no statement typed', async () => {
+    const fixture = sources();
+    const data = await dbPanel.data(fixture.sources, new URLSearchParams());
+
+    expect(data.tables).toEqual(TABLES);
+    expect(data.drift).toEqual(DRIFT);
+    expect(data.sql).toBeNull();
+    expect(data.result).toBeNull();
+    expect(data.refused).toBeNull();
+    expect(data.readOnly).toBe(true);
+    // Nothing was typed, so nothing was executed — an empty box is not a query.
+    expect(fixture.ran).toEqual([]);
+  });
+
+  // `null`, never `[]`. An empty drift list is the answer a checker that RAN gives, and printing
+  // it for a process that holds no connection tells an operator the schema matches when nobody
+  // looked. `defaultDevSources().drift` refuses for exactly this reason.
+  test('an unwired drift check is null — "nobody looked", not "nothing wrong"', async () => {
+    const fixture = sources({
+      drift: () => Promise.reject(new DevSourceUnavailableError({ source: 'drift', panel: 'db' })),
+    });
+    const data = await dbPanel.data(fixture.sources, new URLSearchParams());
+
+    expect(data.drift).toBeNull();
+    // The rest of the panel still renders: a missing drift check must not cost the table list.
+    expect(data.tables).toEqual(TABLES);
+  });
+
+  test('a drift check that RAN and failed is a diagnostic, not a blank cell', async () => {
+    const fixture = sources({
+      drift: () => Promise.reject(new Error('connection reset while reading pg_catalog')),
+    });
+    // Anything that is not "unwired" reaches `panelPayload`, which renders its code and its fix.
+    await expect(dbPanel.data(fixture.sources, new URLSearchParams())).rejects.toThrow(
+      /connection reset/,
+    );
+  });
+
+  test('whitespace short-circuits before the SQL tool is reached at all', async () => {
+    const fixture = sources();
+    const data = await dbPanel.data(fixture.sources, new URLSearchParams({ sql: '   ' }));
+    expect(data.sql).toBeNull();
+    expect(data.refused).toBeNull();
+    expect(fixture.ran).toEqual([]);
+  });
+
+  test('a half-typed comment is not a REFUSAL — the box must not flash an error mid-keystroke', async () => {
+    const fixture = sources();
+    const data = await dbPanel.data(
+      fixture.sources,
+      new URLSearchParams({ sql: '-- still typing' }),
+    );
+    // `sanitize` blanks the comment, so the guard sees an empty statement and says nothing. It
+    // does NOT short-circuit — only `trim() === ''` does — so the tool is still asked, which is
+    // a no-op against a database and the panel's own definition of "read-only".
+    expect(data.refused).toBeNull();
+    expect(fixture.ran).toEqual(['-- still typing']);
+  });
+
+  test('a read statement is executed and its grid comes back', async () => {
+    const fixture = sources();
+    const data = await dbPanel.data(
+      fixture.sources,
+      new URLSearchParams({ sql: 'select id from members' }),
+    );
+
+    expect(data.sql).toBe('select id from members');
+    expect(data.result).toEqual(RESULT);
+    expect(data.refused).toBeNull();
+    expect(fixture.ran).toEqual(['select id from members']);
+  });
+
+  test('a write statement is refused BEFORE the tool is called, with a way out', async () => {
+    const fixture = sources();
+    const data = await dbPanel.data(
+      fixture.sources,
+      new URLSearchParams({ sql: 'delete from members' }),
+    );
+
+    expect(data.result).toBeNull();
+    expect(fixture.ran).toEqual([]);
+    expect(data.refused).toContain('refused:');
+    // Phrased for both classes that arrive through one code: a write, and a delimiter that never
+    // closes. `--write` grants writes; it does not close a quote.
+    expect(data.refused).toContain('Fix the statement');
+    expect(data.refused).toContain('x db psql --write');
+    // The statement the operator typed is still on screen for them to edit.
+    expect(data.sql).toBe('delete from members');
+  });
+
+  test('an unterminated delimiter is refused by the shared guard, not by a local scan', async () => {
+    const fixture = sources();
+    const data = await dbPanel.data(
+      fixture.sources,
+      new URLSearchParams({ sql: "select * from members where name = 'oops" }),
+    );
+    expect(data.refused).not.toBeNull();
+    expect(fixture.ran).toEqual([]);
   });
 });

@@ -17,11 +17,11 @@ One panel per file. Each kills one question, and each is available as `--json` �
 
 | Panel | Kills |
 |---|---|
-| `routes` | which handler serves this? — render mode, offline strategy, budget, meta |
+| `routes` | which handler serves this? — render mode, offline strategy, revalidate tags, budget |
 | `timeline` | where did the time go? — flamegraph of SQL, cache, action, policy spans + the N+1 count |
 | `live` | what does each subscriber receive, and **why** — the matcher's decision trace |
 | `jobs` | queue depth, step traces, retry-from-step target, dead letter |
-| `db` | psql in a tab (read-only; `assertReadOnly` refuses DML), schema diff vs migrations |
+| `db` | psql in a tab (read-only; `assertReadOnly` refuses DML), schema + drift (`null` unless a host wires the check) |
 | `mail` | caught mail, rendered, per locale, with the locale gaps listed |
 | `cache` | the tag graph — what invalidated what, and which tags are orphans |
 | `policy` | the permission matrix per actor, every cell carrying its trace |

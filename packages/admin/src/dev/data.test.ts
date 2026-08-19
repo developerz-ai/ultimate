@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { action, registerActions, resetRegistry as resetActionRegistry, t } from '@ultimat3/action';
 import {
+  and,
   can,
   clearPermissions,
   definePermissions,
@@ -22,7 +23,7 @@ afterEach(() => {
 });
 
 /** The `can()` capabilities this file's fixture actions and queries declare. */
-const WIDGET_PERMISSIONS = ['widget:create', 'widget:delete', 'widget:read'] as const;
+const WIDGET_PERMISSIONS = ['widget:create', 'widget:delete', 'widget:read', 'org:member'] as const;
 
 let ambientPermissions: readonly string[] = [];
 
@@ -107,8 +108,40 @@ describe('cachePanel degrades when its invalidation log is unwired', () => {
   });
 });
 
+describe('policyMatrix over a COMPOSITE policy', () => {
+  test('a composite-guarded action contributes its real permissions, not its display label', async () => {
+    // The bug this pins, and the reason a simple `can()` could never show it: `capability` is the
+    // policy's DISPLAY label, and `packages/action/src/action.ts` says so. A composite renders as
+    // `and(widget:create, org:member)` — a string no grant can ever match — so every
+    // composite-guarded action was a permanently DENIED row and an operator read a real grant as
+    // missing. `x policy list` shipped the identical confusion once already, which is why
+    // `ActionDescriptor.permissions` carries that history in its own doc comment.
+    const publishWidget = action({
+      input: t.object({}),
+      output: t.object({}),
+      policy: and(can('widget:create'), can('org:member')),
+      handle: () => ({}),
+    });
+    registerActions({ publishWidget });
+
+    const authz = staticAuthz(['widget:create', 'org:member']);
+    const sources = defaultDevSources({ authz, actors: [{ id: 'a1' }] });
+
+    const matrix = await sources.policyMatrix();
+
+    // Both halves appear, and the label appears nowhere.
+    expect([...matrix.map((row) => row.permission)].sort()).toEqual([
+      'org:member',
+      'widget:create',
+    ]);
+    expect(matrix.map((row) => row.permission)).not.toContain('and(widget:create, org:member)');
+    // And because they are real permissions, a real grant is ALLOWED rather than dead.
+    expect(matrix.every((row) => row.allowed)).toBe(true);
+  });
+});
+
 describe('policyMatrix', () => {
-  test("reads the action registry's capability field, not the non-existent policy field", async () => {
+  test("reads the action registry's flattened permissions, not the non-existent policy field", async () => {
     const createWidget = action({
       input: t.object({}),
       output: t.object({}),
@@ -130,7 +163,7 @@ describe('policyMatrix', () => {
     const matrix = await sources.policyMatrix();
 
     // If `policyMatrix` reads `raw['policy']` again, every permission comes back '' and is
-    // filtered out — `permissions` is empty and the matrix collapses to `[]`, well short of 4.
+    // filtered out — the list is empty and the matrix collapses to `[]`, well short of 4.
     expect(matrix).toHaveLength(4);
     expect([...new Set(matrix.map((row) => row.permission))].sort()).toEqual([
       'widget:create',

@@ -177,3 +177,50 @@ describe('other widgets', () => {
     });
   });
 });
+
+describe('the value guards refuse rather than render something wrong', () => {
+  test('a money value that is not an object at all names the type it got', () => {
+    // A repo that returned a formatted STRING: rendering it would put "€19.99" through a
+    // formatter that expects minor units, and the amount on screen would be arbitrary.
+    let thrown: { code?: string; cause?: string; fix?: string } = {};
+    try {
+      widgetProps(field({}), '19.99', ctx);
+    } catch (error) {
+      thrown = error as typeof thrown;
+    }
+    expect(thrown.code).toBe('X_ADMIN_FIELD_UNSUPPORTED');
+    expect(thrown.cause).toContain('money value is a string');
+    expect(thrown.fix).toContain('{ minor, currency }');
+  });
+
+  test('a boolean money value is refused the same way', () => {
+    expect(() => widgetProps(field({}), true, ctx)).toThrow(
+      expect.objectContaining({ code: 'X_ADMIN_FIELD_UNSUPPORTED' }),
+    );
+  });
+
+  test('a timestamp stored as epoch milliseconds is widened to an ISO instant', () => {
+    // Not refused: a number IS a timestamp, unlike a number that claims to be money.
+    const props = widgetProps(
+      field({ name: 'sentAt', type: 'timestamptz', widget: 'datetime' }),
+      Date.UTC(2026, 7, 19, 12, 30),
+      ctx,
+    );
+    expect(props).toMatchObject({
+      widget: 'datetime',
+      value: '2026-08-19T12:30:00.000Z',
+      precision: 'instant',
+    });
+  });
+
+  test('a timestamp that is neither a Date, a string nor a number is refused', () => {
+    let thrown: { code?: string; cause?: string } = {};
+    try {
+      widgetProps(field({ name: 'sentAt', type: 'timestamptz', widget: 'datetime' }), {}, ctx);
+    } catch (error) {
+      thrown = error as typeof thrown;
+    }
+    expect(thrown.code).toBe('X_ADMIN_FIELD_UNSUPPORTED');
+    expect(thrown.cause).toContain('timestamp value is a object');
+  });
+});

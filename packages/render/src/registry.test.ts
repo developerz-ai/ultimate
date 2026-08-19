@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
-import { RouteDuplicateError, RouteFileInvalidError } from './errors';
+import { RouteDuplicateError, RouteFileInvalidError, SurfaceBoundaryError } from './errors';
 import {
   clearRoutes,
+  compilePattern,
   describeRoutes,
   matchRoute,
   registerRoute,
+  routeCount,
   routeEntries,
   routePathFromFile,
 } from './registry';
@@ -263,5 +265,69 @@ describe('route table', () => {
     registerRoute({ file: 'apps/web/site/blog/[slug]/page.tsx', config: staticConfig });
     registerRoute({ file: 'apps/web/site/blog/%zz/page.tsx', config: staticConfig });
     expect(matchRoute('/blog/%zz')?.entry.path).toBe('/blog/%zz');
+  });
+});
+
+describe('a file outside every surface has no URL at all', () => {
+  // The surface is the bundle graph. A file that is in none of them cannot be given a URL by
+  // guessing one — axiom 6 is the reason this is a refusal and not a default.
+  test.each([
+    'apps/web/components/button.tsx',
+    'page.tsx',
+    'apps/web/lib/site-utils/page.tsx',
+    'apps/web/apiary/route.ts',
+  ])('%s is refused rather than mounted', (file) => {
+    const error = thrownBy(() => routePathFromFile(file));
+    expect(error.code).toBe('X_SURFACE_BOUNDARY');
+    expect(error.cause).toContain(file);
+    expect(error.fix).toContain('site/, app/ or api/');
+  });
+
+  test('registerRoute refuses it too, so nothing lands in the table', () => {
+    expect(() =>
+      registerRoute({ file: 'apps/web/components/button.tsx', config: staticConfig }),
+    ).toThrow(SurfaceBoundaryError);
+    expect(routeCount()).toBe(0);
+  });
+});
+
+describe('a catch-all segment', () => {
+  test('matches one segment, many segments, and the empty rest', () => {
+    registerRoute({ file: 'apps/web/site/docs/[...path]/page.tsx', config: staticConfig });
+    expect(matchRoute('/docs/a')?.params).toEqual({ path: 'a' });
+    expect(matchRoute('/docs/a/b/c')?.params).toEqual({ path: 'a/b/c' });
+    expect(matchRoute('/docs/')?.params).toEqual({ path: '' });
+    expect(matchRoute('/other/a')).toBe(null);
+  });
+
+  test('is the least specific pattern, so a literal and a param both outrank it', () => {
+    registerRoute({ file: 'apps/web/site/docs/[...path]/page.tsx', config: staticConfig });
+    registerRoute({ file: 'apps/web/site/docs/[slug]/page.tsx', config: staticConfig });
+    registerRoute({ file: 'apps/web/site/docs/intro/page.tsx', config: staticConfig });
+
+    expect(matchRoute('/docs/intro')?.entry.path).toBe('/docs/intro');
+    expect(matchRoute('/docs/anything')?.entry.path).toBe('/docs/:slug');
+    expect(matchRoute('/docs/a/b')?.entry.path).toBe('/docs/*path');
+  });
+
+  test('compilePattern reports the key and the specificity it was ranked by', () => {
+    const catchAll = compilePattern('/docs/*path');
+    expect(catchAll.keys).toEqual(['path']);
+    expect(compilePattern('/docs/:slug').specificity).toBeGreaterThan(catchAll.specificity);
+    expect(compilePattern('/docs/intro').specificity).toBeGreaterThan(
+      compilePattern('/docs/:slug').specificity,
+    );
+  });
+});
+
+describe('routeCount', () => {
+  test('counts registered routes and is reset by clearRoutes', () => {
+    expect(routeCount()).toBe(0);
+    registerRoute({ file: 'apps/web/site/page.tsx', config: staticConfig });
+    registerRoute({ file: 'apps/web/site/pricing/page.tsx', config: staticConfig });
+    expect(routeCount()).toBe(2);
+    expect(routeCount()).toBe(routeEntries().length);
+    clearRoutes();
+    expect(routeCount()).toBe(0);
   });
 });

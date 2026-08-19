@@ -85,6 +85,18 @@ describe('unit · a download is armed only by a RECORDED selector', () => {
     );
   });
 
+  test('the refusal is a REJECTION — `download().catch()` is reached, never jumped over', async () => {
+    // `download()` is typed `Promise<ScrapeDownloadFile>`, and `page-over-target.ts` forwards it
+    // straight through: a synchronous `throw` here escapes past the caller's `.catch()` and lands
+    // wherever the call was written, so an artifact writer's own handler never runs.
+    const target = targetOver({ url: PAGE_URL, html: '<p>no download here</p>' });
+    let caught: unknown;
+    await target.download({ timeoutMs: 10 }).catch((thrown: unknown) => {
+      caught = thrown;
+    });
+    expect((caught as { code?: string } | undefined)?.code).toBe('X_SCRAPE_DOWNLOAD_TIMEOUT');
+  });
+
   test('a recorded download still arms', async () => {
     const target = targetOver({
       url: PAGE_URL,

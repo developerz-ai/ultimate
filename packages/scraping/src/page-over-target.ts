@@ -204,8 +204,12 @@ export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePa
     },
     screenshot: (options) => capture('screenshot', options),
     pdf: (options) => capture('pdf', options),
-    download: (options?: DownloadRequest): Promise<ScrapeDownloadFile> =>
-      target.download({ timeoutMs: options?.timeout ?? ctx.defaultTimeoutMs }),
+    // `async`, and that is the whole point of the keyword here: `ScrapeTarget` is the seam a third
+    // party implements, and a driver that THROWS from its promise-typed `download()` would escape
+    // past this page's caller `.catch()` if the forward were a bare arrow.
+    async download(options?: DownloadRequest): Promise<ScrapeDownloadFile> {
+      return await target.download({ timeoutMs: options?.timeout ?? ctx.defaultTimeoutMs });
+    },
     cookies: (): Promise<readonly ScrapeCookie[]> => target.cookies(),
     session: () => target.session(),
     console: () => target.console.entries(),

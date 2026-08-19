@@ -1,7 +1,11 @@
-import { beforeEach, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
-import { resetJobDriver } from '@ultimat3/jobs';
+import {
+  createMemoryDriver as createMemoryJobDriver,
+  resetJobDriver,
+  setJobDriver,
+} from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { blocks } from './blocks';
 import { registerMailCatalog } from './catalog';
@@ -11,7 +15,15 @@ import {
   resetMailDriver,
   setMailDriver,
 } from './driver';
-import { defineMail, type SendOptions, send, sendById } from './mail';
+import {
+  defineMail,
+  mailFor,
+  registeredMailIds,
+  registeredMails,
+  type SendOptions,
+  send,
+  sendById,
+} from './mail';
 
 registerMailCatalog();
 registerCatalog(
@@ -37,6 +49,16 @@ const basicMail = defineMail<{ name: string }>({
     blocks.heading('test.basic.heading', { name: data.name }),
     blocks.paragraph('test.basic.body'),
   ],
+});
+
+// A SECOND registration, with an id that sorts before the first: the registry's ordering is
+// unobservable with one entry, and "sorted by id" is what the `/_x` panel and `x mail list`
+// present. Defined after `basicMail` so insertion order and sorted order disagree.
+const alphaMail = defineMail<{ name: string }>({
+  id: 'test-alpha',
+  subject: 'test.basic.subject',
+  input: basicInput,
+  template: () => [blocks.paragraph('test.basic.body')],
 });
 
 let memory: MemoryMailDriver;
@@ -142,4 +164,102 @@ test('cc and bcc are accepted and the unsubscribe url reaches both parts', async
   ]);
   expect(entry?.message.html).toContain('https://example.test/unsubscribe?token=abc');
   expect(entry?.message.text).toContain('https://example.test/unsubscribe?token=abc');
+});
+
+describe('the registry', () => {
+  test('mailFor answers the very definition defineMail returned, and undefined otherwise', () => {
+    // Identity: `sendById` looks a mail up here and hands it to `send`, so a lookup that
+    // rebuilt the definition would re-parse against a different schema object.
+    expect(mailFor('test-basic')).toBe(basicMail);
+    expect(mailFor('no-such-mail')).toBeUndefined();
+  });
+
+  test('registeredMails is sorted by id and agrees with registeredMailIds', () => {
+    const ids = registeredMails().map((definition) => definition.id);
+    expect(ids).toContain('test-basic');
+    expect(ids).toContain('test-alpha');
+    expect(ids).toEqual([...ids].sort());
+    // Sorted, NOT insertion order: `test-alpha` was defined second and comes first.
+    expect(ids.indexOf('test-alpha')).toBeLessThan(ids.indexOf('test-basic'));
+    expect(mailFor('test-alpha')).toBe(alphaMail);
+    // Two views of one map — a reader listing mails and a reader listing ids must not disagree.
+    expect(ids).toEqual([...registeredMailIds()]);
+    // The full definition, not just the id: the `/_x` panel renders the subject key off this.
+    expect(registeredMails().find((d) => d.id === 'test-basic')?.subject).toBe(
+      'test.basic.subject',
+    );
+  });
+});
+
+describe('the queue path', () => {
+  afterEach(() => {
+    resetJobDriver();
+  });
+
+  test('a configured job driver means the message is enqueued, not delivered', async () => {
+    setJobDriver(createMemoryJobDriver());
+    const result = await send(basicMail, { name: 'Ada' }, { to: 'ada@example.test', locale: 'en' });
+
+    expect(result.queued).toBe(true);
+    expect(result.driver).toBe('queue');
+    // Nothing reached the transport: that is the whole point of enqueuing.
+    expect(memory.sent).toHaveLength(0);
+    // The id is the QUEUE row's, not a transport's.
+    expect(result.id).not.toBe('');
+    expect(result.idempotencyKey).toMatch(/^mail:test-basic:ada@example\.test:/);
+  });
+
+  test('the queued result reports every envelope recipient, cc and bcc included', async () => {
+    setJobDriver(createMemoryJobDriver());
+    const result = await send(
+      basicMail,
+      { name: 'Ada' },
+      {
+        to: 'ada@example.test',
+        cc: ['grace@example.test'],
+        bcc: ['ops@example.test'],
+        locale: 'en',
+      },
+    );
+    expect(result.accepted).toEqual(['ada@example.test', 'grace@example.test', 'ops@example.test']);
+    expect(result.queued).toBe(true);
+  });
+
+  test('two identical sends dedupe onto one queue row', async () => {
+    setJobDriver(createMemoryJobDriver());
+    const options: SendOptions = { to: 'ada@example.test', locale: 'en' };
+    const first = await send(basicMail, { name: 'Ada' }, options);
+    const second = await send(basicMail, { name: 'Ada' }, options);
+    // `onConflict: 'dedupe'` against a content-derived key: a retried request is one email.
+    expect(second.id).toBe(first.id);
+    // Different content is a different key, so it is a second row.
+    const other = await send(basicMail, { name: 'Grace' }, options);
+    expect(other.idempotencyKey).not.toBe(first.idempotencyKey);
+    expect(other.id).not.toBe(first.id);
+  });
+
+  test('sync: true delivers inline even with a queue configured', async () => {
+    setJobDriver(createMemoryJobDriver());
+    const result = await send(
+      basicMail,
+      { name: 'Ada' },
+      { to: 'ada@example.test', locale: 'en', sync: true },
+    );
+    expect(result.queued).toBe(false);
+    expect(result.driver).toBe('memory');
+    expect(memory.sent).toHaveLength(1);
+  });
+});
+
+test('sendById renders and delivers the mail the id names', async () => {
+  const result = await sendById(
+    'test-basic',
+    { name: 'Ada' },
+    { to: 'ada@example.test', locale: 'en' },
+  );
+  expect(result.driver).toBe('memory');
+  expect(memory.lastTo('ada@example.test')?.message.subject).toBe('Hi Ada');
+  // `data` is parsed through the mail's own schema, not trusted — the registry erased `I`.
+  const bad = sendById('test-basic', { name: 42 }, { to: 'a@b.test', locale: 'en' });
+  expect(codeOf(await caught(bad))).toBe('X_VALIDATION_FAILED');
 });

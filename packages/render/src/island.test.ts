@@ -8,7 +8,13 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
 import { BudgetExceededError } from './errors';
 import { hydrateRuntime, hydrateRuntimeBytes } from './hydrate';
-import { clearDeclaredIslands, ISLAND_EXTENSION, isIslandNode, island } from './island';
+import {
+  clearDeclaredIslands,
+  drainDeclaredIslands,
+  ISLAND_EXTENSION,
+  isIslandNode,
+  island,
+} from './island';
 import { createIslandCollector, islandModuleIds } from './island-collector';
 import { ISLAND_PROPS_MAX_BYTES } from './island-props';
 import type { Island } from './islands';
@@ -87,6 +93,61 @@ describe('island · a declaration that cannot ship', () => {
       expect(error).toBeInstanceOf(UltimateError);
       expect((error as UltimateError).fix).toContain(`contact-modal${ISLAND_EXTENSION}`);
     }
+  });
+});
+
+describe('island · a specifier that cannot be emitted', () => {
+  // `src` lands verbatim inside `data-x-entry="…"`. A quote closes the attribute, a backtick or an
+  // angle bracket opens something else — so the character set is checked at the declaration, not
+  // escaped at the emit, and `isEmittableSpecifier` is the same test the resolver's output faces.
+  test.each([
+    ['a double quote', './ca"rt.island.tsx'],
+    ['a single quote', "./ca'rt.island.tsx"],
+    ['a backtick', './ca`rt.island.tsx'],
+    ['an angle bracket', './<cart>.island.tsx'],
+    ['a space', './my cart.island.tsx'],
+    ['a backslash', '.\\cart.island.tsx'],
+  ])('%s in src is refused where it is written', (_name, src) => {
+    expect(codeOf(() => island({ src }))).toBe('X_ISLAND_INVALID');
+  });
+
+  test('the cause quotes the specifier and the fix names the rename', () => {
+    let caught: UltimateError | undefined;
+    try {
+      island({ src: './my cart.island.tsx' });
+    } catch (error) {
+      caught = error instanceof UltimateError ? error : undefined;
+    }
+    expect(caught?.cause).toContain(JSON.stringify('./my cart.island.tsx'));
+    expect(caught?.fix).toContain(`src: './<name>${ISLAND_EXTENSION}'`);
+  });
+
+  test('a src that is nothing but the extension has no name left to be an id', () => {
+    // It passes every earlier check — it IS an island file — and fails on the id, which is what
+    // the budget report and the manifest key on.
+    expect(codeOf(() => island({ src: ISLAND_EXTENSION }))).toBe('X_ISLAND_INVALID');
+    expect(codeOf(() => island({ src: `./${ISLAND_EXTENSION}` }))).toBe('X_ISLAND_INVALID');
+    expect(codeOf(() => island({ src: `./---${ISLAND_EXTENSION}` }))).toBe('X_ISLAND_INVALID');
+  });
+
+  test('a remote specifier is outside the bundle graph the budget has to count', () => {
+    expect(codeOf(() => island({ src: 'https://cdn.example.com/cart.island.tsx' }))).toBe(
+      'X_ISLAND_INVALID',
+    );
+  });
+
+  test('no src at all is refused before anything is derived from it', () => {
+    expect(codeOf(() => island({ src: '' }))).toBe('X_ISLAND_INVALID');
+    expect(codeOf(() => island({ src: 7 as unknown as string }))).toBe('X_ISLAND_INVALID');
+  });
+
+  test('a refused declaration never reaches the pending list the route drains', () => {
+    // The throw is in the normalizer, before the push — so the next `defineRoute` cannot inherit
+    // a half-built spec and derive `hydrate` from an island that does not exist.
+    expect(codeOf(() => island({ src: './my cart.island.tsx' }))).toBe('X_ISLAND_INVALID');
+    expect(codeOf(() => island({ src: ISLAND_EXTENSION }))).toBe('X_ISLAND_INVALID');
+    island({ src: './cart.island.tsx' });
+    expect(drainDeclaredIslands().map((spec) => spec.moduleId)).toEqual(['cart']);
   });
 });
 

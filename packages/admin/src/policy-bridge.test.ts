@@ -247,3 +247,103 @@ describe('the admin subject carries the tenant and the loaded row', () => {
     expect(result.ok).toBe(false);
   });
 });
+
+describe('a permission with no registered policy is denied, closed, with the fix in the trace', () => {
+  test('the verdict is deny and the trace says exactly what to declare', async () => {
+    const { policyAuthz } = await import('./policy-bridge');
+    // An admin that fails OPEN is worse than one that fails visibly: the missing entry is the
+    // author forgetting a policy, and the trace is the only place that can say so.
+    const decision = policyAuthz({ policies: {} }).decide({
+      permission: 'admin_subject_post:archive',
+      actor: OWNER,
+    });
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.reason).toBe('admin.policy.missing');
+    expect(decision.trace[0]).toContain('admin_subject_post:archive');
+    expect(decision.trace[1]).toContain("can('admin_subject_post:archive')");
+    expect(decision.trace[1]).toContain('definePermissions');
+  });
+
+  test('a permission that IS registered is decided by its policy, not by this branch', () => {
+    const decision = authz.decide({
+      permission: 'admin:read',
+      actor: OWNER,
+    });
+    expect(decision.allowed).toBe(true);
+    expect(decision.reason).not.toBe('admin.policy.missing');
+  });
+});
+
+describe('the payload a policy receives when the surface has no row', () => {
+  test('a subject with no `row` key is passed WITHOUT one — absent is not null', async () => {
+    const { policyAuthz } = await import('./policy-bridge');
+    const seenArgs: PolicyArgs<unknown, unknown>[] = [];
+    const local = policyAuthz({
+      policies: {
+        'admin:read': definePolicy('admin:read', {
+          deny: 'admin.denied',
+          check: (args) => {
+            seenArgs.push(args);
+            return true;
+          },
+        }),
+      },
+    });
+
+    local.decide({ permission: 'admin:read', actor: OWNER, subject: { entity: 'post' } });
+    // What the RULE sees is `null` either way: `evaluate` normalises `row: args.row ?? null` so
+    // that `PolicyArgs.row` can be required. The bridge's own distinction — omit the key rather
+    // than pass `row: undefined` — therefore does not reach a predicate, and a rule reading
+    // `row` must fail closed on `null` whether the surface looked or not.
+    expect(seenArgs[0]?.row).toBeNull();
+    // The subject IS the payload when the surface carries no action input.
+    expect(seenArgs[0]?.input).toEqual({ entity: 'post' });
+  });
+
+  test("an action's own input is the payload, and the subject is not smuggled in beside it", async () => {
+    const { policyAuthz } = await import('./policy-bridge');
+    const seenArgs: PolicyArgs<unknown, unknown>[] = [];
+    const local = policyAuthz({
+      policies: {
+        'admin:write': definePolicy('admin:write', {
+          deny: 'admin.denied',
+          check: (args) => {
+            seenArgs.push(args);
+            return true;
+          },
+        }),
+      },
+    });
+
+    local.decide({
+      permission: 'admin:write',
+      actor: OWNER,
+      subject: { entity: 'post', id: 'p_1', input: { title: 'Hello' } },
+    });
+    expect(seenArgs[0]?.input).toEqual({ title: 'Hello' });
+  });
+
+  test('a decision with no subject at all still reaches the policy', async () => {
+    const { policyAuthz } = await import('./policy-bridge');
+    const seenArgs: PolicyArgs<unknown, unknown>[] = [];
+    const local = policyAuthz({
+      policies: {
+        'admin:read': definePolicy('admin:read', {
+          deny: 'admin.denied',
+          check: (args) => {
+            seenArgs.push(args);
+            return true;
+          },
+        }),
+      },
+    });
+
+    expect(local.decide({ permission: 'admin:read', actor: OWNER }).allowed).toBe(true);
+    // No subject at all: nothing to decide ON, so the payload is absent rather than invented.
+    expect(seenArgs[0]?.input).toBeUndefined();
+    expect(seenArgs[0]?.row).toBeNull();
+    // The ACTOR always reaches the rule, which is the half that used to be missing.
+    expect(seenArgs[0]?.actor?.orgId).toBe(OWNER.orgId);
+  });
+});

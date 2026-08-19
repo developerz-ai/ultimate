@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { RebaseConflictError } from './errors';
 import type { Row } from './json';
 import { type LocalTx, MemoryLocalStore } from './local-store';
-import { custom, RebaseLog, reconcile } from './rebase';
+import { custom, RebaseLog, rebaseFrame, reconcile, type ServerAck } from './rebase';
+import { PROTOCOL_VERSION } from './sync-protocol';
 
 /** The table map a generated app produces from its entities: `tx.posts`, not `tx['posts']`. */
 type Tables = { posts: Row };
@@ -124,5 +125,47 @@ describe('rebase', () => {
 
     expect(result.winner).toBe('merge');
     expect(store.table('posts').get('p1')?.['likes']).toBe(5);
+  });
+});
+
+describe('rebaseFrame', () => {
+  const ack: ServerAck = {
+    key: 'like:p1',
+    entity: 'posts',
+    id: 'p1',
+    row: { id: 'p1', likes: 7, updatedAt: 30 },
+  };
+
+  test('carries the acked row and the strategy NAME, never the merge function', () => {
+    const frame = rebaseFrame(ack, 'server-wins');
+    expect(frame).toEqual({
+      type: 'rebase',
+      v: PROTOCOL_VERSION,
+      key: 'like:p1',
+      entity: 'posts',
+      strategy: 'server-wins',
+      row: { id: 'p1', likes: 7, updatedAt: 30 },
+    });
+    // It has to survive the wire: a closure would not.
+    expect(JSON.parse(JSON.stringify(frame))).toEqual(frame as unknown as Record<string, unknown>);
+  });
+
+  test('a custom merge is named, not serialized', () => {
+    const frame = rebaseFrame(
+      ack,
+      custom(({ server }) => server),
+    );
+    expect(frame.strategy).toBe('custom');
+    expect(JSON.stringify(frame)).not.toContain('function');
+  });
+
+  test('last-write-wins keeps its own name', () => {
+    expect(rebaseFrame(ack, 'last-write-wins').strategy).toBe('last-write-wins');
+  });
+
+  test('a delete is a null row, which is what tells the client to drop it', () => {
+    const frame = rebaseFrame({ ...ack, row: null }, 'server-wins');
+    expect(frame.row).toBe(null);
+    expect(Object.hasOwn(frame, 'row')).toBe(true);
   });
 });

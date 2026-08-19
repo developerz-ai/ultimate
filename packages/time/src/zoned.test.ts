@@ -3,8 +3,10 @@ import { fromIso, toIso } from './instant';
 import {
   addDaysInZone,
   daysBetween,
+  endOfDay,
   fromZoned,
   fromZonedDetailed,
+  isSameLocalDay,
   startOfDay,
   toZoned,
 } from './zoned';
@@ -240,3 +242,74 @@ function codeOf(run: () => unknown): string {
   }
   return 'no-throw';
 }
+
+describe('endOfDay', () => {
+  test('is one millisecond before the next local midnight, not 23:59:59.999Z', () => {
+    expect(toIso(endOfDay(fromIso('2026-03-14T08:00:00Z'), BERLIN))).toBe(
+      '2026-03-14T22:59:59.999Z',
+    );
+    expect(toIso(endOfDay(fromIso('2026-03-14T20:00:00Z'), TOKYO))).toBe(
+      '2026-03-15T14:59:59.999Z',
+    );
+  });
+
+  test('the local day it closes is the local day of the instant it was given', () => {
+    const at = fromIso('2026-03-14T08:00:00Z');
+    for (const zone of [BERLIN, NEW_YORK, KATHMANDU, TOKYO]) {
+      const closing = toZoned(endOfDay(at, zone), zone);
+      const asked = toZoned(at, zone);
+      expect(closing.day).toBe(asked.day);
+      expect(closing.hour).toBe(23);
+      expect(closing.minute).toBe(59);
+      expect(closing.second).toBe(59);
+      expect(closing.millisecond).toBe(999);
+    }
+  });
+
+  test('a 23-hour and a 25-hour local day both close at 23:59:59.999 local', () => {
+    // Spring forward: 2026-03-29 in Berlin has no 02:00, so the day is 23 hours long.
+    const spring = fromIso('2026-03-29T08:00:00Z');
+    expect(toIso(endOfDay(spring, BERLIN))).toBe('2026-03-29T21:59:59.999Z');
+    expect(endOfDay(spring, BERLIN).getTime() - startOfDay(spring, BERLIN).getTime()).toBe(
+      23 * 3_600_000 - 1,
+    );
+    // Fall back: 2026-10-25 repeats 02:00, so the day is 25 hours long.
+    const fall = fromIso('2026-10-25T08:00:00Z');
+    expect(toIso(endOfDay(fall, BERLIN))).toBe('2026-10-25T22:59:59.999Z');
+    expect(endOfDay(fall, BERLIN).getTime() - startOfDay(fall, BERLIN).getTime()).toBe(
+      25 * 3_600_000 - 1,
+    );
+  });
+
+  test('rolls the month and the year rather than asking for the 32nd', () => {
+    expect(toIso(endOfDay(fromIso('2026-01-31T08:00:00Z'), UTC))).toBe('2026-01-31T23:59:59.999Z');
+    expect(toIso(endOfDay(fromIso('2026-12-31T08:00:00Z'), UTC))).toBe('2026-12-31T23:59:59.999Z');
+    expect(toIso(endOfDay(fromIso('2024-02-29T08:00:00Z'), UTC))).toBe('2024-02-29T23:59:59.999Z');
+  });
+});
+
+describe('isSameLocalDay', () => {
+  test('the zone decides, not the elapsed time', () => {
+    const morning = fromIso('2026-03-14T00:30:00Z');
+    const evening = fromIso('2026-03-14T23:30:00Z');
+    // 23 hours apart, one UTC day; in New York the pair straddles local midnight.
+    expect(isSameLocalDay(morning, evening, UTC)).toBe(true);
+    expect(isSameLocalDay(morning, evening, NEW_YORK)).toBe(false);
+    // One hour apart, two UTC days, but one local day in New York.
+    expect(isSameLocalDay(morning, fromIso('2026-03-13T23:30:00Z'), NEW_YORK)).toBe(true);
+    expect(isSameLocalDay(morning, fromIso('2026-03-13T23:30:00Z'), UTC)).toBe(false);
+  });
+
+  test('is symmetric, and an instant is on the same day as itself', () => {
+    const left = fromIso('2026-03-14T00:30:00Z');
+    const right = fromIso('2026-03-14T23:30:00Z');
+    expect(isSameLocalDay(left, left, KATHMANDU)).toBe(true);
+    expect(isSameLocalDay(left, right, ADELAIDE)).toBe(isSameLocalDay(right, left, ADELAIDE));
+    expect(isSameLocalDay(left, right, NEW_YORK)).toBe(isSameLocalDay(right, left, NEW_YORK));
+  });
+
+  test('an unknown zone raises X_TIMEZONE_INVALID rather than answering false', () => {
+    const at = fromIso('2026-03-14T00:30:00Z');
+    expect(() => isSameLocalDay(at, at, 'Mars/Olympus')).toThrow(/X_TIMEZONE_INVALID/);
+  });
+});

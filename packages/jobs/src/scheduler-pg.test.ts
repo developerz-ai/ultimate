@@ -13,7 +13,12 @@ import {
   SQL_SCHEDULER_STATE_MARK,
   SQL_TRY_ADVISORY_LOCK,
 } from './driver-pg-sql';
-import { createPgLeaseLeader, pgSchedulerState } from './scheduler-pg';
+import {
+  createPgLeaseLeader,
+  currentLeader,
+  DEFAULT_LEADER_TTL_MS,
+  pgSchedulerState,
+} from './scheduler-pg';
 
 function recorder(handler: (sql: string, params: readonly unknown[]) => readonly unknown[]) {
   const calls: { sql: string; params: readonly unknown[] }[] = [];
@@ -96,5 +101,69 @@ describe('the advisory-lock leader it replaces', () => {
     await leader.release();
     await leader.release();
     expect(calls.filter((call) => call.sql === SQL_ADVISORY_UNLOCK)).toHaveLength(1);
+  });
+});
+
+describe('the watermark write and the lease release', () => {
+  test('markFired binds the task and the OCCURRENCE, never the wall clock', async () => {
+    // The occurrence is the schedule's own instant. Writing `now()` instead would move the
+    // watermark past occurrences a catch-up round has not dispatched yet.
+    const { executor, calls } = recorder(() => []);
+    await pgSchedulerState(executor).markFired('nightlyBilling', 1_735_700_400_000);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.sql).toBe(SQL_SCHEDULER_STATE_MARK);
+    expect(calls[0]?.params).toEqual(['nightlyBilling', 1_735_700_400_000]);
+  });
+
+  test('release names the holder, so a node cannot drop a lease another node now holds', async () => {
+    const { executor, calls } = recorder(() => []);
+    await createPgLeaseLeader({ executor, lockKey: 'sweeper', holder: 'pod-a' }).release();
+    expect(calls[0]?.sql).toBe(SQL_LEADER_RELEASE);
+    expect(calls[0]?.params).toEqual(['sweeper', 'pod-a']);
+  });
+
+  test('the default lock key is "scheduler" and the default ttl is DEFAULT_LEADER_TTL_MS', async () => {
+    const { executor, calls } = recorder(() => []);
+    await createPgLeaseLeader({ executor, holder: 'pod-a' }).acquire();
+    expect(calls[0]?.params).toEqual(['scheduler', 'pod-a', DEFAULT_LEADER_TTL_MS]);
+    expect(DEFAULT_LEADER_TTL_MS).toBe(30_000);
+  });
+
+  test('a holder defaulted per PROCESS is unique, never a hostname a pod reuses', async () => {
+    const { executor, calls } = recorder(() => []);
+    await createPgLeaseLeader({ executor }).acquire();
+    await createPgLeaseLeader({ executor }).acquire();
+    const [first, second] = calls.map((call) => call.params[1]);
+    expect(first).not.toBe(second);
+    expect(String(first)).toStartWith('scheduler-');
+  });
+});
+
+describe('currentLeader', () => {
+  const clock = { now: () => new Date(1_000_000), monotonic: () => 1_000_000 };
+
+  test('an unheld key has no leader', async () => {
+    const { executor, calls } = recorder(() => []);
+    expect(await currentLeader(executor, 'scheduler', clock)).toBeUndefined();
+    expect(calls[0]?.params).toEqual(['scheduler']);
+  });
+
+  test('a live lease answers its holder', async () => {
+    const { executor } = recorder(() => [{ holder: 'pod-a', expires_at: '1000001' }]);
+    expect(await currentLeader(executor, 'scheduler', clock)).toBe('pod-a');
+  });
+
+  test('an EXPIRED row is nobody — a dead pod does not keep reading as the leader', async () => {
+    // The row survives its lease: expiry is what makes a crashed node reclaimable with nothing
+    // to clean up, so the read has to apply the deadline the write only recorded.
+    const { executor } = recorder(() => [{ holder: 'pod-a', expires_at: '1000000' }]);
+    expect(await currentLeader(executor, 'scheduler', clock)).toBeUndefined();
+  });
+
+  test('the lock key defaults to "scheduler" here too, so both halves read one row', async () => {
+    const { executor, calls } = recorder(() => []);
+    await currentLeader(executor);
+    expect(calls[0]?.params).toEqual(['scheduler']);
+    expect(calls[0]?.sql).toContain('from x_scheduler_leader where lock_key = $1');
   });
 });

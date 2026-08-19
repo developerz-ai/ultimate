@@ -112,6 +112,30 @@ describe('isErrorRetry', () => {
   });
 });
 
+describe('X_NOT_IMPLEMENTED', () => {
+  test('is DECLARED terminal, not merely defaulted to it', () => {
+    // The distinction is the whole fix. `classifyThrown` reads an UNREGISTERED code carrying
+    // `terminal` as unclassified — a per-instance `terminal` is indistinguishable from the
+    // default, and honouring it would dead-letter the first attempt of every job in every app
+    // whose codes nobody has classified. So `retryFor` answering `terminal` is not enough;
+    // `declaredErrorRetry` has to answer it too, or a job burns its whole retry policy on a
+    // feature this build will still not have on attempt five.
+    expect(declaredErrorRetry('X_NOT_IMPLEMENTED')).toBe('terminal');
+    expect(retryFor('X_NOT_IMPLEMENTED')).toBe('terminal');
+  });
+
+  test('an unclassified code is still undeclared, so the distinction is real', () => {
+    expect(retryFor('X_MADE_UP_CODE')).toBe('terminal');
+    expect(declaredErrorRetry('X_MADE_UP_CODE')).toBeUndefined();
+  });
+
+  test('a package may not reclassify it — core owns the code', () => {
+    expect(codeOf(() => registerErrorRetry({ X_NOT_IMPLEMENTED: 'retryable' }))).toBe(
+      'X_ERROR_RETRY_INVALID',
+    );
+  });
+});
+
 describe('X_TIMEOUT', () => {
   test('a deadline that expired is retryable — a client that gave up on it was the bug', () => {
     expect(retryFor('X_TIMEOUT')).toBe('retryable');

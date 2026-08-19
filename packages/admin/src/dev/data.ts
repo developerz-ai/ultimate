@@ -63,17 +63,6 @@ export function staticDevSources(facts: Partial<DevSources> = {}): DevSources {
   };
 }
 
-type Bag = Readonly<Record<string, unknown>>;
-
-const bagOf = (value: unknown): Bag =>
-  typeof value === 'object' && value !== null ? (value as Bag) : {};
-const str = (value: unknown, fallback = ''): string =>
-  typeof value === 'string' ? value : fallback;
-const numOf = (value: unknown, fallback = 0): number =>
-  typeof value === 'number' ? value : fallback;
-const listOf = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
-const strings = (value: unknown): readonly string[] => listOf(value).map((item) => String(item));
-
 export interface DevSourceOptions {
   /** The app's authz. The policy matrix is computed through it, never re-derived. */
   readonly authz?: AdminAuthz;
@@ -136,9 +125,19 @@ const STEP_STATUS: Readonly<Record<StepStatus, JobStepFact['status']>> = {
 };
 
 /**
- * Registry output is read field by field: a registry that grows a field must not break the
- * dev dashboard, and a registry that renames one should show a blank cell in /_x rather than
- * crash the process an engineer is debugging with.
+ * Every registry is read through its OWN descriptor type, not as an untyped bag. The bag was
+ * defended here as tolerance — "a renamed field should show a blank cell rather than crash the
+ * process an engineer is debugging with" — and what it actually bought was three panels that
+ * were wrong for every row and could not go red: `route['render']`, `route['budget']`,
+ * `route['revalidate']` and `job['idempotencyKey']` are names no descriptor has ever published,
+ * so /_x reported every route as `stream` with no budget and every job as non-idempotent.
+ *
+ * The packages ship in lockstep at one version, so a renamed descriptor field is a rename this
+ * file can be edited with — as a TYPECHECK failure naming the field, which is the tolerance
+ * worth having. It costs the production graph nothing: `await import('@ultimat3/render')` is
+ * typed by the module it resolves to, so /_x is still reached only through the dynamic import
+ * and no descriptor type has to be named here at all. `published-keys.test.ts` is the other
+ * half — it walks what the real registries EMIT, which a stale `dist/*.d.ts` would hide.
  */
 export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
   const hooks = opts.hooks ?? {};
@@ -146,23 +145,26 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
   const sources: DevSources = {
     async routes(): Promise<readonly RouteFact[]> {
       const { describeRoutes } = await import('@ultimat3/render');
-      return listOf(describeRoutes()).map((raw) => {
-        const route = bagOf(raw);
-        const budget = bagOf(route['budget']);
-        return {
-          path: str(route['path']),
-          render: str(route['render'], 'stream'),
-          offline: str(route['offline'], 'network-only'),
-          hydrate: str(route['hydrate'], 'idle'),
-          handler: str(route['handler'], str(route['file'])),
-          budget: {
-            ...(typeof budget['js'] === 'string' ? { js: budget['js'] } : {}),
-            ...(typeof budget['lcp'] === 'number' ? { lcp: budget['lcp'] } : {}),
-          },
-          revalidateTags: strings(bagOf(route['revalidate'])['tags']),
-          hasMeta: route['meta'] !== undefined,
-        };
-      });
+      return describeRoutes().map((route) => ({
+        path: route.path,
+        // `RouteDescriptor` calls the render mode `mode`; the panel's own word is `render`, and
+        // the two are bridged here, once. Reading `route['render']` answered `undefined` for
+        // every route, so the fallback shipped — `stream` for the whole table, forever.
+        render: route.mode,
+        offline: route.offline,
+        hydrate: route.hydrate,
+        // A descriptor has no `handler`: the FILE is what names the row.
+        handler: route.file,
+        // Two flat fields on the descriptor, one nested bag on the fact — the panel's budget
+        // check reads `budget.js`. Spread, never `js: undefined`: `exactOptionalPropertyTypes`.
+        budget: {
+          ...(route.budgetJs === null ? {} : { js: route.budgetJs }),
+          ...(route.budgetLcp === null ? {} : { lcp: route.budgetLcp }),
+        },
+        // `revalidateTags`, already flattened to keys — never `revalidate.tags`, a shape the
+        // descriptor does not have and which answered `[]` for every ISR route in the app.
+        revalidateTags: route.revalidateTags,
+      }));
     },
 
     traces: unwired<readonly RequestTrace[]>('traces', 'timeline'),
@@ -186,38 +188,30 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
           entry.sql,
         ]),
       );
-      return listOf(queries).map((raw) => {
-        const query = bagOf(raw);
-        const name = str(query['name']);
-        return {
-          name,
-          live: query['live'] === true,
-          // `QueryDescriptor`'s permission field is named `capability`, not `policy` — this
-          // fact keeps its own field named `policy` (that is the /_x rendering, not the registry).
-          policy: str(query['capability']),
-          sql: sqlByName.get(name) ?? null,
-        };
-      });
+      return queries.map((query) => ({
+        name: query.name,
+        live: query.live,
+        // `QueryDescriptor`'s permission field is named `capability`, not `policy` — this
+        // fact keeps its own field named `policy` (that is the /_x rendering, not the registry).
+        policy: query.capability,
+        sql: sqlByName.get(query.name) ?? null,
+      }));
     },
 
     subscribers: unwired<readonly LiveSubscriberFact[]>('subscribers', 'live'),
 
     async jobDefs(): Promise<readonly JobDefFact[]> {
       const { describeJobs } = await import('@ultimat3/jobs');
-      return listOf(describeJobs()).map((raw) => {
-        const job = bagOf(raw);
-        const retry = bagOf(job['retry']);
-        return {
-          name: str(job['name']),
-          queue: str(job['queue'], 'default'),
-          steps: strings(job['steps']),
-          retry: {
-            attempts: numOf(retry['attempts'], 1),
-            backoff: str(retry['backoff'], 'exponential'),
-          },
-          idempotent: job['idempotencyKey'] !== undefined,
-        };
-      });
+      return describeJobs().map((job) => ({
+        name: job.name,
+        queue: job.queue,
+        steps: job.steps,
+        retry: { attempts: job.retry.attempts, backoff: job.retry.backoff },
+        // The descriptor's own boolean. `job['idempotencyKey']` was a read of the DEFINITION's
+        // field on a descriptor that never carried it, so every job on the panel reported
+        // non-idempotent — the opposite of what `job()` refuses to register without.
+        idempotent: job.idempotent,
+      }));
     },
 
     async queues(): Promise<readonly QueueFact[]> {
@@ -301,38 +295,28 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
 
     async tables(): Promise<readonly TableFact[]> {
       const { describeEntities } = await import('@ultimat3/entity');
-      return listOf(describeEntities()).map((raw) => {
-        const entity = bagOf(raw);
-        return {
-          name: str(entity['table'], str(entity['name'])),
-          // `EntityDescription.columns` is a LIST of physical columns — money is already two
-          // of them here. Reading it as a record produced a table whose columns were "0", "1".
-          columns: listOf(entity['columns']).map((rawColumn) => {
-            const column = bagOf(rawColumn);
-            return {
-              name: str(column['column'], str(column['property'], 'unknown')),
-              type: str(column['kind'], 'unknown'),
-              nullable: column['notNull'] !== true,
-            };
-          }),
-        };
-      });
+      return describeEntities().map((entity) => ({
+        name: entity.table,
+        // `EntityDescription.columns` is a LIST of physical columns — money is already two
+        // of them here. Reading it as a record produced a table whose columns were "0", "1".
+        columns: entity.columns.map((column) => ({
+          // The PHYSICAL name, which is the vocabulary a psql tab speaks.
+          name: column.column,
+          type: column.kind,
+          nullable: !column.notNull,
+        })),
+      }));
     },
 
-    async drift(): Promise<readonly DriftFact[]> {
-      const { describeEntities } = await import('@ultimat3/entity');
-      return listOf(describeEntities()).flatMap((raw) => {
-        const entity = bagOf(raw);
-        return listOf(entity['drift']).map((rawIssue) => {
-          const issue = bagOf(rawIssue);
-          return {
-            table: str(entity['table'], str(entity['name'])),
-            column: typeof issue['column'] === 'string' ? issue['column'] : null,
-            issue: str(issue['issue'], 'unknown'),
-          };
-        });
-      });
-    },
+    /**
+     * Unwired, and it has to be: drift is a COMPARISON — the entities this process declares
+     * against the columns a database actually has — and `describeEntities()` is only one half of
+     * it. This source used to read a `drift` key off `EntityDescription`, which has never had one,
+     * so the panel answered `[]` for every app and every schema: "no drift" printed over a
+     * database nobody looked at. Only a host holding the connection can answer (`x db migrate`'s
+     * `checkDrift`), so it wires the hook or the panel says the check did not run.
+     */
+    drift: unwired<readonly DriftFact[]>('drift', 'db'),
 
     runSql: unwired<SqlResult>('runSql', 'db'),
     mail: unwired<readonly MailFact[]>('mail', 'mail'),
@@ -347,16 +331,13 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
         import('@ultimat3/cache'),
         import('@ultimat3/entity'),
       ]);
-      return listOf(describeEntities()).map((raw) => {
-        const name = str(bagOf(raw)['name']);
-        return {
-          tag: name,
-          dependents: listOf(dependentsOf([{ entity: name }])).map((rawDep) => {
-            const dep = bagOf(rawDep);
-            return { kind: str(dep['kind']), id: str(dep['id']) };
-          }),
-        };
-      });
+      return describeEntities().map((entity) => ({
+        tag: entity.name,
+        dependents: dependentsOf([{ entity: entity.name }]).map((dependent) => ({
+          kind: dependent.kind,
+          id: dependent.id,
+        })),
+      }));
     },
 
     invalidations: unwired<readonly InvalidationFact[]>('invalidations', 'cache'),
@@ -379,11 +360,15 @@ export function defaultDevSources(opts: DevSourceOptions = {}): DevSources {
         });
       }
       const { describeActions } = await import('@ultimat3/action');
-      // `ActionDescriptor`'s permission field is named `capability`, not `policy` — reading the
-      // latter answered '' for every action, so the matrix came back empty even when both
-      // `authz` and `actors` were wired correctly.
+      // `permissions`, NOT `capability`. `capability` is the policy's DISPLAY label and
+      // `action.ts` says so: a composite renders as `and(post:read, org:member)`, which is not a
+      // permission and can never be granted — so every composite-guarded action was a
+      // permanently-denied row, and an operator read a real grant as missing. `permissions` is
+      // the flattened list a grant is actually matched against. This is the SECOND time the two
+      // were confused: `x policy list` reported the same actions as unenforced for the same
+      // reason, and `ActionDescriptor.permissions` carries that history in its own doc comment.
       const permissions = [
-        ...new Set(listOf(describeActions()).map((raw) => str(bagOf(raw)['capability']))),
+        ...new Set(describeActions().flatMap((action) => action.permissions)),
       ].filter((permission) => permission !== '');
 
       return actors.flatMap((actor) =>

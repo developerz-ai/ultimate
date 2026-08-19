@@ -222,3 +222,128 @@ describe('catalog shape', () => {
     expect(missing.isError).toBe(true);
   });
 });
+
+describe('the read tools return what the host answered, each from its own source', () => {
+  const parse = (result: { content: readonly { text: string }[] }): unknown =>
+    JSON.parse(result.content[0]?.text ?? 'null');
+
+  test('routes.list, schema.describe and policies.list do not share a source', async () => {
+    const { tool } = toolset(BRANCH);
+    expect(parse(await tool('routes.list').handle({}, caller))).toEqual([
+      { url: '/', render: 'static' },
+    ]);
+    expect(parse(await tool('schema.describe').handle({}, caller))).toEqual([{ name: 'post' }]);
+    expect(parse(await tool('policies.list').handle({}, caller))).toEqual([
+      { permission: 'post:publish' },
+    ]);
+  });
+
+  test('actions.describe answers both registries under their own keys', async () => {
+    const { tool } = toolset(BRANCH);
+    expect(parse(await tool('actions.describe').handle({}, caller))).toEqual({
+      actions: [{ name: 'publishPost' }],
+      queries: [{ name: 'liveFeed' }],
+    });
+  });
+
+  test('jobs.inspect lists every job with no name, and traces one when named', async () => {
+    const { tool } = toolset(BRANCH);
+    expect(parse(await tool('jobs.inspect').handle({}, caller))).toEqual([{ name: 'onboardOrg' }]);
+    expect(parse(await tool('jobs.inspect').handle({ name: 'onboardOrg' }, caller))).toEqual({
+      name: 'onboardOrg',
+      attempts: 5,
+    });
+    // A non-string name is the list, not `jobInspect(String(undefined))`.
+    expect(parse(await tool('jobs.inspect').handle({ name: 7 }, caller))).toEqual([
+      { name: 'onboardOrg' },
+    ]);
+  });
+
+  test('queue.depth awaits the host rather than serialising the promise', async () => {
+    const { tool } = toolset(BRANCH);
+    expect(parse(await tool('queue.depth').handle({}, caller))).toEqual([
+      { queue: 'default', pending: 3, running: 1, failed: 0 },
+    ]);
+  });
+
+  test('manifest.read hands back the manifest as text, not as re-encoded JSON', async () => {
+    const { tool } = toolset(BRANCH);
+    const result = await tool('manifest.read').handle({}, caller);
+    expect(result.content[0]?.text).toBe('{"version":1}');
+  });
+});
+
+describe('the tools that execute something report failure as isError', () => {
+  test('tests.run marks a failing run as an error, and a green run as not', async () => {
+    const { host } = fakeHost(BRANCH);
+    const seen: (string | undefined)[] = [];
+    const tools = devTools({
+      ...host,
+      async runTests(filter) {
+        seen.push(filter);
+        return filter === 'red'
+          ? {
+              passed: 1,
+              failed: 2,
+              skipped: 0,
+              durationMs: 9,
+              failures: [{ test: 'a', message: 'boom' }],
+            }
+          : { passed: 3, failed: 0, skipped: 0, durationMs: 4, failures: [] };
+      },
+    });
+    const runner = tools.find((t) => t.name === 'tests.run');
+    if (runner === undefined) expect.unreachable('no tests.run tool');
+
+    const red = await runner.handle({ filter: 'red' }, caller);
+    expect(red.isError).toBe(true);
+    const green = await runner.handle({}, caller);
+    expect(green.isError).toBeUndefined();
+    // A missing filter is `undefined`, never the string "undefined".
+    expect(seen).toEqual(['red', undefined]);
+  });
+
+  test('verify.run is an error exactly when the gate is not ok', async () => {
+    const { host } = fakeHost(BRANCH);
+    const asked: boolean[] = [];
+    const tools = devTools({
+      ...host,
+      async verify(fix) {
+        asked.push(fix);
+        return { ok: !fix, steps: [{ name: 'types', ok: !fix }] };
+      },
+    });
+    const verify = tools.find((t) => t.name === 'verify.run');
+    if (verify === undefined) expect.unreachable('no verify.run tool');
+
+    expect((await verify.handle({}, caller)).isError).toBeUndefined();
+    expect((await verify.handle({ fix: true }, caller)).isError).toBe(true);
+    // `fix` is a boolean gate, not a truthiness one: a string must not turn autofix on.
+    await verify.handle({ fix: 'yes' }, caller);
+    expect(asked).toEqual([false, true, false]);
+  });
+
+  test('logs.tail defaults to 100 lines and passes a role through only when it is a string', async () => {
+    const { host } = fakeHost(BRANCH);
+    const asked: { lines: number; role: string | undefined }[] = [];
+    const tools = devTools({
+      ...host,
+      async tailLogs(lines, role) {
+        asked.push({ lines, role });
+        return ['a', 'b'];
+      },
+    });
+    const tail = tools.find((t) => t.name === 'logs.tail');
+    if (tail === undefined) expect.unreachable('no logs.tail tool');
+
+    const result = await tail.handle({}, caller);
+    expect(result.content[0]?.text).toBe('a\nb');
+    await tail.handle({ lines: 5, role: 'worker' }, caller);
+    await tail.handle({ lines: '5', role: 12 }, caller);
+    expect(asked).toEqual([
+      { lines: 100, role: undefined },
+      { lines: 5, role: 'worker' },
+      { lines: 100, role: undefined },
+    ]);
+  });
+});

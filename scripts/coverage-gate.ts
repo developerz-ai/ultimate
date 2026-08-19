@@ -10,7 +10,7 @@
 //   bun run scripts/coverage-gate.ts --package core [--json]
 //   bun run scripts/coverage-gate.ts --all [--json]
 
-import { rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import type { CoveragePin } from './lib/coverage-pins';
@@ -26,12 +26,98 @@ import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 import { ScriptError } from './lib/script-error';
 
+/**
+ * Whether a file holds anything that could be EXECUTED, as opposed to a barrel that only
+ * re-exports. The distinction is load-bearing: bun emits no lcov record for a file with no
+ * executable statement, so a pure barrel is legitimately absent — and a real module nobody
+ * imported is absent for the opposite reason and must not pass as one.
+ *
+ * Comments and `import`/`export … from '…'` statements are stripped; anything left is code.
+ */
+/** Index just past the balanced `{ … }` that starts at or after `from`. */
+function skipBalanced(text: string, from: number): number {
+  let depth = 0;
+  for (let i = from; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return text.length;
+}
+
+/**
+ * Index just past the `;` that ends a `type` alias — the first one at nesting depth zero.
+ *
+ * Depth matters and a naive scan gets it wrong: `type _A = Assert<[FactKeysOf<{ a: 1 }>] extends
+ * [Actor] ? true : false>;` contains a `{ … }` whose closing brace is NOT the end of the
+ * declaration, and matching braces there leaves `, ] extends [Actor] … >;` behind, which then
+ * reads as executable code.
+ */
+function endOfTypeAlias(text: string, from: number): number {
+  let depth = 0;
+  for (let i = from; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '{' || ch === '[' || ch === '(' || ch === '<') depth += 1;
+    else if (ch === '}' || ch === ']' || ch === ')' || ch === '>') depth -= 1;
+    else if (ch === ';' && depth <= 0) return i + 1;
+  }
+  return text.length;
+}
+
+/**
+ * Whether a file emits anything at RUNTIME, as opposed to a barrel or a types-only module.
+ *
+ * Load-bearing, not cosmetic: bun writes an lcov record only for a file that produced executable
+ * code, so a pure barrel and a types-only module are legitimately absent — while a real module
+ * nothing imported is absent for the opposite reason and must be reported.
+ * `packages/core/src/type-pins.ts` says it of itself: "This module emits nothing and exports
+ * nothing anybody imports."
+ *
+ * A regex cannot decide this. `metrics-types.ts` contains `(() => number)` in a TYPE position, so
+ * scanning for `=>` calls a types-only file executable. Hence a scanner: strip comments and
+ * re-export statements, then remove `interface` blocks by brace matching and `type` aliases to
+ * their depth-zero `;`, and ask whether anything is left.
+ */
+export function hasExecutableCode(source: string): boolean {
+  let text = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^[ \t]*\/\/.*$/gm, '')
+    .replace(/^[ \t]*(?:import|export)\b[^;]*?from\s*'[^']*';[ \t]*$/gm, '')
+    .replace(/^[ \t]*import\s+type\b[^;]*;[ \t]*$/gm, '')
+    // `declare const x: T;` is ambient — it emits nothing, and `type-pins.ts` files are built
+    // almost entirely from them.
+    .replace(/^[ \t]*declare\s+(?:const|let|var|function|class)\b[^;]*;[ \t]*$/gm, '');
+
+  for (;;) {
+    const found = /(?:^|\n)[ \t]*(?:export\s+)?(?:declare\s+)?(interface|type)\s/.exec(text);
+    if (found === null) break;
+    const start = found.index + (found[0].startsWith('\n') ? 1 : 0);
+    const end =
+      found[1] === 'interface'
+        ? skipBalanced(text, text.indexOf('{', start))
+        : endOfTypeAlias(text, start);
+    text = text.slice(0, start) + text.slice(end);
+  }
+  return text.replace(/\s/g, '') !== '';
+}
+
 export interface CoverageReading {
   readonly pkg: string;
   readonly lines: number;
   readonly funcs: number;
   /** Lines found in the package's own `src/`. Zero is the false green this gate refuses. */
   readonly measured: number;
+  /**
+   * Source files with executable code that lcov has no record of at all. They are NOT zeroes in
+   * the percentage — bun records a file only when something imports it, so a module no test
+   * reaches is absent from both halves of the fraction and silently makes the number BETTER.
+   * `@ultimat3/ui` had 16 of these, and its denominator grew from 2,922 to 3,286 lines the day
+   * they were first imported.
+   */
+  readonly unimported: readonly string[];
 }
 
 /**
@@ -54,6 +140,12 @@ const pct = (hit: number, found: number): number =>
  * and folding it in is the dilution this gate exists to undo.
  */
 export function scopeLcov(lcov: string, pkg: string): CoverageReading {
+  // `startsWith`, NOT `includes`. Bun writes `SF:` paths relative to the repo root, and both
+  // tracked apps carry a package of their own under the same name —
+  // `examples/dummy/packages/mcp/src/` and `dummy/social-media-clone/packages/mcp/src/` each
+  // CONTAIN `packages/mcp/src/`. A substring test folded them into the framework package's
+  // reading: `@ultimat3/mcp` measured 96.99% while its own sources were at 100%, carrying 35
+  // uncovered lines that belong to an app gated on its own ratchet.
   const prefix = `packages/${pkg}/src/`;
   let lf = 0;
   let lh = 0;
@@ -64,7 +156,7 @@ export function scopeLcov(lcov: string, pkg: string): CoverageReading {
     if (line.startsWith('SF:')) {
       const file = line.slice(3);
       counting =
-        file.includes(prefix) &&
+        file.startsWith(prefix) &&
         !/\.test\.[cm]?[jt]sx?$/.test(file) &&
         !COVERAGE_EXCLUDED.some((fragment) => file.includes(fragment));
       continue;
@@ -75,7 +167,27 @@ export function scopeLcov(lcov: string, pkg: string): CoverageReading {
     else if (line.startsWith('FNF:')) fnf += Number(line.slice(4));
     else if (line.startsWith('FNH:')) fnh += Number(line.slice(4));
   }
-  return { pkg, lines: pct(lh, lf), funcs: pct(fnh, fnf), measured: lf };
+  return { pkg, lines: pct(lh, lf), funcs: pct(fnh, fnf), measured: lf, unimported: [] };
+}
+
+/** Every non-test source file under the package that has executable code and no lcov record. */
+export function unimportedSources(root: string, pkg: string, lcov: string): readonly string[] {
+  const recorded = new Set(
+    lcov
+      .split('\n')
+      .filter((line) => line.startsWith('SF:'))
+      .map((line) => line.slice(3)),
+  );
+  const missing: string[] = [];
+  for (const rel of new Bun.Glob(`packages/${pkg}/src/**/*.{ts,tsx}`).scanSync({ cwd: root })) {
+    if (/\.test\.[cm]?[jt]sx?$/.test(rel)) continue;
+    if (/\.d\.ts$/.test(rel)) continue;
+    if (COVERAGE_EXCLUDED.some((fragment) => rel.includes(fragment))) continue;
+    if ([...recorded].some((file) => file.endsWith(`/${rel}`) || file === rel)) continue;
+    if (!hasExecutableCode(readFileSync(join(root, rel), 'utf8'))) continue;
+    missing.push(rel);
+  }
+  return missing.sort();
 }
 
 /**
@@ -96,6 +208,15 @@ export function judge(reading: CoverageReading, pin: CoveragePin | undefined): C
       fix: `run bun test --coverage packages/${reading.pkg} and confirm the suite runs; a package whose tests do not run cannot pass this gate`,
     });
     return { reading, required: pin, findings };
+  }
+
+  if (reading.unimported.length > 0) {
+    findings.push({
+      code: 'X_COVERAGE_UNMEASURED',
+      at,
+      cause: `${reading.unimported.length} file(s) under packages/${reading.pkg}/src/ have executable code and NO lcov record, so they are absent from the percentage rather than counted as zero: ${reading.unimported.slice(0, 5).join(', ')}${reading.unimported.length > 5 ? ', …' : ''}`,
+      fix: `import each of them from a test beside it — a file nothing reaches makes this package's coverage read HIGHER, which is the one direction an unmeasured file must never move it`,
+    });
   }
 
   const floorLines = pin?.lines ?? COVERAGE_TARGET;
@@ -162,7 +283,8 @@ async function measure(root: string, pkg: string): Promise<CoverageReading> {
       fix: `run bun test packages/${pkg} and fix the failure it reports; coverage cannot be read from a suite that did not finish`,
     });
   }
-  const reading = scopeLcov(await file.text(), pkg);
+  const lcov = await file.text();
+  const reading = { ...scopeLcov(lcov, pkg), unimported: unimportedSources(root, pkg, lcov) };
   rmSync(dir, { recursive: true, force: true });
   return reading;
 }

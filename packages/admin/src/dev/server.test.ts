@@ -12,7 +12,6 @@ const sources = staticDevSources({
       handler: 'site/posts/[slug].tsx',
       budget: { js: '80kb' },
       revalidateTags: ['post'],
-      hasMeta: true,
     },
     {
       path: '/app',
@@ -22,7 +21,6 @@ const sources = staticDevSources({
       handler: 'app/index.tsx',
       budget: { js: '30kb' },
       revalidateTags: [],
-      hasMeta: false,
     },
   ],
 });
@@ -110,13 +108,14 @@ describe('every panel is a rendering of its --json', () => {
     const data = payload.data as {
       routes: { path: string; handler: string }[];
       byRenderMode: Record<string, number>;
-      missingMeta: string[];
       overBudget: string[];
     };
     expect(data.routes[0]?.handler).toBe('app/index.tsx');
     expect(data.byRenderMode).toEqual({ isr: 1, spa: 1 });
-    expect(data.missingMeta).toEqual(['/app']);
     expect(data.overBudget).toEqual(['/posts/:slug']);
+    // `missingMeta` is gone, not renamed: `defineRoute()` refuses a route with no `meta`, so
+    // the list could never have had a member and the panel filled it with EVERY route instead.
+    expect(data).not.toHaveProperty('missingMeta');
   });
 
   test('the HTTP surface serves the same payload as --json', async () => {

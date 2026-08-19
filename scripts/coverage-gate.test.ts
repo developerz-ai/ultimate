@@ -2,24 +2,24 @@
 // Bun's cross-package dilution, and the ratchet that fails in both directions.
 
 import { describe, expect, test } from 'bun:test';
-import { judge, scopeLcov } from './coverage-gate';
+import { hasExecutableCode, judge, scopeLcov } from './coverage-gate';
 import { COVERAGE_TARGET, PIN_SLACK } from './lib/coverage-pins';
 
 /** Two records for the package under test, one for a package it merely imported. */
 const LCOV = [
-  'SF:/repo/packages/cache/src/tiers.ts',
+  'SF:packages/cache/src/tiers.ts',
   'FNF:10',
   'FNH:10',
   'LF:100',
   'LH:99',
   'end_of_record',
-  'SF:/repo/packages/cache/src/redis.ts',
+  'SF:packages/cache/src/redis.ts',
   'FNF:10',
   'FNH:9',
   'LF:100',
   'LH:98',
   'end_of_record',
-  'SF:/repo/packages/core/src/logger.ts',
+  'SF:packages/core/src/logger.ts',
   'FNF:100',
   'FNH:1',
   'LF:1000',
@@ -35,18 +35,28 @@ describe('scoping an lcov report to one package', () => {
       lines: 98.5,
       funcs: 95,
       measured: 200,
+      unimported: [],
     });
   });
 
   test('a test file is not its own coverage', () => {
-    const withTest = `${LCOV}\nSF:/repo/packages/cache/src/redis.test.ts\nFNF:50\nFNH:50\nLF:500\nLH:500\nend_of_record`;
+    const withTest = `${LCOV}\nSF:packages/cache/src/redis.test.ts\nFNF:50\nFNH:50\nLF:500\nLH:500\nend_of_record`;
     // Counting the test would push cache to 99.6% by measuring the tests' own execution.
     expect(scopeLcov(withTest, 'cache').measured).toBe(200);
   });
 
   test('an excluded path is not counted — generated glyphs are output volume, not tested surface', () => {
-    const withGlyphs = `${LCOV}\nSF:/repo/packages/ui/src/icons/glyphs/a.ts\nFNF:1\nFNH:0\nLF:900\nLH:0\nend_of_record`;
+    const withGlyphs = `${LCOV}\nSF:packages/ui/src/icons/glyphs/a.ts\nFNF:1\nFNH:0\nLF:900\nLH:0\nend_of_record`;
     expect(scopeLcov(withGlyphs, 'ui').measured).toBe(0);
+  });
+
+  test("a tracked app's own package of the same name is NOT this package", () => {
+    // `examples/dummy/packages/mcp/src/` contains `packages/mcp/src/`, so a substring test folded
+    // the reference app's sources into the framework package's reading — @ultimat3/mcp measured
+    // 96.99% while its own sources were at 100%, carrying 35 lines belonging to an app that is
+    // gated on its own ratchet.
+    const nested = `${LCOV}\nSF:examples/dummy/packages/cache/src/tools.ts\nFNF:3\nFNH:0\nLF:66\nLH:31\nend_of_record`;
+    expect(scopeLcov(nested, 'cache').measured).toBe(200);
   });
 
   test('a report naming no file of this package measures nothing, rather than 100%', () => {
@@ -56,7 +66,73 @@ describe('scoping an lcov report to one package', () => {
       lines: 0,
       funcs: 0,
       measured: 0,
+      unimported: [],
     });
+  });
+});
+
+describe('a file with no lcov record at all', () => {
+  test('a pure re-export barrel has no executable code — bun records none, correctly', () => {
+    // `packages/money/src/index.ts` is exactly this shape. Flagging it would be noise.
+    expect(
+      hasExecutableCode(`/** Public surface. */
+export { allocate, sum } from './arithmetic';
+export type { Money } from './money';
+export { type Currency, formatMoney } from './format';
+`),
+    ).toBe(false);
+  });
+
+  test('a module with a statement has executable code, however small', () => {
+    expect(hasExecutableCode('export const ZERO = 0;\n')).toBe(true);
+    expect(hasExecutableCode("import { a } from './a';\nexport const b = a();\n")).toBe(true);
+  });
+
+  test('comments alone are not executable code', () => {
+    expect(hasExecutableCode('// just a note\n/* and a block */\n')).toBe(false);
+  });
+
+  test('a comment that LOOKS like a statement does not count', () => {
+    // The strip runs before the check, so a commented-out export cannot resurrect a barrel.
+    expect(hasExecutableCode("export { a } from './a';\n// export const x = 1;\n")).toBe(false);
+  });
+
+  test('a type alias containing an object literal is still types-only', () => {
+    // The case that broke the first scanner: the `{ … }` inside the alias is not the end of the
+    // declaration, so matching braces there left `, ] extends [Actor] … >;` behind — which then
+    // read as executable code and reported `type-pins.ts` as an unimported module.
+    expect(
+      hasExecutableCode(
+        'type _A = Assert<[FactKeysOf<{ a: 1 }>] extends [Actor] ? true : false>;\n',
+      ),
+    ).toBe(false);
+  });
+
+  test('a types-only module and a barrel are both invisible for the RIGHT reason', () => {
+    expect(hasExecutableCode('export interface Counter {\n  add(n: number): void;\n}\n')).toBe(
+      false,
+    );
+    expect(hasExecutableCode("export const COLUMN_KINDS = ['text'] as const;\n")).toBe(true);
+  });
+
+  test('an unimported file is reported, and is NOT a zero in the percentage', () => {
+    // This is the whole point: bun records a file only when something imports it, so a module no
+    // test reaches is absent from BOTH halves of the fraction and makes the number read higher.
+    // `@ultimat3/ui` had 16 of these; its denominator grew 2,922 -> 3,286 once they were imported.
+    const reading = {
+      pkg: 'demo',
+      lines: 99,
+      funcs: 99,
+      measured: 100,
+      unimported: ['packages/demo/src/never-imported.ts'],
+    };
+    const codes = judge(reading, undefined).findings.map((f) => f.code);
+    expect(codes).toContain('X_COVERAGE_UNMEASURED');
+  });
+
+  test('no unimported files is silent', () => {
+    const reading = { pkg: 'demo', lines: 99, funcs: 99, measured: 100, unimported: [] };
+    expect(judge(reading, undefined).findings).toEqual([]);
   });
 });
 
@@ -66,6 +142,7 @@ describe('the ratchet', () => {
     lines,
     funcs,
     measured,
+    unimported: [],
   });
 
   test('nothing measured is refused, and is not reported as being below the target', () => {

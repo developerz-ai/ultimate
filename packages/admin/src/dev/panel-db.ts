@@ -4,12 +4,19 @@
 
 import { isUltimateError } from '@ultimat3/core';
 import { assertReadOnlyQuery } from '@ultimat3/mcp';
+import { DevSourceUnavailableError } from '../errors';
 import type { DriftFact, SqlResult, TableFact } from './facts';
 import type { DevPanel } from './panel';
 
 export interface DbPanelData {
   readonly tables: readonly TableFact[];
-  readonly drift: readonly DriftFact[];
+  /**
+   * `null` when no host wired the check — NOT `[]`. Drift is the entities against the database,
+   * so it needs the connection this process may not have, and an empty list reads as "the schema
+   * matches", which is the one answer a panel that never looked has not earned. The same
+   * distinction `panel-timeline.ts` draws for `nPlusOne` and `panel-live.ts` for its subscribers.
+   */
+  readonly drift: readonly DriftFact[] | null;
   readonly sql: string | null;
   readonly result: SqlResult | null;
   /** Set when a statement was refused; the panel shows it instead of a result grid. */
@@ -95,7 +102,16 @@ export const dbPanel: DevPanel<DbPanelData> = {
   titleKey: 'dev.panel.db.title',
   questionKey: 'dev.panel.db.question',
   async data(sources, params): Promise<DbPanelData> {
-    const [tables, drift] = await Promise.all([sources.tables(), sources.drift()]);
+    // The drift half degrades on its own: a host with no drift check must still get the table
+    // list and the SQL box. Only `DevSourceUnavailableError` is caught — a checker that ran and
+    // FAILED is a diagnostic, and reaches `panelPayload` with its code and its fix.
+    const [tables, drift] = await Promise.all([
+      sources.tables(),
+      sources.drift().catch((error: unknown) => {
+        if (!(error instanceof DevSourceUnavailableError)) throw error;
+        return null;
+      }),
+    ]);
     const sql = params.get('sql');
     if (sql === null || sql.trim() === '') {
       return { tables, drift, sql: null, result: null, refused: null, readOnly: true };

@@ -48,6 +48,28 @@ describe('route facts', () => {
     }
   });
 
+  // `render` is the one route field the loop above never moved, and it is the field that decides
+  // whether a URL is prerendered or served per request — an unclassified change there is a page
+  // silently switching cost model between two committed manifests.
+  test('a changed render mode is internal, and the detail names both modes', () => {
+    const changed = diff(route({ render: 'ssr' }));
+    expect(changed.hasBreaking).toBe(false);
+    const entry = changed.internal.find((c) => c.path === 'routes./posts.render');
+    expect(entry?.detail).toBe('render isr -> ssr');
+  });
+
+  test('a route that only the after side has is additive, not a removal', () => {
+    const added = diffManifest(
+      fixtureManifest(),
+      fixtureManifest({ routes: [...route(), ...route({ url: '/about', render: 'static' })] }),
+    );
+    expect(added.hasBreaking).toBe(false);
+    expect(added.additive.map((c) => c.path)).toContain('routes./about');
+    expect(added.additive.find((c) => c.path === 'routes./about')?.detail).toBe('route added');
+    // And the route both sides carry is not re-reported as arriving.
+    expect(added.changes.filter((c) => c.path === 'routes./posts')).toEqual([]);
+  });
+
   test('an unchanged route reports nothing of its own', () => {
     expect(diff(route()).changes.filter((c) => c.path.startsWith('routes.'))).toEqual([]);
   });

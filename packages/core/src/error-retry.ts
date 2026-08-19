@@ -39,6 +39,15 @@ const CORE_ERROR_RETRY: ReadonlyMap<string, ErrorRetry> = new Map(
     // `X_ABORTED` (the caller went away) is left to the `terminal` DEFAULT rather than listed here:
     // the answer is the same, and listing it would close a door nobody has asked to open.
     X_TIMEOUT: 'retryable',
+    // Listed even though `terminal` is the default, and that is the whole point: `classifyThrown`
+    // reads an UNREGISTERED code carrying `terminal` as unclassified, because a per-instance
+    // `terminal` is indistinguishable from the default and honouring it would dead-letter the
+    // first attempt of every job in every app whose codes nobody has classified. So a stub that
+    // says "this build does not have the feature" fell through to the attempt count and burned a
+    // job's whole retry policy on a fact that cannot change between attempt 1 and attempt 5.
+    // It is core's code — every `notImplemented()` stub in the framework raises it — so it is
+    // classified once here rather than by each package that happens to throw it.
+    X_NOT_IMPLEMENTED: 'terminal',
   } as const),
 );
 

@@ -125,6 +125,18 @@ describe('the job DSL surface', () => {
     expect(handle.describe()).toEqual(describeJob(handle));
   });
 
+  // The `/_x` jobs panel and `x.manifest.json` both answer "is a replay of this safe" out of the
+  // descriptor. `job()` refuses a definition with no `idempotencyKey` (X_IDEMPOTENCY_REQUIRED),
+  // so the honest answer is always `true` — and the panel used to publish `false` for every job
+  // because it looked for a key the descriptor never carried.
+  test('the descriptor publishes the idempotency guarantee, and never the key itself', () => {
+    const descriptor = defineJob().describe();
+    expect(descriptor.idempotent).toBe(true);
+    // The key is computed from an input — customer ids — so it must not reach the manifest.
+    expect(JSON.stringify(descriptor)).not.toContain('dsl-notify');
+    expect(descriptor).not.toHaveProperty('idempotencyKey');
+  });
+
   test('.enqueue() and .as() go through one path: the ambient jobs facade', async () => {
     const handle = defineJob();
     const driver = createMemoryDriver();

@@ -4,8 +4,8 @@ import type { IslandDirective } from './hydrate';
 import { hydrateRuntime } from './hydrate';
 import { clearDeclaredIslands, ISLAND_EXTENSION, island } from './island';
 import type { Island } from './islands';
-import { assertBudget, checkBudget, graphFor, parseByteBudget } from './islands';
-import { clearRoutes, registerRoute } from './registry';
+import { assertBudget, checkBudget, checkBudgets, graphFor, parseByteBudget } from './islands';
+import { clearRoutes, registerRoute, routeEntries } from './registry';
 import type { RouteMetaFn } from './route';
 import { defineRoute } from './route';
 
@@ -109,5 +109,83 @@ describe('hydrateRuntime', () => {
     expect(runtime).toContain('IntersectionObserver');
     expect(runtime).toContain('addEventListener');
     expect(runtime).not.toContain('requestIdleCallback');
+  });
+});
+
+/**
+ * The 0kb baseline is not "no budget declared, so nothing to check" — that reading is how a
+ * `site/` page ships 61kb and passes. An undeclared budget on `site/` IS a budget: zero.
+ */
+describe('site/ with no budget.js at all', () => {
+  const siteEntry = () =>
+    registerRoute({
+      file: 'apps/web/site/pricing/page.tsx',
+      config: defineRoute({ render: 'static', offline: 'precache', hydrate: 'never', meta }),
+    });
+
+  const rendered: readonly IslandDirective[] = [
+    { islandId: 'pricing-toggle', strategy: 'visible', entry: '/_x/pricing-toggle.js' },
+  ];
+
+  test('a rendered island with no declared budget fails against a limit of 0', () => {
+    const report = checkBudget(siteEntry(), islands, rendered);
+    expect(report.ok).toBe(false);
+    expect(report.limit).toBe(0);
+    expect(report.measured).toBeGreaterThan(61 * 1024);
+    expect(report.cause).toContain('0kb JS baseline');
+    expect(report.cause).toContain('with no budget.js');
+    // The chain is what makes it an instruction rather than a number.
+    expect(report.cause).toContain('node_modules/chart.js');
+    expect(() => assertBudget(siteEntry(), islands, rendered)).toThrow(BudgetExceededError);
+  });
+
+  test('the same route shipping nothing passes, so it is the bytes and not the missing field', () => {
+    const report = checkBudget(siteEntry(), islands, []);
+    expect(report.ok).toBe(true);
+    expect(report.measured).toBe(0);
+    expect(report.limit).toBe(null);
+  });
+
+  test('app/ with no budget.js is unlimited — the 0kb default is site/ only', () => {
+    const entry = registerRoute({
+      file: 'apps/web/app/reports/page.tsx',
+      config: defineRoute({ render: 'ssr', offline: 'runtime', hydrate: 'idle', meta }),
+    });
+    const report = checkBudget(entry, islands, [
+      { islandId: 'dashboard-chart', strategy: 'visible', entry: '/_x/chart.js' },
+    ]);
+    expect(report.limit).toBe(null);
+    expect(report.ok).toBe(true);
+    expect(report.measured).toBeGreaterThan(12 * 1024);
+  });
+});
+
+describe('checkBudgets', () => {
+  test('reports every route, sorted by path, not just the first failure', () => {
+    island({ src: `./pricing-toggle${ISLAND_EXTENSION}` });
+    registerRoute({
+      file: 'apps/web/site/pricing/page.tsx',
+      config: defineRoute({
+        render: 'static',
+        offline: 'precache',
+        hydrate: 'visible',
+        budget: { js: '40kb' },
+        meta,
+      }),
+    });
+    registerRoute({
+      file: 'apps/web/site/about/page.tsx',
+      config: defineRoute({ render: 'static', offline: 'precache', hydrate: 'never', meta }),
+    });
+
+    const reports = checkBudgets(routeEntries(), islands);
+    expect(reports.map((r) => r.path)).toEqual(['/about', '/pricing']);
+    expect(reports.map((r) => r.ok)).toEqual([true, false]);
+    // A failing route earlier in the list does not stop the later ones being measured.
+    expect(reports[1]?.cause).toContain('js 61kb > 40kb');
+  });
+
+  test('an empty table is an empty report, never a throw', () => {
+    expect(checkBudgets([], islands)).toEqual([]);
   });
 });

@@ -5,7 +5,14 @@
 import { describe, expect, test } from 'bun:test';
 import { registerCatalog } from '@ultimat3/i18n';
 import type { AuditEntry } from './audit';
-import { operationLabel } from './detail';
+
+// Dynamic, and paired: `detail.tsx` contains a `<>` whose fragment factory only exists once
+// `@ultimat3/render`'s `Bun.plugin` is installed, and a plugin only transforms modules loaded
+// AFTER it. A STATIC import here transformed the view with the classic fallback and cached it, so
+// whichever of this file and `detail-render.test.ts` ran first decided whether the other could
+// render at all. Neither file may reach `detail.tsx` any other way.
+await import('@ultimat3/render');
+const { operationLabel } = await import('./detail');
 
 // Distinctive probe values, registered flat: the framework catalog owns `admin.operation.*` and
 // an APP owns `admin.action.*` — the same namespace `action-gate.ts` builds a button's `labelKey`

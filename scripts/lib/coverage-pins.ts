@@ -9,6 +9,22 @@ export const PINS_FILE = 'scripts/lib/coverage-pins.ts';
 /**
  * Line and function coverage a package's own `src/` must reach. One number for all 30: a
  * per-package target negotiated downward is not a bar, it is a record of what happened.
+ *
+ * **This number is a FLOOR, and it is not the bar.** Coverage measures execution, not
+ * validation — 100% is reachable with zero assertions, and the well-documented failure of a
+ * coverage KPI is a team that raised its number by writing tests that assert nothing. A run
+ * mutation-tested after such a push scored 3% against a reported 30%.
+ *
+ * So the rule this repo holds itself to, and the one that makes the number mean anything:
+ *
+ * > **Every test added to raise coverage must be proven by mutation** — break the source it
+ * > covers, watch the test go red, restore. A branch covered by a test that cannot fail is worse
+ * > than an uncovered branch, because it reads as done.
+ *
+ * That is not enforceable by this gate and is deliberately written here rather than left implied:
+ * the 26 packages that reached this bar on 2026-08-19 did so under roughly 300 applied mutations,
+ * five of which initially SURVIVED and were closed. If a future push raises a package without
+ * that evidence, the number will be true and worthless.
  */
 export const COVERAGE_TARGET = 95;
 
@@ -46,100 +62,39 @@ export interface CoveragePin {
  * still being written. Both directions fail: under the pin is a regression, and comfortably over
  * it is a pin that has outlived its reason.
  *
- * Measured `As of 2026-08-19`: 12 of 30 packages clear the target, 18 are pinned.
- * Re-measure with `bun run scripts/coverage-gate.ts --all --json`.
+ * **Empty `As of 2026-08-19`, and that is the ratchet reaching its end**: all 30 packages clear
+ * 95% lines and 95% functions on their own `src/`, so there is nothing left to excuse. It started
+ * at 18 pinned with `admin` lowest at 77.93%.
+ *
+ * A new entry here is a regression that someone chose not to fix yet, and it needs the reason
+ * written in `why`. Re-measure with `bun run scripts/coverage-gate.ts --all --json`.
  */
-export const COVERAGE_PINS: Readonly<Record<string, CoveragePin>> = {
-  admin: {
-    lines: 79.47,
-    funcs: 84.97,
-    why: 'the widest surface with the fewest tests: resource/mcp projection is covered, the screen and frame builders are not',
-  },
-  auth: { lines: 94.05, funcs: 93.53, why: 'oauth provider branches need a live issuer' },
-  cli: {
-    lines: 92.25,
-    funcs: 93.53,
-    why: '11,890 lines, the largest package: command wiring is covered, several interactive paths are not',
-  },
-  db: {
-    lines: 98.23,
-    funcs: 92.03,
-    why: 'lines clear the bar; the pg client halves are live-only',
-  },
-  i18n: {
-    lines: 95.15,
-    funcs: 92.59,
-    why: 'lines clear the bar; several extract helpers are unreached',
-  },
-  jobs: {
-    lines: 91.19,
-    funcs: 91.8,
-    why: 'the pg driver halves are live-only, so they measure 0 without TEST_DATABASE_URL',
-  },
-  mail: {
-    lines: 96.52,
-    funcs: 92.59,
-    why: 'lines clear the bar; the smtp socket half needs a peer',
-  },
-  manifest: {
-    lines: 96.81,
-    funcs: 93.9,
-    why: 'lines clear the bar; several docs-scan helpers are unreached',
-  },
-  mcp: { lines: 92.97, funcs: 86.23, why: 'transport-stdio and the wire framing need a peer' },
-  money: {
-    lines: 95.8,
-    funcs: 90.43,
-    why: 'lines clear the bar; several rounding-mode branches have no direct case',
-  },
-  pwa: {
-    lines: 90.96,
-    funcs: 85.45,
-    why: 'the emitted sw.js is executed against stubs, but several strategy branches are unreached',
-  },
-  realtime: {
-    lines: 95.14,
-    funcs: 94.18,
-    why: 'lines clear the bar, functions do not — the nats transport is fake-only here',
-  },
-  render: {
-    lines: 93.41,
-    funcs: 95.04,
-    why: 'hydrate and modes are covered; the island runtime paths are not',
-  },
-  scraping: {
-    lines: 89.34,
-    funcs: 84.96,
-    why: 'the cdp driver paths need a browser; the fake and fixture drivers carry the parity suite',
-  },
-  seo: {
-    lines: 92.18,
-    funcs: 94.59,
-    why: 'sitemap and robots are covered; several meta renderers have no case',
-  },
-  testing: {
-    lines: 92.11,
-    funcs: 92.28,
-    why: 'fixtures are exercised BY other suites rather than having their own',
-  },
-  time: {
-    lines: 94.6,
-    funcs: 88.67,
-    why: 'cron-parse is covered; several instant/format helpers have no direct case',
-  },
-  ui: {
-    lines: 87.44,
-    funcs: 82.49,
-    why: 'components render through jsx-probe; the 51 stylesheets and several presentational components have no case',
-  },
-};
+export const COVERAGE_PINS: Readonly<Record<string, CoveragePin>> = {};
 
 /**
  * Paths inside a package's `src/` that do not count toward its own coverage.
  *
- * `icons/glyphs/` is 23,073 lines of GENERATED data — `build-icons.ts` writes one module per
+ * `src/bin.ts` is an executable entry point — a shebang, a top-level `await` and a
+ * `process.exit(code)`. Importing it from a test runs the CLI against the TEST RUNNER's own argv
+ * (`bun test packages/cli` parses as `x test packages/cli`, spawning a nested suite) and then
+ * kills the runner. Everything it does lives in `dispatch.ts`, which is covered.
+ *
+ * `src/preload.ts` is the bunfig preload. The runner loads it once per process before any test
+ * file, so it is never imported BY a test and cannot appear in a report a test produced.
+ *
+ * A `type-pins` module exists to fail `tsc`, not to run: it asserts type-level facts a test file
+ * could never check, because `tsconfig.json` excludes test files from the build and a type
+ * assertion written in one is never read by the compiler. `x verify`'s `typecheck` step is its
+ * gate, and the only one that can be.
+ *
+ * `icons/glyphs/` is 23,073 lines of GENERATED data — `build-icons.ts` writes one namespace per
  * Lucide glyph, each an array literal. Counting them measures the generator's output volume, not
  * the package's tested surface: they would move `@ultimat3/ui`'s denominator by an order of
  * magnitude while saying nothing about whether a component works.
  */
-export const COVERAGE_EXCLUDED = ['/icons/glyphs/'] as const;
+export const COVERAGE_EXCLUDED = [
+  '/icons/glyphs/',
+  '/src/bin.ts',
+  '/src/preload.ts',
+  '/type-pins.',
+] as const;
