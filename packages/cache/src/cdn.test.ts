@@ -123,6 +123,22 @@ describe('createCdnTier', () => {
     expect(calls).toHaveLength(0);
   });
 
+  test('a tier with no purge driver reports SKIPPED, never a list of cleared keys', async () => {
+    // The default state of every deployment with no CDN credentials — `selectPurgeDriver` answers
+    // `noopPurgeDriver()` for exactly that env. The noop echoes its argument back, so the tier
+    // reported every tag as CLEARED and `recentInvalidations().busted` picked it up with no
+    // errors: a partial bust reading as a clean one, which is the log's whole job to prevent.
+    const tier = createCdnTier();
+
+    const result = await tier.invalidateTags([tag('post'), tag('post', '1')]);
+
+    expect(result).toEqual({
+      tier: 'cdn',
+      keys: [],
+      skipped: 'no purge driver configured',
+    });
+  });
+
   test('invalidateTags purges the serialized wire tags and surfaces the driver-accepted keys', async () => {
     const { driver, calls } = purgeSpy((keys) => keys.filter((key) => key === 'post'));
     const tier = createCdnTier({ purge: driver });

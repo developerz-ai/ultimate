@@ -157,6 +157,10 @@ Tier 1. Tagged caching + THE invalidation graph.
   change: a cold shared tier, which the default build-id namespace already pays per deploy.
   Pinned by `tier-parity.test.ts` (all three rungs, one test each) and `redis.live.test.ts` (the
   same two busts against a real server, asserting the LRU's and Redis's survivors are EQUAL).
+  **A row bust does not read the index and still SREMs from it** (`sweepBucketsFor`) — reading it
+  over-reaches, removing a member cannot: only what the bust deleted leaves. Without that, a
+  deleted value key kept its membership in `e:{entity}` for ever while every write renewed that
+  index's lease — the unbounded `SMEMBERS` the lease was added to prevent, rebuilt out of corpses.
 - **`CacheTier.set` REJECTS, never throws synchronously.** `createLruTier` and `createMemoTier` are
   `async` for that reason alone — `LruCache.set` stays a sync API, but a `CacheTier` is one
   interface with three implementations and `tier.set(...).catch(...)` has to mean the same thing on
@@ -212,6 +216,11 @@ Tier 1. Tagged caching + THE invalidation graph.
   options and only `receiveInvalidationBroadcast` passes `false`. An inbound tag this process never
   declared is dropped into `report.errors`, never thrown: a throw kills the subscriber loop and
   silently ends cross-instance invalidation for the whole process.
+- **A `cdn` tier holding `noopPurgeDriver()` reports `skipped`, never keys.** That is the default
+  state of every deployment with no CDN credentials (`selectPurgeDriver`), and the noop ECHOES the
+  keys it is handed — so the tier reported every tag as CLEARED and `busted` listed keys nothing
+  had purged, with `errors: []`. `isNoopPurgeDriver` lives in `cdn.ts`, beside the `name: 'noop'`
+  it tests for, because `createCdnTier` cannot import `purge-env.ts` without a cycle.
 - **`report.cdn` is what depends on the tags; `report.tiers` is what cleared.** The `cdn` tier
   purges `cdn-path` dependents itself, alongside the tags, so `busted` is built from `tiers` +
   `isr` + `liveQueries` and never from `cdn` — folding in a list nothing purged is exactly the

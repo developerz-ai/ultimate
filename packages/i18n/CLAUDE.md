@@ -28,6 +28,13 @@ Imported by every package that renders a string.
   negotiated `en` in a file that never mentioned locales. No partial call can widen the set back. The
   test harness restores it at each file boundary (`@ultimat3/testing`'s `registry-snapshot.ts`).
 - A miss renders `⟦key⟧`. Never add a fallback locale chain — it hides gaps.
+- **`FRAMEWORK_CATALOG` registers under `FRAMEWORK_CATALOG_LOCALE` (`en`) only**, and
+  `registerFrameworkCatalog()` takes no locale — passing one is a compile error. It ran per locale
+  until 2026-08, so an `es`-only app served `Page not found` and English `ui.*` chrome with
+  `isMiss` reading FALSE, which is the fallback chain the line above refuses, wearing registration
+  as a disguise. It is also a real no-op when the locale already has a catalog: `registerCatalog`
+  merges its ARGUMENT last, so a second call reverted every app override of a framework key.
+  A non-`en` app translates the framework keys it renders into its own catalog.
 - Only an **own** property of `vars` is a variable — `interpolate` guards with `Object.hasOwn`.
   A plain object inherits `constructor`, `toString`, `valueOf` and `__proto__`, so a bare
   `vars[name]` rendered a function's source into the page for a template nobody wrote a variable

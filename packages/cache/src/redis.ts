@@ -239,6 +239,19 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
       ? [entityKey(owned.entity), tagKey(owned)]
       : [tagKey(owned), tagKey({ entity: owned.entity })];
 
+  /**
+   * The buckets a bust CLEANS UP, which is not the set it reads — and the asymmetry is the point.
+   *
+   * A row bust must not READ the entity index: it holds every key of the entity, so the bust would
+   * delete them all. It must still SREM from it. `set` joins the index on every write, so a row
+   * bust that deletes a value key and leaves its membership there leaves a corpse no later bust
+   * can reach — while `TAG_MEMBER_SCRIPT` renews that index's lease on every write, which is the
+   * unbounded `SMEMBERS` the lease exists to prevent, rebuilt out of dead keys. Removing a member
+   * cannot over-reach the way reading one can: only what this bust actually deleted leaves.
+   */
+  const sweepBucketsFor = (owned: CacheTag): string[] =>
+    owned.id === undefined ? [] : [entityKey(owned.entity)];
+
   return {
     name: 'redis',
 
@@ -330,18 +343,18 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
      */
     async invalidateTags(tags: readonly CacheTag[]): Promise<TierInvalidation> {
       const claimed = new Set<string>();
-      const perTag: string[][] = [];
+      const perTag: { read: string[]; sweep: string[] }[] = [];
       for (const owned of tags) {
         // A bucket already claimed by an earlier tag is dropped rather than re-sent: a collection
         // tag and one of its rows overlap, and the second call would read the same members.
-        const buckets = bustBucketsFor(owned).filter((bucket) => !claimed.has(bucket));
-        for (const bucket of buckets) claimed.add(bucket);
-        if (buckets.length > 0) perTag.push(buckets);
+        const read = bustBucketsFor(owned).filter((bucket) => !claimed.has(bucket));
+        for (const bucket of read) claimed.add(bucket);
+        if (read.length > 0) perTag.push({ read, sweep: [...read, ...sweepBucketsFor(owned)] });
       }
       if (perTag.length === 0) return { tier: 'redis', keys: [] };
       const replies = await Promise.all(
-        perTag.map((buckets) =>
-          conn().send('EVAL', [INVALIDATE_SCRIPT, String(buckets.length), ...buckets]),
+        perTag.map(({ read }) =>
+          conn().send('EVAL', [INVALIDATE_SCRIPT, String(read.length), ...read]),
         ),
       );
       // A member may sit in two tag sets; deleting it twice is harmless but reporting it twice
@@ -369,7 +382,7 @@ export function createRedisTier(options: RedisTierOptions = {}): CacheTier {
       // drops the bucket, which is what made that failure permanent.
       for (let i = 0; i < perTag.length; i += 1) {
         const gone = [...new Set(toStrings(replies[i]))].filter((member) => deleted.has(member));
-        for (const bucket of perTag[i] ?? []) {
+        for (const bucket of perTag[i]?.sweep ?? []) {
           for (let start = 0; start < gone.length; start += DELETE_BATCH) {
             await conn().send('SREM', [bucket, ...gone.slice(start, start + DELETE_BATCH)]);
           }

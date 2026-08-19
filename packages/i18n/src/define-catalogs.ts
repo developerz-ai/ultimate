@@ -38,10 +38,13 @@ export function defineCatalogs<TLocales extends CatalogSources>(
   // whole, not leave half the locales live and the other half missing.
   const loaded = locales.map((locale) => [locale, loadCatalog(input.locales[locale])] as const);
 
+  // Framework first, app second. `registerCatalog` merges and the later call wins, which is how an
+  // app overrides `errors.notFound.title` without forking the framework catalog. ONCE, not once
+  // per locale: the framework catalog is English, and registering it under every locale filled
+  // `es` with English for every key the app had not translated — `isMiss` false, gap invisible,
+  // the exact fallback chain `⟦key⟧` exists to refuse.
+  registerFrameworkCatalog();
   for (const [locale, catalog] of loaded) {
-    // Framework first, app second. `registerCatalog` merges and the later call wins, which is
-    // how an app overrides `errors.notFound.title` without forking the framework catalog.
-    registerFrameworkCatalog(locale);
     registerCatalog(locale, catalog);
   }
   configureLocales({ supported: locales, fallback: input.default });

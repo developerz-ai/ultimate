@@ -170,9 +170,12 @@ partial bust while stale rows served until TTL. Value keys are still deleted cli
 each, which is slot-local under every topology.
 
 The script **deletes nothing at all** — not the value keys, and not the buckets either. The tier
-`SREM`s exactly the members whose `DEL` succeeded, so a refused delete keeps its membership and the
-retry the error asks for still finds it; dropping the bucket inside the script made that failure
-permanent. A `set` mirrors it: buckets are joined **before** the value is written and membership is
+`SREM`s exactly the members whose `DEL` succeeded, from every bucket that member joined —
+including, for a row bust, the entity index it deliberately never *reads*. Reading `e:{entity}` for
+a row bust would return every key of the entity; removing from it cannot over-reach, and a member
+left there is a corpse in a set every later write renews the lease on. A refused delete keeps its
+membership and the retry the error asks for still finds it; dropping the bucket inside the script
+made that failure permanent. A `set` mirrors it: buckets are joined **before** the value is written and membership is
 re-checked after, because a bust that landed in between would otherwise leave a row nothing can
 reach by tag, serving until its own lease ran out.
 
@@ -318,6 +321,12 @@ nothing loads that file's contents at runtime:
 | `FASTLY_API_TOKEN` + `FASTLY_SERVICE_ID` | Fastly |
 | `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ZONE_ID` | Cloudflare |
 | neither | nothing is purged, and `x dev` prints `cdn=none` |
+
+A `cdn` tier holding the noop driver answers an invalidation with
+`{ tier: 'cdn', keys: [], skipped: 'no purge driver configured' }` — never a list of keys. The noop
+echoes what it is handed, so reporting its reply as accepted made every tag read as CLEARED in
+`report.tiers` and in `recentInvalidations().busted`, with `errors: []`, in the default state of a
+deployment that has no CDN at all. `isNoopPurgeDriver(driver)` is the same probe, exported.
 
 Both pairs at once is `X_CONFIG_INVALID`: one process purges exactly one edge. Half a pair
 is refused the same way — treating it as "no CDN" is how a deployment ships believing it

@@ -3,6 +3,7 @@
  * a wrong reset is a wrong `<html lang>` in every later file of the same `bun test` process.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { createContext, runWithContext } from '@ultimat3/core';
 import { flattenCatalog } from './catalog';
 import {
   configureLocales,
@@ -111,6 +112,38 @@ describe('ambient translator', () => {
     registerCatalog('en', flattenCatalog({ errors: { notFound: { title: 'Page not found' } } }));
     registerCatalog('en', flattenCatalog({ errors: { notFound: { title: 'Lost?' } } }));
     expect(useI18n()('errors.notFound.title')).toBe('Lost?');
+  });
+});
+
+describe('currentLocale', () => {
+  afterEach(() => {
+    resetLocaleConfig();
+    resetCatalogs();
+  });
+
+  // `Ctx.locale` is a plain string core never validates, and it reaches `translatorFor` and
+  // `Intl.PluralRules` through two module-level maps that are never swept. Unnormalised, every
+  // distinct spelling a request carried bought a permanent `Translator` and a permanent
+  // `PluralRules` — an unbounded cache keyed by user input, on the ambient read path.
+  test('normalises the ambient locale, the same call `resolveLocale` makes for its sources', () => {
+    runWithContext(createContext({ locale: 'pt-BR' }), () => {
+      expect(currentLocale()).toBe('pt');
+    });
+  });
+
+  test('an unsupported tag falls back instead of becoming a cache key of its own', () => {
+    configureLocales({ supported: ['en', 'es'], fallback: 'es' });
+    runWithContext(createContext({ locale: 'zz-ZZ' }), () => {
+      expect(currentLocale()).toBe('es');
+    });
+  });
+
+  test('two spellings of one locale share ONE memoized translator', () => {
+    const first = runWithContext(createContext({ locale: 'en-US' }), () => useI18n());
+    const second = runWithContext(createContext({ locale: 'EN-gb' }), () => useI18n());
+
+    expect(second).toBe(first);
+    expect(first.locale).toBe('en');
   });
 });
 

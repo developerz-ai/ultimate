@@ -66,6 +66,15 @@ export function noopPurgeDriver(): PurgeDriver {
   };
 }
 
+/**
+ * A driver that reaches no CDN, so a caller can report "purges nothing" without a name match.
+ *
+ * Lives here rather than beside `selectPurgeDriver`, which is where it was until 2026-08: the
+ * `name: 'noop'` it tests for is declared one function up, and `createCdnTier` — the caller that
+ * most needs it — cannot import from `purge-env.ts` without making a cycle of the two files.
+ */
+export const isNoopPurgeDriver = (driver: PurgeDriver): boolean => driver.name === 'noop';
+
 export interface CdnTierOptions {
   readonly purge?: PurgeDriver;
   /**
@@ -108,6 +117,13 @@ export function createCdnTier(options: CdnTierOptions = {}): CacheTier {
      * `cdn-path` dependent must tag that response with its own path.
      */
     async invalidateTags(tags: readonly CacheTag[]): Promise<TierInvalidation> {
+      // The default state of any deployment with no CDN credentials, and it has to say so: the
+      // noop driver ECHOES its argument, so every tag came back as an accepted purge and
+      // `recentInvalidations().busted` listed keys nothing had cleared, `errors: []`. `skipped`
+      // is the field that already exists for this — a tier that did not run, named as one.
+      if (isNoopPurgeDriver(driver)) {
+        return { tier: 'cdn', keys: [], skipped: 'no purge driver configured' };
+      }
       const keys = [...new Set([...serializeTags(tags), ...dependentsOfKind(tags, 'cdn-path')])];
       if (keys.length === 0) return { tier: 'cdn', keys: [] };
       const accepted = await driver.purge(keys);
