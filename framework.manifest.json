@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "c92d7cc177a16b675183ba4698d9be1573b64f6fee4042e6434e66ea4222bfae",
+  "buildId": "db20af9fbc1c61820698c556f3c5b76ece70be6cbc70f0c30dd18cb67825baf2",
   "tiers": {
     "0": [
       "core",
@@ -621,6 +621,21 @@
       "code": "X_CORS_CONFIG_INVALID",
       "owner": "http",
       "at": "packages/http/src/errors.ts"
+    },
+    {
+      "code": "X_COVERAGE_BELOW",
+      "owner": "scripts",
+      "at": "scripts/coverage-gate.ts"
+    },
+    {
+      "code": "X_COVERAGE_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/coverage-gate.ts"
+    },
+    {
+      "code": "X_COVERAGE_UNMEASURED",
+      "owner": "scripts",
+      "at": "scripts/coverage-gate.ts"
     },
     {
       "code": "X_CRON_INVALID",

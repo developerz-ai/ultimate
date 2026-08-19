@@ -262,3 +262,57 @@ jobs:
         run: >-
           bun run scripts/scaffold-gate.ts "${{ runner.temp }}/demoapp"
           --allow-red budgets
+
+  # One job per package: its own tests, its own lint, its own coverage bar.
+  #
+  # This does NOT duplicate `verify`, and the rule at the top of this file is why it has to be
+  # argued rather than assumed. `verify` answers "does the framework ship" over the whole tree at
+  # once; these answer two questions it structurally cannot:
+  #
+  #   1. WHICH package is below bar. `x verify`'s `unit` step runs every suite in one process, so a
+  #      coverage number over that run is a number for the monorepo, not for a package — and a
+  #      package's own sources read 20-50% there purely because every package it imports is loaded
+  #      and mostly unexercised (`@ultimat3/cache` read 35% while its own `src/` was at 98.8%).
+  #   2. Whether a suite passes IN ISOLATION. Run together, a package whose tests only pass because
+  #      another package's preload registered something first is invisible. Run alone, it is a
+  #      failure — and `registerFrameworkCatalog`/`registerMailCatalog` were exactly that shape.
+  #
+  # No services, deliberately: `scripts/lib/coverage-pins.ts` explains that the pins are measured
+  # with no Postgres, no Redis and no NATS so the number is identical on a laptop and on a runner.
+  # The live paths are `verify`'s `live` step, which does have them.
+  package-list:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      packages: ${{ steps.list.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      # Derived, never hand-listed — the same rule the publish list follows, and what keeps a new
+      # package from being silently absent from its own gate.
+      - id: list
+        run: |
+          echo "packages=$(bun run scripts/list-package-dirs.ts --json | jq -c '.data')" >> "$GITHUB_OUTPUT"
+
+  package:
+    needs: package-list
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      # Every package is reported, not just the first to break: a matrix that stops at one failure
+      # turns a 30-package answer into a one-package answer.
+      fail-fast: false
+      matrix:
+        package: ${{ fromJson(needs.package-list.outputs.packages) }}
+    name: package (${{ matrix.package }})
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: lint
+        run: bunx biome check "packages/${{ matrix.package }}"
+      - name: test + coverage
+        run: bun run scripts/coverage-gate.ts --package "${{ matrix.package }}"
