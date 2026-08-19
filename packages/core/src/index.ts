@@ -30,10 +30,9 @@ export {
   withFacts,
 } from './actor';
 export { APP_VERSION_KEY, appVersion, DEFAULT_APP_VERSION } from './app-version';
-export type { InvariantOptions } from './assert';
-export { assert, assertNever, invariant } from './assert';
-export type { Clock, FrozenClock } from './clock';
-export { frozenClock, systemClock } from './clock';
+export { assert, assertNever, type InvariantOptions, invariant } from './assert';
+export { canonicalJson, fingerprint } from './canonical-json';
+export { type Clock, type FrozenClock, frozenClock, systemClock } from './clock';
 export type {
   AiConfig,
   AiConfigInput,
@@ -78,6 +77,7 @@ export {
   resetCursorSigning,
   usesDevCursorSecret,
 } from './cursor';
+export { compareDecimalText } from './decimal-order';
 export type {
   Env,
   EnvBooleanVar,
@@ -425,8 +425,7 @@ export {
   MAX_IMAGE_PIXELS,
   rasterFrom,
 } from './image/raster';
-export type { ImageFit, ResizeSpec } from './image/resize';
-export { fitBox, resizeRaster, scaledToFit } from './image/resize';
+export { fitBox, type ImageFit, type ResizeSpec, resizeRaster, scaledToFit } from './image/resize';
 export { impersonate, impersonationReason, isImpersonating } from './impersonate';
 export { cachedFormatter, canonicalLocale, MAX_CACHED_FORMATTERS } from './intl-cache';
 export type {
@@ -471,10 +470,8 @@ export {
   markListening,
   resetListeners,
 } from './listeners';
-export type { McpExposureDeclaration } from './mcp-exposure';
-export { isMcpExposed } from './mcp-exposure';
-export type { CappedBody } from './read-capped';
-export { readWithinLimit } from './read-capped';
+export { isMcpExposed, type McpExposureDeclaration } from './mcp-exposure';
+export { type CappedBody, readWithinLimit } from './read-capped';
 export type { ModuleRegistrar, PrimitiveKind, RegisteredPrimitive } from './registrar';
 export {
   hasPrimitiveRegistrar,
@@ -488,8 +485,7 @@ export { err, isErr, isOk, map, mapErr, ok, tryCatch, unwrap, unwrapOr } from '.
 export type { ResolveRoleOptions, Role, RoleInfo, ScalingSignal } from './roles';
 export { DEFAULT_ROLE, isRole, ROLE_INFO, ROLES, resolveRole } from './roles';
 export { safeUrl, URL_ATTRIBUTES } from './safe-url';
-export type { ServiceFactory } from './service';
-export { defineService, resetServices } from './service';
+export { defineService, resetServices, type ServiceFactory } from './service';
 export { timingSafeEqual } from './timing-safe-equal';
 export {
   frameworkVersion,
