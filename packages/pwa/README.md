@@ -67,12 +67,18 @@ before an un-shippable PWA exists.
 | `push` | — | `push` + `notificationclick` listeners |
 | `backgroundSync` | — | `sync` listener + outbox flush |
 | `badging` | — | `navigator.setAppBadge` after a push |
-| `shareTarget` | `share_target` | share-target route rule |
+| `shareTarget` | `share_target` | — |
 | `fileHandlers` | `file_handlers` | — |
 | `protocolHandlers` | `protocol_handlers` | — |
 
 A disabled capability emits neither the manifest member nor the SW code. An unused
 capability ships zero bytes and asks for zero permissions.
+
+Three of the six are manifest-only, and the `—` in their SW column is load-bearing: the OS hands a
+share, a file or a protocol URL to a route the app already serves, so there is no worker branch to
+gate. `CAPABILITY_SW_MARKERS` is checked against the emitted `sw.js` in both directions, so a claim
+here that the generator does not honour is a failing test rather than an installed app announcing a
+capability nothing implements.
 
 ## Public API
 
@@ -89,6 +95,7 @@ capability ships zero bytes and asks for zero permissions.
 | `backgroundSyncSource`, `retryDelayMs` | the Background Sync trigger |
 | `renderPushPayload`, `pushSource`, `subscribeSource` | Web Push, per-locale bodies |
 | `createInstallController`, `iosInstallGuidance` | install prompt, never on first paint |
+| `PwaStrategyExhaustedError` and the other `errors.ts` classes | the codes this package throws, catchable by an app |
 
 ## Notes
 
@@ -109,5 +116,13 @@ capability ships zero bytes and asks for zero permissions.
   PNG, because `type: 'image/png'` is what the manifest declares. A maskable icon's artwork
   lands exactly inside `maskableSafeZone(size)`; the ring around it is `background`, which is
   hex or `transparent` (there are no named colours). Same bytes in, same bytes out.
+- **Every HTML sink goes through one escaper.** `appleTouchLinks` and `renderThemeColorMeta`
+  interpolate app configuration into attributes, so both run it through `escapeAttribute` from
+  `@ultimat3/seo` (tier 1, and the one this package can reach — `@ultimat3/render`'s `html.ts` is
+  tier 4, sideways). Never a second escaper here.
+- **A precache URL may already carry a query.** `PrecacheAsset.url` is public API and bundlers emit
+  `?v=<hash>` of their own, so the install block picks `?` or `&` per entry. A fixed `?` produced
+  `...?locale=en?v=<rev>`, and because `cache.addAll` is all-or-nothing a single non-200 there means
+  the worker never installs at all.
 - **Route data arrives as data.** `@ultimat3/render` and `@ultimat3/pwa` are both tier 4, so
   `PwaRoute` is a structural view of `RouteDescriptor`, never an import.

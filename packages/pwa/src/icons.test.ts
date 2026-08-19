@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { createRaster, decodeImage, encodeImage, probeImage } from '@ultimat3/core';
 import { NotImplementedError, PwaIconMissingError } from './errors';
 import {
+  appleTouchLinks,
   BuiltinImagePipeline,
   ICON_MATRIX,
   MASKABLE_PADDING,
@@ -254,5 +255,27 @@ describe('pwa error vocabulary', () => {
     );
     expect(error.code).toBe('X_NOT_IMPLEMENTED');
     expect(fixOf(error)).toBe('x pwa build --driver=local');
+  });
+});
+
+/**
+ * `outputPath` is built from `IconSourceConfig.outDir`, which is app config — and the result is
+ * interpolated into an `href`. Unescaped, an `outDir` holding a quote closes the attribute and the
+ * tag: the emitted `<head>` carried a live `<script>` element. One escaper, `@ultimat3/seo`'s.
+ */
+describe('appleTouchLinks escapes what it interpolates', () => {
+  test('a quote in outDir cannot close the attribute or open an element', () => {
+    const html = appleTouchLinks(
+      planIcons({ sourceIcon: 'assets/icon.png', outDir: '/i"><script>alert(1)</script>' }),
+    );
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&quot;');
+    // Every emitted element is still a link, so the escaping did not simply delete the output.
+    expect(html.match(/<link /g)?.length).toBe(3);
+  });
+
+  test('an ordinary outDir is untouched', () => {
+    const html = appleTouchLinks(planIcons({ sourceIcon: 'assets/icon.png', outDir: '/icons' }));
+    expect(html).toContain('href="/icons/apple-touch-icon.png"');
   });
 });

@@ -150,7 +150,10 @@ self.addEventListener('push',(event)=>{
 });
 self.addEventListener('notificationclick',(event)=>{
   event.notification.close();
-  const url=(event.notification.data&&event.notification.data.url)||'/';
+  // PushPayload.url is a PATH and WindowClient.url is absolute, so the comparison below is only
+  // ever true after resolving — unresolved it matched no client at all and every tap opened a
+  // second window on an app the user already had open. Same resolve as the fetch block's.
+  const url=new URL((event.notification.data&&event.notification.data.url)||'/',self.location.origin).href;
   event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then((ws)=>{
     for(const w of ws){if(w.url===url&&'focus'in w)return w.focus()}
     return clients.openWindow(url)

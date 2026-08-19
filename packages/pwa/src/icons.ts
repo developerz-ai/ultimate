@@ -5,6 +5,7 @@
  */
 
 import { transformImageBytes } from '@ultimat3/core';
+import { escapeAttribute } from '@ultimat3/seo';
 import { PwaIconMissingError } from './errors';
 import type { ManifestIcon } from './manifest';
 
@@ -180,8 +181,11 @@ export function appleTouchLinks(plan: IconPlan): string {
   return plan.entries
     .filter((entry) => entry.spec.purpose === 'apple-touch')
     .map(
+      // `outputPath` carries `IconSourceConfig.outDir`, which is app config on its way into an
+      // `href` — a quote in it closed the attribute AND the tag, so `<head>` got a live element.
+      // seo's escaper is tier 1 and the one this package can reach; render's html.ts is tier 4.
       (entry) =>
-        `<link rel="apple-touch-icon" sizes="${entry.spec.size}x${entry.spec.size}" href="${entry.outputPath}">`,
+        `<link rel="apple-touch-icon" sizes="${entry.spec.size}x${entry.spec.size}" href="${escapeAttribute(entry.outputPath)}">`,
     )
     .join('');
 }

@@ -13,7 +13,15 @@ by the CLI, not imported.
 | `schema.ts` | the manifest's typed shape + `MANIFEST_VERSION` |
 | `build.ts` | `buildManifest` — pure, deterministic, stably sorted |
 | `sources.ts` | wires `describe*` from entity/action/query/jobs into `ManifestSources` |
-| `diff.ts` | `diffManifest` — breaking / additive / internal |
+| `diff.ts` | `diffManifest` — the orchestrator: one classifier per section, nothing else |
+| `diff-change.ts` | the shared vocabulary: `ManifestChange`, `index`, `diffNamedSet`, `diffScalar` |
+| `diff-operations.ts` | actions, queries and the permissions they require |
+| `diff-rate-limit.ts` | how a declared rate limit moved |
+| `diff-entities.ts` | tables, columns, keys, invariants |
+| `diff-work.ts` | jobs and tasks — the two things that fail by silently not happening |
+| `diff-routes.ts` | a URL's surface and its delivery facts |
+| `diff-registries.ts` | policies and error codes |
+| `diff-fixtures.ts` | TEST-ONLY: one fully-populated `ManifestSources`. Never in `index.ts` |
 | `verify.ts` | `verifyContract` — the major-bump gate |
 | `emit.ts` | canonical serialisation, write, `--json`, drift check |
 | `agents-md.ts` | read-only AGENTS.md existence + size check |
@@ -69,8 +77,25 @@ by the CLI, not imported.
 - A guide topic is unique within its package — repeated headings take a document-order suffix.
 - Neither docs module may import a registry or a clock. `docs-search.ts` is pure; `docs-scan.ts`
   reads files and nothing else.
-- **A new manifest field ⇒ a `diff.ts` rule for it.** Always — a field nothing classifies is a
-  fact the gate cannot see, which is the whole reason the field was added.
+- **A new manifest field ⇒ a `diff-*.ts` rule for it.** Always — a field nothing classifies is a
+  fact the gate cannot see, which is the whole reason the field was added. Now enforced rather
+  than stated: `diff.test.ts` walks `ARRAY_SECTIONS` (exported by `schema.ts`, the same list
+  `isManifest` checks) and fails on a section emptying without a classified change. `tasks` and
+  `errorCodes` were unread until 2026-08, along with ten fields — a renamed table, a dropped
+  `primaryKey`/`references`, emptied `invariants`, a moved job `queue`, `retry.attempts` 5 → 0, a
+  route's `surface`/`offline`/`hydrate`, and a query's `cacheTags` — and every one of them
+  reported exactly `[{ kind: 'internal', path: 'buildId' }]` with `hasBreaking: false`. A new
+  SECTION needs its own file beside the others; a new FIELD joins the file its section owns.
+- **The axis is what a change refuses, not how it reads.** Something that rejects input that was
+  valid yesterday is breaking (an invariant added, a NOT NULL, a gained permission, a gained
+  enforcement site, a lowered `retry.attempts`); something that accepts more is additive and
+  still reported (an invariant dropped, a permission dropped, more attempts). A removal is
+  breaking on every section, including the two that fail silently: a deleted task never runs
+  again and a job whose `queue` moved piles up where no worker is subscribed.
+- **Absence is evidence only where absence has a meaning.** `primaryKey`/`references` absent IS
+  "no key", so a dropped one is classified. `surface`, `offline`, `hydrate`, `budget` and
+  `revalidateTags` absent means "this file predates the field", so `diffScalar` skips a side that
+  carries nothing rather than reporting every route in an upgraded app as re-surfaced.
 - **`MANIFEST_VERSION` bumps only when a reader built for the old version would be WRONG** — a
   field removed, retyped, or given a new meaning — never for one that is merely added. Two costs
   make the reflex expensive: `isCompatible` is an equality check, so a bump rejects every

@@ -66,3 +66,28 @@ describe('generateWebManifest', () => {
     ).toThrow(PwaManifestInvalidError);
   });
 });
+
+/**
+ * `content` and `media` land inside attributes. They are the app's own design tokens rather than
+ * request data, so this is the lower-severity half of the same class as `appleTouchLinks` — and
+ * the same one-line repair, through the same escaper. `assertValid` only checks non-empty.
+ */
+describe('renderThemeColorMeta escapes what it interpolates', () => {
+  test('a quote in a token value cannot open a second attribute', () => {
+    const html = renderThemeColorMeta([
+      { content: '#fff" onx="1', media: '(prefers-color-scheme: light)' },
+    ]);
+    // A second, LIVE attribute needs an unescaped quote to close `content` first; escaped, the
+    // whole payload stays one value.
+    expect(html).not.toContain('onx="');
+    expect(html).toBe(
+      '<meta name="theme-color" content="#fff&quot; onx=&quot;1" media="(prefers-color-scheme: light)">',
+    );
+  });
+
+  test('a resolved token value is emitted verbatim', () => {
+    expect(renderThemeColorMeta([{ content: 'oklch(98% 0 0)', media: 'all' }])).toBe(
+      '<meta name="theme-color" content="oklch(98% 0 0)" media="all">',
+    );
+  });
+});

@@ -11,6 +11,8 @@ import {
   PWA_ERROR_TITLES,
   PWA_OWNED_ERROR_CODES,
 } from './errors';
+import type { StrategyCache, StrategyEnv } from './strategies';
+import { staleWhileRevalidate } from './strategies';
 
 describe('PWA_ERROR_TITLES', () => {
   test('titles exactly the codes pwa owns — a borrowed code carries no title here', () => {
@@ -53,5 +55,48 @@ describe('error code registry', () => {
       'this driver does not implement the requested feature',
     );
     expect(Object.keys(PWA_ERROR_TITLES)).not.toContain('X_NOT_IMPLEMENTED');
+  });
+});
+
+/**
+ * A caller can only `instanceof` what it can import. `X_PWA_STRATEGY_EXHAUSTED` is documented in
+ * `wiki/Error-Codes.md` as raised by `staleWhileRevalidate`, which IS public API — so the class it
+ * throws has to leave the package through `index.ts`, and it did not.
+ *
+ * The two `X_PWA_SYNC_*` classes deliberately stay internal: they title codes the emitted `sw.js`
+ * throws in the service-worker realm, which has no bundler and constructs its own local class, so
+ * no `instanceof` in an app can ever be true. Their codes and titles are public through
+ * `PWA_ERROR_CODES` / `PWA_ERROR_TITLES`, which is the thing an app can actually use.
+ */
+describe('the public entry point', () => {
+  test('exports the error class its own public API throws', async () => {
+    const api: Record<string, unknown> = await import('./index');
+    const cache: StrategyCache = {
+      match: async (): Promise<undefined> => undefined,
+      put: async (): Promise<void> => undefined,
+    };
+    const env: StrategyEnv = {
+      open: async (): Promise<StrategyCache> => cache,
+      fetch: async (): Promise<Response> => {
+        throw new TypeError('network down');
+      },
+    };
+
+    let thrown: unknown;
+    try {
+      await staleWhileRevalidate(new Request('https://app.test/x'), env, { cacheName: 'pages' });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(api['PwaStrategyExhaustedError'] as new () => Error);
+  });
+
+  test('does not export the classes only the generated sw.js realm can throw', async () => {
+    const api: Record<string, unknown> = await import('./index');
+    expect(api['PwaSyncFlushFailedError']).toBeUndefined();
+    expect(api['PwaSyncIncompleteError']).toBeUndefined();
+    // Their codes are public even so — that is what an app matches on.
+    expect(PWA_ERROR_CODES).toContain('X_PWA_SYNC_FLUSH_FAILED');
+    expect(PWA_ERROR_CODES).toContain('X_PWA_SYNC_INCOMPLETE');
   });
 });

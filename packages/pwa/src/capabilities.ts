@@ -55,15 +55,21 @@ export const CAPABILITY_MANIFEST_KEYS: Readonly<Record<Capability, readonly stri
 
 /**
  * The service-worker code each capability emits — its listener, and anything that listener alone
- * needs. Used to assert nothing leaks when disabled: `PwaSyncError` is the background-sync
- * handler's own error class, so it ships with the handler and never without it.
+ * needs. Checked in BOTH directions (`service-worker.test.ts`): every marker is in the emitted
+ * worker when its capability is on, and none of them is when they are all off. `PwaSyncError` is
+ * the background-sync handler's own error class, so it ships with the handler and never without it.
+ *
+ * An EMPTY list is a claim too, and the true one for the three manifest-only capabilities: a share
+ * target, a file handler and a protocol handler are all delivered by the OS to a URL the app
+ * already serves, so the member is the whole feature and the worker has no branch to add.
+ * `shareTarget` named `/_x/share-target` here for two releases and no block ever emitted it.
  */
 export const CAPABILITY_SW_MARKERS: Readonly<Record<Capability, readonly string[]>> = Object.freeze(
   {
     push: ["addEventListener('push'", "addEventListener('notificationclick'"],
     backgroundSync: ["addEventListener('sync'", 'class PwaSyncError'],
     badging: ['navigator.setAppBadge'],
-    shareTarget: ['/_x/share-target'],
+    shareTarget: [],
     fileHandlers: [],
     protocolHandlers: [],
   },

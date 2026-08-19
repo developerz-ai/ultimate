@@ -64,6 +64,16 @@ export interface ServiceWorkerOutput {
  * "why is my PWA not working" and it is checkable at build time.
  */
 export function assertScope(swPath: string, scope: string): void {
+  // A relative path has no directory to compare, and `''` is a prefix of every scope — so the
+  // check passed for exactly the config most likely to be wrong. Refused, not normalised: where
+  // the browser would resolve `sw.js` from is the registration call, which this cannot see.
+  if (!swPath.startsWith('/')) {
+    throw new SwScopeInvalidError(
+      `sw.js is served from ${swPath}, which is relative, so the directory it can control is ` +
+        `unknown at build time; the configured scope is ${scope}`,
+      `set pwa.swPath to an absolute path — '${scope}sw.js' serves scope ${scope}`,
+    );
+  }
   const directory = swPath.slice(0, swPath.lastIndexOf('/') + 1);
   if (!scope.startsWith(directory)) {
     throw new SwScopeInvalidError(
@@ -210,13 +220,19 @@ function serializeRules(rules: readonly RouteRule[]): string {
  * of the page that was precached, and online every precached byte is downloaded a second time.
  * `addAll` still does the fetching, because its all-or-nothing failure is what stops a
  * half-populated precache from activating; the second pass only re-keys what it stored.
+ *
+ * The separator in front of `v=` is chosen per entry, because `PrecacheAsset.url` is public API
+ * and a bundler emits a query of its own: a fixed `?` built `...?locale=en?v=<rev>`, and a single
+ * non-200 for it rejects `addAll`, which rejects the install — no precache, no offline document,
+ * no version-skew header, and a worker that never activates at all.
  */
 const INSTALL_BLOCK = `
 self.addEventListener('install',(event)=>{
   event.waitUntil((async()=>{
     const cache=await caches.open(PRECACHE);
     // Revision is a content hash: unchanged assets are not re-downloaded across deploys.
-    const fetched=PRECACHE_MANIFEST.map((e)=>new Request(e.url+'?v='+e.revision,{cache:'reload'}));
+    // The separator is picked per entry: a precache URL may already carry a query.
+    const fetched=PRECACHE_MANIFEST.map((e)=>new Request(e.url+(e.url.indexOf('?')<0?'?':'&')+'v='+e.revision,{cache:'reload'}));
     await cache.addAll(fetched);
     for(let i=0;i<PRECACHE_MANIFEST.length;i++){
       const stored=await cache.match(fetched[i]);

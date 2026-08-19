@@ -60,3 +60,100 @@ describe('pushSource', () => {
     expect(pushSource({})).not.toContain('navigator.setAppBadge');
   });
 });
+
+/**
+ * The emitted `notificationclick` handler, executed the way the browser executes it. `payload.url`
+ * is a PATH (`/posts/1`, per `PushPayload.url`) and `WindowClient.url` is always ABSOLUTE, so the
+ * focus-existing-tab loop matched nothing, ever: every tap opened another window on top of the app
+ * the user already had open. Asserting the text of the handler cannot see that.
+ */
+describe('the emitted notificationclick handler, executed', () => {
+  const ORIGIN = 'https://app.test';
+
+  interface FakeClient {
+    readonly url: string;
+    focus(): Promise<string>;
+  }
+
+  function realm(source: string) {
+    const listeners = new Map<string, (event: unknown) => void>();
+    const focused: string[] = [];
+    const opened: string[] = [];
+    let windows: readonly FakeClient[] = [];
+
+    const self = {
+      location: { origin: ORIGIN },
+      addEventListener(type: string, listener: (event: unknown) => void): void {
+        listeners.set(type, listener);
+      },
+      registration: { showNotification: async (): Promise<void> => undefined },
+    };
+    const clients = {
+      matchAll: async (): Promise<readonly FakeClient[]> => windows,
+      openWindow: async (url: string): Promise<null> => {
+        opened.push(url);
+        return null;
+      },
+    };
+    const factory = new Function('self', 'clients', 'navigator', source) as (
+      scope: typeof self,
+      clientList: typeof clients,
+      nav: Record<string, unknown>,
+    ) => void;
+    factory(self, clients, {});
+
+    return {
+      focused,
+      opened,
+      openTab(url: string): void {
+        windows = [
+          ...windows,
+          {
+            url,
+            focus: async (): Promise<string> => {
+              focused.push(url);
+              return url;
+            },
+          },
+        ];
+      },
+      async click(url: string | undefined): Promise<void> {
+        let work: Promise<unknown> = Promise.resolve();
+        listeners.get('notificationclick')?.({
+          notification: { close: (): void => undefined, data: url === undefined ? {} : { url } },
+          waitUntil: (p: Promise<unknown>) => {
+            work = p;
+          },
+        });
+        await work;
+      },
+    };
+  }
+
+  test('focuses the tab already showing the path, instead of opening a second window', async () => {
+    const sw = realm(pushSource({}));
+    sw.openTab(`${ORIGIN}/posts/1`);
+    await sw.click('/posts/1');
+
+    expect(sw.focused).toEqual([`${ORIGIN}/posts/1`]);
+    expect(sw.opened).toEqual([]);
+  });
+
+  test('opens a window when no client is on that path', async () => {
+    const sw = realm(pushSource({}));
+    sw.openTab(`${ORIGIN}/settings`);
+    await sw.click('/posts/1');
+
+    expect(sw.focused).toEqual([]);
+    expect(sw.opened).toEqual([`${ORIGIN}/posts/1`]);
+  });
+
+  test('a payload with no url falls back to the app root, resolved the same way', async () => {
+    const sw = realm(pushSource({}));
+    sw.openTab(`${ORIGIN}/`);
+    await sw.click(undefined);
+
+    expect(sw.focused).toEqual([`${ORIGIN}/`]);
+    expect(sw.opened).toEqual([]);
+  });
+});

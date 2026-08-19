@@ -5,6 +5,7 @@
  * app gets a light status bar on every launch.
  */
 
+import { escapeAttribute } from '@ultimat3/seo';
 import type { CapabilityFlags, ResolvedCapabilities } from './capabilities';
 import { isEnabled, resolveCapabilities } from './capabilities';
 import { PwaManifestInvalidError } from './errors';
@@ -211,6 +212,12 @@ export function serializeWebManifest(manifest: WebManifest): string {
 
 export function renderThemeColorMeta(metas: readonly ThemeColorMeta[]): string {
   return metas
-    .map((meta) => `<meta name="theme-color" content="${meta.content}" media="${meta.media}">`)
+    .map(
+      // Both values are attribute sinks. `assertValid` only asks that a token is non-empty, so a
+      // quote in one emitted a second, live attribute — same class as `appleTouchLinks`, same
+      // escaper, one per package rather than one per call site.
+      (meta) =>
+        `<meta name="theme-color" content="${escapeAttribute(meta.content)}" media="${escapeAttribute(meta.media)}">`,
+    )
     .join('');
 }
