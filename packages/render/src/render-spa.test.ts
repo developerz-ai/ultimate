@@ -155,3 +155,73 @@ describe('renderSpa', () => {
     expect(result.body).toBe(shell.html);
   });
 });
+
+/**
+ * `renderSpaShell` is a public export: every value it interpolates into an attribute goes through
+ * `html.ts`'s one escaper, the same contract row `emitIslandAttributes` was fixed to obey. `lang`
+ * is safe on the framework's own path — `currentLocale()` normalises it against the configured
+ * `supported` list — but a caller supplies it directly, and the escaper is what makes that safe by
+ * construction rather than by a second package's invariant holding.
+ */
+describe('renderSpaShell escapes every value it puts in an attribute', () => {
+  const entry = spaRoute;
+
+  test('a lang carrying a quote cannot open a second attribute', () => {
+    const shell = renderSpaShell({
+      entry: entry(),
+      buildId: 'b1',
+      head: '',
+      chunks: [],
+      lang: 'en" onload="alert(1)',
+    });
+    expect(shell.html).not.toContain('onload="alert(1)"');
+    expect(shell.html).toContain('&quot;');
+  });
+
+  test('a buildId carrying one cannot escape the meta tag', () => {
+    const shell = renderSpaShell({
+      entry: entry(),
+      buildId: 'b1"><script>alert(1)</script>',
+      head: '',
+      chunks: [],
+      lang: 'en',
+    });
+    expect(shell.html).not.toContain('<script>alert(1)</script>');
+  });
+
+  test('a chunk url carrying one cannot escape the preload or the module script', () => {
+    const shell = renderSpaShell({
+      entry: entry(),
+      buildId: 'b1',
+      head: '',
+      chunks: ['/c.js" onerror="alert(1)'],
+      lang: 'en',
+    });
+    expect(shell.html).not.toContain('onerror="alert(1)"');
+  });
+
+  test('a rootId and dir carrying one are escaped too', () => {
+    const shell = renderSpaShell({
+      entry: entry(),
+      buildId: 'b1',
+      head: '',
+      chunks: [],
+      lang: 'en',
+      dir: 'ltr" onload="alert(1)' as 'ltr',
+      rootId: 'root" onclick="alert(1)',
+    });
+    expect(shell.html).not.toContain('onload="alert(1)"');
+    expect(shell.html).not.toContain('onclick="alert(1)"');
+  });
+
+  test('the head is still passed through verbatim — it is already-merged markup', () => {
+    const shell = renderSpaShell({
+      entry: entry(),
+      buildId: 'b1',
+      head: '<title>Dashboard</title>',
+      chunks: [],
+      lang: 'en',
+    });
+    expect(shell.html).toContain('<title>Dashboard</title>');
+  });
+});

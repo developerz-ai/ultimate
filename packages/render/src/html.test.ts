@@ -107,3 +107,56 @@ describe('renderAttributes', () => {
     expect(renderAttributes({ id: 'a', class: 'b' })).toBe(' id="a" class="b"');
   });
 });
+
+/**
+ * `<div {...row} />` where `row` is a `load()` result or a DB row: a column named for a member of
+ * `Object.prototype` is a plain string on the object and must render as a plain attribute. The
+ * alias lookup used to walk the prototype chain, so `toString` resolved to a FUNCTION and the
+ * next line called `.toLowerCase()` on it — a TypeError with no code, and the whole page 500s.
+ */
+describe('attributePair with a prop named after an Object.prototype member', () => {
+  const inherited = ['toString', 'constructor', 'valueOf', 'hasOwnProperty', '__proto__'];
+
+  test('renders the name it was given, never a function off the prototype', () => {
+    for (const name of inherited) {
+      expect(attributePair(name, 'x')).toBe(`${name}="x"`);
+    }
+  });
+
+  test('a spread row carrying one still renders every other attribute', () => {
+    expect(renderAttributes({ title: 'Hello', toString: 'x' })).toBe(' title="Hello" toString="x"');
+  });
+
+  test('the real aliases still map, so the lookup was narrowed and not removed', () => {
+    expect(attributePair('className', 'a')).toBe('class="a"');
+    expect(attributePair('htmlFor', 'a')).toBe('for="a"');
+  });
+});
+
+/**
+ * The scheme choke point covers every attribute a browser FOLLOWS, not just the four an anchor
+ * uses — and `srcdoc` is not a URL at all: its value is entity-decoded and then parsed as HTML, so
+ * escaping it ships a live `<script>` inside an iframe on this origin.
+ */
+describe('attributePair beyond href/src', () => {
+  test('refuses javascript: in every attribute a browser follows', () => {
+    for (const name of ['data', 'poster', 'ping', 'xlink:href', 'XLink:Href']) {
+      expect(attributePair(name, 'javascript:alert(1)')).toBeNull();
+    }
+  });
+
+  test('leaves an ordinary value in those attributes alone', () => {
+    expect(attributePair('poster', '/cover.webp')).toBe('poster="/cover.webp"');
+    expect(attributePair('data', 'https://ultimate.dev/x.pdf')).toBe(
+      'data="https://ultimate.dev/x.pdf"',
+    );
+  });
+
+  test('srcdoc is never emitted, because escaping cannot make markup inert there', () => {
+    expect(attributePair('srcdoc', '<script>alert(1)</script>')).toBeNull();
+    expect(attributePair('srcdoc', 'plain text')).toBeNull();
+    expect(renderAttributes({ srcdoc: '<script>alert(1)</script>', title: 'a' })).toBe(
+      ' title="a"',
+    );
+  });
+});

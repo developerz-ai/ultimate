@@ -295,3 +295,61 @@ describe('staticResult', () => {
     });
   });
 });
+
+/**
+ * `prerender` and the render function are both app code, and both frames exist to turn a failure
+ * into `X_PRERENDER_FAILED` naming the route. `error instanceof Error ? error.message :
+ * String(error)` raises on a null-prototype object and on an `Error` whose `message` getter
+ * throws — so the one frame that owed the build a coded error produced a bare one instead.
+ */
+describe('a build-time throw that fights being read', () => {
+  const hostileError = (): Error => {
+    const error = new Error('never read');
+    Object.defineProperty(error, 'message', {
+      get() {
+        throw new TypeError('message is a trap');
+      },
+    });
+    return error;
+  };
+
+  test('prerender throwing a null-prototype object is X_PRERENDER_FAILED', async () => {
+    const entry = registerRoute({
+      file: 'apps/web/site/pricing/page.tsx',
+      config: staticConfig({
+        prerender: () => {
+          throw Object.create(null);
+        },
+      }),
+    });
+    await expect(enumeratePrerender(entry)).rejects.toMatchObject({
+      code: 'X_PRERENDER_FAILED',
+      message: expect.stringContaining('prerender() for /pricing threw:'),
+    });
+  });
+
+  test('prerender throwing an Error with a hostile message is X_PRERENDER_FAILED', async () => {
+    const entry = registerRoute({
+      file: 'apps/web/site/pricing/page.tsx',
+      config: staticConfig({
+        prerender: () => {
+          throw hostileError();
+        },
+      }),
+    });
+    await expect(enumeratePrerender(entry)).rejects.toMatchObject({
+      code: 'X_PRERENDER_FAILED',
+    });
+  });
+
+  test('a render that throws one still names the path being built', async () => {
+    const entry = blogRoute(async () => ['a']);
+    const render: StaticRenderFn = () => {
+      throw Object.create(null);
+    };
+    await expect(renderStatic(entry, render, { buildId: 'b1' })).rejects.toMatchObject({
+      code: 'X_PRERENDER_FAILED',
+      message: expect.stringContaining('rendering /blog/a failed:'),
+    });
+  });
+});

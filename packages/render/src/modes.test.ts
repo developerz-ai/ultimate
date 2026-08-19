@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { tag } from '@ultimat3/cache';
 import { RouteModeInvalidError } from './errors';
 import { assertModeInvariants } from './modes';
 import { clearRoutes, registerRoute } from './registry';
@@ -186,5 +187,63 @@ describe('surface-level mode rules', () => {
       fix = fixOf(error);
     }
     expect(fix).toContain('budget: { js:');
+  });
+});
+
+/**
+ * `isr` needs a trigger "otherwise it is `static` wearing a costume" — and a TTL nothing can parse
+ * is exactly that costume: `parseTtlMs` answers `null`, so the page is generated ONCE and served
+ * for the life of the process while the CDN is told `s-maxage=60`. One reader for "is this a TTL".
+ */
+describe('isr revalidate trigger', () => {
+  const isrRoute = (revalidate: NonNullable<RouteConfig['revalidate']>): RouteConfig =>
+    defineRoute({ render: 'isr', revalidate, offline: 'runtime', hydrate: 'never', meta });
+
+  test('accepts a ttl the ISR clock can actually read', () => {
+    expect(isrRoute({ ttl: '5m' }).render).toBe('isr');
+    expect(isrRoute({ ttl: 60_000 }).render).toBe('isr');
+  });
+
+  test('refuses a ttl string parseTtlMs answers null for', () => {
+    for (const ttl of ['5 minutes', '5min', 'soon', '']) {
+      expect(() => isrRoute({ ttl })).toThrow(RouteModeInvalidError);
+    }
+  });
+
+  test('refuses a number that is not a duration', () => {
+    expect(() => isrRoute({ ttl: 0 })).toThrow(RouteModeInvalidError);
+    expect(() => isrRoute({ ttl: -1 })).toThrow(RouteModeInvalidError);
+  });
+
+  test('tags alone are still a trigger, with no ttl at all', () => {
+    expect(isrRoute({ tags: [tag('post')] }).render).toBe('isr');
+  });
+});
+
+/**
+ * The `spec === undefined` guard is widened on purpose for JS callers — and an object lookup walks
+ * the prototype chain, so `render: 'constructor'` found a `ModeSpec` that does not exist and
+ * `defineRoute` returned a frozen descriptor for a mode nothing implements.
+ */
+describe('a render mode named after an Object.prototype member', () => {
+  test('is refused like any other unknown mode', () => {
+    for (const render of ['constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty']) {
+      expect(() =>
+        defineRoute({
+          render: render as RouteConfig['render'],
+          offline: 'runtime',
+          hydrate: 'never',
+          meta,
+        }),
+      ).toThrow(RouteModeInvalidError);
+    }
+  });
+
+  test('the five real modes still resolve, so the lookup was narrowed and not broken', () => {
+    for (const render of ['static', 'ssr', 'stream'] as const) {
+      expect(defineRoute({ render, offline: 'runtime', hydrate: 'never', meta }).render).toBe(
+        render,
+      );
+    }
   });
 });

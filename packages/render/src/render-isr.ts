@@ -13,7 +13,8 @@ import {
   registerRevalidator,
   unregisterDependent,
 } from '@ultimat3/cache';
-import { logger } from '@ultimat3/core';
+import { logger, renderThrowable } from '@ultimat3/core';
+import { parseTtlMs } from './duration';
 import type { RouteDescriptor } from './registry';
 import { describeRoutes } from './registry';
 import { contentHash, staticHeaders } from './render-static';
@@ -72,26 +73,6 @@ export function memoryIsrStore(options: MemoryIsrStoreOptions = {}): IsrStore {
     },
     paths: () => [...map.keys()].sort(),
   };
-}
-
-const DURATION_UNITS: Readonly<Record<string, number>> = {
-  ms: 1,
-  s: 1_000,
-  m: 60_000,
-  h: 3_600_000,
-  d: 86_400_000,
-};
-
-/** `'5m'` → 300000. Numbers pass through as milliseconds. */
-export function parseTtlMs(ttl: string | number | null | undefined): number | null {
-  if (ttl === null || ttl === undefined) return null;
-  if (typeof ttl === 'number') return Number.isFinite(ttl) && ttl > 0 ? ttl : null;
-  const match = /^(\d+(?:\.\d+)?)(ms|s|m|h|d)$/.exec(ttl.trim());
-  const amount = match?.[1];
-  const unit = match?.[2];
-  if (amount === undefined || unit === undefined) return null;
-  const factor = DURATION_UNITS[unit];
-  return factor === undefined ? null : Number(amount) * factor;
 }
 
 export type IsrRenderFn = (path: string) => string | Promise<string>;
@@ -248,10 +229,10 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
       // stale-while-revalidate: answer from the stale copy now, refresh behind the request.
       const already = pending.has(path);
       void regenerate(path, render).catch((error: unknown) => {
-        logger.warn('isr.regenerate.failed', {
-          path,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        // `renderThrowable`, never `.message`/`String()`: this `.catch` is the last frame under a
+        // route's own render function, and `String()` raises on a null-prototype object — the
+        // handler that exists to REPORT the failure became a second, unhandled rejection.
+        logger.warn('isr.regenerate.failed', { path, error: renderThrowable(error) });
       });
       return {
         state: 'stale',

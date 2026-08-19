@@ -68,7 +68,7 @@ function assertJsonSafe(value: unknown, path: string, seen: Set<object>, file: s
     guardCycle(value, path, seen, file);
     const out: Record<string, JsonValue> = {};
     for (const [key, item] of Object.entries(value)) {
-      out[key] = assertJsonSafe(item, `${path}.${key}`, seen, file);
+      put(out, key, assertJsonSafe(item, `${path}.${key}`, seen, file));
     }
     seen.delete(value);
     return out;
@@ -80,6 +80,18 @@ function assertJsonSafe(value: unknown, path: string, seen: Set<object>, file: s
     `pass a plain JSON value at ${path} in ${file} (an id, not the row; a string, not a Date), ` +
       'or fetch it inside the island',
   );
+}
+
+/**
+ * One walked value onto the bag. `out[key] = value` is not an assignment for exactly one name:
+ * `__proto__` runs `Object.prototype`'s setter and REPLACES the prototype instead of adding a key,
+ * so the prop never reaches the browser — the exact footgun the walk above exists to prevent — and
+ * the record the server keeps reading answers whatever the request body chose. `JSON.parse` mints a
+ * real own `__proto__` key, so a row off the wire is enough. Same shape as `validate-args.ts`'s
+ * `put` in `@ultimat3/mcp`; `defineProperty` writes a plain own data property whatever the name is.
+ */
+function put(out: Record<string, JsonValue>, key: string, value: JsonValue): void {
+  Object.defineProperty(out, key, { value, writable: true, enumerable: true, configurable: true });
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -127,7 +139,7 @@ export function checkIslandProps(
   const bag: Record<string, JsonValue> = {};
   const seen = new Set<object>();
   for (const key of passed) {
-    bag[key] = assertJsonSafe(props[key], `props.${key}`, seen, file);
+    put(bag, key, assertJsonSafe(props[key], `props.${key}`, seen, file));
   }
 
   const bytes = new TextEncoder().encode(JSON.stringify(bag)).byteLength;

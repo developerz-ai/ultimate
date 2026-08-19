@@ -6,6 +6,8 @@
 // tier — the CLI wires them, this package only defines the shape and the URIs.
 
 import { McpResourceDuplicateError } from './errors';
+import type { McpCaller, McpVisibility } from './registry';
+import { visibleToCaller } from './registry';
 import type { JsonSchema } from './wire';
 
 /** Stable URIs. These are quoted in AGENTS.md files, so treat them as public API. */
@@ -21,9 +23,23 @@ export interface McpResource {
   readonly name: string;
   readonly description: string;
   readonly mimeType: string;
+  /**
+   * Required scope, checked exactly as a tool's is — OUTCOME 2. Absent = no scope gate. A
+   * resource is a DOCUMENT, and the four this package ships are an app's policy and data map, so
+   * the surface owes the same two gates the tool surface does.
+   */
+  readonly scope?: string;
+  /** Who may see and read it — OUTCOME 1. Absent = everyone. Same `McpVisibility` as a tool's. */
+  readonly visibleTo?: McpVisibility;
   /** Read on demand — a resource is never eagerly materialised at boot. */
   read(): Promise<string> | string;
 }
+
+/** The gates that run before a resource is read. The tool surface's `ToolResolution` twin. */
+export type ResourceResolution =
+  | { readonly kind: 'ok'; readonly resource: McpResource }
+  | { readonly kind: 'not-found'; readonly uri: string }
+  | { readonly kind: 'scope-denied'; readonly uri: string; readonly scope: string };
 
 /** `resources/list` row (the MCP shape, minus the body). */
 export interface ResourceListEntry {
@@ -81,9 +97,23 @@ export interface FrameworkResourceProviders {
   readonly routes?: () => Promise<string> | string;
   /** Entity/column/invariant description — the DB shape as JSON. */
   readonly schema?: () => Promise<string> | string;
+  /**
+   * Scope required to read ANY of the four, and the audience allowed to see them. Both optional and
+   * both off by default: `x mcp serve` hands the local developer's own identity to the server with
+   * no scopes at all, so a default would refuse the flow these documents exist for. A host serving
+   * them over HTTP declares one — the mechanism is here, the policy is the app's.
+   */
+  readonly scope?: string;
+  readonly visibleTo?: McpVisibility;
 }
 
 export function frameworkResources(providers: FrameworkResourceProviders): readonly McpResource[] {
+  // Applied to all four: they are one document set — the manifest, the OpenAPI document, the route
+  // table and the entity schema — and a host that gates one and not the others has gated nothing.
+  const gate = {
+    ...(providers.scope === undefined ? {} : { scope: providers.scope }),
+    ...(providers.visibleTo === undefined ? {} : { visibleTo: providers.visibleTo }),
+  };
   const out: McpResource[] = [];
   if (providers.manifest !== undefined) {
     out.push({
@@ -92,6 +122,7 @@ export function frameworkResources(providers: FrameworkResourceProviders): reado
       description: 'Generated facts: routes, entities, actions, queries, jobs, policies.',
       mimeType: 'application/json',
       read: providers.manifest,
+      ...gate,
     });
   }
   if (providers.openapi !== undefined) {
@@ -101,6 +132,7 @@ export function frameworkResources(providers: FrameworkResourceProviders): reado
       description: 'OpenAPI 3.1 document projected from every action and query.',
       mimeType: 'application/json',
       read: providers.openapi,
+      ...gate,
     });
   }
   if (providers.routes !== undefined) {
@@ -110,6 +142,7 @@ export function frameworkResources(providers: FrameworkResourceProviders): reado
       description: 'Route table: url, render mode, offline strategy, hydrate, budget.',
       mimeType: 'application/json',
       read: providers.routes,
+      ...gate,
     });
   }
   if (providers.schema !== undefined) {
@@ -119,6 +152,7 @@ export function frameworkResources(providers: FrameworkResourceProviders): reado
       description: 'Entities with columns, types and invariants.',
       mimeType: 'application/json',
       read: providers.schema,
+      ...gate,
     });
   }
   return out;
@@ -144,9 +178,15 @@ export class ResourceRegistry {
     return this;
   }
 
-  /** Sorted by URI: a stable list is diffable between two boots. */
-  list(): readonly ResourceListEntry[] {
-    return [...this.resources.values()]
+  /**
+   * Sorted by URI: a stable list is diffable between two boots. Role-filtered when a caller is
+   * supplied, exactly as `ToolRegistry.list` is — `resources/list` answered every URI to every
+   * accepted token, which is a catalog of an app's whole generated surface.
+   */
+  list(caller?: McpCaller): readonly ResourceListEntry[] {
+    const all = [...this.resources.values()];
+    const visible = caller === undefined ? all : all.filter((r) => visibleToCaller(r, caller));
+    return visible
       .map((r) => ({
         uri: r.uri,
         name: r.name,
@@ -156,6 +196,23 @@ export class ResourceRegistry {
       .sort((a, b) => (a.uri < b.uri ? -1 : a.uri > b.uri ? 1 : 0));
   }
 
+  /**
+   * Visibility then scope, in the only order that is safe — the same order and the same two gates
+   * `ToolRegistry.resolve` applies, and for the same reason: absent and hidden collapse into ONE
+   * branch, or the difference between them is a catalog a prober can enumerate.
+   */
+  resolve(uri: string, caller: McpCaller): ResourceResolution {
+    const resource = this.resources.get(uri);
+    if (resource === undefined || !visibleToCaller(resource, caller)) {
+      return { kind: 'not-found', uri };
+    }
+    if (resource.scope !== undefined && !caller.scopes.has(resource.scope)) {
+      return { kind: 'scope-denied', uri, scope: resource.scope };
+    }
+    return { kind: 'ok', resource };
+  }
+
+  /** Raw read with NO gate applied — the resolver owns the gates, as it does for a tool. */
   async read(uri: string): Promise<ResourceContents | undefined> {
     const resource = this.resources.get(uri);
     if (resource === undefined) return undefined;

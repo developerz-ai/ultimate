@@ -40,6 +40,10 @@ const WRITE_KEYWORDS = new Set([
   'grant',
   'import',
   'insert',
+  // `SELECT ... INTO <table>` is `CREATE TABLE AS` in another spelling: a DDL write with a read
+  // leader, so nothing above catches it. The word, never the shape — `insert into` is already
+  // refused by `insert`, and a bare `into` cannot appear in a read.
+  'into',
   'listen',
   'lock',
   'merge',
@@ -81,7 +85,10 @@ const WRITE_KEYWORDS = new Set([
  *    write keyword above;
  *  - burn the wall clock — layer 2's `statement_timeout` cannot interrupt embedded PGlite
  *    (single-threaded WASM), which is the database `x dev` runs, so this ban is the only one
- *    that holds there.
+ *    that holds there;
+ *  - ADVANCE A SEQUENCE (`nextval`, `setval`) — a write that leaves no keyword behind, and one
+ *    `ROLLBACK` does not undo: a consumed sequence value is gone, so a read can silently burn the
+ *    next id a real insert would have taken. `currval`/`lastval` read the session and stay legal.
  *
  * The prefix is applied to a CALL — a name followed by `(` — and never to a bare word, so a
  * column called `pg_sleep_for_seconds` stays readable. Quoting does not evade it: the scan reads
@@ -91,6 +98,7 @@ const WRITE_KEYWORDS = new Set([
 const FORBIDDEN_FUNCTIONS = [
   'dblink',
   'lo_',
+  'nextval',
   'pg_advisory_',
   'pg_cancel_backend',
   'pg_ls_',
@@ -101,6 +109,7 @@ const FORBIDDEN_FUNCTIONS = [
   'pg_terminate_backend',
   'pg_try_advisory_',
   'set_config',
+  'setval',
 ];
 
 /** The family refusing `called`, or `undefined`. A prefix, so a new member is refused by default. */

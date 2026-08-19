@@ -455,3 +455,36 @@ describe('popstate', () => {
     expect(router.current()?.route.path).toBe('/');
   });
 });
+
+/**
+ * The package contract row: "an undecodable path segment — not a match, never a throw". The server
+ * router (`registry.ts`) already answers `null`; this half threw a bare `URIError` out of the
+ * signal initialiser, out of `navigate`, out of a `mouseenter` prefetch and out of a popstate
+ * listener — so a typed `%zz` failed the SPA at boot instead of 404ing.
+ */
+describe('an undecodable path segment', () => {
+  test('resolve answers null instead of throwing', () => {
+    expect(router.resolve('/blog/%zz')).toBe(null);
+  });
+
+  test('createRouter boots when the initial pathname carries one', () => {
+    const brokenHost = createFakeHost('/blog/%zz');
+    expect(() => createRouter({ routes, host: brokenHost, primitives })).not.toThrow();
+    expect(createRouter({ routes, host: brokenHost, primitives }).current()).toBe(null);
+  });
+
+  test('navigate refuses it like any other unmatched url', async () => {
+    expect(await router.navigate('/blog/%zz')).toBe(false);
+    expect(host.pushed).toEqual([]);
+  });
+
+  test('prefetch does not throw out of the event that triggered it', () => {
+    expect(() => router.prefetch('/blog/%zz')).not.toThrow();
+  });
+
+  test('a literal route matching the same text still wins', () => {
+    const literal: readonly RouterRoute[] = [{ path: '/blog/%zz', chunk: 'literal.js' }];
+    const literalRouter = createRouter({ routes: literal, host, primitives });
+    expect(literalRouter.resolve('/blog/%zz')?.route.path).toBe('/blog/%zz');
+  });
+});

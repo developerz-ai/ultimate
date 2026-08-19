@@ -210,3 +210,52 @@ describe('routeDataFor', () => {
     expect(declare).toThrow(/X_ROUTE_LOAD_INVALID|not a function/);
   });
 });
+
+/**
+ * `new URL(ctx.url)` was called TWICE inside the catch block, so a relative `ctx.url` — what a
+ * test harness, a prerender pass and `x build` all hand this function — replaced the one coded
+ * error this frame exists to produce with a bare `TypeError` carrying no fix and no route name.
+ */
+describe('routeDataFor with a relative ctx.url', () => {
+  const relative = { params: { id: '7' }, url: '/posts/7' } as const;
+
+  const throwingRoute = () =>
+    defineRoute({
+      ...base,
+      load: () => {
+        throw new Error('the loader failed');
+      },
+      meta: () => ({ title: 't' }),
+    });
+
+  test('a failing load is still X_ROUTE_LOAD_FAILED, not a URIError from the catch block', async () => {
+    await expect(routeDataFor(throwingRoute(), relative)).rejects.toMatchObject({
+      code: 'X_ROUTE_LOAD_FAILED',
+    });
+  });
+
+  test('the cause and the fix still name the path the load failed for', async () => {
+    await expect(routeDataFor(throwingRoute(), relative)).rejects.toMatchObject({
+      cause: expect.stringContaining('/posts/7'),
+      fix: expect.stringContaining('/posts/7'),
+    });
+  });
+
+  test('an absolute url still reports the pathname alone, never the origin', async () => {
+    await expect(routeDataFor(throwingRoute(), CTX)).rejects.toMatchObject({
+      cause: expect.stringContaining('/posts/7'),
+    });
+    await expect(routeDataFor(throwingRoute(), CTX)).rejects.not.toMatchObject({
+      cause: expect.stringContaining('http://localhost'),
+    });
+  });
+
+  test('a successful load is untouched by any of this', async () => {
+    const config = defineRoute({
+      ...base,
+      load: (ctx) => ({ id: ctx.params['id'] }),
+      meta: () => ({ title: 't' }),
+    });
+    expect(await routeDataFor(config, relative)).toEqual({ id: '7' });
+  });
+});

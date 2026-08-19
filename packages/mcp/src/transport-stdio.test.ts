@@ -6,7 +6,7 @@ import { agentActor } from '@ultimat3/core';
 import type { McpCaller } from './registry';
 import { textResult } from './registry';
 import { createMcpServer } from './server';
-import { serveStdio } from './transport-stdio';
+import { DEFAULT_STDIO_LINE_LIMIT, serveStdio } from './transport-stdio';
 
 const caller: McpCaller = { actor: agentActor({ id: 'dev' }), scopes: new Set() };
 
@@ -130,5 +130,73 @@ describe('serveStdio', () => {
     // halves into `caf` plus two U+FFFD replacement characters — still valid JSON, still
     // answering id 1 — so asserting on the envelope alone can never fail.
     expect(parsed.result.content[0].text).toBe('café');
+  });
+});
+
+/**
+ * `transport-http.ts` caps the same wire at 1 MiB with `readWithinLimit`; two transports must not
+ * answer one question two ways. The peer launched this process, so it is trusted — a bug in it is
+ * not, and a stream with no newline in it grew the buffer until the process died with no frame
+ * written and no answer to the request that was already in flight.
+ */
+describe('a message with no newline in it', () => {
+  const limit = 256;
+
+  async function feed(lines: readonly string[]): Promise<string[]> {
+    const chunks: string[] = [];
+    await serveStdio({
+      server,
+      caller,
+      input: streamOf(lines),
+      lineLimitBytes: limit,
+      write: (chunk) => {
+        chunks.push(chunk);
+      },
+    });
+    return chunks;
+  }
+
+  test('is refused once the cap is passed, with a coded frame rather than growth', async () => {
+    const chunks = await feed(['x'.repeat(limit * 3)]);
+    expect(chunks).toHaveLength(1);
+    const parsed = JSON.parse(chunks[0] ?? '');
+    expect(parsed.error.code).toBe(-32600);
+    expect(String(parsed.error.data.fix).length).toBeGreaterThan(0);
+  });
+
+  test('the session survives it: the next complete message is still answered', async () => {
+    const chunks = await feed([
+      'x'.repeat(limit * 3),
+      'more overflow with no newline',
+      '\n{"jsonrpc":"2.0","id":9,"method":"initialize"}\n',
+    ]);
+    expect(chunks).toHaveLength(2);
+    expect(JSON.parse(chunks[0] ?? '').error.code).toBe(-32600);
+    expect(JSON.parse(chunks[1] ?? '').id).toBe(9);
+  });
+
+  test('the discarded tail is never parsed as a message of its own', async () => {
+    const chunks = await feed([
+      `${'x'.repeat(limit * 2)}{"jsonrpc":"2.0","id":1,"method":"initialize"}\n`,
+    ]);
+    expect(chunks).toHaveLength(1);
+    expect(JSON.parse(chunks[0] ?? '').error.code).toBe(-32600);
+  });
+
+  test('a message just under the cap is answered normally', async () => {
+    const note = 'a'.repeat(20);
+    const line = `${JSON.stringify({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'tools/call',
+      params: { name: 'echo', arguments: { note } },
+    })}\n`;
+    expect(line.length).toBeLessThan(limit);
+    const chunks = await feed([line]);
+    expect(JSON.parse(chunks[0] ?? '').result.content[0].text).toBe(note);
+  });
+
+  test('the default cap matches the HTTP transport’s 1 MiB', () => {
+    expect(DEFAULT_STDIO_LINE_LIMIT).toBe(1_048_576);
   });
 });

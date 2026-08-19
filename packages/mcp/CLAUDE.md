@@ -58,6 +58,34 @@ import. The CLI wires it.
   `@ultimat3/i18n`'s catalog lookup and `@ultimat3/schema`'s `coerce`. Its twin: a validated key
   lands on the result through `Object.defineProperty`, because `out[key] = v` for `__proto__` runs
   the setter on `Object.prototype` and re-prototypes the record instead of adding a key.
+- **The RESOURCE surface owes the same three outcomes as the tool surface.** `resources/list` and
+  `resources/read` take the `McpCaller`; `McpResource` carries `visibleTo` and `scope`, and
+  `ResourceRegistry.resolve` applies them in the same order `ToolRegistry.resolve` does, through the
+  same `visibleToCaller`. Both took no caller at all until 2026-08: any token `resolveToken`
+  accepted could enumerate every URI and read every document — the manifest, the OpenAPI document,
+  the route table and the entity schema, which together are an app's whole policy and data map. The
+  not-found branch answered `data.available` with the full catalog, so one wrong guess enumerated
+  it; it now carries no `data`, exactly as `tool not found` does. `resource-security.test.ts` is the
+  contract, in both halves — hand-built resources AND `defineAppMcp({ resources })`.
+- **Every provider call is inside a `try`.** A resource's `read` is an INJECTED THUNK —
+  `frameworkResources` wires it to a file read, and `Bun.file(...).text()` on a missing
+  `x.manifest.json` throws ENOENT. Outside the try it escaped `handle()`: `serveStdio` REJECTED with
+  the raw error, zero frames written, the request unanswered and every later request on that buffer
+  never processed. Same shape `toolsCall` uses — a framework error keeps its code/cause/fix, anything
+  else is `-32603` with no internals.
+- **`format` is NOT in the wire subset**, and `wire.ts` types it `never` so re-adding it does not
+  compile. It names a rule whose meaning lives in `@ultimat3/schema` (`uuid`, `email`,
+  `iana-time-zone`), and this package cannot check it without a second definition of each that can
+  only drift from the action's own parse. `tools/list` published it and `validate-args.ts` ignored
+  it, so a tool declaring `t.uuid` accepted `"not-a-uuid"` with `ok: true` — the silent pass
+  `input-schema.ts` exists to prevent. `pattern` is the opposite case and is kept: the rule travels
+  with the schema. `input-schema.test.ts` asserts every published keyword is one this server
+  enforces, at any depth.
+- **A hand-written app tool parses its own input**, in the slot `invoke` puts it: parse, then
+  `guard()`, then `handle`. A projected action re-parses inside `invoke`; `app-tool.ts` had no second
+  parse, so `handle` was handed whatever the wire subset let through — typed `InferOutput<TInput>`,
+  past the policy. One code either way, `X_INPUT_INVALID`, built from `@ultimat3/action`'s own
+  `InputInvalidError`.
 - **Anything a tool RETURNS is rendered totally.** `jsonResult` is handed an action's own return
   value, and `JSON.stringify` answers `undefined` for a handler that returned nothing (a
   `ContentBlock.text` that is not a string is an invalid frame) and THROWS on a bigint, a cycle or
@@ -147,6 +175,10 @@ import. The CLI wires it.
   exploitable through Postgres (a syntax error either way); the point is that this layer must not
   be the thing that waves it through. `@ultimat3/admin`'s `/_x` panel failed CLOSED here where this
   failed open, which is how it was found — a second, differently-behaved copy of one rule.
+- **`into` is a write keyword.** `SELECT ... INTO <table>` is `CREATE TABLE AS` in another spelling:
+  a DDL write with a read LEADER, so nothing else in the scan sees it. Layer 2's `BEGIN READ ONLY`
+  refuses it on the wired path — the point is that this layer must not be the thing that waves it
+  through, and `@ultimat3/admin`'s `/_x` panel is a second caller whose layer 2 is its own.
 - `db.query` / `db.migrate` refuse structurally, in `readonly-sql.ts`, before the host runs
   (`X_MCP_QUERY_REJECTED` / `X_MCP_NOT_BRANCH_DB` — one code each, because they want different
   next commands).
@@ -156,11 +188,14 @@ import. The CLI wires it.
   keyword. Add a family, never a name. The unit is the call (`name` before `(`), never a bare word:
   a word scan refused a column named `pg_sleep_for_seconds`. The call scan reads a strip that KEEPS
   quoted-identifier content, because `"pg_advisory_lock"(1)` is the same call as the bare spelling —
-  the keyword scan still reads the blanked form, so `select "update" from t` stays a column. Two of the families exist because the same ban is already
-  made elsewhere in another spelling: `pg_advisory_*` is `FOR UPDATE`'s ban and the worse breach
-  (a session lock survives layer 2's `ROLLBACK`, so it outlives the read on a pooled connection —
-  proved live in `packages/testing/src/db-integration.test.ts`), and `pg_sleep*` is the one ban
-  that still holds on embedded PGlite, whose single WASM thread cannot honour a statement timeout.
+  the keyword scan still reads the blanked form, so `select "update" from t` stays a column. Two of
+  the families exist because the same ban is already made elsewhere in another spelling:
+  `pg_advisory_*` is `FOR UPDATE`'s ban and the worse breach (a session lock survives layer 2's
+  `ROLLBACK`, so it outlives the read on a pooled connection — proved live in
+  `packages/testing/src/db-integration.test.ts`), and `pg_sleep*` is the one ban that still holds on
+  embedded PGlite, whose single WASM thread cannot honour a statement timeout. `nextval`/`setval`
+  are a family no keyword can reach: they advance a SEQUENCE, which is a write, and one `ROLLBACK`
+  does not undo — a consumed id is gone, so a read can burn the next id a real insert would take.
 - `db.query` is defended four ways: a SELECT-only role and `BEGIN READ ONLY` in `@ultimat3/db`
   (the CLI wires them — this package must never import `db`), the parse here, and the caps here.
   `limit` is a request, never a permission: `resolveQueryLimits` clamps it into a hard 1000.
@@ -172,7 +207,12 @@ import. The CLI wires it.
   answered `400 parse error` for a malformed payload and `401` for a well-formed one under the
   SAME rejected token, which is precisely the oracle the pre-parse 401 exists to remove. The parse
   error still exists — it is what an authenticated agent gets.
-- `transport-stdio.ts` never writes stdout except the wire. Diagnostics → stderr.
+- `transport-stdio.ts` never writes stdout except the wire. Diagnostics → stderr. It also **caps one
+  message** at `DEFAULT_STDIO_LINE_LIMIT` (1 MiB, the same figure `transport-http.ts` enforces with
+  `readWithinLimit`) — the peer launched this process and is trusted, a bug in it is not, and a
+  stream with no newline grew the buffer until the process died. Over-long is one `-32600` frame
+  carrying a `fix`, then the rest of that line is DISCARDED to the next newline: what follows an
+  over-long message on the same line is its tail, never a message of its own.
 - New mutating tool ⇒ set `destructive: true`, or it is metered as cheap read chatter.
 
 ## Commands

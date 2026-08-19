@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { CacheTag } from '@ultimat3/cache';
 import { invalidateTags, isolateGraph, resetGraph, tag } from '@ultimat3/cache';
 import { clearRoutes, describeRoutes, registerRoute } from './registry';
-import { createIsrController, memoryIsrStore, parseTtlMs } from './render-isr';
+import { createIsrController, memoryIsrStore } from './render-isr';
 import type { RenderResult, RouteMetaFn } from './route';
 import { defineRoute } from './route';
 
@@ -39,16 +39,6 @@ beforeEach(() => {
 });
 
 afterAll(restoreGraph);
-
-describe('parseTtlMs', () => {
-  test('parses duration strings and passes milliseconds through', () => {
-    expect(parseTtlMs('5m')).toBe(300_000);
-    expect(parseTtlMs('1h')).toBe(3_600_000);
-    expect(parseTtlMs(1500)).toBe(1500);
-    expect(parseTtlMs('soon')).toBe(null);
-    expect(parseTtlMs(undefined)).toBe(null);
-  });
-});
 
 describe('single-flight regeneration', () => {
   test('a burst of concurrent requests renders exactly once', async () => {
@@ -98,6 +88,33 @@ describe('single-flight regeneration', () => {
     const fresh = await controller.serve('/blog/a', render);
     expect(fresh.state).toBe('hit');
     expect(fresh.result.body).toBe('<p>v2</p>');
+  });
+
+  /**
+   * The background half runs a route's own render function, and `.catch` is the last frame under
+   * it: `error instanceof Error ? error.message : String(error)` RUNS app code — `String()` raises
+   * on a null-prototype object — so the handler that exists to log the failure became a second,
+   * unhandled rejection with nothing left to report it.
+   */
+  test('a regeneration that throws a value String() cannot render still logs and moves on', async () => {
+    isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag]);
+    const controller = createIsrController({ routes: describeRoutes });
+
+    let fail = false;
+    const render = (): string => {
+      if (fail) throw Object.create(null);
+      return '<p>v1</p>';
+    };
+
+    await controller.serve('/blog/a', render);
+    controller.markStale('/blog/a');
+    fail = true;
+
+    const stale = await controller.serve('/blog/a', render);
+    expect(stale.regenerating).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The stale copy is still served, and the controller still answers.
+    expect((await controller.serve('/blog/a', render)).result.body).toBe('<p>v1</p>');
   });
 });
 

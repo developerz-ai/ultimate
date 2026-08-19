@@ -76,7 +76,19 @@ export interface JsonSchema {
   readonly enum?: readonly (string | number | boolean | null)[];
   readonly const?: string | number | boolean | null;
   readonly default?: unknown;
-  readonly format?: string;
+  /**
+   * NOT in the subset, and deliberately absent: `format` NAMES a rule whose meaning lives in
+   * `@ultimat3/schema` (`uuid`, `email`, `iana-time-zone`, `bcp47-locale`), and this package
+   * cannot enforce it without a second definition of each one — which would drift from the parse
+   * the action itself runs and refuse values that surface accepts. So it is dropped by
+   * `input-schema.ts` rather than published unchecked: an agent told `format: 'uuid'` by a server
+   * that accepted `"not-a-uuid"` obeyed a rule nothing checked. `pattern` below is the opposite
+   * case — the rule travels WITH the schema as a source string, so it is enforceable and is kept.
+   *
+   * `readonly format?: never;` states it in the type: a narrow() that starts copying `format`
+   * again fails to compile rather than shipping a silent pass.
+   */
+  readonly format?: never;
   readonly minimum?: number;
   readonly maximum?: number;
   readonly minLength?: number;

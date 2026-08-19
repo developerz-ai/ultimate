@@ -251,7 +251,7 @@ export const summarize = llm({
   output: t.object({ summary: t.string, tags: t.array(t.string) }),
   prompt: summarizePrompt,                                       // versioned artifact
   vars:   async ({ input, ctx }) => ({ body: await ctx.posts.body(input.postId) }),
-  cache:  { semantic: { threshold: 0.97, ttl: '7d', scope: ({ orgId }) => orgId } },
+  cache:  { semantic: { threshold: 0.97, ttl: '7d' } },   // scope defaults to the ACTOR
   budget: { tokensIn: 8_000, costPerCall: { minor: 5, currency: 'USD' } },
   policy: can('post:read'),
 });
@@ -267,7 +267,7 @@ summarize.contract();    // the contract tests
 | `output` | projected into the one tool the model may answer through; prose with a fenced JSON block still parses |
 | a schema failure | **one** repair turn naming the issues, then `X_LLM_OUTPUT_INVALID` |
 | `budget` | reserved against the worst case **before** the provider is reached — nothing spent, nothing truncated |
-| `cache.semantic` | one store per scope, keyed by embedding; a prompt version bump reaches a different store, so the bump *is* the invalidation |
+| `cache.semantic` | one store per scope, keyed by embedding; a prompt version bump reaches a different store, so the bump *is* the invalidation. `scope` receives `{ input, ctx }` and **defaults to the calling actor** — the narrowest key, `@ultimat3/query`'s `readAuthority` rule; a shared store is `scope: () => 'global'`, written down |
 | `policy` | the same object every surface evaluates — an MCP call and an HTTP call are denied identically |
 | `vars` | the one declared place a model call loads data, so a reader can see what was sent — and the one place a redactor sees it, and where a `Secret` is refused |
 

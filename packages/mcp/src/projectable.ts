@@ -5,9 +5,10 @@
 
 import type { AnyAction } from '@ultimat3/action';
 import { actionName, invoke, isAction } from '@ultimat3/action';
-import { isMcpExposed, withChildContext } from '@ultimat3/core';
+import { isMcpExposed } from '@ultimat3/core';
 import type { AnyQuery } from '@ultimat3/query';
 import { isQuery, queryName, sourceFor } from '@ultimat3/query';
+import { asCallerContext } from './caller-context';
 import type { McpExposure, ProjectablePrimitive } from './from-action';
 import { toWireSchema } from './input-schema';
 
@@ -60,7 +61,7 @@ export function primitiveFromQuery(target: AnyQuery): ProjectablePrimitive {
     inputJsonSchema: toWireSchema(target.input),
     mutates: false,
     run: ({ input, actor }) =>
-      withChildContext({ actor }, async () => {
+      asCallerContext(actor, async () => {
         // `sourceFor` is the authorized front half of `runQuery` — validate, guard, build —
         // and is what `live`, `paginate` and `explain` build on too. Executed without the
         // cache tiers on purpose: an agent diffing two tool calls must be reading the rows,

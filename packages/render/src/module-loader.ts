@@ -4,6 +4,7 @@
  * `bun test` all load a component the same way and there is no separate "bundled" behaviour.
  */
 
+import { renderThrowable } from '@ultimat3/core';
 import { compileStylesheet, isGlobalStylesheet } from './css-modules';
 import { PrerenderFailedError } from './errors';
 import type { Surface } from './surfaces';
@@ -134,7 +135,10 @@ export function installRenderLoader(): void {
         } catch (error) {
           if (error instanceof PrerenderFailedError) throw error;
           throw new PrerenderFailedError(
-            `${path} could not be loaded: ${error instanceof Error ? error.message : String(error)}`,
+            // `renderThrowable` from core, never `.message`/`String()`: this catch is the loader's
+            // last frame, and a value that fights being read would replace the coded failure with
+            // a bare throw out of a Bun plugin — where no route and no file name survives.
+            `${path} could not be loaded: ${renderThrowable(error)}`,
             `open ${path} and fix the stylesheet it @use-s`,
           );
         }

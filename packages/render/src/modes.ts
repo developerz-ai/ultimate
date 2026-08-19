@@ -5,6 +5,7 @@
  * invariant is only documented is a mode that silently degrades in production.
  */
 
+import { parseTtlMs } from './duration';
 import { RouteModeInvalidError } from './errors';
 import type { HydrateStrategy, RenderMode, RouteConfig } from './route';
 import { HYDRATE_STRATEGIES } from './route';
@@ -89,8 +90,12 @@ export const MODE_SPECS: Readonly<Record<RenderMode, ModeSpec>> = Object.freeze(
 
 /** Mode-local checks that need nothing but the config. Called by `defineRoute`. */
 export function assertModeShape(config: RouteShape): void {
-  // Widened on purpose: JS callers reach `defineRoute` with unvalidated strings.
-  const spec: ModeSpec | undefined = MODE_SPECS[config.render];
+  // Widened on purpose: JS callers reach `defineRoute` with unvalidated strings — and an object
+  // lookup walks the prototype chain, so `render: 'constructor'` used to find a `ModeSpec` that
+  // does not exist and hand back a frozen descriptor for a mode nothing implements.
+  const spec: ModeSpec | undefined = Object.hasOwn(MODE_SPECS, config.render)
+    ? MODE_SPECS[config.render]
+    : undefined;
   if (spec === undefined) {
     throw new RouteModeInvalidError(
       `render: ${JSON.stringify(config.render)} is not a render mode`,
@@ -163,7 +168,10 @@ function hasRevalidateTrigger(config: RouteShape): boolean {
   const revalidate = config.revalidate;
   if (revalidate === undefined) return false;
   const hasTags = revalidate.tags !== undefined && revalidate.tags.length > 0;
-  const hasTtl = revalidate.ttl !== undefined && revalidate.ttl !== '';
+  // `parseTtlMs`, never "a non-empty string": the ISR clock is the one that has to read this value,
+  // and `ttl: '5 minutes'` passed here and parsed to `null` there — a page generated once and
+  // served for the life of the process, which is the exact costume this check refuses below.
+  const hasTtl = parseTtlMs(revalidate.ttl) !== null;
   return hasTags || hasTtl;
 }
 

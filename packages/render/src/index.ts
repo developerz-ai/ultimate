@@ -11,6 +11,7 @@ installRenderLoader();
 
 export type { CompiledStylesheet } from './css-modules';
 export { compileStylesheet, isCssModule, isGlobalStylesheet, scopeClasses } from './css-modules';
+export { parseTtlMs } from './duration';
 export type { RenderErrorCode } from './errors';
 export {
   BudgetExceededError,
@@ -135,7 +136,6 @@ export {
   DEFAULT_ISR_MAX_ENTRIES,
   invalidateAndRevalidate,
   memoryIsrStore,
-  parseTtlMs,
 } from './render-isr';
 export type { SpaShell, SpaShellInput } from './render-spa';
 export { renderSpa, renderSpaShell, SPA_ROOT_ID } from './render-spa';

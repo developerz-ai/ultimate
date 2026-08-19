@@ -6,79 +6,25 @@
  */
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { anonymousCtx, isAction, t } from '@ultimat3/action';
+import { anonymousCtx, isAction } from '@ultimat3/action';
 import { createContext, PRIMITIVE_KINDS } from '@ultimat3/core';
 import { allow, deny } from '@ultimat3/policy';
-import { createGateway } from './gateway';
 import { llm } from './llm';
+import {
+  ANSWER,
+  declare,
+  Input,
+  install,
+  Output,
+  POST_ID,
+  promptFor,
+  stub,
+  USAGE,
+} from './llm-fixture';
 import { ANTHROPIC_MODEL_IDS, DEFAULT_MODEL } from './models';
-import { definePrompt, type Prompt } from './prompt';
-import type { GenerateRequest, GenerateResult, Provider, TokenUsage } from './provider';
+import type { GenerateRequest, GenerateResult, Provider } from './provider';
 import { costOf, EchoProvider } from './provider';
-import { configureAi, resetAiRuntime } from './runtime';
-
-const Input = t.object({ postId: t.uuid });
-const Output = t.object({ summary: t.string, tags: t.array(t.string) });
-const POST_ID = '00000000-0000-4000-8000-0000000000aa';
-const OTHER_ID = '00000000-0000-4000-8000-0000000000bb';
-const ANSWER = { summary: 'a post about caching', tags: ['cache'] };
-
-const USAGE: TokenUsage = {
-  inputTokens: 12,
-  outputTokens: 8,
-  cacheReadTokens: 0,
-  cacheWriteTokens: 0,
-};
-
-/**
- * A provider that replays scripted answers and records what it was asked. A string is a prose
- * answer (the JSON-in-text path), an object is a `respond` tool call (the tool-use path).
- */
-function stub(...answers: readonly unknown[]): { provider: Provider; seen: GenerateRequest[] } {
-  const seen: GenerateRequest[] = [];
-  const echo = new EchoProvider();
-  const provider: Provider = {
-    name: 'stub',
-    models: ANTHROPIC_MODEL_IDS,
-    generate(request) {
-      const answer = answers[Math.min(seen.length, answers.length - 1)];
-      seen.push(request);
-      return Promise.resolve(reply(request, answer));
-    },
-    stream: (request) => echo.stream(request),
-  };
-  return { provider, seen };
-}
-
-function reply(request: GenerateRequest, answer: unknown): GenerateResult {
-  const model = request.model ?? DEFAULT_MODEL;
-  const prose = typeof answer === 'string';
-  return {
-    model,
-    text: prose ? answer : '',
-    toolCalls: prose
-      ? []
-      : [{ id: 'call-1', name: 'respond', input: answer as Record<string, unknown> }],
-    stopReason: prose ? 'end_turn' : 'tool_use',
-    stopDetails: undefined,
-    usage: USAGE,
-    cost: costOf(model, USAGE),
-  };
-}
-
-function install(provider: Provider): void {
-  configureAi({ gateway: createGateway({ providers: [provider] }) });
-}
-
-let seq = 0;
-function promptFor(id?: string, version = '1.0.0'): Prompt<{ postId: string }> {
-  seq += 1;
-  return definePrompt<{ postId: string }>({
-    id: id ?? `summarize-${seq}`,
-    version,
-    template: 'Summarise post {{postId}} in one sentence.',
-  });
-}
+import { resetAiRuntime } from './runtime';
 
 beforeEach(() => {
   resetAiRuntime();
@@ -359,61 +305,6 @@ describe('budgets refuse before the provider is reached', () => {
   });
 });
 
-describe('the semantic cache', () => {
-  test('a repeated prompt is answered without a second model call', async () => {
-    const { provider, seen } = stub(ANSWER);
-    install(provider);
-    const summarize = declare(promptFor(), {
-      cache: { semantic: { threshold: 0.99, ttl: '7d' } },
-    });
-
-    await summarize({ postId: POST_ID }, { ctx: anonymousCtx() });
-    await summarize({ postId: POST_ID }, { ctx: anonymousCtx() });
-    expect(seen.length).toBe(1);
-  });
-
-  test('scopes are separate stores, so one tenant never reads another tenant answer', async () => {
-    const { provider, seen } = stub(ANSWER);
-    install(provider);
-    let tenant = 'org-a';
-    const summarize = declare(promptFor(), {
-      // Same rendered prompt, different scope: a shared store would hit on cosine alone.
-      cache: { semantic: { threshold: 0.5, scope: () => tenant } },
-    });
-
-    await summarize({ postId: POST_ID }, { ctx: anonymousCtx() });
-    tenant = 'org-b';
-    await summarize({ postId: POST_ID }, { ctx: anonymousCtx() });
-    expect(seen.length).toBe(2);
-  });
-
-  test('a prompt version bump invalidates it — that is what the bump is for', async () => {
-    const { provider, seen } = stub(ANSWER);
-    install(provider);
-    const cache = { semantic: { threshold: 0.99 } } as const;
-    const v1 = declare(promptFor('bumped', '1.0.0'), { cache });
-    await v1({ postId: POST_ID }, { ctx: anonymousCtx() });
-    await v1({ postId: POST_ID }, { ctx: anonymousCtx() });
-    expect(seen.length).toBe(1);
-
-    const v2 = declare(promptFor('bumped', '2.0.0'), { cache });
-    await v2({ postId: POST_ID }, { ctx: anonymousCtx() });
-    expect(seen.length).toBe(2);
-  });
-
-  test('an unrelated input misses, so the cache never answers the wrong question', async () => {
-    const { provider, seen } = stub(ANSWER);
-    install(provider);
-    const summarize = declare(promptFor(), {
-      cache: { semantic: { threshold: 0.99 } },
-    });
-
-    await summarize({ postId: POST_ID }, { ctx: anonymousCtx() });
-    await summarize({ postId: OTHER_ID }, { ctx: anonymousCtx() });
-    expect(seen.length).toBe(2);
-  });
-});
-
 describe('the ambient runtime', () => {
   test('no gateway configured names the prompt and the boot call that fixes it', async () => {
     const summarize = llm({
@@ -459,19 +350,4 @@ describe('cancellation', () => {
   });
 });
 
-let declared = 0;
 /** The common declaration, so each test states only the part it is about. */
-function declare(
-  prompt: Prompt<{ postId: string }>,
-  extra: Partial<Parameters<typeof llm<typeof Input, typeof Output, { postId: string }>>[0]> = {},
-) {
-  declared += 1;
-  return llm({
-    input: Input,
-    output: Output,
-    prompt,
-    vars: ({ input }) => ({ postId: input.postId }),
-    policy: allow(),
-    ...extra,
-  }).named(`declaredLlm${declared}`);
-}

@@ -329,3 +329,28 @@ describe('documentBaseline', () => {
     expect(html).not.toContain('width=device-width');
   });
 });
+
+/**
+ * `themeScript`'s two options are pasted between quotes inside a `<script>` body. Author-supplied
+ * today, and that is exactly the status `emitIslandAttributes`'s five values had before the sweep:
+ * one `"` ends the JS string and the rest of the option is code the page runs.
+ */
+describe('themeScript encodes its options as JS string literals', () => {
+  test('a quote in the storage key cannot close the string it sits in', () => {
+    const tag = themeScript({ storageKey: 'x");alert(1);//' });
+    expect(tag.content).not.toContain('localStorage.getItem("x");alert(1);//")');
+    expect(tag.content).toContain(String.raw`localStorage.getItem("x\");alert(1);//")`);
+  });
+
+  test('a quote in the attribute cannot either', () => {
+    const tag = themeScript({ attribute: 'data-theme");alert(1);//' });
+    expect(tag.content).not.toContain('setAttribute("data-theme");alert(1);//"');
+    expect(tag.content).toContain(String.raw`setAttribute("data-theme\");alert(1);//"`);
+  });
+
+  test('the ordinary options are unchanged, so the encoder did not rewrite them', () => {
+    const tag = themeScript({ attribute: 'data-x-theme', storageKey: 'my-theme' });
+    expect(tag.content).toContain('localStorage.getItem("my-theme")');
+    expect(tag.content).toContain('document.documentElement.setAttribute("data-x-theme"');
+  });
+});

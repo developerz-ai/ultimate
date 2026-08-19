@@ -96,9 +96,9 @@ export class McpServer {
       case 'tools/call':
         return this.toolsCall(body, caller);
       case 'resources/list':
-        return resultResponse(id, { resources: this.resources.list() });
+        return resultResponse(id, { resources: this.resources.list(caller) });
       case 'resources/read':
-        return this.resourcesRead(body);
+        return this.resourcesRead(body, caller);
       case 'prompts/list':
         return resultResponse(id, { prompts: this.prompts });
       default:
@@ -213,19 +213,67 @@ export class McpServer {
     return resultResponse(id, payload);
   }
 
-  private async resourcesRead(req: JsonRpcRequest): Promise<JsonRpcResponse> {
+  /**
+   * The same three-outcome shape `toolsCall` above applies, on the document surface. It took no
+   * caller at all until 2026-08: every accepted token could list every URI and read every one of
+   * them — the manifest, the OpenAPI document, the route table and the entity schema.
+   */
+  private async resourcesRead(req: JsonRpcRequest, caller: McpCaller): Promise<JsonRpcResponse> {
     const id = req.id ?? null;
     const uri = paramsOf(req)?.['uri'];
     if (typeof uri !== 'string') {
       return errorResponse(id, INVALID_PARAMS, 'resources/read params.uri must be a string');
     }
-    const contents = await this.resources.read(uri);
-    if (contents === undefined) {
-      return errorResponse(id, METHOD_NOT_FOUND, `resource not found: ${uri}`, {
-        available: this.resources.list().map((r) => r.uri),
-      });
+
+    const resolved = this.resources.resolve(uri, caller);
+    switch (resolved.kind) {
+      // OUTCOME 1. Absent AND hidden collapse to one answer with no `data`: this branch used to
+      // return `available: [...every uri]`, so one wrong guess enumerated the whole catalog.
+      case 'not-found':
+        return errorResponse(id, METHOD_NOT_FOUND, `resource not found: ${uri}`);
+      // OUTCOME 2. The caller can already see this resource, so naming the missing scope leaks
+      // nothing — and the fix travels with it, built by the error that owns the wording.
+      case 'scope-denied': {
+        const denial = new McpScopeDeniedError({
+          name: uri,
+          scope: resolved.scope,
+          subject: 'resource',
+        });
+        return errorResponse(id, INVALID_REQUEST, `missing scope: ${resolved.scope}`, {
+          code: denial.code,
+          scope: resolved.scope,
+          fix: denial.fix,
+          docs: denial.docs,
+        });
+      }
+      case 'ok':
+        break;
     }
-    return resultResponse(id, { contents: [contents] });
+
+    // The provider is an INJECTED THUNK — `frameworkResources` wires these to file reads, and
+    // `Bun.file(...).text()` on a missing `x.manifest.json` throws ENOENT. Outside a try it escaped
+    // `handle()` entirely: `serveStdio` rejected with the raw error, zero frames written, the
+    // request unanswered and every later request on that buffer never processed. Same shape
+    // `toolsCall` uses above, for the same reason.
+    try {
+      const contents = await this.resources.read(uri);
+      if (contents === undefined) {
+        return errorResponse(id, METHOD_NOT_FOUND, `resource not found: ${uri}`);
+      }
+      return resultResponse(id, { contents: [contents] });
+    } catch (error) {
+      const framework = asFrameworkError(error);
+      if (framework !== undefined) {
+        return errorResponse(id, INTERNAL_ERROR, `resource "${uri}" could not be read`, {
+          code: framework.code,
+          cause: framework.cause,
+          fix: framework.fix,
+        });
+      }
+      // No internals: a provider's own message names a path, a query or a host the caller has no
+      // business seeing, exactly as a failing tool's does.
+      return errorResponse(id, INTERNAL_ERROR, `resource "${uri}" could not be read`);
+    }
   }
 }
 

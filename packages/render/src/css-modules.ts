@@ -7,6 +7,7 @@
 import { existsSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { renderThrowable } from '@ultimat3/core';
 import * as sass from 'sass';
 import { PrerenderFailedError } from './errors';
 import { contentHash } from './render-static';
@@ -124,7 +125,10 @@ export function compileStylesheet(file: string, source: string): CompiledStylesh
       style: 'compressed',
     }).css;
   } catch (error) {
-    const first = error instanceof Error ? error.message.split('\n')[0] : String(error);
+    // `renderThrowable`, never `.message`/`String()`: an importer, a plugin or a future Sass
+    // release can throw a value whose own read raises, and this frame is what turns a failed
+    // compile into `X_PRERENDER_FAILED` naming the file — a laundered read leaves it a bare one.
+    const first = renderThrowable(error).split('\n')[0];
     throw new PrerenderFailedError(
       `${file} did not compile: ${first}`,
       `edit ${file}: ${TOKEN_FIX}`,

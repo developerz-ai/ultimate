@@ -118,8 +118,14 @@ export type McpVerbClass = 'read' | 'write';
  *     oracle OUTCOME 1 exists to remove. It would also break `list` outright for that
  *     caller, turning one broken audience into an empty catalog.
  */
-export function visibleToCaller(tool: AnyMcpTool, caller: McpCaller): boolean {
-  const visibility = tool.visibleTo;
+export function visibleToCaller(
+  // The SUBJECT of the gate, not a tool: a resource carries the same `visibleTo` and owes the same
+  // answer, and two implementations of one fail-closed rule is how one of them stops failing
+  // closed. Structural, so `AnyMcpTool` and `McpResource` both satisfy it with no adapter.
+  subject: { readonly visibleTo?: McpVisibility },
+  caller: McpCaller,
+): boolean {
+  const visibility = subject.visibleTo;
   if (visibility === undefined) return true;
   if (typeof visibility === 'function') {
     try {
