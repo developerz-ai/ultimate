@@ -2,7 +2,7 @@
 // resolve() ordering that must never leak a hidden tool's existence via a different error.
 
 import { describe, expect, test } from 'bun:test';
-import { agentActor } from '@ultimat3/core';
+import { agentActor, isUltimateError } from '@ultimat3/core';
 import type { AnyMcpTool, McpCaller } from './registry';
 import { jsonResult, ToolRegistry, textResult, visibleToCaller } from './registry';
 import type { JsonSchema } from './wire';
@@ -72,10 +72,26 @@ describe('visibleToCaller', () => {
 });
 
 describe('ToolRegistry.register', () => {
-  test('registering the same name twice throws', () => {
+  test('registering the same name twice throws the CODED error, not a bare Error', () => {
+    // The twin, `ResourceRegistry.register`, throws `X_MCP_RESOURCE_DUPLICATE` and
+    // `packages/mcp/CLAUDE.md` says this one answers "the name is taken" the same way. It did
+    // not: a file-private `class McpDuplicateToolError extends Error` carried no code, so
+    // `x errors explain` could not answer it and the CLI mapped it to X_CLI_UNEXPECTED with
+    // `fix: x doctor --json`, discarding the real cause.
     const registry = new ToolRegistry();
     registry.register(tool({ name: 'dup' }));
-    expect(() => registry.register(tool({ name: 'dup' }))).toThrow();
+
+    let thrown: unknown;
+    try {
+      registry.register(tool({ name: 'dup' }));
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(isUltimateError(thrown) ? thrown.code : thrown).toBe('X_MCP_TOOL_DUPLICATE');
+    expect(isUltimateError(thrown) ? thrown.cause : '').toContain('dup');
+    // The first registration stands — a refusal that half-applied would be its own surprise.
+    expect(registry.get('dup')).toBeDefined();
   });
 
   test('registerAll registers every tool and returns the registry for chaining', () => {

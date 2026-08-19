@@ -5,7 +5,7 @@
  * the body does not contain.
  */
 
-import { isUltimateError } from '@ultimat3/core';
+import { isUltimateError, renderThrowable } from '@ultimat3/core';
 import { useI18n } from '@ultimat3/i18n';
 import { RouteLoadFailedError } from './errors';
 import type { RouteConfig, RouteContext, RouteData, RouteMetaContext } from './route';
@@ -35,7 +35,10 @@ export async function routeDataFor<TData = RouteData>(
     // `code` property: an ENOENT off `Bun.file` carries `code: 'ENOENT'`, and the duck-type let
     // every one of them out of here unwrapped — no fix line, and no mention of the route to fix.
     if (isUltimateError(cause)) throw cause;
-    const detail = cause instanceof Error ? cause.message : String(cause);
+    // `renderThrowable`, not `.message`/`String()`: `load` is app code and may throw a value
+    // whose `message` getter or `toString` throws in turn — this frame is the last thing between
+    // that and a page with no error at all.
+    const detail = renderThrowable(cause);
     throw new RouteLoadFailedError(
       `load() threw while rendering ${new URL(ctx.url).pathname}: ${detail}`,
       `fix the load function for ${new URL(ctx.url).pathname}, or return a fallback so the page can render`,

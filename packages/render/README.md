@@ -101,7 +101,7 @@ a hydrating `site/` route below.
 | Mode | Invariant | Error if violated |
 |---|---|---|
 | `static` | no per-request state — no `policy`, no `revalidate` | `X_ROUTE_MODE_INVALID` |
-| `isr` | needs a trigger: `revalidate.tags` or `revalidate.ttl` | `X_ROUTE_MODE_INVALID` |
+| `isr` | needs a trigger: `revalidate.tags` or `revalidate.ttl`; **no `policy`** — one cached document per URL cannot answer two actors | `X_ROUTE_MODE_INVALID` |
 | `ssr` | cannot be prerendered | `X_ROUTE_MODE_INVALID` |
 | `stream` | at least one `<Suspense>` boundary | `X_ROUTE_MODE_INVALID` |
 | `spa` | requires a `policy` (authed dashboards only) | `X_ROUTE_MODE_INVALID` |

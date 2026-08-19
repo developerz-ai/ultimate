@@ -46,19 +46,24 @@ describe('the route DSL surface', () => {
   });
 
   test('every declared key is carried onto the descriptor', () => {
-    const config = defineRoute({
+    // Two routes, because `policy` and `revalidate`/`prerender` no longer belong to one mode:
+    // `isr` caches a document per URL, so a gated one would serve the first actor's HTML to
+    // everybody after them (`modes.ts`).
+    const cached = defineRoute({
       ...minimal,
       render: 'isr',
       revalidate: { ttl: '5m' },
       prerender: () => ['first-post'],
       budget: { js: '40kb' },
-      policy: { permission: 'post:read' },
     });
-    expect(Object.keys(config).sort()).toEqual(
-      [...DESCRIPTOR_MEMBERS, 'revalidate', 'prerender', 'policy'].sort(),
+    expect(Object.keys(cached).sort()).toEqual(
+      [...DESCRIPTOR_MEMBERS, 'revalidate', 'prerender'].sort(),
     );
-    expect(config.revalidate).toEqual({ ttl: '5m' });
-    expect(config.policy).toEqual({ permission: 'post:read' });
+    expect(cached.revalidate).toEqual({ ttl: '5m' });
+
+    const gated = defineRoute({ ...minimal, render: 'ssr', policy: { permission: 'post:read' } });
+    expect(Object.keys(gated).sort()).toEqual([...DESCRIPTOR_MEMBERS, 'policy'].sort());
+    expect(gated.policy).toEqual({ permission: 'post:read' });
   });
 
   test('the descriptor is branded and frozen — a declaration object is neither', () => {

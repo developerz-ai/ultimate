@@ -381,6 +381,31 @@ describe('two primitives may not project to one tool name', () => {
     expect(thrown?.cause).toContain('seatReport');
     expect(thrown?.fix).toContain('rename one');
   });
+
+  test('the refusal names WHERE each copy came from, so the fix names a declaration site', () => {
+    // The old `fix:` said "the primitive's export name, or the `tools` record key" — on the path
+    // that most often raises it neither is the name that collided, so the reader was sent to two
+    // places that do not hold it. Which list projected each copy is the one fact only the
+    // projector knows, so it travels with the error.
+    registerAction(
+      'seatAudit',
+      action({
+        input: t.object({ orgId: t.string }),
+        output: t.object({ ok: t.boolean }),
+        policy: can('org:administer'),
+        mcp: { expose: true, description: 'The action' },
+        handle: () => ({ ok: true }),
+      }),
+    );
+
+    const thrown = codeAndCause(() =>
+      defineAppMcp({ include: 'exposed', tools: { seatAudit: seatReport } }),
+    );
+
+    expect(thrown?.cause).toContain('include:');
+    expect(thrown?.cause).toContain('tools:');
+    expect(thrown?.fix).toContain('seatAudit');
+  });
 });
 
 describe('prompts', () => {
