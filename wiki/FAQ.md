@@ -6,18 +6,19 @@ Honest answers. Where something is not built yet, it says so.
 
 ### Is it production ready?
 
-**`As of 2026-08`.** Stable API, semver from here. 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — **29 in all** — are **versioned** in lockstep: one version, one commit, one tag. For 2.0.0 the version and the commit are done; the tag is not.
+**`As of 2026-08`.** Stable API, semver from here. 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — **30 in all** — are **versioned** in lockstep: one version, one commit, one tag. 2.0.0 is versioned, tagged and published.
 
-**Publication is a separate step and 2.0.0 has not taken it.** Versioned in the repository is not published to npm, and only the first is done:
+**Publication is a separate step from versioning, and it is not in lockstep.** One package is behind:
 
 | Fact | State, verified against the registry `As of 2026-08` |
 |---|---|
-| What you can install | **1.2.0** — `npm view @ultimat3/core version` answers it, and `bunx create-ultimate myapp` gives you it |
-| 2.0.0 on npm | **nothing**, in any package. No tag cut either |
-| `@ultimat3/flags` | on npm at **no version**, 1.2.0 and 2.0.0 alike — the registry answers 404. Nothing in the repo notices, because every consumer resolves it through the workspace ([Known gaps](Known-Gaps)) |
-| Why that blocks the rest | `flags` is tier 1 and in the derived publish list, so a release run aborts on it with `@ultimat3/core` and `@ultimat3/schema` already published irreversibly. Its first publish is a manual bootstrap — a trusted publisher cannot attach to a package that does not exist |
+| What you can install | **2.0.0** — `npm view @ultimat3/core version` answers it, and `bunx create-ultimate myapp` gives you it |
+| Tagged | `v2.0.0`, pushed to origin |
+| On the registry | **29 of the 30**, all at 2.0.0 |
+| `@ultimat3/scraping` | on npm at **no version** — the registry answers 404. It landed after the 2.0.0 publish run, so the run never saw it, and nothing in the repo notices because every consumer resolves it through the workspace. `bun add @ultimat3/scraping` fails ([Known gaps](Known-Gaps)) |
+| What that costs | it is **27th of 30** in the derived publish list, so the next release run dies on it with 26 packages already published irreversibly. Its first publish is a manual bootstrap — a trusted publisher cannot attach to a package that does not exist |
 
-1.1.0 was the first release the workflow published over OIDC trusted publishing, with provenance; 1.0.0 was the manual bootstrap.
+1.1.0 was the first release the workflow published over OIDC trusted publishing, with provenance; 1.0.0 was the manual bootstrap. `@ultimat3/flags` was the previous never-published package and 2.0.0 closed it — `2.0.0` is its only version on the registry.
 
 That is exactly what the version claims — a stable API under semver, not a promise about your infrastructure.
 

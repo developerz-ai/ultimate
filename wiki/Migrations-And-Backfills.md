@@ -14,7 +14,7 @@ One engine per concern. A **migration** changes the shape of a table — schema,
 
 ## Migrations: one engine, one ledger
 
-**This page documents the code at 2.0.0, which is not yet on npm** — the registry's latest is 1.2.0, so take [Known gaps → `x db gen` / `x db migrate`](Known-Gaps) and its 1.1.0/1.2.0 workarounds until the publish lands. `CHANGELOG.md` names the release each fix shipped in.
+**This page documents the code at 2.0.0, which is what the registry's `latest` resolves to** `As of 2026-08`. On a pin still at 1.x, take [Known gaps → `x db gen` / `x db migrate`](Known-Gaps) and its 1.1.0/1.2.0 workarounds instead. `CHANGELOG.md` names the release each fix shipped in.
 
 `x db gen` and the `ROLE=migrate` release-phase container run the **same** engine — `packages/db`'s `migrate()`/`generateMigration()` — not two. **In 1.1.0** they did not: `x db gen`'s subcommands shelled out to `bunx drizzle-kit`, a second schema engine with its own journal, declared in no `package.json` and fetched unpinned at run time, which is why a 1.1.0 scaffold's own `bin/setup` fails. That shelling-out is gone from current source — `cmd-db.ts` calls `generateAppMigration` and `runMigrations` from `@ultimat3/db`/`@ultimat3/cli` directly, and the only remaining mention of `drizzle-kit` anywhere is a file header comment recording the history.
 

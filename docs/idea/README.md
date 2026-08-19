@@ -60,14 +60,14 @@ Consequences of each in [`00-thesis.md`](./00-thesis.md); axiom 8 in full in [`1
 
 ## Status
 
-`As of 2026-08`: **2.0.0 in the repository, not on npm.** Two different facts, and the second one is not done.
+`As of 2026-08`: **2.0.0 is versioned, tagged and on npm.** Publication is not in lockstep with versioning, and one package is behind.
 
 | Fact | State |
 |---|---|
-| Versioned | 28 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 29 in all — at 2.0.0 in lockstep, one commit. The first major: 33 changelog entries marked `BREAKING —`, no codemod |
-| Tagged | **no**. No git tag has been cut for it |
-| Published | **no**. Nothing at 2.0.0 is on the registry. `npm view @ultimat3/core version` answers `1.2.0`, and that is what `bunx create-ultimate myapp` installs today |
-| Blocked on | `@ultimat3/flags` has never reached npm at any version ([#84](https://github.com/developerz-ai/ultimate/issues/84)). It is tier 1 and in the derived publish list, so a release run aborts on it with `core` and `schema` already published irreversibly — four human steps in the npm and GitHub UIs come first, and [`PUBLISHING.md`](../../PUBLISHING.md) records that none is done |
+| Versioned | 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 30 in all — at 2.0.0 in lockstep, one commit. The first major: 33 changelog entries marked `BREAKING —`, no codemod |
+| Tagged | **yes**. `v2.0.0`, on origin |
+| Published | **yes**. `npm view @ultimat3/core version` answers `2.0.0`, and that is what `bunx create-ultimate myapp` installs today |
+| Not published | `@ultimat3/scraping` — 404 at every version, because it landed after the 2.0.0 publish run. It is 27th of 30 in the derived publish list, so the next release run dies there with 26 packages already published irreversibly; the one-time manual bootstrap is [`PUBLISHING.md`](../../PUBLISHING.md) step 1 |
 
 Docs `00`–`15`, `18` and `19` describe what exists; `16` and `17` are design only and say so in every claim.
 
