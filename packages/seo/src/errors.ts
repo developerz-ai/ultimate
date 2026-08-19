@@ -69,6 +69,20 @@ export function metaMissing(file: string, path: string, field: string): SeoError
   });
 }
 
+/**
+ * A `titleTemplate` that cannot place the title. Reported under `X_SEO_META_MISSING` because that
+ * is what it produces — every page's `<title>` is the brand and the route's own title is gone —
+ * and the reader lands on the page about missing metadata, which is where the answer is.
+ */
+export function titleTemplateSlotMissing(file: string, path: string): SeoError {
+  return new SeoError({
+    code: SEO_ERROR_CODES.metaMissing,
+    cause: `${file} (route "${path}") declares a titleTemplate with no %s slot, so the page title is discarded and every route renders the brand alone`,
+    fix: `put the slot in the template — meta.titleTemplate: '%s — Ultimate' in ${file} — or delete titleTemplate and let meta.title stand alone`,
+    meta: { file, path, field: 'titleTemplate' },
+  });
+}
+
 export function duplicateMeta(field: string, value: string, files: readonly string[]): SeoError {
   return new SeoError({
     code: SEO_ERROR_CODES.duplicateMeta,

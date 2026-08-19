@@ -136,16 +136,19 @@ export function sniffContentType(bytes: Uint8Array): string | undefined {
   return sniffText(bytes);
 }
 
-const ALIASES: Readonly<Record<string, string>> = {
-  'image/jpg': 'image/jpeg',
-  'image/x-png': 'image/png',
-  'application/x-pdf': 'application/pdf',
-};
+// A `Map`, not an object literal: `base` is the transport's own `Content-Type` header by the time
+// `acceptSignedUpload` reaches here, and `ALIASES['constructor']` on an object answers the `Object`
+// FUNCTION through a `: string` signature — which the refusal below then rendered as its `cause`.
+const ALIASES: ReadonlyMap<string, string> = new Map([
+  ['image/jpg', 'image/jpeg'],
+  ['image/x-png', 'image/png'],
+  ['application/x-pdf', 'application/pdf'],
+]);
 
 /** Strip parameters and case: `IMAGE/PNG; charset=binary` and `image/png` are one type. */
 export function normalizeContentType(value: string): string {
   const base = (value.split(';')[0] ?? '').trim().toLowerCase();
-  return ALIASES[base] ?? base;
+  return ALIASES.get(base) ?? base;
 }
 
 const ZIP_CONTAINERS = new Set<string>([...DOCUMENT_CONTENT_TYPES, 'application/epub+zip']);

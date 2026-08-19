@@ -2,6 +2,7 @@
 // their `prerender()` enumerates, so the sitemap can never drift from what the
 // build actually produced. Splits into an index past the 50,000-URL protocol cap.
 
+import { assert } from '@ultimat3/core';
 import { sitemapTooLarge } from './errors';
 import { type ChangeFreq, expandRoute, indexableRoutes, type RouteRecord } from './routes';
 import { absoluteUrl, attributes, escapeXml } from './xml';
@@ -134,6 +135,15 @@ function renderIndex(files: readonly SitemapFile[], options: BuildSitemapOptions
 }
 
 export function chunk<T>(items: readonly T[], size: number): T[][] {
+  // The loop advances by `size`, so a non-positive one never moves the cursor: `maxUrls: 0` in a
+  // route config turned a build into an infinite loop allocating empty slices until the box ran
+  // out of memory. A fractional size is refused for a quieter reason — `slice` truncates it, so
+  // the groups silently stop being the size that was asked for.
+  assert(
+    Number.isSafeInteger(size) && size > 0,
+    `a chunk size must be a positive integer, got ${String(size)}: a non-positive step never advances and the loop cannot end`,
+    'pass a positive integer — buildSitemap(routes, { baseUrl, maxUrls: 50000 }), the sitemaps.org bound SITEMAP_MAX_URLS already carries',
+  );
   const out: T[][] = [];
   for (let index = 0; index < items.length; index += size) {
     out.push(items.slice(index, index + size));
@@ -145,8 +155,16 @@ export async function buildSitemap(
   routes: readonly RouteRecord[],
   options: BuildSitemapOptions,
 ): Promise<SitemapResult> {
-  const urls = await sitemapUrls(routes, options);
   const maxUrls = options.maxUrls ?? SITEMAP_MAX_URLS;
+  // Refused here and not only in `chunk`, so the answer does not depend on how many URLs the site
+  // happens to have today: `maxUrls: 2.5` is a typo whether or not this build has enough routes to
+  // reach the split, exactly as a metric refuses `maxSeries: 1.5` at declaration.
+  assert(
+    Number.isSafeInteger(maxUrls) && maxUrls > 0,
+    `buildSitemap({ maxUrls }) must be a positive integer, got ${String(maxUrls)}`,
+    'pass a positive integer — buildSitemap(routes, { baseUrl, maxUrls: 50000 }) — or omit it and take SITEMAP_MAX_URLS, the sitemaps.org bound',
+  );
+  const urls = await sitemapUrls(routes, options);
 
   if (urls.length <= maxUrls) {
     return {

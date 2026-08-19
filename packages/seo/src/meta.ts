@@ -108,6 +108,9 @@ export interface RenderMetaOptions {
  */
 const TEMPLATE_SEPARATORS = /^[\s\-–—|·:>/]+|[\s\-–—|·:>/]+$/g;
 
+/** Where the page's own title goes. Case-sensitive: `%S` names no slot, and neither does absence. */
+export const TITLE_SLOT = '%s';
+
 /**
  * The containment was `template.includes(title)` — inverted, so it only ever answered true when
  * the title EQUALLED the brand. `applyTitleTemplate('About Ultimate', '%s — Ultimate')` produced
@@ -115,9 +118,14 @@ const TEMPLATE_SEPARATORS = /^[\s\-–—|·:>/]+|[\s\-–—|·:>/]+$/g;
  */
 export function applyTitleTemplate(title: string, template?: string): string {
   if (template === undefined || template === '') return title;
-  const brand = template.replace('%s', '').replace(TEMPLATE_SEPARATORS, '');
+  // No slot, nothing to apply: `'Ultimate'.replace('%s', title)` is a no-op that returned the
+  // BRAND and threw the page's own title away, on every route in the app. Total on purpose —
+  // `renderMeta` runs per request, so the refusal belongs in `validate.ts`'s build gate, where it
+  // can name the file.
+  if (!template.includes(TITLE_SLOT)) return title;
+  const brand = template.replace(TITLE_SLOT, '').replace(TEMPLATE_SEPARATORS, '');
   if (brand !== '' && title.includes(brand)) return title;
-  return template.replace('%s', title);
+  return template.replace(TITLE_SLOT, title);
 }
 
 export function robotsContent(directives: RobotsDirectives): string {

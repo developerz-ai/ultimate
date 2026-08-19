@@ -55,6 +55,16 @@ function without(tokens: readonly string[], name: string): readonly string[] {
 }
 
 /**
+ * Whether the operator already set `name` in their own `options` — the second spelling of a
+ * setting that also has a URL parameter. A framework DEFAULT may not overwrite either one, and
+ * a default that checks only the parameter leaves the two spellings free to disagree.
+ */
+export function declaresLibpqOption(existing: string | null, name: string): boolean {
+  const assigns = ASSIGNS(name);
+  return splitLibpqOptions(existing ?? '').some((token) => assigns.test(token));
+}
+
+/**
  * The operator's `options` with the framework's settings merged in.
  *
  * **Precedence: the framework wins on the settings it names, the operator keeps everything else.**

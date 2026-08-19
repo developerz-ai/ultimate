@@ -60,6 +60,16 @@ describe('renderMeta', () => {
     );
   });
 
+  test('a template with no %s slot keeps the page title, never the brand alone', () => {
+    // `template.replace('%s', title)` on a template with no slot is a no-op, so the page's own
+    // title was DISCARDED and every route rendered the brand as its <title>. The renderer stays
+    // total — `validate.ts` is where a slotless template becomes a build error.
+    expect(applyTitleTemplate('About', 'Ultimate')).toBe('About');
+    expect(applyTitleTemplate('Pricing', '%S — Ultimate')).toBe('Pricing');
+    expect(applyTitleTemplate('About Ultimate', 'Ultimate')).toBe('About Ultimate');
+    expect(applyTitleTemplate('Ship it', '')).toBe('Ship it');
+  });
+
   test('a title that only shares a word with the template is still branded', () => {
     expect(applyTitleTemplate('Ship it', '%s | Ultimate')).toBe('Ship it | Ultimate');
     expect(applyTitleTemplate('Pricing', '%s — Ultimate')).toBe('Pricing — Ultimate');
