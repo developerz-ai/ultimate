@@ -13,6 +13,7 @@ import {
   resetMetrics,
 } from '@ultimat3/core';
 import {
+  isAddressInUse,
   type MetricsEndpoint,
   MetricsPortInUseError,
   startMetricsEndpoint,
@@ -66,20 +67,51 @@ describe('the scrape endpoint', () => {
   // The bug this guards: a second `x dev` died on `Bun.serve`'s own bare `Error` — no `X_*` code,
   // no `fix:` — at the FIRST thing `startRoles` opens, so the boot path this package owns handed
   // back a stack trace instead of an instruction.
-  test('a port already bound is a coded refusal naming the port, never a bare Error', () => {
+  //
+  // Asserted on the MAPPING, not on a second `Bun.serve`: whether the kernel refuses a rebind of a
+  // live port is the OS's business and it does not answer the same way everywhere — this test bound
+  // the port twice and passed locally while GitHub's runner allowed the second bind, so it failed
+  // for a reason that was never this package's contract. What is ours is that an EADDRINUSE-shaped
+  // throw becomes a coded refusal naming the port, and that is decidable without racing a socket.
+  test('an EADDRINUSE-shaped throw is recognised, and nothing else is', () => {
+    const bind = Object.assign(new Error('Failed to start server'), { code: 'EADDRINUSE' });
+    expect(isAddressInUse(bind)).toBe(true);
+
+    expect(isAddressInUse(Object.assign(new Error('nope'), { code: 'EACCES' }))).toBe(false);
+    expect(isAddressInUse(new Error('no code at all'))).toBe(false);
+    expect(isAddressInUse(undefined)).toBe(false);
+
+    // A bind failure that crossed a worker or a subprocess arrives as a plain object carrying the
+    // libc code — structurally the same fault, and `error instanceof Error` answers false for it.
+    expect(isAddressInUse({ message: 'Failed to start server', code: 'EADDRINUSE' })).toBe(true);
+
+    // And a value that fights being read answers false rather than throwing out of the guard:
+    // `getPrototypeOf` is what `instanceof` runs, so a trap there took the old check with it.
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          throw new TypeError('trapped getPrototypeOf');
+        },
+        get() {
+          throw new TypeError('trapped get');
+        },
+      },
+    );
+    expect(isAddressInUse(hostile)).toBe(false);
+  });
+
+  test('the refusal names the port and the knob that moves it', () => {
     const taken = Number(new URL(endpoint?.url ?? 'http://localhost:0').port);
-    let caught: unknown;
-    try {
-      startMetricsEndpoint({ port: taken }).stop();
-    } catch (error) {
-      caught = error;
-    }
-    // `expect(fn).toThrow(Class)` passes in Bun 1.3.14 when the callee merely RETURNS an error, so
-    // the identity is asserted off the caught value.
-    expect(caught).toBeInstanceOf(MetricsPortInUseError);
-    expect(caught).toMatchObject({ code: 'X_PORT_IN_USE' });
-    expect((caught as { cause: string }).cause).toContain(String(taken));
-    expect((caught as { fix: string }).fix).toContain('METRICS_PORT=');
+    expect(taken).toBeGreaterThan(0);
+
+    const refusal = new MetricsPortInUseError({ port: taken });
+    expect(refusal).toBeInstanceOf(MetricsPortInUseError);
+    expect(refusal).toMatchObject({ code: 'X_PORT_IN_USE' });
+    expect(refusal.cause).toContain(String(taken));
+    // `METRICS_PORT` is the one knob both `x dev` and the container read, so the fix has to name it.
+    expect(refusal.fix).toContain('METRICS_PORT=');
+    expect(refusal.fix).toContain(String(taken + 1));
   });
 
   test('a scrape does not reset the counters it read', async () => {

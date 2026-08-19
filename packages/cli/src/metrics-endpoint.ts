@@ -8,6 +8,7 @@ import {
   METRICS_PATH,
   markListening,
   metricsText,
+  stringField,
   UltimateError,
 } from '@ultimat3/core';
 import { docsFor } from './error-codes';
@@ -44,9 +45,16 @@ export class MetricsPortInUseError extends UltimateError {
   }
 }
 
-/** Bun surfaces the bind failure as an `Error` carrying the libc code; nothing else is ours. */
-const isAddressInUse = (error: unknown): boolean =>
-  error instanceof Error && (error as { code?: unknown }).code === 'EADDRINUSE';
+/**
+ * Bun surfaces the bind failure as an `Error` carrying the libc code; nothing else is ours. Read
+ * through `stringField`, never `error instanceof Error` plus a property access: both run on a value
+ * this process did not build, and either can throw one line before the guard that was meant to make
+ * the path safe. Exported because whether the kernel refuses a second bind is the OS's business,
+ * not this package's — the contract worth pinning is that an EADDRINUSE-shaped throw becomes a
+ * coded refusal, and that is testable without racing a socket.
+ */
+export const isAddressInUse = (error: unknown): boolean =>
+  stringField(error, 'code') === 'EADDRINUSE';
 
 export interface MetricsEndpointOptions {
   /** 0 asks the kernel for an ephemeral port, which is what a test wants. */
