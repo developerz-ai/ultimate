@@ -12,8 +12,9 @@ import { generate } from '../cmd-generate';
 import { planNewApp } from '../cmd-new';
 import { fixProblem, staticFix } from '../error-contract';
 import { citedCommandProblem, loadCommandCatalog } from '../fix-command';
+import { scanFixes } from '../fix-scan';
 import { scaffoldVariants } from '../scaffold-fixture';
-import { scanFixes, stripComments } from '../ts-scan';
+import { stripComments } from '../ts-scan';
 
 /** Four levels: `templates` → `src` → `cli` → `packages` → the repo root. */
 const REPO_ROOT = join(import.meta.dir, '..', '..', '..', '..');

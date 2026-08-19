@@ -1,19 +1,26 @@
-// Cross-file state pollution, caught at the boundary it crosses. `bun test` runs every file of one
-// invocation in ONE process — only `--isolate` gives each file its own module registry — so a file
-// that leaves a process-global registry dirty changes what every file after it sees, and the
-// failure lands on an innocent suite in another package. This names the file that leaked.
+// Cross-file state pollution, caught at the boundary it crosses and — where a registry can be put
+// back — repaired there. `bun test` runs one invocation in ONE process, so a file that leaves a
+// process-global registry dirty changes what every file after it sees and the failure lands on an
+// innocent suite in another package. What is REPORTED and what is RESTORED are disjoint sets.
 
 import { afterAll } from 'bun:test';
 import { knownTags, registeredTiers } from '@ultimat3/cache';
 import { RegistryLeakError } from './errors';
+import type { ProcessRegistrySnapshot } from './registry-snapshot';
+import { captureProcessRegistries, restoreProcessRegistries } from './registry-snapshot';
 
 /**
- * What is guarded, and why only these two. Both are BOOT installs — `declareTags` takes the
+ * What is REPORTED, and why only these two. Both are BOOT installs — `declareTags` takes the
  * manifest's entity names, `registerTier` takes `app.config.ts`'s tiers — so "empty again when the
  * file ends" is the honest invariant for a test. The entity, job, route and permission registries
  * are not here: `entity()` and `job()` register at module scope, which is how an app declares
  * itself, so a file that leaves them filled is idiomatic rather than leaky. A test whose subject is
  * an EMPTY one of those establishes it itself — `isolateEntityRegistry()`.
+ *
+ * Neither is RESTORED, and that is the same judgement read the other way: `@ultimat3/cache`
+ * publishes no un-declare for a tag, so there is nothing to put a tag registry back WITH. The
+ * registries that are restored are `registry-snapshot.ts`'s, and none of them is reported —
+ * repairing a state and then failing the run over it would be two answers to one question.
  */
 export interface RegistrySample {
   readonly tags: readonly string[];
@@ -87,13 +94,23 @@ export function installRegistryLeakGuard(): void {
   installed = true;
 
   let pending: string | undefined;
-  let current: { readonly file: string; readonly before: RegistrySample } | undefined;
+  let current:
+    | {
+        readonly file: string;
+        readonly before: RegistrySample;
+        readonly snapshot: ProcessRegistrySnapshot;
+      }
+    | undefined;
   const leaks: RegistryLeak[] = [];
 
   const close = (): void => {
     if (current === undefined) return;
     const leak = leakBetween(current.file, current.before, sampleRegistries());
     if (leak !== undefined) leaks.push(leak);
+    // The repair, at the only point it is safe: the file is over and the next one has not
+    // evaluated yet, so what goes back is exactly what that file inherited — module-scope
+    // declarations included, which is the half a plain `resetX()` in a `beforeEach` destroys.
+    restoreProcessRegistries(current.snapshot);
     current = undefined;
   };
 
@@ -102,7 +119,11 @@ export function installRegistryLeakGuard(): void {
   // how an app declares its tags — and everything after this point is the file's own to undo.
   hookHost[BASELINE_HOOK] = () => {
     if (pending === undefined) return;
-    current = { file: pending, before: sampleRegistries() };
+    current = {
+      file: pending,
+      before: sampleRegistries(),
+      snapshot: captureProcessRegistries(),
+    };
     pending = undefined;
   };
 

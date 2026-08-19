@@ -120,7 +120,7 @@ export async function renderStatic(
     } catch (error) {
       throw new PrerenderFailedError(
         `rendering ${path} failed: ${describe(error)}`,
-        `run \`x build --route ${path}\` to reproduce, then fix ${entry.file}`,
+        `x build --target static --json   # reproduces ${path}, then fix ${entry.file}`,
       );
     }
     const hash = contentHash(html);

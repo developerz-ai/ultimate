@@ -181,7 +181,7 @@ Skew handling during a rolling deploy:
 | `ROLE=migrate` must exit 0 before new `web`/`sync` start | a `web` replica whose build ID does not match the applied migration reports not-ready |
 | Migrations are additive across one deploy | old and new code run simultaneously during a rollout; a destructive change needs two deploys |
 | Skew is observable | `x status --json` reports the build-ID distribution of connected clients |
-| No forced reload without a grace period | except `x deploy --critical`, which sets a countdown deadline and saves in-flight state through the mutator queue |
+| No forced reload without a grace period | no exception ships `As of 2026-08`. `x deploy --critical` records the intent in the plan JSON and nothing acts on it, and `updateSignal` — the function that would compute a forced deadline — has **no runtime caller anywhere in the repo**. The grace default is 6h, not 30m, and a forced deadline is `now`, not a countdown |
 
 ## Codes
 

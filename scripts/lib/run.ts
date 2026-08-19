@@ -64,5 +64,11 @@ export const repoRoot = (): string => new URL('../..', import.meta.url).pathname
  * twice: the second round of failures happened because CI shards SIX ways while the local
  * reproduction used EIGHT, so a different test crossed the line each time and no local run had
  * ever seen the one that broke main. A per-site number is a per-site guess.
+ *
+ * 30s -> 90s on 2026-08-19, a third time and for a real reason rather than flake: the `errors`
+ * step's fix scan now RESOLVES cross-file helpers (#157) and the `boundaries` step now reads every
+ * file under `packages/cli/src` to check that a declared flag has a reader (#161). Both scans grew,
+ * both are the point of their test, and each takes ~5s alone against ~30s under eight competing
+ * workers. Raise this, never narrow a scan, and never delete a test for being slow.
  */
-export const REPO_SCAN_TIMEOUT_MS = 30_000;
+export const REPO_SCAN_TIMEOUT_MS = 90_000;

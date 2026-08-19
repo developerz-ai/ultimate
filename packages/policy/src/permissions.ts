@@ -75,3 +75,18 @@ export const definePermissions = <const P extends readonly Permission[]>(
 
 /** Test seam; production never forgets a permission it declared. */
 export const clearPermissions = (): void => declared.clear();
+
+/**
+ * `clearPermissions()`'s other half, taking exactly what `knownPermissions()` answers.
+ *
+ * `definePermissions()` runs at MODULE scope — `@ultimat3/admin` declares `admin:*` on its
+ * barrel's import — and a module evaluates once per `bun test` process. So a clear in one test
+ * file is permanent for every file after it: that file's own `import` is a cache hit which
+ * registers nothing, and `can('admin:read')` throws X_PERMISSION_UNKNOWN for a permission the
+ * process really did declare. Only putting the captured set back repairs it; re-importing cannot.
+ * Replaces rather than merges — a capture is the whole truth about the process, not an addition.
+ */
+export const restorePermissions = (permissions: readonly string[]): void => {
+  declared.clear();
+  for (const permission of permissions) declared.add(permission);
+};

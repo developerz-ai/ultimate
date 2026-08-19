@@ -117,7 +117,9 @@ a shallow spread keeps one of them.
 
 | File | Job |
 |---|---|
-| `ts-scan.ts` | the strings a `fix:` can evaluate to, the `X_*` codes a file declares, and the ones it says it borrows |
+| `ts-scan.ts` | the masking every scan shares, the `X_*` codes a file declares, and the ones it says it borrows |
+| `fix-scan.ts` | the strings a `fix:` can evaluate to: under a key, at a factory's argument, at a class constructor's |
+| `fix-imports.ts` | which of those factories a file can call that it did not declare — one relative specifier, one file read |
 | `error-contract.ts` | the rules, the two checks that turn them into findings, and `collectDeclaredCodes` |
 | `fix-command.ts` | resolving an `x <command>` a `fix:` cites against the registry |
 | `source-files.ts` | which files are shipped source — shared with `filesize`, never a second list |
@@ -177,7 +179,7 @@ and the step says so rather than guessing.
 helper, so the file held no `fix:` at all and `scanFixes` returned `[]` for all of it — the
 citation resolver was never given a string to judge, and two stale `x db branch <name>` lines
 shipped through the hole. `scanFixes` now also reads the argument in the `fix: string` position of
-a **local** helper, under four rules, each with its own case in `ts-scan.test.ts`: the helper must
+a **local** helper, under four rules, each with its own case in `fix-scan.test.ts`: the helper must
 BUILD an error (`code` key or `new …Error(` in its body), or `citedCommandProblem(fix, catalog)` —
 which takes a fix to *judge* it — would have its call sites read as declarations; the parameter
 list may hold no rest or destructured parameter, because neither has a reliable position; the call
@@ -186,12 +188,31 @@ because `prefix + 'x doctor'` reads as one literal there and publishing half a f
 publishing none. Measured over the whole tree: 16 files gained readable fixes, `readonly-sql.ts`
 went from 0 to 7, and **zero** new findings.
 
-What it still cannot see is **cross-file**: `dbNotImplemented` is exported from `@ultimat3/db` and
-called from `pglite-branch.ts`, and resolving that means an import graph and a per-symbol parameter
-table. Same for an error class with a positional `constructor(cause, fix)` — `@ultimat3/render`'s
-`errors.ts` has fourteen, and 15 of its codes have never had a fix line read. Measured: **zero**
-same-file call sites for that form, so a constructor rule would be dead code today. Named, not
-guessed at.
+**And a fix does not always arrive in the file that declares its builder**, which is where four
+bad `fix:` lines in `packages/ui/src/icons/build-icons.ts` shipped: `invalidIconDataError` is
+declared in `packages/ui/src/errors.ts`, and a per-package `errors.ts` full of factories is the
+house pattern, so the same-file rule left the most common shape of all unchecked. `fix-imports.ts`
+resolves it — the specifier is relative, the candidate paths are `<base>.ts{,x}` and
+`<base>/index.ts{,x}`, and the parameter position is the callee's. An alias is renamed to what the
+CALLER writes; a local declaration of the same name wins, because that is the function the call
+actually reaches. One module cache per run: `errors.ts` is imported by every file in its package.
+
+**An error CLASS is the same helper one keyword away**, and is now read too: the name is the
+class's, the parameter list its `constructor`'s, `new X(…)` is a call like any other. It was
+measured as dead code in the same-file rule — zero same-file call sites — and cross-file it is
+`@ultimat3/render`'s fourteen classes plus `@ultimat3/core`'s three image ones.
+
+Measured over the whole tree, `As of 2026-08`: **791 → 877** fix literals read, 37 files gained
+one, and **3 findings** the gate had never been able to see — `x verify --contract` and
+`x build --route` (two flags no command declares) and one `check …` line with no command token.
+
+What it still cannot see is a builder imported from another **package**: `candidatePaths` refuses a
+non-relative specifier, because resolving one means guessing which of 29 packages a bare name came
+from and a wrong guess reads an unrelated function's argument as a fix. Measured: 3 call sites in
+this repo, none of them a finding. It is **not** left silent — the step's `output` carries
+`checked {n} fix line(s), could not read {m}`, counted at `FixScan.unreadable`: an argument in a
+KNOWN fix position that is not one literal. Deliberately not "imports I could not open", which is
+1504 names here and 1310 of them are `join` and `UltimateError` — a number nobody can act on.
 
 `cli → admin` is a declared sideways edge (`scripts/lib/tiers.ts`): `x dev` **mounts** the
 dashboard, it never grows a second one. The CLI's only contribution is the facts no registry
@@ -645,6 +666,35 @@ Ctrl-C is therefore the same three phases production runs, not a kill that leave
 locked by a process that no longer exists.
 
 Commands: `bun test`, `bunx tsc --noEmit -p tsconfig.json`.
+
+## A declared flag with no reader is a promise `x help` makes and nothing keeps
+
+`x deploy --critical` said *"security deploy: forces clients to reload"* and forced nothing: the
+value is written into the plan JSON (`cmd-deploy.ts`) and **no package reads that field**. The
+parser accepts every declared flag, so this is neither a parse error nor a type error — the flag
+worked perfectly and meant nothing, to the operator most likely to be shipping a security patch.
+
+`flag-reads.ts` is the rule that can see the class of defect: **every flag a command declares is
+read by something in the CLI's own source**, as `X_CLI_FLAG_UNREAD`. The four global flags are
+excluded — `--json`, `--help`, `--cwd` and `--verbose` are the parser's, read once for every
+command, and a per-command rule would report all thirty declarations of `--json`. The read test is
+deliberately generous: a bare `'name'` literal anywhere outside a `name:`/`short:` spec field
+counts, so a flag echoed only into `--json`, or read through a shared constant, is read. A gate
+that guessed at intent would report findings about working commands.
+
+It is enforced by `flag-reads.test.ts`, in the `unit` step — the same shape `cmd-planned.test.ts`
+and `error-catalog.test.ts` use for a rule about the CLI's own declarations, and the reason its
+`fix:` is a `bun test` line rather than an `x` command: the rule can only ever fire in this repo.
+Promoting it to `x verify`'s `boundaries` host check is one line in `scripts/verify.ts`.
+
+**It does not catch `--critical`, and that is the honest limit.** The flag IS read —
+`flagBool(ctx.args, 'critical')` — and what had no consumer was the plan FIELD, one level below any
+rule over names. Two stronger rules were measured and rejected: "the read must not be a property
+initializer" reports six flags, five of which work (`x db --allow-destructive`, `x jobs --queue`);
+"the summary must match the behaviour" is undecidable. So the flag's summary now says what it does,
+and forcing a reload stays what it always was — `@ultimat3/pwa`'s `updateSignal({ reason:
+'security' })`, which `As of 2026-08` has **no runtime caller anywhere**, in that package or
+outside it. Wiring the flag means giving that function a caller first.
 
 ## Planned commands are commands
 

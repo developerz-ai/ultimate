@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "f47fe42062833be184261d0a52a957687aedc0e86567372bd1417ff2a07d4005",
+  "buildId": "27841743eb56d4eab25f194cb87cf188492844fc82821cca94743d13ad9ddf21",
   "tiers": {
     "0": [
       "core",
@@ -584,6 +584,11 @@
     },
     {
       "code": "X_CLI_BAD_FLAG",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_CLI_FLAG_UNREAD",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
@@ -1706,6 +1711,26 @@
       "code": "X_REGISTRAR_MISSING",
       "owner": "core",
       "at": "packages/core/src/error-codes.ts"
+    },
+    {
+      "code": "X_REGISTRY_BOOTSTRAP_OWED",
+      "owner": "scripts",
+      "at": "scripts/registry-audit.ts"
+    },
+    {
+      "code": "X_REGISTRY_UNATTESTED",
+      "owner": "scripts",
+      "at": "scripts/registry-audit.ts"
+    },
+    {
+      "code": "X_REGISTRY_UNREACHABLE",
+      "owner": "scripts",
+      "at": "scripts/registry-audit.ts"
+    },
+    {
+      "code": "X_REGISTRY_VERSION_BEHIND",
+      "owner": "scripts",
+      "at": "scripts/registry-audit.ts"
     },
     {
       "code": "X_RELEASE_VERSION_SKEW",

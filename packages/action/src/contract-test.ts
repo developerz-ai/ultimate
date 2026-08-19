@@ -75,7 +75,7 @@ export function contractTestsFor(
         if (document.paths[path] === undefined) {
           throw new ContractDriftError(
             `OpenAPI document has no entry for ${path}`,
-            'x verify --contract',
+            'x verify --json   # the contract suite is a step of it',
           );
         }
       },

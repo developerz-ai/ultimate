@@ -9,7 +9,10 @@ import {
   defineRoles,
   expandRoles,
   grantMatches,
+  type RoleDef,
   type RoleMap,
+  restoreRoles,
+  roleDeclarationSites,
   roleDefinitions,
   roleMapGeneration,
   rolesGranting,
@@ -184,5 +187,58 @@ describe('rolesGranting()', () => {
     // grant matching `x:y` other than root's `*`, which is asserted separately above.
     clearRoles();
     expect(rolesGranting('x:y')).toEqual([]);
+  });
+});
+
+describe('restoreRoles()', () => {
+  // Same one-way hazard as `clearPermissions()`: `defineRoles()` runs at an app's MODULE scope,
+  // and a module evaluates once per `bun test` process, so a `clearRoles()` in one test file is
+  // permanent for every file after it — a later `import` is a cache hit that declares nothing.
+  test('puts back a map clearRoles destroyed, which re-importing cannot', () => {
+    defineRoles(roles);
+    const captured = roleDefinitions();
+    const capturedSites = roleDeclarationSites();
+
+    clearRoles();
+    expect(roleDefinitions()).toEqual({});
+
+    restoreRoles(captured, capturedSites);
+
+    expect(roleDefinitions()).toEqual(roles);
+    expect(expandRoles(['editor'])).toEqual(['post:publish', 'post:read']);
+  });
+
+  // `defineRoles()` cannot be the restore: it re-derives the declaration site from the CALLER's
+  // stack, so every role would report the harness as its origin and X_ROLE_REDEFINED would name
+  // a frame no reader can act on.
+  test('keeps each role declared where it was actually declared', () => {
+    defineRoles({ viewer: roles['viewer'] as RoleDef });
+    const captured = roleDefinitions();
+    const capturedSites = roleDeclarationSites();
+    expect(capturedSites['viewer']).toContain('roles.test.ts');
+
+    clearRoles();
+    restoreRoles(captured, capturedSites);
+
+    expect(roleDeclarationSites()['viewer']).toBe(capturedSites['viewer'] as string);
+  });
+
+  // The memo in `grant-index.ts` is invalidated by the generation alone, so a restore that did
+  // not bump it would leave a flattened grant set computed against the cleared map.
+  test('bumps the generation, or the grant memo answers from the map it just replaced', () => {
+    defineRoles(roles);
+    const captured = roleDefinitions();
+
+    clearRoles();
+    // Read AFTER the clear: `clearRoles()` bumps too, so a baseline taken before it passes on a
+    // `restoreRoles` that never bumps at all.
+    const before = roleMapGeneration();
+    restoreRoles(captured, roleDeclarationSites());
+
+    expect(roleMapGeneration()).toBeGreaterThan(before);
+    expect(actorPermissions({ id: 'u1', roles: ['editor'] })).toEqual([
+      'post:publish',
+      'post:read',
+    ]);
   });
 });

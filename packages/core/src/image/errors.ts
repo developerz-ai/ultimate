@@ -42,7 +42,7 @@ export const imageDecodeFailed = (
 ): ImageDecodeFailedError =>
   new ImageDecodeFailedError(
     cause,
-    'check the file is a complete, uncorrupted image: `file <path>` then re-export it',
+    're-export the image from its source: `file <path>` reports what these bytes actually are',
     meta,
   );
 

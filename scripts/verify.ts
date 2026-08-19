@@ -6,16 +6,19 @@
 //
 //   bun run scripts/verify.ts [--json] [--verbose]
 
+import { join } from 'node:path';
 import type { HostCheck, VerifyStepName } from '@ultimat3/cli';
 import {
   checkErrorCodeDocs,
   checkErrorCodeRegistry,
+  checkFlagReads,
   collectDeclaredCodes,
   exec,
   exitCodeFor,
   registeredErrorCodes,
   render,
   runVerify,
+  SPECS,
   VERIFY_STEPS,
 } from '@ultimat3/cli';
 import { benchClaimFindings } from './bench-claims';
@@ -77,6 +80,12 @@ export const tierBoundaries: HostCheck = async (root) => [
   ...checkAdminFlattener(await collectAdminFiles(root)).map(adminFlattenerFindingFor),
   ...(await frameworkCatalogFindings(root)),
   ...(await imageContractFindings(root)),
+  // The CLI's own declarations, held to each other: a flag the parser accepts that no file reads is
+  // a promise `x help` prints with nothing behind it. `x deploy --critical` said "forces clients to
+  // reload" and reached no reader outside the plan JSON. Host-side, because a generated app ships no
+  // `packages/cli/src` — and on `boundaries` rather than an eighteenth step, for the reason the
+  // `errors` step's comment already gives: `VerifyStepName` is a closed union the CLI owns.
+  ...(await checkFlagReads(SPECS, join(root, 'packages', 'cli', 'src'))),
 ];
 
 /**

@@ -14,8 +14,11 @@ name: release
 #
 # Two things must be TRUE outside this file for the gate below to be a gate, and both are named in
 # PUBLISHING.md as human steps: the `npm-publish` environment needs required reviewers configured in
-# Settings → Environments, and `@ultimat3/flags` needs its first manual publish (the derived list
-# below now includes it, and trusted publishing cannot bootstrap a package that does not exist yet).
+# Settings → Environments, and every package in the derived list needs a trusted publisher plus its
+# first manual publish. Trusted publishing cannot bootstrap a package that does not exist yet, so a
+# package added AFTER a release run is unpublished until a human bootstraps it — and this run will
+# reach it and abort with everything ahead of it already published irreversibly.
+# `bun run scripts/registry-audit.ts` answers whether that is owed, before a release finds out.
 
 on:
   release:
@@ -139,11 +142,12 @@ jobs:
       # imports it — and the list is DERIVED, never kept by hand.
       #
       # It used to be seven hand-written steps of `-w` flags, and `@ultimat3/flags` was on none of
-      # them. That is why the registry answers 404 for it while the other 28 are published: flags
-      # declares the same `publishConfig` as its siblings, every consumer resolves it through the
-      # workspace, and so nothing in this repo could notice. The missing entry was the symptom; a
-      # list that has to match a derived one is the defect, and adding one line would have fixed
-      # today and re-broken on the next package somebody adds.
+      # them, so the registry answered 404 for it while its siblings published: flags declares the
+      # same `publishConfig`, every consumer resolves it through the workspace, and nothing in this
+      # repo could notice. The missing entry was the symptom; a list that has to match a derived one
+      # is the defect, and adding one line would have fixed that day and re-broken on the next
+      # package somebody added — which is exactly what happened to `@ultimat3/scraping`, added after
+      # the 2.0.0 run and 404 until it was bootstrapped by hand on 2026-08-19.
       #
       # `scripts/list-workspaces.ts` reads the real package.json files rather than the tier table,
       # so a package that exists on disk cannot be invisible here — and `create-ultimate` lands last

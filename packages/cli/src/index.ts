@@ -117,12 +117,14 @@ export {
 } from './error-catalog';
 export type { CliErrorCode } from './error-codes';
 export { CLI_ERROR_CODES, CLI_ERROR_TITLES } from './error-codes';
+export type { ErrorFixReport } from './error-contract';
 export {
   BANNED_PHRASES,
   COMMAND_TOKENS,
   checkErrorCodeDocs,
   checkErrorCodeRegistry,
   checkErrorFixes,
+  checkErrorFixReport,
   collectDeclaredCodes,
   documentedCodes,
   fixProblem,
@@ -167,6 +169,12 @@ export {
   fixCitations,
   loadCommandCatalog,
 } from './fix-command';
+export type { HelperResolver } from './fix-imports';
+export { candidatePaths, createHelperResolver, scanImports } from './fix-imports';
+export type { FixHelper, FixScan } from './fix-scan';
+export { scanFixes, scanFixHelpers, scanFixSites } from './fix-scan';
+export type { DeclaredFlag } from './flag-reads';
+export { checkFlagReads, declaredFlags, readsFlag } from './flag-reads';
 export type { Guard } from './guards';
 export { findingProblem, GUARD_DIR, guardFindings, guardPaths } from './guards';
 export type { DrainFailure, DrainOutcome, DrainSkip } from './jobs-drain';
@@ -241,7 +249,6 @@ export {
   scanBorrowedCodes,
   scanCodeFixSites,
   scanCodes,
-  scanFixes,
   stripComments,
 } from './ts-scan';
 // The one spelling rule for a `references` entry. Exported because the two gate scripts ask the

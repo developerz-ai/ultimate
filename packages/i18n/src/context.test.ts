@@ -1,14 +1,22 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+/**
+ * Guards the locale-configuration RESET seam: `configureLocales` is process-global and merges, so
+ * a wrong reset is a wrong `<html lang>` in every later file of the same `bun test` process.
+ */
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { flattenCatalog } from './catalog';
 import {
+  configureLocales,
   currentLocale,
+  localeConfig,
   localeCookieOf,
   registerCatalog,
   resetCatalogs,
+  resetLocaleConfig,
   resolveLocale,
   t,
   useI18n,
 } from './context';
+import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from './locales';
 
 const supported = ['en', 'es', 'de'] as const;
 
@@ -103,5 +111,78 @@ describe('ambient translator', () => {
     registerCatalog('en', flattenCatalog({ errors: { notFound: { title: 'Page not found' } } }));
     registerCatalog('en', flattenCatalog({ errors: { notFound: { title: 'Lost?' } } }));
     expect(useI18n()('errors.notFound.title')).toBe('Lost?');
+  });
+});
+
+describe('resetLocaleConfig', () => {
+  afterEach(() => {
+    resetLocaleConfig();
+  });
+
+  // The leak this exists to close: `defineCatalogs()` runs at an APP's module scope, so one test
+  // that loads an app narrows `supported` for every later file of the same `bun test` process —
+  // and `<html lang>` answers `en` to `Accept-Language: de-DE` in a file that never mentioned
+  // locales. `configureLocales` merges, so no partial call can widen the set back.
+  test('puts the shipped supported set back, which a partial configureLocales cannot', () => {
+    configureLocales({ supported: ['en'], fallback: 'en' });
+    expect(localeConfig().supported).toEqual(['en']);
+
+    resetLocaleConfig();
+
+    expect(localeConfig().supported).toEqual(SUPPORTED_LOCALES);
+    expect(localeConfig().fallback).toBe(DEFAULT_LOCALE);
+  });
+
+  // The documented behaviour the leak was corrupting, asserted on its own: with `de` registered,
+  // a `de-DE` header negotiates `de`. Read through the ambient config — no `overrides` argument —
+  // because the overrides argument is exactly what hides a corrupted module-level config.
+  test('a de-DE header negotiates de again once the narrowing is undone', () => {
+    configureLocales({ supported: ['en'], fallback: 'en' });
+    expect(resolveLocale({ header: 'de-DE,de;q=0.9,en;q=0.7' }).locale).toBe('en');
+
+    resetLocaleConfig();
+
+    expect(resolveLocale({ header: 'de-DE,de;q=0.9,en;q=0.7' })).toEqual({
+      locale: 'de',
+      direction: 'ltr',
+      source: 'header',
+    });
+  });
+
+  // A "default" shared by reference is not a default. `localeConfig()` hands out the LIVE object,
+  // and that object used to BE `DEFAULT_LOCALE_CONFIG` — so one caller writing through it corrupted
+  // the value the reset restores FROM, and every later reset replayed the corruption.
+  test('a caller that mutates the live config cannot corrupt what the reset restores', () => {
+    const shipped = [...SUPPORTED_LOCALES];
+    expect(shipped.length).toBeGreaterThan(1);
+
+    // The cast is the point: a `readonly` annotation stops a compiler, not the JS caller this
+    // seam exists for.
+    const live = localeConfig() as unknown as {
+      supported: string[];
+      fallback: string;
+      order: string[];
+    };
+    live.supported.length = 0;
+    live.order.length = 0;
+    live.fallback = 'zz';
+
+    resetLocaleConfig();
+
+    expect(localeConfig().supported).toEqual(shipped);
+    expect(localeConfig().fallback).toBe(DEFAULT_LOCALE);
+    // The arrays too, and `SUPPORTED_LOCALES` is a module export half the framework reads.
+    expect(SUPPORTED_LOCALES).toEqual(shipped);
+    // Precedence back as behaviour, not only as a field.
+    expect(resolveLocale({ header: 'en-US,en;q=0.9', cookie: 'es' }).source).toBe('cookie');
+  });
+
+  test('the source precedence is restored too, not only the supported set', () => {
+    configureLocales({ order: ['header'] });
+    expect(resolveLocale({ header: 'en-US,en;q=0.9', cookie: 'es' }).source).toBe('header');
+
+    resetLocaleConfig();
+
+    expect(resolveLocale({ header: 'en-US,en;q=0.9', cookie: 'es' }).source).toBe('cookie');
   });
 });
