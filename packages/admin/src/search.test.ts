@@ -170,3 +170,76 @@ describe('adminSearch is audited, allowed or refused', () => {
     expect(context.audit.entries()).toEqual([]);
   });
 });
+
+describe('a resource skipped for a structural reason is not an authz event', () => {
+  // A second entity with no text column at all: nothing to search, and nothing decided about.
+  const counters = entity('admin_search_counter', {
+    columns: { id: uuid().primaryKey(), status: enumerated(['on', 'off']).default('on') },
+  });
+
+  const appWithCounter = (repo: AdminRepo<AdminRow> | undefined) =>
+    defineAdmin({
+      entities: [posts, counters],
+      resources: {
+        admin_search_post: { repo: repoOver(new Map([[POST_ID, row()]])) },
+        ...(repo === undefined ? {} : { admin_search_counter: { repo } }),
+      },
+      auth: {
+        actor: (): AdminActor => actor,
+        authz: staticAuthz([...GRANTS, 'admin_search_counter:read']),
+      },
+    });
+
+  const searchBoth = async (
+    repo: AdminRepo<AdminRow> | undefined,
+  ): Promise<Awaited<ReturnType<typeof adminSearch>> & { readonly logged: number }> => {
+    const app = appWithCounter(repo);
+    const context = {
+      actor,
+      authz: staticAuthz([...GRANTS, 'admin_search_counter:read']),
+      audit: memoryAuditLog(),
+      requestId: 'req_skip',
+    };
+    const found = await adminSearch({
+      term: 'First',
+      resources: [app.resource('admin_search_post'), app.resource('admin_search_counter')],
+      ctx: context,
+    });
+    return { ...found, logged: context.audit.entries().length };
+  };
+
+  test('a resource with no text field is skipped, and writes NO audit entry', async () => {
+    const found = await searchBoth(repoOver(new Map()));
+
+    expect(found.searched).toEqual(['admin_search_post']);
+    expect(found.skipped).toEqual([
+      { entity: 'admin_search_counter', reason: 'admin.search.skipped.no-text-fields' },
+    ]);
+    // Exactly one entry: the resource that WAS read. Logging the skip would put a denial in an
+    // auditor's face for a resource nobody was refused.
+    expect(found.logged).toBe(1);
+    expect(found.audit.map((entry) => entry.entity)).toEqual(['admin_search_post']);
+  });
+
+  test('a resource WITH text fields but no repo is skipped for that reason, and writes nothing', async () => {
+    // Same entity, no repo bound: searchable in principle, with nothing to ask.
+    const app = defineAdmin({
+      entities: [posts],
+      auth: { actor: (): AdminActor => actor, authz: staticAuthz(GRANTS) },
+    });
+    const context = ctx();
+    const found = await adminSearch({
+      term: 'First',
+      resources: [app.resource('admin_search_post')],
+      ctx: context,
+    });
+
+    expect(found.searched).toEqual([]);
+    expect(found.skipped).toEqual([
+      { entity: 'admin_search_post', reason: 'admin.search.skipped.no-repo' },
+    ]);
+    // Not an authorization event: the actor was allowed, there was simply nowhere to look.
+    expect(found.audit).toEqual([]);
+    expect(context.audit.entries()).toEqual([]);
+  });
+});

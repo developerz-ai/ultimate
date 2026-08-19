@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { allocate, allocateByPercentages, allocateByRatios } from './allocate';
+import {
+  allocate,
+  allocateByPercentages,
+  allocateByRatios,
+  assertAllocationSums,
+} from './allocate';
 import { sum } from './arithmetic';
 import { money } from './money';
 
@@ -99,6 +104,71 @@ describe('allocation at a scale of its own', () => {
     ]);
   });
 });
+
+describe('assertAllocationSums', () => {
+  test('accepts what allocate() produced, for every part count it produced it at', () => {
+    for (const parts of [2, 3, 7, 97]) {
+      const total = money(10_000, 'USD');
+      expect(() => assertAllocationSums(total, allocate(total, parts))).not.toThrow();
+    }
+  });
+
+  test('a lost minor unit is reported with the whole, the sum and how much went', () => {
+    const cause = causeOf(() =>
+      assertAllocationSums(money(100, 'USD'), [
+        money(34, 'USD'),
+        money(33, 'USD'),
+        money(32, 'USD'),
+      ]),
+    );
+    expect(cause).toContain('USD 100');
+    expect(cause).toContain('sums to 99');
+    expect(cause).toContain('at scale 2');
+    // Signed from the whole's point of view: one unit SHORT is `1 … lost`, not `-1`.
+    expect(cause).toContain('1 minor unit(s) lost');
+    // And a split that overshoots reports the other direction rather than passing.
+    expect(
+      causeOf(() => assertAllocationSums(money(100, 'USD'), [money(60, 'USD'), money(41, 'USD')])),
+    ).toContain('-1 minor unit(s) lost');
+    expect(
+      codeOf(() => assertAllocationSums(money(100, 'USD'), [money(60, 'USD'), money(41, 'USD')])),
+    ).toBe('X_ALLOCATION_INVALID');
+  });
+
+  test('parts split finer than the whole reconcile against it at the finer scale', () => {
+    // $1.00 as two half-dollar amounts carried in micro-dollars. Summing at the WHOLE's scale
+    // would have to narrow the parts, which is refused — so the finest scale present is the one
+    // that has to be used.
+    const halves = [money(500_000, 'USD', 6), money(500_000, 'USD', 6)];
+    expect(() => assertAllocationSums(money(100, 'USD'), halves)).not.toThrow();
+    // One micro-dollar short is still short, which is the point of reconciling at scale 6.
+    const cause = causeOf(() =>
+      assertAllocationSums(money(100, 'USD'), [money(500_000, 'USD', 6), money(499_999, 'USD', 6)]),
+    );
+    expect(cause).toContain('at scale 6');
+    expect(cause).toContain('1 minor unit(s) lost');
+  });
+
+  test('a part in another currency is a mismatch, not an arithmetic error', () => {
+    expect(
+      codeOf(() => assertAllocationSums(money(100, 'USD'), [money(50, 'USD'), money(50, 'EUR')])),
+    ).toBe('X_CURRENCY_MISMATCH');
+  });
+
+  test('an empty part list against a non-zero whole loses all of it', () => {
+    expect(codeOf(() => assertAllocationSums(money(100, 'USD'), []))).toBe('X_ALLOCATION_INVALID');
+    expect(() => assertAllocationSums(money(0, 'USD'), [])).not.toThrow();
+  });
+});
+
+function causeOf(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return String((error as { cause?: unknown }).cause);
+  }
+  return 'no-throw';
+}
 
 function codeOf(run: () => unknown): string {
   try {

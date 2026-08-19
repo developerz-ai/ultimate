@@ -7,6 +7,7 @@ import { createContext, runWithContext } from '@ultimat3/core';
 import { flattenCatalog } from './catalog';
 import {
   configureLocales,
+  currentDirection,
   currentLocale,
   localeConfig,
   localeCookieOf,
@@ -217,5 +218,44 @@ describe('resetLocaleConfig', () => {
     resetLocaleConfig();
 
     expect(resolveLocale({ header: 'en-US,en;q=0.9', cookie: 'es' }).source).toBe('cookie');
+  });
+});
+
+describe('currentDirection', () => {
+  afterEach(() => {
+    resetLocaleConfig();
+  });
+
+  test('is the direction of the locale the context carries, normalised first', () => {
+    configureLocales({ supported: ['en', 'ar', 'he'], fallback: 'en' });
+    runWithContext(createContext({ locale: 'ar-EG' }), () => {
+      expect(currentLocale()).toBe('ar');
+      expect(currentDirection()).toBe('rtl');
+    });
+    runWithContext(createContext({ locale: 'he' }), () => {
+      expect(currentDirection()).toBe('rtl');
+    });
+    runWithContext(createContext({ locale: 'en-GB' }), () => {
+      expect(currentDirection()).toBe('ltr');
+    });
+  });
+
+  test('a locale outside the supported set takes the fallback’s direction, not its own', () => {
+    // `fa` is RTL, but an app that does not support it renders the fallback — and `dir` must
+    // agree with the copy that is actually on the page.
+    configureLocales({ supported: ['en'], fallback: 'en' });
+    runWithContext(createContext({ locale: 'fa-IR' }), () => {
+      expect(currentLocale()).toBe('en');
+      expect(currentDirection()).toBe('ltr');
+    });
+    configureLocales({ supported: ['ar'], fallback: 'ar' });
+    runWithContext(createContext({ locale: 'kl-GL' }), () => {
+      expect(currentDirection()).toBe('rtl');
+    });
+  });
+
+  test('outside any context it is the configured fallback’s direction', () => {
+    configureLocales({ supported: ['en', 'he'], fallback: 'he' });
+    expect(currentDirection()).toBe('rtl');
   });
 });

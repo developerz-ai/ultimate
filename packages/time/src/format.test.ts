@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { formatDate, formatIsoDate, formatRelative, formatWithOffset, ordinal } from './format';
+import {
+  formatDate,
+  formatDateTime,
+  formatIsoDate,
+  formatRange,
+  formatRelative,
+  formatTime,
+  formatWithOffset,
+  ordinal,
+} from './format';
 import { fromIso } from './instant';
 import { isoDateInZone } from './zoned';
 
@@ -108,5 +117,114 @@ describe('formatIsoDate', () => {
         expect(formatIsoDate(fromIso(iso), zone)).toBe(isoDateInZone(fromIso(iso), zone));
       }
     }
+  });
+});
+
+describe('formatDateTime', () => {
+  test('the zone decides the clock, the locale decides the order', () => {
+    expect(formatDateTime(at, { locale: 'en-GB', zone: 'Europe/Berlin' })).toBe(
+      '14 Mar 2026, 09:00:00',
+    );
+    expect(formatDateTime(at, { locale: 'en-GB', zone: 'America/New_York' })).toBe(
+      '14 Mar 2026, 04:00:00',
+    );
+  });
+
+  // `style` sets BOTH halves, and the two wide styles deliberately do not set a wide TIME style:
+  // `timeStyle: 'full'` appends the zone name, which `formatWithOffset` exists to render instead.
+  test("style: 'full' widens the date and holds the time at medium", () => {
+    expect(formatDateTime(at, { locale: 'en-GB', zone: 'Europe/Berlin', style: 'full' })).toBe(
+      'Saturday 14 March 2026 at 09:00:00',
+    );
+    expect(formatDateTime(at, { locale: 'en-GB', zone: 'Europe/Berlin', style: 'short' })).toBe(
+      '14/03/2026, 09:00',
+    );
+  });
+
+  test('dateStyle and timeStyle each override style on their own half', () => {
+    expect(
+      formatDateTime(at, {
+        locale: 'en-GB',
+        zone: 'Europe/Berlin',
+        dateStyle: 'long',
+        timeStyle: 'short',
+      }),
+    ).toBe('14 March 2026 at 09:00');
+  });
+
+  test('hour12 is passed through only when given, so the locale keeps its own default', () => {
+    const options = { locale: 'en-US', zone: 'Europe/Berlin', style: 'short' } as const;
+    expect(formatDateTime(at, { ...options, hour12: true })).toBe('3/14/26, 9:00 AM');
+    expect(formatDateTime(at, { ...options, hour12: false })).toBe('3/14/26, 09:00');
+  });
+
+  test('an unknown zone is refused before Intl sees it', () => {
+    expect(() => formatDateTime(at, { locale: 'en-GB', zone: 'Mars/Olympus' })).toThrow(
+      /X_TIMEZONE_INVALID/,
+    );
+  });
+});
+
+describe('formatTime', () => {
+  test('defaults to the short style, in the requested zone', () => {
+    expect(formatTime(at, { locale: 'en-GB', zone: 'Europe/Berlin' })).toBe('09:00');
+    expect(formatTime(at, { locale: 'en-GB', zone: 'Asia/Kathmandu' })).toBe('13:45');
+  });
+
+  test('style widens it to seconds', () => {
+    expect(formatTime(at, { locale: 'en-GB', zone: 'Europe/Berlin', style: 'medium' })).toBe(
+      '09:00:00',
+    );
+  });
+
+  test('hour12 overrides the locale default in both directions', () => {
+    expect(formatTime(at, { locale: 'en-US', zone: 'Europe/Berlin', hour12: false })).toBe('09:00');
+    expect(formatTime(at, { locale: 'en-US', zone: 'Europe/Berlin', hour12: true })).toBe(
+      '9:00 AM',
+    );
+  });
+
+  test('an unknown zone is refused before Intl sees it', () => {
+    expect(() => formatTime(at, { locale: 'en-GB', zone: 'Mars/Olympus' })).toThrow(
+      /X_TIMEZONE_INVALID/,
+    );
+  });
+});
+
+describe('formatRange', () => {
+  const to = fromIso('2026-03-16T08:00:00Z');
+
+  test('one call, so the locale collapses the shared parts', () => {
+    expect(formatRange(at, to, { locale: 'en-GB', zone: 'Europe/Berlin' })).toBe('14–16 Mar 2026');
+    // A range whose endpoints land on one local day collapses to that single day.
+    expect(formatRange(at, at, { locale: 'en-GB', zone: 'Europe/Berlin' })).toBe('14 Mar 2026');
+  });
+
+  test('timeStyle is added only when asked for, never defaulted from style', () => {
+    expect(
+      formatRange(at, to, { locale: 'en-GB', zone: 'Europe/Berlin', timeStyle: 'short' }),
+    ).toBe('14 Mar 2026, 09:00 – 16 Mar 2026, 09:00');
+  });
+
+  // The ES2021 fallback. `Intl.DateTimeFormat.prototype.formatRange` is removed for the length of
+  // this test and restored from the captured descriptor — the module caches FORMATTERS, not the
+  // method, so removing it from the prototype is what an older engine looks like to every cached
+  // instance at once.
+  test('falls back to two formatted endpoints when the engine has no formatRange', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      Intl.DateTimeFormat.prototype,
+      'formatRange',
+    );
+    expect(descriptor).not.toBeUndefined();
+    if (descriptor === undefined) return;
+    Reflect.deleteProperty(Intl.DateTimeFormat.prototype, 'formatRange');
+    try {
+      expect(formatRange(at, to, { locale: 'en-GB', zone: 'Europe/Berlin' })).toBe(
+        '14 Mar 2026 – 16 Mar 2026',
+      );
+    } finally {
+      Object.defineProperty(Intl.DateTimeFormat.prototype, 'formatRange', descriptor);
+    }
+    expect(formatRange(at, to, { locale: 'en-GB', zone: 'Europe/Berlin' })).toBe('14–16 Mar 2026');
   });
 });

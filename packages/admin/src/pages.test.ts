@@ -140,3 +140,33 @@ describe('the guard cannot be omitted', () => {
     );
   });
 });
+
+describe('every unusable page path is refused, each with the shape that would have worked', () => {
+  const REFUSED: readonly (readonly [string, string])[] = [
+    ['ops', 'is not rooted'],
+    ['/', 'is not a usable path'],
+    ['/ops/', 'is not a usable path'],
+    ['/ops//health', 'is not a usable path'],
+  ];
+
+  for (const [path, cause] of REFUSED) {
+    test(`"${path}" is X_ADMIN_PAGE_PATH_INVALID (${cause})`, () => {
+      let thrown: { code?: string; cause?: string; fix?: string } = {};
+      try {
+        defineAdmin({ entities: [], pages: [{ ...ops, path }], auth });
+      } catch (error) {
+        thrown = error as typeof thrown;
+      }
+      expect(thrown.code).toBe('X_ADMIN_PAGE_PATH_INVALID');
+      expect(thrown.cause).toContain(cause);
+      // The fix is the path that WOULD have worked, not a description of the rule.
+      expect(thrown.fix).toContain("path: '/");
+    });
+  }
+
+  test('a two-segment path is fine — only the malformed shapes above are refused', () => {
+    expect(() =>
+      defineAdmin({ entities: [], pages: [{ ...ops, path: '/ops/health' }], auth }),
+    ).not.toThrow();
+  });
+});

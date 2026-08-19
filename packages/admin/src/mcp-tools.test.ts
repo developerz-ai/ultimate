@@ -145,3 +145,79 @@ describe('the MCP surface is the UI surface', () => {
     expect(tool?.input.find((field) => field.name === 'confirmation')?.required).toBe(true);
   });
 });
+
+describe('a GLOBAL action — one bound to no entity — gets its own tool', () => {
+  const reindex: AdminAction = {
+    name: 'admin.reindex',
+    permission: 'admin_tool_post:publish',
+    mcp: { expose: true, description: 'Rebuild the search index' },
+    async handle(): Promise<null> {
+      return null;
+    },
+  };
+
+  const hidden: AdminAction = {
+    name: 'admin.rotate-keys',
+    permission: 'admin_tool_post:publish',
+    mcp: { expose: false },
+    async handle(): Promise<null> {
+      return null;
+    },
+  };
+
+  const undescribed: AdminAction = {
+    name: 'admin.vacuum',
+    permission: 'admin_tool_post:publish',
+    destructive: true,
+    async handle(): Promise<null> {
+      return null;
+    },
+  };
+
+  const globalApp = (authz: AdminAuthz): AdminApp =>
+    defineAdmin({
+      entities: [post],
+      actions: [reindex, hidden, undescribed],
+      auth: { actor: (): AdminActor => actor, authz },
+    });
+
+  const authz = staticAuthz(['admin:destroy', 'admin_tool_post:read', 'admin_tool_post:publish']);
+
+  test('it is named and described like a resource action, but carries no entity', () => {
+    const tool = adminMcpTools(globalApp(authz), ctxWith(authz)).find(
+      (candidate) => candidate.name === 'admin.action.admin.reindex',
+    );
+
+    expect(tool).toBeDefined();
+    expect(tool?.kind).toBe('action');
+    expect(tool?.action).toBe('admin.reindex');
+    // `null`, never the string 'admin': a global action is not scoped to a table.
+    expect(tool?.entity).toBeNull();
+    expect(tool?.description).toBe('Rebuild the search index');
+    expect(tool?.destructive).toBe(false);
+    expect(tool?.input.map((field) => field.name)).toEqual(['id']);
+  });
+
+  test('mcp: { expose: false } withdraws it — this catalog is the one opt-OUT surface', () => {
+    const names = adminMcpTools(globalApp(authz), ctxWith(authz)).map((tool) => tool.name);
+    expect(names).toContain('admin.action.admin.reindex');
+    expect(names).not.toContain('admin.action.admin.rotate-keys');
+  });
+
+  test('with no mcp block at all it is exposed, with a derived description', () => {
+    const tool = adminMcpTools(globalApp(authz), ctxWith(authz)).find(
+      (candidate) => candidate.name === 'admin.action.admin.vacuum',
+    );
+    expect(tool?.description).toBe('Run the admin.vacuum action.');
+    // Destructive, so the envelope demands the token — the same rule a resource action follows.
+    expect(tool?.destructive).toBe(true);
+    expect(tool?.input.find((field) => field.name === 'confirmation')?.required).toBe(true);
+  });
+
+  test('it is gated by its own policy, exactly like a resource action', () => {
+    const refused = staticAuthz(['admin:read', 'admin_tool_post:read']);
+    const names = adminMcpTools(globalApp(refused), ctxWith(refused)).map((tool) => tool.name);
+    expect(names).not.toContain('admin.action.admin.reindex');
+    expect(names).toContain('admin.search');
+  });
+});

@@ -2,12 +2,12 @@
 // — the same output an app with no routes gives. What is asserted here is the filter's closed set,
 // that the refusal lands before the app is loaded, and the two projections of one route table.
 
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { RouteDescriptor } from '@ultimat3/render';
-import { SURFACES } from '@ultimat3/render';
+import { clearRoutes, defineRoute, registerRoute, SURFACES } from '@ultimat3/render';
 import { readSurfaceFilter, renderRouteTable, routesCommand } from './cmd-routes';
 import type { CommandContext } from './command';
 import { parseArgs } from './parse';
@@ -95,5 +95,72 @@ describe('unit · the route table renders one row per route', () => {
     expect(new Set(lines.map((line) => line.length)).size).toBe(1);
     expect(lines[1]).toContain('/pricing');
     expect(lines[2]).toContain('/dashboard');
+  });
+});
+
+// The `--json` projection, which had no coverage at all: the terminal table and the JSON payload
+// are two views of ONE route table, and only one of them is what an agent reads.
+describe('unit · x routes --json projects every fact the table shows', () => {
+  // `defineRoute`, not a literal: `registerRoute` refuses a raw declaration.
+  const site = defineRoute({
+    render: 'static',
+    hydrate: 'never',
+    offline: 'precache',
+    budget: { js: '0kb', lcp: 1500 },
+    meta: () => ({ title: 'Home', description: 'the landing page' }),
+  });
+  const app = defineRoute({
+    render: 'stream',
+    hydrate: 'visible',
+    offline: 'runtime',
+    policy: { permission: 'dashboard:read' },
+    budget: { js: '60kb', lcp: 2500 },
+    meta: () => ({ title: 'Dashboard', description: 'authed' }),
+  });
+
+  beforeEach(() => {
+    clearRoutes();
+  });
+
+  afterEach(() => {
+    clearRoutes();
+  });
+
+  test('each row carries its path, surface, file, mode, hydrate, offline and budget', async () => {
+    registerRoute({ file: 'apps/web/site/page.tsx', config: site });
+    const result = await routesCommand.run(contextFor(['routes', '--json']));
+    expect(result.data).toEqual({
+      routes: [
+        {
+          path: '/',
+          surface: 'site',
+          file: 'apps/web/site/page.tsx',
+          render: 'static',
+          hydrate: 'never',
+          offline: 'precache',
+          budget: { js: '0kb', lcp: 1500 },
+        },
+      ],
+    });
+  });
+
+  test('the JSON rows and the printed rows are the same routes, filtered the same way', async () => {
+    registerRoute({ file: 'apps/web/site/page.tsx', config: site });
+    registerRoute({
+      file: 'apps/web/app/dashboard/page.tsx',
+      config: app,
+      suspenseBoundaries: 1,
+    });
+
+    const all = await routesCommand.run(contextFor(['routes', '--json']));
+    const rows = (all.data as { routes: readonly { path: string }[] }).routes;
+    expect(rows.map((row) => row.path).sort()).toEqual(['/', '/dashboard']);
+    // One printed line per route, plus the header.
+    expect(all.lines).toHaveLength(rows.length + 1);
+    expect(all.summary).toContain('2');
+
+    const filtered = await routesCommand.run(contextFor(['routes', '--surface', 'app', '--json']));
+    const appRows = (filtered.data as { routes: readonly { path: string }[] }).routes;
+    expect(appRows.map((row) => row.path)).toEqual(['/dashboard']);
   });
 });

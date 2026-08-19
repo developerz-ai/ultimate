@@ -79,3 +79,117 @@ describe('the jobs panel reports the backfill ledger', () => {
     expect(data.backfillsInFlight).toBe(0);
   });
 });
+
+describe('the retry target is the FIRST failed step, so a retry replays nothing that succeeded', () => {
+  const step = (
+    over: Partial<JobRunFact['steps'][number]> & { name: string },
+  ): JobRunFact['steps'][number] => ({
+    status: 'ok',
+    attempt: 1,
+    durationMs: 10,
+    ...over,
+  });
+
+  test('a failed run points at its first failed step, with that step’s error', async () => {
+    const data = await jobsPanel.data(
+      staticDevSources({
+        jobRuns: () =>
+          Promise.resolve([
+            run({
+              id: 'r1',
+              status: 'failed',
+              steps: [
+                step({ name: 'load' }),
+                step({ name: 'write', status: 'failed', attempt: 3, error: 'deadlock' }),
+                step({ name: 'notify', status: 'failed', attempt: 1, error: 'later' }),
+              ],
+            }),
+          ]),
+      }),
+      new URLSearchParams(),
+    );
+
+    expect(data.retryTargets).toEqual([
+      {
+        runId: 'r1',
+        job: 'recount-likes',
+        // `notify` also failed; retrying from it would skip the write that never landed.
+        fromStep: 'write',
+        attempt: 3,
+        error: 'deadlock',
+      },
+    ]);
+  });
+
+  test('a dead run is a retry target too, and is the one listed as dead-lettered', async () => {
+    const data = await jobsPanel.data(
+      staticDevSources({
+        jobRuns: () =>
+          Promise.resolve([
+            run({ id: 'ok', status: 'ok', steps: [step({ name: 'load' })] }),
+            run({
+              id: 'failed',
+              status: 'failed',
+              steps: [step({ name: 'write', status: 'failed', attempt: 2 })],
+            }),
+            run({
+              id: 'dead',
+              status: 'dead',
+              steps: [step({ name: 'write', status: 'failed', attempt: 5 })],
+            }),
+          ]),
+      }),
+      new URLSearchParams(),
+    );
+
+    // Only `dead`: a `failed` run is still in the queue's own retry loop, and listing it as
+    // dead-lettered puts `x jobs retry` in front of a reader for work that is already retrying.
+    expect(data.deadLetter.map((entry) => entry.id)).toEqual(['dead']);
+    expect(data.retryTargets.map((target) => target.runId)).toEqual(['failed', 'dead']);
+    // A step with no error text still produces a target — `''`, never `undefined`, so the panel
+    // renders a row rather than a hole.
+    expect(data.retryTargets[1]?.error).toBe('');
+  });
+
+  test('a failed run with no failed step is dropped rather than pointing at nothing', async () => {
+    const data = await jobsPanel.data(
+      staticDevSources({
+        jobRuns: () =>
+          Promise.resolve([run({ id: 'r1', status: 'failed', steps: [step({ name: 'load' })] })]),
+      }),
+      new URLSearchParams(),
+    );
+    expect(data.retryTargets).toEqual([]);
+  });
+
+  test('a healthy run is neither a retry target nor dead-lettered', async () => {
+    const data = await jobsPanel.data(
+      staticDevSources({
+        jobRuns: () =>
+          Promise.resolve([
+            run({ id: 'r1', status: 'ok', steps: [step({ name: 'write', status: 'failed' })] }),
+          ]),
+      }),
+      new URLSearchParams(),
+    );
+    // The step list is not the verdict: the RUN's status is what decides a retry is offered.
+    expect(data.retryTargets).toEqual([]);
+    expect(data.deadLetter).toEqual([]);
+  });
+});
+
+describe('totalDepth is the whole backlog, across every queue', () => {
+  test('it sums the queues rather than reporting the first or the largest', async () => {
+    const data = await jobsPanel.data(
+      staticDevSources({
+        queues: () =>
+          Promise.resolve([
+            { name: 'default', depth: 4, running: 1, failed: 0, deadLetter: 0 },
+            { name: 'mail', depth: 7, running: 0, failed: 2, deadLetter: 1 },
+          ]),
+      }),
+      new URLSearchParams(),
+    );
+    expect(data.totalDepth).toBe(11);
+  });
+});

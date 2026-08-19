@@ -2,17 +2,21 @@ import { describe, expect, test } from 'bun:test';
 import type { Clock } from '@ultimat3/core';
 import {
   addMs,
+  compareInstants,
   differenceMs,
   epoch,
   fromEpochMs,
   fromEpochSeconds,
   fromIso,
   instant,
+  isAfter,
+  isBefore,
   isInstant,
   now,
   subtractMs,
   toEpochMs,
   toIso,
+  toIsoDateUtc,
 } from './instant';
 
 describe('instant', () => {
@@ -127,3 +131,56 @@ function codeOf(run: () => unknown): string {
   }
   return 'no-throw';
 }
+
+describe('ordering', () => {
+  const earlier = fromIso('2026-03-14T08:00:00Z');
+  const later = fromIso('2026-03-14T09:00:00Z');
+  const same = fromIso('2026-03-14T08:00:00.000Z');
+
+  test('isBefore and isAfter are strict, so an equal pair is neither', () => {
+    expect(isBefore(earlier, later)).toBe(true);
+    expect(isBefore(later, earlier)).toBe(false);
+    expect(isAfter(later, earlier)).toBe(true);
+    expect(isAfter(earlier, later)).toBe(false);
+    expect(isBefore(earlier, same)).toBe(false);
+    expect(isAfter(earlier, same)).toBe(false);
+  });
+
+  test('a one-millisecond gap is enough — the comparison is the epoch, not the second', () => {
+    const tick = addMs(earlier, 1);
+    expect(isBefore(earlier, tick)).toBe(true);
+    expect(isAfter(tick, earlier)).toBe(true);
+    expect(compareInstants(earlier, tick)).toBe(-1);
+  });
+
+  test('compareInstants answers exactly -1, 0 or 1, so it can sort', () => {
+    expect(compareInstants(earlier, later)).toBe(-1);
+    expect(compareInstants(later, earlier)).toBe(1);
+    expect(compareInstants(earlier, same)).toBe(0);
+    const sorted = [later, earlier, same].sort(compareInstants).map(toIso);
+    expect(sorted).toEqual([
+      '2026-03-14T08:00:00.000Z',
+      '2026-03-14T08:00:00.000Z',
+      '2026-03-14T09:00:00.000Z',
+    ]);
+  });
+
+  test('two distinct objects for one point on the timeline compare equal', () => {
+    // Identity is not the question: `earlier !== same` while both name the same instant.
+    expect(earlier).not.toBe(same);
+    expect(compareInstants(earlier, same)).toBe(0);
+  });
+});
+
+describe('toIsoDateUtc', () => {
+  test('is the UTC calendar day, never the local one', () => {
+    expect(toIsoDateUtc(fromIso('2026-03-14T23:30:00Z'))).toBe('2026-03-14');
+    // 23:30 in Tokyo on the 14th is 14:30Z the same day; 09:00 in Tokyo is 00:00Z, still the 14th.
+    expect(toIsoDateUtc(fromIso('2026-03-15T00:30:00+09:00'))).toBe('2026-03-14');
+  });
+
+  test('keeps four digits for a year below 1000', () => {
+    expect(toIsoDateUtc(fromIso('0050-01-01T00:00:00Z'))).toBe('0050-01-01');
+    expect(toIsoDateUtc(fromIso('0050-01-01T00:00:00Z'))).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});

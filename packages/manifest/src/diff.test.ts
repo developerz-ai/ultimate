@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { ManifestSources } from './build';
 import { buildManifest } from './build';
-import { diffManifest } from './diff';
+import { diffManifest, formatDiff } from './diff';
 import { fixtureManifest } from './diff-fixtures';
 import type { Manifest } from './schema';
 import { ARRAY_SECTIONS } from './schema';
@@ -380,4 +380,46 @@ describe('no section of the manifest is unread', () => {
       expect(diff.changes.map((c) => c.path)).not.toEqual(['buildId']);
     });
   }
+});
+
+describe('the manifest shape itself', () => {
+  // `MANIFEST_VERSION` is what `isCompatible` equality-checks, so a bump rejects every
+  // `x.manifest.json` in existence — every reader of the old file breaks at once. Anything less
+  // than `breaking` here would let that ship without a major.
+  test('a changed manifestVersion is breaking and names both shapes', () => {
+    const before = fixtureManifest();
+    const after: Manifest = { ...fixtureManifest(), manifestVersion: before.manifestVersion + 1 };
+    const diff = diffManifest(before, after);
+    expect(diff.hasBreaking).toBe(true);
+    const entry = diff.breaking.find((c) => c.path === 'manifestVersion');
+    expect(entry?.detail).toBe(
+      `manifest shape ${before.manifestVersion} -> ${before.manifestVersion + 1}`,
+    );
+  });
+
+  test('an unchanged manifestVersion says nothing, so every diff does not carry it', () => {
+    const diff = diffManifest(fixtureManifest(), fixtureManifest({ locales: ['en', 'fr'] }));
+    expect(diff.changes.map((c) => c.path)).not.toContain('manifestVersion');
+  });
+});
+
+describe('formatDiff', () => {
+  test('one line per change, carrying the kind, the path and the detail', () => {
+    const diff = diffManifest(fixtureManifest(), fixtureManifest({ locales: ['en', 'fr'] }));
+    const lines = formatDiff(diff);
+    expect(lines).toHaveLength(diff.changes.length);
+    expect(lines).toContain('additive locales.fr: added');
+    expect(lines).toContain('internal buildId: content changed');
+  });
+
+  test('a diff with no changes formats to no lines', () => {
+    expect(formatDiff(diffManifest(fixtureManifest(), fixtureManifest()))).toEqual([]);
+  });
+
+  test('the lines follow `changes`, which is sorted by path', () => {
+    // Dropping `en` reports `locales.en` removed and `buildId` changed; sorted by path,
+    // `buildId` comes first, and a formatter that re-sorted or reversed would not.
+    const lines = formatDiff(diffManifest(fixtureManifest(), fixtureManifest({ locales: [] })));
+    expect(lines).toEqual(['internal buildId: content changed', 'additive locales.en: removed']);
+  });
 });

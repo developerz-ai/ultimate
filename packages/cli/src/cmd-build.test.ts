@@ -8,15 +8,19 @@ import {
   BUILD_ENTRY,
   BUILD_TARGETS,
   binaryArgs,
+  buildCommand,
   buildResult,
   preflightResult,
   readTarget,
   requireEntry,
 } from './cmd-build';
 import { planNewApp } from './cmd-new';
-import type { ExecResult } from './exec';
+import type { CommandContext } from './command';
+import type { ExecResult, Runner } from './exec';
 import type { CommandResult } from './output';
 import { renderJson } from './output';
+import { parseArgs } from './parse';
+import { SPECS } from './registry';
 import type { ThrownShape } from './thrown-by';
 import { thrownBy } from './thrown-by';
 
@@ -136,3 +140,85 @@ test('an unknown target names the known ones and a working invocation', () => {
   expect(thrown.code).toBe('X_CLI_UNKNOWN_COMMAND');
   expect(thrown.fix).toBe('x build --target docker');
 });
+
+/** An app root with the docker entry `x build --target docker` requires. */
+async function buildRoot(): Promise<string> {
+  const dir = mkdtempSync(join(tmpdir(), 'x-build-run-'));
+  await Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  await Bun.write(join(dir, 'docker', 'Dockerfile'), 'FROM oven/bun:1.3-alpine\n');
+  return dir;
+}
+
+function scriptedRunner(failOn?: string): { runner: Runner; ran: string[][] } {
+  const ran: string[][] = [];
+  const runner: Runner = async (command) => {
+    ran.push([...command]);
+    const failed = failOn !== undefined && command.includes(failOn);
+    return {
+      command,
+      code: failed ? 2 : 0,
+      ok: !failed,
+      stdout: '',
+      stderr: failed ? `${failOn} refused` : '',
+      durationMs: 5,
+    };
+  };
+  return { runner, ran };
+}
+
+const buildContext = (argv: readonly string[], cwd: string, runner: Runner): CommandContext => ({
+  args: parseArgs(argv, SPECS),
+  cwd,
+  runner,
+  env: {},
+  bunVersion: '1.3.0',
+});
+
+test('x build runs the static gate FIRST and only then the builder', async () => {
+  const dir = await buildRoot();
+  try {
+    const { runner, ran } = scriptedRunner();
+    const result = await buildCommand.run(buildContext(['build', '--tag', 'app:ci'], dir, runner));
+    expect(result.ok).toBe(true);
+    expect(result.command).toBe('build');
+    // The gate's own two subprocesses come first; the docker build is last.
+    expect(ran[0]).toEqual(['bunx', 'tsc', '-b', '--pretty', 'false']);
+    expect(ran.at(-1)?.slice(0, 2)).toEqual(['docker', 'build']);
+    expect(ran.at(-1)).toContain('app:ci');
+    expect(result.data).toMatchObject({ target: 'docker', artifact: 'app:ci' });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 60_000);
+
+test('a red static gate blocks the build — the builder is never spawned', async () => {
+  const dir = await buildRoot();
+  try {
+    const { runner, ran } = scriptedRunner('tsc');
+    const result = await buildCommand.run(buildContext(['build'], dir, runner));
+    expect(result.ok).toBe(false);
+    // Reported as the command the caller ran, and the artifact was never attempted.
+    expect(result.command).toBe('build');
+    expect(ran.some((command) => command[0] === 'docker')).toBe(false);
+    expect(result.steps?.find((step) => step.name === 'typecheck')?.ok).toBe(false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 60_000);
+
+test('--out overrides where a binary lands, and the default is .x/app', async () => {
+  const dir = await buildRoot();
+  try {
+    await Bun.write(join(dir, 'apps/web/server.ts'), 'export {};\n');
+    const { runner: a, ran: defaulted } = scriptedRunner();
+    await buildCommand.run(buildContext(['build', '--target', 'binary'], dir, a));
+    expect(defaulted.at(-1)).toContain(join(dir, '.x', 'app'));
+    const { runner: b, ran: overridden } = scriptedRunner();
+    await buildCommand.run(
+      buildContext(['build', '--target', 'binary', '--out', '/tmp/x-build-out'], dir, b),
+    );
+    expect(overridden.at(-1)).toContain('/tmp/x-build-out');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 60_000);

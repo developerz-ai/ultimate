@@ -1,6 +1,6 @@
 // Panel: Routes.
-// Kills: "which handler serves this?" — the route table with render mode, offline strategy,
-// budget, and whether the route declares meta.
+// Kills: "which handler serves this?" — the route table with render mode, offline strategy
+// and budget.
 
 import type { RouteFact } from './facts';
 import type { DevPanel } from './panel';
@@ -9,7 +9,9 @@ export interface RoutesPanelData {
   readonly routes: readonly RouteFact[];
   /** Counts per render mode: an app that is all `ssr` has a caching problem to find. */
   readonly byRenderMode: Readonly<Record<string, number>>;
-  readonly missingMeta: readonly string[];
+  // No `missingMeta`. `defineRoute()` refuses a route without a `meta` function, so the list had
+  // no member it could ever hold — and it was published from a `RouteFact.hasMeta` that read a
+  // key no descriptor has, which made it name EVERY route instead. See `RouteFact` in `facts.ts`.
   readonly overBudget: readonly string[];
 }
 
@@ -34,7 +36,6 @@ export const routesPanel: DevPanel<RoutesPanelData> = {
     return {
       routes: [...routes].sort((a, b) => a.path.localeCompare(b.path)),
       byRenderMode,
-      missingMeta: routes.filter((route) => !route.hasMeta).map((route) => route.path),
       overBudget: routes
         .filter((route) => kb(route.budget.js) > BUDGET_LIMIT_KB)
         .map((route) => route.path),

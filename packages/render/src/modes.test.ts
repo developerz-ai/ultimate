@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { tag } from '@ultimat3/cache';
 import { RouteModeInvalidError } from './errors';
-import { assertModeInvariants } from './modes';
+import { assertModeInvariants, defaultHydrate } from './modes';
 import { clearRoutes, registerRoute } from './registry';
 import type { RouteConfig, RouteGuard, RouteMetaFn } from './route';
 import { defineRoute } from './route';
@@ -245,5 +245,152 @@ describe('a render mode named after an Object.prototype member', () => {
         render,
       );
     }
+  });
+});
+
+describe('the two shapes a mode declaration can be wrong in', () => {
+  // `defineRoute` is the ONE normalizer, so its checks are the runtime half of the type: an app
+  // built from a JSON config, or one `as`-casting past the union, reaches them.
+  test('a render mode outside the union is refused, and the fix lists the union', () => {
+    let fix = '';
+    try {
+      defineRoute({
+        render: 'server' as unknown as RouteConfig['render'],
+        offline: 'runtime',
+        hydrate: 'idle',
+        meta,
+      });
+    } catch (error) {
+      fix = fixOf(error);
+    }
+    expect(fix).toContain('static');
+    expect(fix).toContain('isr');
+  });
+
+  test('a hydration strategy outside the union is refused the same way', () => {
+    let fix = '';
+    let cause = '';
+    try {
+      defineRoute({
+        render: 'ssr',
+        offline: 'runtime',
+        hydrate: 'eager' as unknown as RouteConfig['hydrate'],
+        meta,
+      });
+    } catch (error) {
+      fix = fixOf(error);
+      cause = error instanceof RouteModeInvalidError ? error.cause : '';
+    }
+    expect(cause).toContain('"eager"');
+    expect(fix).toContain('never');
+    expect(fix).toContain('interaction');
+  });
+});
+
+describe('api/ renders nothing', () => {
+  const config: RouteConfig = defineRoute({
+    render: 'ssr',
+    offline: 'runtime',
+    hydrate: 'idle',
+    meta,
+  });
+
+  // A page under api/ is a route with no HTML and no bundle graph, so the failure names the two
+  // edits that exist — move it, or stop pretending it is a page.
+  test('a defineRoute under api/ is refused before any other mode rule is consulted', () => {
+    let fix = '';
+    let cause = '';
+    try {
+      assertModeInvariants(config, {
+        file: 'apps/web/api/posts/route.ts',
+        path: '/api/posts',
+        surface: 'api',
+        suspenseBoundaries: 0,
+      });
+    } catch (error) {
+      fix = fixOf(error);
+      cause = error instanceof RouteModeInvalidError ? error.cause : '';
+    }
+    expect(cause).toContain('apps/web/api/posts/route.ts');
+    expect(cause).toContain('renders nothing');
+    expect(fix).toContain('replace defineRoute with an action');
+  });
+
+  test('the same config is accepted on app/, so the surface is what refused it', () => {
+    expect(() =>
+      assertModeInvariants(config, {
+        file: 'apps/web/app/posts/page.tsx',
+        path: '/posts',
+        surface: 'app',
+        suspenseBoundaries: 0,
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe('prerender belongs to a prerenderable mode', () => {
+  const withPrerender = (render: 'static' | 'isr' | 'stream'): RouteConfig =>
+    defineRoute({
+      render,
+      ...(render === 'isr' ? { revalidate: { ttl: '5m' } } : {}),
+      prerender: () => [{}],
+      offline: 'runtime',
+      hydrate: 'never',
+      meta,
+    });
+
+  // `stream` is the mode that reaches THIS check: `defineRoute` refuses `ssr` + prerender on its
+  // own, so a route only arrives at registration still carrying an impossible pair when the mode
+  // is per-request but not `ssr`.
+  test('stream cannot be prerendered, and the fix names both ways out', () => {
+    let fix = '';
+    let cause = '';
+    try {
+      assertModeInvariants(withPrerender('stream'), {
+        file: 'apps/web/app/feed/page.tsx',
+        path: '/feed',
+        surface: 'app',
+        suspenseBoundaries: 1,
+      });
+    } catch (error) {
+      fix = fixOf(error);
+      cause = error instanceof RouteModeInvalidError ? error.cause : '';
+    }
+    expect(cause).toContain('apps/web/app/feed/page.tsx');
+    expect(cause).toContain('not prerenderable');
+    expect(fix).toContain('remove prerender');
+    expect(fix).toContain("change render to 'static' | 'isr'");
+  });
+
+  test('static and isr accept it, so the refusal is the mode and not the field', () => {
+    for (const render of ['static', 'isr'] as const) {
+      expect(() =>
+        assertModeInvariants(withPrerender(render), {
+          file: 'apps/web/site/posts/page.tsx',
+          path: '/posts',
+          surface: 'site',
+          suspenseBoundaries: 0,
+        }),
+      ).not.toThrow();
+    }
+  });
+});
+
+describe('defaultHydrate', () => {
+  // The 0kb baseline as a default rather than as a rule an author has to remember: a `site/` route
+  // that says nothing ships nothing, and an `app/` route that says nothing wakes when idle.
+  test('site/ ships nothing unless asked; app/ wakes on idle', () => {
+    expect(defaultHydrate('site')).toBe('never');
+    expect(defaultHydrate('app')).toBe('idle');
+    expect(defaultHydrate('api')).toBe('idle');
+  });
+
+  test('a site/ route that declares no hydrate needs no js budget, and gets none', () => {
+    clearRoutes();
+    const entry = registerRoute({
+      file: 'apps/web/site/legal/page.tsx',
+      config: defineRoute({ render: 'static', offline: 'precache', meta }),
+    });
+    expect(entry.config.hydrate).toBe(defaultHydrate('site'));
   });
 });

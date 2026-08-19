@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import {
+  announce,
   ariaBool,
   createFocusTrap,
   createRovingTabindex,
@@ -237,6 +238,200 @@ describe('createFocusTrap', () => {
       expect(dom.document.activeElement).toBe(buttons[0] as FakeElement);
       trap.release();
       expect(dom.document.listeners.get('keydown')?.size ?? 0).toBe(0);
+    } finally {
+      dom.restore();
+    }
+  });
+});
+
+describe('createFocusTrap, backwards', () => {
+  test('shift-Tab off the first item wraps to the last, and pulls focus back from outside', () => {
+    const root = new FakeElement('div');
+    const buttons = [new FakeElement('button'), new FakeElement('button')];
+    root.append(...buttons);
+    const trigger = new FakeElement('button');
+    const page = new FakeElement('div').append(trigger, root);
+    const dom = installFakeDom(page);
+    try {
+      const trap = createFocusTrap(root as unknown as HTMLElement);
+      trap.activate();
+      expect(dom.document.activeElement).toBe(buttons[0] as FakeElement);
+
+      const backwards = keydown('Tab', true);
+      dom.document.dispatch('keydown', backwards);
+      expect(backwards.defaultPrevented).toBe(true);
+      expect(dom.document.activeElement).toBe(buttons[1] as FakeElement);
+
+      // Focus that already escaped comes back to the LAST item on shift-Tab, not the first.
+      dom.document.activeElement = trigger;
+      dom.document.dispatch('keydown', keydown('Tab', true));
+      expect(dom.document.activeElement).toBe(buttons[1] as FakeElement);
+    } finally {
+      dom.restore();
+    }
+  });
+
+  test('a Tab in the middle of the panel is left to the browser', () => {
+    const root = new FakeElement('div');
+    const buttons = [
+      new FakeElement('button'),
+      new FakeElement('button'),
+      new FakeElement('button'),
+    ];
+    root.append(...buttons);
+    const dom = installFakeDom(new FakeElement('div').append(root));
+    try {
+      createFocusTrap(root as unknown as HTMLElement).activate();
+      dom.document.activeElement = buttons[1] as FakeElement;
+
+      const event = keydown('Tab');
+      dom.document.dispatch('keydown', event);
+      // Neither end of the ring: cycling here would break normal forward tabbing.
+      expect(event.defaultPrevented).toBe(false);
+      expect(dom.document.activeElement).toBe(buttons[1] as FakeElement);
+    } finally {
+      dom.restore();
+    }
+  });
+
+  test('a key that is not Tab is ignored entirely', () => {
+    const root = new FakeElement('div');
+    root.append(new FakeElement('button'));
+    const dom = installFakeDom(new FakeElement('div').append(root));
+    try {
+      createFocusTrap(root as unknown as HTMLElement).activate();
+      const event = keydown('a');
+      dom.document.dispatch('keydown', event);
+      expect(event.defaultPrevented).toBe(false);
+    } finally {
+      dom.restore();
+    }
+  });
+});
+
+/**
+ * `announce` is the one helper here that writes to the document rather than reading it, so it needs
+ * a document that records: one persistent region per politeness level (a region created and written
+ * in the same frame is not announced by most screen readers), the right role for the level, and the
+ * empty-then-write that makes a repeated identical message re-announce.
+ */
+describe('announce', () => {
+  interface FakeNode {
+    id: string;
+    textContent: string;
+    readonly attrs: Record<string, string>;
+    readonly style: { cssText: string };
+    setAttribute(name: string, value: string): void;
+  }
+
+  interface AnnounceDom {
+    readonly appended: FakeNode[];
+    restore(): void;
+  }
+
+  function installAnnounceDom(): AnnounceDom {
+    const appended: FakeNode[] = [];
+    const node = (): FakeNode => {
+      const created: FakeNode = {
+        id: '',
+        textContent: '',
+        attrs: {},
+        style: { cssText: '' },
+        setAttribute(name, value): void {
+          created.attrs[name] = value;
+        },
+      };
+      return created;
+    };
+    const document = {
+      getElementById: (id: string): FakeNode | null =>
+        appended.find((element) => element.id === id) ?? null,
+      createElement: (tag: string): FakeNode => {
+        if (tag !== 'div') throw new Error(`announce created an unexpected <${tag}>`);
+        return node();
+      },
+      body: {
+        appendChild: (element: FakeNode): void => void appended.push(element),
+      },
+    };
+    const hadDocument = 'document' in globalThis;
+    const previous: unknown = Reflect.get(globalThis, 'document');
+    Object.assign(globalThis, { document });
+    return {
+      appended,
+      restore(): void {
+        if (hadDocument) Object.assign(globalThis, { document: previous });
+        else Reflect.deleteProperty(globalThis, 'document');
+      },
+    };
+  }
+
+  const settle = (): Promise<void> => new Promise((resolve) => queueMicrotask(() => resolve()));
+
+  test('off-DOM it is a no-op rather than a throw on the server', () => {
+    expect(() => announce('saved')).not.toThrow();
+  });
+
+  test('creates one hidden region per politeness level and reuses it', async () => {
+    const dom = installAnnounceDom();
+    try {
+      announce('saved');
+      await settle();
+
+      expect(dom.appended).toHaveLength(1);
+      const region = dom.appended[0] as FakeNode;
+      expect(region.id).toBe('ultimate-live-region-polite');
+      expect(region.attrs).toEqual({
+        role: 'status',
+        'aria-live': 'polite',
+        'aria-atomic': 'true',
+      });
+      // Off-screen but not `display:none`, which would stop it being announced at all.
+      expect(region.style.cssText).toContain('clip-path:inset(50%)');
+      expect(region.style.cssText).not.toContain('display:none');
+      expect(region.textContent).toBe('saved');
+
+      announce('saved again');
+      await settle();
+      expect(dom.appended).toHaveLength(1);
+      expect(region.textContent).toBe('saved again');
+    } finally {
+      dom.restore();
+    }
+  });
+
+  test('assertive gets its own region, with the alert role', async () => {
+    const dom = installAnnounceDom();
+    try {
+      announce('saved', 'polite');
+      announce('upload failed', 'assertive');
+      await settle();
+
+      expect(dom.appended.map((element) => element.id)).toEqual([
+        'ultimate-live-region-polite',
+        'ultimate-live-region-assertive',
+      ]);
+      expect(dom.appended[1]?.attrs['role']).toBe('alert');
+      expect(dom.appended[1]?.attrs['aria-live']).toBe('assertive');
+    } finally {
+      dom.restore();
+    }
+  });
+
+  test('writes in a later task, so the same message twice is announced twice', async () => {
+    const dom = installAnnounceDom();
+    try {
+      announce('one');
+      await settle();
+      const region = dom.appended[0] as FakeNode;
+      expect(region.textContent).toBe('one');
+
+      announce('one');
+      // Emptied synchronously; the identical text lands in a later task, which is what makes
+      // most screen readers treat it as a new message rather than an unchanged region.
+      expect(region.textContent).toBe('');
+      await settle();
+      expect(region.textContent).toBe('one');
     } finally {
       dom.restore();
     }

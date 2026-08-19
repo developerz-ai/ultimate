@@ -145,3 +145,29 @@ describe('presence at all-hands size', () => {
     expect(fromFollower).toEqual([]);
   });
 });
+
+describe('the two numbers a client is told to beat by', () => {
+  test('heartbeatMs is a third of the ttl, so one lost beat cannot read as a leave', () => {
+    const transport = new InProcessTransport({ clock: frozenClock(0) });
+    const presence = new PresenceRegistry({ transport, clock: frozenClock(0), ttlMs: 30_000 });
+    expect(presence.ttlMs).toBe(30_000);
+    expect(presence.heartbeatMs).toBe(10_000);
+    // Two beats fit inside the ttl with room to spare — that is the whole point of the ratio.
+    expect(presence.heartbeatMs * 2).toBeLessThan(presence.ttlMs);
+  });
+
+  test('the floor is one second: a tiny ttl must not turn into a beat-per-millisecond storm', () => {
+    const transport = new InProcessTransport({ clock: frozenClock(0) });
+    const tiny = new PresenceRegistry({ transport, clock: frozenClock(0), ttlMs: 300 });
+    expect(tiny.ttlMs).toBe(300);
+    expect(tiny.heartbeatMs).toBe(1_000);
+  });
+
+  test('the default ttl is used when the option is absent, and heartbeatMs follows it', () => {
+    // No clock and no nodeId either: the defaults have to produce a usable registry, because a
+    // single-node `x dev` constructs one with nothing but a transport.
+    const presence = new PresenceRegistry({ transport: new InProcessTransport() });
+    expect(presence.ttlMs).toBe(30_000);
+    expect(presence.heartbeatMs).toBe(10_000);
+  });
+});

@@ -6,7 +6,7 @@
 
 import { type Environment, nanoid, logger as rootLogger } from '@ultimat3/core';
 import { driverUnavailable, mailCredentialMissing } from './errors';
-import { mailIdempotencyKey } from './idempotency';
+import { mailIdempotencyKey, mailMessageIdToken } from './idempotency';
 
 /** The rendered envelope. Everything a transport needs; nothing it does not. */
 export interface MailMessage {
@@ -156,6 +156,14 @@ export function isUnconfiguredDriver(driver: MailDriver): boolean {
 /**
  * Structured log line per message through core's `logger` — the default for a worker that
  * has no credentials yet. Bodies are never logged; a mail body is user data.
+ *
+ * `to` is a COUNT and the correlation handle is the message-id TOKEN, not the idempotency key —
+ * and the second half is the one that was wrong. `mailIdempotencyKey` is
+ * `mail:<id>:<recipients joined>:<digest>`, so logging it put the `to` addresses in the line in
+ * plaintext, one field after the count that exists to keep them out, against
+ * `packages/mail/CLAUDE.md`'s "Recipient addresses stay out of logs". `mailMessageIdToken` is the
+ * framework's existing spelling for the same key digested — it was written for exactly this
+ * reason and says so — and it correlates just as well, because it is stable per message.
  */
 export function createLogDriver(logger = rootLogger): MailDriver {
   return {
@@ -167,7 +175,7 @@ export function createLogDriver(logger = rootLogger): MailDriver {
         to: message.to.length,
         subject: message.subject,
         locale: message.locale,
-        idempotencyKey: result.idempotencyKey,
+        idempotencyToken: mailMessageIdToken(message),
       });
       return Promise.resolve(result);
     },

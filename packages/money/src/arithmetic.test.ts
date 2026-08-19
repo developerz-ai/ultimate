@@ -1,5 +1,21 @@
 import { describe, expect, test } from 'bun:test';
-import { add, compare, divide, isZero, max, multiply, negate, subtract, sum } from './arithmetic';
+import {
+  absolute,
+  add,
+  compare,
+  divide,
+  greaterThan,
+  isNegative,
+  isPositive,
+  isZero,
+  lessThan,
+  max,
+  min,
+  multiply,
+  negate,
+  subtract,
+  sum,
+} from './arithmetic';
 import { money } from './money';
 import { rescale } from './rescale';
 
@@ -191,3 +207,69 @@ function fixOf(run: () => unknown): string {
   }
   return 'no-throw';
 }
+
+describe('sign, ordering and the predicates built on compare', () => {
+  test('absolute mirrors the negative half and is the identity on the positive one', () => {
+    expect(absolute(money(-1299, 'EUR'))).toEqual({ minor: 1299, currency: 'EUR' });
+    expect(absolute(money(1299, 'EUR'))).toEqual({ minor: 1299, currency: 'EUR' });
+    // Zero has one representation: `Math.abs(-0)` is `0`, and `Object.is` is what tells them apart.
+    expect(Object.is(absolute(money(-0, 'EUR')).minor, 0)).toBe(true);
+    // The scale rides along, so |−2 micro-dollars| is still a micro-dollar amount.
+    expect(absolute(money(-2, 'USD', 6))).toEqual({ minor: 2, currency: 'USD', scale: 6 });
+    expect(absolute(negate(money(Number.MAX_SAFE_INTEGER, 'USD'))).minor).toBe(
+      Number.MAX_SAFE_INTEGER,
+    );
+  });
+
+  test('isNegative and isPositive both answer false at zero — zero has no sign', () => {
+    expect(isNegative(money(-1, 'EUR'))).toBe(true);
+    expect(isNegative(money(0, 'EUR'))).toBe(false);
+    expect(isNegative(money(1, 'EUR'))).toBe(false);
+    expect(isPositive(money(1, 'EUR'))).toBe(true);
+    expect(isPositive(money(0, 'EUR'))).toBe(false);
+    expect(isPositive(money(-1, 'EUR'))).toBe(false);
+    // A scaled zero is still zero, and a scaled −1 is still negative.
+    expect(isPositive(money(0, 'USD', 6))).toBe(false);
+    expect(isNegative(money(-1, 'USD', 6))).toBe(true);
+  });
+
+  test('greaterThan and lessThan are strict — equal values satisfy neither', () => {
+    const cents = money(1, 'USD');
+    const micros = money(10_000, 'USD', 6);
+    expect(greaterThan(cents, micros)).toBe(false);
+    expect(lessThan(cents, micros)).toBe(false);
+    expect(greaterThan(money(2, 'USD'), money(1, 'USD'))).toBe(true);
+    expect(lessThan(money(2, 'USD'), money(1, 'USD'))).toBe(false);
+    expect(lessThan(money(-2, 'USD'), money(-1, 'USD'))).toBe(true);
+    expect(greaterThan(money(-2, 'USD'), money(-1, 'USD'))).toBe(false);
+  });
+
+  test('min and max keep the left operand when the two values are equal', () => {
+    const cents = money(1, 'USD');
+    const micros = money(10_000, 'USD', 6);
+    // Equal in value, different in encoding: whichever side is returned is observable, and the
+    // left one is the answer for both — `<=` and `>=`, not `<` and `>`.
+    expect(min(cents, micros)).toEqual({ minor: 1, currency: 'USD' });
+    expect(max(cents, micros)).toEqual({ minor: 1, currency: 'USD' });
+    expect(min(micros, cents)).toEqual({ minor: 10_000, currency: 'USD', scale: 6 });
+    expect(min(money(-2, 'USD'), money(1, 'USD'))).toEqual({ minor: -2, currency: 'USD' });
+    expect(max(money(-2, 'USD'), money(1, 'USD'))).toEqual({ minor: 1, currency: 'USD' });
+  });
+
+  test('lessThan and greaterThan still refuse two currencies', () => {
+    expect(codeOf(() => lessThan(money(1, 'USD'), money(1, 'EUR')))).toBe('X_CURRENCY_MISMATCH');
+    expect(codeOf(() => min(money(1, 'USD'), money(1, 'EUR')))).toBe('X_CURRENCY_MISMATCH');
+  });
+});
+
+describe('divide by zero', () => {
+  test('refuses with X_ALLOCATION_INVALID and points at allocate()', () => {
+    expect(codeOf(() => divide(money(100, 'USD'), 0))).toBe('X_ALLOCATION_INVALID');
+    expect(causeOf(() => divide(money(100, 'USD'), 0))).toContain('allocate()');
+    // −0 is zero too, and `divisor === 0` is true for it — the reciprocal would be −Infinity.
+    expect(codeOf(() => divide(money(100, 'USD'), -0))).toBe('X_ALLOCATION_INVALID');
+    // The neighbours still divide, so the guard is on zero alone.
+    expect(divide(money(100, 'USD'), 1)).toEqual({ minor: 100, currency: 'USD' });
+    expect(divide(money(100, 'USD'), -1)).toEqual({ minor: -100, currency: 'USD' });
+  });
+});

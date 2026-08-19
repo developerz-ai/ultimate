@@ -153,3 +153,86 @@ describe('verifyWorkloadToken', () => {
     expect(actorFromService(verified.identity).scopes).toEqual([]);
   });
 });
+
+describe('a token whose payload is not a set of claims', () => {
+  const causeOf = async (call: () => Promise<unknown>): Promise<string> => {
+    try {
+      await call();
+    } catch (error) {
+      return error instanceof AuthError ? error.cause : `not-an-AuthError: ${String(error)}`;
+    }
+    return 'did-not-throw';
+  };
+
+  /** Verifies a token that is already signed by the key set, so only the payload is under test. */
+  const causeFor = async (token: string): Promise<string> => {
+    const keys = await pair();
+    return await causeOf(async () =>
+      verifyWorkloadToken({
+        token,
+        keys: await jwksFor(keys),
+        issuers: ['https://kubernetes.default.svc'],
+        audience: 'https://ledger.internal',
+        clock,
+      }),
+    );
+  };
+
+  test('a payload that is not JSON describing an object is refused after the signature', async () => {
+    const keys = await pair();
+    // Correctly signed, so this is the payload check refusing and not the signature check.
+    const body = `${text('{"alg":"ES256","kid":"k1"}')}.${text('["not","an","object"]')}`;
+    const signature = await crypto.subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      keys.privateKey,
+      new TextEncoder().encode(body),
+    );
+    const token = `${body}.${base64Url(new Uint8Array(signature))}`;
+
+    const cause = await causeOf(async () =>
+      verifyWorkloadToken({
+        token,
+        keys: await jwksFor(keys),
+        issuers: ['https://kubernetes.default.svc'],
+        audience: 'https://ledger.internal',
+        clock,
+      }),
+    );
+    expect(cause).toContain('the payload is not base64url-encoded JSON describing an object');
+  });
+
+  test.each<[string, Readonly<Record<string, unknown>>]>([
+    ['no sub at all', { iss: CLAIMS.iss, aud: CLAIMS.aud, exp: CLAIMS.exp }],
+    ['an empty sub', { ...CLAIMS, sub: '' }],
+    ['no iss at all', { sub: CLAIMS.sub, aud: CLAIMS.aud, exp: CLAIMS.exp }],
+    ['a non-string sub', { ...CLAIMS, sub: 42 }],
+  ])('%s carries no identity, so no actor is minted', async (_name, claims) => {
+    const keys = await pair();
+    const cause = await causeOf(async () =>
+      verifyWorkloadToken({
+        token: await sign(keys, claims),
+        keys: await jwksFor(keys),
+        issuers: ['https://kubernetes.default.svc'],
+        audience: 'https://ledger.internal',
+        clock,
+      }),
+    );
+    expect(cause).toContain('the payload carries no iss or sub');
+  });
+
+  test('a token with no numeric exp is refused rather than read as never expiring', async () => {
+    const { exp: _exp, ...withoutExp } = CLAIMS;
+    const keys = await pair();
+    const cause = await causeOf(async () =>
+      verifyWorkloadToken({
+        token: await sign(keys, withoutExp),
+        keys: await jwksFor(keys),
+        issuers: ['https://kubernetes.default.svc'],
+        audience: 'https://ledger.internal',
+        clock,
+      }),
+    );
+    expect(cause).toContain('the payload carries no numeric exp');
+    expect(await causeFor('not.a.jwt')).not.toBe('did-not-throw');
+  });
+});

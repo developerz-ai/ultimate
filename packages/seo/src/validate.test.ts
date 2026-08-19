@@ -125,6 +125,32 @@ describe('validateMeta', () => {
     expect(issue?.cause).toContain('69-character title');
   });
 
+  test('an over-length description is flagged against the default 160-character bound', () => {
+    const report = validateMeta([
+      route({
+        path: '/long',
+        file: 'site/long/page.tsx',
+        meta: { title: 'Long', description: 'D'.repeat(161) },
+      }),
+    ]);
+    expect(report.ok).toBe(false);
+    const issue = report.issues.find((entry) => entry.code === SEO_ERROR_CODES.metaTooLong);
+    expect(issue?.cause).toContain('161-character description');
+    expect(issue?.cause).toContain('truncate past 160');
+    expect(issue?.fix).toBe('shorten meta.description in site/long/page.tsx to <= 160 characters');
+  });
+
+  test('descriptionMaxLength overrides the default bound in both directions', () => {
+    const meta = { title: 'Long', description: 'D'.repeat(161) };
+    const routes = [route({ path: '/long', file: 'site/long/page.tsx', meta })];
+    const loose = validateMeta(routes, { descriptionMaxLength: 200 });
+    expect(loose.issues.filter((e) => e.code === SEO_ERROR_CODES.metaTooLong)).toEqual([]);
+    const tight = validateMeta(routes, { descriptionMaxLength: 10 });
+    expect(tight.issues.find((e) => e.code === SEO_ERROR_CODES.metaTooLong)?.cause).toContain(
+      'truncate past 10',
+    );
+  });
+
   test('a canonical that does not match the route is flagged', () => {
     const report = validateMeta(
       [

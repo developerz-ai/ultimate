@@ -111,3 +111,97 @@ describe('one policy decides both the button and the call', () => {
     ]);
   });
 });
+
+describe('a handler that throws is audited as failed, and the throw is not swallowed', () => {
+  const boom: AdminAction = {
+    name: 'post.explode',
+    permission: 'post:publish',
+    entity: 'post',
+    async handle(): Promise<never> {
+      throw new RangeError('the upstream said no');
+    },
+  };
+
+  const run = async (
+    action: AdminAction,
+    audit = memoryAuditLog(),
+  ): Promise<{ readonly thrown: unknown; readonly audit: ReturnType<typeof memoryAuditLog> }> => {
+    let thrown: unknown;
+    try {
+      await invokeAdminAction({
+        action,
+        input: {},
+        actor: editor,
+        authz,
+        audit,
+        requestId: 'req_boom',
+        subject: { entity: 'post', id: 'p_1' },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    return { thrown, audit };
+  };
+
+  test('the caller gets the ORIGINAL error, not a decision object', async () => {
+    const { thrown } = await run(boom);
+    // Rethrown untouched: a handler's failure is the app's error, with the app's own stack.
+    expect(thrown).toBeInstanceOf(RangeError);
+    expect((thrown as Error).message).toBe('the upstream said no');
+  });
+
+  test('the failure is logged before the throw escapes — "if it isn’t logged, it didn’t happen"', async () => {
+    const { audit } = await run(boom);
+    const entries = audit.entries();
+    expect(entries).toHaveLength(1);
+    const entry = entries[0];
+    expect(entry).toBeDefined();
+    if (entry === undefined) return;
+
+    expect(entry.outcome).toBe('failed');
+    expect(entry.operation).toBe('post.explode');
+    expect(entry.kind).toBe('action');
+    expect(entry.entity).toBe('post');
+    expect(entry.entityId).toBe('p_1');
+    expect(entry.permission).toBe('post:publish');
+    // A key, never a sentence — the view renders it.
+    expect(entry.reason).toBe('admin.error.action-failed');
+    expect(entry.diff).toEqual([]);
+  });
+
+  test('a non-Error throw is still audited rather than crashing the audit path', async () => {
+    const rude: AdminAction = {
+      ...boom,
+      name: 'post.rude',
+      async handle(): Promise<never> {
+        // eslint-disable-next-line no-throw-literal -- the value under test
+        throw 'a bare string';
+      },
+    };
+    const { thrown, audit } = await run(rude);
+    expect(thrown).toBe('a bare string');
+    expect(audit.entries()[0]?.outcome).toBe('failed');
+  });
+
+  test('a global action with no entity is audited under "admin", with a null row id', async () => {
+    const global: AdminAction = {
+      name: 'admin.reindex',
+      permission: 'post:publish',
+      async handle(): Promise<never> {
+        throw new Error('nope');
+      },
+    };
+    const audit = memoryAuditLog();
+    await invokeAdminAction({
+      action: global,
+      input: {},
+      actor: editor,
+      authz,
+      audit,
+      requestId: 'req_global',
+    }).catch(() => undefined);
+
+    expect(audit.entries()[0]?.entity).toBe('admin');
+    expect(audit.entries()[0]?.entityId).toBeNull();
+  });
+});

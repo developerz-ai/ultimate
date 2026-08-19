@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { DoctorProbe } from './cmd-doctor';
 import { doctorCommand, doctorPort, OFFLINE_FALLBACK, probeFor, runDoctor } from './cmd-doctor';
+import type { CommandContext } from './command';
 import { ICON_SOURCE } from './dev-assets';
 import { PORT_RANGE, parseIntFlag } from './flag-number';
 import type { ParsedArgs } from './parse';
@@ -239,3 +243,81 @@ describe('unit · x doctor · probeFor', () => {
     expect(production({})).toBe(false);
   });
 });
+
+// `probeFor` is where `x doctor`'s diagnosis meets the machine. Only the deterministic half is
+// asserted: a port THIS test holds is not free, and the readers that depend on an app root answer
+// nothing when there is none. Whether an arbitrary port is free is not a fact a test can own.
+describe('unit · x doctor · probeFor reaches the real machine', () => {
+  test('a port this process is holding is reported as not free', async () => {
+    const server = Bun.serve({ port: 0, fetch: () => new Response('') });
+    try {
+      const taken = server.port;
+      expect(await probeFor(import.meta.dir, '1.3.14', taken).portFree(taken)).toBe(false);
+    } finally {
+      await server.stop(true);
+    }
+  });
+
+  test('outside an app, the root-dependent readers answer empty rather than throwing', async () => {
+    // `/` has no app.config.ts at or above it, so `findAppRoot` answers undefined.
+    const outside = probeFor('/', '1.3.14', 3000);
+    expect(outside.root).toBeUndefined();
+    expect(outside.exists('apps/web/site/page.tsx')).toBe(false);
+    expect(await outside.drift()).toEqual([]);
+    expect(await outside.snapshots()).toEqual([]);
+  });
+
+  test('inside an app, exists() is resolved against the app root and not against the cwd', () => {
+    const root = doctorAppRoot();
+    try {
+      // Called from a SUBDIRECTORY, so a reader that resolved against the cwd would miss both.
+      const inside = probeFor(join(root, 'apps', 'web'), '1.3.14', 3000);
+      expect(inside.root).toBe(root);
+      expect(inside.exists('app.config.ts')).toBe(true);
+      expect(inside.exists('this-file-does-not-exist.txt')).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('unit · x doctor · the command', () => {
+  const doctorContext = (argv: readonly string[], cwd: string): CommandContext => ({
+    args: parseArgs(argv, [doctorCommand.spec]),
+    cwd,
+    // `x doctor` diagnoses in-process; a subprocess from it is the bug, not a fixture.
+    runner: (command) => {
+      throw new Error(`x doctor spawned ${command.join(' ')}`);
+    },
+    env: {},
+    bunVersion: '1.3.14',
+  });
+
+  test('a port that is taken is reported as X_PORT_IN_USE, and --json lists the codes', async () => {
+    const server = Bun.serve({ port: 0, fetch: () => new Response('') });
+    const root = doctorAppRoot();
+    try {
+      const result = await doctorCommand.run(
+        doctorContext(['doctor', '--port', String(server.port), '--json'], root),
+      );
+      expect(result.ok).toBe(false);
+      expect(result.command).toBe('doctor');
+      const data = result.data as { count: number; codes: readonly string[] };
+      expect(data.codes).toContain('X_PORT_IN_USE');
+      expect(data.count).toBe(result.findings?.length);
+      // Every finding the report counted is a finding the report carries.
+      expect(data.codes).toEqual((result.findings ?? []).map((finding) => finding.code));
+    } finally {
+      await server.stop(true);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+/** The smallest thing `findAppRoot` accepts, plus one subdirectory to be called from. */
+function doctorAppRoot(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'x-doctor-'));
+  mkdirSync(join(dir, 'apps', 'web'), { recursive: true });
+  writeFileSync(join(dir, 'app.config.ts'), 'export const config = {};\n');
+  return dir;
+}

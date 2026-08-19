@@ -2,7 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { unsignedJwt } from './id-token-fixture';
 import { beginOAuth, type OAuthHandshake } from './oauth';
-import { exchangeOAuthCode, type OAuthFetch, oauthCredentials } from './oauth-exchange';
+import {
+  exchangeOAuthCode,
+  type OAuthFetch,
+  oauthCredentials,
+  providerDetail,
+} from './oauth-exchange';
 
 const NOW = new Date('2026-08-09T12:00:00.000Z');
 const clock = frozenClock(NOW);
@@ -314,5 +319,133 @@ describe('a token endpoint cannot forge a log line', () => {
     const cause = isUltimateError(thrown) ? thrown.cause : '';
     expect(cause).not.toContain('\n');
     expect(cause).toContain('not json');
+  });
+});
+
+/**
+ * `providerDetail` is the one place a REMOTE server's bytes become a `cause:`. Every branch of it
+ * is reachable from a real token endpoint, so every branch is pinned here rather than at the one
+ * call site that happens to be tested.
+ */
+describe('providerDetail', () => {
+  test('reads the OAuth error fields in the order the spec ranks them', async () => {
+    // Every answer is `renderCauseValue`d — quoted and escaped — because it is a remote server's
+    // bytes reaching a `cause:` line.
+    expect(
+      await providerDetail(new Response(JSON.stringify({ error_description: 'bad verifier' }))),
+    ).toBe(JSON.stringify('bad verifier'));
+    expect(await providerDetail(new Response(JSON.stringify({ error: 'invalid_grant' })))).toBe(
+      JSON.stringify('invalid_grant'),
+    );
+    expect(await providerDetail(new Response(JSON.stringify({ message: 'Bad credentials' })))).toBe(
+      JSON.stringify('Bad credentials'),
+    );
+    // `error_description` outranks the others when a server sends several.
+    expect(
+      await providerDetail(
+        new Response(JSON.stringify({ error: 'invalid_grant', error_description: 'spent code' })),
+      ),
+    ).toBe(JSON.stringify('spent code'));
+  });
+
+  test('a JSON object with none of those fields falls through to its raw text', async () => {
+    // Rendered, not raw: `renderCauseValue` quotes and escapes remote bytes so a body carrying a
+    // newline cannot write a second log line an operator reads as genuine.
+    const body = JSON.stringify({ ok: false, retryAfter: 30 });
+    expect(await providerDetail(new Response(body))).toBe(JSON.stringify(body));
+    // An empty description is not a description: it would render as a blank cause line.
+    expect(await providerDetail(new Response(JSON.stringify({ error_description: '' })))).toContain(
+      'error_description',
+    );
+    // A non-string description is not one either.
+    expect(await providerDetail(new Response(JSON.stringify({ error: 42 })))).toContain('42');
+  });
+
+  test('a JSON array is not a record, so it is raw text too', async () => {
+    expect(await providerDetail(new Response(JSON.stringify(['nope'])))).toBe(
+      JSON.stringify('["nope"]'),
+    );
+  });
+
+  test('an empty body says so instead of producing a blank cause line', async () => {
+    expect(await providerDetail(new Response(''))).toBe('the response body was empty');
+  });
+
+  test('a long body is truncated with an ellipsis rather than logged whole', async () => {
+    const detail = await providerDetail(new Response('x'.repeat(500)));
+    // 200 characters plus the ellipsis, then quoted: a stack trace or an HTML page must not
+    // become the whole cause line.
+    expect(detail).toBe(JSON.stringify(`${'x'.repeat(200)}\u2026`));
+    // Exactly at the cap is not truncated — the check is `>`, not `>=`.
+    expect(await providerDetail(new Response('x'.repeat(200)))).toBe(
+      JSON.stringify('x'.repeat(200)),
+    );
+  });
+});
+
+describe('the fix depends on the status, because the remedy does', () => {
+  const failWith =
+    (status: number): OAuthFetch =>
+    async () =>
+      json({ error_description: 'nope' }, status);
+
+  const fixFor = async (status: number): Promise<string> => {
+    const handshake = handshakeFor('google');
+    const thrown = await exchangeOAuthCode(
+      handshake,
+      { state: handshake.state, code: 'the-code' },
+      { credentials, clock, fetch: failWith(status) },
+    ).catch((error: unknown) => error);
+    return isUltimateError(thrown) ? thrown.fix : `not-an-UltimateError: ${String(thrown)}`;
+  };
+
+  test('401 and 403 blame the credentials; 400 blames the redirect_uri', async () => {
+    expect(await fixFor(401)).toContain('GOOGLE_CLIENT_SECRET');
+    expect(await fixFor(403)).toContain('GOOGLE_CLIENT_SECRET');
+    expect(await fixFor(400)).toContain('register this exact redirect_uri');
+  });
+
+  test('anything else says retry and names the status page — no credential to rotate', async () => {
+    // A 500 or a 503 is the provider's outage, and telling an operator to rotate a secret there
+    // is an instruction that makes a working configuration worse.
+    for (const status of [500, 502, 503, 429]) {
+      const fix = await fixFor(status);
+      expect(fix).toContain('status page');
+      expect(fix).not.toContain('GOOGLE_CLIENT_SECRET');
+    }
+  });
+});
+
+describe('a 200 that is not a token response', () => {
+  test('a body that is not a JSON object is refused, naming the endpoint that sent it', async () => {
+    const handshake = handshakeFor('google');
+    const thrown = await exchangeOAuthCode(
+      handshake,
+      { state: handshake.state, code: 'the-code' },
+      { credentials, clock, fetch: async () => json(['access_token', 'x']) },
+    ).catch((error: unknown) => error);
+
+    expect(isUltimateError(thrown) && thrown.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    expect(isUltimateError(thrown) && thrown.cause).toContain('not a JSON object');
+    expect(isUltimateError(thrown) && thrown.fix).toContain('https://oauth2.googleapis.com/token');
+  });
+
+  test('a 200 that is not JSON at all is the same refusal, never a bare SyntaxError', async () => {
+    const handshake = handshakeFor('google');
+    const thrown = await exchangeOAuthCode(
+      handshake,
+      { state: handshake.state, code: 'the-code' },
+      {
+        credentials,
+        clock,
+        fetch: async () =>
+          new Response('<!doctype html><title>Sign in</title>', {
+            headers: { 'content-type': 'text/html' },
+          }),
+      },
+    ).catch((error: unknown) => error);
+
+    expect(isUltimateError(thrown) && thrown.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    expect(isUltimateError(thrown) && thrown.cause).toContain('not a JSON object');
   });
 });

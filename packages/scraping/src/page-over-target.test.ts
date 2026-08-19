@@ -3,7 +3,11 @@
 import { describe, expect, test } from 'bun:test';
 import { testClock } from './clock';
 import { fakeBrowser, fakePage } from './driver-fake';
+import { downloadTimeout } from './error-throws';
+import { htmlTarget } from './html-target';
+import { pageOverTarget } from './page-over-target';
 import type { PageRecording } from './recording';
+import type { ScrapeTarget } from './target';
 
 const codeOf = async (promise: Promise<unknown>): Promise<string | undefined> => {
   try {
@@ -109,5 +113,38 @@ describe('unit · the rings are bounded', () => {
     for (let index = 0; index < 10; index += 1) ring.push(index);
     expect(ring.entries()).toEqual([7, 8, 9]);
     expect(ring.dropped).toBe(7);
+  });
+});
+
+describe('unit · a promise-typed page method rejects whatever the driver under it did', () => {
+  test('a target that THROWS from download() still reaches the caller`s .catch()', async () => {
+    // `ScrapeTarget` is the seam a third party implements, so the page cannot assume every driver
+    // got this right — and a synchronous throw forwarded by a non-async arrow is invisible to
+    // `page.download().catch(…)`, which is how every caller of a promise-typed method handles it.
+    const recording: PageRecording = { url: 'https://shop.test/orders', html: '<p>orders</p>' };
+    const target = htmlTarget({
+      driver: 'fixture',
+      lookup: () => Promise.resolve(recording),
+      rules: { allowHosts: ['shop.test'] },
+      clock: testClock(),
+      source: 'test/fixtures',
+      start: recording,
+    });
+    const rude: ScrapeTarget = {
+      ...target,
+      download: () => {
+        throw downloadTimeout(10, recording.url);
+      },
+    };
+    const page = pageOverTarget(rude, {
+      clock: testClock(),
+      allowHosts: ['shop.test'],
+      defaultTimeoutMs: 100,
+    });
+    let caught: unknown;
+    await page.download().catch((thrown: unknown) => {
+      caught = thrown;
+    });
+    expect((caught as { code?: string } | undefined)?.code).toBe('X_SCRAPE_DOWNLOAD_TIMEOUT');
   });
 });

@@ -319,3 +319,111 @@ describe('verifyIdToken through a key set', () => {
     expect(verified.sub).toBe('the-vp');
   });
 });
+
+describe('a key set the process cannot reach at all', () => {
+  // Distinct from a 503: `fetch` REJECTS on a DNS failure, a refused connection or the abort
+  // signal firing, so there is no `response.ok` to read and the naked rejection would escape
+  // every coded path in this package.
+  test('a rejected fetch is X_OAUTH_EXCHANGE_FAILED carrying the runtime message', async () => {
+    const keys = createJwksClient({
+      provider: 'test-op',
+      jwksUri: 'https://op.test/jwks',
+      clock,
+      fetch: async () => {
+        throw new TypeError('Unable to connect. Is the computer able to access the url?');
+      },
+    });
+    const thrown = await keys.keyFor('k1', 'RS256').catch((error: unknown) => error);
+    const error = thrown instanceof AuthError ? thrown : null;
+    expect(error?.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    expect(error?.cause).toContain('Unable to connect');
+    expect(error?.fix).toContain('curl -sS -m 5 https://op.test/jwks');
+  });
+
+  test('a rejection that is not an Error still gets a sentence, never [object Object]', async () => {
+    const keys = createJwksClient({
+      provider: 'test-op',
+      jwksUri: 'https://op.test/jwks',
+      clock,
+      // Not an Error: `AbortSignal.timeout` rejects with a DOMException, and a runtime is free
+      // to reject with anything at all — which is why the detail has a fallback.
+      fetch: async () => {
+        throw { name: 'AbortError' } as unknown as Error;
+      },
+    });
+    const thrown = await keys.keyFor('k1', 'RS256').catch((error: unknown) => error);
+    const error = thrown instanceof AuthError ? thrown : null;
+    expect(error?.code).toBe('X_OAUTH_EXCHANGE_FAILED');
+    expect(error?.cause).toContain('the request failed before a response arrived');
+    expect(error?.cause).not.toContain('[object Object]');
+  });
+});
+
+describe('a token with no kid', () => {
+  test('resolves when the set holds exactly one key for that algorithm', async () => {
+    const pair = await rsaKeyPair();
+    const jwk = await publicJwk(pair, 'k1');
+    delete jwk['kid'];
+    const served = keySet([{ ...(await publicJwk(pair, 'k1')) }]);
+    const keys = createJwksClient({
+      provider: 'test-op',
+      jwksUri: 'https://op.test/jwks',
+      clock,
+      fetch: served.fetch,
+    });
+    // The header carries no `kid`, so the only unambiguous answer is "the one RS256 key".
+    const body = `${text(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${text(JSON.stringify({ sub: 'ada' }))}`;
+    const signature = await crypto.subtle.sign(
+      { name: 'RSASSA-PKCS1-v1_5' },
+      pair.privateKey,
+      new TextEncoder().encode(body),
+    );
+    const token = `${body}.${base64Url(new Uint8Array(signature))}`;
+
+    expect(await verifyJwtSignature(token, keys)).toBe(true);
+  });
+
+  test('is refused when the set holds two keys for that algorithm — it names none of them', async () => {
+    const first = await rsaKeyPair();
+    const second = await rsaKeyPair();
+    const served = keySet([await publicJwk(first, 'k1'), await publicJwk(second, 'k2')]);
+    const keys = createJwksClient({
+      provider: 'test-op',
+      jwksUri: 'https://op.test/jwks',
+      clock,
+      fetch: served.fetch,
+    });
+    const body = `${text(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${text(JSON.stringify({ sub: 'ada' }))}`;
+    const signature = await crypto.subtle.sign(
+      { name: 'RSASSA-PKCS1-v1_5' },
+      first.privateKey,
+      new TextEncoder().encode(body),
+    );
+    const token = `${body}.${base64Url(new Uint8Array(signature))}`;
+
+    // Picking one would be guessing which key an unauthenticated caller meant.
+    expect(await codeOf(() => verifyJwtSignature(token, keys))).toBe('X_OAUTH_TOKEN_INVALID');
+  });
+
+  test('an ES256 key in the same set does not answer for an RS256 token', async () => {
+    const rsa = await rsaKeyPair();
+    const ec = await ecKeyPair();
+    const served = keySet([await publicJwk(rsa, 'k1'), await publicJwk(ec, 'k2')]);
+    const keys = createJwksClient({
+      provider: 'test-op',
+      jwksUri: 'https://op.test/jwks',
+      clock,
+      fetch: served.fetch,
+    });
+    // One RS256 key and one ES256 key: the RS256 lookup is unambiguous even with no `kid`.
+    const body = `${text(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${text(JSON.stringify({ sub: 'ada' }))}`;
+    const signature = await crypto.subtle.sign(
+      { name: 'RSASSA-PKCS1-v1_5' },
+      rsa.privateKey,
+      new TextEncoder().encode(body),
+    );
+    expect(await verifyJwtSignature(`${body}.${base64Url(new Uint8Array(signature))}`, keys)).toBe(
+      true,
+    );
+  });
+});

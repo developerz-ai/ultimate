@@ -1,15 +1,27 @@
 // The facts a /_x panel may read: one shape per introspection call. Kept apart from the
 // sources that produce them so a panel imports the shape it renders and nothing else.
 
+/**
+ * One row of the route table, in the panel's own words: `render` is the descriptor's `mode` and
+ * `handler` is its `file`. Both renames are made in `data.ts`, once.
+ *
+ * There is no `hasMeta`, deliberately. `defineRoute()` REFUSES a route with no `meta` function
+ * (`packages/render/src/route.ts`), so every registered route has one and the field could only
+ * ever be `true` — it was published as `false` for every route instead, off a `meta` key no
+ * descriptor carries, and fed a `missingMeta` list that can never have a member. Whether the meta
+ * a route returns is any GOOD is a render-time question: `meta` takes the loaded data, so nothing
+ * static can answer it, and a list that always reads "0 routes missing meta" is worse than absent.
+ */
 export interface RouteFact {
   readonly path: string;
+  /** `RouteDescriptor.mode` — `ssr`, `isr`, `static`, `stream`, `spa`. */
   readonly render: string;
   readonly offline: string;
   readonly hydrate: string;
+  /** The route's source file: what names the row. A descriptor publishes no handler. */
   readonly handler: string;
   readonly budget: { readonly js?: string; readonly lcp?: number };
   readonly revalidateTags: readonly string[];
-  readonly hasMeta: boolean;
 }
 
 /**
@@ -85,6 +97,12 @@ export interface JobDefFact {
   readonly queue: string;
   readonly steps: readonly string[];
   readonly retry: { readonly attempts: number; readonly backoff: string };
+  /**
+   * `JobDescriptor.idempotent` — `true` for every registered job, because `job()` refuses a
+   * definition with no `idempotencyKey`. Published rather than assumed: it read the DEFINITION's
+   * `idempotencyKey` off a descriptor that never carried it, so the panel called every job in
+   * the app unsafe to retry.
+   */
   readonly idempotent: boolean;
 }
 
@@ -153,6 +171,11 @@ export interface TableFact {
   readonly columns: readonly ColumnFact[];
 }
 
+/**
+ * One column the database and the entities disagree about. A COMPARISON, so no registry can
+ * produce it alone — `DevSources.drift` is a hook a host holding the connection wires, and the
+ * db panel reports `drift: null` ("nobody checked") rather than `[]` ("nothing wrong") without it.
+ */
 export interface DriftFact {
   readonly table: string;
   readonly column: string | null;

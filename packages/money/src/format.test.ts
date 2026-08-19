@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { MAX_CACHED_FORMATTERS } from '@ultimat3/core';
-import { formatMoney, formatMoneyDecimal, formatMoneyParts } from './format';
+import { currencySymbol, formatMoney, formatMoneyDecimal, formatMoneyParts } from './format';
 import { fromDecimal, money } from './money';
 
 /** Intl inserts narrow no-break spaces; compare on the digits, not the whitespace. */
@@ -150,3 +150,38 @@ describe('the formatter cache', () => {
     }
   });
 });
+
+describe('currencySymbol', () => {
+  test('is the currency part alone — no digits, no separators, no amount', () => {
+    expect(currencySymbol('EUR', 'en-US')).toBe('€');
+    expect(currencySymbol('USD', 'en-US')).toBe('$');
+    expect(currencySymbol('GBP', 'en-US')).toBe('£');
+    expect(currencySymbol('JPY', 'ja-JP')).toBe('￥');
+    // A currency with no symbol in this locale answers its code, which is still the symbol slot
+    // and not the whole formatted string.
+    expect(currencySymbol('KWD', 'en-US')).toBe('KWD');
+    for (const code of ['EUR', 'USD', 'JPY', 'KWD'] as const) {
+      expect(currencySymbol(code, 'en-US')).not.toMatch(/[0-9]/);
+    }
+  });
+
+  test('asks for the NARROW symbol, which is what makes it usable as an input prefix', () => {
+    // `narrowSymbol` is forced by this function, not taken from the caller. In `en-US` the plain
+    // symbol for CAD is `CA$` and the narrow one is `$`; the difference is the whole point.
+    expect(currencySymbol('CAD', 'en-US')).toBe('$');
+    expect(currencySymbol('USD', 'en-CA')).toBe('$');
+  });
+
+  test('an unknown currency is refused rather than answered with its own code', () => {
+    expect(codeOf(() => currencySymbol('XTS', 'en-US'))).toBe('X_CURRENCY_UNKNOWN');
+  });
+});
+
+function codeOf(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return String((error as { code?: unknown }).code);
+  }
+  return 'no-throw';
+}

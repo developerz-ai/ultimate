@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
-import { AcceptBudget, backoffDelay, defaultBackoff, drainPlan } from './thundering-herd';
+import {
+  AcceptBudget,
+  backoffDelay,
+  defaultBackoff,
+  drainPlan,
+  timeoutScheduler,
+} from './thundering-herd';
 
 describe('thundering herd', () => {
   test('jittered backoff produces a spread of delays, not one value', () => {
@@ -51,5 +57,47 @@ describe('thundering herd', () => {
     clock.advance(1_000);
     expect(budget.tryAccept()).toBe(true);
     expect(budget.retryAfterMs(() => 0)).toBe(100);
+  });
+});
+
+/**
+ * The production scheduler. Ordering, never duration: both assertions are settled by a second
+ * timer queued AFTER the one under test, so a slow machine cannot change the answer — a `setTimeout`
+ * queued first with an equal-or-earlier deadline runs first.
+ */
+describe('timeoutScheduler', () => {
+  const nextTick = (): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+  test('runs the callback it was given', async () => {
+    let fired = 0;
+    timeoutScheduler(() => {
+      fired += 1;
+    }, 0);
+    await nextTick();
+    expect(fired).toBe(1);
+  });
+
+  test('the canceller it returns stops the callback from ever running', async () => {
+    let fired = 0;
+    const cancel = timeoutScheduler(() => {
+      fired += 1;
+    }, 0);
+    cancel();
+    await nextTick();
+    expect(fired).toBe(0);
+    // Cancelling twice is not a second failure — a reconnect races its own teardown.
+    cancel();
+    await nextTick();
+    expect(fired).toBe(0);
+  });
+
+  test('cancelling one scheduled callback leaves the others alone', async () => {
+    const fired: string[] = [];
+    timeoutScheduler(() => fired.push('a'), 0);
+    const cancelB = timeoutScheduler(() => fired.push('b'), 0);
+    timeoutScheduler(() => fired.push('c'), 0);
+    cancelB();
+    await nextTick();
+    expect(fired).toEqual(['a', 'c']);
   });
 });

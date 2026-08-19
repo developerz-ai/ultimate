@@ -19,7 +19,7 @@ import { memoryAuditLog } from './audit';
 import { type AdminActor, staticAuthz } from './authz';
 import { adminCreate, adminDetail, adminList, type CrudCtx } from './crud';
 import { adminMcpTools } from './mcp-tools';
-import type { AdminEntity, AdminRepo, AdminRow } from './registry';
+import { type AdminEntity, type AdminRepo, type AdminRow, readField, rowId } from './registry';
 
 const orgs = entity('admin_reg_org', {
   columns: { id: uuid().primaryKey(), name: text({ max: 80 }) },
@@ -203,5 +203,35 @@ describe('the derived admin reads and writes real rows', () => {
       'price',
     ]);
     expect(create?.input.find((field) => field.name === 'price')?.type).toBe('money');
+  });
+});
+
+describe('the two row readers', () => {
+  test('readField reads by name, and an absent column is undefined rather than a throw', () => {
+    const record: AdminRow = { id: 'p_1', title: 'Hello', archived: false };
+    expect(readField(record, 'title')).toBe('Hello');
+    // `false` and `0` must survive: a reader that used `||` would blank them.
+    expect(readField(record, 'archived')).toBe(false);
+    expect(readField(record, 'nope')).toBeUndefined();
+  });
+
+  test('rowId hands back a string id unchanged', () => {
+    expect(rowId({ id: 'p_1' }, 'id')).toBe('p_1');
+  });
+
+  test('a non-string id is stringified rather than reaching a URL as [object Object]', () => {
+    // A legacy `int8` key arrives as a number or as decimal digits; both address a row.
+    expect(rowId({ id: 42 }, 'id')).toBe('42');
+    expect(rowId({ id: 9007199254740993n }, 'id')).toBe('9007199254740993');
+  });
+
+  test('a missing or null id is the empty string, never the words "undefined"/"null"', () => {
+    // Those two strings would be pasted straight into `/posts/undefined/edit`.
+    expect(rowId({}, 'id')).toBe('');
+    expect(rowId({ id: null }, 'id')).toBe('');
+  });
+
+  test('the id column is the one named, not a hardcoded "id"', () => {
+    expect(rowId({ id: 'p_1', slug: 'hello' }, 'slug')).toBe('hello');
   });
 });

@@ -1,6 +1,7 @@
 // `ScrapeTarget` over a real browser, through the structural CDP port. Everything driver-specific
 // in this package lives here and in `driver-cdp.ts`; the vocabulary above it does not change.
 
+import { isUltimateError } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse, t } from '@ultimat3/schema';
 import type { CdpBrowserLike, CdpFrameLike, CdpPageLike, CdpRequestLike } from './cdp-port';
@@ -86,6 +87,26 @@ const readStringFrom = (owner: unknown, key: string): string | undefined => {
   const answer = (value as (this: unknown) => unknown).call(owner);
   return typeof answer === 'string' ? answer : undefined;
 };
+
+/**
+ * The one failure `guard()` must NOT re-label, and the line is drawn at exactly one code.
+ *
+ * `X_NOT_IMPLEMENTED` is the only code that says "this build does not have the feature" — a fact
+ * about the launcher's own shape, never about the connection. A browser cannot produce it; only
+ * this file's own `scrapeNotImplemented()` can, from inside a guarded closure. Re-labelled as
+ * `X_SCRAPE_BROWSER_UNREACHABLE` (registered `retryable` in `errors.ts`) it spends every attempt
+ * in the scrape's retry policy on a method that is still missing on attempt five, and tells the
+ * operator the browser went away while the browser is answering fine.
+ *
+ * Every OTHER coded error stays wrapped, deliberately. `thrown instanceof UltimateError` is the
+ * naive version of this check and it is wrong: an `X_SCRAPE_TIMEOUT` raised while the socket was
+ * already dead would then arrive unwrapped, and "the browser went away mid-run" is the frame that
+ * makes a disconnect legible — which is the whole reason this wrapper exists.
+ *
+ * `isUltimateError`, not `instanceof`: the brand survives a duplicated module instance.
+ */
+const isStructuralRefusal = (thrown: unknown): boolean =>
+  isUltimateError(thrown) && thrown.code === 'X_NOT_IMPLEMENTED';
 
 export interface CdpTargetInit {
   readonly page: CdpPageLike;
@@ -185,6 +206,7 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
       return await run();
     } catch (thrown) {
       live();
+      if (isStructuralRefusal(thrown)) throw thrown;
       throw browserUnreachable(`${CDP_DRIVER} ${what}`, thrown);
     }
   };
@@ -256,15 +278,20 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
         }
         return parse(cookieSchema, await source.cookies());
       }),
-    download: (_options): Promise<ScrapeDownloadFile> => {
-      // Honest stub, in the shape `packages/jobs/src/driver-redis.ts` uses. A real one needs
-      // `Browser.setDownloadBehavior` over a raw CDP session plus a directory watch, and a
-      // half-written version that silently returned empty bytes is worse than this line.
-      throw scrapeNotImplemented(
-        'download() on the puppeteer driver',
-        'fetch the file inside the page — page.evaluate("fetch(url).then(r => r.text())") — or run this scrape on fixtureBrowser(), whose download() is complete',
-      );
-    },
+    // Honest stub, in the shape `packages/jobs/src/driver-redis.ts` uses. A real one needs
+    // `Browser.setDownloadBehavior` over a raw CDP session plus a directory watch, and a
+    // half-written version that silently returned empty bytes is worse than this line.
+    //
+    // REJECTS rather than throws: the method is typed `Promise<ScrapeDownloadFile>` and every
+    // caller of a promise-typed method handles its failure with `.catch()` or an `await` inside a
+    // `try` — a synchronous `throw` jumps over the first of those entirely.
+    download: (_options): Promise<ScrapeDownloadFile> =>
+      Promise.reject(
+        scrapeNotImplemented(
+          'download() on the puppeteer driver',
+          'fetch the file inside the page — page.evaluate("fetch(url).then(r => r.text())") — or run this scrape on fixtureBrowser(), whose download() is complete',
+        ),
+      ),
     frames: () =>
       guard('frames', () =>
         Promise.resolve(

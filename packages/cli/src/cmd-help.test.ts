@@ -3,7 +3,7 @@
 // actually prints, once each.
 
 import { describe, expect, test } from 'bun:test';
-import { createHelpCommand, renderHelp } from './cmd-help';
+import { createHelpCommand, createVersionCommand, renderHelp } from './cmd-help';
 import type { CommandContext } from './command';
 import { exec } from './exec';
 import { msg } from './messages';
@@ -96,5 +96,35 @@ describe('unit · x help --json carries what the page renders', () => {
     expect(renderHelp(SPECS, 'nosuch')).toEqual(renderHelp(SPECS, undefined));
     expect(await jsonNames('nosuch')).toEqual(await jsonNames());
     expect((await jsonNames('nosuch')).length).toBe(SPECS.length);
+  });
+});
+
+describe('unit · x version', () => {
+  // A resolver, not a string: `registry.ts` builds COMMANDS at module scope, and a manifest read
+  // there runs in every process that imports `@ultimat3/cli` — a compiled `apps/web/server.ts`
+  // included. So the read must happen inside `run()`, and not before.
+  test('the version function is not called until the command runs', async () => {
+    let reads = 0;
+    const command = createVersionCommand(() => {
+      reads += 1;
+      return '9.9.9';
+    });
+    expect(reads).toBe(0);
+    const result = await command.run(contextFor(['version']));
+    expect(reads).toBe(1);
+    expect(result.ok).toBe(true);
+    expect(result.command).toBe('version');
+    expect(result.summary).toBe('9.9.9');
+  });
+
+  test('--json carries both versions a bug report needs', async () => {
+    const result = await createVersionCommand(() => '3.0.0').run(contextFor(['version', '--json']));
+    expect(result.data).toEqual({ version: '3.0.0', bun: Bun.version });
+  });
+
+  test('its spec declares the usage line the help table prints', () => {
+    const spec = createVersionCommand(() => '3.0.0').spec;
+    expect(spec.name).toBe('version');
+    expect(spec.usage).toBe('x version [--json]');
   });
 });

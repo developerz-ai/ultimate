@@ -8,6 +8,7 @@ import {
   backgroundSyncSource,
   DEFAULT_FLUSH_ENDPOINT,
   DEFAULT_RETRY,
+  registerBackgroundSyncSource,
   retryDelayMs,
   SYNC_TAG,
   shouldRetry,
@@ -119,5 +120,120 @@ describe('shouldRetry', () => {
   test('stops at the attempt ceiling', () => {
     expect(shouldRetry(DEFAULT_RETRY.maxAttempts - 1)).toBe(true);
     expect(shouldRetry(DEFAULT_RETRY.maxAttempts)).toBe(false);
+  });
+});
+
+/**
+ * The emitted realm's class and the `UltimateError` subclass that owns the code are two
+ * declarations of one contract, in two languages the compiler never compares. So both are
+ * constructed with the same cause and fix and read field for field.
+ */
+describe('the emitted class and the class errors.ts owns', () => {
+  test.each([
+    ['flush failed', PwaSyncFlushFailedError],
+    ['incomplete', PwaSyncIncompleteError],
+  ] as const)('agree on code, cause, fix and docs — %s', (_name, ErrorClass) => {
+    const cause = 'the flush endpoint said no';
+    const fix = 'run the fix command';
+    const owned = new ErrorClass(cause, fix);
+    const emitted = emittedError(ErrorClass.code);
+
+    expect(owned.code).toBe(ErrorClass.code);
+    expect({
+      code: emitted.code,
+      cause: emitted.cause,
+      fix: emitted.fix,
+      docs: emitted.docs,
+    }).toEqual({ code: owned.code, cause: owned.cause, fix: owned.fix, docs: owned.docs });
+    expect(owned.title).toBe(describeErrorCode(ErrorClass.code).title);
+  });
+});
+
+/**
+ * `registerBackgroundSyncSource` is client code emitted as a string, so it is executed rather than
+ * read. The fallback branch is the one that matters: without it, every browser without Background
+ * Sync keeps its outbox forever and the user's mutations never leave the device.
+ */
+describe('registerBackgroundSyncSource, executed', () => {
+  interface Realm {
+    readonly registered: string[];
+    readonly online: (() => void)[];
+    readonly posted: unknown[];
+    register(registration: unknown): Promise<string>;
+  }
+
+  function realm(): Realm {
+    const registered: string[] = [];
+    const online: (() => void)[] = [];
+    const posted: unknown[] = [];
+    const source = registerBackgroundSyncSource();
+    expect(source.startsWith('export async function registerOutboxSync')).toBe(true);
+
+    const run = new Function(
+      'addEventListener',
+      'navigator',
+      'registration',
+      `${source.replace('export async function', 'async function')}
+return registerOutboxSync(registration);`,
+    ) as (
+      addEventListener: (type: string, handler: () => void) => void,
+      navigator: unknown,
+      registration: unknown,
+    ) => Promise<string>;
+
+    return {
+      registered,
+      online,
+      posted,
+      register: (registration) =>
+        run(
+          (type, handler) => {
+            if (type === 'online') online.push(handler);
+          },
+          {
+            serviceWorker: {
+              controller: {
+                postMessage: (message: unknown): void => {
+                  posted.push(message);
+                },
+              },
+            },
+          },
+          registration,
+        ),
+    };
+  }
+
+  test('registers this package own sync tag when the platform has Background Sync', async () => {
+    const sw = realm();
+    const outcome = await sw.register({
+      sync: {
+        register: async (tag: string): Promise<void> => {
+          sw.registered.push(tag);
+        },
+      },
+    });
+
+    expect(outcome).toBe('sync');
+    expect(sw.registered).toEqual([SYNC_TAG]);
+    expect(sw.online).toHaveLength(0);
+  });
+
+  test('falls back to an online listener that asks the controller to flush', async () => {
+    const sw = realm();
+    const outcome = await sw.register({});
+
+    expect(outcome).toBe('fallback');
+    expect(sw.registered).toEqual([]);
+    expect(sw.online).toHaveLength(1);
+
+    sw.online[0]?.();
+    expect(sw.posted).toEqual([{ type: 'flush-outbox' }]);
+  });
+
+  test('a sync object without register() is not Background Sync', async () => {
+    const sw = realm();
+    expect(await sw.register({ sync: {} })).toBe('fallback');
+    expect(sw.registered).toEqual([]);
   });
 });

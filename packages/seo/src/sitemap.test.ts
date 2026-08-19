@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
+import { SEO_ERROR_CODES } from './errors';
 import type { RouteRecord } from './routes';
-import { buildSitemap, chunk, SITEMAP_MAX_URLS, sitemapUrls } from './sitemap';
+import {
+  buildSitemap,
+  chunk,
+  SITEMAP_INDEX_MAX_FILES,
+  SITEMAP_MAX_URLS,
+  sitemapUrls,
+} from './sitemap';
 
 const BASE = { baseUrl: 'https://ultimate.dev' } as const;
 
@@ -129,3 +136,41 @@ function codeOfSync(run: () => unknown): string {
   }
   return 'no-throw';
 }
+
+describe('the sitemap index cap', () => {
+  const manyPaths = (count: number): string[] =>
+    Array.from({ length: count }, (_, index) => `/p/${index}`);
+
+  test('more shards than a sitemap index can hold is refused, not silently truncated', async () => {
+    const routes = [
+      route({
+        path: '/p/:id',
+        file: 'site/p/[id]/page.tsx',
+        prerender: () => manyPaths(SITEMAP_INDEX_MAX_FILES + 1),
+      }),
+    ];
+    let thrown: { code?: unknown; cause?: unknown; fix?: unknown } | undefined;
+    try {
+      await buildSitemap(routes, { ...BASE, maxUrls: 1 });
+    } catch (error) {
+      thrown = error as { code?: unknown; cause?: unknown; fix?: unknown };
+    }
+    expect(thrown?.code).toBe(SEO_ERROR_CODES.sitemapTooLarge);
+    expect(thrown?.cause).toContain(String(SITEMAP_INDEX_MAX_FILES + 1));
+    expect(thrown?.cause).toContain(String(SITEMAP_INDEX_MAX_FILES));
+    expect(thrown?.fix).toContain('noindex');
+  });
+
+  test('exactly the limit is allowed — the refusal is > and not >=', async () => {
+    const routes = [
+      route({
+        path: '/p/:id',
+        file: 'site/p/[id]/page.tsx',
+        prerender: () => manyPaths(SITEMAP_INDEX_MAX_FILES),
+      }),
+    ];
+    const result = await buildSitemap(routes, { ...BASE, maxUrls: 1 });
+    expect(result.files).toHaveLength(SITEMAP_INDEX_MAX_FILES);
+    expect(result.index?.path).toBe('/sitemap.xml');
+  });
+});

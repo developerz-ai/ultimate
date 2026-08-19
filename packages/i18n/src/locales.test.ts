@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  assertSupportedLocale,
   directionOf,
   isRtl,
+  isSupportedLocale,
   negotiateLocale,
   normalizeLocale,
   parseAcceptLanguage,
+  SUPPORTED_LOCALES,
 } from './locales';
 
 const supported = ['en', 'es', 'pt', 'de', 'ar', 'zh-hant', 'zh'] as const;
@@ -60,3 +63,57 @@ describe('direction', () => {
     expect(directionOf('de')).toBe('ltr');
   });
 });
+
+describe('assertSupportedLocale', () => {
+  test('answers the NORMALIZED tag, not the one the caller passed', () => {
+    expect(assertSupportedLocale('pt-BR', supported)).toBe('pt');
+    expect(assertSupportedLocale('ES', supported)).toBe('es');
+    expect(assertSupportedLocale('zh-Hant-TW', supported)).toBe('zh-hant');
+  });
+
+  test('an unsupported tag throws X_LOCALE_UNSUPPORTED instead of falling back to en', () => {
+    // The whole difference from `normalizeLocale`: `en` is IN `supported`, so a shared fallback
+    // would make every unknown tag look like a successful resolution.
+    expect(normalizeLocale('kl-GL', supported)).toBe('en');
+    expect(codeOf(() => assertSupportedLocale('kl-GL', supported))).toBe('X_LOCALE_UNSUPPORTED');
+    expect(causeOf(() => assertSupportedLocale('kl-GL', supported))).toContain('kl-GL');
+    // An empty tag is unsupported too — `normalizeLocale` returns the fallback for it.
+    expect(codeOf(() => assertSupportedLocale('', supported))).toBe('X_LOCALE_UNSUPPORTED');
+  });
+
+  test('defaults to the shipped supported set when none is passed', () => {
+    expect(assertSupportedLocale('de-DE')).toBe('de');
+    expect(SUPPORTED_LOCALES).toContain('de');
+    expect(codeOf(() => assertSupportedLocale('kl-GL'))).toBe('X_LOCALE_UNSUPPORTED');
+  });
+});
+
+describe('isSupportedLocale', () => {
+  test('is the same question without the throw', () => {
+    expect(isSupportedLocale('pt-BR', supported)).toBe(true);
+    expect(isSupportedLocale('zh-Hant-TW', supported)).toBe(true);
+    expect(isSupportedLocale('kl-GL', supported)).toBe(false);
+    expect(isSupportedLocale('', supported)).toBe(false);
+    // Narrowing the set is what makes a previously-supported tag false.
+    expect(isSupportedLocale('de', ['en'])).toBe(false);
+    expect(isSupportedLocale('de-AT')).toBe(true);
+  });
+});
+
+function codeOf(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return String((error as { code?: unknown }).code);
+  }
+  return 'no-throw';
+}
+
+function causeOf(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return String((error as { cause?: unknown }).cause);
+  }
+  return 'no-throw';
+}

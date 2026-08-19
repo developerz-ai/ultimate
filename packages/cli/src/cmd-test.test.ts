@@ -264,3 +264,62 @@ describe('unit · x test --sample', () => {
     ).rejects.toMatchObject({ code: 'X_CLI_BAD_FLAG' });
   });
 });
+
+describe('unit · x test --worker names a shard that exists', () => {
+  // The shard index is a position in a split the command computed, not a free integer: asking for
+  // shard 2 of a 2-worker split runs nothing and reports green, which is the one outcome a shard
+  // reproduction must never produce.
+  test('a shard past the end of the split is refused before anything runs', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-x-test-shard-'));
+    try {
+      for (let i = 0; i < 4; i += 1) await Bun.write(join(root, `f${i}.test.ts`), 'export {};\n');
+      const { calls, runner } = recorder();
+      const thrown: unknown = await testCommand
+        .run(context(['test', '--workers', '2', '--worker', '2'], root, runner))
+        .then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+      expect((thrown as { code?: string }).code).toBe('X_CLI_BAD_FLAG');
+      expect((thrown as { cause?: string }).cause).toBe(
+        '--worker on "x test": shard 2 does not exist in a 2-worker split (0..1)',
+      );
+      expect(calls).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('the last shard of the split is accepted', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-x-test-shard-'));
+    try {
+      for (let i = 0; i < 4; i += 1) await Bun.write(join(root, `f${i}.test.ts`), 'export {};\n');
+      const { calls, runner } = recorder();
+      const result = await testCommand.run(
+        context(['test', '--workers', '2', '--worker', '1'], root, runner),
+      );
+      expect(result.ok).toBe(true);
+      expect(calls).toHaveLength(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // The clamp is what makes this reachable: 2 files can only be a 2-worker split, so `--workers 8
+  // --worker 3` is out of range for a reason the caller cannot see from their own flags.
+  test('the split is clamped to the file count, and the refusal names the clamped width', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ultimate-x-test-shard-'));
+    try {
+      for (let i = 0; i < 2; i += 1) await Bun.write(join(root, `f${i}.test.ts`), 'export {};\n');
+      const thrown: unknown = await testCommand
+        .run(context(['test', '--workers', '8', '--worker', '3'], root, recorder().runner))
+        .then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+      expect((thrown as { cause?: string }).cause).toContain('in a 2-worker split (0..1)');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});

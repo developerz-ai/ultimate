@@ -126,6 +126,46 @@ describe('unit · parseArgs', () => {
     expect(String(failure.cause)).toContain('expects a value');
   });
 
+  // `nearest` answers nothing for a token that resembles no command, and the two arms differ:
+  // one names a `suggestion`, the other must not invent one. A `did you mean` pointing at an
+  // unrelated command is worse than none — it is an instruction that runs the wrong thing.
+  test('a command that resembles nothing is refused with no suggestion at all', () => {
+    const failure = thrownBy(() => parseArgs(['zzzzzzzzzz'], SPECS));
+    expect(failure.code).toBe('X_CLI_UNKNOWN_COMMAND');
+    expect(failure.cause).toBe(
+      '"x zzzzzzzzzz" is not a command (known: verify, db, g, help, version)',
+    );
+    expect(failure.fix).toBe('x help');
+    // and the near-miss arm still suggests.
+    expect(thrownBy(() => parseArgs(['verifyy'], SPECS)).fix).toBe('x verify');
+  });
+
+  test('a subcommand that resembles nothing is refused with no suggestion either', () => {
+    const failure = thrownBy(() => parseArgs(['db', 'zzzzzzzzzz'], SPECS));
+    expect(failure.code).toBe('X_CLI_UNKNOWN_COMMAND');
+    expect(failure.cause).toBe('"x db zzzzzzzzzz" is not a command (known: gen, migrate, branch)');
+    expect(failure.fix).toBe('x help');
+    // and the near-miss arm names the command AND the subcommand, never the subcommand alone.
+    expect(thrownBy(() => parseArgs(['db', 'migrat'], SPECS)).fix).toBe('x db migrate');
+  });
+
+  test('a boolean flag given a value is refused, never read as the string', () => {
+    for (const argv of [
+      ['verify', '--json=true'],
+      ['verify', '--json=false'],
+      ['verify', '--json='],
+    ]) {
+      const failure = thrownBy(() => parseArgs(argv, SPECS));
+      expect([argv.join(' '), failure.code]).toEqual([argv.join(' '), 'X_CLI_BAD_FLAG']);
+      expect([argv.join(' '), failure.cause]).toEqual([
+        argv.join(' '),
+        '--json on "x verify": boolean flag takes no value',
+      ]);
+    }
+    // The bare form is what a boolean takes.
+    expect(parseArgs(['verify', '--json'], SPECS).json).toBe(true);
+  });
+
   test('bare argv and --help both route to the help command', () => {
     expect(parseArgs([], SPECS).command).toBe('help');
     expect(parseArgs(['--help'], SPECS).command).toBe('help');

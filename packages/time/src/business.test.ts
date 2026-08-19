@@ -6,6 +6,7 @@ import {
   addBusinessDays,
   businessDaysBetween,
   isWeekend,
+  nextBusinessDay,
   WEEKEND_FRI_SAT,
   WEEKEND_SAT_SUN,
 } from './business';
@@ -165,3 +166,31 @@ function codeOf(run: () => unknown): string {
   }
   return 'no-throw';
 }
+
+describe('nextBusinessDay', () => {
+  test('a business day is its own answer — the same object, not an equal one', () => {
+    const monday = fromIso('2026-03-16T09:00:00Z');
+    expect(nextBusinessDay(monday, { zone: BERLIN })).toBe(monday);
+  });
+
+  test('a weekend day advances to the next business day at the same local time', () => {
+    const saturday = fromIso('2026-03-14T09:00:00Z');
+    const answer = nextBusinessDay(saturday, { zone: BERLIN });
+    expect(toZoned(answer, BERLIN).day).toBe(16);
+    expect(toZoned(answer, BERLIN).hour).toBe(toZoned(saturday, BERLIN).hour);
+  });
+
+  test('a holiday is skipped too, and consecutive holidays chain', () => {
+    const monday = fromIso('2026-03-16T09:00:00Z');
+    const calendar = { zone: BERLIN, holidays: ['2026-03-16', '2026-03-17'] };
+    expect(toZoned(nextBusinessDay(monday, calendar), BERLIN).day).toBe(18);
+  });
+
+  test('the configured weekend decides which day qualifies', () => {
+    const friday = fromIso('2026-03-13T09:00:00Z');
+    // Friday is a business day under Sat/Sun and a weekend day under Fri/Sat.
+    expect(nextBusinessDay(friday, { zone: DUBAI, weekendDays: WEEKEND_SAT_SUN })).toBe(friday);
+    const shifted = nextBusinessDay(friday, { zone: DUBAI, weekendDays: WEEKEND_FRI_SAT });
+    expect(toZoned(shifted, DUBAI).day).toBe(15);
+  });
+});

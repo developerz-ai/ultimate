@@ -69,3 +69,57 @@ describe('livePanel subscriber lookup', () => {
     expect(payload).toMatchObject({ error: { code: 'X_FORBIDDEN' } });
   });
 });
+
+const sub = (
+  over: Partial<LiveSubscriberFact> & Pick<LiveSubscriberFact, 'id' | 'query' | 'matched'>,
+): LiveSubscriberFact => ({
+  actorId: 'u_1',
+  trace: [],
+  rows: 0,
+  lastDeliveryAt: null,
+  ...over,
+});
+
+const SUBSCRIBERS: readonly LiveSubscriberFact[] = [
+  sub({ id: 's1', query: 'inbox', matched: true, rows: 3 }),
+  sub({ id: 's2', query: 'inbox', matched: false, trace: ['tenant mismatch'] }),
+  sub({ id: 's3', query: 'archive', matched: false, trace: ['not live'] }),
+];
+
+describe('livePanel with subscribers attached', () => {
+  const attached = (params = ''): ReturnType<typeof livePanel.data> =>
+    livePanel.data(
+      sourcesFor(() => Promise.resolve(SUBSCRIBERS)),
+      new URLSearchParams(params),
+    );
+
+  test('a query with somebody attached is not idle', async () => {
+    const data = await attached();
+    // `archive` is not `live`, so it never reaches `queries` and cannot be idle either.
+    expect(data.queries.map((query) => query.name)).toEqual(['inbox']);
+    expect(data.idleQueries).toEqual([]);
+  });
+
+  test('the rejected list keeps the matcher’s trace beside the subscriber it refused', async () => {
+    const data = await attached();
+    expect(data.rejected).toEqual([
+      { id: 's2', query: 'inbox', trace: ['tenant mismatch'] },
+      { id: 's3', query: 'archive', trace: ['not live'] },
+    ]);
+    // A matched subscriber is not a rejection — the panel's whole question is "why NOT".
+    expect(data.rejected.map((entry) => entry.id)).not.toContain('s1');
+  });
+
+  test('?query= scopes the subscribers and the rejections with them', async () => {
+    const data = await attached('query=archive');
+    expect(data.subscribers.map((entry) => entry.id)).toEqual(['s3']);
+    expect(data.rejected.map((entry) => entry.id)).toEqual(['s3']);
+  });
+
+  test('the idle list is computed BEFORE the ?query= filter, not after it', async () => {
+    // Scoped to `archive`, nothing is attached to `inbox` in the filtered view — reporting it
+    // idle would make the reader's own filter look like a client that never subscribed.
+    const data = await attached('query=archive');
+    expect(data.idleQueries).toEqual([]);
+  });
+});

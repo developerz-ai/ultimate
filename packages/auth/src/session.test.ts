@@ -4,11 +4,13 @@ import type { SessionStore } from './adapter';
 import { AuthError } from './errors';
 import { MemoryAdapter } from './memory-adapter';
 import {
+  clearSessionCookie,
   createSession,
   DEFAULT_SESSION_POLICY,
   idleSlideMs,
   listDevices,
   readSessionCookie,
+  revokeOtherSessions,
   revokeSession,
   type SessionPolicy,
   type SessionRuntime,
@@ -225,5 +227,112 @@ describe('the idle window slides, it does not grind', () => {
     // An explicit value wins, including zero — which restores the write-every-request behaviour
     // for an app that would rather pay for exact idle expiry.
     expect(idleSlideMs({ ...DEFAULT_SESSION_POLICY, idleSlideMs: 0 })).toBe(0);
+  });
+});
+
+describe('revokeOtherSessions', () => {
+  test('kills every other device and leaves the one that asked', async () => {
+    const rt = runtime();
+    const laptop = await createSession(rt, { userId: 'user-1', userAgent: 'laptop' });
+    rt.clock.advance(1_000);
+    const phone = await createSession(rt, { userId: 'user-1', userAgent: 'phone' });
+    rt.clock.advance(1_000);
+    const tablet = await createSession(rt, { userId: 'user-1', userAgent: 'tablet' });
+    const other = await createSession(rt, { userId: 'user-2', userAgent: 'laptop' });
+
+    expect(await revokeOtherSessions(rt, 'user-1', phone.session.id)).toBe(2);
+
+    const left = await listDevices(rt, 'user-1');
+    expect(left.map((device) => device.sessionId)).toEqual([phone.session.id]);
+    // The session that asked still verifies; the two it killed no longer do.
+    expect((await verifySession(rt, phone.token)).id).toBe(phone.session.id);
+    expect((await caught(() => verifySession(rt, laptop.token))).code).toBe('X_UNAUTHENTICATED');
+    expect((await caught(() => verifySession(rt, tablet.token))).code).toBe('X_UNAUTHENTICATED');
+    // Another user's sessions are not this user's to revoke.
+    expect((await verifySession(rt, other.token)).id).toBe(other.session.id);
+  });
+
+  test('a user with one session loses nothing, and the count says so', async () => {
+    const rt = runtime();
+    const only = await createSession(rt, { userId: 'user-1' });
+    expect(await revokeOtherSessions(rt, 'user-1', only.session.id)).toBe(0);
+    expect(await listDevices(rt, 'user-1')).toHaveLength(1);
+  });
+
+  test('a session id that is not this user’s keeps nothing, so every device goes', async () => {
+    const rt = runtime();
+    await createSession(rt, { userId: 'user-1', userAgent: 'laptop' });
+    rt.clock.advance(1_000);
+    await createSession(rt, { userId: 'user-1', userAgent: 'phone' });
+
+    expect(await revokeOtherSessions(rt, 'user-1', 'not-a-session-of-theirs')).toBe(2);
+    expect(await listDevices(rt, 'user-1')).toEqual([]);
+  });
+});
+
+describe('clearSessionCookie', () => {
+  // A logout cookie that differs from the set cookie in one attribute leaves a live twin the
+  // browser keeps sending: same name, same Path, same flags, empty value, Max-Age=0.
+  test('matches the set cookie attribute for attribute, with Max-Age=0 and no value', () => {
+    const set = sessionCookie('token-value', POLICY);
+    const cleared = clearSessionCookie(POLICY);
+
+    expect(cleared.startsWith(`${POLICY.cookieName}=;`)).toBe(true);
+    expect(cleared).toContain('Max-Age=0');
+    expect(cleared).not.toContain('token-value');
+    for (const attribute of ['Path=/', 'HttpOnly', 'Secure', 'SameSite=Lax']) {
+      expect(set).toContain(attribute);
+      expect(cleared).toContain(attribute);
+    }
+    expect(cleared).not.toContain('Domain=');
+  });
+
+  test('clears the name it is given, so a second cookie is clearable too', () => {
+    expect(clearSessionCookie(POLICY, 'x_impersonation').startsWith('x_impersonation=;')).toBe(
+      true,
+    );
+    // No name is the policy's own — one place decides what the session cookie is called.
+    expect(clearSessionCookie(POLICY).startsWith(`${POLICY.cookieName}=;`)).toBe(true);
+  });
+
+  test('a cleared cookie read back is the empty string, never the old token', () => {
+    const cleared = clearSessionCookie(POLICY);
+    const value = cleared.slice(0, cleared.indexOf(';'));
+    const request = new Request('https://app.test/', { headers: { cookie: value } });
+    expect(readSessionCookie(request, POLICY)).toBe('');
+  });
+});
+
+describe('readSessionCookie against a header a client controls', () => {
+  test('a jar with several cookies finds the right one, whatever its position', () => {
+    const jar = `other=1; ${POLICY.cookieName}=wanted; trailing=2`;
+    const request = new Request('https://app.test/', { headers: { cookie: jar } });
+    expect(readSessionCookie(request, POLICY)).toBe('wanted');
+  });
+
+  test('a valueless segment is skipped rather than matched or thrown on', () => {
+    const jar = `justaflag; ${POLICY.cookieName}=wanted`;
+    const request = new Request('https://app.test/', { headers: { cookie: jar } });
+    expect(readSessionCookie(request, POLICY)).toBe('wanted');
+  });
+
+  test('a valueless segment one character longer than the name is not a near miss', () => {
+    // Without the `has an =` guard, `part.slice(0, -1)` turns `__Host-x_sessionX` into the cookie
+    // name and the whole segment is handed back as its value — a token an attacker chose.
+    const jar = `${POLICY.cookieName}X; ${POLICY.cookieName}=right`;
+    const request = new Request('https://app.test/', { headers: { cookie: jar } });
+    expect(readSessionCookie(request, POLICY)).toBe('right');
+  });
+
+  test('a jar without the cookie, and no jar at all, are both null', () => {
+    const other = new Request('https://app.test/', { headers: { cookie: 'other=1' } });
+    expect(readSessionCookie(other, POLICY)).toBe(null);
+    expect(readSessionCookie(new Request('https://app.test/'), POLICY)).toBe(null);
+  });
+
+  test('a name that merely ends with the cookie name is not the cookie', () => {
+    const jar = `not_${POLICY.cookieName}=wrong; ${POLICY.cookieName}=right`;
+    const request = new Request('https://app.test/', { headers: { cookie: jar } });
+    expect(readSessionCookie(request, POLICY)).toBe('right');
   });
 });

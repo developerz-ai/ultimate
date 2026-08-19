@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { money } from './money';
-import { assertScale, MAX_MONEY_SCALE, minorAt, moneyScale } from './scale';
+import { assertScale, MAX_MONEY_SCALE, minorAt, moneyScale, toMinor } from './scale';
 
 describe('moneyScale', () => {
   test('a value without a scale carries its currency’s own', () => {
@@ -51,6 +51,42 @@ describe('minorAt', () => {
     );
   });
 });
+
+describe('toMinor', () => {
+  test('names the finest scale that would have fitted, so the fix line is executable', () => {
+    // MAX_SAFE_INTEGER micro-dollars, widened once more: too big at scale 6, fine at scale 5.
+    const widened = BigInt(Number.MAX_SAFE_INTEGER) * 10n;
+    expect(codeOf(() => toMinor(widened, 6, 'USD'))).toBe('X_MONEY_SCALE_INVALID');
+    expect(fixOf(() => toMinor(widened, 6, 'USD'))).toContain(
+      "rescale(theFinerOperand, 5, 'half-up')",
+    );
+    // One digit coarser and it is storable, which is what makes 5 the right answer above.
+    expect(toMinor(widened / 10n, 5, 'USD')).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  test('a magnitude no scale can hold says so instead of naming a scale', () => {
+    // Past 2^53 at scale 0 already: coarsening cannot help, and offering `rescale(x, 0)` would
+    // be a fix line that throws the same error again. One decimal digit past the boundary is the
+    // case that matters — the loop must stop AT zero, not walk on to a negative scale.
+    const tooBig = BigInt(Number.MAX_SAFE_INTEGER) * 10n;
+    const fix = fixOf(() => toMinor(tooBig, 0, 'JPY'));
+    expect(fix).toContain('too large for any scale');
+    expect(fix).not.toContain('rescale');
+    // The same on the negative side — magnitude is what decides, not sign.
+    expect(fixOf(() => toMinor(-tooBig, 0, 'JPY'))).toContain('too large for any scale');
+    // And the boundary itself still fits at scale 0.
+    expect(toMinor(BigInt(Number.MAX_SAFE_INTEGER), 0, 'JPY')).toBe(Number.MAX_SAFE_INTEGER);
+  });
+});
+
+function fixOf(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return String((error as { fix?: unknown }).fix);
+  }
+  return 'no-throw';
+}
 
 function codeOf(run: () => unknown): string {
   try {

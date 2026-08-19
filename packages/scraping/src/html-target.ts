@@ -209,11 +209,13 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
       session = next;
       return Promise.resolve();
     },
-    download(options: { readonly timeoutMs: number }): Promise<ScrapeDownloadFile> {
+    // `async`, so the refusal REJECTS: the method is typed `Promise<ScrapeDownloadFile>` and a
+    // synchronous `throw` from one escapes past `download().catch(…)` at every caller.
+    async download(options: { readonly timeoutMs: number }): Promise<ScrapeDownloadFile> {
       if (armed === undefined) throw downloadTimeout(options.timeoutMs, page.url);
       const { filename, contents } = splitDownload(armed);
       armed = undefined;
-      return Promise.resolve({ filename, bytes: new TextEncoder().encode(contents) });
+      return { filename, bytes: new TextEncoder().encode(contents) };
     },
     async frames(): Promise<readonly FrameRef[]> {
       const refs: FrameRef[] = [];

@@ -88,6 +88,23 @@ describe('flattenCatalog', () => {
       'X_CATALOG_INVALID',
     );
   });
+
+  // `loadCatalog` refuses the shape above at the PARSE step — a dot is not a key segment — so
+  // the flattener's own collision guard is never reached through it. `flattenCatalog` is exported
+  // and takes the nested shape directly, and that is the door where one dotted key and one branch
+  // would otherwise both write `nav.home` and the last writer would silently win.
+  test('the flattener refuses a collision on its own, naming the path both keys claim', () => {
+    const collide = () => flattenCatalog(loadFixture({ 'nav.home': 'A', nav: { home: 'B' } }));
+    expect(codeOf(collide)).toBe('X_CATALOG_INVALID');
+    expect(causeOf(collide)).toContain('nav.home');
+    expect(causeOf(collide)).toContain('duplicate key');
+    // Order-independent: the branch first is the same collision.
+    const reversed = () => flattenCatalog(loadFixture({ nav: { home: 'B' }, 'nav.home': 'A' }));
+    expect(codeOf(reversed)).toBe('X_CATALOG_INVALID');
+    // A dotted key with no branch beside it still flattens, so the guard is on the collision
+    // and not on the dot.
+    expect(flattenCatalog(loadFixture({ 'nav.home': 'A' }))['nav.home']).toBe('A');
+  });
 });
 
 describe('prototype safety', () => {
@@ -165,6 +182,16 @@ function codeOf(run: () => unknown): string {
     run();
   } catch (error) {
     return String((error as { code?: unknown }).code);
+  }
+  return 'no-throw';
+}
+
+/** Assert on the cause where the code alone cannot tell two refusals apart. */
+function causeOf(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return String((error as { cause?: unknown }).cause);
   }
   return 'no-throw';
 }

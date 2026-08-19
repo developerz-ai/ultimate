@@ -341,3 +341,43 @@ describe('pgStreamOver', () => {
     expect(codeOf(error)).toBe('X_REPLICATION_FAILED');
   });
 });
+
+describe('a socket error ends the stream for everyone on it', () => {
+  test('a reader that arrives after the error is rejected, not left hanging on a dead socket', async () => {
+    const runtime = new FakeRuntime();
+    const stream = await pgStreamOver(runtime, pgTarget({ ssl: 'disable' }));
+
+    runtime.events().error(runtime.socket, new Error('ECONNRESET'));
+
+    const error = await caught(stream.read());
+    expect(error).toBeInstanceOf(ReplicationFailedError);
+    expect(codeOf(error)).toBe('X_REPLICATION_FAILED');
+    // The refusal has to name the peer an operator would open a route to, not just "socket error".
+    expect(isUltimateError(error) ? error.cause : '').toContain('ECONNRESET');
+    expect(isUltimateError(error) ? error.fix : '').toContain(`${TARGET_HOST}:5432`);
+  });
+
+  test('a reader already parked when the error lands is rejected rather than resolved with EOF', async () => {
+    const runtime = new FakeRuntime();
+    const stream = await pgStreamOver(runtime, pgTarget({ ssl: 'disable' }));
+
+    const parked = stream.read();
+    runtime.events().error(runtime.socket, new Error('broken pipe'));
+
+    const error = await caught(parked);
+    expect(codeOf(error)).toBe('X_REPLICATION_FAILED');
+    expect(isUltimateError(error) ? error.cause : '').toContain('broken pipe');
+  });
+
+  test('chunks that arrived before the error are still handed over first', async () => {
+    const runtime = new FakeRuntime();
+    const stream = await pgStreamOver(runtime, pgTarget({ ssl: 'disable' }));
+
+    runtime.events().data(runtime.socket, new Uint8Array([1, 2]));
+    runtime.events().error(runtime.socket, new Error('ECONNRESET'));
+
+    // A buffered frame is still a frame the decoder can finish; the failure comes after it.
+    expect(Array.from((await stream.read()) ?? [])).toEqual([1, 2]);
+    expect(codeOf(await caught(stream.read()))).toBe('X_REPLICATION_FAILED');
+  });
+});

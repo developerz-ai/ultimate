@@ -1,0 +1,56 @@
+// The one stdout write every published entry point uses. Its whole reason to exist is a failure
+// that only appears when stdout is a PIPE and the process exits immediately afterwards, so the
+// load-bearing test spawns a child and reads the pipe — the in-process runner's fd 1 is not a
+// thing a test may redirect without taking the whole runner down with it.
+
+import { describe, expect, test } from 'bun:test';
+import { join } from 'node:path';
+import { writeLine } from './write-line';
+
+const MODULE = join(import.meta.dir, 'write-line.ts');
+
+/** A child that writes `bytes` characters through `writeLine` and then exits immediately. */
+async function throughAPipe(bytes: number): Promise<{ stdout: string; code: number }> {
+  const child = Bun.spawn(
+    [
+      'bun',
+      '-e',
+      `const { writeLine } = await import(${JSON.stringify(MODULE)});
+       writeLine('x'.repeat(${bytes}));
+       process.exit(0);`,
+    ],
+    { stdout: 'pipe', stderr: 'pipe' },
+  );
+  const stdout = await new Response(child.stdout).text();
+  return { stdout, code: await child.exited };
+}
+
+describe('writeLine', () => {
+  test('appends exactly one newline and writes nothing else', async () => {
+    const { stdout, code } = await throughAPipe(3);
+    expect(code).toBe(0);
+    expect(stdout).toBe('xxx\n');
+  });
+
+  // The bug in one number: `process.stdout.write` queues past the 64KB pipe buffer and
+  // `process.exit` discards the queue, so a `--json` payload larger than the buffer silently
+  // truncated under `| jq` and in CI — the only two places `--json` is for.
+  test('a payload far past the 64KB pipe buffer survives an immediate process.exit', async () => {
+    const bytes = 512 * 1024;
+    const { stdout, code } = await throughAPipe(bytes);
+    expect(code).toBe(0);
+    expect(stdout).toHaveLength(bytes + 1);
+    expect(stdout.endsWith('x\n')).toBe(true);
+    // Not merely long enough: no interior byte was dropped by a short write.
+    expect(stdout.slice(0, -1)).toBe('x'.repeat(bytes));
+  }, 30_000);
+
+  // In-process, so the module this package ships is the one the coverage report sees. An empty
+  // line is one byte of noise in the runner's output, and the assertion is real: the loop must
+  // terminate on a zero-length payload rather than spinning on `written < buffer.length`.
+  test('an empty line terminates rather than spinning', () => {
+    expect(() => {
+      writeLine('');
+    }).not.toThrow();
+  });
+});
