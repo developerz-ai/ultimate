@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "db20af9fbc1c61820698c556f3c5b76ece70be6cbc70f0c30dd18cb67825baf2",
+  "buildId": "5ca9f8f8e46f66c57c74bac0181e597cebf5deb2956935eea0b7fe10adda7883",
   "tiers": {
     "0": [
       "core",
@@ -1211,6 +1211,11 @@
       "code": "X_LOCALE_UNSUPPORTED",
       "owner": "i18n",
       "at": "packages/i18n/src/errors.ts"
+    },
+    {
+      "code": "X_LOCKFILE_STALE",
+      "owner": "scripts",
+      "at": "scripts/lockfile-pins.ts"
     },
     {
       "code": "X_MAIL_ADDRESS_INVALID",
