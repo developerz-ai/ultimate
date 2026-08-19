@@ -86,9 +86,31 @@ describe('predicateSql, via selectStatement', () => {
     expect(stmt.values).toEqual(['a', 'b', 'c']);
   });
 
-  test('in with a scalar (not an array) is treated as a one-element list', () => {
+  // `in` reads a list or nothing. Wrapping a scalar matched a row here that `memoryRepo`'s
+  // `matches` refuses outright — 0 rows in memory, 1 in Postgres — and `andWhere(column, op,
+  // value: unknown)` compiles, so the mistake is reachable. `@ultimat3/query` answers no rows for
+  // the same operand; this is the two drivers and the two packages giving one answer.
+  test('in with a scalar (not an array) matches nothing, as it does in memory', () => {
     const stmt = where({ column: 'title', op: 'in', value: 'solo' });
-    expect(stmt.values).toEqual(['solo']);
+    expect(stmt.text).toContain('1 = 0');
+    expect(stmt.text).not.toContain('"title" in');
+    expect(stmt.values).toEqual([]);
+  });
+
+  // `col in ($1)` with a NULL bound is `col = null`, which is UNKNOWN: the null row the caller
+  // listed is the one row Postgres leaves out, while memory's `sameValue(null, null)` includes it.
+  test('in with a null in the list asks for the nulls separately', () => {
+    const stmt = where({ column: 'title', op: 'in', value: ['a', null] });
+    expect(stmt.text).toContain('"title" in (');
+    expect(stmt.text).toContain('or "title" is null');
+    expect(stmt.values).toEqual(['a']);
+  });
+
+  test('in with nothing but nulls is "is null" alone, never a bound parameter', () => {
+    const stmt = where({ column: 'title', op: 'in', value: [null] });
+    expect(stmt.text).toContain('"title" is null');
+    expect(stmt.text).not.toContain('"title" in');
+    expect(stmt.values).toEqual([]);
   });
 
   test.each([

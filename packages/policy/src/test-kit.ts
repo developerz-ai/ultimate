@@ -59,15 +59,21 @@ export const policyMatrix = <I, R = unknown>(
     };
   });
 
-  const verdicts: Record<string, boolean> = {};
-  for (const row of rows) verdicts[row.actor] = row.allowed;
+  // `Object.fromEntries` rather than `verdicts[row.actor] = …`: an actor named `__proto__` assigns
+  // the PROTOTYPE through that spelling and files no key at all, so the matrix would report a
+  // verdict it never stored. Every name here is an own key.
+  const verdicts: Record<string, boolean> = Object.fromEntries(
+    rows.map((row) => [row.actor, row.allowed]),
+  );
 
   const width = Math.max(5, ...rows.map((row) => row.actor.length));
   return {
     label: policy.label,
     rows,
     verdicts,
-    allowedFor: (name) => verdicts[name] ?? false,
+    // `verdicts[name] ?? false` answered the `Object` FUNCTION — truthy, and not a boolean — for
+    // `allowedFor('constructor')`, so a matrix asserting on an actor of that name read as allow.
+    allowedFor: (name) => (Object.hasOwn(verdicts, name) ? verdicts[name] === true : false),
     toTable: () =>
       rows
         .map((row) =>

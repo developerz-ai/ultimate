@@ -4,6 +4,7 @@
 // a `countBy` against Postgres means; a rule added to one driver alone is the drift this file
 // exists to prevent.
 
+import { columnFor } from './column';
 import type { EntityCore } from './entity';
 import { EntityError } from './errors';
 import type { AnyColumn, ColumnKind } from './types';
@@ -86,7 +87,7 @@ export const groupColumnOf = <Row>(
   property: string,
   operation: string,
 ): AnyColumn => {
-  const column = entity.$columns[property];
+  const column = columnFor(entity.$columns, property);
   if (column === undefined) {
     throw notGroupable(
       entity,

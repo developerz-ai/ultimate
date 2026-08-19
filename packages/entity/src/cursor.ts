@@ -7,6 +7,7 @@
 // to still exist, and a row deleted between two pages would silently restart pagination.
 
 import { CursorInvalidError, decodeCursor, encodeCursor } from '@ultimat3/core';
+import { columnFor } from './column';
 import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
 import type { QueryPlan } from './tenancy';
@@ -28,7 +29,7 @@ const partsOf = (path: string): { readonly property: string; readonly part?: str
 };
 
 const columnAt = <Row>(entity: EntityCore<Row>, path: string): AnyColumn => {
-  const column = entity.$columns[partsOf(path).property];
+  const column = columnFor(entity.$columns, partsOf(path).property);
   if (column === undefined) {
     throw invariantViolated(entity.$name, 'orderBy', `no column "${path}"`);
   }
@@ -51,11 +52,31 @@ const kindAt = <Row>(entity: EntityCore<Row>, path: string): ColumnKind => {
       `${path} is money: order by ${path}.minor or ${path}.currency`,
     );
   }
-  const money = kind === 'money' ? MONEY_PARTS[part] : undefined;
+  // `MONEY_PARTS[part]` alone answers a FUNCTION for `orderBy('price.toString')` — not
+  // `undefined` — so the refusal below never fired and `assertSeekable` minted a cursor for it.
+  const money =
+    kind === 'money' && Object.hasOwn(MONEY_PARTS, part) ? MONEY_PARTS[part] : undefined;
   if (money === undefined) {
     throw invariantViolated(entity.$name, 'orderBy', `${path} names no column part`);
   }
   return money;
+};
+
+/**
+ * The kind a PATH holds, or `undefined` when it names none — the non-throwing half of `kindAt`.
+ *
+ * The in-memory driver asks this about a predicate column and a sort key, both of which are caller
+ * data: an unknown name compares as text there exactly as it always did, rather than turning a
+ * filter into a refusal the Postgres driver does not make. It is what lets a comparison be decided
+ * by the column's DECLARED kind — which is what Postgres decides by — instead of by the JS type of
+ * whichever value is in hand.
+ */
+export const kindOf = <Row>(entity: EntityCore<Row>, path: string): ColumnKind | undefined => {
+  const { property, part } = partsOf(path);
+  const kind = columnFor(entity.$columns, property)?.$meta.kind;
+  if (kind === undefined) return undefined;
+  if (part === undefined) return kind === 'money' ? undefined : kind;
+  return kind === 'money' && Object.hasOwn(MONEY_PARTS, part) ? MONEY_PARTS[part] : undefined;
 };
 
 export const valueAt = (row: unknown, path: string): unknown => {

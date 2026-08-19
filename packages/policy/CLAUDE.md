@@ -62,6 +62,16 @@ two differ, and it is why a surface that decides on input alone needs no edit.
 - **`defineRoles()` merges** and refuses a role two modules define differently
   (`X_ROLE_REDEFINED`, naming both declaration sites). A re-declaration of an *identical*
   role is a no-op, which is what keeps `defineRoles({ ...roleDefinitions(), … })` legal.
+- **A role name is ACTOR data, so the role map is read with `Object.hasOwn` and written with
+  `defineProperty`** (`roles.ts`, `As of 2026-08`). An app's map is a plain object literal, so
+  `map['constructor']` answered the `Object` FUNCTION, the `definition === undefined` guard passed,
+  and `for (const grant of definition.grants)` threw a bare `TypeError` out of `evaluate` — which
+  `@ultimat3/http` re-raises to the error boundary, so an actor holding a role named `constructor`,
+  `__proto__` or `toString` turned every authz decision it made into a **500 instead of a 403**.
+  `map[name] = value` is the same hazard writing: for `__proto__` it runs `Object.prototype`'s
+  setter and files no key at all. `test-kit.ts`'s verdict map has the same two rules for the same
+  reason — `allowedFor('constructor')` answered a truthy function — and `policyMatrix` builds it
+  through `Object.fromEntries`, which defines own keys whatever they spell.
 - No `any`. Never throw a bare `Error` — use `errors.ts`.
 - **This package owns `X_FORBIDDEN`** and registers its title with core. `http`, `auth`
   and every surface adapter reuse the code and must not re-register it.

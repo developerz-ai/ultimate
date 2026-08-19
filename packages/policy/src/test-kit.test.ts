@@ -106,3 +106,32 @@ describe('policyMatrix', () => {
     expect(lines[2]).toContain('deny');
   });
 });
+
+// An actor's NAME reaches the verdict map as a key, and a plain object literal inherits keys it
+// was never given: `allowedFor('constructor')` used to answer the `Object` function — truthy, and
+// not a boolean — so a matrix would report allow for an actor nobody granted anything.
+describe('an actor name is data, never a prototype key', () => {
+  const rule = () => can<Input>('post:read');
+
+  test('allowedFor() answers a boolean for a name every object inherits', () => {
+    const matrix = policyMatrix(rule(), {
+      input: { postId: 'p1', ownerId: 'owner' },
+      actors: [testActor('viewer', { roles: ['viewer'] })],
+    });
+
+    for (const name of ['constructor', 'toString', 'valueOf', 'hasOwnProperty']) {
+      expect(matrix.allowedFor(name)).toBe(false);
+    }
+  });
+
+  test('an actor named __proto__ gets its own verdict, stored and read back', () => {
+    const matrix = policyMatrix(rule(), {
+      input: { postId: 'p1', ownerId: 'owner' },
+      actors: [testActor('__proto__', { roles: ['viewer'] }), testActor('nobody')],
+    });
+
+    expect(matrix.allowedFor('__proto__')).toBe(true);
+    expect(matrix.allowedFor('nobody')).toBe(false);
+    expect(Object.getPrototypeOf(matrix.verdicts)).toBe(Object.prototype);
+  });
+});

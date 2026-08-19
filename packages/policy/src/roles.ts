@@ -52,6 +52,26 @@ const declarationSite = (): string => {
   return frame.trim() === '' ? 'unknown site' : frame.trim();
 };
 
+/**
+ * A role name is caller data, and an app's role map is a plain object literal — so `map['constructor']`
+ * answers the `Object` FUNCTION rather than `undefined`, the `=== undefined` guard at the call site
+ * never fires, and reading `.grants` off it throws a bare `TypeError` from inside `evaluate`. That is
+ * an authz decision arriving at the error boundary as a 500 instead of a 403, for every request an
+ * actor holding a role named `constructor`, `__proto__` or `toString` makes. Same discriminator
+ * `@ultimat3/entity`'s `tenancy.ts` uses, for the same reason.
+ */
+const own = <V>(map: Readonly<Record<string, V>>, name: string): V | undefined =>
+  Object.hasOwn(map, name) ? map[name] : undefined;
+
+/**
+ * `map[name] = value` is the same hazard writing: for `name === '__proto__'` it runs the setter on
+ * `Object.prototype` and stores NO key, so the role would vanish between being merged and being
+ * read back. `defineProperty` files an own key whatever the name spells.
+ */
+const put = <V>(map: Record<string, V>, name: string, value: V): void => {
+  Object.defineProperty(map, name, { value, writable: true, enumerable: true, configurable: true });
+};
+
 const sameList = (left: readonly string[], right: readonly string[]): boolean => {
   if (left.length !== right.length) return false;
   const sortedRight = [...right].sort();
@@ -81,12 +101,12 @@ export const defineRoles = <const M extends RoleMap>(map: M): M => {
   const merged: Record<string, RoleDef> = { ...roleMap };
   const nextSites: Record<string, string> = { ...sites };
   for (const [role, definition] of Object.entries(map)) {
-    const existing = merged[role];
+    const existing = own(merged, role);
     if (existing !== undefined && !sameDefinition(existing, definition)) {
-      throw roleRedefined(role, sites[role] ?? 'unknown site', site);
+      throw roleRedefined(role, own(sites, role) ?? 'unknown site', site);
     }
-    merged[role] = definition;
-    nextSites[role] = nextSites[role] ?? site;
+    put(merged, role, definition);
+    put(nextSites, role, own(nextSites, role) ?? site);
   }
   roleMap = merged;
   sites = nextSites;
@@ -136,7 +156,7 @@ export const expandRoles = (
   const walk = (name: string): void => {
     if (seen.has(name)) return;
     seen.add(name);
-    const definition = map[name];
+    const definition = own(map, name);
     if (definition === undefined) return;
     for (const grant of definition.grants) out.add(grant);
     for (const parent of definition.inherits ?? []) walk(parent);

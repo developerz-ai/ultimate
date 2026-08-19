@@ -7,7 +7,6 @@
 // being told — which is how `ctx.jobs.enqueue()` lands its outbox row atomically with the write
 // that caused it. `RepoOptions.tx` is the in-memory driver's undo hook and is ignored here.
 
-import { systemClock } from '@ultimat3/core';
 import {
   currentTx,
   type DbClient,
@@ -24,6 +23,7 @@ import {
   namedProperties,
   upsertPlan,
 } from './bulk-write';
+import { entityNow } from './clock';
 import { coalesceFindById } from './coalesce';
 import { countsFrom, groupColumnOf, groupValue, MAX_GROUPS } from './count-by';
 import { cursorFor, seekFrom, valueAt } from './cursor';
@@ -132,7 +132,7 @@ export const postgresRepo = <Row>(
       ? updateStatement(
           entity,
           plan,
-          new Map([[physicalName(entity, SOFT_DELETE_COLUMN), systemClock.now()]]),
+          new Map([[physicalName(entity, SOFT_DELETE_COLUMN), entityNow()]]),
           shapeOf({}),
           false,
         )

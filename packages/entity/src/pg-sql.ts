@@ -4,7 +4,7 @@
 // declared. That is the whole reason this file exists instead of a template literal per method.
 
 import { identifier, join, raw, type SqlFragment, sql } from '@ultimat3/db';
-import { columnName } from './column';
+import { columnFor, columnName } from './column';
 import type { EntityCore } from './entity';
 import { SOFT_DELETE_COLUMN } from './entity';
 import { allColumns, columnsOf, physicalName } from './pg-row';
@@ -33,10 +33,23 @@ const predicateSql = <Row>(entity: EntityCore<Row>, predicate: Predicate): SqlFr
       // `is distinct from` so a null on either side compares as a value, not as unknown.
       return sql`${column} is distinct from ${value}`;
     case 'in': {
-      const values = Array.isArray(value) ? value : [value];
-      return values.length === 0
-        ? NEVER
-        : sql`${column} in (${join(values.map((each) => sql`${each}`))})`;
+      // `in` reads a LIST or nothing. A scalar used to be wrapped into a one-element list, which
+      // matched a row here that `memoryRepo`'s `matches` refuses outright — 0 rows in memory, 1 in
+      // Postgres, from a call `andWhere(column, op, value: unknown)` compiles. One answer, and it
+      // is the one `@ultimat3/query`'s `filterClause` already gives: no rows.
+      if (!Array.isArray(value)) return NEVER;
+      // A NULL bound as a parameter is `col = null`, which is UNKNOWN and therefore excludes the
+      // very row the caller listed — while memory's `sameValue(null, null)` includes it. Postgres
+      // has no `in` that compares a null as a value, so the list is partitioned and the nulls are
+      // asked for as `is null`: the `(… in (…) or … is null)` pair `eq` and `neq` already emit.
+      const present = value.filter((each) => each !== null && each !== undefined);
+      const list =
+        present.length === 0
+          ? undefined
+          : sql`${column} in (${join(present.map((e) => sql`${e}`))})`;
+      const nulls = present.length === value.length ? undefined : sql`${column} is null`;
+      if (list === undefined) return nulls ?? NEVER;
+      return nulls === undefined ? list : sql`(${list} or ${nulls})`;
     }
     case 'gt':
       return sql`${column} > ${value}`;
@@ -137,7 +150,7 @@ const projection = <Row>(entity: EntityCore<Row>, plan: QueryPlan): SqlFragment 
     ...plan.orderBy.map((entry) => entry.column.split('.')[0] ?? entry.column),
   ]);
   const names = [...wanted].flatMap((property) => {
-    const column = entity.$columns[property];
+    const column = columnFor(entity.$columns, property);
     return column === undefined ? [] : columnsOf(property, column);
   });
   return join(names.map(identifier));

@@ -242,3 +242,46 @@ describe('restoreRoles()', () => {
     ]);
   });
 });
+
+// A role name is an actor's data, and an app's role map is a plain object literal — so a name
+// every object inherits used to resolve to a function instead of `undefined`. Reading `.grants`
+// off it threw a bare `TypeError` from inside `evaluate`, which `@ultimat3/http` re-raises: an
+// authz decision arriving at the error boundary as a 500 rather than as a 403.
+describe('a role name is caller data, never a prototype key', () => {
+  const INHERITED = [
+    'constructor',
+    '__proto__',
+    'toString',
+    'valueOf',
+    'hasOwnProperty',
+    'isPrototypeOf',
+  ] as const;
+
+  test('expandRoles() answers no grants for a role nothing declared', () => {
+    for (const name of INHERITED) expect(expandRoles([name])).toEqual([]);
+  });
+
+  test('an actor holding one is denied, and denied is an answer rather than a throw', () => {
+    defineRoles(roles);
+    for (const name of INHERITED) {
+      expect(actorHas({ id: `u-${name}`, roles: [name] }, 'post:read')).toBe(false);
+      expect(actorPermissions({ id: `p-${name}`, roles: [name] })).toEqual([]);
+    }
+  });
+
+  test('one of those names may still BE a role, declared and re-declared', () => {
+    defineRoles({ constructor: { grants: ['post:read'] } });
+    expect(expandRoles(['constructor'])).toEqual(['post:read']);
+    // `sameDefinition` reads `left.grants.length`, so the same read is on the redefinition path.
+    expect(() => defineRoles({ constructor: { grants: ['post:read'] } })).not.toThrow();
+    expect(() => defineRoles({ constructor: { grants: ['post:delete'] } })).toThrow(
+      /defined twice/,
+    );
+  });
+
+  test('a role named __proto__ is stored as a key, never as the map’s prototype', () => {
+    defineRoles({ ['__proto__']: { grants: ['post:read'] } } as RoleMap);
+    expect(expandRoles(['__proto__'])).toEqual(['post:read']);
+    expect(Object.getPrototypeOf(roleDefinitions())).toBe(Object.prototype);
+  });
+});

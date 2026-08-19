@@ -7,13 +7,15 @@
 //     table silently skips and repeats rows. A keyset cursor is stable because it names a
 //     position in the sort order, not a row count.
 
-import { systemClock } from '@ultimat3/core';
+import { keyOf } from './batch-read';
 import { conflictKeyOf, conflictKeys, upsertPlan } from './bulk-write';
+import { entityNow } from './clock';
 import { narrowMoney } from './columns';
 import { countsFrom, groupColumnOf } from './count-by';
-import { cursorFor, seekFrom, valueAt } from './cursor';
+import { cursorFor, kindOf, seekFrom, valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { notFound } from './errors';
+import { compareByKind, matchesPredicate } from './memory-match';
 import { deletePlan, idPlan, readPlan, singleKeyOf, updatePlan } from './plan';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
 import { assertRowTenant } from './tenancy';
@@ -142,79 +144,22 @@ export interface Transactor {
 const field = (row: unknown, property: string): unknown =>
   typeof row === 'object' && row !== null ? (row as Record<string, unknown>)[property] : undefined;
 
-/**
- * `===` on two Dates compares identity, so `where({ publishedAt })` would match nothing here
- * and every row in Postgres. Equality has to mean the same thing in both drivers or the
- * in-memory one stops being a preview of production.
- */
-const sameValue = (left: unknown, right: unknown): boolean =>
-  left instanceof Date && right instanceof Date
-    ? left.getTime() === right.getTime()
-    : left === right;
-
-const matches = (row: unknown, predicate: Predicate): boolean => {
-  const actual = field(row, predicate.column);
-  switch (predicate.op) {
-    case 'eq':
-      return sameValue(actual, predicate.value);
-    case 'neq':
-      return !sameValue(actual, predicate.value);
-    case 'in':
-      return (
-        Array.isArray(predicate.value) &&
-        predicate.value.some((candidate) => sameValue(candidate, actual))
-      );
-    case 'gt':
-      return compare(actual, predicate.value) > 0;
-    case 'gte':
-      return compare(actual, predicate.value) >= 0;
-    case 'lt':
-      return compare(actual, predicate.value) < 0;
-    case 'lte':
-      return compare(actual, predicate.value) <= 0;
-    // Real LIKE semantics, so `'draft%'` means "starts with" here exactly as it does in
-    // Postgres. Treating the pattern as a substring would make the two drivers disagree.
-    case 'like':
-      return likePattern(String(predicate.value)).test(String(actual));
-    case 'is-null':
-      return actual === null || actual === undefined;
-    case 'is-not-null':
-      return actual !== null && actual !== undefined;
-  }
-};
-
-/**
- * `%` and `_` are the wildcards; everything else in the pattern is literal, as in SQL.
- *
- * A RUN of `%` is one `.*`, not one each: `%%%…x` compiled to twenty adjacent `.*` groups, and an
- * anchored regex with twenty of them takes exponential time to fail on a long value — a filter
- * value an app forwards from a search box is then a CPU stall in the process, on the in-memory
- * driver. Postgres reads a run of `%` as one wildcard too, so this is the two drivers agreeing
- * rather than a defensive narrowing.
- */
-const likePattern = (pattern: string): RegExp =>
-  new RegExp(
-    `^${pattern
-      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      .replaceAll(/%+/g, '.*')
-      .replaceAll('_', '.')}$`,
-    's',
-  );
-
-const compare = (left: unknown, right: unknown): number => {
-  if (left instanceof Date && right instanceof Date) return left.getTime() - right.getTime();
-  if (typeof left === 'number' && typeof right === 'number') return left - right;
-  if (typeof left === 'bigint' && typeof right === 'bigint') {
-    return left < right ? -1 : left > right ? 1 : 0;
-  }
-  const [a, b] = [String(left), String(right)];
-  return a < b ? -1 : a > b ? 1 : 0;
-};
-
 /** Lexicographic over the sort keys, direction applied. `> 0` means "after the cursor". */
-const compareToSeek = (plan: QueryPlan, row: unknown, seek: readonly unknown[]): number => {
+const compareToSeek = <Row>(
+  entity: EntityCore<Row>,
+  plan: QueryPlan,
+  row: unknown,
+  seek: readonly unknown[],
+): number => {
   for (const [index, entry] of plan.orderBy.entries()) {
-    const order = compare(valueAt(row, entry.column), seek[index]);
+    // The COLUMN's kind, not the value's: the seek was revived from the same kind (`cursor.ts`),
+    // so a `bigint` column compares its stored decimal string against a revived `BigInt` as one
+    // number instead of as two pieces of text.
+    const order = compareByKind(
+      kindOf(entity, entry.column),
+      valueAt(row, entry.column),
+      seek[index],
+    );
     if (order !== 0) return entry.direction === 'desc' ? -order : order;
   }
   return 0;
@@ -232,7 +177,7 @@ const afterCursor = <Row>(
 ): number => {
   const seek = seekFrom(entity, plan);
   if (seek === undefined) return 0;
-  const start = found.findIndex((row) => compareToSeek(plan, row, seek) > 0);
+  const start = found.findIndex((row) => compareToSeek(entity, plan, row, seek) > 0);
   return start === -1 ? found.length : start;
 };
 
@@ -245,9 +190,20 @@ export const memoryRepo = <Row>(
   entity: EntityCore<Row>,
   seed: readonly Row[] = [],
 ): MemoryRepo<Row> => {
-  const keyOf = (row: unknown): string =>
-    entity.$primaryKey.map((property) => String(field(row, property))).join('');
-  const rows = new Map<string, Row>(seed.map((row) => [keyOf(row), row]));
+  /**
+   * A stored row's key, spelled the way `batch-read.ts` spells an id — because Postgres compares a
+   * `uuid` as a VALUE and prints it lower-cased, so `findById(UPPER)` reads the row there while
+   * `String(...)` missed it here: `null` from a read and `X_NOT_FOUND` from a write, against a row
+   * that exists, reachable from a path parameter, a client-supplied id or a legacy import.
+   */
+  const storeKey = (row: unknown): string =>
+    entity.$primaryKey
+      .map((property) => keyOf(kindOf(entity, property) ?? '', field(row, property)))
+      .join('');
+  /** The same key, from the id a caller named rather than from a row it has in hand. */
+  const idStoreKey = (id: unknown, operation: string): string =>
+    keyOf(kindOf(entity, singleKeyOf(entity, operation)) ?? '', id);
+  const rows = new Map<string, Row>(seed.map((row) => [storeKey(row), row]));
 
   const rowsOf = (plan: QueryPlan, args: FindManyArgs): Row[] => {
     const visible = (row: Row): boolean =>
@@ -256,11 +212,15 @@ export const memoryRepo = <Row>(
       field(row, SOFT_DELETE_COLUMN) === null ||
       field(row, SOFT_DELETE_COLUMN) === undefined;
     return [...rows.values()]
-      .filter((row) => plan.where.every((predicate) => matches(row, predicate)))
+      .filter((row) => plan.where.every((predicate) => matchesPredicate(entity, row, predicate)))
       .filter(visible)
       .sort((left, right) => {
         for (const entry of plan.orderBy) {
-          const order = compare(valueAt(left, entry.column), valueAt(right, entry.column));
+          const order = compareByKind(
+            kindOf(entity, entry.column),
+            valueAt(left, entry.column),
+            valueAt(right, entry.column),
+          );
           if (order !== 0) return entry.direction === 'desc' ? -order : order;
         }
         return 0;
@@ -283,7 +243,7 @@ export const memoryRepo = <Row>(
     // out of this tenant is refused by the same call that refuses an insert into another one.
     assertRowTenant(entity.$name, entity.$tenantColumn, operation, row);
     entity.$assert(row);
-    const key = keyOf(row);
+    const key = storeKey(row);
     const previous = rows.get(key);
     options?.tx?.onRollback(() => {
       if (previous === undefined) rows.delete(key);
@@ -297,7 +257,7 @@ export const memoryRepo = <Row>(
   // to name a row, so `update`/`delete` resolve through a plan rather than through the map.
   const addressed = (id: string, options: RepoOptions | undefined, operation: string): Row => {
     const plan = idPlan(entity, id, options, operation);
-    const current = rows.get(id);
+    const current = rows.get(idStoreKey(id, operation));
     // A soft-deleted row is hidden from writes too — `delete` on one is `X_NOT_FOUND`, not a
     // second stamp, which is what the Postgres driver's `deleted_at is null` clause already says.
     const hidden =
@@ -308,7 +268,7 @@ export const memoryRepo = <Row>(
     if (
       current === undefined ||
       hidden ||
-      !plan.where.every((predicate) => matches(current, predicate))
+      !plan.where.every((predicate) => matchesPredicate(entity, current, predicate))
     ) {
       throw notFound(entity.$name, id);
     }
@@ -334,7 +294,8 @@ export const memoryRepo = <Row>(
       const more = start + page.length < found.length;
       return {
         rows: page,
-        nextCursor: more && last !== undefined ? cursorFor(entity, plan, last, keyOf(last)) : null,
+        nextCursor:
+          more && last !== undefined ? cursorFor(entity, plan, last, storeKey(last)) : null,
       };
     },
 
@@ -407,14 +368,10 @@ export const memoryRepo = <Row>(
       const current = addressed(id, options, 'delete');
       // Soft delete hides the row without losing it; the column's presence is the switch.
       if (entity.$softDelete) {
-        write(
-          Object.assign({}, current, { [SOFT_DELETE_COLUMN]: systemClock.now() }),
-          options,
-          'delete',
-        );
+        write(Object.assign({}, current, { [SOFT_DELETE_COLUMN]: entityNow() }), options, 'delete');
         return;
       }
-      const key = keyOf(current);
+      const key = storeKey(current);
       options?.tx?.onRollback(() => rows.set(key, current));
       rows.delete(key);
     },
@@ -428,13 +385,13 @@ export const memoryRepo = <Row>(
       for (const row of doomed) {
         if (entity.$softDelete) {
           write(
-            Object.assign({}, row, { [SOFT_DELETE_COLUMN]: systemClock.now() }),
+            Object.assign({}, row, { [SOFT_DELETE_COLUMN]: entityNow() }),
             options,
             'deleteWhere',
           );
           continue;
         }
-        const key = keyOf(row);
+        const key = storeKey(row);
         options?.tx?.onRollback(() => rows.set(key, row));
         rows.delete(key);
       }
@@ -471,7 +428,7 @@ export const memoryRepo = <Row>(
 
     reset() {
       rows.clear();
-      for (const row of seed) rows.set(keyOf(row), row);
+      for (const row of seed) rows.set(storeKey(row), row);
     },
   };
 };

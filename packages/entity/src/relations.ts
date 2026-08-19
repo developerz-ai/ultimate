@@ -204,7 +204,10 @@ export const relationsFor = (entityName: string): EntityRelations =>
  */
 export const relationNamed = (entityName: string, name: string): Relation => {
   const relations = relationsFor(entityName);
-  const relation = relations[name];
+  // `relations[name]` walks the prototype: `preload('toString')` used to hand back
+  // `Function.prototype.toString` AS a `Relation`, past the refusal, to be read for a `.through`
+  // it does not have. A relation map is derived from foreign keys, so a name is caller data here.
+  const relation = Object.hasOwn(relations, name) ? relations[name] : undefined;
   if (relation === undefined) {
     throw preloadUnknownRelation(entityName, name, Object.keys(relations));
   }

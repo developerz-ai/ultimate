@@ -29,6 +29,31 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   `pg-driver-bulk.live.test.ts`, `pg-driver-tenancy.live.test.ts`). A method with only the first is
   unproven against Postgres itself; a method with only the second is unproven against memory. Both
   are the bar, not either one.
+- **What a PREDICATE means is decided by the column's declared KIND, and `memory-match.ts` is
+  where that one meaning is written.** The database decides by the column's type, so a driver
+  deciding by the JS `typeof` of the value in hand is answering a different question — four rules,
+  each of them a place the two drivers used to disagree, `As of 2026-08`. **A decimal-string column
+  orders by its digits**: `bigint()` and `decimal()` both hand back a STRING (deliberately —
+  `JSON.stringify` throws on a `bigint` and a `number` loses digits past 2^53), so neither the
+  `number`/`number` branch nor the `bigint`/`bigint` branch fired and both fell to
+  `String(left) < String(right)` — `["10","100","2","9"]` against Postgres' `2, 9, 10, 100`, and a
+  keyset page cut where the database cuts none, since the seek compares the stored string against
+  a revived `BigInt`. The comparison is exact at any width (the fractions are padded and both sides
+  become one integer), which no `Number()` is. **A `uuid` is a VALUE**: Postgres parses it and
+  prints it lower-cased, so `findById(UPPER)` reads the row there and answered `null` here, and
+  `update(UPPER)` was `X_NOT_FOUND` against a row that exists — `keyOf(kind, value)`
+  (`batch-read.ts`), which already carried that rule for a batched read, now spells the memory
+  store's key and its equality too. Text is NOT narrowed: lower-casing it would merge two rows
+  Postgres keeps apart. **A `LIKE` pattern uses Postgres' default escape**: `\` escapes `%`, `_`
+  or itself, so `like 'a\%b'` matches the literal `a%b` in both drivers rather than
+  `a\<anything>b` in one — and a pattern ending in the escape character is refused here as
+  Postgres refuses it (`22025`). A RUN of `%` is still one `.*`: twenty adjacent `.*` groups in an
+  anchored regex is a CPU stall on a filter value forwarded from a search box. **`in` takes a list
+  or nothing**, in both drivers and in `@ultimat3/query`: a scalar operand matches NO rows (it was
+  wrapped into a one-element list for the SQL and refused in memory — 0 rows against one driver, 1
+  against the other, from a call `andWhere(column, op, value: unknown)` compiles), and a list
+  carrying a NULL emits `(col in (…) or col is null)` — `col = null` is UNKNOWN, so the null row
+  the caller listed was the one row Postgres left out while memory included it.
 - **The Postgres driver is proved against a real Postgres, not only against a recording client.**
   `pg-driver.live.test.ts` runs the whole chain — `entity()` -> `$describe()` ->
   `generateMigration()` -> a live server -> `postgresDriver()` -> decoded row — and skips when no
@@ -74,9 +99,15 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   calls `forgetPreloaded(entity.$name)` *before* the statement, so a row a request changed is
   re-read and never served from a page read before it. **Values, not rows**: the index is keyed by
   id and holds ids, so a page early in a long request pins its keys and not its rows, and it dies
-  with the request like every other per-ctx store here. **Declining is the old behaviour**: no
-  request in scope, an id no page indexed, a key that resolved to nothing — the caller reads the
-  statement it always read. `MAX_IDS_PER_STATEMENT` bounds the preload exactly as it bounds a
+  with the request like every other per-ctx store here. **And the store itself is BOUNDED**
+  (`MAX_SIBLING_KEYS`, four statements' worth), `As of 2026-08`: "dies with the request" is a job's
+  whole attempt, `MAX_IDS_PER_STATEMENT` bounded the statement and nothing bounded the store, and
+  1,000 pages x 1,000 distinct keys measured **159.3 MB retained** against a 2.7 MB control — ~2 GB
+  on a 12M-row `backfill()`, an OOM in the worker on the DEFAULT configuration, since `jitPreload`
+  defaults to true and `backfill()` names no driver option. Oldest page first, for both maps: the
+  key index AND the bucket, which holds rows and is therefore the worse of the two.
+  **Declining is the old behaviour**: no request in scope, an id no page indexed, a key that
+  resolved to nothing, a key the bound evicted — the caller reads the statement it always read. `MAX_IDS_PER_STATEMENT` bounds the preload exactly as it bounds a
   batch. What both share — the scope key, `keyOf`, the one `in` statement — lives in
   `batch-read.ts` so the two can never disagree about when a shared statement is legal.
   **One switch, where the driver is built**: `postgresDriver({ jitPreload: false })` /
@@ -368,6 +399,16 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
     the three callers want three answers and the wrong one is invisible in the result. The soft
     delete inside `removal()` passes `false` too — both its callers read a count through
     `execute()`, so its rows were never readable by anyone.
+- **Every instant the write path stamps comes from `ctx.clock`, through `entityNow()`**
+  (`clock.ts`, `As of 2026-08`). `defaultNow()`, `touch()`'s `onUpdateNow()`, the soft-delete stamp
+  in BOTH drivers and a seed's `now` each read `systemClock` directly, so a frozen test clock drove
+  nothing the entity layer wrote — `createdAt`, `updatedAt` and `deletedAt` were the wall clock
+  however the ctx was built, and a test could only assert a range where it wanted a value. The read
+  path still reads no clock at all, which is what makes IT drivable (`@ultimat3/query`'s CLAUDE.md
+  says so in as many words); this is the write half of the same property. Outside a request there
+  is no ctx and the system clock IS the answer — a script, a worker boot and a seed take that
+  branch exactly as before. Never read `systemClock` on the write path again: five sites is how the
+  four stamps of one write ended up able to disagree.
 - **`touch()` in `query.ts` is the ONE place `onUpdateNow()` columns are stamped**, for
   `update(id, patch)` and `updateWhere(filter, patch)` alike — a second copy is how one of them
   ends up writing a stale `updatedAt`. It returns an empty patch untouched, so whether
@@ -671,6 +712,8 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `entity.ts` / `describe.ts` | `entity()`, `$row`; the `EntityDescription` projection |
 | `view.ts` | `$view(keys)` — the row projection an action names as its `output` |
 | `query.ts` / `database.ts` | chainable read to a cursor page; `database()` + `Driver` |
+| `clock.ts` | `entityNow()` — the ONE clock read on the write path, `ctx.clock` else the system's |
+| `memory-match.ts` | what a `Predicate` means in the memory driver: compare/equal/LIKE, by the column's kind |
 | `repo.ts` / `tenancy.ts` | `Repo<T>` + `memoryDriver`'s repo, tx rollback; `QueryPlan` + `scopedPlan()` for a read and `assertRowTenant()` for a write — one actor-derived tenant guard, both halves |
 | `cross-tenant.ts` | `crossTenant(reason, fn)` — the capability-gated scope that lifts it |
 | `plan.ts` / `cursor.ts` | the plan both drivers execute; the one keyset cursor codec |

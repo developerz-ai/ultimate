@@ -4,7 +4,7 @@
 // from the driver is re-parsed by the column that declared it rather than trusted — int8 arrives
 // as a string, timestamptz may arrive as one, and a silent `NaN` is worse than a loud throw.
 
-import { columnName, moneyColumns } from './column';
+import { columnFor, columnName, moneyColumns } from './column';
 import { narrowMoney } from './columns';
 import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
@@ -39,7 +39,7 @@ export const columnsOf = (property: string, column: AnyColumn): readonly string[
  */
 export const physicalName = <Row>(entity: EntityCore<Row>, path: string): string => {
   const [property = path, part] = path.split('.');
-  const column = entity.$columns[property];
+  const column = columnFor(entity.$columns, property);
   if (column === undefined) {
     throw invariantViolated(
       entity.$name,

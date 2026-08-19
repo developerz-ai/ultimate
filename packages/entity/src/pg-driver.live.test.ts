@@ -187,6 +187,35 @@ describe.skipIf(!hasPostgres)('live · postgres · postgresDriver', () => {
     expect(read?.reference).toBe('INV-round-trip');
   });
 
+  // `col in ($1, $2)` with a NULL bound is `col = null` — UNKNOWN, so the very row the caller
+  // listed is the one Postgres leaves out, while `memoryRepo`'s `matches` includes it through
+  // `sameValue(null, null)`. Only a real server can prove the emitted `(… in (…) or … is null)`
+  // is the pair that closes the gap; the statement TEXT is `pg-sql.test.ts`'s half.
+  test('an `in` list carrying a null matches the null rows too, as memory does', async () => {
+    const org = await newOrg('in-null');
+    await write(org, 'INV-noted', { note: 'kept' });
+    await write(org, 'INV-blank', { note: null });
+
+    const found = await repo().findMany({
+      orgId: org,
+      where: [{ column: 'note', op: 'in', value: ['kept', null] }],
+    });
+
+    expect(found.rows.map((row) => row.reference).sort()).toEqual(['INV-blank', 'INV-noted']);
+  });
+
+  test('an `in` operand that is not a list matches nothing, as memory answers for it', async () => {
+    const org = await newOrg('in-scalar');
+    await write(org, 'INV-solo');
+
+    const found = await repo().findMany({
+      orgId: org,
+      where: [{ column: 'reference', op: 'in', value: 'INV-solo' }],
+    });
+
+    expect(found.rows).toEqual([]);
+  });
+
   test('a SCALED amount survives the round trip, and an absent scale stays absent', async () => {
     // The third money column against a real int2/int4: `{ minor: 16, currency: 'USD', scale: 5 }`
     // is $0.00016, and the entity layer used to store and read it back as $16.00 — a 10,000x

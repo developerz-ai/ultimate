@@ -5,6 +5,7 @@
 // reads the same answer rather than a second copy of the rule.
 
 import { keyOf } from './batch-read';
+import { columnFor } from './column';
 import { valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { EntityError, invariantViolated } from './errors';
@@ -46,7 +47,7 @@ export const insertColumns = <Row>(
   properties: readonly string[],
 ): readonly string[] =>
   properties.flatMap((property) => {
-    const column = entity.$columns[property];
+    const column = columnFor(entity.$columns, property);
     return column === undefined ? [] : columnsOf(property, column);
   });
 
@@ -186,7 +187,7 @@ export const upsertPlan = <Row>(
 ): UpsertPlan => {
   if (onConflict.length === 0) throw noConflictTarget(entity.$name);
   for (const property of onConflict) {
-    if (entity.$columns[property] === undefined) {
+    if (columnFor(entity.$columns, property) === undefined) {
       throw invariantViolated(
         entity.$name,
         'upsertAll',
@@ -255,7 +256,7 @@ export const conflictKeyOf = <Row>(
   row: Partial<Row>,
 ): string | undefined => {
   const cells = on.map((property) =>
-    cellKey(entity.$columns[property]?.$meta.kind ?? '', valueAt(row, property)),
+    cellKey(columnFor(entity.$columns, property)?.$meta.kind ?? '', valueAt(row, property)),
   );
   return cells.some((cell) => cell === undefined) ? undefined : JSON.stringify(cells);
 };

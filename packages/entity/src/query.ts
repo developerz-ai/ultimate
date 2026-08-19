@@ -4,9 +4,9 @@
 // concurrent writes an insert before the offset shifts every later page, so a client silently
 // skips and repeats rows.
 
-import { systemClock } from '@ultimat3/core';
 import type { BatchIterator } from './batch';
 import { assertBatchable, batchIterator } from './batch';
+import { entityNow } from './clock';
 import type { EntityCore } from './entity';
 import { assertPageSize, DEFAULT_PAGE_SIZE, namedColumns } from './plan';
 import type { RelatedTables } from './preload';
@@ -311,7 +311,7 @@ const touch = <Row, Patch>(entity: EntityCore<Row>, patch: Patch): Patch => {
   if (namedColumns(patch).length === 0) return patch;
   const stamped: Record<string, unknown> = {};
   for (const [property, column] of Object.entries(entity.$columns)) {
-    if (column.$meta.onUpdate !== undefined) stamped[property] = systemClock.now();
+    if (column.$meta.onUpdate !== undefined) stamped[property] = entityNow();
   }
   return Object.assign({}, patch, stamped);
 };
