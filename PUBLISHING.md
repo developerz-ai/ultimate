@@ -114,8 +114,9 @@ Until then no package had a trusted publisher at all, and this file claimed othe
 **That is why 2.0.0 has no provenance.** With no trusted publisher attached, the OIDC exchange had
 nothing to verify against, so the workflow could not publish and 2.0.0 went out by hand: every
 `@ultimat3/*` package at 2.0.0 carries `_npmUser: sebyx07` and **no `dist.attestations`**, while
-1.1.0 and 1.2.0 carry attestations and `_npmUser: GitHub Actions`. 3.0.0 is the first release since
-1.2.0 to run through the workflow.
+1.1.0 and 1.2.0 carry attestations and `_npmUser: GitHub Actions`. 3.0.0 is the first release since 1.2.0
+that *can* run through the workflow — confirm it did with
+`npm view @ultimat3/core@3.0.0 dist.attestations`, never from this sentence.
 
 **Two traps met while doing steps 3 and 4, both worth knowing before you redo them:**
 
@@ -161,10 +162,19 @@ after a release run.
 npm publish -w <pkg> --access public --provenance=false
 ```
 
-**Use a real `.npmrc`, not an env var.** `npm_config__authToken` / `NODE_AUTH_TOKEN` do **not** reach
-`npm publish`: the bootstrap of `scraping` answered `E404 Not Found - PUT` with a full session token
-belonging to an org **owner**, which reads as a permissions problem and is not one. Writing
-`//registry.npmjs.org/:_authToken=<token>` into an `.npmrc` published it on the first try.
+**npm reads the credential from an `.npmrc`, not from a bare environment variable.** Setting
+`npm_config__authToken` or `NODE_AUTH_TOKEN` alone is not enough: the bootstrap of `scraping`
+answered `E404 Not Found - PUT` with a full session token belonging to an org **owner**, which reads
+as a permissions problem and is not one. Either `npm login`, or point npm at the variable — never a
+literal token in a file:
+
+```sh
+printf '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n' > "$HOME/.npmrc"
+```
+
+npm interpolates `${NODE_AUTH_TOKEN}` at read time, so the secret stays in the environment. Keep any
+`.npmrc` you create out of source control and out of the package — `files` already excludes it, and
+a token written literally into one is a credential leak waiting for a `git add`.
 
 **A 404 immediately afterwards is propagation, not failure.** The public packument lagged the
 publish by minutes. `npm access list packages @ultimat3` showed the record first, and a retry

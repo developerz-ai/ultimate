@@ -22,7 +22,7 @@ where this commit sits.** Never read a number here as the installable one; run t
 |---|---|---|
 | Repository version | 3.0.0, every workspace stamped | `bun run scripts/release.ts --check 3.0.0` |
 | Publishable workspaces | 30 | `bun run scripts/release-workflow.ts --json` |
-| On the registry | **all 30**, no holes | `npm view @ultimat3/scraping version` |
+| On the registry | **all 30**, no holes | `bun run scripts/release-workflow.ts --json   # the derived list; check every name against npm view` |
 | npm `latest` | **2.0.0** — the `v3.0.0` tag and the publish run follow this commit | `npm view @ultimat3/core version` |
 | OIDC trusted publisher | attached to all 30 | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
 

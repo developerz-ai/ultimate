@@ -67,8 +67,8 @@ Consequences of each in [`00-thesis.md`](./00-thesis.md); axiom 8 in full in [`1
 | Versioned | 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 30 in all — at 3.0.0 in lockstep, one commit. A major: 10 changelog entries marked `BREAKING —` from a five-agent bug sweep, no codemod. 2.0.0 was the first major and carried 33 | `bun run scripts/release.ts --check 3.0.0` |
 | Tagged | `v2.0.0` is on origin; `v3.0.0` follows this commit | `git tag --list 'v3.*'` |
 | Published | **`latest` is 2.0.0** — that is what `bunx create-ultimate myapp` installs today | `npm view @ultimat3/core version` |
-| Publication holes | **none.** All 30 workspaces are on the registry. `@ultimat3/scraping` was the last one and was bootstrapped by hand at 2.0.0, exactly as `@ultimat3/flags` had been — the one-time step in [`PUBLISHING.md`](../../PUBLISHING.md) that every package needs before a trusted publisher can attach | `npm view @ultimat3/scraping version` |
-| OIDC trusted publisher | attached to all 30 on 2026-08-19, for the first time — which is why 2.0.0 carries no provenance and 3.0.0 can publish over OIDC at all | `npm view @ultimat3/core@2.0.0 dist.attestations` |
+| Publication holes | **none.** All 30 workspaces are on the registry. `@ultimat3/scraping` was the last one and was bootstrapped by hand at 2.0.0, exactly as `@ultimat3/flags` had been — the one-time step in [`PUBLISHING.md`](../../PUBLISHING.md) that every package needs before a trusted publisher can attach | `bun run scripts/release-workflow.ts --json` for the derived list, then `npm view` each name — one package proves one package |
+| OIDC trusted publisher | attached to all 30 on 2026-08-19, for the first time — which is why 2.0.0 carries no provenance and 3.0.0 can publish over OIDC at all | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — every package, and without a fresh code they all read as missing |
 
 Docs `00`–`15`, `18` and `19` describe what exists; `16` and `17` are design only and say so in every claim.
 

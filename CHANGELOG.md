@@ -10,11 +10,14 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## 3.0.0 - 2026-08-19
 
-The first release published by the workflow since 1.2.0, and the first with an OIDC trusted
-publisher attached to every package. 2.0.0 was hand-published without provenance because no
-publisher existed to verify the exchange against; all 30 now have one, and
-`@ultimat3/scraping` — 404 since it landed after the 2.0.0 run — was bootstrapped by hand at
-2.0.0 so the derived publish list can reach it here.
+The first release *able* to go through the workflow since 1.2.0: every package now has an OIDC
+trusted publisher, and none had one before. 2.0.0 was hand-published without provenance precisely
+because there was nothing for the exchange to verify against. `@ultimat3/scraping` — 404 since it
+landed after the 2.0.0 run — was bootstrapped by hand at 2.0.0 so the derived publish list can
+reach it here.
+
+Whether this release *did* publish with provenance is a fact about the registry, not about this
+file: `npm view @ultimat3/core@3.0.0 dist.attestations` answers it.
 
 A major because a five-agent bug sweep landed breaking changes to documented APIs. The
 entries below are that sweep; each names the manual edit it costs.
