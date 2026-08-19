@@ -94,4 +94,10 @@ export interface ScrapePage extends ScrapeFrame {
   /** The bounded tail. Bounded because a long run's full history is an OOM, not a log. */
   console(): readonly ConsoleLine[];
   network(): readonly NetworkEntry[];
+  /**
+   * How many entries the bound above threw away. It is the same honesty `Ring.dropped` carries:
+   * any count taken from `network()` — the run's `refused` total included — is a floor once this
+   * is non-zero, and a scrape that blocked 5,000 images otherwise reports 200 with no hint.
+   */
+  networkDropped(): number;
 }

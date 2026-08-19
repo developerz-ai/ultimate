@@ -16,7 +16,14 @@ import type { ScrapeCookie } from './target';
 
 export interface SessionSnapshot {
   readonly cookies: readonly ScrapeCookie[];
-  /** Headers the HTTP leg must send to stay the same client — user-agent, language, site tokens. */
+  /**
+   * Headers the HTTP leg must send to stay the same client — user-agent, language, site tokens.
+   *
+   * Only an OFFLINE driver can fill it: CDP exposes no read for "the headers this site now
+   * expects", so the puppeteer driver answers `{}` and `driver-parity.test.ts` pins the
+   * divergence. A token the HTTP leg must carry belongs on the request (`http.request(url, {
+   * headers })`), not here — a fixture that proves otherwise proves it only offline.
+   */
   readonly headers: Readonly<Record<string, string>>;
   /** `localStorage`, flattened. Many sites keep the bearer token here and not in a cookie. */
   readonly storage: Readonly<Record<string, string>>;

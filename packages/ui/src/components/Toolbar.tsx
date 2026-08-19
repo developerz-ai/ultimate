@@ -1,6 +1,8 @@
 // The control strip above a table or a list: filters and search at the inline start, actions at
 // the inline end. `role="toolbar"` with the same roving-tabindex helper Tabs uses, so arrow keys
-// move between controls and the strip costs one Tab stop instead of a dozen.
+// move between the strip's buttons. It is NOT one tab stop: the strip holds arbitrary children it
+// cannot reach into to set an initial `tabindex`, and a search field at the inline start keeps its
+// own arrow keys, so making the strip a single stop would strand every control past it.
 
 import type { JSX } from 'solid-js';
 import { createRovingTabindex, focusableWithin } from '../a11y';
@@ -24,7 +26,9 @@ export function Toolbar(props: ToolbarProps): JSX.Element {
   const ui = useUi();
   let strip: HTMLDivElement | undefined;
 
-  // Arrows follow the writing direction; `focusableWithin` skips anything hidden or disabled.
+  // Arrows follow the writing direction; `focusableWithin` skips anything hidden or disabled, and
+  // `createRovingTabindex` declines outright while a control that answers arrows itself — the
+  // search Input this strip exists to hold — has focus.
   const onKeyDown = createRovingTabindex(
     () => (strip === undefined ? [] : focusableWithin(strip)),
     { orientation: 'horizontal', dir: ui.dir, loop: false },

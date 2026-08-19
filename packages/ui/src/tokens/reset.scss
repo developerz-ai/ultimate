@@ -127,6 +127,13 @@ table {
   color: t.role('fg-strong');
 }
 
+// Body scroll lock behind a modal surface (Dialog, Drawer). `:modal` matches only a <dialog>
+// opened with showModal(), so a non-modal one still lets the page scroll behind it. One CSS rule
+// rather than JS: a lock a script installs is a lock that leaks when the close path throws.
+html:has(dialog:modal) {
+  overflow: hidden;
+}
+
 // Global motion guard. Placed last so it wins over every component rule.
 @media (prefers-reduced-motion: reduce) {
   html {

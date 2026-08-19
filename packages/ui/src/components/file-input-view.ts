@@ -100,3 +100,28 @@ export function formatBytes(bytes: number, locale: string): string {
     maximumFractionDigits: index === 0 ? 0 : 1,
   }).format(value);
 }
+
+/** The one field of the `<input type="file">` a drop has to write. Structural, so a test needs no DOM. */
+export interface FileTarget {
+  files: FileList | null;
+}
+
+/**
+ * Hand a drop's files to the real `<input>`, so a dropped file behaves exactly like a picked one.
+ *
+ * Without this a `<Dropzone name="avatar" required>` inside a `<form>` shows the accepted file and
+ * then refuses to submit: `onSelect` fired, but `input.files` is still empty, so `required` blocks
+ * on "Please select a file" and a submit that got past it would post no file at all. Native form
+ * participation is what the `name`/`required` props promise. `files` is assignable from a
+ * `DataTransfer`'s own `FileList` in every current engine — that is the supported way to do this.
+ */
+export function adoptDroppedFiles(
+  input: FileTarget | undefined,
+  dropped: FileList | null | undefined,
+): void {
+  // An empty drop must not CLEAR a previous pick: the browser does not, and neither does this.
+  if (input === undefined || dropped === null || dropped === undefined || dropped.length === 0) {
+    return;
+  }
+  input.files = dropped;
+}

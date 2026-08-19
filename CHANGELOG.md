@@ -252,6 +252,56 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **SECURITY — the icon generator wrote network-fetched data into TypeScript source unescaped, so a
+  crafted glyph executed at import.** `build-icons.ts` emitted `${key}: '${value}'` where `value`
+  came from `icon-nodes.json` fetched over the network. `iconElements` validated tag names,
+  attribute *names* and the `fill` value — never the value of `d`, `points` or `cx`. A value that
+  closes the string, the object and the array element and reopens all three produces a glyph module
+  that runs arbitrary code **in every app that imports that icon**. **Proven exploitable**: the
+  regression test transpiles and evaluates the generated module, and the payload set a global before
+  the fix. `JSON.stringify` is the fix; a `SAFE_ATTR_VALUE` allowlist is defence in depth, added only
+  because it demonstrably refuses none of the 1767 committed glyphs. The sibling `icon-glyph.ts`
+  already stated the principle — *"data reaching an attribute sink unchecked is how `onload=` gets
+  into the DOM"* — and this was a **code** sink, which is worse.
+
+- **SECURITY — a scraped session's cookies were sent to hosts they do not belong to.** The match was
+  `host.endsWith(cookie.domain)`, with no dot boundary in either direction: a host-only cookie for
+  `bank.test` was sent to **`evilbank.test`** *and* to `sub.bank.test`. The CDP jar is every domain
+  the session ever touched, so an SSO hop's cookies rode along. Cookie scoping is now one function
+  implementing RFC 6265 §5.1.3 and §5.1.4 — domain **and** path, both boundaries — failing closed on
+  an unparseable URL, and a `secure` cookie no longer reaches an `http:` URL. Path scoping was a
+  third leak the audit had not named.
+
+- **SECURITY — two tenants shared one authenticated scrape session.** A declared `auth.key` replaced
+  the whole session key instead of discriminating within the tenant, so `orgOf(ctx)` was never
+  consulted and the value was never sanitised. `sessionKeyFor`'s third parameter is named
+  `discriminator` and had no caller anywhere — it does now.
+
+- **A disabled item made the rest of a `Menu` or `Tabs` unreachable by keyboard.** A disabled control
+  cannot take focus, so the roving reducer returned its index forever and arrow keys stopped dead. If
+  the disabled item was first, nothing in the group was tabbable at all. A `Toolbar` separately stole
+  arrow keys from a text field inside it — its own documented use — swallowing the caret move.
+
+- **`ToastRegion` was not a live region**, which is precisely the failure its own header says the
+  region/child split exists to prevent: each toast created a fresh live region with its content
+  already in it, which most screen readers do not announce.
+
+- **A file dropped on `Dropzone` never reached the form.** `onSelect` fired, `input.files` stayed
+  empty, and `required` blocked the submit — while `name`/`required` are props and native form
+  participation is the advertised contract.
+
+- **Seven more instances of the caught-value totality class**, in `@ultimat3/ai` and `@ultimat3/mcp`:
+  a tool result that could not be serialised took down the tool loop, a hostile provider rejection
+  escaped the gateway's retry classifier, and the MCP server's error renderer read four fields off a
+  value the framework did not build. A tool whose *output* is unserialisable now reports that the
+  tool **ran**, never that it failed — so the model does not re-buy the side effects.
+
+- Also: a refused scrape credential was walked back to the login form when `reuse: false`;
+  `robots: 'obey'` was unenforced on the offline HTTP leg every test exercises, so a `Disallow:`ed
+  endpoint replayed green and failed in production; a browser process leaked per failed attempt, and
+  the throws that caused it reached the job retry classifier as bare `Error`s with no code; and
+  restored `localStorage` was written on `about:blank` where it can never reach the site's origin.
+
 - **The outbox relay's claim locked nothing, so two relays could publish one batch and a job could
   run twice.** `SQL_OUTBOX_CLAIM` ends in `for update skip locked`, but the relay issues it on a
   **pooled** connection with no transaction — a bare statement runs in an implicit transaction that

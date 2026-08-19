@@ -74,8 +74,15 @@ browser's cookies, headers and proxy, the same `allowHosts`, the same robots gat
 limit, the same cancellation. `page.session()` exposes the handoff so an author can see what
 carried over.
 
+The jar is scoped per request, RFC 6265: a cookie stored for `bank.test` is sent to `bank.test`
+and to nothing else — not `evilbank.test`, not `sub.bank.test` — and only a domain-scoped
+`.bank.test` reaches subdomains. `SessionSnapshot.headers` is the one field the real driver cannot
+fill (CDP exposes no read for it, and `driver-parity.test.ts` pins that): a token the HTTP leg must
+carry goes on the request, `http.request(url, { headers })`.
+
 Both legs replay from **one** fixture directory (`fixtureBrowser(dir)`), so a hybrid run — browser
-login, session handoff, HTTP bulk fetch — is tested end to end.
+login, session handoff, HTTP bulk fetch — is tested end to end. Both legs apply the same robots
+gate, offline included.
 
 ## What it owns
 

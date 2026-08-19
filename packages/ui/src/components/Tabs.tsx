@@ -4,6 +4,7 @@
 import type { JSX } from 'solid-js';
 import { ariaBool, createRovingTabindex, useId } from '../a11y';
 import { cx } from '../cx';
+import { TAB_SELECTOR, tabStopIndex } from '../roving';
 import { useUi } from '../theme/context';
 import styles from './Tabs.module.scss';
 
@@ -31,11 +32,20 @@ export function Tabs(props: TabsProps): JSX.Element {
   const base = useId('tabs');
   let list: HTMLDivElement | undefined;
 
+  // A disabled tab is excluded from BOTH answers — the list arrows walk and the one tab that
+  // carries the tab stop — because `focus()` on a disabled button silently does nothing, so a
+  // disabled tab left in the list pins the reducer on its index and hides every tab after it.
   const onKeyDown = createRovingTabindex(
-    () =>
-      list === undefined ? [] : Array.from(list.querySelectorAll<HTMLElement>('[role="tab"]')),
+    () => (list === undefined ? [] : Array.from(list.querySelectorAll<HTMLElement>(TAB_SELECTOR))),
     { orientation: props.orientation ?? 'horizontal', dir: ui.dir },
   );
+  // The selected tab holds the tab stop; a selected tab that is disabled, or a `value` matching no
+  // tab at all, falls back to the first enabled one rather than leaving the tablist unreachable.
+  const tabStop = (): number =>
+    tabStopIndex(
+      props.items,
+      props.items.findIndex((item) => item.id === props.value),
+    );
 
   return (
     <div
@@ -55,7 +65,7 @@ export function Tabs(props: TabsProps): JSX.Element {
         aria-orientation={props.orientation ?? 'horizontal'}
         onKeyDown={onKeyDown}
       >
-        {props.items.map((item) => (
+        {props.items.map((item, index) => (
           <button
             type="button"
             role="tab"
@@ -63,7 +73,7 @@ export function Tabs(props: TabsProps): JSX.Element {
             class={styles['tab']}
             aria-selected={ariaBool(props.value === item.id)}
             aria-controls={`${base}-panel-${item.id}`}
-            tabindex={props.value === item.id ? 0 : -1}
+            tabindex={index === tabStop() ? 0 : -1}
             disabled={item.disabled === true}
             onClick={() => props.onChange(item.id)}
           >

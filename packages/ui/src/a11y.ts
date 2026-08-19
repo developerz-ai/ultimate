@@ -2,6 +2,7 @@
 // The decision logic is pure (and tested); only the thin shells touch the DOM.
 
 import type { Direction } from '@ultimat3/i18n';
+import { handlesOwnArrowKeys } from './roving';
 
 export const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -66,8 +67,14 @@ export interface FocusTrap {
 }
 
 /**
- * Cycles Tab within `root` and restores focus to the previously active element
- * on release — the behaviour Dialog and Drawer both need.
+ * Cycles Tab within `root`, moves focus into it on `activate`, and restores focus to the element
+ * that had it on `release` — what `Menu` and `Popover` need, because a panel unmounted with focus
+ * inside it resets focus to `<body>` and the next Tab restarts at the top of the document.
+ *
+ * The listener sits on `document`, not on `root`: a keydown while focus is OUTSIDE never reaches
+ * `root`, so a trap listening on its own root can never recapture focus that already left — the
+ * branch that pulls it back was unreachable by construction. Every branch still tests
+ * `root.contains`, so the trap only acts while it is the active one.
  */
 export function createFocusTrap(root: HTMLElement): FocusTrap {
   let previous: HTMLElement | null = null;
@@ -77,15 +84,17 @@ export function createFocusTrap(root: HTMLElement): FocusTrap {
     const items = focusableWithin(root);
     if (items.length === 0) {
       event.preventDefault();
+      root.focus();
       return;
     }
     const first = items[0] as HTMLElement;
     const last = items[items.length - 1] as HTMLElement;
     const active = document.activeElement;
-    if (event.shiftKey && (active === first || !root.contains(active))) {
+    const outside = !root.contains(active);
+    if (event.shiftKey && (outside || active === first)) {
       event.preventDefault();
       last.focus();
-    } else if (!event.shiftKey && active === last) {
+    } else if (!event.shiftKey && (outside || active === last)) {
       event.preventDefault();
       first.focus();
     }
@@ -94,11 +103,11 @@ export function createFocusTrap(root: HTMLElement): FocusTrap {
   return {
     activate() {
       previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      root.addEventListener('keydown', onKeyDown);
+      document.addEventListener('keydown', onKeyDown);
       (focusableWithin(root)[0] ?? root).focus();
     },
     release() {
-      root.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('keydown', onKeyDown);
       previous?.focus();
     },
   };
@@ -151,11 +160,19 @@ export function createRovingTabindex(
   return (event) => {
     const items = getItems();
     const active = document.activeElement;
+    // A control with its own arrow-key behaviour keeps it. A group cannot know whether the caret
+    // in the Input it contains was about to move, so it never guesses — it declines.
+    if (handlesOwnArrowKeys(active)) return;
     // Focus may sit on nothing, on `<body>`, or on a non-HTML element (an SVG child): none of
     // those are in `items`, and all of them mean "start from the first item".
     const current = active instanceof HTMLElement ? items.indexOf(active) : -1;
-    const next = nextRovingIndex(Math.max(current, 0), event.key, items.length, options);
-    if (next === current || next < 0) return;
+    const start = Math.max(current, 0);
+    const next = nextRovingIndex(start, event.key, items.length, options);
+    // Compared against `start`, the value the reducer was actually given — not the unclamped
+    // `current`. A key the reducer does not navigate answers its own input, so comparing against
+    // `-1` made every such key (Tab included) look like a move and steal focus out of whatever
+    // held it whenever the active element was not one of the group's items.
+    if (next === start || next < 0) return;
     event.preventDefault();
     for (const [index, item] of items.entries()) {
       item.tabIndex = index === next ? 0 : -1;

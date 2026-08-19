@@ -52,13 +52,7 @@ export function Field(props: FieldProps): JSX.Element {
   });
 
   return (
-    <div
-      class={cx(
-        styles['field'],
-        props.error === undefined ? undefined : styles['invalid'],
-        props.class,
-      )}
-    >
+    <div class={cx(styles['field'], props.class)}>
       <label class={styles['label']} for={id}>
         {props.label}
         {props.required === true ? (

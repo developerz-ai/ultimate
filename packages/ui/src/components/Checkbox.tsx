@@ -13,7 +13,7 @@ export interface CheckboxProps {
   name?: string | undefined;
   value?: string | undefined;
   checked?: boolean | undefined;
-  /** Tri-state for "some children selected". Mirrored to `aria-checked`. */
+  /** Tri-state for "some children selected". The ONLY thing mirrored to `aria-checked`. */
   indeterminate?: boolean | undefined;
   disabled?: boolean | undefined;
   required?: boolean | undefined;
@@ -36,7 +36,12 @@ export function Checkbox(props: CheckboxProps): JSX.Element {
         checked={props.checked === true}
         disabled={props.disabled === true}
         required={props.required === true}
-        aria-checked={props.indeterminate === true ? 'mixed' : ariaBool(props.checked === true)}
+        // Only "mixed" is set here. `indeterminate` is an IDL property with no attribute form, so
+        // ARIA is the sole server-side lever for it — whereas a plain checked/unchecked box already
+        // maps from the native `checked` state, and an `aria-checked` mirroring it would FREEZE the
+        // announced state: on the no-JS path a user ticks the box, the native state changes, the
+        // attribute does not, and ARIA wins in the accessibility tree.
+        aria-checked={props.indeterminate === true ? 'mixed' : undefined}
         aria-describedby={props['aria-describedby']}
         aria-invalid={ariaBool(props['aria-invalid'])}
         onChange={props.onChange}

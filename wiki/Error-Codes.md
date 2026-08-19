@@ -570,7 +570,7 @@ Two sets override the table, in `failures.ts`:
 | `X_TOKEN_UNKNOWN` | design token role does not exist | a typo, or a raw colour that was never a token | use a role from `@ultimat3/ui` tokens; see [Theming](Theming) |
 | `X_THEME_INVALID` | theme is not `light` or `dark` | a bad `data-theme` value | set `light` or `dark`, or clear the attribute to follow the OS |
 | `X_UI_RUNTIME_MISSING` | a host capability the component needs is absent | `IntersectionObserver` or `localStorage` unavailable | render the no-JS fallback path |
-| `X_UI_INVALID_VALUE` | a formatting component received an unrenderable value | `NaN` money, or an invalid date | fix the value upstream; formatting never guesses |
+| `X_UI_INVALID_VALUE` | `@ultimat3/ui` received a value it cannot use | `NaN` money or an invalid date reaching a formatting component; upstream icon data whose shape or attribute values the glyph generator refuses | fix the value upstream; formatting never guesses, and the icon generator never emits data it could not validate |
 
 ## CLI and verify
 

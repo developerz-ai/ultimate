@@ -58,7 +58,9 @@ export async function runScrape<I, Row>(
 ): Promise<ScrapeReport<Row>> {
   const clock = definition.clock ?? systemScrapeClock;
   const driver = definition.driver ?? scrapeDriver();
-  if (driver === undefined) throw driverUnknown(definition.name, []);
+  // The scrape's name goes in the SCRAPE slot: there is no driver here to name, which is the
+  // whole failure.
+  if (driver === undefined) throw driverUnknown(undefined, [], definition.name);
   const logger = scrapeLogger(args.ctx.logger, {
     scrape: definition.name,
     runId: args.runId,
@@ -77,9 +79,14 @@ export async function runScrape<I, Row>(
   const plan: AuthPlanInput<I> = {
     scrape: definition.name,
     auth: definition.auth,
-    key:
-      definition.auth?.key?.(args.input) ??
-      sessionKeyFor({ scrape: definition.name, tenant: orgOf(args.ctx) }),
+    // `auth.key` DISCRIMINATES inside the tenant's key space; it never replaces it. Letting it
+    // replace the key gave two tenants declaring the same account name one authenticated session,
+    // and skipped the sanitising `sessionKeyFor` does to a value that is also a storage path.
+    key: sessionKeyFor({
+      scrape: definition.name,
+      tenant: orgOf(args.ctx),
+      discriminator: definition.auth?.key?.(args.input),
+    }),
     clock,
     logger,
   };
@@ -134,12 +141,17 @@ export async function runScrape<I, Row>(
       history: definition.history,
     });
     const refused = session.page.network().filter((entry) => entry.refused !== undefined).length;
+    // The ring is bounded, so `refused` is a FLOOR and this is what says so. Reporting the count
+    // alone made a run that blocked 5,000 images print 200 and discarded the one number
+    // (`Ring.dropped`) that exists to say "you are not seeing it all".
+    const networkDropped = session.page.networkDropped();
     logger.info('scrape.ok', { rows: rows.length, refused });
     return {
       scrape: definition.name,
       rows,
       artifacts: artifact.saved.map((ref) => ref.key),
       refused,
+      networkDropped,
     };
   } catch (thrown) {
     logger.error('scrape.failed', { code: errorCode(thrown) });

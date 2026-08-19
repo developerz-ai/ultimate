@@ -6,12 +6,25 @@
 import { renderThrowable, UltimateError } from '@ultimat3/core';
 import { ScrapeError } from './errors';
 
-export const driverUnknown = (name: string, installed: readonly string[]): ScrapeError =>
+/**
+ * Two shapes of the same failure, one code. `name` is the driver a definition ASKED for; `scrape`
+ * is passed when there is no driver at all to name — and that is the reachable case, so the cause
+ * has to read as one. It said `no scrape driver named "orders.daily" is installed`, naming the
+ * scrape as a driver, which sends its reader hunting for a driver nobody ever declared.
+ */
+export const driverUnknown = (
+  name: string | undefined,
+  installed: readonly string[],
+  scrape?: string,
+): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_DRIVER_UNKNOWN',
-    cause: `no scrape driver named "${name}" is installed; installed: ${installed.join(', ') || 'none'}`,
+    cause:
+      scrape === undefined
+        ? `no scrape driver named "${name ?? 'none'}" is installed; installed: ${installed.join(', ') || 'none'}`
+        : `scrape "${scrape}" has no browser driver: nothing called setScrapeDriver() and the definition declares no driver:; installed: ${installed.join(', ') || 'none'}`,
     fix: 'call setScrapeDriver(localBrowser()) at boot, or pass driver: fakeBrowser() on the scrape() definition',
-    meta: { driver: name },
+    meta: { driver: name ?? 'none', ...(scrape === undefined ? {} : { scrape }) },
   });
 
 export const cdpAttachFailed = (cdpUrl: string, thrown: unknown): ScrapeError =>

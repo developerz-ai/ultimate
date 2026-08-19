@@ -83,9 +83,11 @@ export type {
   FileRejectionReason,
   FileSelection,
   FileSelectionLimits,
+  FileTarget,
 } from './components/file-input-view';
 export {
   acceptMatches,
+  adoptDroppedFiles,
   formatBytes,
   progressPercent,
   selectFiles,
@@ -178,6 +180,7 @@ export type { UiErrorCode } from './errors';
 export {
   invalidBrandTokenError,
   invalidGlyphError,
+  invalidIconDataError,
   invalidThemeError,
   invalidValueError,
   providerNeedsRuntimeError,
@@ -188,6 +191,13 @@ export {
 } from './errors';
 export type { UiKey } from './i18n-keys';
 export { UI_KEYS } from './i18n-keys';
+export type { ArrowKeyElement, RovingItem } from './roving';
+export {
+  handlesOwnArrowKeys,
+  MENU_ITEM_SELECTOR,
+  TAB_SELECTOR,
+  tabStopIndex,
+} from './roving';
 export type { Brand, BrandInput, FontSlot } from './theme/brand';
 export { brandStyleCspSource, brandStyleTag, defineTheme, FONT_SLOTS } from './theme/brand';
 export type { Direction, UiContextValue } from './theme/context';

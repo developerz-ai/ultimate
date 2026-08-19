@@ -3,9 +3,10 @@
 // icons, so an upstream fix is a version bump plus a re-run and never a hand edit.
 
 import { rm } from 'node:fs/promises';
+import { renderCauseValue } from '@ultimat3/core';
 import type { IconGlyph } from '../components/icon-glyph';
 import { iconElements } from '../components/icon-glyph';
-import { runtimeMissingError } from '../errors';
+import { invalidIconDataError, runtimeMissingError } from '../errors';
 
 /** Pinned: a floating version would silently redraw icons under an app that never asked. */
 export const LUCIDE_VERSION = '1.31.0';
@@ -29,9 +30,9 @@ export function parseIconNodes(text: string): ReadonlyMap<string, IconGlyph> {
   const parsed: unknown = JSON.parse(text);
   // `typeof [] === 'object'`, and an array of icons is a different upstream format, not this one.
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw runtimeMissingError(
-      'lucide icon-nodes.json as an object',
-      `check ${LUCIDE_ICON_NODES_URL} is reachable, then re-run: bun run --filter @ultimat3/ui icons`,
+    throw invalidIconDataError(
+      `parsed as ${renderCauseValue(parsed)}, not the object of name to nodes that icon-nodes.json publishes`,
+      `check ${LUCIDE_ICON_NODES_URL} still serves icon-nodes.json, then re-run: bun run --filter @ultimat3/ui icons`,
     );
   }
   const out = new Map<string, IconGlyph>();
@@ -41,6 +42,13 @@ export function parseIconNodes(text: string): ReadonlyMap<string, IconGlyph> {
   return out;
 }
 
+/**
+ * Glyph geometry, as characters: digits, the path-command letters, `currentColor`/`none`, and the
+ * separators between them. Deliberately not "anything that is not a quote" — an allowlist over a
+ * value bound for a code sink is the only shape that stays correct when the sink changes.
+ */
+export const SAFE_ATTR_VALUE = /^[\w\s.,+-]*$/;
+
 function toGlyph(name: string, value: unknown): IconGlyph {
   const glyph: (readonly [string, Readonly<Record<string, string>>])[] = [];
   for (const node of Array.isArray(value) ? (value as unknown[]) : []) {
@@ -48,7 +56,20 @@ function toGlyph(name: string, value: unknown): IconGlyph {
     const attrs: Record<string, string> = {};
     for (const [key, item] of Object.entries((node[1] ?? {}) as Record<string, unknown>)) {
       // Upstream keys an element for its diff tooling; it is not an SVG attribute.
-      if (key !== 'key') attrs[key] = String(item);
+      if (key === 'key') continue;
+      const text = String(item);
+      // Defence in depth behind `moduleSource`'s escaping: geometry is digits, path commands and
+      // separators, so anything else in a value that is about to be written into a TYPESCRIPT
+      // module is refused here rather than escaped and shipped. Measured against the whole
+      // committed set — all 1767 glyphs pass (`build-icons.test.ts` asserts it), so this rejects
+      // no legitimate Lucide artwork.
+      if (!SAFE_ATTR_VALUE.test(text)) {
+        throw invalidIconDataError(
+          `for the icon "${name}" carries ${renderCauseValue(text)} as "${key}", which is not glyph geometry`,
+          'bump LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts, then: bun run --filter @ultimat3/ui icons',
+        );
+      }
+      attrs[key] = text;
     }
     glyph.push([node[0], attrs]);
   }
@@ -56,17 +77,25 @@ function toGlyph(name: string, value: unknown): IconGlyph {
   // would throw in a page is a build failure here instead.
   iconElements(glyph);
   if (glyph.length === 0) {
-    throw runtimeMissingError(
-      `renderable node data for the lucide icon "${name}"`,
-      `bump LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts, then: bun run --filter @ultimat3/ui icons`,
+    throw invalidIconDataError(
+      `for the icon "${name}" carries no renderable node data`,
+      'bump LUCIDE_VERSION in packages/ui/src/icons/build-icons.ts, then: bun run --filter @ultimat3/ui icons',
     );
   }
   return glyph;
 }
 
+/**
+ * `JSON.stringify`, never `'${value}'`. The value is network-fetched data on its way into a
+ * TypeScript module that every app importing that icon will EXECUTE at import — a code sink, not
+ * an attribute sink. A raw quote in the value ends the string literal, and `');` after it starts
+ * a statement. `JSON.stringify` escapes quotes, backslashes and control characters, and Biome
+ * rewrites the quote style afterwards (`format()` below), so the committed output is unchanged.
+ * The key needs no escaping: `iconElements` has already refused every name off the allowlist.
+ */
 const attrsSource = (attrs: Readonly<Record<string, string>>): string =>
   Object.entries(attrs)
-    .map(([key, value]) => `${/^[a-z]+$/.test(key) ? key : `'${key}'`}: '${value}'`)
+    .map(([key, value]) => `${/^[a-z]+$/.test(key) ? key : `'${key}'`}: ${JSON.stringify(value)}`)
     .join(', ');
 
 /** One module's full text. Biome reformats it afterwards, so the layout here is only a seed. */

@@ -13,6 +13,7 @@
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { parse } from '@ultimat3/schema';
 import type { ScrapeClock } from './clock';
+import { cookieHeaderFor } from './cookie-scope';
 import { hostBlocked, httpFailed, scrapeTimeout } from './error-throws';
 import type { InterceptRules } from './intercept';
 import { interceptVerdict } from './intercept';
@@ -68,19 +69,6 @@ export interface HttpTransportInit {
   readonly fetch?: typeof fetch | undefined;
 }
 
-const cookieHeader = (session: SessionSnapshot, url: string): string | undefined => {
-  let host: string;
-  try {
-    host = new URL(url).hostname;
-  } catch {
-    return undefined;
-  }
-  const jar = session.cookies.filter(
-    (cookie) => host === cookie.domain.replace(/^\./, '') || host.endsWith(cookie.domain),
-  );
-  return jar.length === 0 ? undefined : jar.map((c) => `${c.name}=${c.value}`).join('; ');
-};
-
 const headerRecord = (headers: Headers): Record<string, string> => {
   const out: Record<string, string> = {};
   headers.forEach((value, key) => {
@@ -127,7 +115,7 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
       await init.robots?.assertAllowed(url);
       await init.pace?.(init.signal);
       const session = await init.session();
-      const cookies = cookieHeader(session, url);
+      const cookies = cookieHeaderFor(session.cookies, url);
       const timeoutMs = request.timeout ?? init.timeoutMs;
       // `AbortSignal.timeout` and NOT `clock.sleep`: this is a deadline handed to the platform's
       // own fetch, not a wait this package performs — and under a test clock a slept deadline

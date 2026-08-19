@@ -12,7 +12,7 @@ import { useUi } from '../theme/context';
 import { solid } from '../theme/solid-adapter';
 import styles from './Dropzone.module.scss';
 import type { FileSelection } from './file-input-view';
-import { progressPercent, selectFiles } from './file-input-view';
+import { adoptDroppedFiles, progressPercent, selectFiles } from './file-input-view';
 
 export interface DropzoneProps {
   /** Already-translated instruction. Required — it is the control's accessible name. */
@@ -45,6 +45,7 @@ export function Dropzone(props: DropzoneProps): JSX.Element {
   const rt = solid();
   const [over, setOver] = rt.createSignal(false);
   const fallbackId = useId('dropzone');
+  let input: HTMLInputElement | undefined;
   const inputId = (): string => props.id ?? fallbackId;
   const percent = (): number => progressPercent(props.progress ?? 0);
 
@@ -72,12 +73,19 @@ export function Dropzone(props: DropzoneProps): JSX.Element {
       onDrop={(event: DragEvent) => {
         event.preventDefault();
         setOver(false);
-        if (props.disabled !== true) offer(event.dataTransfer?.files);
+        if (props.disabled === true) return;
+        // The input first, then the callback: a drop that only reaches `onSelect` leaves the real
+        // control empty, and the form the label sits in submits nothing.
+        adoptDroppedFiles(input, event.dataTransfer?.files);
+        offer(event.dataTransfer?.files);
       }}
     >
       <span class={styles['label']}>{props.label}</span>
       {props.hint === undefined ? null : <span class={styles['hint']}>{props.hint}</span>}
       <input
+        ref={(el: HTMLInputElement) => {
+          input = el;
+        }}
         class={styles['input']}
         type="file"
         id={inputId()}

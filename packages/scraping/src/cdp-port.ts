@@ -15,6 +15,12 @@
 export interface CdpRequestLike {
   url(): string;
   resourceType(): string;
+  /**
+   * OPTIONAL, and read defensively: this is the shape of somebody else's event payload, so a
+   * launcher that predates the method (or a provider SDK that never had it) still satisfies the
+   * port and its requests are recorded as `GET` rather than crashing the interception handler.
+   */
+  method?(): string;
   abort(): Promise<void>;
   continue(): Promise<void>;
 }

@@ -29,10 +29,13 @@ export function interceptVerdict(
 }
 
 /** The ring entry a refusal earns. Refusals are RECORDED, never silent — a scrape that came back
- * empty is diagnosed from this list. */
+ * empty is diagnosed from this list, and a blocked POST reported as a GET sends its reader hunting
+ * for a request the page never made. `method` is last and optional because a driver that cannot
+ * read one (a parsed document's `<img src>` is a GET by construction) says so by omitting it. */
 export const refusalEntry = (
   url: string,
   resourceType: ResourceType,
   verdict: Exclude<InterceptVerdict, 'allow'>,
   at: number,
-): NetworkEntry => ({ method: 'GET', url, resourceType, at, refused: verdict });
+  method = 'GET',
+): NetworkEntry => ({ method, url, resourceType, at, refused: verdict });

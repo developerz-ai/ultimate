@@ -112,8 +112,16 @@ export interface ScrapeReport<Row> {
   readonly scrape: string;
   readonly rows: readonly Row[];
   readonly artifacts: readonly string[];
-  /** Requests interception refused, by reason. A zero-row run usually explains itself here. */
+  /**
+   * Requests interception refused, by reason. A zero-row run usually explains itself here — and it
+   * is a FLOOR, not a total, whenever `networkDropped` is non-zero.
+   */
   readonly refused: number;
+  /**
+   * Entries the bounded network ring dropped to stay bounded (`rings.ts`). Non-zero is the honest
+   * "you are not seeing it all": `refused` was counted from what survived the bound.
+   */
+  readonly networkDropped: number;
 }
 
 export function scrape<I, Row>(definition: ScrapeDefinition<I, Row>): JobHandle<I> {
