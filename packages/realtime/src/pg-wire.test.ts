@@ -5,11 +5,13 @@
 
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
+import { DEFAULT_REPLICATION_PUBLICATION } from './changefeed-env';
 import { ReplicationFailedError, ReplicationProtocolError } from './errors';
 import { ByteWriter } from './pg-bytes';
 import {
   copyDoneMessage,
   describeFields,
+  FIXES,
   frame,
   MessageReader,
   type PgStream,
@@ -322,6 +324,24 @@ describe('responseFields / describeFields / serverError', () => {
       expect(error.code).toBe('X_REPLICATION_FAILED');
       expect(error.fix).toBe(fix);
     }
+  });
+
+  /**
+   * `42704` said `x db replication init` until 2026-08-20 and `x db` has no such subcommand — a
+   * `fix:` that is a no-op, which is the failure axiom 4 exists to prevent. It shipped because the
+   * fix was read out of a TABLE (`fix: FIXES[code]`), and the `errors` step only ever read `fix:`
+   * literals; the table is scanned as of #97, so a seventh entry is checked the day it is written.
+   *
+   * What that gate still cannot check is whether the publication NAME is the one the feed looks
+   * for, because it is a copy: `pg-wire.ts` may not import `changefeed-env.ts` without closing a
+   * cycle, and a test may.
+   */
+  test('the 42704 fix names the publication the change feed actually defaults to', () => {
+    // The whole command, not the two halves separately: a fix naming the right publication in its
+    // explanatory tail and the WRONG one in the statement would satisfy both partial assertions.
+    const fix = FIXES['42704'] ?? '';
+    expect(fix).toInclude(`CREATE PUBLICATION ${DEFAULT_REPLICATION_PUBLICATION} FOR ALL TABLES`);
+    expect(fix).not.toInclude('x db replication');
   });
 
   test('serverError falls back to the generic x doctor db fix for an unknown SQLSTATE', () => {

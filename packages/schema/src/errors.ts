@@ -96,22 +96,24 @@ export class SchemaError extends Error {
   readonly meta: Readonly<Record<string, unknown>> | undefined;
 
   constructor(init: SchemaErrorInit) {
-    const title = TITLES[init.code] ?? humanize(init.code);
-    super(`${init.code}: ${title}`, { cause: init.cause });
-    this.code = init.code;
+    // Escaped HERE, once, exactly as `UltimateError`'s constructor does — read the reason there.
+    // A schema cause is the one most likely to carry a hostile string: it describes the value that
+    // failed validation, which is the request body.
+    const code = singleLine(init.code);
+    const title = singleLine(TITLES[init.code] ?? humanize(init.code));
+    super(`${code}: ${title}`, { cause: singleLine(init.cause) });
+    this.code = code;
     this.title = title;
-    this.fix = init.fix;
-    this.docs = init.docs ?? `https://ultimate.dev/errors/${init.code}`;
+    this.fix = singleLine(init.fix);
+    this.docs = singleLine(init.docs ?? `https://ultimate.dev/errors/${init.code}`);
     this.meta = init.meta;
   }
 
-  /** The same 3-line rendering as `UltimateError.format()`. */
+  /** The same 3-line rendering as `UltimateError.format()`, escaped in the same place: neither. */
   format(): string {
-    return [
-      `${singleLine(this.code)}: ${singleLine(this.title)}`,
-      `  cause: ${singleLine(this.cause)}`,
-      `  fix:   ${singleLine(this.fix)}`,
-    ].join('\n');
+    return [`${this.code}: ${this.title}`, `  cause: ${this.cause}`, `  fix:   ${this.fix}`].join(
+      '\n',
+    );
   }
 
   toJSON(): SchemaErrorJSON {

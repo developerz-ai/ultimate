@@ -8,7 +8,7 @@ is a change to every package.
 | Deps | none (`bun-types` only) |
 | Errors | subclass `UltimateError`; never `throw new Error` |
 | Values in a message | `renderCauseValue()` / `renderFixLiteral()`; never raw `JSON.stringify`, `String()` or `${…}` on an `unknown` |
-| Rendering the 3-line format | `singleLine()` on every interpolated field. A `string` renders fine and can still carry a newline, which writes a line an operator reads as a genuine message |
+| Rendering the 3-line format | nothing to remember — `UltimateError`'s CONSTRUCTOR escapes `code`, `title`, `cause`, `fix` and `docs` with `singleLine()`. Call it yourself only when you render a shape this class never built, e.g. a `Finding` |
 | A value a CALLER supplied | `describeValue()` — shape, never content. `renderCauseValue` is safe against throwing, not against leaking |
 | Reading a caught value | `renderThrowable()` / `isThrownError()` / `stringField()`; never `error.message`, `error instanceof Error` or `typeof error.code === 'string'` directly — the probe throws before the renderer runs |
 | New code | add to `CORE_CODE_TITLES` in `error-codes.ts`, else the title is auto-humanised |
@@ -39,11 +39,21 @@ const, then assigns it).
 there is nothing for it to object to — while a newline in one adds a line to a format that is
 line-oriented in the terminal, in CI logs and inside the dev overlay's `<pre>`. Three holes shipped
 in `@ultimat3/auth` under a green check, the worst reachable by an unauthenticated stranger with one
-crafted OIDC token (issue #97). It is applied at the SIX renderers of that format and never at the
-call sites — `UltimateError.format()` here, `SchemaError.format()` in `@ultimat3/schema`,
-`renderErrorLines` in `@ultimat3/http`, `renderFrameworkError` in `@ultimat3/mcp`, and
-`renderFinding` / `detailLines` in `@ultimat3/cli` — because a rule every author must remember is a
-rule the next author forgets. It is not a general sanitiser: a cause is prose and keeps its quotes,
+crafted OIDC token (issue #97).
+
+**It is applied in the CONSTRUCTOR, `As of 2026-08-20` — not at the renderers, which is where it
+went first and could not stay.** Escaping at each renderer was six call sites, and six is a number
+that only goes up: a seventh in this repo, and every renderer an APP writes, would each have had to
+remember. `format()` is also not the only reader — an uncaught throw prints `.message`, a log line
+takes `.cause`, `--json` takes `toJSON()` — so a per-renderer escape left three of four doors open.
+One constructor covers all of them, and `singleLine` is idempotent, so a call site that already
+escaped (`@ultimat3/auth` renders `claims.iss` at its source, quotes and all) is unharmed. `format()`
+therefore interpolates the fields bare: a second pass would be a second place that has to be right.
+The four renderers that still call it — `renderErrorLines` in `@ultimat3/http`,
+`renderFrameworkError` in `@ultimat3/mcp`, `renderFinding` / `detailLines` in `@ultimat3/cli` — take
+shapes this class never built (a `Finding`, a catalog entry), which is the one case left.
+
+It is not a general sanitiser: a cause is prose and keeps its quotes,
 its backslashes and its percent signs — only the control range is touched. Line breaks are the
 structural half; the rest of C0 and DEL ride along because a terminal reads a raw `\u001b` as an ANSI
 escape, so a cause could repaint the screen or hide the line above it. `@ultimat3/schema` carries a

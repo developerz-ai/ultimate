@@ -70,16 +70,27 @@ export class UltimateError extends Error {
 
   constructor(init: UltimateErrorInit) {
     const described = describeErrorCode(init.code);
+    // Every line-bearing field is escaped HERE, once, and never again downstream. A `cause` is a
+    // single line by contract, and a caller controls one often enough to matter: `claims.iss` off
+    // an unverified JWT, an IdP's `error_description`, a forwarded IP. One newline in any of them
+    // writes a second line an operator, a CI log or a `<pre>` reads as a genuine framework
+    // message. Escaping at each RENDERER was the first fix and it cannot hold — it is six call
+    // sites today, a seventh whenever someone writes one, and zero of the renderers an APP writes.
+    // Escaping at construction is the one place that covers all of them, and it is what #97 called
+    // the real answer. `singleLine` is idempotent, so a call site that already escaped is unharmed.
+    const code = singleLine(init.code);
+    const title = singleLine(described.title);
+    const cause = singleLine(init.cause);
     // `message` carries the cause because it is the ONLY field a runtime prints when an
     // error escapes uncaught — a worker log, a CI transcript, a stack trace. A message of
     // just `code: title` tells an operator which rule fired but not which row, column or
     // value, which is the opposite of "errors are instructions". `format()` still renders
     // the canonical 3 lines from the fields, so the two never disagree.
-    super(`${init.code}: ${described.title} — ${init.cause}`, { cause: init.cause });
-    this.code = init.code;
-    this.title = described.title;
-    this.fix = init.fix;
-    this.docs = init.docs ?? described.docs;
+    super(`${code}: ${title} — ${cause}`, { cause });
+    this.code = code;
+    this.title = title;
+    this.fix = singleLine(init.fix);
+    this.docs = singleLine(init.docs ?? described.docs);
     this.retry = init.retry ?? retryFor(init.code);
     this.meta = init.meta;
     this.sourceError = init.sourceError;
@@ -95,14 +106,12 @@ export class UltimateError extends Error {
    * ```
    */
   format(options?: FormatErrorOptions): string {
-    // `singleLine`, because this format is line-oriented and `cause` may hold a caller's string:
-    // one newline in it writes a second line an operator reads as a genuine framework message.
-    const lines = [
-      `${singleLine(this.code)}: ${singleLine(this.title)}`,
-      `  cause: ${singleLine(this.cause)}`,
-      `  fix:   ${singleLine(this.fix)}`,
-    ];
-    if (options?.docs === true) lines.push(`  docs:  ${singleLine(this.docs)}`);
+    // No `singleLine` here. The constructor already escaped all five fields, so a second pass
+    // would be a second place that has to be right — and the one that gets forgotten. This method
+    // is line-oriented and stays exactly 3 lines (4 with `docs`) because the fields cannot carry
+    // a line break, not because this joiner removes them.
+    const lines = [`${this.code}: ${this.title}`, `  cause: ${this.cause}`, `  fix:   ${this.fix}`];
+    if (options?.docs === true) lines.push(`  docs:  ${this.docs}`);
     return lines.join('\n');
   }
 

@@ -170,13 +170,28 @@ export const describeFields = (fields: Readonly<Record<string, string>>): string
     .filter((part): part is string => part !== undefined && part !== '')
     .join(' — ');
 
-/** SQLSTATEs worth their own fix line, because the operator's next command differs for each. */
-const FIXES: Readonly<Record<string, string>> = {
+/**
+ * SQLSTATEs worth their own fix line, because the operator's next command differs for each.
+ *
+ * Exported for `pg-wire.test.ts` alone, which pins the publication name in `42704` to
+ * `DEFAULT_REPLICATION_PUBLICATION` — a test may import `changefeed-env.ts`, and this module may
+ * not: `changefeed-env -> changefeed -> pg-replication -> pg-wire` is already a chain, so reading
+ * the constant here would close it into a cycle. Not re-exported from `index.ts`.
+ */
+export const FIXES: Readonly<Record<string, string>> = {
   '28P01': 'correct the password in the replication URL — the server refused the credentials',
   '28000': 'add a `host replication <user> <cidr> scram-sha-256` line to pg_hba.conf and reload',
   '42501': 'grant the role REPLICATION: ALTER ROLE <user> WITH REPLICATION',
   '55006': 'another replicator holds the slot — exactly one replicator per database, by design',
-  '42704': 'x db replication init — the publication or the slot does not exist yet',
+  // NOT `x db replication init`, which this line said until 2026-08-20 and which is not a command:
+  // `x db` takes gen, migrate, reset, seed, studio, branch and backfill. It shipped because a fix
+  // read out of a TABLE was invisible to the gate — `fix: FIXES[code]` holds no literal — which is
+  // the half of #97 that outlived the three log-injection holes. The publication is the operator's
+  // to create; the slot the replicator creates for itself on its next start.
+  '42704':
+    'psql "$REPLICATION_URL" -c "CREATE PUBLICATION x_changes FOR ALL TABLES"' +
+    "   # x_changes is the default name; use REPLICATION_PUBLICATION's value where it is set. " +
+    "The slot is the replicator's own and it creates one on its next start",
   '0A000': 'set wal_level = logical in postgresql.conf and restart the server',
 };
 

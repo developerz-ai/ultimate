@@ -261,3 +261,117 @@ describe('scanFixes · a helper resolved from another file', () => {
     expect(scanFixSites("invalidIconData('a');", 'a.ts', IMPORTED).unreadable).toBe(0);
   });
 });
+
+/**
+ * The fourth shape, and the one that let `@ultimat3/realtime`'s `x db replication init` ship: a
+ * `fix:` whose value IS a lookup holds no literal at its own depth, so `valueLiterals` answered
+ * `[]` and the site was dropped — silently, and without even reaching the `unreadable` counter that
+ * exists to make a blind spot visible. Six `@ultimat3/db` SQLSTATE fixes were hand-verified in a
+ * pin test for that reason, and nothing would have caught a seventh (#97).
+ */
+describe('scanFixes · a fix read out of a table', () => {
+  test('resolves a lookup one hop and reads every entry the table holds', () => {
+    const source =
+      "const FIXES: Readonly<Record<string, string>> = { a: 'x doctor --json', b: 'x verify --json' };\n" +
+      'export const e = (k: string) => new E({ code: X, fix: FIXES[k] });';
+    expect(fixes(source)).toEqual(['x doctor --json', 'x verify --json']);
+  });
+
+  test('a dotted lookup resolves the same table', () => {
+    const source =
+      "const FIXES = { pool: 'x db migrate --json' };\n" +
+      'const e = () => new E({ code: X, fix: FIXES.pool });';
+    expect(fixes(source)).toEqual(['x db migrate --json']);
+  });
+
+  test('an Object.freeze wrapper is still the table', () => {
+    const source =
+      "const FIXES = Object.freeze({ a: 'x doctor --json' });\n" +
+      'const e = (k: string) => new E({ code: X, fix: FIXES[k] });';
+    expect(fixes(source)).toEqual(['x doctor --json']);
+  });
+
+  // `driverError` in `@ultimat3/db` is exactly this: `FIXES[code].replace('{constraint}', fn)`.
+  // The argument to `.replace` is at depth 1, so it is not mistaken for the fix.
+  test('a call chained onto the lookup neither hides the table nor contributes its arguments', () => {
+    const source =
+      "const FIXES = { a: 'upsertAll(rows) over the columns {constraint} covers' };\n" +
+      "const e = (k: string) => new E({ code: X, fix: FIXES[k].replace('{constraint}', () => n) });";
+    expect(fixes(source)).toEqual(['upsertAll(rows) over the columns {constraint} covers']);
+  });
+
+  // Otherwise a table read at four call sites reports its entries four times, and one bad entry
+  // becomes four findings an agent has to recognise as one.
+  test('a table read at several call sites is read once', () => {
+    const source =
+      "const FIXES = { a: 'x doctor --json' };\n" +
+      'const one = () => new E({ code: X, fix: FIXES.a });\n' +
+      'const two = () => new E({ code: X, fix: FIXES.b });';
+    expect(fixes(source)).toEqual(['x doctor --json']);
+  });
+
+  // An entry written as a concatenation is one fix line per literal, exactly as a `fix:` key is:
+  // the rule is per line, and half a fix carrying a banned phrase is still handed to an agent.
+  test('a concatenated entry yields one site per literal', () => {
+    const source =
+      "const FIXES = { a: 'x db migrate' + '   # then re-run the statement' };\n" +
+      'const e = () => new E({ code: X, fix: FIXES.a });';
+    expect(fixes(source)).toEqual(['x db migrate', '   # then re-run the statement']);
+  });
+
+  test('a quoted key is skipped whole, so its quotes cannot shift the value', () => {
+    const source =
+      "const FIXES = { '23505': 'x db migrate --json' };\n" +
+      'const e = (k: string) => new E({ code: X, fix: FIXES[k] });';
+    expect(fixes(source)).toEqual(['x db migrate --json']);
+  });
+
+  // The honesty half. A constant this file does not declare is a table in another file — a hole
+  // the coverage line names rather than a site it drops. A parameter's property is neither: it is
+  // read wherever that parameter was filled, and counting it would describe re-passes, not holes.
+  test('a table constant that resolves to nothing is counted, and init.fix is not', () => {
+    expect(
+      scanFixSites('const e = (k: string) => new E({ code: X, fix: FAR_AWAY[k] });', 'a.ts'),
+    ).toEqual({ sites: [], unreadable: 1 });
+    expect(
+      scanFixSites('const e = (init: I) => new E({ code: X, fix: init.fix });', 'a.ts').unreadable,
+    ).toBe(0);
+  });
+});
+
+/**
+ * The three ways one-hop resolution could read a table the call site cannot reach. All three answer
+ * `unreadable` rather than a guess: a gate that judged fix lines from the wrong object would report
+ * findings nobody can act on, which is the failure mode `error-render.ts` calls the weakest joint.
+ */
+describe('scanFixes · a lookup this scan refuses to resolve', () => {
+  test('a name declared twice is not resolved, because nothing here tracks scope', () => {
+    const source =
+      "const FIXES = { a: 'x doctor --json' };\n" +
+      "function inner() { const FIXES = { a: 'check it' }; return new E({ code: X, fix: FIXES.a }); }";
+    expect(scanFixSites(source, 'a.ts')).toEqual({ sites: [], unreadable: 1 });
+  });
+
+  test('a factory call is not a table — its argument is the input, not the result', () => {
+    const source =
+      "const FIXES = makeTable({ a: 'check it' });\n" +
+      'const e = (k: string) => new E({ code: X, fix: FIXES[k] });';
+    expect(scanFixSites(source, 'a.ts')).toEqual({ sites: [], unreadable: 1 });
+  });
+
+  test('a let is not a table — the last assignment is what a call reads', () => {
+    const source =
+      "let FIXES = { a: 'x doctor --json' };\n" +
+      'const e = (k: string) => new E({ code: X, fix: FIXES[k] });';
+    expect(scanFixSites(source, 'a.ts')).toEqual({ sites: [], unreadable: 1 });
+  });
+
+  // `a: on ? 'x' : 'y'` carries TWO colons at the entry's own depth. Resuming at the first would
+  // read the else branch again and report one entry as two fix lines.
+  test('a conditional entry is one entry, read once', () => {
+    const source =
+      "const FIXES = { a: on ? 'x doctor --json' : 'x verify --json', b: 'x db migrate' };\n" +
+      'const e = (k: string) => new E({ code: X, fix: FIXES[k] });';
+    expect(fixes(source)).toEqual(['x doctor --json', 'x verify --json', 'x db migrate']);
+  });
+});

@@ -21,6 +21,13 @@
 // value that is `unknown` by inference rather than by annotation; and a renderer that is on the
 // allowlist by NAME but is not actually total. It is a floor, not a proof.
 //
+// It also cannot see a caller-controlled value already typed `string` — a `string` cannot throw
+// on render, so this check has nothing to object to, while a NEWLINE in one still writes a second
+// line an operator reads as a genuine framework message. That is no longer this gate's problem and
+// was never going to be: `UltimateError`'s and `SchemaError`'s constructors escape `code`, `title`,
+// `cause`, `fix` and `docs` (`As of 2026-08-20`, #97), so the property holds for every reader,
+// every renderer, and every app — none of which a scan over THIS repo's source could have covered.
+//
 // One more it cannot see, and this one is fixable elsewhere: a value interpolated AFTER a template
 // nested inside a `${…}` (`` `${keys.map((k) => `\`${k}\``)} ${value}` ``). `maskLiterals` reads the
 // inner backtick as the outer template's closing delimiter, so the mask this file reads is already
