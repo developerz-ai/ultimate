@@ -5,6 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { createContext, userActor } from '@ultimat3/core';
+import type { Actor as PolicyActor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -18,9 +19,11 @@ const Input = t.object({ amount: t.number });
 // The handler returns a `chargeId` the schema requires; the drift is the provider handing back
 // a fractional amount `t.number.int()` rejects — AFTER the money moved.
 const Output = t.object({ chargeId: t.string, amount: t.number.int() });
-const charger = createContext({
-  actor: { ...userActor({ id: 'u1' }), permissions: ['card:charge'] },
-});
+// `permissions` — direct grants, bypassing roles — is a field of POLICY's actor
+// (`CoreActor & PolicyActorFields`), which is what `can()` reads through `actorHas`. Core's
+// `Actor` has none and cannot: core is tier 0 and knows nothing about grants.
+const chargerActor: PolicyActor = { ...userActor({ id: 'u1' }), permissions: ['card:charge'] };
+const charger = createContext({ actor: chargerActor });
 
 /** Commits (increments `charges`) and then returns a value its own `output:` rejects. */
 function chargeCard() {

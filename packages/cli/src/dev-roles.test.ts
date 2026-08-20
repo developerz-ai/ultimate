@@ -7,7 +7,7 @@ import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { METRICS_PATH } from '@ultimat3/core';
 import type { OutboxRecord, OutboxStore } from '@ultimat3/jobs';
-import { task } from '@ultimat3/jobs';
+import { job, t, task } from '@ultimat3/jobs';
 import type { RunningRoles } from './dev-roles';
 import { DEV_ROLES, SELECTABLE_ROLES, selectRoles, startRoles } from './dev-roles';
 import { fixtureRuntime, resetDevRolesState } from './dev-roles-fixture';
@@ -81,11 +81,23 @@ describe('unit · x dev --role', () => {
   });
 
   test('worker and scheduler start without a web server, and drain the queue', async () => {
+    // `enqueue: () => [[handle, input]]`, not `job: { name, idempotencyKey }` — `TaskDefinition`
+    // has carried entries rather than a single job name since `task()` learned catch-up, and the
+    // handle has to be built OUTSIDE `enqueue`: that callback runs on every describe, and `job()`
+    // refuses a second registration under the same name. Same shape as `cmd-tasks.test.ts`.
+    const nightlyJob = job({
+      name: 'nightly-job',
+      input: t.object({}),
+      tenant: 'none' as const,
+      idempotencyKey: () => 'nightly',
+      retry: { attempts: 1 },
+      run: () => Promise.resolve(),
+    });
     task({
       name: 'nightly',
       cron: '0 3 * * *',
       tz: 'UTC',
-      job: { name: 'nightly-job', idempotencyKey: () => 'nightly' },
+      enqueue: () => [[nightlyJob, {}]],
     });
     running = await startRoles({
       roles: selectRoles('worker,scheduler'),
@@ -227,7 +239,8 @@ describe('unit · x dev --role', () => {
     await expect(
       startRoles({
         roles: selectRoles('web,sync'),
-        port: blocker.port - 1,
+        // `Server.port` is `number | undefined` — a unix-socket server has none. This one is TCP.
+        port: (blocker.port ?? expect.unreachable('the blocker opened no TCP port')) - 1,
         // Explicit, because `port` is not 0 here: the fixed 9090 would make this test fail on
         // whichever machine already runs a Prometheus, for a reason that is not the one under test.
         metricsPort: 0,

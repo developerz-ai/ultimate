@@ -30,6 +30,15 @@ const withGuards = async (
   }
 };
 
+/**
+ * The file's text. `GeneratedSourceFile.contents` admits raw bytes — `x new` emits a PNG icon —
+ * but `x g guard` writes TypeScript, so bytes reaching the app root written below are the failure.
+ */
+const textOf = (file: { readonly path: string; readonly contents: string | Uint8Array }): string =>
+  typeof file.contents === 'string'
+    ? file.contents
+    : expect.unreachable(`${file.path} is bytes, not text`);
+
 const codes = (findings: readonly { code: string }[]): readonly string[] =>
   findings.map((finding) => finding.code);
 
@@ -224,7 +233,7 @@ describe('unit · what x g guard writes is a guard the seam can actually run', (
   test('the scaffolded guard loads, runs, and passes on an app with no migrations', async () => {
     const files = guardFiles('migration-safety');
     const written = Object.fromEntries(
-      files.map((file) => [file.path.slice(`${GUARD_DIR}/`.length), file.contents]),
+      files.map((file) => [file.path.slice(`${GUARD_DIR}/`.length), textOf(file)]),
     );
     await withGuards(written, async (root) => {
       expect(await guardPaths(root)).toEqual(['guards/migration-safety.ts']);
@@ -235,7 +244,7 @@ describe('unit · what x g guard writes is a guard the seam can actually run', (
   test('and it catches the migration that passes every local gate', async () => {
     const files = guardFiles('migration-safety');
     const written = Object.fromEntries(
-      files.map((file) => [file.path.slice(`${GUARD_DIR}/`.length), file.contents]),
+      files.map((file) => [file.path.slice(`${GUARD_DIR}/`.length), textOf(file)]),
     );
     await withGuards(written, async (root) => {
       await Bun.write(
@@ -253,7 +262,7 @@ describe('unit · what x g guard writes is a guard the seam can actually run', (
   test('a commented-out statement is not one, and DEFAULT NULL is not a default', async () => {
     const files = guardFiles('migration-safety');
     const written = Object.fromEntries(
-      files.map((file) => [file.path.slice(`${GUARD_DIR}/`.length), file.contents]),
+      files.map((file) => [file.path.slice(`${GUARD_DIR}/`.length), textOf(file)]),
     );
     await withGuards(written, async (root) => {
       const migration = async (name: string, sql: string): Promise<void> => {

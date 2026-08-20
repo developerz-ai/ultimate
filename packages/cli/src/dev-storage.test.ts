@@ -59,7 +59,12 @@ async function call(routes: readonly Route[], init: CallInit = {}): Promise<Resp
   });
   ctx.params = { disk: init.disk ?? 'local', key };
   ctx.actor = init.actor ?? reader(['member'], 'org-1');
-  const request = new UltimateRequest(new Request(url, { headers: init.headers }), ctx);
+  // Spread conditionally, exactly as `requestHeaders` is four lines up: `RequestInit.headers` is
+  // optional, and under `exactOptionalPropertyTypes` an explicit `undefined` is not "no headers".
+  const request = new UltimateRequest(
+    new Request(url, init.headers === undefined ? {} : { headers: init.headers }),
+    ctx,
+  );
   return route.handler(request, ctx);
 }
 

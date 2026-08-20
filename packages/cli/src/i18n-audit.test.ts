@@ -246,6 +246,6 @@ describe('unit · seedCatalog, syncCatalog, serializeCatalog', () => {
     const dir = tempRoot('x-i18n-roundtrip-');
     const original = { 'app.feed.heading': '{org} feed', 'site.home.title': 'Home' };
     await Bun.write(join(dir, 'packages/i18n/catalogs/en.json'), serializeCatalog(original));
-    expect((await loadCatalogs(dir)).en).toEqual(original);
+    expect((await loadCatalogs(dir))['en']).toEqual(original);
   });
 });

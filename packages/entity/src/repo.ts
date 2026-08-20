@@ -19,7 +19,7 @@ import { compareByKind, matchesPredicate } from './memory-match';
 import { deletePlan, idPlan, readPlan, singleKeyOf, updatePlan } from './plan';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
 import { assertRowTenant } from './tenancy';
-import type { IdOf } from './types';
+import type { IdOf, RowPatch } from './types';
 
 export interface Tx {
   readonly id: string;
@@ -54,12 +54,26 @@ export interface UpsertArgs<T = unknown> extends RepoOptions {
   readonly onMatch?: 'update' | 'nothing';
 }
 
-export interface FindManyArgs extends RepoOptions {
+/**
+ * `findById`'s options: `RepoOptions`, plus the one knob a point READ has and a write must not.
+ *
+ * `includeDeleted` lives here and deliberately NOT on `RepoOptions`. It has always been honoured
+ * on this path — `idPlan` spreads the options straight into `FindManyArgs`, and both drivers read
+ * `args.includeDeleted === true` — but `RepoOptions` never declared it, so the only documented way
+ * to read a soft-deleted row by its id did not typecheck. Putting it on `RepoOptions` instead would
+ * have offered it to `update(id, patch)` and `delete(id)`, which reach the same `idPlan`: that is
+ * the resurrection those two carry `deleted_at is null` to refuse.
+ */
+export interface FindByIdOptions extends RepoOptions {
+  /** Soft-deleted rows are hidden unless the caller asks for them. */
+  readonly includeDeleted?: boolean;
+}
+
+export interface FindManyArgs extends FindByIdOptions {
   readonly where?: readonly Predicate[];
   readonly orderBy?: readonly SortKey[];
   readonly limit?: number;
   readonly cursor?: string | null;
-  readonly includeDeleted?: boolean;
   readonly select?: readonly string[];
 }
 
@@ -78,7 +92,7 @@ export interface Page<T> {
  * both `string`, so a row-agnostic consumer sees the signature it always saw.
  */
 export interface Repo<T = unknown> {
-  findById(id: IdOf<T>, options?: RepoOptions): Promise<T | null>;
+  findById(id: IdOf<T>, options?: FindByIdOptions): Promise<T | null>;
   findMany(args?: FindManyArgs): Promise<Page<T>>;
   insert(values: T, options?: RepoOptions): Promise<T>;
   /**
@@ -95,7 +109,7 @@ export interface Repo<T = unknown> {
    * which is what `returning *` says on the Postgres side.
    */
   upsertAll(rows: readonly T[], args: UpsertArgs<T>): Promise<readonly T[]>;
-  update(id: IdOf<T>, patch: Partial<T>, options?: RepoOptions): Promise<T>;
+  update(id: IdOf<T>, patch: RowPatch<T>, options?: RepoOptions): Promise<T>;
   delete(id: IdOf<T>, options?: RepoOptions): Promise<void>;
   /**
    * Delete by filter, returning how many rows went. The only way to remove a row from an entity
@@ -103,14 +117,14 @@ export interface Repo<T = unknown> {
    * to be able to tell "nothing matched" from "it worked", and an empty filter is
    * `X_WRITE_UNFILTERED` rather than every row.
    */
-  deleteWhere(filter: Partial<T>, options?: RepoOptions): Promise<number>;
+  deleteWhere(filter: RowPatch<T>, options?: RepoOptions): Promise<number>;
   /**
    * Update by filter, returning how many rows were written. The `update(id, patch)` a composite
    * primary key cannot express — `participants.lastReadAt` is the reference case. Same two guards
    * as `deleteWhere`, plus `X_PATCH_EMPTY` for a patch that names no columns, and soft-deleted
    * rows are not reachable, exactly as they are not by `update(id, patch)`.
    */
-  updateWhere(filter: Partial<T>, patch: Partial<T>, options?: RepoOptions): Promise<number>;
+  updateWhere(filter: RowPatch<T>, patch: RowPatch<T>, options?: RepoOptions): Promise<number>;
   count(args?: FindManyArgs): Promise<number>;
   /**
    * The grouped count: one statement, one entry per distinct value of `column`, over exactly the

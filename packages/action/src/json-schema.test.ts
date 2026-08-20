@@ -17,16 +17,21 @@ const unintrospectable = {
   '~standard': { version: 1, vendor: 'test', validate: () => ({ value: undefined }) },
 } as unknown as StandardSchemaV1;
 
+// Bracket access throughout, and NOT a narrowed result type: `JsonSchemaObject` is
+// `Record<string, unknown>` because the converter is a swappable `SchemaProvider` and a JSON
+// Schema's keyword set is open — a fixed interface here would describe one provider's output and
+// silently drop another's. `@ultimat3/mcp`'s narrow `JsonSchema` is tier 4 and unreachable from
+// tier 3 anyway.
 describe('jsonSchemaOf', () => {
   test('converts a real schema to a plain JSON-schema-shaped object', () => {
     const result = jsonSchemaOf(Schema);
 
-    expect(result.type).toBe('object');
-    expect(result.properties).toMatchObject({
+    expect(result['type']).toBe('object');
+    expect(result['properties']).toMatchObject({
       postId: { type: 'string', format: 'uuid' },
       title: { type: 'string' },
     });
-    expect(result.required).toEqual(['postId', 'title']);
+    expect(result['required']).toEqual(['postId', 'title']);
   });
 
   // `additionalProperties: true` was published for a schema the runtime rejects EVERYTHING from,
@@ -41,8 +46,8 @@ describe('mcpSchemaOf', () => {
   test('converts a real schema, draft-07, without a $schema key', () => {
     const result = mcpSchemaOf(Schema);
 
-    expect(result.$schema).toBeUndefined();
-    expect(result.type).toBe('object');
+    expect(result['$schema']).toBeUndefined();
+    expect(result['type']).toBe('object');
   });
 
   test('refuses, with the provider code, when the provider cannot introspect it', () => {
@@ -64,7 +69,10 @@ describe('sortSchema', () => {
     const sorted = sortSchema(schema);
 
     expect(Object.keys(sorted)).toEqual(['properties', 'type']);
-    expect(Object.keys(sorted.properties as Record<string, unknown>)).toEqual(['postId', 'title']);
+    expect(Object.keys(sorted['properties'] as Record<string, unknown>)).toEqual([
+      'postId',
+      'title',
+    ]);
   });
 
   test('drops undefined-valued keys, matching stableStringify', () => {

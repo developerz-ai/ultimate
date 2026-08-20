@@ -30,7 +30,10 @@ async function packagesWithErrorCodes(): Promise<readonly string[]> {
 describe('unit · the catalog list', () => {
   test('covers every workspace package that owns error codes', async () => {
     const expected = await packagesWithErrorCodes();
-    expect([...CATALOG_PACKAGES].sort()).toEqual([...expected]);
+    // Read into `string[]` first: `CATALOG_PACKAGES` is a readonly tuple of package-name literals,
+    // so the matcher would only accept that same literal union back — never a scanned list.
+    const declared: readonly string[] = [...CATALOG_PACKAGES].sort();
+    expect(declared).toEqual(expected);
   });
 
   test('never names a package twice — a duplicate import is a silent no-op', () => {

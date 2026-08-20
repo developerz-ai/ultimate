@@ -8,6 +8,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { createPostgresClient, type PostgresClient, raw, setDbClient } from '@ultimat3/db';
 import type { PlainDate } from '@ultimat3/time';
+import { plainDate } from '@ultimat3/time';
 import { money, text, timestamp, uuid } from './columns';
 import { date } from './columns-data';
 import { database } from './database';
@@ -93,7 +94,7 @@ describe.skipIf(!hasPostgres)('live · postgres · adopting an existing table', 
     expect(found?.githubLogin).toBe('ada');
     // The amount folds back out of two columns, with no scale key — that IS the absent column.
     expect(found?.balance).toEqual({ minor: 125_000, currency: 'EUR' });
-    expect(found?.openedOn).toBe('2026-03-14');
+    expect(found?.openedOn).toBe(plainDate('2026-03-14'));
     expect(found?.createdAt).toBeInstanceOf(Date);
   });
 
@@ -107,7 +108,7 @@ describe.skipIf(!hasPostgres)('live · postgres · adopting an existing table', 
     );
     const found = await db().accounts.where({ githubLogin: 'bruno' }).one();
     expect(found?.balance).toEqual({ minor: 4200, currency: 'USD' });
-    expect(found?.openedOn).toBe('2019-11-02');
+    expect(found?.openedOn).toBe(plainDate('2019-11-02'));
   });
 
   test('an update and a filtered write address the physical columns too', async () => {

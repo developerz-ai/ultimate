@@ -63,7 +63,7 @@ describe('the resolved foreign keys the map is built from', () => {
 describe('relationMap()', () => {
   test('covers every registered entity without being handed one', () => {
     expect(Object.keys(relationMap())).toEqual(['relation_map_authors', 'relation_map_books']);
-    expect(relationMap().relation_map_authors?.relation_map_books?.kind).toBe('hasMany');
+    expect(relationMap()['relation_map_authors']?.['relation_map_books']?.kind).toBe('hasMany');
   });
 
   test('answers a second read from the memo while the registry is unchanged', () => {
@@ -75,16 +75,16 @@ describe('relationMap()', () => {
     const reviews = entity('relation_map_reviews', {
       columns: { id: uuid().primaryKey(), bookId: uuid().references(() => books.id) },
     });
-    expect(before.relation_map_books?.relation_map_reviews).toBeUndefined();
+    expect(before['relation_map_books']?.['relation_map_reviews']).toBeUndefined();
     expect(relationMap()).not.toBe(before);
-    expect(relationMap()[books.$name]?.relation_map_reviews?.kind).toBe('hasMany');
-    expect(relationMap()[reviews.$name]?.book?.to).toBe('relation_map_books');
+    expect(relationMap()[books.$name]?.['relation_map_reviews']?.kind).toBe('hasMany');
+    expect(relationMap()[reviews.$name]?.['book']?.to).toBe('relation_map_books');
   });
 });
 
 describe('relationsFor() and relationNamed()', () => {
   test("reads one entity's own relations off the registry", () => {
-    expect(relationsFor(books.$name).author).toMatchObject({
+    expect(relationsFor(books.$name)['author']).toMatchObject({
       kind: 'belongsTo',
       from: 'relation_map_books',
       to: 'relation_map_authors',

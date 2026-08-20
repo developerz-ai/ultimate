@@ -6,6 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import { catalogKeys, loadCatalog } from '@ultimat3/i18n';
 import { generate } from './cmd-generate';
+import type { GeneratedFile, GeneratedJsonFile } from './templates';
 import { thrownBy } from './thrown-by';
 
 /**
@@ -17,6 +18,21 @@ const catalogOf = (contents: string | undefined): Record<string, string> => ({
   ...loadCatalog(JSON.parse(contents ?? '{}')),
 });
 const catalogKeysOf = (contents: string | undefined): string[] => catalogKeys(catalogOf(contents));
+
+/**
+ * The catalog for a locale, found by the DISCRIMINANT and not only by the path. `merge: 'json'` is
+ * what makes a catalog merge into the file already on disk instead of overwriting it, and it is
+ * also what types `contents` as a plain `string` — `GeneratedSourceFile.contents` admits raw bytes
+ * for `x new`'s PNG icon, so nothing that carries bytes can reach `JSON.parse` through here.
+ */
+const catalogFile = (
+  files: readonly GeneratedFile[],
+  locale: string,
+): GeneratedJsonFile | undefined =>
+  files.find(
+    (file): file is GeneratedJsonFile =>
+      file.merge === 'json' && file.path === `packages/i18n/catalogs/${locale}.json`,
+  );
 
 describe('unit · the catalogs x g writes', () => {
   test('a route ships an i18n catalog entry rather than a hardcoded string', () => {
@@ -32,8 +48,7 @@ describe('unit · the catalogs x g writes', () => {
     const paths = files.map((file) => file.path);
     expect(paths).toContain('apps/web/app/invoice/ui/invoice-card.tsx');
     expect(paths).toContain('apps/web/app/invoice/ui/invoice-form.tsx');
-    const catalog = files.find((file) => file.path === 'packages/i18n/catalogs/en.json');
-    expect(catalogKeysOf(catalog?.contents)).toContain('app.invoice.empty');
+    expect(catalogKeysOf(catalogFile(files, 'en')?.contents)).toContain('app.invoice.empty');
   });
 
   test('a resource takes every configured locale, merging the slice and its route into one file', () => {
@@ -47,8 +62,7 @@ describe('unit · the catalogs x g writes', () => {
       'packages/i18n/catalogs/es.json',
     ]);
     for (const locale of ['en', 'es']) {
-      const catalog = files.find((file) => file.path === `packages/i18n/catalogs/${locale}.json`);
-      const keys = catalogKeysOf(catalog?.contents);
+      const keys = catalogKeysOf(catalogFile(files, locale)?.contents);
       // The slice's own key (catalogSource) and the route's (routeFiles, for the /invoices page)
       // both survive the merge — this is the union, not whichever generator happened to run first.
       // Both live under `app`, so a shallow spread would keep exactly one of them.
@@ -74,8 +88,7 @@ describe('unit · the catalogs x g writes', () => {
     // renders ⟦key⟧ and fails the i18n gate the moment someone writes the override by hand.
     for (const admin of [false, true]) {
       const files = generate({ kind: 'resource', name: 'invoice', admin });
-      const catalog = files.find((file) => file.path === 'packages/i18n/catalogs/en.json');
-      expect(catalogOf(catalog?.contents)['admin.invoice.title']).toBe('Invoices');
+      expect(catalogOf(catalogFile(files, 'en')?.contents)['admin.invoice.title']).toBe('Invoices');
     }
     const withAdmin = generate({ kind: 'resource', name: 'invoice', admin: true });
     const override = withAdmin.find((file) => file.path.endsWith('admin/resource.ts'));

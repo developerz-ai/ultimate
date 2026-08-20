@@ -13,13 +13,16 @@ import {
   hasOrgPredicate,
   isOrgScoped,
   orgScoped,
-  type QueryPlan,
   scopedPlan,
   tenantColumnOf,
 } from './tenancy';
 
-/** The plan a request would have built, so a derivation can be read rather than inferred. */
-const asPlan = (build: () => QueryPlan): QueryPlan =>
+/**
+ * What a request would have done, so a derivation can be read rather than inferred. Generic over
+ * the result: `assertScoped` answers `void`, and pinning this to `QueryPlan` meant the one call
+ * that VERIFIES a plan rather than building one could not use the helper that installs the actor.
+ */
+const inRequest = <T>(build: () => T): T =>
   runWithContext(
     createContext({
       actor: userActor({ id: 'u-1', orgId: '11111111-1111-4111-8111-111111111111' }),
@@ -244,13 +247,13 @@ describe('the tenant a plan actually runs under', () => {
   });
 
   test('the derived predicate is in the plan, not applied after the rows are in', () => {
-    const plan = asPlan(() => scopedPlan('post', 'orgId', 'findMany', emptyPlan('post')));
+    const plan = inRequest(() => scopedPlan('post', 'orgId', 'findMany', emptyPlan('post')));
     expect(plan.where).toEqual([{ column: 'orgId', op: 'eq', value: ORG_A }]);
   });
 
   test('a caller-supplied org equal to the actor’s is a restatement, not a second predicate', () => {
     const named = orgScoped(emptyPlan('post'), ORG_A);
-    const plan = asPlan(() => scopedPlan('post', 'orgId', 'findMany', named));
+    const plan = inRequest(() => scopedPlan('post', 'orgId', 'findMany', named));
     expect(plan.where).toHaveLength(1);
   });
 
@@ -259,14 +262,14 @@ describe('the tenant a plan actually runs under', () => {
       ...emptyPlan('post'),
       where: [{ column: 'orgId', op: 'in' as const, value: [ORG_A, ORG_B] }],
     };
-    expect(() => asPlan(() => scopedPlan('post', 'orgId', 'findMany', both))).toThrow(
+    expect(() => inRequest(() => scopedPlan('post', 'orgId', 'findMany', both))).toThrow(
       /X_TENANCY_ACTOR_MISMATCH/,
     );
   });
 
   test('the mismatch names both tenants, so a reader can tell an attack from a typo', () => {
     const error = caught(() =>
-      asPlan(() => scopedPlan('post', 'orgId', 'findMany', orgScoped(emptyPlan('post'), ORG_B))),
+      inRequest(() => scopedPlan('post', 'orgId', 'findMany', orgScoped(emptyPlan('post'), ORG_B))),
     );
     expect(error).toBeUltimateError('X_TENANCY_ACTOR_MISMATCH');
     expect(String(error?.cause)).toContain(ORG_A);
@@ -286,7 +289,7 @@ describe('the tenant a plan actually runs under', () => {
     };
     for (const plan of [set, absent]) {
       const fix = String(
-        caught(() => asPlan(() => scopedPlan('post', 'orgId', 'find', plan)))?.fix,
+        caught(() => inRequest(() => scopedPlan('post', 'orgId', 'find', plan)))?.fix,
       );
       expect(fix).toContain("orgId: '<org>'");
       expect(fix).not.toContain('orgId: undefined');
@@ -298,7 +301,7 @@ describe('the tenant a plan actually runs under', () => {
     // `assertScoped` verifies a plan it did not build, so it is the one path that can refuse an
     // unscoped plan while an actor IS carrying a tenant — and it must not claim there was none.
     const withActor = caught(() =>
-      asPlan(() => {
+      inRequest(() => {
         assertScoped('post', 'orgId', 'findMany', emptyPlan('post'));
       }),
     );

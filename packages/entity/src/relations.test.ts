@@ -51,13 +51,20 @@ const likes = entity('relations_test_likes', {
   primaryKey: ['postId', 'memberId'],
 });
 
-/** A tree: the FK points at the entity that declares it. */
+/**
+ * A tree: the FK points at the entity that declares it. The primary key is hoisted because
+ * `.references(() => comments.id)` inside `comments`' own initializer makes its type circular —
+ * TS7022, and the whole entity silently becomes `any`. A column carries no binding of its own
+ * (`column.ts`'s header: where a column landed is recorded in a BINDING, keyed by the column
+ * object), so the hoisted const IS the entity's `id` and the foreign key resolves identically.
+ */
+const commentPk = uuid().primaryKey();
 const comments = entity('relations_test_comments', {
   columns: {
-    id: uuid().primaryKey(),
+    id: commentPk,
     postId: uuid().references(() => posts.id),
     parentId: uuid()
-      .references(() => comments.id)
+      .references(() => commentPk)
       .nullable(),
     body: text(),
   },
@@ -88,7 +95,7 @@ const caught = (run: () => unknown): unknown => {
 describe('relationsOf()', () => {
   test('reads a belongsTo off the entity that declared the foreign key', () => {
     const relations = relationsOf(ALL)[posts.$name] ?? {};
-    expect(relations.author).toEqual({
+    expect(relations['author']).toEqual({
       kind: 'belongsTo',
       name: 'author',
       from: 'relations_test_posts',
@@ -103,7 +110,7 @@ describe('relationsOf()', () => {
 
   test('reads a hasMany off the inbound foreign keys, keys the other way round', () => {
     const relations = relationsOf(ALL)[members.$name] ?? {};
-    expect(relations.relations_test_likes).toEqual({
+    expect(relations['relations_test_likes']).toEqual({
       kind: 'hasMany',
       name: 'relations_test_likes',
       from: 'relations_test_members',
@@ -125,21 +132,21 @@ describe('relationsOf()', () => {
       'relations_test_likes',
       'reviewer',
     ]);
-    expect(relations.reviewer?.nullable).toBe(true);
-    expect(relations.author?.nullable).toBe(false);
+    expect(relations['reviewer']?.nullable).toBe(true);
+    expect(relations['author']?.nullable).toBe(false);
   });
 
   test('gives a composite-key join table one belongsTo per foreign key and no id of its own', () => {
     const relations = relationsOf(ALL)[likes.$name] ?? {};
     expect(Object.keys(relations)).toEqual(['member', 'post']);
-    expect(relations.post?.localKey).toBe('postId');
-    expect(relations.post?.remoteKey).toBe('id');
-    expect(relations.member?.to).toBe('relations_test_members');
+    expect(relations['post']?.localKey).toBe('postId');
+    expect(relations['post']?.remoteKey).toBe('id');
+    expect(relations['member']?.to).toBe('relations_test_members');
   });
 
   test('resolves a self-reference to both sides of the same entity', () => {
     const relations = relationsOf(ALL)[comments.$name] ?? {};
-    expect(relations.parent).toMatchObject({
+    expect(relations['parent']).toMatchObject({
       kind: 'belongsTo',
       from: 'relations_test_comments',
       to: 'relations_test_comments',
@@ -147,7 +154,7 @@ describe('relationsOf()', () => {
       remoteKey: 'id',
       nullable: true,
     });
-    expect(relations.relations_test_comments).toMatchObject({
+    expect(relations['relations_test_comments']).toMatchObject({
       kind: 'hasMany',
       from: 'relations_test_comments',
       to: 'relations_test_comments',
@@ -158,7 +165,7 @@ describe('relationsOf()', () => {
 
   test('declares no relation for a money column: neither physical column is named', () => {
     const relations = relationsOf(ALL)[posts.$name] ?? {};
-    expect(relations.bounty).toBeUndefined();
+    expect(relations['bounty']).toBeUndefined();
     expect(Object.values(relationsOf(ALL)[orgs.$name] ?? {}).map((r) => r.remoteKey)).not.toContain(
       'bounty',
     );
@@ -167,8 +174,8 @@ describe('relationsOf()', () => {
   test('keeps a belongsTo whose target is outside the set, and no hasMany for it', () => {
     const map = relationsOf(entriesOf(posts));
     expect(Object.keys(map)).toEqual(['relations_test_posts']);
-    expect(map.relations_test_posts?.org?.to).toBe('relations_test_orgs');
-    expect(map.relations_test_posts?.relations_test_likes).toBeUndefined();
+    expect(map['relations_test_posts']?.['org']?.to).toBe('relations_test_orgs');
+    expect(map['relations_test_posts']?.['relations_test_likes']).toBeUndefined();
   });
 
   test('is keyed in sorted order and unaffected by the order it was handed', () => {
@@ -213,7 +220,7 @@ describe('relation names under collision', () => {
       'relations_collide_ticketsByAssignee',
       'relations_collide_ticketsByReporter',
     ]);
-    expect(relations.relations_collide_ticketsByAssignee?.remoteKey).toBe('assigneeId');
+    expect(relations['relations_collide_ticketsByAssignee']?.remoteKey).toBe('assigneeId');
   });
 
   test('the uncontested side keeps the short name', () => {
@@ -224,13 +231,17 @@ describe('relation names under collision', () => {
   test('a belongsTo and a hasMany contesting one name both fall back', () => {
     // Two entities pointing at each other: `shops` names carts by its own key, and carts name
     // shops back — so on `shops` a belongsTo and a hasMany both want `relations_collide_carts`.
+    // Both primary keys hoisted: the two entities reference each other, so inferring either
+    // type needs the other and both collapse to `any` (TS7022). Same fix as `comments` above.
+    const cartPk = uuid().primaryKey();
+    const shopPk = uuid().primaryKey();
     const carts = entity('relations_collide_carts', {
-      columns: { id: uuid().primaryKey(), shopId: uuid().references(() => shops.id) },
+      columns: { id: cartPk, shopId: uuid().references(() => shopPk) },
     });
     const shops = entity('relations_collide_shops', {
       columns: {
-        id: uuid().primaryKey(),
-        relations_collide_cartsId: uuid().references(() => carts.id),
+        id: shopPk,
+        relations_collide_cartsId: uuid().references(() => cartPk),
       },
     });
     const relations = relationsOf(entriesOf(carts, shops))[shops.$name] ?? {};
@@ -238,8 +249,8 @@ describe('relation names under collision', () => {
       'relations_collide_cartsByShop',
       'relations_collide_cartsId',
     ]);
-    expect(relations.relations_collide_cartsId?.kind).toBe('belongsTo');
-    expect(relations.relations_collide_cartsByShop?.kind).toBe('hasMany');
+    expect(relations['relations_collide_cartsId']?.kind).toBe('belongsTo');
+    expect(relations['relations_collide_cartsByShop']?.kind).toBe('hasMany');
     // The other side is uncontested and keeps the short name.
     expect(Object.keys(relationsOf(entriesOf(carts, shops))[carts.$name] ?? {})).toEqual([
       'relations_collide_shops',

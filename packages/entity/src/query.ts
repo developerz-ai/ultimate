@@ -15,7 +15,7 @@ import type { Relation } from './relations';
 import { relationNamed } from './relations';
 import type { Page, Repo, RepoOptions, UpsertArgs } from './repo';
 import type { Operator, Predicate, QueryPlan, SortDirection, SortKey } from './tenancy';
-import type { ColumnMap, IdOf, Insertable } from './types';
+import type { ColumnMap, IdOf, Insertable, RowPatch } from './types';
 
 /**
  * What a preloaded relation adds to a row. `unknown` because the name is a string resolved at
@@ -26,7 +26,7 @@ export type Preloaded<Name extends string> = { readonly [K in Name]: unknown };
 
 export interface ReadBuilder<Row> {
   /** Equality on the columns given. `where({ orgId })` is what satisfies the tenancy guard. */
-  where(filter: Partial<Row>): ReadBuilder<Row>;
+  where(filter: RowPatch<Row>): ReadBuilder<Row>;
   andWhere(column: keyof Row & string, op: Operator, value: unknown): ReadBuilder<Row>;
   orderBy(column: keyof Row & string, direction?: SortDirection): ReadBuilder<Row>;
   limit(rows: number): ReadBuilder<Row>;
@@ -106,21 +106,21 @@ export interface Table<Row, C extends ColumnMap = ColumnMap> extends ReadBuilder
    */
   upsertAll(rows: readonly Insertable<C>[], args: UpsertArgs<Row>): Promise<readonly Row[]>;
   /** `IdOf<Row>`: an entity that declared `uuid<PostId>()` is addressed by a `PostId` only. */
-  update(id: IdOf<Row>, patch: Partial<Row>, options?: RepoOptions): Promise<Row>;
+  update(id: IdOf<Row>, patch: RowPatch<Row>, options?: RepoOptions): Promise<Row>;
   delete(id: IdOf<Row>, options?: RepoOptions): Promise<void>;
   /**
    * Delete by equality filter; resolves with the number of rows removed. The only way to remove a
    * row from an entity whose primary key is composite — `likes`, `blocks`, a join table — where
    * one id cannot name it. `deleteWhere({})` is `X_WRITE_UNFILTERED`, never every row.
    */
-  deleteWhere(filter: Partial<Row>, options?: RepoOptions): Promise<number>;
+  deleteWhere(filter: RowPatch<Row>, options?: RepoOptions): Promise<number>;
   /**
    * Update by equality filter; resolves with the number of rows written. The `update(id, patch)`
    * a composite primary key cannot express — `participants.updateWhere({ conversationId, userId },
    * { lastReadAt })` is the reference case. Empty filter: `X_WRITE_UNFILTERED`. Empty patch:
    * `X_PATCH_EMPTY`. `onUpdateNow()` columns are stamped exactly as `update(id, patch)` stamps them.
    */
-  updateWhere(filter: Partial<Row>, patch: Partial<Row>, options?: RepoOptions): Promise<number>;
+  updateWhere(filter: RowPatch<Row>, patch: RowPatch<Row>, options?: RepoOptions): Promise<number>;
 }
 
 interface State {

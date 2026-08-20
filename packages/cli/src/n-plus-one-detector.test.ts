@@ -122,9 +122,10 @@ describe('detector · a real n1 loop over posts and their authors', () => {
 
     expect(ledger.repeats()).toHaveLength(1);
     const [loop] = ledger.repeats();
-    expect(loop?.fingerprint).toBe('n1cli_authors.findById');
-    expect(loop?.kind).toBe('read');
-    expect(loop?.count).toBe(N_PLUS_ONE_THRESHOLD);
+    if (loop === undefined) return expect.unreachable('the ledger recorded no repeat');
+    expect(loop.fingerprint).toBe('n1cli_authors.findById');
+    expect(loop.kind).toBe('read');
+    expect(loop.count).toBe(N_PLUS_ONE_THRESHOLD);
 
     const facts = loopFacts(loop);
     expect(facts.code).toBe('X_N_PLUS_ONE_QUERY');
@@ -184,7 +185,8 @@ describe('detector · a real n1 loop over posts and their authors', () => {
 
     expect(ledger.repeats()).toHaveLength(1);
     const [loop] = ledger.repeats();
-    expect(loop?.kind).toBe('write');
+    if (loop === undefined) return expect.unreachable('the ledger recorded no repeat');
+    expect(loop.kind).toBe('write');
 
     const facts = loopFacts(loop);
     expect(facts.code).toBe('X_N_PLUS_ONE_WRITE');

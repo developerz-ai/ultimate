@@ -15,7 +15,9 @@ interface Sent {
   readonly attribution?: StatementAttribution | undefined;
   readonly expected?: string | undefined;
   readonly error?: unknown;
-  readonly rows?: number | undefined;
+  // No `| undefined`: `StatementEvent.rows` is REQUIRED, and `...sent` is spread over a `rows: 1`
+  // default — an optional that admits an explicit `undefined` puts it back and breaks the default.
+  readonly rows?: number;
 }
 
 const statement = (text: string, sent: Sent = {}): StatementEvent => ({

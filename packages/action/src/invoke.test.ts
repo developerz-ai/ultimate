@@ -63,6 +63,12 @@ describe('the invocation core', () => {
       input: Input,
       output: Output,
       policy: can('post:publish'),
+      // @ts-expect-error `published` is `t.boolean`, so a handler answering 'yes' is refused at
+      // COMPILE time — that is the first gate, and it is why this line needs a directive at all.
+      // What the test asserts is the SECOND gate: `output:` re-validates whatever the handler
+      // actually returned, which is the only gate left when the action is reached through the
+      // erased `AnyAction` view (`invoke()` below takes one) and the output type is `unknown`.
+      // Delete the output validation and this goes red while the directive stays needed.
       handle: ({ input }) => ({ id: input.postId, published: 'yes' }),
     }).named('publishPost');
 

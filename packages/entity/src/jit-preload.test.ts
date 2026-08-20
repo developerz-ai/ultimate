@@ -294,7 +294,15 @@ describe('the scope a preloaded row may be served to', () => {
     await inRequest(async () => {
       await postRepo().findMany({ orgId: ORG });
       await userRepo().findById(idAt(20), { orgId: ORG });
-      await postRepo().insert({ id: idAt(13), orgId: ORG, authorId: idAt(20), title: 'P-13' });
+      // A complete row: `Repo.insert` is the DRIVER seam and takes a parsed row — `Table.insert`
+      // is the surface that takes an `Insertable` and fills a nullable column through `$parse`.
+      await postRepo().insert({
+        id: idAt(13),
+        orgId: ORG,
+        authorId: idAt(20),
+        reviewerId: null,
+        title: 'P-13',
+      });
       await userRepo().findById(idAt(21), { orgId: ORG });
     });
 

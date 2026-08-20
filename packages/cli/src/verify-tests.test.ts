@@ -32,7 +32,7 @@ const calls: Call[] = [];
 
 const runner = async (command: readonly string[], options?: ExecOptions): Promise<ExecResult> => {
   calls.push({ command, worker: options?.env?.['ULTIMATE_TEST_WORKER'] });
-  return { ok: true, code: 0, stdout: '', stderr: '', durationMs: 1 };
+  return { command, ok: true, code: 0, stdout: '', stderr: '', durationMs: 1 };
 };
 
 const ctx = (workers: number): VerifyContext => ({ root, runner, workers });

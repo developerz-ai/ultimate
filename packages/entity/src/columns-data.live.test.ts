@@ -15,6 +15,7 @@ import {
 } from '@ultimat3/db';
 import { t } from '@ultimat3/schema';
 import type { PlainDate } from '@ultimat3/time';
+import { plainDate } from '@ultimat3/time';
 import { text, uuid } from './columns';
 import { arrayOf, bigint, bytes, date, decimal, json } from './columns-data';
 import { database } from './database';
@@ -103,7 +104,7 @@ describe.skipIf(!hasPostgres)('live · postgres · the wide column vocabulary', 
     // The decimal keeps every digit AND the trailing zeroes the column's scale defines.
     expect(stored?.rate).toBe('1.23456789');
     // The date is a date: no time, no zone, and the same string the row was written with.
-    expect(stored?.effectiveOn).toBe('2026-03-14');
+    expect(stored?.effectiveOn).toBe(plainDate('2026-03-14'));
     // Past 2^53, exactly — a `number` here would read back 9007199254740992.
     expect(stored?.externalId).toBe('9007199254740993');
     expect(stored?.settings).toEqual({ plan: 'team', seats: 12 });

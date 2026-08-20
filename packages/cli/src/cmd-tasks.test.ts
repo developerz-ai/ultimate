@@ -168,7 +168,10 @@ describe('unit · x tasks list', () => {
     registerNightlyPing();
     const root = appRoot();
     const viaList = await tasksCommand.run(contextFor(root, { subcommand: 'list' }));
-    const viaUndefined = await tasksCommand.run(contextFor(root, { subcommand: undefined }));
+    // `contextFor(root)` — the option ABSENT. `RunOptions.subcommand` is optional, so under
+    // `exactOptionalPropertyTypes` an explicit `undefined` is a different statement; `contextFor`
+    // reads `options.subcommand` with no default, so both produce the same `args.subcommand`.
+    const viaUndefined = await tasksCommand.run(contextFor(root));
     expect(viaUndefined.summary).toBe(viaList.summary);
   });
 });

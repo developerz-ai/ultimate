@@ -16,6 +16,16 @@ const parses = (file: GeneratedFile): boolean => {
   return true;
 };
 
+/**
+ * The file's text. `GeneratedSourceFile.contents` admits raw bytes because `x new` emits a PNG
+ * icon, but no `x g <kind>` generator does — so bytes reaching a reader here are the failure, not
+ * a case to default to `''`. Skipping them silently is how a placeholder inside one goes unread.
+ */
+const textOf = (file: GeneratedFile): string =>
+  typeof file.contents === 'string'
+    ? file.contents
+    : expect.unreachable(`${file.path} is bytes, not text`);
+
 const typescript = (files: readonly GeneratedFile[]): readonly GeneratedFile[] =>
   files.filter((file) => file.path.endsWith('.ts') || file.path.endsWith('.tsx'));
 
@@ -43,7 +53,7 @@ describe('unit · what x g emits', () => {
   test('no generated file contains a TODO placeholder', () => {
     for (const kind of GENERATORS) {
       for (const file of generate({ kind, name: 'invoice', feature: 'invoice' })) {
-        expect(file.contents.includes('TODO')).toBe(false);
+        expect(textOf(file).includes('TODO')).toBe(false);
       }
     }
   });
@@ -73,19 +83,21 @@ describe('unit · what x g emits', () => {
   test('generated tests drive the fluent surface, never a projection function', () => {
     const files = generate({ kind: 'action', name: 'publish-invoice', feature: 'invoice' });
     const testFile = files.find((file) => file.path.endsWith('publish-invoice.contract.test.ts'));
-    expect(testFile?.contents).toContain('.contract()');
+    if (testFile === undefined) return expect.unreachable('x g action emitted no contract test');
+    const source = textOf(testFile);
+    expect(source).toContain('.contract()');
     // One authz object across surfaces — the claim the whole DSL rests on.
-    expect(testFile?.contents).toContain('.tool().policy');
-    expect(testFile?.contents).toContain('.openapi().operationId');
+    expect(source).toContain('.tool().policy');
+    expect(source).toContain('.openapi().operationId');
     for (const reached of ['toMcpTool(', 'toOpenApiOperation(', 'contractTestsFor(']) {
-      expect(testFile?.contents.includes(reached)).toBe(false);
+      expect(source.includes(reached)).toBe(false);
     }
   });
 
   test('a primitive imports t from its own package, never from @ultimat3/schema', () => {
     for (const kind of GENERATORS) {
       for (const file of typescript(generate({ kind, name: 'invoice', feature: 'invoice' }))) {
-        expect(file.contents.includes("from '@ultimat3/schema'")).toBe(false);
+        expect(textOf(file).includes("from '@ultimat3/schema'")).toBe(false);
       }
     }
   });
@@ -93,7 +105,7 @@ describe('unit · what x g emits', () => {
   test('no generated file reaches through .def — the declaration is not app surface', () => {
     for (const kind of GENERATORS) {
       for (const file of typescript(generate({ kind, name: 'invoice', feature: 'invoice' }))) {
-        expect(/\.def\b/.test(file.contents)).toBe(false);
+        expect(/\.def\b/.test(textOf(file))).toBe(false);
       }
     }
   });
@@ -161,7 +173,7 @@ describe('unit · what x g emits', () => {
   test('no generated stylesheet contains a raw colour', () => {
     const files = generate({ kind: 'resource', name: 'invoice' });
     for (const file of files.filter((entry) => entry.path.endsWith('.scss'))) {
-      expect(/#[0-9a-fA-F]{3,8}\b/.test(file.contents)).toBe(false);
+      expect(/#[0-9a-fA-F]{3,8}\b/.test(textOf(file))).toBe(false);
     }
   });
 
