@@ -47,7 +47,7 @@ afterAll(async () => {
   resetJobDriver();
   clearRoutes();
   clearRegistry();
-  await driver.close();
+  await driver.close?.();
 });
 
 describe('routes()', () => {

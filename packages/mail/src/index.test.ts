@@ -4,7 +4,7 @@
 // the only assertion that catches that, which is why this file exists.
 
 import { describe, expect, test } from 'bun:test';
-import { t as schemaT } from '@ultimat3/schema';
+import { parse, t as schemaT } from '@ultimat3/schema';
 import { blocks, defineMail, t } from './index';
 
 describe('@ultimat3/mail public surface', () => {
@@ -22,10 +22,13 @@ describe('@ultimat3/mail public surface', () => {
       template: ({ data }) => [blocks.heading('mail.receipt.heading', { name: data.name })],
     });
 
-    expect(receipt.input?.parse({ name: 'Ada', url: 'https://example.com' })).toEqual({
+    // `input` is typed as the vendor-agnostic `StandardSchemaV1` — that is the swap point that
+    // lets a mail carry an ArkType or Zod schema — so it is read through schema's `parse()`,
+    // never through the `.parse()` method only Ultimate's own builder happens to expose.
+    expect(parse(receipt.input, { name: 'Ada', url: 'https://example.com' })).toEqual({
       name: 'Ada',
       url: 'https://example.com',
     });
-    expect(() => receipt.input?.parse({ name: 'Ada', url: 'not-a-url' })).toThrow();
+    expect(() => parse(receipt.input, { name: 'Ada', url: 'not-a-url' })).toThrow();
   });
 });

@@ -40,7 +40,10 @@ const EMAIL = 'ADA@Example.test';
 const NORMALISED_EMAIL = 'ada@example.test';
 const PASSWORD = 'correct-horse-battery-staple-42';
 
-const newAuth = (adapter = new MemoryAdapter(), startMs = 1_700_000_000_000): Auth =>
+// `adapter: AuthAdapter`, annotated rather than inferred from the default: without it the
+// parameter reads as the concrete `MemoryAdapter`, and no helper that takes an adapter — the
+// `withUserGone` proxy above, any app's real adapter — can be handed to it.
+const newAuth = (adapter: AuthAdapter = new MemoryAdapter(), startMs = 1_700_000_000_000): Auth =>
   defineAuth({
     adapter,
     clock: frozenClock(startMs),

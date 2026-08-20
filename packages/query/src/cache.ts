@@ -48,11 +48,18 @@ export type QueryCacheScope = 'actor' | 'tenant' | 'global';
 
 /**
  * "This actor is inside no org", in all three spellings it arrives in. The parameter is widened
- * past core's `Actor.orgId` (`string | undefined`) on purpose: `@ultimat3/policy`'s
- * `PolicyActorFields` declares `string | null | undefined` and its `testActor` mints `orgId: null`,
- * so a `null` does reach here — and it used to miss the `undefined`/`''` test below, which handed
- * every org-less caller the single shared key `["org",null]` and served each one the rows of
- * whoever asked first. `actorAuthority` already wrote `?? null` for the same reason.
+ * past core's `Actor.orgId` (`string | undefined`) because `orgId` is a value off the wire, not a
+ * value this process minted: an app's own adapter, a decoded session row or a JSON payload can put
+ * a `null` here, and it used to miss the `undefined`/`''` test below — which handed every org-less
+ * caller the single shared key `["org",null]` and served each one the rows of whoever asked first.
+ * `actorAuthority` already wrote `?? null` for the same reason.
+ *
+ * `@ultimat3/policy`'s `PolicyActorFields` is NOT the justification, though it reads like one:
+ * `Actor = CoreActor & PolicyActorFields`, and that intersection collapses its
+ * `string | null | undefined` back to core's `string | undefined`, so the widening is inert at the
+ * type level. Its `testActor` mints `orgId: null` through the one cast left in that file, which is
+ * why `cache-authority.test.ts` can exercise this branch at all — a test producer, not a proof
+ * that the declared type permits one.
  */
 const orgless = (orgId: string | null | undefined): boolean =>
   orgId === undefined || orgId === null || orgId === '';

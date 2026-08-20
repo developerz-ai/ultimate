@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { UI_ERROR_CODES, UiError } from '../errors';
+import type { ImageLoadingHints } from './image-source';
 import { assertNonEmptySrc, boxFor, loadingHints, srcsetFor } from './image-source';
 
 /**
@@ -116,7 +117,9 @@ describe('loadingHints', () => {
   });
 
   test('everything else defers: lazy, auto, async', () => {
-    const lazy = { loading: 'lazy', fetchpriority: 'auto', decoding: 'async' };
+    // Annotated, not inferred: a bare literal widens to `string` and would still `toEqual`
+    // a hint object whose union members had drifted.
+    const lazy: ImageLoadingHints = { loading: 'lazy', fetchpriority: 'auto', decoding: 'async' };
     expect(loadingHints(false)).toEqual(lazy);
     expect(loadingHints(undefined)).toEqual(lazy);
   });

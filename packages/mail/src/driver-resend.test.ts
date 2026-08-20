@@ -5,7 +5,7 @@
 import { expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import type { MailMessage } from './driver';
-import { createResendDriver, RESEND_BASE_URL } from './driver-resend';
+import { createResendDriver, type MailFetch, RESEND_BASE_URL } from './driver-resend';
 import { mailIdempotencyKey } from './idempotency';
 
 const API_KEY = 'resend_sk_test_do_not_leak_9f8e7d6c5b4a';
@@ -68,13 +68,13 @@ interface Seen {
  * body is single-use, so handing the same instance to a second send would have the driver read an
  * already-consumed body and fall back to a local id — passing the test for the wrong reason.
  */
-function fetchStub(response: Response): { fetch: typeof globalThis.fetch; seen: Seen } {
+function fetchStub(response: Response): { fetch: MailFetch; seen: Seen } {
   const seen: Seen = { url: '', method: '', headers: new Headers(), body: {} };
-  const impl: typeof globalThis.fetch = async (input, init) => {
-    seen.url = String(input);
-    seen.method = init?.method ?? '';
-    seen.headers = new Headers(init?.headers);
-    seen.body = init?.body === undefined ? {} : JSON.parse(String(init.body));
+  const impl: MailFetch = async (input, init) => {
+    seen.url = input;
+    seen.method = init.method ?? '';
+    seen.headers = new Headers(init.headers);
+    seen.body = init.body === undefined || init.body === null ? {} : JSON.parse(String(init.body));
     return response.clone();
   };
   return { fetch: impl, seen };
@@ -238,7 +238,7 @@ test("the provider's message reaches the cause and the API key never leaks", asy
 });
 
 test('a fetch that rejects (DNS/TLS/reset) is retryable with no status', async () => {
-  const failingFetch: typeof globalThis.fetch = async () => {
+  const failingFetch: MailFetch = async () => {
     throw new TypeError('fetch failed: getaddrinfo ENOTFOUND api.resend.com');
   };
   const driver = createResendDriver({ apiKey: API_KEY, from: FROM, fetch: failingFetch });

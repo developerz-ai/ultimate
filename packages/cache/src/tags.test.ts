@@ -4,6 +4,7 @@
 
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { CacheTagUnknownError } from './errors';
+import type { CacheTag, TagFactory } from './tags';
 import {
   assertKnownTags,
   declareTags,
@@ -41,9 +42,17 @@ describe('tag()', () => {
   });
 
   test('property access is equivalent to calling tag() with no id', () => {
-    expect(tag.post).toEqual(tag('post'));
-    // Arbitrary keys must work: the Proxy has no fixed member list to fall back on.
-    expect((tag as Record<string, unknown>).feed).toEqual({ entity: 'feed' });
+    // Nothing augments `CacheTagRegistry` in this repo, so the property form has NO typed members
+    // here — that refusal is the feature (`tag.pots` is a build error in an app that declared
+    // `post`). `appTag` is the view an app gets after augmenting, and reading `feed` through it
+    // pins the other half: the Proxy has no fixed member list to fall back on, so a key the
+    // registry adds later needs no runtime codegen.
+    const appTag = tag as TagFactory & {
+      readonly post: CacheTag<'post'>;
+      readonly feed: CacheTag<'feed'>;
+    };
+    expect(appTag.post).toEqual(tag('post'));
+    expect(appTag.feed).toEqual({ entity: 'feed' });
   });
 });
 

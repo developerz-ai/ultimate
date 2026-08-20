@@ -75,9 +75,9 @@ beforeAll(() => {
       live: true,
       cache: { tags: [tag('feed')] },
       sql: ({ limit }) =>
-        from<{ id: string }>('sources_test_posts', () => [])
-          .orderBy('id')
-          .limit(limit),
+        // A `RowProvider` is rows or an ASYNC provider; this read is only ever described,
+        // never executed, so the rows are the empty literal rather than a sync thunk.
+        from<{ id: string }>('sources_test_posts', []).orderBy('id').limit(limit),
     }),
   );
 

@@ -3,10 +3,10 @@
 // authenticated caller could hold 120 cross-tenant aggregates in flight, then 2/s, forever.
 
 import { describe, expect, test } from 'bun:test';
-import type { Actor } from '@ultimat3/core';
 import { userActor } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
 import { createServer, defineHttpConfig, toBucket } from '@ultimat3/http';
+import type { Actor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { toQueryRoute } from './http';

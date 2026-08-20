@@ -55,7 +55,7 @@ describe('a cell nobody answered for is deny, never blank', () => {
   test('the whole matrix is rectangular: one cell per actor on every row', async () => {
     const panel = await data();
     for (const row of panel.matrix) {
-      expect(Object.keys(row.byActor)).toEqual(panel.actors);
+      expect(Object.keys(row.byActor)).toEqual([...panel.actors]);
       expect(Object.values(row.byActor).every((cell) => typeof cell === 'boolean')).toBe(true);
     }
   });

@@ -15,6 +15,15 @@ function codeOf(run: () => unknown): string | undefined {
   }
 }
 
+function fixOf(run: () => unknown): string | undefined {
+  try {
+    run();
+    return undefined;
+  } catch (error) {
+    return (error as { fix?: string }).fix;
+  }
+}
+
 describe('defineTheme', () => {
   test('an empty brand emits nothing at all', () => {
     expect(defineTheme({}).css).toBe('');
@@ -61,25 +70,28 @@ describe('defineTheme', () => {
     expect(Object.isFrozen(brand)).toBe(true);
   });
 
+  // Two halves of one proof, and neither replaces the other. Each `@ts-expect-error` asserts the
+  // COMPILE-time refusal: an unknown role is not spellable in `BrandInput`, and deleting a role
+  // from `COLOR_ROLES`/`radiusTokens`/`FONT_SLOTS` would make the directive itself unused and red.
+  // The `codeOf` assertions below it assert the RUNTIME refusal, which is not redundant — a brand
+  // read from a JSON config file reaches `defineTheme` with no type having seen it.
   test('an unknown role is X_TOKEN_UNKNOWN with the file to edit', () => {
-    expect(codeOf(() => defineTheme({ colors: { light: { 'brand-500': '1 1 1' } } }))).toBe(
-      UI_ERROR_CODES.tokenUnknown,
-    );
-    expect(codeOf(() => defineTheme({ radius: { huge: '4rem' } }))).toBe(
-      UI_ERROR_CODES.tokenUnknown,
-    );
-    expect(codeOf(() => defineTheme({ font: { display: 'Inter' } }))).toBe(
-      UI_ERROR_CODES.tokenUnknown,
-    );
+    // @ts-expect-error 'brand-500' is not a ColorRole
+    const badColor = () => defineTheme({ colors: { light: { 'brand-500': '1 1 1' } } });
+    // @ts-expect-error 'huge' is not a RadiusName
+    const badRadius = () => defineTheme({ radius: { huge: '4rem' } });
+    // @ts-expect-error 'display' is not a FontSlot
+    const badFont = () => defineTheme({ font: { display: 'Inter' } });
+
+    expect(codeOf(badColor)).toBe(UI_ERROR_CODES.tokenUnknown);
+    expect(codeOf(badRadius)).toBe(UI_ERROR_CODES.tokenUnknown);
+    expect(codeOf(badFont)).toBe(UI_ERROR_CODES.tokenUnknown);
   });
 
   test('the unknown-radius fix names _radius.scss, not the pluralised guess', () => {
-    try {
-      defineTheme({ radius: { huge: '4rem' } });
-      throw new Error('expected a throw');
-    } catch (error) {
-      expect((error as { fix?: string }).fix).toContain('_radius.scss');
-    }
+    // @ts-expect-error 'huge' is not a RadiusName — see the note above
+    const badRadius = () => defineTheme({ radius: { huge: '4rem' } });
+    expect(fixOf(badRadius)).toContain('_radius.scss');
   });
 
   test('a value that is not a token value is X_UI_INVALID_VALUE', () => {

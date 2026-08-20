@@ -42,7 +42,10 @@ describe('DB_OWNED_ERROR_CODES', () => {
   });
 
   test('every owned code carries a title', () => {
-    expect([...DB_OWNED_ERROR_CODES].sort()).toEqual([...Object.keys(DB_ERROR_TITLES)].sort());
+    // Widened to `string[]` on purpose: the two sides are the SAME set read two ways, and the
+    // question is whether the title map has a hole, which a literal-union actual cannot ask.
+    const owned: readonly string[] = [...DB_OWNED_ERROR_CODES].sort();
+    expect(owned).toEqual(Object.keys(DB_ERROR_TITLES).sort());
   });
 });
 

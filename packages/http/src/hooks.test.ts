@@ -150,7 +150,13 @@ describe('configureAuthenticator', () => {
   test('it fits ServerHooks.authenticate without an adapter', async () => {
     const actor = userActor({ id: 'u-1' });
     configureAuthenticator((incoming) => (incoming.cookie('session') === 'ok' ? actor : null));
-    const hooks: ServerHooks = { authenticate: configuredAuthenticator() };
+    const authenticate = configuredAuthenticator();
+    // Narrowed rather than assigned through: `exactOptionalPropertyTypes` makes an ABSENT
+    // `authenticate` and a present-`undefined` one different types, and what this pins is the
+    // FUNCTION dropping into the slot unwrapped — which is what `devHooks()` relies on.
+    expect(authenticate).toBeDefined();
+    if (authenticate === undefined) return;
+    const hooks: ServerHooks = { authenticate };
     const signedIn = new UltimateRequest(
       new Request('http://x.test/posts', { headers: { cookie: 'session=ok' } }),
       ctx,

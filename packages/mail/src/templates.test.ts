@@ -31,7 +31,10 @@ function keyOf(block: MailBlock): readonly string[] {
   return block.kind === 'divider' ? [] : [block.key];
 }
 
-function makeCase<I>(mail: MailDefinition<I>, data: I): Case {
+// `NoInfer` on `data`: `MailDefinition<I>` is invariant in `I`, so inferring from the fixture
+// too made a literal union (`method: 'totp'`) widen to `string` and fight the mail's own type.
+// The mail declares the payload; the fixture is checked against it.
+function makeCase<I>(mail: MailDefinition<I>, data: NoInfer<I>): Case {
   const list = mail.template({
     data,
     t: translatorFor(OPTIONS.locale),

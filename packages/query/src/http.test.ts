@@ -3,10 +3,10 @@
 // handler, and the URL it answers on is the one `client()` derives with no server import.
 
 import { describe, expect, test } from 'bun:test';
-import type { Actor } from '@ultimat3/core';
 import { userActor } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
 import { createServer, defineHttpConfig } from '@ultimat3/http';
+import type { Actor } from '@ultimat3/policy';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { FetchLike } from './client';

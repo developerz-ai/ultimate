@@ -87,7 +87,7 @@ describe('one policy, four surfaces', () => {
     const surfaces: readonly Surface[] = ['http', 'live', 'job', 'mcp'];
     const denials = surfaces.map((surface) => enforce(surface, policy, { input, actor: null }));
     expect(denials.every((denial) => denial !== undefined)).toBe(true);
-    expect(denials.map((denial) => denial?.surface)).toEqual(surfaces);
+    expect(denials.map((denial) => denial?.surface)).toEqual([...surfaces]);
   });
 });
 

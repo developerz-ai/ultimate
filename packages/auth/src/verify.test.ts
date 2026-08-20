@@ -130,7 +130,9 @@ describe('issueVerification', () => {
     expect(message?.template).toBe(VERIFICATION_TEMPLATES['password-reset']);
     expect(message?.to).toBe('a@example.com');
     expect(message?.locale).toBe('fr');
-    expect(message?.data.link).toBe(token);
+    // `MailSender.send`'s `data` is `Record<string, unknown>` by design — an app's own template
+    // variables ride in it — so `link` genuinely comes from the index signature.
+    expect(message?.data['link']).toBe(token);
   });
 
   test('runs the token through a link builder when given one', async () => {
@@ -142,7 +144,7 @@ describe('issueVerification', () => {
       link: (t) => `https://app.example.com/verify?token=${t}`,
     });
 
-    expect(rt.mail.sent[0]?.data.link).toBe(`https://app.example.com/verify?token=${token}`);
+    expect(rt.mail.sent[0]?.data['link']).toBe(`https://app.example.com/verify?token=${token}`);
   });
 
   test('defaults ttl per purpose, and honors an override', async () => {

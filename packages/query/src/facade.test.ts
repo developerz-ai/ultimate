@@ -131,9 +131,11 @@ describe('the fluent surface', () => {
 
   test('.client() issues a GET against the derived path', async () => {
     const { target } = defineFeed();
-    let url: string | null = null;
+    // A list rather than a `let`: it pins that ONE request went out, and a variable only ever
+    // assigned inside the stub reads to TypeScript as its initialiser forever.
+    const urls: string[] = [];
     const fetchStub: FetchLike = async (input, init) => {
-      url = input;
+      urls.push(input);
       expect(init.method).toBe('GET');
       return Response.json([{ id: 'a', orgId: ORG, createdAt: 10 }]);
     };
@@ -141,7 +143,7 @@ describe('the fluent surface', () => {
     const call = target.client({ baseUrl: 'https://app.test/', fetch: fetchStub });
     const rows = await call({ orgId: ORG });
 
-    expect(url).toBe(`https://app.test/_x/query/org-feed?orgId=${ORG}`);
+    expect(urls).toEqual([`https://app.test/_x/query/org-feed?orgId=${ORG}`]);
     expect(rows).toEqual([{ id: 'a', orgId: ORG, createdAt: 10 }]);
   });
 

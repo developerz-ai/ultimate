@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { actorLabel, hasScope, isAnonymous } from '@ultimat3/core';
 import { clearPermissions, definePermissions } from './permissions';
 import { and, can } from './policy';
 import { clearRoles, defineRoles } from './roles';
@@ -133,5 +134,35 @@ describe('an actor name is data, never a prototype key', () => {
     expect(matrix.allowedFor('__proto__')).toBe(true);
     expect(matrix.allowedFor('nobody')).toBe(false);
     expect(Object.getPrototypeOf(matrix.verdicts)).toBe(Object.prototype);
+  });
+});
+
+// `testActor` used to omit `kind` and `scopes` behind a cast, so every actor it minted crashed
+// the two core helpers that read them — a scope-gated policy test failed as a bare TypeError
+// escaping `evaluate()` rather than as the denial it was written to assert.
+describe('testActor mints an actor core’s own helpers can read', () => {
+  test('kind and scopes are present, so hasScope() answers instead of throwing', () => {
+    const actor = testActor('reader', { scopes: ['tenancy:cross'] }).actor;
+    if (actor === null) throw new Error('testActor always mints an actor');
+
+    expect(actor.kind).toBe('user');
+    expect(hasScope(actor, 'tenancy:cross')).toBe(true);
+    expect(hasScope(actor, 'billing:refund')).toBe(false);
+    expect(isAnonymous(actor)).toBe(false);
+  });
+
+  test('an actor with no scopes declared still carries an empty list, never undefined', () => {
+    const actor = testActor('nobody').actor;
+    if (actor === null) throw new Error('testActor always mints an actor');
+
+    expect(actor.scopes).toEqual([]);
+    expect(hasScope(actor, 'anything')).toBe(false);
+  });
+
+  test('actorLabel() renders the kind, so a decision log names who was denied', () => {
+    const actor = testActor('u1', { orgId: 'org-1' }).actor;
+    if (actor === null) throw new Error('testActor always mints an actor');
+
+    expect(actorLabel(actor)).toBe('user:u1@org-1');
   });
 });

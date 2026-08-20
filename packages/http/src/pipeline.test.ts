@@ -355,14 +355,19 @@ describe('the request span', () => {
 
   test('the id on the span is the id on the response, or the two cannot be joined', async () => {
     const pipeline = pipelineWith({});
-    let response: Response | undefined;
+    const answered: Response[] = [];
     const spans = await spansOf(async () => {
-      response = await pipeline.handle(get('/public'), { role: 'web' });
+      const response = await pipeline.handle(get('/public'), { role: 'web' });
+      answered.push(response);
       return response;
     });
 
     const root = spans.find((span) => span.parentSpanId === undefined);
-    expect(root?.attributes['http.request_id']).toBe(response?.headers.get('x-request-id'));
+    // `?? undefined` folds "no response" and "no header" into one absence, and the line below
+    // refutes it — so the comparison can never pass by both sides being missing.
+    const headerId = answered[0]?.headers.get('x-request-id') ?? undefined;
+    expect(headerId).toBeString();
+    expect(root?.attributes['http.request_id']).toBe(headerId);
   });
 
   test('a refused request still reports the status it answered with', async () => {

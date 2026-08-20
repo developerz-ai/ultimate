@@ -9,7 +9,7 @@ import { errorStatusInvalid, HTTP_ERROR_TITLES } from './errors';
  * is the only layer that knows what a status means, so no other package should
  * ever hardcode one.
  */
-export const ERROR_STATUS: Readonly<Record<string, number>> = {
+export const ERROR_STATUS = {
   // @ultimat3/http
   X_ROUTE_NOT_FOUND: 404,
   X_METHOD_NOT_ALLOWED: 405,
@@ -195,7 +195,11 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
   X_TIMEOUT: 504,
   X_ABORTED: 499,
   X_INTERNAL: 500,
-};
+  // The keys are LITERAL — deliberately not `Readonly<Record<string, number>>`, which is what the
+  // annotation used to say. This table is the closed one, so `ERROR_STATUS.X_QUERY_NOT_PAGABLE`
+  // has to be a compile error rather than an `undefined` a test then asserts `toBeNumber()` on.
+  // Read it by a code the framework did not mint through `statusFor`, never by index.
+} satisfies Readonly<Record<string, number>>;
 
 export const DEFAULT_STATUS = 500;
 
@@ -209,8 +213,10 @@ export const DEFAULT_STATUS = 500;
  * one frame with nothing above it, so `Pipeline.handle` REJECTED against its own contract.
  * `scripts/error-map.ts` reads the same table this way already.
  */
+const BY_CODE: Readonly<Record<string, number>> = ERROR_STATUS;
+
 const frameworkStatus = (code: string): number | undefined =>
-  Object.hasOwn(ERROR_STATUS, code) ? ERROR_STATUS[code] : undefined;
+  Object.hasOwn(BY_CODE, code) ? BY_CODE[code] : undefined;
 
 /**
  * Statuses for codes the APP owns. The table above is closed — it has to be, it is the

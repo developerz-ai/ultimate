@@ -26,8 +26,6 @@ const ANTHROPIC_MODEL = 'claude-opus-5';
 const frame = (payload: unknown, event = 'message'): SseFrame => ({
   event,
   data: JSON.stringify(payload),
-  id: undefined,
-  retry: undefined,
 });
 
 /** What the call threw, or `undefined` — so a case asserts the value rather than a `try` shape. */

@@ -11,8 +11,8 @@ import {
   fire,
   installFactory,
   one,
+  renderShallowNodes,
   restoreFactory,
-  shallowNodesOf,
   withAttr,
 } from './inert-jsx';
 import type { NavGroup } from './nav';
@@ -52,22 +52,20 @@ const appWith = (over: Partial<AdminApp> = {}): AdminApp =>
   }) as AdminApp;
 
 interface Rendered {
-  readonly nodes: ReturnType<typeof shallowNodesOf>;
+  readonly nodes: ReturnType<typeof renderShallowNodes>;
   readonly searches: string[];
 }
 
 function render(over: Record<string, unknown> = {}): Rendered {
   const searches: string[] = [];
-  const nodes = shallowNodesOf(
-    (AdminLayout as (props: Record<string, unknown>) => unknown)({
-      app: appWith(),
-      nav: NAV,
-      currentPath: '/back-office/posts',
-      onSearch: (term: string) => searches.push(term),
-      children: 'the page body',
-      ...over,
-    }),
-  );
+  const nodes = renderShallowNodes(AdminLayout, {
+    app: appWith(),
+    nav: NAV,
+    currentPath: '/back-office/posts',
+    onSearch: (term: string) => searches.push(term),
+    children: 'the page body',
+    ...over,
+  });
   return { nodes, searches };
 }
 

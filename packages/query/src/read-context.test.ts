@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
 import { createContext, runWithContext, tryUseContext, userActor } from '@ultimat3/core';
+import type { Actor as PolicyActor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { query } from './query';
@@ -14,7 +15,9 @@ import { resetRegistry } from './registry';
 import { from } from './source';
 
 const ORG = 'org-a';
-const caller: Actor = { ...userActor({ id: 'u1', orgId: ORG }), permissions: ['post:read'] };
+// `@ultimat3/policy`'s `Actor` carries `permissions`; core's does not, and `label()` below reads
+// only the fields core declares.
+const caller: PolicyActor = { ...userActor({ id: 'u1', orgId: ORG }), permissions: ['post:read'] };
 
 interface Row {
   readonly id: string;

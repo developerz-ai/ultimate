@@ -35,7 +35,15 @@ export interface SqlSource<TRow> {
   seek?(after: SeekKey | null, limit: number): SqlSource<TRow>;
 }
 
-export type RowProvider<TRow> = readonly TRow[] | (() => Promise<readonly TRow[]>);
+/**
+ * Rows, or a function that answers them. The function half is `readonly TRow[] | Promise<…>`
+ * because `execute()` **awaits** whatever it returns — declaring only the promise refused a
+ * synchronous provider the implementation has always accepted, which is a repo method that
+ * already has its page in hand, and every in-memory fixture.
+ */
+export type RowProvider<TRow> =
+  | readonly TRow[]
+  | (() => readonly TRow[] | Promise<readonly TRow[]>);
 
 /**
  * In-memory reference source. `from<Post>('posts', rows).where({ orgId }).orderBy('createdAt')`

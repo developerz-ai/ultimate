@@ -91,14 +91,14 @@ const GRANTS = [
 
 const ACTOR: AdminActor = { id: 'agent-1', roles: ['ops'], orgId: 'org_1' };
 
-function appWith(
-  authz: AdminAuthz,
-  calls = recordingRepo(),
-): {
+/** One admin app plus the context and repo spy every dispatch case drives it through. */
+interface Fixture {
   readonly app: ReturnType<typeof defineAdmin>;
   readonly ctx: CrudCtx;
   readonly repo: ReturnType<typeof recordingRepo>;
-} {
+}
+
+function appWith(authz: AdminAuthz, calls = recordingRepo()): Fixture {
   const app = defineAdmin({
     entities: [doc],
     resources: { admin_dispatch_doc: { repo: calls.repo } },
@@ -112,7 +112,7 @@ function appWith(
 }
 
 const call = (
-  fixture: ReturnType<typeof appWith>,
+  fixture: Fixture,
   name: string,
   input: Record<string, unknown> = {},
 ): Promise<AdminToolResult> => callAdminTool(fixture.app, fixture.ctx, name, input);

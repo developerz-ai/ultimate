@@ -320,8 +320,8 @@ describe('a precache URL that already has a query', () => {
   const queried: ServiceWorkerConfig = {
     ...config,
     assets: [
-      { url: '/_x/data/pricing.json?locale=en', revision: 'aaaa1111' },
-      { url: '/assets/app.js?v=deadbeef', revision: 'bbbb2222' },
+      { url: '/_x/data/pricing.json?locale=en', revision: 'aaaa1111', bytes: 2_048 },
+      { url: '/assets/app.js?v=deadbeef', revision: 'bbbb2222', bytes: 64_512 },
     ],
   };
 
