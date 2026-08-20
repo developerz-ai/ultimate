@@ -152,12 +152,20 @@ describe('the dead jobs.driver field', () => {
     expect(Object.hasOwn(config.jobs, 'driver')).toBe(false);
   });
 
-  test('a JS caller passing one is not answered with a working switch', () => {
-    // The cast is what a JS caller — or a config file that predates 5.0.0 — actually does. The
-    // value survives the spread, which is why the assertion is that it selects nothing rather than
-    // that it is absent: what is gone is the DECLARATION, and with it the promise it made.
-    const config = defineConfig({ name: 'myapp' }, { jobs: { concurrency: 3 } } as never);
+  /**
+   * An `app.config.ts` written before 5.0.0, as a JS caller or a `// @ts-expect-error` away from
+   * one. It does not throw and it does not lose the rest of the section — the key rides through the
+   * spread — and that is the honest statement of the migration: deleting the line is the whole of
+   * it, and leaving it in does what it always did, which is nothing.
+   */
+  test('a stale config carrying one still boots, and it still selects nothing', () => {
+    const config = defineConfig({ name: 'myapp' }, {
+      jobs: { driver: 'redis', concurrency: 3 },
+    } as never);
     expect(config.jobs.concurrency).toBe(3);
-    expect(Object.hasOwn(config.jobs, 'driver')).toBe(false);
+    expect(config.jobs.maxAttempts).toBe(5);
+    // Present as a VALUE, because a spread carries a key no type names — and read by nothing, then
+    // as now. What 5.0.0 removed is the declaration, and with it the promise it made.
+    expect((config.jobs as { driver?: string }).driver).toBe('redis');
   });
 });
