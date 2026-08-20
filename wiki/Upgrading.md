@@ -2,16 +2,16 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Four majors have shipped; a fifth is in flight.** [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Five majors have shipped.** [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 5.x → 6.0.0 | **1 so far — unreleased.** The count moves until the tag | the `6.0.0` section, then `[Unreleased]` |
+| 5.x → 6.0.0 | **7** | the `6.0.0` section, in order |
 | 4.x → 5.0.0 | **2**, over six surfaces, each a declaration that promised what the code did not do | the `5.0.0` section, in order |
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
 | 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 1.x → 5.0.0 | **70** | all four shipped sections, oldest first |
+| 1.x → 6.0.0 | **77** | all five sections, oldest first |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
@@ -31,7 +31,7 @@ Each entry changes a surface the table below covers.
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
 
-## 5.x → 6.0.0, entry by entry — **unreleased**
+## 5.x → 6.0.0, entry by entry
 
 **Nothing here is installable until `npm view @ultimat3/core version` answers `6.0.0`.** Run that first; `As of 2026-08` it does not. This section is written as each change lands rather than at the tag, so entries are **appended** — re-read it when `latest` moves.
 

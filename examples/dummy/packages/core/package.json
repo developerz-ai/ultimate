@@ -17,8 +17,8 @@
   },
   "dependencies": {
     "@postly/domain": "0.0.1",
-    "@ultimat3/core": "5.0.1",
-    "@ultimat3/money": "5.0.1",
-    "@ultimat3/time": "5.0.1"
+    "@ultimat3/core": "6.0.0",
+    "@ultimat3/money": "6.0.0",
+    "@ultimat3/time": "6.0.0"
   }
 }

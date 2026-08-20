@@ -28,6 +28,36 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   LEADING sign is a bare offset. No denylist: a list of refused abbreviations grows with every tzdata
   release, and there is no structural rule that keeps `CET` out and lets `Japan` in.
 
+- **BREAKING — `render: 'spa'` is no longer a render mode.** A route declaring it is
+  `X_ROUTE_MODE_INVALID` at `defineRoute` time. **Migration, one line: `render: 'spa'` →
+  `render: 'ssr'`.** Keep the `policy` — `ssr` renders per request, so the guard still runs on the
+  server before the page does. Drop `hydrate` and `budget.js` unless the page declares an
+  `island({ src })`; under `spa` neither was ever read.
+
+  Nothing else changes, because nothing else ever worked. `renderSpa` preloaded a `chunks` array no
+  build in the framework's history produced (`dev-render.ts` passed `chunks: []`, hardcoded;
+  `prerender.ts` refused the mode; the container mounted the same table), and it never read
+  `entry.component` — so every `spa` route ever declared served
+  `<body><div id="x-root"></div></body>`: 200, correct headers, blank page. The mode's own header
+  claimed the shell was "cacheable" while it emitted `private, max-age=0, must-revalidate` and
+  required a `policy`. A page whose body belongs in the browser declares `island({ src })` — one
+  client-entry model, one bundler entry point, one budget measured against bytes that exist.
+
+  Removed with it: `renderSpa`, `renderSpaShell`, `SpaShell`, `SpaShellInput` and `SPA_ROOT_ID`.
+  `SPA_ROOT_ID` returns as **`ROOT_ELEMENT_ID`**, same value `'x-root'`, correctly named — it is the
+  id every mode's body has always been wrapped in. `@ultimat3/admin`'s generated views are now `ssr`
+  + `hydrate: 'never'` like its custom pages, and `x new`'s admin page is scaffolded the same way
+  (#245)
+- **BREAKING — `createRouter` and the vendored client router are deleted.** 236 LOC exported from
+  `@ultimat3/render`, ~490 LOC of tests, and **zero callers** in the framework or in either tracked
+  app. Its header called it "load-bearing for every app page"; nothing loaded it. It existed to
+  drive a `spa` shell's client-side navigation, and it was built on a premise `solid-loader.ts`
+  disproves — "inject reactive primitives, import no `solid-js`" — because Solid's reactivity is a
+  compile-time contract no injected runtime can stand in for. Client-side navigation is not a
+  capability Ultimate ships: every page is a server render, and interactivity is an island. Removed
+  with it: `Router`, `RouterRoute`, `RouterHost`, `RouterOptions`, `ResolvedRoute`, `NavigateOptions`,
+  `NavigationGuard`, `ReactivePrimitives`, `PrefetchContainer`, `PrefetchLink` (#247)
+
 - **BREAKING —** the image pipeline is `Bun.Image`, and its terminals are async. `transformImageBytes()`
   and `blurDataUrl()` return a `Promise`; add `await`. Every consumer inside the framework
   (`storage.transformImage`, `seo`'s `builtinImageDriver`, `pwa`'s `BuiltinImagePipeline`) was already
@@ -101,6 +131,21 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - a browser bundle can load `@ultimat3/core`: three module-scope `AsyncLocalStorage` constructions moved
   onto one lazy seam, so `@ultimat3/ui` no longer throws `TypeError: undefined is not a constructor` at
   module evaluation (#244)
+
+## 6.0.0
+
+### Fixed
+
+- island JSX compiles to real Solid reactivity, not to an undefined React (#253)
+- one lazy AsyncLocalStorage, so a browser bundle can load @ultimat3/core (#256)
+- a scaffolded app's first setup and first gate both work (#238)
+
+### Changed
+
+- One timezone rule everywhere, and CI runs the Bun this repo runs (#265)
+- 6.0.0: Solid reactivity that works, Bun.Image, and four defects that shipped green (#263)
+- restamp to 5.0.1, from the registry rather than from intent (#237)
+
 
 ## 5.0.1
 
