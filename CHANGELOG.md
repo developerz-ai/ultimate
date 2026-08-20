@@ -61,6 +61,37 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   - `Bun.Image`'s `ERR_IMAGE_*` rejections map onto the existing `X_IMAGE_UNSUPPORTED` /
     `X_IMAGE_TOO_LARGE` / `X_IMAGE_DECODE_FAILED`. No new code.
 
+- **BREAKING — `t.timezone` refuses an abbreviation, a single-label legacy link and a bare UTC
+  offset.** The validator behind `t.timezone` probed `new Intl.DateTimeFormat(…)`, which answers
+  "can I format this" and never "is this IANA". It now states the structural rule directly. `CET`,
+  `EST`, `GMT`, `Zulu`, `EST5EDT`, `Japan`, `GB`, `Eire` and every casing of them now fail
+  validation, as does `+01:00` — which ES2024 `Intl` has resolved under every runtime this framework
+  has shipped on, so that half is not ICU 78 drift. **This one guards caller input**: `t.timezone` is
+  a request body field and a query parameter through `coerceQuery`, so the accepted value reached a
+  `format` call that answered `X_TIMEZONE_INVALID` three layers later. Migration: replace an
+  abbreviation with the zone it meant (`CET` → `Europe/Berlin`) and an offset with a real zone; there
+  is no offset that is a zone (#257)
+- **BREAKING — `t.tz(zones)` refuses the same names at declaration time.** `@ultimat3/entity`'s local
+  `Intl` probe is deleted; the column calls `@ultimat3/time`'s `isValidTimeZone` directly — a tier 2
+  → tier 1 downward import, so there is one validator rather than a copy that can drift again.
+  `tz(['CET'])` was a startup success declaring a column whose every stored value the app then
+  refused to format; it is now refused on the line that declares it. Neither tracked app's zone list
+  is affected (#257)
+
+- **BREAKING — `app.config.ts`'s `defaultTimeZone` obeys the same timezone rule as everything else.**
+  `@ultimat3/core`'s config validator asked `Intl.DateTimeFormat` whether a string was a zone, which
+  answers "can I format this" and never "is this IANA" — so the structural rule reached `task()` and
+  every `@ultimat3/time` entry point and stopped at the config file. On ICU 78, `defaultTimeZone:
+  'CET'` — and `EST`, `Japan`, `GMT`, `Zulu`, `+01:00`, all 43 refused names — booted clean and threw
+  `X_TIMEZONE_INVALID` on the first format call, from a stack naming no configuration. Two validators
+  for one question is axiom 1. The config file is now refused at boot with `X_CONFIG_INVALID`, whose
+  `fix:` carries the mechanical swap (`Japan` → `Asia/Tokyo`) and the command that lists every
+  accepted name. `Europe/Berlin`, `UTC`, `utc`, `US/Eastern`, `Asia/Calcutta` and `Etc/GMT+2` are
+  unaffected, and every `defaultTimeZone` in this repo and in `x new`'s scaffold is `'UTC'`. Core is
+  tier 0 and may not import `@ultimat3/time`, so the rule is stated a second time in
+  `packages/core/src/time-zone-name.ts` and mirrored test-for-test against
+  `packages/time/src/zones.test.ts` (#257)
+
 ### Fixed
 
 - island JSX compiles to real SolidJS reactivity. `Bun.build` was called with no `plugins`, so island
