@@ -96,7 +96,15 @@ export interface EnvExampleReport {
   readonly ok: boolean;
   /** Declared in the schema, absent from the file. Always a defect. */
   readonly missing: readonly string[];
-  /** In the file, not in the schema. Reported, never fatal — apps set keys nothing declares. */
+  /**
+   * In the file, not in the schema — never fatal, because apps set keys nothing declares.
+   *
+   * NOT reported on its own, and the comment here said it was. `ok` is `missing.length === 0`, so
+   * an example carrying only extra keys returns `ok: true` and `assertEnvExample` never builds an
+   * error: the list reaches a surface only as `meta` on a drift some MISSING key already raised.
+   * A caller that wants it reads `checkEnvExample(...).extra` itself, which is why this stays
+   * public. `env-example.test.ts` pins both halves.
+   */
   readonly extra: readonly string[];
 }
 

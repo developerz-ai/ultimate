@@ -97,6 +97,21 @@ describe('backgroundSyncSource', () => {
     expect(source).toContain("addEventListener('sync'");
   });
 
+  // Periodic Background Sync is NOT implemented, and this is where that is written down.
+  // `PERIODIC_SYNC_TAG` and `BackgroundSyncOptions.periodicMinIntervalMs` existed as declarations
+  // with no handler behind them — no `periodicsync` listener is emitted, no `periodicSync.register`
+  // is ever called, and `CAPABILITIES` has no `periodicSync` flag to gate one. Both were deleted
+  // rather than left as a settable option that changes nothing. `wiki/PWA-And-Offline.md` and
+  // `docs/idea/08-pwa-offline.md` still document a `periodicSync` capability; this assertion is
+  // what fails if the tag comes back before the handler does.
+  test('one-shot sync only — no periodicsync handler is emitted, because none is implemented', () => {
+    const source = backgroundSyncSource();
+    expect(source).toContain("addEventListener('sync'");
+    expect(source).not.toContain('periodicsync');
+    expect(source).not.toContain('periodicSync');
+    expect(registerBackgroundSyncSource()).not.toContain('periodicSync');
+  });
+
   test('is deterministic for identical input', () => {
     expect(backgroundSyncSource()).toBe(backgroundSyncSource());
     expect(backgroundSyncSource()).not.toContain('Date.now()');

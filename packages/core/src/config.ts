@@ -28,13 +28,28 @@ export interface ThemeConfig {
  */
 export interface AuthConfig {
   readonly signInPath: string | null;
-  /** Where sign-in lands when there is nowhere to return to, or `?next=` is not same-origin. */
+  /**
+   * Where sign-in lands when there is nowhere to return to, or `?next=` is not same-origin.
+   *
+   * **Consulted by nothing, `As of 2026-08.`** Accepted, defaulted and merged here and read by no
+   * file in the repo — `dummy/social-media-clone/app.config.ts` sets `/dashboard` and gets
+   * whatever the sign-in route does on its own. Same shape `urlEnv`, `poolSize` and `schema` were
+   * deleted for below; this one is not deleted yet only because its writer is a tracked app's
+   * config, so removing the key and the line that sets it is one commit across two file sets.
+   */
   readonly afterSignInPath: string;
 }
 
 export interface PwaConfig {
   readonly enabled: boolean;
   readonly offline: OfflineStrategy;
+  /**
+   * **Consulted by nothing, `As of 2026-08.`** `wiki/Configuration.md` describes it as "render
+   * your own install affordance from the deferred event", both tracked apps set it, and
+   * `x new`'s scaffold writes it into every generated app — and no file reads it.
+   * `@ultimat3/pwa`'s `install.ts` is real and complete; nothing threads this flag into it.
+   * Delete the key or thread it; leaving it is a switch with no wire.
+   */
   readonly installPrompt: boolean;
   readonly backgroundSync: boolean;
   readonly push: boolean;
@@ -97,7 +112,15 @@ export interface McpConfig {
 
 export interface AiConfig {
   readonly mcp: McpConfig;
-  /** Env key for the model id, so no model string is baked into the image. */
+  /**
+   * Env key for the model id, so no model string is baked into the image — **an intention, not a
+   * behaviour, `As of 2026-08`.** The only read of it in the repo is the merge two hundred lines
+   * below, which copies it from input to output; nothing consumes the merged value, so
+   * `examples/dummy`'s `modelEnv: 'ANTHROPIC_MODEL'` selects no model. `@ultimat3/ai` reads env
+   * for API KEYS only (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`); the model is
+   * `request.model ?? DEFAULT_MODEL`, a compile-time constant in `models.ts`. So the exact thing
+   * this key exists to prevent — a model string baked into the image — is what actually happens.
+   */
   readonly modelEnv: string | undefined;
 }
 

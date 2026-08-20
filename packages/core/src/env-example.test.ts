@@ -57,6 +57,24 @@ describe('checkEnvExample', () => {
     expect(report.extra).toEqual(['ROLE']);
   });
 
+  // The half the comment on `EnvExampleReport.extra` used to overstate. An extra key ALONE keeps
+  // `ok: true`, so `assertEnvExample` returns before it builds an error and the list reaches no
+  // surface at all — it rides out only on `meta` of a drift raised by a MISSING key, i.e. only when
+  // something else already failed. `checkEnvExample` is public, so an app reading `.extra` itself
+  // is the one reader there is; the framework's own reporter (`@ultimat3/cli`'s `app-env.ts`)
+  // builds its finding from `missing` only.
+  test('an extra key alone is not drift, and nothing raises it', () => {
+    const text = `${[...Object.keys(schema), 'LEGACY_KEY'].join('=\n')}=\n`;
+    const report = checkEnvExample(schema, text);
+    expect(report.ok).toBe(true);
+    expect(report.missing).toEqual([]);
+    expect(report.extra).toEqual(['LEGACY_KEY']);
+    // Silent: the value is computed and there is no path that reports it on its own.
+    expect(() => {
+      assertEnvExample(schema, text);
+    }).not.toThrow();
+  });
+
   test('assertEnvExample throws X_ENV_EXAMPLE_DRIFT naming the keys and the rewrite', () => {
     let caught: unknown;
     try {

@@ -123,7 +123,6 @@ pwa: {
   badging:        { enabled: true, count: () => unreadCount() },
   shareTarget:    { enabled: true, accept: ['image/*', 'text/plain'] },
   fileHandlers:   [{ action: '/import', accept: { 'text/csv': ['.csv'] } }],
-  periodicSync:   { enabled: false },
 }
 ```
 
@@ -131,10 +130,10 @@ pwa: {
 |---|---|---|
 | `push` | SW push handler, subscription endpoint action, a `job` for send fanout | notification permission prompt; needs VAPID keys |
 | `backgroundSync` | SW sync registration wired to the mutator queue | replay must be idempotent — enforced by the mutator's `conflict` field |
-| `badging` | badge update from a live query | Chromium-only surface |
+| `badging` | badge update from a live query — **only alongside `push`** `As of 2026-08-20`: the badge call is emitted inside the push block, so `badging: true` on its own changes nothing while `capabilities.badging` still reports `true` | Chromium-only surface |
 | `shareTarget` | manifest entry + a POST route | must handle untrusted payloads; the target route gets a required policy |
 | `fileHandlers` | manifest entry + route | OS-level file association |
-| `periodicSync` | SW periodic handler | rarely granted; document the fallback path |
+| ~~`periodicSync`~~ | **not built, and the declarations are deleted** `As of 2026-08-20`. There was never a `periodicsync` listener, never a `periodicSync.register` call, and no `CAPABILITIES` flag to gate one — `PERIODIC_SYNC_TAG` and `periodicMinIntervalMs` described a feature that did not exist | — |
 
 All of them are `route` / `action` / `job` primitives underneath ([The eight primitives](The-Eight-Primitives)) — a push send is a job, a share target is a route with a policy. No PWA-specific concept escapes into the app's mental model.
 

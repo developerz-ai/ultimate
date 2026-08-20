@@ -11,8 +11,6 @@ export interface PrecacheAsset {
   /** Content hash. Same bytes → same revision → no re-download. */
   readonly revision: string;
   readonly bytes: number;
-  /** Critical assets (the shell CSS, the LCP font) are precached even if large. */
-  readonly critical?: boolean;
 }
 
 export interface PrecacheEntry {
