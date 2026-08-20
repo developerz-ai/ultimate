@@ -307,6 +307,24 @@ describe('a hostile field cannot carry a line break out of the constructor', () 
     docs: 'https://evil.example/\u000awhatever',
   });
 
+  /**
+   * `code` is the fifth field and the one an author is least likely to think of as foreign — but it
+   * reaches `describeErrorCode`, whose fallback humanises an UNREGISTERED code into the title, so a
+   * hostile code becomes a hostile title as well. Nothing is registered here: `describeErrorCode`
+   * only reads, so there is no registry entry to undo afterwards.
+   */
+  test('a hostile code cannot add a line, and neither can the title derived from it', () => {
+    const forged = new UltimateError({
+      code: `X_FAKE${FORGED}`,
+      cause: 'ok',
+      fix: 'x doctor --json',
+    });
+    expect(forged.code).not.toInclude('\n');
+    expect(forged.title).not.toInclude('\n');
+    expect(forged.docs).not.toInclude('\n');
+    expect(forged.format().split('\n')).toHaveLength(3);
+  });
+
   test('every field a renderer can reach is already one line', () => {
     for (const field of [hostile.code, hostile.title, hostile.cause, hostile.fix, hostile.docs]) {
       expect(field).not.toInclude('\n');
