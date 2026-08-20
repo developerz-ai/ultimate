@@ -58,12 +58,6 @@ export const GATED_APPS: readonly GatedApp[] = [
         'Registering one in examples/dummy/scripts/test-setup.ts would be the app deciding what a ' +
         'live subscription is, so it closes when the framework ships the driver — the same gap ' +
         '`page` leaves on e2e, and its own fix line names a driver that does not exist',
-      job:
-        '1 of 5 fails, and not through a repo: `a rolled-back invite never enqueues its mail` is ' +
-        'a TypeError on ctx.auth.ensureUser at apps/web/app/orgs/service.ts:60. ctx.auth is ' +
-        'undeclared and unimplemented, and this app’s CLAUDE.md already names it together with the ' +
-        'x_users/x_sessions/x_accounts tables no migration creates — neither half is a file to ' +
-        'hand-write. NOT the unscoped repo this line used to blame',
       e2e:
         'X_TEST_FIXTURE_UNAVAILABLE on all 6 tests: the `page` fixture is declared and nothing in ' +
         'this process drives it, so not one of them reaches a built page. NOT the data substrate ' +
