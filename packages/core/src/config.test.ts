@@ -50,7 +50,7 @@ describe('defineConfig', () => {
     expect(error.code).toBe('X_CONFIG_INVALID');
     expect(error.cause).toContain('name "My App"');
     expect(error.cause).toContain('defaultLocale "de" is not in locales');
-    expect(error.cause).toContain('is not an IANA time zone');
+    expect(error.cause).toContain('is not an IANA Area/Location zone name');
     expect(error.cause).toContain('is not a 3-letter ISO 4217 code');
     expect(error.fix).toContain('x verify');
   });
@@ -167,5 +167,50 @@ describe('the dead jobs.driver field', () => {
     // Present as a VALUE, because a spread carries a key no type names — and read by nothing, then
     // as now. What 5.0.0 removed is the declaration, and with it the promise it made.
     expect((config.jobs as { driver?: string }).driver).toBe('redis');
+  });
+});
+
+/**
+ * ONE timezone rule, stated in two places because tier 0 may not import `@ultimat3/time`.
+ * `defaultTimeZone` was validated with a bare `new Intl.DateTimeFormat(…)` probe, and ICU 78
+ * (Bun 1.4) resolves `CET`, `EST`, `Japan`, `GMT` and `Zulu` where ICU 75 threw — so 6.0.0's
+ * structural rule reached `task()` and every `@ultimat3/time` entry point and never reached the
+ * config file, and `defaultTimeZone: 'CET'` booted clean and threw on the first format call.
+ */
+describe('defaultTimeZone answers what @ultimat3/time answers', () => {
+  const refusalFor = (defaultTimeZone: string): UltimateError => {
+    try {
+      defineConfig({ name: 'myapp', defaultTimeZone });
+    } catch (thrown) {
+      if (isUltimateError(thrown)) return thrown;
+    }
+    return expect.unreachable(`defaultTimeZone ${JSON.stringify(defaultTimeZone)} must be refused`);
+  };
+
+  test.each(['CET', 'EST', 'Japan', 'GMT', 'Zulu', '+01:00'])(
+    'refuses %s, which boots clean and throws on the first format call',
+    (zone) => {
+      const error = refusalFor(zone);
+      expect(error.code).toBe('X_CONFIG_INVALID');
+      expect(error.cause).toContain(`defaultTimeZone "${zone}"`);
+      expect(error.cause).toContain('is not an IANA Area/Location zone name');
+    },
+  );
+
+  test.each(['Europe/Berlin', 'UTC', 'utc', 'US/Eastern', 'Asia/Calcutta', 'Etc/GMT+2'])(
+    'still accepts %s',
+    (zone) => {
+      expect(defineConfig({ name: 'myapp', defaultTimeZone: zone }).defaultTimeZone).toBe(zone);
+    },
+  );
+
+  // Axiom 4: an operator holding `CET` needs the spelling to write, not a restatement of the rule.
+  test('the fix names the shape, the mechanical swap and how to list every accepted name', () => {
+    const fix = refusalFor('CET').fix;
+    expect(fix).toContain('Area/Location');
+    expect(fix).toContain('Japan → Asia/Tokyo');
+    expect(fix).toContain("Intl.supportedValuesOf('timeZone')");
+    // The generic instruction survives — a config can be wrong in more than one field at once.
+    expect(fix).toContain('x verify');
   });
 });

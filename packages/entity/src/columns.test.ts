@@ -203,6 +203,51 @@ describe('time', () => {
     expect(() => tz(['CET+2'])).toThrow(/iana-tz/);
     expect(() => tz(['Mars/Olympus'])).toThrow(/iana-tz/);
   });
+
+  /**
+   * The declaration guard is `@ultimat3/time`'s `isValidTimeZone`, imported rather than probed —
+   * `time` is tier 1 and `entity` is tier 2, so the real rule is a downward import and there is no
+   * reason for a local copy. Under the bare `Intl` probe this replaced, ICU 78 (Bun 1.4) resolved
+   * every name below, so `tz(['CET'])` declared a column whose stored value every `format` call
+   * above it answers `X_TIMEZONE_INVALID` on.
+   */
+  test.each(['CET', 'EST', 'GMT', 'Zulu', 'EST5EDT', 'Japan', 'GB', 'Eire', 'Universal'])(
+    'tz() refuses the abbreviation or legacy link %s at declaration time',
+    (zone) => {
+      expect(() => tz([zone])).toThrow(/iana-tz/);
+      // Every casing, because `Intl` accepts every casing of every name it accepts at all.
+      expect(() => tz([zone.toLowerCase()])).toThrow(/iana-tz/);
+    },
+  );
+
+  // A fixed offset carries no DST rule, so a column holding one is wrong twice a year — and
+  // ES2024 `Intl` resolved these long before ICU 78, so this class predates the runtime bump.
+  test.each(['+01:00', '-05:00', '+0100', '-08'])(
+    'tz() refuses the bare offset %s at declaration time',
+    (zone) => {
+      expect(() => tz([zone])).toThrow(/iana-tz/);
+    },
+  );
+
+  test.each(['Europe/Berlin', 'UTC', 'utc', 'US/Eastern', 'Asia/Calcutta', 'Etc/GMT+2'])(
+    'tz() still accepts %s',
+    (zone) => {
+      expect(tz([zone]).$parse(zone)).toBe(zone);
+    },
+  );
+
+  /**
+   * The other direction, and the reason it is not just a longer hardcoded list: the rule must be
+   * exactly as wide as the runtime's own canonical set, and nothing above would notice a rule that
+   * narrowed — a `/^[A-Za-z_]+\/[A-Za-z_]+$/` shaped guard refuses
+   * `America/Argentina/Buenos_Aires` and `Etc/GMT+2` while passing every case above it.
+   */
+  test('tz() accepts every zone the runtime itself lists', () => {
+    const listed = Intl.supportedValuesOf('timeZone');
+    expect(listed.length).toBeGreaterThan(100);
+    expect(() => tz(listed)).not.toThrow();
+    expect(listed).toContain('America/Argentina/Buenos_Aires');
+  });
 });
 
 describe('the chain', () => {
