@@ -11,6 +11,6 @@
     "typecheck": "tsc --noEmit -p ../../tsconfig.json"
   },
   "dependencies": {
-    "@ultimat3/i18n": "5.0.1"
+    "@ultimat3/i18n": "6.0.0"
   }
 }
