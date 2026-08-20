@@ -8,6 +8,11 @@ Ultimate — a laptop, a single VPS, ECS, Nomad, Kubernetes, a Raspberry Pi.
 
 Build once. `ROLE` selects behaviour at start; nothing else differs between processes.
 
+That is the **app** image — `x build --target docker` over the `docker/Dockerfile` that `x new`
+writes into your app, whose `ENTRYPOINT` is `bun apps/web/server.ts` and whose `runRole()` reads
+`ROLE`. The `Dockerfile` in *this* directory is the framework's own CLI image (`x`, compiled to one
+binary); it contains no app, so it serves no role. See its header.
+
 | Role | Scales on | HTTP | Metrics | Probe |
 |---|---|---|---|---|
 | `web` | RPS | `:3000` | `:9090` | `/readyz` + `/healthz` on `:3000` |
@@ -28,9 +33,9 @@ is bounded at `DEFAULT_DEADLINE_MS` — 25s — so a `stop_grace_period` or a
 
 | File | For |
 |---|---|
-| `Dockerfile` | multi-stage → distroless, non-root, 189MB, one binary, no shell |
+| `Dockerfile` | the framework's **CLI** image: multi-stage → distroless, non-root, 189MB, one binary, no shell. Not an app image |
 | `docker-compose.dev.yml` | optional local Postgres + NATS + MinIO |
-| `docker-compose.prod.yml` | the production topology: one service per role, one box |
+| `docker-compose.prod.yml` | the production topology: one service per role, one box. Point `IMAGE` at an app image |
 | `helm/` | Kubernetes chart with **per-role HPAs** — where `web` and `sync` actually scale out |
 
 ## Local

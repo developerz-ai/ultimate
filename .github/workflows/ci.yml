@@ -17,10 +17,23 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A newer push supersedes an in-flight run: CI is a signal, not an archive.
+# A newer push to a PULL REQUEST supersedes the in-flight run for that branch: CI is a signal, not
+# an archive. A push to `main` never supersedes anything, and the group is keyed by SHA there so it
+# cannot.
+#
+# It was `group: …-${{ github.ref }}` with `cancel-in-progress: true` unconditionally, and every
+# push to main shares one ref. Merge two PRs ninety seconds apart and the FIRST commit's run was
+# cancelled by the second's — so its `reference-app-verify` concluded `cancelled`, and
+# `deploy-social-demo.yml`'s verdict check (correctly) fails closed on any conclusion that is not
+# `success`. The image for the first commit never shipped, and the log read like a red gate on a
+# commit whose gate never ran.
+#
+# Keying pushes by SHA rather than setting `cancel-in-progress: false` for them: a shared group with
+# no cancellation SERIALISES, so the second merge would wait out the first's full run before
+# starting. Per-SHA groups let both run, and neither can cancel the other.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -262,6 +275,158 @@ jobs:
         run: >-
           bun run scripts/scaffold-gate.ts "${{ runner.temp }}/demoapp"
           --allow-red budgets
+
+  # The deployable artifacts, BUILT and RENDERED — not merely present.
+  #
+  # The rule at the top of this file says a job beside the gate has to be argued. Here is the
+  # argument: the ONLY thing in `x verify` that looks at `docker/` is the `roadmap` step, and it
+  # asks whether `docker/Dockerfile`, `docker/docker-compose.prod.yml` and `docker/helm` EXIST
+  # (scripts/roadmap.ts, REQUIRED_ARTIFACTS[11]). Existence is not function, and nothing anywhere
+  # built the image or rendered the chart. That is why this set rotted unseen:
+  #
+  #   - the image's default command was "dev --once" — the DEV SERVER, which ignores ROLE and is
+  #     documented "boot, report, exit" — so every service in a compose file booted it, exited 0 and
+  #     was restarted forever, and "run --rm migrate" applied no migration and reported success;
+  #   - the chart declared serviceAccount.create and serviceAccount.name and read neither, so an
+  #     operator configuring IRSA got the chart's own account and pods with no cloud identity.
+  #
+  # Neither is visible to a path check, and both are caught below. Every step is a command a
+  # developer can paste and run — the rule at the top of this file — which is also why the
+  # assertions are shell over docker and helm rather than a script this job alone knows how to run.
+  #
+  # No ./.github/actions/setup, and that is deliberate rather than forgotten: nothing here runs
+  # bun, so the composite's frozen install would be pure latency. docker, helm and jq all come from
+  # the runner image, and the first step refuses if one is missing.
+  #
+  # Cost: measured 20s wall clock for the full image build on a warm daemon — bun install
+  # --frozen-lockfile 1.1s, bun build --compile --minify 1.8s, because the framework has very few
+  # external dependencies. A cold runner pays the two base image pulls on top. That is comfortably
+  # inside the 5-minute target, so this builds the WHOLE image rather than a --target slice: the
+  # runtime stage is where three of the four recorded build bugs lived (musl-vs-glibc, the Debian
+  # skew, the missing --define), and a build stopping at "build" would have caught none of them.
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: docker, helm and jq, from the runner image
+        run: |
+          set -euo pipefail
+          for tool in docker helm jq; do
+            command -v "$tool" >/dev/null || {
+              echo "::error title=${tool} missing::The ubuntu-latest runner image no longer ships ${tool}, so this job cannot check docker/. fix: add a SHA-pinned setup action for ${tool} to this job — the pinning rule and its reason are in .github/actions/setup/action.yml — or install it inline in this step."
+              exit 1
+            }
+          done
+          docker version --format 'docker {{.Server.Version}}'
+          helm version --short
+          jq --version
+
+      # Builds every stage, ending in the runtime stage's own RUN ["/app/x", "--version"]. That exec
+      # is what turns a wrong libc, a Debian skew, a missing --define or a lost workspace manifest
+      # into a red build instead of a red pod — all four have happened.
+      - name: build the framework's CLI image
+        run: docker build -f docker/Dockerfile -t ultimate-cli:ci .
+
+      # The assertion the CMD defect needed. "x" with no arguments prints its catalogue and exits 0,
+      # so a default command that boots ANYTHING fails here twice over: "x dev --once" in a container
+      # with no app exits 1 with X_NOT_IN_APP and prints no catalogue. Verified against a mutant
+      # image built FROM this one with the old CMD restored — exit 1, no catalogue.
+      - name: the image is a CLI, and its default command is the catalogue
+        run: |
+          set -euo pipefail
+          out="$(docker run --rm ultimate-cli:ci)"
+          echo "$out"
+          case "$out" in
+            *"usage: x <command>"*) echo "ok: the default command is the CLI catalogue" ;;
+            *)
+              echo "::error title=Image default command is not the CLI catalogue::docker run ultimate-cli:ci with no arguments did not print the x command catalogue. This image contains /app/x and no app, so it can serve no ROLE; a CMD that boots something is an infinite restart loop under 'restart: unless-stopped', and a release phase that reports success having done nothing. fix: remove the CMD from docker/Dockerfile — an app image is what serves roles, and 'x new' writes one."
+              exit 1
+              ;;
+          esac
+
+      # The --define ULTIMATE_FRAMEWORK_VERSION chain, checked on the SHIPPED artifact and against
+      # the source of truth rather than against itself. The runtime stage's RUN proves the binary
+      # answers --version at build time; this proves the answer is the right number and that the
+      # ENTRYPOINT wiring survived into the image config.
+      - name: the version define survived, and matches @ultimat3/core
+        run: |
+          set -euo pipefail
+          expected="$(jq -r .version packages/core/package.json)"
+          actual="$(docker run --rm ultimate-cli:ci --version --json | jq -r .data.version)"
+          echo "core=${expected} image=${actual}"
+          [ "$expected" = "$actual" ] || {
+            echo "::error title=Image version mismatch::The image answers --version '${actual}' but packages/core/package.json is '${expected}'. A single-file executable carries no package.json, so this number comes only from the --define in docker/Dockerfile's build stage. fix: check the VERSION_DEFINE line in docker/Dockerfile, then run 'bun run scripts/release.ts --check ${expected}' for a workspace that was not stamped."
+            exit 1
+          }
+
+      # Both compose files, parsed by compose itself. .env.production is a secrets file that is never
+      # committed and env_file: is required by design — a missing one must fail an operator loudly —
+      # so an empty stand-in is created for the syntax check and removed again.
+      - name: both compose files parse
+        run: |
+          set -euo pipefail
+          touch .env.production
+          trap 'rm -f .env.production' EXIT
+          docker compose -f docker/docker-compose.dev.yml config -q
+          docker compose -f docker/docker-compose.prod.yml config -q
+          echo "ok: both compose files parse"
+
+      - name: helm lint
+        run: helm lint docker/helm --strict
+
+      # Defaults plus every branch the defaults leave dark. serviceMonitor, ingress and the
+      # replicator role are all off by default, and scheduler/replicator carry no autoscaling block
+      # at all — that last one is what made the whole chart fail to render once, so the no-HPA path
+      # is rendered on purpose rather than left to a default that hides it.
+      - name: the chart renders, on defaults and on every optional branch
+        run: |
+          set -euo pipefail
+          helm template app docker/helm > /dev/null
+          helm template app docker/helm \
+            --set serviceMonitor.enabled=true \
+            --set ingress.enabled=true \
+            --set roles.replicator.enabled=true \
+            --set nameOverride=demo > /dev/null
+          helm template app docker/helm \
+            --set roles.web.autoscaling.enabled=false \
+            --set roles.sync.autoscaling.enabled=false \
+            --set roles.worker.autoscaling.enabled=false > /dev/null
+          helm template app docker/helm --set migrate.enabled=false > /dev/null
+          echo "ok: every branch renders"
+
+      # The assertion the dead-knob defect needed, and it cannot pass by accident: it reads the
+      # rendered serviceAccountName off the workloads, which is the field an operator's IRSA
+      # annotation has to land on. Before 2026-08 both branches rendered app-ultimate and the chart
+      # emitted its own ServiceAccount either way.
+      - name: serviceAccount.create and .name are honoured
+        run: |
+          set -euo pipefail
+          refs_of() { grep 'serviceAccountName:' "$1" | awk '{print $2}' | sort -u | paste -sd, -; }
+          count_sa() { grep -c '^kind: ServiceAccount$' "$1" || true; }
+
+          # create: false + a name — the IRSA case. The chart must create nothing, and every
+          # workload must name the operator's account.
+          helm template app docker/helm \
+            --set serviceAccount.create=false --set serviceAccount.name=app-irsa > /tmp/sa-off.yaml
+          refs="$(refs_of /tmp/sa-off.yaml)"; made="$(count_sa /tmp/sa-off.yaml)"
+          echo "create=false name=app-irsa -> refs=[${refs}] serviceAccounts=${made}"
+          if [ "$refs" != "app-irsa" ] || [ "$made" != "0" ]; then
+            echo "::error title=serviceAccount values not honoured::With serviceAccount.create=false and name=app-irsa the chart rendered serviceAccountName=[${refs}] and ${made} ServiceAccount object(s); it must render exactly [app-irsa] and 0. An operator configuring IRSA otherwise gets the chart's own account and pods with no cloud identity. fix: every workload must resolve the name through the 'ultimate.serviceAccountName' helper in docker/helm/templates/_helpers.tpl, and templates/service.yaml must gate the ServiceAccount on .Values.serviceAccount.create."
+            exit 1
+          fi
+
+          # create: true + a name — the chart owns the account, under the name it was given.
+          helm template app docker/helm --set serviceAccount.name=my-sa > /tmp/sa-on.yaml
+          refs="$(refs_of /tmp/sa-on.yaml)"; made="$(count_sa /tmp/sa-on.yaml)"
+          echo "create=true name=my-sa -> refs=[${refs}] serviceAccounts=${made}"
+          if [ "$refs" != "my-sa" ] || [ "$made" != "1" ]; then
+            echo "::error title=serviceAccount.name not honoured on create::With serviceAccount.create=true and name=my-sa the chart rendered serviceAccountName=[${refs}] and ${made} ServiceAccount object(s); it must render exactly [my-sa] and 1. fix: see the 'ultimate.serviceAccountName' helper in docker/helm/templates/_helpers.tpl."
+            exit 1
+          fi
 
   # One job per package: its own tests, its own lint, its own coverage bar.
   #

@@ -23,7 +23,7 @@ spec:
         app.kubernetes.io/component: migrate
     spec:
       restartPolicy: Never
-      serviceAccountName: {{ include "ultimate.fullname" . }}
+      serviceAccountName: {{ include "ultimate.serviceAccountName" . }}
       # Same reason as the Deployments: ROLE=migrate applies SQL and exits, and calls no API server.
       automountServiceAccountToken: false
       securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}

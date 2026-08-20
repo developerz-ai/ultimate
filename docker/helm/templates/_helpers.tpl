@@ -12,6 +12,29 @@
 {{- printf "%s:%s" .Values.image.repository (default .Chart.AppVersion .Values.image.tag) -}}
 {{- end -}}
 
+{{/*
+The ServiceAccount the pods run as. `helm create`'s semantics, because that is what an operator
+reaching for these two values already expects: with `create: true` the chart's own name unless
+`name` overrides it, with `create: false` whatever `name` says and the namespace `default` if it
+says nothing.
+
+Declared in values.yaml since it shipped and read by NOTHING until 2026-08: service.yaml emitted the
+ServiceAccount unconditionally under `ultimate.fullname`, and both deployments.yaml and
+migrate-job.yaml hardcoded that same name. An operator setting `{create: false, name: app-irsa}` for
+IRSA or Workload Identity therefore got the chart's own ServiceAccount anyway, and the pods ran with
+no cloud identity — a knob that reported success and changed nothing.
+
+Resolved in ONE place so the `kind: ServiceAccount` this chart may or may not create and the
+`serviceAccountName` on two workloads cannot drift apart again.
+*/}}
+{{- define "ultimate.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create -}}
+{{- default (include "ultimate.fullname" .) .Values.serviceAccount.name -}}
+{{- else -}}
+{{- default "default" .Values.serviceAccount.name -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "ultimate.labels" -}}
 app.kubernetes.io/name: {{ include "ultimate.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}

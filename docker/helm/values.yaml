@@ -25,9 +25,30 @@ serviceMonitor:
   scrapeTimeout: 10s
   labels: {}         # what your operator's `serviceMonitorSelector` matches, if it uses one
 
+# Read by `ultimate.serviceAccountName` (_helpers.tpl), which BOTH workloads and the optional
+# ServiceAccount resource go through. `helm create`'s semantics:
+#
+#   create: true,  name: ""          the chart creates `<release>-ultimate` and the pods use it
+#   create: true,  name: my-sa       the chart creates `my-sa` and the pods use it
+#   create: false, name: app-irsa    the chart creates nothing; the pods use your `app-irsa`
+#   create: false, name: ""          the chart creates nothing; the pods use the namespace `default`
+#
+# `create: false` with a name you annotate for IRSA / Workload Identity is why these exist, and
+# until 2026-08 nothing read either key: the ServiceAccount was emitted unconditionally and both
+# workloads hardcoded the chart's own name, so an operator who set them got the chart's account
+# anyway and the pods had no cloud identity.
+#
+# `automountServiceAccountToken: false` on the pods stays either way. It suppresses the DEFAULT
+# kube-apiserver credential, which no role in this image uses; a cloud identity webhook projects
+# its own token volume and is unaffected.
 serviceAccount:
   create: true
   name: ""
+
+# Read by `ultimate.name` (_helpers.tpl) and declared here since 2026-08 — it was the mirror of the
+# `serviceAccount` defect: a knob the templates read that this file never mentioned, so the only way
+# to discover it was to open the chart.
+nameOverride: ""
 
 # A voluntary-eviction budget per role that has more than one pod (pdb.yaml). On by default: a node
 # drain takes every pod of a role at once without it, and the chart's `maxUnavailable: 0` rolling

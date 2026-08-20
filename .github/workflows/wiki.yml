@@ -25,17 +25,26 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: detect wiki sources
-        id: wiki
+      # REFUSES, where it used to set `present=false` and let the push step skip.
+      #
+      # `rsync --delete` two steps down is what makes the wiki a projection rather than an archive:
+      # a page deleted here is deleted there. An empty `wiki/` is the one input for which that
+      # matters most — every page has been removed — and skipping the sync turned it into the one
+      # input where nothing is deleted at all. The run reported ✅ and the GitHub wiki kept serving
+      # every orphaned page, forever, with no error anywhere.
+      #
+      # An empty source directory is a signal to investigate, never a reason to skip. If the wiki is
+      # genuinely being retired, that is a deletion of this workflow — a reviewable change — and not
+      # a silent no-op discovered months later by a reader following a stale link.
+      - name: require wiki sources
         run: |
-          if [ -d wiki ] && [ -n "$(ls -A wiki 2>/dev/null)" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [ ! -d wiki ] || [ -z "$(ls -A wiki 2>/dev/null)" ]; then
+            echo "::error title=No wiki sources::wiki/ is missing or empty, so this run would have skipped the push and left the GitHub wiki serving pages this repository no longer has. fix: restore the directory with 'git checkout HEAD~1 -- wiki' (or 'git log --diff-filter=D -- wiki' to find what removed it); if the wiki is being retired, delete .github/workflows/wiki.yml in the same change."
+            exit 1
           fi
 
       - name: push to the wiki
-        if: steps.wiki.outputs.present == 'true'
         env:
           GIT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
