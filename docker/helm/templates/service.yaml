@@ -37,14 +37,20 @@ spec:
       targetPort: metrics
 {{- end }}
 {{- end }}
+{{- if .Values.serviceAccount.create }}
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "ultimate.fullname" . }}
+  name: {{ include "ultimate.serviceAccountName" . }}
   labels:
     {{- include "ultimate.labels" . | nindent 4 }}
 # Belt to the pod-level braces in deployments.yaml and migrate-job.yaml: a workload that forgets the
 # pod-spec field still gets no token, and a ServiceAccount this chart creates is used by nothing
 # else. No role in this image calls the Kubernetes API.
+#
+# Only on the account this chart OWNS. With `serviceAccount.create: false` the operator's own
+# account is left exactly as they configured it — annotations, automount policy and all — which is
+# the whole point of pointing the workloads at one they manage.
 automountServiceAccountToken: false
+{{- end }}

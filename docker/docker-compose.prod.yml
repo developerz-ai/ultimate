@@ -1,8 +1,18 @@
 # The same image, once per role. This file IS the production topology: scale a role by scaling its
 # service, and nothing about the code changes.
 #
-#   docker compose -f docker/docker-compose.prod.yml run --rm migrate
-#   docker compose -f docker/docker-compose.prod.yml up -d web sync worker scheduler
+#   IMAGE=ghcr.io/you/app:1.2.3 docker compose -f docker/docker-compose.prod.yml run --rm migrate
+#   IMAGE=ghcr.io/you/app:1.2.3 docker compose -f docker/docker-compose.prod.yml up -d web sync worker scheduler
+#
+# `IMAGE` must name an APP image and the commands above show it for that reason. The `Dockerfile`
+# beside this file builds the framework's CLI (`/app/x` and nothing else) and cannot serve any of
+# these roles — `ROLE` is read by `runRole()`, which an app's `apps/web/server.ts` calls. An app
+# image is `x build --target docker` over the app's OWN `docker/Dockerfile`, which `x new` writes.
+# The `ultimate-app:latest` default below is a placeholder, not a buildable reference here.
+#
+# In an app, this file is a specimen of the one `x new` scaffolds and `x deploy --method compose`
+# runs — `planDeploy` resolves `docker/docker-compose.prod.yml` from the APP root
+# (packages/cli/src/cmd-deploy.ts:125), never from the framework.
 #
 # A published host port has exactly one binder, so the two roles that publish one run at
 # `replicas: 1` here. That is the rung, not a defect: Compose is one box (docs/ops/README.md), and

@@ -35,7 +35,7 @@ spec:
         {{- include "ultimate.labels" $ | nindent 8 }}
         app.kubernetes.io/component: {{ $role }}
     spec:
-      serviceAccountName: {{ include "ultimate.fullname" $ }}
+      serviceAccountName: {{ include "ultimate.serviceAccountName" $ }}
       # No role in this image ever calls the Kubernetes API — `ROLE` is read from the env and
       # everything else comes from app.config.ts. Mounting the token anyway hands a JWT for this
       # namespace's ServiceAccount to any code that reaches the filesystem, which for a web role is

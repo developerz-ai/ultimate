@@ -1,8 +1,27 @@
-# One image, every role. ROLE selects behaviour at start; nothing else differs between the web,
-# sync, worker, scheduler, migrate and replicator processes. Deploy anywhere = containers only.
+# The framework's own CLI image: `x`, compiled to one self-contained binary, on distroless.
 #
-#   docker build -f docker/Dockerfile -t ultimate-app:dev .
-#   docker run -e ROLE=worker ultimate-app:dev
+#   docker build -f docker/Dockerfile -t ultimate-cli:dev .
+#   docker run --rm ultimate-cli:dev --version
+#   docker run --rm ultimate-cli:dev doctor --json
+#
+# NOT an app image, and this header said it was until 2026-08: "One image, every role. ROLE selects
+# behaviour at start", with `docker run -e ROLE=worker` beside it. That promise belongs to an APP
+# image and this one cannot keep it — the final stage below contains `/app/x` and nothing else, `x`
+# has no `serve` command, and `ROLE` is read by `runRole()` (packages/cli/src/serve.ts:358), which
+# is a LIBRARY export an app's `apps/web/server.ts` calls. There is no app in this build context to
+# call it.
+#
+# An app's image is written by `x new` (packages/cli/src/templates/scaffold-container.ts) and built
+# by `x build --target docker`, which compiles the APP's own `docker/Dockerfile`
+# (packages/cli/src/cmd-build.ts, `BUILD_ENTRY.docker` — an app-root-relative path, never this
+# file). That image is `ENTRYPOINT ["bun", "apps/web/server.ts"]` with no CMD, and it is the one
+# that keeps the one-image-every-role promise.
+#
+# What this file is for, since nothing deploys it: it is the only artifact in the repository that
+# proves the `--compile` + `--define ULTIMATE_FRAMEWORK_VERSION` + distroless-libc chain end to end
+# on a shipping binary — the chain `x build --target binary` generates and nothing else executes.
+# Four separate bugs in that chain are recorded in the stage comments below, each found by building
+# this file. `.github/workflows/ci.yml`'s `container` job is what now builds it on every push.
 #
 # syntax=docker/dockerfile:1
 
@@ -91,15 +110,17 @@ RUN VERSION_DEFINE="$(bun --print 'JSON.stringify(require("./packages/core/packa
 # stage is not what ships.
 FROM gcr.io/distroless/cc-debian13:nonroot AS runtime
 COPY --from=build /out/app /app/x
-# ROLE is the only knob. Everything else comes from app.config.ts, validated at boot.
-ENV ROLE=web \
-    PORT=3000 \
+# `ROLE=web` was here, under "ROLE is the only knob", and nothing in this image has ever read it:
+# `roleFromEnv` is reached only through `serveApp`/`runRole`, which no `x` subcommand calls. An
+# operator reading it concluded the image serves. `PORT` stays because a command in this image does
+# read it (`x db branch`, packages/cli/src/cmd-db-branch.ts:152, for the preview URL).
+ENV PORT=3000 \
     NODE_ENV=production
-# Every port a role in this image can open: PORT for web, PORT+1 for sync (dev-roles.ts), and
-# METRICS_PORT for the scrape listener every role but `migrate` opens. EXPOSE is metadata, so a
-# missing entry costs nothing at runtime and misdocuments the image to everything that reads it —
-# `docker run -P`, a registry UI, an operator deciding what to publish.
-EXPOSE 3000 3001 9090
+# No EXPOSE. It listed 3000/3001/9090 as "every port a role in this image can open", which is the
+# same false premise as the ROLE default above — no role runs here and the default command opens no
+# socket at all. EXPOSE is metadata read by `docker run -P`, registry UIs and operators deciding
+# what to publish, so a set of ports nothing binds misdocuments the image to exactly the audiences
+# the old comment named. The app image is where those ports are real.
 USER nonroot:nonroot
 # The guard, now on the image that ships and as the user that runs it. A binary that cannot exec —
 # wrong libc, wrong Debian, wrong permissions, or no `--version` because the `--define` above went
@@ -108,14 +129,24 @@ USER nonroot:nonroot
 # Exec form is not a style choice: distroless carries no shell, and shell-form `RUN` is
 # `/bin/sh -c`, which is the very thing this stage does not have.
 RUN ["/app/x", "--version"]
-# No HEALTHCHECK, deliberately. One image serves six roles and `worker`, `scheduler` and
-# `replicator` open no APPLICATION listener — only the metrics socket above, which answers
-# METRICS_PATH and 404s everything else — so any single probe baked in here is wrong for half of
-# them — the exact shape of the bug that made sync's readiness probe meaningless. The probe belongs
-# where the role is chosen: `healthcheck:` per service in docker-compose.prod.yml, and per-role
-# readiness/liveness in docker/helm/templates/_helpers.tpl.
-#
-# Only `web` and `sync` expose /healthz and /readyz — they are the only roles that construct a
-# server. Every role drains on SIGTERM.
+# No HEALTHCHECK: this image runs a command and exits, so there is nothing to keep probing. In an
+# APP image the probe belongs where the role is chosen — `healthcheck:` per service in
+# docker-compose.prod.yml, and per-role readiness/liveness in docker/helm/templates/_helpers.tpl,
+# because `worker`, `scheduler` and `replicator` open no application listener and one probe baked
+# into a six-role image is wrong for half of them.
 ENTRYPOINT ["/app/x"]
-CMD ["dev", "--once"]
+# No CMD. `x` with no arguments prints its command catalogue and exits 0, which is the honest
+# default for a CLI image and leaves no argv variant to get wrong — the same reason the app image
+# ships none.
+#
+# It was `CMD ["dev", "--once"]`: a production image defaulting to the DEV SERVER. `x dev` takes
+# `--role` as a flag, defaults to every role in `DEV_ROLES`, and never reads `ROLE`
+# (packages/cli/src/cmd-dev.ts:187,283); `--once` is documented "boot, report, exit — for smoke
+# tests and CI" (:285). So every service in a compose file running this image booted the dev
+# server, printed a report, exited 0 and was restarted by `restart: unless-stopped` — an infinite
+# boot loop — and `run --rm migrate` applied no migration and exited 0, so a release phase
+# succeeded having done nothing. The chart sets no `command`/`args` either, so every Deployment
+# would CrashLoopBackOff while the pre-upgrade migrate Job reported Complete.
+#
+# `.github/workflows/ci.yml`'s `container` job runs this image with no arguments and requires the
+# catalogue on stdout, so a CMD that boots something is a red build rather than a red pod.
