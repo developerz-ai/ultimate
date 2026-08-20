@@ -23,11 +23,37 @@ export interface AdminPageOptions {
    */
   readonly dir?: string;
   readonly locales?: readonly string[];
+  /**
+   * The app's own catalog module — `@<app>/i18n`, read off `packages/i18n/package.json` by
+   * `resolveCatalogModule`. Absent only for an app that ships no such package.
+   */
+  readonly catalogModule?: string;
 }
 
 const titleKeyFor = (name: string): string => `admin.${name}.title`;
 
-const pageSource = (name: string, permission: string, dir: string): string => {
+/**
+ * The generated page reaches strings through the APP's catalog module — the one that calls
+ * `defineCatalogs()` — so a page that renders a string depends on the module that registers them.
+ * `t` from `@ultimat3/i18n` renders while depending on nothing, which is how a shipped app served
+ * every string as a loud miss with a green gate (issue #249). An app with no catalog module keeps
+ * the framework import: emitting one that cannot resolve is worse than the wrong idiom.
+ */
+const catalogImport = (module: string | undefined): string =>
+  module === undefined
+    ? "import { t } from '@ultimat3/i18n';"
+    : `import { useT } from '${module}';`;
+
+/** `useT()` is per render, so the component binds it in its own body. */
+const translatorBinding = (module: string | undefined): string =>
+  module === undefined ? '' : '\n  const t = useT();\n';
+
+const pageSource = (
+  name: string,
+  permission: string,
+  dir: string,
+  module: string | undefined,
+): string => {
   const Name = pascal(name);
   const declaration = camel(name);
   return `// Admin page: /${name}. An ORDINARY component — there is no \`defineRoute\` here, deliberately:
@@ -40,9 +66,9 @@ const pageSource = (name: string, permission: string, dir: string): string => {
 //   defineAdmin({ …, pages: […, ${declaration}Page] })
 
 import type { AdminCustomPage, AdminPageProps } from '@ultimat3/admin';
-import { t } from '@ultimat3/i18n';
+${catalogImport(module)}
 
-export function ${Name}Page(props: AdminPageProps) {
+export function ${Name}Page(props: AdminPageProps) {${translatorBinding(module)}
   return (
     <section>
       <h1>{t('${titleKeyFor(name)}')}</h1>
@@ -92,7 +118,10 @@ export function adminPageFiles(
   // Trailing slashes trimmed exactly as `islandFiles` does — one `--at`, one normalization.
   const dir = (options.dir ?? DEFAULT_ADMIN_PAGE_DIR).replace(/\/+$/, '');
   return [
-    { path: `${dir}/${name}.tsx`, contents: pageSource(name, options.permission, dir) },
+    {
+      path: `${dir}/${name}.tsx`,
+      contents: pageSource(name, options.permission, dir, options.catalogModule),
+    },
     { path: `${dir}/${name}.test.ts`, contents: pageTest(name, options.permission) },
     ...resolveLocales(options.locales).map((locale) => ({
       path: catalogPath(locale),

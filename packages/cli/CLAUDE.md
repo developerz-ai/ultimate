@@ -12,7 +12,7 @@ Tier 5. May import tiers 0–4. Nothing imports this except `create-ultimate`.
 | Bare subcommands | `CommandSpec.defaultSubcommand`, **declared**. The parser answered `subcommands[0]` until 1.2.0, so `x db` ran `gen` — the migration GENERATOR — because it sorted first, and `x mcp` started a server. A command with no defensible default declares none and `MissingSubcommandError` refuses the bare form; `parse.test.ts` pins the set at exactly `db` and `mcp`. Its fix is `x help <command>`, never `x <command> --help`: the subcommand is resolved *after* the flag loop, so the latter throws the same error again — a fix line that reproduced its own failure |
 | Closed flag values | a flag whose values are a closed set is READ through a function that refuses the rest — `cmd-build.ts`'s `readTarget`, `cmd-deploy.ts`'s `readMethod`, `cmd-routes.ts`'s `readSurfaceFilter`, `cmd-mcp.ts`'s `isTransport`. `=== 'helm' ? 'helm' : 'compose'` made `x deploy --method helmm` a COMPOSE deploy reporting `method: "compose"`, and `--surface App` reported `0 routes` and exit 0 — a typo and an empty table rendering identically. The set is the framework's own where one exists (`SURFACES` from `@ultimat3/render`), never a list restated here |
 | App root | `CommandSpec.requiresApp`, **enforced by `dispatch.ts`** before `target.run` — the field's doc said so for 17 commands and nothing read it, so the promise was kept only by each command remembering to call `requireAppRoot` itself. Those 17 calls stay (they hand the command its root, and name subcommands the dispatcher cannot see), but the DECLARATION is what decides, ahead of any check a command makes about its own arguments; `--help` is exempt, because `target` is the help command by then |
-| Result helpers | `command.ts`'s `ok()` / `failed()` write `ok` **after** the `extra` spread: the function's name is the verdict and nothing a caller passes can overturn it. Spread last, `failed('verify', '1 of 17 steps failed', { ok: true })` answered `ok: true` and `exitCodeFor` exited **0** on it — a green CI over a red command (`command.test.ts`) |
+| Result helpers | `command.ts`'s `ok()` / `failed()` write `ok` **after** the `extra` spread: the function's name is the verdict and nothing a caller passes can overturn it. Spread last, `failed('verify', '1 of 19 steps failed', { ok: true })` answered `ok: true` and `exitCodeFor` exited **0** on it — a green CI over a red command (`command.test.ts`) |
 | I/O | only `dispatch.ts` renders or exits; commands return `CommandResult` |
 | Staying up | a command still listening when `run` resolves returns `hold` (`hold.ts`), or `bin.ts` exits out from under it |
 | `--json` | every command, no exceptions — same data as the human render |
@@ -93,7 +93,7 @@ them is answered by this table rather than by a second convention:
 | `x jobs` | `cmd-jobs.ts`, `jobs-{driver,report,drain,json,table}.ts` | `@ultimat3/jobs`' own introspection |
 | `x tasks` | `cmd-tasks.ts`, `tasks-facts.ts` | `registeredTasks()` + `@ultimat3/time`'s cron resolution |
 | `x policy` | `cmd-policy.ts`, `policy-facts.ts` | `@ultimat3/policy`'s `policyMatrix()` over the app's own `Policy` objects |
-| `x i18n` | `cmd-i18n.ts`, `i18n-audit.ts` | `@ultimat3/i18n`'s `extractFromFiles` + `auditCatalogs` |
+| `x i18n` | `cmd-i18n.ts`, `i18n-audit.ts`, `i18n-registration.ts` | `@ultimat3/i18n`'s `extractFromFiles` + `auditCatalogs`, then the live catalog registry |
 
 Each pairs a `cmd-*.ts` of CLI wiring with a facts module that takes plain inputs and returns plain
 data, so the projection is testable without a `ParsedArgs` — the `cmd-jobs.ts` / `jobs-report.ts`
@@ -107,6 +107,29 @@ mode `cmd-planned.ts` closes for planned commands and these close for real ones.
 `x i18n check` scans source, which the "never parse source for primitives" rule below does not
 forbid: a `t()` call is not a primitive and no registry holds it. It uses `source-files.ts`, the
 same walk `errors` and `filesize` use, so the three cannot disagree on what the app's source is.
+
+**And then it asks the question the scan cannot answer.** A catalog complete on disk, its keys used
+everywhere in source, and an audit of one against the other were all green for an app that rendered
+`⟦key⟧` on every page — registration is a side effect of importing the module that calls
+`defineCatalogs()`, and nothing imported it (issue #249). `i18n-registration.ts` loads the app
+through `loadApp` — the same call `serveApp` makes at boot, so it is the boot's own answer and not a
+simulation of one — and compares the catalogs on disk against the live registry, per locale
+(`X_CATALOG_UNREGISTERED`). Two conditions, one code: a shipped catalog no module registered, and
+no catalog anywhere while source calls `t()` — the second is the vacuous green an app with an
+`app.config.ts` and no `packages/i18n/catalogs/` used to get. `loadApp`'s own findings ride along
+ONLY when something is unregistered, because "packages/i18n/src/index.ts: SyntaxError" is the
+evidence for the gap above it and noise on a pass.
+
+`catalogFindings(root)` is the one composition both callers report: `x i18n check` renders it as a
+table with a `registered` column, `x verify`'s **`i18n` step** returns it as findings. One
+implementation, so the command and the gate can never disagree about an app.
+
+**The generators emit `useT()` from the app's own catalog module, never `t` from `@ultimat3/i18n`.**
+The specifier is `resolveCatalogModule(root)` — `packages/i18n/package.json`'s `name`, read off
+disk, because a template is a pure string function and only a package name resolves as an import.
+An app with no such package keeps the framework import: emitting one that cannot resolve trades a
+wrong idiom for a file that does not compile. This is where the reported bug's idiom came from —
+every generated page imported `t` directly, so no page depended on the module that registers.
 
 **A catalog is authored nested and read flat.** `Catalog` (`{ 'nav.home': 'Home' }`) is the
 translator's form; the file on disk holds `{ nav: { home: 'Home' } }`, and `parseNestedCatalog`

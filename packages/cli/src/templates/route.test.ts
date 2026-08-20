@@ -63,3 +63,36 @@ describe('unit · the offline assertion lands where the e2e step can find it', (
     );
   });
 });
+
+describe('unit · the generated page reads strings through the app, never past it', () => {
+  const pageOf = (options: Parameters<typeof routeFiles>[1]): string => {
+    const page = routeFiles('play', options).find((file) => file.path.endsWith('page.tsx'));
+    // `GeneratedFile.contents` carries bytes for the generators that emit images; a `.tsx` is
+    // text. Answering `''` for either miss would make every `not.toContain` below pass over
+    // nothing, which is the assertion that cannot fail.
+    if (typeof page?.contents !== 'string') return expect.unreachable('no page.tsx generated');
+    return page.contents;
+  };
+
+  test('imports useT from the app catalog module the generator was given', () => {
+    const source = pageOf({ surface: 'app', catalogModule: '@myapp/i18n' });
+
+    expect(source).toContain("import { useT } from '@myapp/i18n';");
+    expect(source).toContain('const t = useT();');
+    // Registration is a side effect of importing that module. A page reaching straight for
+    // `@ultimat3/i18n` renders strings while depending on nothing that registers them, which is
+    // the app issue #249 reported — and the generator is where that idiom came from.
+    expect(source).not.toContain("from '@ultimat3/i18n'");
+  });
+
+  test("`meta` takes the router's own `t`, so the page has one import and not two", () => {
+    expect(pageOf({ surface: 'site', catalogModule: '@myapp/i18n' })).toContain('meta: ({ t }) =>');
+  });
+
+  test('an app with no catalog module keeps the framework import — never one that cannot resolve', () => {
+    const source = pageOf({ surface: 'app' });
+
+    expect(source).toContain("import { t } from '@ultimat3/i18n';");
+    expect(source).not.toContain('useT');
+  });
+});

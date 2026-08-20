@@ -33,6 +33,13 @@ export const VERIFY_STEP_NAMES = [
   // enforces — and `verifyCommand.run` passes no host checks at all, so the app path could not
   // have carried it. It runs beside `budgets` because both read the app the same load produced.
   'seo',
+  // Nineteenth, by the same test the SEO step above passed and for the same reason it is not a
+  // rider: `boundaries` asks whether an import was LEGAL and this asks whether a declaration
+  // REACHED the running app, which is a different question with a different fix (axiom 4). It
+  // costs no second app load — `budgets` already imported every module, and this reads the
+  // registries that load filled. Until it existed, an app could ship every user-facing string as
+  // `⟦key⟧` with `x verify` green, because nothing in the gate ever asked (issue #249).
+  'i18n',
   'manifest',
   'roadmap',
 ] as const;

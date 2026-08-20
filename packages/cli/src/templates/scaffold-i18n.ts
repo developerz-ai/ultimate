@@ -87,8 +87,15 @@ export type AppCatalog = typeof en;
 export type TranslationKey = KeyOf<AppCatalog>;
 
 /**
- * Use this, never \`useI18n()\` directly — the type parameter is what makes an unknown key a
- * compile error instead of a \`⟦key⟧\` someone notices in production.
+ * The app's ONE way to read a string. Never \`useI18n()\` directly and never \`t\` from
+ * \`@ultimat3/i18n\`, for two independent reasons:
+ *
+ * 1. the type parameter makes an unknown key a compile error instead of a \`⟦key⟧\` someone
+ *    notices in production;
+ * 2. importing THIS module is what registers the catalogs — \`defineCatalogs()\` above runs on
+ *    import and nowhere else. A page that reached past it rendered every string as \`⟦key⟧\`
+ *    with \`x verify\` green, because nothing in the app depended on the module that registers
+ *    (issue #249). \`x i18n check\` now refuses that app; this import is why it never happens.
  */
 export const useT = (): Translator<AppCatalog> => useI18n<AppCatalog>();
 `;

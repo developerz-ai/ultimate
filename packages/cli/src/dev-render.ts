@@ -26,13 +26,12 @@ import {
   hydrateRuntime,
   isrKey,
   metaContextFor,
+  ROOT_ELEMENT_ID,
   renderComponent,
   renderHead,
-  renderSpa,
   renderSsr,
   routeDataFor,
   routeEntries,
-  SPA_ROOT_ID,
   seoRenderers,
   staticHeaders,
   streamResult,
@@ -87,9 +86,10 @@ const styleTag = (entry: RouteEntry): string => {
 };
 
 /**
- * The route's rendered body, inside the hydration root. A module that exports no component (an
- * `api/` route, or a `spa` whose data is all client-side) renders an empty root, which is the
- * shell those modes are defined to serve — not a fallback for a component that failed.
+ * The route's rendered body, inside the hydration root. Every mode goes through here — an empty
+ * root is what a module exporting no component renders, and nothing else: `spa` was the one mode
+ * that never reached this function, which is why every `spa` route ever declared served
+ * `<div id="x-root"></div>` and painted nothing.
  */
 export async function routeBody(
   entry: RouteEntry,
@@ -97,7 +97,7 @@ export async function routeBody(
   data: RouteData,
   islands: IslandCollector,
 ): Promise<string> {
-  if (entry.component === undefined) return `<div id="${SPA_ROOT_ID}"></div>`;
+  if (entry.component === undefined) return `<div id="${ROOT_ELEMENT_ID}"></div>`;
   const url = new URL(ctx.url);
   const html = await renderComponent(
     entry.component,
@@ -113,7 +113,7 @@ export async function routeBody(
     entry.file,
     { islands },
   );
-  return `<div id="${SPA_ROOT_ID}">${html}</div>`;
+  return `<div id="${ROOT_ELEMENT_ID}">${html}</div>`;
 }
 
 /**
@@ -195,16 +195,6 @@ async function resultFor(
       );
       return served.result;
     }
-    case 'spa':
-      // The shell renders no body by definition, but it still carries the surface's CSS: the
-      // client paints into `#x-root` and a flash of unstyled shell is the mode's own regression.
-      return renderSpa({
-        entry,
-        buildId: options.buildId,
-        head: (await headFor(entry, request, data)) + styleTag(entry),
-        chunks: [],
-        lang: lang(),
-      });
     case 'stream': {
       // The shell IS the component: nothing can yet mark a subtree as a hole. Solid's `Suspense`
       // is not the missing piece and never will be here — it calls `getContextId()`, which throws

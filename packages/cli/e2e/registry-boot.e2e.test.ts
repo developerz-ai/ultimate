@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { VERSION_DEFINE } from '@ultimat3/core';
+import { externalArgs } from '../src/compile-externals';
 
 const dir = mkdtempSync(join(tmpdir(), 'ultimate-cli-boot-e2e-'));
 const REGISTRY = join(import.meta.dir, '..', 'src', 'registry.ts');
@@ -36,6 +37,10 @@ async function compileAndRun(
       'build',
       '--compile',
       ...(define === undefined ? [] : ['--define', define]),
+      // The same allowlist `binaryArgs` splices in, from the same constant — this probe imports
+      // `registry.ts`, whose graph reaches `cmd-dev` → `island-bundle` → `@babel/core`, so a copy
+      // that drifted from the shipped command would make this suite green over a red `x build`.
+      ...externalArgs(),
       entry,
       '--outfile',
       out,
