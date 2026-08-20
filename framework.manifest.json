@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "499021ccdd2bbd49ae6965921148a5dc941c925a15ab30704fc5d0c37186ead2",
+  "buildId": "dbfedc3aa6d6b65e546daffc0d9477c55f27d7bc6502c5ed9d95ea8576e9a0a6",
   "tiers": {
     "0": [
       "core",
@@ -2381,6 +2381,21 @@
       "code": "X_TEST_SHARD_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_TEST_TYPECHECK_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/test-typecheck-gate.ts"
+    },
+    {
+      "code": "X_TEST_TYPECHECK_REGRESSED",
+      "owner": "scripts",
+      "at": "scripts/test-typecheck-gate.ts"
+    },
+    {
+      "code": "X_TEST_TYPECHECK_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/test-typecheck-gate.ts"
     },
     {
       "code": "X_THEME_INVALID",

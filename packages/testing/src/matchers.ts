@@ -2,10 +2,18 @@
 // hand, differently, in every test — and a hand-written version of "did this policy deny?" is how
 // a test ends up asserting on the wrong branch.
 
+import type { ExpectExtendMatchers } from 'bun:test';
 import { expect } from 'bun:test';
 import { describeValue, isUltimateError, stringField } from '@ultimat3/core';
 import { TestJobExpectedError, TestSchemaExpectedError } from './errors';
+import type { UltimateMatchers } from './matcher-surface';
 import type { OpenApiLike } from './test-types';
+
+// Re-exported so the EMITTED `matchers.d.ts` still names `./matcher-surface`. A type-only import
+// used by a non-exported const is elided from the declaration output, and with it goes the
+// `bun:test` augmentation for anyone consuming this package through `dist/` — which is every
+// package that reaches it across a project reference.
+export type { UltimateMatchers } from './matcher-surface';
 
 export interface MatcherResult {
   readonly pass: boolean;
@@ -160,7 +168,15 @@ function breakingChanges(before: OpenApiLike, after: OpenApiLike): readonly stri
   return broke;
 }
 
-expect.extend({
+/**
+ * Typed from the declaration rather than inferred from this literal, which is what makes the two
+ * halves one thing: a matcher on `UltimateMatchers` with no entry here fails to compile, an entry
+ * here that nothing declares is an excess property, and an argument list that drifts from the
+ * declared one is a type error at the key that drifted. Inferred — `expect.extend({ … })` — none
+ * of the three is visible, and a declared-but-unimplemented matcher fails at runtime in whichever
+ * test calls it first.
+ */
+const implementations: ExpectExtendMatchers<UltimateMatchers<unknown>> = {
   toBeUltimateError(received: unknown, code?: string) {
     const actual = codeOf(received);
     if (actual === undefined) {
@@ -225,19 +241,9 @@ expect.extend({
     const rejected = await hasIssues(received, input);
     return result(!rejected, `expected the schema to accept ${JSON.stringify(input)}`);
   },
-});
+};
 
-declare module 'bun:test' {
-  interface Matchers<T> {
-    toBeUltimateError(code?: string): T;
-    toDenyPolicy(context: Readonly<Record<string, unknown>>): Promise<T>;
-    toEmitSteps(steps: readonly string[]): Promise<T>;
-    toMatchOpenApi(committed: OpenApiLike): T;
-    toBeWithinBudget(limit: number): T;
-    toRejectInput(input: unknown): Promise<T>;
-    toAcceptInput(input: unknown): Promise<T>;
-  }
-}
+expect.extend(implementations);
 
 /** Imported for its side effect by the preload; exported so a test can be explicit about it. */
 export const matchersInstalled = true;

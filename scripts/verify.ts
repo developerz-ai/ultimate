@@ -47,6 +47,7 @@ import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
 import { readmeFenceFindings } from './readme-fences';
 import { publishListFindings } from './release-workflow';
 import { checkRoadmap } from './roadmap';
+import { testTypecheckFindings } from './test-typecheck-gate';
 import { versionStampFindings } from './version-stamps';
 import { frameDocFindings } from './wiki-frames';
 import { wikiTableFindings } from './wiki-tables';
@@ -198,6 +199,13 @@ export const errorContract: HostCheck = async (root) => [
  * | `docCommandFindings` | every `` `x …` `` in `wiki/` and `docs/` is an invocation this build can run | `loadCommandCatalog()` |
  * | `versionStampFindings` | one page stamps a version, it is the shipped one, and the workspaces agree | every workspace manifest |
  * | `readmeFenceFindings` | a fenced `ts`/`tsx` example in a package README typechecks | `tsc`, on a ratchet |
+ * | `testTypecheckFindings` | this repo's TEST sources typecheck — every package config excludes them, so `tsc -b` reads none of the 966 | `tsc -p tsconfig.tests.json`, on a ratchet |
+ *
+ * `testTypecheckFindings` rides HERE and not on `typecheck`, which is where it belongs by meaning:
+ * that step takes no host findings at all (`packages/cli/src/cmd-verify.ts` calls `hostFindings`
+ * on four steps, and `typecheck` is not one), and widening it is that package's edit rather than a
+ * rider on this one. This is the step that already carries the other `tsc`-on-a-ratchet rule, and
+ * it asks the same question both do: does a committed file still describe this tree?
  *
  * None of them is a step of its own, for the reason the `errors` step's comment already gives:
  * `VerifyStepName` is a closed union owned by `@ultimat3/cli`, and a generated app would inherit an
@@ -214,6 +222,7 @@ export const frameworkFiles: HostCheck = async (root) => [
   ...(await docCommandFindings(root)),
   ...(await versionStampFindings(root)),
   ...(await readmeFenceFindings(root)),
+  ...(await testTypecheckFindings(root)),
 ];
 
 export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {
