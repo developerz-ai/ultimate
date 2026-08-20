@@ -45,6 +45,9 @@ const modules = async (): Promise<readonly string[]> => {
 
 const relative = (file: string): string => file.slice(APP_ROOT.length + 1);
 
+/** The one module allowed to import `@ultimat3/i18n`: the one that registers the catalogs. */
+const CATALOG_MODULE = 'packages/i18n/src/index.ts';
+
 /**
  * `import { a, b as c } from 'x'` only. `import type { … }` is skipped because a type is not an
  * export at runtime, and `verbatimModuleSyntax` is on — so every *other* named import in this app
@@ -123,5 +126,26 @@ describe('every app module', () => {
     expect(missing).toEqual([]);
     // Same whole-graph walk as above, so the same budget. Raised with its neighbour rather than
     // after it is seen failing: they scan one module set, and fixing one relocates the failure.
+  }, 30_000);
+
+  /**
+   * Registration is a side effect of importing `packages/i18n/src/index.ts` — nothing else in this
+   * app calls `defineCatalogs()`. A module that pulls `t` straight out of `@ultimat3/i18n` renders
+   * strings while depending on nothing that registers them, which is exactly how a shipped app
+   * served `⟦app.play.title⟧` on every page with `x verify` and `x i18n check` both green
+   * (issue #249). `useT()` from `@postly/i18n` is the one way in, and it is typed against this
+   * app's catalog besides, so an unknown key is a compile error rather than a loud miss.
+   */
+  test("reads strings through this app's catalog module, never past it", async () => {
+    const files = await modules();
+    const past: string[] = [];
+
+    for (const file of files) {
+      if (relative(file) === CATALOG_MODULE) continue;
+      const source = await Bun.file(file).text();
+      if (source.includes("from '@ultimat3/i18n'")) past.push(relative(file));
+    }
+
+    expect(past).toEqual([]);
   }, 30_000);
 });

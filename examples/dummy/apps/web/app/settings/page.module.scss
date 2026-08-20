@@ -1,22 +1,75 @@
 // Settings form. One column, generous spacing, tokens throughout.
+//
+// `.editor`'s rules reach the island's elements by TAG, not by class: the island is compiled by
+// `Bun.build`, which resolves a `.module.scss` import to a URL string rather than to the class map
+// the server hashed — so a scoped name written there would arrive `undefined`. The wrapper is
+// server-rendered, the island's markup is inside it, and descendant selectors cross the seam.
 
 .page {
   max-inline-size: 34rem;
 }
 
-.preview {
-  background-color: rgb(var(--color-bg-soft));
-  border-radius: var(--radius-md);
-  color: rgb(var(--color-fg-muted));
-  font-variant-numeric: tabular-nums;
+.summary {
+  display: grid;
+  gap: var(--space-2) var(--space-4);
+  grid-template-columns: auto 1fr;
   margin: 0;
-  padding: var(--space-3);
+
+  dt {
+    color: rgb(var(--color-fg-muted));
+  }
+
+  dd {
+    font-variant-numeric: tabular-nums;
+    margin: 0;
+  }
 }
 
-.actions {
-  align-items: center;
-  border-block-start: 1px solid rgb(var(--color-line));
+.editor {
   display: flex;
-  gap: var(--space-3);
-  padding-block-start: var(--space-6);
+  flex-direction: column;
+  gap: var(--space-5);
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  small {
+    color: rgb(var(--color-fg-muted));
+  }
+
+  select {
+    background-color: rgb(var(--color-bg));
+    border: 1px solid rgb(var(--color-line));
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-fg));
+    padding: var(--space-2);
+  }
+
+  p[data-role='preview'] {
+    background-color: rgb(var(--color-bg-soft));
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-fg-muted));
+    font-variant-numeric: tabular-nums;
+    margin: 0;
+    padding: var(--space-3);
+  }
+
+  button {
+    align-self: flex-start;
+    background-color: rgb(var(--color-accent));
+    border: 0;
+    border-radius: var(--radius-md);
+    color: rgb(var(--color-accent-fg));
+    cursor: pointer;
+    padding: var(--space-2) var(--space-4);
+  }
+
+  p[data-role='status'] {
+    color: rgb(var(--color-fg-muted));
+    margin: 0;
+    min-block-size: var(--space-4);
+  }
 }
