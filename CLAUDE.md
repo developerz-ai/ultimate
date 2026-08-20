@@ -17,9 +17,10 @@ CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 one commit, one tag, 30 tarballs.
 
 **Repository, tag and registry agree.** Never read a number here as the installable one; run the
-command beside it — that is the only thing here that cannot go stale. One command checks the whole
-row at once: `bun run scripts/registry-audit.ts --json`, which answers `30/30 publishable packages
-are on npm at 4.0.0, every one attested` or names each gap with a runnable `fix:`.
+command beside it — that is the only thing here that cannot go stale. `bun run scripts/registry-audit.ts --json`
+covers the **npm** rows in one call — it answers `30/30 publishable packages are on npm at 4.0.0,
+every one attested` or names each gap with a runnable `fix:` — and it asks nothing about the tag or
+the Release, which are the two rows below it.
 
 | Fact | State, `As of 2026-08-20` | Read it yourself |
 |---|---|---|
@@ -28,7 +29,7 @@ are on npm at 4.0.0, every one attested` or names each gap with a runnable `fix:
 | On the registry | **all 30 at 4.0.0**, no holes | `bun run scripts/registry-audit.ts --json` |
 | npm `latest` | **4.0.0** — `bunx create-ultimate myapp` installs it | `npm view @ultimat3/core version` |
 | Provenance | every 4.0.0 tarball attested, `_npmUser: GitHub Actions` | `npm view @ultimat3/core@4.0.0 dist.attestations _npmUser` |
-| Tag and Release | `v4.0.0` pushed **annotated**, GitHub Release published — the Release is what triggers the workflow | `git tag --list 'v4.*'` |
+| Tag and Release | `v4.0.0` pushed **annotated**, GitHub Release published — the Release is what triggers the workflow | `git ls-remote --tags origin 'refs/tags/v4.0.0*'` — both the ref **and** its peeled `^{}` line, which is what proves it is annotated and on the remote; then `gh release view v4.0.0 --json tagName,isDraft,publishedAt`. **Not** `git tag --list`, which reads the local repository and answered `v4.0.0` throughout the window in which the tag had never been pushed |
 | OIDC trusted publisher | attached to all 30, with `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
 
 **A lightweight tag is not a release trigger, and `--follow-tags` will not push one.** `v4.0.0` was
@@ -119,9 +120,10 @@ figure. [`scripts/bench/restart-bench.ts`](scripts/bench/restart-bench.ts), resu
 Open: roadmap milestone 11's two-platform deploy proof — 1.1.0 gave a scaffolded app a real
 deployable artifact (`packages/cli/src/serve.ts`; `x new` writes `apps/web/server.ts`,
 `prerender.ts`, a Dockerfile and `docker-compose.prod.yml`; `ROLE=migrate` runs release-phase
-migrations), and **4.0.0 gave it a chart** — `x new` writes `docker/helm`, 8 files, one
-`Deployment` per role, so `x deploy --method helm` runs `helm upgrade --install` against it with
-nothing to copy in. What is still missing is the **proof**, which is the milestone: the demo app on
+migrations), and **4.0.0 gave it a chart** — `x new` writes `docker/helm`, 8 files: a
+`Deployment` for each of the four roles enabled by default (`web`, `sync`, `worker`, `scheduler`),
+`replicator` behind `enabled: false`, and `migrate` as a `Job` rather than a Deployment. So
+`x deploy --method helm` runs `helm upgrade --install` against it with nothing to copy in. What is still missing is the **proof**, which is the milestone: the demo app on
 Compose **and** K8s from one image, with an invisible rolling restart, has not been demonstrated.
 Two things had to be true before it could be, and each was false in turn — until 2.0.0 `sync`'s
 readiness probe polled a port the process never opened, and until 4.0.0 a scaffolded app had no

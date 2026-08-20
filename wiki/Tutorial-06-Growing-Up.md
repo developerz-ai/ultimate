@@ -71,7 +71,7 @@ Start Postgres with `wal_level=logical`, `max_replication_slots=8` and `max_wal_
 
 ## Rung 2 → 3: Kubernetes
 
-**`x new` writes the chart**, `As of 2026-08-19` — `docker/helm`, 8 files, one `Deployment` per role — so `x deploy --method helm` runs `helm upgrade --install` against it with nothing to copy in. On 3.0.0 and below `x new` writes none and the command exits `X_NOT_IMPLEMENTED`: copy [`docker/helm`](https://github.com/developerz-ai/ultimate/tree/main/docker/helm) from the framework repo.
+**`x new` writes the chart**, `As of 2026-08-19` — `docker/helm`, 8 files — a `Deployment` for each of the four roles enabled by default (`web`, `sync`, `worker`, `scheduler`), `replicator` behind `enabled: false`, and `migrate` as a `Job` — so `x deploy --method helm` runs `helm upgrade --install` against it with nothing to copy in. On 3.0.0 and below `x new` writes none and the command exits `X_NOT_IMPLEMENTED`: copy [`docker/helm`](https://github.com/developerz-ai/ultimate/tree/main/docker/helm) from the framework repo.
 
 The alternative is the flat manifests in [`docs/ops/01-kubernetes.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/01-kubernetes.md). Carry one, never both — a repo with a chart *and* a manifest tree has two sources of truth for the same pod. Deleting `docker/helm` is how you choose the manifests: the command then fails with helm's own error, not the framework's.
 

@@ -8,18 +8,18 @@ Honest answers. Where something is not built yet, it says so.
 
 **`As of 2026-08`.** Stable API, semver from here. 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — **30 in all** — are **versioned** in lockstep: one version, one commit, one tag.
 
-**Publication is a separate step from versioning, and the current release's has run.** Repository, tag and registry are the same version; there are no publication holes — every one of the 30 is on npm.
+**Publication is a separate step from versioning, and for the current release it has run.** Repository, tag and registry are the same version; there are no publication holes — every one of the 30 is on npm.
 
 | Fact | State `As of 2026-08-20` | Resolve it yourself |
 |---|---|---|
 | What you can install | whatever `latest` is — `bunx create-ultimate myapp` gives you it | `npm view @ultimat3/core version` |
 | Repository version | all 30 stamped in one commit | the top section of [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) |
-| Tagged | the tag is on origin, annotated, and its GitHub Release is published | [the repository's tags](https://github.com/developerz-ai/ultimate/tags) |
+| Tagged | the tag is on origin, annotated, and its GitHub Release is published | `git ls-remote --tags origin 'refs/tags/v<version>*'` — expect the ref and its peeled `^{}` line — then `gh release view v<version> --json tagName,isDraft,publishedAt` |
 | On the registry | **all 30**, at that version | `npm view @ultimat3/scraping version` |
 | Provenance | 1.1.0, 1.2.0, 3.0.0 and 4.0.0 carry an attestation; **2.0.0 does not** | `npm view @ultimat3/core dist.attestations` |
 | Who published it | `GitHub Actions`, over OIDC, on all 30 | `npm view @ultimat3/core _npmUser` |
 
-Only the [footer](_Footer) stamps the number, so this table names the command instead of a version that goes stale on the next tag. In the repository, `bun run scripts/registry-audit.ts --json` checks the whole table in one call, and `registry-audit.yml` runs it daily and opens an issue on any disagreement.
+Only the [footer](_Footer) stamps the number, so this table names the command instead of a version that goes stale on the next tag. In the repository, `bun run scripts/registry-audit.ts --json` covers the **registry** rows in one call — not the tag or the Release, which it never asks about — and `registry-audit.yml` runs it daily and opens an issue on any disagreement.
 
 3.0.0 and 4.0.0 both went out through the workflow. 2.0.0 is the exception in the line: it was hand-published, with no trusted publisher attached for the OIDC exchange to verify against, so its tarballs carry no attestation and `_npmUser: sebyx07`. 1.0.0 was the manual bootstrap. `@ultimat3/scraping` and `@ultimat3/flags` were the two never-published packages and both are closed — each by the one-time manual bootstrap every package needs before a trusted publisher can attach.
 
