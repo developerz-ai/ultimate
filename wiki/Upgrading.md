@@ -2,14 +2,23 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**There are three majors to cross.** [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names.
+**Four majors have shipped; a fifth is in flight.** [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
-| 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
+| 5.x → 6.0.0 | **1 so far — unreleased.** The count moves until the tag | the `6.0.0` section, then `[Unreleased]` |
+| 4.x → 5.0.0 | **2**, over six surfaces, each a declaration that promised what the code did not do | the `5.0.0` section, in order |
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
-| 1.x → 4.0.0 | **68** | all three sections, oldest first |
+| 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
+| 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
+| 1.x → 5.0.0 | **70** | all four shipped sections, oldest first |
+
+An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
+
+```sh
+grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
+# 71 As of 2026-08 — 70 shipped, 1 under [Unreleased]
+```
 
 Each entry changes a surface the table below covers.
 
@@ -22,10 +31,68 @@ Each entry changes a surface the table below covers.
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
 
+## 5.x → 6.0.0, entry by entry — **unreleased**
+
+**Nothing here is installable until `npm view @ultimat3/core version` answers `6.0.0`.** Run that first; `As of 2026-08` it does not. This section is written as each change lands rather than at the tag, so entries are **appended** — re-read it when `latest` moves.
+
+One breaking entry so far, and it is a **runtime** refusal with no compile error in front of it.
+
+### Start here — the one edit
+
+Every single-label timezone name except `UTC` is refused. `isValidTimeZone` answers `false`, `canonicalTimeZone` answers `undefined`, `assertTimeZone` throws `X_TIMEZONE_INVALID` — and every `@ultimat3/time` formatter is downstream of that one call. **43 names change answer**, tabulated once under [`[Unreleased]` in `CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md#unreleased); that table is the source and is deliberately not copied here.
+
+```diff
+- formatDate(at, { locale, zone: 'CET' })
++ formatDate(at, { locale, zone: 'Europe/Paris' })
+```
+
+### Which class the name is in decides whether the swap is mechanical
+
+| Class | Names | Replacement |
+|---|---|---|
+| geographic link — 24 of the 43 | `Japan`, `GB`, `Hongkong`, `NZ`, … | the `Area/Location` spelling: `Asia/Tokyo`, `Europe/London`, `Asia/Hong_Kong`, `Pacific/Auckland`. Textual — identical wall clock, identical offset |
+| UTC alias | `UCT`, `Universal`, `Zulu` | `UTC` |
+| the `GMT` family | `GMT`, `GMT0`, `GMT+0`, `GMT-0`, `Greenwich` | `Etc/GMT`, which still renders the label `GMT`. **Not `UTC`**, which renders `UTC` — same instant, different text on any surface that prints the zone name |
+| abbreviation | `CET`, `EET`, `MET`, `WET`, `EST`, `MST`, `HST`, `EST5EDT`, `CST6CDT`, `MST7MDT`, `PST8PDT` | **none, and that is the defect.** An abbreviation names no jurisdiction and carries no DST rule, so only the author knows which city's clock was meant: `Europe/Paris` for `CET`, `America/New_York` for `EST5EDT`, `America/Phoenix` for `MST` |
+
+`Etc/GMT+2` is unaffected — only a **leading** sign is a bare offset, and that `+` sits inside a real zone name. `US/Eastern` and `Asia/Calcutta` are unaffected too: a deprecated two-label alias is still `Area/Location`.
+
+### Where the names hide, and why no build error finds them
+
+`TimeZone` is `string` in `@ultimat3/time`, so `'CET'` compiles. Nothing fails until the call runs.
+
+| Site | Spelling | At 6.0.0 |
+|---|---|---|
+| a formatter, or zone arithmetic | `zone:` on `formatDate`, `formatDateTime`, `formatRange`, `zonePartsAt`, … | throws `X_TIMEZONE_INVALID` on the first call |
+| a scheduled task | `tz:` on `task()` | refused where the task is declared — `task()` validates through `isValidTimeZone`, so this one is caught at boot |
+| `app.config.ts` | `defaultTimeZone` | **boots clean, then throws downstream.** `@ultimat3/core`'s config validator asks `Intl`, not `@ultimat3/time`, so it accepts all 43. Fix the key by hand; nothing will tell you |
+| a client's `x-timezone` header | any of the 43 | no error — `resolveTimeZone` falls through to the configured default, so a hand-written client sending `CET` silently renders in your default zone. Browsers are unaffected: `Intl.DateTimeFormat().resolvedOptions().timeZone` is always `Area/Location` |
+
+Find every candidate:
+
+```sh
+grep -rnE "(zone|tz|defaultTimeZone): *'[^/']+'" --include='*.ts' --include='*.tsx' .
+```
+
+Run it from the app root. Every hit is a single-label zone; `'UTC'` is the only one already correct.
+
+### Why it changed
+
+`Intl` answers "can I format this", never "is this an IANA zone", and at ICU 78 the two stopped agreeing: Bun 1.4 resolves `CET`, `EST`, `GMT` and `MST` where ICU 75 threw. A **runtime upgrade alone** therefore reopened the "no date without an explicit IANA zone" rule — silently, and in the direction that fails dangerous, because an abbreviation carries no DST rule. The judgement is now structural instead of delegated: an identifier is `Area/Location`, and `UTC` is the one legal exception. That refuses the single-label `backward` links along with the abbreviations, and is meant to — no structural rule keeps `CET` out while letting `Japan` in, both being one label, and the alternative is a denylist that grows with every tzdata release. [#251](https://github.com/developerz-ai/ultimate/issues/251), and [Timezones and dates](Timezones-And-Dates) for the rule it restores.
+
+### Fixed, and neither costs an edit
+
+| Fix | What changes for you |
+|---|---|
+| island JSX compiles through `babel-preset-solid` | client-side Solid reactivity inside an island works at all. An island containing JSX compiled to `React.createElement` and threw `ReferenceError: React is not defined` on first interaction, with the gate green. Two build-time dependencies join `@ultimat3/cli`; zero bytes reach your client bundle ([#243](https://github.com/developerz-ai/ultimate/issues/243)) |
+| `@ultimat3/core` loads in a browser bundle | three module-scope `AsyncLocalStorage` constructions moved onto one lazy seam, so `@ultimat3/ui` no longer throws `TypeError: undefined is not a constructor` at module evaluation ([#244](https://github.com/developerz-ai/ultimate/issues/244)) |
+
+Rebuild to pick either up.
+
 ## 4.1.0 → 5.0.0, entry by entry
 
-Four breaking changes, one of which needs an edit. There is no codemod, and there does not need to
-be: **the whole migration is deleting one line, and only if you wrote it.**
+Two breaking entries over six surfaces, one of which needs an edit. There is no codemod, and there
+does not need to be: **the whole migration is deleting one line, and only if you wrote it.**
 
 ### Start here — the one edit
 
@@ -55,7 +122,7 @@ setJobDriver(createMemoryDriver())           // a test
 `app.config.ts` still boots and the field still does nothing — `packages/core/src/config.test.ts`
 pins exactly that. TypeScript will flag it; the runtime will not.
 
-### The other three need no edit unless you wrote a test driver
+### The other four need no edit unless you wrote a test driver
 
 They are `@ultimat3/testing`'s `subscribe` fixture, which was **declared and had no driver** — so
 nothing could have been implementing these types. They changed because they described an API that
@@ -196,11 +263,11 @@ Ten `BREAKING —` entries, all from one bug sweep. Each was a documented surfac
 |---|---|
 | Pinned exact versions | no `^`, no `~`, in the framework or in a generated app. A range is a silent upgrade |
 | Lockstep releases | one release bumps all 30 packages — 29 `@ultimat3/*` plus the unscoped `create-ultimate` — to the same version. One version, one commit, one tag. A mixed set is unsupported |
-| Published with provenance | npm via OIDC trusted publishing. Every 3.0.0 and 4.0.0 tarball carries an attestation; **2.0.0's do not** — that release went out by hand. Per version: `npm view @ultimat3/core@<version> dist.attestations` |
-| Breaking changes land with codemods | if `x upgrade` cannot codemod it, the changelog carries the manual step |
+| Published with provenance | npm via OIDC trusted publishing. Every tarball from 3.0.0 onward carries an attestation — verified through 5.0.1; **2.0.0's do not**, that release went out by hand. Per version: `npm view @ultimat3/core@<version> dist.attestations` |
+| Breaking changes land with the edit named | **no release has shipped a codemod** and `x upgrade` is not implemented, so every `BREAKING —` entry names the manual edit itself. A section of this page walks it |
 | Dependency upgrades are framework work | Solid is pinned to **`1.9.14`, the stable line** — Solid 2 is still prerelease (`2.0.0-beta.N`, DOM renderer split into `@solidjs/web`) and every app inherits whatever core this repo pins. Bumping it is a framework release, never an app-level `bun update`. There is no ArkType or Drizzle pin to carry: `@ultimat3/schema` ships dependency-free builtin validators (ArkType is an optional provider you adapt yourself) and `@ultimat3/entity` ships its own `postgresDriver()` |
 | Bun floor | `>=1.3`, target 2.0. Below the floor → `X_BUN_VERSION` |
-| Not in 4.0.0, behind the interfaces that ship today | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — the last throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
+| Not shipped `As of 2026-08`, behind the interfaces that ship today | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — the last throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
 
 Do not upgrade a transitive dependency of a `@ultimat3/*` package by hand. Open an issue instead — the pin is deliberate.
 
@@ -269,20 +336,20 @@ Server behavior on a stale build ID:
 
 Full detail: [PWA and offline](PWA-And-Offline).
 
-## Migrating jobs between drivers — **not in 4.0.0**
+## Migrating jobs between drivers — **still nowhere to migrate to**
 
-`jobs.driver` accepts **`postgres` \| `redis` \| `nats`**, and `postgres` is the only one implemented — `redis` and `nats` are interface-complete stubs that throw `X_NOT_IMPLEMENTED`. So **there is no driver migration to perform** `As of 2026-08`: `x jobs drain --to redis` constructs the target and fails on its first enqueue.
+**There is no `jobs.driver` field.** 5.0.0 deleted it, because it selected nothing: boot always built `createPgDriver`, so `jobs: { driver: 'redis' }` gave you Postgres in silence. Which driver runs is `setJobDriver(driver)` at boot, and only that.
 
-`memory` is **not** a `jobs.driver` value and does not typecheck as one. It is a real driver reachable two other ways: `--to memory` (one of `x jobs drain`'s three targets) and `setJobDriver(createMemoryDriver())` at boot, which is what tests use.
+`x jobs drain --to` takes **`memory` \| `redis` \| `nats`**, and `memory` is the only target that lands a job: `redis` and `nats` are interface-complete stubs that throw `X_NOT_IMPLEMENTED`. So **there is no driver migration to perform** `As of 2026-08` — `x jobs drain --to redis` constructs the target and fails on its first enqueue. Postgres is the source, never a `--to` value.
 
 `x jobs drain --to memory` works today, and it is the same command, so the procedure below is written against the interface that already ships and applies unchanged the moment a driver does:
 
 | Order | Step |
 |---|---|
-| 1 | deploy with the old driver still configured |
+| 1 | deploy with the old driver still installed |
 | 2 | `x jobs drain --to <driver> --dry-run --json` — read the plan; a skipped candidate is a job whose `runAt` has not arrived, not an error |
 | 3 | `x jobs drain --to <driver>` — leases the batch off the old queue, copies steps, enqueues, then acks |
-| 4 | flip `jobs.driver` in `app.config.ts`, `x verify`, deploy |
+| 4 | change the `setJobDriver(…)` call at boot, `x verify`, deploy |
 | 5 | confirm with `x jobs ls --json` that the old queue is empty before removing its infra |
 
 Job code never changes across a driver: `steps` is a driver member, so step persistence is identical on all of them. The outbox table stays the transactional record. At-least-once delivery is preserved; atomicity is not negotiable ([Jobs and workflows](Jobs-And-Workflows)).
@@ -292,19 +359,20 @@ Job code never changes across a driver: `steps` is a driver member, so step pers
 | From → to | Change | Notes |
 |---|---|---|
 | tier 1 → tier 2 | `live: true` on the query | needs a `replicator` role and `orderBy` + `limit` on the `sql` |
-| tier 2 → tier 3 | `persist: true` on the query | not in 4.0.0. No new mutators, no new authz, no new server code |
+| tier 2 → tier 3 | `persist: true` on the query | not shipped `As of 2026-08`. No new mutators, no new authz, no new server code |
 | `memory` → `nats` transport | `realtime.transport`, and **`realtime.urlEnv`** — the env *key name*, not a URL. There is no `realtime.url` field | roll `sync` and `replicator`; clients reconnect with server-directed backoff. What actually decides the transport at boot is **`NATS_URL` being set**: `selectTransport(env)` never reads `config.realtime.transport`, so the config field documents intent and the env var makes the switch ([Configuration](Configuration)) |
 
 ## Where the facts live
 
 | Source | Contents |
 |---|---|
-| [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) | Keep a Changelog format. `Added` / `Changed` / `Removed`, plus a **Migration** block per breaking change with the codemod name |
+| [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) | Keep a Changelog format, `Added` / `Changed` / `Removed`. A `BREAKING —` entry names its manual edit **inline**; there is no per-entry `Migration` block convention and never a codemod name — `grep -c '\*\*Migration' CHANGELOG.md` answers `1` `As of 2026-08`, against 71 breaking entries |
 | [`docs/idea/14-roadmap.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/14-roadmap.md) | the twelve milestones, 0–10 shipped. Milestone 11's two-platform deploy proof is the one item still open |
 | [`docs/idea/15-risks.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/15-risks.md) | what could still change shape — the sync engine is roughly 70% of total effort |
+| [`docs/architecture/19-cutting-a-major.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/architecture/19-cutting-a-major.md) | how this page is maintained: one section per major, written when the first breaking change lands. Maintainer-facing — read it if you are opening a PR against the framework, not if you are upgrading an app |
 | `x.manifest.json` | generated, per build. Diff two manifests to see exactly what a release changed in your app |
 
-Read the changelog **backwards from your current pin to the target**, and read the `Migration` blocks only — the rest is regenerated for you.
+Read the changelog **backwards from your current pin to the target**, and read the `BREAKING —` entries only — the rest is regenerated for you.
 
 ## When an upgrade fails
 
@@ -316,10 +384,10 @@ x verify --json > verify.json
 | Situation | Do |
 |---|---|
 | Prod is already rolling | redeploy the previous image tag. Assets from the previous build are inside the retention window, so sessions survive |
-| A codemod produced broken code | keep the diff. It is the most useful part of the bug report |
+| An entry's named edit did not compile | keep the diff. It is the most useful part of the bug report, and it is the entry that is wrong |
 | `x verify` fails on one check | read that step's findings from `x verify --json`, then reproduce it with the command its `fix` names |
 | Cause is unclear | `x errors explain <CODE> --json` |
 
-File an issue with `verify.json` attached, your previous and target versions, and the codemod output. The JSON is the report — do not paraphrase the terminal.
+File an issue with `verify.json` attached, your previous and target versions, and the entry you were following. The JSON is the report — do not paraphrase the terminal.
 
 Symptom-first fixes: [Troubleshooting](Troubleshooting). Code index: [Error codes](Error-Codes).

@@ -12,6 +12,7 @@ import {
 } from './doc-commands';
 import type { DocCommandAllowance } from './doc-commands-allow';
 import { DOC_COMMAND_ALLOWANCES } from './doc-commands-allow';
+import type { MarkdownFile } from './lib/doc-citations';
 import { scanDocCitations } from './lib/doc-citations';
 import { repoRoot } from './lib/run';
 
@@ -32,8 +33,9 @@ const catalog: CommandCatalog = {
 };
 
 const page = (text: string, path = 'wiki/Page.md') => ({ path, text });
+/** No pin by default: an unpinned page is the shape every case below the ratchet block asserts. */
 const gaps = (text: string, allow: readonly DocCommandAllowance[] = []) =>
-  checkDocCommands({ files: [page(text)], catalog, allow });
+  checkDocCommands({ files: [page(text)], catalog, allow, pins: {} });
 
 describe('a page that names a command this build cannot run', () => {
   test('an unreal subcommand inside a code span is the finding', () => {
@@ -129,6 +131,7 @@ describe('the rule cannot quietly stop being one', () => {
       files: [page('`x db query`', 'wiki/Other.md')],
       catalog,
       allow: [allow],
+      pins: {},
     });
     expect(other.map((one) => one.kind)).toEqual(['unresolved', 'allowance']);
   });
@@ -136,9 +139,54 @@ describe('the rule cannot quietly stop being one', () => {
   test('NO FILE READ is a failure, never a pass', () => {
     // The defect a reviewer caught in three of the four gate checks written this month: a check
     // that answers "everything resolved" over a file set it never opened.
-    const found = checkDocCommands({ files: [], catalog, allow: [] });
+    const found = checkDocCommands({ files: [], catalog, allow: [], pins: {} });
     expect(found[0]?.kind).toBe('vacuous');
     expect(docCommandFindingFor(found[0] as never).code).toBe('X_DOC_COMMAND_UNSCANNED');
+  });
+});
+
+describe('the pin is a ratchet, so it may only shrink', () => {
+  const pinned = (pins: Readonly<Record<string, number>>, ...files: readonly MarkdownFile[]) =>
+    checkDocCommands({ files, catalog, allow: [], pins });
+  const two = page('`x db query`\n`x db drift`', 'wiki/Pinned.md');
+
+  test('a page holding exactly its pin reports nothing — that is what a pin buys', () => {
+    expect(pinned({ 'wiki/Pinned.md': 2 }, two)).toEqual([]);
+  });
+
+  test('one more than the pin is a finding, and it names the count to write', () => {
+    const found = pinned({ 'wiki/Pinned.md': 1 }, two);
+    expect(found.map((one) => one.kind)).toEqual(['pin']);
+    expect(found[0]?.subject).toBe('wiki/Pinned.md');
+    expect(found[0]?.detail).toBe('2 now, pinned at 1');
+    expect(docCommandFindingFor(found[0] as never).code).toBe('X_DOC_COMMAND_PIN_STALE');
+  });
+
+  test('a pin ABOVE what the page holds is a finding too — slack is a waiver nobody reads', () => {
+    const found = pinned({ 'wiki/Pinned.md': 2 }, page('`x db query`', 'wiki/Pinned.md'));
+    expect(found.map((one) => one.kind)).toEqual(['pin']);
+    expect(found[0]?.detail).toBe('1 now, pinned at 2');
+  });
+
+  test('a pin that no page contradicts is still checked against zero', () => {
+    // The stale-allowance rule, one file set on: a pinned page whose last bad citation was fixed
+    // must lose its entry, or the number outlives the debt it recorded.
+    const found = pinned({ 'wiki/Gone.md': 1 }, page('nothing here'));
+    expect(found.map((one) => one.kind)).toEqual(['pin']);
+    expect(found[0]?.detail).toBe('0 now, pinned at 1');
+    expect(docCommandFindingFor(found[0] as never).fix).toContain(
+      "DOC_COMMAND_PINS['wiki/Gone.md']",
+    );
+  });
+
+  test('a pin suppresses its own page and no other', () => {
+    const found = pinned(
+      { 'wiki/Pinned.md': 1 },
+      page('`x db query`', 'wiki/Pinned.md'),
+      page('`x db query`', 'wiki/Other.md'),
+    );
+    expect(found.map((one) => one.kind)).toEqual(['unresolved']);
+    expect(found[0]?.at).toBe('wiki/Other.md:1');
   });
 });
 

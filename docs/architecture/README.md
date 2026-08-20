@@ -7,7 +7,7 @@ How Ultimate is built. [`../idea/`](../idea/README.md) answers *what and why*; t
 | [`00-conventions.md`](./00-conventions.md) | File layout, naming, export surface, LOC ceilings — the rules Biome and `x verify` enforce. |
 | [`01-package-map.md`](./01-package-map.md) | 29 packages, 6 tiers, one reason to change each. What every package owns and must never do. |
 | [`02-boundaries.md`](./02-boundaries.md) | Tier violations are build errors. `scripts/boundaries.ts` resolves the transitive chain and prints it. |
-| [`03-request-lifecycle.md`](./03-request-lifecycle.md) | 17 ordered stages and why each sits where it does. ALS context, so no layer threads `actor`. |
+| [`03-request-lifecycle.md`](./03-request-lifecycle.md) | 18 ordered stages and why each sits where it does. ALS context, so no layer threads `actor`. |
 | [`04-error-contract.md`](./04-error-contract.md) | `UltimateError`: one object, three renderings. Every error carries an executable `fix:`. |
 | [`05-type-chain.md`](./05-type-chain.md) | DB column → entity → action → OpenAPI → client → component. Rename a field, count the compile errors. |
 | [`06-data-layer.md`](./06-data-layer.md) | Entities, repos, tenancy. Cursor pagination only. Migrations that cannot lie. |
@@ -23,6 +23,7 @@ How Ultimate is built. [`../idea/`](../idea/README.md) answers *what and why*; t
 | [`16-build-pipeline.md`](./16-build-pipeline.md) | SCSS modules → scoped CSS, the server render path, and what the budgets gate now measures. There is still no client bundle — the page says why. |
 | [`17-uploads.md`](./17-uploads.md) | Signed direct upload: who signs, who verifies, where bytes land, and what sweeps the orphans. |
 | [`18-observer-seam.md`](./18-observer-seam.md) | The two funnels every statement passes through, attribution, and why an uninstalled diagnostic costs production one branch. |
+| [`19-cutting-a-major.md`](./19-cutting-a-major.md) | One `wiki/Upgrading.md` section per major, written when the first breaking change lands. What `CHANGELOG.md` owns, what the wiki owns, and which of the three rules nothing enforces. |
 
 ## Start here
 

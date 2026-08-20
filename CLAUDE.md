@@ -166,11 +166,11 @@ Milestone detail: [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md).
 | Task | Command |
 |---|---|
 | install | `bun install` |
-| **the gate** | `bun run verify` — `x verify` at the repo root, 17 steps: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap. Green = shippable. |
+| **the gate** | `bun run verify` — `x verify` at the repo root, 19 steps: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, manifest, roadmap. Green = shippable. The list is `VERIFY_STEP_NAMES` in `packages/cli/src/verify-step.ts`; `bun run scripts/gate-steps.ts` fails when a page states another number. |
 | typecheck | `bun run typecheck` |
 | lint | `bun run lint` · fix: `bun run lint:fix` |
 | test (all) | `bun run test` — every framework suite, opt-in ones included. The reference app is gated separately: `cd examples/dummy && bun run ../../packages/cli/src/bin.ts verify` |
-| **the app gate** | `bun run scripts/reference-app-gate.ts` — both tracked apps' own 17 steps (`examples/dummy`, `dummy/social-media-clone`), blocking on a ratchet: a step passing today must keep passing, a step pinned in that app's `expectedRed` (`scripts/lib/gated-apps.ts`) must still be failing, and a `typecheck` that goes green must join the root `tsconfig.json` references |
+| **the app gate** | `bun run scripts/reference-app-gate.ts` — both tracked apps' own 19 steps (`examples/dummy`, `dummy/social-media-clone`), blocking on a ratchet: a step passing today must keep passing, a step pinned in that app's `expectedRed` (`scripts/lib/gated-apps.ts`) must still be failing, and a `typecheck` that goes green must join the root `tsconfig.json` references |
 | shrink the ratchet | `bun run scripts/reference-app-gate.ts --unpin <app>:<step>[,<step>]` — the edit `X_REFERENCE_APP_PIN_STALE` names, performed |
 | test (one file) | `bun test packages/core/src/errors.test.ts` |
 | test (one name) | `bun test -t 'formats the fix line'` |
@@ -279,9 +279,15 @@ Everything in the framework is one of these. **If a feature doesn't fit one of t
   `packages/i18n/catalogs/<locale>.json` (`CATALOG_ROOT`, what `x g route` / `x g resource` merge
   keys into, and what both tracked apps have on disk); the **framework's own** catalog is
   `packages/i18n/src/catalogs/en.json`, imported by `framework.ts`. `x i18n check` audits the first;
-  the `boundaries` step audits the second (`X_CATALOG_KEY_UNREACHABLE`), because pointing an app
-  check at this repo silently answers `ok` — `CATALOG_ROOT` does not exist here, so it loads zero
-  locales and passes.
+  the `boundaries` step audits the second (`X_CATALOG_KEY_UNREACHABLE`), because the framework repo
+  is not an app and the app check cannot read it.
+  **Pointing `x i18n check` at this repo does not answer `ok`** — this file said so until 2026-08-20
+  and `packages/cli/src/cmd-i18n.ts:227` calls `requireAppRoot('i18n', ctx.cwd)`, which refuses with
+  `X_NOT_IN_APP` before a catalog is loaded. The vacuous green was one step further in: an app WITH
+  an `app.config.ts` and no catalogs at all loaded zero locales and passed, and a catalog on disk
+  that no module registered passed with it. Both are now refused — `X_CATALOG_UNREGISTERED` — and
+  `i18n` is a step of the gate in its own right, so an app can no longer ship every user-facing
+  string as `⟦key⟧` under a green `x verify`.
 - Docs style: lead with the rule, fragments over sentences, tables for any ≥3-row structure, no meta-framing, no trailing summary. Date load-bearing claims `As of 2026-07`.
 
 ## Where things live

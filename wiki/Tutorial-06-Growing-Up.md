@@ -126,7 +126,7 @@ Every one keys on env or a boot-time constructor. One image resolves `x dev`, a 
 | point the app at a real Postgres | `DATABASE_URL=… ROLE=migrate bun apps/web/server.ts`, then `ROLE=web` |
 | prove the plan without running it | `bunx x deploy --image … --dry-run --json` |
 | prove the image before the platform does | `docker run -e ROLE=web -e PORT=8080 -p 8085:8080 …` and poll `/readyz` |
-| prove the gate still holds | `bunx x verify` — the same 17 steps, at every rung |
+| prove the gate still holds | `bunx x verify` — the same 19 steps, at every rung |
 
 ## Where the invariant genuinely breaks
 

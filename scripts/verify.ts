@@ -38,6 +38,7 @@ import { docCommandFindings } from './doc-commands';
 import { docFixFindings } from './doc-fixes';
 import { errorStatusCompleteness } from './error-map';
 import { errorRendering } from './error-render';
+import { gateStepFindings } from './gate-steps';
 import { generatorCountFindings } from './generator-counts';
 import { frameworkCatalogFindings } from './i18n-catalog';
 import { imageContractFindings } from './image-contract';
@@ -213,7 +214,8 @@ export const errorContract: HostCheck = async (root) => [
  * | `wikiTableFindings` | every `wiki/` table renders as a table | the GFM row rule |
  * | `frameDocFindings` | `wiki/Realtime.md` names the frames the wire actually sends | `FRAME_KINDS` |
  * | `chartVersionFindings` | `docker/helm/Chart.yaml` is on the lockstep version — it sat at 0.0.1, and `appVersion` IS the default image tag | the publishable workspaces' version |
- * | `docCommandFindings` | every `` `x …` `` in `wiki/` and `docs/` is an invocation this build can run | `loadCommandCatalog()` |
+ * | `docCommandFindings` | every `` `x …` `` on a page an agent reads is an invocation this build can run | `loadCommandCatalog()` |
+ * | `gateStepFindings` | a page stating how many steps `x verify` runs, or enumerating them, describes this build's gate — 17 documented against 18 shipped, in 20 files, through a whole major | `VERIFY_STEP_NAMES` |
  * | `versionStampFindings` | one page stamps a version, it is the shipped one, and the workspaces agree | every workspace manifest |
  * | `readmeFenceFindings` | a fenced `ts`/`tsx` example in a package README typechecks | `tsc`, on a ratchet |
  * | `testTypecheckFindings` | this repo's TEST sources typecheck — every package config excludes them, so `tsc -b` reads none of the 966 | `tsc -p tsconfig.tests.json`, on a ratchet |
@@ -239,6 +241,7 @@ export const frameworkFiles: HostCheck = async (root) => [
   ...(await frameDocFindings(root)),
   ...(await chartVersionFindings(root)),
   ...(await docCommandFindings(root)),
+  ...(await gateStepFindings(root)),
   ...(await versionStampFindings(root)),
   ...(await readmeFenceFindings(root)),
   ...(await testTypecheckFindings(root)),

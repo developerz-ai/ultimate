@@ -139,6 +139,6 @@ Three load-bearing decisions the design makes, so they are not re-litigated per 
 |---|---|
 | **A screen is a `route`**, not a ninth primitive | the eight-primitive rule survives a second view layer; a native capability the server must trust is an `action`, as it already was |
 | **Tokens move down to tier 1**, `ui` re-exports them verbatim | a tier-4 native runtime cannot import upward into tier-5 `ui`; the move is additive, so no major |
-| **No native component kit** | 46 components mirrored is 46 forever. Tokens and a runtime, not a kit — the scope cut that decides whether this ships at all |
+| **No native component kit** | 52 components mirrored is 52 forever. Tokens and a runtime, not a kit — the scope cut that decides whether this ships at all |
 
 Desktop is staged first because it is packaging rather than a second product, which is the claim the whole design rests on.

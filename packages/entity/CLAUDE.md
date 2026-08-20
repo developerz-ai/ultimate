@@ -564,7 +564,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   hole open on exactly the unauthenticated path. **Outside every request context there is no actor
   to derive from** — a script, a seed, a test harness — so the caller names the tenant itself and
   `X_TENANCY_UNSCOPED` still refuses a plan that names none. There is no build-time tenancy step in
-  `x verify` (its 17 steps check none) and the old comment in `tenancy.ts` claiming one was wrong:
+  `x verify` (its 19 steps check none) and the old comment in `tenancy.ts` claiming one was wrong:
   the tenant is a request-time value, so the seam is the enforcement.
 - **`crossTenant(reason, fn)` (`cross-tenant.ts`) is the ONE way to read across tenants**, for the
   three cases that have no single one: an admin surface over every org, background reconciliation,

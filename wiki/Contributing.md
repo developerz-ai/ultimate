@@ -182,7 +182,7 @@ Never generate prose documentation at runtime. Facts come from code (`x.manifest
 
 | Expectation | Detail |
 |---|---|
-| Green `x verify` | all 17 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap |
+| Green `x verify` | all 19 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, manifest, roadmap |
 | No new dependency without justification in the PR body | target is **under 40 direct dependencies for the whole framework**. A Bun native beats a package |
 | No new alternative for something already locked | a second CSS system, a second ORM, a second validator, a second runtime is a closed PR ([Home](Home)) |
 | Feature fits one of the eight primitives | if it doesn't fit, it doesn't ship ([The eight primitives](The-Eight-Primitives)) |

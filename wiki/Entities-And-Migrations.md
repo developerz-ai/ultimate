@@ -514,7 +514,7 @@ planner decision.
 | `missing-foreign-key` | no key points those columns at that table. Matched on **where the key points**, never on its name: a hand-written `constraint fk_posts_org` is the same constraint as a generated `posts_org_id_fkey` |
 | `changed-foreign-key` | new `As of 2026-08-19`. The key points where it was declared to point and one side's `on delete` rule is not the other's. Reported apart from `missing-foreign-key` because it is a different repair — the constraint is there, and what changed is what happens to the child rows. Its `fix:` is the **pair**, not `x db migrate`: a rule cannot be altered in place, `add constraint` alone is `42710` on a name already taken, and no `x db gen` diff emits either statement. Both sides go through one normalisation, so the catalog's `c` and a snapshot's `cascade` agree, and Postgres' `a` (`no action`) on every undeclared key reads as no rule |
 
-There is no separate migration tool and no "regenerate types" step. `drift` is one of `x verify`'s seventeen steps — the list, in order, is in [Testing](Testing).
+There is no separate migration tool and no "regenerate types" step. `drift` is one of `x verify`'s nineteen steps — the list, in order, is in [Testing](Testing).
 
 ## Reversible or marked
 
