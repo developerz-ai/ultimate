@@ -28,6 +28,18 @@ describe('error -> status', () => {
     }
   });
 
+  // The table is the CLOSED one, and its type now says so: it is a literal object, never
+  // `Readonly<Record<string, number>>`. A mistyped row has to be a compile error, because at
+  // runtime it reads `undefined` and the loop above would report the real code as missing.
+  // `@ts-expect-error` IS the assertion here — it stops compiling the day the index signature
+  // comes back.
+  test('a row this table does not carry is refused at compile time', () => {
+    // @ts-expect-error `X_QUERY_NOT_PAGABLE` is a typo for `X_QUERY_NOT_PAGEABLE`.
+    const typo: unknown = ERROR_STATUS.X_QUERY_NOT_PAGABLE;
+    expect(typo).toBeUndefined();
+    expect(ERROR_STATUS.X_QUERY_NOT_PAGEABLE).toBe(500);
+  });
+
   test('maps the codes callers depend on', () => {
     expect(statusFor('X_ROUTE_NOT_FOUND')).toBe(404);
     expect(statusFor('X_METHOD_NOT_ALLOWED')).toBe(405);

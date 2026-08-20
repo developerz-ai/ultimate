@@ -3,7 +3,7 @@
 // humanised fallback — so only a test can tell "registered" from "silently degraded".
 
 import { describe, expect, test } from 'bun:test';
-import { describeErrorCode, hasErrorCode } from '../error-codes';
+import { type CoreErrorCode, describeErrorCode, hasErrorCode } from '../error-codes';
 import { UltimateError } from '../errors';
 import {
   ImageDecodeFailedError,
@@ -14,7 +14,14 @@ import {
   imageUnsupported,
 } from './errors';
 
-const CODES = ['X_IMAGE_UNSUPPORTED', 'X_IMAGE_DECODE_FAILED', 'X_IMAGE_TOO_LARGE'] as const;
+// `CoreErrorCode[]`, not `as const`: a mutable array is the shape `test.each` takes, and the
+// annotation makes a code that leaves `CORE_CODE_TITLES` a compile error here rather than a
+// runtime `hasErrorCode` failure.
+const CODES: CoreErrorCode[] = [
+  'X_IMAGE_UNSUPPORTED',
+  'X_IMAGE_DECODE_FAILED',
+  'X_IMAGE_TOO_LARGE',
+];
 
 describe('registration', () => {
   test.each(CODES)('%s is registered, not humanised at render time', (code) => {

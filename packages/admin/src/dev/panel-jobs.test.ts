@@ -81,13 +81,17 @@ describe('the jobs panel reports the backfill ledger', () => {
 });
 
 describe('the retry target is the FIRST failed step, so a retry replays nothing that succeeded', () => {
+  // Field by field rather than a spread: `error` is REQUIRED on `JobStepFact` (a step with no
+  // error carries `null`, never an absent key), and a `Partial` spread can only ever produce
+  // `string | null | undefined` for it.
   const step = (
     over: Partial<JobRunFact['steps'][number]> & { name: string },
   ): JobRunFact['steps'][number] => ({
-    status: 'ok',
-    attempt: 1,
-    durationMs: 10,
-    ...over,
+    name: over.name,
+    status: over.status ?? 'ok',
+    attempt: over.attempt ?? 1,
+    durationMs: over.durationMs ?? 10,
+    error: over.error ?? null,
   });
 
   test('a failed run points at its first failed step, with that step’s error', async () => {

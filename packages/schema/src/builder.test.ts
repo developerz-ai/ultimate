@@ -63,7 +63,11 @@ describe('makeSchema', () => {
     expect(schema.safeParse(42)).toEqual({ value: 42 });
     const failed = schema.safeParse('nope');
     expect(failed.issues).toBeDefined();
-    expect(failed.value).toBeUndefined();
+    // `failed.value` is not a property to read: Standard Schema's failure result declares only
+    // `issues`, so reading `.value` before narrowing is a compile error rather than `undefined`.
+    // What the runtime must hold is that the key is absent — `{ value: undefined, issues }` would
+    // satisfy the old assertion and break a caller that discriminates on `'value' in result`.
+    expect(Object.hasOwn(failed, 'value')).toBe(false);
   });
 
   test('["~standard"].validate() mirrors safeParse', () => {

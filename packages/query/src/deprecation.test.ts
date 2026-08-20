@@ -2,10 +2,10 @@
 // every caller at once. The mirror of `@ultimat3/action`'s, because the two must agree.
 
 import { describe, expect, test } from 'bun:test';
-import type { Actor } from '@ultimat3/core';
 import { userActor } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
 import { createServer, defineHttpConfig } from '@ultimat3/http';
+import type { Actor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { Deprecation } from './deprecation';

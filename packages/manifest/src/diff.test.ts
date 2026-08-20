@@ -60,11 +60,16 @@ const base: ManifestSources = {
   errorCodes: [],
 };
 
-const withActions = (actions: ManifestSources['actions']) => buildManifest({ ...base, actions });
-const withEntities = (entities: ManifestSources['entities']) =>
+// `NonNullable`, because every section of `ManifestSources` is optional and
+// `exactOptionalPropertyTypes` refuses an explicit `undefined` where a key may be absent.
+// These helpers always supply a list — the "section missing" case is `base` itself.
+const withActions = (actions: NonNullable<ManifestSources['actions']>) =>
+  buildManifest({ ...base, actions });
+const withEntities = (entities: NonNullable<ManifestSources['entities']>) =>
   buildManifest({ ...base, entities });
-const withJobs = (jobs: ManifestSources['jobs']) => buildManifest({ ...base, jobs });
-const withQueries = (queries: ManifestSources['queries']) => buildManifest({ ...base, queries });
+const withJobs = (jobs: NonNullable<ManifestSources['jobs']>) => buildManifest({ ...base, jobs });
+const withQueries = (queries: NonNullable<ManifestSources['queries']>) =>
+  buildManifest({ ...base, queries });
 
 describe('classification', () => {
   test('a removed action is breaking', () => {

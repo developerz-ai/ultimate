@@ -227,7 +227,9 @@ describe('the schema migrations declare', () => {
       migration('0002_b', schema(table('posts', ['id', 'title']))),
       migration('0001_a', schema(table('posts', ['id']))),
     ]);
-    expect(declared.tables[0]?.columns.map((column) => column.name)).toEqual(['id', 'title']);
+    // `declaredSchema` answers `undefined` when the newest migration carries no snapshot, so the
+    // chain has to survive that — and an `undefined` actual still fails this assertion.
+    expect(declared?.tables[0]?.columns.map((column) => column.name)).toEqual(['id', 'title']);
   });
 
   test('no migration at all declares an empty schema — an app owes the database nothing yet', () => {

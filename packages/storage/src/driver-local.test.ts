@@ -243,16 +243,15 @@ describe('localDriver', () => {
     // have the read route serve attacker HTML from the app's own origin. Asserted through every
     // method, because a guard is only where it is written.
     const reserved = `${META_DIR}/org/org-1/a.png.json`;
-    expect(
-      await Promise.all([
-        catchCode(() => driver.put(reserved, bytesOf('x'))),
-        catchCode(() => driver.get(reserved)),
-        catchCode(() => driver.stream(reserved)),
-        catchCode(() => driver.exists(reserved)),
-        catchCode(() => driver.delete(reserved)),
-        catchCode(() => driver.signedUrl(reserved)),
-      ]),
-    ).toEqual(Array(6).fill('X_STORAGE_PATH_UNSAFE'));
+    const refusals: readonly string[] = await Promise.all([
+      catchCode(() => driver.put(reserved, bytesOf('x'))),
+      catchCode(() => driver.get(reserved)),
+      catchCode(() => driver.stream(reserved)),
+      catchCode(() => driver.exists(reserved)),
+      catchCode(() => driver.delete(reserved)),
+      catchCode(() => driver.signedUrl(reserved)),
+    ]);
+    expect(refusals).toEqual(new Array<string>(6).fill('X_STORAGE_PATH_UNSAFE'));
     expect(await Bun.file(`${root}/${reserved}`).exists()).toBe(false);
 
     // Only the FIRST segment is reserved: a tenant key of its own named `.meta` collides with

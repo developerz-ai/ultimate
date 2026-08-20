@@ -3,7 +3,14 @@
 // prevent — and an unsupported format must surface core's own code, never a second one.
 
 import { beforeEach, describe, expect, test } from 'bun:test';
-import { createRaster, decodeImage, encodeImage, hasAlpha, probeImage } from '@ultimat3/core';
+import {
+  createRaster,
+  decodeImage,
+  encodeImage,
+  hasAlpha,
+  isUltimateError,
+  probeImage,
+} from '@ultimat3/core';
 import {
   BLUR_PLACEHOLDER_WIDTH,
   blurPlaceholder,
@@ -183,9 +190,13 @@ describe('transformImage', () => {
     const pending = transformImage(opaquePng(), { width: 10, format: 'webp' });
     expect(pending).toBeInstanceOf(Promise);
     await expect(pending).rejects.toMatchObject({ code: 'X_IMAGE_UNSUPPORTED' });
-    const error = await pending.catch((reason: { fix: string }) => reason);
-    expect(error.fix).toContain('png');
-    expect(error.fix).toContain('jpeg');
+    // `Promise.catch` widens the value to `Uint8Array | <handler result>`, so the rejection has to
+    // be narrowed back before its `fix:` can be read — and a non-`UltimateError` rejection fails
+    // both assertions rather than skipping them.
+    const rejection: unknown = await pending.catch((reason: unknown) => reason);
+    const fix = isUltimateError(rejection) ? rejection.fix : '';
+    expect(fix).toContain('png');
+    expect(fix).toContain('jpeg');
   });
 
   test('rejects the default format too — the default key extension is .webp', async () => {

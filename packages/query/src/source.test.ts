@@ -244,3 +244,39 @@ describe('isAfterKey answers what the SQL answers', () => {
     expect(isAfterKey({ id: 'c', publishedAt: null }, { key: [null], id: 'd' }, ASC)).toBe(false);
   });
 });
+
+// `execute()` awaits whatever the provider returns, so all three spellings are one contract.
+// `RowProvider` declared only the promise, which refused a synchronous provider the
+// implementation has always run — a repo method holding its page already, and every fixture.
+describe('a row provider may be a list, a sync function or an async one', () => {
+  const expected = ['a', 'b', 'c', 'd'];
+
+  test('a list', async () => {
+    expect(ids(await from<Post>('posts', posts).orderBy('id').execute())).toEqual(expected);
+  });
+
+  test('a synchronous function', async () => {
+    expect(
+      ids(
+        await from<Post>('posts', () => posts)
+          .orderBy('id')
+          .execute(),
+      ),
+    ).toEqual(expected);
+  });
+
+  test('an async function', async () => {
+    const rows = await from<Post>('posts', async () => posts)
+      .orderBy('id')
+      .execute();
+    expect(ids(rows)).toEqual(expected);
+  });
+
+  test('the provider is re-read per execute, so a later row is served', async () => {
+    const live: Post[] = [];
+    const source = from<Post>('posts', () => live).orderBy('id');
+    expect(ids(await source.execute())).toEqual([]);
+    live.push({ id: 'z', orgId: ORG, publishedAt: null, score: 1 });
+    expect(ids(await source.execute())).toEqual(['z']);
+  });
+});

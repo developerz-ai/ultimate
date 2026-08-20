@@ -66,8 +66,13 @@ describe('renderCauseValue', () => {
 
   test('the raw forms it replaces really do throw', () => {
     // Without this the suite above proves only that the helper runs, not that it was needed.
+    // The symbol is read back out of `hostile()`, so it arrives as `unknown` — the type a cause
+    // actually has at the call sites this helper replaced. That is also the record of why the bug
+    // shipped three times: the compiler permits `${value}` for an `unknown`, and refuses it only
+    // when the static type is `symbol`, which it never is where a cause is built.
+    const symbol = hostile().get('a symbol');
     expect(() => JSON.stringify(10n)).toThrow();
-    expect(() => `${Symbol('post')}`).toThrow();
+    expect(() => `${symbol}`).toThrow();
     const cyclic: Record<string, unknown> = {};
     cyclic['self'] = cyclic;
     expect(() => JSON.stringify(cyclic)).toThrow();

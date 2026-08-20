@@ -59,7 +59,12 @@ describe('DevSources has exactly one implementation shape, and two implementatio
   });
 
   test('every member answers a promise, so a panel can await one without branching', () => {
-    const fixture = staticDevSources() as unknown as Record<string, () => unknown>;
+    // Variadic: `runSql` is the one member that takes an argument, and a nullary erasure would
+    // make the call below a compile error rather than the check it is meant to be.
+    const fixture = staticDevSources() as unknown as Record<
+      string,
+      (...args: readonly unknown[]) => unknown
+    >;
     for (const member of REQUIRED) {
       const answer = fixture[member]?.('select 1');
       expect(answer).toBeInstanceOf(Promise);

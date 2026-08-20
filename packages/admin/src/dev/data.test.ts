@@ -268,7 +268,7 @@ describe('the backfill ledger source', () => {
       expect(facts[0]?.cursor).toBe('p7');
     } finally {
       resetJobDriver();
-      await driver.close();
+      await driver.close?.();
     }
   });
 

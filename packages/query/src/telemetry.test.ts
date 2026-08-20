@@ -12,6 +12,7 @@ import {
   resetTelemetry,
   userActor,
 } from '@ultimat3/core';
+import type { Actor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { query } from './query';
@@ -27,16 +28,23 @@ const orders: readonly Order[] = [
   { id: 'a', orgId: ORG },
   { id: 'b', orgId: ORG },
 ];
-const reader = createContext({
-  actor: { ...userActor({ id: 'u1' }), permissions: ['order:read'] },
-});
+const readerActor: Actor = { ...userActor({ id: 'u1' }), permissions: ['order:read'] };
+const reader = createContext({ actor: readerActor });
 
 /**
  * Records which span was ACTIVE while the policy ran and while `sql()` built the source — the two
  * stages the old span excluded. Structural rather than timed: the test clock is frozen, and
  * "was this work inside the span" is the claim anyway, not "did it take long".
  */
-const listOrders = (inside: { policy?: string; sql?: string }, cached: boolean) =>
+// `string | undefined` per field, not `string?`: `currentSpan()` answers `undefined` when NO span
+// is active, and "the stage ran outside every span" is the exact regression this file pins — it
+// has to be recordable, not unassignable.
+interface ActiveSpans {
+  policy?: string | undefined;
+  sql?: string | undefined;
+}
+
+const listOrders = (inside: ActiveSpans, cached: boolean) =>
   query({
     input: t.object({ orgId: t.uuid }),
     policy: can('order:read', () => {
@@ -93,7 +101,8 @@ describe('the query span covers the whole read', () => {
   });
 
   test('a denied read is still one span, and it records the refusal', async () => {
-    const stranger = createContext({ actor: { ...userActor({ id: 'u2' }), permissions: [] } });
+    const noGrants: Actor = { ...userActor({ id: 'u2' }), permissions: [] };
+    const stranger = createContext({ actor: noGrants });
     const spans = await traced(() => listOrders({}, false)({ orgId: ORG }, { ctx: stranger }));
     expect(spans).toHaveLength(1);
     expect(spans[0]?.status.code).toBe('error');

@@ -83,16 +83,35 @@ export const policyMatrix = <I, R = unknown>(
   };
 };
 
-/** Builds an actor for tests without asserting anything about core's Actor shape. */
+/**
+ * Builds a COMPLETE actor for tests — `kind` and `scopes` included.
+ *
+ * It used to omit both behind an `as unknown as Actor`, and neither is decoration: `hasScope()`
+ * reads `actor.scopes.includes(…)` and threw a bare `TypeError` on every actor this minted, and
+ * `actorLabel()` rendered `undefined:editor` into logs and spans. A generated policy test
+ * (`x g policy`) asserting a scope-gated denial therefore failed as a 500-shaped throw rather
+ * than as a denial — the exact confusion `surfaces.ts` exists to prevent.
+ */
 export const testActor = (
   name: string,
-  init: { roles?: readonly string[]; permissions?: readonly string[]; orgId?: string } = {},
-): NamedActor => ({
-  name,
-  actor: {
+  init: {
+    roles?: readonly string[];
+    permissions?: readonly string[];
+    scopes?: readonly string[];
+    orgId?: string;
+  } = {},
+): NamedActor => {
+  const base: Actor = {
+    kind: 'user',
     id: name,
     roles: init.roles ?? [],
+    scopes: init.scopes ?? [],
     permissions: init.permissions ?? [],
-    orgId: init.orgId ?? null,
-  } as unknown as Actor,
-});
+  };
+  // `orgId: null` is deliberate and load-bearing, and the ONE cast left here. `Actor` is
+  // `CoreActor & PolicyActorFields`, and that intersection collapses `PolicyActorFields`'s
+  // `string | null | undefined` back to core's `string | undefined` — so nothing else in the repo
+  // can produce the `null` an app's own adapter still puts on the wire, and
+  // `@ultimat3/query`'s `orgless()` needs a producer of it to stay honest.
+  return { name, actor: { ...base, orgId: init.orgId ?? null } as Actor };
+};

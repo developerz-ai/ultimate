@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from './errors';
-import type { MetricCollection } from './metrics';
+import type { HistogramPoint, MetricCollection } from './metrics';
 import { OTLP_ENDPOINT_KEY } from './otlp';
 import { otlpMetricExporter, otlpMetricsRequest } from './otlp-metric-exporter';
 
@@ -150,22 +150,24 @@ describe('otlpMetricsRequest', () => {
   });
 
   test('histogram bucket counts are strings, and min/max are omitted for an empty series', () => {
+    // Declared as a `HistogramPoint` rather than inline: `ReadableMetric.points` is
+    // `readonly MetricPoint[]`, so a fresh literal carrying the histogram half is an excess
+    // property. Naming the type also checks the fixture against the contract the exporter reads.
+    const empty: HistogramPoint = {
+      attributes: {},
+      value: 0,
+      count: 0,
+      min: 0,
+      max: 0,
+      bounds: [0.1, 1],
+      buckets: [0, 0, 0],
+    };
     const [metric] = scopeMetrics(
       otlpMetricsRequest(
         collection([
           {
             descriptor: { name: 'd_seconds', kind: 'histogram', unit: 's', description: '' },
-            points: [
-              {
-                attributes: {},
-                value: 0,
-                count: 0,
-                min: 0,
-                max: 0,
-                bounds: [0.1, 1],
-                buckets: [0, 0, 0],
-              },
-            ],
+            points: [empty],
           },
         ]),
         STARTED,

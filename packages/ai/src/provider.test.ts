@@ -339,6 +339,9 @@ describe('streaming', () => {
         text: 'ship it',
         toolCalls: [],
         stopReason: 'end_turn',
+        // Required by `GenerateResult`: absent details on a non-refusal stop is the fact,
+        // not a gap in the fixture.
+        stopDetails: undefined,
         usage,
         cost: costOf('claude-opus-5', usage),
       },

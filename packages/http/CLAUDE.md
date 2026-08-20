@@ -172,6 +172,13 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   can never import each other, so the only conversion between `{ limit, windowMs }` and a `Bucket`
   sitting in one of them is why a `query` could not declare a rate limit at all. It is beside
   `Bucket` and the maths it validates, and it throws http's own `X_RATE_LIMIT_INVALID`.
+- **`ERROR_STATUS`'s keys are LITERAL, not an index signature** (`As of 2026-08-19`). The
+  annotation was `Readonly<Record<string, number>>`, which made `ERROR_STATUS.X_QUERY_NOT_PAGABLE`
+  a legal read answering `undefined` — a mistyped row in the one table the framework's whole error
+  contract rests on. It is now an object literal `satisfies Readonly<Record<string, number>>`, so a
+  typo is a compile error; `error-map.test.ts` pins that with a `@ts-expect-error`. Read it by a
+  code the framework did not mint through `statusFor()`, which goes via the file-local `BY_CODE`
+  view and keeps `Object.hasOwn`.
 - Statuses live in `error-map.ts` only. No other file writes a status number. The framework's
   table (`ERROR_STATUS`) is closed; an app declares its own codes' statuses with
   `registerErrorStatus()`, which refuses a code the framework already holds. Without that half,

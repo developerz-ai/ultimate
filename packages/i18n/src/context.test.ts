@@ -86,6 +86,25 @@ describe('resolveLocale', () => {
     expect(localeCookieOf(undefined)).toBeUndefined();
   });
 
+  test('takes an ABSENT source as `undefined`, the shape this package\u2019s own readers answer', () => {
+    // `localeCookieOf` answers `string | undefined`, so this is the composition the package is
+    // for. `LocaleSources` declared `?: string | null` under `exactOptionalPropertyTypes`, which
+    // refuses an explicit `undefined` \u2014 the caller had to write `?? null` to satisfy a type
+    // whose own reader skips `undefined` on the next line.
+    expect(resolveLocale({ cookie: localeCookieOf(undefined), user: 'es' }, { supported })).toEqual(
+      { locale: 'es', direction: 'ltr', source: 'user' },
+    );
+    expect(
+      resolveLocale(
+        { header: undefined, cookie: undefined, user: undefined, query: undefined },
+        {
+          supported,
+          fallback: 'de',
+        },
+      ),
+    ).toEqual({ locale: 'de', direction: 'ltr', source: 'default' });
+  });
+
   test('a cookie that will not decode is a value, never a URIError out of the request', () => {
     // `x_locale=%` threw straight out of a per-request path; the raw value simply fails to
     // normalise and the next source wins.

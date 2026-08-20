@@ -21,7 +21,9 @@ describe('uuid v7', () => {
     const id = uuid();
     expect(isUuid(id)).toBe(true);
     expect(id[14]).toBe('7');
-    expect(['8', '9', 'a', 'b']).toContain(id[19]);
+    // `charAt`, not `id[19]`: indexing a string is `string | undefined` under
+    // `noUncheckedIndexedAccess`, and the length assertion below is what rules the absent case out.
+    expect(['8', '9', 'a', 'b']).toContain(id.charAt(19));
     expect(id).toHaveLength(36);
   });
 

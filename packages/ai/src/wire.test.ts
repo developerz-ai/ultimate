@@ -81,6 +81,9 @@ describe('MessageStream', () => {
       text: 'Hello world',
       toolCalls: [],
       stopReason: 'end_turn',
+      // Required by `StreamState`, and asserted rather than omitted: an `end_turn` that carried
+      // refusal details would be a parse bug this assertion is the only thing positioned to see.
+      stopDetails: undefined,
       // The closing usage must not erase the cache counters the opening one carried.
       usage: { inputTokens: 100, outputTokens: 25, cacheReadTokens: 40, cacheWriteTokens: 0 },
     });

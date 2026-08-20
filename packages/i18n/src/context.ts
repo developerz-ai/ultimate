@@ -19,15 +19,22 @@ import { createTranslator, type TranslateVars, type Translator } from './transla
 /** The cookie an explicit language switcher writes. */
 export const LOCALE_COOKIE = 'x_locale';
 
+/**
+ * Every source is `string | null | undefined`. Not decoration: `exactOptionalPropertyTypes` is on,
+ * so `?: string | null` refuses an EXPLICIT `undefined` — and `localeCookieOf`, this file's own
+ * cookie reader, answers `string | undefined`, so `resolveLocale({ cookie: localeCookieOf(h) })`
+ * (the composition the package exists to offer) did not typecheck. `resolveLocale` has skipped
+ * `undefined` since it was written; only the declaration disagreed.
+ */
 export interface LocaleSources {
   /** Raw `Accept-Language` header value. */
-  header?: string | null;
+  header?: string | null | undefined;
   /** Value of the `x_locale` cookie, already URL-decoded. */
-  cookie?: string | null;
+  cookie?: string | null | undefined;
   /** `user.locale` from the authenticated user record. */
-  user?: string | null;
+  user?: string | null | undefined;
   /** `?locale=es` — mobile and email preview links pass it per request. */
-  query?: string | null;
+  query?: string | null | undefined;
 }
 
 export type LocaleSourceName = keyof LocaleSources;

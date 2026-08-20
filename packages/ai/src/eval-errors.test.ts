@@ -35,7 +35,9 @@ describe('X_EVAL_THRESHOLD names a runnable command', () => {
   test('every `x test <word>` it names is a real test type', () => {
     for (const name of ['summarize', 'eval', 'unit']) {
       const { fix } = threshold(name).toJSON();
-      for (const [, positional] of fix.matchAll(/\bx test ([a-z0-9-]+)/g)) {
+      // `''` rather than `undefined`: the group always matches when the regex does, and an
+      // empty positional is not a test type either, so an impossible case still fails loudly.
+      for (const [, positional = ''] of fix.matchAll(/\bx test ([a-z0-9-]+)/g)) {
         expect(TEST_TYPES).toContain(positional);
       }
     }
@@ -67,7 +69,9 @@ describe('the other four fix lines stay on `x test eval`', () => {
     test(`${code} cites only real test types`, () => {
       const fix = json.fix ?? '';
       expect(fix.length).toBeGreaterThan(0);
-      for (const [, positional] of fix.matchAll(/\bx test ([a-z0-9-]+)/g)) {
+      // `''` rather than `undefined`: the group always matches when the regex does, and an
+      // empty positional is not a test type either, so an impossible case still fails loudly.
+      for (const [, positional = ''] of fix.matchAll(/\bx test ([a-z0-9-]+)/g)) {
         expect(TEST_TYPES).toContain(positional);
       }
     });

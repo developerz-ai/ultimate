@@ -6,6 +6,7 @@ import {
   loadPgliteDriver,
   PGLITE_FIX,
   PGLITE_MEMORY,
+  type PgliteDriver,
   type PgliteResult,
   pgliteDataDir,
 } from './pglite';

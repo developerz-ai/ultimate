@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
 import { userActor } from '@ultimat3/core';
+import type { FlagTargeting } from './targeting';
 import { evaluateTargeting } from './targeting';
 
 const caught = (run: () => unknown): unknown => {

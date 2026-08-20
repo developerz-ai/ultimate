@@ -154,6 +154,10 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   `query.page(input, { first, after })` — a page is the read's own answer, not an imported helper.
   `src/index.ts` exports `Page` and `PaginateArgs` and not the function: re-exporting it would be
   a second way to ask for the thing `.page()` already does.
+- **A `RowProvider` may be a list, a sync function or an async one** (`As of 2026-08-19`).
+  `execute()` awaits whatever the function returns, so all three were always accepted at runtime —
+  the type declared only `() => Promise<readonly TRow[]>`, which refused a repo method already
+  holding its page and every in-memory fixture. `source.test.ts` pins all three.
 - **A cursor is a position, not a row.** `isAfterKey` in `source.ts` is the one definition of
   "after this position": `Builder.seek()` compiles it to SQL and `paginate()` applies it when a
   source cannot push the seek down. The fallback used to find the cursor's row by id and slice

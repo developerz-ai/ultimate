@@ -47,7 +47,7 @@ describe('a ROW bust spares the other rows of its entity', () => {
     const memo = createMemoTier();
     await runWithContext(createContext(), async () => {
       await seed(memo);
-      expect((await memo.invalidateTags([tag('post', '1')])).keys.sort()).toEqual([
+      expect([...(await memo.invalidateTags([tag('post', '1')])).keys].sort()).toEqual([
         'feed',
         'post-1',
       ]);
@@ -56,7 +56,10 @@ describe('a ROW bust spares the other rows of its entity', () => {
 
     const lru = createLruTier({ rng: () => 0 });
     await seed(lru);
-    expect((await lru.invalidateTags([tag('post', '1')])).keys.sort()).toEqual(['feed', 'post-1']);
+    expect([...(await lru.invalidateTags([tag('post', '1')])).keys].sort()).toEqual([
+      'feed',
+      'post-1',
+    ]);
     expect(await survivors(lru)).toEqual(['post-2']);
 
     // The same verdict on the wire: `post-2`'s only bucket is `x:t:{post}:2`, and the bust asks

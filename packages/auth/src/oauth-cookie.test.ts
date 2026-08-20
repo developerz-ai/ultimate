@@ -228,10 +228,12 @@ describe('the two legs of a login', () => {
     const handshake = readHandshakeCookie(request, 'github', options);
     const url = new URL(request.url);
 
-    let sentVerifier: string | null = null;
+    // A list rather than a `let`: it pins that the token endpoint was reached exactly ONCE, and a
+    // variable only ever assigned inside the stub reads to TypeScript as its initialiser forever.
+    const sentVerifiers: (string | null)[] = [];
     const fetch: OAuthFetch = async (endpoint, init) => {
       if (endpoint === 'https://github.com/login/oauth/access_token') {
-        sentVerifier = new URLSearchParams(String(init.body)).get('code_verifier');
+        sentVerifiers.push(new URLSearchParams(String(init.body)).get('code_verifier'));
         return json({ access_token: 'gho_token', token_type: 'bearer' });
       }
       if (endpoint === 'https://api.github.com/user') return json({ id: 583231, login: 'octocat' });
@@ -251,7 +253,7 @@ describe('the two legs of a login', () => {
     expect(result.actor.kind).toBe('user');
     expect(result.cookie).toContain('__Host-x_session=');
     // The verifier reached the token endpoint from the cookie alone — that is what PKCE is.
-    expect(sentVerifier).toBe(handshake.verifier);
+    expect(sentVerifiers).toEqual([handshake.verifier]);
   });
 
   test('a callback whose cookie belongs to another browser never reaches the network', async () => {

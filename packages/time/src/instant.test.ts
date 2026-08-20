@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { Clock } from '@ultimat3/core';
+import { type Clock, frozenClock } from '@ultimat3/core';
 import {
   addMs,
   compareInstants,
@@ -48,7 +48,7 @@ describe('instant', () => {
   });
 
   test('takes its clock by injection, so tests can freeze time', () => {
-    const frozen: Clock = { now: () => new Date('2026-03-14T08:00:00Z') };
+    const frozen: Clock = frozenClock('2026-03-14T08:00:00Z');
     expect(toIso(now(frozen))).toBe('2026-03-14T08:00:00.000Z');
     expect(differenceMs(now(frozen), fromIso('2026-03-14T09:00:00Z'))).toBe(3_600_000);
   });
@@ -104,7 +104,10 @@ describe('the epoch constructors', () => {
     expect(codeOf(() => fromEpochSeconds(1e13))).toBe('X_INSTANT_INVALID');
     expect(codeOf(() => addMs(epoch(), 1e16))).toBe('X_INSTANT_INVALID');
     expect(codeOf(() => subtractMs(epoch(), 1e16))).toBe('X_INSTANT_INVALID');
-    const runaway: Clock = { now: () => 1e16, monotonic: () => 0 };
+    // A clock skewed past the `Date` range: `now()` answers an Invalid Date, which `now(clock)`
+    // must refuse rather than brand. `Clock.now` returns a `Date`, so this is the only shape the
+    // out-of-range case can arrive in.
+    const runaway: Clock = { now: () => new Date(1e16), monotonic: () => 0 };
     expect(codeOf(() => now(runaway))).toBe('X_INSTANT_INVALID');
   });
 

@@ -75,7 +75,14 @@ describe('objectSchema', () => {
     });
     const result = validate(schema, { title: 'hi' });
     expect(result.issues).toBeUndefined();
-    if (result.issues === undefined) expect(result.value).toEqual({ title: 'hi' });
+    if (result.issues === undefined) {
+      // Not `toEqual({ title: 'hi' })`: an object literal's apparent `toString` is
+      // `Object.prototype`'s `() => string`, which TS compares against the declared
+      // `toString?: string` and rejects. Own keys say the same thing and say it more exactly —
+      // the bug was `toString` landing as an INHERITED read, which `Object.keys` cannot see.
+      expect(Object.keys(result.value)).toEqual(['title']);
+      expect(result.value.title).toBe('hi');
+    }
   });
 
   test('a prototype-named field falls back to its `.default()` when the caller omits it', () => {

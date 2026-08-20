@@ -20,6 +20,9 @@ const DIMENSION = 4;
 const vec = (...values: number[]): Float32Array => normalize(Float32Array.from(values));
 const ids = (hits: readonly SearchHit[]): readonly string[] => hits.map((hit) => hit.id);
 
+/** For the reads whose order is not part of the claim. Copies — `sort` mutates, `ids` is readonly. */
+const sortedIds = (hits: readonly SearchHit[]): readonly string[] => [...ids(hits)].sort();
+
 /** Ties are ordered `score desc, id asc` in SQL; normalise both sides so a tie cannot flake. */
 const ranked = (hits: readonly SearchHit[]): readonly string[] =>
   [...hits].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).map((hit) => hit.id);
@@ -145,7 +148,7 @@ describe.skipIf(!hasPostgres)('live · pgvector · PgVectorStore', () => {
       expect(row?.typeof).toBe('object');
       expect(row?.kind).toBe('guide');
       const hits = await acme().search(vec(1, 0, 0, 0), 10, { kind: 'guide' });
-      expect(ids(hits).sort()).toEqual(['a', 'b']);
+      expect(sortedIds(hits)).toEqual(['a', 'b']);
     });
 
     test('upsert of an existing id replaces the row instead of adding a second', async () => {
@@ -184,7 +187,7 @@ describe.skipIf(!hasPostgres)('live · pgvector · PgVectorStore', () => {
     test('searchText is Postgres FTS: the rare exact term wins and stemming applies', async () => {
       expect(ids(await acme().searchText('x_vector_drift', 5))).toEqual(['a']);
       // 'guides' stems to 'guide', which is the whole point of running FTS rather than LIKE.
-      expect(ids(await acme().searchText('guides', 5)).sort()).toEqual(['a', 'b']);
+      expect(sortedIds(await acme().searchText('guides', 5))).toEqual(['a', 'b']);
       expect(await acme().searchText('nothing matches this', 5)).toEqual([]);
     });
 
@@ -240,7 +243,7 @@ describe.skipIf(!hasPostgres)('live · pgvector · PgVectorStore', () => {
       });
       expect(ids(hits)).not.toContain('d');
       expect(ids(await scoped.searchText('billing summary', 10))).toEqual([]);
-      expect(ids(await scoped.search(vec(0, 0, 1, 0), 10)).sort()).toEqual(['a', 'b']);
+      expect(sortedIds(await scoped.search(vec(0, 0, 1, 0), 10))).toEqual(['a', 'b']);
     });
 
     test('an empty allow-list matches nothing rather than everything', async () => {

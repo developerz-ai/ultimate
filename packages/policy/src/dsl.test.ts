@@ -19,6 +19,7 @@ import {
   enforceLive,
   enforceMcp,
   type Surface,
+  type SurfaceDenial,
 } from './surfaces';
 import { testActor } from './test-kit';
 
@@ -106,7 +107,9 @@ describe('the policy DSL surface', () => {
   test('enforce() dispatches to the same adapter, not a reimplementation', () => {
     const policy = can<Input>('post:publish');
     const args = { input, actor: guest };
-    const table: Record<Surface, () => ReturnType<typeof enforceHttp>> = {
+    // `SurfaceDenial`, not `ReturnType<typeof enforceHttp>`: each adapter answers its OWN wire
+    // shape, and typing the table as http's silently made three of the four unassignable.
+    const table: Record<Surface, () => SurfaceDenial | undefined> = {
       http: () => enforceHttp(policy, args),
       live: () => enforceLive(policy, args),
       job: () => enforceJob(policy, args),

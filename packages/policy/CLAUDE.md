@@ -72,6 +72,13 @@ two differ, and it is why a surface that decides on input alone needs no edit.
   setter and files no key at all. `test-kit.ts`'s verdict map has the same two rules for the same
   reason — `allowedFor('constructor')` answered a truthy function — and `policyMatrix` builds it
   through `Object.fromEntries`, which defines own keys whatever they spell.
+- **`testActor()` mints a COMPLETE actor — `kind` and `scopes` included** (`As of 2026-08-19`).
+  It omitted both behind an `as unknown as Actor`, so core's `hasScope(actor, …)` threw a bare
+  `TypeError` on every actor it built and `actorLabel()` rendered `undefined:editor` — a generated
+  scope-gated policy test failed as a 500-shaped throw instead of as the denial it asserts. The one
+  cast left is `orgId: null`, which is load-bearing: the `Actor = CoreActor & PolicyActorFields`
+  intersection collapses `string | null | undefined` back to core's `string | undefined`, so
+  nothing else in the repo produces the `null` `@ultimat3/query`'s `orgless()` guards against.
 - No `any`. Never throw a bare `Error` — use `errors.ts`.
 - **This package owns `X_FORBIDDEN`** and registers its title with core. `http`, `auth`
   and every surface adapter reuse the code and must not re-register it.
@@ -97,7 +104,7 @@ reappearing there is a failing test.
 | `surfaces.ts` | http/live/job/mcp adapters — the "one system" proof |
 | `roles.ts` | the role map: merge, conflict, inheritance, wildcards |
 | `grant-index.ts` | the per-actor flattened grant set, memoised against the role generation |
-| `test-kit.ts` | `policyMatrix()` for generated policy tests |
+| `test-kit.ts` | `policyMatrix()` for generated policy tests, and `testActor()` |
 
 ## The hot path
 

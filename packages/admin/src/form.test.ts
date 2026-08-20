@@ -11,6 +11,7 @@ import {
   fire,
   installFactory,
   one,
+  renderShallowNodes,
   restoreFactory,
   shallowNodesOf,
   withAttr,
@@ -78,21 +79,19 @@ function render(over: Record<string, unknown> = {}): Rendered {
   const inputs: [string, unknown][] = [];
   const submits: number[] = [];
   const cancels: number[] = [];
-  const nodes = shallowNodesOf(
-    (AdminForm as (props: Record<string, unknown>) => unknown)({
-      resource,
-      mode: 'create',
-      values: {},
-      issues: [],
-      submitting: false,
-      error: null,
-      ctx: { timeZone: 'UTC', locale: 'en-US' },
-      onInput: (name: string, value: unknown) => inputs.push([name, value]),
-      onSubmit: () => submits.push(1),
-      onCancel: () => cancels.push(1),
-      ...over,
-    }),
-  );
+  const nodes = renderShallowNodes(AdminForm, {
+    resource,
+    mode: 'create',
+    values: {},
+    issues: [],
+    submitting: false,
+    error: null,
+    ctx: { timeZone: 'UTC', locale: 'en-US' },
+    onInput: (name: string, value: unknown) => inputs.push([name, value]),
+    onSubmit: () => submits.push(1),
+    onCancel: () => cancels.push(1),
+    ...over,
+  });
   return { nodes, inputs, submits, cancels };
 }
 

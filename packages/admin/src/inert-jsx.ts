@@ -139,6 +139,19 @@ export function renderNodes(component: unknown, props: Record<string, unknown> =
   return nodesOf((component as InertComponent)(props));
 }
 
+/**
+ * `renderNodes`, stopping at the design-system boundary — the `shallowNodesOf` sibling. The
+ * `unknown` parameter is what makes it usable: a screen's props are typed and generic, so a test
+ * calling one through `as (props: Record<string, unknown>) => unknown` is a conversion TypeScript
+ * refuses outright. One widening here beats one per call site.
+ */
+export function renderShallowNodes(
+  component: unknown,
+  props: Record<string, unknown> = {},
+): InertNode[] {
+  return shallowNodesOf((component as InertComponent)(props));
+}
+
 /** Render a component to markup. */
 export function renderComponent(component: unknown, props: Record<string, unknown> = {}): string {
   return renderHtml((component as InertComponent)(props));

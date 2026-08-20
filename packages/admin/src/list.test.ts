@@ -12,6 +12,7 @@ import {
   fire,
   installFactory,
   one,
+  renderShallowNodes,
   restoreFactory,
   shallowNodesOf,
   withAttr,
@@ -89,22 +90,20 @@ function render(over: Record<string, unknown> = {}): Rendered {
   const cursors: (string | null)[] = [];
   const opened: string[] = [];
   const sorts: unknown[] = [];
-  const nodes = shallowNodesOf(
-    AdminList({
-      resource,
-      page: pageOf(),
-      loading: false,
-      error: null,
-      ctx: { timeZone: 'UTC', locale: 'en-US' },
-      actor: ACTOR,
-      authz: refuseAll,
-      basePath: '/back-office',
-      onCursor: (cursor: string | null) => cursors.push(cursor),
-      onOpen: (id: string) => opened.push(id),
-      onSort: (sort: unknown) => sorts.push(sort),
-      ...over,
-    } as never),
-  );
+  const nodes = renderShallowNodes(AdminList, {
+    resource,
+    page: pageOf(),
+    loading: false,
+    error: null,
+    ctx: { timeZone: 'UTC', locale: 'en-US' },
+    actor: ACTOR,
+    authz: refuseAll,
+    basePath: '/back-office',
+    onCursor: (cursor: string | null) => cursors.push(cursor),
+    onOpen: (id: string) => opened.push(id),
+    onSort: (sort: unknown) => sorts.push(sort),
+    ...over,
+  });
   return { nodes, cursors, opened, sorts };
 }
 
@@ -123,21 +122,19 @@ const columnsOf = (rendered: Rendered): readonly Column[] =>
 
 describe('the three states', () => {
   test('an error wins over loading and over the page', () => {
-    const nodes = shallowNodesOf(
-      // The state precedence, exercised with all three set at once.
-      (AdminList as (props: Record<string, unknown>) => unknown)({
-        resource,
-        page: pageOf(),
-        loading: true,
-        error: { code: 'X_ADMIN_DENIED', cause: 'no grant', fix: 'ask an owner' },
-        ctx: { timeZone: 'UTC', locale: 'en-US' },
-        actor: ACTOR,
-        authz: refuseAll,
-        basePath: '/back-office',
-        onCursor: () => undefined,
-        onOpen: () => undefined,
-      }),
-    );
+    // The state precedence, exercised with all three set at once.
+    const nodes = renderShallowNodes(AdminList, {
+      resource,
+      page: pageOf(),
+      loading: true,
+      error: { code: 'X_ADMIN_DENIED', cause: 'no grant', fix: 'ask an owner' },
+      ctx: { timeZone: 'UTC', locale: 'en-US' },
+      actor: ACTOR,
+      authz: refuseAll,
+      basePath: '/back-office',
+      onCursor: () => undefined,
+      onOpen: () => undefined,
+    });
     const state = one(byComponent(nodes, 'ErrorState'), '<ErrorState>');
     expect((state.props['error'] as { code: string }).code).toBe('X_ADMIN_DENIED');
   });

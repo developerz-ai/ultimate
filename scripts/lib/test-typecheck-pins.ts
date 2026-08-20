@@ -11,30 +11,11 @@
 // about its own: a pin keyed on a file and a line goes stale on every edit to the file above it,
 // and churn teaches a reader to regenerate a ratchet without looking at it.
 //
-// Cheapest first — this is the order phase 2 should be sliced in, one package per PR. The classes
-// are the 2026-08-19 measurement and are advisory; the number is the rule:
+// Cheapest first — this is the order the remaining packages should be sliced in, one PR per
+// batch. The classes are the 2026-08-19 measurement and are advisory; the number is the rule:
 //
 // | Package | Errors | The classes behind the count |
 // |---|---|---|
-// | create-ultimate, money, seo | 0 | — |
-// | i18n | 1 | TS2379 |
-// | pwa | 2 | TS2741 |
-// | schema | 2 | TS2339, TS2769 |
-// | time | 2 | TS2741, TS2322 |
-// | storage | 3 | TS2339, TS2769 |
-// | db | 4 | TS18048, TS2769, TS2304, TS7006 |
-// | auth | 5 | TS4111, TS2740, TS2769, TS2345 |
-// | cache | 5 | TS2339, TS2352, TS4111 |
-// | mail | 5 | TS2741, TS2339, TS2345 |
-// | manifest | 5 | TS2379 |
-// | ui | 6 | TS2353, TS2769 |
-// | ai | 8 | TS2769, TS2339, TS2353 |
-// | http | 8 | TS4111, TS2322, TS2375, TS2769 |
-// | admin | 9 | TS2352, TS2722, TS2554, TS2322, TS2769, TS2304 |
-// | core | 9 | TS2769, TS2345, TS2731, TS18046, TS2353 |
-// | policy | 13 | TS2739 (fakes missing members the real interface gained), TS2322 |
-// | query | 13 | TS2353, TS2345, TS2412 |
-// | flags | 15 | TS2304 — one type used without its `import type`, fifteen times |
 // | testing | 20 | TS2339, TS2353, TS2322, TS2345 |
 // | action | 21 | TS4111, TS2353, TS2322, TS2769 |
 // | realtime | 22 | TS2769, TS2339, TS2741, TS2353 |
@@ -45,6 +26,15 @@
 // | cli | 60 | TS2345, TS2769, TS2322, TS18046 |
 // | entity | 78 | TS4111 (index-signature access), TS2769, TS18048 |
 //
+// At zero and staying there: `create-ultimate`, `money`, `seo` (never had a line), plus the 18
+// closed by the first phase-2 batch — `core`, `schema`, `i18n`, `time`, `pwa`, `storage`, `db`,
+// `cache`, `flags`, `auth`, `http`, `policy`, `query`, `mail`, `manifest`, `ui`, `ai`, `admin`.
+// 115 errors, and four of them were the type being wrong rather than the test: `LocaleSources`
+// refused the `undefined` its own sibling reader produces, `testActor()` minted an `Actor` with no
+// `kind` and no `scopes` so `hasScope()` threw out of a predicate, `RowProvider` forbade the
+// synchronous thunk `Builder.execute` has always awaited, and `ERROR_STATUS` was typed open in the
+// one table whose whole argument is that it is closed.
+//
 // Shrink it with `bun run scripts/test-typecheck-gate.ts --unpin <pkg>[,<pkg>]`, which lowers a
 // count to what is measured and refuses to raise one. Raising a count is a hand edit, in a review.
 
@@ -53,35 +43,35 @@ export const PINS_FILE = 'scripts/lib/test-typecheck-pins.ts';
 
 export const TEST_TYPECHECK_PINS: Readonly<Record<string, number>> = {
   action: 21,
-  admin: 9,
-  ai: 8,
-  auth: 5,
-  cache: 5,
+  admin: 0,
+  ai: 0,
+  auth: 0,
+  cache: 0,
   cli: 60,
-  core: 9,
+  core: 0,
   'create-ultimate': 0,
-  db: 4,
+  db: 0,
   entity: 78,
-  flags: 15,
-  http: 8,
-  i18n: 1,
+  flags: 0,
+  http: 0,
+  i18n: 0,
   jobs: 25,
-  mail: 5,
-  manifest: 5,
+  mail: 0,
+  manifest: 0,
   mcp: 30,
   money: 0,
-  policy: 13,
-  pwa: 2,
-  query: 13,
+  policy: 0,
+  pwa: 0,
+  query: 0,
   realtime: 22,
   render: 48,
-  schema: 2,
+  schema: 0,
   scraping: 27,
   seo: 0,
-  storage: 3,
+  storage: 0,
   testing: 20,
-  time: 2,
-  ui: 6,
+  time: 0,
+  ui: 0,
 };
 
 /** What this package is allowed to have failing today. Absent means zero, deliberately. */

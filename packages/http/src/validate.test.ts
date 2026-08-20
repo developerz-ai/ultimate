@@ -3,15 +3,16 @@
 // something an agent can act on when an async schema is used on the sync path. Neither is
 // visible in the type, so both are asserted here.
 import { describe, expect, test } from 'bun:test';
+import type { StandardResult } from '@ultimat3/schema';
 import { t } from '@ultimat3/schema';
 import type { Schema } from './validate';
 import { formatIssue, validate, validateSync } from './validate';
 
-type StandardResult<Out> =
-  | { readonly value: Out }
-  | {
-      readonly issues: readonly { readonly message: string; readonly path?: readonly unknown[] }[];
-    };
+// `StandardResult` comes from `@ultimat3/schema`, never a copy declared here: this file exists to
+// prove the seam behaves for a HAND-WRITTEN validator, and a hand-written validator conforms to
+// the shipped interface or it is not the thing under test. The local copy had drifted — a success
+// arm with no `issues?: undefined` discriminant and a path of `unknown[]` — so it described a
+// vendor `Schema<Out>` would not have accepted.
 
 const syncSchema = <Out>(validateFn: (value: unknown) => StandardResult<Out>): Schema<Out> => ({
   '~standard': {

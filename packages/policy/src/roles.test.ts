@@ -17,6 +17,7 @@ import {
   roleMapGeneration,
   rolesGranting,
 } from './roles';
+import { testActor } from './test-kit';
 
 const roles: RoleMap = {
   viewer: { grants: ['post:read'] },
@@ -130,18 +131,21 @@ describe('actorPermissions()', () => {
   });
 
   test('combines direct grants with role-derived ones, deduped and sorted', () => {
-    const actor = { id: 'u1', roles: ['viewer'], permissions: ['post:read', 'comment:write'] };
+    const actor = testActor('u1', {
+      roles: ['viewer'],
+      permissions: ['post:read', 'comment:write'],
+    }).actor;
     expect(actorPermissions(actor)).toEqual(['comment:write', 'post:read']);
   });
 
   test('an actor with no roles or direct grants has none', () => {
-    const actor = { id: 'u1' };
+    const actor = testActor('u1').actor;
     expect(actorPermissions(actor)).toEqual([]);
   });
 
   test('accepts an explicit map override instead of the global registry', () => {
     const localMap: RoleMap = { local: { grants: ['x:y'] } };
-    const actor = { id: 'u1', roles: ['local'] };
+    const actor = testActor('u1', { roles: ['local'] }).actor;
     expect(actorPermissions(actor, localMap)).toEqual(['x:y']);
     // The global registry (defineRoles(roles) in beforeEach) has no `local` role.
     expect(actorPermissions(actor)).toEqual([]);
@@ -154,7 +158,7 @@ describe('actorHas()', () => {
   });
 
   test('true when a role grant (direct or wildcard) covers the permission', () => {
-    const modActor = { id: 'm1', roles: ['mod'] };
+    const modActor = testActor('m1', { roles: ['mod'] }).actor;
     expect(actorHas(modActor, 'post:delete')).toBe(true);
     expect(actorHas(modActor, 'org:admin')).toBe(false);
   });
@@ -236,7 +240,7 @@ describe('restoreRoles()', () => {
     restoreRoles(captured, roleDeclarationSites());
 
     expect(roleMapGeneration()).toBeGreaterThan(before);
-    expect(actorPermissions({ id: 'u1', roles: ['editor'] })).toEqual([
+    expect(actorPermissions(testActor('u1', { roles: ['editor'] }).actor)).toEqual([
       'post:publish',
       'post:read',
     ]);
@@ -264,8 +268,8 @@ describe('a role name is caller data, never a prototype key', () => {
   test('an actor holding one is denied, and denied is an answer rather than a throw', () => {
     defineRoles(roles);
     for (const name of INHERITED) {
-      expect(actorHas({ id: `u-${name}`, roles: [name] }, 'post:read')).toBe(false);
-      expect(actorPermissions({ id: `p-${name}`, roles: [name] })).toEqual([]);
+      expect(actorHas(testActor(`u-${name}`, { roles: [name] }).actor, 'post:read')).toBe(false);
+      expect(actorPermissions(testActor(`p-${name}`, { roles: [name] }).actor)).toEqual([]);
     }
   });
 
