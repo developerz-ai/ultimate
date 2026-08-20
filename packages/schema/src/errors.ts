@@ -108,7 +108,7 @@ export class SchemaError extends Error {
   /** The same 3-line rendering as `UltimateError.format()`. */
   format(): string {
     return [
-      `${this.code}: ${singleLine(this.title)}`,
+      `${singleLine(this.code)}: ${singleLine(this.title)}`,
       `  cause: ${singleLine(this.cause)}`,
       `  fix:   ${singleLine(this.fix)}`,
     ].join('\n');

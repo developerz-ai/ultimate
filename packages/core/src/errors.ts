@@ -98,7 +98,7 @@ export class UltimateError extends Error {
     // `singleLine`, because this format is line-oriented and `cause` may hold a caller's string:
     // one newline in it writes a second line an operator reads as a genuine framework message.
     const lines = [
-      `${this.code}: ${singleLine(this.title)}`,
+      `${singleLine(this.code)}: ${singleLine(this.title)}`,
       `  cause: ${singleLine(this.cause)}`,
       `  fix:   ${singleLine(this.fix)}`,
     ];

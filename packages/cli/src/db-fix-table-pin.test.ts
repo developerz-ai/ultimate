@@ -1,19 +1,7 @@
-// `@ultimat3/db` builds every driver `fix:` from the `SQLSTATE_FIXES` LOOKUP TABLE, and the
-// `errors` step cannot see one.
-//
-// `checkErrorFixes` reads `fix:` string literals out of source (`fix-scan.ts`). A table indexed at
-// run time — `fix: SQLSTATE_FIXES[code].replace(...)` — puts no literal in the `fix:` position, so
-// the six strings behind the framework's most operationally loaded errors were checked by hand and
-// nothing would have caught a seventh (#97, "Related, same family").
-//
-// This closes it by asking the question at the other end: build the REAL error for every SQLSTATE
-// the driver classifies and hold its rendered `fix` to `fixProblem` — the same rule the gate
-// applies to every literal in the repo. Checking the rendered string is strictly better than
-// checking the table, because it also covers the `{constraint}` substitution, which is where a
-// server-supplied identifier enters the line an operator is told to paste.
-//
-// It lives here rather than in `@ultimat3/db` because `fixProblem` is `@ultimat3/cli`'s and `db` is
-// tier 1 — imports go DOWN, so `db` can never reach it. Same arrangement as the tier-0 pins.
+// Holds `@ultimat3/db`'s SQLSTATE fix table to the rule the `errors` step applies to literals.
+// That step reads `fix:` string literals, and a table indexed at run time puts no literal in the
+// `fix:` position — so these six were checked by hand and nothing would catch a seventh (#97).
+// Here rather than in `db`, because `fixProblem` is `@ultimat3/cli`'s and imports go DOWN.
 
 import { describe, expect, test } from 'bun:test';
 import { DB_SQLSTATE_CODES, driverError, SQLSTATE } from '@ultimat3/db';
@@ -28,6 +16,10 @@ const pgError = (code: string, constraint?: string): unknown =>
 
 const states = Object.keys(DB_SQLSTATE_CODES);
 
+/**
+ * Asked at the rendered end, not the table: building the REAL error also covers the `{constraint}`
+ * substitution, which is where a server-supplied identifier enters the line an operator pastes.
+ */
 describe('every SQLSTATE fix passes the rule the errors step applies to literals', () => {
   test('the table covers every state the driver classifies', () => {
     expect(states.length).toBeGreaterThan(0);

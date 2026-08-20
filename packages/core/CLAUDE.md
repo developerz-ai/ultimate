@@ -44,7 +44,9 @@ call sites — `UltimateError.format()` here, `SchemaError.format()` in `@ultima
 `renderErrorLines` in `@ultimat3/http`, `renderFrameworkError` in `@ultimat3/mcp`, and
 `renderFinding` / `detailLines` in `@ultimat3/cli` — because a rule every author must remember is a
 rule the next author forgets. It is not a general sanitiser: a cause is prose and keeps its quotes,
-its backslashes and its percent signs; only line breaks are structural. `@ultimat3/schema` carries a
+its backslashes and its percent signs — only the control range is touched. Line breaks are the
+structural half; the rest of C0 and DEL ride along because a terminal reads a raw `\u001b` as an ANSI
+escape, so a cause could repaint the screen or hide the line above it. `@ultimat3/schema` carries a
 deliberate duplicate for the tier-0 reason below, pinned behaviourally by
 `single-line-pin.test.ts` in `@ultimat3/cli`.
 

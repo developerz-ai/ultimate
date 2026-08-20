@@ -1,15 +1,7 @@
-// `@ultimat3/schema` is tier 0 like `@ultimat3/core` and may not import it (imports go DOWN, never
-// sideways), so `schema/errors.ts` carries a deliberate duplicate of core's `singleLine`. Neither
-// tier-0 package can check that duplicate against its source, so the pin lives here: `@ultimat3/cli`
-// is tier 5 and may legally import both — the same arrangement as `schema-error-codes-pin.test.ts`
-// and `describe-value-pin.test.ts`.
-//
-// Pinned BEHAVIOURALLY, on `format()`, rather than by exporting the helper from schema. The
-// contract is "the 3-line format stays three lines whoever renders it"; exporting a private escape
-// to test it would widen the public surface to describe an implementation, and would still not
-// prove the two renderers agree. A copy that drifts fails here instead of quietly letting a schema
-// cause — which describes the value that failed validation, i.e. the request body — write a line an
-// operator reads as a genuine framework message.
+// Pins `@ultimat3/schema`'s deliberate copy of core's `singleLine` against core's own, since both
+// are tier 0 and schema may not import core. Behavioural, on `format()`: the contract is "the
+// 3-line format stays three lines whoever renders it", and exporting a private escape to test it
+// would widen the public surface to describe an implementation. Same arrangement as the tier-0 pins.
 
 import { describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
@@ -20,6 +12,10 @@ const FORGED = 'evil\n  fix:   rm -rf /\nX_OK: everything is fine';
 
 const bodyOf = (rendered: string): readonly string[] => rendered.split('\n').slice(1);
 
+/**
+ * A drifted copy fails here instead of quietly letting a schema cause — which describes the value
+ * that failed validation, i.e. the request body — write a line an operator reads as genuine.
+ */
 describe('schema and core escape a hostile cause identically', () => {
   test('both render exactly three lines', () => {
     const core = new UltimateError({ code: 'X_INVARIANT', cause: FORGED, fix: FORGED });

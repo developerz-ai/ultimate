@@ -85,8 +85,13 @@ export function renderCauseValue(value: unknown): string {
  * `\u2028` and `\u2029` are included because they terminate a line for a JavaScript parser and
  * for several log viewers, while `String.prototype.split('\n')` never sees them.
  *
- * NOT a general sanitiser: a `cause` is prose and may contain quotes, backslashes and anything
- * else. Only line breaks are structural here, so only line breaks are escaped.
+ * The set is every C0 control, DEL, and `\u2028`/`\u2029`. Line breaks are the structural half —
+ * they add a line to a line-oriented format — and the rest ride along because a terminal reads them
+ * as commands of its own: a raw `\u001b` in a cause is an ANSI escape, so a value could repaint the
+ * screen, hide the line above it or move the cursor over what a reader had already been shown.
+ *
+ * NOT a general sanitiser. A `cause` is prose and keeps its quotes, its backslashes, its percent
+ * signs and every printable character it arrived with; only the control range is touched.
  */
 export function singleLine(text: string): string {
   // biome-ignore lint/suspicious/noControlCharactersInRegex: escaping them is the point.
