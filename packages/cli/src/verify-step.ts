@@ -28,6 +28,11 @@ export const VERIFY_STEP_NAMES = [
   'drift',
   'contract-diff',
   'budgets',
+  // Eighteenth, and a deliberate widening of a closed list rather than a `HostCheck`: an SEO gate
+  // is a MECHANISM every app with a `site/` surface wants (axiom 8), not a rule one host repo
+  // enforces — and `verifyCommand.run` passes no host checks at all, so the app path could not
+  // have carried it. It runs beside `budgets` because both read the app the same load produced.
+  'seo',
   'manifest',
   'roadmap',
 ] as const;

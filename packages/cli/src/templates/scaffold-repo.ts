@@ -120,6 +120,13 @@ const envDeclaration = (): string => `${envSchemaSource()}
  */
 export const env = defineEnv(envSchema);`;
 
+/**
+ * No `installPrompt`. `PwaConfig` declares it, `defineConfig` defaults it, and NO file reads it —
+ * `packages/core/src/config.ts` carries the marker saying so. Scaffolding it wrote a switch with
+ * no wire into every generated app, and the note belongs HERE rather than in the emitted file: an
+ * app author has no use for a comment about a framework key their config does not name. Deleting
+ * the key itself is core's edit; not writing it is this template's half.
+ */
 const appConfig = (
   app: NameSet,
 ): string => `// The one config file. Everything the app needs to boot is here, typed and validated at startup —
@@ -142,7 +149,7 @@ export const config = defineConfig({
   jobs: { driver: 'postgres', queues: ['${app.kebab}-default'], concurrency: 4 },
   // In-process transport by default; set urlEnv and transport: 'nats' to scale past one node.
   realtime: { enabled: true, tier: 'live-queries', transport: 'memory' },
-  pwa: { enabled: true, offline: 'runtime', installPrompt: true },
+  pwa: { enabled: true, offline: 'runtime' },
   ai: { mcp: { expose: true, path: '/mcp' } },
 });
 `;

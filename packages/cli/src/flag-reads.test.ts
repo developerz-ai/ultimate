@@ -161,8 +161,11 @@ describe('checkFlagReads', () => {
 });
 
 // The rule applied to this build, which is what makes it a build error rather than a utility.
-// It answers zero today: `--critical` IS read — `cmd-deploy.ts` writes it into the plan JSON —
-// and what was unimplemented was the plan field's consumer, one level below any rule over names.
+//
+// It answers zero, and `--critical` is why that is worth saying twice. This gate PASSED it for as
+// long as it existed: `cmd-deploy.ts` wrote it into the plan JSON, which is a read. What no rule
+// over names can see is that nothing read the FIELD — so the flag was deleted rather than wired,
+// and the gate's honest scope is "declared and never touched", never "declared and inert".
 describe('this CLI', () => {
   test('every flag every command declares is read by something', async () => {
     expect(await checkFlagReads(SPECS, import.meta.dir)).toEqual([]);
