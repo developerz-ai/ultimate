@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 6.0.0
+
 ### Changed
 
 - **BREAKING â€”** `isValidTimeZone`, `assertTimeZone` and `canonicalTimeZone` refuse every single-label
@@ -132,31 +136,12 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   onto one lazy seam, so `@ultimat3/ui` no longer throws `TypeError: undefined is not a constructor` at
   module evaluation (#244)
 
-## 6.0.0
-
 ### Fixed
 
 - island JSX compiles to real Solid reactivity, not to an undefined React (#253)
 - one lazy AsyncLocalStorage, so a browser bundle can load @ultimat3/core (#256)
-- a scaffolded app's first setup and first gate both work (#238)
-
-### Changed
-
 - One timezone rule everywhere, and CI runs the Bun this repo runs (#265)
 - 6.0.0: Solid reactivity that works, Bun.Image, and four defects that shipped green (#263)
-- restamp to 5.0.1, from the registry rather than from intent (#237)
-
-
-## 5.0.1
-
-### Fixed
-
-- a live query no longer ships the raw table row, or mis-orders a projected window (#235)
-
-### Changed
-
-- restamp the status table to 5.0.0, from the registry rather than from intent (#234)
-
 
 ## 5.0.1 - 2026-08-20
 
@@ -186,18 +171,6 @@ A patch: one fix, in two packages, closing the defect 5.0.0's own work uncovered
   readable on the row.** `examples/dummy`'s `PostSummary` now carries `createdAt` for that reason,
   which also puts its feed back on the incremental path â€” the assertion that file was written with,
   and which had never been true.
-
-## 5.0.0
-
-### Added
-
-- the subscribe fixture drives a whole sync node, and its five tests run (#231)
-
-### Fixed
-
-- delete JobsConfig.driver, which selected no driver and said nothing (#232)
-- escape error lines at construction, and read a fix out of a table (#229)
-
 
 ## 5.0.0 - 2026-08-20
 
