@@ -134,7 +134,8 @@ function driverWithoutIntrospect(): JobDriver {
   return rest;
 }
 
-const INTROSPECT_FIX = "set jobs: { driver: 'postgres' } in app.config.ts, then: x jobs ls --json";
+const INTROSPECT_FIX =
+  'call setJobDriver(createPgDriver()) at boot — only the pg driver implements introspect — then: x jobs ls --json';
 
 async function expectIntrospectionRequired(call: () => Promise<unknown>): Promise<void> {
   let thrown: unknown;

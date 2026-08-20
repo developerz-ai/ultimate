@@ -19,10 +19,13 @@ import type {
 import { JobsNotImplementedError } from './errors';
 import type { StepRecord, StepStore } from './steps';
 
-// Names the config edit that actually removes the stub, plus the runnable command for whatever
-// is already queued. The redis driver lands in v2; there is no flag that turns this one on.
+// Names the seam that actually replaces the stub, plus the runnable command for whatever is
+// already queued. NOT `jobs: { driver }` in app.config.ts, which this line said until 2026-08-20:
+// `JobsConfig.driver` has no reader anywhere (see `driver.ts`'s header), so that edit repairs
+// nothing and the reader is sent back to the same throw. #223 removes the field.
+// The redis driver lands in v2; there is no flag that turns this one on.
 const FIX =
-  "set jobs: { driver: 'postgres' } in app.config.ts, then: x jobs drain --to memory --json";
+  'call setJobDriver(createPgDriver()) at boot instead of this driver, then move what is already queued: x jobs drain --to memory --json';
 
 const unavailable = (method: string): never => {
   throw new JobsNotImplementedError({ feature: `redis jobs driver (${method})`, fix: FIX });

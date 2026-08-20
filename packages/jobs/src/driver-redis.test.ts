@@ -10,7 +10,7 @@ import { createRedisDriver } from './driver-redis';
 import { JobsNotImplementedError } from './errors';
 
 const FIX =
-  "set jobs: { driver: 'postgres' } in app.config.ts, then: x jobs drain --to memory --json";
+  'call setJobDriver(createPgDriver()) at boot instead of this driver, then move what is already queued: x jobs drain --to memory --json';
 
 // Every stub method throws SYNCHRONOUSLY (`unavailable` is `throw`, not a rejected promise), so
 // the call under test has to happen inside the try — passed as a promise, `driver.enqueue(...)`

@@ -338,7 +338,7 @@ export function jobsFacade(): JobsFacade {
           throw new DriverUnavailableError({
             driver: 'none',
             cause: 'no queue driver is installed in this process',
-            fix: 'call setJobDriver(createMemoryDriver()) before enqueuing — or set jobs.driver in app.config.ts and run `x dev`',
+            fix: 'call setJobDriver(createMemoryDriver()) before enqueuing, or setJobDriver(createPgDriver()) for a real queue',
           });
         }
         return installed;
