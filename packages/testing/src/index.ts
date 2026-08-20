@@ -91,6 +91,8 @@ export type { TestNetwork } from './fixture-network';
 export { createTestNetwork } from './fixture-network';
 export type { ObservedStatement, StatementShape, TestStatements } from './fixture-statements';
 export { createTestStatements } from './fixture-statements';
+export type { SubscribeDriver } from './fixture-subscribe';
+export { createSubscribeDriver } from './fixture-subscribe';
 export { fixtureTest as test } from './fixtures';
 export {
   ALL_FIXTURE_NAMES,
@@ -100,6 +102,10 @@ export {
 } from './framework-fixtures';
 export type { AppHandle, AppOptions, BootedApp } from './harness';
 export { describeApp, testApp } from './harness';
+export type { LiveConnection, LiveNodeHandle, LiveNodeOptions } from './live-node';
+export { createLiveNode } from './live-node';
+export type { LiveReplicator, LiveReplicatorOptions } from './live-replicator';
+export { startLiveReplicator } from './live-replicator';
 export type { MatcherResult } from './matchers';
 export { matchersInstalled, recordSteps } from './matchers';
 // `isolateEntityRegistry` is deliberately NOT here — it is `@ultimat3/testing/registry-isolation`.

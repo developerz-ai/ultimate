@@ -7,6 +7,7 @@ import type { Table } from './query';
 import { tableFor } from './query';
 import type { Repo } from './repo';
 import { memoryRepo } from './repo';
+import { observedRepo } from './row-observer';
 
 export type EntitySet = Readonly<Record<string, EntityCore>>;
 
@@ -88,7 +89,11 @@ export const database = <E extends EntitySet>(
   };
   const tables: Record<string, unknown> = {};
   for (const [key, entity] of Object.entries(entities)) {
-    tables[key] = tableFor(entity, driver.repo(entity), related);
+    // Wrapped here rather than in a driver, so a committed row change is reported the same whether
+    // rows live in memory or in Postgres — `setRowObserver` is the seam, and with none installed the
+    // wrapper is one comparison per write. `related` below stays unwrapped on purpose: a relation
+    // preload is a READ, and a change feed has nothing to say about one.
+    tables[key] = tableFor(entity, observedRepo(entity, driver.repo(entity)), related);
   }
   // Built key by key from `entities`, so each table is the one `Database<E>` names.
   return tables as Database<E>;

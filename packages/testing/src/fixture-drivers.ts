@@ -1,7 +1,8 @@
 // The fixtures the framework DECLARES but cannot build in this process: a browser for `page`,
-// `budget`, `signIn` and `deploy`; a replicator feeding a live-query registry for `subscribe`.
+// `budget`, `signIn` and `deploy` — all four wait for a browser or a second build.
 // Each is a type a driver implements, plus a factory that says what is missing until one does.
 
+import type { Actor } from '@ultimat3/core';
 import { fixtureUnavailable } from './errors';
 import type { FixtureFactory, Fixtures } from './fixtures';
 
@@ -19,20 +20,20 @@ export interface TestDeploy {
 }
 
 /**
- * What `query.live(input, { actor })` resolves to, named structurally so `@ultimat3/testing` does
- * not take a dependency on `@ultimat3/query` for one type. The real `LiveQuery` satisfies it.
+ * The declared query itself — `liveFeed`, not a call to it. Named structurally so this package takes
+ * no static dependency on `@ultimat3/query` for one type; every `query()` satisfies it, because
+ * `registerQueries()` stamps the name a subscription is keyed by.
  *
- * NOT what `query.as(actor, input)` resolves to, which is a ROW ARRAY — and the difference is
- * invisible until a driver exists. `examples/dummy`'s five `subscribe` tests all call
- * `subscribe(liveFeed.as(actor, input))`, which is `TS2345` against `Subscribe` below and has
- * never been read, because that app's `typecheck` is pinned red in `scripts/lib/gated-apps.ts`.
- * A driver built to satisfy those call sites would have to accept a row array — and a `subscribe`
- * loose enough to do that proves nothing, which is strictly worse than the fixture being
- * unavailable, because it then reads as coverage.
+ * It was `{ name, queryHash }` — "what `query.live(input, { actor })` resolves to" — and that shape
+ * cannot be subscribed to: the node keys a subscription by `(name, input)`, and a hash is the input
+ * already thrown away. The five `subscribe` tests in `examples/dummy` wrote
+ * `subscribe(liveFeed.as(actor, input))`, which resolves to a ROW ARRAY and was `TS2345` against
+ * either shape — never read, because that app's `typecheck` is pinned red in
+ * `scripts/lib/gated-apps.ts`. The call is now `subscribe(liveFeed, input, actor)`: the query, its
+ * input, and who is asking — the three things a subscribe frame carries.
  */
 export interface LiveTarget {
   readonly name: string;
-  readonly queryHash: string;
 }
 
 export interface LiveFeedPatch<R extends object> {
@@ -56,11 +57,19 @@ export interface LiveFeed<R extends object> {
   snapshots(): number;
 }
 
+/**
+ * `actor` is the third argument rather than something baked into the target, because that is where
+ * the framework itself puts it: `liveQueryDefinition` builds the shared window with NO subject
+ * (`ToLiveOptions.enforce: false`) and decides per subscriber at subscribe time. A `subscribe` that
+ * took the actor inside the target would be describing a design the node does not have.
+ */
 export type Subscribe = <R extends object>(
-  target: LiveTarget | Promise<LiveTarget>,
+  target: LiveTarget,
+  input: Readonly<Record<string, unknown>>,
+  actor?: Actor | null,
 ) => Promise<LiveFeed<R>>;
 
-export const DRIVER_FIXTURE_NAMES = ['budget', 'deploy', 'page', 'signIn', 'subscribe'] as const;
+export const DRIVER_FIXTURE_NAMES = ['budget', 'deploy', 'page', 'signIn'] as const;
 
 export type DriverFixtureName = (typeof DRIVER_FIXTURE_NAMES)[number];
 
@@ -70,9 +79,6 @@ export const DRIVER_FIXTURE_NEEDS: Readonly<Record<DriverFixtureName, string>> =
   deploy: 'a second build to switch the running app to',
   page: 'a browser driving the built app',
   signIn: 'a browser session against the app’s own sign-in route',
-  subscribe:
-    'an in-process replicator feeding the live-query registry, and a caller that hands it ' +
-    'query.live(input, { actor }) — query.as() resolves to ROWS, which is not a LiveTarget',
 };
 
 /**
@@ -103,5 +109,4 @@ export const driverFixtures = (): DriverFixtures => ({
   deploy: unavailableFixture('deploy'),
   page: unavailableFixture('page'),
   signIn: unavailableFixture('signIn'),
-  subscribe: unavailableFixture('subscribe'),
 });
