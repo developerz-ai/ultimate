@@ -54,7 +54,17 @@ export interface ChangeEvent<R extends Row = Row> {
 
 `before` is mandatory for correct matching: deciding whether a row **left** a result set requires the old values, and with Postgres's default replica identity a delete replicates only the key columns.
 
-**Nothing enforces it `As of 2026-08.`** No generator emits `ALTER TABLE … REPLICA IDENTITY FULL`, no `x verify` step checks it, and there is no error code for it. Every occurrence in the repo is hand-written: `examples/dummy/packages/db/migrations/0001_init.sql:106-107` for `posts` and `likes`, and `packages/realtime/src/pg-replication.live.test.ts` for its fixture — the reference app demonstrates the `ALTER TABLE` precisely because nothing generates it. An app running live queries against a real slot sets it in a migration itself. Per axiom 3 this is a convention, not a rule, until a check exists.
+**It is warned about and counted, never refused `As of 2026-08-19`.** Three facts, and the third is
+the gap:
+
+| | State |
+|---|---|
+| the code | `X_LIVE_REPLICA_IDENTITY` exists, is registered and is in the manifest (`packages/realtime/src/errors.ts`) |
+| the check | `warnPartialIdentity` is preflight's fourth question — it asks `pg_class` which replicated tables sit on `relreplident <> 'f'` and logs the code with the exact `ALTER TABLE` per table (`packages/realtime/src/pg-preflight.ts`). It runs **before** `pg_create_logical_replication_slot`, because a slot decodes with the identity the catalog held when the rows were written |
+| the counter | `ReplicationStreamStats.partialBefore` increments on every non-insert change whose relation is not on identity `f` (`pg-replication.ts:344`) — the running half of the same fact |
+| the refusal | **missing.** It warns rather than throws, deliberately: every app on the default identity would otherwise stop booting, and a replicator that will not start is worse than the partial rows it is complaining about. No generator emits the `ALTER TABLE` and no `x verify` step reads it, so a table added tomorrow gets a log line and no build error |
+
+Every occurrence in the repo is still hand-written: `examples/dummy/packages/db/migrations/0001_init.sql:106-107` for `posts` and `likes`, and `packages/realtime/src/pg-replication.live.test.ts` for its fixture. Per axiom 3 the *hard* rule does not exist yet — a warning is not a build error → [`wiki/Known-Gaps.md`](../../wiki/Known-Gaps.md).
 
 ### The lsn is a pair, not a WAL position
 
@@ -68,7 +78,7 @@ export interface ChangeEvent<R extends Row = Row> {
 
 The pair is monotonic in delivery order *and* byte-identical on replay. The row position counts every replicated row, selected or not, so narrowing the entity list cannot renumber a stream a resume cursor already points into.
 
-`PgLogicalReplicationFeed` speaks the Postgres v3 protocol directly (`pg-wire.ts`, `pg-auth.ts`, `pg-connection.ts`, `pg-socket.ts`) and decodes `pgoutput` (`pgoutput.ts`) — no driver dependency, because a replication connection is CopyBoth and no pooled client will hand one over. It preflights `wal_level`, the publication and the slot, so the three misconfigurations that produce an unreadable server message each get their own `fix:` line instead.
+`PgLogicalReplicationFeed` speaks the Postgres v3 protocol directly (`pg-wire.ts`, `pg-auth.ts`, `pg-connection.ts`, `pg-socket.ts`) and decodes `pgoutput` (`pgoutput.ts`) — no driver dependency, because a replication connection is CopyBoth and no pooled client will hand one over. It asks **four** preflight questions — `wal_level`, the publication, the replica identity of every entity it replicates, and the slot's decoder plugin. Three throw with a `fix:` of their own, so the misconfigurations that produce an unreadable server message each get an instruction instead; the identity one warns, for the reason above. `slot` and `publication` are interpolated into simple queries, so `assertIdentifier`'s charset is the injection boundary — re-asserted inside `preflight` rather than trusted from the constructor.
 
 ## Incremental matcher
 

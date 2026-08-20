@@ -85,7 +85,7 @@ Better Auth, wrapped. Sessions live in Postgres. Authorization is **not** here �
 
 ## `realtime`
 
-`RealtimeConfig` is five fields and no more `As of 2026-08` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)):
+`RealtimeConfig` is four fields and no more `As of 2026-08-19` ([`packages/core/src/config.ts:86`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)):
 
 | field | type | default | notes |
 |---|---|---|---|
@@ -93,11 +93,20 @@ Better Auth, wrapped. Sessions live in Postgres. Authorization is **not** here �
 | `realtime.tier` | `'channels' \| 'live-queries' \| 'local-first'` | `'channels'` | **names, not numbers**. `channels` and `live-queries` ship; `local-first` is not in 3.0.0 ([Realtime](Realtime)) |
 | `realtime.transport` | `'memory' \| 'nats' \| 'redis'` | `'memory'` | `memory` = in-process, single node, dev and small deploys. `redis` type-checks and is never built — `selectTransport` resolves in-process or NATS only |
 | `realtime.urlEnv` | `string` | — | the **env key name**, never a URL. Required unless `memory`; missing → `X_CONFIG_INVALID` |
-| `realtime.heartbeatMs` | `number` | `15000` | **read by nothing** `As of 2026-08` → [Known gaps](Known-Gaps). The socket heartbeat is the client's: `new LiveClient({ heartbeatMs })`, same 15s default, kept equal by hand because browser code cannot read server config ([Realtime](Realtime)) |
 
 At runtime the transport is chosen by `NATS_URL` rather than by this field — the config documents intent, the env decides ([`17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md)).
 
-**`realtime.limits.*`, `realtime.changeBuffer.*` and `realtime.drain.*` are not `app.config.ts` fields** `As of 2026-08`, and never were — `RealtimeConfig` is `{ enabled, tier, transport, urlEnv, heartbeatMs }` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)). Writing one is a typecheck failure, not a silent no-op, because the input type is `Input<RealtimeConfig>` and an unknown key is an excess property. The caps and the ring are **constructor options**, passed where the node is built:
+**`realtime.heartbeatMs` is gone**, `As of 2026-08-19`. It was declared here with a default of
+15 000 and read by nothing; the socket beat is the client's `new LiveClient({ heartbeatMs })` —
+browser code, which cannot read server config — and the presence beat is derived
+(`PresenceRegistry.heartbeatMs` is `max(1000, floor(ttlMs / 3))`). **Removing the key from your
+config is a typecheck fix, not a runtime one**: `section()` copies every own key of the patch and
+`validate()` checks only the fields it names, so a leftover `heartbeatMs` is silently kept at
+runtime. It fails at `x verify`'s `typecheck` step as `TS2353`, excess property on
+`Input<RealtimeConfig>` — and an app that builds its config into a variable before passing it loses
+excess-property checking and gets **no error at all** → [Known gaps](Known-Gaps).
+
+**`realtime.limits.*`, `realtime.changeBuffer.*` and `realtime.drain.*` are not `app.config.ts` fields** `As of 2026-08-19`, and never were — `RealtimeConfig` is `{ enabled, tier, transport, urlEnv }` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)). Writing one is a typecheck failure, not a silent no-op, because the input type is `Input<RealtimeConfig>` and an unknown key is an excess property. The caps and the ring are **constructor options**, passed where the node is built:
 
 | Option | Where | Default | Effect |
 |---|---|---|---|

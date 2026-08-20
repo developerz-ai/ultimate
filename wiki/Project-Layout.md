@@ -20,8 +20,8 @@ myapp/
     ui/                   # app-specific Solid components on top of @ultimat3/ui
     mcp/                  # the app's own MCP tools (its dashboards are AI-first too)
   bin/                    # setup, dev, check — thin wrappers over `x`
-  docker/                 # Dockerfile + docker-compose.dev.yml; the prod compose and the
-                          #   Helm chart are copied from the framework repo's docker/
+  docker/                 # Dockerfile, Dockerfile.dockerignore, both compose files, and
+                          #   helm/ — the chart, 8 files. All written by `x new`
   app.config.ts           # the one config file
   x.manifest.json         # GENERATED: routes, entities, actions, jobs, policies
   AGENTS.md               # short, human-authored

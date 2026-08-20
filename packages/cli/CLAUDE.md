@@ -339,8 +339,12 @@ The typo is impossible rather than the keystroke tedious — and `@ultimat3/db` 
 `x db branch drop <name>` as `X_BRANCH_EXISTS`'s `fix:` with no flag on it, so a flag here would
 break a shipped instruction.
 
-**The prefix half is not decoration: the marker records WHEN a clone was made and never what it was
-cloned FROM.** One Postgres server hosting two Ultimate apps answers `listBranches()` with both
+**The prefix half is not decoration, and it is no longer the only source guard.** The marker records
+the base `As of 2026-08-19` — `ultimate:branch:<base>:<iso>`, read back as `BranchInfo.base` — so
+`reapBranches` can skip another app's clones on its own. The prefix guard still stands and is what
+`ls`/`drop` read, because an **older** marker records no base at all: it is skipped by the reaper
+rather than dropped, which leaves `drop` needing an answer that does not depend on a field half the
+branches lack. One Postgres server hosting two Ultimate apps answers `listBranches()` with both
 apps' clones, and `branchNameOf` reduced `postly_branch_feat` and `analytics_branch_feat` to the
 same branch name — so `x db branch drop feat`, run against `postly`, was authorised by
 `analytics`'s row and then issued `drop database if exists "postly_branch_feat"` against a database

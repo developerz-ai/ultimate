@@ -7,7 +7,7 @@ The loop, end to end. Worked example: **posts, with publishing, a live feed, and
 | # | Step | Command | Lands in |
 |---|---|---|---|
 | 0 | Pick the surface | — | see the table below |
-| 1 | Generate the slice | `x g resource post --live --admin` | 27 files — 25 without either flag ([`12-generated-app.md`](./12-generated-app.md)) |
+| 1 | Generate the slice | `x g resource post --live --admin` | 29 files — 27 without either flag, `As of 2026-08-19` ([`12-generated-app.md`](./12-generated-app.md)). Re-derive with `--dry-run --json`; no gate reads these |
 | 2 | Entity + invariants | edit | `packages/db/src/schema/posts.ts`, `apps/web/app/posts/entity.ts` |
 | 3 | Migration | `x db gen "create posts"` | `packages/db/migrations/<stamp>_create_posts.{sql,snapshot.json,hash}` |
 | 4 | Apply | `x db migrate` | the dev database |

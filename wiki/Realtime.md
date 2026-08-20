@@ -179,7 +179,7 @@ A dead TCP connection that was never closed fires no `close` event. Only the cli
 | One beat | a `hello`, plus one subscribe frame per topic held. A beat and an opening frame are **byte-identical** — `hello` carries no cursors — so a beat asks for nothing and resumes nothing |
 | Silence | nothing received for **two** intervals ⇒ the socket is closed with code `4000` and the reconnect timer arms |
 | Why re-sending topics | on the node, subscribing to a topic **is** joining its presence set, and repeating the frame is the presence heartbeat |
-| Server-side key | `realtime.heartbeatMs` in `app.config.ts` is read by nothing `As of 2026-08` → [Known gaps](Known-Gaps). Set the client option |
+| The only knob | the client option above. `realtime.heartbeatMs` in `app.config.ts` was read by nothing and is **deleted** `As of 2026-08-19`; an app still setting it fails `typecheck` with `TS2353` and changes no behaviour either way → [Known gaps](Known-Gaps) |
 
 **A reconnect re-announces everything, one frame at a time.** `hello`, then one `subscribe` per registration carrying that registration's cursor, then one per topic. `hello` itself carries **neither** cursors nor topic membership — resume is decided per subscription, by the frame that also names the query and its input, and topic membership is state on the node's socket. Without the topic half a channel stayed silent from the first reconnect onwards while its handler was still installed, and its presence membership was swept.
 

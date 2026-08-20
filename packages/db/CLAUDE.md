@@ -346,7 +346,7 @@ branches dropped. The discriminator was in hand and thrown away: `createBranch` 
 `options.base ?? currentDatabase(client)` and wrote only the timestamp. The marker is now
 `ultimate:branch:<base>:<iso>` and `BranchInfo.base` carries it, so the reaper skips a branch whose
 base is not the database it is connected to. **Split on the ISO tail, never on the first `:`** — a
-database name may contain one and an instant certainly does. A pre-3.x one-segment comment matches
+database name may contain one and an instant certainly does. A pre-4.x one-segment comment matches
 no base, keeps its readable date for `x db branch ls`, and is **skipped, never dropped**: a branch
 of nothing is not a branch of this database, which is what makes the change self-healing with no
 migration. Postgres records no template lineage in the catalog and `datdba` is shared when both

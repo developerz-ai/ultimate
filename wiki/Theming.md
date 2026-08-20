@@ -197,7 +197,7 @@ Order: **explicit `localStorage` choice → OS preference**. Applied by a blocki
 | `packages/ui/src/tokens/contrast.ts` | WCAG ratios over the channel tokens |
 | `packages/ui/src/theme/brand.ts` | `defineTheme()` — the one brand-override seam |
 | `packages/ui/src/tokens/_index.scss` | what `@use '@ultimat3/ui/tokens' as t` forwards: maps, `t.role()`, `t.space()`, the mixins. Emits no CSS |
-| `apps/web/shared/tokens.scss` | the generated app's own layer — see [Known gaps](Known-Gaps), it does not compile as scaffolded |
+| `apps/web/shared/tokens.scss` | the generated app's own layer. One line — `@forward '@ultimat3/ui/tokens'` — and it emits **zero bytes** of CSS by design: every module is its own Sass compilation, so a `:root` block here would be inlined once per stylesheet. Compiles as scaffolded, verified `As of 2026-08-19`; the bare specifier is resolved by `css-modules.ts`'s package importer, since `./tokens` is an `exports` entry only the module resolver can place |
 
 `shared/` is importable by `site/`, `app/`, and `api/`. `site/` importing from `app/` stays a build error — see [Project layout](Project-Layout). The `/_x` dev dashboard reads its six channels from `colorTokens` at render time rather than keeping a copy → [Admin dashboard](Admin-Dashboard).
 
