@@ -63,6 +63,28 @@ describe('buildPrecacheManifest', () => {
     expect(heavy.totalBytes).toBe(6 * 1024 * 1024 + 2_048 + 4_096);
   });
 
+  // `PrecacheAsset` carried a `critical?: boolean` whose comment read "critical assets (the shell
+  // CSS, the LCP font) are precached even if large" — a promise kept by nothing, because there is
+  // no size filter anywhere in this file and never was. Every declared asset is precached whatever
+  // it weighs; `warnBytes` warns on the TOTAL and excludes nothing. The field was deleted rather
+  // than implemented: a filter added now would silently drop assets an app precaches today, and a
+  // precache manifest quietly missing an entry is an app that 404s offline. This is the assertion
+  // that would have caught the lie, and the one that fails if a filter is ever added in silence.
+  test('nothing is excluded for being large — a size filter does not exist', () => {
+    const huge = buildPrecacheManifest({
+      buildId: 'b1',
+      routes: [],
+      assets: [
+        { url: '/tiny.css', revision: 'a1', bytes: 10 },
+        { url: '/huge.js', revision: 'a2', bytes: 500 * 1024 * 1024 },
+      ],
+      warnBytes: 1,
+    });
+    expect(huge.entries.map((entry) => entry.url)).toEqual(['/huge.js', '/tiny.css']);
+    // Warned about, and still precached: the warning is the whole of the size behaviour.
+    expect(huge.warnings).toHaveLength(1);
+  });
+
   test('the revision is the content hash, so unchanged assets survive a deploy', () => {
     const first = buildPrecacheManifest({ buildId: 'b1', routes });
     const second = buildPrecacheManifest({ buildId: 'b2', routes });

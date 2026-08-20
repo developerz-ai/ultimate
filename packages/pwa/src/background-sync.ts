@@ -18,7 +18,6 @@ import { PwaSyncFlushFailedError, PwaSyncIncompleteError } from './errors';
 import { BUILD_ID_HEADER } from './version-skew';
 
 export const SYNC_TAG = 'x-outbox';
-export const PERIODIC_SYNC_TAG = 'x-refresh';
 
 export interface RetryPolicy {
   readonly maxAttempts: number;
@@ -50,8 +49,6 @@ export interface BackgroundSyncOptions {
   /** Endpoint `@ultimat3/realtime` exposes to flush the outbox. */
   readonly flushEndpoint?: string;
   readonly retry?: RetryPolicy;
-  /** Minimum interval for periodic sync, when the platform grants it. */
-  readonly periodicMinIntervalMs?: number;
 }
 
 export const DEFAULT_FLUSH_ENDPOINT = '/_x/outbox/flush';

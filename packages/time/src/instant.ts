@@ -125,7 +125,11 @@ export function epoch(): Instant {
   return new Date(0) as Instant;
 }
 
-/** Tolerates a `Clock` whose `now()` returns either a `Date` or epoch milliseconds. */
+/**
+ * `Clock.now()` returns a `Date`, so the number branch is unreachable through the typed API. It is
+ * kept for the untyped caller: a JS `Clock` answering epoch milliseconds would otherwise reach
+ * `.getTime()` on a number and throw a bare `TypeError` instead of `X_INSTANT_INVALID`.
+ */
 function epochMsOf(value: Date | number): number {
   return typeof value === 'number' ? value : value.getTime();
 }

@@ -81,9 +81,15 @@ describe('generateServiceWorker', () => {
     expect(output.source).toContain('caches.delete');
   });
 
+  // The OFF direction iterates the WHOLE table rather than two hand-picked entries.
+  // `CAPABILITY_SW_MARKERS` claims it is "checked in BOTH directions ... none of them is when they
+  // are all off", and `badging` was the entry that claim did not cover. Iterating means a
+  // capability added later is covered by declaring its markers, with no second edit here to forget.
   test('a disabled capability emits no service-worker code for it', () => {
     const off = generateServiceWorker(routes, config, 'build-1');
-    for (const marker of [...CAPABILITY_SW_MARKERS.push, ...CAPABILITY_SW_MARKERS.backgroundSync]) {
+    const everyMarker = Object.values(CAPABILITY_SW_MARKERS).flat();
+    expect(everyMarker.length).toBeGreaterThan(0);
+    for (const marker of everyMarker) {
       expect(off.source).not.toContain(marker);
     }
 
@@ -92,10 +98,37 @@ describe('generateServiceWorker', () => {
       { ...config, capabilities: { push: true, backgroundSync: true, badging: true } },
       'build-1',
     );
-    for (const marker of [...CAPABILITY_SW_MARKERS.push, ...CAPABILITY_SW_MARKERS.backgroundSync]) {
-      expect(on.source).toContain(marker);
+    for (const capability of ['push', 'backgroundSync', 'badging'] as const) {
+      for (const marker of CAPABILITY_SW_MARKERS[capability]) {
+        expect(on.source).toContain(marker);
+      }
     }
-    expect(on.source).toContain('navigator.setAppBadge');
+  });
+
+  // `badging` reads like an independent capability — it has its own `CAPABILITIES` entry, its own
+  // `CAPABILITY_SW_MARKERS` row, and `resolveCapabilities({ badging: true })` accepts it — but the
+  // badge call is emitted ONLY inside the push block (`service-worker.ts` gates it on
+  // `push && config.vapid !== undefined`), chained onto `showNotification`. So `badging: true`
+  // alone is a flag that changes nothing, which is worth stating rather than discovering. Pinned
+  // rather than "fixed": standalone badging is a feature, and inventing one here would be a
+  // behaviour change smuggled into a dead-declaration sweep.
+  test('badging is a modifier on push, not an independent capability', () => {
+    const badgeOnly = generateServiceWorker(
+      routes,
+      { ...config, capabilities: { push: false, backgroundSync: false, badging: true } },
+      'build-1',
+    );
+    expect(badgeOnly.source).not.toContain('navigator.setAppBadge');
+    // Declared enabled all the same — the capability resolver and the emitted worker disagree,
+    // and this is the line that says so out loud.
+    expect(badgeOnly.capabilities.badging).toBe(true);
+
+    const withPush = generateServiceWorker(
+      routes,
+      { ...config, capabilities: { push: true, backgroundSync: false, badging: true } },
+      'build-1',
+    );
+    expect(withPush.source).toContain('navigator.setAppBadge');
   });
 
   test('every proxied request carries the build id header', () => {

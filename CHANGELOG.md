@@ -8,17 +8,57 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Four bug sweeps since 3.0.0. The second was six independent auditors over the packages the 3.0.0
+Five bug sweeps since 3.0.0. The second was six independent auditors over the packages the 3.0.0
 sweep did not reach; the third added a whole-repo security pass and an architecture review, and
-found more than the first two combined; the fourth closed the known-gaps backlog and is below.
-**Twenty** of the entries below are breaking changes to documented APIs and one needs a migration
-run, so the next release is a major.
+found more than the first two combined; the fourth closed the known-gaps backlog; the fifth
+typechecked the 966 test files no compiler had ever read and then deleted what nothing calls.
+**Twenty-two** of the entries below are breaking changes to documented APIs and one needs a
+migration run, so the next release is a major.
 
 Four findings are worth reading even if you skip the rest, because each was a guarantee the code
 stated in a comment and did not keep: every authenticated websocket carried `actor: null`, every
 `Date` in a query input collided into one cache key, the scraping wedge watchdog's abort signal was
 built and handed to nobody, and `references(() => t.id, { onDelete: 'cascade' })` had type-checked
 since 1.0 while reaching no SQL at all.
+
+### Removed — BREAKING (fifth sweep: delete what nothing calls)
+
+- **BREAKING — `PrecacheAsset.critical` is deleted from `@ultimat3/pwa`.** It was declared and read
+  nowhere: `buildPrecacheManifest` copies `url`/`revision`/`bytes` and hardcodes
+  `reason: 'asset'`, so `critical` never survived. The documented promise — "critical assets are
+  precached even if large" — was kept by nothing, because **there is no size filter at all**;
+  `warnBytes` warns on the *total* and excludes no asset, so the promise was vacuously true of
+  every entry and the word distinguished nothing. Deleted rather than implemented, deliberately:
+  adding the filter now would silently stop precaching assets an app precaches today, and a
+  precache manifest quietly missing an entry is an app that 404s offline. Migration: delete the
+  property. No runtime behaviour changes.
+- **BREAKING — `PERIODIC_SYNC_TAG` and `BackgroundSyncOptions.periodicMinIntervalMs` are deleted
+  from `@ultimat3/pwa`.** Periodic Background Sync was never implemented in any sense: no
+  `periodicsync` listener was ever emitted, `periodicSync.register` was never called, and
+  `CAPABILITIES` has no `periodicSync` flag to gate one. Two declarations describing a feature that
+  does not exist, plus a tag for a registration the framework never makes, received by no listener.
+  `wiki/PWA-And-Offline.md` and `docs/idea/08-pwa-offline.md` documented it as a shipping flag;
+  both are corrected. Migration: delete the option.
+
+### Fixed (fifth sweep)
+
+- **`badging: true` on its own changes nothing, and now says so.** The badge call is emitted only
+  inside the push block (`service-worker.ts:161`, gated on `push && config.vapid !== undefined`),
+  while `CAPABILITIES` carries a `badging` entry and `resolveCapabilities({ badging: true })`
+  accepts it — so the capability reports `true` against a worker with no badge call. Pinned by a
+  test asserting both halves rather than fixed: standalone badging is a feature, and inventing one
+  inside a dead-declaration sweep is a behaviour change smuggled in the side door.
+- **`EnvExampleReport.extra` is reported only as a passenger on another failure.** `ok` is
+  `missing.length === 0`, so `assertEnvExample` returns before building the
+  `EnvExampleDriftError` that carries `extra` as `meta` whenever an undeclared key is the *only*
+  finding. The doc said "Reported, never fatal"; it is narrower than that, and now says which
+  reader drops it.
+- **`CAPABILITY_SW_MARKERS` documented itself as "checked in BOTH directions" and the OFF loop
+  iterated two hand-picked entries.** It now iterates the whole table, so a capability added later
+  is covered by declaring its markers.
+- **`epochMsOf`'s comment claimed a tolerance no type permits.** `Clock.now()` returns a `Date`, so
+  the number branch is unreachable through the typed API; it is kept for the untyped caller, where
+  it turns a `TypeError` into `X_INSTANT_INVALID`. The branch stays, the claim is corrected.
 
 ### Changed — BREAKING (fourth sweep)
 

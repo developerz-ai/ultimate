@@ -5,7 +5,6 @@ export {
   backgroundSyncSource,
   DEFAULT_FLUSH_ENDPOINT,
   DEFAULT_RETRY,
-  PERIODIC_SYNC_TAG,
   registerBackgroundSyncSource,
   retryDelayMs,
   SYNC_TAG,
