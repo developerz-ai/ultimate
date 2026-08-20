@@ -58,7 +58,11 @@ describe('unit · determinism', () => {
     expect(frozenNow() instanceof Date).toBe(true);
     // Still a real predicate: it must not wave through something that is not a date at all.
     expect(({} as unknown) instanceof Date).toBe(false);
-    expect('2020-05-05' instanceof (Date as unknown as new () => object)).toBe(false);
+    // `unknown`, not a cast on the constructor: the LHS is a PRIMITIVE, which is what the
+    // narrowing `instanceof` refuses, and a date-shaped string is the value most likely to be
+    // waved through by a patched predicate that only looks at the text.
+    const dateShapedString: unknown = '2020-05-05';
+    expect(dateShapedString instanceof Date).toBe(false);
   });
 
   test('a Date built in another realm is still a Date', () => {

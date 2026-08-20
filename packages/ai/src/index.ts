@@ -91,6 +91,7 @@ export {
   promptsWithoutEvals,
   resetEvals,
 } from './evals';
+export type { AiFetch } from './fetch-seam';
 export type { CreateGatewayInput, Gateway, GatewayCache, RetryPolicy } from './gateway';
 export { backoffMs, cacheKeyFor, createGateway, DEFAULT_RETRY, isRetryable } from './gateway';
 export type { HiveDef, HiveSplitArgs } from './hive';

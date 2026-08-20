@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { ScrapeFetch } from './http';
 import { createRobotsGate } from './robots';
 import { DEFAULT_ROBOTS_MAX_BYTES, robotsFetcher } from './robots-fetch';
 
@@ -14,9 +15,9 @@ const bodyResponse = (body: ReadableStream<Uint8Array>, status = 200): Response 
   new Response(body, { status });
 
 /** Resolves only when the caller's signal aborts — a hung CDN, without the wait. */
-const hangingFetch: typeof fetch = (_url, init) =>
+const hangingFetch: ScrapeFetch = (_url, init) =>
   new Promise((_resolve, reject) => {
-    const signal = (init as RequestInit | undefined)?.signal;
+    const { signal } = init;
     if (signal == null) return;
     signal.addEventListener('abort', () => {
       reject(signal.reason ?? new Error('aborted'));
@@ -79,7 +80,7 @@ describe('unit · the default robots.txt read', () => {
   // came to exit from the worker's IP while every page load exited through the proxy.
   test('the exit is resolved per read, and only dialled when there is one', async () => {
     const seen: Array<Record<string, unknown>> = [];
-    const record: typeof fetch = (_url, init) => {
+    const record: ScrapeFetch = (_url, init) => {
       seen.push((init ?? {}) as Record<string, unknown>);
       return Promise.resolve(bodyResponse(streamOf([])));
     };

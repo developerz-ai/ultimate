@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { frozenClock } from '@ultimat3/core';
 import { topic } from './channel';
-import { InProcessTransport } from './fanout';
+import { InProcessTransport, type Transport } from './fanout';
 import { PRESENCE_KEY_PREFIX, PRESENCE_SWEEP_PREFIX, PresenceRegistry } from './presence';
 
 const room = topic('org', 'o1', 'cursors');
@@ -104,13 +104,20 @@ describe('presence at all-hands size', () => {
       touch: shared.touch.bind(shared),
       drop: shared.drop.bind(shared),
     };
+    // Delegated member by member, NOT `{ ...transport, shared: counting }`: `transport` is a class
+    // instance, so `publish`, `subscribe` and `close` live on its prototype and a spread copies
+    // none of them — the wrapper that stood here was a `Transport` that could not fan out, and it
+    // survived only because `PresenceRegistry` reads nothing but `shared`. The `shared` wrapper
+    // above already re-binds every method by hand, for exactly this reason.
+    const observed: Transport = {
+      name: transport.name,
+      shared: counting,
+      publish: (subject, payload) => transport.publish(subject, payload),
+      subscribe: (subject, handler) => transport.subscribe(subject, handler),
+      close: () => transport.close(),
+    };
     const fleet = ['node-a', 'node-b', 'node-c'].map(
-      (nodeId) =>
-        new PresenceRegistry({
-          transport: { ...transport, shared: counting },
-          clock,
-          nodeId,
-        }),
+      (nodeId) => new PresenceRegistry({ transport: observed, clock, nodeId }),
     );
     for (const node of fleet)
       await node.join(room, { id: `s-${node.constructor.name}`, actorId: null });

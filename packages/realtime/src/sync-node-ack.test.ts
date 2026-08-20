@@ -29,7 +29,10 @@ class FakeWs implements WsLike {
 
 class MutationFailed extends Error {
   readonly code = 'X_INVARIANT_VIOLATED';
-  readonly cause = 'the row no longer exists';
+  // `cause` IS a member of `Error` (ES2022), so shadowing it without `override` is what
+  // `noImplicitOverride` refuses — and silently shadowing it is how a `cause` a caller set
+  // through `new Error(msg, { cause })` disappears.
+  override readonly cause = 'the row no longer exists';
   readonly fix = 'refetch the post before liking it';
 }
 

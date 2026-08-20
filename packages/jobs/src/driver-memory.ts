@@ -38,7 +38,18 @@ export interface MemoryDriverOptions {
 
 const LIVE_STATES = new Set(['ready', 'delayed', 'running', 'suspended']);
 
-export function createMemoryDriver(options: MemoryDriverOptions = {}): JobDriver {
+/**
+ * The in-memory driver's own type: `JobDriver` with `close` REQUIRED.
+ *
+ * `JobDriver.close` is optional because a driver may hold nothing to release. This one always
+ * does — it clears the job map — and every wrapper in the test suite delegates through
+ * `base.close()`. Declaring it here is what makes that delegation a CHECKED call: against a plain
+ * `JobDriver` the only way to write it is `base.close?.()`, which a driver that quietly stopped
+ * shipping a `close` would satisfy in silence.
+ */
+export type MemoryJobDriver = JobDriver & { close(): Promise<void> };
+
+export function createMemoryDriver(options: MemoryDriverOptions = {}): MemoryJobDriver {
   const clock = options.clock ?? systemClock;
   const steps = options.steps ?? createMemoryStepStore();
   const backfills = options.backfills ?? createMemoryBackfillLedger(clock);

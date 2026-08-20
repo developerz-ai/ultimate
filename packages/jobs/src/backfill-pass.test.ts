@@ -102,11 +102,11 @@ describe('one pass', () => {
       // `steps.ts` retains a completed step's output for the whole run, so a checkpoint carrying
       // its page would hold every row the pass has touched until the job ended.
       expect(Object.keys(output).sort()).toEqual(['cursor', 'rows']);
-      expect(typeof output.rows).toBe('number');
-      expect(output.cursor === null || typeof output.cursor === 'string').toBe(true);
+      expect(typeof output['rows']).toBe('number');
+      expect(output['cursor'] === null || typeof output['cursor'] === 'string').toBe(true);
     }
     // The pass ends because the source did, and that is what the last checkpoint records.
-    expect(checkpoints.at(-1)?.cursor).toBeNull();
+    expect(checkpoints.at(-1)?.['cursor']).toBeNull();
   });
 });
 

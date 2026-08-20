@@ -59,7 +59,12 @@ describe('inspectBackfills', () => {
   test('a driver that ships no ledger answers an EMPTY list, never a throw', async () => {
     // `x jobs ls` and the jobs panel report the queue; a queue that failed on "no backfills
     // recorded" would be a broken command for a fact nobody asked about.
-    const driver: JobDriver = { ...createMemoryDriver(), backfills: undefined };
+    // The key is REMOVED, not set to `undefined`: `backfills?: BackfillLedger` under
+    // `exactOptionalPropertyTypes` is "absent or a ledger", and a driver that ships no ledger is
+    // one where the property does not exist — which is also the only shape a real driver has.
+    const { backfills: _ledger, ...withoutLedger } = createMemoryDriver();
+    const driver: JobDriver = withoutLedger;
+    expect(Object.hasOwn(driver, 'backfills')).toBe(false);
     expect(await inspectBackfills(driver)).toEqual([]);
   });
 

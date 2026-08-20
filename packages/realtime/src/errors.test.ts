@@ -56,7 +56,10 @@ describe('REALTIME_ERROR_CODES', () => {
   });
 
   test('is exactly the original members plus the ones added since', () => {
-    expect(REALTIME_ERROR_CODES.length).toBe(ORIGINAL_MEMBERS.length + ADDED_SINCE.length);
+    // Read into a `number` first: `REALTIME_ERROR_CODES` is a readonly tuple, so `.length` is the
+    // LITERAL `20` and the matcher would only accept that literal back.
+    const declared: number = REALTIME_ERROR_CODES.length;
+    expect(declared).toBe(ORIGINAL_MEMBERS.length + ADDED_SINCE.length);
     expect([...EVERY_CODE].sort()).toEqual([...ORIGINAL_MEMBERS, ...ADDED_SINCE].sort());
   });
 
@@ -111,7 +114,11 @@ describe('error code registry', () => {
  */
 describe('isClientFault', () => {
   test('a denied topic, a cap and a skewed protocol are the client’s, not the node’s', () => {
-    expect(isClientFault(new TopicForbiddenError({ topic: 'org:1', actorId: 'u_1' }))).toBe(true);
+    expect(
+      isClientFault(
+        new TopicForbiddenError({ topic: 'org:1', actorId: 'u_1', reason: 'no guard is declared' }),
+      ),
+    ).toBe(true);
     expect(isClientFault({ code: 'X_SUBSCRIPTION_LIMIT' })).toBe(true);
     expect(isClientFault({ code: 'X_PROTOCOL_VERSION' })).toBe(true);
     // A name this node never registered is the client's typo, not this node's outage.
@@ -148,7 +155,11 @@ describe('isPolicyDenial', () => {
   });
 
   test('a client fault that is not an authz answer is still not a denial', () => {
-    expect(isPolicyDenial(new TopicForbiddenError({ topic: 'org:1', actorId: 'u_1' }))).toBe(false);
+    expect(
+      isPolicyDenial(
+        new TopicForbiddenError({ topic: 'org:1', actorId: 'u_1', reason: 'no guard is declared' }),
+      ),
+    ).toBe(false);
     expect(isPolicyDenial({ code: 'X_SUBSCRIPTION_LIMIT' })).toBe(false);
     expect(isPolicyDenial({ code: 'X_CURSOR_STALE' })).toBe(false);
   });

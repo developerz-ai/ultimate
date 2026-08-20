@@ -1,6 +1,7 @@
 // Shared fixtures for the Anthropic provider suites: a recording fetch, a real SSE body, and the
 // canonical event sequence. Here rather than duplicated because `provider.test.ts` and
 // `provider-stream.test.ts` assert on the same wire and must not drift apart.
+import type { AiFetch } from './fetch-seam';
 import type { StreamChunk } from './provider';
 
 export interface Call {
@@ -10,20 +11,16 @@ export interface Call {
 }
 
 /** Records what left the process and replies with whatever the test wants back. */
-export function fakeFetch(
-  calls: Call[],
-  reply: (call: Call, index: number) => Response,
-): typeof fetch {
-  const impl = async (input: unknown, init?: RequestInit): Promise<Response> => {
+export function fakeFetch(calls: Call[], reply: (call: Call, index: number) => Response): AiFetch {
+  return async (input, init) => {
     const call: Call = {
-      url: String(input),
-      headers: { ...(init?.headers as Record<string, string> | undefined) },
-      body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>,
+      url: input,
+      headers: { ...(init.headers as Record<string, string> | undefined) },
+      body: JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>,
     };
     calls.push(call);
     return reply(call, calls.length - 1);
   };
-  return impl as unknown as typeof fetch;
 }
 
 /** A real SSE body — the provider reads it through the same framing a socket would deliver. */

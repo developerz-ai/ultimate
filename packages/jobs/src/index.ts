@@ -81,7 +81,7 @@ export {
   resetJobDriver,
   setJobDriver,
 } from './driver';
-export type { MemoryDriverOptions } from './driver-memory';
+export type { MemoryDriverOptions, MemoryJobDriver } from './driver-memory';
 export { createMemoryDriver } from './driver-memory';
 export type { NatsDriverOptions } from './driver-nats';
 export { createNatsDriver } from './driver-nats';

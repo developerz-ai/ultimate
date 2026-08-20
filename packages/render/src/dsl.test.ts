@@ -6,8 +6,17 @@
 import { describe, expect, test } from 'bun:test';
 import { assertModeInvariants, assertModeShape } from './modes';
 import { clearRoutes, registerRoute, routeFor } from './registry';
-import type { RouteConfig, RouteDefinition } from './route';
+import type { RouteConfig, RouteData, RouteDefinition, RouteMetaContext } from './route';
 import { defineRoute, isRouteConfig, tagKeys } from './route';
+import { metaContextFor } from './route-data';
+
+/**
+ * What `meta` is actually handed at render time, built by the one builder `x dev` and the
+ * prerenderer both use — so calling `config.meta({})` can never again stand in for a context and
+ * hide the fact that `meta` reads `ctx.data`, not the bare object.
+ */
+const metaCtx = (data: RouteData = {}): RouteMetaContext =>
+  metaContextFor({ params: {}, url: 'http://localhost/' }, data);
 
 /** The stable code every route-shape refusal carries; a bare `toThrow()` would accept any. */
 const codeOf = (run: () => unknown): string => {
@@ -80,8 +89,8 @@ describe('the route DSL surface', () => {
     const sync = defineRoute(minimal);
     const async = defineRoute({ ...minimal, meta: async () => ({ title: 'A', description: 'B' }) });
     // Both are promises. No consumer branches on a thenable.
-    expect(sync.meta({})).toBeInstanceOf(Promise);
-    expect(async.meta({})).toBeInstanceOf(Promise);
+    expect(sync.meta(metaCtx())).toBeInstanceOf(Promise);
+    expect(async.meta(metaCtx())).toBeInstanceOf(Promise);
     // And the descriptor's `meta` is a wrapper, never the function the author passed.
     expect(sync.meta).not.toBe(minimal.meta);
   });

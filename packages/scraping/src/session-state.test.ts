@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { StorageDriver, StorageObject } from '@ultimat3/storage';
+import { cookieHeaderFor } from './cookie-scope';
 import type { SessionState } from './session-state';
 import {
   DEFAULT_SESSION_PREFIX,
@@ -228,7 +229,28 @@ describe('unit · parseSessionState', () => {
       },
       'k',
     );
-    expect(parsed?.cookies).toEqual([{ name: 'sid', value: 'abc' }]);
+    expect(parsed?.cookies).toEqual([
+      { name: 'sid', value: 'abc', domain: '', path: '/', httpOnly: false, secure: false },
+    ]);
+  });
+
+  test('a cookie missing its scope is COMPLETED, never smuggled through as half a ScrapeCookie', () => {
+    // `isCookie` asserted `value is ScrapeCookie` while checking two of that type's six required
+    // fields, so a stored `{ name, value }` left this function typed as a whole cookie with no
+    // `domain` — and `cookieDomainMatches`, reached from the public `cookieHeaderFor`, calls
+    // `.trim()` on it. Completing the record is what makes the declared type true.
+    const parsed = parseSessionState(
+      { savedAt: '2026-01-01T00:00:00.000Z', cookies: [{ name: 'sid', value: 'abc' }] },
+      'k',
+    );
+    expect(parsed?.cookies).toEqual([
+      { name: 'sid', value: 'abc', domain: '', path: '/', httpOnly: false, secure: false },
+    ]);
+    // And what makes the completion SAFE rather than a guess: an unscoped cookie reaches no host.
+    // `cookiesForUrl` fails closed on an empty domain, so the default cannot widen a jar — the
+    // alternative, inferring the domain from whichever URL asked, is how a `bank.test` session
+    // cookie ends up on `evilbank.test`.
+    expect(cookieHeaderFor(parsed?.cookies ?? [], 'https://bank.test/')).toBeUndefined();
   });
 
   test('the missing halves default rather than making the record unreadable', () => {

@@ -1,8 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { RouteMetaMissingError, RouteModeInvalidError, RouteOfflineMissingError } from './errors';
 import { assertModeInvariants } from './modes';
-import type { RouteConfig, RouteDefinition, RouteMetaFn } from './route';
+import type {
+  RouteConfig,
+  RouteData,
+  RouteDefinition,
+  RouteMetaContext,
+  RouteMetaFn,
+} from './route';
 import { defineRoute, isRouteConfig } from './route';
+import { metaContextFor } from './route-data';
 
 /** UltimateError carries a `fix`; read it structurally so the test needs no core import. */
 export function fixOf(error: unknown): string {
@@ -11,10 +18,16 @@ export function fixOf(error: unknown): string {
 
 const DESCRIPTION = 'A description that is comfortably inside the fifty-to-one-sixty range.';
 
-const meta = (() => ({
-  title: 'Title',
-  description: DESCRIPTION,
-})) as unknown as RouteMetaFn;
+const meta: RouteMetaFn = () => ({ title: 'Title', description: DESCRIPTION });
+
+/**
+ * What `meta` is actually handed, built by the one builder every render mode uses. The `{}` these
+ * calls used to pass satisfied nothing: `meta` reads `ctx.data`, and a bare object is not a
+ * context, so the descriptor's own normalization was being asserted against a shape production
+ * never produces.
+ */
+const metaCtx = (data: RouteData = {}): RouteMetaContext =>
+  metaContextFor({ params: {}, url: 'http://localhost/' }, data);
 
 describe('defineRoute', () => {
   test('offline is required by the type — axiom 3 lives in the type system', () => {
@@ -64,8 +77,8 @@ describe('the descriptor normalizes meta to one shape', () => {
     defineRoute({ render: 'static', offline: 'precache', hydrate: 'never', meta: metaFn });
 
   test('a synchronous meta is awaitable and resolves to what it returned', async () => {
-    const config = route((data) => ({ title: `Sync ${String(data['id'] ?? '')}`.trim() }));
-    const resolved = config.meta({ id: '7' });
+    const config = route((ctx) => ({ title: `Sync ${String(ctx.data['id'] ?? '')}`.trim() }));
+    const resolved = config.meta(metaCtx({ id: '7' }));
     expect(resolved).toBeInstanceOf(Promise);
     expect(await resolved).toEqual({ title: 'Sync 7' });
   });
@@ -73,16 +86,16 @@ describe('the descriptor normalizes meta to one shape', () => {
   test('an async meta behaves identically — the caller cannot tell them apart', async () => {
     const syncRoute = route(() => ({ title: 'Same', description: DESCRIPTION }));
     const asyncRoute = route(async () => ({ title: 'Same', description: DESCRIPTION }));
-    expect(syncRoute.meta({})).toBeInstanceOf(Promise);
-    expect(asyncRoute.meta({})).toBeInstanceOf(Promise);
-    expect(await syncRoute.meta({})).toEqual(await asyncRoute.meta({}));
+    expect(syncRoute.meta(metaCtx())).toBeInstanceOf(Promise);
+    expect(asyncRoute.meta(metaCtx())).toBeInstanceOf(Promise);
+    expect(await syncRoute.meta(metaCtx())).toEqual(await asyncRoute.meta(metaCtx()));
   });
 
   test('a meta that throws synchronously rejects instead, so one catch covers both', async () => {
     const config = route(() => {
       throw new RangeError('no post');
     });
-    await expect(config.meta({})).rejects.toThrow('no post');
+    await expect(config.meta(metaCtx())).rejects.toThrow('no post');
   });
 });
 

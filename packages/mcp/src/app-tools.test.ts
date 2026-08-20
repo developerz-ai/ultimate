@@ -127,9 +127,12 @@ describe('tools as a named record', () => {
     // The authoring type requires `policy`; this is the JS caller that ignored it.
     const tools = { unsafe: { description: 'no gate', input: t.object({}), handle: () => null } };
 
-    expect(() => defineAppMcp({ tools } as Parameters<typeof defineAppMcp>[0])).toThrow(
-      'X_MCP_TOOL_UNSAFE',
-    );
+    // `@ts-expect-error` is the first half of the claim: the authoring type REFUSES a tool with
+    // no `policy`, so no typed app can write this. The throw is the second half, for the untyped
+    // caller the type cannot reach — delete the boot-time check and this line goes red while the
+    // directive stays needed.
+    // @ts-expect-error a tool definition with no `policy` is not an AppToolDefinition
+    expect(() => defineAppMcp({ tools })).toThrow('X_MCP_TOOL_UNSAFE');
   });
 
   test('the ready-McpTool array form still works, untouched', async () => {

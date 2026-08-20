@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { anonymousCtx, t } from '@ultimat3/action';
 import { secret } from '@ultimat3/core';
 import { allow } from '@ultimat3/policy';
+import type { AiFetch } from './fetch-seam';
 import { createGateway } from './gateway';
 import { llm } from './llm';
 import { modelSpec } from './models';
@@ -32,16 +33,16 @@ interface Call {
 }
 
 /** Records what left the process and replies with whatever the test wants back. */
-function fakeFetch(calls: Call[], reply: (call: Call, index: number) => Response): typeof fetch {
-  const impl = async (input: unknown, init?: RequestInit): Promise<Response> => {
-    calls.push({
-      url: String(input),
-      headers: { ...(init?.headers as Record<string, string> | undefined) },
-      body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>,
-    });
-    return reply(calls[calls.length - 1] as Call, calls.length - 1);
+function fakeFetch(calls: Call[], reply: (call: Call, index: number) => Response): AiFetch {
+  return async (input, init) => {
+    const call: Call = {
+      url: input,
+      headers: { ...(init.headers as Record<string, string> | undefined) },
+      body: JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>,
+    };
+    calls.push(call);
+    return reply(call, calls.length - 1);
   };
-  return impl as unknown as typeof fetch;
 }
 
 const jsonResponse = (body: unknown, status = 200): Response =>

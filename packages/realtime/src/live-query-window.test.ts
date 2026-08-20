@@ -116,6 +116,7 @@ async function feedWithOneSlowGate(): Promise<{
   registry: LiveQueryRegistry;
   ws: FakeWs;
   sid: string;
+  socketId: string;
 }> {
   let slowNext = false;
   const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() }).register(

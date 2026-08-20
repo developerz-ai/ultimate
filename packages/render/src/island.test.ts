@@ -193,15 +193,22 @@ describe('island · what an island may close over', () => {
   test('an undeclared prop is refused by name — a spread entity row names every column', async () => {
     const Modal = island({ src: `./contact-modal${ISLAND_EXTENSION}`, props: ['subject'] });
     const row = { subject: 'pricing', email: 'a@b.c', passwordHash: 'deadbeef' };
-    const code = await asyncCodeOf(() => render(h(Modal, row)));
+    const code = await asyncCodeOf(() => render(Modal(row)));
     expect(code).toBe('X_ISLAND_PROPS_INVALID');
   });
 
   test('a value the browser could never receive is refused, naming the path and the type', async () => {
     const Modal = island({ src: `./contact-modal${ISLAND_EXTENSION}`, props: ['db', 'at'] });
     const db = { query: () => Promise.resolve([]) };
-    expect(await asyncCodeOf(() => render(h(Modal, { db })))).toBe('X_ISLAND_PROPS_INVALID');
-    expect(await asyncCodeOf(() => render(h(Modal, { at: new Date(0) })))).toBe(
+    // Both halves are the contract, and each `@ts-expect-error` carries one of them: a handle and
+    // a `Date` are not `JsonValue`, so the type refuses the prop (`type-pins.tsx` pins that), and
+    // the render refuses it again for the caller that arrived through `renderToHtml(node: unknown)`
+    // — an untyped spread, a JS caller, a value laundered through `unknown`. Deleting either check
+    // makes exactly one of these two lines fail.
+    // @ts-expect-error a database handle is not a JsonValue, and `at` is not supplied
+    expect(await asyncCodeOf(() => render(Modal({ db })))).toBe('X_ISLAND_PROPS_INVALID');
+    // @ts-expect-error a Date is not a JsonValue, and `db` is not supplied
+    expect(await asyncCodeOf(() => render(Modal({ at: new Date(0) })))).toBe(
       'X_ISLAND_PROPS_INVALID',
     );
   });
@@ -209,12 +216,14 @@ describe('island · what an island may close over', () => {
   test('props over the cap are refused: every byte here ships in the HTML on every request', async () => {
     const Modal = island({ src: `./contact-modal${ISLAND_EXTENSION}`, props: ['blob'] });
     const blob = 'x'.repeat(ISLAND_PROPS_MAX_BYTES + 1);
-    expect(await asyncCodeOf(() => render(h(Modal, { blob })))).toBe('X_ISLAND_PROPS_INVALID');
+    expect(await asyncCodeOf(() => render(Modal({ blob })))).toBe('X_ISLAND_PROPS_INVALID');
   });
 
   test('children are the server shell, never serialized props', async () => {
     const Modal = island({ src: `./contact-modal${ISLAND_EXTENSION}`, props: ['subject'] });
-    const html = await render(h(Modal, { subject: 'pricing' }, h('button', null, 'Contact us')));
+    const html = await render(
+      Modal({ subject: 'pricing', children: h('button', null, 'Contact us') }),
+    );
     expect(html).toContain('<button>Contact us</button>');
     expect(html).toContain('{"subject":"pricing"}');
     expect(html).not.toContain('"children"');
@@ -232,7 +241,7 @@ describe('island · a static page ships JS for only its island', () => {
         'main',
         null,
         h(Hero, null),
-        h(Modal, { subject: 'pricing' }, h('button', null, 'Contact us')),
+        Modal({ subject: 'pricing', children: h('button', null, 'Contact us') }),
       ),
       { islands: collector },
     );
@@ -274,7 +283,7 @@ describe('island · a static page ships JS for only its island', () => {
     const Modal = island({ src: `./contact-modal${ISLAND_EXTENSION}`, props: ['subject'] });
     const collector = createIslandCollector({ file: PAGE, hydrate: 'interaction' });
     const html = await renderToHtml(
-      h('main', null, h(Modal, { subject: 'top' }), h(Modal, { subject: 'bottom' })),
+      h('main', null, Modal({ subject: 'top' }), Modal({ subject: 'bottom' })),
       { islands: collector },
     );
 
@@ -352,7 +361,7 @@ describe('island · declaring one is the whole declaration', () => {
 
     // 3. it renders, and the browser is told to boot it
     const collector = createIslandCollector({ file: PAGE, hydrate: entry.config.hydrate });
-    const html = await renderToHtml(h(Modal, { subject: 'pricing' }, 'Contact us'), {
+    const html = await renderToHtml(Modal({ subject: 'pricing', children: 'Contact us' }), {
       islands: collector,
     });
     expect(html).toContain('data-x-hydrate="interaction"');

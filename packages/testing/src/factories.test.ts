@@ -50,10 +50,14 @@ const postFactory = () =>
 
 /** Every `create()` in this file goes through one recorder; a leaked one would fail the next file. */
 const recorder = () => {
-  const written: { table: string; row: Record<string, unknown> }[] = [];
+  // A `Map`, not a spread into a `Record`: `Persister.insert` receives `TRow extends object`, and
+  // an `interface` row has no index signature — which is exactly why `defineFactory` constrains
+  // `TRow` to `object` and not to `Record<string, unknown>`. Enumerating the columns once, here,
+  // is what keeps every assertion below free of a cast.
+  const written: { table: string; row: ReadonlyMap<string, unknown> }[] = [];
   usePersister({
     insert: async <TRow extends object>(table: string, row: TRow) => {
-      written.push({ table, row: { ...row } });
+      written.push({ table, row: new Map<string, unknown>(Object.entries(row)) });
     },
   });
   return written;
@@ -189,8 +193,8 @@ describe(testName('unit', 'factory associations'), () => {
     const written = recorder();
     const row = await postFactory().create();
     expect(written.map((entry) => entry.table)).toEqual(['orgs', 'posts']);
-    expect(written[1]?.row['orgId']).toBe(row.orgId);
-    expect(written[0]?.row['id']).toBe(row.orgId);
+    expect(written[1]?.row.get('orgId')).toBe(row.orgId);
+    expect(written[0]?.row.get('id')).toBe(row.orgId);
   });
 
   test('an overridden association column creates no parent row at all', async () => {
@@ -222,7 +226,7 @@ describe(testName('unit', 'factory create'), () => {
     const written = recorder();
     const rows = await orgFactory().createMany(3);
     expect(rows).toHaveLength(3);
-    expect(written.map((entry) => entry.row['id'])).toEqual(rows.map((row) => row.id));
+    expect(written.map((entry) => entry.row.get('id'))).toEqual(rows.map((row) => row.id));
   });
 
   test('with no persister it names the table and the two ways out', async () => {

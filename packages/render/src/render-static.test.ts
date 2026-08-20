@@ -17,14 +17,15 @@ import {
   staticHeaders,
   staticResult,
 } from './render-static';
-import type { PrerenderFn, RouteMetaFn } from './route';
+import type { PrerenderFn, RouteConfig, RouteMetaFn } from './route';
 import { defineRoute } from './route';
 
-const meta = (() => ({ title: 'T', description: 'd'.repeat(60) })) as unknown as RouteMetaFn;
+const meta: RouteMetaFn = () => ({ title: 'T', description: 'd'.repeat(60) });
 
-function staticConfig(overrides: {
-  readonly prerender?: PrerenderFn;
-}): ReturnType<typeof defineRoute> {
+// `RouteConfig`, not `ReturnType<typeof defineRoute>`: `defineRoute` is generic in `TData`, so
+// `ReturnType` resolves it to `unknown` and every entry built from this helper was a
+// `RouteEntry<unknown>` that no route consumer accepts.
+function staticConfig(overrides: { readonly prerender?: PrerenderFn }): RouteConfig {
   return defineRoute({
     render: 'static',
     offline: 'precache',

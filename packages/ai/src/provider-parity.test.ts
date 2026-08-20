@@ -12,6 +12,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { secret } from '@ultimat3/core';
 import { AiTransportError } from './errors';
+import type { AiFetch } from './fetch-seam';
 import { OPENAI_MODEL_IDS, registerOpenAiModels } from './openai-models';
 import { openAiProvider } from './openai-provider';
 import { ChatCompletionStream, parseChatCompletion } from './openai-wire';
@@ -44,9 +45,8 @@ const transportError = (value: unknown): AiTransportError => {
 };
 
 /** Records what left the process and replies with whatever the case wants back. */
-function fakeFetch(reply: () => Response): typeof fetch {
-  const impl = async (): Promise<Response> => reply();
-  return impl as unknown as typeof fetch;
+function fakeFetch(reply: () => Response): AiFetch {
+  return async () => reply();
 }
 
 beforeEach(() => {
@@ -226,15 +226,12 @@ describe("the caller's abort signal reaches the socket", () => {
     // flight — which on a long completion is the expensive one. `agent()` puts `ctx.signal` on
     // every request; a provider that drops it makes that guarantee a comment.
     const seen: (AbortSignal | undefined)[] = [];
-    const recording = (): typeof fetch => {
-      const impl = async (_url: string, init?: RequestInit): Promise<Response> => {
-        seen.push(init?.signal ?? undefined);
-        return new Response(JSON.stringify({ error: { message: 'stop here' } }), {
-          status: 503,
-          headers: { 'content-type': 'application/json' },
-        });
-      };
-      return impl as unknown as typeof fetch;
+    const recording = (): AiFetch => async (_url, init) => {
+      seen.push(init.signal ?? undefined);
+      return new Response(JSON.stringify({ error: { message: 'stop here' } }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      });
     };
 
     const signal = new AbortController().signal;
@@ -282,14 +279,11 @@ describe("the caller's abort signal reaches the socket", () => {
 
   test('a request with no signal attaches none, rather than an explicit undefined', async () => {
     let init: RequestInit | undefined;
-    const impl = async (_url: string, given?: RequestInit): Promise<Response> => {
+    const impl: AiFetch = async (_url, given) => {
       init = given;
       return new Response('{}', { status: 503 });
     };
-    const anthropic = new AnthropicProvider({
-      apiKey: KEY,
-      fetch: impl as unknown as typeof fetch,
-    });
+    const anthropic = new AnthropicProvider({ apiKey: KEY, fetch: impl });
     await anthropic
       .generate({ messages: [{ role: 'user', content: 'hi' }], maxTokens: 16 })
       .catch(() => undefined);

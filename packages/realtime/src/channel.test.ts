@@ -57,7 +57,9 @@ function connect(sockets: SocketRegistry, who: Actor): { socket: SyncSocket; ws:
 
 describe('channels', () => {
   test('topic segments are validated, never escaped', () => {
-    expect(topic('org', 'o1', 'cursors')).toBe('org.o1.cursors');
+    // `String(...)`, because `Topic` is a BRANDED string: the matcher is typed on what it
+    // received, so a bare literal is not a `Topic` and the assertion could not be written.
+    expect(String(topic('org', 'o1', 'cursors'))).toBe('org.o1.cursors');
     expect(() => topic('org', 'o1.evil', 'cursors')).toThrow(TopicForbiddenError);
     expect(() => topic('org', '>', 'cursors')).toThrow(TopicForbiddenError);
   });

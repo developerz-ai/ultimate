@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { PgLogicalReplicationFeed } from './changefeed';
 import { pgTimestampToEpochMs } from './pg-bytes';
 import { changeLsn, commitPositionOf } from './pg-replication';
 import {

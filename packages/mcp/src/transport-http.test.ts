@@ -205,7 +205,7 @@ describe('an unauthenticated caller learns nothing about its own request', () =>
   test('a non-agent actor answers the same way for either body', async () => {
     const route = mcpHttpRoute({
       server,
-      resolveToken: () => ({ actor: userActor({ id: 'u1' }), scopes: [] }),
+      resolveToken: () => ({ actor: userActor({ id: 'u1' }), scopes: new Set<string>() }),
     });
 
     const bad = await route.handle(malformed({ authorization: 'Bearer t' }));
@@ -226,7 +226,7 @@ describe('an unauthenticated caller learns nothing about its own request', () =>
   test('an authenticated agent still gets the parse error', async () => {
     const route = mcpHttpRoute({
       server,
-      resolveToken: () => ({ actor: agentActor({ id: 'a1' }), scopes: [] }),
+      resolveToken: () => ({ actor: agentActor({ id: 'a1' }), scopes: new Set<string>() }),
     });
 
     const res = await route.handle(malformed({ authorization: 'Bearer t' }));

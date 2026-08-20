@@ -9,6 +9,7 @@
 // `driver.open()`, and the proxy is a driver option the session only reports on the way back out.
 
 import { readWithinLimit } from '@ultimat3/core';
+import type { ScrapeFetch } from './http';
 import type { RobotsFetch } from './robots';
 
 /**
@@ -40,8 +41,12 @@ export interface RobotsFetchInit {
    */
   readonly proxy?: (() => string | undefined) | undefined;
   readonly maxBytes?: number | undefined;
-  /** The platform `fetch`, injectable so the default path itself is testable. */
-  readonly fetch?: typeof fetch | undefined;
+  /**
+   * The platform `fetch`, injectable so the default path itself is testable. `ScrapeFetch` and not
+   * `typeof fetch`: the latter also carries `preconnect`, so nothing a caller can write satisfies
+   * it and the option was reachable only through a cast.
+   */
+  readonly fetch?: ScrapeFetch | undefined;
 }
 
 /**
@@ -50,7 +55,7 @@ export interface RobotsFetchInit {
  * and a 404 are all the same answer on purpose: none of them is evidence of a rule.
  */
 export function robotsFetcher(init: RobotsFetchInit = {}): RobotsFetch {
-  const call = init.fetch ?? fetch;
+  const call: ScrapeFetch = init.fetch ?? fetch;
   const limit = init.maxBytes ?? DEFAULT_ROBOTS_MAX_BYTES;
   return async (robotsUrl: string): Promise<string | undefined> => {
     // Armed per read, not per gate: the gate is long-lived and reads once per origin, so a
@@ -64,7 +69,7 @@ export function robotsFetcher(init: RobotsFetchInit = {}): RobotsFetch {
       const response = await call(robotsUrl, {
         signal,
         ...(proxy === undefined || proxy === '' ? {} : { proxy }),
-      } as RequestInit);
+      });
       if (!response.ok) return undefined;
       // Counted as it arrives rather than `.text()`, which materialises the whole body first: a
       // multi-gigabyte robots.txt is a heap the worker never gets back.

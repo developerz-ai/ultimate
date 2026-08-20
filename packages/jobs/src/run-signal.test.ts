@@ -33,11 +33,22 @@ describe('the signal one run is cancelled by', () => {
     const remove = caller.signal.removeEventListener.bind(caller.signal);
     // The count is the assertion: `AbortSignal.any` registers nothing here, which is exactly why
     // there was nothing to hand back — the composite hung off the caller's signal instead.
-    caller.signal.addEventListener = (type, listener, options): void => {
+    // Annotated, not inferred: `addEventListener` is OVERLOADED on `AbortSignal`, and TypeScript
+    // gives an assignment target with overloads no contextual parameter types — so every parameter
+    // here was an implicit `any` that nothing checked against the method it replaces.
+    caller.signal.addEventListener = (
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: AddEventListenerOptions | boolean,
+    ): void => {
       listeners += 1;
       add(type, listener, options);
     };
-    caller.signal.removeEventListener = (type, listener, options): void => {
+    caller.signal.removeEventListener = (
+      type: string,
+      listener: EventListenerOrEventListenerObject,
+      options?: EventListenerOptions | boolean,
+    ): void => {
       listeners -= 1;
       remove(type, listener, options);
     };

@@ -322,11 +322,16 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   `orgId` narrows to the actor rather than widening to everyone, because nothing here can prove two
   org-less callers share a tenant. **All THREE spellings of "no org" take that branch**, `As of
   2026-08`: `undefined`, `''` and `null`. The last one missed it, so every org-less caller shared
-  the single key `["org",null]` and was served the rows of whoever asked first — core's `Actor`
-  declares `orgId?: string`, but `@ultimat3/policy`'s `PolicyActorFields` widens it to
-  `string | null | undefined` and its `testActor` mints `null`, which is why `orgless()` widens its
-  parameter rather than trusting the declared type. The authority is JSON, never a joined string,
-  for the reason
+  the single key `["org",null]` and was served the rows of whoever asked first. `orgless()` widens
+  its parameter past core's `orgId?: string` because **`orgId` is a value off the wire** — an app's
+  adapter, a decoded session row, a JSON payload — not because a declared type permits a `null`.
+  `@ultimat3/policy`'s `PolicyActorFields` reads like the reason and is not it (corrected
+  2026-08-19): `Actor = CoreActor & PolicyActorFields`, and that intersection collapses its
+  `string | null | undefined` back to `string | undefined`, so the widening is **inert** at the type
+  level and `{ orgId: null }` is a type error. Its `testActor` mints `orgId: null` through the one
+  cast left in `packages/policy/src/test-kit.ts`, which is why `cache-authority.test.ts` can reach
+  this branch at all — the repo's only producer of that `null`, and a test seam rather than a proof.
+  The authority is JSON, never a joined string, for the reason
   `@ultimat3/entity`'s `scopeKey` gives: an actor id is app data and may carry the separator.
 - **`cache.ttlMs` is judged at `query()`, not on the first read.** Every `CacheTier` refuses a
   lease that is not positive and finite (`assertTtl`), and the read tier's one catch absorbs

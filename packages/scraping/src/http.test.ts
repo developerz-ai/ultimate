@@ -33,10 +33,10 @@ const transport = (
     timeoutMs: 1_000,
     network,
     session: () => Promise.resolve(session),
-    fetch: ((url: string, init: RequestInit) => {
+    fetch: (url, init) => {
       calls.push({ url, headers: (init.headers ?? {}) as Record<string, string> });
       return Promise.resolve(new Response(answer.body, { status: answer.status }));
-    }) as unknown as typeof fetch,
+    },
   });
   return { http, calls, network };
 };
@@ -62,7 +62,7 @@ describe('unit · the HTTP leg is session-bound, not a bare fetch', () => {
       },
     );
     await http.request('https://api.test/orders');
-    expect(calls[0]?.headers.cookie).toBe('sid=abc');
+    expect(calls[0]?.headers['cookie']).toBe('sid=abc');
     expect(calls[0]?.headers['x-csrf']).toBe('tok');
     expect(calls[0]?.headers['user-agent']).toBe('Mozilla/5.0 (a real one)');
   });
@@ -85,7 +85,7 @@ describe('unit · the HTTP leg is session-bound, not a bare fetch', () => {
       },
     );
     await http.request('https://api.test/orders');
-    expect(calls[0]?.headers.cookie).toBeUndefined();
+    expect(calls[0]?.headers['cookie']).toBeUndefined();
   });
 
   test('the SAME allow list gates this transport — refused before a byte leaves', async () => {
@@ -152,27 +152,27 @@ describe('unit · the session jar is EVERY domain the browser touched, so scopin
   test('a host-only bank.test cookie never reaches evilbank.test — a suffix is not a domain', async () => {
     const { http, calls } = transport({ status: 200, body: '{}' }, hostOnly('bank.test'), ['*']);
     await http.request('https://evilbank.test/a');
-    expect(calls[0]?.headers.cookie).toBeUndefined();
+    expect(calls[0]?.headers['cookie']).toBeUndefined();
   });
 
   test('a host-only bank.test cookie never reaches sub.bank.test — host-only means the host', async () => {
     const { http, calls } = transport({ status: 200, body: '{}' }, hostOnly('bank.test'), ['*']);
     await http.request('https://sub.bank.test/a');
-    expect(calls[0]?.headers.cookie).toBeUndefined();
+    expect(calls[0]?.headers['cookie']).toBeUndefined();
   });
 
   test('the cookie DOES reach the host it belongs to', async () => {
     const { http, calls } = transport({ status: 200, body: '{}' }, hostOnly('bank.test'), ['*']);
     await http.request('https://bank.test/a');
-    expect(calls[0]?.headers.cookie).toBe('sid=SECRET');
+    expect(calls[0]?.headers['cookie']).toBe('sid=SECRET');
   });
 
   test('a domain-scoped .bank.test cookie DOES reach a subdomain, and still not evilbank.test', async () => {
     const { http, calls } = transport({ status: 200, body: '{}' }, hostOnly('.bank.test'), ['*']);
     await http.request('https://sub.bank.test/a');
     await http.request('https://evilbank.test/a');
-    expect(calls[0]?.headers.cookie).toBe('sid=SECRET');
-    expect(calls[1]?.headers.cookie).toBeUndefined();
+    expect(calls[0]?.headers['cookie']).toBe('sid=SECRET');
+    expect(calls[1]?.headers['cookie']).toBeUndefined();
   });
 
   test('a cookie scoped to /admin is not sent to /public', async () => {
@@ -183,8 +183,8 @@ describe('unit · the session jar is EVERY domain the browser touched, so scopin
     );
     await http.request('https://bank.test/public');
     await http.request('https://bank.test/admin/users');
-    expect(calls[0]?.headers.cookie).toBeUndefined();
-    expect(calls[1]?.headers.cookie).toBe('sid=SECRET');
+    expect(calls[0]?.headers['cookie']).toBeUndefined();
+    expect(calls[1]?.headers['cookie']).toBe('sid=SECRET');
   });
 });
 
@@ -196,10 +196,10 @@ describe('unit · the response body is bounded by BYTES, not only by time', () =
       timeoutMs: 1_000,
       network: createRing<NetworkEntry>(),
       session: () => Promise.resolve(EMPTY_SESSION),
-      fetch: (() =>
+      fetch: () =>
         Promise.resolve(
           new Response(body, { status: 200, ...(headers === undefined ? {} : { headers }) }),
-        )) as unknown as typeof fetch,
+        ),
     });
 
   test('a body past maxBytes is refused rather than buffered whole', async () => {
@@ -235,8 +235,7 @@ describe('unit · the response body is bounded by BYTES, not only by time', () =
       timeoutMs: 1_000,
       network: createRing<NetworkEntry>(),
       session: () => Promise.resolve(EMPTY_SESSION),
-      fetch: (() =>
-        Promise.resolve(new Response(endless, { status: 200 }))) as unknown as typeof fetch,
+      fetch: () => Promise.resolve(new Response(endless, { status: 200 })),
     });
     expect(await codeOf(http.request('https://api.test/firehose', { maxBytes: 256 * 1024 }))).toBe(
       'X_SCRAPE_BODY_TOO_LARGE',
@@ -252,8 +251,7 @@ describe('unit · response headers are data, not a prototype the site can reach'
       timeoutMs: 1_000,
       network: createRing<NetworkEntry>(),
       session: () => Promise.resolve(EMPTY_SESSION),
-      fetch: (() =>
-        Promise.resolve(new Response('{}', { status: 200, headers }))) as unknown as typeof fetch,
+      fetch: () => Promise.resolve(new Response('{}', { status: 200, headers })),
     });
 
   test('a site sending __proto__ and constructor gets both filed as ordinary keys', async () => {

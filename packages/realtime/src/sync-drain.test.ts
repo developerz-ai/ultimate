@@ -191,9 +191,12 @@ describe('a socket the node evicts is released the way a closed one is', () => {
     const plan = await app.node.drain({ graceMs: 0 });
 
     expect(
+      // Sorted by the NAMED field before mapping: `[socketId, notified]` is a `(string | boolean)[]`
+      // to TypeScript, so `a[0]` was `string | boolean | undefined` and the comparison read an
+      // index nothing guaranteed was there.
       [...plan]
-        .map((entry) => [entry.socketId, entry.notified])
-        .sort((a, b) => (a[0] < b[0] ? -1 : 1)),
+        .sort((a, b) => a.socketId.localeCompare(b.socketId))
+        .map((entry) => [entry.socketId, entry.notified]),
     ).toEqual([
       ['s1', true],
       ['s2', false],
