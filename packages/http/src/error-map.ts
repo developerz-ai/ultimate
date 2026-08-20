@@ -1,7 +1,7 @@
 // The one place a framework error code becomes an HTTP status. A table, not a
 // switch chain: adding a code elsewhere in the framework means adding a row here,
 // and a missing row is a loud 500 rather than a silently wrong 200.
-import { renderCauseValue, stringField } from '@ultimat3/core';
+import { renderCauseValue, singleLine, stringField } from '@ultimat3/core';
 import { errorStatusInvalid, HTTP_ERROR_TITLES } from './errors';
 
 /**
@@ -385,5 +385,12 @@ export const toProblem = (
 /** The exact three lines the terminal prints, reused by the overlay and `--json`. */
 export const renderErrorLines = (error: unknown): string => {
   const facts = factsOf(error);
-  return `${facts.code}: ${facts.title}\n  cause: ${facts.cause}\n  fix:   ${facts.fix}`;
+  // The newlines here are the format's own. Every interpolated field goes through `singleLine`
+  // so a caller-controlled value cannot add a third one — this string is rendered into the dev
+  // overlay's `<pre>`, where HTML escaping does not help because a newline is not markup.
+  return [
+    `${singleLine(facts.code)}: ${singleLine(facts.title)}`,
+    `  cause: ${singleLine(facts.cause)}`,
+    `  fix:   ${singleLine(facts.fix)}`,
+  ].join('\n');
 };

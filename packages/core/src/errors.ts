@@ -3,7 +3,13 @@
 // overlay and `--json`. Never throw a bare Error anywhere in the framework.
 
 import { describeErrorCode } from './error-codes';
-import { isThrownError, renderCauseValue, renderMetaRecord, renderThrowable } from './error-render';
+import {
+  isThrownError,
+  renderCauseValue,
+  renderMetaRecord,
+  renderThrowable,
+  singleLine,
+} from './error-render';
 import { DEFAULT_ERROR_RETRY, type ErrorRetry, isErrorRetry, retryFor } from './error-retry';
 
 /**
@@ -89,8 +95,14 @@ export class UltimateError extends Error {
    * ```
    */
   format(options?: FormatErrorOptions): string {
-    const lines = [`${this.code}: ${this.title}`, `  cause: ${this.cause}`, `  fix:   ${this.fix}`];
-    if (options?.docs === true) lines.push(`  docs:  ${this.docs}`);
+    // `singleLine`, because this format is line-oriented and `cause` may hold a caller's string:
+    // one newline in it writes a second line an operator reads as a genuine framework message.
+    const lines = [
+      `${this.code}: ${singleLine(this.title)}`,
+      `  cause: ${singleLine(this.cause)}`,
+      `  fix:   ${singleLine(this.fix)}`,
+    ];
+    if (options?.docs === true) lines.push(`  docs:  ${singleLine(this.docs)}`);
     return lines.join('\n');
   }
 

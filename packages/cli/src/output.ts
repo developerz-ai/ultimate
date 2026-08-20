@@ -2,7 +2,7 @@
 // and the JSON renderer are projections of it, so `--json` can never drift from the terminal
 // output (axiom 4). The human renderer owns the canonical 3-line error format.
 
-import { renderThrowable, stringField } from '@ultimat3/core';
+import { renderThrowable, singleLine, stringField } from '@ultimat3/core';
 import { msg } from './messages';
 
 export interface Finding {
@@ -113,13 +113,16 @@ const summaryOf = (value: UltimateErrorShape): string =>
  * ```
  */
 export function renderFinding(finding: Finding, indent = ''): string {
-  const head = finding.at === undefined ? finding.code : `${finding.code} (${finding.at})`;
+  // Every field through `singleLine`: this is the format's only renderer for the terminal and CI
+  // logs, and a `cause` carrying a newline would print a line a reader takes for a real finding.
+  const code = singleLine(finding.code);
+  const head = finding.at === undefined ? code : `${code} (${singleLine(finding.at)})`;
   const lines = [
     `${indent}${head}`,
-    `${indent}  cause: ${finding.cause}`,
-    `${indent}  fix:   ${finding.fix}`,
+    `${indent}  cause: ${singleLine(finding.cause)}`,
+    `${indent}  fix:   ${singleLine(finding.fix)}`,
   ];
-  if (finding.docs !== undefined) lines.push(`${indent}  docs:  ${finding.docs}`);
+  if (finding.docs !== undefined) lines.push(`${indent}  docs:  ${singleLine(finding.docs)}`);
   return lines.join('\n');
 }
 

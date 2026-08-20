@@ -65,6 +65,48 @@ export function renderCauseValue(value: unknown): string {
 }
 
 /**
+ * One line, always. Escapes every character that a line-oriented reader would treat as a line
+ * break, leaving everything else byte-identical.
+ *
+ * WHY this exists at all: `renderCauseValue` above is safe against a value that THROWS while
+ * rendering, and safe against a value that LEAKS. It is not safe against a value that is already
+ * a `string` — a `string` renders fine, so nothing objected to it — and a caller-controlled
+ * string can carry a newline. The 3-line contract format (`<code>` / `  cause: …` / `  fix:   …`)
+ * is line-oriented in the terminal, in CI logs and inside the dev overlay's `<pre>`, so one
+ * newline in a `cause` writes a second line an operator reads as a genuine framework message.
+ * Reproduced with a forged OIDC `iss` claim: an unauthenticated stranger with one crafted token.
+ *
+ * At the RENDERER, not at the call site, deliberately. `bun run error-render` cannot see this
+ * class — its rule is about `unknown` reaching a `cause:` — and three holes shipped in
+ * `@ultimat3/auth` alone under a green check. A rule every call site must remember is a rule the
+ * 296th call site forgets; there are six renderers of this format and no more, so escaping there
+ * is one place instead of every place (issue #97, option 3).
+ *
+ * `\u2028` and `\u2029` are included because they terminate a line for a JavaScript parser and
+ * for several log viewers, while `String.prototype.split('\n')` never sees them.
+ *
+ * NOT a general sanitiser: a `cause` is prose and may contain quotes, backslashes and anything
+ * else. Only line breaks are structural here, so only line breaks are escaped.
+ */
+export function singleLine(text: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: escaping them is the point.
+  return text.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, (char) => {
+    const known = CONTROL_ESCAPES[char];
+    if (known !== undefined) return known;
+    return `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`;
+  });
+}
+
+/** The spellings a reader already knows from a JSON string, so the escape reads as an escape. */
+const CONTROL_ESCAPES: Readonly<Record<string, string>> = {
+  '\n': String.raw`\n`,
+  '\r': String.raw`\r`,
+  '\t': String.raw`\t`,
+  '\b': String.raw`\b`,
+  '\f': String.raw`\f`,
+};
+
+/**
  * `value instanceof Error`, made total. The test itself can throw: a `Proxy`'s `getPrototypeOf`
  * trap runs during `instanceof`, and the one place this question is asked is a `catch` block that
  * has nothing left to answer with if it does.

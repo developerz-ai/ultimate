@@ -1,3 +1,4 @@
+import { singleLine } from '@ultimat3/core';
 // `x errors explain <CODE>` / `x errors list` — the error table, programmatically. An agent that
 // hits an `X_*` code should not have to leave the terminal to learn what it means, and a code it
 // invented should come back refused: the answer to an unregistered code is "no such code", never
@@ -35,9 +36,9 @@ const asJson = (explanation: ErrorExplanation): JsonValue => {
 
 /** The 3-line contract format, minus the leading blank code line `renderFinding` would add. */
 const detailLines = (explanation: ErrorExplanation): readonly string[] => [
-  `  cause: ${explanation.cause}`,
-  `  fix:   ${explanation.fix}`,
-  `  docs:  ${explanation.docs}`,
+  `  cause: ${singleLine(explanation.cause)}`,
+  `  fix:   ${singleLine(explanation.fix)}`,
+  `  docs:  ${singleLine(explanation.docs)}`,
 ];
 
 function explainOne(code: string): CommandResult {
@@ -69,7 +70,7 @@ function listAll(catalog: ErrorCatalog): CommandResult {
     ok: catalog.failed.length === 0,
     command: 'errors',
     summary: msg('cli.errors.count', { count: all.length }),
-    lines: all.map((entry) => `  ${entry.code.padEnd(30)} ${entry.cause}`),
+    lines: all.map((entry) => `  ${entry.code.padEnd(30)} ${singleLine(entry.cause)}`),
     findings: catalog.failed,
     data: {
       codes: all.map(asJson),

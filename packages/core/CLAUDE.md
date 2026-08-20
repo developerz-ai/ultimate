@@ -8,6 +8,7 @@ is a change to every package.
 | Deps | none (`bun-types` only) |
 | Errors | subclass `UltimateError`; never `throw new Error` |
 | Values in a message | `renderCauseValue()` / `renderFixLiteral()`; never raw `JSON.stringify`, `String()` or `${…}` on an `unknown` |
+| Rendering the 3-line format | `singleLine()` on every interpolated field. A `string` renders fine and can still carry a newline, which writes a line an operator reads as a genuine message |
 | A value a CALLER supplied | `describeValue()` — shape, never content. `renderCauseValue` is safe against throwing, not against leaking |
 | Reading a caught value | `renderThrowable()` / `isThrownError()` / `stringField()`; never `error.message`, `error instanceof Error` or `typeof error.code === 'string'` directly — the probe throws before the renderer runs |
 | New code | add to `CORE_CODE_TITLES` in `error-codes.ts`, else the title is auto-humanised |
@@ -31,6 +32,21 @@ VERBATIM, `a object` included, so a package adopting it changes no message. `toU
 parameters typed `unknown` that reach a `cause:` / `fix:`, and it cannot see a value laundered
 through a local helper first (`packages/ui/src/components/ErrorState.tsx` builds a `message`
 const, then assigns it).
+
+`singleLine` is the escape that keeps the 3-line contract to three lines, and it exists because
+`scripts/error-render.ts` **cannot see this class**. That gate refuses a parameter typed
+`unknown`/`any` reaching a `cause:`; a value that is already a `string` renders without throwing, so
+there is nothing for it to object to — while a newline in one adds a line to a format that is
+line-oriented in the terminal, in CI logs and inside the dev overlay's `<pre>`. Three holes shipped
+in `@ultimat3/auth` under a green check, the worst reachable by an unauthenticated stranger with one
+crafted OIDC token (issue #97). It is applied at the SIX renderers of that format and never at the
+call sites — `UltimateError.format()` here, `SchemaError.format()` in `@ultimat3/schema`,
+`renderErrorLines` in `@ultimat3/http`, `renderFrameworkError` in `@ultimat3/mcp`, and
+`renderFinding` / `detailLines` in `@ultimat3/cli` — because a rule every author must remember is a
+rule the next author forgets. It is not a general sanitiser: a cause is prose and keeps its quotes,
+its backslashes and its percent signs; only line breaks are structural. `@ultimat3/schema` carries a
+deliberate duplicate for the tier-0 reason below, pinned behaviourally by
+`single-line-pin.test.ts` in `@ultimat3/cli`.
 
 `describeValue` in `error-render.ts` is a character-for-character duplicate of `describeValue` in
 `packages/schema/src/describe-value.ts`, for the same tier-0 reason `SCHEMA_ERROR_CODE_TITLES` is
