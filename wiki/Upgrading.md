@@ -22,6 +22,86 @@ Each entry changes a surface the table below covers.
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
 
+## 4.1.0 → 5.0.0, entry by entry
+
+Four breaking changes, one of which needs an edit. There is no codemod, and there does not need to
+be: **the whole migration is deleting one line, and only if you wrote it.**
+
+### Start here — the one edit
+
+```diff
+  jobs: {
+-   driver: 'postgres',
+    queues: ['app-default'],
+    concurrency: 8,
+  },
+```
+
+`jobs.driver` accepted `'postgres' | 'redis' | 'nats'` and had **no reader anywhere**. Boot always
+built `createPgDriver`, so setting it to `redis` did not throw, did not warn and did not boot Redis
+— it changed nothing and you silently got Postgres. If you were relying on it doing something, it
+was not: you were on Postgres the whole time.
+
+Which driver runs is `setJobDriver(driver)`, and only that:
+
+```ts
+setJobDriver(createPgDriver({ executor }))   // production
+setJobDriver(createMemoryDriver())           // a test
+```
+
+`JobsDriver` (the type) goes with it. `JobsConfig.driver` was its only use.
+
+**Leaving the line in also works.** A spread carries a key no type names, so a stale
+`app.config.ts` still boots and the field still does nothing — `packages/core/src/config.test.ts`
+pins exactly that. TypeScript will flag it; the runtime will not.
+
+### The other three need no edit unless you wrote a test driver
+
+They are `@ultimat3/testing`'s `subscribe` fixture, which was **declared and had no driver** — so
+nothing could have been implementing these types. They changed because they described an API that
+could not work: `LiveTarget` was `{ name, queryHash }`, and a node keys a subscription by
+`(name, input)`; a hash is the input already thrown away.
+
+| Was | Is |
+|---|---|
+| `Subscribe = (target) => Promise<LiveFeed>` | `(target, input, actor?) => Promise<LiveFeed>` |
+| `LiveTarget = { name, queryHash }` | `{ name }` — the query itself |
+| `LiveFeed` had no `reconnect()` | it has one |
+| `DRIVER_FIXTURE_NAMES` held `subscribe` | `FRAMEWORK_FIXTURE_NAMES` does; the framework builds it |
+
+A test that destructured `subscribe` and called it now reads:
+
+```diff
+-const feed = await subscribe(liveFeed.as(actorFor(ada), { orgId: acme.id }));
++const feed = await subscribe(liveFeed, { orgId: acme.id }, actorFor(ada));
+```
+
+The actor is the third argument rather than baked into the target because that is where the
+framework puts it: the shared window is built with **no subject**, and every decision about an
+actor is per subscriber.
+
+### Behaviour that changed without breaking a type
+
+**Error fields are escaped where they are built.** `UltimateError` and `SchemaError` run
+`singleLine` over `code`, `title`, `cause`, `fix` and `docs` in their constructors, so `.message`,
+`.cause`, `format()`, `toJSON()` and any renderer you write are one line by construction. Measured
+over every shipped `cause:`/`fix:` literal: none contains a newline, so no framework message
+changed. If you build error text from a value a CALLER controls, you no longer have to remember —
+and if you were already escaping, `singleLine` is idempotent, so nothing doubles.
+
+**One `fix:` line changed text.** `X_REPLICATION_FAILED` on SQLSTATE `42704` said
+`x db replication init`, which is not a command — `x db` takes `gen`, `migrate`, `reset`, `seed`,
+`studio`, `branch`, `backfill`. It now names the `CREATE PUBLICATION` an operator can paste.
+
+### One thing to know before you subscribe to a projected live query
+
+Not a change in this release — a defect it made visible. If a `query({ live: true })` declares an
+`orderBy` on a column its rows do **not** carry (a projection that omits it), every change to a row
+reads as a move, and the re-delivered row is the raw entity row rather than the projection. Columns
+you left out of the projection reach the subscriber. [#230](https://github.com/developerz-ai/ultimate/issues/230),
+and [Known gaps](Known-Gaps) carries it. Until it is fixed, order a live query by a column its rows
+carry.
+
 ## 3.0.0 → 4.0.0, entry by entry
 
 Twenty-five `BREAKING —` entries. Most are one of two shapes: a **declaration nothing read**, deleted rather than implemented, and a **surface that answered the wrong thing**, corrected. Full rationale per row in [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md)'s `4.0.0` section.
