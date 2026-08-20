@@ -12,24 +12,24 @@ This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x`
 
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
-**Status:** 4.0.0, released, `As of 2026-08-20`. 29 `@ultimat3/*` packages plus the unscoped
+**Status:** 5.0.0, released, `As of 2026-08-20`. 29 `@ultimat3/*` packages plus the unscoped
 `create-ultimate` — 30 in all — **versioned** in lockstep and **published** in lockstep: one version,
 one commit, one tag, 30 tarballs.
 
 **Repository, tag and registry agree.** Never read a number here as the installable one; run the
 command beside it — that is the only thing here that cannot go stale. `bun run scripts/registry-audit.ts --json`
-covers the **npm** rows in one call — it answers `30/30 publishable packages are on npm at 4.0.0,
+covers the **npm** rows in one call — it answers `30/30 publishable packages are on npm at 5.0.0,
 every one attested` or names each gap with a runnable `fix:` — and it asks nothing about the tag or
 the Release, which are the two rows below it.
 
 | Fact | State, `As of 2026-08-20` | Read it yourself |
 |---|---|---|
-| Repository version | 4.0.0, every workspace stamped | `bun run scripts/release.ts --check 4.0.0` |
+| Repository version | 5.0.0, every workspace stamped | `bun run scripts/release.ts --check 5.0.0` |
 | Publishable workspaces | 30 | `bun run scripts/release-workflow.ts --json` |
-| On the registry | **all 30 at 4.0.0**, no holes | `bun run scripts/registry-audit.ts --json` |
-| npm `latest` | **4.0.0** — `bunx create-ultimate myapp` installs it | `npm view @ultimat3/core version` |
-| Provenance | every 4.0.0 tarball attested, `_npmUser: GitHub Actions` | `npm view @ultimat3/core@4.0.0 dist.attestations _npmUser` |
-| Tag and Release | `v4.0.0` pushed **annotated**, GitHub Release published — the Release is what triggers the workflow | `git ls-remote --tags origin 'refs/tags/v4.0.0*'` — both the ref **and** its peeled `^{}` line, which is what proves it is annotated and on the remote; then `gh release view v4.0.0 --json tagName,isDraft,publishedAt`. **Not** `git tag --list`, which reads the local repository and answered `v4.0.0` throughout the window in which the tag had never been pushed |
+| On the registry | **all 30 at 5.0.0**, no holes | `bun run scripts/registry-audit.ts --json` |
+| npm `latest` | **5.0.0** — `bunx create-ultimate myapp` installs it | `npm view @ultimat3/core version` |
+| Provenance | every 5.0.0 tarball attested, `_npmUser: GitHub Actions` | `npm view @ultimat3/core@5.0.0 dist.attestations _npmUser` |
+| Tag and Release | `v5.0.0` pushed **annotated**, GitHub Release published — the Release is what triggers the workflow | `git ls-remote --tags origin 'refs/tags/v5.0.0*'` — both the ref **and** its peeled `^{}` line, which is what proves it is annotated and on the remote; then `gh release view v5.0.0 --json tagName,isDraft,publishedAt`. **Not** `git tag --list`, which reads the local repository and answered `v4.0.0` throughout the window in which the tag had never been pushed |
 | OIDC trusted publisher | attached to all 30, with `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
 
 **A lightweight tag is not a release trigger, and `--follow-tags` will not push one.** `v4.0.0` was
@@ -50,10 +50,18 @@ when the run finished). The publish list itself is **derived** from `scripts/lis
 which is what keeps a new package from being silently absent from it. Step 1 of `PUBLISHING.md`
 comes due again for the next package added after a release run, and nothing else.
 
-**4.0.0 is a major** because a sweep to close every known gap landed breaking changes to documented
-APIs. The 4.0.0 section of [`CHANGELOG.md`](CHANGELOG.md) carries **25** entries marked `BREAKING —`
-and ships no codemod, so each one is a manual edit its own entry names — [`wiki/Upgrading.md`](wiki/Upgrading.md)
-walks them. The shape of the sweep: things **declared and never wired** were either wired or deleted
+**5.0.0 is a major, and its migration is one line.** Four breaking changes, each deleting or
+correcting a DECLARATION that promised something the code did not do — the same sweep 4.0.0 ran,
+applied to what was left after it. Only one needs an edit: delete `driver:` from `jobs` in
+`app.config.ts`. `JobsConfig.driver` accepted `'postgres' | 'redis' | 'nats'`, had **no reader
+anywhere**, and boot always built `createPgDriver` — so `jobs: { driver: 'redis' }` did not throw,
+did not warn, and silently gave you Postgres. Worse than `realtime.heartbeatMs`, which 4.0.0 deleted
+for the same reason, because it failed silently in the DANGEROUS direction. The other three are
+`@ultimat3/testing`'s `subscribe` fixture types, which nothing could have implemented: the fixture
+had no driver until 5.0.0 built one.
+
+**4.0.0 was the sweep before it** — 25 entries marked `BREAKING —` and no codemod, so each one is a
+manual edit its own entry names. [`wiki/Upgrading.md`](wiki/Upgrading.md) walks every major. The shape of the sweep: things **declared and never wired** were either wired or deleted
 (`PrecacheAsset.critical`, `realtime.heartbeatMs`, `CaptureOptions.timeoutMs`, `PERIODIC_SYNC_TAG`,
 `requiresApp`), and things that **answered the wrong thing** were corrected (`on delete` reaching
 the generated SQL, `in` with a non-array operand, `t.date` accepting an offsetless date-time,
@@ -75,7 +83,7 @@ failure.
 
 **2.0.0 is the one release with no provenance**: no publisher was attached, so the OIDC exchange had
 nothing to verify against, the workflow could not publish, and 2.0.0 went out by hand —
-`_npmUser: sebyx07`, no `dist.attestations`, where 1.1.0, 1.2.0, 3.0.0 and 4.0.0 carry both. Not
+`_npmUser: sebyx07`, no `dist.attestations`, where 1.1.0, 1.2.0 and every release from 3.0.0 carry both. Not
 "for the first time" — this file said that until 2026-08-19 and `CHANGELOG.md`'s 3.0.0 header still
 does: 1.1.0 and 1.2.0 published under **earlier** publisher configurations, one per package, and
 `npm view @ultimat3/core@1.2.0 _npmUser.trustedPublisher` answers an `oidcConfigId` that differs from
@@ -292,7 +300,7 @@ Everything in the framework is one of these. **If a feature doesn't fit one of t
 
 ## CI
 
-Free GitHub Actions runners (`ubuntu-latest`) — never a paid runner. `ci.yml` runs three jobs, each answering a question no other job answers: `verify` (the gate, `x verify` verbatim — lint, typecheck, boundaries and every suite are its steps, never a second job), `reference-app-verify` (the app gate, on its ratchet) and `scaffold-smoke` (`x new` → `bun install` → `x verify` outside the checkout). Target under 5 minutes. Every job starts with `./.github/actions/setup` — bun, the install cache, a frozen install. Releases publish to npm via **OIDC trusted publishing**, with provenance — which 2.0.0 did not get, because no trusted publisher existed for the exchange to verify against. All 30 were attached on 2026-08-19, and 3.0.0 and 4.0.0 both went out through the workflow: `npm view @ultimat3/core@4.0.0 dist.attestations _npmUser`. A fourth workflow, `registry-audit.yml`, runs `scripts/registry-audit.ts` on a schedule and files a `registry-drift` issue when the tree's stamped version and the registry disagree — it is not a `ci.yml` job because it asks about the **registry**, which no commit changes. See [`PUBLISHING.md`](PUBLISHING.md).
+Free GitHub Actions runners (`ubuntu-latest`) — never a paid runner. `ci.yml` runs three jobs, each answering a question no other job answers: `verify` (the gate, `x verify` verbatim — lint, typecheck, boundaries and every suite are its steps, never a second job), `reference-app-verify` (the app gate, on its ratchet) and `scaffold-smoke` (`x new` → `bun install` → `x verify` outside the checkout). Target under 5 minutes. Every job starts with `./.github/actions/setup` — bun, the install cache, a frozen install. Releases publish to npm via **OIDC trusted publishing**, with provenance — which 2.0.0 did not get, because no trusted publisher existed for the exchange to verify against. All 30 were attached on 2026-08-19, and 3.0.0, 4.0.0, 4.1.0 and 5.0.0 all went out through the workflow: `npm view @ultimat3/core@5.0.0 dist.attestations _npmUser`. A fourth workflow, `registry-audit.yml`, runs `scripts/registry-audit.ts` on a schedule and files a `registry-drift` issue when the tree's stamped version and the registry disagree — it is not a `ci.yml` job because it asks about the **registry**, which no commit changes. See [`PUBLISHING.md`](PUBLISHING.md).
 
 ## Note
 
