@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { PgLogicalReplicationFeed } from './changefeed';
 import { pgTimestampToEpochMs } from './pg-bytes';
 import { changeLsn, commitPositionOf } from './pg-replication';
 import {
@@ -40,71 +39,6 @@ describe('changeLsn', () => {
   test('a replayed transaction produces byte-identical lsns, which is what dedupes it', () => {
     expect(changeLsn(0x2b3c4dn, 7)).toBe(changeLsn(0x2b3c4dn, 7));
     expect(commitPositionOf(changeLsn(0x2b3c4dn, 7))).toBe(0x2b3c4dn);
-  });
-});
-
-describe('PgLogicalReplicationFeed', () => {
-  test('an empty entity list is refused before a socket is opened', () => {
-    expect(
-      () =>
-        new PgLogicalReplicationFeed({
-          url: 'postgres://x@y/z',
-          slot: 's',
-          publication: 'p',
-          entities: [],
-        }),
-    ).toThrow(/empty entity list/);
-  });
-
-  test('preflights wal_level, the publication and the slot before it streams', async () => {
-    const { server, feed } = await start();
-    expect(server.queries[0]).toBe('SHOW wal_level');
-    expect(server.queries[1]).toContain('pg_publication');
-    expect(server.queries[2]).toContain('pg_replication_slots');
-    expect(server.queries[3]).toStartWith('START_REPLICATION SLOT ultimate_slot LOGICAL 0/0');
-    expect(server.queries[3]).toContain("publication_names 'ultimate_pub'");
-    await feed.stop();
-  });
-
-  test('creates the slot when there is none, and never touches an existing one', async () => {
-    const fresh = await start({ script: { slotPlugin: null } });
-    expect(fresh.server.queries[3]).toBe(
-      "SELECT pg_create_logical_replication_slot('ultimate_slot', 'pgoutput')",
-    );
-    await fresh.feed.stop();
-
-    const existing = await start();
-    expect(existing.server.queries.some((sql) => sql.includes('pg_create'))).toBe(false);
-    await existing.feed.stop();
-  });
-
-  test('a non-logical wal_level names the exact statement that fixes it', async () => {
-    const failure = await start({ script: { walLevel: 'replica' } }).catch(
-      (error: unknown) => error,
-    );
-    expect((failure as { code?: string }).code).toBe('X_REPLICATION_FAILED');
-    expect((failure as { fix?: string }).fix).toContain("ALTER SYSTEM SET wal_level = 'logical'");
-  });
-
-  test('a missing publication and a foreign slot plugin each carry their own fix', async () => {
-    const noPublication = await start({ script: { publicationExists: false } }).catch(
-      (error: unknown) => error,
-    );
-    expect((noPublication as { fix?: string }).fix).toBe(
-      'CREATE PUBLICATION ultimate_pub FOR ALL TABLES;',
-    );
-
-    const wrongPlugin = await start({ script: { slotPlugin: 'wal2json' } }).catch(
-      (error: unknown) => error,
-    );
-    expect((wrongPlugin as { fix?: string }).fix).toContain('pg_drop_replication_slot');
-  });
-
-  test('an identifier outside [a-z_][a-z0-9_]* never reaches a replication command', async () => {
-    const failure = await start({ entities: ["posts'; drop table users --"] }).catch(
-      (error: unknown) => error,
-    );
-    expect((failure as { code?: string }).code).toBe('X_REPLICATION_FAILED');
   });
 });
 
@@ -226,6 +160,43 @@ describe('decoded changes', () => {
     await feed.stop();
   });
 
+  // The counter, not the log line: a warning fires once at boot, and the thing an operator has to
+  // be able to see afterwards is how many decisions were actually made on a partial row.
+  test('a delete off a non-FULL relation is counted, and a FULL one is not', async () => {
+    const partial = await start();
+    partial.server.push(xlog(relation(POSTS_OID, 'posts', POST_COLUMNS, 'd')));
+    partial.server.push(xlog(begin(0x6000n, 0n, 13)));
+    partial.server.push(xlog(remove(POSTS_OID, ['p1', null, null, null, null, null])));
+    partial.server.push(xlog(commit(0x6000n, 0x6100n, 0n)));
+    await partial.settled(1);
+    expect(partial.feed.stats().delivered).toBe(1);
+    expect(partial.feed.stats().partialBefore).toBe(1);
+    await partial.feed.stop();
+
+    const full = await start();
+    full.server.push(xlog(relation(POSTS_OID, 'posts', POST_COLUMNS, 'f')));
+    full.server.push(xlog(begin(0x6000n, 0n, 13)));
+    full.server.push(xlog(remove(POSTS_OID, ['p1', 'Old', 'org-1', null, null, null])));
+    full.server.push(xlog(commit(0x6000n, 0x6100n, 0n)));
+    await full.settled(1);
+    expect(full.feed.stats().delivered).toBe(1);
+    expect(full.feed.stats().partialBefore).toBe(0);
+    await full.feed.stop();
+  });
+
+  test('an insert off a non-FULL relation is not counted — it carries no before at all', async () => {
+    const { server, feed, settled } = await start();
+    server.push(xlog(relation(POSTS_OID, 'posts', POST_COLUMNS, 'd')));
+    server.push(xlog(begin(0x7000n, 0n, 14)));
+    server.push(xlog(insert(POSTS_OID, ['p1', 'Hello', 'org-1', null, null, null])));
+    server.push(xlog(commit(0x7000n, 0x7100n, 0n)));
+    await settled(1);
+
+    expect(feed.stats().delivered).toBe(1);
+    expect(feed.stats().partialBefore).toBe(0);
+    await feed.stop();
+  });
+
   test('an update with no old tuple has before: null rather than a fabricated row', async () => {
     const { server, events, settled, feed } = await start();
     server.push(xlog(relation(POSTS_OID, 'posts', POST_COLUMNS)));
@@ -250,7 +221,7 @@ describe('decoded changes', () => {
 
     expect(events.map((event) => event.after?.['id'])).toEqual(['p3', 'p4']);
     expect(feed.stats().replayed).toBe(2);
-    expect(server.queries[3]).toContain('LOGICAL 0/6000');
+    expect(server.queries[4]).toContain('LOGICAL 0/6000');
     await feed.stop();
   });
 

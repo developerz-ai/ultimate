@@ -123,3 +123,16 @@ describe('database config carries only what something reads', () => {
     expect(defineConfig({ name: 'myapp', database: { ssl: true } }).database.ssl).toBe(true);
   });
 });
+
+describe('realtime section', () => {
+  // `realtime.heartbeatMs` was declared, defaulted to 15_000 and read by NOTHING — the socket
+  // heartbeat is the client's own option and the presence beat is derived from the TTL
+  // (`PresenceRegistry.heartbeatMs`). Axiom 1: one knob. Deleted 2026-08-19, and this is what
+  // stops it coming back, since a re-added field would sail through `section()` unnoticed.
+  test('carries no heartbeatMs — the beat is the client option and the derived presence one', () => {
+    const config = defineConfig({ name: 'myapp' });
+
+    expect(Object.keys(config.realtime).sort()).toEqual(['enabled', 'tier', 'transport', 'urlEnv']);
+    expect('heartbeatMs' in config.realtime).toBe(false);
+  });
+});

@@ -243,6 +243,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_FRAME_RATE_LIMIT',
     'X_LIVE_CLIENT_MISSING',
     'X_LIVE_QUERY_UNKNOWN',
+    'X_LIVE_REPLICA_IDENTITY',
     'X_LIVE_ROW_UNIDENTIFIED',
     'X_PROTOCOL_VERSION',
     'X_QUERY_NOT_SUBSCRIBABLE',

@@ -72,8 +72,9 @@ export interface LiveClientOptions<T extends TableMap = TableMap> {
   readonly scheduler?: Scheduler;
   /**
    * How often a live socket re-announces itself, in ms. `0` disables it. Defaults to
-   * `DEFAULT_HEARTBEAT_MS` — the same 15s as the server's `realtime.heartbeatMs`, which browser
-   * code cannot read, so it is an option here rather than a value shipped down the wire.
+   * `DEFAULT_HEARTBEAT_MS`, 15s. The one knob for the beat: `realtime.heartbeatMs` in
+   * `app.config.ts` was deleted 2026-08-19 because nothing read it, so this is not a restatement
+   * of a server value — browser code could never have reached one.
    */
   readonly heartbeatMs?: number;
   /** Where a dial failure inside the reconnect timer is reported. Defaults to `reportToConsole`. */

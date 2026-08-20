@@ -76,12 +76,18 @@ export interface JobsConfig {
   readonly visibilityTimeoutMs: number;
 }
 
+/**
+ * No `heartbeatMs`. It was declared here, defaulted to 15_000, and read by NOTHING — deleted
+ * 2026-08-19. The socket beat is `new LiveClient({ heartbeatMs })`, browser code that cannot read
+ * server config, and the presence beat is DERIVED (`PresenceRegistry.heartbeatMs` is
+ * `max(1000, floor(ttlMs / 3))`). A second knob is a second number that can disagree with the one
+ * it is a fraction of, and a knob nothing reads is a knob nothing enforces — axioms 1 and 3.
+ */
 export interface RealtimeConfig {
   readonly enabled: boolean;
   readonly tier: RealtimeTier;
   readonly transport: RealtimeTransport;
   readonly urlEnv: string | undefined;
-  readonly heartbeatMs: number;
 }
 
 export interface McpConfig {
@@ -210,13 +216,7 @@ function defaults(name: string): Omit<AppConfig, 'name'> {
       backoff: 'exponential',
       visibilityTimeoutMs: 30_000,
     },
-    realtime: {
-      enabled: false,
-      tier: 'channels',
-      transport: 'memory',
-      urlEnv: undefined,
-      heartbeatMs: 15_000,
-    },
+    realtime: { enabled: false, tier: 'channels', transport: 'memory', urlEnv: undefined },
     ai: { mcp: { expose: true, path: '/mcp' }, modelEnv: undefined },
   };
 }

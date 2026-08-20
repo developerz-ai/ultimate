@@ -20,6 +20,7 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_LIVE_CLIENT_MISSING',
   'X_LIVE_ROW_UNIDENTIFIED',
   'X_LIVE_QUERY_UNKNOWN',
+  'X_LIVE_REPLICA_IDENTITY',
   'X_QUERY_NOT_SUBSCRIBABLE',
   'X_SOCKET_UNAUTHENTICATED',
   'X_SOCKET_AUTH_UNAVAILABLE',
@@ -113,6 +114,7 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_LIVE_CLIENT_MISSING: 'a realtime hook ran with no LiveClient registered',
   X_LIVE_ROW_UNIDENTIFIED: 'a live query returned a row with no id',
   X_LIVE_QUERY_UNKNOWN: 'no live query is registered under the name a subscribe frame asked for',
+  X_LIVE_REPLICA_IDENTITY: 'a replicated table sends a key-only row on delete',
   X_QUERY_NOT_SUBSCRIBABLE: 'a hook was bound to a query that is not declared live',
   X_SOCKET_UNAUTHENTICATED: 'the sync upgrade carried no credential this app accepts',
   X_SOCKET_AUTH_UNAVAILABLE: 'the sync node could not decide who a connecting socket is',
@@ -323,6 +325,34 @@ export class ReplicatorSlotHeldError extends RealtimeError {
         `advisory lock ${args.key} is held${args.holder === undefined ? '' : ` by ${args.holder}`}` +
         ' — one database has exactly one replicator',
       fix: 'scale the replicator to 1 per database: kubectl scale deploy/replicator --replicas=1',
+    });
+  }
+}
+
+/**
+ * A table in the entity list replicates with a replica identity other than FULL, so its `delete`
+ * (and any key-changing `update`) carries the KEY COLUMNS ONLY. `toRow` accepts that tuple —
+ * it only requires a text `id` — so the live matcher decides "did this row leave the result set"
+ * from a one-column row, and a row policy written against `!row.private` reads `undefined`.
+ *
+ * **Raised at preflight and LOGGED, never thrown.** Every app running today on the default
+ * identity would stop booting, and the replicator refusing to start is a worse outcome than the
+ * partial rows it is warning about. The runtime half is `ReplicationStreamStats.partialBefore`,
+ * which counts the changes this actually affects. Refusing it at `x verify` time is the follow-up.
+ *
+ * The tables are named because the fix is per table, and they are the entity list's own names —
+ * every one has already passed `assertIdentifier`, so the `fix:` is SQL that can be pasted.
+ */
+export class ReplicaIdentityError extends RealtimeError {
+  constructor(args: { tables: readonly string[] }) {
+    super({
+      code: 'X_LIVE_REPLICA_IDENTITY',
+      cause:
+        `${args.tables.join(', ')} replicate with a replica identity other than FULL, so a ` +
+        'delete carries the key columns only and a live query decides visibility from a partial row',
+      fix:
+        `${args.tables.map((table) => `ALTER TABLE ${table} REPLICA IDENTITY FULL;`).join(' ')}` +
+        ' -- rows already written to the WAL keep the identity they were written with',
     });
   }
 }

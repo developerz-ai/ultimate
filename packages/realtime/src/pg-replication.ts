@@ -1,20 +1,18 @@
 // Single responsibility: turn a Postgres logical-replication slot into ordered `ChangeEvent`s —
-// preflight the three things that are always misconfigured, START_REPLICATION, decode pgoutput,
-// and keep the slot confirmed. The connection, the framing and the pgoutput decode live next door;
-// what is decided here is *ordering*, because the lsn is the only authority the pipeline has.
+// START_REPLICATION, decode pgoutput, and keep the slot confirmed. The preflight, the connection,
+// the framing and the pgoutput decode live next door; what is decided here is *ordering*, because
+// the lsn is the only authority the pipeline has.
 
 import { type Clock, logger, systemClock } from '@ultimat3/core';
 import type { ChangeEvent, ChangeOp, PgLogicalReplicationOptions } from './changefeed';
-import { ReplicationFailedError, ReplicationProtocolError } from './errors';
+import { ReplicationProtocolError } from './errors';
 import { isRow, type JsonObject, type Row } from './json';
 import { ByteReader, ByteWriter, epochMsToPgTimestamp, printLsn } from './pg-bytes';
 import { PgConnection } from './pg-connection';
 import { entityRow } from './pg-entity-row';
+import { assertIdentifier, preflight } from './pg-preflight';
 import { bunPgStream, parsePgUrl } from './pg-socket';
 import { PgOutputDecoder, type PgOutputMessage, type PgRelation } from './pgoutput';
-
-/** Identifiers reach a simple query unparameterised, so the charset is the injection boundary. */
-const IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 
 const DEFAULT_STATUS_INTERVAL_MS = 10_000;
 
@@ -27,6 +25,14 @@ export interface ReplicationStreamStats {
   readonly skipped: number;
   /** Rows replayed from before the resume position, dropped so `onChange` sees each one once. */
   readonly replayed: number;
+  /**
+   * Changes delivered from a relation whose replica identity is not FULL — so the `before` row is
+   * the key columns alone (or absent), and the live matcher's "did this row leave the result set"
+   * is decided on a partial row. `X_LIVE_REPLICA_IDENTITY` warns about the CONFIGURATION once at
+   * preflight; this counts the decisions it actually cost, which is the half a running node can
+   * be alerted on. Inserts never count: there is no `before` to be partial.
+   */
+  readonly partialBefore: number;
   /**
    * Why the pump stopped, or `null` while it is live. The read loop cannot throw into a caller —
    * nothing awaits it — so this is the one place `/readyz` and a test can see that it died at all.
@@ -58,15 +64,6 @@ export const changeLsn = (commitLsn: bigint, sequence: number): string =>
 /** The commit position inside a change lsn — where a resume asks the server to restart. */
 export const commitPositionOf = (lsn: string): bigint => BigInt(`0x${lsn.slice(0, 16) || '0'}`);
 
-const assertIdentifier = (kind: string, value: string): string => {
-  if (IDENTIFIER.test(value)) return value;
-  throw new ReplicationFailedError({
-    stage: 'preflight',
-    detail: `${kind} "${value}" is not a lower-case postgres identifier`,
-    fix: `rename the ${kind} to match [a-z_][a-z0-9_]* — it is interpolated into a replication command`,
-  });
-};
-
 export interface ReplicationStreamHandlers {
   readonly from?: string | undefined;
   onChange(event: ChangeEvent): void | Promise<void>;
@@ -94,6 +91,7 @@ export class PgReplicationStream {
   #delivered = 0;
   #skipped = 0;
   #replayed = 0;
+  #partialBefore = 0;
   #failure: string | null = null;
 
   constructor(options: PgLogicalReplicationOptions) {
@@ -116,6 +114,7 @@ export class PgReplicationStream {
       delivered: this.#delivered,
       skipped: this.#skipped,
       replayed: this.#replayed,
+      partialBefore: this.#partialBefore,
       failure: this.#failure,
     };
   }
@@ -147,7 +146,7 @@ export class PgReplicationStream {
     });
     this.#connection = connection;
     try {
-      await preflight(connection, slot, publication);
+      await preflight(connection, slot, publication, this.#entities);
       const from = handlers.from;
       this.#confirmed = from === undefined ? 0n : commitPositionOf(from);
       await connection.startCopyBoth(
@@ -339,6 +338,10 @@ export class PgReplicationStream {
       this.#replayed += 1;
       return;
     }
+    // Read off the Relation message rather than off the tuple: a DEFAULT-identity table whose
+    // non-key columns happen to be NULL sends the same bytes a FULL one does, so counting missing
+    // keys would undercount exactly the rows a policy is most likely to misjudge.
+    if (op !== 'insert' && relation.replicaIdentity !== 'f') this.#partialBefore += 1;
     const before = toRow(relation, oldTuple);
     const after = toRow(relation, newTuple);
     const event: ChangeEvent = {
@@ -377,55 +380,6 @@ export class PgReplicationStream {
       () => undefined,
     );
     await this.#writing;
-  }
-}
-
-/**
- * The three misconfigurations that produce an unreadable server message if left to the server.
- * `slot` and `publication` are interpolated into simple queries, so the `IDENTIFIER` charset is the
- * injection boundary; re-asserted here rather than trusted, so the guarantee travels with the
- * function instead of living only in `start()`.
- */
-async function preflight(
-  connection: PgConnection,
-  slot: string,
-  publication: string,
-): Promise<void> {
-  assertIdentifier('slot', slot);
-  assertIdentifier('publication', publication);
-  const [walLevel] = await connection.query('SHOW wal_level');
-  if (walLevel?.[0] !== 'logical') {
-    throw new ReplicationFailedError({
-      stage: 'preflight',
-      detail: `wal_level is "${walLevel?.[0] ?? 'unknown'}", so the server writes no logical WAL`,
-      fix: "ALTER SYSTEM SET wal_level = 'logical'; -- then restart postgres",
-    });
-  }
-  const publications = await connection.query(
-    `SELECT 1 FROM pg_publication WHERE pubname = '${publication}'`,
-  );
-  if (publications.length === 0) {
-    throw new ReplicationFailedError({
-      stage: 'preflight',
-      detail: `no publication named "${publication}" exists`,
-      fix: `CREATE PUBLICATION ${publication} FOR ALL TABLES;`,
-    });
-  }
-  const [existing] = await connection.query(
-    `SELECT plugin FROM pg_replication_slots WHERE slot_name = '${slot}'`,
-  );
-  if (existing === undefined) {
-    // Plain SQL rather than CREATE_REPLICATION_SLOT: the replication command exports a snapshot
-    // that pins xmin for the session, and its option syntax changed in postgres 15.
-    await connection.query(`SELECT pg_create_logical_replication_slot('${slot}', 'pgoutput')`);
-    return;
-  }
-  if (existing[0] !== 'pgoutput') {
-    throw new ReplicationFailedError({
-      stage: 'preflight',
-      detail: `slot "${slot}" decodes with "${existing[0] ?? 'unknown'}", not pgoutput`,
-      fix: `SELECT pg_drop_replication_slot('${slot}'); -- then start the replicator again`,
-    });
   }
 }
 

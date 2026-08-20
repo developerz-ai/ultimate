@@ -5,9 +5,10 @@
 import type { Scheduler } from './thundering-herd';
 
 /**
- * The same 15s as `realtime.heartbeatMs` in `@ultimat3/core`'s config, restated rather than read:
- * that value is server configuration and this is browser code, so the client cannot reach it. The
- * two are kept equal on purpose — a node's presence TTL is sized against this interval.
+ * The client's own number, and `As of 2026-08-19` the only one. It used to be described as a
+ * restatement of `realtime.heartbeatMs` in `@ultimat3/core`'s config — that key was read by
+ * nothing and is deleted, so there is no second value to keep this equal to. The server side of
+ * the beat is DERIVED, never configured: `PresenceRegistry.heartbeatMs` is `ttlMs / 3`.
  */
 export const DEFAULT_HEARTBEAT_MS = 15_000;
 

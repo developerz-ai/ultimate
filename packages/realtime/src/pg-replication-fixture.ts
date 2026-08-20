@@ -24,17 +24,23 @@ export interface FixtureColumn {
   readonly type?: number;
 }
 
+/**
+ * `replicaIdentity` is the byte postgres puts in the Relation message — `'f'` FULL, `'d'` DEFAULT,
+ * `'i'` index, `'n'` nothing. Defaulted to `'f'` because that is what a live query needs; a test
+ * passes `'d'` to produce the key-only `before` tuple the default identity actually sends.
+ */
 export const relation = (
   oid: number,
   name: string,
   columns: readonly FixtureColumn[],
+  replicaIdentity: 'f' | 'd' | 'i' | 'n' = 'f',
 ): Uint8Array => {
   const writer = new ByteWriter()
     .uint8(0x52)
     .int32(oid)
     .cstring('public')
     .cstring(name)
-    .uint8(0x66)
+    .uint8(replicaIdentity.charCodeAt(0))
     .int16(columns.length);
   for (const column of columns) {
     writer
@@ -120,6 +126,8 @@ export interface ServerScript {
   readonly publicationExists?: boolean;
   /** `null` = no slot yet, so the feed has to create one. */
   readonly slotPlugin?: string | null;
+  /** Table names `pg_class` reports with `relreplident <> 'f'`. Empty is the healthy answer. */
+  readonly partialIdentity?: readonly string[];
 }
 
 /**
@@ -195,6 +203,11 @@ export class FakeWalsender implements PgStream {
     }
     if (sql.includes('pg_publication')) {
       const rows = this.#script.publicationExists === false ? [] : [dataRow(['1'])];
+      this.push(joined(...rows, complete(), ready()));
+      return;
+    }
+    if (sql.includes('relreplident')) {
+      const rows = (this.#script.partialIdentity ?? []).map((name) => dataRow([name]));
       this.push(joined(...rows, complete(), ready()));
       return;
     }

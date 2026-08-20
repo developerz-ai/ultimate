@@ -100,6 +100,13 @@ so nothing can be wrong.
 maths stays in `createRateLimiter`, so every driver agrees on the numbers. **No shared store ships
 yet, `As of 2026-08`** — `memoryRateLimitStore()` is the only implementation in the framework.
 
+The maths reads an injected `Clock`, defaulting to `systemClock`: `createRateLimiter({ config,
+clock })`. **Breaking, `As of 2026-08-19`** — it took `now?: () => number` before and read
+`Date.now()` when nothing passed one, which both production call sites did, so the limiter that
+actually throttles a request could not be frozen. Replace `now: () => t` with
+`clock: frozenClock(t)`; a limiter you build yourself still reaches the pipeline through
+`PipelineDeps.limiter`, which stays the only seam for one.
+
 ### A route may bring its own bucket
 
 `meta.rateLimit` names a bucket; `meta.rateLimitBucket` is the numbers that bucket must hold.

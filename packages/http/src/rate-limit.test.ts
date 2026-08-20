@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { type FrozenClock, frozenClock } from '@ultimat3/core';
 import { HttpError } from './errors';
 import {
   assertRateLimitScope,
@@ -13,7 +14,7 @@ import {
   toBucket,
 } from './rate-limit';
 
-const limiterAt = (clock: { ms: number }, capacity: number, refillPerSecond: number) =>
+const limiterAt = (clock: FrozenClock, capacity: number, refillPerSecond: number) =>
   createRateLimiter({
     config: {
       enabled: true,
@@ -21,12 +22,65 @@ const limiterAt = (clock: { ms: number }, capacity: number, refillPerSecond: num
       scope: 'process',
       buckets: { default: { capacity, refillPerSecond } },
     },
-    now: () => clock.ms,
+    clock,
   });
+
+/**
+ * The production path — `createServer` and `createPipeline` both build their limiter here — read
+ * `Date.now()` until 2026-08-19, so no test clock could reach the bucket maths that decides
+ * whether a caller is throttled. `@ultimat3/auth`'s credential limiter has taken an injected
+ * `Clock` since it shipped; this is the same rule on the same tier.
+ */
+describe('the clock is injected, never ambient', () => {
+  test('refill is decided by the injected clock and by nothing else', async () => {
+    const clock = frozenClock(0);
+    const limiter = createRateLimiter({
+      config: {
+        enabled: true,
+        defaultBucket: 'default',
+        scope: 'process',
+        buckets: { default: { capacity: 2, refillPerSecond: 1 } },
+      },
+      clock,
+    });
+    expect((await limiter.check('k', 'default')).allowed).toBe(true);
+    expect((await limiter.check('k', 'default')).allowed).toBe(true);
+    expect((await limiter.check('k', 'default')).allowed).toBe(false);
+
+    // Real time passes across these awaits and the frozen clock does not, so a bucket refilling
+    // on `Date.now()` cannot be told apart from one refilling on the injected clock without both
+    // halves: still denied here, allowed only once the clock is advanced by hand.
+    for (let tick = 0; tick < 50; tick += 1) await Promise.resolve();
+    expect((await limiter.check('k', 'default')).allowed).toBe(false);
+
+    clock.advance(1_000);
+    expect((await limiter.check('k', 'default')).allowed).toBe(true);
+  });
+
+  test('the reset header counts from the injected clock too', async () => {
+    const clock = frozenClock(0);
+    const limiter = createRateLimiter({
+      config: {
+        enabled: true,
+        defaultBucket: 'default',
+        scope: 'process',
+        buckets: { default: { capacity: 1, refillPerSecond: 1 } },
+      },
+      clock,
+    });
+    await limiter.check('k', 'default');
+    const denied = await limiter.check('k', 'default');
+    // An absolute instant on the injected clock, not an offset from an ambient one: reading
+    // `Date.now()` here answers ~1.7e12, which is what made the two halves impossible to pin.
+    expect(denied.resetAtMs).toBe(1_000);
+    clock.advance(600);
+    expect(limiter.headers(denied)['ratelimit-reset']).toBe('1');
+  });
+});
 
 describe('token bucket', () => {
   test('spends the burst then denies with a usable retry-after', async () => {
-    const clock = { ms: 0 };
+    const clock = frozenClock(0);
     const limiter = limiterAt(clock, 3, 1);
     for (let index = 0; index < 3; index += 1) {
       expect((await limiter.check('k', 'default')).allowed).toBe(true);
@@ -38,23 +92,23 @@ describe('token bucket', () => {
   });
 
   test('refills over time, capped at capacity', async () => {
-    const clock = { ms: 0 };
+    const clock = frozenClock(0);
     const limiter = limiterAt(clock, 2, 1);
     await limiter.check('k', 'default');
     await limiter.check('k', 'default');
     expect((await limiter.check('k', 'default')).allowed).toBe(false);
 
-    clock.ms = 1_000;
+    clock.set(1_000);
     expect((await limiter.check('k', 'default')).allowed).toBe(true);
 
-    clock.ms = 60_000;
+    clock.set(60_000);
     const refilled = await limiter.check('k', 'default');
     expect(refilled.allowed).toBe(true);
     expect(refilled.remaining).toBeLessThanOrEqual(2);
   });
 
   test('buckets are independent per key', async () => {
-    const clock = { ms: 0 };
+    const clock = frozenClock(0);
     const limiter = limiterAt(clock, 1, 0.1);
     expect((await limiter.check('a', 'default')).allowed).toBe(true);
     expect((await limiter.check('a', 'default')).allowed).toBe(false);
@@ -62,14 +116,14 @@ describe('token bucket', () => {
   });
 
   test('assert() throws X_RATE_LIMITED with a fix line', async () => {
-    const clock = { ms: 0 };
+    const clock = frozenClock(0);
     const limiter = limiterAt(clock, 1, 1);
     await limiter.assert('k', 'default');
     await expect(limiter.assert('k', 'default')).rejects.toThrow(/X_RATE_LIMITED|refills in/);
   });
 
   test('an unknown bucket name falls back to the default bucket', async () => {
-    const clock = { ms: 0 };
+    const clock = frozenClock(0);
     const limiter = limiterAt(clock, 1, 1);
     expect((await limiter.check('k', 'does-not-exist')).limit).toBe(1);
   });
