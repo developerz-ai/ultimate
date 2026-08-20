@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "1cc2c46cf274d05355aa828d51ac40e05f48823d1bcad4509ab9ba695498033a",
+  "buildId": "5c4412ebaa00baf7438a4b2cc193e8554bb11a6486c4f71b714a6cee6e2371a0",
   "tiers": {
     "0": [
       "core",
@@ -2419,6 +2419,16 @@
     },
     {
       "code": "X_TEST_JOB_EXPECTED",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_LIVE_NODE_EMPTY",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_LIVE_NODE_UPGRADE_REFUSED",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },

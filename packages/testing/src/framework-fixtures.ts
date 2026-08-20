@@ -8,6 +8,7 @@ import { createRunJobs } from './fixture-jobs';
 import { createTestMail } from './fixture-mail';
 import { createTestNetwork } from './fixture-network';
 import { createTestStatements } from './fixture-statements';
+import { createSubscribeDriver } from './fixture-subscribe';
 import { defineFixtures } from './fixtures';
 
 /**
@@ -22,6 +23,12 @@ export const FRAMEWORK_FIXTURE_NAMES = [
   'network',
   'runJobs',
   'statements',
+  // Moved here from `DRIVER_FIXTURE_NAMES` on 2026-08-20: the driver it was waiting for is
+  // `createSubscribeDriver()`, and the framework can build one — a whole `sync` node in this
+  // process, over the change source `@ultimat3/entity`'s `setRowObserver` gives it. The four left
+  // in that list all need something the framework genuinely cannot bundle: a browser, or a
+  // second build.
+  'subscribe',
 ] as const;
 
 export { DRIVER_FIXTURE_NAMES };
@@ -46,5 +53,9 @@ export function registerFrameworkFixtures(): void {
     network: createTestNetwork,
     runJobs: createRunJobs,
     statements: createTestStatements,
+    // After the spread, so it REPLACES the `unavailableFixture('subscribe')` declaration above it —
+    // `defineFixtures` merges and the last registration wins, which is the same seam an app's own
+    // driver uses.
+    subscribe: async () => (await createSubscribeDriver()).subscribe,
   });
 }

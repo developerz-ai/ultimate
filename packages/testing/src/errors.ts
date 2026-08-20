@@ -25,6 +25,8 @@ export const TESTING_ERROR_CODES = [
   'X_TEST_FACTORY_TRAIT_UNKNOWN',
   'X_TEST_FACTORY_NOT_PERSISTED',
   'X_TEST_REGISTRY_LEAK',
+  'X_TEST_LIVE_NODE_EMPTY',
+  'X_TEST_LIVE_NODE_UPGRADE_REFUSED',
 ] as const;
 
 export type TestingErrorCode = (typeof TESTING_ERROR_CODES)[number];
@@ -43,6 +45,8 @@ export const TESTING_ERROR_TITLES: Readonly<Record<TestingErrorCode, string>> = 
   X_TEST_FACTORY_TRAIT_UNKNOWN: 'a factory was asked for a trait it does not declare',
   X_TEST_FACTORY_NOT_PERSISTED: 'a factory create() had nowhere to write the row',
   X_TEST_REGISTRY_LEAK: 'a test file left a process-global registry dirty',
+  X_TEST_LIVE_NODE_EMPTY: 'the in-process sync node has no live query to serve',
+  X_TEST_LIVE_NODE_UPGRADE_REFUSED: 'the in-process sync node refused the connection',
 };
 
 // Titles must be registered for `format()` to render the contract's first line. Every code above is
@@ -144,6 +148,50 @@ export class FixtureUnavailableError extends UltimateError {
 
 export const fixtureUnavailable = (name: string, needs: string): UltimateError =>
   new FixtureUnavailableError({ name, needs });
+
+/**
+ * The `subscribe` fixture built a node and found nothing to register. A registry with no definition
+ * answers every subscribe with "no live query registered" — a working socket serving no reads,
+ * which looks the same as a harness that is broken and an app that declared nothing. Said at the
+ * one moment the count is known, rather than three awaits later at the first subscribe.
+ *
+ * Almost always the same cause: the app's api module was never imported, so `registerQueries()`
+ * never ran and `listQueries()` is empty. The preload is where an app imports it — see
+ * `examples/dummy/scripts/test-setup.ts`.
+ */
+export class LiveNodeEmptyError extends UltimateError {
+  constructor() {
+    super({
+      code: 'X_TEST_LIVE_NODE_EMPTY',
+      cause:
+        'no query declared live: true is registered in this process, so the node would serve none',
+      fix: "import the app's api module in the test preload — import './apps/web/api' — then: x queries list --json",
+      docs: docsFor('X_TEST_LIVE_NODE_EMPTY'),
+    });
+  }
+}
+
+export const liveNodeUnavailable = (): UltimateError => new LiveNodeEmptyError();
+
+/**
+ * The node answered the upgrade with a response instead of taking it. A REAL refusal — the accept
+ * budget, the connection ceiling, or a node that is not ready — and a different failure from
+ * "nothing to serve", which is what this path reported until 2026-08-20 and sent a reader looking
+ * for a missing query rather than at a node that never started.
+ */
+export class LiveNodeUpgradeRefusedError extends UltimateError {
+  constructor(status: number | undefined) {
+    super({
+      code: 'X_TEST_LIVE_NODE_UPGRADE_REFUSED',
+      cause: `the sync node answered the upgrade with ${status === undefined ? 'no response' : `HTTP ${String(status)}`} instead of taking it`,
+      fix: 'await node.start() before connect(), and keep the request path at /_x/sync',
+      docs: docsFor('X_TEST_LIVE_NODE_UPGRADE_REFUSED'),
+    });
+  }
+}
+
+export const upgradeRefused = (status: number | undefined): UltimateError =>
+  new LiveNodeUpgradeRefusedError(status);
 
 /**
  * A request made while `network.offline()` (or `network.drop()`) is in force. Coded rather than a

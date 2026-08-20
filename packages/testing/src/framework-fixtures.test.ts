@@ -46,14 +46,19 @@ const message = (mailId: string) => ({
 });
 
 describe(testName('unit', 'the framework fixture bag'), () => {
-  bunTest('builds exactly clock, mail, network, runJobs and statements in-process', () => {
+  bunTest('builds exactly clock, mail, network, runJobs, statements and subscribe', () => {
     registerFrameworkFixtures();
+    // `subscribe` joined this list on 2026-08-20. It was declared-and-driverless because the
+    // framework had no change SOURCE in a test process — PGlite has no walsender and the memory
+    // driver no log — and `@ultimat3/entity`'s `setRowObserver` is that source, so the framework
+    // can now build a whole in-process `sync` node for it.
     expect([...FRAMEWORK_FIXTURE_NAMES]).toEqual([
       'clock',
       'mail',
       'network',
       'runJobs',
       'statements',
+      'subscribe',
     ]);
   });
 
