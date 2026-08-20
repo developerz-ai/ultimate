@@ -23,6 +23,7 @@ import { isZonelessDateTime } from './iso-date';
 import { type MoneyValue, moneySchema } from './money-value';
 import type { SchemaNode } from './node';
 import type { InferInput, InferOutput, StandardIssue } from './standard';
+import { isIanaZoneName } from './time-zone-name';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -334,15 +335,6 @@ export function refineSchema<In, Out>(
   return schema.refine(refinement);
 }
 
-function isTimeZone(value: string): boolean {
-  try {
-    new Intl.DateTimeFormat('en', { timeZone: value });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function isLocale(value: string): boolean {
   try {
     return Intl.getCanonicalLocales(value).length === 1;
@@ -438,7 +430,7 @@ export const builtinT: TNamespace = Object.freeze({
   timezone: makeStringSchema(
     { kind: 'string', format: 'timezone' },
     'an IANA time zone',
-    isTimeZone,
+    isIanaZoneName,
   ),
   locale: makeStringSchema({ kind: 'string', format: 'locale' }, 'a BCP-47 locale', isLocale),
   slug: makeStringSchema({ kind: 'string', format: 'slug', pattern: SLUG_RE.source }, 'a slug'),

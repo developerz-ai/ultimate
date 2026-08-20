@@ -98,7 +98,7 @@ CPU is a lagging proxy for all three serving roles and scales the wrong one at t
 | `runtime` | `distroless/cc-debian13:nonroot` + the binary. No Bun, no npm, no shell |
 
 `cc` rather than `base`: a Bun single-file executable links against `libstdc++`. **`debian13`, and
-the digit is load-bearing** — it must be the same Debian as the build stage (`oven/bun:1.3-slim`,
+the digit is load-bearing** — it must be the same Debian as the build stage (`oven/bun:1.4-slim`,
 trixie). The build stage was `oven/bun:1.3-alpine` until 2026-08, so the binary asked for
 `ld-musl-x86_64.so.1` on a glibc-only runtime and *every container this image started* died with
 `exec /app/x: no such file or directory`. The runtime stage now ends in

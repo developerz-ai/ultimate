@@ -304,6 +304,67 @@ whether or not anyone updates this table.
 5. The workflow installs, checks the repo is stamped at the tag's version, runs the full `verify`
    gate, then publishes each tier over OIDC.
 
+## Releasing without a human in the loop
+
+**The flow is: publish a GitHub Release for the tag, and CI publishes to npm.** Nothing else
+publishes. No token is involved anywhere in it — the workflow authenticates over OIDC as the
+trusted publisher, which is what stamps every tarball with a provenance attestation.
+
+**`.env` is not part of that flow.** It is needed for exactly one thing: the **one-time bootstrap of
+a package that has never been published** (step 1), which no trusted publisher can do, because a
+publisher cannot attach to a package that does not exist on the registry yet. Adding a new
+`@ultimat3/*` package is the only event that calls for it.
+
+So: `bun run workspaces:list` returning a count the last release did not publish means step 1 is
+due. Any other release needs no credentials on any machine.
+
+**Never publish with `NPM_TOKEN` outside that bootstrap.** It works, and it is the wrong path: a
+local `npm publish` bypasses the OIDC exchange, so the tarballs carry **no provenance attestation**.
+That is precisely what makes 2.0.0 the one release in this project's history with
+`_npmUser: sebyx07` and no `dist.attestations`. Every release from 3.0.0 went out through the
+workflow and carries both. A release that trades provenance for convenience is worth less than one
+that waits.
+
+**An agent can drive the whole flow unattended**, because none of it needs a secret it does not
+already have: tag, push, publish the Release, then approve the environment through the API below.
+
+What the credentials are actually for:
+
+| Credential | Use | Not for |
+|---|---|---|
+| `NPM_TOTP_SECRET` | generating an OTP for `scripts/trust-publishers.ts --check --json`, which reads as `0/30 missing` without one | — |
+| `NPM_TOKEN` | `npm whoami`, and the **one-time bootstrap** of a package that has never been published (step 1) — the only publish a trusted publisher cannot do, because it cannot attach to a package that does not exist yet | every other publish |
+
+**Step 4 without a person.** The `npm-publish` environment still requires an approving reviewer;
+that is the last point an irreversible publish can be stopped, and it is not disabled. It is
+approved through the API rather than the UI, by an account that is a named reviewer:
+
+```sh
+RUN=$(gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId')
+gh api "repos/developerz-ai/ultimate/actions/runs/$RUN/pending_deployments" \
+  --jq '.[] | {environment: .environment.name, waiting: .current_user_can_approve}'
+gh api -X POST "repos/developerz-ai/ultimate/actions/runs/$RUN/pending_deployments" \
+  -f environment_ids[]=<id> -f state=approved -f comment='<why this release is safe>'
+```
+
+`gh run view <id>` reporting `waiting` before that is the gate working, not a failure.
+
+**Before approving, an agent is expected to have checked the things a reviewer would**, because
+approving is the whole of the review:
+
+| Check | Command | Answer that means go |
+|---|---|---|
+| the tag is annotated and on the remote | `git ls-remote --tags origin 'refs/tags/vX.Y.Z*'` | both the ref **and** its peeled `^{}` line |
+| the tree is stamped at the tag | `bun run scripts/release.ts --check X.Y.Z` | ok |
+| every workspace is publishable | `bun run scripts/release-workflow.ts --json` | 30 |
+| the gate is green on the merge commit | `gh run list --branch main --limit 1` | `success` |
+| a major carries its upgrade section | `wiki/Upgrading.md` | the section exists and no longer says `unreleased` |
+
+**A new package added since the last release still needs step 1 by hand**, and that is the one
+place `NPM_TOKEN` is correct. `bun run workspaces:list` naming a count higher than the last release
+published is the signal; `bun run scripts/registry-audit.ts --json` names each gap with a runnable
+`fix:`.
+
 ## Requirements baked into the workflow
 
 | Requirement | Where |

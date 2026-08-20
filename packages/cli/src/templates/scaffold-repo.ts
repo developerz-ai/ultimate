@@ -50,7 +50,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
   "devDependencies": {
     "@biomejs/biome": "${BIOME_VERSION}",
     "@electric-sql/pglite": "^0.5.4",
-    "@types/bun": "^1.3.14",
+    "@types/bun": "^1.4.0",
     "@ultimat3/testing": "^${version}",
     "typescript": "^6.0.3"
   },

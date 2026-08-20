@@ -4,6 +4,7 @@
 
 import { ConfigInvalidError } from './errors';
 import { ROLES, type Role } from './roles';
+import { isIanaZoneName } from './time-zone-name';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type OfflineStrategy = 'precache' | 'runtime' | 'network-only';
@@ -205,15 +206,6 @@ const NAME_RE = /^[a-z][a-z0-9-]{1,63}$/;
  */
 const CURRENCY_RE = /^[A-Z]{3}$/;
 
-function isTimeZone(value: string): boolean {
-  try {
-    new Intl.DateTimeFormat('en', { timeZone: value });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function isLocale(value: string): boolean {
   try {
     return Intl.getCanonicalLocales(value).length === 1;
@@ -252,8 +244,22 @@ function defaults(name: string): Omit<AppConfig, 'name'> {
   };
 }
 
+const BASE_FIX = 'edit app.config.ts to fix the fields named in cause, then run: x verify';
+
+/**
+ * Appended only when the zone is what failed. Axiom 4: an operator holding `'CET'` needs the
+ * spelling to write, and the two refused classes have different remedies — a single-label legacy
+ * name swaps mechanically, an abbreviation or an offset has no replacement at all because it names
+ * no jurisdiction. Deliberately parallel to `@ultimat3/time`'s `X_TIMEZONE_INVALID` fix, since the
+ * two refuse the same strings and an operator may meet either first.
+ */
+const TIMEZONE_FIX =
+  "set defaultTimeZone to an Area/Location name, or UTC — list every accepted one with bun -e \"console.log(Intl.supportedValuesOf('timeZone').join('\\n'))\" — where a legacy single-label name swaps mechanically (Japan → Asia/Tokyo, GB → Europe/London, Universal → UTC), while an abbreviation or numeric offset (CET, EST5EDT, +01:00) carries no DST rule and has no replacement, so name the city whose clock you mean (Europe/Paris, America/New_York)";
+
 function validate(config: AppConfig): void {
   const issues: string[] = [];
+  // Zero or one entry: the zone's own remedy, carried only when the zone is what failed.
+  const zoneFix: string[] = [];
 
   if (!NAME_RE.test(config.name)) {
     issues.push(`name "${config.name}" must match ${String(NAME_RE)}`);
@@ -265,8 +271,14 @@ function validate(config: AppConfig): void {
   if (!config.locales.includes(config.defaultLocale)) {
     issues.push(`defaultLocale "${config.defaultLocale}" is not in locales`);
   }
-  if (!isTimeZone(config.defaultTimeZone)) {
-    issues.push(`defaultTimeZone "${config.defaultTimeZone}" is not an IANA time zone`);
+  // `@ultimat3/time`'s rule, restated because tier 0 cannot import tier 1 — see
+  // `time-zone-name.ts`. One validator means a zone `app.config.ts` accepts is a zone every
+  // `format` call, `task()` and `toZoned` below it can then do arithmetic in.
+  if (!isIanaZoneName(config.defaultTimeZone)) {
+    issues.push(
+      `defaultTimeZone "${config.defaultTimeZone}" is not an IANA Area/Location zone name`,
+    );
+    zoneFix.push(TIMEZONE_FIX);
   }
   if (!CURRENCY_RE.test(config.defaultCurrency)) {
     issues.push(`defaultCurrency "${config.defaultCurrency}" is not a 3-letter ISO 4217 code`);
@@ -284,7 +296,9 @@ function validate(config: AppConfig): void {
   if (issues.length > 0) {
     throw new ConfigInvalidError({
       cause: issues.join('; '),
-      fix: 'edit app.config.ts to fix the fields named in cause, then run: x verify',
+      // The generic instruction goes LAST so the fix line still ends in a command that can be
+      // pasted — a trailing `.` after `x verify` is a command nobody can run.
+      fix: [...zoneFix, BASE_FIX].join('. '),
       meta: { issues },
     });
   }

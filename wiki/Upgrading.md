@@ -65,7 +65,7 @@ Every single-label timezone name except `UTC` is refused. `isValidTimeZone` answ
 |---|---|---|
 | a formatter, or zone arithmetic | `zone:` on `formatDate`, `formatDateTime`, `formatRange`, `zonePartsAt`, … | throws `X_TIMEZONE_INVALID` on the first call |
 | a scheduled task | `tz:` on `task()` | refused where the task is declared — `task()` validates through `isValidTimeZone`, so this one is caught at boot |
-| `app.config.ts` | `defaultTimeZone` | **boots clean, then throws downstream.** `@ultimat3/core`'s config validator asks `Intl`, not `@ultimat3/time`, so it accepts all 43. Fix the key by hand; nothing will tell you |
+| `app.config.ts` | `defaultTimeZone` | refused at boot — `defineConfig` validates through core's own statement of the structural rule, so a stale key is `X_CONFIG_INVALID` naming the field, with the swap in its `fix:` |
 | a client's `x-timezone` header | any of the 43 | no error — `resolveTimeZone` falls through to the configured default, so a hand-written client sending `CET` silently renders in your default zone. Browsers are unaffected: `Intl.DateTimeFormat().resolvedOptions().timeZone` is always `Area/Location` |
 
 Find every candidate:

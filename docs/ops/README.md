@@ -74,7 +74,7 @@ pays for the control plane.
 | Artifact | State `As of 2026-08` |
 |---|---|
 | [`docker/Dockerfile`](../../docker/Dockerfile) | **this repo's own** image: multi-stage → `distroless/cc-debian12:nonroot`, one compiled binary, no shell, ~80MB |
-| the Dockerfile `x new` writes you | **not the same image.** `oven/bun:1.3-alpine`, `ENTRYPOINT ["bun", "apps/web/server.ts"]`, user `bun`, measured 194MB. Harden against *this* one — the uid and the shell differ, so the `runAsUser: 65532` baseline below does not transfer unchanged |
+| the Dockerfile `x new` writes you | **not the same image.** `oven/bun:1.4-alpine`, `ENTRYPOINT ["bun", "apps/web/server.ts"]`, user `bun`, measured 194MB. Harden against *this* one — the uid and the shell differ, so the `runAsUser: 65532` baseline below does not transfer unchanged |
 | [`docker/docker-compose.prod.yml`](../../docker/docker-compose.prod.yml) | one service per role, `migrate` gates `web` via `service_completed_successfully`; `web` and `sync` at `replicas: 1`, `worker` free |
 | [`docker/helm/`](../../docker/helm/) | per-role Deployments, per-role HPAs, a `pre-install,pre-upgrade` migrate Job, an optional Ingress |
 | `/healthz` and `/readyz` on every role | shipped — [`packages/core/src/lifecycle.ts`](../../packages/core/src/lifecycle.ts) |

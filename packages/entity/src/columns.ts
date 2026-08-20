@@ -10,6 +10,7 @@ import {
   isMoneyScale,
   MAX_MONEY_SCALE,
 } from '@ultimat3/schema';
+import { isValidTimeZone } from '@ultimat3/time';
 import {
   assertColumnName,
   BARE,
@@ -176,22 +177,22 @@ export const url = (): Column<string> =>
     { check: (name) => `${name} ~ '^https?://'` },
   );
 
-const isIanaZone = (value: string): boolean => {
-  try {
-    new Intl.DateTimeFormat('en', { timeZone: value }).format(0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 /**
- * IANA identifiers, checked against `Intl` when the column is declared — a typo or a UTC offset
- * is a startup error rather than a row nobody can format. An offset is wrong twice a year.
+ * IANA identifiers, checked when the column is declared — a typo, an abbreviation or a UTC offset
+ * is a startup error rather than a row nobody can format.
+ *
+ * The check is `@ultimat3/time`'s own `isValidTimeZone`, imported and never restated: `time` is
+ * tier 1 and this package is tier 2, so the one rule is a downward import away. A local
+ * `new Intl.DateTimeFormat(…)` probe was the second answer to that question, and the two stopped
+ * agreeing — `Intl` answers "can I format this", never "is this IANA", and ICU 78 (Bun 1.4)
+ * resolves `CET`, `EST`, `GMT`, `Zulu` and `Japan`, so `tz(['CET'])` declared a column every
+ * `format` call above it then refused with `X_TIMEZONE_INVALID`. A leading-sign offset (`+01:00`)
+ * resolved under every runtime this framework has shipped on, and carries no DST rule at all, so
+ * it is wrong twice a year on top of being unformattable.
  */
 export const tz = <const Z extends readonly string[]>(zones: Z): Column<Z[number]> => {
   for (const zone of zones) {
-    if (!isIanaZone(zone)) reject('iana-tz', `${zone} is not an IANA time zone`);
+    if (!isValidTimeZone(zone)) reject('iana-tz', `${zone} is not an IANA time zone`);
   }
   const allowed = new Set<string>(zones);
   return column<Z[number]>(

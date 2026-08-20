@@ -4,7 +4,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 
 ## Boundary
 
-- May import `@ultimat3/core`, `@ultimat3/schema` and `@ultimat3/db`. Nothing else — `http`,
+- May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/db` and `@ultimat3/time` (tier 1 — `columns.ts` and `columns-data.ts` read its `isValidTimeZone`, so a zone this package accepts is one `@ultimat3/time` can do arithmetic in). Nothing else — `http`,
   `policy` and `auth` are the same tier.
 - `db` is tier 1 (it imports only `core`), which is what lets the Postgres driver live **here**
   rather than in a tier-3 package: `Driver` and its production implementation stay in one place.

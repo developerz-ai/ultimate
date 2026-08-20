@@ -197,6 +197,15 @@ describe('builtinT.date', () => {
   });
 });
 
+/**
+ * **A MIRROR of `isIanaZoneName`'s corpus in `packages/core/src/time-zone-name.test.ts` and of
+ * `isValidTimeZone`'s in `packages/time/src/zones.test.ts`, name for name, and it must move with
+ * them.** `schema` is tier 0 and may import neither, so the rule is stated a third time; the
+ * mechanical half is `timezone-validator-pin.test.ts` in `@ultimat3/cli`, which is the lowest tier
+ * that may import all three. This is the local half, and the reason it is not merely a pin: this
+ * predicate is the only one of the three that judges **caller input** — `t.timezone` is a field on
+ * a request body, so a name accepted here reaches a `format` call that refuses it.
+ */
 describe('builtinT.timezone', () => {
   test('accepts a valid IANA time zone', () => {
     expect(validate(builtinT.timezone, 'America/New_York').issues).toBeUndefined();
@@ -204,6 +213,78 @@ describe('builtinT.timezone', () => {
 
   test('rejects an unknown time zone', () => {
     expect(validate(builtinT.timezone, 'Not/AZone').issues).toBeDefined();
+  });
+
+  // ICU 78 (Bun 1.4) RESOLVES every one of these where ICU 75 threw, which is how the bare `Intl`
+  // probe this replaced started accepting them. One case per name, named, so a later ICU bump that
+  // reopens one fails with the name in the report.
+  const ABBREVIATIONS = [
+    'CET',
+    'EET',
+    'MET',
+    'WET',
+    'EST',
+    'MST',
+    'HST',
+    'GMT',
+    'GMT0',
+    'UCT',
+    'Zulu',
+    'EST5EDT',
+    'CST6CDT',
+    'MST7MDT',
+    'PST8PDT',
+  ];
+
+  test.each(ABBREVIATIONS)('refuses %s — an abbreviation carries no DST rule', (zone) => {
+    expect(validate(builtinT.timezone, zone).issues).toBeDefined();
+    // Every casing, because `Intl` accepts every casing of every name it accepts at all.
+    expect(validate(builtinT.timezone, zone.toLowerCase()).issues).toBeDefined();
+  });
+
+  // Single-label `backward` links name real zones, and refusing them is deliberate rather than ICU
+  // drift: no structural rule keeps `CET` out and lets `Japan` in, both being one label.
+  test.each(['Japan', 'GB', 'Eire', 'W-SU', 'PRC', 'ROK', 'Singapore', 'Israel', 'Universal'])(
+    'refuses the single-label legacy link %s',
+    (zone) => {
+      expect(validate(builtinT.timezone, zone).issues).toBeDefined();
+    },
+  );
+
+  // A fixed offset has no DST rules, and ES2024 `Intl` accepted these long before ICU 78 — so this
+  // class has been reaching `t.timezone` off the wire under every runtime this framework has
+  // shipped on, which is what makes this the worst of the three sites.
+  test.each(['+01:00', '-05:00', '+0100', '-08'])('refuses the bare offset %s', (zone) => {
+    expect(validate(builtinT.timezone, zone).issues).toBeDefined();
+  });
+
+  test.each(['Europe/Berlin', 'UTC', 'utc', 'US/Eastern', 'Asia/Calcutta', 'Etc/GMT+2'])(
+    'still accepts %s',
+    (zone) => {
+      expect(validate(builtinT.timezone, zone).issues).toBeUndefined();
+    },
+  );
+
+  test.each(['', ' ', 'Mars/Olympus', 'Europe/Berlin ', 'Not a zone'])(
+    'refuses %p, which is not a zone at all',
+    (zone) => {
+      expect(validate(builtinT.timezone, zone).issues).toBeDefined();
+    },
+  );
+
+  /**
+   * The other direction, and the reason it is not just a longer hardcoded list: the rule must be
+   * exactly as wide as the runtime's own canonical set, and nothing in the corpus above would
+   * notice a rule that narrowed — `/^[A-Za-z_]+\/[A-Za-z_]+$/` refuses
+   * `America/Argentina/Buenos_Aires` and `Etc/GMT+2` while passing every case above it.
+   */
+  test('accepts every zone the runtime itself lists, three-part and signed names included', () => {
+    const listed = Intl.supportedValuesOf('timeZone');
+    expect(listed.length).toBeGreaterThan(100);
+    expect(listed.filter((zone) => validate(builtinT.timezone, zone).issues !== undefined)).toEqual(
+      [],
+    );
+    expect(listed).toContain('America/Argentina/Buenos_Aires');
   });
 });
 
