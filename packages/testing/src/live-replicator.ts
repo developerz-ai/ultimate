@@ -14,7 +14,7 @@
 // still decides what a real node reads, and this is never in that decision.
 
 import type { RowBulkChange, RowChange, RowObserver } from '@ultimat3/entity';
-import type { ChangeEvent, ChangeOp, LiveQueryRegistry } from '@ultimat3/realtime';
+import type { ChangeEvent, ChangeOp, LiveQueryRegistry, Row } from '@ultimat3/realtime';
 
 /** What a caller does with a change nobody could deliver. */
 export interface LiveReplicatorOptions {
@@ -38,8 +38,14 @@ const OPS: Readonly<Record<RowChange['op'], ChangeOp>> = {
   delete: 'delete',
 };
 
-const asRow = (value: Readonly<Record<string, unknown>> | null): Record<string, never> | null =>
-  value === null ? null : (value as Record<string, never>);
+/**
+ * A `ChangeEvent` row is `Row` — a JSON object carrying an `id`. Every row a repository stores has
+ * one; the cast is what says so to a compiler that only sees `Record<string, unknown>`, and a row
+ * that genuinely has none fails downstream in `idOf`, with the entity named, exactly as a row off
+ * the wire would.
+ */
+const asRow = (value: Readonly<Record<string, unknown>> | null): Row | null =>
+  value === null ? null : (value as unknown as Row);
 
 /**
  * Lexicographically comparable, which is the whole contract of an lsn — `formatLsn` in

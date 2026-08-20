@@ -45,7 +45,10 @@ const stubPage = (url: string): PageLike => ({
 
 describe(testName('unit', 'the declared-but-driverless fixtures'), () => {
   bunTest('every declared name has a driver requirement written down', () => {
-    expect([...DRIVER_FIXTURE_NAMES]).toEqual(['budget', 'deploy', 'page', 'signIn', 'subscribe']);
+    // `subscribe` left this list on 2026-08-20: the driver it was waiting for is
+    // `createSubscribeDriver()`, and the framework can build one. What is left all needs something
+    // the framework genuinely cannot bundle — a browser, or a second build.
+    expect([...DRIVER_FIXTURE_NAMES]).toEqual(['budget', 'deploy', 'page', 'signIn']);
     for (const name of DRIVER_FIXTURE_NAMES) {
       expect(DRIVER_FIXTURE_NEEDS[name].length).toBeGreaterThan(10);
     }
@@ -67,8 +70,8 @@ describe(testName('unit', 'the declared-but-driverless fixtures'), () => {
   });
 
   bunTest('the failure names the fixture and what it is waiting on', () => {
-    expect(() => unavailableFixture('subscribe')()).toThrow(/subscribe/);
-    expect(() => unavailableFixture('subscribe')()).toThrow(/replicator/);
+    expect(() => unavailableFixture('page')()).toThrow(/page/);
+    expect(() => unavailableFixture('page')()).toThrow(/browser/);
   });
 
   // Throwing when built, not when used: a fixture that returned a proxy would surface three

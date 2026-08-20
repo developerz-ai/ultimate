@@ -15,7 +15,7 @@
 
 import type { EntityCore } from './entity';
 import type { Repo, RepoOptions, UpsertArgs } from './repo';
-import type { RowPatch } from './types';
+import type { IdOf, RowPatch } from './types';
 
 export type RowChangeOp = 'insert' | 'update' | 'delete';
 
@@ -84,6 +84,40 @@ const asRecord = (row: unknown): Readonly<Record<string, unknown>> | null =>
   typeof row === 'object' && row !== null ? (row as Readonly<Record<string, unknown>>) : null;
 
 /**
+ * Whether `findById(row.id)` is the right lookup for this entity at all. It is exactly when the
+ * primary key IS `id` — on a composite key `findById` cannot name a row, and an `id` column that is
+ * not the key would read a DIFFERENT row than the write touched. Answering `null` there beats
+ * answering confidently with somebody else's row.
+ */
+const readsById = (entity: EntityCore<unknown>): boolean =>
+  entity.$primaryKey.length === 1 && entity.$primaryKey[0] === 'id';
+
+/**
+ * The `before` row, or `null` when this process could not read one.
+ *
+ * `null` is not a lie: it is exactly what logical replication reports for a table whose
+ * `REPLICA IDENTITY` is not `FULL`. A consumer that diffs before against after then produces a
+ * patch carrying every column instead of only the changed ones — wider, never wrong.
+ *
+ * The `catch` is a FLOOR, not a case: no write in this repo is known to succeed while its own
+ * `findById` refuses, because every guard a read applies — tenancy, soft delete — the write applies
+ * too. It stays because the cost of being wrong is asymmetric: an observer is a diagnostic, and a
+ * diagnostic that turns a working write into a failing one is worse than the gap it was closing.
+ */
+const beforeOf = async <Row>(
+  entity: EntityCore<Row>,
+  repo: Repo<Row>,
+  id: IdOf<Row>,
+): Promise<Row | null> => {
+  if (!readsById(entity as EntityCore<unknown>)) return null;
+  try {
+    return await repo.findById(id);
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Wrap one repository so its writes are reported. Applied by `database()` to every table it builds,
  * so an app opts in by installing an observer and never by choosing a different repository — the
  * rows under test are the rows the app reads, which is the whole reason `defaultDriver()` is
@@ -129,7 +163,7 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
       const before = new Map<string, unknown>();
       for (const row of rows) {
         const id = idOf(row);
-        if (id !== undefined) before.set(id, await repo.findById(id as never));
+        if (id !== undefined) before.set(id, await beforeOf(entity, repo, id as IdOf<Row>));
       }
       const stored = await repo.upsertAll(rows, args);
       for (const row of stored) {
@@ -142,7 +176,7 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
 
     update: async (id, patch: RowPatch<Row>, options?: RepoOptions): Promise<Row> => {
       if (installed === null) return await repo.update(id, patch, options);
-      const before = await repo.findById(id);
+      const before = await beforeOf(entity, repo, id);
       const after = await repo.update(id, patch, options);
       emit('update', before, after);
       return after;
@@ -150,7 +184,7 @@ export function observedRepo<Row>(entity: EntityCore<Row>, repo: Repo<Row>): Rep
 
     delete: async (id, options?: RepoOptions): Promise<void> => {
       if (installed === null) return await repo.delete(id, options);
-      const before = await repo.findById(id);
+      const before = await beforeOf(entity, repo, id);
       await repo.delete(id, options);
       emit('delete', before, null);
     },

@@ -51,6 +51,13 @@ export interface LiveFeed<R extends object> {
   /** Resolves when every patch in flight has been applied — never a sleep. */
   settled(): Promise<void>;
   lsn(): string;
+  /**
+   * Drop the connection and subscribe again with the cursor this feed holds — what a client does
+   * by itself on a reconnect, spelled out so a test can put a write between the two halves. It
+   * resolves once the node has answered, with either a delta or a fresh snapshot; which one is
+   * `snapshots()` and `resubscribedFrom()` below.
+   */
+  reconnect(): Promise<void>;
   /** Set when a reconnect resumed from a cursor; undefined when it resnapshotted. */
   resubscribedFrom(): string | undefined;
   /** How many snapshots this subscriber received. A resume that refetched shows up here. */

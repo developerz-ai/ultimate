@@ -18,7 +18,7 @@ import type {
   WsData,
   WsLike,
 } from '@ultimat3/realtime';
-import { liveNodeUnavailable } from './errors';
+import { liveNodeUnavailable, upgradeRefused } from './errors';
 
 /** Every frame this end received, in order, already parsed. */
 export interface FramePipe {
@@ -77,12 +77,11 @@ export interface LiveNodeOptions {
   readonly buildId?: string;
   /** Pins the reconnect epoch, so a test can force a refetch by changing it. */
   readonly epoch?: string;
-  /** Called for every `mutate` frame the node routes. Omitted, a mutation is acknowledged only. */
-  readonly onMutate?: (args: {
-    name: string;
-    input: unknown;
-    actor: Actor | null;
-  }) => Promise<void>;
+  // No `onMutate`. `SyncNodeOptions` takes one — `{ socket, name, key, seq, input }`, the actor
+  // read off the socket — and nothing here needs it: the mutation half of a live subscription is
+  // the CLIENT's local store and offline queue, which this driver deliberately does not hold. A
+  // forwarded option no test passes is a declaration nothing reads, which is what 4.0.0 spent a
+  // major deleting. It arrives with its first caller, in that caller's shape.
 }
 
 export interface LiveNodeHandle {
@@ -153,17 +152,15 @@ export async function createLiveNode(options: LiveNodeOptions = {}): Promise<Liv
     transport,
     buildId,
     sockets,
+    // A grant always, never `null`: `handleUpgrade` answers 401 to a `null` grant, so returning one
+    // for an anonymous connection would refuse the very socket a test asking about anonymous access
+    // needs. `anonymousActor()` is how core spells nobody — policy models it as `null`, core models
+    // it as an actor, and this is core's side of that seam.
     authenticate: (request: Request) =>
       Promise.resolve({
-        actor: ACTORS.get(new URL(request.url).searchParams.get('c') ?? '') ?? null,
+        actor:
+          ACTORS.get(new URL(request.url).searchParams.get('c') ?? '') ?? core.anonymousActor(),
       }),
-    ...(options.onMutate === undefined
-      ? {}
-      : {
-          onMutate: async (args: { name: string; input: unknown; actor: Actor | null }) => {
-            await options.onMutate?.(args);
-          },
-        }),
   });
   await node.start();
 
@@ -185,8 +182,14 @@ export async function createLiveNode(options: LiveNodeOptions = {}): Promise<Liv
           return true;
         },
       };
-      await node.fetch(new Request(`http://sync.test/sync?c=${key}`), target);
-      if (data === undefined) throw liveNodeUnavailable();
+      // `/_x/sync` is `SyncNodeOptions.path`'s default and `handleUpgrade` answers 404 to
+      // anything else. The `c` parameter is this connection's actor key — see `ACTORS` above.
+      const refusal = await node.fetch(new Request(`http://sync.test/_x/sync?c=${key}`), target);
+      // A refusal is a REAL one: the accept budget, the connection ceiling or `ready()`. Reported
+      // with what the node answered rather than as "no live query", which is a different failure
+      // and was this line's error until 2026-08-20. Thrown rather than asserted through a namespace
+      // import, which cannot narrow (TS2775).
+      if (data === undefined) throw upgradeRefused(refusal?.status);
       const received: Record<string, unknown>[] = [];
       const ws = new PipeWs(data, (raw) => {
         received.push(JSON.parse(raw) as Record<string, unknown>);
@@ -199,11 +202,32 @@ export async function createLiveNode(options: LiveNodeOptions = {}): Promise<Liv
         send: (frame) => {
           node.websocket.message(ws as unknown as SyncWs, JSON.stringify(frame));
         },
-        // `message` dispatches into a floating async task, so a caller that asserted straight
-        // after `send` would be asserting on a frame that has not been routed. Two turns of the
-        // microtask queue is what the node's own suites wait; a timer would be a sleep.
+        /**
+         * `message` dispatches into a floating async task — `void (async () => …)()` — so a caller
+         * asserting straight after `send` would be reading frames that have not been routed.
+         *
+         * A MACROTASK yield, not a count of microtask turns. Counting turns is a number that is
+         * right until someone adds an `await`, and it fails as a flake: the first version drained 32
+         * turns and worked against a two-line query while `examples/dummy`'s feed — a repository, a
+         * cache lookup and a policy pass deeper — resolved nothing inside it, so the harness read an
+         * empty frame list as "the node answered nothing". One `setImmediate` drains the entire
+         * microtask queue however deep it is; the loop then repeats until the frame count has
+         * stopped moving for two yields, which is what covers a chain that goes quiet and then
+         * produces again.
+         *
+         * Bounded, because a harness that spins forever on a node that will never answer is worse
+         * than one that gives up and lets the assertion say what is missing. No timer: the preload
+         * freezes the clock this suite runs on, and a sleep would be a race dressed as a wait.
+         */
         settled: async () => {
-          for (let turn = 0; turn < 8; turn += 1) await Promise.resolve();
+          let quiet = 0;
+          for (let yields = 0; yields < 64 && quiet < 2; yields += 1) {
+            const before = received.length;
+            await new Promise<void>((resolve) => {
+              setImmediate(resolve);
+            });
+            quiet = received.length === before ? quiet + 1 : 0;
+          }
         },
         cut: () => {
           ws.cut();

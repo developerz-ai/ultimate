@@ -709,6 +709,24 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   to refuse. `bigint()` and `decimal()` are STRINGS for the same reason `money.minor` is a
   `number`: `JSON.stringify` throws on a bigint, and a `number` loses digits exactly where a legacy
   `int8` key lives.
+- **`setRowObserver` reports committed row changes, above the driver, so memory and Postgres report
+  the same thing.** It exists because a change feed needs a SOURCE and only production has one:
+  `@ultimat3/realtime` decodes the write-ahead log, PGlite has no walsender and the memory driver has
+  no log at all — so `InMemoryChangeFeed`, which that package calls "the blessed development and
+  test feed", had nothing upstream of it. That is what left `@ultimat3/testing`'s `subscribe` fixture
+  with no driver. Rules, none optional. **One observer per process**, exactly like `@ultimat3/db`'s
+  `setStatementObserver`, and it hands back what it replaced so a nested harness restores rather than
+  clears. **Applied by `database()`**, not by a driver, so an app opts in by installing an observer
+  and never by choosing a different repository — the rows under test are the rows the app reads.
+  **With none installed it is one comparison per write**, which is why the guard is the first line of
+  every method rather than a flag read at wrap time. **`before` is read only when the primary key IS
+  `id`** — on a composite key `findById` cannot name a row, and an `id` column that is not the key
+  would read a DIFFERENT row than the write touched; `null` there is what logical replication reports
+  without `REPLICA IDENTITY FULL`, and a consumer already handles it. **A filtered write is `onBulk`,
+  never silence**: `deleteWhere`/`updateWhere` name a filter and not rows, and reading the matches
+  first would turn one statement into two and change what the code under test issues — so a count is
+  reported and a consumer re-reads. It is NOT a second change-feed path: `selectChangeFeed` still
+  decides what a real node reads, and this is never in that decision.
 - Never throw a bare `Error` — use `errors.ts`.
 - Tests restore the process-global registry in `afterAll` (`clearRegistry()`): a leaked registry
   breaks an unrelated package's tests, as it did in `@ultimat3/policy`.
@@ -738,6 +756,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `jit-preload.ts` | a page's foreign key values → one `in` statement for the whole `for … of` loop |
 | `preload.ts` | the relation `preload()` names → one related-rows statement → attached to the page |
 | `pg-sql.ts` / `pg-row.ts` | plan → parameterised SQL; physical row ⇄ entity row (money is three columns) |
+| `row-observer.ts` | `setRowObserver` — committed row changes, above the driver, for a change feed that has no log to read |
 | `registry.ts` | duplicate detection, `describeEntities()` for the manifest, `references()` per entry |
 | `relations.ts` | `relationMap()`/`relationsFor()`/`relationNamed()` — the FKs as a named `belongsTo`/`hasMany` map |
 | `n-plus-one.ts` | a repeated statement → the error whose `fix` is the preload or bulk call that ends it |

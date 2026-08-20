@@ -24,7 +24,8 @@ interface SnapshotFrameLike {
   readonly type: 'snapshot';
   readonly sid: string;
   readonly rows: readonly Row[];
-  readonly cursor: { readonly epoch: string; readonly version: number };
+  /** `@ultimat3/realtime`'s `LiveCursor`, carried back verbatim on a resume. */
+  readonly cursor: { readonly qid: string; readonly lsn: string };
 }
 
 interface PatchFrameLike {
@@ -88,7 +89,10 @@ export async function createSubscribeDriver(): Promise<SubscribeDriver> {
       v: realtime.PROTOCOL_VERSION,
       op: 'add',
       sid: id,
-      target: { name: target.name, input },
+      // `SubscribeTarget`'s query form. `qid` carries the query NAME on the way in — the node
+      // derives the real qid from `(name, input)`, so a client can never pick its own fanout key —
+      // and `cursor: null` is what makes this a fresh subscribe rather than a resume.
+      target: { kind: 'query', qid: target.name, input, cursor: null },
     });
     await connection.settled();
 
@@ -106,31 +110,45 @@ export async function createSubscribeDriver(): Promise<SubscribeDriver> {
       throw new UltimateError({ code: wire.code, cause: wire.cause, fix: wire.fix });
     }
 
+    /**
+     * Where each reconnect started, and the lsn it asked to resume from. A resume is decided by
+     * what the node answered AFTER that point — a `patch` means it replayed from the cursor, a
+     * `snapshot` means `resumeFrom` refused it and re-read. Reading the frames is the only honest
+     * way to tell: the decision is the node's, and a harness that recorded its own intention would
+     * report a resume it never got.
+     */
+    const marks: { readonly at: number; readonly askedLsn: string }[] = [];
+
     const state = () => {
       let rows: readonly Row[] = [];
       let snapshots = 0;
       let lsn = '';
-      let resumedFrom: string | undefined;
+      let cursor: unknown = null;
       const patches: LiveFeedPatch<R>[] = [];
-      for (const frame of mine()) {
+      const frames = mine();
+      for (const frame of frames) {
         if (frame['type'] === 'snapshot') {
           const snapshot = frame as unknown as SnapshotFrameLike;
           rows = snapshot.rows;
+          cursor = snapshot.cursor;
+          lsn = snapshot.cursor.lsn;
           snapshots += 1;
           continue;
         }
         if (frame['type'] !== 'patch') continue;
         const patch = frame as unknown as PatchFrameLike;
-        // A patch arriving on a resubscribe rather than a snapshot IS the resume: the node answered
-        // the cursor with a delta, which is what `planResume` decided and what test 5 asserts.
-        if (snapshots === 1 && patches.length === 0 && lsn !== '') resumedFrom = lsn;
         rows = realtime.applyPatches(rows as never, patch.patches as never) as unknown as Row[];
         for (const one of patch.patches) {
           patches.push({ op: one.op, row: { id: one.id, ...(one.row ?? {}) } as unknown as R });
         }
         lsn = patch.lsn;
       }
-      return { rows, snapshots, lsn, resumedFrom, patches };
+      const last = marks[marks.length - 1];
+      const resumedFrom =
+        last === undefined || frames.slice(last.at).some((frame) => frame['type'] === 'snapshot')
+          ? undefined
+          : last.askedLsn;
+      return { rows, snapshots, lsn, cursor, resumedFrom, patches, frames };
     };
 
     return {
@@ -147,6 +165,38 @@ export async function createSubscribeDriver(): Promise<SubscribeDriver> {
         await connection.settled();
       },
       lsn: () => state().lsn,
+
+      reconnect: async () => {
+        const held = state();
+        if (held.cursor === null) return;
+        // The cursor the client holds: the snapshot's, advanced to the last patch it applied. That
+        // is what a real client carries, and what `resumeFrom` compares against the retained window.
+        const askedLsn = held.lsn;
+        marks.push({ at: held.frames.length, askedLsn });
+        connection.send({
+          type: 'subscribe',
+          v: realtime.PROTOCOL_VERSION,
+          op: 'drop',
+          sid: id,
+          target: { kind: 'query', qid: target.name, input, cursor: null },
+        });
+        await connection.settled();
+        connection.send({
+          type: 'subscribe',
+          v: realtime.PROTOCOL_VERSION,
+          op: 'add',
+          sid: id,
+          target: {
+            kind: 'query',
+            qid: target.name,
+            input,
+            cursor: { ...(held.cursor as Record<string, unknown>), lsn: askedLsn },
+          },
+        });
+        await replicator.settled();
+        await connection.settled();
+      },
+
       resubscribedFrom: () => state().resumedFrom,
       snapshots: () => state().snapshots,
     };
