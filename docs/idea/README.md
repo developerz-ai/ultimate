@@ -60,16 +60,17 @@ Consequences of each in [`00-thesis.md`](./00-thesis.md); axiom 8 in full in [`1
 
 ## Status
 
-`As of 2026-08-19`: **repository, tag and registry are all at 3.0.0.** The release ran. Resolve every row below rather than believing it — a version in a doc is a snapshot, a command is not.
+`As of 2026-08-20`: **repository, tag and registry all agree.** The release ran. Resolve every row below rather than believing it — a version in a doc is a snapshot, a command is not, and `bun run scripts/registry-audit.ts --json` checks the whole table in one call.
 
-| Fact | State, `As of 2026-08-19` | Read it yourself |
+| Fact | State, `As of 2026-08-20` | Read it yourself |
 |---|---|---|
-| Versioned | 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 30 in all — at 3.0.0 in lockstep, one commit. A major: 10 changelog entries marked `BREAKING —` from a five-agent bug sweep, no codemod. 2.0.0 was the first major and carried 33 | `bun run scripts/release.ts --check 3.0.0` |
-| Tagged | `v3.0.0` is on origin, and its GitHub Release is published — that Release is what triggers the workflow | `git tag --list 'v3.*'` |
-| Published | **`latest` is 3.0.0** — that is what `bunx create-ultimate myapp` installs | `npm view @ultimat3/core version` |
-| Publication holes | **none.** All 30 workspaces are on the registry at 3.0.0. `@ultimat3/scraping` was the last never-published package and was bootstrapped by hand at 2.0.0, exactly as `@ultimat3/flags` had been — the one-time step in [`PUBLISHING.md`](../../PUBLISHING.md) that every package needs before a trusted publisher can attach | `bun run scripts/release-workflow.ts --json` for the derived list, then `npm view` each name — one package proves one package |
-| Provenance | every 3.0.0 tarball carries an attestation and `_npmUser: GitHub Actions`; **2.0.0 carries neither**, having gone out by hand | `npm view @ultimat3/core@3.0.0 dist.attestations`, `npm view @ultimat3/core@2.0.0 dist.attestations` |
-| OIDC trusted publisher | attached to all 30 on 2026-08-19, with `Environment: npm-publish` — that attachment is what let the workflow publish 3.0.0 at all, and its absence is why 2.0.0 has no provenance. Not the first ever: 1.1.0 and 1.2.0 published under earlier publisher configurations (a different `oidcConfigId` per package) | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — every package, and without a fresh code they all read as missing. Per version: `npm view @ultimat3/core@1.2.0 _npmUser.trustedPublisher` |
+| Versioned | 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — 30 in all — in lockstep, one commit. The current line is a major: 25 changelog entries marked `BREAKING —` from a sweep that closed every known gap, no codemod. 2.0.0 was the first major and carried 33; 3.0.0 carried 10 | `bun run scripts/release.ts --check <version>` |
+| Tagged | the tag is on origin **annotated**, and its GitHub Release is published — that Release is what triggers the workflow. `git push --follow-tags` pushes annotated tags only, so a `git tag` with no `-a` never leaves the machine | `git tag --list 'v4.*'` |
+| Published | `latest` is what `bunx create-ultimate myapp` installs | `npm view @ultimat3/core version` |
+| Publication holes | **none.** All 30 workspaces are on the registry at the stamped version. `@ultimat3/scraping` was the last never-published package and was bootstrapped by hand at 2.0.0, exactly as `@ultimat3/flags` had been — the one-time step in [`PUBLISHING.md`](../../PUBLISHING.md) that every package needs before a trusted publisher can attach | `bun run scripts/registry-audit.ts --json` — it resolves the derived list against npm and names each gap with a runnable `fix:` |
+| Provenance | every 3.0.0 and 4.0.0 tarball carries an attestation and `_npmUser: GitHub Actions`; **2.0.0 carries neither**, having gone out by hand | `npm view @ultimat3/core dist.attestations`, `npm view @ultimat3/core@2.0.0 dist.attestations` |
+| OIDC trusted publisher | attached to all 30 on 2026-08-19, with `Environment: npm-publish` — that attachment is what let the workflow publish 3.0.0 and then 4.0.0, and its absence is why 2.0.0 has no provenance. Not the first ever: 1.1.0 and 1.2.0 published under earlier publisher configurations (a different `oidcConfigId` per package) | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — every package, and without a fresh code they all read as missing. Per version: `npm view @ultimat3/core@1.2.0 _npmUser.trustedPublisher` |
+| Release approval | the workflow stops at `waiting` on the `npm-publish` environment until a named reviewer approves the pending deployment — the last point an irreversible publish can be stopped | `gh run view <id> --json status` |
 
 Docs `00`–`15`, `18` and `19` describe what exists; `16` and `17` are design only and say so in every claim.
 
