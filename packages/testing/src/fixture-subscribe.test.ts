@@ -218,6 +218,19 @@ describe(testName('unit', 'the subscribe fixture drives a whole sync node'), () 
     expect(feed.row(NOTE_ONE)?.title).toBe('while away');
   });
 
+  /**
+   * A refusal arrives as an `ack` carrying an error, never as a dead socket — the node answered and
+   * the connection stayed up. `subscribe` rethrows it so a test asserting a denial gets the error
+   * rather than an empty result set, which is the one shape a policy failure must not be confused
+   * with.
+   */
+  bunTest('a subscriber the policy denies is refused, not served an empty window', async () => {
+    const stranger = userActor({ id: 'm9', orgId: ACME, roles: ['visitor'] });
+    await expect(
+      driver.subscribe<{ id: string }>(liveNotes, { orgId: ACME }, stranger),
+    ).rejects.toBeUltimateError('X_FORBIDDEN');
+  });
+
   // The bound this driver states out loud: a filtered write names rows the row observer never saw,
   // so there is no event to shape and every window is marked stale instead of told nothing.
   bunTest('a filtered write invalidates rather than pretending nothing happened', async () => {
