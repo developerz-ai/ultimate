@@ -27,6 +27,7 @@ export {
   renderCauseValue,
   renderFixLiteral,
   renderThrowable,
+  singleLine,
   stringField,
 } from '../error-render';
 export type { ErrorRetry } from '../error-retry';

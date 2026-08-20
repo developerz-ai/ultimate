@@ -4,6 +4,31 @@
 
 import { formatIssues } from './standard';
 
+/**
+ * The same escape `@ultimat3/core`'s `singleLine` performs. **Keep in sync**, and read the reason
+ * there — briefly: the 3-line format is line-oriented, and a `cause` may hold a value the caller
+ * chose, so a newline in one writes a line an operator reads as a genuine framework message.
+ *
+ * Copied rather than imported for the same reason the brand symbol above is: `schema` and `core`
+ * are both tier 0, so `schema` may not import `core` (imports go DOWN, never sideways). A schema
+ * cause is the one most likely to carry a hostile string — it describes the value that failed
+ * validation, which is the request body.
+ */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: escaping them is the point.
+const CONTROL = /[\u0000-\u001f\u007f\u2028\u2029]/g;
+const ESCAPES: Readonly<Record<string, string>> = {
+  '\n': String.raw`\n`,
+  '\r': String.raw`\r`,
+  '\t': String.raw`\t`,
+  '\b': String.raw`\b`,
+  '\f': String.raw`\f`,
+};
+const singleLine = (text: string): string =>
+  text.replace(
+    CONTROL,
+    (char) => ESCAPES[char] ?? `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+
 /** Same well-known symbol `@ultimat3/core` brands with. Keep in sync, never rename. */
 export const ULTIMATE_ERROR_BRAND: unique symbol = Symbol.for('ultimate.error');
 
@@ -82,9 +107,11 @@ export class SchemaError extends Error {
 
   /** The same 3-line rendering as `UltimateError.format()`. */
   format(): string {
-    return [`${this.code}: ${this.title}`, `  cause: ${this.cause}`, `  fix:   ${this.fix}`].join(
-      '\n',
-    );
+    return [
+      `${singleLine(this.code)}: ${singleLine(this.title)}`,
+      `  cause: ${singleLine(this.cause)}`,
+      `  fix:   ${singleLine(this.fix)}`,
+    ].join('\n');
   }
 
   toJSON(): SchemaErrorJSON {

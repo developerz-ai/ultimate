@@ -11,6 +11,7 @@ import {
   renderFixLiteral,
   renderMetaRecord,
   renderThrowable,
+  singleLine,
   stringField,
 } from './error-render';
 
@@ -288,5 +289,47 @@ describe('describeValue', () => {
     expect(describeValue(Number.NaN)).toBe('NaN');
     expect(describeValue(true)).toBe('a boolean');
     expect(describeValue(new Date(Number.NaN))).toBe('an invalid Date');
+  });
+});
+
+/** A forged OIDC `iss` claim: closes the sentence, then forges a whole framework line. */
+const FORGED = 'evil.example\n  fix:   rm -rf /\nX_OK: everything is fine';
+
+/**
+ * The escape that keeps the 3-line contract format to three lines. `scripts/error-render.ts`
+ * cannot see this class: its rule is about an `unknown` reaching a `cause:`, and a value that is
+ * already a `string` renders fine while still carrying a newline. Three such holes shipped in
+ * `@ultimat3/auth` under a green check (#97).
+ */
+describe('singleLine', () => {
+  test('a newline can no longer end the line', () => {
+    expect(singleLine(FORGED)).not.toInclude('\n');
+    expect(singleLine(FORGED)).toBe(
+      String.raw`evil.example\n  fix:   rm -rf /\nX_OK: everything is fine`,
+    );
+  });
+
+  test('carriage return, tab and the other named controls are escaped too', () => {
+    expect(singleLine('a\rb')).toBe(String.raw`a\rb`);
+    expect(singleLine('a\tb')).toBe(String.raw`a\tb`);
+    expect(singleLine('a\bb')).toBe(String.raw`a\bb`);
+    expect(singleLine('a\fb')).toBe(String.raw`a\fb`);
+  });
+
+  test('a control with no named spelling takes the backslash-u form', () => {
+    expect(singleLine('a\x00b')).toBe('a\\u0000b');
+    expect(singleLine('a\x1bb')).toBe('a\\u001bb');
+    expect(singleLine('a\x7fb')).toBe('a\\u007fb');
+  });
+
+  test('U+2028 and U+2029 are escaped — splitting on a newline never sees them', () => {
+    expect(singleLine('a\u2028b')).toBe('a\\u2028b');
+    expect(singleLine('a\u2029b')).toBe('a\\u2029b');
+  });
+
+  test('prose is byte-identical — this is not a general sanitiser', () => {
+    const prose = 'table "posts" has column \'publish_at\' not in any migration (a\\b, 100% of 3)';
+    expect(singleLine(prose)).toBe(prose);
+    expect(singleLine('')).toBe('');
   });
 });

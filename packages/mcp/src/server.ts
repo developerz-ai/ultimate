@@ -3,7 +3,7 @@
 // and an already-resolved caller, and returns a response or `null` for a notification.
 // Both transports (http, stdio) and every test drive this one function.
 
-import { stringField } from '@ultimat3/core';
+import { singleLine, stringField } from '@ultimat3/core';
 import { formatIssues } from '@ultimat3/schema';
 import { auditToolCall, outcomeForCode } from './audit';
 import { McpScopeDeniedError } from './errors';
@@ -319,6 +319,9 @@ function asFrameworkError(error: unknown): FrameworkError | undefined {
  * but no title; a real `UltimateError` always has one.
  */
 function renderFrameworkError(error: FrameworkError): string {
-  const head = error.title === '' ? error.code : `${error.code}: ${error.title}`;
-  return `${head}\n  cause: ${error.cause}\n  fix:   ${error.fix}`;
+  const head =
+    error.title === ''
+      ? singleLine(error.code)
+      : `${singleLine(error.code)}: ${singleLine(error.title)}`;
+  return `${head}\n  cause: ${singleLine(error.cause)}\n  fix:   ${singleLine(error.fix)}`;
 }

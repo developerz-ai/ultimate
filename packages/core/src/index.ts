@@ -159,6 +159,7 @@ export {
   resetErrorRetry,
   retryFor,
   SCHEMA_ERROR_CODE_TITLES,
+  singleLine,
   stringField,
   toUltimateError,
   ULTIMATE_ERROR_BRAND,

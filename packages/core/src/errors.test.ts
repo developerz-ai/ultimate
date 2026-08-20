@@ -249,3 +249,45 @@ describe('error code registry', () => {
     expect(codes).toContain('X_ENV_MISSING');
   });
 });
+
+/** A forged OIDC `iss` claim: closes the sentence, then forges a whole framework line. */
+const FORGED = 'evil.example\n  fix:   rm -rf /\nX_OK: everything is fine';
+
+describe('the 3-line contract holds under a hostile cause', () => {
+  test('format() emits exactly three lines', () => {
+    const error = new UltimateError({
+      code: 'X_INVARIANT',
+      cause: `iss was ${FORGED}`,
+      fix: 'x doctor --json',
+    });
+    const lines = error.format().split('\n');
+    expect(lines).toHaveLength(3);
+    expect(lines[1]).toStartWith('  cause: ');
+    expect(lines[2]).toStartWith('  fix:   ');
+    // The forged line is present as TEXT and absent as a LINE, which is the whole distinction.
+    expect(error.format()).toInclude(String.raw`\nX_OK: everything is fine`);
+    expect(lines).not.toContain('X_OK: everything is fine');
+  });
+
+  test('a hostile fix: cannot add a line either', () => {
+    const error = new UltimateError({
+      code: 'X_INVARIANT',
+      cause: 'ok',
+      // Joined rather than written as one literal: the citation scanner reads a source string
+      // with the backslash dropped, so `'x doctor --json\n…'` would read as a citation of the
+      // flag `--jsonn` and trip the unrunnable-fix ratchet. Joining keeps the fix a real runnable
+      // command AND gives the value a real newline, which is what is under test.
+      fix: ['x doctor --json', '  cause: forged'].join('\n'),
+    });
+    expect(error.format().split('\n')).toHaveLength(3);
+  });
+
+  test('four lines when docs are asked for, and not five', () => {
+    const error = new UltimateError({
+      code: 'X_INVARIANT',
+      cause: FORGED,
+      fix: 'x doctor --json',
+    });
+    expect(error.format({ docs: true }).split('\n')).toHaveLength(4);
+  });
+});
