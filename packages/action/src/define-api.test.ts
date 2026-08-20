@@ -88,7 +88,12 @@ describe('defineApi', () => {
     const createPost = echo();
     const api = defineApi({ actions: { createPost } });
 
-    expect(api.actions.createPost).toBe(getAction('createPost'));
+    // `getAction` is the wider side — `AnyAction | undefined` — so it is the ACTUAL: asserting
+    // the other way round types the expectation as the narrow `Action<…>` and refuses the
+    // `undefined` that a missing registration would produce, which is the case worth catching.
+    expect(getAction('createPost')).toBe(api.actions.createPost);
+    // "not copies" against the object actually handed in, which nothing pinned before.
+    expect(api.actions.createPost).toBe(createPost);
     expect(api.actions.createPost.name).toBe('createPost');
   });
 

@@ -144,8 +144,10 @@ describe('the rule is conditional, not universal', () => {
   test('a digit is part of a name, not a boundary', () => {
     // `x i18n check` read through `[a-z-]*` cites `x i`, which is not a command — three of the
     // framework's own fix lines were false findings until the character class allowed digits.
+    // `positional` is an own key on every citation — `fixCitations` assigns `match[3]`, which is
+    // `undefined` when the group did not match. `JSON.stringify` hides that; `Object.keys` does not.
     expect(fixCitations('x i18n check --json')).toEqual([
-      { command: 'i18n', sub: 'check', flags: ['json'] },
+      { command: 'i18n', sub: 'check', positional: undefined, flags: ['json'] },
     ]);
   });
 

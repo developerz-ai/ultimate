@@ -8,6 +8,7 @@ import { insertChunks, insertColumns, MAX_BIND_PARAMETERS, namedProperties } fro
 import { integer, money, text, uuid } from './columns';
 import { entity } from './entity';
 import { clearRegistry } from './registry';
+import type { RowPatch } from './types';
 
 const items = entity('bulk_items', {
   columns: {
@@ -54,8 +55,10 @@ describe('the columns a batch writes', () => {
 
   test('a property present and undefined is a value the caller wrote', () => {
     // `Object.hasOwn`, exactly as `bindValues` decides it — dropping the column here would insert
-    // one the update set then skipped. `exactOptionalPropertyTypes` is why it takes a cast to say.
-    const written = { label: undefined } as Partial<Item>;
+    // one the update set then skipped. It used to take a cast to say: `Partial<Item>` cannot spell
+    // a present-`undefined` property under `exactOptionalPropertyTypes`, so the one value this
+    // test exists for was the one value the parameter type refused. `RowPatch<Item>` spells it.
+    const written: RowPatch<Item> = { label: undefined };
     expect(namedProperties(items, [written])).toEqual(['label']);
     expect(namedProperties(items, [{}])).toEqual([]);
     expect(namedProperties(items, [])).toEqual([]);

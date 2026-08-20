@@ -8,6 +8,7 @@ import { EntityError, invariantViolated, patchEmpty, writeUnfiltered } from './e
 import type { FindManyArgs, RepoOptions } from './repo';
 import type { Predicate, QueryPlan, SortKey } from './tenancy';
 import { scopedPlan } from './tenancy';
+import type { RowPatch } from './types';
 
 /** A page is bounded by default; an unbounded read is a production incident waiting for traffic. */
 export const DEFAULT_PAGE_SIZE = 50;
@@ -146,7 +147,7 @@ export const namedColumns = (values: unknown): readonly (readonly [string, unkno
 /** The filter a filtered write is allowed to run with: never the empty one. */
 const boundedWhere = <Row>(
   entity: EntityCore<Row>,
-  filter: Partial<Row>,
+  filter: RowPatch<Row>,
   operation: string,
 ): Predicate[] => {
   const where = namedColumns(filter).map(
@@ -166,7 +167,7 @@ const boundedWhere = <Row>(
  */
 export const deletePlan = <Row>(
   entity: EntityCore<Row>,
-  filter: Partial<Row>,
+  filter: RowPatch<Row>,
   options: RepoOptions | undefined,
   operation: string,
 ): QueryPlan =>
@@ -179,8 +180,8 @@ export const deletePlan = <Row>(
  */
 export const updatePlan = <Row>(
   entity: EntityCore<Row>,
-  filter: Partial<Row>,
-  patch: Partial<Row>,
+  filter: RowPatch<Row>,
+  patch: RowPatch<Row>,
   options: RepoOptions | undefined,
   operation: string,
 ): QueryPlan => {

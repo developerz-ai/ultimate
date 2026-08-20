@@ -14,7 +14,16 @@ export type { IslandOptions } from './island';
 export { islandFiles } from './island';
 export { jobFiles, taskFiles } from './job';
 export { CATALOG_ROOT, catalogPath, DEFAULT_LOCALES, resolveLocales } from './locales';
-export type { GeneratedFile, GeneratedFoundationFile, NameSet } from './naming';
+// All three members of the `GeneratedFile` union, not two: the barrel exported the union and the
+// foundation variant only, so a consumer could hold a `GeneratedFile` and had no name to narrow it
+// to — and `merge` is the discriminant the split exists for.
+export type {
+  GeneratedFile,
+  GeneratedFoundationFile,
+  GeneratedJsonFile,
+  GeneratedSourceFile,
+  NameSet,
+} from './naming';
 export { camel, kebab, names, pascal, plural, titleKey } from './naming';
 export { policyFiles } from './policy';
 export type { QueryOptions } from './query';

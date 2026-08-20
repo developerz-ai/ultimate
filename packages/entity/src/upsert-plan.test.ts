@@ -12,6 +12,7 @@ import { entity } from './entity';
 import { EntityError } from './errors';
 import { invariant } from './invariants';
 import { clearRegistry } from './registry';
+import type { RowPatch } from './types';
 
 const items = entity('upsert_items', {
   columns: {
@@ -59,6 +60,8 @@ const tickets = entity('upsert_tickets', {
   columns: { id: uuid().primaryKey(), queue: text(), slot: integer(), note: text() },
   invariants: (c) => [invariant('upsert_ticket_slot', c.unique(['queue', 'slot']))],
 });
+
+type Item = typeof items.$row;
 
 const ID = '0192f5a0-0000-7000-8000-00000000000a';
 const ORG = '0192f5a0-0000-7000-8000-0000000000b0';
@@ -263,10 +266,10 @@ describe('the soft-delete stamp an updating upsert never writes', () => {
   test('an entity with no soft-delete column has no such stamp to spare', () => {
     // `deletedAt` is only a stamp where the entity declares one: elsewhere it is an ordinary
     // column, and sparing it would be a rule read off a property name.
-    expect(upsertPlan(items, [{ ...item, deletedAt: null }], ['sku'], 'update').set).toEqual([
-      'label',
-      'quantity',
-    ]);
+    // Hoisted: `items` declares no `deletedAt`, which IS the case under test, and an excess
+    // property is only checked on a fresh object literal at the call site.
+    const stamped = { ...item, deletedAt: null };
+    expect(upsertPlan(items, [stamped], ['sku'], 'update').set).toEqual(['label', 'quantity']);
   });
 });
 
@@ -284,10 +287,13 @@ describe('the rows of an updating batch name the same columns', () => {
   });
 
   test('naming it and leaving it undefined is naming it — the same Object.hasOwn', () => {
-    const even = [
+    // No cast: `RowPatch<Item>` spells a property that is PRESENT and `undefined`, which is the
+    // whole subject of this test and what `Partial<Item>` refused under
+    // `exactOptionalPropertyTypes`.
+    const even: RowPatch<Item>[] = [
       { sku: 'a', label: undefined },
       { sku: 'b', label: 'y' },
-    ] as Partial<Item>[];
+    ];
     expect(upsertPlan(items, even, ['sku'], 'update')).toEqual({ on: ['sku'], set: ['label'] });
   });
 
@@ -322,7 +328,7 @@ describe('the key a collision is judged on', () => {
     expect(conflictKeyOf(drafts, ['deletedAt'], { deletedAt: at('001') })).not.toBe(
       conflictKeyOf(drafts, ['deletedAt'], { deletedAt: at('002') }),
     );
-    const priced = (minor: bigint): Partial<Item> => ({ unitPrice: { minor, currency: 'EUR' } });
+    const priced = (minor: bigint): RowPatch<Item> => ({ unitPrice: { minor, currency: 'EUR' } });
     expect(conflictKeyOf(items, ['unitPrice'], priced(1n))).not.toBe(
       conflictKeyOf(items, ['unitPrice'], priced(2n)),
     );
@@ -334,7 +340,12 @@ describe('the key a collision is judged on', () => {
   test('a null in the target is no key at all — a default unique index is NULLS DISTINCT', () => {
     expect(conflictKeyOf(items, ['serial'], { serial: null })).toBeUndefined();
     // Every other cell being present does not save it: the index compares no null to anything.
-    expect(conflictKeyOf(marks, ['postId', 'memberId'], { postId: ID, memberId: null })).toBe(
+    // A composite target, on a column the schema actually lets be null: `marks.memberId` is a
+    // non-nullable uuid, so the old spelling asserted about a row no entity can hold.
+    expect(conflictKeyOf(drafts, ['orgId', 'deletedAt'], { orgId: ORG, deletedAt: null })).toBe(
+      undefined,
+    );
+    expect(conflictKeyOf(drafts, ['orgId', 'slug'], { orgId: ORG, slug: 'first' })).not.toBe(
       undefined,
     );
     expect(conflictKeyOf(items, ['serial'], { serial: 'S-1' })).not.toBeUndefined();

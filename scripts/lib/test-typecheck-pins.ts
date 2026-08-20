@@ -11,17 +11,20 @@
 // about its own: a pin keyed on a file and a line goes stale on every edit to the file above it,
 // and churn teaches a reader to regenerate a ratchet without looking at it.
 //
-// What is left, and the order to slice it in. The classes are advisory; the number is the rule:
+// What is left: **2**, both in `packages/entity/src/pg-driver.test.ts`, and they are one named
+// defect rather than two stale fixtures. `Repo`'s full-row write members take the ROW type where
+// money's WRITE type belongs — `Repo.insert(values: T)` demands a `MoneyValue`, while
+// `narrowMoney` exists solely to narrow a `bigint` handed to a driver, and `postgresRepo()` is
+// exported, so that caller is public API. Two fixes were attempted and reverted with evidence: a
+// `RowWrite<Row>` mapped type produces 6 fallout errors at the narrowing boundaries, and re-typing
+// `narrowMoney` cuts that to 4 but makes `Out` uninferrable, so every app call site would need an
+// explicit type argument. The remaining route narrows at each write-method entry, which moves the
+// narrowing before `assertRowTenant` in `writeRows` — strictly more correct and SQL-identical, but
+// a runtime-ordering change in `Driver`'s only production implementation whose live suites need
+// `TEST_DATABASE_URL`. That is its own piece of work; do not silence it.
 //
-// | Package | Errors | The classes behind the count |
-// |---|---|---|
-// | action | 21 | TS4111, TS2353, TS2322, TS2769 |
-// | entity | 22 | TS4111 (index-signature access), TS2769, TS18048 |
-// | cli | 59 | TS2345, TS2769, TS2322, TS18046 |
-//
-// At zero and staying there: 27 of 30 workspaces. `create-ultimate`, `money` and `seo` never had a
-// line; the other 24 were closed in two batches, 344 errors, and eleven of them were the type
-// being wrong rather than the test:
+// Everything else is at zero. 446 errors closed across 30 workspaces, and thirteen of them were
+// the type being wrong rather than the test:
 //
 // | Where | What shipped |
 // |---|---|
@@ -30,10 +33,12 @@
 // | `query/source.ts` | `RowProvider` forbade the synchronous thunk `execute` has always awaited |
 // | `http/error-map.ts` | `ERROR_STATUS` was typed open in the one table whose argument is that it is closed |
 // | `scraping/session-state.ts` | `isCookie` claimed `value is ScrapeCookie` after checking 2 of 6 fields |
-// | `scraping/http.ts` + `robots-fetch.ts` | `fetch?: typeof fetch` — an option no caller could fill |
-// | `ai/{provider,openai-provider,remote-embedder}.ts` | the same, nine double casts deep |
+// | `scraping/http.ts`, `ai/*.ts` | `fetch?: typeof fetch` — an option no caller could fill, 13 double casts deep |
 // | `realtime/rebase.ts` | `rebaseFrame` declared the whole union and built one member |
 // | `jobs/driver-memory.ts` | `close` optional on a driver that always implements it |
+// | `entity/types.ts` | `RowPatch` could not spell `{ col: undefined }` — the exact value `X_WRITE_UNFILTERED` exists to refuse |
+// | `entity/repo.ts` | `findById(id, { includeDeleted })` was honoured at runtime and a type error |
+// | `cli/templates/index.ts` | the barrel exported a union and one of its three members |
 // | `realtime/presence.test.ts` | a `Transport` built by spreading a class instance — no prototype, no `publish` |
 // | `jobs/step-options.test.ts` | a two-arg `waitForEvent` call put `{ timeout }` on the `event` parameter |
 //
@@ -50,16 +55,16 @@
 export const PINS_FILE = 'scripts/lib/test-typecheck-pins.ts';
 
 export const TEST_TYPECHECK_PINS: Readonly<Record<string, number>> = {
-  action: 21,
+  action: 0,
   admin: 0,
   ai: 0,
   auth: 0,
   cache: 0,
-  cli: 59,
+  cli: 0,
   core: 0,
   'create-ultimate': 0,
   db: 0,
-  entity: 78,
+  entity: 2,
   flags: 0,
   http: 0,
   i18n: 0,

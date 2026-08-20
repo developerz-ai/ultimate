@@ -229,6 +229,38 @@ export type Insertable<C extends ColumnMap> = {
   readonly [K in DefaultedKeys<C> | NullableKeys<C>]?: InputOf<TypeOf<C[K]>>;
 };
 
+/**
+ * A patch or a filter: every property optional, **and every property allowed to be present and
+ * `undefined`**.
+ *
+ * `Partial<Row>` cannot say the second half. Under `exactOptionalPropertyTypes` — which this repo
+ * has on — `{ k?: T }` means "absent, or a `T`", so `{ postId: undefined }` is a type error, and
+ * that is the ONE value every filtered write in this package is built to refuse:
+ *
+ * - `plan.ts`'s `namedColumns` drops `value !== undefined`, so `deleteWhere({ postId: undefined })`
+ *   yields no predicate and throws `X_WRITE_UNFILTERED` rather than deleting the table. That
+ *   refusal exists for exactly one caller — a variable that came back `undefined` — and
+ *   `Partial<Row>` made the caller unable to spell it and the test unable to prove it.
+ * - `updateWhere(filter, { createdAt: undefined })` is `X_PATCH_EMPTY`, one argument over.
+ * - `bulk-write.ts`'s `owns()` is `Object.hasOwn`, so for a batch a present-`undefined` property
+ *   IS a named column — the opposite reading, deliberately, and equally unspellable.
+ *
+ * A type that forbids the value its own runtime is written to catch is a type that documents
+ * nothing: `bulk-write.test.ts` carried `as Partial<Item>` with the comment
+ * "`exactOptionalPropertyTypes` is why it takes a cast to say", which is the defect written down.
+ *
+ * Money goes through `InputOf`, for the reason `Insertable` does: a patch is a WRITE, and money's
+ * write shape is the wider one. `conflictKeyOf`'s own `cellKey` renders a `bigint` minor unit
+ * (`${part}n`), so refusing one here would have been a type refusing a value one function down
+ * spells out how to serialise. The row's own type stays in the union rather than being replaced by
+ * `InputOf<Row[K]>`: a conditional type over an unresolved `Row` never reduces, so `Row` itself
+ * stopped being assignable to its own patch and every internal caller reddened. Both spellings are
+ * accepted here, which is the honest statement anyway — a patch may carry either.
+ */
+export type RowPatch<Row> = {
+  readonly [K in keyof Row]?: Row[K] | InputOf<Row[K]> | undefined;
+};
+
 export interface IndexDef {
   readonly name: string;
   readonly columns: readonly string[];

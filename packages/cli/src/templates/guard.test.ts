@@ -8,8 +8,19 @@ import { guardCode, guardFiles } from './guard';
 const paths = (files: readonly { path: string }[]): readonly string[] =>
   files.map((file) => file.path);
 
-const sourceOf = (name: string): string =>
-  guardFiles(name).find((file) => file.path === `guards/${name}.ts`)?.contents ?? '';
+/**
+ * The file's text. `GeneratedSourceFile.contents` admits raw bytes — `x new` emits a PNG icon —
+ * but `x g guard` writes two TypeScript files and nothing else, so bytes here are the failure.
+ */
+const textOf = (file: { readonly path: string; readonly contents: string | Uint8Array }): string =>
+  typeof file.contents === 'string'
+    ? file.contents
+    : expect.unreachable(`${file.path} is bytes, not text`);
+
+const sourceOf = (name: string): string => {
+  const file = guardFiles(name).find((entry) => entry.path === `guards/${name}.ts`);
+  return file === undefined ? '' : textOf(file);
+};
 
 describe('x g guard', () => {
   test('the emitted test drives the emitted rule, failure case first', () => {
@@ -17,10 +28,16 @@ describe('x g guard', () => {
     // seam. What is checkable here is that the scaffold ships a test that would notice: a
     // generated example nothing drives is the TODO this repo's generators refuse to emit.
     const spec = guardFiles('migration-safety').find((file) => file.path.endsWith('.test.ts'));
-    expect(spec?.contents).toContain('unsafeAdditions');
-    expect(spec?.contents.indexOf('is refused')).toBeLessThan(
-      spec?.contents.indexOf('makes the same addition safe') ?? 0,
-    );
+    if (spec === undefined) return expect.unreachable('x g guard emitted no test file');
+    const source = textOf(spec);
+    expect(source).toContain('unsafeAdditions');
+    // Both PRESENT, then ordered. `indexOf` answers -1 for a string that is absent and `-1 < n`
+    // is true, so the ordering assertion alone passed for an emitted test that had stopped naming
+    // either case — which is exactly the "generated example nothing drives" this test is for.
+    const refused = source.indexOf('is refused');
+    const safe = source.indexOf('makes the same addition safe');
+    expect(refused).toBeGreaterThanOrEqual(0);
+    expect(safe).toBeGreaterThan(refused);
     expect(sourceOf('migration-safety')).toContain(guardCode('migration-safety'));
   });
 

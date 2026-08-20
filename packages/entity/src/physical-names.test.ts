@@ -5,6 +5,7 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import { t } from '@ultimat3/schema';
+import { plainDate } from '@ultimat3/time';
 import { columnName, moneyColumns } from './column';
 import { integer, money, text, timestamp, uuid } from './columns';
 import { date, json } from './columns-data';
@@ -61,7 +62,9 @@ describe('unit · the table an entity is bound to', () => {
       { where: [{ column: 'githubLogin', op: 'eq', value: 'ada' }] },
       'findMany',
     );
-    const select = selectStatement(accounts, plan, {}, 10);
+    // `ReadShape.includeDeleted` is required, not defaulted — the same "no ambient default" rule
+    // a timezone gets: whether a statement hides soft-deleted rows is the caller's to state.
+    const select = selectStatement(accounts, plan, { includeDeleted: false }, 10);
     expect(select.text).toContain('"legacy_accounts"');
     expect(select.text).toContain('"gh_login"');
     expect(select.text).not.toContain('github_login');
@@ -150,7 +153,7 @@ describe('unit · the column a property is bound to', () => {
     });
     expect(row.githubLogin).toBe('ada');
     expect(row.seats).toBe(3);
-    expect(row.openedOn).toBe('2026-03-14');
+    expect(row.openedOn).toBe(plainDate('2026-03-14'));
     expect(row.settings).toEqual({ beta: true });
   });
 });
@@ -213,6 +216,6 @@ describe('unit · the memory driver agrees with the physical layer', () => {
     expect(written.githubLogin).toBe('mara');
     const found = await db.accounts.where({ githubLogin: 'mara' }).one();
     expect(found?.balance).toEqual({ minor: 900, currency: 'USD' });
-    expect(found?.openedOn).toBe('2026-05-01');
+    expect(found?.openedOn).toBe(plainDate('2026-05-01'));
   });
 });

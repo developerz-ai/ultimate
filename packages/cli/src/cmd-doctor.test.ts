@@ -251,7 +251,9 @@ describe('unit · x doctor · probeFor reaches the real machine', () => {
   test('a port this process is holding is reported as not free', async () => {
     const server = Bun.serve({ port: 0, fetch: () => new Response('') });
     try {
-      const taken = server.port;
+      // `Server.port` is `number | undefined` — a unix-socket server has none. `port: 0` always
+      // opens a TCP one, so an absent port is a broken assumption, never a case to default.
+      const taken = server.port ?? expect.unreachable('Bun.serve({ port: 0 }) opened no TCP port');
       expect(await probeFor(import.meta.dir, '1.3.14', taken).portFree(taken)).toBe(false);
     } finally {
       await server.stop(true);
@@ -304,7 +306,7 @@ describe('unit · x doctor · the command', () => {
       expect(result.command).toBe('doctor');
       const data = result.data as { count: number; codes: readonly string[] };
       expect(data.codes).toContain('X_PORT_IN_USE');
-      expect(data.count).toBe(result.findings?.length);
+      expect(data.count).toBe((result.findings ?? []).length);
       // Every finding the report counted is a finding the report carries.
       expect(data.codes).toEqual((result.findings ?? []).map((finding) => finding.code));
     } finally {

@@ -109,7 +109,13 @@ describe('the entity DSL surface', () => {
   });
 
   test('$view() delegates to viewFor() — same keys, same projected shape', () => {
-    const direct = viewFor(target.$name, target.$columns, ['id', 'title'] as const);
+    // `Row` supplied: `viewFor<Row, K>` has no inference site for `Row` — only `entityName` and
+    // `columns: ColumnMap` — so left off it resolves to `unknown`, `keyof unknown & string` is
+    // `never`, and every key is refused. `$view` below carries the row already.
+    const direct = viewFor<typeof target.$row, 'id' | 'title'>(target.$name, target.$columns, [
+      'id',
+      'title',
+    ] as const);
     const viaFacade = target.$view(['id', 'title'] as const);
     expect(viaFacade.$name).toBe(direct.$name);
     expect(viaFacade.$keys).toEqual(direct.$keys);

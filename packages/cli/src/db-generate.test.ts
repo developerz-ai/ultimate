@@ -101,7 +101,10 @@ test('generation writes the sql, the snapshot and the hash, and the snapshot is 
 
     const migrations = await readMigrations(dir);
     expect(migrations).toHaveLength(1);
-    expect(declaredSchema(migrations).tables.map((table) => table.name)).toEqual([
+    // `declaredSchema` answers `undefined` when the newest migration carries no snapshot; `x db
+    // gen` always writes one, so an absent schema is itself the failure — and `?.` reports it as a
+    // mismatch against the expected list rather than crashing the test.
+    expect(declaredSchema(migrations)?.tables.map((table) => table.name)).toEqual([
       'db_gen_test_notes',
     ]);
   } finally {
@@ -194,7 +197,7 @@ test('a real DDL change still generates a migration — the empty-diff path is n
       `packages/db/migrations/${id}.hash`,
     ]);
     expect(first.migration?.up ?? '').toContain('db_gen_test_notes');
-    expect(declaredSchema(await readMigrations(dir)).tables.map((table) => table.name)).toEqual([
+    expect(declaredSchema(await readMigrations(dir))?.tables.map((table) => table.name)).toEqual([
       'db_gen_test_notes',
     ]);
   } finally {

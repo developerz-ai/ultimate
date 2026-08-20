@@ -12,6 +12,7 @@ import {
   resetTelemetry,
   userActor,
 } from '@ultimat3/core';
+import type { Actor as PolicyActor } from '@ultimat3/policy';
 import { can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import { action } from './action';
@@ -21,17 +22,24 @@ import { invoke } from './invoke';
 
 const Input = t.object({ postId: t.string });
 const Output = t.object({ id: t.string });
-const editor = createContext({
-  actor: { ...userActor({ id: 'u1' }), permissions: ['post:publish'] },
-});
-const stranger = createContext({ actor: { ...userActor({ id: 'u2' }), permissions: [] } });
+// `permissions` — direct grants, bypassing roles — is a field of POLICY's actor
+// (`CoreActor & PolicyActorFields`), which is what `can()` reads through `actorHas`. Core's
+// `Actor` has none and cannot: core is tier 0 and knows nothing about grants.
+const editorActor: PolicyActor = { ...userActor({ id: 'u1' }), permissions: ['post:publish'] };
+const editor = createContext({ actor: editorActor });
+/** No grant at all — the denial half, and the reason `permissions: []` is written out. */
+const strangerActor: PolicyActor = { ...userActor({ id: 'u2' }), permissions: [] };
+const stranger = createContext({ actor: strangerActor });
 
 /**
  * Records which span was ACTIVE while `row:` loaded and while the policy decided — the two stages
  * the old span excluded, and where the missing 1.96s of a 2s p99 actually was. Structural rather
  * than timed: "was this work inside the span" is the claim, and the test clock is frozen.
  */
-function publishPost(inside: { row?: string; policy?: string } = {}) {
+// `| undefined` is the honest type, not a widening: `currentSpan()` answers `undefined` when the
+// stage ran OUTSIDE any span, which is the bug this file exists to catch — so the recorder has to
+// be able to hold it. `exactOptionalPropertyTypes` refuses to write it into a bare `row?: string`.
+function publishPost(inside: { row?: string | undefined; policy?: string | undefined } = {}) {
   return action({
     input: Input,
     output: Output,

@@ -33,6 +33,7 @@ import { t } from '@ultimat3/schema';
 import { actionsCommand, entitiesCommand, queriesCommand } from './cmd-registries';
 import type { CommandContext } from './command';
 import { msg } from './messages';
+import type { CommandResult } from './output';
 import type { FlagValue } from './parse';
 import { parseArgs } from './parse';
 import type { ThrownShape } from './thrown-by';
@@ -138,6 +139,14 @@ afterEach(() => {
   clearEntities();
 });
 
+/**
+ * What the command EMITTED. `CommandResult.data` is `JsonValue | undefined`, and a descriptor is a
+ * declared interface with no index signature — so the two are never the same TYPE even when they
+ * are the same VALUE, which is exactly the claim these tests make. Compared as `unknown`, because
+ * "`--json` emits the descriptor unchanged" is a statement about the value, not about the type.
+ */
+const emitted = (result: CommandResult): unknown => result.data;
+
 describe('unit · x actions|queries|entities · list', () => {
   test('actions: a row per declaration, and the full descriptor array under data', async () => {
     const result = await actionsCommand.run(contextFor('list'));
@@ -145,7 +154,7 @@ describe('unit · x actions|queries|entities · list', () => {
     expect(result.summary).toBe(msg('cli.registry.count', { count: 1, kind: 'actions' }));
     expect(result.lines?.[0]).toContain('name');
     expect(result.lines?.some((line) => line.includes(ACTION_NAME))).toBe(true);
-    expect(result.data).toEqual(describeActions());
+    expect(emitted(result)).toEqual(describeActions());
   });
 
   test('queries: a row per declaration, and the full descriptor array under data', async () => {
@@ -153,7 +162,7 @@ describe('unit · x actions|queries|entities · list', () => {
     expect(result.ok).toBe(true);
     expect(result.summary).toBe(msg('cli.registry.count', { count: 1, kind: 'queries' }));
     expect(result.lines?.some((line) => line.includes(QUERY_NAME))).toBe(true);
-    expect(result.data).toEqual(describeQueries());
+    expect(emitted(result)).toEqual(describeQueries());
   });
 
   test('entities: a row per declaration, and the full descriptor array under data', async () => {
@@ -161,7 +170,7 @@ describe('unit · x actions|queries|entities · list', () => {
     expect(result.ok).toBe(true);
     expect(result.summary).toBe(msg('cli.registry.count', { count: 1, kind: 'entities' }));
     expect(result.lines?.some((line) => line.includes(ENTITY_NAME))).toBe(true);
-    expect(result.data).toEqual(describeEntities());
+    expect(emitted(result)).toEqual(describeEntities());
   });
 
   test('the default subcommand is list — for the parser, and for run() given no subcommand', async () => {
@@ -183,14 +192,14 @@ describe('unit · x actions|queries|entities · describe', () => {
     expect(result.summary).toBe(
       msg('cli.registry.described', { kind: 'action', name: ACTION_NAME }),
     );
-    expect(result.data).toEqual(getAction(ACTION_NAME)?.describe());
+    expect(emitted(result)).toEqual(getAction(ACTION_NAME)?.describe());
   });
 
   test('a query describes as its full QueryDescriptor plus the input JSON schema', async () => {
     const result = await queriesCommand.run(contextFor('describe', [QUERY_NAME]));
     expect(result.ok).toBe(true);
     expect(result.summary).toBe(msg('cli.registry.described', { kind: 'query', name: QUERY_NAME }));
-    expect(result.data).toEqual({
+    expect(emitted(result)).toEqual({
       ...getQuery(QUERY_NAME)?.describe(),
       input: (result.data as { input: unknown }).input,
     });
@@ -203,7 +212,7 @@ describe('unit · x actions|queries|entities · describe', () => {
     expect(result.summary).toBe(
       msg('cli.registry.described', { kind: 'entity', name: ENTITY_NAME }),
     );
-    expect(result.data).toEqual(getEntity(ENTITY_NAME)?.describe());
+    expect(emitted(result)).toEqual(getEntity(ENTITY_NAME)?.describe());
   });
 });
 

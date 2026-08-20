@@ -43,7 +43,10 @@ function seed(): void {
     query({
       input: t.object({}),
       policy: can('feed:read'),
-      sql: () => from('posts').select({ id: 'id' }).limit(10),
+      // `from(entity, rows)` — the in-memory source takes its rows, and `Builder` projects
+      // through `shape()`, never `select()`. The matrix never executes this query; it reads the
+      // `policy` above, so the source only has to be a source.
+      sql: () => from<{ id: string }>('posts', []).limit(10),
     }),
   );
 }

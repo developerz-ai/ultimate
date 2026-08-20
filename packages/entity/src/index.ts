@@ -101,6 +101,7 @@ export {
 export type { EntityRelations, Relation, RelationKind, RelationMap } from './relations';
 export { relationMap, relationNamed, relationsFor, relationsOf } from './relations';
 export type {
+  FindByIdOptions,
   FindManyArgs,
   MemoryRepo,
   Page,
@@ -152,6 +153,7 @@ export type {
   OnDelete,
   ReferenceOptions,
   RowOf,
+  RowPatch,
   TimestampColumn,
   TypeOf,
   UuidColumn,

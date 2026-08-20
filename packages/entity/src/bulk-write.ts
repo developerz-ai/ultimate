@@ -10,6 +10,7 @@ import { valueAt } from './cursor';
 import { type EntityCore, SOFT_DELETE_COLUMN } from './entity';
 import { EntityError, invariantViolated } from './errors';
 import { columnsOf } from './pg-row';
+import type { RowPatch } from './types';
 
 /**
  * Postgres binds at most 65535 parameters in one statement and a multi-row insert spends
@@ -37,7 +38,7 @@ const owns = (row: unknown, property: string): boolean =>
  */
 export const namedProperties = <Row>(
   entity: EntityCore<Row>,
-  rows: readonly Partial<Row>[],
+  rows: readonly RowPatch<Row>[],
 ): readonly string[] =>
   Object.keys(entity.$columns).filter((property) => rows.some((row) => owns(row, property)));
 
@@ -181,7 +182,7 @@ const sameColumns = (left: readonly string[], right: readonly string[]): boolean
  */
 export const upsertPlan = <Row>(
   entity: EntityCore<Row>,
-  rows: readonly Partial<Row>[],
+  rows: readonly RowPatch<Row>[],
   onConflict: readonly string[],
   onMatch: 'update' | 'nothing',
 ): UpsertPlan => {
@@ -253,7 +254,7 @@ const cellKey = (kind: string, value: unknown): string | undefined => {
 export const conflictKeyOf = <Row>(
   entity: EntityCore<Row>,
   on: readonly string[],
-  row: Partial<Row>,
+  row: RowPatch<Row>,
 ): string | undefined => {
   const cells = on.map((property) =>
     cellKey(columnFor(entity.$columns, property)?.$meta.kind ?? '', valueAt(row, property)),
@@ -271,7 +272,7 @@ export const conflictKeyOf = <Row>(
 export const conflictKeys = <Row>(
   entity: EntityCore<Row>,
   plan: UpsertPlan,
-  rows: readonly Partial<Row>[],
+  rows: readonly RowPatch<Row>[],
 ): readonly (string | undefined)[] => {
   const keys = rows.map((row) => conflictKeyOf(entity, plan.on, row));
   if (plan.set.length === 0) return keys;

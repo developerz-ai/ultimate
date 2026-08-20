@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { UltimateErrorShape } from '@ultimat3/core';
 import { msg } from './messages';
-import type { CommandResult, StepResult } from './output';
+import type { CommandResult, StepResult, UltimateErrorShape } from './output';
 import {
   exitCodeFor,
   findingFrom,

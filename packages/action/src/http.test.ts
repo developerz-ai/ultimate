@@ -7,6 +7,7 @@ import type { Actor } from '@ultimat3/core';
 import { userActor } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
 import { createServer, defineHttpConfig, setRedirect } from '@ultimat3/http';
+import type { Actor as PolicyActor } from '@ultimat3/policy';
 import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AnyAction } from './action';
@@ -45,7 +46,13 @@ function publisher(authorId: string, evaluations: { count: number }) {
  */
 const oneProcess = (): HttpConfig => defineHttpConfig({ rateLimit: { scope: 'process' } });
 
-const editor = (id: string): Actor => ({ ...userActor({ id }), permissions: ['post:publish'] });
+// `permissions` — direct grants, bypassing roles — is a field of POLICY's actor
+// (`CoreActor & PolicyActorFields`), which is what `can()` reads through `actorHas`. Core's
+// `Actor` has none and cannot: core is tier 0 and knows nothing about grants.
+const editor = (id: string): PolicyActor => ({
+  ...userActor({ id }),
+  permissions: ['post:publish'],
+});
 
 function serve(target: ReturnType<typeof publisher>, actor: Actor | null) {
   return createServer({
@@ -152,11 +159,11 @@ describe('an idempotent action over the pipeline', () => {
     expect(runs.count).toBe(0);
   });
 
-  // RED until `X_IDEMPOTENCY_KEY_INVALID: 400` is added to `ERROR_STATUS` in
-  // `packages/http/src/error-map.ts` — the framework's one code-to-status table, which this
-  // package may not write to. A code with no row there is `DEFAULT_STATUS`, and `pipeline.ts`
-  // reports every `status >= 500` to the error monitor: a caller's blank header would page
-  // whoever is on call, which is the exact failure that table's own comment describes.
+  // The row lives in `packages/http/src/error-map.ts` — the framework's one code-to-status table,
+  // which this package may not write to — and it is there: `X_IDEMPOTENCY_KEY_INVALID: 400`,
+  // pinned by that file's own test. This asserts the two ends agree. A code with no row is
+  // `DEFAULT_STATUS`, and `pipeline.ts` reports every `status >= 500` to the error monitor, so a
+  // caller's blank header would page whoever is on call — which is why it is pinned from both sides.
   test('and it is a 400 — the row belongs in http ERROR_STATUS, not here', async () => {
     const response = await call(counter({ count: 0 }), '');
     expect(response.status).toBe(400);

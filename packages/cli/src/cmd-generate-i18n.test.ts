@@ -53,7 +53,9 @@ describe('unit · dedupe rejects a merge: json file a generator could not have m
     // No `merge: 'json'` anywhere in the pair, so first-write-wins applies exactly as before —
     // the second file's unparseable-as-JSON text is irrelevant, because nothing here reads it as
     // JSON in the first place.
-    expect(dedupe(files)).toEqual([files[0]]);
+    // `files.slice(0, 1)`, not `[files[0]]`: an index read is `GeneratedFile | undefined` under
+    // `noUncheckedIndexedAccess`, and the slice says "the first file, unchanged" without it.
+    expect(dedupe(files)).toEqual(files.slice(0, 1));
   });
 });
 

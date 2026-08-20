@@ -18,6 +18,7 @@ import { text, uuid } from './columns';
 import { database } from './database';
 import { entity } from './entity';
 import { postgresDriver } from './pg-driver';
+import type { Preloaded } from './query';
 import { clearRegistry } from './registry';
 
 // `TEST_DATABASE_URL` only: `beforeAll`/`afterAll` here run `drop table … cascade`, so falling back
@@ -71,7 +72,9 @@ describe.skipIf(!hasPostgres)('live · postgres · inBatches', () => {
     (await database({ orgs }, { driver: postgresDriver() }).orgs.insert({ slug })).id;
 
   /** Seven titled rows for `org` — the size the header's `[3, 3, 1]` claim is built on. */
-  const seedSeven = async (org: string): Promise<readonly string[]> => {
+  // `string[]`, not `readonly string[]`: what this returns is the EXPECTED side of a `toEqual`,
+  // whose parameter is typed from the subject — `batches.flat()`, a mutable array.
+  const seedSeven = async (org: string): Promise<string[]> => {
     const titles = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
     for (const title of titles) await db().posts.insert({ orgId: org, title });
     return titles;
@@ -157,7 +160,9 @@ describe.skipIf(!hasPostgres)('live · postgres · inBatches', () => {
     await seedSeven(org);
 
     const [batches, orgReads] = await capturing('from "pg_batch_live_orgs"', async () => {
-      const seen: { title: string; org: { id: string; slug: string } }[][] = [];
+      // The row type itself, never a hand-written subset: a batch is `readonly`, and restating
+      // the shape here made the annotation both narrower than the row and mutable where it is not.
+      const seen: (readonly (typeof posts.$row & Preloaded<'org'>)[])[] = [];
       for await (const batch of db()
         .posts.where({ orgId: org })
         .orderBy('title', 'asc')

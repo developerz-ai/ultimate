@@ -17,6 +17,7 @@ import type { CommandContext } from './command';
 import { exec } from './exec';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
+import type { GeneratedFile } from './templates';
 
 /** A real app root, because `x g` resolves one before it reads a single argument. */
 const EXAMPLE_APP = join(import.meta.dir, '..', '..', '..', 'examples', 'dummy');

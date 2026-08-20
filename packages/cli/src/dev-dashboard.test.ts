@@ -6,7 +6,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { DevPanel } from '@ultimat3/admin/dev';
+import type { DevPanel, PanelPayload, TimelinePanelData } from '@ultimat3/admin/dev';
 import { DEV_PANELS, panelPayload, staticDevSources, timelinePanel } from '@ultimat3/admin/dev';
 import { declareTags, invalidateTags, isolateDeclaredTags, tag } from '@ultimat3/cache';
 import {
@@ -25,6 +25,19 @@ import type { RunningServices } from './dev-runtime';
 import type { DevServices, ServiceBinding } from './dev-services';
 import { createTraceRecorder } from './dev-traces';
 import { CliNotImplementedError } from './errors';
+
+/**
+ * The timeline panel's own data, off a payload that has lost its type.
+ *
+ * `PanelPayload.data` is `unknown` because `panelPayload(panel: DevPanel, …)` takes the NON-generic
+ * `DevPanel` — so `timelinePanel`, which IS a `DevPanel<TimelinePanelData>`, has its `Data` erased
+ * at the call. Recovered here against the panel's own exported type, so this cannot claim a shape
+ * `@ultimat3/admin` does not publish. The real fix is a generic `panelPayload`, and it lives there.
+ */
+const timelineData = (payload: PanelPayload): TimelinePanelData => {
+  if (!payload.ok) return expect.unreachable(`the timeline panel failed: ${payload.error.code}`);
+  return payload.data as TimelinePanelData;
+};
 
 /** The nine panels `@ultimat3/admin` ships. Spelled out so a silent drop is a failure here. */
 const FRAMEWORK_PANELS = [
@@ -308,9 +321,7 @@ describe('unit · x dev mounts the dashboard', () => {
       });
       const payload = await panelPayload(timelinePanel, devSources(input), new URLSearchParams());
       expect(payload.ok).toBe(true);
-      expect(payload.ok ? payload.data.requests.map((entry) => entry.requestId) : []).toEqual([
-        'req_1',
-      ]);
+      expect(timelineData(payload).requests.map((entry) => entry.requestId)).toEqual(['req_1']);
     } finally {
       resetTelemetry();
     }
@@ -327,7 +338,7 @@ describe('unit · x dev mounts the dashboard', () => {
     expect(payload.ok).toBe(true);
     // `null`, not `[]`: "nobody counted" and "this request was clean" are different answers, and
     // the panel can only tell them apart because the unwired source rejects.
-    expect(payload.ok ? payload.data.nPlusOne : undefined).toBeNull();
+    expect(timelineData(payload).nPlusOne).toBeNull();
   });
 
   test("the ledger x dev installs becomes the timeline's verdicts, scoped to the request shown", async () => {
@@ -357,7 +368,7 @@ describe('unit · x dev mounts the dashboard', () => {
         new URLSearchParams([['requestId', 'req_loop']]),
       );
       expect(payload.ok).toBe(true);
-      const loops = payload.ok ? (payload.data.nPlusOne ?? []) : [];
+      const loops = timelineData(payload).nPlusOne ?? [];
       expect(loops.map((loop) => loop.code)).toEqual(['X_N_PLUS_ONE_QUERY']);
       // The `fix:` is `@ultimat3/entity`'s, so the panel shows the line an author pastes.
       expect(loops[0]?.fix).toContain("db.members.andWhere('id', 'in', ids).all()");

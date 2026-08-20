@@ -30,7 +30,9 @@ export const config = { name: 'fixture' };
 let base = '';
 let counter = 0;
 
-const runner = async (): Promise<ExecResult> => ({
+const runner = async (command: readonly string[]): Promise<ExecResult> => ({
+  // Echoed back, as `exec()` does: `ExecResult.command` is what a failure names.
+  command,
   ok: true,
   code: 0,
   stdout: '',

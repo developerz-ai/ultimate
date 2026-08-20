@@ -4,6 +4,7 @@
 
 import { afterAll, describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
+import { text } from './columns';
 import { invariantColumns } from './expr';
 import { clearRegistry } from './registry';
 
@@ -11,7 +12,13 @@ afterAll(() => {
   clearRegistry();
 });
 
-const c = invariantColumns('expr_test_posts', ['slug', 'title']);
+// `C` supplied, exactly as `entity()` supplies it at `entity.ts:169`. Left to infer, `C` falls back
+// to its `ColumnMap` constraint — an index signature — so `c.slug` was a possibly-`undefined`
+// `ColumnExpr` reached through a string key, which is the shape `InvariantColumns<C>` was made a
+// mapped type to stop being. The runtime list is `Object.keys` of the same map, so a column can
+// never be declared to one half and not the other.
+const columns = { slug: text(), title: text() };
+const c = invariantColumns<typeof columns>('expr_test_posts', Object.keys(columns));
 /** Physical names are the entity's job; here the property name IS the column. */
 const resolve = (path: readonly string[]): string => path.join('_');
 

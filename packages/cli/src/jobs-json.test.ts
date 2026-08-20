@@ -11,6 +11,7 @@ import {
   inspectJob,
   inspectQueues,
 } from '@ultimat3/jobs';
+import type { DrainFailure, DrainSkip } from './jobs-drain';
 import {
   backfillToJson,
   deadLetterToJson,
@@ -20,7 +21,6 @@ import {
   jobRecordToJson,
   jobTraceToJson,
 } from './jobs-json';
-import type { DrainFailure, DrainSkip } from './jobs-report';
 import { listJobs } from './jobs-report';
 
 /** Every key that survives `JSON.stringify` — anything holding `undefined` is silently dropped. */

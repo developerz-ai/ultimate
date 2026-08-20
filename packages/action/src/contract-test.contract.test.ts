@@ -196,7 +196,7 @@ describe('the garbage assertion', () => {
    */
   test('a circular garbage value still gets its verdict from the schema', async () => {
     const circular: Record<string, unknown> = { postId: 'not-a-uuid' };
-    circular.self = circular;
+    circular['self'] = circular;
 
     await garbage(publish(can('post:publish'), { garbage: circular })).run();
   });
@@ -212,7 +212,7 @@ describe('the garbage assertion', () => {
     }).named('acceptAnything');
 
     const circular: Record<string, unknown> = {};
-    circular.self = circular;
+    circular['self'] = circular;
 
     const failure = await garbage(contractTestsFor(permissive, { garbage: circular }))
       .run()

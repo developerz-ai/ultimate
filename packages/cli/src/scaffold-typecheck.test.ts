@@ -170,8 +170,15 @@ describe('unit · scaffold typecheck harness', () => {
   test('--no-example is its own variant: a different db package, so its own compile', () => {
     const [example, empty] = scaffoldVariants();
     expect(scaffoldVariants()).toHaveLength(2);
-    const schemaIn = (variant: typeof example): string =>
-      variant?.files.find((file) => file.path === 'packages/db/src/schema.ts')?.contents ?? '';
+    const schemaIn = (variant: typeof example): string => {
+      const file = variant?.files.find((entry) => entry.path === 'packages/db/src/schema.ts');
+      if (file === undefined) return '';
+      // `GeneratedSourceFile.contents` admits raw bytes for `x new`'s PNG icon; `schema.ts` is
+      // TypeScript, so bytes here are the failure rather than an empty string to compare against.
+      return typeof file.contents === 'string'
+        ? file.contents
+        : expect.unreachable('packages/db/src/schema.ts is bytes, not text');
+    };
     // The bug this variant exists to catch: an entity re-export naming a slice nobody wrote.
     expect(schemaIn(example)).toContain("from '@ledger-demo/web/app/post/entity'");
     expect(schemaIn(empty)).not.toContain('app/post/entity');

@@ -13,6 +13,9 @@ import { withJobDriver } from './jobs-driver';
 const contextFor = (): CommandContext => ({
   args: {
     command: 'jobs',
+    // Present and `undefined`, not absent: `ParsedArgs.subcommand` is `string | undefined` and
+    // REQUIRED, so every reader may index it — `x jobs` with no subcommand is this value.
+    subcommand: undefined,
     positionals: [],
     flags: new Map(),
     json: false,

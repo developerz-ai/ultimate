@@ -100,16 +100,19 @@ describe('the fluent surface', () => {
 
   test('.client() calls the derived path, same as rpc', async () => {
     const { target } = definePublish();
-    let url: string | null = null;
+    // Collected rather than last-write-wins: a `let` assigned only inside the stub is narrowed to
+    // `null` by control-flow analysis, which cannot see that `call()` invokes it — and the array
+    // also pins the CALL COUNT, so a client that dialled twice stops reading as one right URL.
+    const urls: string[] = [];
     const fetchStub: FetchLike = async (input, init) => {
-      url = input;
+      urls.push(input);
       expect(String(init.body)).toBe(JSON.stringify({ postId: POST_ID }));
       return Response.json({ id: POST_ID, published: true });
     };
 
     const call = target.client({ baseUrl: 'https://app.test/', fetch: fetchStub });
     expect(await call({ postId: POST_ID })).toEqual({ id: POST_ID, published: true });
-    expect(url).toBe('https://app.test/api/posts/publish');
+    expect(urls).toEqual(['https://app.test/api/posts/publish']);
   });
 
   test('.contract() emits the three assertions and they hold', async () => {

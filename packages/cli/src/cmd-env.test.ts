@@ -22,7 +22,10 @@ export const config = { name: 'fixture' };
 
 let base = '';
 
-const runner = async (): Promise<ExecResult> => ({
+const runner = async (command: readonly string[]): Promise<ExecResult> => ({
+  // Echoed back, as `exec()` does: `ExecResult.command` is what a failure names, so a fake that
+  // invents one would report a command nobody ran.
+  command,
   ok: true,
   code: 0,
   stdout: '',

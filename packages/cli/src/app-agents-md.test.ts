@@ -99,12 +99,17 @@ describe('the manifest step runs it', () => {
   // `x new`'s output has to pass `x verify` unmodified. Dropping AGENTS.md from the templates
   // would fail the gate in every generated app, and only here does that surface as one failure
   // rather than as a mystery in someone else's repo.
-  test.each(scaffoldVariants())('$name scaffolds an AGENTS.md that passes', async (variant) => {
-    const agents = variant.files.find((file) => file.path === AGENTS_MD_FILENAME);
-    expect(agents).toBeDefined();
-    await withRoot(async (root) => {
-      await Bun.write(join(root, AGENTS_MD_FILENAME), agents?.contents ?? '');
-      expect(await checkAgentsMd(root)).toMatchObject({ findings: [] });
-    });
-  });
+  // `[...]`, because `test.each`'s only matching overload takes a MUTABLE array: handed a
+  // `readonly ScaffoldVariant[]` it fell through to no overload, and `variant` was `unknown`.
+  test.each([...scaffoldVariants()])(
+    '$name scaffolds an AGENTS.md that passes',
+    async (variant) => {
+      const agents = variant.files.find((file) => file.path === AGENTS_MD_FILENAME);
+      expect(agents).toBeDefined();
+      await withRoot(async (root) => {
+        await Bun.write(join(root, AGENTS_MD_FILENAME), agents?.contents ?? '');
+        expect(await checkAgentsMd(root)).toMatchObject({ findings: [] });
+      });
+    },
+  );
 });

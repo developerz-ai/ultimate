@@ -17,7 +17,7 @@ import {
 } from './columns';
 import { entity } from './entity';
 import { clearRegistry } from './registry';
-import type { MoneyValue } from './types';
+import type { MoneyInput, MoneyValue } from './types';
 
 afterAll(() => {
   // The registry is process-global; a leaked entity breaks an unrelated package's tests.
@@ -106,7 +106,16 @@ describe('money', () => {
     const narrow = { id: 'a', price: { minor: 1234, currency: 'EUR' }, other: 7 };
     expect(narrowMoney(columns, narrow)).toBe(narrow);
 
-    const wide = { id: 'a', price: { minor: 1234n, currency: 'EUR' }, other: 7 };
+    // Annotated with the WRITE shape rather than left to infer `{ minor: bigint }`. `narrowMoney`
+    // is declared `<Row>(columns, row: Row): Row`, so the return type is whatever the caller's
+    // input type was — sound for every production call site, which hands it a value already
+    // declared as `MoneyInput`, and a lie for one inferred as exactly `bigint`. `MoneyInput` is
+    // what a writer is documented to hand a money column, so that is what this says.
+    const wide: { id: string; price: MoneyInput; other: number } = {
+      id: 'a',
+      price: { minor: 1234n, currency: 'EUR' },
+      other: 7,
+    };
     expect(narrowMoney(columns, wide)).toEqual(narrow);
     // The caller's object is theirs; narrowing copies rather than mutating it.
     expect(wide.price.minor).toBe(1234n);
@@ -222,9 +231,12 @@ describe('the chain', () => {
     expect(branded.$meta).toEqual(plain.$meta);
     expect(branded.$optional).toBe(plain.$optional);
     expect(() => branded.$parse('not-a-uuid')).toThrow(/expected a uuid/);
-    expect(branded.$parse('018f1b3c-1c2a-7c3d-8e4f-5a6b7c8d9e0f')).toBe(
-      '018f1b3c-1c2a-7c3d-8e4f-5a6b7c8d9e0f',
-    );
+    // Read back as a plain `string`, which is a widening the compiler checks and not a cast: the
+    // brand's claim is compile-time and lives in `type-pins.ts` (see above), so comparing the
+    // branded result against a bare literal here would only be asserting that
+    // `018f1b3c-…` ends in `-post`, which no uuid does.
+    const parsed: string = branded.$parse('018f1b3c-1c2a-7c3d-8e4f-5a6b7c8d9e0f');
+    expect(parsed).toBe('018f1b3c-1c2a-7c3d-8e4f-5a6b7c8d9e0f');
   });
 
   test('.default() marks the column optional and keeps its type', () => {

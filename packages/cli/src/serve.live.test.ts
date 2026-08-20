@@ -28,7 +28,11 @@ function scaffolded(path: string): string {
     (candidate) => candidate.path === path,
   );
   if (file === undefined) return expect.unreachable(`x new writes no ${path}`);
-  return file.contents;
+  // `x new` DOES emit one byte-carrying file — the PNG icon — so this narrowing is load-bearing
+  // here in a way it is not for `x g`: the fixture writes text files only.
+  return typeof file.contents === 'string'
+    ? file.contents
+    : expect.unreachable(`${path} is bytes, not text`);
 }
 
 /** One pump per stream; reading a stream twice abandons the first reader forever. */
@@ -53,7 +57,9 @@ function freePort(): number {
   const probe = Bun.serve({ port: 0, fetch: () => new Response('') });
   const port = probe.port;
   probe.stop(true);
-  return port;
+  // `Server.port` is `number | undefined` — a unix-socket server has none. `port: 0` always opens
+  // a TCP one, so an absent port is a broken assumption rather than a number to default.
+  return port ?? expect.unreachable('Bun.serve({ port: 0 }) opened no TCP port');
 }
 
 async function writeFixture(): Promise<void> {

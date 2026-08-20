@@ -47,8 +47,14 @@ const post = (index: number, orgId: string = ORG): Post => ({
   publishedAt: null,
 });
 
-/** Ids in tens, so a row written mid-iteration can land between two the loop already read. */
-const ids = (...indexes: readonly number[]): readonly string[] => indexes.map(id);
+/**
+ * Ids in tens, so a row written mid-iteration can land between two the loop already read.
+ *
+ * `string[]`, not `readonly string[]`: this builds the EXPECTED side of a `toEqual`, whose
+ * parameter is typed from the subject — `rows.map(...)`, a mutable array. `.map()` already
+ * answers one, so the `readonly` was a widening of the return that nothing read.
+ */
+const ids = (...indexes: readonly number[]): string[] => indexes.map(id);
 const SEEDED = [0, 10, 20, 30, 40, 50, 60] as const;
 
 /** Seven rows for the org under test, two more nobody iterating it may ever see. */
@@ -90,8 +96,12 @@ afterAll(() => {
 
 const feed = () => table.where({ orgId: ORG });
 
-const drain = async (batches: BatchIterator<Post>): Promise<readonly (readonly Post[])[]> => {
-  const seen: (readonly Post[])[] = [];
+// Generic over the row: `.select({ id: true })` yields `Pick<Post, 'id'>` and `.preload('org')`
+// yields `Post & Preloaded<'org'>`, and pinning this to `Post` erased both — so the projection
+// test asserted against the full row type and the preload test read `row.org` off a type without
+// it. Draining an iterator says nothing about the shape it carries.
+const drain = async <Row>(batches: BatchIterator<Row>): Promise<readonly (readonly Row[])[]> => {
+  const seen: (readonly Row[])[] = [];
   for await (const batch of batches) seen.push(batch);
   return seen;
 };

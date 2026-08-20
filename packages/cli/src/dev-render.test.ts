@@ -26,7 +26,9 @@ interface RouteFixture {
 }
 
 function register(fixture: RouteFixture): void {
-  const input: RegisterRouteInput = {
+  // Generic, matching the `defineRoute<…>` below: `RegisterRouteInput` defaults `TData` to
+  // `RouteData`, and a `meta` written against `{ url, params }` cannot be handed a bare record.
+  const input: RegisterRouteInput<{ url: string; params: Record<string, string> }> = {
     file: fixture.file,
     suspenseBoundaries: fixture.render === 'stream' ? 1 : 0,
     ...(fixture.component === undefined ? {} : { component: fixture.component }),

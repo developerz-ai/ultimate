@@ -8,7 +8,7 @@ import { columnFor, columnName, moneyColumns } from './column';
 import { narrowMoney } from './columns';
 import type { EntityCore } from './entity';
 import { invariantViolated } from './errors';
-import type { AnyColumn, MoneyValue } from './types';
+import type { AnyColumn, MoneyValue, RowPatch } from './types';
 
 export type PhysicalRow = Readonly<Record<string, unknown>>;
 
@@ -73,7 +73,7 @@ export const allColumns = <Row>(entity: EntityCore<Row>): readonly string[] =>
  */
 export const bindValues = <Row>(
   entity: EntityCore<Row>,
-  values: Partial<Row>,
+  values: RowPatch<Row>,
 ): ReadonlyMap<string, unknown> => {
   const bound = new Map<string, unknown>();
   // `MoneyInput` lets a writer hand a `bigint`; the row type is `MoneyValue`. `memoryRepo` calls
