@@ -4,6 +4,8 @@ Durable background work, optionally multi-step. Postgres queue by default. `idem
 
 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
+Two factories return a `job` rather than a ninth primitive, so everything on this page applies to both: `backfill()` ([Migrations and backfills](Migrations-And-Backfills)) and `scrape()` ([Scraping](Scraping)).
+
 ## The canonical shape
 
 ```ts

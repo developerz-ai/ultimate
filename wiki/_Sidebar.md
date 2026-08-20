@@ -38,6 +38,7 @@
 - [MCP and AI](MCP-And-AI)
 - [Agents](Agents)
 - [Admin dashboard](Admin-Dashboard)
+- [Scraping](Scraping)
 
 **Cross-cutting**
 

@@ -11,6 +11,9 @@ Tier 5. May import tiers 0-4. Never sideways, never upward.
 
 Commands: `bun test`, `bunx tsc --noEmit -p tsconfig.json`.
 
+Public docs: [`wiki/Scraping.md`](../../wiki/Scraping.md) — the only public surface. A capability this file
+claims and that page does not carry is a capability an app author cannot find.
+
 ## Tier 5, and why not lower
 
 `jobs` is tier 3 and `storage` is tier 1, so today's imports would allow tier 4. It sits at 5

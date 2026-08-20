@@ -80,6 +80,7 @@ Follow in order. Each page states what it was executed against in its own first 
 | [MCP and AI](MCP-And-AI) | the dev MCP server, every action as a tool, the `llm()` gateway, evals |
 | [Agents](Agents) | `agent()` as an action factory, tools as real actions, `hive()`, `agentJob()`, and the at-least-once trap |
 | [Admin dashboard](Admin-Dashboard) | the generated admin app and its MCP surface |
+| [Scraping](Scraping) | `scrape()` as a job factory, the driver-blind page vocabulary, robots and host gates, the yield alarm |
 
 ## Cross-cutting
 

@@ -8,13 +8,18 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 4.0.0 - 2026-08-20
+
 Six bug sweeps since 3.0.0. The second was six independent auditors over the packages the 3.0.0
 sweep did not reach; the third added a whole-repo security pass and an architecture review, and
-found more than the first two combined; the fourth closed the known-gaps backlog; the fifth
-typechecked the 966 test files no compiler had ever read and then deleted what nothing calls; the
-sixth closed the known-gaps backlog and mounted two gates that had been built and never wired.
+found more than the first two combined; the fourth closed the first known-gaps backlog; the
+fifth typechecked the 966 test files no compiler had ever read and then deleted what nothing calls;
+the sixth closed the backlog to the last issue and mounted two gates that had been built and never
+wired.
 **Twenty-six** of the entries below are breaking changes to documented APIs and one needs a
-migration run, so the next release is a major.
+migration run, which is why this release is a major.
 
 Four findings are worth reading even if you skip the rest, because each was a guarantee the code
 stated in a comment and did not keep: every authenticated websocket carried `actor: null`, every
@@ -401,6 +406,54 @@ reach. Five of the entries below are **breaking changes to documented APIs**.
   wrote. Byte-identical outside a request.
 - Everything else in PRs #179–#186, each of which names the defect it closes.
 
+### Every PR in this release
+
+- four gates, and the last ten known gaps (#219)
+- mount the SEO gate as an 18th step, and delete four flags nothing reads (#220)
+- typecheck the tests, on a ratchet — 966 files the gate never read (#208)
+- canonicalJson, fingerprint and compareDecimalText — one home for three that had two (#191)
+- the production image ran the dev server, and nothing built it (#215)
+- two documented options that no caller could make effective (#207)
+- both tracked apps could bake .env.production into their image (#206)
+- secrets shipped inside the production image, and four other things x new got wrong (#205)
+- delete a knob nothing read, stop echoing request bodies, and check the identity live queries depend on (#203)
+- the generated schema told four lies, and drift could see none of them (#202)
+- the error-render gate could not see the shape it let through six times (#198)
+- the wedge watchdog's abort half was built and never wired (#197)
+- the semantic cache defaulted to one store for every tenant (#196)
+- qidOf was queryHash written twice, and the two already disagreed (#195)
+- every Date collided into one cache key, and two tenants shared one dedupe slot (#194)
+- a thrown code named toString made Pipeline.handle reject (#193)
+- an allow list sent as a string matched every subject containing it (#192)
+- 90 recorded ranges said 1.2.0 and 2.0.0 while every package.json said 3.0.0 (#190)
+- deleting every scheduled task and dropping every primary key was a clean x verify (#185)
+- the icon name from network data reached a filesystem path and a TypeScript identifier (#186)
+- a permanent mail refusal was retried five times, and one document indexed as nine copies of one sentence (#184)
+- every authenticated websocket carried actor: null, and the test stub hid it (#183)
+- a limiter shed vanished from queue_depth, silencing the HPA exactly when saturated (#182)
+- an actor holding a role named "constructor" turned every authz denial into a 500 (#181)
+- an app shipping only Spanish served English error pages, and nothing could see it (#180)
+- a declared field named toString was unsatisfiable for every input (#179)
+- two admin actions could share a name and dispatch to the wrong one (#178)
+- an ISR route with a policy served the first actor's HTML to everybody (#177)
+- an unreadable TOTP secret verified against a code needing no secret (#176)
+- a serialization retry budget of NaN ran the transaction zero times (#175)
+- three of these bugs were reachable through a key nobody typed (#174)
+- close the four deferred issues — and two of them were not what their issue said (#163)
+- a direct grant was unspellable, and userActor silently dropped it (#218)
+- delete two declarations that describe features nothing implements (#217)
+- the last 102 test typecheck errors, and RowPatch could not spell the value it refuses (#216)
+- 229 more test typecheck errors, and the fetch seam no caller could fill (#214)
+- the tests typecheck, and four of the errors were the type being wrong (#210)
+- the gap registry said "fixed" about six things that were not, and "open" about fourteen that were (#209)
+- replace a stale economy measurement with a reproducible one (#204)
+- all 30 packages clear 95%, and six bugs found while getting there (#201)
+- ui moves 5 → 4, and the admin → ui exception is deleted (#200)
+- three sweeps, twelve breaking changes and one migration — the next release is a major (#199)
+- how much code you do not write, and why the bugs matter more than the lines (#189)
+- one job per package — its own tests, its own lint, its own coverage bar (#188)
+- the second sweep landed five breaking changes, and the next release is a major (#187)
+- 3.0.0 is on npm, and the publishers were re-attached, not attached (#162)
 
 ## 3.0.1
 
