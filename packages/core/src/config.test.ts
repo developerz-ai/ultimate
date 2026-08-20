@@ -20,11 +20,10 @@ describe('defineConfig', () => {
   test('overlays let config/ split by concern, last one wins', () => {
     const config = defineConfig(
       { name: 'myapp', locales: ['en', 'es'], defaultLocale: 'es' },
-      { jobs: { driver: 'redis', concurrency: 32 } },
+      { jobs: { concurrency: 32 } },
       { realtime: { enabled: true, tier: 'live-queries', transport: 'nats', urlEnv: 'NATS_URL' } },
     );
 
-    expect(config.jobs.driver).toBe('redis');
     expect(config.jobs.concurrency).toBe(32);
     // untouched keys still come from defaults
     expect(config.jobs.maxAttempts).toBe(5);
@@ -134,5 +133,31 @@ describe('realtime section', () => {
 
     expect(Object.keys(config.realtime).sort()).toEqual(['enabled', 'tier', 'transport', 'urlEnv']);
     expect('heartbeatMs' in config.realtime).toBe(false);
+  });
+});
+
+/**
+ * `jobs.driver` accepted `'postgres' | 'redis' | 'nats'` and was read by NOTHING — boot always
+ * built `createPgDriver`, so `jobs: { driver: 'redis' }` did not throw, did not warn, and silently
+ * gave you Postgres. Deleted in 5.0.0.
+ *
+ * Asserted at RUNTIME and not only by the compiler, because the compiler is exactly what missed it:
+ * this file's overlay test passed `{ jobs: { driver: 'redis' } }` and asserted `config.jobs.driver`
+ * came back — green for as long as the field existed, and still green the moment it was deleted,
+ * because a spread carries a key no type names. A type-level guard alone would have the same hole.
+ */
+describe('the dead jobs.driver field', () => {
+  test('the default config declares no driver', () => {
+    const config = defineConfig({ name: 'myapp' });
+    expect(Object.hasOwn(config.jobs, 'driver')).toBe(false);
+  });
+
+  test('a JS caller passing one is not answered with a working switch', () => {
+    // The cast is what a JS caller — or a config file that predates 5.0.0 — actually does. The
+    // value survives the spread, which is why the assertion is that it selects nothing rather than
+    // that it is absent: what is gone is the DECLARATION, and with it the promise it made.
+    const config = defineConfig({ name: 'myapp' }, { jobs: { concurrency: 3 } } as never);
+    expect(config.jobs.concurrency).toBe(3);
+    expect(Object.hasOwn(config.jobs, 'driver')).toBe(false);
   });
 });

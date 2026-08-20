@@ -44,7 +44,6 @@ export type {
   CacheTier,
   DatabaseConfig,
   JobsConfig,
-  JobsDriver,
   McpConfig,
   OfflineStrategy,
   PwaConfig,

@@ -179,11 +179,11 @@ Two implementations ship in 1.0.0. Two more are **not in 4.0.0** — interface-c
 | Driver | Status `As of 2026-08` | When | Trade-off |
 |---|---|---|---|
 | `postgres` (default) | **shipped** | always, up to ~thousands of jobs/sec. `x dev` runs it too, against the embedded PGlite | outbox is free (same DB, same tx); `SELECT ... FOR UPDATE SKIP LOCKED` claiming; zero extra infra |
-| `memory` | **shipped**, not a `jobs.driver` value | tests and fixtures — reached through `createMemoryDriver()`, and as `x jobs drain --to memory` | in-process; nothing survives a restart |
+| `memory` | **shipped**; there is no config value for any driver | tests and fixtures — reached through `createMemoryDriver()`, and as `x jobs drain --to memory` | in-process; nothing survives a restart |
 | `redis` | **not in 4.0.0 — throws `X_NOT_IMPLEMENTED`** | high-throughput, short jobs | would need the outbox relay; loses "queue state in one backup" |
 | `nats` | **not in 4.0.0 — throws `X_NOT_IMPLEMENTED`** | very high fanout, multi-region, JetStream retention | strongest delivery semantics, most operational surface |
 
-**`jobs.driver` selects nothing** `As of 2026-08-20`, and this page said it did. `JobsConfig.driver` accepts `'postgres' | 'redis' | 'nats'`, and it **has no reader anywhere** — boot always builds `createPgDriver`, stated in [`packages/jobs/src/driver.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/jobs/src/driver.ts)'s own header. So setting it to `redis` does not boot-and-then-throw, as this page claimed: it changes nothing at all and you silently get Postgres, which is the more dangerous of the two behaviours because nothing reports it.
+**There is no `jobs.driver`, and 5.0.0 is where it went.** It accepted `'postgres' | 'redis' | 'nats'` and had **no reader anywhere** — boot always built `createPgDriver`, stated in [`packages/jobs/src/driver.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/jobs/src/driver.ts)'s own header. So setting it to `redis` never boot-and-then-threw, as this page once claimed: it changed nothing at all and you silently got Postgres, which is the more dangerous of the two behaviours because nothing reports it. On 4.x the field still typechecks and still does nothing; deleting it from `app.config.ts` is the whole of the upgrade.
 
 **The seam that does work is `setJobDriver(driver)`** — swap the driver, zero job-code change, which is what the interface buys. The `redis` and `nats` stubs are real and throw `X_NOT_IMPLEMENTED` on every method; you reach them by constructing one and passing it to `setJobDriver`, never through config. Tracked as [issue #223](https://github.com/developerz-ai/ultimate/issues/223): the field is a declaration nothing reads, the same shape 4.0.0 deleted for `realtime.heartbeatMs` and `PrecacheAsset.critical`, and removing it is breaking — so it waits for the next major.
 
@@ -228,7 +228,7 @@ Every command supports `--json`. See [CLI reference](CLI-Reference).
 | `X_IDEMPOTENCY_CONFLICT` | same key, different payload, or still in flight | fresh key for a different payload; otherwise retry after the first settles |
 | `X_DRAINING` | claim attempted on a worker that received SIGTERM | none — the job stays queued and another worker claims it |
 | `X_FORBIDDEN` | the job's actor fails the originating action's policy | grant the permission, or enqueue as a system actor |
-| `X_NOT_IMPLEMENTED` | the `redis` or `nats` driver was reached — neither is in 4.0.0 | call `setJobDriver(createPgDriver({ executor }))`, or `setJobDriver(createMemoryDriver())` in a test. **Not** `jobs.driver` in `app.config.ts` — that field has no reader, so editing it cannot repair this. To move rows already queued: `x jobs drain --to memory --json` |
+| `X_NOT_IMPLEMENTED` | the `redis` or `nats` driver was reached — neither is shipped | call `setJobDriver(createPgDriver({ executor }))`, or `setJobDriver(createMemoryDriver())` in a test. There is no config line to edit: `jobs.driver` was deleted in 5.0.0 because it never had a reader. To move rows already queued: `x jobs drain --to memory --json` |
 
 Full index: [Error codes](Error-Codes). Verbatim error shapes live in each package's `src/errors.ts`.
 

@@ -249,9 +249,9 @@ Rule: after the queue is wiped, the business must be reconstructible from Postgr
 | `X_JOB_TIMEOUT` | the job exceeded its wall-clock limit | `raise timeout on the job definition, or split the work into step.run() calls` |
 | `X_JOB_LEASE_LOST` | the queue took this job back mid-run | `x jobs show <id> --json` |
 | `X_JOB_SLOT_LOST` | the fleet concurrency slot was taken by another worker | `x jobs ls --state running --json` |
-| `X_JOB_NOT_CANCELLABLE` | the driver cannot cancel | `set jobs: { driver: 'postgres' } in app.config.ts, then: x jobs cancel <id> --json` |
+| `X_JOB_NOT_CANCELLABLE` | the driver cannot cancel | `call setJobDriver(createPgDriver({ executor })) at boot, then: x jobs cancel <id> --json` |
 | `X_JOB_TENANT_REQUIRED` | the job declares no tenant | `add tenant: (input) => input.orgId to the job — or tenant: 'none', which declares NO org` |
-| `X_JOB_CONCURRENCY_UNENFORCEABLE` | `concurrency` declared on a driver that cannot enforce it | `remove concurrency from the job, or set jobs: { driver: 'postgres' } in app.config.ts` |
+| `X_JOB_CONCURRENCY_UNENFORCEABLE` | `concurrency` declared on a driver that cannot enforce it | `remove concurrency from the job, or call setJobDriver(createPgDriver({ executor }))` |
 | `X_OUTBOX_NO_TX` | `enqueue` outside a transaction | `wrap the call in ctx.tx(async (tx) => ...), or enqueue with { outbox: false }` |
 | `X_DRIVER_UNAVAILABLE` | the queue driver is unreachable | the factory takes the `fix` from the driver — it names the connection to repair |
-| `X_NOT_IMPLEMENTED` | a driver path with no implementation yet | `set jobs: { driver: 'postgres' } in app.config.ts` |
+| `X_NOT_IMPLEMENTED` | a driver path with no implementation yet | `call setJobDriver(createPgDriver({ executor })) at boot` |
