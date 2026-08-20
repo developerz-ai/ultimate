@@ -102,3 +102,31 @@ describe('toJobHandle', () => {
     expect(ran).toBe(false);
   });
 });
+
+// The type is the first refusal, and the one an author actually meets: `.job()` is named `job`,
+// so the reach for `.enqueue()` is the natural next keystroke. It is a compile error, and
+// `@ts-expect-error` IS the assertion — it stops compiling the day the field appears, which is the
+// day someone has quietly made this look enqueueable without seating it through `job()`.
+// `registerJobs()` in `@ultimat3/jobs` is the second refusal, for the untyped path.
+describe('an action projection cannot be mistaken for a job handle', () => {
+  test('there is no enqueue on it, at compile time', () => {
+    const handle = toJobHandle(publishPost());
+    // @ts-expect-error `ActionJobHandle` has no `enqueue` — `agentJob()` is what produces one.
+    const enqueue: unknown = handle.enqueue;
+    expect(enqueue).toBeUndefined();
+    // The literal is deliberately not `'job'`, which is what lets `registerJobs` recognise it
+    // across a tier boundary it may never import across.
+    expect(handle.kind).toBe('action-job');
+  });
+
+  test('and nothing on it is a job field the queue would read', () => {
+    const handle = toJobHandle(publishPost());
+    expect(Object.keys(handle).sort()).toEqual([
+      'idempotencyKey',
+      'input',
+      'invoke',
+      'kind',
+      'name',
+    ]);
+  });
+});

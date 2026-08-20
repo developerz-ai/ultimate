@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import type { CacheTag } from '@ultimat3/cache';
 import { invalidateTags, isolateGraph, resetGraph, tag } from '@ultimat3/cache';
 import { clearRoutes, describeRoutes, registerRoute } from './registry';
-import { createIsrController, memoryIsrStore } from './render-isr';
+import { createIsrController, isrKey, memoryIsrStore } from './render-isr';
 import type { RenderResult, RouteMetaFn } from './route';
 import { defineRoute } from './route';
 
@@ -38,7 +38,13 @@ beforeEach(() => {
   resetGraph();
 });
 
-afterAll(restoreGraph);
+afterAll(() => {
+  // The graph AND the registry. `beforeEach` clears routes for this file's own sake; this clears
+  // them for everyone else's — the registry is process-global, so the last test in this file left
+  // its routes visible to every suite that ran after it, in whatever order `bun test` chose.
+  clearRoutes();
+  restoreGraph();
+});
 
 describe('single-flight regeneration', () => {
   test('a burst of concurrent requests renders exactly once', async () => {
@@ -308,5 +314,72 @@ describe('the default ISR store is bounded', () => {
     await controller.serve('/blog/a', render); // evicts /blog/b
 
     expect(controller.revalidateByTags([postTag])).toEqual(['/blog/a', '/blog/c']);
+  });
+});
+
+// #171's second half. A gated ISR route is refused at `defineRoute` (`modes.ts`), which closes the
+// actor axis at build time — but two URLs that differ only in their query are two documents no
+// build error can tell apart, and the store keyed both as the bare pathname.
+describe('the store key carries the query, and the route lookup does not', () => {
+  test('two queries on one path are two entries, not one served twice', async () => {
+    isrRoute('apps/web/site/blog/page.tsx', [postTag], '5m');
+    const isr = createIsrController({ store: memoryIsrStore() });
+
+    const first = await isr.serve('/blog?page=2', () => '<p>page 2</p>');
+    const second = await isr.serve('/blog?page=3', () => '<p>page 3</p>');
+
+    expect(first.result.body).toBe('<p>page 2</p>');
+    // The whole issue in one assertion: keyed on `/blog`, this was `<p>page 2</p>` and `state`
+    // was `hit` — a second visitor served the first visitor's document.
+    expect(second.result.body).toBe('<p>page 3</p>');
+    expect(second.state).toBe('miss');
+    expect(isr.store().paths()).toEqual(['/blog?page=2', '/blog?page=3']);
+  });
+
+  test('a query-keyed entry still resolves ITS ROUTE for the declared TTL', async () => {
+    // The trap in the obvious fix. `descriptorFor` asks the route TABLE, and `/blog?page=2`
+    // matches no route pattern — so a key change without stripping the query first would answer
+    // `ttlMs: null`, and `revalidate: { ttl: '5m' }` would silently become tag-only. `s-maxage`
+    // is where that surfaces: 300 is the declared five minutes, 60 is the tag-only fallback.
+    isrRoute('apps/web/site/blog/page.tsx', [postTag], '5m');
+    const isr = createIsrController({ store: memoryIsrStore() });
+
+    const served = await isr.serve('/blog?page=2', () => '<p>x</p>');
+
+    expect(sMaxAge(served.result)).toBe('300');
+    expect(served.entry.ttlMs).toBe(300_000);
+  });
+
+  test('a dynamic route with a query resolves through its pattern too', async () => {
+    isrRoute('apps/web/site/blog/[slug]/page.tsx', [postTag], '5m');
+    const isr = createIsrController({ store: memoryIsrStore() });
+
+    const served = await isr.serve('/blog/hello?utm_source=x', () => '<p>x</p>');
+
+    expect(sMaxAge(served.result)).toBe('300');
+  });
+
+  test('a tag bust marks the query-keyed entries, so nothing escapes invalidation', async () => {
+    isrRoute('apps/web/site/blog/page.tsx', [postTag], '5m');
+    const isr = createIsrController({ store: memoryIsrStore() });
+    await isr.serve('/blog?page=2', () => '<p>a</p>');
+    await isr.serve('/blog?page=3', () => '<p>b</p>');
+
+    expect(isr.revalidateByTags([postTag])).toEqual(['/blog?page=2', '/blog?page=3']);
+  });
+});
+
+describe('isrKey', () => {
+  test('a bare path is its own key — no trailing `?` for a URL that had none', () => {
+    expect(isrKey(new URL('https://app.test/blog'))).toBe('/blog');
+  });
+
+  test('params are SORTED, so one page is not rendered twice under two spellings', () => {
+    expect(isrKey(new URL('https://app.test/blog?b=2&a=1'))).toBe('/blog?a=1&b=2');
+    expect(isrKey(new URL('https://app.test/blog?a=1&b=2'))).toBe('/blog?a=1&b=2');
+  });
+
+  test('the fragment is never in the key — a browser never sends it', () => {
+    expect(isrKey(new URL('https://app.test/blog?a=1#section'))).toBe('/blog?a=1');
   });
 });

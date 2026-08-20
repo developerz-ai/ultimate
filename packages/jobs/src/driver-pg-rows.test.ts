@@ -4,8 +4,43 @@
 // `tenantId: null` to a tenant guard that only refuses `undefined`.
 
 import { describe, expect, test } from 'bun:test';
+import { isUltimateError } from '@ultimat3/core';
+import { BACKFILL_STATUSES } from './backfill-ledger';
+import { JOB_STATES } from './driver';
 import type { BackfillRow, JobRow, StepRow } from './driver-pg-rows';
 import { num, toBackfillRun, toJobRecord, toStepRecord } from './driver-pg-rows';
+import { isStepStatus, STEP_STATUSES } from './steps';
+
+/** Row builders at file scope: the validation block below needs all three. */
+const stepRowFor = (overrides: Partial<StepRow> = {}): StepRow => ({
+  run_id: 'run-1',
+  name: 'charge',
+  status: 'completed',
+  output: { chargeId: 'ch_1' },
+  started_at: '1000',
+  completed_at: null,
+  wake_at: null,
+  event: null,
+  correlation_key: null,
+  attempts: 1,
+  error: null,
+  ...overrides,
+});
+
+const backfillRowFor = (overrides: Partial<BackfillRow> = {}): BackfillRow => ({
+  run_id: 'run-1',
+  name: 'sweep',
+  checksum: 'aaaa',
+  status: 'running',
+  app_version: '1.2.0',
+  rows_processed: '4200',
+  last_cursor: 'id-42',
+  started_at: '1000',
+  completed_at: null,
+  ...overrides,
+});
+
+const jobRowFor = (overrides: Partial<JobRow> = {}): JobRow => jobRow(overrides);
 
 const jobRow = (overrides: Partial<JobRow> = {}): JobRow => ({
   id: 'job-1',
@@ -176,5 +211,106 @@ describe('toBackfillRun', () => {
     expect(run.cursor).toBe('id-42');
     expect(run.rows).toBe(4200);
     expect(Object.hasOwn(run, 'completedAt')).toBe(false);
+  });
+});
+
+// The three decoders each cast a `text` column onto a closed union — `row.status as
+// StepRecord['status']`, `row.state as JobRecord['state']`, `row.status as BackfillStatus`. A cast
+// is not a check, and this data crosses a process boundary: the row was written by whatever build
+// was deployed when the job was enqueued. `isBackfillStatus` one file over already states the rule
+// this broke — "Narrows a string the CLI, MCP or a URL handed over. Never a cast — the list
+// decides" — and `toBackfillRun` was the one caller ignoring it.
+//
+// What a laundered status COSTS is `steps.ts:263`: `if (existing?.status === 'completed')` returns
+// the memoized output, and every other value falls through and RE-EXECUTES the step. So a status
+// this build cannot read turns "this step already ran" into "run it again" — a second charge on
+// `step.run('charge', …)`, in a file whose header promises the welcome email is not sent twice.
+describe('a status column is validated, never cast', () => {
+  const codeOf = (run: () => unknown): string => {
+    try {
+      run();
+      return 'resolved';
+    } catch (error) {
+      return isUltimateError(error) ? error.code : String(error);
+    }
+  };
+
+  test('a step status this build does not know is refused, not passed through', () => {
+    // `'suspended'` is a JOB state, never a `StepStatus`. It reached `StepRecord.status` unchanged.
+    expect(codeOf(() => toStepRecord(stepRowFor({ status: 'suspended' })))).toBe(
+      'X_JOB_ROW_STATUS_UNKNOWN',
+    );
+    expect(codeOf(() => toStepRecord(stepRowFor({ status: '' })))).toBe('X_JOB_ROW_STATUS_UNKNOWN');
+  });
+
+  test('every status the step vocabulary declares still decodes', () => {
+    for (const status of STEP_STATUSES) {
+      expect(toStepRecord(stepRowFor({ status })).status).toBe(status);
+    }
+  });
+
+  test('a job state this build does not know is refused', () => {
+    expect(codeOf(() => toJobRecord(jobRowFor({ state: 'paused' })))).toBe(
+      'X_JOB_ROW_STATUS_UNKNOWN',
+    );
+    for (const state of JOB_STATES) {
+      expect(toJobRecord(jobRowFor({ state })).state).toBe(state);
+    }
+  });
+
+  test('a backfill status this build does not know is refused', () => {
+    expect(codeOf(() => toBackfillRun(backfillRowFor({ status: 'cancelled' })))).toBe(
+      'X_JOB_ROW_STATUS_UNKNOWN',
+    );
+    for (const status of BACKFILL_STATUSES) {
+      expect(toBackfillRun(backfillRowFor({ status })).status).toBe(status);
+    }
+  });
+
+  // The refusal is an instruction: an operator reading it has to learn WHICH column held WHAT, and
+  // that the row is almost certainly a newer deploy's, not corruption.
+  test('the refusal names the column, the value and the table it came from', () => {
+    try {
+      toStepRecord(stepRowFor({ status: 'compensated' }));
+      throw new Error('expected a refusal');
+    } catch (error) {
+      if (!isUltimateError(error)) throw error;
+      expect(error.cause).toContain('compensated');
+      expect(error.cause).toContain('status');
+      expect(error.cause).toContain('ultimate_job_steps');
+      expect(error.fix).toContain('x jobs');
+    }
+  });
+});
+
+// What a rolling deploy does now, said out loud, because refusing changed it.
+//
+// A status string only reaches these columns because some build of this framework wrote it, so
+// the two directions are not symmetric. N+1 reading N's rows is the normal direction and cannot
+// refuse: a release that only ADDS a status still knows every older one, which the first test
+// below pins by decoding the whole vocabulary. N reading N+1's row is the rare direction — a
+// status added in N+1, seen by a worker still on N — and that one job now fails loudly with
+// `X_JOB_ROW_STATUS_UNKNOWN` instead of silently re-running its steps.
+describe('two builds sharing one queue', () => {
+  test('the older build refuses ONE row and leaves the rest of the queue readable', () => {
+    const fromNewerDeploy = stepRowFor({ name: 'compensate', status: 'compensated' });
+    const written = STEP_STATUSES.map((status) => stepRowFor({ name: status, status }));
+
+    expect(() => toStepRecord(fromNewerDeploy)).toThrow(/X_JOB_ROW_STATUS_UNKNOWN/);
+    // Every row this build did write still decodes: the refusal is per row, not per queue.
+    expect(written.map((row) => toStepRecord(row).status)).toEqual([...STEP_STATUSES]);
+  });
+
+  // The severity, demonstrated rather than asserted in prose: `stepRun` returns the memoized
+  // output only for `'completed'`, so a laundered status is not a cosmetic type hole — it is a
+  // step that runs a second time. This is the behaviour the cast used to produce.
+  test('a status that is not exactly `completed` is what makes a step re-run', () => {
+    const memoized = STEP_STATUSES.filter((status) => status === 'completed');
+    const rerun = STEP_STATUSES.filter((status) => status !== 'completed');
+
+    expect(memoized).toEqual(['completed']);
+    // Anything outside the vocabulary lands in the second bucket, which is why it may not land.
+    expect(rerun).not.toContain('compensated');
+    expect(isStepStatus('compensated')).toBe(false);
   });
 });

@@ -25,6 +25,7 @@ export const SCRAPE_OWNED_ERROR_CODES = [
   'X_SCRAPE_PAGE_CRASHED',
   'X_SCRAPE_OUTPUT_INVALID',
   'X_SCRAPE_YIELD_COLLAPSED',
+  'X_SCRAPE_YIELD_HISTORY_MISSING',
   'X_SCRAPE_DOWNLOAD_TIMEOUT',
   'X_SCRAPE_ROBOTS_DISALLOWED',
   'X_SCRAPE_FIXTURE_MISSING',
@@ -70,6 +71,8 @@ export const SCRAPE_ERROR_TITLES: Readonly<Record<ScrapeOwnedErrorCode, string>>
   X_SCRAPE_PAGE_CRASHED: 'the renderer process died',
   X_SCRAPE_OUTPUT_INVALID: 'the extracted rows do not match the extract schema',
   X_SCRAPE_YIELD_COLLAPSED: 'the run succeeded and returned far too little',
+  X_SCRAPE_YIELD_HISTORY_MISSING:
+    'a maxDrop is declared and no history store can supply its baseline',
   X_SCRAPE_DOWNLOAD_TIMEOUT: 'the download never landed',
   X_SCRAPE_ROBOTS_DISALLOWED: 'robots.txt disallows this path',
   X_SCRAPE_FIXTURE_MISSING: 'the fixture driver has no recording for this request',
@@ -132,6 +135,9 @@ export const SCRAPE_ERROR_RETRY = {
   // gigabyte and dies the same way. The fix is a number on the request, so a human decides it.
   X_SCRAPE_BODY_TOO_LARGE: 'terminal',
   X_SCRAPE_YIELD_COLLAPSED: 'terminal',
+  // A declaration error, raised by `scrape()` before any attempt exists — there is no run to
+  // retry, and the same definition would refuse identically forever.
+  X_SCRAPE_YIELD_HISTORY_MISSING: 'terminal',
   X_SCRAPE_ROBOTS_DISALLOWED: 'terminal',
   X_SCRAPE_FIXTURE_MISSING: 'terminal',
   X_SCRAPE_FIXTURE_STALE: 'terminal',

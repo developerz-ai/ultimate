@@ -135,6 +135,7 @@ export {
   createIsrController,
   DEFAULT_ISR_MAX_ENTRIES,
   invalidateAndRevalidate,
+  isrKey,
   memoryIsrStore,
 } from './render-isr';
 export type { SpaShell, SpaShellInput } from './render-spa';

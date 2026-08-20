@@ -3,9 +3,10 @@
 // decoding a row is not control flow — every number arrives as `number | string` (a bigint is a
 // string in every client) and every absent column as `null`, and that translation is its own job.
 
-import type { BackfillRun, BackfillStatus } from './backfill-ledger';
-import type { JobRecord } from './driver';
-import type { StepRecord } from './steps';
+import { BACKFILL_STATUSES, type BackfillRun, isBackfillStatus } from './backfill-ledger';
+import { isJobState, JOB_STATES, type JobRecord, type JobState } from './driver';
+import { JobRowStatusUnknownError } from './errors';
+import { isStepStatus, STEP_STATUSES, type StepRecord, type StepStatus } from './steps';
 
 export interface StepRow {
   readonly run_id: string;
@@ -54,6 +55,21 @@ export interface JobRow {
   readonly enqueued_by?: string | null;
 }
 
+/**
+ * The one narrowing for all three status columns. `as` is not a check, and these rows cross a
+ * process boundary — a queue row was written by whatever build was deployed when the job was
+ * enqueued, which on a rolling deploy is not this one. `isBackfillStatus`'s own doc already stated
+ * the rule ("Never a cast — the list decides") and this file was the caller ignoring it.
+ */
+const statusIn = <T extends string>(
+  known: readonly T[],
+  is: (value: string) => value is T,
+  input: { table: string; column: string; value: string },
+): T => {
+  if (is(input.value)) return input.value;
+  throw new JobRowStatusUnknownError({ ...input, known });
+};
+
 export const num = (value: number | string | null | undefined): number =>
   value === null || value === undefined ? 0 : Number(value);
 
@@ -71,7 +87,11 @@ export function toJobRecord(row: JobRow): JobRecord {
     runId: row.run_id,
     attempt: row.attempt,
     maxAttempts: row.max_attempts,
-    state: row.state as JobRecord['state'],
+    state: statusIn<JobState>(JOB_STATES, isJobState, {
+      table: 'ultimate_jobs',
+      column: 'state',
+      value: row.state,
+    }),
     runAt: num(row.run_at),
     createdAt: num(row.created_at),
     updatedAt: num(row.updated_at),
@@ -94,7 +114,11 @@ export function toStepRecord(row: StepRow): StepRecord {
   return {
     runId: row.run_id,
     name: row.name,
-    status: row.status as StepRecord['status'],
+    status: statusIn<StepStatus>(STEP_STATUSES, isStepStatus, {
+      table: 'ultimate_job_steps',
+      column: 'status',
+      value: row.status,
+    }),
     output: row.output,
     startedAt: num(row.started_at),
     attempts: row.attempts,
@@ -112,7 +136,11 @@ export function toBackfillRun(row: BackfillRow): BackfillRun {
     runId: row.run_id,
     name: row.name,
     checksum: row.checksum,
-    status: row.status as BackfillStatus,
+    status: statusIn(BACKFILL_STATUSES, isBackfillStatus, {
+      table: 'ultimate_backfills',
+      column: 'status',
+      value: row.status,
+    }),
     appVersion: row.app_version,
     // `rows_processed` is a bigint, which every Postgres client hands back as a string.
     rows: num(row.rows_processed),

@@ -105,7 +105,7 @@ function frameOver(
     waitFor: (selector, options) => wait(selector, options, 'actionable'),
     async click(selector, options): Promise<void> {
       await wait(selector, options, 'actionable');
-      await (await resolve()).click(selector, 0);
+      await (await resolve()).click(selector);
     },
     async type(selector, text, options): Promise<void> {
       await wait(selector, options, 'actionable');
@@ -187,8 +187,7 @@ export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePa
     // in object storage, forever. Refused rather than masked — a mask over pixels is a guess
     // about layout, and `page.html()` already gives a redacted artifact that is exact.
     if (state.tainted) throw secretExposed(kind, target.url());
-    const timeoutMs = options?.timeout ?? ctx.defaultTimeoutMs;
-    const request = { fullPage: options?.fullPage, timeoutMs };
+    const request = { fullPage: options?.fullPage };
     return kind === 'screenshot' ? target.screenshot(request) : target.pdf(request);
   };
   return {

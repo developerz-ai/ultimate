@@ -76,32 +76,34 @@ describe('the agent surface is the same dashboard, projected again', () => {
 });
 
 /**
- * Two `@ultimat3/admin` defects, asserted AS THEY ARE so the gate stays honest rather than
- * flattering. Both are the framework's to fix; when either is, this test goes red and whoever
- * fixed it updates the line deliberately — which is the point of pinning them here.
+ * The double-pluralisation bug this block used to pin is **fixed**: `adminResource` no longer
+ * guesses English morphology, so an entity named `orgs` is served at `/admin/orgs`. Which plural
+ * a name takes is an app's convention, not a mechanism the framework can own (axiom 8), and
+ * `path:` was always the override.
  *
- *  1. **Double pluralisation.** Every entity name here is already plural, and the route builder
- *     pluralises again: `orgs` -> `orgses`, `members` -> `memberses`. Every admin URL this app
- *     would serve is misspelled.
- *  2. **The nav omits `basePath`.** `nav` links to `/orgses` while the route is `/admin/orgses`,
- *     so every navigation link in the dashboard points at a path no route matches. This is the
- *     one that makes the dashboard unusable rather than merely ugly, and it is invisible to any
- *     test that checks the nav or the routes alone — it only shows when the two are compared.
+ * The nav "bug" it also pinned **was never one**, and this is the more useful lesson. The old
+ * assertion compared `nav` hrefs against route paths and found them disjoint — but hrefs are
+ * base-relative by design and `layout.tsx:82` composes `${basePath}${item.href}`, which
+ * `layout.test.ts` has always asserted. Comparing an uncomposed href to a composed path is
+ * disjoint by construction, so the test passed while proving nothing. It is replaced below by the
+ * invariant that does matter: every nav href must resolve to a real route AFTER composition.
  */
-describe('known @ultimat3/admin defects, pinned so they cannot be forgotten', () => {
-  test('entity names are pluralised twice in every route path', () => {
+describe('routes are the entity names, not a guess about English', () => {
+  test('an already-plural entity name is served once, not twice', () => {
     const paths = admin.routes.map((route) => route.path);
-    expect(paths).toContain('/admin/orgses');
-    expect(paths).toContain('/admin/memberses');
-    expect(paths).not.toContain('/admin/orgs');
+    expect(paths).toContain('/admin/orgs');
+    expect(paths).toContain('/admin/members');
+    expect(paths).not.toContain('/admin/orgses');
   });
 
-  test('no nav href matches any route path, because nav drops the base path', () => {
-    const paths = new Set(admin.routes.map((route) => route.path));
+  test('nav hrefs are base-relative, and the layout is what makes them absolute', () => {
     const hrefs = admin.nav.flatMap((group) => group.items.map((item) => item.href));
+    const paths = admin.routes.map((route) => route.path);
     expect(hrefs.length).toBeGreaterThan(0);
-    expect(hrefs.filter((href) => paths.has(href))).toEqual([]);
-    expect(hrefs).toContain('/orgses');
+    expect(hrefs).toContain('/orgs');
     expect(admin.basePath).toBe('/admin');
+    for (const href of hrefs) {
+      expect(paths).toContain(`${admin.basePath}${href}`);
+    }
   });
 });

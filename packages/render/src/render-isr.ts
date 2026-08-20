@@ -23,6 +23,11 @@ import type { RenderResult } from './route';
 export type IsrState = 'miss' | 'hit' | 'stale';
 
 export interface IsrEntry {
+  /**
+   * The store key: the request's pathname AND its query, params sorted. Not the route's pattern
+   * and not the bare pathname — `/blog?page=2` and `/blog?page=3` render different documents, and
+   * keying both as `/blog` served the second visitor the first one's HTML (#171).
+   */
   readonly path: string;
   readonly html: string;
   readonly hash: string;
@@ -73,6 +78,37 @@ export function memoryIsrStore(options: MemoryIsrStoreOptions = {}): IsrStore {
     },
     paths: () => [...map.keys()].sort(),
   };
+}
+
+/**
+ * The ISR store key for one request URL: pathname plus the query, **params sorted**.
+ *
+ * Exported because deriving it is the caller's job and there may only be ONE derivation — a
+ * server that keyed on `url.pathname` while the store believed it held a whole URL is the shape
+ * of #171. Sorting makes `?a=1&b=2` and `?b=2&a=1` one entry rather than two renders of one page.
+ *
+ * A query-carrying URL therefore gets its own entry, which is correct and is not free: a crawler
+ * appending `?utm_source=…` mints one entry per value. That is bounded, not unbounded —
+ * `DEFAULT_ISR_MAX_ENTRIES` evicts least-recently-generated first — and a bounded cache that
+ * thrashes is the right failure next to an unbounded one that answers the wrong document.
+ */
+export function isrKey(url: URL): string {
+  if (url.search === '') return url.pathname;
+  const params = new URLSearchParams(url.search);
+  params.sort();
+  return `${url.pathname}?${params.toString()}`;
+}
+
+/**
+ * The route pattern a key belongs to. Every lookup that asks the ROUTE TABLE a question — the
+ * descriptor, and therefore the TTL — has to strip the query first: `descriptorFor('/blog?page=2')`
+ * matches no route, so the entry would silently fall back to `ttlMs: null` and a declared
+ * `revalidate: { ttl: '5m' }` would become tag-only. Keying without this split is a half-fix that
+ * trades a leak for a wrong TTL.
+ */
+function routePathOf(key: string): string {
+  const query = key.indexOf('?');
+  return query === -1 ? key : key.slice(0, query);
 }
 
 export type IsrRenderFn = (path: string) => string | Promise<string>;
@@ -131,7 +167,8 @@ export function createIsrController(options: IsrControllerOptions = {}): IsrCont
   const pending = new Map<string, Promise<IsrEntry>>();
   const registered = new Set<string>();
 
-  function descriptorFor(path: string): RouteDescriptor | undefined {
+  function descriptorFor(key: string): RouteDescriptor | undefined {
+    const path = routePathOf(key);
     const table = routes();
     return table.find((r) => r.path === path) ?? table.find((r) => matchesRoute(path, r.path));
   }

@@ -284,3 +284,52 @@ describe('the registrar announcement', () => {
     expect(getJob('onboardOrg')).toBe(onboardOrg as AnyJobHandle);
   });
 });
+
+// `registerJobs(module)` is handed a whole module namespace, so skipping a non-job silently is
+// correct for a constant, a type or a helper exported beside the job — that is the case above.
+// An `@ultimat3/action` job PROJECTION is the one shape where silence is wrong: `.job()` is named
+// `job`, it carries `name`, `input` and `idempotencyKey`, and it is exactly what an author reaches
+// for when they want to queue an action. It is not a job and cannot be — `action` and `jobs` are
+// both tier 3, so neither may import the other — so `registerJobs({ publishPost: p.job() })`
+// registered NOTHING, returned `[]`, and the job simply never ran. Nothing failed, at any point.
+describe('an action projection is refused by name, never skipped in silence', () => {
+  /**
+   * The shape `packages/action/src/job-handle.ts` builds, detected structurally because the tier
+   * rule forbids importing it. `kind: 'action-job'` is deliberately a different literal from
+   * `'job'` — that file says so — which is exactly what makes it recognisable here.
+   */
+  const actionProjection = {
+    kind: 'action-job' as const,
+    name: 'action:publishPost',
+    input: passthrough<OrgInput>(),
+    idempotencyKey: (input: OrgInput) => `action:publishPost:${input.orgId}`,
+    invoke: async () => undefined,
+  };
+
+  test('registering one throws instead of registering nothing', () => {
+    expect(codeOf(() => registerJobs({ publishPost: actionProjection }))).toBe(
+      'X_ACTION_JOB_UNBRIDGED',
+    );
+    expect(registeredJobs()).toHaveLength(0);
+  });
+
+  test('the refusal names the export and the bridge that fixes it', () => {
+    try {
+      registerJobs({ publishPost: actionProjection });
+      throw new Error('expected a refusal');
+    } catch (error) {
+      if (!(error instanceof UltimateError)) throw error;
+      expect(error.cause).toContain('publishPost');
+      expect(error.fix).toContain('agentJob');
+    }
+  });
+
+  // The reason silence is still right for everything else: a module namespace is full of exports
+  // that are not jobs, and refusing those would make every helper a boot failure.
+  test('an ordinary export beside a job is still skipped without a word', () => {
+    expect(registerJobs({ notifySubscribers: anonymousJob(), MAX: 5, helper: () => 1 })).toEqual([
+      expect.objectContaining({ kind: 'job' }),
+    ]);
+    expect(registeredJobs()).toHaveLength(1);
+  });
+});

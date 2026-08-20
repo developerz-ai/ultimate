@@ -12,7 +12,20 @@ import type { DurationInput } from './clock';
 import { nowMs, toMs } from './clock';
 import { JobAbortedError, JobTimeoutError, StepDuplicateError } from './errors';
 
-export type StepStatus = 'completed' | 'sleeping' | 'waiting' | 'failed';
+/**
+ * The runtime list is the declaration and `StepStatus` is derived from it, the shape
+ * `BACKFILL_STATUSES` and `PRIMITIVE_KINDS` already have. A bare union cannot narrow a `text`
+ * column, so `driver-pg-rows.ts` cast one instead — and a cast that lands an unknown status on a
+ * record makes `stepRun`'s `existing?.status === 'completed'` false, which RE-EXECUTES a step
+ * this file promises runs once.
+ */
+export const STEP_STATUSES = ['completed', 'sleeping', 'waiting', 'failed'] as const;
+
+export type StepStatus = (typeof STEP_STATUSES)[number];
+
+/** Narrows a status read back out of a store. Never a cast — the list decides. */
+export const isStepStatus = (value: string): value is StepStatus =>
+  (STEP_STATUSES as readonly string[]).includes(value);
 
 export interface StepRecord {
   readonly runId: string;

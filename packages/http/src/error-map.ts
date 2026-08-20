@@ -132,6 +132,18 @@ export const ERROR_STATUS = {
   // at it), which 422 describes only for the insert.
   X_DB_UNIQUE_VIOLATION: 409,
   X_DB_FOREIGN_KEY_VIOLATION: 409,
+  // @ultimat3/jobs — the ONE jobs code with a row here, and the reason the rest are pinned in
+  // `scripts/error-map-backlog.ts` does not cover it. That pin says "a job runs with no socket
+  // attached; `ROLE=worker` opens no HTTP port at all" — true of `X_JOB_TIMEOUT` and every other
+  // worker-runtime code, and NOT true of a decode failure: `toJobRecord` runs wherever a row is
+  // READ, which includes the admin dashboard's job panel and `x jobs show` served over HTTP.
+  // 500, and it should page: a queue holding rows this build cannot read is an operator's
+  // problem, and nothing the caller sent is wrong.
+  X_JOB_ROW_STATUS_UNKNOWN: 500,
+  // Thrown by `registerJobs()` while the app's modules load, so no request is ever answered with
+  // it either — the row exists for the reason `X_CORS_CONFIG_INVALID`'s does: this table is the
+  // closed one, and a code with no row is a 500 anyway.
+  X_ACTION_JOB_UNBRIDGED: 500,
   // @ultimat3/policy
   X_POLICY_MISSING: 500,
   X_PERMISSION_UNKNOWN: 500,
@@ -165,6 +177,11 @@ export const ERROR_STATUS = {
   X_STORAGE_CHECKSUM_MISMATCH: 422,
   X_STORAGE_URL_INVALID: 403,
   X_STORAGE_URL_EXPIRED: 410,
+  // 500, not 403, and the distinction is the whole reason this code exists rather than
+  // reusing X_STORAGE_URL_INVALID: nothing is wrong with the caller's URL. The disk was
+  // built with no way to check a signature, which is the operator's misconfiguration and
+  // not an attacker — reporting it as 403 sends the on-call hunting somebody who is not there.
+  X_STORAGE_URL_UNVERIFIABLE: 500,
   // 409, not the 500 it fell through to: the object exists and the request is well formed — the
   // STATE is wrong. A validated upload lands under the quarantine segment and `promoteAttachment`
   // refuses it until the app's own scanner calls `releaseQuarantine`, which is a thing the caller

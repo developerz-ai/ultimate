@@ -69,7 +69,16 @@ export interface AdminResourceOptions<Row extends AdminRow = AdminRow> {
 
 export interface AdminResource<Row extends AdminRow = AdminRow> {
   readonly name: string;
-  /** Mount-relative, e.g. `/posts`. */
+  /**
+   * Mount-relative, e.g. `/posts` — the layout composes it with `AdminApp.basePath`, so this is
+   * never the URL on its own.
+   *
+   * Defaults to the entity's `$name` VERBATIM. It used to be `pluralize($name)`, which is why the
+   * reference app's dashboard served `/orgses`, `/postses` and `/commentses`: every entity in both
+   * tracked apps is already named plural (19 of 19), so the heuristic ran a second time on a word
+   * that had already had it. Which plural a name takes is an app's convention and not a mechanism
+   * the framework can own (axiom 8) — `path:` is how an app spells its own.
+   */
   readonly path: string;
   readonly titleKey: string;
   readonly group: string;
@@ -89,12 +98,6 @@ export interface AdminResource<Row extends AdminRow = AdminRow> {
   readonly repo?: AdminRepo<Row>;
   field(name: string): AdminField;
 }
-
-const pluralize = (name: string): string => {
-  if (/[sxz]$/.test(name) || /(ch|sh)$/.test(name)) return `${name}es`;
-  if (/[^aeiou]y$/.test(name)) return `${name.slice(0, -1)}ies`;
-  return `${name}s`;
-};
 
 function deriveField(
   entity: AdminEntity,
@@ -263,7 +266,7 @@ export function adminResource<Row extends AdminRow = AdminRow>(
 
   const resource: AdminResource<Row> = {
     name: entity.$name,
-    path: opts.path ?? `/${pluralize(entity.$name)}`,
+    path: opts.path ?? `/${entity.$name}`,
     titleKey: opts.titleKey ?? `admin.${entity.$name}.title`,
     group: opts.group ?? 'admin.group.data',
     idField,

@@ -21,6 +21,14 @@ export interface TestDeploy {
 /**
  * What `query.live(input, { actor })` resolves to, named structurally so `@ultimat3/testing` does
  * not take a dependency on `@ultimat3/query` for one type. The real `LiveQuery` satisfies it.
+ *
+ * NOT what `query.as(actor, input)` resolves to, which is a ROW ARRAY — and the difference is
+ * invisible until a driver exists. `examples/dummy`'s five `subscribe` tests all call
+ * `subscribe(liveFeed.as(actor, input))`, which is `TS2345` against `Subscribe` below and has
+ * never been read, because that app's `typecheck` is pinned red in `scripts/lib/gated-apps.ts`.
+ * A driver built to satisfy those call sites would have to accept a row array — and a `subscribe`
+ * loose enough to do that proves nothing, which is strictly worse than the fixture being
+ * unavailable, because it then reads as coverage.
  */
 export interface LiveTarget {
   readonly name: string;
@@ -62,7 +70,9 @@ export const DRIVER_FIXTURE_NEEDS: Readonly<Record<DriverFixtureName, string>> =
   deploy: 'a second build to switch the running app to',
   page: 'a browser driving the built app',
   signIn: 'a browser session against the app’s own sign-in route',
-  subscribe: 'an in-process replicator feeding the live-query registry',
+  subscribe:
+    'an in-process replicator feeding the live-query registry, and a caller that hands it ' +
+    'query.live(input, { actor }) — query.as() resolves to ROWS, which is not a LiveTarget',
 };
 
 /**

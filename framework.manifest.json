@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "4327ad44a9651abffaa9adfe67814c310ffee33e54121c44a6ec89de1b651771",
+  "buildId": "cb4f65b68b6623b4e3b4aff5012d499c02ea4ae7dbc186d10175d51f82c7222e",
   "tiers": {
     "0": [
       "core",
@@ -251,6 +251,11 @@
       "code": "X_ACTION_FOREIGN",
       "owner": "action",
       "at": "packages/action/src/errors.ts"
+    },
+    {
+      "code": "X_ACTION_JOB_UNBRIDGED",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
     },
     {
       "code": "X_ACTION_PATH_DUPLICATE",
@@ -1149,6 +1154,11 @@
     },
     {
       "code": "X_JOB_NOT_CANCELLABLE",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_JOB_ROW_STATUS_UNKNOWN",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
     },
@@ -2083,6 +2093,11 @@
       "at": "packages/scraping/src/errors.ts"
     },
     {
+      "code": "X_SCRAPE_YIELD_HISTORY_MISSING",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
       "code": "X_SECRETS_EDIT_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -2279,6 +2294,11 @@
     },
     {
       "code": "X_STORAGE_URL_INVALID",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
+      "code": "X_STORAGE_URL_UNVERIFIABLE",
       "owner": "storage",
       "at": "packages/storage/src/errors.ts"
     },

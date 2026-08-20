@@ -641,7 +641,8 @@ picture from the other side.
 | `backfill-pending.ts` | declared minus completed, per environment: the alarm `--pending` reads |
 | `backfill-rate.ts` | the `rate` throttle: batches/sec as an interval, and the cancellable wait |
 | `backfill-inspect.ts` | the ledger projected for `x db backfill`, `x jobs`, `/_x` and MCP |
-| `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements |
+| `backfill-errors.ts` | the seven `X_BACKFILL_*` classes — split out of `errors.ts`, which was over the 500-line ceiling. The codes themselves stay declared in `errors.ts`: one registry, one place |
+| `register.ts` | `registerJobs`/`registerTasks` over a module namespace + the registrar announcements. Skips a non-job in silence — a module namespace is full of helpers — EXCEPT an `@ultimat3/action` projection (`kind: 'action-job'`), which is `X_ACTION_JOB_UNBRIDGED` |
 | `describe.ts` | the JSON projection one handle emits; `describeJobs()` is a map over it |
 | `steps.ts` | `StepStore`, `StepApi`, memoized-replay executor, `StepSuspension` |
 | `outbox.ts` | staging in a `Tx`, the relay, the ambient `JobsFacade` slot |

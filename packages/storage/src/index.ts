@@ -87,6 +87,7 @@ export {
   StorageError,
   signedUrlExpired,
   signedUrlRejected,
+  signedUrlUnverifiable,
   signingSecretMissing,
   storageNotImplemented,
   tooLarge,

@@ -17,15 +17,22 @@ import type { StepStore } from './steps';
  * a cancellation is work an operator stopped on purpose and `x jobs retry` must not resurrect by
  * accident. It appears in no claim predicate, so the queue never hands a cancelled row out again.
  */
-export type JobState =
-  | 'ready'
-  | 'delayed'
-  | 'running'
-  | 'suspended'
-  | 'done'
-  | 'failed'
-  | 'dead'
-  | 'cancelled';
+export const JOB_STATES = [
+  'ready',
+  'delayed',
+  'running',
+  'suspended',
+  'done',
+  'failed',
+  'dead',
+  'cancelled',
+] as const;
+
+export type JobState = (typeof JOB_STATES)[number];
+
+/** Narrows a state read back off a queue row. Never a cast — the list decides. */
+export const isJobState = (value: string): value is JobState =>
+  (JOB_STATES as readonly string[]).includes(value);
 
 export interface JobRecord {
   readonly id: string;
