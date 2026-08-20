@@ -207,6 +207,8 @@ export function backfillFiles(rawName: string, target: FeatureTarget): readonly 
     // `repo.ts` rides along with `entity.ts`: it is that file's only reader.
     ...sliceFoundation(target, ['entity']),
     { path: `${dir}/${name.kebab}.ts`, contents: backfillSource(name, feature) },
-    { path: `${dir}/${name.kebab}.test.ts`, contents: backfillTest(name, feature) },
+    // A sweep IS a job (`backfill()` is a job factory), its test is a `jobTest`, and the gate
+    // types a test by its filename — so `<name>.test.ts` put it in the `unit` step forever.
+    { path: `${dir}/${name.kebab}.job.test.ts`, contents: backfillTest(name, feature) },
   ];
 }

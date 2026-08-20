@@ -189,11 +189,16 @@ const biome = (): string => `{
  * to any root with an `app.config.ts`. Typed as `VerifyStepName`, so a name the gate does not run
  * is a compile error rather than a floor that covers nothing.
  *
- * Four are deliberately absent. `contract`, `live` and `job` have no scaffolded file; `e2e` has
- * one, and it is an `e2eTest` — `test.skip` until the app registers a browser driver, so the step
- * would run zero tests and fail the ratchet on the scaffold's own placeholder. `contract-diff`
- * needs a committed `x.manifest.json`, which `x manifest` writes later. Each joins the list in the
- * commit that makes the app's own gate run it.
+ * Plus `contract`, which every variant now ships a file for — `apps/web/api/health.contract.test.ts`
+ * — and, with the example slice, `live` and `job`: its query is a `liveTest` and its job a
+ * `jobTest`, and both were written into plain `<name>.test.ts` files that the `unit` step ran while
+ * `x test live` and `x test job` answered X_TEST_NO_FILES. This is the commit that makes the app's
+ * own gate run them, which is what the paragraph below always said the condition was.
+ *
+ * Two remain absent. `e2e` has a scaffolded file and it is an `e2eTest` — `test.skip` until the app
+ * registers a browser driver, so the step would run zero tests and fail the ratchet on the
+ * scaffold's own placeholder. `contract-diff` needs a committed `x.manifest.json`, which
+ * `x manifest` writes later. Each joins the list in the commit that makes the app's gate run it.
  */
 const SCAFFOLD_FLOOR: readonly VerifyStepName[] = [
   'typecheck',
@@ -203,13 +208,18 @@ const SCAFFOLD_FLOOR: readonly VerifyStepName[] = [
   'package-shape',
   'errors',
   'unit',
+  'contract',
   'eval',
   'drift',
   'budgets',
   'manifest',
 ];
 
-const verifyFloor = (): string => `${JSON.stringify({ steps: SCAFFOLD_FLOOR }, null, 2)}\n`;
+/** The two suites only the example slice writes a file for — a floor step with no file is red. */
+const EXAMPLE_FLOOR: readonly VerifyStepName[] = ['live', 'job'];
+
+const verifyFloor = (example: boolean): string =>
+  `${JSON.stringify({ steps: example ? [...SCAFFOLD_FLOOR, ...EXAMPLE_FLOOR] : SCAFFOLD_FLOOR }, null, 2)}\n`;
 
 const bunfig = (): string => `[test]
 root = "."
@@ -276,7 +286,7 @@ export function repoFiles(
     { path: 'biome.json', contents: biome() },
     { path: 'bunfig.toml', contents: bunfig() },
     { path: 'app.config.ts', contents: appConfig(app) },
-    { path: VERIFY_FLOOR_FILE, contents: verifyFloor() },
+    { path: VERIFY_FLOOR_FILE, contents: verifyFloor(example) },
     { path: 'types/scss.d.ts', contents: scssTypes() },
     { path: '.gitignore', contents: gitignore() },
     { path: '.env.development', contents: envDevelopment() },

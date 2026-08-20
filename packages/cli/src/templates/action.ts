@@ -100,14 +100,18 @@ const shapeTest = (name: NameSet, isMutator: boolean): string =>
   expect(target.describe().name).toBe('${name.camel}');
 });`;
 
-const actionTest = (
+/**
+ * The preamble both generated tests share. `outsider` rides along only where it is USED: the
+ * scaffolded app lints with `noUnusedVariables: error`, so an actor declared in the unit half
+ * would be a lint failure in code nobody typed.
+ */
+const preamble = (
   name: NameSet,
   feature: NameSet,
   isMutator: boolean,
-): string => `// ${name.camel}: its declared shape, the input it refuses, the contract every action owes, and the
-// foreign-org actor it denies before the handler runs. One declaration, every surface.
-import { testActor } from '@ultimat3/policy';
-import { contractTest, expect, unitTest } from '@ultimat3/testing';
+  wrappers: string,
+  outsider: boolean,
+): string => `${outsider ? "import { testActor } from '@ultimat3/policy';\n" : ''}import { ${wrappers} } from '@ultimat3/testing';
 import { ${name.camel} } from './${name.kebab}';
 
 const id = '${ID}';
@@ -118,21 +122,41 @@ const input = { id, orgId${isMutator ? ", title: 'a title'" : ''} };
 // At boot \`registerActions(await import('./actions'))\` stamps the same name onto the same
 // object, so \`${name.camel}.tool()\` works there with nothing to remember.
 const target = ${name.camel}.named('${name.camel}');
-
+${
+  outsider
+    ? `
 // Holds the grant, wrong org. That is the interesting actor: a denial here is the predicate
 // deciding, not the permission check, so this test fails if the tenancy rule is ever dropped.
 const outsider = testActor('outsider', {
   orgId: '${OTHER_ORG}',
   permissions: ['${feature.kebab}:write'],
 }).actor;
+`
+    : ''
+}`;
 
+const actionUnitTest = (
+  name: NameSet,
+  feature: NameSet,
+  isMutator: boolean,
+): string => `// ${name.camel}: its declared shape and the input it refuses. Both are answered by the declaration
+// alone, so they belong to the \`unit\` step — the contract projections are next door.
+${preamble(name, feature, isMutator, 'expect, unitTest', false)}
 ${shapeTest(name, isMutator)}
 
 unitTest('${name.camel} rejects input that is not a uuid', async () => {
   await expect(target.input).toRejectInput({ ...input, id: 'not-a-uuid' });
   await expect(target.input).toAcceptInput(input);
 });
+`;
 
+const actionContractTest = (
+  name: NameSet,
+  feature: NameSet,
+  isMutator: boolean,
+): string => `// ${name.camel}: the contract every action owes, and the foreign-org actor it denies before the
+// handler runs. One declaration, every surface.
+${preamble(name, feature, isMutator, 'contractTest, expect', true)}
 contractTest('${name.camel} passes the action contract', async () => {
   // Three assertions the framework makes for any action, without knowing what this one does:
   // garbage input is rejected, an anonymous actor is denied, and the operation reaches the
@@ -173,6 +197,14 @@ export function actionFiles(rawName: string, target: ActionOptions): readonly Ge
       path: `${dir}/${name.kebab}.ts`,
       contents: isMutator ? mutatorSource(name, feature) : actionSource(name, feature),
     },
-    { path: `${dir}/${name.kebab}.test.ts`, contents: actionTest(name, feature, isMutator) },
+    // TWO test files, because the gate types a test by its FILENAME and this declaration owes two
+    // suites: the input parse is a `unit` assertion and the three projections are `contract` ones.
+    // Emitted as one file, the contract half ran under `unit` and `x test contract` answered
+    // X_TEST_NO_FILES; renaming that one file would have put the `unitTest` in the same bind.
+    { path: `${dir}/${name.kebab}.test.ts`, contents: actionUnitTest(name, feature, isMutator) },
+    {
+      path: `${dir}/${name.kebab}.contract.test.ts`,
+      contents: actionContractTest(name, feature, isMutator),
+    },
   ];
 }

@@ -130,6 +130,11 @@ export function queryFiles(rawName: string, target: QueryOptions): readonly Gene
     // `--live` changes only which directory this file lands in.
     ...sliceFoundation(target, ['entity', 'policy']),
     { path: `${dir}/${name.kebab}.ts`, contents: querySource(name, feature, live) },
-    { path: `${dir}/${name.kebab}.test.ts`, contents: queryTest(name, feature, live) },
+    // The suffix follows the WRAPPER, which follows `--live`: a `liveTest` in a plain
+    // `<name>.test.ts` runs under `unit`, so `x test live` had no files in an app full of them.
+    {
+      path: `${dir}/${name.kebab}${live ? '.live' : ''}.test.ts`,
+      contents: queryTest(name, feature, live),
+    },
   ];
 }

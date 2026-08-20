@@ -7,6 +7,7 @@
 // buildpack, a Render blueprint or a fly.toml would be the primitive that never ships.
 
 import type { GeneratedFile, NameSet } from './naming';
+import { helmFiles } from './scaffold-helm';
 
 const dockerfile = (
   app: NameSet,
@@ -71,15 +72,27 @@ ENTRYPOINT ["bun", "apps/web/server.ts"]
  * BuildKit prefers `<dockerfile>.dockerignore` over the context root's, so this sits beside the
  * Dockerfile. Without it `COPY . .` ships `node_modules` and `.x/` — a stale host `node_modules`
  * would shadow the `--production` install the deps stage just made.
+ *
+ * The `.env` block carries a recursive prefix for a reason measured against a real `docker build`.
+ * An ignore pattern is anchored at the context root and crosses no directory on its own, so `.env`
+ * plus `.env.*.local` matched NEITHER `.env.production` — the file `docker-compose.prod.yml` below
+ * tells the operator to create, in its own `env_file:` — nor `.env.development`, and both landed in
+ * an image layer that `cache-to=mode=max` then pushes to a shared cache. Same four lines the
+ * framework's own `docker/Dockerfile.dockerignore` carries, and for the same reason.
  */
-const dockerignore = (): string => `node_modules
+const dockerignore = (): string => `**/.env
+**/.env.*
+!**/.env.example
+# Same shape, different file: an .npmrc carries a registry auth token, so any that exists in a
+# build context is somebody's local credential and has no business in a layer.
+**/.npmrc
+
+node_modules
 **/node_modules
 **/.x
 **/dist
 **/*.tsbuildinfo
 .git
-.env
-.env.*.local
 coverage
 **/test-results
 **/playwright-report
@@ -93,9 +106,10 @@ const composeProd = (
 #   IMAGE=ghcr.io/you/${app.kebab}:1.2.3 x deploy --image ghcr.io/you/${app.kebab}:1.2.3
 #
 # A published host port has exactly one binder, so \`web\` and \`sync\` run at 1 here. Compose is one
-# box; horizontal scaling of those two belongs to an orchestrator (copy \`docker/helm\` from the
-# framework repo). To scale them on one box anyway, drop \`ports:\` and put your own proxy on this
-# network — the service name resolves to every replica over the compose DNS round robin.
+# box; horizontal scaling of those two belongs to an orchestrator — \`docker/helm\`, beside this
+# file, is the chart \`x deploy --method helm\` installs. To scale them on one box anyway, drop
+# \`ports:\` and put your own proxy on this network — the service name resolves to every replica
+# over the compose DNS round robin.
 name: ${app.kebab}
 
 x-image: &image
@@ -292,9 +306,26 @@ a one-off command sets \`command:\` (the entrypoint) as well as \`args:\`, for t
 
 ## Kubernetes
 
-\`x deploy --method helm\` expects a chart at \`docker/helm\`. \`x new\` does not write one — a chart is
-a topology decision, not a scaffold default. Copy \`docker/helm\` from the framework repository, or
-stay on \`--method compose\`.
+\`\`\`sh
+x deploy --method helm --image ghcr.io/you/${app.kebab}:1.2.3 --dry-run --json   # the plan
+x deploy --method helm --image ghcr.io/you/${app.kebab}:1.2.3                    # run it
+\`\`\`
+
+One \`helm upgrade --install\` against \`docker/helm\`, which is scaffolded beside this file for the
+same reason \`docker-compose.prod.yml\` is: a deploy method whose topology file only exists in
+somebody else's repository is a command that cannot run. \`--image\` sets \`image.repository\` and
+\`image.tag\`; everything else is \`docker/helm/values.yaml\`, and it is yours to edit.
+
+| Object | Per | Note |
+|---|---|---|
+| Deployment + Service | enabled role | one image, \`ROLE\` and the port are the only difference |
+| Job | release | \`ROLE=migrate\`, a \`pre-install,pre-upgrade\` hook — it runs to completion first |
+| Ingress | release | off by default; routes \`/_x/sync\` to sync and \`/\` to web |
+| HorizontalPodAutoscaler | role, opt-in | rps, websocket connections, queue depth — never CPU |
+
+No ServiceMonitor and no PodDisruptionBudget: the first needs a CRD \`helm install\` fails on in a
+cluster with no Prometheus operator, and both are cluster policy rather than this app's topology.
+Every role already answers \`/metrics\` on \`metricsPort\`.
 `;
 
 /** The container files for a new app, in the order a reader meets them. */
@@ -304,5 +335,9 @@ export function containerFiles(app: NameSet): readonly GeneratedFile[] {
     { path: 'docker/Dockerfile.dockerignore', contents: dockerignore() },
     { path: 'docker/docker-compose.prod.yml', contents: composeProd(app) },
     { path: 'docker/README.md', contents: readme(app) },
+    // The other deploy method's topology, on the same terms as the compose file above: `x deploy`
+    // is one `helm upgrade --install` against this directory, and a chart that shipped in no npm
+    // tarball made that command's only failure mode "clone the framework repository".
+    ...helmFiles(app),
   ];
 }

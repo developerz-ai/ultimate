@@ -15,6 +15,7 @@ import {
   planDeploy,
   readMethod,
 } from './cmd-deploy';
+import { planNewApp } from './cmd-new';
 import type { CommandContext } from './command';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
@@ -230,24 +231,21 @@ describe('unit · x deploy actually runs the plan it printed', () => {
   });
 });
 
-describe('unit · x deploy --method helm needs the chart to be there', () => {
-  test('an app with no docker/helm is refused before anything is spawned', async () => {
-    const root = appRoot();
-    const { runner, ran } = recordingRunner();
-    const thrown: unknown = await deployCommand
-      .run(runContext(['deploy', '--image', 'repo/app:1.2.3', '--method', 'helm'], root, runner))
-      .then(
-        (result) => result,
-        (error: unknown) => error,
-      );
-    expect((thrown as { code?: string }).code).toBe('X_NOT_IMPLEMENTED');
-    expect((thrown as { fix?: string }).fix).toBe(
-      'copy docker/helm from the framework repo, or use: x deploy --method compose',
-    );
-    expect(ran).toEqual([]);
+// The chart is scaffolded (`templates/scaffold-helm.ts`), so `x deploy --method helm` runs the
+// build's own complete helm branch. It used to refuse first, with X_NOT_IMPLEMENTED — "helm deploy
+// is not implemented in this build" over a build that implements it — and a fix line, "copy
+// docker/helm from the framework repo", naming a repository an installed app never had and a
+// directory that ships in no npm tarball.
+describe('unit · x deploy --method helm runs the chart the scaffold writes', () => {
+  test('x new writes docker/helm, so the plan names a path the app actually has', () => {
+    const written = planNewApp({ name: 'demo-app', example: true }).map((file) => file.path);
+    expect(written).toContain('docker/helm/Chart.yaml');
+    // The exact path `planDeploy` hands to helm — one string, two files, no drift.
+    const [, , , , chart] = planDeploy('repo/app:tag', 'helm', '/srv/app').steps[0]?.command ?? [];
+    expect(chart).toBe(join('/srv/app', 'docker', 'helm'));
   });
 
-  test('with the chart present the one helm upgrade is spawned', async () => {
+  test('the upgrade is spawned, and no missing-file branch refuses it first', async () => {
     const root = appRoot();
     mkdirSync(join(root, 'docker', 'helm'), { recursive: true });
     const { runner, ran } = recordingRunner();
@@ -268,5 +266,25 @@ describe('unit · x deploy --method helm needs the chart to be there', () => {
         'image.tag=1.2.3',
       ],
     ]);
+  });
+
+  // An app that deleted its chart gets helm's own diagnosis through X_DEPLOY_FAILED, whose fix is
+  // the command to rerun — never a claim that the feature does not exist.
+  test('an app with no chart still runs helm, and reports what helm said', async () => {
+    // Helm's own exit code, not a pre-flight guess: the one process that can say whether a chart
+    // renders is helm, and `x deploy` hands its verdict back with the argv that produced it.
+    const ran: string[][] = [];
+    const runner: CommandContext['runner'] = async (command) => {
+      ran.push([...command]);
+      return { command, code: 1, ok: false, stdout: '', stderr: 'Error: no chart', durationMs: 3 };
+    };
+    const result = await deployCommand.run(
+      runContext(['deploy', '--image', 'repo/app:1.2.3', '--method', 'helm'], appRoot(), runner),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.findings?.[0]?.code).toBe('X_DEPLOY_FAILED');
+    expect(result.findings?.[0]?.fix).toBe(
+      `${(ran.at(-1) ?? []).join(' ')}   # run it directly to see the full output`,
+    );
   });
 });
