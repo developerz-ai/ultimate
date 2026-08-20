@@ -73,15 +73,22 @@ describe('unit · the default robots.txt read', () => {
     expect(await read('https://gone.test/robots.txt')).toBeUndefined();
   });
 
-  test('the proxy is dialled only when the session has one', async () => {
+  // The exit is RESOLVED per read, never captured at construction: the gate is built as an
+  // argument to `driver.open()`, and the proxy is a driver option resolved inside it — so a
+  // string captured here could only ever be the one nobody has yet, which is how the robots read
+  // came to exit from the worker's IP while every page load exited through the proxy.
+  test('the exit is resolved per read, and only dialled when there is one', async () => {
     const seen: Array<Record<string, unknown>> = [];
     const record: typeof fetch = (_url, init) => {
       seen.push((init ?? {}) as Record<string, unknown>);
       return Promise.resolve(bodyResponse(streamOf([])));
     };
-    await robotsFetcher({ fetch: record })('https://a.test/robots.txt');
-    await robotsFetcher({ proxy: 'http://exit:8080', fetch: record })('https://b.test/robots.txt');
-    expect(seen[0]?.['proxy']).toBeUndefined();
+    let exit: string | undefined;
+    const read = robotsFetcher({ proxy: () => exit, fetch: record });
+    await read('https://a.test/robots.txt');
+    // `driver.open()` has now returned, and the session dialled through a proxy.
+    exit = 'http://exit:8080';
+    await read('https://b.test/robots.txt');
     expect('proxy' in (seen[0] ?? {})).toBe(false);
     expect(seen[1]?.['proxy']).toBe('http://exit:8080');
   });

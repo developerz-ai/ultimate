@@ -187,3 +187,35 @@ describe('unit · the wedge watchdog reaches the waits — incident #1, on the a
     expect(message).toBe('the job was cancelled');
   });
 });
+
+describe('unit · the session reports the exit it dialled', () => {
+  // The proxy is a DRIVER option, resolved after the robots gate the run hands to `open()` has
+  // already been built — so the session has to say what it dialled, or the default `/robots.txt`
+  // read exits from the worker's IP while every page load exits through the proxy, and an origin
+  // reachable ONLY through the proxy reads as "no robots.txt", which the gate treats as
+  // allow-everything.
+  test('a launched browser hands its exit back on the session', async () => {
+    const launcher = fakeCdpLauncher({ url: 'https://shop.test/', html: '<p>hi</p>' });
+    const session = await localBrowser({ launcher, proxy: 'http://exit:8080' }).open(init());
+    expect(session.proxy).toBe('http://exit:8080');
+    await session.close();
+  });
+
+  test('an attached browser does too — the HTTP leg already dialled through it', async () => {
+    const launcher = fakeCdpLauncher({ url: 'https://shop.test/', html: '<p>hi</p>' });
+    const session = await remoteBrowser({
+      launcher,
+      cdpUrl: 'ws://browser.test/1',
+      proxy: 'http://exit:9000',
+    }).open(init());
+    expect(session.proxy).toBe('http://exit:9000');
+    await session.close();
+  });
+
+  test('a direct browser reports no exit at all, never an empty string', async () => {
+    const launcher = fakeCdpLauncher({ url: 'https://shop.test/', html: '<p>hi</p>' });
+    const session = await localBrowser({ launcher }).open(init());
+    expect(session.proxy).toBeUndefined();
+    await session.close();
+  });
+});

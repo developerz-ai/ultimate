@@ -152,9 +152,9 @@ const { key } = await uploadFile({ file, grant: (request) => api.requestUpload(r
 
 // 3. server, in the route mounted at `/_storage`: take it back, or refuse
 const object = await acceptSignedUpload({
-  url: request.url,                  // baseUrl defaults to signedUrlBaseFor(disk.name) — the
-  secret,                            // same base the driver signed under. Pass one only for a
-  disk: disk('uploads'),             // route mounted somewhere other than /_storage/<driver>.
+  url: request.url,                  // baseUrl defaults to `disk.signedUrlBase` — the very base
+  secret,                            // the driver signed under, `/_storage/<disk name>`. Pass one
+  disk: disk('uploads'),             // only for a route mounted somewhere else.
   orgId: ctx.actor.orgId,
   bytes, declaredContentType: request.headers.get('content-type') ?? undefined,
   policy: uploadPolicy({ maxBytes: 5e6 }),

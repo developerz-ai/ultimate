@@ -10,6 +10,7 @@ import { createContext, createLogger, userActor } from '@ultimat3/core';
 import type { JobRunArgs, StepApi } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { testClock } from './clock';
+import type { ScrapeDriver } from './driver';
 import { resetScrapeDriver } from './driver';
 import { fakeBrowser } from './driver-fake';
 import { authFailed, blocked } from './error-throws';
@@ -204,5 +205,57 @@ describe('unit · a failed session write never replaces the failure that caused 
       }),
     );
     expect(code).toBe('X_SCRAPE_BLOCKED');
+  });
+});
+
+describe('unit · the robots read exits through the SAME proxy the session dialled', () => {
+  /** A fake browser whose session reports an exit, exactly as `driver-cdp.ts` now does. */
+  const proxiedFake = (proxy: string): ScrapeDriver => {
+    const inner = fakeBrowser([{ url: URL_A, html: HTML }]);
+    return {
+      name: inner.name,
+      open: async (init) => ({ ...(await inner.open(init)), proxy }),
+    };
+  };
+
+  /**
+   * A VALUE put back in `finally`, not `mock.module` — the ban this package writes down is on a
+   * module replacement that outlives the file. The run's gate takes no `fetch` from a definition,
+   * so the global is the only place its own `/robots.txt` read is observable.
+   */
+  const readsDuring = async (run: () => Promise<unknown>): Promise<Record<string, unknown>[]> => {
+    const seen: Record<string, unknown>[] = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = ((url: string | URL | Request, init?: RequestInit) => {
+      seen.push({ url: String(url), ...(init ?? {}) });
+      return Promise.resolve(new Response('', { status: 404 }));
+    }) as typeof globalThis.fetch;
+    try {
+      await run();
+    } finally {
+      globalThis.fetch = real;
+    }
+    return seen;
+  };
+
+  test('a run whose session dialled a proxy reads /robots.txt through the same one', async () => {
+    // Before this was wired, the gate was built with no proxy and structurally could not be given
+    // one: the proxy is a driver option resolved inside `driver.open()`, which takes the gate as
+    // an argument. So the robots read exited from the worker's IP while every page load exited
+    // through the proxy — and an origin reachable ONLY through the proxy read as "no robots.txt",
+    // which `robots.ts` turns into allow-everything.
+    const seen = await readsDuring(() =>
+      runScrape(define({ driver: proxiedFake('http://exit:8080') }), runArgs('org-1')),
+    );
+    const robots = seen.find((entry) => String(entry['url']).endsWith('/robots.txt'));
+    expect(robots?.['url']).toBe('https://shop.test/robots.txt');
+    expect(robots?.['proxy']).toBe('http://exit:8080');
+  });
+
+  test('a run with no proxy dials none — a `proxy` key is never invented', async () => {
+    const seen = await readsDuring(() => runScrape(define(), runArgs('org-1')));
+    const robots = seen.find((entry) => String(entry['url']).endsWith('/robots.txt'));
+    expect(robots).toBeDefined();
+    expect('proxy' in (robots ?? {})).toBe(false);
   });
 });

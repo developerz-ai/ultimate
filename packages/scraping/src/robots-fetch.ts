@@ -4,6 +4,9 @@
 // package with no deadline, no size cap and no proxy — and `scrape-run.ts` builds the gate with no
 // `fetchText`, so production always took it. Every existing gate test injected one, which is how a
 // read that could park a run forever stayed green.
+//
+// The exit is a RESOLVER, not a string: `scrape-run.ts` builds this gate as an argument to
+// `driver.open()`, and the proxy is a driver option the session only reports on the way back out.
 
 import { readWithinLimit } from '@ultimat3/core';
 import type { RobotsFetch } from './robots';
@@ -25,10 +28,17 @@ export interface RobotsFetchInit {
   /** The run's cancellation, when there is one. Composed with the deadline, never replacing it. */
   readonly signal?: AbortSignal | undefined;
   /**
-   * The SAME proxy the browser dialled through, when the session has one. Optional by design:
-   * proxies are an opt-in leg, and an origin reachable directly must still be asked for its rules.
+   * The SAME proxy the browser dialled through, when the session has one — asked PER READ, never
+   * captured. A resolver rather than a string because construction order forbids the string: the
+   * gate is an argument to `driver.open()` and the proxy is a driver option resolved inside it,
+   * so a value passed here could only ever be the one nobody has yet. That is how the robots read
+   * came to exit from the worker's IP while every page load exited through the proxy — and how an
+   * origin reachable ONLY through the proxy read as "no robots.txt", which is allow-everything.
+   *
+   * Optional by design: proxies are an opt-in leg, and an origin reachable directly must still be
+   * asked for its rules.
    */
-  readonly proxy?: string | undefined;
+  readonly proxy?: (() => string | undefined) | undefined;
   readonly maxBytes?: number | undefined;
   /** The platform `fetch`, injectable so the default path itself is testable. */
   readonly fetch?: typeof fetch | undefined;
@@ -47,10 +57,13 @@ export function robotsFetcher(init: RobotsFetchInit = {}): RobotsFetch {
     // deadline created alongside it would already have expired by the second origin.
     const deadline = AbortSignal.timeout(init.timeoutMs ?? DEFAULT_ROBOTS_TIMEOUT_MS);
     const signal = init.signal === undefined ? deadline : AbortSignal.any([deadline, init.signal]);
+    // Resolved here, at the read, because the session that owns the exit did not exist when this
+    // fetcher was built. An empty string is not an exit and is dropped with the absent one.
+    const proxy = init.proxy?.();
     try {
       const response = await call(robotsUrl, {
         signal,
-        ...(init.proxy === undefined ? {} : { proxy: init.proxy }),
+        ...(proxy === undefined || proxy === '' ? {} : { proxy }),
       } as RequestInit);
       if (!response.ok) return undefined;
       // Counted as it arrives rather than `.text()`, which materialises the whole body first: a
