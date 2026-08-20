@@ -78,7 +78,7 @@ $ x new myapp --dry-run --json
 {"ok":true,"command":"new","summary":"…","data":{"dir":"/home/me/myapp","files":["README.md","AGENTS.md",…],"dryRun":true}}
 ```
 
-**114 files** with the example slice, **90** with `--no-example` — measured on `main` `As of 2026-08`, one lower than 1.2.0's because the scaffold no longer writes `0000_initial.sql`. Both numbers move the moment a template is added, so derive rather than quote them:
+**125 files** with the example slice, **99** with `--no-example` — measured on `main` `As of 2026-08-19`, up from 114/90 because `x new` now writes the Helm chart (8 files), `apps/web/api/index.ts`, and one more test per generated action. Both numbers move the moment a template is added, and no gate reads them ([Known gaps](Known-Gaps)), so derive rather than quote:
 
 ```bash
 x new myapp --dry-run --json | jq '.data.files | length'
@@ -96,10 +96,11 @@ Deployment artifacts are part of the scaffold — an app is deployable the momen
 | `docker/Dockerfile.dockerignore` | **this exact name** — not a root `.dockerignore` |
 | `docker/docker-compose.prod.yml` | one service per role: migrate, web, sync, worker, scheduler |
 | `docker/docker-compose.dev.yml` | parity checks only; `x dev` needs none of it |
+| `docker/helm/` | the chart, 8 files — `Chart.yaml`, `values.yaml` and 6 templates (`_helpers.tpl`, `deployments`, `service`, `migrate-job`, `ingress`, `hpa`). Written `As of 2026-08-19`, which is what makes `x deploy --method helm` work in a scaffold |
 | `docker/README.md` | how the two compose files differ |
 | `bin/setup`, `bin/dev`, `bin/check` | written executable (`0755`) |
 
-There is **no** `docker/helm` in the scaffold, which is why `x deploy --method helm` throws there.
+The framework repo's own `docker/helm` carries two templates the scaffold does not — `pdb.yaml` and `servicemonitor.yaml`. Neither ships in an npm tarball, so copying them is a `git clone` of this repo, not an install.
 
 `bunx create-ultimate myapp` is the same generator without a global install. Errors: `X_GENERATE_CONFLICT` (the directory exists — `fix` is the same command with `--force`), `X_CLI_BAD_FLAG` (no name given), `X_BUN_VERSION`.
 
@@ -214,13 +215,13 @@ Alias: `x generate`.
 | `--force` | boolean | `false` | overwrite existing files |
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
 
-`resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the plural route and a test beside each declaration — **25 files** (27 with `--admin --live`), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>` then `x db gen "create <name>"`. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). Every generator produces code that passes `x verify` unmodified. Errors: `X_GENERATE_CONFLICT`.
+`resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the plural route and a test beside each declaration — **27 files** (29 with `--admin --live`), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>` then `x db gen "create <name>"`. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). Every generator produces code that passes `x verify` unmodified. Errors: `X_GENERATE_CONFLICT`.
 
 **A narrower generator plants the slice modules its own source imports**, `As of 2026-08` — they used to be `x g resource`'s alone, so `x g job` into a hand-written slice emitted `import * as repo from '../repo'` against a file nobody had written. Which modules differ per generator, on purpose: a job has no request behind it and evaluates no policy, so `x g job` plants no `policy.ts`.
 
 | Generator | Files into a **bare** slice | Its own | Slice modules it plants |
 |---|---|---|---|
-| `x g action` · `x g mutator` | 8 | 2 | `entity.ts` + `entity.test.ts` + `repo.ts`, `policy.ts` + `policy.test.ts`, `errors.ts` |
+| `x g action` · `x g mutator` | 9 | 3 — the declaration, a unit test and a `.contract.test.ts` | `entity.ts` + `entity.test.ts` + `repo.ts`, `policy.ts` + `policy.test.ts`, `errors.ts` |
 | `x g query` (± `--live`) | 7 | 2 | `entity.ts` + `entity.test.ts` + `repo.ts`, `policy.ts` + `policy.test.ts` |
 | `x g job` | 5 | 2 | `entity.ts` + `entity.test.ts` + `repo.ts` |
 | `x g backfill` | 5 | 2 | `entity.ts` + `entity.test.ts` + `repo.ts` |
@@ -229,7 +230,18 @@ Alias: `x generate`.
 
 `repo.ts` is never planted alone: it imports `./entity` for its row type, so the pair goes in together or the unresolved import has only moved.
 
-**A module the slice already has is skipped — never a conflict, never overwritten, `--force` included.** A foundation module belongs to the slice, not to the generator that needed it, and `--force` is about the primitive you named: clobbering `policy.ts` to regenerate one action would delete every rule in it. Regenerating a slice module is its own generator — `x g entity`, `x g policy`. So a second `x g action` into a finished slice writes exactly its own 2 files, and one into a half-built slice writes only what is missing.
+**A module the slice already has is skipped — never a conflict, never overwritten, `--force` included.** A foundation module belongs to the slice, not to the generator that needed it, and `--force` is about the primitive you named: clobbering `policy.ts` to regenerate one action would delete every rule in it. Regenerating a slice module is its own generator — `x g entity`, `x g policy`. So a second `x g action` into a finished slice writes exactly its own 3 files, and one into a half-built slice writes only what is missing.
+
+**The filename carries the test's type**, `As of 2026-08-19` — `x verify` selects a suite by it, so a generated test that landed in a plain `*.test.ts` ran under `unit` and `x test contract` answered `X_TEST_NO_FILES`:
+
+| Generator | Test filename it writes | Step that runs it |
+|---|---|---|
+| `x g action` · `x g mutator` | `<name>.test.ts` **and** `<name>.contract.test.ts` | `unit`, `contract` |
+| `x g query --live` | `<name>.live.test.ts` | `live` |
+| `x g job` · `x g task` · `x g backfill` | `<name>.job.test.ts` | `job` |
+| `x g query` (not live) · `x g entity` · `x g policy` · `x g route` | `<name>.test.ts` | `unit` |
+
+`--force` writes the new name and does not touch a file under the old one, because the old name is not in its output list. Delete the orphan by hand.
 
 The synopsis above is `GENERATORS` in `packages/cli/src/cmd-generate.ts`, which `x g --help` prints verbatim — run it if this list and the CLI ever disagree.
 
@@ -291,6 +303,7 @@ Two more facts about the set, both `As of 2026-08`:
 | Fact | Why |
 |---|---|
 | an external `create` runs through `@ultimat3/db`, not `psql` | `createBranch()` writes the marker comment `ls` finds branches by. The `psql` shell-out wrote the database and no marker, so every branch the CLI made was invisible to the only lister the framework has |
+| the marker records the **base**, not just the date | `ultimate:branch:<base>:<iso>` `As of 2026-08-19`, and `BranchInfo` carries `base` alongside `createdAt`. `listBranches()` walks `pg_database` for the whole **server**, so two Ultimate apps sharing one Postgres plus one nightly `reapBranches` was the other app's branches dropped — a `DROP DATABASE` nobody asked for and nothing recovers from. The reaper skips any branch whose base is not this database, **and skips a pre-3.x marker that records no base rather than dropping it**: a branch of nothing is not a branch of this database. Self-healing with no migration — the next `createBranch` writes the base down. The payload is split on the ISO tail, not on the first `:`, because a database name may contain one |
 | there is no `reap` verb | `reapBranches()` is a `task` — a nightly sweep with an app-chosen max age. A CLI verb would be a second path to one job, and no default max age is defensible |
 
 | Flag | Type | Default | Meaning |
@@ -505,12 +518,18 @@ open against a database still serving the previous release, so data sweeps are e
 new pods serve and the workers already draining the queue perform them. The `backfill` service runs
 `x db backfill --all --write --json` and exits. Steps run sequentially and stop
 at the first non-zero exit; the `fix` is that step's command, so you can rerun it directly for full
-output. `helm` is one `helm upgrade --install app docker/helm --set image=<ref>`; the chart is
-**committed** at `docker/helm` in the framework repo, there is no `--helm` flag and nothing
-generates it. Because `x new` never writes `docker/helm`, `--method helm` in a scaffolded app exits
-`X_NOT_IMPLEMENTED` naming `x deploy --method compose`. Any `--method` value other than the literal
-`helm` is treated as `compose`. `--critical` is carried into `--json` output and nothing else acts
-on it today. Errors: `X_DEPLOY_FAILED`, `X_NOT_IMPLEMENTED`.
+output. `helm` is one `helm upgrade --install app docker/helm --set image=<ref>` against the chart **`x new`
+writes**, `As of 2026-08-19`. There is no `X_NOT_IMPLEMENTED` branch: the command implements helm
+completely, so an app that deleted its chart gets helm's own error and an app with no `helm` on
+`PATH` gets `X_CLI_UNEXPECTED` naming the binary to install. An image pinned by digest is refused
+before the upgrade starts — the chart renders `repository:tag` with no digest branch.
+
+**An unknown `--method` is refused, never defaulted.** `x deploy --method helmm` is
+`X_CLI_UNKNOWN_COMMAND` listing `compose, helm`; it used to run the six-step Compose plan and report
+`method: "compose"` back to an operator who asked for a Helm upgrade. `--critical` is carried into
+`--json` output and nothing else acts on it today. Errors: `X_DEPLOY_FAILED` (a step exited
+non-zero — its `fix:` is that step's exact command), `X_CLI_BAD_FLAG` (a digest-pinned `--image`
+under `--method helm`), `X_CLI_UNKNOWN_COMMAND`, `X_CLI_UNEXPECTED`.
 
 `X_MIGRATE_CONCURRENT` **is thrown**, `As of 2026-08`. `ROLE=migrate` takes the migration lock by a
 **bounded** `pg_try_advisory_lock` poll on one pinned session — one try per 500ms against a 60s

@@ -24,7 +24,7 @@ bunx create-ultimate myapp
 **Unpinned on purpose.** Pinning the tutorial to a version pins readers to a scaffold that stops matching this page on the next tag; `README.md` and `llms.txt` drop the pin for the same reason. To reproduce a specific release, add `@<version>` and read that release's tag of this page.
 
 ```text
-  114 files in /tmp/tmp.XXXXXXXX/myapp
+  125 files in /tmp/tmp.XXXXXXXX/myapp
 ✓ created myapp — next: cd myapp && bun install && x db gen "initial" && x db migrate && x dev
 ```
 

@@ -51,7 +51,7 @@ describe('listBranches', () => {
       ],
     });
 
-    // The date survives on a pre-3.x branch — `x db branch ls` still shows it — and the base
+    // The date survives on a pre-4.x branch — `x db branch ls` still shows it — and the base
     // does not, because nothing ever wrote one. Unknown, never guessed at.
     expect(await listBranches({ client })).toEqual([
       {
@@ -164,7 +164,7 @@ describe('reapBranches is a sweep of THIS database, not of the server', () => {
    * before the base was recorded reads as a branch of nothing, and a branch of nothing is not a
    * branch of this database. The next `x db branch create` writes the two-segment form.
    */
-  test('a pre-3.x one-segment marker is skipped, never dropped', async () => {
+  test('a pre-4.x one-segment marker is skipped, never dropped', async () => {
     const client = createRecordingClient();
     client.on('current_database', { rows: [{ name: 'shop' }] });
     client.on('pg_database', {

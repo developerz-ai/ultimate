@@ -67,8 +67,23 @@ out first.
 all, and two tables referencing each other cannot be expressed inline in any order. The same call
 site answers the second half — a `references()` added to a column that **already exists** now emits
 its own `add constraint`, where before the `up` came out empty, `x db gen` wrote no file, and the
-`drift` step stayed red forever behind a fix that did nothing. Removing a `references()` still emits
-nothing, exactly as a removed index does ([Known gaps](Known-Gaps)).
+`drift` step stayed red forever behind a fix that did nothing.
+
+**Removing a `references()` emits the `drop constraint`**, `As of 2026-08-19` — it used to emit
+nothing, and that is not the harmless omission a removed index is. A removed index leaves the
+snapshot correct by omission; a removed key left the constraint on the database *and* wrote
+`foreignKeys: []` beside it, so the record actively denied a constraint the catalog held, and
+`compareForeignKeys` judges only the declared side. The drop names the constraint the **previous
+snapshot** recorded rather than the name this generator would have chosen, so a hand-written
+`fk_legacy` is dropped by its own name instead of `42704`. A column being dropped in the same
+migration takes its constraint with it, and no second `drop constraint` is emitted for it.
+
+**`on delete` reaches the SQL too**, `As of 2026-08-19`. `references(() => orgs.id, { onDelete:
+'cascade' })` has type-checked since 1.0 and the clause it produced was `references "orgs" ("id");`
+— a declared cascade that the database refuses the delete under instead. `ColumnDescription` and
+`ReferenceDescription` carry `onDelete`, `addForeignKey` writes the clause, and a rule changed on
+either side is `changed-foreign-key` drift whose `fix:` is the drop/add pair, because Postgres has
+no `alter constraint` for it.
 
 The sidecar is written through `snapshotJson()`, not `JSON.stringify(value, null, 2)`. Biome
 collapses a short array onto one line and `JSON.stringify` never does, so an app whose `lint` step

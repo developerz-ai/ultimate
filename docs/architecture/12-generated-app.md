@@ -226,7 +226,7 @@ imports, through `sliceFoundation(target, needs)`
 
 | Generator | Files into a bare slice | Its own | `needs` |
 |---|---|---|---|
-| `x g action`, `x g mutator` | 8 | 2 | `entity`, `policy`, `errors` |
+| `x g action`, `x g mutator` | 9 | 3 — the declaration, `<name>.test.ts` and `<name>.contract.test.ts` | `entity`, `policy`, `errors` |
 | `x g query`, `x g query --live` | 7 | 2 | `entity`, `policy` |
 | `x g job` | 5 | 2 | `entity` |
 | `x g backfill` | 5 | 2 | `entity` |
@@ -249,10 +249,28 @@ needed it, and `--force` is about the primitive the author named: clobbering `po
 regenerate one action would delete every rule they wrote. Regenerating a slice module is its own
 generator, `x g entity` or `x g policy`.
 
-Measured `As of 2026-08` on a slice holding an authored `policy.ts`: `x g action` writes **7 of 8** —
+Measured `As of 2026-08-19` on a slice holding an authored `policy.ts`: `x g action` writes **8 of 9** —
 everything the slice lacked, including `policy.test.ts`, and not the `policy.ts` — and a second
-`x g action` into the finished slice writes exactly its own **2**. `--force` leaves the authored file
+`x g action` into the finished slice writes exactly its own **3**. `--force` leaves the authored file
 byte-for-byte.
+
+## The filename carries the test's type
+
+`x verify` selects a suite by filename, so a generated `contractTest(…)` inside a plain `*.test.ts`
+ran under `unit` and `x test contract` answered `X_TEST_NO_FILES` — a generated test in the wrong
+step is a step that passes by having nothing to run. Five generators emit a typed name
+`As of 2026-08-19`:
+
+| Generator | Writes | Step |
+|---|---|---|
+| `x g action`, `x g mutator` | `<name>.test.ts` **and** `<name>.contract.test.ts` | `unit`, `contract` |
+| `x g query --live` | `<name>.live.test.ts` | `live` |
+| `x g job` | `<name>.job.test.ts` | `job` |
+| `x g task` | `<name>.job.test.ts` for the task **and** for the job it enqueues | `job` |
+| `x g backfill` | `<name>.job.test.ts` | `job` |
+
+`--force` writes the new name and never touches a file under the old one — the old name is not in
+the generator's output list, so it is an orphan the author deletes.
 
 ### The two hand-wired lines
 

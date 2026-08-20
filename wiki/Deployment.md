@@ -176,7 +176,7 @@ services:
 
 ## Helm
 
-Committed at `docker/helm` in the framework repo, one `Deployment` per role. Nothing generates it — there is no `--helm` flag on `x build`.
+**`x new` writes it**, `As of 2026-08-19` — `docker/helm`, one `Deployment` per role, 8 files: `Chart.yaml`, `values.yaml` and 6 templates. There is still no `--helm` flag on `x build`; the chart is a scaffold artifact like `docker/Dockerfile`, not a build target.
 
 | Role | HPA metric | Typical range | Notes |
 |---|---|---|---|
@@ -189,7 +189,15 @@ Committed at `docker/helm` in the framework repo, one `Deployment` per role. Not
 
 CPU autoscaling is wrong for `sync` and `worker`: a node holding 80k idle sockets is near-zero CPU and near-capacity, and a worker blocked on a slow HTTP call is idle CPU with a growing backlog. The framework **declares** both series — `connections` and `queue_depth`, with `rps` derived from the monotonic `http_requests_total` — and `SCALING_METRICS` maps each role's signal to its series so the chart and the role table cannot drift. `As of 2026-08` every role serves `/metrics` on `METRICS_PORT` (default 9090) and `http`/`realtime`/`jobs` call the recorders, so the signals exist. **The chart's half is closed in 2.0.0**: `values.yaml` declares `metricsPort: 9090`, `_helpers.tpl` emits a container port named `metrics` on every role but `migrate`, `service.yaml` publishes it by name and `templates/servicemonitor.yaml` ships the scrape target. Two things remain, and neither is the chart's: `serviceMonitor.enabled` defaults **false**, because a cluster without the Prometheus operator has no such CRD and `helm install` would fail on an unknown kind; and turning scraped series into the `Pods` metrics an HPA reads needs a **custom-metrics adapter**. Do not hand-add a metrics container port — the chart already emits one and a duplicate is rejected by the API server → [Observability](Observability).
 
-The chart is committed at `docker/helm` in the framework repo and **is not part of the scaffold**, which is why `x deploy --method helm` throws `X_NOT_IMPLEMENTED` in a fresh app. Copy it in, or deploy with `--method compose`.
+`x deploy --method helm` works in a fresh app `As of 2026-08-19`: the command implements helm
+completely and its `X_NOT_IMPLEMENTED` branch — which claimed the *build* did not implement it, over
+a build that did — is deleted. An app that deleted its chart now gets helm's own error.
+
+The framework repo's own [`docker/helm`](https://github.com/developerz-ai/ultimate/tree/main/docker/helm)
+carries two templates the scaffold does not — `pdb.yaml` and `servicemonitor.yaml`. Neither ships in
+an npm tarball, so taking them is a `git clone` of this repo. On 3.0.0 and below, `x new` writes no
+chart at all and `--method helm` exits `X_NOT_IMPLEMENTED`: copy the chart in, or use
+`--method compose`.
 
 ## Static deploys independently
 

@@ -104,7 +104,7 @@ package is the drift that rule exists to prevent. The host mounts two routes aro
 calls — the same shape `packages/cli/src/dev-assets.ts` already uses for `/media/*`:
 
 ```ts
-{ method: 'PUT', path: '/_storage/local/*key', meta: { name: 'storage.put', auth: 'required' },
+{ method: 'PUT', path: '/_storage/:disk/*key', meta: { name: 'storage.put', auth: 'required' },
   handler: async (request) => Response.json(await acceptSignedUpload({
     url: request.url.toString(), secret, disk: storage.disk(), orgId: ctx.actor.orgId,
     bytes: new Uint8Array(await request.arrayBuffer()),
@@ -112,8 +112,18 @@ calls — the same shape `packages/cli/src/dev-assets.ts` already uses for `/med
   })) }
 ```
 
-`localDriver`'s base is `/_storage/<driver>`; `s3Driver` presigns against the provider and never
-touches this route.
+**The segment is the registered disk name, not the driver kind.** The mounted route resolves it
+through the registry, so a disk registered as `uploads` whose URLs said `local` 404s every signature
+it just wrote. `defineStorage` calls `StorageDriver.registerAs(diskName)` at boot and the driver
+hangs its URLs off that; `acceptSignedUpload` reads the base back off `disk.signedUrlBase` rather
+than re-deriving it from `disk.name`, which is what let both halves agree with each other and
+disagree with the route. `s3Driver` presigns against the provider, declares no `signedUrlBase`, and
+never touches this route.
+
+**Only the `GET` half is mounted by the framework**, `As of 2026-08-19`:
+[`packages/cli/src/dev-storage.ts:227`](../../packages/cli/src/dev-storage.ts) serves
+`GET /_storage/:disk/*key` and there is no shipped `PUT`, so `acceptSignedUpload` is reachable only
+from a route an app writes. The snippet above is that route → [`wiki/Known-Gaps.md`](../../wiki/Known-Gaps.md).
 
 ## Orphans
 

@@ -8,15 +8,159 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Three bug sweeps since 3.0.0. The second was six independent auditors over the packages the 3.0.0
+Four bug sweeps since 3.0.0. The second was six independent auditors over the packages the 3.0.0
 sweep did not reach; the third added a whole-repo security pass and an architecture review, and
-found more than the first two combined. **Twelve** of the entries below are breaking changes to
-documented APIs and one needs a migration run, so the next release is a major.
+found more than the first two combined; the fourth closed the known-gaps backlog and is below.
+**Twenty** of the entries below are breaking changes to documented APIs and one needs a migration
+run, so the next release is a major.
 
-Three findings are worth reading even if you skip the rest, because each was a guarantee the code
+Four findings are worth reading even if you skip the rest, because each was a guarantee the code
 stated in a comment and did not keep: every authenticated websocket carried `actor: null`, every
-`Date` in a query input collided into one cache key, and the scraping wedge watchdog's abort
-signal was built and handed to nobody.
+`Date` in a query input collided into one cache key, the scraping wedge watchdog's abort signal was
+built and handed to nobody, and `references(() => t.id, { onDelete: 'cascade' })` had type-checked
+since 1.0 while reaching no SQL at all.
+
+### Changed — BREAKING (fourth sweep)
+
+- **BREAKING — `on delete` reaches the generated SQL. Any app that ever declared a rule generates
+  different DDL now.** `references(() => orgs.id, { onDelete: 'cascade' })` type-checked, and the
+  rule was dropped one layer below the declaration: `describe.ts` rendered the reference as the
+  string `"<entity>.<column>"` with nowhere to put it, so every `add constraint` this framework has
+  ever emitted said `references "orgs" ("id");` — a declared cascade under which the database
+  refuses the delete instead. Drift could not see it either: the catalog answers `a`/`c`/`r` and the
+  snapshot held nothing truthful, so a hand-added `on delete cascade` and its absence both read
+  `ok: true`.
+
+  **The edit:** none to your entities. Run `x db gen "<name>"` and read the diff — an app with an
+  `onDelete` rule already applied by hand gets a `changed-foreign-key` difference, whose `fix:` is
+  the drop/add pair, because Postgres has no `alter constraint` for a referential action. An app that
+  declared a rule and never noticed it was inert gets the constraint it always asked for, and
+  **child rows will now be deleted or nulled where they previously blocked the parent delete**.
+  Check that before you apply.
+
+- **BREAKING — `ColumnDescription` and `ReferenceDescription` gain `onDelete: OnDelete | null`.**
+  The projection `@ultimat3/db` reads is the only path a rule can travel, since `db` is tier 1 and
+  cannot import `@ultimat3/entity`. **The edit:** a hand-built description literal — a test fixture,
+  a custom generator — must add the field; `null` is Postgres' `no action` and is the old behaviour.
+
+- **BREAKING — `DriftKind` gains `changed-foreign-key`.** The key points where it was declared to
+  point and one side's `on delete` rule is not the other's. Reported apart from
+  `missing-foreign-key` because it is a different repair — the constraint is there, and what changed
+  is what happens to the child rows. **The edit:** a `switch` over `DriftKind` with no `default` no
+  longer compiles. Its `fix:` is deliberately not `x db migrate`: `add constraint` alone is `42710`
+  on a name already taken and no `x db gen` diff emits either statement, so it hands over the pair.
+
+- **BREAKING — `BranchInfo` gains `base: string | null`.** The `comment on database` marker is
+  `ultimate:branch:<base>:<iso>`, split on the ISO tail rather than the first `:` because a database
+  name may contain one. `reapBranches` was **source-blind**: `listBranches()` walks `pg_database` for
+  the whole server, so two Ultimate apps on one Postgres plus one nightly sweep was the other app's
+  branches dropped — a `DROP DATABASE` nobody asked for and nothing recovers from. It now skips any
+  branch whose base is not `current_database()`, **and skips an older marker that records no base
+  rather than dropping it**: a branch of nothing is not a branch of this database, which makes the
+  change self-healing with no migration — the next `createBranch` writes the base down.
+
+  **The edit:** a consumer destructuring `BranchInfo` gets a new field, `null` on every branch made
+  before this. Nothing back-fills the comment; re-create a branch to give it a base.
+
+- **BREAKING — `realtime.heartbeatMs` is removed from `RealtimeConfig`.** It was declared, defaulted
+  to `15_000`, and read by nothing. The socket beat is `new LiveClient({ heartbeatMs })` — browser
+  code, which cannot read server config — and the presence beat is derived
+  (`PresenceRegistry.heartbeatMs` is `max(1000, floor(ttlMs / 3))`). A second knob is a second number
+  that can disagree with the one it is a fraction of. `RealtimeConfig` is now
+  `{ enabled, tier, transport, urlEnv }`.
+
+  **The edit:** delete the key. **There is no runtime refusal, and this is not what the gap row
+  predicted:** `section()` copies every own key of the patch and `validate()` checks only the fields
+  it names, so a leftover `heartbeatMs` is silently kept in the resolved config and changes nothing.
+  The only failure is at typecheck — `TS2353`, excess property on `Input<RealtimeConfig>` — and an
+  app that assigns its config to a variable before passing it loses excess-property checking and gets
+  **no error at all**. Grep for it rather than trusting the compiler.
+
+- **BREAKING — `createRateLimiter({ now })` is `createRateLimiter({ clock })`.** The same `Clock`
+  shape `createRequestContext`'s `init.clock` takes; a second spelling of "what time is it" is a
+  second way to set one number. **The edit:**
+  `createRateLimiter({ config, now: () => t })` → `createRateLimiter({ config, clock: { now: () => new Date(t) } })`.
+  Callers that passed neither are unaffected — it defaults to `systemClock`.
+
+- **BREAKING — five generators write typed test filenames.** `x verify` selects a suite by filename,
+  so a generated `contractTest(…)` inside a plain `*.test.ts` ran under `unit` and `x test contract`
+  answered `X_TEST_NO_FILES` — a step that passes by having nothing to run. `x g action` and
+  `x g mutator` now write `<name>.contract.test.ts` beside `<name>.test.ts`; `x g query --live`
+  writes `<name>.live.test.ts`; `x g job`, `x g task` and `x g backfill` write `<name>.job.test.ts`.
+  `x g action`/`x g mutator` therefore emit **9** files into a bare slice, not 8, and its own 3
+  rather than 2.
+
+  **The edit:** re-running a generator with `--force` writes the new name and **leaves a file under
+  the old name where it is** — the old name is not in the output list, so nothing touches it. Delete
+  the orphan by hand, or the same declaration is tested twice under two step names.
+
+- **BREAKING — a local disk's signed URLs carry the registered disk name, not the driver kind.**
+  `localDriver` minted `/_storage/<driver>/<key>` while the mounted route resolves the segment
+  through the registry, so a disk registered as `uploads` 404'd every signature it had just written.
+  `StorageDriver.registerAs(diskName)` is optional on the interface and called by `defineStorage` at
+  boot; `acceptSignedUpload` reads the base back off `disk.signedUrlBase` rather than re-deriving it
+  from `disk.name`, which is what let the minting half and the verifying half agree with each other
+  and disagree with the route.
+
+  **The edit:** a URL signed before this and not yet redeemed no longer verifies if the disk's
+  registered name differs from its driver's. Re-sign. A third-party `StorageDriver` that ignores
+  `registerAs` keeps minting under `name`, which is the old behaviour.
+
+### Fixed — the fourth sweep
+
+- **A removed `references()` emits its `drop constraint`.** It emitted nothing, and that is not the
+  harmless omission a removed index is: the key stayed on the database *and* the snapshot beside it
+  recorded `foreignKeys: []`, actively denying a constraint the catalog held — and
+  `compareForeignKeys` judges the declared side, so no check the framework runs could see it. The
+  drop names the constraint the **previous snapshot** recorded rather than the name this generator
+  would have chosen, so a hand-written `fk_legacy` is dropped by its own name instead of `42704`. A
+  column dropped in the same migration takes its constraint with it and gets no second statement.
+- **Drift compares an index's direction and its predicate's presence.** A `desc` index rebuilt
+  ascending by hand served a feed's newest page off the wrong end and a partial index recreated as a
+  total one silently widened the constraint, both under `ok: true`. `asc` normalises to `null` first,
+  because `createIndex` writes `"col" asc` and Postgres stores that as not-descending. The
+  predicate's **text** stays uncompared on purpose — the catalog answers its own rewriting
+  (`(deleted_at IS NULL)`) where the snapshot holds the author's spelling, and normalising that means
+  shipping an expression parser to compete with the server's.
+- **`X_LIVE_REPLICA_IDENTITY` exists and fires.** It was documented and present in neither the source
+  nor the manifest. `preflight` now asks `pg_class` which replicated tables sit on
+  `relreplident <> 'f'` and **warns** with the exact `ALTER TABLE` per table — a warning and not a
+  refusal, deliberately, because every app on the default identity would otherwise stop booting.
+  `ReplicationStreamStats.partialBefore` counts the running half: every non-insert change whose
+  relation is not on identity `f`. The hard `x verify` refusal is still open.
+- **A malformed request body no longer echoes itself into the 422 or the log store.** The parser's
+  message quotes the bytes it choked on and reached `cause:` through `String(error)`, which is itself
+  a `TypeError` on a null-prototype throwable. The caller-facing half names the format alone and the
+  parser's message rides in `meta` through `renderThrowable`.
+- **The scaffold's `.dockerignore` no longer leaks `.env.production` or `.env.development` into the
+  image.** The patterns were `.env` and `.env.*.local`, neither of which matches the file
+  `docker-compose.prod.yml`'s `env_file:` tells the operator to create. Proven by a real
+  `docker build`. Now `**/.env` + `**/.env.*` + `!**/.env.example` plus `**/.npmrc`, in the
+  framework's file, both tracked apps' and the one `x new` writes. **An image already built still
+  carries them** — rebuild.
+- **`x new` writes the Helm chart** — `docker/helm`, 8 files — and `x deploy`'s
+  `X_NOT_IMPLEMENTED` branch is deleted. It claimed the *build* did not implement helm, over a build
+  that implemented it completely; what was actually missing was the chart in the app, because
+  `docker/helm` ships in no npm tarball. An app that deletes its chart now gets helm's own error.
+  The framework repo's own chart carries two templates the scaffold does not, `pdb.yaml` and
+  `servicemonitor.yaml`.
+- **An unknown `--method` on `x deploy` is refused rather than treated as `compose`.**
+  `x deploy --method helmm` ran the six-step Compose plan and reported `method: "compose"` back to an
+  operator who had asked for a Helm upgrade. It is `X_CLI_UNKNOWN_COMMAND` listing the two.
+- **A planned command answers `X_NOT_IMPLEMENTED`, not `X_CLI_BAD_FLAG`.** The parser read flags
+  against the spec first, and a planned command declares none — so `x logs tail --follow` reported
+  the unknown flag instead of the honest status. A **shipped** command still refuses an unknown flag.
+- **`x new` writes `apps/web/api/index.ts`,** so a scaffolded app's jobs and tasks register under
+  their own names instead of `anonymous-job-2` / `anonymous-task-1`.
+- **The robots.txt read exits through the session's proxy.** It was documented and unpassable: the
+  gate is an argument to `driver.open()` while the exit is a driver option resolved inside it, so a
+  value passed at construction could only ever be the one nobody has yet. `ScrapeSession.proxy`
+  reports the exit and `createRobotsGate` takes a **resolver**. Without it the read left from the
+  worker's IP while every page load left through the proxy — two client identities at one origin —
+  and an origin reachable only through the proxy answered nothing, which the gate reads as
+  allow-everything.
+- **`x db branch`'s `lock:` doc comments no longer name `x db branch` as a caller.** No shipped path
+  passes it; every caller in the repo is a test.
 
 ### Changed — BREAKING (third sweep)
 

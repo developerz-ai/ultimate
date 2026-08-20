@@ -23,7 +23,7 @@ const BRANCH_MARKER = 'ultimate:branch:';
 
 /**
  * `<base>:<iso>`, split on the ISO tail rather than on the first `:` — a database name may contain
- * one and an ISO instant certainly does. A comment that does not match is a pre-3.x one-segment
+ * one and an ISO instant certainly does. A comment that does not match is a pre-4.x one-segment
  * marker: its date is still readable, and its base is `null`, which is what keeps `reapBranches`
  * off it. Unknown, never guessed at.
  */
@@ -31,7 +31,7 @@ const MARKER_PAYLOAD = /^(.*):(\d{4,}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)$/;
 
 export interface BranchInfo {
   readonly name: string;
-  /** The database this branch was cloned from. `null` on a branch made before 3.0 recorded it. */
+  /** The database this branch was cloned from. `null` on a branch made before 4.0 recorded it. */
   readonly base: string | null;
   readonly createdAt: string | null;
   readonly sizeBytes: number;
@@ -163,7 +163,7 @@ export interface ReapOptions extends DropBranchOptions {
  * **Branches of THIS database only** (issue #133). `listBranches` walks `pg_database` for the whole
  * server, so two Ultimate apps sharing one Postgres plus one nightly sweep was the other app's
  * branches dropped — a `DROP DATABASE` nothing recovers from and nobody asked for. A branch whose
- * base is not this database is skipped, and so is a pre-3.x marker that records no base at all:
+ * base is not this database is skipped, and so is a pre-4.x marker that records no base at all:
  * a branch of nothing is not a branch of this database, which makes the change self-healing with
  * no migration — the next `createBranch` writes the base down.
  */

@@ -314,10 +314,10 @@ already stored is skipped and absent, which is how a caller counts what it actua
 There is no `updateAll`: `updateWhere(filter, patch)` and `deleteWhere(filter)` are already the
 bulk forms of `update` and `delete`, and a second spelling of one of them would be a second path.
 
-One consequence to know before you reach for `onMatch: 'update'` on a tenant-scoped entity: the
-composite unique index the tenancy rule requires is one the migration generator still cannot emit —
-see the composite-index row in [Known gaps](Known-Gaps). Declare it on the entity as usual and write
-that one `create unique index` by hand in the migration until it is fixed.
+The composite unique index the tenancy rule requires is emitted correctly since 2.0.0 — declare it
+on the entity and generate. Through 1.2.0 `indexes: [{ on: ['orgId','createdAt'] }]` emitted one
+mangled name (`("org_id_created_at")`) and the SQL would not apply, so an app pinned there writes
+that `create unique index` by hand.
 
 ## Seeding
 
@@ -497,6 +497,23 @@ in CI. `x db migrate` diffs the live catalog against the `x_migrations` ledger o
 just migrated over — the only place a hand-edited column is visible at all. A pending migration is
 not drift, and neither is a table in the framework's `x_` namespace.
 
+### What the catalog diff compares
+
+Ten `DriftKind` values, `As of 2026-08-19` — the executable list is `DriftKind` in
+[`packages/db/src/drift.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/db/src/drift.ts).
+**Only the declared side is judged**: a live index or key no snapshot names is not drift, because
+Postgres creates one for every primary key and every unique constraint and an index a DBA added is a
+planner decision.
+
+| Kind | Raised when |
+|---|---|
+| `unexpected-column` · `missing-column` · `changed-column` | a modelled table's columns disagree with the snapshot. A primary-key column reads as `NOT NULL` on both sides whether or not anything declared it |
+| `unexpected-table` · `missing-table` · `unknown-schema` | a modelled table is absent, or a table outside `x_` is present that no migration declares |
+| `missing-index` | the snapshot names an index the catalog does not hold |
+| `changed-index` | the index is there and one of **four** facts about it differs: its column list, its uniqueness, its **direction**, or whether it is **partial**. The last two are new `As of 2026-08-19` — a `desc` index rebuilt ascending served a feed's newest page off the wrong end, and a partial index recreated as a total one silently widened the constraint, and both read `ok: true`. `asc` is normalised to `null` first, because Postgres stores an ascending index as not-descending. The predicate's **text** is deliberately never compared → [Known gaps](Known-Gaps) |
+| `missing-foreign-key` | no key points those columns at that table. Matched on **where the key points**, never on its name: a hand-written `constraint fk_posts_org` is the same constraint as a generated `posts_org_id_fkey` |
+| `changed-foreign-key` | new `As of 2026-08-19`. The key points where it was declared to point and one side's `on delete` rule is not the other's. Reported apart from `missing-foreign-key` because it is a different repair — the constraint is there, and what changed is what happens to the child rows. Its `fix:` is the **pair**, not `x db migrate`: a rule cannot be altered in place, `add constraint` alone is `42710` on a name already taken, and no `x db gen` diff emits either statement. Both sides go through one normalisation, so the catalog's `c` and a snapshot's `cascade` agree, and Postgres' `a` (`no action`) on every undeclared key reads as no rule |
+
 There is no separate migration tool and no "regenerate types" step. `drift` is one of `x verify`'s seventeen steps — the list, in order, is in [Testing](Testing).
 
 ## Reversible or marked
@@ -557,6 +574,7 @@ x db branch create feat-new-billing --json
 | Preview URL | reported in `data.preview`, subdomain-routed off `PORT` | **the URL is computed**; nothing routes that subdomain for you |
 | Listing | `x db branch ls` — name, location, created-at, size, over either database. **Managed branches only**: external, a database carrying `createBranch()`'s marker comment (`listBranches()` is that read); embedded, a `pgdata-<name>` directory under the state dir (`listPgliteBranches()`, in the CLI). A branch cloned by the pre-1.2.x `psql` path carries no marker and is invisible → [Known gaps](Known-Gaps). `created-at` and `size` read `unknown` where nothing recorded one — always the size on the embedded side, since measuring it is a full directory walk | **shipped** |
 | Teardown | `x db branch drop <name>`. It may only drop what `ls` shows, and that guard lives in the **CLI** (`runDrop` lists first, then drops): the shared database this session is connected to carries no marker, so it is not in the set, and there is no `--force` to get it wrong with. `@ultimat3/db`'s `dropBranch()` is the statement underneath, not the same operation — it takes the **database** name (`<source>_branch_<slug>`), reads no marker, and will drop any database but the current one. Its `force: true` means "terminate other sessions first", which the CLI always passes; it is not an override of the guard | **shipped** |
+| Reaping | `reapBranches({ maxAgeMs })` drops **branches of this database only**, `As of 2026-08-19`. The marker is `ultimate:branch:<base>:<iso>` and `BranchInfo` carries `base`; a branch whose base is not `current_database()` is skipped, and so is a pre-3.x marker that records no base at all. A `createdAt` that is not finite, or that does not round-trip through `toISOString()`, is also skipped — a truncated comment used to read as an infinitely old branch and be dropped on the next sweep whatever `maxAgeMs` said | **shipped** |
 | Build + scoped MCP socket | a per-branch build id scoping the service worker, and `ws://localhost:9229/<branch>` | **planned**, part of `x branch` |
 
 The same clone mechanism powers test parallelism: each worker gets its own `ultimate_test_template_w<N>` cloned from the migrated template `ultimate_test_template`, typically 100–400ms. Never mock the database — clone it.

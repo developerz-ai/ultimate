@@ -5,8 +5,13 @@ A router, not an encyclopedia. Facts live in `x.manifest.json`; this file holds 
 infer from the code.
 
 `x verify` here is **blocking on the framework repo's CI**, through the ratchet in
-`../../scripts/lib/gated-apps.ts`: this app's own `expectedRed` pins `boundaries` and `drift` —
-2 red of 17 as of 2026-08 — and every other step must stay green. `examples/dummy` has its own
+`../../scripts/lib/gated-apps.ts`: this app's own `expectedRed` pins `boundaries` and `budgets` —
+2 red of 17 as of 2026-08-19 — and every other step must stay green. `boundaries` is
+`X_BOUNDARY_SITE_TO_APP` ×3, `apps/web/site/feed/page.tsx` reaching `apps/web/app/posts/service.ts`;
+`budgets` is `X_BUDGET_UNMEASURED` on every route declaring one, because no `.x/build-stats.json`
+has ever existed here — closed by running `x build` ahead of the gate. `drift` is **not** pinned and
+must stay green; that table is the executable copy, so read it rather than this line if they
+disagree. `examples/dummy` has its own
 table; neither app's pins excuse the other's red step. Turn a pinned step green and you must
 delete its pin in the same change
 (`bun run ../../scripts/reference-app-gate.ts --unpin dummy/social-media-clone:<step>`). This app is not the reference app — `examples/dummy` decides idiom — but it is deployed

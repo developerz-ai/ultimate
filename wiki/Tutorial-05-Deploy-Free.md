@@ -69,7 +69,15 @@ The image's own `HEALTHCHECK` reports `healthy` within the 30s start period. Pro
 
 A real `DATABASE_URL` env var wins over anything baked into the image; verified by pointing a container at an unreachable host and getting `X_DB_UNAVAILABLE` rather than a silent PGlite fallback.
 
-`.env.development` **is copied into the image** — the `.dockerignore` excludes `.env` and `.env.*.local`, not `.env.development`. It ships with every value empty, so it is harmless as generated. Never put a real value in it.
+**No `.env` file reaches the image**, `As of 2026-08-19`. `docker/Dockerfile.dockerignore` excludes `**/.env` and `**/.env.*`, keeping only `!**/.env.example`. It did not: the old patterns were `.env` and `.env.*.local`, which match neither `.env.development` **nor `.env.production`** — the file `docker/docker-compose.prod.yml`'s `env_file:` tells you to create. Both shipped inside the layer, proven by a real `docker build`, and this tutorial called that harmless.
+
+On 3.0.0 and below, add these three lines to `docker/Dockerfile.dockerignore` before your first build — and rebuild, because an image already built still carries them:
+
+```text
+**/.env
+**/.env.*
+!**/.env.example
+```
 
 ## Release-phase migrations — the one way
 
@@ -183,7 +191,7 @@ Scaling the two serving roles is the next rung, and it is not an edit to this fi
 | `x logs tail` | planned — `X_NOT_IMPLEMENTED`, with `x dev` → the `/_x` timeline panel as its fix |
 | `x status` | planned — `x doctor --json` is the shipped answer |
 | OTLP export, on by default | the exporter **ships** — `otlpSpanExporter()` / `otlpMetricExporter()`, OTLP/HTTP JSON — but the default is still the no-op, so nothing leaves the process until you register one: `configureTelemetry({ exporter: otlpSpanExporter() })` with `OTEL_EXPORTER_OTLP_ENDPOINT` set to a collector's HTTP receiver (`:4318` — `:4317` is gRPC and is refused) |
-| a Helm chart in your app | `x new` writes none. Copy [`docker/helm`](https://github.com/developerz-ai/ultimate/tree/main/docker/helm) from the framework repo, or stay on `--method compose` |
+| a Helm chart in your app | **`x new` writes one** `As of 2026-08-19` — `docker/helm`, 8 files — so `x deploy --method helm` works here. On 3.0.0 and below it writes none: copy [`docker/helm`](https://github.com/developerz-ai/ultimate/tree/main/docker/helm) from the framework repo, or stay on `--method compose` |
 
 ## Next
 
