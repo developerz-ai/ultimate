@@ -104,7 +104,6 @@ export type {
   SrcsetOptions,
 } from './image';
 export {
-  BLUR_PLACEHOLDER_WIDTH,
   blurPlaceholder,
   DEFAULT_QUALITY,
   DEFAULT_SRCSET_WIDTHS,

@@ -1,7 +1,9 @@
-// Single responsibility: the three failure modes of the image pipeline, as coded errors.
-// Every one names the format AND a runnable way forward, because an agent that hits
-// "unsupported" needs to know which format to ask for instead, not that it lost.
+// Single responsibility: the three failure modes of the image pipeline, as coded errors, and the
+// one translation of `Bun.Image`'s `ERR_IMAGE_*` rejections into them. Every one names the format
+// AND a runnable way forward, because an agent that hits "unsupported" needs to know which format
+// to ask for instead, not that it lost.
 
+import { renderThrowable, stringField } from '../error-render';
 import { UltimateError } from '../errors';
 
 export class ImageUnsupportedError extends UltimateError {
@@ -56,3 +58,33 @@ export const imageTooLarge = (
     'downscale the source before it reaches the pipeline, or raise MAX_IMAGE_PIXELS deliberately',
     meta,
   );
+
+/**
+ * `Bun.Image` rejects with a plain `Error` carrying a stable `error.code`. This is the ONE place
+ * that code is read: a caller branching on `ERR_IMAGE_*` would be a second vocabulary for the same
+ * three failures, and `X_IMAGE_*` is the one the rest of the framework, the wiki and `x errors
+ * explain` already know. Unknown codes land on decode-failed rather than on a bare `Error`.
+ */
+const UNSUPPORTED_FIX =
+  "request 'png', 'jpeg' or 'webp' — AVIF and HEIC need an OS codec the portable backend never " +
+  'uses, so route those through an ImageTransformDriver (a CDN or an external encoder)';
+
+const UNKNOWN_FORMAT_FIX =
+  're-export the source as PNG, JPEG or WebP: `file <path>` reports what these bytes actually are';
+
+export function imageFromBunError(value: unknown, doing: string): UltimateError {
+  // `renderThrowable`, never `${value}` — the rejection is Bun's value, not ours, and a cause that
+  // throws while formatting itself replaces the refusal with a TypeError nothing catches by code.
+  const cause = `${doing}: ${renderThrowable(value)}`;
+  const code = stringField(value, 'code');
+  if (code === 'ERR_IMAGE_FORMAT_UNSUPPORTED') {
+    return new ImageUnsupportedError(cause, UNSUPPORTED_FIX, { bunCode: code });
+  }
+  if (code === 'ERR_IMAGE_UNKNOWN_FORMAT') {
+    return new ImageUnsupportedError(cause, UNKNOWN_FORMAT_FIX, { bunCode: code });
+  }
+  if (code === 'ERR_IMAGE_TOO_MANY_PIXELS') {
+    return imageTooLarge(cause, { bunCode: code });
+  }
+  return imageDecodeFailed(cause, code === undefined ? {} : { bunCode: code });
+}

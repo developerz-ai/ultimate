@@ -235,7 +235,7 @@ Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan
 | `X_STORAGE_QUARANTINED` | `promoteAttachment` on a key nothing has released from `pending/quarantine/` |
 | `X_NOT_IMPLEMENTED` | S3 user metadata / cache-control; `serverSideEncryption` on either driver |
 | `X_ENV_MISSING` | core's: S3 credential env vars, or a `localDriver` built outside development where neither `signingSecret` nor `STORAGE_SIGNING_SECRET` holds a secret other than the published `DEV_SIGNING_SECRET` |
-| `X_IMAGE_UNSUPPORTED` | core's: an `avif`/`webp` encode, or a source no built-in decoder reads |
+| `X_IMAGE_UNSUPPORTED` | core's: an `avif` encode, or a source no built-in decoder reads |
 | `X_IMAGE_DECODE_FAILED` | core's: truncated or corrupt image bytes |
 
 ## Images
@@ -243,11 +243,14 @@ Inside `pending/` deliberately: an upload nobody ever scanned is still an orphan
 `variantKey()`, `srcsetDescriptors()`, `fitDimensions()` are pure — `@ultimat3/seo` builds
 `srcset` from them without decoding a byte.
 
-`transformImage()` and `blurPlaceholder()` are real, over `@ultimat3/core`'s zero-dependency
-pipeline. **It encodes `png` and `jpeg`, nothing else** — `avif`/`webp` remain key and `srcset`
-math, and asking for their bytes rejects with core's `X_IMAGE_UNSUPPORTED` naming the two that
-work; produce them through a CDN or a custom `ImageTransformDriver`. `png` is the only output
-that keeps alpha. The encoded size is always exactly `fitDimensions()`, so the `width`/`height`
-`@ultimat3/seo` already wrote into the tag match the bytes — `contain` fits inside the box, it
-does not letterbox to it. `blurPlaceholder()` returns a real 16px-wide PNG `data:` URI.
+`transformImage()` and `blurPlaceholder()` are real, over `@ultimat3/core`'s pipeline, which is
+`Bun.Image` — no `sharp`, no dependency. **It encodes `png`, `jpeg` and `webp`** — so the default
+format and the default `.webp` key extension finally agree, and a `srcset` entry can be served
+rather than only named. `avif` remains key and `srcset` math: it needs an OS codec the portable
+backend never uses, so asking for its bytes rejects with core's `X_IMAGE_UNSUPPORTED` naming the
+three that work; produce it through a CDN or a custom `ImageTransformDriver`. `png` and `webp` are
+the outputs that keep alpha. The encoded size is always exactly `fitDimensions()`, so the
+`width`/`height` `@ultimat3/seo` already wrote into the tag match the bytes — `contain` fits inside
+the box, it does not letterbox to it. `blurPlaceholder()` returns a ThumbHash PNG `data:` URI, at
+most 32px on its long edge.
 `bun test` from `packages/storage`.

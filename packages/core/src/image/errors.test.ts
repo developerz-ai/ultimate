@@ -10,6 +10,7 @@ import {
   ImageTooLargeError,
   ImageUnsupportedError,
   imageDecodeFailed,
+  imageFromBunError,
   imageTooLarge,
   imageUnsupported,
 } from './errors';
@@ -91,5 +92,58 @@ describe('every image error', () => {
       fix: 'request png or jpeg',
       docs: 'https://ultimate.dev/errors/X_IMAGE_UNSUPPORTED',
     });
+  });
+});
+
+describe('imageFromBunError', () => {
+  /** The shape `Bun.Image` rejects with: a plain Error carrying a stable `code`. */
+  const bunError = (code: string): unknown => Object.assign(new Error(`Image: ${code}`), { code });
+
+  test.each([
+    ['ERR_IMAGE_FORMAT_UNSUPPORTED', 'X_IMAGE_UNSUPPORTED'],
+    ['ERR_IMAGE_UNKNOWN_FORMAT', 'X_IMAGE_UNSUPPORTED'],
+    ['ERR_IMAGE_TOO_MANY_PIXELS', 'X_IMAGE_TOO_LARGE'],
+    ['ERR_IMAGE_DECODE_FAILED', 'X_IMAGE_DECODE_FAILED'],
+    ['ERR_IMAGE_ENCODE_FAILED', 'X_IMAGE_DECODE_FAILED'],
+    ['ERR_INVALID_STATE', 'X_IMAGE_DECODE_FAILED'],
+  ])('maps %s onto %s', (bunCode, code) => {
+    const error = imageFromBunError(bunError(bunCode), 'transforming the image');
+    expect(error.code).toBe(code);
+    expect(error.meta).toMatchObject({ bunCode });
+    expect(error.cause).toContain('transforming the image');
+  });
+
+  test('the format refusal names the three portable formats and the way to the others', () => {
+    const error = imageFromBunError(bunError('ERR_IMAGE_FORMAT_UNSUPPORTED'), 'encoding');
+    expect(error.fix).toContain('webp');
+    expect(error.fix).toContain('ImageTransformDriver');
+  });
+
+  test('a code nobody mapped is still a coded error, never a bare one', () => {
+    // A syscall code (ENOENT, EACCES) reaches this for a file-backed input.
+    const error = imageFromBunError(
+      Object.assign(new Error('boom'), { code: 'ENOENT' }),
+      'reading',
+    );
+    expect(error.code).toBe('X_IMAGE_DECODE_FAILED');
+    expect(error).toBeInstanceOf(ImageDecodeFailedError);
+  });
+
+  test('a value that fights being read still renders, and does not throw doing it', () => {
+    // A rejection crossing a worker arrives as a plain object, and reading `.code` off one is a
+    // getter call on a value the framework did not build. `new Error` here is INPUT, never a
+    // verdict — the assertions below are what report.
+    const fights = new Error('this value fights being read');
+    const hostile = new Proxy(
+      {},
+      {
+        get() {
+          throw fights;
+        },
+      },
+    );
+    const error = imageFromBunError(hostile, 'transforming the image');
+    expect(error.code).toBe('X_IMAGE_DECODE_FAILED');
+    expect(error.cause).toContain('transforming the image');
   });
 });

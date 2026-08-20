@@ -87,12 +87,13 @@ export interface ImagePipeline {
  * Always square PNG: `toManifestIcon` declares `type: 'image/png'`, so any other format
  * would make the manifest lie about bytes the browser then refuses.
  *
- * `async` on purpose. A `Promise`-typed method that throws synchronously skips every
- * `.catch()` a caller wrote; an undecodable source or a named colour must reject instead.
+ * `await` inside, not a returned promise: core's own refusals (a named colour, a padding out of
+ * range) are thrown before the first `await` in it, and re-raising them here is what keeps every
+ * failure of this method a rejection rather than a synchronous throw past a caller's `.catch()`.
  */
 export class BuiltinImagePipeline implements ImagePipeline {
   async resize(source: Uint8Array, transform: ImageTransform): Promise<Uint8Array> {
-    return transformImageBytes(source, {
+    return await transformImageBytes(source, {
       width: transform.size,
       height: transform.size,
       fit: 'contain',

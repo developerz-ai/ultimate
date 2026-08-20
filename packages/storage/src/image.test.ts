@@ -12,7 +12,6 @@ import {
   probeImage,
 } from '@ultimat3/core';
 import {
-  BLUR_PLACEHOLDER_WIDTH,
   blurPlaceholder,
   DEFAULT_QUALITY,
   DEFAULT_SRCSET_WIDTHS,
@@ -56,6 +55,7 @@ function alphaPng(): Uint8Array {
 const dataUrlBytes = (uri: string): Uint8Array =>
   Uint8Array.from(atob(uri.slice(uri.indexOf(',') + 1)), (char) => char.charCodeAt(0));
 
+/** PNG bytes only — `decodeImage` is core's raw-pixel seam, not a second decoder. */
 const alphaAt = (bytes: Uint8Array, x: number, y: number): number => {
   const raster = decodeImage(bytes);
   return raster.pixels[(y * raster.width + x) * 4 + 3] ?? -1;
@@ -166,8 +166,10 @@ describe('transformImage', () => {
   });
 
   test('jpeg drops the alpha png keeps — the reason png is encodable at all', async () => {
-    const bytes = await transformImage(alphaPng(), { width: 4, format: 'jpeg' });
-    expect(hasAlpha(decodeImage(bytes))).toBe(false);
+    // Read back through PNG, because the raw-pixel seam decodes PNG and the JPEG is the subject.
+    const jpeg = await transformImage(alphaPng(), { width: 4, format: 'jpeg' });
+    const asPng = await transformImage(jpeg, { width: 4, format: 'png' });
+    expect(hasAlpha(decodeImage(asPng))).toBe(false);
   });
 
   test('never upscales past the source', async () => {
@@ -184,10 +186,22 @@ describe('transformImage', () => {
     }
   });
 
-  test('rejects webp — the built-in encoder produces png and jpeg only', async () => {
+  test('webp is a real output now — one encoder, three formats', async () => {
+    const bytes = await transformImage(opaquePng(), { width: 10, format: 'webp' });
+    expect(probeImage(bytes)).toMatchObject({ format: 'webp', width: 10, height: 5 });
+  });
+
+  test('the default format is webp, which is also the default key extension', async () => {
+    // These two must agree: `variantKey` writes `.webp` with no format asked for, so bytes in any
+    // other format would be served under a key that names one the browser will not read.
+    expect(variantKey('a/b.png', { width: 10 }).endsWith('.webp')).toBe(true);
+    expect(probeImage(await transformImage(opaquePng(), { width: 10 })).format).toBe('webp');
+  });
+
+  test('rejects avif — it needs an OS codec the portable backend never uses', async () => {
     // A rejection, not a synchronous throw: this line would blow up before `expect` if the
     // function still threw out of a Promise-typed body.
-    const pending = transformImage(opaquePng(), { width: 10, format: 'webp' });
+    const pending = transformImage(opaquePng(), { width: 10, format: 'avif' });
     expect(pending).toBeInstanceOf(Promise);
     await expect(pending).rejects.toMatchObject({ code: 'X_IMAGE_UNSUPPORTED' });
     // `Promise.catch` widens the value to `Uint8Array | <handler result>`, so the rejection has to
@@ -196,13 +210,7 @@ describe('transformImage', () => {
     const rejection: unknown = await pending.catch((reason: unknown) => reason);
     const fix = isUltimateError(rejection) ? rejection.fix : '';
     expect(fix).toContain('png');
-    expect(fix).toContain('jpeg');
-  });
-
-  test('rejects the default format too — the default key extension is .webp', async () => {
-    await expect(transformImage(opaquePng(), { width: 10 })).rejects.toMatchObject({
-      code: 'X_IMAGE_UNSUPPORTED',
-    });
+    expect(fix).toContain('webp');
   });
 
   test('rejects bytes that are no image at all', async () => {
@@ -221,15 +229,16 @@ describe('transformImage', () => {
 });
 
 describe('blurPlaceholder', () => {
-  test('is a 16px-wide png data URI', async () => {
+  test('is a png data URI at most 32px on its long edge, at the source aspect ratio', async () => {
     const uri = await blurPlaceholder(opaquePng());
     expect(uri.startsWith('data:image/png;base64,')).toBe(true);
-    expect(probeImage(dataUrlBytes(uri))).toMatchObject({
-      format: 'png',
-      width: BLUR_PLACEHOLDER_WIDTH,
-      height: 8,
-    });
-    expect(BLUR_PLACEHOLDER_WIDTH).toBe(16);
+    const info = probeImage(dataUrlBytes(uri));
+    expect(info.format).toBe('png');
+    expect(info.width).toBeLessThanOrEqual(32);
+    // 40x20 source: landscape stays landscape. ThumbHash quantises the ratio (32x18 here, not
+    // 32x16), which costs nothing because `@ultimat3/seo` paints this as `background-size:cover`
+    // inside a box already sized from the real width/height — the LQIP never sets the box.
+    expect(info.width).toBeGreaterThan(info.height);
   });
 
   test('stays small enough to inline in the document head', async () => {

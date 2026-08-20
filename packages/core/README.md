@@ -38,7 +38,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | the sockets this process opened, so a self-request is not egress | `listeners.ts` |
 | `defineService('orgs', …)` → `ctx.orgs`, rebuilt per actor | `service.ts` |
 | the registrar table one same-tier package reaches another through | `registrar.ts` |
-| decode → resize → encode, the one image pipeline | `image/` |
+| decode → resize → encode, the one image pipeline (over `Bun.Image`) | `image/` |
 | `assertNever`, `invariant` | `assert.ts` |
 
 ## Errors are instructions
@@ -466,31 +466,55 @@ than in `@ultimat3/time` because `@ultimat3/money` needs it too and tier 1 may n
 
 ```ts
 probeImage(bytes);                                     // { format, width, height, mimeType }
-transformImageBytes(bytes, { width: 640, format: 'jpeg', quality: 80 });
-blurDataUrl(bytes);                                    // 16px PNG data: URI, the LQIP
+await transformImageBytes(bytes, { width: 640, format: 'webp', quality: 80 });
+await blurDataUrl(bytes);                              // ThumbHash PNG data: URI, the LQIP
 ```
 
 `storage` variants, `seo` `<picture>` sources and `pwa` icons are the same three steps —
 decode, resize, encode — with different numbers, so there is one implementation and no second
-scaler for an icon to grow a halo in. Zero dependencies: no `sharp`, no native module.
+scaler for an icon to grow a halo in. The codecs are **`Bun.Image`** — statically-linked
+libjpeg-turbo / libspng / libwebp with SIMD resize kernels, in the runtime. Still zero
+dependencies: no `sharp`, no native module.
+
+Every terminal is `async`, because the pipeline runs on a worker thread. `probeImage` stays
+synchronous: it reads a header and never decodes, which is also why it measures SVG and AVIF that
+no codec here reads.
 
 | | |
 |---|---|
-| Decode / encode | PNG and JPEG. `canDecode()` / `canEncode()` publish the real list |
-| Probe only | WebP, AVIF, GIF, SVG — measured from the header so `width`/`height` still inline and CLS stays 0 |
+| Decode | PNG, JPEG, WebP, GIF. `canDecode()` publishes the real list |
+| Encode | PNG, JPEG, WebP. `canEncode()` publishes the real list |
+| Probe only | AVIF and SVG — measured from the header so `width`/`height` still inline and CLS stays 0 |
 | Anything else | `X_IMAGE_UNSUPPORTED`, naming the format and pointing at an `ImageTransformDriver` |
-| Ceiling | `MAX_IMAGE_PIXELS` (64MP), checked from the header **before** a byte is allocated |
-| Determinism | same bytes + same spec → same output bytes. No clock, no randomness |
+| Ceiling | `MAX_IMAGE_PIXELS` (64MP), passed to the decoder as `maxPixels` and refused from the header **before** a byte is allocated |
+| Determinism | same bytes + same spec → same output bytes, **on every platform** |
 
-Adding a format is a decoder plus an entry in `DECODABLE_FORMATS` / `ENCODABLE_FORMATS` — never a
-second dispatch. An unencodable `format` is refused from the spec alone, before the source is
-decoded, so a request nothing can write never expands 64 megapixels first.
+**AVIF and HEIC are refused everywhere, deliberately.** `Bun.Image` can reach them through an OS
+codec (ImageIO on macOS, WIC on Windows), and this pipeline sets `Bun.Image.backend = 'bun'` on
+every call to forbid exactly that: the static codecs and the Highway geometry kernels are what make
+a laptop and a Linux node produce the same bytes, and `variantKey` is content-addressed. A variant
+that re-encoded differently per platform is a cache that never hits. Producing AVIF means a CDN or
+a custom `ImageTransformDriver`.
 
-`image/` is the one place in core allowed past the 200-line target, and only there: a JPEG or PNG
-codec is a single algorithm that does not split into smaller responsibilities without inventing
-seams. Nothing else in it qualifies, which is why the segment headers (`jpeg-headers.ts`), the SVG
-text parse (`probe-svg.ts`) and the colour grammar (`color.ts`) are their own files. The 500-line
-hard ceiling applies to all of them.
+`transformImageBytes` has two paths and picks by geometry. When the resampled artwork IS the output
+box it is one `Bun.Image` call, source bytes to encoded bytes. When it is not — a letterbox, a
+`padding`, a `cover` crop — the artwork comes back as PNG and `canvas.ts` composites it, because
+`Bun.Image` resamples but has no compositor and the PWA maskable safe zone is a composite.
+`png-pixels.ts` is the raw-pixel seam that hop needs, 8-bit RGBA only; anything else is
+`X_IMAGE_UNSUPPORTED` naming `transformImageBytes`.
+
+Adding a format is an entry in `DECODABLE_FORMATS` / `ENCODABLE_FORMATS` and a branch in
+`withFormat` — never a second dispatch. An unencodable `format` is refused from the spec alone,
+before the source is decoded, so a request nothing can write never expands 64 megapixels first.
+
+`Bun.Image` rejects with `ERR_IMAGE_*` on `error.code`. `imageFromBunError` is the ONE place that
+is read, mapping it onto `X_IMAGE_UNSUPPORTED` / `X_IMAGE_TOO_LARGE` / `X_IMAGE_DECODE_FAILED`; no
+caller branches on a Bun code.
+
+Two files in `image/` are past the 200-line target and neither splits without inventing a seam:
+`probe.ts` is one algorithm per format over header bytes, and `fixtures.ts` is data. The 500-line
+hard ceiling applies to both. Everything else in `image/` is under the target — deleting the
+hand-rolled JPEG and PNG codecs is what put it there.
 
 `image/fixtures.ts` is byte-exact output from Pillow and ffmpeg on purpose: a codec that only round
 trips against itself proves nothing. Never regenerate a fixture with our own encoder.

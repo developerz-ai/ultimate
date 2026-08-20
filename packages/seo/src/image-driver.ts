@@ -60,17 +60,17 @@ function requestedFormat(format: string | undefined): ImageFormat | undefined {
 }
 
 /**
- * The zero-dependency pipeline in `@ultimat3/core`: PNG and JPEG in, PNG and JPEG out.
- * `<picture>` still offers AVIF and WebP, but nothing here synthesises them — asking for one
- * raises core's `X_IMAGE_UNSUPPORTED`, and those variants belong on a CDN driver instead.
+ * The zero-dependency pipeline in `@ultimat3/core`: PNG, JPEG, WebP and GIF in, PNG, JPEG and
+ * WebP out. `<picture>` still offers AVIF, and nothing here synthesises it — asking for one
+ * raises core's `X_IMAGE_UNSUPPORTED`, and that variant belongs on a CDN driver instead.
  */
 export function builtinImageDriver(options: BuiltinImageDriverOptions): ImageTransformDriver {
   return {
     name: 'builtin',
     async transform(request: TransformRequest): Promise<TransformedImage> {
-      const bytes = transformImageBytes(await options.read(request.src), {
+      const bytes = await transformImageBytes(await options.read(request.src), {
         width: request.width,
-        // Omitted means core picks by the pixels: PNG when the raster has alpha.
+        // Omitted means core keeps the source's format when it can write it, PNG otherwise.
         format: requestedFormat(request.format),
         quality: request.quality ?? options.quality,
       });

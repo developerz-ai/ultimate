@@ -57,11 +57,19 @@ describe('builtinImageDriver', () => {
     expect(probeImage(result.bytes).width).toBe(64);
   });
 
-  test('an alpha source stays PNG and an opaque one becomes JPEG when nobody asks', async () => {
+  test('with no format asked for, the source format is KEPT — alpha can never be lost', async () => {
+    // The old rule guessed from the pixels and turned an opaque PNG into a JPEG; this one cannot
+    // flatten a logo, because the only way out of PNG is asking for it.
     const alpha = builtinImageDriver({ read: reader(TRANSLUCENT).read });
     const opaque = builtinImageDriver({ read: reader(OPAQUE).read });
     expect((await alpha.transform({ src: '/logo.png', width: 32 })).contentType).toBe('image/png');
     expect((await opaque.transform({ src: '/photo.png', width: 32 })).contentType).toBe(
+      'image/png',
+    );
+
+    const jpeg = await opaque.transform({ src: '/photo.png', width: 32, format: 'jpeg' });
+    const fromJpeg = builtinImageDriver({ read: reader(jpeg.bytes).read });
+    expect((await fromJpeg.transform({ src: '/photo.jpg', width: 16 })).contentType).toBe(
       'image/jpeg',
     );
   });
@@ -78,9 +86,13 @@ describe('builtinImageDriver', () => {
     await expect(
       driver.transform({ src: '/img/hero.png', width: 32, format: 'avif' }),
     ).rejects.toMatchObject({ code: 'X_IMAGE_UNSUPPORTED' });
-    await expect(
-      driver.transform({ src: '/img/hero.png', width: 32, format: 'webp' }),
-    ).rejects.toMatchObject({ code: 'X_IMAGE_UNSUPPORTED' });
+  });
+
+  test('webp is served by the builtin driver now, not only by a CDN one', async () => {
+    const driver = builtinImageDriver({ read: reader(OPAQUE).read });
+    const result = await driver.transform({ src: '/img/hero.png', width: 32, format: 'webp' });
+    expect(result.contentType).toBe('image/webp');
+    expect(probeImage(result.bytes)).toMatchObject({ format: 'webp', width: 32, height: 24 });
   });
 
   test('a string that names no format is the same failure, and the fix lists the real ones', async () => {
@@ -91,13 +103,14 @@ describe('builtinImageDriver', () => {
     ).rejects.toMatchObject({ code: 'X_IMAGE_UNSUPPORTED', fix: expect.stringContaining('jpeg') });
   });
 
-  test('blurPlaceholder is a 16px PNG data URI', async () => {
+  test('blurPlaceholder is a ThumbHash PNG data URI, at most 32px on its long edge', async () => {
     const driver = builtinImageDriver({ read: reader(OPAQUE).read });
     const uri = await driver.blurPlaceholder('/img/hero.png');
     expect(uri.startsWith('data:image/png;base64,')).toBe(true);
-    expect(
-      probeImage(Uint8Array.from(atob(uri.split(',')[1] ?? ''), (c) => c.charCodeAt(0))),
-    ).toMatchObject({ format: 'png', width: 16 });
+    const info = probeImage(Uint8Array.from(atob(uri.split(',')[1] ?? ''), (c) => c.charCodeAt(0)));
+    expect(info.format).toBe('png');
+    expect(Math.max(info.width, info.height)).toBeLessThanOrEqual(32);
+    expect(uri.length).toBeLessThan(2048);
   });
 
   /**
