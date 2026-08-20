@@ -76,8 +76,27 @@ export interface Actor {
   readonly orgId?: string | undefined;
   /** Application roles (`admin`, `editor`). Unrelated to the runtime `Role`. */
   readonly roles: readonly string[];
-  /** Capability strings a policy can require (`post:publish`). */
+  /**
+   * FRAMEWORK capabilities, checked with `hasScope()`. One reader in the whole framework —
+   * `@ultimat3/entity`'s `crossTenant()`, gating `tenancy:cross` — and that narrowness is the
+   * point: a scope is an escape hatch the framework itself honours, never the app's authz
+   * vocabulary. That is `roles` and `permissions`, which `@ultimat3/policy` reads.
+   */
   readonly scopes: readonly string[];
+  /**
+   * DIRECT grants, bypassing roles: what a service token or a break-glass account holds
+   * (`post:publish`). `@ultimat3/policy` flattens these together with every grant `roles` expands
+   * to, so the two are one set by the time a predicate runs, and neither is `scopes`.
+   *
+   * Declared here rather than on policy's own `Actor` (`As of 2026-08-19`). It was policy's, which
+   * made it unreachable from the one place actors are built: core is tier 0 and cannot import
+   * policy, so `build()` below had no field to carry and `userActor({ permissions })` compiled and
+   * silently discarded the argument. Every caller worked around it with
+   * `{ ...userActor({ id }), permissions: [...] }` — a spread over a frozen actor, producing an
+   * UNFROZEN one — so the fixtures proving authz had a shape no request ever mints. `@ultimat3/auth`
+   * carried a second, hand-synced copy of the declaration for the same tier reason.
+   */
+  readonly permissions: readonly string[];
   /** App-declared facts. Read it through `actorFact()`; never logged — `actorLabel` is id-only. */
   readonly facts?: ActorFactMap | undefined;
   /**
@@ -93,6 +112,8 @@ export interface ActorInit {
   readonly orgId?: string | undefined;
   readonly roles?: readonly string[] | undefined;
   readonly scopes?: readonly string[] | undefined;
+  /** Direct grants. Absent means none — never "inherit some"; there is nothing to inherit from. */
+  readonly permissions?: readonly string[] | undefined;
   readonly facts?: ActorFactMap | undefined;
   /** For a session that already recorded an impersonation; `impersonate()` sets it otherwise. */
   readonly onBehalfOf?: ActorOrigin | undefined;
@@ -105,6 +126,7 @@ const ANONYMOUS: Actor = Object.freeze({
   id: 'anonymous',
   roles: Object.freeze([]),
   scopes: Object.freeze([]),
+  permissions: Object.freeze([]),
   facts: NO_FACTS,
 });
 
@@ -115,6 +137,10 @@ function build(kind: ActorKind, init: ActorInit): Actor {
     orgId: init.orgId,
     roles: Object.freeze([...(init.roles ?? [])]),
     scopes: Object.freeze([...(init.scopes ?? [])]),
+    // Copied and frozen like the two above, and for the sharper reason: this list IS the actor's
+    // authz. Handing back the caller's array would let whoever still holds it `push` a grant into
+    // a decision already made about a frozen actor.
+    permissions: Object.freeze([...(init.permissions ?? [])]),
     facts: Object.freeze({ ...init.facts }),
     onBehalfOf: init.onBehalfOf === undefined ? undefined : Object.freeze({ ...init.onBehalfOf }),
   });

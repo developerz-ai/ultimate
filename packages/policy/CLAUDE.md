@@ -72,13 +72,26 @@ two differ, and it is why a surface that decides on input alone needs no edit.
   setter and files no key at all. `test-kit.ts`'s verdict map has the same two rules for the same
   reason — `allowedFor('constructor')` answered a truthy function — and `policyMatrix` builds it
   through `Object.fromEntries`, which defines own keys whatever they spell.
-- **`testActor()` mints a COMPLETE actor — `kind` and `scopes` included** (`As of 2026-08-19`).
-  It omitted both behind an `as unknown as Actor`, so core's `hasScope(actor, …)` threw a bare
-  `TypeError` on every actor it built and `actorLabel()` rendered `undefined:editor` — a generated
+- **`Actor` is an ALIAS of core's, and `PolicyActorFields` is deleted** (`As of 2026-08-19`).
+  It was `CoreActor & PolicyActorFields`, a four-field interface declared here. Three fields
+  (`id`, `roles`, `orgId`) were already core's, so the intersection only restated them, and
+  `PolicyActorFields.orgId`'s `| null` never survived it — it was intersected straight back to
+  core's `string | undefined`. The fourth, `permissions`, was the only real content, and declaring
+  it here is what made it **unbuildable**: core is tier 0 and cannot import this package, so
+  `build()` had no field to carry and `userActor({ permissions })` compiled and discarded the
+  argument. Every caller worked around it with `{ ...userActor({ id }), permissions: [...] }` — a
+  spread over a frozen actor, producing an unfrozen one — so **32 fixtures across `query`,
+  `action` and a tracked app proved authz against a shape no request mints**. `@ultimat3/auth`
+  kept a second, hand-synced copy of the same interface for the same tier reason. `permissions`
+  now sits beside `roles` and `scopes` in `@ultimat3/core`.
+- **`testActor()` goes through `userActor()`** (`As of 2026-08-19`), so it is frozen with frozen
+  arrays and a field added to `Actor` arrives here without a second list to keep in sync. It used
+  to hand-roll the literal — it had to, since core's builder had no `permissions` — and omitted
+  `kind` and `scopes` behind an `as unknown as Actor`, so `hasScope(actor, …)` threw a bare
+  `TypeError` on every actor it built and `actorLabel()` rendered `undefined:editor`: a generated
   scope-gated policy test failed as a 500-shaped throw instead of as the denial it asserts. The one
-  cast left is `orgId: null`, which is load-bearing: the `Actor = CoreActor & PolicyActorFields`
-  intersection collapses `string | null | undefined` back to core's `string | undefined`, so
-  nothing else in the repo produces the `null` `@ultimat3/query`'s `orgless()` guards against.
+  cast left is `orgId: null` — core declares `orgId?: string`, so nothing typed can mint the
+  `null` that `@ultimat3/query`'s `orgless()` guards against, and that test needs a producer.
 - No `any`. Never throw a bare `Error` — use `errors.ts`.
 - **This package owns `X_FORBIDDEN`** and registers its title with core. `http`, `auth`
   and every surface adapter reuse the code and must not re-register it.

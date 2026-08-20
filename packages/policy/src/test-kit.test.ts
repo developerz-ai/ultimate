@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { actorLabel, hasScope, isAnonymous } from '@ultimat3/core';
+import { actorLabel, hasScope, isAnonymous, userActor } from '@ultimat3/core';
 import { clearPermissions, definePermissions } from './permissions';
 import { and, can } from './policy';
 import { clearRoles, defineRoles } from './roles';
@@ -164,5 +164,31 @@ describe('testActor mints an actor core’s own helpers can read', () => {
     if (actor === null) throw new Error('testActor always mints an actor');
 
     expect(actorLabel(actor)).toBe('user:u1@org-1');
+  });
+});
+
+// The asymmetry that made `testActor()` ship broken: a request's actor is frozen with frozen
+// arrays, and every hand-built fixture was a mutable literal — so the fixtures proving authz had a
+// shape production never mints, and nothing could notice the missing fields.
+describe('a test actor is structurally a production actor', () => {
+  const production = userActor({ id: 'ada', roles: ['editor'], permissions: ['post:publish'] });
+
+  test('frozen, with frozen grant lists, exactly as a request-minted actor is', () => {
+    const actor = testActor('ada', { roles: ['editor'], permissions: ['post:publish'] }).actor;
+    if (actor === null) throw new Error('testActor always mints an actor');
+
+    expect(Object.isFrozen(actor)).toBe(Object.isFrozen(production));
+    expect(Object.isFrozen(actor.roles)).toBe(Object.isFrozen(production.roles));
+    expect(Object.isFrozen(actor.permissions)).toBe(Object.isFrozen(production.permissions));
+    expect(Object.isFrozen(actor)).toBe(true);
+  });
+
+  test('carries every key a built actor carries, so a new field cannot be missed here', () => {
+    const actor = testActor('ada').actor;
+    if (actor === null) throw new Error('testActor always mints an actor');
+
+    // `orgId` is the one deliberate difference — `null` here, `undefined` there — so it is
+    // compared as a KEY and not as a value; `@ultimat3/query`'s `orgless()` reads both alike.
+    expect(Object.keys(actor).sort()).toEqual(Object.keys(production).sort());
   });
 });

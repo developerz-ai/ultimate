@@ -52,9 +52,15 @@ type _ActorFactMapAcceptsNothing = Assert<
 >;
 
 /**
- * The seam is additive: an actor literal written before it existed still is one. `facts` is
- * optional for that reason and not only for the denial rule — a required member would have been
- * a breaking change to a tier-0 type every package depends on.
+ * The seam is additive: an actor literal carrying the required members but no `facts` still is an
+ * `Actor`. `facts` is optional for that reason and not only for the denial rule — making it
+ * required would be a breaking change to a tier-0 type every package depends on.
+ *
+ * `permissions` joined the required set in 4.0.0 and is spelled here deliberately. That WAS such a
+ * breaking change, made knowingly and with a migration: policy's `PolicyActorFields` held it, so
+ * `userActor({ permissions })` silently dropped it and no builder could spell a direct grant. This
+ * pin is what makes the next one impossible to add by accident — a new required member fails here
+ * before it fails in an app.
  */
 type _ActorWithoutFactsIsStillAnActor = Assert<
   [
@@ -63,6 +69,7 @@ type _ActorWithoutFactsIsStillAnActor = Assert<
       readonly id: string;
       readonly roles: readonly string[];
       readonly scopes: readonly string[];
+      readonly permissions: readonly string[];
     },
   ] extends [Actor]
     ? true

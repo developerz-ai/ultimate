@@ -1,6 +1,7 @@
 // `policyMatrix()` turns "who can do this?" into a table a test can assert on in one
 // expression. `x g policy` generates a test that calls it, so every policy ships with
 // its allow/deny matrix and a change to a role shows up as a diff in that table.
+import { userActor } from '@ultimat3/core';
 import { type EvaluateArgs, evaluate, reasonOf } from './evaluate';
 import type { Policy } from './policy';
 import type { Actor } from './roles';
@@ -84,13 +85,19 @@ export const policyMatrix = <I, R = unknown>(
 };
 
 /**
- * Builds a COMPLETE actor for tests — `kind` and `scopes` included.
+ * Builds a test actor through `userActor()` — core's own builder, and now the only one, since
+ * `permissions` moved to core's `Actor` (`As of 2026-08-19`).
  *
- * It used to omit both behind an `as unknown as Actor`, and neither is decoration: `hasScope()`
- * reads `actor.scopes.includes(…)` and threw a bare `TypeError` on every actor this minted, and
- * `actorLabel()` rendered `undefined:editor` into logs and spans. A generated policy test
- * (`x g policy`) asserting a scope-gated denial therefore failed as a 500-shaped throw rather
- * than as a denial — the exact confusion `surfaces.ts` exists to prevent.
+ * This function hand-rolled the object literal because it had to: a direct grant was declared on
+ * policy's `PolicyActorFields` and core's builder had no field for it. That is what made every
+ * actor it minted structurally different from a request's — it omitted `kind` and `scopes` behind
+ * an `as unknown as Actor`, so `hasScope()` threw a bare `TypeError` and `actorLabel()` rendered
+ * `undefined:editor` into logs and spans, and a generated policy test (`x g policy`) asserting a
+ * scope-gated denial failed as a 500-shaped throw rather than as the denial it wrote.
+ *
+ * Going through `userActor()` closes that by construction rather than by keeping a second field
+ * list in sync: a field added to `Actor` arrives here, and the result is FROZEN with frozen
+ * arrays, exactly as the actor `@ultimat3/auth` resolves per request is.
  */
 export const testActor = (
   name: string,
@@ -101,17 +108,15 @@ export const testActor = (
     orgId?: string;
   } = {},
 ): NamedActor => {
-  const base: Actor = {
-    kind: 'user',
+  const built = userActor({
     id: name,
     roles: init.roles ?? [],
     scopes: init.scopes ?? [],
     permissions: init.permissions ?? [],
-  };
-  // `orgId: null` is deliberate and load-bearing, and the ONE cast left here. `Actor` is
-  // `CoreActor & PolicyActorFields`, and that intersection collapses `PolicyActorFields`'s
-  // `string | null | undefined` back to core's `string | undefined` — so nothing else in the repo
-  // can produce the `null` an app's own adapter still puts on the wire, and
-  // `@ultimat3/query`'s `orgless()` needs a producer of it to stay honest.
-  return { name, actor: { ...base, orgId: init.orgId ?? null } as Actor };
+  });
+  // `orgId: null` is deliberate and load-bearing, and the ONE cast left. Core declares
+  // `orgId?: string | undefined`, so nothing typed can mint the `null` an app's own adapter still
+  // puts on the wire — and `@ultimat3/query`'s `orgless()` treats `null`, `undefined` and `''`
+  // alike precisely because it does reach there. Frozen, so this stays a production-shaped actor.
+  return { name, actor: Object.freeze({ ...built, orgId: init.orgId ?? null }) as Actor };
 };

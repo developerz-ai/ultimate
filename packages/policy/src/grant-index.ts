@@ -34,6 +34,9 @@ interface CacheEntry {
 const cache = new WeakMap<Actor, CacheEntry>();
 
 const buildIndex = (actor: Actor, map: RoleMap): GrantIndex => {
+  // `?? []` on both, though `Actor` declares them required and `userActor()` defaults them: this
+  // takes an `Actor | null` from surfaces that hand it a value parsed out of JSON, and an authz
+  // read that throws where it should have DENIED is the `testActor` defect one layer down.
   const exact = new Set<string>(actor.permissions ?? []);
   for (const grant of expandRoles(actor.roles ?? [], map)) exact.add(grant);
   const wildcards = new Set<string>();

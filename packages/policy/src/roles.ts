@@ -7,18 +7,21 @@ import { roleRedefined } from './errors';
 import { resourceOf } from './permissions';
 
 /**
- * The fields policy evaluation reads off an actor. `Actor` itself is core's; these
- * are authz roles ("editor", "owner"), not core's runtime `Role` ("web", "worker").
+ * An **alias** of core's declaration, and nothing more (`As of 2026-08-19`) — so the actor
+ * `userActor()` mints IS the actor a predicate decides about, with no spread and no second type.
+ *
+ * It used to be `CoreActor & PolicyActorFields`, a four-field interface declared here. Three of
+ * those fields (`id`, `roles`, `orgId`) were already core's, so the intersection restated them;
+ * `PolicyActorFields.orgId`'s `| null` never survived it at all, being intersected back to core's
+ * `string | undefined`. The fourth, `permissions`, was the only real content — and declaring THAT
+ * here is what made it unbuildable: core is tier 0, so `userActor({ permissions })` had no field
+ * to land in and dropped the argument in silence. It now lives beside `roles` and `scopes` in
+ * `@ultimat3/core`, where every actor is built, and this interface has nothing left to say.
+ *
+ * Same shape as `@ultimat3/entity`'s `MoneyValue`, aliased from `@ultimat3/schema` for the same
+ * reason: one declaration, re-exported by the package whose public API talks about it.
  */
-export interface PolicyActorFields {
-  readonly id: string;
-  readonly roles?: readonly string[] | undefined;
-  /** Direct grants, bypassing roles. Used by service tokens. */
-  readonly permissions?: readonly string[] | undefined;
-  readonly orgId?: string | null | undefined;
-}
-
-export type Actor = CoreActor & PolicyActorFields;
+export type Actor = CoreActor;
 
 export interface RoleDef {
   readonly grants: readonly string[];
