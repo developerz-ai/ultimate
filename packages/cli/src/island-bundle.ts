@@ -13,6 +13,7 @@ import {
   islandModuleId,
 } from '@ultimat3/render';
 import { IslandBuildFailedError } from './errors';
+import { solidJsxPlugin } from './solid-loader';
 
 /**
  * Where a chunk is served from, in `x dev`, in the container and in a static export — one base
@@ -78,6 +79,12 @@ async function buildOne(root: string, file: string): Promise<IslandChunk> {
       format: 'esm',
       splitting: false,
       minify: true,
+      // A build with no `plugins` is a build with no JSX transform: `Bun.plugin` installs into the
+      // RUNTIME's loader and `Bun.build` walks its own graph, so render's `.tsx` loader never sees
+      // an island. The app's tsconfig says `jsx: "preserve"`, which makes the bundler fall back to
+      // classic `React.createElement` — emitted into a browser chunk that imports no React, with
+      // `success: true` and no log. Every island shipped that way through five majors.
+      plugins: [solidJsxPlugin],
     });
   } catch (error) {
     throw new IslandBuildFailedError({ file, logs: describeBuildError(error) });
