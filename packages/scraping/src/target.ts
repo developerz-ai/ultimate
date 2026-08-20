@@ -74,9 +74,17 @@ export interface GotoOptions {
   readonly signal?: AbortSignal | undefined;
 }
 
+/**
+ * `fullPage` and nothing else. It carried a required `timeoutMs` until 2026-08 that NO driver
+ * honoured — `cdp-target.ts` read only `fullPage`, `html-target.ts` ignored the whole object —
+ * so `page.screenshot({ timeout })` was a documented deadline that bounded nothing. Deleted
+ * rather than implemented: the CDP port's own `screenshot({ fullPage })` has no timeout slot to
+ * forward it to, and a deadline enforced in `page-over-target.ts` would have to race
+ * `ScrapeClock.sleep`, which under `testClock` resolves on the first microtask and would time
+ * out every capture in every test. A driver's own default is the honest bound.
+ */
 export interface CaptureOptions {
   readonly fullPage?: boolean | undefined;
-  readonly timeoutMs: number;
 }
 
 /**
@@ -93,7 +101,16 @@ export interface ScrapeTarget {
   /** Serialised HTML of THIS target — the document for a page, the subtree for a frame. */
   content(): Promise<string>;
   query(selector: string): Promise<readonly ElementSnapshot[]>;
-  click(selector: string, index: number): Promise<void>;
+  /**
+   * Clicks the FIRST match. It took an `index` until 2026-08 that `html-target.ts` honoured and
+   * `cdp-target.ts` dropped — its implementations are `click: (selector) => …`, so puppeteer
+   * clicked match 0 whatever was asked. They agreed only because `page-over-target.ts`, the sole
+   * caller, always passed `0`, and no public vocabulary could set it: `ScrapeFrame.click` takes
+   * `(selector, options?: WaitOptions)`. A port member no app can reach and one driver ignores is
+   * a divergence waiting to be found by an app, so it is gone. `driver-parity.test.ts` pins that
+   * all three drivers click the first match.
+   */
+  click(selector: string): Promise<void>;
   /** Appends, exactly as typing does. Clearing first is `fill`'s job at the page level. */
   type(selector: string, text: string): Promise<void>;
   clear(selector: string): Promise<void>;

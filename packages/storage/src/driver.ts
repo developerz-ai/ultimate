@@ -3,8 +3,10 @@
 // strings — a base64 round trip through JSON is how a "small" upload becomes a 33%-larger OOM —
 // and never unbounded, which is the same failure with the sender choosing the size.
 
+import type { Clock } from '@ultimat3/core';
 import { assert } from '@ultimat3/core';
 import { putTooLarge } from './errors';
+import type { SignedUrlVerification } from './signed-url';
 
 export type StorageBody = Uint8Array | ReadableStream<Uint8Array> | Blob;
 
@@ -131,6 +133,28 @@ export interface StorageDriver {
   exists(key: string): Promise<boolean>;
   list(options?: ListOptions): Promise<ListPage>;
   signedUrl(key: string, options?: SignedUrlOptions): Promise<string>;
+  /**
+   * Verify a URL THIS disk minted — without surrendering the key it minted with.
+   *
+   * The other half of `signedUrlBase`, and it was missing for the whole life of the package.
+   * `signedUrlBase` is on this interface so the minting half and the verifying half cannot state
+   * the base twice; the SECRET is the same pair and stayed closed over inside `localDriver`, so
+   * `acceptSignedUpload` — whose `secret:` was required — was reachable from no route that held
+   * only a `Storage` registry. That is why the shipped upload path has no mounted `PUT`.
+   *
+   * Verification and not the secret, deliberately. A member that handed the key back would let any
+   * holder of a driver MINT a URL for any key, and would put it in every `JSON.stringify(disk)` a
+   * log or an error payload performs. A driver can answer "did I sign this?" without that.
+   *
+   * Optional, like `registerAs`: a disk whose URLs are the provider's (`s3`) verifies at the
+   * provider and never reaches this path, and a third-party driver that implements neither is
+   * refused by name (`X_STORAGE_URL_UNVERIFIABLE`) rather than reported as a bad signature.
+   */
+  verifySigned?(input: {
+    readonly url: string;
+    /** Overrides the driver's own, so a test's frozen clock still governs expiry. */
+    readonly clock?: Clock | undefined;
+  }): Promise<SignedUrlVerification>;
 }
 
 export const DEFAULT_CONTENT_TYPE = 'application/octet-stream';

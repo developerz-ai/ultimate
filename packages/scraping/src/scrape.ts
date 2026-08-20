@@ -18,6 +18,7 @@ import type { ArtifactWriter } from './artifacts';
 import type { PromptHandler, ScrapeAuth } from './auth';
 import type { ScrapeClock } from './clock';
 import type { ScrapeDriver } from './driver';
+import { yieldHistoryMissing } from './error-throws';
 import type { YieldExpectation, YieldHistory } from './expect';
 import type { HostRule } from './hosts';
 import type { ScrapeHttp } from './http';
@@ -137,6 +138,12 @@ export function scrape<I, Row>(definition: ScrapeDefinition<I, Row>): JobHandle<
     `scrape "${definition.name}" declares rate: ${String(definition.rate)} — a rate is navigations per second, greater than zero`,
     `set rate: 1 on scrape("${definition.name}"), or leave it out — to go faster raise the number, there is no unpaced mode`,
   );
+  // Two halves that must be set together. `maxDrop` is a fraction of a trailing median and only
+  // `history:` can supply one, so declaring it alone is an alarm that cannot fire — refused here,
+  // where it is written, rather than discovered as a scrape that never once went red.
+  if (definition.expect?.maxDrop !== undefined && definition.history === undefined) {
+    throw yieldHistoryMissing(definition.name);
+  }
   return job<I>({
     name: definition.name,
     input: definition.input,

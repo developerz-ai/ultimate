@@ -120,6 +120,35 @@ describe('unit · one attempt, end to end, with no browser', () => {
     expect(await codeOf(handle.run(runArgs({ page: 1 })))).toBe('X_SCRAPE_YIELD_COLLAPSED');
   });
 
+  /**
+   * `maxDrop` is measured against a trailing median that only a `history:` store can supply. With
+   * no store, `guardYield` reads an empty array, `history.length < MIN_BASELINE_RUNS` is true on
+   * every run forever, and the alarm can never fire — a declared yield guard that cannot fail,
+   * which is the silent green this whole file exists to prevent. Refused where it is written.
+   *
+   * `minRows` is deliberately still legal alone: it is an absolute floor and needs no baseline.
+   */
+  test('maxDrop with no history: is refused at declaration, not silently inert', () => {
+    let thrown: unknown;
+    try {
+      scrape(define({ expect: { maxDrop: 0.5 } }));
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeUltimateError('X_SCRAPE_YIELD_HISTORY_MISSING');
+    expect((thrown as { fix?: string }).fix).toContain('history:');
+  });
+
+  test('minRows alone needs no history — an absolute floor has no baseline to miss', () => {
+    expect(() => scrape(define({ expect: { minRows: 5 } }))).not.toThrow();
+  });
+
+  test('maxDrop WITH a history store is declared without complaint', () => {
+    expect(() =>
+      scrape(define({ expect: { maxDrop: 0.5 }, history: memoryYieldHistory() })),
+    ).not.toThrow();
+  });
+
   test('the hybrid leg runs off the same declaration: browser walk, then the JSON endpoint', async () => {
     const handle = scrape(
       define({

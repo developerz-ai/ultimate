@@ -14,6 +14,7 @@ export const STORAGE_OWNED_ERROR_CODES = [
   'X_STORAGE_CHECKSUM_MISMATCH',
   'X_STORAGE_URL_INVALID',
   'X_STORAGE_URL_EXPIRED',
+  'X_STORAGE_URL_UNVERIFIABLE',
   'X_STORAGE_ORG_MISMATCH',
   'X_STORAGE_UPLOAD_FAILED',
   'X_STORAGE_DELETE_FAILED',
@@ -48,6 +49,7 @@ export const STORAGE_ERROR_TITLES: Readonly<Record<StorageOwnedErrorCode, string
   X_STORAGE_CHECKSUM_MISMATCH: 'bytes do not match the declared checksum',
   X_STORAGE_URL_INVALID: 'signed URL does not match its signature',
   X_STORAGE_URL_EXPIRED: 'signed URL is past its expiry',
+  X_STORAGE_URL_UNVERIFIABLE: 'no way to verify a signed URL for this disk',
   X_STORAGE_ORG_MISMATCH: 'object key belongs to another org',
   X_STORAGE_UPLOAD_FAILED: 'the signed upload was refused',
   X_STORAGE_DELETE_FAILED: 'the object could not be deleted',
@@ -300,6 +302,21 @@ export const uploadFailed = (path: string, status: number, detail: string): Stor
  * avatar grant becomes an unlimited upload of any type. Refused at construction, not at the
  * first `signedUrl()`: a process that cannot sign safely must not finish booting.
  */
+/**
+ * Neither half of the verification seam was available: no `secret:` in the call, and a disk that
+ * cannot verify what it signed. Its own condition rather than a signature failure, because the two
+ * need opposite edits — a mismatch is a forged or stale URL and this is a route that was never
+ * handed a way to check one, and reporting it as `X_STORAGE_URL_INVALID` sent an operator looking
+ * for an attacker.
+ */
+export const signedUrlUnverifiable = (diskName: string): StorageError =>
+  new StorageError({
+    code: 'X_STORAGE_URL_UNVERIFIABLE',
+    cause: `the "${diskName}" disk was asked to verify a signed URL with no secret in the call, and its driver implements no verifySigned()`,
+    fix: 'pass secret: to the call, or use a driver that signs its own URLs (localDriver) — a provider-signed disk (s3) verifies at the provider and never reaches this path',
+    meta: { disk: diskName },
+  });
+
 export const signingSecretMissing = (environment: string): StorageError =>
   new StorageError({
     code: 'X_ENV_MISSING',

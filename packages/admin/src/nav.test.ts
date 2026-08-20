@@ -66,9 +66,20 @@ describe('adminNav groups the resources', () => {
     expect(item).toEqual({
       key: 'post',
       labelKey: 'admin.post.title',
-      href: '/posts',
+      href: '/post',
       entity: 'post',
     });
+  });
+
+  /**
+   * The half the test above is named for and did not check: `href` is the resource's OWN path,
+   * copied, not a URL this file assembles. It read `/posts` for an entity named `post` until
+   * `adminResource` stopped pluralising — a guessed URL asserted by a test that says it forbids
+   * them. Reading it off the resource is what makes the two impossible to drift.
+   */
+  test('href is the resource path verbatim, whatever the resource says it is', () => {
+    const custom = adminResource(shaped('post'), { path: '/editorial/pieces' });
+    expect(adminNav([custom])[0]?.items[0]?.href).toBe('/editorial/pieces');
   });
 
   test('an explicit groups map decides both order and membership', () => {

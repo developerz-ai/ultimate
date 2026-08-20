@@ -4,10 +4,10 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Environment } from '@ultimat3/core';
+import { BackfillEnvironmentError } from './backfill-errors';
 import { checkBackfillEnvironment, gateBackfill } from './backfill-gate';
 import type { BackfillProgress } from './backfill-inspect';
 import type { BackfillDeclaration } from './backfill-registry';
-import { BackfillEnvironmentError } from './errors';
 
 const declaration = (over: Partial<BackfillDeclaration> = {}): BackfillDeclaration => ({
   kind: 'backfill',

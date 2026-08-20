@@ -34,7 +34,25 @@ const badFlagFinding = (flag: string, value: string, expected: string): Finding 
   at: 'scripts/release.ts',
 });
 
-/** Both flags, refused before a single manifest is rewritten. */
+/**
+ * The flags this script accepts. Anything else is refused before a manifest is touched — see
+ * `readReleaseVersion` for why an unrecognised token must never reach the rewrite.
+ */
+export const RELEASE_FLAGS = ['version', 'bump', 'check', 'dry-run', 'json'] as const;
+
+/** Every `--flag` the caller passed that this script does not declare. */
+export const unknownReleaseFlags = (flags: Iterable<string>): readonly string[] =>
+  [...flags].filter((name) => !(RELEASE_FLAGS as readonly string[]).includes(name)).sort();
+
+/**
+ * Both flags, refused before a single manifest is rewritten.
+ *
+ * The absent case is a REFUSAL, not a patch bump. It defaulted to `patch`, so any invocation the
+ * parser did not recognise — `--help` most obviously, since this script has never had one — fell
+ * through to "no explicit, no bump" and rewrote 47 manifests plus the chart. A release is the most
+ * expensive thing in this repo to undo, and it was the one script that acted on a typo. The
+ * version to publish is always somebody's decision, so it is always stated.
+ */
 export function readReleaseVersion(input: {
   readonly explicit: string | undefined;
   readonly bump: string | undefined;
@@ -46,6 +64,14 @@ export function readReleaseVersion(input: {
   }
   if (input.explicit !== undefined && !SEMVER.test(input.explicit)) {
     findings.push(badFlagFinding('version', input.explicit, 'a semver version (e.g. 1.3.0)'));
+  }
+  if (input.explicit === undefined && input.bump === undefined) {
+    findings.push({
+      code: 'X_RELEASE_VERSION_UNSTATED',
+      cause: `neither --version nor --bump was given, and this repo is at ${input.current}`,
+      fix: `bun run scripts/release.ts --bump patch --dry-run --json   # or --version ${input.current}`,
+      at: 'scripts/release.ts',
+    });
   }
   if (findings.length > 0) return { findings };
   return {
@@ -154,6 +180,27 @@ if (import.meta.main) {
             : `${findings.length} finding(s): this repo is not at ${check}`,
         findings,
         data: { check, packages: publishable.length },
+      },
+      args.json,
+    );
+  }
+
+  // Before anything is decided, let alone written: a flag this script does not declare is a
+  // mistake, and the mistake this guard exists for wrote 47 manifests.
+  const unknown = unknownReleaseFlags(args.flags.keys());
+  if (unknown.length > 0) {
+    report(
+      {
+        ok: false,
+        script: 'release',
+        summary: `refusing to release: ${unknown.length} unknown flag(s)`,
+        findings: unknown.map((name) => ({
+          code: 'X_RELEASE_FLAG_UNKNOWN',
+          cause: `--${name} is not a flag scripts/release.ts declares (known: ${RELEASE_FLAGS.join(', ')})`,
+          fix: 'bun run scripts/release.ts --bump patch --dry-run --json',
+          at: 'scripts/release.ts',
+        })),
+        data: { unknown, current },
       },
       args.json,
     );

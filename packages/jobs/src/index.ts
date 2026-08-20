@@ -17,6 +17,15 @@ export type {
   BackfillReport,
 } from './backfill';
 export { backfill, DEFAULT_BACKFILL_BATCH } from './backfill';
+export {
+  BackfillAppliedError,
+  BackfillEnvironmentError,
+  BackfillMigrationPendingError,
+  BackfillPendingError,
+  BackfillRunningError,
+  BackfillStalledError,
+  BackfillUnknownError,
+} from './backfill-errors';
 export type { BackfillGate, BackfillGateInput } from './backfill-gate';
 export { checkBackfillEnvironment, gateBackfill } from './backfill-gate';
 export type { BackfillProgress } from './backfill-inspect';
@@ -77,6 +86,8 @@ export type {
 export {
   DEFAULT_QUEUE,
   DEFAULT_VISIBILITY_TIMEOUT_MS,
+  isJobState,
+  JOB_STATES,
   jobDriver,
   resetJobDriver,
   setJobDriver,
@@ -121,13 +132,7 @@ export type { RedisDriverOptions } from './driver-redis';
 export { createRedisDriver } from './driver-redis';
 export type { JobErrorCode } from './errors';
 export {
-  BackfillAppliedError,
-  BackfillEnvironmentError,
-  BackfillMigrationPendingError,
-  BackfillPendingError,
-  BackfillRunningError,
-  BackfillStalledError,
-  BackfillUnknownError,
+  ActionJobUnbridgedError,
   CancelUnsupportedError,
   ConcurrencyUnenforceableError,
   DriverUnavailableError,
@@ -139,6 +144,7 @@ export {
   JobMaxAttemptsError,
   JobNameTakenError,
   JobNotCancellableError,
+  JobRowStatusUnknownError,
   JobSlotLostError,
   JobsNotImplementedError,
   JobTenantRequiredError,
@@ -248,8 +254,10 @@ export type {
 export {
   createMemoryStepStore,
   createStepRunner,
+  isStepStatus,
   isStepSuspension,
   MAX_TRACE_NAMES,
+  STEP_STATUSES,
   StepSuspension,
 } from './steps';
 export type {

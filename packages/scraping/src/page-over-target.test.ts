@@ -148,3 +148,53 @@ describe('unit · a promise-typed page method rejects whatever the driver under 
     expect((caught as { code?: string } | undefined)?.code).toBe('X_SCRAPE_DOWNLOAD_TIMEOUT');
   });
 });
+
+describe('unit · what a capture actually asks the driver for', () => {
+  /**
+   * `CaptureOptions.timeoutMs` used to be REQUIRED by the port and honoured by no driver:
+   * `page.screenshot({ timeout })` was documented, threaded down here, and dropped by
+   * `cdp-target.ts` and `html-target.ts` alike. It is deleted rather than implemented.
+   *
+   * Implementing it was the tempting answer and it is the wrong one twice over. The CDP port's
+   * `screenshot({ fullPage })` has no timeout slot, and a generic race in this file would have to
+   * race `clock.sleep`, which under `testClock` resolves on the FIRST microtask — so every capture
+   * in every test would have timed out instead of running. A knob no driver ever honoured takes
+   * nothing away when it goes; a deadline that fires in tests and not in production would.
+   *
+   * What the driver is handed is now exactly what a driver can act on: `fullPage`, and nothing it
+   * would have to ignore.
+   */
+  test('the driver is handed fullPage and nothing else', async () => {
+    const recording: PageRecording = { url: 'https://shop.test/o', html: '<p>o</p>' };
+    const base = htmlTarget({
+      driver: 'fixture',
+      lookup: () => Promise.resolve(recording),
+      rules: { allowHosts: ['shop.test'] },
+      clock: testClock(),
+      source: 'test/fixtures',
+      start: recording,
+    });
+    const asked: unknown[] = [];
+    const target: ScrapeTarget = {
+      ...base,
+      screenshot: (options) => {
+        asked.push({ ...options });
+        return Promise.resolve(new Uint8Array([1]));
+      },
+      pdf: (options) => {
+        asked.push({ ...options });
+        return Promise.resolve(new Uint8Array([2]));
+      },
+    };
+    const page = pageOverTarget(target, {
+      clock: testClock(),
+      allowHosts: ['shop.test'],
+      defaultTimeoutMs: 100,
+    });
+
+    await page.screenshot({ fullPage: true });
+    await page.pdf();
+
+    expect(asked).toEqual([{ fullPage: true }, { fullPage: undefined }]);
+  });
+});

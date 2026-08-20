@@ -25,6 +25,8 @@ const HTML_A = `<html><body>
   <h1 id="title">Orders</h1>
   <ul><li class="row" data-id="1">One</li><li class="row" data-id="2">Two</li></ul>
   <button id="next" data-goto="/orders/2">Next</button>
+  <button class="go" data-goto="/orders/2">Go first</button>
+  <button class="go" data-goto="/orders/nowhere">Go second</button>
   <button id="pay" disabled>Pay</button>
   <img src="https://tracker.test/pixel.gif">
 </body></html>`;
@@ -74,7 +76,12 @@ const drivers = (): readonly (readonly [string, ScrapeDriver])[] => [
       launcher: fakeCdpLauncher({
         url: URL_A,
         html: HTML_A,
-        routes: { '#next': { url: URL_B, html: HTML_B } },
+        routes: {
+          '#next': { url: URL_B, html: HTML_B },
+          // Keyed by SELECTOR, not by element: this fake has no DOM index for clicks, which is
+          // exactly why the `index` divergence below could hide from every existing test.
+          '.go': { url: URL_B, html: HTML_B },
+        },
         covered: ['#covered'],
       }),
     }),
@@ -108,6 +115,30 @@ describe('unit · every driver answers the vocabulary the same way', () => {
         ['One', '1'],
         ['Two', '2'],
       ]);
+    });
+  });
+
+  /**
+   * `ScrapeTarget.click` took a second `index` argument that `html-target.ts` honoured
+   * (`at(selector, index)`) and `cdp-target.ts` silently dropped — its implementations are
+   * `click: (selector) => …`, so puppeteer clicked the first match whatever was asked for. They
+   * agreed only because the sole production caller, `page-over-target.ts`, always passed `0`.
+   *
+   * The parameter is deleted rather than implemented in the second driver: no public vocabulary
+   * can set it (`ScrapeFrame.click(selector, options?: WaitOptions)` has no index), so it was a
+   * port member no app could reach and one driver ignored. This is the test that would have
+   * caught the divergence — a multi-match selector, driven through the page, on all three.
+   */
+  test('a multi-match selector clicks the FIRST match on all three', async () => {
+    await forEachDriver(async (session, name) => {
+      await session.page.goto(URL_A);
+      await session.page.click('.go');
+      // The first `.go` goes to /orders/2; the second points at a URL no recording covers, so an
+      // offline driver that clicked it raises `X_SCRAPE_FIXTURE_MISSING` instead of landing here.
+      // The puppeteer path routes by selector and cannot tell the two apart — that blindness is
+      // the reason the divergence survived, and it is why the port no longer carries an `index`
+      // for one driver to honour and the other to drop.
+      expect(await session.page.text('#title'), name).toBe('Page two');
     });
   });
 

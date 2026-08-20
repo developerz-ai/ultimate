@@ -3,7 +3,7 @@
 // missing metadata — a gate that turns "I could not look" into "you forgot a title" is worse than
 // no gate, because the fix it hands the reader is for a defect that is not there.
 
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { RegisterRouteInput } from '@ultimat3/render';
 import { clearRoutes, defineRoute, registerRoute } from '@ultimat3/render';
 import { validateMeta } from '@ultimat3/seo';
@@ -42,6 +42,15 @@ function register(fixture: Fixture): void {
   };
   registerRoute(input);
 }
+
+// BOTH halves, and the `beforeEach` is the one that matters. `routeEntries()` is a PROCESS-global
+// registry, so this file's subject is whatever the process happens to hold — and a `packages/render`
+// suite that registers routes and never clears them made these assertions fail only when the two
+// packages were run in one `bun test` invocation, which is not how the gate shards them. A file
+// that reads a global registry starts from a known state; it does not inherit one.
+beforeEach(() => {
+  clearRoutes();
+});
 
 afterEach(() => {
   clearRoutes();

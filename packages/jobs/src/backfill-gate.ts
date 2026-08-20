@@ -8,15 +8,15 @@
 // convention rather than a rail (axiom 3).
 
 import type { Environment, UltimateError } from '@ultimat3/core';
-// `BackfillProgress`, the one ledger projection every surface already reads — never the driver's
-// own row shape, which would make this a second reader of `x_backfills`.
-import type { BackfillProgress } from './backfill-inspect';
-import type { BackfillDeclaration } from './backfill-registry';
 import {
   BackfillAppliedError,
   BackfillEnvironmentError,
   BackfillMigrationPendingError,
-} from './errors';
+} from './backfill-errors';
+// `BackfillProgress`, the one ledger projection every surface already reads — never the driver's
+// own row shape, which would make this a second reader of `x_backfills`.
+import type { BackfillProgress } from './backfill-inspect';
+import type { BackfillDeclaration } from './backfill-registry';
 
 export type BackfillGate =
   | { readonly run: true }

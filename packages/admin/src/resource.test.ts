@@ -28,6 +28,16 @@ const authors = entity('admin_res_author', {
   columns: { id: uuid().primaryKey(), name: text({ max: 80 }) },
 });
 
+/** Named the way both tracked apps name every entity: plural already. */
+const plurals = entity('admin_res_orgs', {
+  columns: { id: uuid().primaryKey(), name: text({ max: 80 }) },
+});
+
+/** A name no English pluralizer gets right, and the reason not to ship one. */
+const irregular = entity('admin_res_media', {
+  columns: { id: uuid().primaryKey(), name: text({ max: 80 }) },
+});
+
 const post = entity('admin_res_post', {
   columns: {
     id: uuid().primaryKey(),
@@ -81,10 +91,33 @@ describe('adminResource with zero config', () => {
   test('derives every field from the entity columns', () => {
     expect(resource.fields.map((field) => field.name)).toEqual(Object.keys(post.$columns));
     expect(resource.name).toBe('admin_res_post');
-    expect(resource.path).toBe('/admin_res_posts');
+    // VERBATIM, never pluralised. `$name` is the entity's own name and this package does not
+    // guess English morphology on it — see the plural-name test below for what that cost.
+    expect(resource.path).toBe('/admin_res_post');
     expect(resource.titleKey).toBe('admin.admin_res_post.title');
     expect(resource.idField).toBe('id');
     expect(resource.labelField).toBe('title');
+  });
+
+  /**
+   * The bug this replaced an English pluralizer to close. Every entity in both tracked apps is
+   * named PLURAL — `entity('orgs')`, `entity('posts')`, `entity('media')`, 19 of 19 — and
+   * `adminResource` pluralised the name AGAIN, so the reference app's admin served `/orgses`,
+   * `/postses`, `/commentses` and would have served `/medias` and `/likeses`. Every URL the
+   * dashboard generates was misspelled.
+   *
+   * The fix is a deletion, not a better pluralizer: which plural a name takes is an app's
+   * convention (axiom 8), the framework ships the mechanism, and `path:` is the override that was
+   * always there. It also removes one of the three disagreeing pluralizers the repo's dead-code
+   * audit names — this package's private copy.
+   */
+  test('an already-plural entity name is not pluralised a second time', () => {
+    expect(adminResource(plurals).path).toBe('/admin_res_orgs');
+    expect(adminResource(irregular).path).toBe('/admin_res_media');
+  });
+
+  test('an explicit path: still wins, which is how an app spells its own plural', () => {
+    expect(adminResource(plurals, { path: '/organisations' }).path).toBe('/organisations');
   });
 
   test('maps each column kind to its one widget', () => {

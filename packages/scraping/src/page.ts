@@ -64,9 +64,9 @@ export interface ScrapeFrame {
   frame(nameOrSelector: string): ScrapeFrame;
 }
 
+/** `fullPage` only. `timeout` is gone with the port's — see `CaptureOptions` for why. */
 export interface CaptureRequest {
   readonly fullPage?: boolean | undefined;
-  readonly timeout?: number | undefined;
 }
 
 export interface DownloadRequest {

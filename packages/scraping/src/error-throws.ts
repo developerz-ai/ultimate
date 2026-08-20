@@ -75,6 +75,21 @@ export const notActionable = (selector: string, reason: string, waitedMs: number
     meta: { selector, reason, waitedMs },
   });
 
+/**
+ * Declared, and structurally unable to fire. `maxDrop` is a fraction of a TRAILING MEDIAN, and the
+ * only source of one is a `history:` store — with none, `guardYield` reads an empty array and the
+ * `MIN_BASELINE_RUNS` gate is true forever, so the alarm never raises `X_SCRAPE_YIELD_COLLAPSED`
+ * on any run. Two halves that must be set together, where setting one alone did nothing and
+ * nothing said so.
+ */
+export const yieldHistoryMissing = (scrapeName: string): ScrapeError =>
+  new ScrapeError({
+    code: 'X_SCRAPE_YIELD_HISTORY_MISSING',
+    cause: `scrape "${scrapeName}" declares expect.maxDrop with no history: store, so there is no baseline to measure a drop against and the alarm can never fire`,
+    fix: `add history: memoryYieldHistory() to scrape("${scrapeName}") for a test, or your own YieldHistory in production — or drop expect.maxDrop and keep expect.minRows, which needs no baseline`,
+    meta: { scrape: scrapeName },
+  });
+
 export const scrapeTimeout = (what: string, ms: number): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_TIMEOUT',

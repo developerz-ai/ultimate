@@ -29,7 +29,8 @@ import {
   storageNotImplemented,
 } from './errors';
 import { assertSafeKey, META_DIR } from './path';
-import { buildSignedUrl, signedUrlBaseFor } from './signed-url';
+import type { SignedUrlVerification } from './signed-url';
+import { buildSignedUrl, signedUrlBaseFor, verifySignedUrl } from './signed-url';
 import { DEFAULT_MAX_UPLOAD_BYTES } from './upload';
 
 const DRIVER_NAME = 'local';
@@ -378,6 +379,28 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
         contentType: urlOptions?.contentType,
         baseUrl,
         clock,
+      });
+    },
+
+    /**
+     * The mint above, run backwards, on the same three values from the same closure: `secret`,
+     * `baseUrl` and `clock`. That is the whole reason it belongs here rather than in a caller — a
+     * route holding this disk can now accept an upload without ever being handed the key, and
+     * before this member existed there was no way for one to verify at all, which is why the
+     * shipped `PUT` half of `/_storage` was never mounted.
+     *
+     * Never throws: `verifySignedUrl` returns a reason, and `accept.ts` owns which reason becomes
+     * which error. A driver that decided that here would be a second error taxonomy.
+     */
+    async verifySigned(input: {
+      readonly url: string;
+      readonly clock?: Clock | undefined;
+    }): Promise<SignedUrlVerification> {
+      return verifySignedUrl({
+        url: input.url,
+        secret,
+        baseUrl,
+        clock: input.clock ?? clock,
       });
     },
   };

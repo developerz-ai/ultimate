@@ -4,7 +4,7 @@ Hand-written, deliberately short. The *facts* about this codebase are generated 
 
 ## What this repo is
 
-The **Ultimate** web framework. Bun-only, Postgres, SolidJS, SCSS tokens. A monorepo of 27 `@ultimat3/*` packages — the `x` CLI among them — plus the unscoped `create-ultimate`. All 28 publish to npm at **1.0.0** in lockstep, `As of 2026-08`.
+The **Ultimate** web framework. Bun-only, Postgres, SolidJS, SCSS tokens. A monorepo of 29 `@ultimat3/*` packages — the `x` CLI among them — plus the unscoped `create-ultimate`. All 30 publish to npm at **3.0.0** in lockstep, `As of 2026-08-19`. Run `bun run scripts/list-workspaces.ts` rather than trusting this line; `scripts/release-facts.ts` now fails the gate when it drifts.
 
 No ORM dependency, `As of 2026-08`: `entity()` is the one table declaration, and `postgresDriver()` (`packages/entity/src/pg-driver.ts`, `pg-sql.ts`) is hand-written parameterised SQL. Generated apps declare their tables the same way — `packages/db/` holds those declarations plus plain-SQL migrations.
 

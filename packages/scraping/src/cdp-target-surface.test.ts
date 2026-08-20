@@ -171,7 +171,7 @@ describe('unit · the target`s input calls reach the page, not a reimplementatio
   test('click, type and select pass their selector and values straight through', async () => {
     const fixture = rich();
     const target = await targetOver(fixture);
-    await target.click('#buy', 0);
+    await target.click('#buy');
     await target.type('#email', 'a@b.test');
     await target.select('#size', ['m', 'l']);
     expect(fixture.calls).toContain('click #buy');
@@ -207,7 +207,7 @@ describe('unit · capture', () => {
     // Some builds answer text and some answer bytes; an artifact written from the string would be
     // a PNG nobody can open.
     const fixture = rich({ screenshotBase64: true });
-    const shot = await (await targetOver(fixture)).screenshot({ fullPage: true, timeoutMs: 1_000 });
+    const shot = await (await targetOver(fixture)).screenshot({ fullPage: true });
     expect(shot).toBeInstanceOf(Uint8Array);
     expect(new TextDecoder().decode(shot)).toBe('PNG');
     expect(fixture.calls).toContain('screenshot fullPage=true');
@@ -215,14 +215,14 @@ describe('unit · capture', () => {
 
   test('bytes are passed through unchanged, and fullPage defaults to false', async () => {
     const fixture = rich();
-    const shot = await (await targetOver(fixture)).screenshot({ timeoutMs: 1_000 });
+    const shot = await (await targetOver(fixture)).screenshot({});
     expect([...shot]).toEqual([1, 2, 3]);
     expect(fixture.calls).toContain('screenshot fullPage=false');
   });
 
   test('pdf comes straight off the page', async () => {
     const fixture = rich();
-    expect([...(await (await targetOver(fixture)).pdf({ timeoutMs: 1_000 }))]).toEqual([4, 5]);
+    expect([...(await (await targetOver(fixture)).pdf({}))]).toEqual([4, 5]);
   });
 
   test('download() is an honest X_NOT_IMPLEMENTED, never empty bytes', async () => {
@@ -302,7 +302,7 @@ describe('unit · frames', () => {
     expect(inner.url()).toBe('https://shop.test/checkout-frame');
     expect(await inner.content()).toBe('<p>frame</p>');
     expect((await inner.query('a')).map((element) => element.text)).toEqual(['Order 1']);
-    await inner.click('#pay', 0);
+    await inner.click('#pay');
     await inner.type('#card', '4242');
     await inner.select('#country', ['de']);
     await inner.evaluate('1 + 1');
@@ -329,7 +329,7 @@ describe('unit · a dead renderer is a CODE, not a hang', () => {
     fixture.emit('error', { message: 'Renderer process crashed' });
 
     await expect(target.content()).rejects.toThrow(/X_SCRAPE_PAGE_CRASHED|crashed/);
-    await expect(target.click('#buy', 0)).rejects.toThrow(/X_SCRAPE_PAGE_CRASHED|crashed/);
+    await expect(target.click('#buy')).rejects.toThrow(/X_SCRAPE_PAGE_CRASHED|crashed/);
     // And the call never reached the page: a crashed tab would wait out its own timeout.
     expect(fixture.calls).not.toContain('click #buy');
   });

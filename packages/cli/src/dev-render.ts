@@ -24,6 +24,7 @@ import {
   createIsrController,
   headFromMeta,
   hydrateRuntime,
+  isrKey,
   metaContextFor,
   renderComponent,
   renderHead,
@@ -185,7 +186,11 @@ async function resultFor(
       return { status: 200, headers: staticHeaders(contentHash(body), options.buildId), body };
     }
     case 'isr': {
-      const served = await isr.serve(url.pathname, () =>
+      // `isrKey(url)`, never `url.pathname`: the query is part of what was rendered — this
+      // route's own `meta` reads `data.url` — so two URLs differing only in their query are two
+      // documents. Keyed on the pathname alone, the first render answered every later query
+      // string (#171). Render owns the derivation so no second caller can invent another.
+      const served = await isr.serve(isrKey(url), () =>
         documentFrom(entry, request, data, options),
       );
       return served.result;

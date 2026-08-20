@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '@ultimat3/core';
-import { userActor } from '@ultimat3/core';
+import { createContext, isUltimateError, runWithContext, userActor } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
 import { createServer, defineHttpConfig, setRedirect } from '@ultimat3/http';
 import type { Actor as PolicyActor } from '@ultimat3/policy';
@@ -12,7 +12,8 @@ import { allow, can } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AnyAction } from './action';
 import { action } from './action';
-import { toRoute } from './http';
+import { toOpenApiOperation, toRoute } from './http';
+import { invoke } from './invoke';
 
 const Input = t.object({ postId: t.uuid });
 const Output = t.object({ id: t.uuid, published: t.boolean });
@@ -46,13 +47,10 @@ function publisher(authorId: string, evaluations: { count: number }) {
  */
 const oneProcess = (): HttpConfig => defineHttpConfig({ rateLimit: { scope: 'process' } });
 
-// `permissions` — direct grants, bypassing roles — is a field of POLICY's actor
-// (`CoreActor & PolicyActorFields`), which is what `can()` reads through `actorHas`. Core's
-// `Actor` has none and cannot: core is tier 0 and knows nothing about grants.
-const editor = (id: string): PolicyActor => ({
-  ...userActor({ id }),
-  permissions: ['post:publish'],
-});
+// `permissions` — direct grants, bypassing roles — is what `can()` reads through `actorHas`, and
+// it is core's field now, so the builder carries it and the actor comes back FROZEN. The spread
+// this used to be produced an unfrozen actor, a shape no request ever mints.
+const editor = (id: string): PolicyActor => userActor({ id, permissions: ['post:publish'] });
 
 function serve(target: ReturnType<typeof publisher>, actor: Actor | null) {
   return createServer({
@@ -236,5 +234,82 @@ describe('an action answering a form post', () => {
 
     expect((await call()).status).toBe(303);
     expect((await call()).status).toBe(303);
+  });
+});
+
+// Axiom 2, enforced instead of described: the operation an app publishes and the response the
+// server sends are two projections of ONE action, so a client written against the document has to
+// be right. The expectation is READ OUT OF the published operation rather than written down here
+// — a test that hardcoded `400` would pass just as happily if both halves drifted together.
+describe('the published operation and the live response are one contract', () => {
+  const target = publisher('u1', { count: 0 });
+
+  const badBody = (body: string): Promise<Response> =>
+    createServer({
+      routes: [toRoute(target)],
+      config: oneProcess(),
+      hooks: { authenticate: () => editor('u1') },
+    }).fetch(
+      new Request('http://dev.test/api/posts/publish', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'http://dev.test' },
+        body,
+      }),
+    );
+
+  // Four shapes of "the body is not what this action declared", because the divergence was not an
+  // edge case: every one of them answered 422 X_BODY_INVALID while the document promised 400.
+  // Two DIFFERENT failures, which is the half the original divergence hid. The first three
+  // parsed and then failed this action's schema; the fourth never became a body at all, and that
+  // is raised in `bodyRaw()` before a schema exists to fail — so it keeps `X_BODY_INVALID`, and
+  // the operation publishes both.
+  const REFUSED: readonly (readonly [string, string, string])[] = [
+    ['a field of the wrong type', JSON.stringify({ postId: 'not-a-uuid' }), 'X_INPUT_INVALID'],
+    ['a missing required field', JSON.stringify({}), 'X_INPUT_INVALID'],
+    ['a JSON null where an object belongs', 'null', 'X_INPUT_INVALID'],
+    ['a body that is not JSON at all', '{', 'X_BODY_INVALID'],
+  ];
+
+  test('every refusal answers a status the operation actually publishes', async () => {
+    const published = Object.keys(toOpenApiOperation(target).responses);
+
+    for (const [label, body] of REFUSED) {
+      const response = await badBody(body);
+      expect(published, `${label}: ${response.status} is not in the published operation`).toContain(
+        String(response.status),
+      );
+    }
+  });
+
+  test('and it is the code the operation names for that status', async () => {
+    const responses = toOpenApiOperation(target).responses;
+
+    for (const [label, body, code] of REFUSED) {
+      const response = await badBody(body);
+      const problem: unknown = await response.json();
+      expect((problem as { readonly code: string }).code, label).toBe(code);
+      const declared = responses[String(response.status)];
+      // The description is `problemResponse(code)`'s own text, so the document names the code.
+      expect(JSON.stringify(declared), label).toContain(code);
+    }
+  });
+
+  // The half a contract test cannot see, and the reason this is `X_INPUT_INVALID` and not a
+  // renamed 422: the SAME action invoked without HTTP answers the same code. An action whose
+  // input error depends on the surface it arrived through is two actions.
+  test('a direct invocation refuses with the same code the route does', async () => {
+    const overHttp: unknown = await (await badBody(JSON.stringify({ postId: 'nope' }))).json();
+    let direct = 'resolved';
+    try {
+      // In a context, because `invoke` needs one before it validates anything — the point here is
+      // the CODE the same input produces off the wire, not what an unhosted call does.
+      await runWithContext(createContext({ actor: editor('u1') }), () =>
+        invoke(target, { postId: 'nope' }, { surface: 'http' }),
+      );
+    } catch (error) {
+      direct = isUltimateError(error) ? error.code : String(error);
+    }
+    expect(direct).toBe((overHttp as { readonly code: string }).code);
+    expect(direct).toBe('X_INPUT_INVALID');
   });
 });

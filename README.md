@@ -68,9 +68,21 @@ do with the product. The framework's job is to have already decided those things
 spends its budget on the feature, and on a floor whose failure modes were found once, here, rather
 than once per app.
 
+**Roughly 9× — that is the multiplier.** For every line of production code the author of
+[`dummy/social-media-clone`](dummy/social-media-clone/) owns, the framework already runs **8.8** on
+their behalf: 63,949 code lines across the 17 packages that app executes, against 7,227 of its own.
+Counting everything hand-written including tests, against all framework source, it is **11.1 : 1**.
+
+Read that as *code you never own, never test and never fix* — **not** as "a DIY build of this app
+would be nine times bigger". It would not be: a DIY build reaches for libraries too. What the
+multiplier measures is how much of the surface has already been decided, and where a bug gets fixed
+when one is found. The honest per-feature figure is sharper anyway: **~16 code lines buy a fully
+projected endpoint** — input schema, output schema, policy, an OpenAPI operation, an MCP tool and a
+typed client, all drift-checked. Write those six by hand once and the ratio stops being abstract.
+
 **A line the app author never writes cannot carry a bug.** So the payoff is measured as how little
 the author owns. The worked example is [`dummy/social-media-clone`](dummy/social-media-clone/) — the
-deployed demo, `As of 2026-08-19`, counted with `git ls-files` + `tokei 14.0.0`. Every figure below
+deployed demo, `As of 2026-08-20`, counted with `git ls-files` + `tokei 14.0.0`. Every figure below
 is **code** lines, never `wc -l`: comments are 21% of this app's raw lines, so a raw count overstates
 it by a fifth. Where a raw number appears it is labelled raw.
 
@@ -106,15 +118,15 @@ the five handles. The rest of the app holds the shape:
 | Tests | 45 | 2,482 |
 | SCSS | 25 | 1,658 |
 | the `en` catalog | 1 | 397 |
-| config, Compose, Dockerfiles, env, shell | 31 | 379 |
-| **Total** | **222** | **9,707** |
-| production only — total minus tests | 177 | **7,225** |
+| config, Compose, Dockerfiles, env, shell | 31 | 381 |
+| **Total** | **222** | **9,709** |
+| production only — total minus tests | 177 | **7,227** |
 
 | Framework : app | Ratio |
 |---|---|
-| the **17 runtime packages this app executes** (63,754 code) : its production code (7,225) | **8.8 : 1** |
-| all framework source (106,939 code, 1,073 files) : everything hand-written here (9,707) | **11.0 : 1** |
-| the same, plus the framework's 142,922 lines of test code : hand-written (9,707) | 25.7 : 1 — test code on one side only, so read it as reassurance, not leverage |
+| the **17 runtime packages this app executes** (63,949 code) : its production code (7,227) | **8.8 : 1** |
+| all framework source (107,809 code, 1,080 files) : everything hand-written here (9,709) | **11.1 : 1** |
+| the same, plus the framework's 144,046 lines of test code : hand-written (9,709) | 25.9 : 1 — test code on one side only, so read it as reassurance, not leverage |
 
 Re-derive all three (`tokei` 14.0.0; `node_modules`, `.x/`, `dist/` and `coverage/` are gitignored,
 so `git ls-files` never enters them):

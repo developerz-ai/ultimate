@@ -114,7 +114,7 @@ describe('defineAdmin over entities built by entity()', () => {
     ]);
     expect(resource.idField).toBe('id');
     expect(resource.labelField).toBe('title');
-    expect(resource.path).toBe('/admin_reg_posts');
+    expect(resource.path).toBe('/admin_reg_post');
   });
 
   test('widgets follow the column kinds the entity declared', () => {
@@ -144,7 +144,7 @@ describe('defineAdmin over entities built by entity()', () => {
 
   test('both entities get their routes, and the nav lists both', () => {
     expect(app.resources.map((each) => each.name)).toEqual(['admin_reg_org', 'admin_reg_post']);
-    expect(app.routes.map((route) => route.path)).toContain('/admin/admin_reg_posts/:id');
+    expect(app.routes.map((route) => route.path)).toContain('/admin/admin_reg_post/:id');
   });
 });
 

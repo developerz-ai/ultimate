@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "dbfedc3aa6d6b65e546daffc0d9477c55f27d7bc6502c5ed9d95ea8576e9a0a6",
+  "buildId": "cb4f65b68b6623b4e3b4aff5012d499c02ea4ae7dbc186d10175d51f82c7222e",
   "tiers": {
     "0": [
       "core",
@@ -251,6 +251,11 @@
       "code": "X_ACTION_FOREIGN",
       "owner": "action",
       "at": "packages/action/src/errors.ts"
+    },
+    {
+      "code": "X_ACTION_JOB_UNBRIDGED",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
     },
     {
       "code": "X_ACTION_PATH_DUPLICATE",
@@ -783,6 +788,16 @@
       "at": "scripts/doc-commands.ts"
     },
     {
+      "code": "X_DOC_FILE_COUNT_STALE",
+      "owner": "scripts",
+      "at": "scripts/generator-counts.ts"
+    },
+    {
+      "code": "X_DOC_FILE_COUNT_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/generator-counts.ts"
+    },
+    {
       "code": "X_DOC_FIX_UNRUNNABLE",
       "owner": "scripts",
       "at": "scripts/doc-fixes.ts"
@@ -791,6 +806,16 @@
       "code": "X_DOC_FIX_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/doc-fixes.ts"
+    },
+    {
+      "code": "X_DOC_RELEASE_FACT_STALE",
+      "owner": "scripts",
+      "at": "scripts/release-facts.ts"
+    },
+    {
+      "code": "X_DOC_RELEASE_FACT_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/release-facts.ts"
     },
     {
       "code": "X_DRAINING",
@@ -1129,6 +1154,11 @@
     },
     {
       "code": "X_JOB_NOT_CANCELLABLE",
+      "owner": "jobs",
+      "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_JOB_ROW_STATUS_UNKNOWN",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
     },
@@ -1768,9 +1798,19 @@
       "at": "scripts/registry-audit.ts"
     },
     {
+      "code": "X_RELEASE_FLAG_UNKNOWN",
+      "owner": "scripts",
+      "at": "scripts/release.ts"
+    },
+    {
       "code": "X_RELEASE_VERSION_SKEW",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_RELEASE_VERSION_UNSTATED",
+      "owner": "scripts",
+      "at": "scripts/release.ts"
     },
     {
       "code": "X_REPLICATION_FAILED",
@@ -2053,6 +2093,11 @@
       "at": "packages/scraping/src/errors.ts"
     },
     {
+      "code": "X_SCRAPE_YIELD_HISTORY_MISSING",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
       "code": "X_SECRETS_EDIT_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -2253,6 +2298,11 @@
       "at": "packages/storage/src/errors.ts"
     },
     {
+      "code": "X_STORAGE_URL_UNVERIFIABLE",
+      "owner": "storage",
+      "at": "packages/storage/src/errors.ts"
+    },
+    {
       "code": "X_STYLES_GLOBAL_MISSING",
       "owner": "render",
       "at": "packages/render/src/errors.ts"
@@ -2328,6 +2378,21 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_TEST_FIX_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/test-fix-citations.ts"
+    },
+    {
+      "code": "X_TEST_FIX_UNRUNNABLE",
+      "owner": "scripts",
+      "at": "scripts/test-fix-citations.ts"
+    },
+    {
+      "code": "X_TEST_FIX_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/test-fix-citations.ts"
+    },
+    {
       "code": "X_TEST_FIXTURE_UNAVAILABLE",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
@@ -2381,6 +2446,11 @@
       "code": "X_TEST_SHARD_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_TEST_THROW_NOT_THROWN",
+      "owner": "scripts",
+      "at": "scripts/to-throw-returns.ts"
     },
     {
       "code": "X_TEST_TYPECHECK_PIN_STALE",

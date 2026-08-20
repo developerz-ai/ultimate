@@ -8,9 +8,15 @@
 
 import type { Clock } from '@ultimat3/core';
 import type { SignedUrlMethod, StorageDriver, StorageObject, StorageRead } from './driver';
-import { orgMismatch, signedUrlExpired, signedUrlRejected, tooLarge } from './errors';
+import {
+  orgMismatch,
+  signedUrlExpired,
+  signedUrlRejected,
+  signedUrlUnverifiable,
+  tooLarge,
+} from './errors';
 import { isTenantScoped, isWithinOrg } from './path';
-import type { SignedUrlConstraints } from './signed-url';
+import type { SignedUrlConstraints, SignedUrlVerification } from './signed-url';
 import { signedUrlBaseFor, verifySignedUrl } from './signed-url';
 import type { UploadPolicy } from './upload';
 import { normalizeContentType, uploadPolicy, validateUpload } from './upload';
@@ -18,7 +24,16 @@ import { normalizeContentType, uploadPolicy, validateUpload } from './upload';
 export interface SignedRequestInput {
   /** Absolute or route-relative — `verifySignedUrl` parses both. */
   readonly url: string;
-  readonly secret: string;
+  /**
+   * OPTIONAL since the disk can verify its own. It was required, and that requirement is why the
+   * upload half of `/_storage` has never been mounted: `localDriver` closes over the secret it
+   * mints with and exposes it through no member, so a route holding a `Storage` registry had no
+   * value to put here. A disk implementing `verifySigned()` needs none.
+   *
+   * Still honoured, and it still wins, for a caller that verifies a URL some OTHER disk signed —
+   * a migration between disks, a test signing by hand.
+   */
+  readonly secret?: string | undefined;
   /**
    * Defaults to the base THIS disk signs under (`disk.signedUrlBase`), never to the bare mount
    * prefix: a second default here made every URL `localDriver` mints a signature-mismatch,
@@ -56,16 +71,33 @@ export interface AcceptSignedUploadInput extends SignedRequestInput {
  * the reason it exists is that a forged URL must never learn "the signature was fine, just late".
  * The org check runs on the verified key, so an attacker cannot probe org names with a fake one.
  */
+async function verify(input: SignedRequestInput): Promise<SignedUrlVerification> {
+  // An explicit secret first, so every call that shipped behaves exactly as it did — including
+  // one verifying a URL a DIFFERENT disk signed, which the driver could not answer for.
+  if (input.secret !== undefined && input.secret !== '') {
+    return verifySignedUrl({
+      url: input.url,
+      secret: input.secret,
+      baseUrl: input.baseUrl ?? input.disk.signedUrlBase ?? signedUrlBaseFor(input.disk.name),
+      ...(input.clock === undefined ? {} : { clock: input.clock }),
+    });
+  }
+  // The disk that signed it verifies it, holding the key it never hands out. `baseUrl` is the
+  // driver's own here for the same reason the secret is: both are the minting half's, and stating
+  // either one a second time is what made every `localDriver` URL a signature mismatch once.
+  const own = input.disk.verifySigned;
+  if (own === undefined) throw signedUrlUnverifiable(input.disk.name);
+  return own.call(input.disk, {
+    url: input.url,
+    ...(input.clock === undefined ? {} : { clock: input.clock }),
+  });
+}
+
 async function constraintsFor(
   input: SignedRequestInput,
   method: SignedUrlMethod,
 ): Promise<SignedUrlConstraints> {
-  const result = await verifySignedUrl({
-    url: input.url,
-    secret: input.secret,
-    baseUrl: input.baseUrl ?? input.disk.signedUrlBase ?? signedUrlBaseFor(input.disk.name),
-    ...(input.clock === undefined ? {} : { clock: input.clock }),
-  });
+  const result = await verify(input);
   if (!result.ok) {
     throw result.reason === 'expired'
       ? signedUrlExpired(input.url, result.detail)

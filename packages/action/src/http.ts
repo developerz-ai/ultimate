@@ -95,7 +95,17 @@ export function toRoute(target: AnyAction): Route {
     // stage deciding first would decide from `row: null` — a denial for the row's own
     // author, from an authz system that never saw the row.
     enforcedBy: 'handler',
-    input: def.input,
+    // `input` stays ABSENT, deliberately, exactly as `@ultimat3/query`'s `toQueryRoute` leaves it.
+    // Setting it hands the action's schema to the pipeline's `body` stage, which throws
+    // `bodyInvalid` — so this route answered `422 X_BODY_INVALID` for every malformed body while
+    // the operation two hundred lines down published `400 X_INPUT_INVALID`, and the SAME action
+    // called over MCP, over the typed client or directly answered `X_INPUT_INVALID`. One action,
+    // one input schema, two codes, decided by the surface the call arrived through.
+    //
+    // `invoke`'s own `validateInput` is the one parser now, and nothing is lost by dropping this:
+    // `bodyRaw()` still parses by content-type, caches, and enforces the size cap — the body stage
+    // only ever added SCHEMA validation on top. `X_BODY_INVALID` keeps its job, which is a body
+    // failing a plain `route.ts`'s own schema, where no primitive owns the input.
     cache: { mode: 'no-store', tags: tagKeys(def.cache?.invalidates ?? []) },
     tags: [resource],
     // Name AND numbers. The name alone selected a bucket the limiter's table never held, so
@@ -145,7 +155,15 @@ export function toOpenApiOperation(target: AnyAction): OpenApiOperation {
         description: 'ok',
         content: { 'application/json': { schema: { $ref: schemaRef(outputSchemaName(name)) } } },
       },
+      // BOTH, because they are two different failures and this operation published only one of
+      // them while the route answered only the other. `X_INPUT_INVALID` is the body that parsed
+      // and failed THIS action's declared schema — the primitive's own code, identical over MCP,
+      // the typed client and a direct call. `X_BODY_INVALID` is the bytes never becoming a body
+      // at all: malformed JSON, over `bodyLimitBytes`, an unreadable content type. That one is
+      // HTTP-only, because only HTTP has bytes, and it is raised in `bodyRaw()` before any schema
+      // exists to fail.
       '400': problemResponse('X_INPUT_INVALID'),
+      '422': problemResponse('X_BODY_INVALID'),
       '403': problemResponse('policy denied'),
       ...(idempotent ? { '409': problemResponse('X_IDEMPOTENCY_CONFLICT') } : {}),
     },

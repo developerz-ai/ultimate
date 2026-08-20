@@ -23,6 +23,8 @@ export const JOB_OWNED_ERROR_CODES = [
   'X_BACKFILL_RUNNING',
   'X_BACKFILL_STALLED',
   'X_BACKFILL_UNKNOWN',
+  'X_JOB_ROW_STATUS_UNKNOWN',
+  'X_ACTION_JOB_UNBRIDGED',
 ] as const;
 
 /**
@@ -58,6 +60,8 @@ export const JOB_ERROR_TITLES: Readonly<Record<JobOwnedErrorCode, string>> = {
   X_BACKFILL_RUNNING: 'a pass under this name is already live',
   X_BACKFILL_STALLED: 'the sweep ended with rows its own count still matches',
   X_BACKFILL_UNKNOWN: 'no declaration carries this backfill name',
+  X_JOB_ROW_STATUS_UNKNOWN: 'a queue row carries a status this build does not know',
+  X_ACTION_JOB_UNBRIDGED: 'an action projection was registered as a job',
 };
 
 // One unconditional call, so a second package claiming one of jobs' codes throws
@@ -89,7 +93,8 @@ registerErrorRetry({
   X_BACKFILL_APPLIED: 'terminal',
 });
 
-const docsFor = (code: JobErrorCode): string => `https://ultimate.dev/errors/${code}`;
+/** Shared with `backfill-errors.ts`, which holds the seven `X_BACKFILL_*` classes. */
+export const docsFor = (code: JobErrorCode): string => `https://ultimate.dev/errors/${code}`;
 
 /** An enqueue collided with a live job holding the same idempotency key under `onConflict: 'error'`. */
 export class JobDuplicateError extends UltimateError {
@@ -120,6 +125,57 @@ export class JobNameTakenError extends UltimateError {
       cause: `two ${input.kind}s claim the name "${input.name}"`,
       fix: `x jobs ls --json names the one already seated; rename the other's export, or its "name:" if it declares one — a ${input.kind} name is a durable queue key and is globally unique`,
       docs: docsFor('X_JOB_DUPLICATE'),
+    });
+  }
+}
+
+/**
+ * A `text` status column holds a value outside the vocabulary this build compiled.
+ *
+ * Refused rather than passed through, because the alternative is what used to happen: the three
+ * decoders in `driver-pg-rows.ts` cast the column, and `stepRun`'s `existing?.status ===
+ * 'completed'` then read false for the laundered value and RE-EXECUTED the step. A second charge
+ * is a worse answer than a failed attempt, and "an unrecognised fact is never a satisfied one" is
+ * the rule the rest of the framework already follows.
+ *
+ * Almost always a NEWER deploy's row, not corruption: a status string only reaches the table
+ * because some version of this framework wrote it. A rolling deploy that only ADDS a status is
+ * safe in the normal direction — the new build knows every old value — and it is the old build
+ * reading the new build's row that lands here, on that one job, loudly.
+ */
+export class JobRowStatusUnknownError extends UltimateError {
+  constructor(input: { table: string; column: string; value: string; known: readonly string[] }) {
+    super({
+      code: 'X_JOB_ROW_STATUS_UNKNOWN',
+      cause:
+        `${input.table}.${input.column} holds "${input.value}", which this build does not know — ` +
+        `it reads ${input.known.join(', ')}`,
+      fix: `x jobs show --json   # then drain the older workers: a status this build cannot read was almost certainly written by a newer deploy`,
+      docs: docsFor('X_JOB_ROW_STATUS_UNKNOWN'),
+    });
+  }
+}
+
+/**
+ * `registerJobs()` was handed `someAction.job()`.
+ *
+ * That call answers an `ActionJobHandle` — `kind: 'action-job'`, deliberately a different literal
+ * from `'job'` — which is the four fields `job()` takes, not a job. It cannot be one: `action` and
+ * `jobs` are both tier 3, so neither may import the other, and only `job()` seats a handle the
+ * queue, the worker and the manifest accept.
+ *
+ * Refused BY NAME rather than skipped, which is what used to happen. `registerJobs(module)` is
+ * handed a whole module namespace, so silently ignoring a constant or a helper exported beside a
+ * job is right — but ignoring this one meant `registerJobs({ publishPost: publishPost.job() })`
+ * registered nothing, returned `[]`, and the job never ran, with nothing failing anywhere.
+ */
+export class ActionJobUnbridgedError extends UltimateError {
+  constructor(input: { export: string; job: string }) {
+    super({
+      code: 'X_ACTION_JOB_UNBRIDGED',
+      cause: `export "${input.export}" is the action projection "${input.job}", which is not a job handle and cannot be registered as one`,
+      fix: `wrap it: agentJob(${input.export}, { name: '${input.export}', tenant, retry }) from @ultimat3/ai — that composes job() and returns a handle the queue accepts`,
+      docs: docsFor('X_ACTION_JOB_UNBRIDGED'),
     });
   }
 }
@@ -330,134 +386,6 @@ export class OutboxNoTxError extends UltimateError {
       cause: `ctx.jobs.enqueue(${input.job}) ran outside a transaction with outbox: 'required'`,
       fix: 'wrap the call in ctx.tx(async (tx) => ...), or enqueue with { outbox: false }',
       docs: docsFor('X_OUTBOX_NO_TX'),
-    });
-  }
-}
-
-/**
- * The seven backfill codes below all answer one question — "why is this sweep not running?" — and
- * each is here because it sends the reader somewhere different: run it, force it, change
- * environment, migrate first, wait, fix the predicates, or fix the name. A code that shared a fix
- * line with another one would be code inflation, which is why `X_BACKFILL_WRITE_UNCONFIRMED` was
- * considered and rejected: a dry run that wrote nothing did exactly what it was asked to.
- *
- * Every `fix` below is ONE line something can execute — a shell command, or the edit to make.
- * Never a command with prose appended: a `fix:` is copied and run verbatim, so a trailing clause
- * turns a working command into a syntax error at the one moment the reader is following it
- * literally. Explanations belong in `cause`, which is read and never run.
- */
-
-/**
- * Declared and never completed. The alarm the framework did not have: an author could
- * `x g backfill`, merge and deploy, and nothing anywhere said the pass had not run.
- */
-export class BackfillPendingError extends UltimateError {
-  constructor(input: { backfill: string; environment: string }) {
-    super({
-      code: 'X_BACKFILL_PENDING',
-      cause: `backfill "${input.backfill}" is declared and x_backfills holds no completed pass for it in ${input.environment}`,
-      fix: `x db backfill ${input.backfill} --write --json`,
-      docs: docsFor('X_BACKFILL_PENDING'),
-    });
-  }
-}
-
-/** Already swept. A rerun is legitimate, so this names the flag rather than refusing outright. */
-export class BackfillAppliedError extends UltimateError {
-  constructor(input: { backfill: string; runId: string; completedAt: string }) {
-    super({
-      code: 'X_BACKFILL_APPLIED',
-      cause: `backfill "${input.backfill}" completed as run ${input.runId} at ${input.completedAt}; a forced rerun writes a NEW ledger row and never edits that one`,
-      fix: `x db backfill ${input.backfill} --write --force --json`,
-      docs: docsFor('X_BACKFILL_APPLIED'),
-    });
-  }
-}
-
-/**
- * The declaration names the environments it belongs to and this is not one. Declared DATA, never a
- * hardcoded "cleanups are production": a staging rehearsal is correct practice, so which
- * environments a sweep belongs to is the app's convention and this is only the mechanism carrying
- * it (axiom 8).
- */
-export class BackfillEnvironmentError extends UltimateError {
-  constructor(input: { backfill: string; environment: string; declared: readonly string[] }) {
-    // The first declared environment, because the fix has to be ONE runnable line and the list is
-    // ordered by the author. The empty case cannot arise from `checkBackfillEnvironment`, which
-    // treats an empty list as "every environment" — but this constructor is public, so it answers
-    // with the command that lists what IS declared rather than an `ULTIMATE_ENV=undefined`.
-    const target = input.declared[0];
-    super({
-      code: 'X_BACKFILL_ENVIRONMENT',
-      cause: `backfill "${input.backfill}" declares environments: ${input.declared.join(', ')} and this process resolved ${input.environment} — add "${input.environment}" to that list if this deploy should sweep too`,
-      fix:
-        target === undefined
-          ? 'x db backfill --pending --json'
-          : `ULTIMATE_ENV=${target} x db backfill ${input.backfill} --write --json`,
-      docs: docsFor('X_BACKFILL_ENVIRONMENT'),
-    });
-  }
-}
-
-/**
- * `requires` names a migration the ledger has not applied. Checked where `x_migrations` is
- * readable — this package holds no `@ultimat3/db` dependency and growing one to read a ledger
- * would put the migration engine on the tier-3 queue's import graph.
- */
-export class BackfillMigrationPendingError extends UltimateError {
-  constructor(input: { backfill: string; migration: string }) {
-    super({
-      code: 'X_BACKFILL_MIGRATION_PENDING',
-      cause: `backfill "${input.backfill}" requires migration ${input.migration}, which x_migrations does not record as applied`,
-      fix: 'x db migrate --json',
-      docs: docsFor('X_BACKFILL_MIGRATION_PENDING'),
-    });
-  }
-}
-
-/**
- * The enqueue deduped: one live pass per name, so this run is the one already going. Distinct from
- * `X_BACKFILL_APPLIED`, which is a pass that finished — the response there is `--force`, and the
- * response here is to look at the run that is holding the key.
- */
-export class BackfillRunningError extends UltimateError {
-  constructor(input: { backfill: string; jobId: string }) {
-    super({
-      code: 'X_BACKFILL_RUNNING',
-      cause: `backfill "${input.backfill}" already has a live pass queued as ${input.jobId}, and one name holds one live pass; its step trace names the batch it is on, and a pass that is not advancing is a worker that lost its lease`,
-      fix: `x jobs show ${input.jobId} --json`,
-      docs: docsFor('X_BACKFILL_RUNNING'),
-    });
-  }
-}
-
-/**
- * The source ran out of rows and the declaration's own `count()` still matches some. Two
- * predicates that disagree is an authoring bug in any business — the sweep reported success over
- * rows it never visited — so the pass fails rather than writing a completed row nobody can trust.
- */
-export class BackfillStalledError extends UltimateError {
-  constructor(input: { backfill: string; remaining: number; swept: number }) {
-    super({
-      code: 'X_BACKFILL_STALLED',
-      cause: `backfill "${input.backfill}" swept ${input.swept} rows, exhausted its source, and count() still matches ${input.remaining} — a WHERE the sweep narrows and the count does not is what leaves rows behind`,
-      fix: `make count() select on exactly what source() selects on in backfill("${input.backfill}")`,
-      docs: docsFor('X_BACKFILL_STALLED'),
-    });
-  }
-}
-
-/** A name no declaration in this app carries — a typo, or a backfill whose module was deleted. */
-export class BackfillUnknownError extends UltimateError {
-  constructor(input: { backfill: string; known: readonly string[] }) {
-    super({
-      code: 'X_BACKFILL_UNKNOWN',
-      cause:
-        input.known.length === 0
-          ? `no backfill named "${input.backfill}" is declared, and this app declares none at all`
-          : `no backfill named "${input.backfill}" is declared (declared: ${input.known.join(', ')})`,
-      fix: 'x db backfill --pending --json',
-      docs: docsFor('X_BACKFILL_UNKNOWN'),
     });
   }
 }

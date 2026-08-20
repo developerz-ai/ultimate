@@ -79,7 +79,7 @@ describe('unit · a download is armed only by a RECORDED selector', () => {
       html: '<a id="constructor" href="">Export</a>',
       downloads: { '#export': 'orders.csv:id,1' },
     });
-    await target.click('#constructor', 0);
+    await target.click('#constructor');
     expect(await codeOf(() => target.download({ timeoutMs: 10 }))).toBe(
       'X_SCRAPE_DOWNLOAD_TIMEOUT',
     );
@@ -103,7 +103,7 @@ describe('unit · a download is armed only by a RECORDED selector', () => {
       html: '<a id="export" href="">Export</a>',
       downloads: { '#export': 'orders.csv:id,1' },
     });
-    await target.click('#export', 0);
+    await target.click('#export');
     const file = await target.download({ timeoutMs: 10 });
     expect(file.filename).toBe('orders.csv');
   });

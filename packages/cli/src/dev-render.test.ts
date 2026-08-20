@@ -94,6 +94,28 @@ describe('unit · x dev renders the app routes', () => {
     expect(await cacheControl('/feed')).toBe('private, no-store');
   });
 
+  test('two ISR URLs that differ only in their query are two documents, never one', async () => {
+    // #171, the half a build error cannot close. `resultFor` keyed the ISR store on
+    // `url.pathname`, so `?page=2` and `?page=3` were ONE entry: the first render was stored under
+    // `/pricing` and every later query string was served that body.
+    //
+    // ONE server for both requests, deliberately. `serve()` builds a fresh `IsrController` per
+    // call, so a test that used it twice could never observe a cache hit at all — it would pass
+    // against the leak and against the fix alike. The route's own `meta` renders `data.url`, so
+    // the served document names the URL it was rendered for and a collision is visible from
+    // outside rather than inferred from the store.
+    register({ file: 'apps/web/site/pricing/page.tsx', render: 'isr', revalidate: { ttl: '5m' } });
+    const server = serve();
+    const fetchOnce = async (path: string): Promise<string> =>
+      await (await server.fetch(new Request(`http://dev.test${path}`))).text();
+
+    const second = await fetchOnce('/pricing?page=2');
+    const third = await fetchOnce('/pricing?page=3');
+
+    expect(second).toContain('rendered http://dev.test/pricing?page=2');
+    expect(third).toContain('rendered http://dev.test/pricing?page=3');
+  });
+
   test('a dynamic segment reaches meta as a param, matched by the router', async () => {
     register({ file: 'apps/web/site/blog/[slug]/page.tsx', render: 'ssr' });
     const body = await (await get('/blog/hello-world')).text();

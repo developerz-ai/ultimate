@@ -171,8 +171,8 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
       return Promise.resolve(page.html);
     },
     query,
-    async click(selector: string, index: number): Promise<void> {
-      const element = await at(selector, index);
+    async click(selector: string): Promise<void> {
+      const element = await at(selector, 0);
       if (element === undefined) throw fixtureMissing(`${page.url} ${selector}`, init.source);
       const download =
         recorded(page.downloads, selector) ?? recorded(page.downloads, element.attrs['id'] ?? '');

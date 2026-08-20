@@ -16,13 +16,13 @@
 import { appVersion, assert, logger, resolveEnvironment } from '@ultimat3/core';
 import type { BatchIterator } from '@ultimat3/entity';
 import type { BackfillDefinition, BackfillInput, BackfillReport } from './backfill';
+import { BackfillStalledError } from './backfill-errors';
 import { checkBackfillEnvironment } from './backfill-gate';
 import type { BackfillLedger, BackfillRun } from './backfill-ledger';
 import { decideBackfill } from './backfill-ledger';
 import type { Pacer } from './backfill-rate';
 import { withBackfillScope } from './backfill-scope';
 import { jobDriver } from './driver';
-import { BackfillStalledError } from './errors';
 import type { JobRunArgs } from './job';
 import { isStepSuspension } from './steps';
 
