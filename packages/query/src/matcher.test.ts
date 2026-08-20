@@ -343,3 +343,107 @@ describe('a refill is only owed by a window that was full', () => {
     ]);
   });
 });
+
+/**
+ * #230. A result set is whatever the query's `sql` returned, and a PROJECTION that drops an
+ * ordering column leaves the matcher measuring the change row's real value against nothing — never
+ * equal, so every change to every row read as a move. In `examples/dummy` that turned one publish
+ * into a `remove` + `insert` pair whose re-inserted row was the raw table row.
+ */
+describe('an ordering column the result set does not carry', () => {
+  const projected: QueryShape = {
+    entity: 'posts',
+    filters: [{ column: 'orgId', op: '=', value: ORG }],
+    orderBy: [{ column: 'createdAt', direction: 'asc' }],
+    limit: 10,
+    unsupported: [],
+  };
+
+  /** What a projection returns: no `createdAt` key at all, because `select` never asked for it. */
+  const held: readonly Post[] = [
+    { id: 'a', orgId: ORG },
+    { id: 'b', orgId: ORG },
+  ];
+
+  const touch = (id: string): ChangeEvent<Post> => ({
+    entity: 'posts',
+    op: 'update',
+    row: { id, orgId: ORG, createdAt: 10 },
+    before: { id, orgId: ORG, createdAt: 10 },
+  });
+
+  test('is a refusal to place the row, not a move', () => {
+    expect(match('feed', projected, held, touch('a'))).toEqual([{ kind: 'refill', from: 0 }]);
+  });
+
+  // The whole point: nothing is emitted that would put the raw row on the wire or reorder the
+  // window on a comparison against a column that is not there.
+  test('emits no add, update or remove beside it', () => {
+    const patches: readonly Patch<Post>[] = match('feed', projected, held, touch('b'));
+    expect(patches.every((patch) => patch.kind === 'refill')).toBe(true);
+  });
+
+  // The discriminator is `Object.hasOwn`, never a value check. A nullable column that IS null still
+  // has its key, and everywhere else in this package an absent key and a SQL NULL are one absence —
+  // here they are different facts, and only the key tells them apart. A null sorting differently
+  // from `10` is a REAL move, which is the point: the window answered.
+  test('a NULL value is answerable; an absent key is not', () => {
+    const nulled: readonly Post[] = [{ id: 'a', orgId: ORG, createdAt: null }];
+    const patches: readonly Patch<Post>[] = match('feed', projected, nulled, touch('a'));
+    expect(patches.some((patch) => patch.kind === 'refill')).toBe(false);
+    expect(patches.map((patch) => patch.kind)).toEqual(['remove', 'add']);
+  });
+
+  test('a result set that carries the key patches incrementally, as before', () => {
+    const carried: readonly Post[] = [
+      { id: 'a', orgId: ORG, createdAt: 10 },
+      { id: 'b', orgId: ORG, createdAt: 20 },
+    ];
+    expect(match('feed', projected, carried, touch('a'))).toEqual([
+      { kind: 'update', position: 0, row: { id: 'a', orgId: ORG, createdAt: 10 } },
+    ]);
+  });
+
+  /**
+   * The insert path has the SAME defect and it was the one this suite found: `positionFor` compares
+   * the arriving row against the held rows, so with no `createdAt` there to compare against, a row
+   * created last landed at position 0. Wrong in a way no re-read returns — which is exactly what
+   * `positionFor`'s own doc says a wrong position costs.
+   */
+  test('a row arriving into a window that cannot place it is a refill, not a guess', () => {
+    const arriving: ChangeEvent<Post> = {
+      entity: 'posts',
+      op: 'insert',
+      row: { id: 'c', orgId: ORG, createdAt: 30 },
+    };
+    expect(match('feed', projected, held, arriving)).toEqual([{ kind: 'refill', from: 0 }]);
+  });
+
+  test('the same row lands at its real position once the window carries the key', () => {
+    const carried: readonly Post[] = [
+      { id: 'a', orgId: ORG, createdAt: 10 },
+      { id: 'b', orgId: ORG, createdAt: 20 },
+    ];
+    const arriving: ChangeEvent<Post> = {
+      entity: 'posts',
+      op: 'insert',
+      row: { id: 'c', orgId: ORG, createdAt: 30 },
+    };
+    expect(match('feed', projected, carried, arriving)).toEqual([
+      { kind: 'add', position: 2, row: { id: 'c', orgId: ORG, createdAt: 30 } },
+    ]);
+  });
+
+  // A delete is addressed by the index its id was found at, so it needs no ordering at all — a
+  // projected query still removes rows incrementally rather than re-reading for every departure.
+  test('a delete still patches incrementally, because it decides no position', () => {
+    const leaving: ChangeEvent<Post> = {
+      entity: 'posts',
+      op: 'delete',
+      row: { id: 'b', orgId: ORG, createdAt: 20 },
+    };
+    expect(match('feed', projected, held, leaving)).toEqual([
+      { kind: 'remove', position: 1, id: 'b' },
+    ]);
+  });
+});

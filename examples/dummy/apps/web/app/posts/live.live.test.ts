@@ -31,25 +31,18 @@ test('the initial snapshot is scoped to the actor’s org', async ({ seed, actor
 });
 
 /**
- * The distinction this test is named for holds: the change arrives as PATCHES and not as a second
- * snapshot, and the window is not re-read.
- *
- * What it does NOT arrive as is one `update`, and running this test for the first time is what
- * found out why. `match()` decides "moved" with
- * `compareRows(event.row, current, shape.orderBy)`, `shape.orderBy` here is
- * `createdAt desc, id asc` — and `current` is the row the window HOLDS, which is a `PostSummary`.
- * `SUMMARY_COLUMNS` carries `publishedAt` and not `createdAt`, so every comparison is a real `Date`
- * against `undefined`, every change to a row reads as a move, and one update becomes a
- * `remove` + `insert` pair. The re-inserted row is the raw `posts` row the change feed carried, so
- * the client's row shape changes under it and columns the projection deliberately dropped — `body`
- * — arrive over the socket.
- *
- * Asserted as it behaves rather than as it ought to: a test that expected `update` would be red for
- * a defect it does not own, and one that skipped the shape would let it go unrecorded.
- * Tracked as its own issue; the fix is a design decision in `@ultimat3/query`'s matcher, not a
- * change to this app.
+ * The assertion this file was WRITTEN with, and it is true as of #230's fix. It was not before:
+ * `liveFeed` orders by `createdAt`, `PostSummary` did not carry `createdAt`, and `match()` compared
+ * the change row's real value against nothing on the row the client holds — so every change read as
+ * a move, one update became a `remove` + `insert` pair, and the re-inserted row was the raw `posts`
+ * row. Two fixes met here: the matcher refuses to place a row its window cannot answer for, and the
+ * feed row now carries the key it is ordered by.
  */
-test('a publish arrives as patches, not a refetch', async ({ seed, actorFor, subscribe }) => {
+test('a publish arrives as one incremental patch, not a refetch', async ({
+  seed,
+  actorFor,
+  subscribe,
+}) => {
   const { ada, acme, draft } = await seed('dev').pick({
     ada: 'member:ada',
     acme: 'org:acme',
@@ -64,9 +57,40 @@ test('a publish arrives as patches, not a refetch', async ({ seed, actorFor, sub
 
   expect(feed.rows().length).toBe(before);
   expect(feed.snapshots()).toBe(1); // patched, never re-read
-  expect(feed.patches().map((patch) => patch.op)).toEqual(['delete', 'insert']);
-  expect(feed.patches().every((patch) => patch.row.id === draft.id)).toBe(true);
+  expect(feed.patches()).toMatchObject([{ op: 'update', row: { id: draft.id } }]);
   expect(feed.row(draft.id)?.status).toBe('published');
+});
+
+/**
+ * The half of #230 that is a leak rather than churn, and it is independent of the ordering key: a
+ * `ChangeEvent` carries the whole TABLE row, and every patch used to forward it. `body` is the one
+ * column this projection exists to drop — "50 bodies is not a feed" — and it reached every
+ * subscriber on the first change to any post.
+ *
+ * Asserted over the frames the subscriber RECEIVED, not over the server's window, because the wire
+ * is where the leak was.
+ */
+test('a patch carries the feed row, never the columns the projection dropped', async ({
+  seed,
+  actorFor,
+  subscribe,
+}) => {
+  const { ada, acme, draft } = await seed('dev').pick({
+    ada: 'member:ada',
+    acme: 'org:acme',
+    draft: 'post:draft-money',
+  });
+
+  const feed = await subscribe<PostSummary>(liveFeed, { orgId: acme.id }, actorFor(ada));
+  await publishPost.as(actorFor(ada), { postId: draft.id, orgId: acme.id, notify: false });
+  await feed.settled();
+
+  const delivered = feed.patches().flatMap((patch) => Object.keys(patch.row));
+  expect(delivered).not.toContain('body');
+  expect(delivered).not.toContain('updatedAt');
+  // And the rows the subscriber holds keep the feed's own shape, rather than drifting into the
+  // table's as patches land on them.
+  for (const row of feed.rows()) expect(Object.hasOwn(row, 'body')).toBe(false);
 });
 
 test('a row that fails the policy is never delivered', async ({ seed, actorFor, subscribe }) => {

@@ -21,7 +21,7 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 | `naming.ts` | export name → `/_x/query/<kebab>`. Pure string math. **Paths only** — no tool name |
 | `registry.ts` | export-name registration, `describeQueries()`, and the `registerPrimitiveRegistrar('query', …)` announcement |
 | `live.ts` | `LiveQuery` descriptor + cursor arithmetic |
-| `matcher.ts` | change event → minimal patch, or `X_MATCHER_UNSUPPORTED` |
+| `matcher.ts` | change event → minimal patch, `refill` when the window cannot place the row, or `X_MATCHER_UNSUPPORTED` |
 | `pagination.ts` | `paginate()` over core's cursor codec — no offset, ever |
 | `cursor-value.ts` | what a sort value becomes inside a cursor, and what it becomes again |
 | `input-shape.ts` | what a read's `input:` may be, given that its route is a query STRING |
@@ -445,3 +445,22 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
 bun test packages/query
 bun run typecheck
 ```
+
+**A position is decided against the rows the WINDOW holds, so a window that cannot answer gets a
+`refill` rather than a guess** — `unprojectedOrderKey`, `As of 2026-08-20`. A result set is whatever
+the query's `sql` returned, and a PROJECTION that drops an ordering column left `compareRows`
+measuring the change row's real value against nothing: never equal on the update path, so every
+change read as a move, and arbitrary on the insert path, so a row created last landed wherever
+`undefined` sorted. `examples/dummy`'s feed ordered by `createdAt` and projected without it, and one
+publish became a `remove` + `insert` whose re-inserted row was the raw table row (#230).
+
+The discriminator is **`Object.hasOwn`, never a value check**: a nullable column that IS null still
+carries its key, and everywhere else in this package an absent key and a SQL NULL are one absence
+(`isNull` says so). Here they are different facts — "this row's value is nothing" versus "this shape
+cannot answer" — and only the key tells them apart. Asked of the row the window holds and never of
+the change row, which comes off the table and can always answer. A **delete** never reaches the rule:
+it is addressed by the index its id was found at, so a projected query still removes incrementally.
+
+The rule generalises what `assertSeekable` already applies to a cursor: **a sort key has to be
+readable on the row.** A live query whose rows omit one still works — it re-reads instead of
+patching — which is correct and slower, and the fix is to project the key.

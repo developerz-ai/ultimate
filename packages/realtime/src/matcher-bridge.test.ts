@@ -7,8 +7,10 @@ import {
   bridgeChange,
   canAffect,
   type IncrementalMatcher,
+  narrowRow,
   normalizePatch,
   patchFromChange,
+  projectionOf,
   type SubscriptionShape,
   toBridgeResult,
 } from './matcher-bridge';
@@ -123,5 +125,71 @@ describe('matcher bridge', () => {
         index: 3,
       },
     );
+  });
+});
+
+/**
+ * #230's leak half, and it is independent of the ordering key. A `ChangeEvent` carries the whole
+ * TABLE row — that is what logical replication emits and what `setRowObserver` emits — while a live
+ * query's result set is whatever its `sql` returned. Every patch used to forward the change row
+ * unnarrowed, so a projection's dropped columns went out on the socket: `examples/dummy`'s feed
+ * projects ten columns and one publish delivered `body` to every subscriber.
+ */
+describe('a patch carries the result set\u2019s columns, never the table\u2019s', () => {
+  const projection = new Set(['id', 'orgId', 'title', 'likes']);
+
+  const changeOf = (op: 'insert' | 'update', row: Row, previous?: Row): ChangeEvent => ({
+    entity: 'posts',
+    op,
+    before: previous ?? null,
+    after: row,
+    lsn: formatLsn(11),
+    txid: '11',
+    orgId: 'o1',
+    at: 1_000,
+  });
+
+  test('narrowRow keeps the projection and drops the rest', () => {
+    expect(narrowRow(after, projection)).toEqual({
+      id: 'p1',
+      orgId: 'o1',
+      title: 'draft',
+      likes: 2,
+    });
+  });
+
+  // `id` is the row's identity on the wire — `applyToWindow` and every client store key by it — so
+  // it survives a projection that somehow did not name it.
+  test('id survives whatever the projection says', () => {
+    expect(narrowRow(after, new Set(['title']))).toEqual({ id: 'p1', title: 'draft' });
+  });
+
+  // Nothing read yet is not the same as "the result set has no columns". Inventing a shape there
+  // would drop columns a caller is owed.
+  test('an unknown projection narrows nothing', () => {
+    expect(narrowRow(after, undefined)).toEqual(after);
+  });
+
+  test('projectionOf reads the shape off the window, and answers nothing for an empty one', () => {
+    expect(projectionOf([{ id: 'p1', title: 'hi' } as Row])).toEqual(new Set(['id', 'title']));
+    expect(projectionOf([])).toBeUndefined();
+  });
+
+  test('an insert patch is narrowed', () => {
+    const change = changeOf('insert', after);
+    const result = toBridgeResult([{ kind: 'add', position: 0, row: after }], change, projection);
+    expect(result.patches[0]?.row).toEqual({ id: 'p1', orgId: 'o1', title: 'draft', likes: 2 });
+  });
+
+  test('an update patch is narrowed after the changed columns are computed', () => {
+    const changed: Row = { ...before, likes: 2, internalNote: 'y' };
+    const change = changeOf('update', changed, before);
+    const result = toBridgeResult(
+      [{ kind: 'update', position: 0, row: changed }],
+      change,
+      projection,
+    );
+    // `internalNote` changed and is dropped; `likes` changed and is kept.
+    expect(result.patches[0]?.row).toEqual({ id: 'p1', likes: 2 });
   });
 });
