@@ -320,7 +320,12 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   rendered from it.** The resolved records are the source; `ColumnDescription.references` spells
   `"<table>.<column>"` out of one for the migration generator, which is in tier 1 and cannot
   import this package. Never parse that string back — it carries physical names and a traversal
-  reads row *properties*, so the parse would be a second, lossy resolver. `references()` is a
+  reads row *properties*, so the parse would be a second, lossy resolver. **`onDelete` rides
+  beside it, on both `ColumnDescription` and `ReferenceDescription`, `As of 2026-08-19`**: the flat
+  string has no room for a rule and neither record had a field for one, so a declared
+  `{ onDelete: 'cascade' }` type-checked and reached no SQL for three majors — `@ultimat3/db` emits
+  it now, and it can only see what the projection carries. Read off the resolved reference, never
+  off `meta` a second time: a rule with no key is not a thing. `references()` is a
   method, not a field: a thunk may point at an entity two modules of an import cycle have not
   finished evaluating. `relationMap()` memoises the whole-registry derivation against
   `registryGeneration()`, which every registration bumps — a schema module imported late must

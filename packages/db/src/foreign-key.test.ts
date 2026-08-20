@@ -3,7 +3,7 @@
 // here is a migration that adds a constraint that exists or a drift report on a correct database.
 
 import { describe, expect, test } from 'bun:test';
-import { addForeignKey, dropForeignKey, foreignKeyTarget } from './foreign-key';
+import { addForeignKey, dropForeignKey, foreignKeyTarget, onDeleteRule } from './foreign-key';
 import type { ForeignKeyDescription } from './introspect';
 
 const key = (overrides: Partial<ForeignKeyDescription> = {}): ForeignKeyDescription => ({
@@ -51,5 +51,57 @@ describe('unit · the two statements', () => {
     expect(dropForeignKey('posts', 'posts_org_id_fkey')).toBe(
       'alter table "posts" drop constraint "posts_org_id_fkey";',
     );
+  });
+
+  test('add writes the on delete rule out, so a declared cascade reaches the database', () => {
+    // `entity()` has carried `{ onDelete: 'cascade' }` since 1.0 and no clause ever spelled one:
+    // the rule type-checked, generated `references "orgs" ("id");`, and deleting an org left
+    // every child row behind on a constraint that refuses the delete instead.
+    expect(addForeignKey('posts', key({ onDelete: 'cascade' }))).toBe(
+      'alter table "posts" add constraint "posts_org_id_fkey" foreign key ("org_id") ' +
+        'references "orgs" ("id") on delete cascade;',
+    );
+  });
+
+  test('a rule the catalog spells as a character is written out in full', () => {
+    expect(addForeignKey('posts', key({ onDelete: 'n' }))).toContain('on delete set null');
+  });
+
+  test('no action is no clause, whichever way it arrives', () => {
+    expect(addForeignKey('posts', key({ onDelete: 'a' }))).not.toContain('on delete');
+    expect(addForeignKey('posts', key({ onDelete: 'no action' }))).not.toContain('on delete');
+  });
+
+  test('a rule Postgres does not have is X_INVARIANT, never spliced into the DDL', () => {
+    // The only way in is a hand-built description: `entity()`'s option is a closed union.
+    expect(() => addForeignKey('posts', key({ onDelete: 'drop table posts' }))).toThrow(
+      /X_INVARIANT/,
+    );
+  });
+});
+
+describe('unit · onDeleteRule', () => {
+  test('the catalog character and the declared name are one vocabulary', () => {
+    expect([
+      onDeleteRule('c'),
+      onDeleteRule('r'),
+      onDeleteRule('n'),
+      onDeleteRule('d'),
+      onDeleteRule('cascade'),
+    ]).toEqual(['cascade', 'restrict', 'set null', 'set default', 'cascade']);
+  });
+
+  test('`a` and `no action` are both "nothing was declared"', () => {
+    // Postgres records the default on every key, so reading it as a rule would report a
+    // difference on every constraint a snapshot never spelled one for.
+    expect([onDeleteRule('a'), onDeleteRule('no action'), onDeleteRule(null)]).toEqual([
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  test('it is idempotent, so either side may be normalised twice', () => {
+    expect(onDeleteRule(onDeleteRule('c'))).toBe('cascade');
   });
 });

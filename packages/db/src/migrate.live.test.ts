@@ -11,7 +11,7 @@ import type {
   ColumnDescriptionLike,
   EntityDescriptionLike,
   IndexDescriptionLike,
-} from './generate';
+} from './entity-shape';
 import { generateMigration } from './generate';
 import { introspect, type SchemaDescription } from './introspect';
 import { LEDGER_TABLE, MIGRATION_LOCK_KEY, type Migration, migrate, rollback } from './migrate';

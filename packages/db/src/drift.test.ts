@@ -78,66 +78,46 @@ describe('an index migrations declare, against the one the catalog holds', () =>
     expect(diffSchema(live, schema(posts)).ok).toBe(true);
   });
 
-  test('a matching index reports nothing, predicate and direction aside', () => {
+  test('two spellings of one predicate are not drift — the text is never compared', () => {
     // The catalog rewrites a predicate into its own spelling, so comparing the text would report
     // two identical indexes as drift. `x db gen` compares them, where both sides are generated.
     const live = schema(withIndexes(posts, { ...declared, where: '(deleted_at IS NULL)' }));
     const expected = schema(withIndexes(posts, { ...declared, where: '"deleted_at" is null' }));
     expect(diffSchema(live, expected).ok).toBe(true);
   });
-});
 
-describe('a foreign key migrations declare, against the one the catalog holds', () => {
-  const posts = table('posts', ['id', 'org_id']);
-  const key = (
-    overrides: Partial<TableDescription['foreignKeys'][number]> = {},
-  ): TableDescription['foreignKeys'][number] => ({
-    name: 'posts_org_id_fkey',
-    columns: ['org_id'],
-    referencedTable: 'orgs',
-    referencedColumns: ['id'],
-    onDelete: null,
-    ...overrides,
-  });
-  const withKeys = (
-    base: TableDescription,
-    ...foreignKeys: TableDescription['foreignKeys']
-  ): TableDescription => ({ ...base, foreignKeys });
-
-  test('a key the migrations declare and the database does not have is drift', () => {
-    const report = diffSchema(schema(posts), schema(withKeys(posts, key())));
-    expect(report.ok).toBe(false);
-    expect(report.differences[0]?.kind).toBe('missing-foreign-key');
-    expect(report.differences[0]?.cause).toContain('no foreign key on (org_id) to "orgs" (id)');
-    expect(report.differences[0]?.fix).toBe('x db migrate');
+  test('a desc index rebuilt ascending by hand is drift', () => {
+    // Structured on both sides — `'asc' | 'desc' | null` — so it is comparable where the
+    // predicate's text is not, and a feed's newest page reads off the wrong end of the index.
+    const live = schema(withIndexes(posts, { ...declared, order: null }));
+    const report = diffSchema(live, schema(withIndexes(posts, { ...declared, order: 'desc' })));
+    expect(report.differences[0]?.kind).toBe('changed-index');
+    expect(report.differences[0]?.cause).toContain('is ascending');
   });
 
-  test('a key repointed at another table is the declared one missing', () => {
-    const live = schema(withKeys(posts, key({ referencedTable: 'tenants' })));
-    expect(diffSchema(live, schema(withKeys(posts, key()))).differences[0]?.kind).toBe(
-      'missing-foreign-key',
+  test('`asc` and `null` are one direction, so a declared asc is not drift', () => {
+    // `createIndex` emits `"col" asc`, which Postgres stores as not-descending — i.e. `null` on
+    // the catalog side. Comparing the raw values reports every ascending index as drift.
+    const live = schema(withIndexes(posts, { ...declared, order: null }));
+    expect(diffSchema(live, schema(withIndexes(posts, { ...declared, order: 'asc' }))).ok).toBe(
+      true,
     );
   });
 
-  test('a key repointed at another column is drift too', () => {
-    const live = schema(withKeys(posts, key({ referencedColumns: ['slug'] })));
-    expect(diffSchema(live, schema(withKeys(posts, key()))).ok).toBe(false);
+  test('a partial index recreated as a total one is drift, whatever the predicate says', () => {
+    // Presence is a boolean; only the text is uncomparable. A partial unique index rebuilt total
+    // refuses rows the entity allows, and the reverse silently widens the constraint.
+    const live = schema(withIndexes(posts, { ...declared, where: null }));
+    const expected = schema(withIndexes(posts, { ...declared, where: 'deleted_at is null' }));
+    const report = diffSchema(live, expected);
+    expect(report.differences[0]?.kind).toBe('changed-index');
+    expect(report.differences[0]?.cause).toContain('covers every row');
   });
 
-  test('the same key under another constraint name is not drift', () => {
-    // Postgres names an inline clause `posts_org_id_fkey`; a hand-written migration may not.
-    const live = schema(withKeys(posts, key({ name: 'fk_posts_org' })));
-    expect(diffSchema(live, schema(withKeys(posts, key()))).ok).toBe(true);
-  });
-
-  test('an on delete rule the snapshot never wrote down is not drift', () => {
-    // The catalog spells it `a`/`c`/`r` and no generated clause declares one.
-    const live = schema(withKeys(posts, key({ onDelete: 'c' })));
-    expect(diffSchema(live, schema(withKeys(posts, key()))).ok).toBe(true);
-  });
-
-  test('a key the database has and no migration declares is not drift', () => {
-    expect(diffSchema(schema(withKeys(posts, key())), schema(posts)).ok).toBe(true);
+  test('a total index narrowed to a predicate on the database is drift too', () => {
+    const live = schema(withIndexes(posts, { ...declared, where: '(deleted_at IS NULL)' }));
+    const report = diffSchema(live, schema(withIndexes(posts, { ...declared, where: null })));
+    expect(report.differences[0]?.cause).toContain('is partial');
   });
 });
 

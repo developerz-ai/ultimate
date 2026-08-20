@@ -2,7 +2,34 @@
 // add or drop one. `generate.ts` writes them and `drift.ts` compares them, and a generator that
 // disagreed with a detector about whether two keys are the same key is drift on a correct database.
 
+import { assert } from '@ultimat3/core';
 import type { ForeignKeyDescription } from './introspect';
+
+/** `pg_constraint.confdeltype`. The catalog's vocabulary; a description holds the rule's name. */
+const CATALOG_RULES: Readonly<Record<string, string>> = {
+  a: 'no action',
+  c: 'cascade',
+  r: 'restrict',
+  n: 'set null',
+  d: 'set default',
+};
+
+/**
+ * One `on delete` vocabulary for both sides. The catalog spells the rule as a single character and
+ * a description spells it out, so a comparison between them needs one of them translated — and
+ * translating both through the same total function keeps it idempotent, which is what lets either
+ * side be normalised without knowing where it came from.
+ *
+ * `no action` is `null`: Postgres records the default on **every** key, so reading it as a
+ * declared rule reports a difference against every constraint whose snapshot never spelled one.
+ */
+export function onDeleteRule(raw: string | null): string | null {
+  if (raw === null) return null;
+  const named = CATALOG_RULES[raw] ?? raw.toLowerCase();
+  return named === 'no action' ? null : named;
+}
+
+const WRITABLE = new Set(['cascade', 'restrict', 'set null', 'set default']);
 
 /**
  * A key's identity: its columns, its target table, its target columns — never its name. Postgres
@@ -26,12 +53,25 @@ const quoted = (names: readonly string[]): string => names.map((name) => `"${nam
  *
  * The constraint is **named** here rather than left to Postgres' own convention, so the name the
  * snapshot beside it records is a name this migration wrote and not a name it guessed.
+ *
+ * `on delete` is written out, and it had never been: `entity()` has carried the option since 1.0,
+ * it type-checked, and the clause it reached was `references "orgs" ("id");` — a declared cascade
+ * that the database refuses the delete under instead. A rule Postgres does not have is
+ * `X_INVARIANT` rather than DDL, the same discipline `createIndex` applies to an index naming no
+ * column: `entity()`'s option is a closed union, so only a hand-built description can get here.
  */
 export function addForeignKey(table: string, key: ForeignKeyDescription): string {
+  const rule = onDeleteRule(key.onDelete);
+  assert(
+    rule === null || WRITABLE.has(rule),
+    `foreign key "${key.name}" on "${table}" declares an unknown on delete rule`,
+    `references(() => target.id, { onDelete: 'cascade' })   # cascade | restrict | set null`,
+  );
   return (
     `alter table "${table}" add constraint "${key.name}" ` +
     `foreign key (${quoted(key.columns)}) ` +
-    `references "${key.referencedTable}" (${quoted(key.referencedColumns)});`
+    `references "${key.referencedTable}" (${quoted(key.referencedColumns)})` +
+    `${rule === null ? '' : ` on delete ${rule}`};`
   );
 }
 

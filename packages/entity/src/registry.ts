@@ -5,6 +5,7 @@
 
 import { entityDuplicate } from './errors';
 import type { InvariantKind } from './invariants';
+import type { OnDelete } from './types';
 
 export interface ColumnDescription {
   readonly property: string;
@@ -16,6 +17,13 @@ export interface ColumnDescription {
   readonly hasDefault: boolean;
   readonly check: string | null;
   readonly references: string | null;
+  /**
+   * The `references()` rule, `null` when the key declared none. Beside `references` rather than
+   * inside it because that field is a flat `"<table>.<column>"` string with no room for it, and
+   * `@ultimat3/db` is tier 1: it cannot import this package, so a rule that is not on this
+   * projection reaches no `alter table` at all. It reached none until 3.0.
+   */
+  readonly onDelete: OnDelete | null;
 }
 
 /**
@@ -35,6 +43,8 @@ export interface ReferenceDescription {
   readonly targetEntity: string;
   readonly targetProperty: string;
   readonly targetColumn: string;
+  /** What the database does to this row when the target goes. `null` is Postgres' `no action`. */
+  readonly onDelete: OnDelete | null;
 }
 
 export interface InvariantDescription {

@@ -3,12 +3,8 @@
 // say about which table a `references()` points at. Split from `generate.test.ts` for the ceiling.
 
 import { describe, expect, test } from 'bun:test';
-import {
-  type ColumnDescriptionLike,
-  type EntityDescriptionLike,
-  generateMigration,
-  snapshotOf,
-} from './generate';
+import type { ColumnDescriptionLike, EntityDescriptionLike } from './entity-shape';
+import { generateMigration, snapshotOf } from './generate';
 import { statementsOf } from './statement-split';
 
 const column = (
@@ -160,6 +156,133 @@ describe('unit · a references() added to a column that already exists', () => {
     const migration = generateMigration({
       entities: after,
       current: { tables: renamed },
+      name: 'no change',
+      now: at,
+    });
+    expect(migration.up.trim()).toBe('');
+  });
+});
+
+describe('unit · a references() removed from a column that keeps existing', () => {
+  const before = [
+    table('comments', [column('post_id', { references: 'posts.id' })]),
+    table('posts', []),
+  ];
+  const after = [table('comments', [column('post_id')]), table('posts', [])];
+
+  test('drops the constraint the previous snapshot recorded', () => {
+    // Before: `up` and `down` were both empty and the new snapshot recorded `foreignKeys: []`, so
+    // the orphan constraint stayed on the database AND the snapshot beside it denied one the
+    // catalog holds — `compareForeignKeys` judges the declared side, so drift could never see it.
+    const migration = generateMigration({
+      entities: after,
+      current: snapshotOf(before),
+      name: 'drop fk',
+      now: at,
+    });
+    expect(migration.up).toContain(
+      'alter table "comments" drop constraint "comments_post_id_fkey";',
+    );
+    expect(migration.down).toContain(
+      'alter table "comments" add constraint "comments_post_id_fkey" ' +
+        'foreign key ("post_id") references "posts" ("id");',
+    );
+  });
+
+  test('drops it under the name the snapshot recorded, not the name entity would have chosen', () => {
+    // `drop constraint` names a constraint, so the name must come from the side that has one —
+    // a hand-written migration's `fk_legacy` is `42704` under the generated spelling.
+    const renamed = snapshotOf(before).tables.map((each) =>
+      each.name === 'comments'
+        ? { ...each, foreignKeys: each.foreignKeys.map((key) => ({ ...key, name: 'fk_legacy' })) }
+        : each,
+    );
+    const migration = generateMigration({
+      entities: after,
+      current: { tables: renamed },
+      name: 'drop fk',
+      now: at,
+    });
+    expect(migration.up).toContain('alter table "comments" drop constraint "fk_legacy";');
+  });
+
+  test('a column dropped with its references() emits no second drop constraint', () => {
+    // `drop column` takes the constraint with it, so a `drop constraint` after it is `42704` on a
+    // constraint that is already gone. The guard is the column list, not `if exists`.
+    const migration = generateMigration({
+      entities: [table('comments', []), table('posts', [])],
+      current: snapshotOf(before),
+      name: 'drop column',
+      now: at,
+      allowDestructive: true,
+    });
+    expect(migration.up).toContain('alter table "comments" drop column "post_id";');
+    expect(migration.up).not.toContain('drop constraint');
+  });
+});
+
+describe('unit · the on delete rule the entity declared', () => {
+  const cascading = [
+    table('comments', [column('post_id', { references: 'posts.id', onDelete: 'cascade' })]),
+    table('posts', []),
+  ];
+
+  test('reaches the statement', () => {
+    const migration = generateMigration({ entities: cascading, name: 'x', now: at });
+    expect(migration.up).toContain(
+      'alter table "comments" add constraint "comments_post_id_fkey" ' +
+        'foreign key ("post_id") references "posts" ("id") on delete cascade;',
+    );
+  });
+
+  test('and the snapshot records it, so drift has something truthful to compare', () => {
+    const migration = generateMigration({ entities: cascading, name: 'x', now: at });
+    const recorded = migration.snapshot.tables.find((each) => each.name === 'comments');
+    expect(recorded?.foreignKeys[0]?.onDelete).toBe('cascade');
+  });
+
+  const before = [
+    table('comments', [column('post_id', { references: 'posts.id' })]),
+    table('posts', []),
+  ];
+
+  test('a rule added to a key that already exists rebuilds the constraint', () => {
+    // The key points the same way, so `foreignKeyTarget` matches and nothing is *added* — but a
+    // migration that emitted nothing here would write a snapshot claiming a cascade the database
+    // does not have, which is the same lie a removed `references()` used to tell. Postgres has no
+    // `alter constraint` for the rule, so it is a rebuild, exactly like `redefineIndex`.
+    const migration = generateMigration({
+      entities: cascading,
+      current: snapshotOf(before),
+      name: 'cascade it',
+      now: at,
+    });
+    // `statementsOf` is the splitter `migrate()` applies, so these are the sends, terminator off.
+    expect(statementsOf(migration.up)).toEqual([
+      'alter table "comments" drop constraint "comments_post_id_fkey"',
+      'alter table "comments" add constraint "comments_post_id_fkey" foreign key ("post_id") ' +
+        'references "posts" ("id") on delete cascade',
+    ]);
+    // Read backwards: drop what this migration created, then put the recorded rule back.
+    expect(statementsOf(migration.down)).toEqual([
+      'alter table "comments" drop constraint "comments_post_id_fkey"',
+      'alter table "comments" add constraint "comments_post_id_fkey" foreign key ("post_id") ' +
+        'references "posts" ("id")',
+    ]);
+    const recorded = migration.snapshot.tables.find((each) => each.name === 'comments');
+    expect(recorded?.foreignKeys[0]?.onDelete).toBe('cascade');
+  });
+
+  test('the same rule under both spellings is not a rebuild', () => {
+    // A snapshot introspected off the catalog holds `c`; the entity declares `cascade`.
+    const catalogSpelling = snapshotOf(cascading).tables.map((each) =>
+      each.name === 'comments'
+        ? { ...each, foreignKeys: each.foreignKeys.map((key) => ({ ...key, onDelete: 'c' })) }
+        : each,
+    );
+    const migration = generateMigration({
+      entities: cascading,
+      current: { tables: catalogSpelling },
       name: 'no change',
       now: at,
     });

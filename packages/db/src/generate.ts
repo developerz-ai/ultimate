@@ -5,8 +5,13 @@
 
 import { assert, systemClock } from '@ultimat3/core';
 import { isDestructive } from './destructive';
+import type {
+  ColumnDescriptionLike,
+  EntityDescriptionLike,
+  IndexDescriptionLike,
+} from './entity-shape';
 import { migrationIrreversible } from './errors';
-import { addForeignKey, dropForeignKey, foreignKeyTarget } from './foreign-key';
+import { addForeignKey, dropForeignKey, foreignKeyTarget, onDeleteRule } from './foreign-key';
 import {
   type ColumnDescription,
   type ForeignKeyDescription,
@@ -15,46 +20,6 @@ import {
   type SchemaDescription,
   type TableDescription,
 } from './introspect';
-
-/** Structurally assignment-compatible with `@ultimat3/entity`'s `ColumnDescription`. */
-export interface ColumnDescriptionLike {
-  readonly property: string;
-  readonly column: string;
-  readonly kind: string;
-  readonly notNull: boolean;
-  readonly primaryKey: boolean;
-  readonly unique: boolean;
-  readonly hasDefault: boolean;
-  readonly check: string | null;
-  readonly references: string | null;
-}
-
-/**
- * Structurally assignment-compatible with `@ultimat3/entity`'s `IndexDescription`.
- *
- * The column list is carried, never recovered from `name`. Entity names an index
- * `<table>_<a>_<b>_idx`, and that convention does not run backwards: two columns joined by `_`
- * are one string, so a composite index read back out of its own name became the single column
- * `"org_id_created_at"` — DDL Postgres answers `42703` and a migration nobody can apply.
- */
-export interface IndexDescriptionLike {
-  readonly name: string;
-  readonly columns: readonly string[];
-  readonly unique: boolean;
-  /** Partial index predicate as SQL, `null` when the index covers every row. */
-  readonly where: string | null;
-  /** `null` is Postgres' own default (`asc`), never written out. */
-  readonly order: 'asc' | 'desc' | null;
-}
-
-/** Structurally assignment-compatible with `@ultimat3/entity`'s `EntityDescription`. */
-export interface EntityDescriptionLike {
-  readonly name: string;
-  readonly table: string;
-  readonly primaryKey: readonly string[];
-  readonly columns: readonly ColumnDescriptionLike[];
-  readonly indexes: readonly IndexDescriptionLike[];
-}
 
 const SQL_TYPES: Readonly<Record<string, string>> = {
   uuid: 'uuid',
@@ -149,8 +114,9 @@ function impliedByColumnClause(
  * beside it chose rather than one it guessed. It is still *not* what drift matches on: see
  * `compareForeignKeys` in `drift.ts`.
  *
- * `onDelete` stays `null`. `entity()` carries the option and no clause here has ever spelled one,
- * so a value written down would be a claim about the database that is not true.
+ * `onDelete` is the column's own, and `addForeignKey` spells it: a rule recorded here while no
+ * clause declared one would be a claim about the database that is not true, which is what it was
+ * until the clause learned to write it out.
  */
 function foreignKeysOf(entity: EntityDescriptionLike): ForeignKeyDescription[] {
   return entity.columns
@@ -162,7 +128,7 @@ function foreignKeysOf(entity: EntityDescriptionLike): ForeignKeyDescription[] {
         columns: [column.column],
         referencedTable: table,
         referencedColumns: [key],
-        onDelete: null,
+        onDelete: column.onDelete ?? null,
       };
     })
     .sort((a, b) => (a.name < b.name ? -1 : 1));
@@ -251,17 +217,51 @@ interface Plan {
  * never runs before the table it points at. `down` is reversed as a whole, so pushing the drops
  * last here puts them *first* on the way back: `drop table "posts"` with `comments` still
  * referencing it is `2BP01`, a migration that cannot be rolled back at all.
+ *
+ * Both directions, because a snapshot may not lie: a removed `references()` used to emit nothing
+ * while the snapshot beside it recorded `foreignKeys: []`, so the orphan constraint stayed on the
+ * database *and* the record denied one the catalog holds — and `compareForeignKeys` judges the
+ * declared side, so no drift check could ever see it. Not parity with a removed index either: that
+ * leaves the snapshot correct by omission. The drop names the constraint the previous snapshot
+ * recorded, never the name this generator would have chosen — a hand-written `fk_legacy` is
+ * `42704` under the generated spelling.
  */
 function foreignKeyPlan(
   entity: EntityDescriptionLike,
   live: TableDescription | undefined,
   constraints: Plan,
 ): void {
-  const held = new Set((live?.foreignKeys ?? []).map(foreignKeyTarget));
-  for (const key of foreignKeysOf(entity)) {
-    if (held.has(foreignKeyTarget(key))) continue;
-    constraints.up.push(addForeignKey(entity.table, key));
-    constraints.down.push(dropForeignKey(entity.table, key.name));
+  const wanted = foreignKeysOf(entity);
+  const held = new Map((live?.foreignKeys ?? []).map((key) => [foreignKeyTarget(key), key]));
+  for (const key of wanted) {
+    const recorded = held.get(foreignKeyTarget(key));
+    if (recorded === undefined) {
+      constraints.up.push(addForeignKey(entity.table, key));
+      constraints.down.push(dropForeignKey(entity.table, key.name));
+      continue;
+    }
+    // The rule is not part of a key's identity, so the same key under a new one is a rebuild —
+    // Postgres has no `alter constraint` for it, the same reason `redefineIndex` recreates.
+    if (onDeleteRule(recorded.onDelete) === onDeleteRule(key.onDelete)) continue;
+    constraints.up.push(
+      dropForeignKey(entity.table, recorded.name),
+      addForeignKey(entity.table, key),
+    );
+    // Pushed forwards and read backwards, like `redefineIndex`: `down` is reversed at assembly.
+    constraints.down.push(
+      addForeignKey(entity.table, recorded),
+      dropForeignKey(entity.table, key.name),
+    );
+  }
+  const declared = new Set(wanted.map(foreignKeyTarget));
+  const columns = new Set(entity.columns.map((column) => column.column));
+  for (const key of live?.foreignKeys ?? []) {
+    if (declared.has(foreignKeyTarget(key))) continue;
+    // `drop column` takes the constraint with it, so a `drop constraint` after that statement is
+    // `42704` on a constraint that is already gone.
+    if (!key.columns.every((column) => columns.has(column))) continue;
+    constraints.up.push(dropForeignKey(entity.table, key.name));
+    constraints.down.push(addForeignKey(entity.table, key));
   }
 }
 

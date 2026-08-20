@@ -256,6 +256,29 @@ describe('the chain', () => {
     expect(described.indexes.map((index) => index.name)).toContain('columns_test_posts_org_id_idx');
   });
 
+  test('.references({ onDelete }) records the rule on the column and on the reference', () => {
+    // `@ultimat3/db` is tier 1 and cannot import this package, so the rule reaches a migration on
+    // the description or not at all — and `references` renders as the flat string `"orgs.id"`,
+    // which has no room for it. It type-checked and reached no SQL for three majors.
+    const orgs = entity('columns_test_rule_orgs', { columns: { id: uuid().primaryKey() } });
+    const posts = entity('columns_test_rule_posts', {
+      columns: {
+        id: uuid().primaryKey(),
+        orgId: uuid().references(() => orgs.id, { onDelete: 'cascade' }),
+        editorId: uuid()
+          .references(() => orgs.id)
+          .nullable(),
+      },
+    });
+    const described = posts.$describe();
+    expect(described.columns.find((column) => column.property === 'orgId')?.onDelete).toBe(
+      'cascade',
+    );
+    // Declared without one is `null`, never `undefined`: the generator writes what it is handed.
+    expect(described.columns.find((column) => column.property === 'editorId')?.onDelete).toBe(null);
+    expect(posts.$references().map((reference) => reference.onDelete)).toEqual(['cascade', null]);
+  });
+
   test('text({ max }) reaches the database as a CHECK', () => {
     const notes = entity('columns_test_notes', {
       columns: { id: uuid().primaryKey(), title: text({ max: 80 }).unique() },

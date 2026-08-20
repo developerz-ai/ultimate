@@ -51,6 +51,11 @@ export {
   expectedSchema,
   FRAMEWORK_TABLE_PREFIX,
 } from './drift';
+export type {
+  ColumnDescriptionLike,
+  EntityDescriptionLike,
+  IndexDescriptionLike,
+} from './entity-shape';
 export type { DbErrorCode, DbErrorInit } from './errors';
 export {
   branchExists,
@@ -78,13 +83,7 @@ export {
 export { expectedQueryLoop, expectedQueryLoopReason } from './expected-loop';
 export type { RecordedStatement, RecordingClient, StubResponse } from './fake';
 export { createRecordingClient } from './fake';
-export type {
-  ColumnDescriptionLike,
-  EntityDescriptionLike,
-  GeneratedMigration,
-  GenerateOptions,
-  IndexDescriptionLike,
-} from './generate';
+export type { GeneratedMigration, GenerateOptions } from './generate';
 export { generateMigration, migrationStamp, slugify, snapshotOf } from './generate';
 export type {
   ColumnDescription,

@@ -48,6 +48,7 @@ export const describeReferences = (
         targetEntity: target.table,
         targetProperty: target.property,
         targetColumn: target.name,
+        onDelete: meta.onDelete ?? null,
       },
     ];
   });
@@ -90,6 +91,7 @@ const describeColumn = <Row>(
       unique: false,
       hasDefault: false,
       references: null,
+      onDelete: null,
     };
     return [
       {
@@ -142,6 +144,9 @@ const describeColumn = <Row>(
       // traversal reads can never disagree about what a `references()` points at.
       references:
         reference === undefined ? null : `${reference.targetEntity}.${reference.targetColumn}`,
+      // Off the resolved reference, never off `meta` again: a rule with no key is not a thing, and
+      // reading the option twice is two places for the pair to disagree.
+      onDelete: reference?.onDelete ?? null,
     },
   ];
 };

@@ -4,8 +4,9 @@
 
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { setDbClient } from './client';
+import type { EntityDescriptionLike } from './entity-shape';
 import { createRecordingClient, type RecordingClient } from './fake';
-import { type EntityDescriptionLike, generateMigration } from './generate';
+import { generateMigration } from './generate';
 import {
   auditLedger,
   type LedgerRow,

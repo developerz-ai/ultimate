@@ -32,17 +32,17 @@ await withTransaction(async (tx) => {
 | `sqlState()` / `sqlStateCode()` / `isRetryableState()` / `SQLSTATE` | `As of 2026-08`: the SQLSTATE a driver error carries, and the closed table from it to a code. `Bun.SQL` puts it on `errno`; PGlite puts it on `code`; **one** reader answers for both |
 | `migrate()` / `rollback()` / `readLedger()` | the `x_migrations` ledger |
 | `statementsOf()` | `As of 2026-08`: a SQL script → the statements a driver sends one at a time. One send is one statement, so `migrate()` splits with this — a `;` inside a literal, an identifier, a dollar-quoted body or a comment is data |
-| `checkDrift()` / `diffSchema()` / `assertNoDrift()` | drift, with a `--json` report. `checkDrift()` is the **post-migrate verification** — the live database against the ledger: columns, declared indexes, and declared foreign keys, matched on where the key points and not on its constraint name |
+| `checkDrift()` / `diffSchema()` / `assertNoDrift()` | drift, with a `--json` report. `checkDrift()` is the **post-migrate verification** — the live database against the ledger: columns, declared indexes (columns, uniqueness, direction, and whether a predicate is there at all — never its text) and declared foreign keys, matched on where the key points and not on its constraint name, with the `on delete` rule compared through one normalisation `As of 2026-08-19` |
 | `declaredSchema()` / `expectedSchema()` | `As of 2026-08`: the schema the migrations write down, or `undefined` when the newest one carries no snapshot — never an older snapshot standing in for it |
 | `parseSnapshot()` | `As of 2026-08`: a `<id>.snapshot.json` sidecar validated to the last nested field, or `undefined`. `{"tables":[null]}` is valid JSON and is not a schema |
 | `snapshotJson()` | `As of 2026-08`: the sidecar's **bytes** — the JSON Biome would have printed, trailing newline included. The one writer of a `<id>.snapshot.json`, because `JSON.stringify(…, null, 2)` is not formatter-clean and an app's `lint` step rejected the file `x db gen` had just written |
 | `isLedgerMissing()` | `As of 2026-08`: whether an error is Postgres' `undefined_table` for `x_migrations` — the one condition a caller may read as "nothing applied" |
 | `appTables()` / `FRAMEWORK_TABLE_PREFIX` | `As of 2026-08`: the live schema minus the `x_` namespace — no migration declares the ledger, the queue, the outbox or an auth table, so none of them is drift |
-| `generateMigration()` | `x db gen "<name>"` — reversible up/down SQL, and `destructive` for the marker the file must carry. `As of 2026-08` a foreign key is its own `alter table … add constraint`, emitted after every table statement: inline, a `references()` had to point at a table entity registration order happened to create first, and `down` had to drop them in an order it did not control |
+| `generateMigration()` | `x db gen "<name>"` — reversible up/down SQL, and `destructive` for the marker the file must carry. `As of 2026-08` a foreign key is its own `alter table … add constraint`, emitted after every table statement: inline, a `references()` had to point at a table entity registration order happened to create first, and `down` had to drop them in an order it did not control. `As of 2026-08-19` a **removed** `references()` emits its `drop constraint` (it emitted nothing, and the snapshot then denied a constraint the database still held), a changed `onDelete` is a drop-and-add rebuild, and a declared `on delete` rule reaches the clause at all |
 | `destructiveStatements()` / `hasDestructiveMarker()` / `isDestructive()` / `DESTRUCTIVE_MARKER` | `As of 2026-08`: the destructive-SQL rail — does this `up` drop, truncate or retype, and does the file declare it with `-- destructive: true`? One classifier, read by `x db gen` when it writes the marker and by `x verify` when it demands one |
 | `stripSqlNoise()` | comments, literals, dollar-quoted bodies and quoted identifiers blanked **in source order**, so a reader sees the operation and not the prose. Shared by `readOnlyQuery()` and the destructive rail |
 | `introspect()` | live schema → `SchemaDescription` |
-| `createBranch()` / `dropBranch()` / `reapBranches()` | copy-on-write branch databases |
+| `createBranch()` / `dropBranch()` / `reapBranches()` | copy-on-write branch databases. `As of 2026-08-19` the marker comment records the **base** as well as the instant (`ultimate:branch:<base>:<iso>`, on `BranchInfo.base`), and `reapBranches()` sweeps only branches of the database it is connected to — one Postgres hosting two Ultimate apps used to mean one app's nightly reap dropped the other's branches. A pre-3.x marker records no base and is skipped, never dropped |
 | `createPgliteClient()` / `branchPglite()` | the embedded database — Postgres in this process |
 | `ensureReadOnlyRole()` / `grantReadOnlySql()` / `READONLY_ROLE` | a `NOLOGIN`, SELECT-only Postgres role — layer 1 of `db.query`'s defence |
 | `readOnlyQuery()` / `READONLY_TIMEOUT_MS` | one statement inside `BEGIN READ ONLY` with a statement timeout — layer 2 |
@@ -136,6 +136,8 @@ X_DB_DRIFT: schema differs from migrations
 | migrated column, not live | `table "T" is missing column "C" that migrations declare` | `x db migrate` |
 | live table, no migration | `table "T" is not present in any migration` | `x db gen "add T"` |
 | migrated table, not live | `table "T" is declared by migrations but does not exist` | `x db migrate` |
+| index rebuilt differently | `index "I" on "T" covers (…)` / `is unique` / `is descending` / `is partial`, `not what migrations declare` | `x db migrate` |
+| foreign key, rule moved | `foreign key on "T" (C) to "R" is on delete cascade, not what migrations declare` | the `drop constraint` + `add constraint` pair, in a new migration |
 
 `checkDrift()` returns every difference; `assertNoDrift()` throws the first. `x db migrate` renders
 them all as findings and exits non-zero; a `ROLE=migrate` container throws the first one

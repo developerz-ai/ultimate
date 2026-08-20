@@ -78,6 +78,9 @@ export async function branchPglite(
 
   return {
     name: branch,
+    // The directory this copy came from — the embedded answer to `BranchInfo.base`'s question,
+    // "whose branch is this". There is no `pg_database` here, so nothing else could be asked.
+    base: from,
     createdAt: (options.now ?? systemClock.now()).toISOString(),
     dataDir: to,
     sizeBytes: await directorySize(to),

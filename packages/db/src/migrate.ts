@@ -76,7 +76,10 @@ export interface MigrateOptions {
   /** The running build. Defaults to `APP_VERSION`, then `dev`. */
   readonly appVersion?: string | undefined;
   readonly client?: DbClient | undefined;
-  /** Skip the advisory lock. Only `x db branch` does this, against a private database. */
+  /**
+   * Skip the advisory lock, for a database only this process can reach — a branch, a test. No
+   * shipped path passes it; every caller in the repo is a test (`migrate-pin.test.ts`).
+   */
   readonly lock?: boolean | undefined;
   /** How long to wait for the lock before `X_MIGRATE_CONCURRENT`. Defaults to 60s. */
   readonly lockWaitMs?: number | undefined;
@@ -382,7 +385,10 @@ export interface RollbackOptions {
   readonly client?: DbClient | undefined;
   /** How many applied migrations to reverse, newest first. A positive integer; defaults to 1. */
   readonly steps?: number | undefined;
-  /** Skip the advisory lock. Only `x db branch` does this, against a private database. */
+  /**
+   * Skip the advisory lock, for a database only this process can reach — a branch, a test. No
+   * shipped path passes it; every caller in the repo is a test (`migrate-pin.test.ts`).
+   */
   readonly lock?: boolean | undefined;
   /** How long to wait for the lock before `X_MIGRATE_CONCURRENT`. Defaults to 60s. */
   readonly lockWaitMs?: number | undefined;
