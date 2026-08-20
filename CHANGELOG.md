@@ -8,6 +8,23 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 5.0.1
+
+### Fixed
+
+- a live query no longer ships the raw table row, or mis-orders a projected window (#235)
+
+### Changed
+
+- restamp the status table to 5.0.0, from the registry rather than from intent (#234)
+
+
+## 5.0.1 - 2026-08-20
+
+A patch: one fix, in two packages, closing the defect 5.0.0's own work uncovered. No API changed.
+
 ### Fixed
 
 - **A live query no longer re-delivers the raw table row, and no longer mis-orders a projected
