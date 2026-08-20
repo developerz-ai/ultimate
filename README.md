@@ -68,31 +68,95 @@ do with the product. The framework's job is to have already decided those things
 spends its budget on the feature, and on a floor whose failure modes were found once, here, rather
 than once per app.
 
-**The worked example is [`dummy/social-media-clone`](dummy/social-media-clone/)** — a deployed demo
-with feed, profiles, follows, direct messages, notifications, media upload and an admin. `As of
-2026-08-19`, measured with `find … | wc -l`, not estimated:
+**A line the app author never writes cannot carry a bug.** So the payoff is measured as how little
+the author owns. The worked example is [`dummy/social-media-clone`](dummy/social-media-clone/) — the
+deployed demo, `As of 2026-08-19`, counted with `git ls-files` + `tokei 14.0.0`. Every figure below
+is **code** lines, never `wc -l`: comments are 21% of this app's raw lines, so a raw count overstates
+it by a fifth. Where a raw number appears it is labelled raw.
 
-| Measured | |
+**One action, 51 code lines.** [`apps/web/app/messages/action.ts`](dummy/social-media-clone/apps/web/app/messages/action.ts)
+declares `sendMessage` in 73 raw / **51 code** lines. Everything it projects is committed, generated
+and drift-checked by `x verify` — none of it hand-written:
+
+| Projected from those 51 lines | In the committed artefact |
 |---|---|
-| The app | **9,829 lines** of TypeScript, TSX and SCSS across 168 files |
-| Its tests | 3,607 lines |
-| What it declares | 13 entities · 11 actions · 1 query · 3 jobs · 2 tasks · 16 routes · 33 policies · 11 error codes |
-| What it **projects** from those declarations | a 1,324-line `openapi.json` and an 1,844-line `x.manifest.json` — neither hand-written, both regenerated and drift-checked by `x verify` |
-| Framework it imports | 19 of the 30 packages, **93,219 lines** of runtime source (120,938 counting `cli` and `testing`, which are dev-time) |
+| the `POST /api/messages/send` operation | **59 lines** of [`openapi.json`](dummy/social-media-clone/openapi.json) — `operationId`, `requestBody`, 200/400/403, tags, `x-ultimate.capability: message:send` |
+| `SendMessageInput` + `SendMessageOutput` JSON Schema | **20** + **34** lines |
+| the `x.manifest.json` row | **66** lines — input and output schema, policy, permissions, cache invalidations |
+| the shared `Problem` response | **37** lines, one copy behind all 11 operations |
+| an MCP tool | `mcpTool: sendMessage`, on the same policy object the HTTP route uses |
+| `.tool()` `.openapi()` `.client()` `.job()` `.contract()` | five handles on the returned `ActionDefinition`, none of them declared |
 
-So roughly **nine and a half lines of mechanism per line of application** — sessions and MFA, the
-policy engine, the entity layer and its two drivers, the job queue with leases and retries, the
-realtime `sync` node, the cache tiers, the render pipeline, the admin, the MCP surface.
+**51 hand-written lines → 179 lines of committed generated interface**, plus the `Problem` block and
+the five handles. The rest of the app holds the shape:
 
-**The estimate, and it is an estimate.** A hand-rolled equivalent is not 93,219 lines — you would
-build a fraction of the generality, and skip the parts this app never reaches. Taking only the
-subsystems this app actually exercises, at the depth it exercises them, a team building the same
-product on a general-purpose stack writes on the order of **12,000–20,000 lines of infrastructure**
-before the first feature: auth and sessions, an authorization layer, migrations and a query seam,
-background jobs with retry and idempotency, a websocket fanout with reconnect, cache invalidation,
-an admin, plus the wiring that keeps an OpenAPI spec and a typed client honest. That is the number
-this framework removes. It is a judgement, not a measurement, and it is stated as one — see
-**Measured, and only this much** above for the line this file holds between the two.
+| Hand-written | Code | Projects |
+|---|---|---|
+| 4 actions in [`app/friends/actions.ts`](dummy/social-media-clone/apps/web/app/friends/actions.ts) | 102 raw / **65** | 4 endpoints, 4 OpenAPI operations, 8 schemas, 4 MCP tools, 4 permissions — **~16 code lines per fully-projected endpoint** |
+| 13 entities, 14 files under [`packages/db/src/schema/`](dummy/social-media-clone/packages/db/src/schema/) | 428 raw / **287** | a 175-line SQL migration, an 1,101-line snapshot, a checksum, 13 manifest entity rows |
+| one `defineAdmin` call, [`apps/admin/app/admin/admin.ts`](dummy/social-media-clone/apps/admin/app/admin/admin.ts) | 120 raw / **73** | 5 screens over 3 entities — columns, filters, validation, labels, audit and nav all derived from the entities |
+
+**The whole app.** Every tracked file the author owns. Excluded: 6 committed generated artefacts
+(`x.manifest.json`, `openapi.json`, `x.verify.json`, the migration `.sql`/`.snapshot.json`/`.hash` —
+4,462 raw lines between them), all markdown, one `.png`.
+
+| Kind | Files | Code |
+|---|---|---|
+| TypeScript and TSX, tests excluded | 120 | 4,791 |
+| Tests | 45 | 2,482 |
+| SCSS | 25 | 1,658 |
+| the `en` catalog | 1 | 397 |
+| config, Compose, Dockerfiles, env, shell | 31 | 379 |
+| **Total** | **222** | **9,707** |
+| production only — total minus tests | 177 | **7,225** |
+
+| Framework : app | Ratio |
+|---|---|
+| the **17 runtime packages this app executes** (63,754 code) : its production code (7,225) | **8.8 : 1** |
+| all framework source (106,939 code, 1,073 files) : everything hand-written here (9,707) | **11.0 : 1** |
+| the same, plus the framework's 142,922 lines of test code : hand-written (9,707) | 25.7 : 1 — test code on one side only, so read it as reassurance, not leverage |
+
+Re-derive all three (`tokei` 14.0.0; `node_modules`, `.x/`, `dist/` and `coverage/` are gitignored,
+so `git ls-files` never enters them):
+
+```sh
+# the app, author-owned
+git ls-files dummy/social-media-clone \
+  | grep -Ev '\.(md|png)$|x\.(manifest|verify)\.json$|openapi\.json$|\.(sql|hash)$|\.snapshot\.json$' \
+  | xargs tokei
+
+# all framework source — no tests, no .d.ts, no generated icon glyphs
+git ls-files 'packages/*' | grep -E '\.(ts|tsx|scss|css)$' \
+  | grep -Ev '\.test\.|\.d\.ts$|packages/ui/src/icons/glyphs/' | xargs tokei
+
+# only the 17 runtime packages this app imports
+git ls-files packages/{action,admin,cache,core,db,entity,http,i18n,jobs,mcp,policy,pwa,query,realtime,render,schema,ui} \
+  | grep -E '\.(ts|tsx|scss|css)$' \
+  | grep -Ev '\.test\.|\.d\.ts$|icons/glyphs/' | xargs tokei
+```
+
+The 1,767 generated Lucide glyph files are excluded on purpose — leaving them in inflates the
+framework side by 15% with code nobody wrote. `tokei` classifies 218 of the 222 app files; `.env*`
+and `.gitignore` carry no language and contribute nothing.
+
+**What the app is**, from its own `x.manifest.json` and not from its plan: 16 routes · 13 entities ·
+11 actions · 1 query · 3 jobs · 2 cron tasks · 33 permissions · 11 app error codes · 7 MCP tools · 11
+OpenAPI operations · 23 OpenAPI schemas · 1 locale.
+
+**What the number does not say.** Five things, none of them buried:
+
+| Not claimed | Why |
+|---|---|
+| that it passes its own 17-step gate | **15 of 17.** `boundaries` and `budgets` are pinned red in [`scripts/lib/gated-apps.ts:94`](scripts/lib/gated-apps.ts) — `X_BOUNDARY_SITE_TO_APP` ×3, because the static feed imports the authed post service, and `X_BUDGET_UNMEASURED`, because no `.x/build-stats.json` has ever existed here |
+| that low lines means high leverage | Partly it means **few features**. Roughly half of `DOMAIN.md` is a plan, not a build: there is no `createPost`, `deletePost`, `addComment`, `likePost` or `unlikePost` anywhere in the tree, and `likes` and `comments` are entities with migrations and no write path. The manifest carries **1** query where [`DOMAIN.md`](dummy/social-media-clone/DOMAIN.md) designs nine |
+| that the framework wrote the auth | It did not. 13 non-test files (`apps/web/app/auth/`, `shared/session.ts`, `shared/auth-policy.ts`, `api/auth.ts`, the `sessions` table) hand-write argon2id parameters, `__Host-` cookie prefixes, session token hashing and a captcha — **521 code lines**, **7.2% of production code** — and `@ultimat3/auth` is imported **nowhere** in this app. `@ultimat3/storage` is likewise unimported despite a media feature. The largest thing the framework could have projected here and did not |
+| that live messaging works | The one live query is declared and unit-tested and **not wired**: nothing calls `installRealtimeTopics` at boot, because the framework offers no seam — [`apps/web/api/realtime.ts:10`](dummy/social-media-clone/apps/web/api/realtime.ts) says so in its own header |
+| that the typed client is proven | It is projected and unused. There is no `.client()` call in either tracked app; the demo's forms post HTML. True of the API surface, untested by this app |
+
+19 of the 30 packages are imported at all, 17 of them at runtime — which is why **8.8 : 1** is the
+ratio led with rather than the flattering one. [`examples/dummy`](examples/dummy/README.md) reaches
+13.8 : 1 on the identical method and is pinned red on 6 of 17 steps including `typecheck`, so the
+demo is what gets quoted.
 
 **The larger win is not the lines.** It is that the bugs are found once. The sweeps recorded in
 [`CHANGELOG.md`](CHANGELOG.md) and in PRs #174–#186 closed defects like these — in the *framework*,
