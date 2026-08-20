@@ -17,6 +17,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/i18n": "4.1.0"
+    "@ultimat3/i18n": "5.0.0"
   }
 }

@@ -10,6 +10,99 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 Nothing yet.
 
+## 5.0.0
+
+### Added
+
+- the subscribe fixture drives a whole sync node, and its five tests run (#231)
+
+### Fixed
+
+- delete JobsConfig.driver, which selected no driver and said nothing (#232)
+- escape error lines at construction, and read a fix out of a table (#229)
+
+
+## 5.0.0 - 2026-08-20
+
+A major, for four breaking changes across two packages. Every one deletes or corrects a
+**declaration that promised something the code did not do** — the same sweep 4.0.0 ran, applied to
+what was left after it.
+
+`bun add @ultimat3/core@5.0.0` needs at most one edit, and only if your `app.config.ts` sets
+`jobs.driver`: delete the line. [`wiki/Upgrading.md`](wiki/Upgrading.md) walks all four.
+
+### BREAKING — `JobsConfig.driver` and the `JobsDriver` type are deleted
+
+It accepted `'postgres' | 'redis' | 'nats'` and had **no reader anywhere**. Boot always built
+`createPgDriver`, and `packages/jobs/src/driver.ts`'s own header already said so — so
+`jobs: { driver: 'redis' }` did not throw, did not warn, and did not boot Redis. It changed nothing
+and you silently got Postgres.
+
+Same shape as `realtime.heartbeatMs`, which 4.0.0 deleted, and worse in the way that matters: it
+failed silently in the **dangerous** direction. Which driver runs is `setJobDriver(driver)` and only
+that — `setJobDriver(createPgDriver({ executor }))`, or `setJobDriver(createMemoryDriver())` in a
+test. There is no config line, because one that cannot be honoured is worse than none. (#223)
+
+**Migration:** delete the `driver:` key from `jobs` in `app.config.ts`. Nothing else changes,
+because nothing else ever read it. Leaving it in also works — it does what it always did.
+
+### BREAKING — the `subscribe` test fixture's types
+
+`@ultimat3/testing`'s `subscribe` was **declared and had no driver**, so the five tests in
+`examples/dummy` that used it had never run, in CI or locally. The types described an API that
+could not work: `LiveTarget` was `{ name, queryHash }`, and a node keys a subscription by
+`(name, input)` — a hash is the input already thrown away.
+
+- `Subscribe` is `(target, input, actor?)`, was `(target)`
+- `LiveTarget` is `{ name }`, was `{ name, queryHash }`
+- `LiveFeed` gains `reconnect()`
+- `DRIVER_FIXTURE_NAMES` no longer contains `subscribe`; `FRAMEWORK_FIXTURE_NAMES` does
+
+Each is a type nothing could implement before, because the fixture had no driver — but they are
+exported, so semver applies. (#9)
+
+### Added
+
+- **`setRowObserver` in `@ultimat3/entity`** — committed row changes, reported above the driver so
+  memory and Postgres report the same thing. It exists because a change feed needs a SOURCE and
+  only production had one: PGlite has no walsender and the memory driver no log, so
+  `InMemoryChangeFeed` had nothing upstream of it. One observer per process, returning what it
+  replaced. With none installed it is one comparison per write. `before` is read only when the
+  primary key IS `id`; a filtered write is `onBulk`, never silence.
+- **`createSubscribeDriver()` in `@ultimat3/testing`** — a whole `sync` node in this process, which
+  is what `x dev --role sync` assembles minus the listener: real `LiveQueryRegistry`, real
+  `liveQueryDefinition` bridge, real per-subscriber authz, real cursor. The socket is two objects
+  handing each other the JSON a WebSocket would, and the WAL decoder is the only thing substituted.
+  `createLiveNode()` and `startLiveReplicator()` ship beside it for a harness that wants the pieces.
+- **`X_TEST_LIVE_NODE_EMPTY`** and **`X_TEST_LIVE_NODE_UPGRADE_REFUSED`**.
+
+### Fixed
+
+- **A caller-controlled `string` could add a line to the 3-line error format, and the fix moved to
+  the CONSTRUCTOR** (#97). 4.1.0 escaped at the six renderers. That could not hold: six is a number
+  that only goes up, `format()` is not the only reader (an uncaught throw prints `.message`, a log
+  line takes `.cause`, `--json` takes `toJSON()`), and it covered none of the renderers an **app**
+  writes. `UltimateError` and `SchemaError` now escape `code`, `title`, `cause`, `fix` and `docs`
+  where they are built, so the property holds for every reader everywhere. `singleLine` is
+  idempotent, so a call site that already escaped is unharmed. **Not breaking**: no shipped
+  `cause:`/`fix:` literal contains a newline, measured over all of them.
+- **A `fix:` read out of a lookup table is now checked** (#97). `fix: SQLSTATE_FIXES[code]` holds
+  no literal, so the site was dropped without even reaching the `unreadable` counter — 921 → 952
+  fix lines read, `unreadable` unchanged at 33. It found one immediately:
+  `@ultimat3/realtime` answered SQLSTATE `42704` with `x db replication init`, which is not a
+  command.
+- **`x db replication init` is gone from `X_REPLICATION_FAILED`'s fix**, replaced by the
+  `CREATE PUBLICATION` an operator can paste.
+
+### Known gaps this release opened
+
+- **#230** — a live query whose projection omits an ordering column reports **every** change as a
+  move, and the re-inserted row is the raw entity row, so columns the projection dropped reach the
+  subscriber. Pre-existing, and found only because `examples/dummy`'s live suite runs for the first
+  time. Not fixed here: each candidate changes what every live subscriber receives.
+  [`wiki/Known-Gaps.md`](wiki/Known-Gaps.md) carries it, and the reference app pins the behaviour
+  as it is so it cannot regress silently in either direction.
+
 ## 4.1.0 - 2026-08-20
 
 A minor: one new export, one behaviour change at the error renderers, and six `fix:` lines that

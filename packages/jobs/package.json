@@ -1,6 +1,6 @@
 {
   "name": "@ultimat3/jobs",
-  "version": "4.1.0",
+  "version": "5.0.0",
   "description": "Durable background work: steps, transactional outbox, cron tasks, one driver interface",
   "license": "MIT",
   "type": "module",
@@ -32,9 +32,9 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@ultimat3/core": "4.1.0",
-    "@ultimat3/entity": "4.1.0",
-    "@ultimat3/schema": "4.1.0",
-    "@ultimat3/time": "4.1.0"
+    "@ultimat3/core": "5.0.0",
+    "@ultimat3/entity": "5.0.0",
+    "@ultimat3/schema": "5.0.0",
+    "@ultimat3/time": "5.0.0"
   }
 }

@@ -24,6 +24,17 @@ export interface DocCommandAllowance {
 }
 
 export const DOC_COMMAND_ALLOWANCES: readonly DocCommandAllowance[] = [
+  // 5.0.0's upgrade note about a `fix:` line that named a command which does not exist. The whole
+  // sentence is "this said `x db replication init`, and there is no such subcommand" — naming it is
+  // the point, and a reader who has the old string in a runbook needs to recognise it. It lists the
+  // seven `x db` subcommands that DO ship on the same line, so nobody leaves the paragraph believing
+  // in the eighth.
+  {
+    path: 'wiki/Upgrading.md',
+    cites: 'x db replication',
+    kind: 'absent',
+    why: 'the entry records that this fix line cited a command that never existed, and names the seven real x db subcommands beside it',
+  },
   // The five below are one deletion. `x deploy --critical` was parsed, echoed into the plan JSON
   // and read by nothing; 4.0.0 removed it. Each of these pages already said so — the flag was
   // documented as inert — so the sentences stayed true and gained "removed in 4.0.0". Deleting
