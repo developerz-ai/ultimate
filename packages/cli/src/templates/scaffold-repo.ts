@@ -146,7 +146,7 @@ export const config = defineConfig({
   // Env KEYS, never the value: the same image deploys to every environment. The database is
   // configured entirely from the environment — \`DATABASE_URL\` and \`DATABASE_POOL_MAX\`.
   cache: { driver: 'memory', tiers: ['memo', 'lru'] },
-  jobs: { driver: 'postgres', queues: ['${app.kebab}-default'], concurrency: 4 },
+  jobs: { queues: ['${app.kebab}-default'], concurrency: 4 },
   // In-process transport by default; set urlEnv and transport: 'nats' to scale past one node.
   realtime: { enabled: true, tier: 'live-queries', transport: 'memory' },
   pwa: { enabled: true, offline: 'runtime' },

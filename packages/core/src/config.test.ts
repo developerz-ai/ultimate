@@ -20,11 +20,10 @@ describe('defineConfig', () => {
   test('overlays let config/ split by concern, last one wins', () => {
     const config = defineConfig(
       { name: 'myapp', locales: ['en', 'es'], defaultLocale: 'es' },
-      { jobs: { driver: 'redis', concurrency: 32 } },
+      { jobs: { concurrency: 32 } },
       { realtime: { enabled: true, tier: 'live-queries', transport: 'nats', urlEnv: 'NATS_URL' } },
     );
 
-    expect(config.jobs.driver).toBe('redis');
     expect(config.jobs.concurrency).toBe(32);
     // untouched keys still come from defaults
     expect(config.jobs.maxAttempts).toBe(5);
@@ -134,5 +133,39 @@ describe('realtime section', () => {
 
     expect(Object.keys(config.realtime).sort()).toEqual(['enabled', 'tier', 'transport', 'urlEnv']);
     expect('heartbeatMs' in config.realtime).toBe(false);
+  });
+});
+
+/**
+ * `jobs.driver` accepted `'postgres' | 'redis' | 'nats'` and was read by NOTHING — boot always
+ * built `createPgDriver`, so `jobs: { driver: 'redis' }` did not throw, did not warn, and silently
+ * gave you Postgres. Deleted in 5.0.0.
+ *
+ * Asserted at RUNTIME and not only by the compiler, because the compiler is exactly what missed it:
+ * this file's overlay test passed `{ jobs: { driver: 'redis' } }` and asserted `config.jobs.driver`
+ * came back — green for as long as the field existed, and still green the moment it was deleted,
+ * because a spread carries a key no type names. A type-level guard alone would have the same hole.
+ */
+describe('the dead jobs.driver field', () => {
+  test('the default config declares no driver', () => {
+    const config = defineConfig({ name: 'myapp' });
+    expect(Object.hasOwn(config.jobs, 'driver')).toBe(false);
+  });
+
+  /**
+   * An `app.config.ts` written before 5.0.0, as a JS caller or a `// @ts-expect-error` away from
+   * one. It does not throw and it does not lose the rest of the section — the key rides through the
+   * spread — and that is the honest statement of the migration: deleting the line is the whole of
+   * it, and leaving it in does what it always did, which is nothing.
+   */
+  test('a stale config carrying one still boots, and it still selects nothing', () => {
+    const config = defineConfig({ name: 'myapp' }, {
+      jobs: { driver: 'redis', concurrency: 3 },
+    } as never);
+    expect(config.jobs.concurrency).toBe(3);
+    expect(config.jobs.maxAttempts).toBe(5);
+    // Present as a VALUE, because a spread carries a key no type names — and read by nothing, then
+    // as now. What 5.0.0 removed is the declaration, and with it the promise it made.
+    expect((config.jobs as { driver?: string }).driver).toBe('redis');
   });
 });

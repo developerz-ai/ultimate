@@ -1,14 +1,18 @@
 // A `fix:` in this package may not tell the reader to edit `jobs.driver`.
 //
-// `JobsConfig.driver` is declared and read by NOTHING — boot always builds `createPgDriver`
+// `JobsConfig.driver` was declared and read by NOTHING — boot always builds `createPgDriver`
 // (`driver.ts`'s header states it, `dev-queue.ts` is where it happens). Six shipped `fix:` lines
 // named that field as the repair for `X_NOT_IMPLEMENTED`, so six error paths handed an agent an
 // instruction that changes nothing and returns it to the same throw. Axiom 4 asks for the exact
 // command that repairs the failure; a no-op is the one thing a `fix:` may never be.
 //
 // The `errors` gate step cannot see this: it checks that a fix names a *command* that exists, and
-// `set jobs: { driver: 'postgres' } in app.config.ts` names none. #223 deletes the field, which is
-// breaking; this test is what stops the instruction coming back before then, and after.
+// `set jobs: { driver: 'postgres' } in app.config.ts` names none.
+//
+// **The field itself is deleted as of 5.0.0**, and this test is not redundant now that it is. A
+// `fix:` is prose: nothing stops an author writing `set jobs: { driver: 'postgres' }` into one
+// tomorrow, and the compiler would not see a word inside a string. What the deletion removed is the
+// declaration that made the instruction look plausible; this is what keeps it from coming back.
 
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';

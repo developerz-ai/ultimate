@@ -109,7 +109,7 @@ Point `OTEL_EXPORTER_OTLP_ENDPOINT` at your collector's **HTTP** receiver, `:431
 | Concern | Interface | Decided by |
 |---|---|---|
 | rows | `@ultimat3/db` · `DbClient` | `DATABASE_URL` — unset is PGlite, and PGlite is `x dev` only |
-| job queue | `@ultimat3/jobs` · `JobDriver` | `jobs.driver: 'postgres'`. Redis and NATS drivers are interface-complete stubs that throw `X_NOT_IMPLEMENTED` — not in 4.0.0 |
+| job queue | `@ultimat3/jobs` · `JobDriver` | `setJobDriver(createPgDriver({ executor }))` — there is no `jobs.driver` config line, and 5.0.0 deleted the one that never worked. Redis and NATS are interface-complete stubs that throw `X_NOT_IMPLEMENTED` |
 | realtime fanout | `@ultimat3/realtime` · `Transport` | `NATS_URL` |
 | change feed | `@ultimat3/realtime` · `ChangeFeed` | `REPLICATION_*` |
 | cache | `@ultimat3/cache` · `CacheTier` | `cache.tiers` + `REDIS_URL` |

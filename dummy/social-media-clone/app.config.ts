@@ -64,7 +64,7 @@ export const config = defineConfig({
   // because `config.database`'s `urlEnv`/`poolSize` were read by nothing and were deleted
   // `As of 2026-08`.
   cache: { driver: 'memory', tiers: ['memo', 'lru'] },
-  jobs: { driver: 'postgres', queues: ['social-media-clone-default'], concurrency: 4 },
+  jobs: { queues: ['social-media-clone-default'], concurrency: 4 },
   // In-process transport by default; set urlEnv and transport: 'nats' to scale past one node.
   realtime: { enabled: true, tier: 'live-queries', transport: 'memory' },
   pwa: { enabled: true, offline: 'runtime', installPrompt: true },

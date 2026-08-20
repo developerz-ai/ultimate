@@ -34,7 +34,7 @@ export const config = defineConfig({
 
   cache: { driver: 'redis', urlEnv: 'REDIS_URL', tiers: ['memo', 'lru', 'shared', 'isr'] },
 
-  jobs: { driver: 'postgres', queues: ['default', 'mail', 'digest'], concurrency: 8 },
+  jobs: { queues: ['default', 'mail', 'digest'], concurrency: 8 },
 
   /** Tier 3: live queries plus a durable client store, because the feed must work offline. */
   realtime: { enabled: true, tier: 'local-first', transport: 'nats', urlEnv: 'NATS_URL' },

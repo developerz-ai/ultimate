@@ -8,7 +8,6 @@ import { ROLES, type Role } from './roles';
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type OfflineStrategy = 'precache' | 'runtime' | 'network-only';
 export type CacheTier = 'memo' | 'lru' | 'shared' | 'isr' | 'cdn';
-export type JobsDriver = 'postgres' | 'redis' | 'nats';
 export type RealtimeTier = 'channels' | 'live-queries' | 'local-first';
 export type RealtimeTransport = 'memory' | 'nats' | 'redis';
 
@@ -83,7 +82,17 @@ export interface CacheConfig {
 }
 
 export interface JobsConfig {
-  readonly driver: JobsDriver;
+  /**
+   * No `driver`. It accepted `'postgres' | 'redis' | 'nats'`, was read by NOTHING, and boot always
+   * built `createPgDriver` — so `jobs: { driver: 'redis' }` did not throw, did not warn, and
+   * silently gave you Postgres. Deleted 2026-08-20, and it is the worse shape of the same defect
+   * `realtime.heartbeatMs` was: a knob that fails SILENTLY in the dangerous direction.
+   *
+   * The seam that works is `setJobDriver(driver)` — `setJobDriver(createPgDriver({ executor }))`,
+   * or `setJobDriver(createMemoryDriver())` in a test. Swap the driver, zero job-code change, which
+   * is the whole of what the `JobDriver` interface buys. There is no config line, and one that
+   * cannot be honoured is worse than none.
+   */
   readonly queues: readonly string[];
   readonly concurrency: number;
   readonly maxAttempts: number;
@@ -232,7 +241,6 @@ function defaults(name: string): Omit<AppConfig, 'name'> {
     database: { driver: 'postgres', ssl: false },
     cache: { driver: 'memory', urlEnv: undefined, defaultTtlMs: 60_000, tiers: ['memo', 'lru'] },
     jobs: {
-      driver: 'postgres',
       queues: [`${name}-default`],
       concurrency: 8,
       maxAttempts: 5,

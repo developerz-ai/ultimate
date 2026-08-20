@@ -23,7 +23,7 @@ export const config = defineConfig({
   defaultCurrency: 'USD',
   // Env KEYS, never the value: the same image deploys to every environment.
   database: { urlEnv: 'DATABASE_URL', poolSize: 10 },
-  jobs: { driver: 'postgres', queues: ['postly-default'], concurrency: 8 },
+  jobs: { queues: ['postly-default'], concurrency: 8 },
   pwa: { enabled: true, offline: 'runtime' },
 });
 ```
@@ -73,7 +73,7 @@ Better Auth, wrapped. Sessions live in Postgres. Authorization is **not** here �
 
 | field | type | default | notes |
 |---|---|---|---|
-| `jobs.driver` | `'postgres' \| 'redis' \| 'nats'` | `'postgres'` | **declared, and read by nothing** `As of 2026-08-20` — boot always builds `createPgDriver`, so this field selects no driver and editing it has no effect. `postgres` is the only shipped production driver; `redis` and `nats` are `X_NOT_IMPLEMENTED` stubs you reach through `setJobDriver()`, not through here. Removing the field is breaking and waits for the next major — [issue #223](https://github.com/developerz-ai/ultimate/issues/223) ([Jobs and workflows](Jobs-And-Workflows)) |
+| ~~`jobs.driver`~~ | — | — | **Deleted in 5.0.0.** It accepted `'postgres' \| 'redis' \| 'nats'` and was read by nothing: boot always built `createPgDriver`, so `jobs: { driver: 'redis' }` did not throw, did not warn, and silently gave you Postgres. Which driver runs is `setJobDriver(driver)` and only that — `setJobDriver(createPgDriver({ executor }))`, or `setJobDriver(createMemoryDriver())` in a test ([Jobs and workflows](Jobs-And-Workflows)) |
 | `jobs.queues` | `string[]` | `['default']` | a `worker` runs one pool per queue in `WORKER_QUEUES` |
 | `jobs.concurrency` | `number` | `8` | per pool, per process |
 | `jobs.retry.attempts` | `number` | `5` | per-job `retry` overrides |
