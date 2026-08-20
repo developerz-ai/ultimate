@@ -269,6 +269,9 @@
     "home": {
       "title": "A social network, built to break a framework",
       "description": "Every Ultimate primitive, once, in one real app: relational visibility decided by a policy, a live feed, offline reads, uploads and an admin that shares the same authz object as the API.",
+      "meta": {
+        "description": "Every Ultimate primitive, once, in one real app: visibility decided by a policy, a live feed, offline reads, uploads, and an admin on the same authz object."
+      },
       "eyebrow": "This page ships 0 kb of JavaScript",
       "cta": "Read the public feed",
       "signin": "Sign in",

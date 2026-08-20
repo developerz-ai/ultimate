@@ -42,7 +42,7 @@ export const config = defineRoute({
   render: 'static',
   hydrate: 'never',
   offline: 'precache',
-  budget: { js: '0kb', lcp: 1500 },
+  budget: { js: '0kb' },
   meta: () => ({
     title: t('site.home.title'),
     description: t('site.home.description'),
@@ -122,7 +122,7 @@ export const config = defineRoute({
   offline: 'runtime',
   // Auth is a policy, never a route-local flag: one authz system, evaluated everywhere.
   policy: { permission: 'dashboard:read' },
-  budget: { js: '60kb', lcp: 2500 },
+  budget: { js: '60kb' },
   meta: () => ({ title: t('app.dashboard.title'), description: t('app.dashboard.description') }),
 });
 
@@ -295,7 +295,7 @@ export const config = defineRoute({
   offline: 'network-only',
   // A spa renders no data, so the shell itself must be gated — @ultimat3/render requires it.
   policy: { permission: 'admin:read' },
-  budget: { js: '120kb', lcp: 3000 },
+  budget: { js: '120kb' },
   meta: () => ({ title: t('admin.home.title'), description: t('admin.home.description') }),
 });
 

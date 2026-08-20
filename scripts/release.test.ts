@@ -174,10 +174,12 @@ describe('unit · the version to publish is decided, never guessed', () => {
     expect(unknownReleaseFlags(['zebra', 'check', 'apple'])).toEqual(['apple', 'zebra']);
   });
 
-  test('every flag the docs tell a reader to pass is declared', () => {
-    for (const flag of ['version', 'bump', 'check', 'dry-run', 'json']) {
-      expect(RELEASE_FLAGS).toContain(flag);
-    }
+  // Through the function, not against the constant: comparing a `string[]` to the readonly literal
+  // tuple narrows `toContain`'s parameter to the union and stops compiling, and asserting the
+  // constant against itself would prove nothing anyway. Every invocation PUBLISHING.md prints.
+  test('every flag the docs tell a reader to pass is accepted', () => {
+    expect(unknownReleaseFlags(['version', 'bump', 'check', 'dry-run', 'json'])).toEqual([]);
+    expect(RELEASE_FLAGS.length).toBe(5);
   });
 
   test('the fix line is a command a shell can run verbatim', () => {

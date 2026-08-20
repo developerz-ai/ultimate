@@ -23,7 +23,10 @@ export const config = defineRoute({
   budget: { js: '0kb', lcp: 1500 },
   meta: () => ({
     title: t('site.home.title'),
-    description: t('site.home.description'),
+    // Not `site.home.description`: that string is the on-page lede at 186 characters, which reads
+    // well in a hero and is truncated by search results past 160. Two audiences, two strings —
+    // the `seo` step of `x verify` is what turned the single shared key into a build error.
+    description: t('site.home.meta.description'),
   }),
 });
 

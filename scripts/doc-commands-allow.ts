@@ -24,6 +24,41 @@ export interface DocCommandAllowance {
 }
 
 export const DOC_COMMAND_ALLOWANCES: readonly DocCommandAllowance[] = [
+  // The five below are one deletion. `x deploy --critical` was parsed, echoed into the plan JSON
+  // and read by nothing; 4.0.0 removed it. Each of these pages already said so — the flag was
+  // documented as inert — so the sentences stayed true and gained "removed in 4.0.0". Deleting
+  // them instead would erase the answer to "how do I force a reload?", which is the real question
+  // every one of them is answering: your app calls `updateSignal()`, and no deploy flag does it.
+  {
+    path: 'docs/architecture/13-topology-runtime.md',
+    cites: 'x deploy --critical',
+    kind: 'absent',
+    why: 'the row records that no forced-reload exception ships, and names the deleted flag as one of the two things that never acted on it',
+  },
+  {
+    path: 'docs/idea/08-pwa-offline.md',
+    cites: 'x deploy --critical',
+    kind: 'absent',
+    why: 'milestone 5 is "designed, not wired", and the flag is cited as the half that was deleted rather than wired',
+  },
+  {
+    path: 'wiki/PWA-And-Offline.md',
+    cites: 'x deploy --critical',
+    kind: 'absent',
+    why: 'the sentence is "there is no deploy flag for this" — naming the removed one is what makes it answerable for a reader who remembers it',
+  },
+  {
+    path: 'wiki/Troubleshooting.md',
+    cites: 'x deploy --critical',
+    kind: 'absent',
+    why: 'the symptom row sends the reader to updateSignal() and names the flag only to say it never set anything and is now gone',
+  },
+  {
+    path: 'wiki/Upgrading.md',
+    cites: 'x deploy --critical',
+    kind: 'absent',
+    why: 'an upgrade page must name a removed flag: the migration is "drop it", and a reader who used it needs to find that line',
+  },
   {
     path: 'wiki/Installation.md',
     cites: 'x env --fix',

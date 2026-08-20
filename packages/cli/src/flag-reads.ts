@@ -1,7 +1,11 @@
-// A flag a command declares and nothing reads: `x deploy --critical` parsed, printed itself in
-// `x help deploy`, and changed nothing about the deploy. The parser accepts every declared flag,
-// so a flag with no reader is not a parse error and not a type error — it is a promise in the help
-// text with no code behind it, and only a rule over the two halves together can see that.
+// A flag a command declares and nothing reads. The parser accepts every declared flag, so a flag
+// with no reader is not a parse error and not a type error — it is a promise in the help text with
+// no code behind it, and only a rule over the two halves together can see that.
+//
+// The bound of this rule, stated where it is enforced: it sees the flag NAME reaching a reader,
+// not the value reaching an effect. `x deploy --critical` satisfied it by being written into the
+// plan JSON, where nothing read the field; that flag is deleted rather than wired, and a second
+// one of its shape would pass here too.
 
 // `join`/`relative` are `node:`-only by necessity: Bun exposes no path-join primitive.
 import { join, relative } from 'node:path';
