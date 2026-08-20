@@ -18,6 +18,7 @@ import { unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import { docsFor } from './error-codes';
+import { exec, type Runner } from './exec';
 
 /** Where the running dev server records itself, inside the state directory it already owns. */
 export const DEV_LOCK_FILE = 'dev.lock';
@@ -70,12 +71,29 @@ export const isProcessAlive = (pid: number): boolean => {
   }
 };
 
-/** Refused before boot, so the failure names the process holding the directory. */
+/**
+ * Refused before boot, so the failure names the process holding the directory.
+ *
+ * The lock is on the CHECKOUT, not on the database, and the cause says so. `x dev` is one process
+ * running every role (`dev-roles.ts`), so a second one is unsupported whatever the services are.
+ * The embedded-Postgres sentence is appended only when the database actually IS embedded — with an
+ * external `DATABASE_URL` it would name a mechanism that is not in play, which is the same defect
+ * as the message this whole module replaced.
+ */
 export class DevAlreadyRunningError extends UltimateError {
-  constructor(input: { readonly lock: DevLock; readonly stateDir: string }) {
+  constructor(input: {
+    readonly lock: DevLock;
+    readonly stateDir: string;
+    /** True when this checkout's database is the embedded one. */
+    readonly embeddedDb?: boolean;
+  }) {
+    const single =
+      input.embeddedDb === true
+        ? ' — embedded Postgres is a single-writer data directory, so a second one cannot open it'
+        : ' — x dev runs every role in one process, so a second one on this checkout is unsupported';
     super({
       code: 'X_DEV_ALREADY_RUNNING',
-      cause: `pid ${input.lock.pid} is already running x dev on ${input.lock.url} and holds ${input.stateDir} — embedded Postgres is a single-writer data directory, so a second one cannot open it`,
+      cause: `pid ${input.lock.pid} is already running x dev on ${input.lock.url} and holds ${input.stateDir}${single}`,
       fix: `use the one already running at ${input.lock.url}, or stop it: kill ${input.lock.pid}`,
       docs: docsFor('X_DEV_ALREADY_RUNNING'),
       meta: { pid: input.lock.pid, port: input.lock.port, stateDir: input.stateDir },
@@ -94,20 +112,33 @@ export interface PortHolder {
  * Who holds the port. `ss` first because it is present on every Linux box the framework targets and
  * needs no elevation for your own processes; `lsof` is the macOS answer.
  *
- * Best-effort by construction: neither tool is a dependency, and a machine with neither still gets
- * the refusal, just without a pid in it. Nothing here shells out with user input — the port is an
- * integer this process validated.
+ * Through `exec.ts`, like every other subprocess the CLI runs, so a test injects a fake `Runner`
+ * rather than racing a real socket.
+ *
+ * EVERY PROBE IS CAUGHT SEPARATELY. `exec` refuses a missing program with `X_CLI_UNEXPECTED`, and
+ * letting that escape would mean a box without `ss` gets the CLI's catch-all instead of
+ * `X_PORT_IN_USE` — the exact substitution this module exists to end. A missing `ss` must fall
+ * through to `lsof`, and a box with neither still gets the refusal, just without a pid in it.
  */
-export const portHolder = (port: number): PortHolder => {
-  const ss = Bun.spawnSync(['ss', '-lptnH', `sport = :${port}`], { stderr: 'ignore' });
-  const parsed = /users:\(\("([^"]+)",pid=(\d+)/.exec(ss.stdout?.toString() ?? '');
+export const portHolder = async (port: number, runner: Runner = exec): Promise<PortHolder> => {
+  const probe = async (command: readonly string[]): Promise<string> => {
+    try {
+      const result = await runner(command, { cwd: process.cwd() });
+      return result.stdout;
+    } catch {
+      return '';
+    }
+  };
+
+  const parsed = /users:\(\("([^"]+)",pid=(\d+)/.exec(
+    await probe(['ss', '-lptnH', `sport = :${port}`]),
+  );
   const name = parsed?.[1];
   if (parsed !== null && name !== undefined) return { command: name, pid: Number(parsed[2]) };
 
-  const lsof = Bun.spawnSync(['lsof', '-nP', `-iTCP:${String(port)}`, '-sTCP:LISTEN', '-Fpc'], {
-    stderr: 'ignore',
-  });
-  const lines = (lsof.stdout?.toString() ?? '').split('\n');
+  const lines = (
+    await probe(['lsof', '-nP', `-iTCP:${String(port)}`, '-sTCP:LISTEN', '-Fpc'])
+  ).split('\n');
   const pid = lines.find((line) => line.startsWith('p'))?.slice(1);
   const command = lines.find((line) => line.startsWith('c'))?.slice(1);
   if (pid !== undefined && /^\d+$/.test(pid)) {
@@ -156,8 +187,17 @@ export class DevPortInUseError extends UltimateError {
  */
 export const suggestPort = (port: number): number => (port >= 65535 ? port - 1 : port + 1);
 
-/** Is anything listening? A successful bind-then-close is the only answer that does not lie. */
-export const isPortBound = (port: number, hostname = '127.0.0.1'): boolean => {
+/**
+ * Is anything listening? A successful bind-then-close is the only answer that does not lie.
+ *
+ * PROBE THE ADDRESS THE SERVER WILL BIND, which is why the hostname is a parameter and why the
+ * caller passes `DEV_BINDING.hostname` rather than accepting a default. Probing a wider address
+ * than the server uses is not the safe direction: `0.0.0.0` reports "in use" whenever ANY interface
+ * holds the port, so a neighbour bound to one LAN address would refuse a boot that would have
+ * succeeded on loopback. Probing a narrower one misses a holder the server would collide with.
+ * Matching is the only rule that is right in both directions.
+ */
+export const isPortBound = (port: number, hostname: string): boolean => {
   try {
     const probe = Bun.listen({ hostname, port, socket: { data() {} } });
     probe.stop(true);
@@ -170,10 +210,14 @@ export const isPortBound = (port: number, hostname = '127.0.0.1'): boolean => {
 export interface PreflightInput {
   readonly stateDir: string;
   readonly port: number;
+  /** The address the web role will bind. Probed exactly, never widened — see `isPortBound`. */
+  readonly hostname: string;
+  /** True when this checkout's database is the embedded one; only shapes the message. */
+  readonly embeddedDb?: boolean;
   /** Injected by the test; `isPortBound` in production. */
-  readonly portBound?: (port: number) => boolean;
+  readonly portBound?: (port: number, hostname: string) => boolean;
   readonly alive?: (pid: number) => boolean;
-  readonly holder?: (port: number) => PortHolder;
+  readonly holder?: (port: number) => Promise<PortHolder>;
 }
 
 /**
@@ -190,7 +234,11 @@ export const preflight = async (input: PreflightInput): Promise<{ clearedStale: 
   if (await file.exists()) {
     const lock = parseLock(await file.text());
     if (lock !== null && alive(lock.pid)) {
-      throw new DevAlreadyRunningError({ lock, stateDir: input.stateDir });
+      throw new DevAlreadyRunningError({
+        lock,
+        stateDir: input.stateDir,
+        ...(input.embeddedDb === undefined ? {} : { embeddedDb: input.embeddedDb }),
+      });
     }
     // Stale: a hard kill, or a file nothing here wrote. Removing it is what makes the next boot
     // work, and `unlinkSync` because a lock that outlives its own cleanup is the bug being fixed.
@@ -202,11 +250,11 @@ export const preflight = async (input: PreflightInput): Promise<{ clearedStale: 
     clearedStale = true;
   }
 
-  if (bound(input.port)) {
+  if (bound(input.port, input.hostname)) {
     throw new DevPortInUseError({
       port: input.port,
       suggestion: suggestPort(input.port),
-      holder: (input.holder ?? portHolder)(input.port),
+      holder: await (input.holder ?? portHolder)(input.port),
     });
   }
   return { clearedStale };

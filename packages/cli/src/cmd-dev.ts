@@ -27,7 +27,7 @@ import { clearLock, preflight, writeLock } from './dev-lock';
 import { createStatementLedger } from './dev-n-plus-one';
 import { appRoutes } from './dev-render';
 import type { RunningRoles } from './dev-roles';
-import { DEV_ROLES, selectRoles, startRoles } from './dev-roles';
+import { DEV_BINDING, DEV_ROLES, selectRoles, startRoles } from './dev-roles';
 import type { RunningServices } from './dev-runtime';
 import { cdnLabel, describeCdn, describeMail, mailLabel, startServices } from './dev-runtime';
 import type { DevServices } from './dev-services';
@@ -301,8 +301,15 @@ export const devCommand: CliCommand = {
     // naming `x doctor`, and a second `x dev` on one checkout died later on X_DB_UNAVAILABLE whose
     // `fix:` named `x dev`. Neither is discoverable from the message; both are trivial once the
     // preflight has the state directory and the port in front of it.
-    const stateDir = resolveServices(root, ctx.env).stateDir;
-    const { clearedStale } = await preflight({ stateDir, port });
+    const services = resolveServices(root, ctx.env);
+    const { clearedStale } = await preflight({
+      stateDir: services.stateDir,
+      port,
+      // The address the web role will actually bind, never a wider one: probing `0.0.0.0` would
+      // refuse a boot that a neighbour on one LAN interface does not actually block.
+      hostname: DEV_BINDING.hostname,
+      embeddedDb: services.db.mode === 'embedded',
+    });
     const server = await startDev({
       root,
       port,
@@ -361,14 +368,14 @@ export const devCommand: CliCommand = {
         msg('cli.dev.introspect', { url: `${server.url}/_x` }),
       ],
     };
-    await writeLock(stateDir, {
+    await writeLock(services.stateDir, {
       pid: process.pid,
       port,
       url: server.url,
       startedAt: new Date().toISOString(),
     });
     if (ctx.args.flags.get('once') === true) {
-      clearLock(stateDir);
+      clearLock(services.stateDir);
       await server.stop();
       return result;
     }
@@ -381,7 +388,7 @@ export const devCommand: CliCommand = {
       hold: holdUntilShutdown('dev', async () => {
         // The lock first: a stop() that throws must not leave a file claiming this pid still owns
         // the directory, because the next boot would then refuse for a process that is gone.
-        clearLock(stateDir);
+        clearLock(services.stateDir);
         await server.stop();
       }),
     };

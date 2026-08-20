@@ -111,7 +111,15 @@ cd "$(dirname "$0")/.."
 # against measured bytes in .x/build-stats.json, so with no build it reports X_BUDGET_UNMEASURED and
 # the very first gate anyone runs on a brand-new app is red for a reason that has nothing to do with
 # their code. Cheap on a warm tree, and it makes "green" reachable from a fresh clone.
-bunx x build --target static
+#
+# \`--json\` is forwarded to BOTH, or the contract breaks: \`bin/check --json\` would otherwise print
+# the build's human renderer to stdout and then the gate's JSON, and a machine consumer reading one
+# document off stdout gets neither. Both commands emit one object; a reader takes the last line.
+build_flags=""
+for arg in "$@"; do
+  case "$arg" in --json|-j) build_flags="--json" ;; esac
+done
+bunx x build --target static $build_flags
 exec bunx x verify "$@"
 `;
 
