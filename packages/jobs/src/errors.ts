@@ -355,7 +355,7 @@ export class CancelUnsupportedError extends UltimateError {
     super({
       code: 'X_JOB_NOT_CANCELLABLE',
       cause: `the "${input.driver}" jobs driver cannot cancel a single job`,
-      fix: "set jobs: { driver: 'postgres' } in app.config.ts, then: x jobs cancel <id> --json",
+      fix: 'call setJobDriver(createPgDriver()) at boot — only the pg driver implements introspect.cancel — then: x jobs cancel <id> --json',
       docs: docsFor('X_JOB_NOT_CANCELLABLE'),
     });
   }
@@ -372,7 +372,7 @@ export class ConcurrencyUnenforceableError extends UltimateError {
     super({
       code: 'X_JOB_CONCURRENCY_UNENFORCEABLE',
       cause: `${input.jobs.join(', ')} declare concurrency and the "${input.driver}" jobs driver has no lease store, so the cap would hold per process and the fleet would run concurrency x replicas`,
-      fix: `remove concurrency from job("${input.jobs[0] ?? 'the job'}"), or set jobs: { driver: 'postgres' } in app.config.ts`,
+      fix: `remove concurrency from job("${input.jobs[0] ?? 'the job'}"), or call setJobDriver(createPgDriver()) at boot — the pg driver is the one with a lease store`,
       docs: docsFor('X_JOB_CONCURRENCY_UNENFORCEABLE'),
     });
   }
