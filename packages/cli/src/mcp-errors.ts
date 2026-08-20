@@ -91,6 +91,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_RUNTIME_DRIVER_SPLIT: 'x dev --json   # the boot names the driver the app installed twice',
   X_GENERATE_CONFLICT: 'x g route posts --force --json',
   X_PORT_IN_USE: 'x dev --port 3001 --json',
+  X_DEV_ALREADY_RUNNING:
+    'x dev --json   # after stopping the x dev that already owns this checkout',
   // Not `x db status`: there is no such subcommand (`x db` is gen, migrate, reset, studio, branch),
   // so the fix answered a failed step with X_CLI_UNKNOWN_COMMAND. `x doctor` is what reports
   // reachability and drift, and is already this table's answer for X_DB_STUDIO_FAILED.

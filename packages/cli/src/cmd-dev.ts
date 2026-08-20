@@ -23,10 +23,11 @@ import type { CliCommand, CommandContext } from './command';
 import { assetRoutes } from './dev-assets';
 import type { DevDashboardInput, DevStatus } from './dev-dashboard';
 import { devDashboardRoutes, devPanels } from './dev-dashboard';
+import { clearLock, preflight, writeLock } from './dev-lock';
 import { createStatementLedger } from './dev-n-plus-one';
 import { appRoutes } from './dev-render';
 import type { RunningRoles } from './dev-roles';
-import { DEV_ROLES, selectRoles, startRoles } from './dev-roles';
+import { DEV_BINDING, DEV_ROLES, selectRoles, startRoles } from './dev-roles';
 import type { RunningServices } from './dev-runtime';
 import { cdnLabel, describeCdn, describeMail, mailLabel, startServices } from './dev-runtime';
 import type { DevServices } from './dev-services';
@@ -295,6 +296,20 @@ export const devCommand: CliCommand = {
       DEFAULT_PORT,
     );
     const roles = selectRoles(flagString(ctx.args, 'role'));
+    // BEFORE anything boots. Both failures this catches were reachable and both reported the wrong
+    // thing: a taken port surfaced as X_CLI_UNEXPECTED wrapping "Is port 3000 in use?" with a `fix:`
+    // naming `x doctor`, and a second `x dev` on one checkout died later on X_DB_UNAVAILABLE whose
+    // `fix:` named `x dev`. Neither is discoverable from the message; both are trivial once the
+    // preflight has the state directory and the port in front of it.
+    const services = resolveServices(root, ctx.env);
+    const { clearedStale } = await preflight({
+      stateDir: services.stateDir,
+      port,
+      // The address the web role will actually bind, never a wider one: probing `0.0.0.0` would
+      // refuse a boot that a neighbour on one LAN interface does not actually block.
+      hostname: DEV_BINDING.hostname,
+      embeddedDb: services.db.mode === 'embedded',
+    });
     const server = await startDev({
       root,
       port,
@@ -344,13 +359,23 @@ export const devCommand: CliCommand = {
         panels: [...server.panels],
       },
       lines: [
+        // A hard kill leaves the lock behind; clearing it is normal and worth one line, never a
+        // finding. First, because it happened before anything else this run reports.
+        ...(clearedStale ? [msg('cli.dev.staleLock')] : []),
         msg('cli.dev.roles', { roles: server.roles.join(', ') }),
         msg('cli.dev.panels', { panels: server.panels.join(', ') }),
         msg('cli.dev.manifest', { path: join(root, MANIFEST_FILENAME) }),
         msg('cli.dev.introspect', { url: `${server.url}/_x` }),
       ],
     };
+    await writeLock(services.stateDir, {
+      pid: process.pid,
+      port,
+      url: server.url,
+      startedAt: new Date().toISOString(),
+    });
     if (ctx.args.flags.get('once') === true) {
+      clearLock(services.stateDir);
       await server.stop();
       return result;
     }
@@ -358,6 +383,14 @@ export const devCommand: CliCommand = {
     // `/_x` stays reachable. Ctrl-C drains the web role through core's phases first and releases
     // the embedded Postgres, the worker and the watcher after — a hard kill leaves the PGlite
     // directory locked by a process that no longer exists.
-    return { ...result, hold: holdUntilShutdown('dev', () => server.stop()) };
+    return {
+      ...result,
+      hold: holdUntilShutdown('dev', async () => {
+        // The lock first: a stop() that throws must not leave a file claiming this pid still owns
+        // the directory, because the next boot would then refuse for a process that is gone.
+        clearLock(services.stateDir);
+        await server.stop();
+      }),
+    };
   },
 };

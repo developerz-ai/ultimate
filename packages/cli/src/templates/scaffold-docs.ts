@@ -88,7 +88,11 @@ bun install
 # this script is documented idempotent, and the guard is what makes that true here.
 ls packages/db/migrations/*.sql >/dev/null 2>&1 || bunx x db gen "initial"
 bunx x db migrate "$@"
-bun run db:seed
+# \`x db seed\`, never \`bun run\`: the CLI owns the connection, so this reaches the same embedded
+# PGlite the migration above just wrote to. A plain script goes through \`db()\`, which needs a
+# \`postgres:\` DATABASE_URL and so dies on a clone with no Postgres — one line after reporting a
+# successful migration.
+bunx x db seed
 echo "setup complete — next: x dev"
 `;
 
@@ -103,6 +107,19 @@ const binCheck = (): string => `#!/usr/bin/env bash
 # The gate. Same steps as CI, because a check that lives only in CI cannot be run locally.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# The build FIRST, and not as a convenience: \`x verify\`'s budgets step compares declared limits
+# against measured bytes in .x/build-stats.json, so with no build it reports X_BUDGET_UNMEASURED and
+# the very first gate anyone runs on a brand-new app is red for a reason that has nothing to do with
+# their code. Cheap on a warm tree, and it makes "green" reachable from a fresh clone.
+#
+# \`--json\` is forwarded to BOTH, or the contract breaks: \`bin/check --json\` would otherwise print
+# the build's human renderer to stdout and then the gate's JSON, and a machine consumer reading one
+# document off stdout gets neither. Both commands emit one object; a reader takes the last line.
+build_flags=""
+for arg in "$@"; do
+  case "$arg" in --json|-j) build_flags="--json" ;; esac
+done
+bunx x build --target static $build_flags
 exec bunx x verify "$@"
 `;
 

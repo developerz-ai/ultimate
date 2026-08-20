@@ -86,7 +86,8 @@ One pipeline in `@ultimat3/core` serves `storage`, `seo` and `pwa`. It **decodes
 | `X_ENV_EXAMPLE_DRIFT` | `.env.example` does not declare every variable the schema requires | a key added to `defineEnv()` and not to the committed example, so the next clone boots into `X_ENV_MISSING` for a variable nobody documented | `x env example` — the example is a projection of the schema, never a second list |
 | `X_BUN_VERSION` | Bun is older than the framework floor | Bun < 1.3 | `bun upgrade` |
 | `X_NOT_IN_APP` | command must run inside an Ultimate app | no `app.config.ts` at or above the cwd | `x new myapp && cd myapp` |
-| `X_PORT_IN_USE` | the dev port is taken | another `x dev` or an unrelated process holds it | `x dev --port 3001`, or stop the other process |
+| `X_PORT_IN_USE` | the dev port is taken | an unrelated process holds it — usually another project's dev server; the pid and command are named when the OS will say | `x dev --port 3001`, or kill the named pid if it is yours |
+| `X_DEV_ALREADY_RUNNING` | another x dev already owns this checkout | a live `x dev` holds `.x/` — embedded Postgres is a single-writer data directory, so a second one cannot open it | use the one already running, or `kill <pid>` |
 | `X_PORT_INVALID` | `PORT` is not a TCP port number | a platform-injected `PORT` that is empty, non-numeric or out of range — never defaulted past, because a web role that quietly bound 3000 fails the platform's health probe with nothing in the log that names the cause | `docker run -e PORT=3000 <image>` |
 | `X_ROLE_UNKNOWN` | `ROLE` names something that is not a role | a typo in a compose file, a Helm value or a `docker run` — one image runs every role, so the typo would otherwise start a process that serves nothing and reports healthy | `docker run -e ROLE=web <image>` — one of `web`, `sync`, `worker`, `scheduler`, `replicator`, `migrate` |
 

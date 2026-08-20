@@ -28,20 +28,6 @@ export * as schema from './schema';
 const SCHEMA_HEADER = `// Every entity the app declares, re-exported here. This list is what the migration generator
 // reads, so an entity that is not exported here does not exist as far as the database is concerned.`;
 
-/**
- * `bun run db:seed`'s entry point. Identical either way — only the rows differ. Interpolated, not
- * nested, so it carries exactly the escaping a single template literal needs.
- */
-const SEED_MAIN = `
-
-if (import.meta.main) {
-  const count = await seed();
-  // Bun's stdout, not process.stdout: one runtime, one API. Awaited because the write resolves
-  // asynchronously, and this JSON line is the whole output of \`bun run db:seed\`.
-  await Bun.stdout.write(\`\${JSON.stringify({ ok: true, seeded: count })}\\n\`);
-}
-`;
-
 const dbSchema = (app: NameSet, example: boolean): string =>
   example
     ? `${SCHEMA_HEADER}
@@ -52,34 +38,66 @@ export { post } from '@${app.kebab}/web/app/post/entity';
 export {};
 `;
 
+/**
+ * The seed, as a `defineSeed()` — which is what `x db seed` discovers and what the framework has
+ * meant by "a seed" since 2.0.0.
+ *
+ * It used to be a plain `export async function seed()` with an `import.meta.main` block, run by a
+ * `bun run db:seed` npm script, and that shipped two defects at once. `x db seed` discovers
+ * every `seed*.ts` under a package's `src` and looks for an exported `Seed`, so the scaffold's
+ * own seed was invisible to its own command — `x db seed` on a fresh app answered "no seed
+ * matched".
+ * And `bun run db:seed` reaches the database through `@ultimat3/db`'s `db()`, which reads
+ * `DATABASE_URL` and speaks `postgres:` only, so on a clone with no Postgres it cannot see the
+ * embedded PGlite that `x db migrate` had just migrated in process. `bin/setup` therefore printed
+ * `✓ migrations applied` and then died on `X_DB_UNAVAILABLE`, whose `fix:` says "run `x dev` to use
+ * the embedded PGlite" — naming the mechanism that had just worked one line above.
+ *
+ * `x db seed` owns the connection, the tier and the per-seed transaction. One runner, one answer.
+ */
 const dbSeed = (app: NameSet, example: boolean): string =>
   example
-    ? `// Deterministic seed: same rows every time, so a test and a demo see the same database.
-import { db, sql } from '@ultimat3/db';
+    ? `// Deterministic fixtures: the same rows every time, so a test, a demo and a branch database
+// all see the same content.
+//
+// \`x db seed\` is the runner — it discovers every exported \`defineSeed()\` in a package's
+// \`src/seed*.ts\`, opens the database exactly as \`x db migrate\` does (embedded PGlite
+// included), and wraps each seed in its own transaction. Never a plain \`bun run\` script: that
+// reaches the database through \`db()\`, which needs a \`postgres:\` \`DATABASE_URL\` and so cannot
+// see the embedded database at all.
+import { defineSeed } from '@ultimat3/entity';
+import { post } from './schema';
 
-const ORG = '00000000-0000-0000-0000-000000000002';
+/** Stable across runs: \`id('post:hello')\` is a UUID v5 of the label, not a random one. */
+export const ${app.camel}Seed = defineSeed('${app.kebab}', async ({ insert, id }) => {
+  await insert(post, [
+    {
+      id: id('post:hello'),
+      orgId: id('org:demo'),
+      title: 'Hello ${app.pascal}',
+      price: { minor: 0, currency: 'USD' },
+    },
+    {
+      id: id('post:second'),
+      orgId: id('org:demo'),
+      title: 'Second post',
+      price: { minor: 1900, currency: 'USD' },
+    },
+  ]);
+});
+`
+    : `// Deterministic fixtures, run by \`x db seed\`. No entity is declared yet, so there is nothing
+// to insert — the shape stays so the first \`x g entity\` has one obvious place to seed from.
+//
+// \`x db seed\` discovers every exported \`defineSeed()\` in a package's \`src/seed*.ts\` and opens
+// the database the way \`x db migrate\` does, embedded PGlite included. Never a plain \`bun run\`
+// script: that needs a \`postgres:\` \`DATABASE_URL\` and cannot see the embedded database.
+import { defineSeed } from '@ultimat3/entity';
 
-export async function seed(): Promise<number> {
-  const rows = [
-    { id: '00000000-0000-0000-0000-000000000101', title: 'Hello ${app.pascal}', minor: 0 },
-    { id: '00000000-0000-0000-0000-000000000102', title: 'Second post', minor: 1900 },
-  ];
-  for (const row of rows) {
-    // Idempotent by primary key, so re-seeding a branch database is a no-op rather than a crash.
-    await db().execute(sql\`
-      insert into posts (id, org_id, title, price_minor, price_currency)
-      values (\${row.id}, \${ORG}, \${row.title}, \${row.minor}, 'USD')
-      on conflict (id) do nothing\`);
-  }
-  return rows.length;
-}${SEED_MAIN}`
-    : `// Deterministic seed: same rows every time, so a test and a demo see the same database.
-// No entity is declared yet, so there is nothing to insert — the shape stays, so the first
-// \`x g entity\` has one obvious place to seed from.
-
-export async function seed(): Promise<number> {
-  return 0;
-}${SEED_MAIN}`;
+export const ${app.camel}Seed = defineSeed('${app.kebab}', async () => {
+  // \`await insert(<entity>, [...])\` once an entity exists.
+});
+`;
 
 /** Every file the `packages/db` workspace ships, in the order `x new` writes them. */
 export const dbPackageFiles = (app: NameSet, example: boolean): readonly GeneratedFile[] => [

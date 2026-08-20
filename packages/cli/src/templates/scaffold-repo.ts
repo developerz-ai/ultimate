@@ -45,7 +45,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "lint": "biome check .",
     "test": "bun test",
     "db:migrate": "x db migrate",
-    "db:seed": "bun run packages/db/src/seed.ts"
+    "db:seed": "x db seed"
   },
   "devDependencies": {
     "@biomejs/biome": "${BIOME_VERSION}",

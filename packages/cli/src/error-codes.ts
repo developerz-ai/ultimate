@@ -55,6 +55,7 @@ export const CLI_OWNED_ERROR_CODES = [
   // its health check with nothing in the log that names the cause.
   'X_ROLE_UNKNOWN',
   'X_PORT_INVALID',
+  'X_DEV_ALREADY_RUNNING',
   // The boot's own consistency check. `startServices` captures the drivers it built, and
   // `loadApp` runs AFTER it — so an app module calling `setJobDriver(theirs)` moved the ambient
   // slot and left the captured object alone: every `handle.enqueue()` went to their queue while
@@ -167,6 +168,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_DEPLOY_FAILED: 'a deploy step failed',
   X_ROLE_UNKNOWN: 'ROLE names something that is not a role',
   X_PORT_INVALID: 'PORT is not a TCP port number',
+  X_DEV_ALREADY_RUNNING: 'another x dev already owns this checkout',
   X_RUNTIME_DRIVER_SPLIT: 'the ambient driver is not the one this process serves',
   X_GENERATE_CONFLICT: 'a generator would overwrite a file',
   X_PORT_IN_USE: 'the dev port is taken',
