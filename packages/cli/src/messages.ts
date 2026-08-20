@@ -72,6 +72,9 @@ const CATALOG = {
   'cli.dev.mail.external': 'mail=external({driver} via {detail})',
   'cli.dev.mail.refused': 'mail=refused({detail})',
   'cli.dev.hmr': 'reloaded {file} in {ms}ms',
+  // A hard kill leaves the lock behind and that is normal, not a fault — worth one line so a
+  // reader knows why the boot paused, and never a finding.
+  'cli.dev.staleLock': 'cleared a stale dev.lock — the previous x dev did not shut down cleanly',
   'cli.dev.roles': '  roles {roles}',
   'cli.dev.panels': '  panels {panels}',
   'cli.dev.introspect': '  introspect {url}',

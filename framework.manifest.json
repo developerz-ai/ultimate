@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "97fda792dc314a14e57493ecb431e395072b80924c690c224701c6a1b89816af",
+  "buildId": "93daaafcf078589bc4501699e1881a0f64181bfbabedc2188f42c6f98102182b",
   "tiers": {
     "0": [
       "core",
@@ -764,6 +764,11 @@
     },
     {
       "code": "X_DEPLOY_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_DEV_ALREADY_RUNNING",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
