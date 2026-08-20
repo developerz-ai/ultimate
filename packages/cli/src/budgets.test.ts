@@ -11,7 +11,7 @@ import type { BuildStats } from './budgets';
 import {
   BUILD_STATS_FILE,
   checkBudgets,
-  measureJsBytes,
+  measureDocumentJs,
   readBuildStats,
   writeBuildStats,
 } from './budgets';
@@ -26,6 +26,14 @@ const route = (url: string, budget?: RouteFact['budget']): RouteFact => ({
 });
 
 const stats = (...routes: BuildStats['routes']): BuildStats => ({ routes });
+
+/**
+ * The total alone. It was `budgets.ts`'s own `measureJsBytes` export, whose doc named "a caller
+ * with nothing to say about which module was the heavy one" — and the only caller it ever had was
+ * this file. A one-line projection belongs beside its one reader.
+ */
+const jsBytesOf = async (html: string, out: string): Promise<number> =>
+  (await measureDocumentJs(html, out)).jsBytes;
 
 describe('unit · budgets', () => {
   test('a declared JS budget with no measurement is a finding, not a pass', () => {
@@ -100,25 +108,25 @@ describe('unit · measureJsBytes weighs the document, not the graph', () => {
   const out = join(tmpdir(), 'x-budget-measure');
 
   test('a page with no script ships no JS, measured rather than assumed', async () => {
-    expect(await measureJsBytes('<html><body><h1>hi</h1></body></html>', out)).toBe(0);
+    expect(await jsBytesOf('<html><body><h1>hi</h1></body></html>', out)).toBe(0);
   });
 
   test('an inline script counts its own bytes', async () => {
-    expect(await measureJsBytes('<script>let a=1</script>', out)).toBe('let a=1'.length);
+    expect(await jsBytesOf('<script>let a=1</script>', out)).toBe('let a=1'.length);
   });
 
   test('a src the artifact does not contain contributes nothing it cannot prove', async () => {
-    expect(await measureJsBytes('<script src="/missing.js"></script>', out)).toBe(0);
+    expect(await jsBytesOf('<script src="/missing.js"></script>', out)).toBe(0);
   });
 
   test('a cross-origin script is not this build`s to weigh', async () => {
-    expect(await measureJsBytes('<script src="https://cdn.test/a.js"></script>', out)).toBe(0);
+    expect(await jsBytesOf('<script src="https://cdn.test/a.js"></script>', out)).toBe(0);
   });
 
   test('a chunk on disk is weighed at its real size', async () => {
     const dir = join(out, `case-${Bun.hash('chunk').toString(16)}`);
     await Bun.write(join(dir, 'chunk.js'), 'console.log(1)');
-    expect(await measureJsBytes('<script src="/chunk.js"></script>', dir)).toBe(14);
+    expect(await jsBytesOf('<script src="/chunk.js"></script>', dir)).toBe(14);
   });
 
   // The bug this guards: a document that makes the browser execute NOTHING failed its JS budget,
@@ -129,7 +137,7 @@ describe('unit · measureJsBytes weighs the document, not the graph', () => {
     const document =
       '<script type="application/ld+json">{"@type":"Article","headline":"a long headline"}</script>' +
       '<script type="application/json" data-x-props="i1">{"title":"another long string"}</script>';
-    expect(await measureJsBytes(document, out)).toBe(0);
+    expect(await jsBytesOf(document, out)).toBe(0);
   });
 
   // A real document writes the charset: `<script type="application/ld+json; charset=utf-8">` is
@@ -137,24 +145,22 @@ describe('unit · measureJsBytes weighs the document, not the graph', () => {
   // budget charged an SEO block as executable JS again, which is the bug the case above closes.
   test('a MIME parameter does not turn structured data back into code', async () => {
     const withCharset = '<script type="application/ld+json; charset=utf-8">{"a":1}</script>';
-    expect(await measureJsBytes(withCharset, out)).toBe(0);
-    expect(
-      await measureJsBytes('<script type="application/json;charset=utf-8">1</script>', out),
-    ).toBe(0);
+    expect(await jsBytesOf(withCharset, out)).toBe(0);
+    expect(await jsBytesOf('<script type="application/json;charset=utf-8">1</script>', out)).toBe(
+      0,
+    );
     // And the parameter cannot make code data: the suffix test still decides, on the type alone.
     expect(
-      await measureJsBytes('<script type="text/javascript; charset=utf-8">let a=1</script>', out),
+      await jsBytesOf('<script type="text/javascript; charset=utf-8">let a=1</script>', out),
     ).toBe(7);
   });
 
   test('the rule is the type ending in json, not the one literal type', async () => {
-    expect(await measureJsBytes('<script type="importmap+json">{"a":1}</script>', out)).toBe(0);
-    expect(await measureJsBytes('<script type="APPLICATION/LD+JSON"> {"a":1} </script>', out)).toBe(
-      0,
-    );
+    expect(await jsBytesOf('<script type="importmap+json">{"a":1}</script>', out)).toBe(0);
+    expect(await jsBytesOf('<script type="APPLICATION/LD+JSON"> {"a":1} </script>', out)).toBe(0);
     // A module is code, and so is a type nobody declared.
-    expect(await measureJsBytes('<script type="module">let a=1</script>', out)).toBe(7);
-    expect(await measureJsBytes('<script>let a=1</script>', out)).toBe(7);
+    expect(await jsBytesOf('<script type="module">let a=1</script>', out)).toBe(7);
+    expect(await jsBytesOf('<script>let a=1</script>', out)).toBe(7);
   });
 });
 

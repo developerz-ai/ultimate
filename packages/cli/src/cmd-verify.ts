@@ -13,6 +13,8 @@ import {
   MANIFEST_FILENAME,
   verifyContract,
 } from '@ultimat3/manifest';
+import type { MetaIssue } from '@ultimat3/seo';
+import { validateMeta } from '@ultimat3/seo';
 import { checkAgentsMd } from './app-agents-md';
 import { checkAppBoundaries } from './app-boundaries';
 import { envExampleFindings } from './app-env';
@@ -31,6 +33,7 @@ import { msg } from './messages';
 import type { CommandResult, Finding, StepResult } from './output';
 import { findingFrom } from './output';
 import type { ParsedArgs } from './parse';
+import { scanSiteMeta } from './seo-meta';
 import { WORKER_CEILING, WORKER_FLOOR, WORKER_OVERSUBSCRIBE } from './test-workers';
 import {
   floorProblemFindings,
@@ -201,6 +204,30 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
         ...checkDocumentStyles(documentSurfaces()),
         ...checkBudgets(manifest, stats),
       ]);
+    },
+  },
+  {
+    name: 'seo',
+    summary: 'every indexable site/ route has a title and a description a search result can render',
+    // The SEO checkers shipped in `@ultimat3/seo` with no caller anywhere — `validateMeta` and its
+    // asserts were reachable only by an app that called them itself, which is what
+    // `packages/seo/src/errors.ts`'s own header said. This is the caller.
+    //
+    // Its own step rather than a rider on `budgets`: that step asks what a document WEIGHS and
+    // this one asks what it SAYS, and a missing `<title>` reported under `budgets` would hand the
+    // reader a fix for the wrong question (axiom 4). It costs no second app load — `loadApp`
+    // imports each module once per process, so this runs on the registries `budgets` just filled.
+    applies: async (ctx) => existsSync(join(ctx.root, APP_CONFIG_FILE)),
+    async run(ctx) {
+      const scan = await scanSiteMeta(ctx.root);
+      // No `baseUrl`: an app declares no base URL anywhere (`packages/core/src/config.ts` has no
+      // such key), so canonical checks are skipped rather than run against an origin this file
+      // invented. `seo-meta.ts` spells out why that is the honest half.
+      const report = validateMeta(scan.records);
+      return {
+        ok: scan.findings.length === 0 && report.ok,
+        findings: [...scan.findings, ...report.issues.map(seoFinding)],
+      };
     },
   },
   {
@@ -396,6 +423,18 @@ function findingOf(error: unknown, step: string): Finding {
     docs: 'https://ultimate.dev/errors/X_VERIFY_FAILED',
   };
 }
+
+/**
+ * One `MetaIssue` as the gate reports it. `at` is the route FILE and never the URL: every seo error
+ * already names the file in its cause, and `at` is what an agent opens.
+ */
+const seoFinding = (issue: MetaIssue): Finding => ({
+  code: issue.code,
+  cause: issue.cause,
+  fix: issue.fix,
+  docs: `https://ultimate.dev/errors/${issue.code}`,
+  at: issue.file,
+});
 
 export const verifyCommand: CliCommand = {
   spec: {

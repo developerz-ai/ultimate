@@ -66,6 +66,7 @@ describe('unit · x verify', () => {
       'drift',
       'contract-diff',
       'budgets',
+      'seo',
       'manifest',
       'roadmap',
     ]);

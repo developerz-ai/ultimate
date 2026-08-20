@@ -21,13 +21,21 @@ export type Surface = 'site' | 'app';
 const RENDER: Record<Surface, string> = { site: 'isr', app: 'ssr' };
 const HYDRATE: Record<Surface, string> = { site: 'never', app: 'visible' };
 const OFFLINE: Record<Surface, string> = { site: 'precache', app: 'runtime' };
-/** Structured, not a literal string: the route and the test that pins it read the same fact. */
-const BUDGET: Record<Surface, { readonly js: string; readonly lcp: number }> = {
-  site: { js: '0kb', lcp: 1800 },
-  app: { js: '60kb', lcp: 2500 },
+/**
+ * Structured, not a literal string: the route and the test that pins it read the same fact.
+ *
+ * `lcp` is deliberately NOT here. `RouteBudget.lcp` is accepted by `defineRoute`, and nothing in
+ * the framework can produce the `lcpMs` that `checkBudgets` compares it against — `prerender.ts`
+ * emits static HTML and there is no browser in the build to observe a paint. A scaffolded `lcp`
+ * was therefore a budget that reads as declared, is never weighed, and passes silently the moment
+ * a `build-stats.json` row exists: the false green `budgets.ts`'s own header forbids. Scaffolding
+ * only what the build measures is the half of "delete it or thread it" that `x new` can act on.
+ */
+const BUDGET: Record<Surface, { readonly js: string }> = {
+  site: { js: '0kb' },
+  app: { js: '60kb' },
 };
-const budgetLiteral = (surface: Surface): string =>
-  `{ js: '${BUDGET[surface].js}', lcp: ${BUDGET[surface].lcp} }`;
+const budgetLiteral = (surface: Surface): string => `{ js: '${BUDGET[surface].js}' }`;
 /** `isr` without a trigger is `static` wearing a costume — @ultimat3/render rejects it at boot. */
 const REVALIDATE: Record<Surface, string> = { site: "\n  revalidate: { ttl: '1h' },", app: '' };
 
@@ -149,13 +157,14 @@ unitTest('/${path} declares metadata', async () => {
   expect(meta.description ?? '').not.toBe('');
 });
 
-unitTest('/${path} declares its render, offline and budget', () => {
+unitTest('/${path} declares its render and offline strategy', () => {
   expect(config.render).toBe('${RENDER[surface]}');
   expect(config.offline).toBe('${OFFLINE[surface]}');
-  // budget is always on the descriptor, so pin the number: presence cannot fail.
-  expect(config.budget.lcp).toBe(${BUDGET[surface].lcp});
 });
 
+// The only budget this route declares, because it is the only one the build can weigh: nothing
+// in the framework observes a paint, so an lcp budget would be a number pinned here and never
+// compared against anything.
 unitTest('/${path} stays inside its byte budget declaration', () => {
   expect(config.budget.js).toBe('${BUDGET[surface].js}');
 });

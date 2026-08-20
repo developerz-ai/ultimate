@@ -27,8 +27,9 @@ import { flagBool, flagString } from './parse';
  * the serving roles were asked to start and not after they are ready. The barrier that makes
  * "after" true is declarative and belongs to the compose file, not to this plan: the `backfill`
  * service needs `depends_on: { web: { condition: service_healthy } }`, which `docker compose run`
- * honours. Both compose definitions — `docker/docker-compose.prod.yml` and the one
- * `templates/scaffold-container.ts` scaffolds — still owe that service and that condition.
+ * honours. Both compose definitions carry it — `docker/docker-compose.prod.yml`'s `backfill` and
+ * the one `templates/scaffold-container.ts` scaffolds, which also gates on `migrate` completing.
+ * This paragraph said they "still owe" both for as long as they have had them.
  */
 export const DEPLOY_ROLES = ['migrate', 'web', 'sync', 'worker', 'scheduler', 'backfill'] as const;
 
@@ -141,16 +142,13 @@ export const deployCommand: CliCommand = {
       { name: 'image', type: 'string', summary: 'image reference to deploy' },
       { name: 'method', type: 'string', summary: 'compose | helm', default: 'compose' },
       { name: 'dry-run', type: 'boolean', summary: 'print the plan, run nothing' },
-      // Says what it does, not what it was going to do. "forces clients to reload" was read by
-      // nothing: the flag lands in the plan JSON below and no package reads that field, so an
-      // operator shipping a security patch was told an outcome that did not occur. Forcing a
-      // reload is `@ultimat3/pwa`'s `updateSignal({ reason: 'security' })`, which as of 2026-08
-      // has no runtime caller anywhere — wiring this flag to it is a change in that package.
-      {
-        name: 'critical',
-        type: 'boolean',
-        summary: 'record a security deploy in the plan (no client is forced to reload)',
-      },
+      // `--critical` was here and is gone. It parsed, it was echoed into the plan JSON as
+      // `critical: <bool>`, and no file in `packages/` read that field — so the flag changed
+      // nothing about what `x deploy` did, on either method. `flag-reads.ts`'s
+      // `X_CLI_FLAG_UNREAD` passed it, because that gate proves a flag is READ and this one was:
+      // into a field with no reader. Forcing a reload is `@ultimat3/pwa`'s
+      // `updateSignal({ reason: 'security' })`, which has no runtime caller either; a flag that
+      // triggers it is a change in that package, and this was not it.
     ],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
@@ -167,7 +165,6 @@ export const deployCommand: CliCommand = {
     const planJson: JsonValue = {
       image: plan.image,
       method,
-      critical: flagBool(ctx.args, 'critical'),
       steps: plan.steps.map((step) => ({ role: step.role, command: step.command.join(' ') })),
     };
     if (flagBool(ctx.args, 'dry-run')) {

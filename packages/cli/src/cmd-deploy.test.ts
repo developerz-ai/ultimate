@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { isUltimateError } from '@ultimat3/core';
 import {
   DEPLOY_METHODS,
   DEPLOY_ROLES,
@@ -102,7 +103,10 @@ describe('unit · the deploy plan', () => {
 
   test('the command declares every flag its own usage line names', () => {
     const flags = deployCommand.spec.flags?.map((flag) => flag.name) ?? [];
-    for (const flag of ['image', 'method', 'dry-run', 'critical']) expect(flags).toContain(flag);
+    for (const flag of ['image', 'method', 'dry-run']) expect(flags).toContain(flag);
+    // `--critical` is gone, and its absence is the assertion: it parsed, it was echoed into the
+    // plan JSON, and no file read that field — a flag whose only effect was on its own report.
+    expect(flags).not.toContain('critical');
   });
 });
 
@@ -217,17 +221,31 @@ describe('unit · x deploy actually runs the plan it printed', () => {
     expect(ran).toHaveLength(DEPLOY_ROLES.indexOf('worker') + 1);
   });
 
-  test('--critical is recorded in the plan the report carries', async () => {
+  test('the plan carries no field nothing reads — `critical` is not in it', async () => {
     const root = appRoot();
     const { runner } = recordingRunner();
-    const plain = await deployCommand.run(
+    const plan = await deployCommand.run(
       runContext(['deploy', '--image', 'repo/app:1.2.3'], root, runner),
     );
-    expect(plain.data).toMatchObject({ critical: false });
-    const critical = await deployCommand.run(
-      runContext(['deploy', '--image', 'repo/app:1.2.3', '--critical'], root, runner),
-    );
-    expect(critical.data).toMatchObject({ critical: true });
+
+    expect(plan.data).toMatchObject({ image: 'repo/app:1.2.3', method: 'compose' });
+    // `toMatchObject` cannot see an extra key, so the absence is asserted directly: this field was
+    // the flag's only destination, and an operator reading it back was reading their own input.
+    expect(Object.keys(plan.data as Record<string, unknown>)).toEqual(['image', 'method', 'steps']);
+  });
+
+  test('--critical is refused now, and the refusal names the flags that exist', async () => {
+    const root = appRoot();
+    const { runner } = recordingRunner();
+    let code = 'no-throw';
+    try {
+      await deployCommand.run(
+        runContext(['deploy', '--image', 'repo/app:1.2.3', '--critical'], root, runner),
+      );
+    } catch (error) {
+      code = isUltimateError(error) ? error.code : 'not-ultimate';
+    }
+    expect(code).toBe('X_CLI_BAD_FLAG');
   });
 });
 

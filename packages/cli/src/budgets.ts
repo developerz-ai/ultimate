@@ -17,6 +17,14 @@ export const BUILD_STATS_FILE = join('.x', 'build-stats.json');
 export interface RouteStats {
   readonly path: string;
   readonly jsBytes: number;
+  /**
+   * **Written by nothing, `As of 2026-08`.** `apps/web/prerender.ts` is the only producer of this
+   * file and it emits static HTML — there is no browser in the build to observe a paint. So the
+   * comparison in `checkBudgets` below is reachable only for an app that writes its own stats, and
+   * `x new` no longer scaffolds an `lcp` budget for exactly that reason: a budget the build cannot
+   * weigh passes silently the moment a stats row exists, which is the false green this file's
+   * header is about. `RouteBudget.lcp` still accepts one — that key is `@ultimat3/render`'s.
+   */
   readonly lcpMs?: number;
   /** Import chain that pulled the heaviest module into this route. */
   readonly heaviestChain?: readonly string[];
@@ -199,11 +207,6 @@ export async function measureDocumentJs(html: string, out: string): Promise<Meas
     await weigh(url);
   }
   return { jsBytes, entries };
-}
-
-/** The total alone, for a caller with nothing to say about which module was the heavy one. */
-export async function measureJsBytes(html: string, out: string): Promise<number> {
-  return (await measureDocumentJs(html, out)).jsBytes;
 }
 
 /**
