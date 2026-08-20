@@ -42,6 +42,15 @@ export interface SessionInit {
 
 export interface ScrapeSession {
   readonly driver: string;
+  /**
+   * The exit this session ACTUALLY dialled — `undefined` for a direct one. Reported because the
+   * proxy is resolved inside `open()`, after the robots gate handed to it was built: without this
+   * the default `/robots.txt` read leaves from the worker's IP while every page load leaves
+   * through the proxy, which is a second client identity presented to the same origin — and an
+   * origin reachable only through the proxy then reads as "no robots.txt", which the gate treats
+   * as allow-everything. A driver that omits it is asked for its rules directly, as before.
+   */
+  readonly proxy?: string | undefined;
   readonly page: ScrapePage;
   /**
    * The second transport, bound to the SAME session as the page: the browser's cookies, headers

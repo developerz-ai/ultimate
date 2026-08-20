@@ -20,9 +20,12 @@ export interface SignedRequestInput {
   readonly url: string;
   readonly secret: string;
   /**
-   * Defaults to the base THIS disk signs under (`signedUrlBaseFor(disk.name)`), never to the bare
-   * mount prefix: a second default here made every URL `localDriver` mints a signature-mismatch,
-   * because the key parsed as `local/<key>`. Pass one only for a route mounted somewhere else.
+   * Defaults to the base THIS disk signs under (`disk.signedUrlBase`), never to the bare mount
+   * prefix: a second default here made every URL `localDriver` mints a signature-mismatch,
+   * because the key parsed as `local/<key>`. Read off the driver rather than re-derived from
+   * `disk.name`, which is the driver KIND — the segment is the registered disk name, and deriving
+   * it twice is what let both halves agree with each other and disagree with the mounted route.
+   * Pass one only for a route mounted somewhere else.
    */
   readonly baseUrl?: string | undefined;
   readonly disk: StorageDriver;
@@ -60,7 +63,7 @@ async function constraintsFor(
   const result = await verifySignedUrl({
     url: input.url,
     secret: input.secret,
-    baseUrl: input.baseUrl ?? signedUrlBaseFor(input.disk.name),
+    baseUrl: input.baseUrl ?? input.disk.signedUrlBase ?? signedUrlBaseFor(input.disk.name),
     ...(input.clock === undefined ? {} : { clock: input.clock }),
   });
   if (!result.ok) {

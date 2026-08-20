@@ -130,7 +130,11 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
   const root = options.root.replace(/\/+$/, '');
   const maxPutBytes = options.maxPutBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
   const clock = options.clock ?? systemClock;
-  const baseUrl = options.baseUrl ?? signedUrlBaseFor(DRIVER_NAME);
+  // The segment is the disk's REGISTERED name, learned from `defineStorage` at boot — the driver
+  // kind is not a mount point, and minting under it made every disk not literally named `local`
+  // 404 its own URLs. An explicit `baseUrl` outranks the registration: that is the operator
+  // stating where the route is mounted, and inference must not overwrite a decision.
+  let baseUrl = options.baseUrl ?? signedUrlBaseFor(DRIVER_NAME);
   // A dev disk must work with zero config. Outside development the fallback is refused rather
   // than used: the literal is published, so signing with it hands every reader the power to mint
   // a PUT for any key with any size and type limit — which `acceptSignedUpload` then trusts over
@@ -204,6 +208,15 @@ export function localDriver(options: LocalDriverOptions): StorageDriver {
 
   return {
     name: DRIVER_NAME,
+
+    /** A getter, not a captured string: `registerAs` runs after the driver is constructed. */
+    get signedUrlBase(): string {
+      return baseUrl;
+    },
+
+    registerAs(diskName: string): void {
+      if (options.baseUrl === undefined) baseUrl = signedUrlBaseFor(diskName);
+    },
 
     async put(key: string, body: StorageBody, putOptions?: PutOptions): Promise<StorageObject> {
       const safe = assertSafeKey(key);

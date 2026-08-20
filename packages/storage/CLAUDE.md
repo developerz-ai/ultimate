@@ -185,11 +185,19 @@ Gotchas:
 - `acceptSignedUpload` refuses a URL signed with **no** content type (`unconstrained`). `grantUpload`
   always sets one, so such a URL is hand-rolled, and trusting the uploader's header instead is the
   only other option.
-- **The signed base is declared ONCE, in `signedUrlBaseFor(driverName)`.** `localDriver` mints
-  under it and `accept.ts` defaults to `signedUrlBaseFor(disk.name)` — the same base, arrived at
-  from the disk the caller already passed. It was stated twice (`/_storage/local` in the driver,
-  `/_storage` in `verifySignedUrl`'s default), so with both defaults NO genuine URL verified: the
-  key parsed as `local/<key>` and every grant died as `signature-mismatch`. `@ultimat3/cli`'s
+- **The signed base is the disk's REGISTERED name, and it is stated once — on the driver.**
+  `defineStorage` tells each driver its registration key (`StorageDriver.registerAs`), the driver
+  rebases its URLs onto `signedUrlBaseFor(diskName)`, and `accept.ts` reads `disk.signedUrlBase`
+  rather than deriving a second one. Both halves used to derive it from `disk.name` — the DRIVER
+  kind — so they agreed with each other and disagreed with the mounted `/_storage/:disk/*key`
+  route, which resolves the segment through the registry: a disk registered as `uploads` minted
+  `/_storage/local/...` and 404'd its own signatures. Latent only because every disk in this repo
+  happens to be named `local`. An explicit `baseUrl` on `localDriver` outranks the registration
+  (the operator saying where the route is mounted); an unregistered driver still mints under
+  `local`. One driver instance under two disk names is refused at `defineStorage`
+  (`X_CONFIG_INVALID`) — it could only mint under one of them. Before that, the base was stated
+  twice (`/_storage/local` in the driver, `/_storage` in `verifySignedUrl`'s default) and NO
+  genuine URL verified at all: the key parsed as `local/<key>`. `@ultimat3/cli`'s
   `STORAGE_BASE_PATH` is a third statement of the mount prefix and should import
   `DEFAULT_SIGNED_URL_BASE` instead.
 - **`accept.ts` asks the `isTenantScoped`/`isWithinOrg` PAIR, exactly as `dev-storage.ts` does.**

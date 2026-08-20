@@ -98,6 +98,20 @@ export interface SignedUrlOptions {
 export interface StorageDriver {
   /** Disk-independent driver name (`local`, `s3`) — appears in every error cause. */
   readonly name: string;
+  /**
+   * The path prefix THIS disk's own signed URLs hang off, read by `accept.ts` so the minting half
+   * and the verifying half cannot state it twice. Undefined on a driver whose URLs are the
+   * provider's (`s3`), which this package never verifies.
+   */
+  readonly signedUrlBase?: string | undefined;
+  /**
+   * `defineStorage` tells the driver the key it was registered under, at boot, once. A driver that
+   * mints its own URLs hangs them off THAT, never off `name`: the mounted `/_storage/:disk/*key`
+   * route resolves the segment through the registry, so a disk registered as `uploads` whose URLs
+   * say `local` 404s every signature it just wrote. Optional — a driver with no URLs of its own
+   * (`s3`) needs none, and a third-party driver that ignores it keeps minting under `name`.
+   */
+  registerAs?(diskName: string): void;
   put(key: string, body: StorageBody, options?: PutOptions): Promise<StorageObject>;
   get(key: string): Promise<StorageRead>;
   /** Bytes without buffering — the only safe path for anything over a few MB. */

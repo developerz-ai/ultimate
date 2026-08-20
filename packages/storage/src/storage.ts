@@ -1,6 +1,8 @@
 // Single responsibility: named disks (Laravel's model) and the one module-level accessor.
 // Call sites name a disk, never a driver — swapping `local` for `s3` in app.config.ts must
-// not touch a single `storage.disk('uploads').put(...)` call.
+// not touch a single `storage.disk('uploads').put(...)` call. This file is also where a driver
+// LEARNS its disk name (`registerAs`), because the registry is the only holder of that fact and
+// a signed URL's `:disk` segment has to be the name the mounted route resolves.
 
 import { ConfigInvalidError } from '@ultimat3/core';
 import type { StorageDriver } from './driver';
@@ -46,6 +48,21 @@ export function defineStorage(config: StorageConfig): Storage {
   // `toString`, `valueOf`, `hasOwnProperty` and `__proto__`. One function was already answering
   // one question two ways: `default: 'constructor'` is refused above, off `Object.keys`.
   const disks = new Map(Object.entries(config.disks));
+  // One driver instance, one disk name. A driver told two names keeps the last, and every URL it
+  // minted under the first then resolves to a disk it is not — refused here rather than 404ing
+  // one alias at a time. Two disks over one root are two `localDriver()` calls.
+  const registered = new Map<StorageDriver, string>();
+  for (const [diskName, driver] of disks) {
+    const already = registered.get(driver);
+    if (already !== undefined) {
+      throw new ConfigInvalidError({
+        cause: `storage disks "${already}" and "${diskName}" are the same driver instance, and a driver can only mint URLs under one name`,
+        fix: `give "${diskName}" its own driver in app.config.ts: disks: { ${already}: localDriver({ root: '.storage/${already}' }), ${diskName}: localDriver({ root: '.storage/${diskName}' }) }`,
+      });
+    }
+    registered.set(driver, diskName);
+    driver.registerAs?.(diskName);
+  }
   const storageInstance: Storage = {
     defaultDisk,
     diskNames: Object.freeze([...names]),

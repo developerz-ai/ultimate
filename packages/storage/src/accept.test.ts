@@ -15,6 +15,7 @@ import { isStorageError } from './errors';
 import { grantUpload } from './grant';
 import type { SignedUrlConstraints } from './signed-url';
 import { canonicalRequest, SIGNED_URL_PARAMS, signConstraints } from './signed-url';
+import { defineStorage, resetStorage } from './storage';
 import { uploadPolicy } from './upload';
 
 const SECRET = 'test-signing-secret';
@@ -409,5 +410,47 @@ describe('keys outside the tenant namespace', () => {
     expect(
       await outcomeOf(() => readSignedObject({ url, secret: SECRET, disk, orgId: ORG, clock })),
     ).toBe('X_STORAGE_NOT_FOUND');
+  });
+});
+
+// The mounted route is `/_storage/:disk/*key` and resolves `:disk` through the REGISTRY, so the
+// segment a disk mints under has to be the key it was registered under. It was the DRIVER's name
+// on both halves — minting and verifying agreed with each other and both disagreed with the
+// route, so every disk not literally named `local` 404'd its own signed URLs.
+describe('the disk segment is the REGISTERED name, never the driver kind', () => {
+  test('a disk registered as "uploads" mints under /_storage/uploads and reads back', async () => {
+    resetStorage();
+    try {
+      defineStorage({ disks: { uploads: disk } });
+      await disk.put('brand/logo.png', genuinePng(), { contentType: 'image/png' });
+      const url = await disk.signedUrl('brand/logo.png', { method: 'GET' });
+      expect(new URL(url, 'http://storage.invalid').pathname).toBe(
+        '/_storage/uploads/brand/logo.png',
+      );
+      // No `baseUrl`: the default is the base the disk itself signs under, so the two halves
+      // cannot drift apart the way a second `signedUrlBaseFor()` call let them.
+      const read = await readSignedObject({ url, secret: SECRET, disk, orgId: ORG, clock });
+      expect(read.object.contentType).toBe('image/png');
+    } finally {
+      resetStorage();
+    }
+  });
+
+  test('an unregistered disk still mints under its driver name, as it always did', async () => {
+    resetStorage();
+    const url = await localDriver({ root, signingSecret: SECRET, clock }).signedUrl('a.png');
+    expect(new URL(url, 'http://storage.invalid').pathname).toBe('/_storage/local/a.png');
+  });
+
+  test('an explicit baseUrl outranks the registration — it is the operator saying where', async () => {
+    resetStorage();
+    try {
+      const mounted = localDriver({ root, signingSecret: SECRET, clock, baseUrl: '/files/pics' });
+      defineStorage({ disks: { uploads: mounted } });
+      const url = await mounted.signedUrl('a.png');
+      expect(new URL(url, 'http://storage.invalid').pathname).toBe('/files/pics/a.png');
+    } finally {
+      resetStorage();
+    }
   });
 });

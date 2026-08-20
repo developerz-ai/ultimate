@@ -59,6 +59,35 @@ describe('defineStorage', () => {
     expect(isUltimateError(caught) ? caught.code : '').toBe('X_CONFIG_INVALID');
   });
 
+  // The registry is the only holder of the disk NAME, and a signed URL's `:disk` segment is that
+  // name — so a driver has to be told it, and told it once.
+  test('tells each driver the key it was registered under', () => {
+    const told: string[] = [];
+    const listening: StorageDriver = {
+      ...stubDriver('local'),
+      registerAs: (name: string): void => {
+        told.push(name);
+      },
+    };
+    defineStorage({ disks: { uploads: listening, media } });
+    expect(told).toEqual(['uploads']);
+  });
+
+  // Last-name-wins would silently strand every URL minted under the first alias: the mounted
+  // route resolves `:disk` through this map, so one driver answering to two names is one alias
+  // 404ing at a time.
+  test('refuses one driver instance registered under two names', () => {
+    const shared = stubDriver('local');
+    let caught: unknown;
+    try {
+      defineStorage({ disks: { uploads: shared, avatars: shared } });
+    } catch (error) {
+      caught = error;
+    }
+    expect(isUltimateError(caught) ? caught.code : '').toBe('X_CONFIG_INVALID');
+    expect(isUltimateError(caught) ? caught.fix : '').toContain('localDriver(');
+  });
+
   test('rejects an empty disk map', () => {
     let caught: unknown;
     try {

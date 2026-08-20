@@ -115,6 +115,11 @@ async function sessionOver(
   const signal = withWedgeSignal(init.signal, guard.signal);
   return {
     driver: CDP_DRIVER,
+    // The exit the browser was launched or attached with, handed back so the run's robots read
+    // presents the SAME client identity to the origin the page loads from. `options.proxy` and
+    // not `init.proxy`: this is what the launch args and the HTTP leg below actually carry, and a
+    // reported exit that nothing dialled would be worse than none.
+    ...(options.proxy === undefined ? {} : { proxy: options.proxy }),
     page: pageOverTarget(target, {
       clock: init.clock,
       allowHosts: init.rules.allowHosts,

@@ -95,25 +95,35 @@ export async function runScrape<I, Row>(
   // opening a session first would already have spent an identity on a run that cannot succeed.
   const restored = await restorableSession(plan);
   const pageTimeoutMs = toMillis(definition.pageTimeout, DEFAULT_PAGE_TIMEOUT_MS);
+  // The exit the session dials, readable only AFTER `driver.open()` — the proxy is a driver
+  // option and the gate below is an argument to `open()`, so the gate asks for it per read
+  // instead of being handed a value that cannot exist yet. Every read happens during a
+  // navigation, which is after this is assigned.
+  let sessionProxy: string | undefined;
   const session = await driver.open({
     name: definition.name,
     rules,
     clock,
     timeoutMs: pageTimeoutMs,
     secrets,
-    // The gate reads `/robots.txt` over the network, so it gets the run's deadline and the run's
-    // cancellation like every other call this package makes. Without them a hung origin parks
-    // every later navigation to it on one cached promise, unreachable by `ctx.signal`.
+    // The gate reads `/robots.txt` over the network, so it gets the run's deadline, the run's
+    // cancellation and the run's exit, like every other call this package makes. Without the
+    // first two a hung origin parks every later navigation to it on one cached promise,
+    // unreachable by `ctx.signal`; without the third the read leaves from a different IP than
+    // every page load, and an origin reachable only through the proxy answers nothing — which
+    // this gate reads as "no restrictions".
     robots: createRobotsGate({
       policy: definition.robots ?? 'obey',
       timeoutMs: pageTimeoutMs,
       signal: args.ctx.signal,
+      proxy: () => sessionProxy,
     }),
     signal: args.ctx.signal,
     restore: restored,
     pace: (signal) => pace(signal),
     watchdog: definition.watchdog,
   });
+  sessionProxy = session.proxy;
 
   try {
     if (definition.auth !== undefined) {
