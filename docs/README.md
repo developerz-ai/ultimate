@@ -12,6 +12,7 @@ Plus, outside `docs/`:
 
 | Where | What |
 |---|---|
+| [`../README.md`](../README.md) | the entry point — install, the 30-package table, the gate, and one hop to everything below |
 | [`../wiki/Home.md`](../wiki/Home.md) | the reference manual — every field, flag, and error code |
 | [`../llms.txt`](../llms.txt) | the machine-readable repo map — start here if you're an agent |
 | [`../examples/dummy/`](../examples/dummy/README.md) | the reference app: every primitive, once, idiomatically |

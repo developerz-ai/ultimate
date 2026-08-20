@@ -88,6 +88,7 @@ COPY . .
 RUN VERSION_DEFINE="$(bun --print 'JSON.stringify(require("./packages/core/package.json").version)')" \
  && bun build --compile --minify --sourcemap \
       --define ULTIMATE_FRAMEWORK_VERSION="$VERSION_DEFINE" \
+      --external @babel/preset-typescript \
       --outfile /out/app \
       ./packages/cli/src/bin.ts \
  && chmod +x /out/app

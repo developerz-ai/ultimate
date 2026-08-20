@@ -21,6 +21,13 @@ answers the canonical spelling (or `undefined`), and `assertTimeZone` / `resolve
 return it. Anything reading a zone off a request header should canonicalize before caching on it:
 4,096 casings of `Europe/Berlin` used to mint 4,096 permanent `Intl.DateTimeFormat`s, 31 MB.
 
+**A zone is `Area/Location`, or `UTC`.** Nothing else. `CET`, `EST5EDT` and `+02:00` name no
+jurisdiction and carry no DST rule; the single-label `backward` links (`Japan`, `GB`, `Eire`) are
+refused with them, because no rule keeps the first group out and lets the second in. Write the
+slashed spelling — `Europe/Paris`, `Asia/Tokyo`, `Europe/London`. `Intl` is not the judge: ICU 78
+resolves what ICU 75 threw on, so the check is structural and does not move with the runtime.
+**Breaking at 6.0.0**, `Japan` → `Asia/Tokyo`.
+
 One **locale** is one key for the same reason — `Accept-Language` spells one locale `EN-us`,
 `en-US` and `en-latn-us`, and `formatDateTime` and `describeCron` collapse the three before they
 reach a formatter cache. The cap stays either way: an unknown `-u-` extension value survives
@@ -141,7 +148,7 @@ negated; an empty one is `0` in either direction, never `-0`.
 
 | Code | When |
 |---|---|
-| `X_TIMEZONE_INVALID` | not an IANA name (abbreviations and numeric offsets are rejected) |
+| `X_TIMEZONE_INVALID` | not `Area/Location` or `UTC`: an abbreviation (`CET`), a numeric offset (`+02:00`), or a single-label legacy name (`Japan`) |
 | `X_CRON_INVALID` | unparseable expression, or one that can never match |
 | `X_DURATION_INVALID` | `'3'` with no unit, trailing junk, unknown unit |
 | `X_DST_AMBIGUOUS` | overlap hit with `overlap: 'throw'` |

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "4a212e87b080759b7b19828bd37e5a82d813f61898c4307a02cbd29f46e25dde",
+  "buildId": "1ba48a90258ec7a614fa1fb658aaf62e3c6c082f9efdfc6768d0a8c451b6112b",
   "tiers": {
     "0": [
       "core",
@@ -593,6 +593,11 @@
       "at": "packages/i18n/src/errors.ts"
     },
     {
+      "code": "X_CATALOG_UNREGISTERED",
+      "owner": "i18n",
+      "at": "packages/i18n/src/errors.ts"
+    },
+    {
       "code": "X_CHART_VERSION_STALE",
       "owner": "scripts",
       "at": "scripts/chart-version.ts"
@@ -788,6 +793,11 @@
       "at": "scripts/doc-commands.ts"
     },
     {
+      "code": "X_DOC_COMMAND_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/doc-commands.ts"
+    },
+    {
       "code": "X_DOC_COMMAND_UNKNOWN",
       "owner": "scripts",
       "at": "scripts/doc-commands.ts"
@@ -816,6 +826,16 @@
       "code": "X_DOC_FIX_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/doc-fixes.ts"
+    },
+    {
+      "code": "X_DOC_GATE_STEPS_STALE",
+      "owner": "scripts",
+      "at": "scripts/gate-steps.ts"
+    },
+    {
+      "code": "X_DOC_GATE_STEPS_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/gate-steps.ts"
     },
     {
       "code": "X_DOC_RELEASE_FACT_STALE",

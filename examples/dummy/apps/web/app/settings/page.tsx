@@ -1,142 +1,152 @@
 /**
- * Preferences. `spa` because it is a form behind auth: the shell is static, the data never is,
- * and nothing here is worth server-rendering.
+ * Preferences. `ssr` because the values on screen are the acting member's own row: there is
+ * nothing here to cache and nothing to stream — one render, per request, behind the route's gate.
  *
- * All three pickers write to the **member row**, not to localStorage. That is what makes the
- * digest email, the admin dashboard and a future mobile client agree with this screen. Theme and
- * the digest switch apply instantly through `mutator.ts`'s `setTheme` / `toggleDigestOptIn` —
- * locale and timezone stay behind the explicit "Save" below, in `actions.ts`.
+ * All four pickers write to the **member row**, not to localStorage. That is what makes the digest
+ * email, the admin dashboard and a future mobile client agree with this screen. The server renders
+ * what is SAVED; `settings.island.tsx` is the editor, and it is the only module this route ships.
  */
 
 import type { AppTheme } from '@postly/domain';
 import { SUPPORTED_LOCALES, SUPPORTED_ZONES, THEMES } from '@postly/domain';
 import { useT } from '@postly/i18n';
+import { derivePath } from '@ultimat3/action';
 import type { KnownPermission } from '@ultimat3/policy';
-import { defineRoute } from '@ultimat3/render';
-import { Button, DateTime, Select, Stack, Switch, Text } from '@ultimat3/ui';
+import { defineRoute, island } from '@ultimat3/render';
+import { DateTime, Stack, Text } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
-import { createSignal, For } from 'solid-js';
+import type { Api } from '../../api';
 import { useActor } from '../../shared/actor';
-import { client } from '../../shared/client';
 import { Layout } from '../layout';
 import styles from './page.module.scss';
 
+/**
+ * The action the editor posts to, named once and checked by the compiler, then derived into a
+ * path. `savePreferences` → `POST /api/settings/save-preferences`, minted here and carried into
+ * the browser as a prop: an island may not import `@ultimat3/action` (36 kB of `rpc()` in a
+ * browser chunk), and it must not spell a URL of its own either.
+ */
+const SAVE_ACTION = 'savePreferences' satisfies keyof Api['actions'];
+
+/**
+ * The page's one island, declared ABOVE `defineRoute` so the route can drain it. `props` are the
+ * exact keys the browser gets — JSON, already translated. `hydrate` is stated on the route below
+ * rather than derived, because a settings form that waits for a click is a form whose first click
+ * is spent waking it up.
+ */
+const Preferences = island({
+  src: './settings.island.tsx',
+  props: [
+    'endpoint',
+    'nowIso',
+    'locale',
+    'timezone',
+    'theme',
+    'digestOptIn',
+    'locales',
+    'timezones',
+    'themes',
+    'labels',
+  ],
+});
+
 export const config = defineRoute({
-  render: 'spa',
+  render: 'ssr',
   /**
-   * The shell is static, so it carries no server-rendered data to authorise — the route itself
-   * has to hold the rule.
-   *
    * A `RouteGuard` is a PERMISSION and not a `Policy` (`packages/render/src/route.ts`): render
-   * only needs to know the route has a gate, so that evaluation stays in one place. Passing
-   * `memberSelf` — the `can()` object — put `{ label, permissions }` where `{ permission }` was
-   * required, and every reader of `config.policy.permission` (the route's own `auth` meta) read
-   * `undefined`. `member:self` is the same grant `savePreferences` gates on; the row-level half,
-   * "your own member row", stays in `memberSelf` where the action evaluates it.
+   * only needs to know the route has a gate, so that evaluation stays in one place. `member:self`
+   * is the same grant `savePreferences` gates on; the row-level half, "your own member row",
+   * stays in `memberSelf` where the action evaluates it.
    */
   policy: { permission: 'member:self' satisfies KnownPermission },
-  /** The shell precaches; the preferences themselves are always fetched. */
-  offline: 'precache',
+  /** Never precached: this document is one member's own row, and a shared cache entry is a leak. */
+  offline: 'runtime',
   hydrate: 'idle',
-  budget: { js: '45kb', lcp: 1800 },
+  /**
+   * Measured, not guessed: a 19,368-byte island chunk plus the 615-byte `idle` hydration runtime
+   * is 19,983 bytes on this document, against 20,480 — 497 bytes of headroom, so an import added
+   * here is meant to fail. 15,020 of those bytes are the Solid runtime itself, which is issue
+   * #254's subject; the editor's own compiled markup is the other 4.3 kB.
+   *
+   * Re-measure rather than adjust: `buildIslands` in `settings.island.test.ts` reports the chunk,
+   * and `hydrateRuntimeBytes` reports the runtime.
+   */
+  budget: { js: '20kb', lcp: 1800 },
   meta: ({ t }) => ({ title: t('app.settings.metaTitle'), robots: { index: false } }),
 });
 
 export function Page(): JSX.Element {
   const t = useT();
   const actor = useActor();
+  const member = actor.member;
 
-  const [locale, setLocale] = createSignal(actor.member.locale);
-  const [zone, setZone] = createSignal(actor.member.tz);
-  const [theme, setThemeSignal] = createSignal(actor.member.theme);
-  const [digestOptIn, setDigestOptInSignal] = createSignal(actor.member.digestOptIn);
-  const [saved, setSaved] = createSignal(false);
+  /** Identifiers, not prose: a zone and a BCP-47 tag are the same in every locale. */
+  const identity = (value: string): { value: string; label: string } => ({ value, label: value });
 
-  const save = async () => {
-    // Theme and digest opt-in already applied instantly through their own mutators below; they
-    // still ride along here so a caller of `savePreferences` gets back the row it expects.
-    await client.savePreferences({
-      locale: locale(),
-      tz: zone(),
-      theme: theme(),
-      digestOptIn: digestOptIn(),
-    });
-    setSaved(true);
-  };
-
-  /** Applies instantly and survives offline — the mutator's own local twin, not this "Save". */
-  const applyTheme = async (next: AppTheme) => {
-    setThemeSignal(next);
-    document.documentElement.dataset.theme = next === 'system' ? '' : next;
-    await client.setTheme({ memberId: actor.member.id, theme: next });
-  };
-
-  const applyDigestOptIn = async (next: boolean) => {
-    setDigestOptInSignal(next);
-    await client.toggleDigestOptIn({ memberId: actor.member.id, digestOptIn: next });
+  /**
+   * Every theme's label, resolved once. A record over `AppTheme` rather than a ternary at each of
+   * the two call sites: adding a fourth theme is a compile error here instead of a silent gap.
+   * Written out as three literal calls because `x i18n check` reads the SOURCE: a key reached
+   * only through a lookup — the translator handed `KEYS[value]` — lands on the audit's `unused`
+   * list, which is its "safe to delete" half. All three were on it while this file used one.
+   */
+  const themeLabel: Record<AppTheme, string> = {
+    system: t('app.settings.themeSystem'),
+    light: t('app.settings.themeLight'),
+    dark: t('app.settings.themeDark'),
   };
 
   return (
     <Layout>
-      <Stack gap="6" class={styles.page}>
+      <Stack gap={6} class={styles.page}>
         <header>
           <h1>{t('app.settings.heading')}</h1>
           <Text tone="muted">{t('app.settings.intro')}</Text>
         </header>
 
-        <Select
-          label={t('app.settings.localeLabel')}
-          hint={t('app.settings.localeHelp')}
-          value={locale()}
-          onChange={setLocale}
-        >
-          <For each={SUPPORTED_LOCALES}>{(value) => <option value={value}>{value}</option>}</For>
-        </Select>
+        <div class={styles.editor}>
+          <Preferences
+            endpoint={derivePath(SAVE_ACTION).path}
+            nowIso={actor.now.toISOString()}
+            locale={member.locale}
+            timezone={member.tz}
+            theme={member.theme}
+            digestOptIn={member.digestOptIn}
+            locales={SUPPORTED_LOCALES.map(identity)}
+            timezones={SUPPORTED_ZONES.map(identity)}
+            themes={THEMES.map((value) => ({ value, label: themeLabel[value] }))}
+            labels={{
+              locale: t('app.settings.localeLabel'),
+              localeHelp: t('app.settings.localeHelp'),
+              timezone: t('app.settings.timezoneLabel'),
+              timezoneHelp: t('app.settings.timezoneHelp'),
+              theme: t('app.settings.themeLabel'),
+              digest: t('app.settings.digestLabel'),
+              digestHelp: t('app.settings.digestHelp'),
+              save: t('common.save'),
+              saved: t('common.saved'),
+              retry: t('common.retry'),
+            }}
+          >
+            {/*
+              The island's shell: what the SERVER knows, which is the saved row. It is on screen
+              before the chunk loads and it is what a member with no JavaScript reads — `app/` is
+              the surface that assumes a browser (a 14 kB JS baseline), so the editing half is the
+              island's and this half never pretends to be a form.
+            */}
+            <dl class={styles.summary}>
+              <dt>{t('app.settings.localeLabel')}</dt>
+              <dd>{member.locale}</dd>
 
-        <Select
-          label={t('app.settings.timezoneLabel')}
-          hint={t('app.settings.timezoneHelp')}
-          value={zone()}
-          onChange={setZone}
-        >
-          <For each={SUPPORTED_ZONES}>{(value) => <option value={value}>{value}</option>}</For>
-        </Select>
+              <dt>{t('app.settings.timezoneLabel')}</dt>
+              <dd>
+                {member.tz} — <DateTime value={actor.now} timeZone={member.tz} dateStyle="long" />
+              </dd>
 
-        {/* Immediate feedback that the zone means something: now, as this member will see it. */}
-        <p class={styles.preview}>
-          <DateTime value={actor.now} zone={zone()} format="long" />
-        </p>
-
-        <Select
-          label={t('app.settings.themeLabel')}
-          value={theme()}
-          onChange={(next) => void applyTheme(next)}
-        >
-          <For each={THEMES}>
-            {(value) => (
-              <option value={value}>
-                {t(
-                  value === 'system'
-                    ? 'app.settings.themeSystem'
-                    : value === 'light'
-                      ? 'app.settings.themeLight'
-                      : 'app.settings.themeDark',
-                )}
-              </option>
-            )}
-          </For>
-        </Select>
-
-        <Switch
-          label={t('app.settings.digestLabel')}
-          hint={t('app.settings.digestHelp')}
-          checked={digestOptIn()}
-          onChange={(next) => void applyDigestOptIn(next)}
-        />
-
-        <div class={styles.actions}>
-          <Button onClick={save}>{t('common.save')}</Button>
-          <Text tone="muted">{saved() ? t('common.saved') : ''}</Text>
+              <dt>{t('app.settings.themeLabel')}</dt>
+              <dd>{themeLabel[member.theme]}</dd>
+            </dl>
+          </Preferences>
         </div>
       </Stack>
     </Layout>

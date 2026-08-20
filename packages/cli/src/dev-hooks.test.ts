@@ -98,7 +98,7 @@ describe('unit · x dev authorizes from the app’s own policies', () => {
       file: 'apps/web/app/settings/page.tsx',
       suspenseBoundaries: 0,
       config: defineRoute({
-        render: 'spa',
+        render: 'ssr',
         offline: 'network-only',
         hydrate: 'never',
         budget: { js: '0kb' },

@@ -73,7 +73,7 @@ bunx x verify
   ✗ budgets            120ms
   ✓ manifest           63ms
   - roadmap            0ms
-✗ 1 of 17 steps failed — 6 skipped: contract, live, job, e2e, contract-diff, roadmap
+✗ 1 of 19 steps failed — 6 skipped: contract, live, job, e2e, contract-diff, roadmap
 ```
 
 `-` is skipped, not passed: no `*.contract.test.ts` exists yet, so the step has nothing to check. The summary counts the two apart and names every skip, so a gate that is green because a suite does not exist says so on the one line you read. [Tutorial 2](Tutorial-02-First-Feature) turns three of those dashes into ticks.

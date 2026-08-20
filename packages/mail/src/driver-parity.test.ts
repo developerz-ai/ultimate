@@ -13,7 +13,6 @@ import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
 import { resetJobDriver } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { blocks } from './blocks';
-import { registerMailCatalog } from './catalog';
 import type { MailDriver } from './driver';
 import { createMemoryDriver, resetMailDriver, setMailDriver } from './driver';
 import { createResendDriver, type MailFetch } from './driver-resend';
@@ -25,7 +24,6 @@ import type { SmtpConnector, SmtpStream } from './smtp-client';
 const FROM = 'Postly <no-reply@postly.test>';
 const TO = 'ada@example.test';
 
-registerMailCatalog();
 registerCatalog(
   'en',
   loadCatalog({

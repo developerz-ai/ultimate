@@ -9,14 +9,12 @@ import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
 import { resetJobDriver } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { blocks } from './blocks';
-import { registerMailCatalog } from './catalog';
 import { resetMailDriver, setMailDriver } from './driver';
 import { createSmtpDriver } from './driver-smtp';
 import { assertEnvelopeAddress } from './envelope-address';
 import { defineMail, send } from './mail';
 import { type SmtpSessionOptions, type SmtpStream, smtpDeliver } from './smtp-client';
 
-registerMailCatalog();
 registerCatalog(
   'en',
   loadCatalog({

@@ -31,7 +31,7 @@ const routes: readonly PwaRoute[] = [
     dynamic: true,
   },
   { path: '/dashboard', surface: 'app', mode: 'stream', offline: 'runtime' },
-  { path: '/reports', surface: 'app', mode: 'spa', offline: 'precache', revision: 'cccc3333' },
+  { path: '/reports', surface: 'app', mode: 'ssr', offline: 'precache', revision: 'cccc3333' },
   { path: '/api/posts', surface: 'api', mode: 'ssr', offline: 'network-only' },
 ];
 
@@ -56,7 +56,11 @@ describe('generateServiceWorker', () => {
     expect(byPattern.get('^/$')).toBe('cache-first');
     expect(byPattern.get('^/blog/[^/]+/?$')).toBe('stale-while-revalidate');
     expect(byPattern.get('^/dashboard/?$')).toBe('stale-while-revalidate');
-    expect(byPattern.get('^/reports/?$')).toBe('cache-first');
+    // `precache` and `network-first` together, which is not a contradiction: the entry is in the
+    // precache so the route answers offline, and online it asks the network first because an
+    // authed `app/` document is one actor's own. No `app/` mode maps to `cache-first` — the row
+    // that did was `spa`, and serving one member's cached HTML to the next is what it cost.
+    expect(byPattern.get('^/reports/?$')).toBe('network-first');
     // api/ renders nothing, so it gets no cache rule at all.
     expect([...byPattern.keys()].some((p) => p.includes('api'))).toBe(false);
   });

@@ -23,11 +23,50 @@ export interface AdminPageOptions {
    */
   readonly dir?: string;
   readonly locales?: readonly string[];
+  /**
+   * The app's own catalog module — `@<app>/i18n`, read off `packages/i18n/package.json` by
+   * `resolveCatalogModule`. Absent only for an app that ships no such package.
+   */
+  readonly catalogModule?: string;
 }
 
 const titleKeyFor = (name: string): string => `admin.${name}.title`;
 
-const pageSource = (name: string, permission: string, dir: string): string => {
+/**
+ * The generated page reaches strings through the APP's catalog module — the one that calls
+ * `defineCatalogs()` — so a page that renders a string depends on the module that registers them.
+ * `t` from `@ultimat3/i18n` renders while depending on nothing, which is how a shipped app served
+ * every string as a loud miss with a green gate (issue #249). An app with no catalog module keeps
+ * the framework import: emitting one that cannot resolve is worse than the wrong idiom.
+ */
+const catalogImport = (module: string | undefined): string =>
+  module === undefined
+    ? "import { t } from '@ultimat3/i18n';"
+    : `import { useT } from '${module}';`;
+
+/**
+ * The two imports, in the order biome's organize-imports wants — which DEPENDS on the app's scope
+ * and cannot be hardcoded either way. An app catalog (`@myapp/i18n`) sorts BEFORE
+ * `@ultimat3/admin`; the fallback `@ultimat3/i18n` sorts AFTER it. Emitting one fixed order makes
+ * every generated admin page a lint error in exactly one of the two cases, and each case is
+ * covered by a different job — the fallback by `templates`' own linter test, the app-scoped one
+ * only by `scaffold-smoke`, which runs the generators against a real scaffold.
+ */
+const pageImports = (module: string | undefined): string =>
+  [`import type { AdminCustomPage, AdminPageProps } from '@ultimat3/admin';`, catalogImport(module)]
+    .sort((a, b) => (a.slice(a.indexOf("'")) < b.slice(b.indexOf("'")) ? -1 : 1))
+    .join('\n');
+
+/** `useT()` is per render, so the component binds it in its own body. */
+const translatorBinding = (module: string | undefined): string =>
+  module === undefined ? '' : '\n  const t = useT();\n';
+
+const pageSource = (
+  name: string,
+  permission: string,
+  dir: string,
+  module: string | undefined,
+): string => {
   const Name = pascal(name);
   const declaration = camel(name);
   return `// Admin page: /${name}. An ORDINARY component — there is no \`defineRoute\` here, deliberately:
@@ -39,10 +78,9 @@ const pageSource = (name: string, permission: string, dir: string): string => {
 //   import { ${declaration}Page } from './${name}';
 //   defineAdmin({ …, pages: […, ${declaration}Page] })
 
-import type { AdminCustomPage, AdminPageProps } from '@ultimat3/admin';
-import { t } from '@ultimat3/i18n';
+${pageImports(module)}
 
-export function ${Name}Page(props: AdminPageProps) {
+export function ${Name}Page(props: AdminPageProps) {${translatorBinding(module)}
   return (
     <section>
       <h1>{t('${titleKeyFor(name)}')}</h1>
@@ -92,7 +130,10 @@ export function adminPageFiles(
   // Trailing slashes trimmed exactly as `islandFiles` does — one `--at`, one normalization.
   const dir = (options.dir ?? DEFAULT_ADMIN_PAGE_DIR).replace(/\/+$/, '');
   return [
-    { path: `${dir}/${name}.tsx`, contents: pageSource(name, options.permission, dir) },
+    {
+      path: `${dir}/${name}.tsx`,
+      contents: pageSource(name, options.permission, dir, options.catalogModule),
+    },
     { path: `${dir}/${name}.test.ts`, contents: pageTest(name, options.permission) },
     ...resolveLocales(options.locales).map((locale) => ({
       path: catalogPath(locale),

@@ -112,7 +112,7 @@ The app code does not change. What changes is which of the above stops being opt
 |---|---|
 | Deny-by-default authz, one rule, every surface | **true** |
 | Tenant isolation on read and write, refused not rewritten | **true** as mechanism; **unproven end to end** — no tracked app demonstrates it, and the reference app is pinned red on `X_TENANCY_UNSCOPED` |
-| `x verify` green = shippable | **true of the framework**; no Ultimate *application* in this repo is green — 7 of 17 steps pinned red on the reference app, 2 on the deployed demo ([`scripts/lib/gated-apps.ts`](../../scripts/lib/gated-apps.ts)) |
+| `x verify` green = shippable | **true of the framework**; no Ultimate *application* in this repo is green — 4 of 19 steps pinned red on the reference app (`typecheck`, `e2e`, `drift`, `budgets`), 2 on the deployed demo (`boundaries`, `budgets`) ([`scripts/lib/gated-apps.ts`](../../scripts/lib/gated-apps.ts)) |
 | Transactional outbox on by default | **true**, newly — it was built and never installed |
 | A trace crosses HTTP → job | **true**, newly. The HTTP root span honours the inbound `traceparent` and mints a valid 32-hex id where it used to mint a dashed UUID no collector accepts; `x_jobs` carries `traceparent` and the worker parents the job span to it |
 | …and on to a live query | **false** — the realtime path carries a producer id and sequence for gap detection, not a trace context |

@@ -132,9 +132,15 @@ describe('formatDateTime', () => {
 
   // `style` sets BOTH halves, and the two wide styles deliberately do not set a wide TIME style:
   // `timeStyle: 'full'` appends the zone name, which `formatWithOffset` exists to render instead.
+  //
+  // Matched, not compared: CLDR moves the SEPARATORS between ICU releases and this repo's runtime
+  // and its CI runner are on different ones. ICU 75 renders `Saturday 14 March…`, ICU 78 (Bun 1.4)
+  // `Saturday, 14 March…`. The optional comma is the only tolerance — the pattern is anchored, so
+  // a `timeStyle` that widened to `'full'` still fails on the appended zone name, which is the
+  // whole claim of this test.
   test("style: 'full' widens the date and holds the time at medium", () => {
-    expect(formatDateTime(at, { locale: 'en-GB', zone: 'Europe/Berlin', style: 'full' })).toBe(
-      'Saturday 14 March 2026 at 09:00:00',
+    expect(formatDateTime(at, { locale: 'en-GB', zone: 'Europe/Berlin', style: 'full' })).toMatch(
+      /^Saturday,? 14 March 2026 at 09:00:00$/u,
     );
     expect(formatDateTime(at, { locale: 'en-GB', zone: 'Europe/Berlin', style: 'short' })).toBe(
       '14/03/2026, 09:00',
@@ -194,8 +200,14 @@ describe('formatTime', () => {
 describe('formatRange', () => {
   const to = fromIso('2026-03-16T08:00:00Z');
 
+  // Anchored, with the spacing around the en dash optional, for the reason `style: 'full'` above
+  // gives: ICU 75 collapses to `14–16 Mar 2026` and ICU 78 to `14 – 16 Mar 2026`. What the test
+  // asserts is that `Mar 2026` appears ONCE — an implementation that formatted both endpoints
+  // separately fails the anchors regardless of which ICU renders it.
+  const COLLAPSED = /^14 ?– ?16 Mar 2026$/u;
+
   test('one call, so the locale collapses the shared parts', () => {
-    expect(formatRange(at, to, { locale: 'en-GB', zone: 'Europe/Berlin' })).toBe('14–16 Mar 2026');
+    expect(formatRange(at, to, { locale: 'en-GB', zone: 'Europe/Berlin' })).toMatch(COLLAPSED);
     // A range whose endpoints land on one local day collapses to that single day.
     expect(formatRange(at, at, { locale: 'en-GB', zone: 'Europe/Berlin' })).toBe('14 Mar 2026');
   });
@@ -225,6 +237,6 @@ describe('formatRange', () => {
     } finally {
       Object.defineProperty(Intl.DateTimeFormat.prototype, 'formatRange', descriptor);
     }
-    expect(formatRange(at, to, { locale: 'en-GB', zone: 'Europe/Berlin' })).toBe('14–16 Mar 2026');
+    expect(formatRange(at, to, { locale: 'en-GB', zone: 'Europe/Berlin' })).toMatch(COLLAPSED);
   });
 });

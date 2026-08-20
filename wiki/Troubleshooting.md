@@ -9,7 +9,7 @@ Run these first, in this order. All support `--json`.
 | Command | Answers |
 |---|---|
 | `x doctor --json` | Bun version, env schema, DB/transport/storage reachability, port conflicts |
-| `x verify --json` | the gate — 17 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap |
+| `x verify --json` | the gate — 19 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, manifest, roadmap |
 | `x errors explain <CODE> --json` | cause, fix command, docs URL for any `X_*` code |
 | `x doctor --json` | environment, versions, drift, ports, PWA prerequisites — each with a fix |
 | `x dev` then `/_x` | the live panels: routes, timeline, jobs, db, mail, cache, policy, manifest |

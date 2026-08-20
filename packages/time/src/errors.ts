@@ -63,11 +63,16 @@ export function scheduleInvalid(field: string, value: unknown, range: string): T
   });
 }
 
+/**
+ * Two refused classes, and they need different instructions — one `fix:` that only described the
+ * abbreviations left an operator holding `"Japan"` reading advice about `CET`. A legacy single-label
+ * link has a mechanical replacement; an abbreviation has none, and saying so IS the instruction.
+ */
 export function timezoneInvalid(zone: string): TimeError {
   return new TimeError({
     code: 'X_TIMEZONE_INVALID',
-    cause: `"${zone}" is not an IANA timezone name`,
-    fix: 'use an IANA identifier such as Europe/Berlin, America/New_York or UTC — never an abbreviation like CET or a numeric offset',
+    cause: `"${zone}" is not an IANA Area/Location zone name`,
+    fix: "use Area/Location, or UTC. A single-label legacy name swaps mechanically — Japan → Asia/Tokyo, GB → Europe/London, Universal → UTC. An abbreviation or a numeric offset does not: CET and EST5EDT name no jurisdiction and carry no DST rule, so name the city whose clock you mean (Europe/Paris, America/New_York). Every accepted name: Intl.supportedValuesOf('timeZone')",
   });
 }
 

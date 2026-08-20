@@ -29,7 +29,7 @@ export const HTTP_METHODS: readonly HttpMethod[] = [
   'OPTIONS',
 ];
 
-export type RenderMode = 'static' | 'isr' | 'ssr' | 'stream' | 'spa';
+export type RenderMode = 'static' | 'isr' | 'ssr' | 'stream';
 
 export type RouteParams = Readonly<Record<string, string>>;
 

@@ -13,6 +13,7 @@ import { loadCatalog } from '@ultimat3/i18n';
 import {
   auditApp,
   loadCatalogs,
+  resolveCatalogModule,
   resolveDefaultLocale,
   runtimeKeyPatterns,
   scanSource,
@@ -247,5 +248,34 @@ describe('unit · seedCatalog, syncCatalog, serializeCatalog', () => {
     const original = { 'app.feed.heading': '{org} feed', 'site.home.title': 'Home' };
     await Bun.write(join(dir, 'packages/i18n/catalogs/en.json'), serializeCatalog(original));
     expect((await loadCatalogs(dir))['en']).toEqual(original);
+  });
+});
+
+describe('unit · resolveCatalogModule', () => {
+  test('answers the app catalog package name a generated page must import useT from', async () => {
+    const dir = tempRoot('x-i18n-module-');
+    await Bun.write(
+      join(dir, 'packages/i18n/package.json'),
+      `${JSON.stringify({ name: '@myapp/i18n', version: '0.0.0' }, null, 2)}\n`,
+    );
+
+    expect(await resolveCatalogModule(dir)).toBe('@myapp/i18n');
+  });
+
+  test('answers undefined for an app with no catalog package — never a specifier that cannot resolve', async () => {
+    const dir = tempRoot('x-i18n-module-none-');
+    await Bun.write(join(dir, 'app.config.ts'), 'export const config = {};\n');
+
+    expect(await resolveCatalogModule(dir)).toBeUndefined();
+  });
+
+  test('a manifest that will not parse, or names nothing, is undefined and not a throw', async () => {
+    const dir = tempRoot('x-i18n-module-bad-');
+    await Bun.write(join(dir, 'packages/i18n/package.json'), '{ not json\n');
+    expect(await resolveCatalogModule(dir)).toBeUndefined();
+
+    // `x g route` writing a page is not the command that should refuse an app over its manifest.
+    await Bun.write(join(dir, 'packages/i18n/package.json'), '{"version":"0.0.0"}\n');
+    expect(await resolveCatalogModule(dir)).toBeUndefined();
   });
 });

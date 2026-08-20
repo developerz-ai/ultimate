@@ -13,7 +13,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Catalog } from '@ultimat3/i18n';
-import { loadCatalog } from '@ultimat3/i18n';
+import { loadCatalog, registerCatalog, resetCatalogs } from '@ultimat3/i18n';
 import { I18N_SUBCOMMANDS, i18nCommand } from './cmd-i18n';
 import type { CommandContext } from './command';
 import { msg } from './messages';
@@ -61,6 +61,21 @@ async function seedApp(): Promise<string> {
   return root;
 }
 
+/**
+ * The half of a real boot a temp directory cannot perform: `packages/i18n/src/index.ts` there
+ * cannot resolve `@ultimat3/i18n`, so nothing registers. Every test whose subject is the FILE
+ * audit calls this first — without it the app is the one issue #249 reported, and the registration
+ * finding is the correct answer rather than the one those tests are asking about.
+ */
+async function registerSeededCatalogs(appRoot: string): Promise<void> {
+  for (const locale of ['en', 'es']) {
+    registerCatalog(
+      locale,
+      await readCatalog(join(appRoot, `packages/i18n/catalogs/${locale}.json`)),
+    );
+  }
+}
+
 function contextFor(appRoot: string, args: readonly string[]): CommandContext {
   return {
     args: parseArgs(['i18n', ...args], [i18nCommand.spec]),
@@ -102,6 +117,7 @@ async function rejectedBy(call: () => Promise<unknown>): Promise<ThrownShape> {
 afterEach(() => {
   if (root !== '') rmSync(root, { recursive: true, force: true });
   root = '';
+  resetCatalogs();
 });
 
 describe('unit · x i18n spec', () => {
@@ -118,6 +134,7 @@ describe('unit · x i18n spec', () => {
 describe('unit · x i18n check', () => {
   test('a missing key fails the command with an X_CATALOG_MISSING_KEYS finding on the right file', async () => {
     const appRoot = await seedApp();
+    await registerSeededCatalogs(appRoot);
     const result = await i18nCommand.run(contextFor(appRoot, ['check']));
 
     expect(result.ok).toBe(false);
@@ -133,6 +150,7 @@ describe('unit · x i18n check', () => {
 
   test('with no subcommand, defaults to check', async () => {
     const appRoot = await seedApp();
+    await registerSeededCatalogs(appRoot);
     const result = await i18nCommand.run(contextFor(appRoot, []));
     expect(result.ok).toBe(false);
     expect(result.command).toBe('i18n');
@@ -144,12 +162,38 @@ describe('unit · x i18n check', () => {
       join(appRoot, 'packages/i18n/catalogs/es.json'),
       `${JSON.stringify({ greeting: 'Hola', farewell: 'Adios' }, null, 2)}\n`,
     );
+    await registerSeededCatalogs(appRoot);
     const result = await i18nCommand.run(contextFor(appRoot, ['check']));
 
     expect(result.ok).toBe(true);
     expect(result.findings).toEqual([]);
     expect(result.summary).toBe(msg('cli.i18n.ok', { locales: 2, keys: 2 }));
     expect(result.lines?.some((line) => line.includes('extra'))).toBe(true);
+    // The column that says the catalogs reached the RUNNING app, not just the disk.
+    expect(result.lines?.some((line) => line.includes('registered'))).toBe(true);
+  });
+
+  test('a complete catalog that no module registered fails, where both guards were green', async () => {
+    const appRoot = await seedApp();
+    await Bun.write(
+      join(appRoot, 'packages/i18n/catalogs/es.json'),
+      `${JSON.stringify({ greeting: 'Hola', farewell: 'Adios' }, null, 2)}\n`,
+    );
+    // Deliberately no `registerSeededCatalogs`: this IS the app issue #249 reported — every key
+    // on disk, every key used in source, and `defineCatalogs()` in a module nothing imports.
+    const result = await i18nCommand.run(contextFor(appRoot, ['check']));
+
+    expect(result.ok).toBe(false);
+    const codes = (result.findings ?? []).map((finding) => finding.code);
+    expect(codes).toContain('X_CATALOG_UNREGISTERED');
+    const finding = (result.findings ?? []).find(
+      (candidate) => candidate.code === 'X_CATALOG_UNREGISTERED',
+    );
+    expect(finding?.at).toBe('packages/i18n/catalogs/en.json');
+    expect(finding?.cause).toContain('greeting');
+    expect(finding?.fix).toContain('defineCatalogs');
+    // en (5 keys) + es (2 keys), across two locales — every one a `⟦key⟧` on a rendered page.
+    expect(result.summary).toBe(msg('cli.i18n.gaps', { missing: 7, locales: 2 }));
   });
 });
 

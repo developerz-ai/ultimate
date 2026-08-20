@@ -79,6 +79,11 @@ export async function loadCatalogs(root: string): Promise<Readonly<Record<Locale
 export interface AuditFacts {
   readonly report: ExtractReport;
   readonly catalogs: Readonly<Record<Locale, Catalog>>;
+  /** The raw scan, carried so the runtime half can re-audit against the REGISTRY rather than
+   * against the files — same keys, same plural rules, a different question. */
+  readonly extraction: Extraction;
+  /** The `prefix*` patterns derived from dynamic calls, carried for the same reason. */
+  readonly ignoreUnused: readonly string[];
 }
 
 /** The static head of a template literal, up to its first interpolation. */
@@ -105,7 +110,12 @@ export function runtimeKeyPatterns(extraction: Extraction): readonly string[] {
 export async function auditApp(root: string): Promise<AuditFacts> {
   const [extraction, catalogs] = await Promise.all([scanSource(root), loadCatalogs(root)]);
   const ignoreUnused = runtimeKeyPatterns(extraction);
-  return { report: auditCatalogs({ extraction, catalogs, ignoreUnused }), catalogs };
+  return {
+    report: auditCatalogs({ extraction, catalogs, ignoreUnused }),
+    catalogs,
+    extraction,
+    ignoreUnused,
+  };
 }
 
 /**
@@ -128,6 +138,34 @@ export function resolveDefaultLocale(
   if (Object.hasOwn(catalogs, DEFAULT_LOCALE)) return DEFAULT_LOCALE;
   const locales = Object.keys(catalogs);
   return locales.length === 1 ? locales[0] : undefined;
+}
+
+/** Where an app's catalog module declares its own package name. */
+const I18N_PACKAGE_JSON = 'packages/i18n/package.json';
+
+/**
+ * The specifier a generated page imports `useT()` from — `@<app>/i18n`, read off the app's own
+ * manifest rather than derived from a directory name, because the package name is the only thing
+ * a TypeScript import can actually resolve.
+ *
+ * `undefined` when the app ships no catalog package, and every generator falls back to `t` from
+ * `@ultimat3/i18n` there: emitting an import that cannot resolve trades a wrong idiom for a file
+ * that does not compile. A manifest that will not parse, or names nothing, answers the same way —
+ * this is a generator convenience, and refusing to scaffold over it would be the wrong verdict.
+ */
+export async function resolveCatalogModule(root: string): Promise<string | undefined> {
+  const path = join(root, I18N_PACKAGE_JSON);
+  if (!existsSync(path)) return undefined;
+  try {
+    const parsed: unknown = await Bun.file(path).json();
+    if (typeof parsed !== 'object' || parsed === null) return undefined;
+    const name = (parsed as { name?: unknown }).name;
+    return typeof name === 'string' && name.length > 0 ? name : undefined;
+  } catch {
+    // Deliberately silent: `x g route` writing a page is not the command that should refuse an
+    // app over a malformed manifest, and `bun install` already does.
+    return undefined;
+  }
 }
 
 /**

@@ -69,7 +69,27 @@ export const routeParams = (path: string): readonly string[] =>
 const routeDir = (surface: Surface, path: string): string =>
   `apps/web/${surface}/${segmentsOf(path).join('/')}`;
 
-const pageSource = (surface: Surface, path: string): string => {
+/**
+ * How the generated page reaches a string, and it is the whole reason this generator takes an app
+ * module at all. `useT()` comes from the app's own catalog module — the one that calls
+ * `defineCatalogs()` — so a page that renders a string DEPENDS on the module that registers them.
+ * Reaching straight for `t` in `@ultimat3/i18n` renders strings while depending on nothing, which
+ * is how a shipped app served `⟦app.play.title⟧` on every page with a green gate (issue #249), and
+ * this generator is where that idiom came from.
+ *
+ * An app with no catalog module keeps the framework import: emitting one that cannot resolve would
+ * trade a wrong idiom for a file that does not compile.
+ */
+const catalogImport = (module: string | undefined): string =>
+  module === undefined
+    ? "import { t } from '@ultimat3/i18n';"
+    : `import { useT } from '${module}';`;
+
+/** `useT()` is per render, so the body binds it; `meta` takes the router's own `t`. */
+const translatorBinding = (module: string | undefined): string =>
+  module === undefined ? '' : '\n  const t = useT();\n';
+
+const pageSource = (surface: Surface, path: string, module: string | undefined): string => {
   const name = pascal(
     path
       .split('/')
@@ -79,7 +99,7 @@ const pageSource = (surface: Surface, path: string): string => {
   return `// Route: /${path} on the ${surface} surface. Config first: render mode, offline
 // strategy and budget are declarations, not runtime choices.
 
-import { t } from '@ultimat3/i18n';
+${catalogImport(module)}
 import { defineRoute } from '@ultimat3/render';
 import styles from './page.module.scss';
 
@@ -88,13 +108,13 @@ export const config = defineRoute({
   hydrate: '${HYDRATE[surface]}',
   offline: '${OFFLINE[surface]}',
   budget: ${budgetLiteral(surface)},
-  meta: () => ({
+  meta: ({ t }) => ({
     title: t('${titleKey(path)}'),
     description: t('${titleKey(path).replace('.title', '.description')}'),
   }),
 });
 
-export function ${name}Page() {
+export function ${name}Page() {${translatorBinding(module)}
   return (
     <main class={styles.page}>
       <h1>{t('${titleKey(path)}')}</h1>
@@ -202,6 +222,12 @@ export interface RouteOptions {
   readonly surface: Surface;
   /** Every locale the catalog entry ships for. Defaults to `['en']` — an app narrows or grows it. */
   readonly locales?: readonly string[];
+  /**
+   * The app's own catalog module — `@<app>/i18n`, read off `packages/i18n/package.json` by
+   * `resolveCatalogModule`. Absent for an app that ships no such package, and only then does the
+   * generated page fall back to importing `t` from `@ultimat3/i18n`.
+   */
+  readonly catalogModule?: string;
 }
 
 export function routeFiles(rawPath: string, options: RouteOptions): readonly GeneratedFile[] {
@@ -209,7 +235,7 @@ export function routeFiles(rawPath: string, options: RouteOptions): readonly Gen
   const dir = routeDir(options.surface, path);
   const locales = resolveLocales(options.locales);
   return [
-    { path: `${dir}/page.tsx`, contents: pageSource(options.surface, path) },
+    { path: `${dir}/page.tsx`, contents: pageSource(options.surface, path, options.catalogModule) },
     { path: `${dir}/page.module.scss`, contents: styleSource() },
     { path: `${dir}/page.test.ts`, contents: routeTest(options.surface, path) },
     { path: `${dir}/page.e2e.test.ts`, contents: routeE2eTest(path) },

@@ -3,12 +3,7 @@
 // `<img srcset>` from `srcsetDescriptors()` without decoding a byte, and when it does need the
 // bytes, `transformImage()` returns exactly the size `fitDimensions()` already promised.
 
-import {
-  blurDataUrl,
-  BLUR_PLACEHOLDER_WIDTH as CORE_BLUR_PLACEHOLDER_WIDTH,
-  probeImage,
-  transformImageBytes,
-} from '@ultimat3/core';
+import { blurDataUrl, probeImage, transformImageBytes } from '@ultimat3/core';
 import { assertSafeKey, keyExtname } from './path';
 
 export const IMAGE_FORMATS = ['avif', 'webp', 'jpeg', 'png'] as const;
@@ -33,8 +28,6 @@ export interface ImageSize {
 
 export const DEFAULT_QUALITY = 80;
 export const DEFAULT_SRCSET_WIDTHS = [320, 640, 960, 1280, 1920] as const;
-/** Small enough to inline in HTML; big enough to blur convincingly. Core owns the number. */
-export const BLUR_PLACEHOLDER_WIDTH = CORE_BLUR_PLACEHOLDER_WIDTH;
 
 const FORMAT_EXTENSIONS: Readonly<Record<ImageFormat, string>> = {
   avif: 'avif',
@@ -116,10 +109,10 @@ export function fitDimensions(source: ImageSize, transform: ImageTransform): Ima
 }
 
 /**
- * Decode, resize, encode — core's pipeline, which encodes **png and jpeg only**. `avif` and
- * `webp` stay key/`srcset` math: asking for their bytes rejects with core's
- * `X_IMAGE_UNSUPPORTED` (not re-wrapped — one failure, one code), and producing them means a
- * CDN or a custom `ImageTransformDriver`. PNG is also the only output that keeps alpha.
+ * Decode, resize, encode — core's pipeline, which encodes **png, jpeg and webp**. `avif` stays
+ * key/`srcset` math: asking for its bytes rejects with core's `X_IMAGE_UNSUPPORTED` (not
+ * re-wrapped — one failure, one code) because it needs an OS codec the portable backend never
+ * uses, and producing it means a CDN or a custom `ImageTransformDriver`.
  *
  * The output box is `fitDimensions()`, always: that is the size `@ultimat3/seo` has already
  * written into the `<img>` tag, and bytes that disagreed with it would be the layout shift
@@ -144,5 +137,5 @@ export async function transformImage(
 
 /** A `data:` URI small enough to inline as the LQIP behind a real image. Always PNG. */
 export async function blurPlaceholder(bytes: Uint8Array): Promise<string> {
-  return blurDataUrl(bytes, BLUR_PLACEHOLDER_WIDTH);
+  return blurDataUrl(bytes);
 }

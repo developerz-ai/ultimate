@@ -8,7 +8,7 @@
 // would, and `node:path` because Bun exposes no path API to build what either of them takes.
 import { type FileHandle, mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { catalogKeys, catalogMissingKeys } from '@ultimat3/i18n';
+import { catalogKeys } from '@ultimat3/i18n';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
@@ -21,9 +21,9 @@ import {
   serializeCatalog,
   syncCatalog,
 } from './i18n-audit';
+import { checkRegistration, missingKeyFindings } from './i18n-registration';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
-import { findingFrom } from './output';
 import { renderTable } from './table';
 import { catalogPath, resolveLocales } from './templates/locales';
 
@@ -102,21 +102,24 @@ function resolveOneLocale(ctx: CommandContext, sub: string): string {
 }
 
 async function runCheck(root: string): Promise<CommandResult> {
-  const { report, catalogs } = await auditApp(root);
+  const { report, catalogs, extraction, ignoreUnused } = await auditApp(root);
+  // The runtime question, asked after the file question and never instead of it: a catalog can be
+  // complete on disk, used everywhere in source, and reach no registry at all (issue #249).
+  const registration = await checkRegistration({ root, catalogs, extraction, ignoreUnused });
 
-  const findings: Finding[] = report.locales
-    .filter((audit) => audit.missing.length > 0)
-    .map((audit) => ({
-      ...findingFrom(catalogMissingKeys(audit.locale, audit.missing)),
-      at: catalogPath(audit.locale),
-    }));
+  const findings: Finding[] = [...missingKeyFindings(report), ...registration.findings];
 
-  const header = ['locale', 'keys', 'missing', 'unused'];
+  // Whether the LOCALE has a catalog is the wrong question — the framework's own `en` is always
+  // registered, so a locale-presence column reads `yes` for an app whose every key is a loud miss.
+  // The column answers the key-level one: does the registry hold what this file defines?
+  const unregistered = new Set(registration.unregisteredLocales);
+  const header = ['locale', 'keys', 'missing', 'unused', 'registered'];
   const rows = report.locales.map((audit) => [
     audit.locale,
     String(catalogKeys(catalogs[audit.locale] ?? {}).length),
     String(audit.missing.length),
     String(audit.unused.length),
+    unregistered.has(audit.locale) ? 'no' : 'yes',
   ]);
   const lines = renderTable(header, rows).map((line) => `  ${line}`);
 
@@ -135,13 +138,26 @@ async function runCheck(root: string): Promise<CommandResult> {
     }
   }
 
-  const gapLocales = report.locales.filter((audit) => audit.missing.length > 0).length;
-  const missingTotal = report.locales.reduce((sum, audit) => sum + audit.missing.length, 0);
-  const summary = report.ok
+  // A key that renders a loud miss counts once, whichever half of the check found it: a missing
+  // catalog entry and an entry no registry holds are the same `⟦key⟧` on the same page.
+  const gapLocales =
+    report.locales.filter((audit) => audit.missing.length > 0).length + registration.locales;
+  const missingTotal =
+    report.locales.reduce((sum, audit) => sum + audit.missing.length, 0) +
+    registration.unregistered;
+  const ok = report.ok && registration.ok;
+  const summary = ok
     ? msg('cli.i18n.ok', { locales: report.locales.length, keys: report.used.length })
     : msg('cli.i18n.gaps', { missing: missingTotal, locales: gapLocales });
 
-  return { ok: report.ok, command: 'i18n', summary, lines, findings, data: asJson(report) };
+  return {
+    ok,
+    command: 'i18n',
+    summary,
+    lines,
+    findings,
+    data: { ...asJson(report), ok, registered: [...registration.registered] },
+  };
 }
 
 async function runAdd(root: string, ctx: CommandContext): Promise<CommandResult> {

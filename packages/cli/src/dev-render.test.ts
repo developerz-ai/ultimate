@@ -11,7 +11,9 @@ import {
   defineRoute,
   h,
   loadStylesheet,
+  RENDER_MODES,
   registerRoute,
+  SURFACE_SPECS,
 } from '@ultimat3/render';
 import { appRoutes } from './dev-render';
 
@@ -125,7 +127,7 @@ describe('unit · x dev renders the app routes', () => {
   test('a gated route is gated by the pipeline, not by a CLI check', async () => {
     register({
       file: 'apps/web/app/settings/page.tsx',
-      render: 'spa',
+      render: 'ssr',
       policy: { permission: 'settings.read' },
     });
     const response = await get('/settings');
@@ -149,6 +151,26 @@ describe('unit · x dev renders the app routes', () => {
 
   test('no registered routes means no page routes — and no crash', () => {
     expect(appRoutes({ buildId: BUILD_ID })).toEqual([]);
+  });
+
+  // Driven off `RENDER_MODES` and not off a list written here, because the defect it closes was a
+  // mode with no renderer at all: `spa` never reached `routeBody`, so every `spa` route in every
+  // app served `<div id="x-root"></div>` — a blank page, 200, correct headers, for the framework's
+  // whole history. A mode that forgets its body is now a red test rather than a shipped blank page.
+  test('every render mode puts the route component inside the hydration root', async () => {
+    for (const mode of RENDER_MODES) {
+      clearRoutes();
+      const surface = SURFACE_SPECS.site.allowedModes.includes(mode) ? 'site' : 'app';
+      register({
+        file: `apps/web/${surface}/probe/page.tsx`,
+        render: mode,
+        ...(mode === 'isr' ? { revalidate: { ttl: '5m' } } : {}),
+        component: () => h('main', { class: 'probe' }, mode),
+      });
+
+      const body = await (await get('/probe')).text();
+      expect(body).toContain(`<div id="x-root"><main class="probe">${mode}</main></div>`);
+    }
   });
 
   test("a route's component reaches the body, inside the hydration root", async () => {

@@ -140,7 +140,7 @@ Every primitive emits a test scaffold that fails until filled in — an untested
 
 ## `x verify`
 
-The single gate. Green means shippable ([axiom 5](./00-thesis.md)). **17 steps**, in this order — `VERIFY_STEPS` in [`packages/cli/src/cmd-verify.ts`](../../packages/cli/src/cmd-verify.ts) is the executable copy.
+The single gate. Green means shippable ([axiom 5](./00-thesis.md)). **19 steps**, in this order — `VERIFY_STEP_NAMES` in [`packages/cli/src/verify-step.ts`](../../packages/cli/src/verify-step.ts) is the executable copy of the list, `VERIFY_STEPS` in [`cmd-verify.ts`](../../packages/cli/src/cmd-verify.ts) the implementations. A page stating another number fails `bun run scripts/gate-steps.ts`.
 
 | # | Step | Fails on |
 |---|---|---|
@@ -154,13 +154,15 @@ The single gate. Green means shippable ([axiom 5](./00-thesis.md)). **17 steps**
 | 13 | **drift** | schema differs from migrations |
 | 14 | **contract-diff** | a breaking change to a published action/query without a version bump |
 | 15 | budgets | per-route JS bytes, precache size |
-| 16 | manifest | `x.manifest.json` differs from what the code produces, or `AGENTS.md` is absent |
-| 17 | roadmap | a milestone row with no status marker, or one marked ✅ whose named artifacts are not on disk ([`14-roadmap.md`](./14-roadmap.md)) |
+| 16 | **seo** | an indexable `site/` route with no title, or no description a search result can render |
+| 17 | **i18n** | a string this app renders that resolves in no catalog, or a catalog nothing registers |
+| 18 | manifest | `x.manifest.json` differs from what the code produces, or `AGENTS.md` is absent |
+| 19 | roadmap | a milestone row with no status marker, or one marked ✅ whose named artifacts are not on disk ([`14-roadmap.md`](./14-roadmap.md)) |
 
 A skipped step is never counted as a passing one. The summary carries both numbers and names the
-skips — `12 of 17 steps passed in 53224ms — 5 skipped: job, eval, drift, contract-diff, budgets` —
+skips — `12 of 19 steps passed in 53224ms — 7 skipped: job, eval, drift, contract-diff, budgets, seo, i18n` —
 so a green gate that is green because the suite does not exist has to say so on the one line every
-reader sees. `all 17 steps passed` means seventeen steps actually ran.
+reader sees. `all 19 steps passed` means nineteen steps actually ran.
 
 **The floor: a step that once applied must keep applying.** Naming the skips makes them visible;
 `x.verify.json` is what makes one *fail*. It is hand-written and committed — `{ "steps": [...] }`,

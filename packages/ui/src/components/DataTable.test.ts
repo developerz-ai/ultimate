@@ -5,10 +5,21 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
+import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
 import { byTag, fire, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
 import { DataTable } from './DataTable';
 import type { SortState } from './sort-state';
+
+/**
+ * What this component must render for a ui key, looked up BY THE KEY in the catalog it ships in.
+ *
+ * These assertions read `⟦ui.x⟧` until 5.1.0, because `registerFrameworkCatalog()` had one caller
+ * and a unit test was never it — so every framework string was a loud miss here and the marker was
+ * the only observable. It is registered by importing `@ultimat3/i18n` now, so the marker is gone;
+ * the KEY is still what is asserted, which is what these tests are about.
+ */
+const uiString = (key: string): string => FRAMEWORK_CATALOG[key] ?? `no catalog entry for ${key}`;
 
 interface Row {
   id: string;
@@ -100,7 +111,7 @@ describe('DataTable', () => {
 
     test('an empty state with no title falls back to the catalog, never to English', () => {
       const nodes = table({ rows: [] });
-      expect(byTag(nodes, 'p')[0]?.props['children']).toContain(UI_KEYS.empty);
+      expect(byTag(nodes, 'p')[0]?.props['children']).toBe(uiString(UI_KEYS.empty));
     });
 
     test('an error replaces the table with the report, carrying the code verbatim', () => {
@@ -181,14 +192,14 @@ describe('DataTable', () => {
 
     test('the control names the action it will perform, through the catalog', () => {
       const unsorted = one(byTag(table(), 'button'), 'sort');
-      expect(unsorted.props['aria-label']).toBe(`Name: ⟦${UI_KEYS.sortAscending}⟧`);
+      expect(unsorted.props['aria-label']).toBe(`Name: ${uiString(UI_KEYS.sortAscending)}`);
 
       const ascending = one(
         byTag(table({ sort: { key: 'name', direction: 'asc' } }), 'button'),
         'sort',
       );
       // Already ascending, so the next click sorts descending — that is what it must announce.
-      expect(ascending.props['aria-label']).toBe(`Name: ⟦${UI_KEYS.sortDescending}⟧`);
+      expect(ascending.props['aria-label']).toBe(`Name: ${uiString(UI_KEYS.sortDescending)}`);
     });
 
     test('the direction indicator is decoration, and matches the state it indicates', () => {

@@ -7,6 +7,10 @@ import { apiFiles } from './scaffold-api';
 import { icon } from './scaffold-icon';
 import { rolesFiles } from './scaffold-roles';
 
+// The one dependency this manifest names, and it is not decoration: every page below reads its
+// strings through `@<app>/i18n`'s `useT()`, so the surface that renders a string DEPENDS on the
+// module that registers the catalogs. An undeclared workspace dependency resolves through the root
+// symlink and then breaks the day the app is built anywhere else.
 const webPackage = (app: NameSet): string => `{
   "name": "@${app.kebab}/web",
   "version": "0.0.0",
@@ -18,6 +22,9 @@ const webPackage = (app: NameSet): string => `{
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@${app.kebab}/i18n": "0.0.0"
   }
 }
 `;
@@ -34,7 +41,12 @@ const tsconfig = (): string => `{
 const sitePage = (
   app: NameSet,
 ): string => `// The landing page. site/ is 0kb JS: static render, hydrate never, no framework script tag.
-import { t } from '@ultimat3/i18n';
+//
+// Strings come from \`useT()\` — this app's own catalog module — and never from
+// \`t\` in @ultimat3/i18n. That import is what puts the module holding \`defineCatalogs()\` in
+// this page's graph, so rendering a string is what registers the catalogs. A page that reached
+// past it shipped every string as \`\u27e6key\u27e7\` with \`x verify\` green (issue #249).
+import { useT } from '@${app.kebab}/i18n';
 import { defineRoute } from '@ultimat3/render';
 import styles from './page.module.scss';
 
@@ -43,13 +55,17 @@ export const config = defineRoute({
   hydrate: 'never',
   offline: 'precache',
   budget: { js: '0kb' },
-  meta: () => ({
+  // \`t\` is handed to \`meta\` by the router — one translator per render, resolved against the
+  // request's locale before the head is built.
+  meta: ({ t }) => ({
     title: t('site.home.title'),
     description: t('site.home.description'),
   }),
 });
 
 export function HomePage() {
+  const t = useT();
+
   return (
     <main class={styles.hero}>
       <h1>{t('site.home.title')}</h1>
@@ -103,11 +119,13 @@ unitTest('the landing page ships zero JS and declares metadata', async () => {
 });
 `;
 
-const dashboardPage =
-  (): string => `// The authed dashboard. app/ streams: a static shell is flushed instantly and the holes arrive
+const dashboardPage = (
+  app: NameSet,
+): string => `// The authed dashboard. app/ streams: a static shell is flushed instantly and the holes arrive
 // as their data resolves.
 
-import { t } from '@ultimat3/i18n';
+// \`useT()\`, not \`t\` from @ultimat3/i18n — see apps/web/site/page.tsx for why.
+import { useT } from '@${app.kebab}/i18n';
 import { defineRoute } from '@ultimat3/render';
 import styles from './page.module.scss';
 
@@ -123,10 +141,15 @@ export const config = defineRoute({
   // Auth is a policy, never a route-local flag: one authz system, evaluated everywhere.
   policy: { permission: 'dashboard:read' },
   budget: { js: '60kb' },
-  meta: () => ({ title: t('app.dashboard.title'), description: t('app.dashboard.description') }),
+  meta: ({ t }) => ({
+    title: t('app.dashboard.title'),
+    description: t('app.dashboard.description'),
+  }),
 });
 
 export function DashboardPage() {
+  const t = useT();
+
   return (
     <section class={styles.panel}>
       <h1>{t('app.dashboard.title')}</h1>
@@ -157,14 +180,18 @@ unitTest('the dashboard renders on the server, is gated, and has an offline stra
 });
 `;
 
-const offlineFallback =
-  (): string => `// The offline fallback. Every app/ route with offline: 'runtime' falls back here, so a train
+const offlineFallback = (
+  app: NameSet,
+): string => `// The offline fallback. Every app/ route with offline: 'runtime' falls back here, so a train
 // tunnel shows the product's own shell instead of the browser's error page.
 
-import { t } from '@ultimat3/i18n';
+// \`useT()\`, not \`t\` from @ultimat3/i18n — see apps/web/site/page.tsx for why.
+import { useT } from '@${app.kebab}/i18n';
 import styles from './offline.module.scss';
 
 export function OfflineFallback() {
+  const t = useT();
+
   return (
     <main class={styles.offline}>
       <h1>{t('app.offline.title')}</h1>
@@ -267,6 +294,8 @@ unitTest('holds answers from the role map, and an anonymous actor holds nothing'
 });
 `;
 
+// Same one dependency as `apps/web`, and for the same reason: `app/admin/page.tsx` reads its
+// strings through `@<app>/i18n`'s `useT()`.
 const adminPackage = (app: NameSet): string => `{
   "name": "@${app.kebab}/admin",
   "version": "0.0.0",
@@ -278,28 +307,36 @@ const adminPackage = (app: NameSet): string => `{
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@${app.kebab}/i18n": "0.0.0"
   }
 }
 `;
 
-const adminPage =
-  (): string => `// The generated admin dashboard. It ships an MCP surface over the app's own actions, so the
+const adminPage = (
+  app: NameSet,
+): string => `// The generated admin dashboard. It ships an MCP surface over the app's own actions, so the
 // user's agents can drive the user's product with the user's permissions.
 
-import { t } from '@ultimat3/i18n';
+// \`useT()\`, not \`t\` from @ultimat3/i18n — see apps/web/site/page.tsx for why.
+import { useT } from '@${app.kebab}/i18n';
 import { defineRoute } from '@ultimat3/render';
 
 export const config = defineRoute({
-  render: 'spa',
+  render: 'ssr',
   hydrate: 'idle',
   offline: 'network-only',
-  // A spa renders no data, so the shell itself must be gated — @ultimat3/render requires it.
+  // Behind auth, and \`ssr\` is the one mode that can be: it renders per request, so the guard runs
+  // on the server before the page does. \`static\` and \`isr\` refuse a policy outright.
   policy: { permission: 'admin:read' },
   budget: { js: '120kb' },
-  meta: () => ({ title: t('admin.home.title'), description: t('admin.home.description') }),
+  meta: ({ t }) => ({ title: t('admin.home.title'), description: t('admin.home.description') }),
 });
 
 export function AdminHome() {
+  const t = useT();
+
   return <h1>{t('admin.home.title')}</h1>;
 }
 `;
@@ -402,10 +439,10 @@ export function appFiles(app: NameSet, example: boolean): readonly GeneratedFile
     { path: 'apps/web/site/page.tsx', contents: sitePage(app) },
     { path: 'apps/web/site/page.module.scss', contents: siteStyle() },
     { path: 'apps/web/site/page.test.ts', contents: sitePageTest() },
-    { path: 'apps/web/app/dashboard/page.tsx', contents: dashboardPage() },
+    { path: 'apps/web/app/dashboard/page.tsx', contents: dashboardPage(app) },
     { path: 'apps/web/app/dashboard/page.module.scss', contents: dashboardStyle() },
     { path: 'apps/web/app/dashboard/page.test.ts', contents: dashboardTest() },
-    { path: 'apps/web/app/offline.tsx', contents: offlineFallback() },
+    { path: 'apps/web/app/offline.tsx', contents: offlineFallback(app) },
     { path: 'apps/web/app/offline.module.scss', contents: offlineStyle() },
     // The third surface, and the one call that registers what the app declares — `scaffold-api.ts`.
     ...apiFiles(example),
@@ -425,7 +462,7 @@ export function appFiles(app: NameSet, example: boolean): readonly GeneratedFile
     // `apps/web/site/page.tsx` — `x dev` loads both surfaces into one route table and the
     // scaffolded app failed its own `x routes` with X_ROUTE_DUPLICATE. `/admin` also matches
     // @ultimat3/admin's own `basePath` default, so the two agree instead of merely not clashing.
-    { path: 'apps/admin/app/admin/page.tsx', contents: adminPage() },
+    { path: 'apps/admin/app/admin/page.tsx', contents: adminPage(app) },
     { path: 'apps/mobile/README.md', contents: placeholder('mobile', app) },
     { path: 'apps/desktop/README.md', contents: placeholder('desktop', app) },
   ];

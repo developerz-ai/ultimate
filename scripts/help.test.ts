@@ -10,11 +10,11 @@ const does = (command: string): string | undefined =>
 
 describe('unit · the script catalogue', () => {
   // It said "all 16 steps" while `VERIFY_STEP_NAMES` and CLAUDE.md both said 17. 18 as of 4.0.0,
-  // when `seo` was mounted — the literal below is the deliberate half: adding a step must be an
-  // edit here too, so no step joins the gate without somebody counting.
+  // when `seo` was mounted, and 19 when `i18n` was — the literal below is the deliberate half:
+  // adding a step must be an edit here too, so no step joins the gate without somebody counting.
   test('the step count is projected from the step list, never restated', () => {
     expect(does('bun run scripts/verify.ts')).toContain(`all ${VERIFY_STEP_NAMES.length} steps`);
-    expect(VERIFY_STEP_NAMES.length).toBe(18);
+    expect(VERIFY_STEP_NAMES.length).toBe(19);
   });
 
   // The app gate is a headline command in CLAUDE.md and was absent, so an agent reading this

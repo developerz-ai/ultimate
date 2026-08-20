@@ -1,9 +1,10 @@
 // What breaks in a presentational component is never the pixels — it is the accessible name it
 // forgot, the decoration it read out loud, or the string it hardcoded instead of resolving through
 // the catalog. Outside a request the translator is the loud-miss one, so a resolved key renders as
-// `⟦ui.loading⟧`: a component that wrote its own English would render the English.
+// uiString('ui.loading'): a component that wrote its own English would render the English.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
 import { byTag, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
 import { Avatar, initialsOf } from './Avatar';
@@ -12,6 +13,16 @@ import { Skeleton } from './Skeleton';
 import { Spinner } from './Spinner';
 import { Text } from './Text';
 import { Tooltip } from './Tooltip';
+
+/**
+ * What this component must render for a ui key, looked up BY THE KEY in the catalog it ships in.
+ *
+ * These assertions read `⟦ui.x⟧` until 5.1.0, because `registerFrameworkCatalog()` had one caller
+ * and a unit test was never it — so every framework string was a loud miss here and the marker was
+ * the only observable. It is registered by importing `@ultimat3/i18n` now, so the marker is gone;
+ * the KEY is still what is asserted, which is what these tests are about.
+ */
+const uiString = (key: string): string => FRAMEWORK_CATALOG[key] ?? `no catalog entry for ${key}`;
 
 const styleOf = (node: { props: Record<string, unknown> }): Record<string, string> =>
   node.props['style'] as Record<string, string>;
@@ -101,7 +112,7 @@ describe('the presentational primitives', () => {
     test('has a live status role and a name resolved through the catalog', () => {
       const node = one(withAttr(renderNodes(Spinner, {}), 'role', 'status'), 'spinner');
       expect(node.props['aria-live']).toBe('polite');
-      expect(node.props['aria-label']).toContain(UI_KEYS.loading);
+      expect(node.props['aria-label']).toBe(uiString(UI_KEYS.loading));
       expect(node.props['aria-hidden']).toBeUndefined();
     });
 

@@ -5,9 +5,6 @@
 
 <p align="center"><strong>The full-stack framework where the primary developer is an AI agent.</strong></p>
 
-<p align="center"><em>Rails' opinions. Bun's speed. One command that means shippable.</em></p>
-
-
 <div align="center">
 
 [![CI](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml/badge.svg)](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml)
@@ -15,22 +12,21 @@
 [![Bun](https://img.shields.io/badge/bun-%E2%89%A5%201.3-black.svg?logo=bun)](https://bun.sh)
 [![Version](https://img.shields.io/npm/v/%40ultimat3%2Fcore?label=version&color=blue)](https://www.npmjs.com/package/@ultimat3/core)
 
+[Wiki — the reference manual](https://github.com/developerz-ai/ultimate/wiki) ·
+[Error codes](wiki/Error-Codes.md) ·
+[CLI reference](wiki/CLI-Reference.md) ·
+[Adding a feature](docs/architecture/15-adding-a-feature.md) ·
+[llms.txt](llms.txt)
+
 </div>
 
-## Built by agents, for agents, maintained by agents
+> **If you are a coding agent, start with [`llms.txt`](llms.txt).** Every doc, wiki page and package README as one link map, generated from the on-disk indexes rather than hand-maintained — and carrying no version number at all, only the commands that resolve one.
 
-Nobody writes this code by hand anymore, and the framework is designed for that rather than
-retrofitted to it. A coding agent works 24/7/365, and — the part that actually matters — it writes
-the tenth feature the way it wrote the first. No Friday-afternoon shortcut, no "I'll clean this up
-later", no second way of doing a thing because someone new joined. Consistency at volume is the
-thing humans are worst at and agents are best at.
+## What it is
 
-That only pays off if the framework agrees. One way to do each thing, so there is nothing to choose
-between. Conventions that are build errors, so the compiler corrects the agent instead of a
-reviewer. Errors carrying a stable code, a cause and a command that fixes it, so a failure costs one
-round-trip. Docs local in `node_modules`, so nothing reaches for a wiki. `--json` on every command,
-so output is parsed rather than re-read. Each of those is worth a little on its own; together they
-are the difference between an agent that ships and one that thrashes.
+Rails' philosophy on a Bun + Postgres + SolidJS stack. Everything is one of **eight primitives**; one `action` declaration projects into an HTTP route, an OpenAPI operation, a typed client, a job handle, an MCP tool and a test — all on one `policy`, because two authz systems is how every framework of this shape has died.
+
+`x verify` is the contract: green means shippable.
 
 <p align="center">
   <img src="assets/never-send-a-human.webp" alt="Agent Smith: &quot;Never send a human to do a machine's job.&quot;" width="460" />
@@ -38,234 +34,25 @@ are the difference between an agent that ships and one that thrashes.
 
 <p align="center"><sub><em>The Matrix</em> (1999)</sub></p>
 
-**Measured, and only this much:**
-
-| What was measured | The result |
-|---|---|
-| **Realtime reachability** | 50,000 real WebSocket clients against **one** `sync` node, `SIGKILL`ed with no drain — no `reconnect` frame sent, so every client recovers on its own backoff. All 50,000 reconnected; **49,981** received a channel patch inside the window. Time to first patch on the reconnected socket: p50 **54.0s**, p90 **105.5s**, max 145.7s. It times reconnect + resubscribe + one delivery, and nothing after it — it was called "time-to-consistent" until 2026-08, and it could not see a lost patch |
-| **Realtime delivery** | 10,000 clients, same forced restart, a probe every 200ms: **1,666,882 channel patches received, 0 observed sequence gaps** — every client's sequence dense across its connection, no gap, no duplicate, no rewind. A lower bound, not a proof of zero loss: a hole is only visible between two frames one connection received. `As of 2026-08` the only run with delivery accounting; the 50,000-client result predates the counter and has none |
-| **The DB-load half** | **156,851** connect attempts shed by the shipped `AcceptBudget` (500/s, burst 2000) before reaching any query or snapshot path. Recovery is bounded by admission control, not by the matcher |
-| **What it is not** | one node, in-process transport — neither run crossed NATS, and neither subscribes to a live query, so no cursor, snapshot or gap-repair path is under test. Per-node recovery, **not** a multi-node result, and not a throughput or latency-under-load figure |
-
-Reproduce it: `bun run scripts/bench/restart-bench.ts --clients 10000 --probe-interval-ms 200` — the committed report and the run's own transcript are in [`scripts/bench/results/`](scripts/bench/results/).
-
-**Not claimed at 4.0.0:**
-
-| Open | Where it stands |
-|---|---|
-| **Two-platform deploy proof** | 1.1.0 gave a scaffolded app a real deployable artifact — `x new` writes `apps/web/server.ts`, `prerender.ts`, a Dockerfile and `docker-compose.prod.yml`, and `ROLE=migrate` runs release-phase migrations. The **proof** is still open: the demo app on Compose **and** K8s from one image, with an invisible rolling restart, is [milestone 11](docs/idea/14-roadmap.md) and has not been demonstrated |
-| **Known gaps shipped in 1.1.0** | all four are fixed in 2.0.0 — but a fix and a proof are different things, and one of the four still lacks the proof. `x build --target binary` no longer crashes at import — the version read is lazy and `x build` passes `--define ULTIMATE_FRAMEWORK_VERSION`, and [`docker/Dockerfile`](docker/Dockerfile) passes it too and ends in `/out/app --version`, so a binary that cannot answer fails the image build rather than the first command an operator runs. The target is still unproven end to end: booting is not serving, and no scaffolded app has been compiled and served from a bare VM · `docker-compose.prod.yml` no longer pairs a published host port with `replicas` above 1: `web` and `sync` declare `replicas: 1` in all four files and each header names the two ways up, which makes the one-box ceiling declared rather than broken, not lifted · the shared cache tier's Lua invalidation no longer `DEL`s keys it never declares in `KEYS` · `resolveEnvironment` exists only in `core`, and `@ultimat3/seo` exports neither it nor `SeoEnvironment` — a **breaking** change, which is part of why 2.0.0 is a major. Detail in [CHANGELOG.md](CHANGELOG.md), per-row workarounds for the 1.x packages in [Known gaps](https://github.com/developerz-ai/ultimate/wiki/Known-Gaps) |
-| **Deferred past 4.0.0** | realtime tier 3 local-first (`persist: true`), the plugin API, multi-region replication, the Redis/NATS **job** drivers — none of them ships in 4.0.0 either, each behind the interface that ships today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
-
-**Never claimed:** no adoption numbers, no production deployments, no testimonials. None exist yet, and this file will say so until they do.
-
----
-
-## How much code you do not write
-
-An agent's scarcest resource is context, and most of it goes on infrastructure that has nothing to
-do with the product. The framework's job is to have already decided those things — so the agent
-spends its budget on the feature, and on a floor whose failure modes were found once, here, rather
-than once per app.
-
-**Roughly 9× — that is the multiplier.** For every line of production code the author of
-[`dummy/social-media-clone`](dummy/social-media-clone/) owns, the framework already runs **8.8** on
-their behalf: 63,949 code lines across the 17 packages that app executes, against 7,227 of its own.
-Counting everything hand-written including tests, against all framework source, it is **11.1 : 1**.
-
-Read that as *code you never own, never test and never fix* — **not** as "a DIY build of this app
-would be nine times bigger". It would not be: a DIY build reaches for libraries too. What the
-multiplier measures is how much of the surface has already been decided, and where a bug gets fixed
-when one is found. The honest per-feature figure is sharper anyway: **~16 code lines buy a fully
-projected endpoint** — input schema, output schema, policy, an OpenAPI operation, an MCP tool and a
-typed client, all drift-checked. Write those six by hand once and the ratio stops being abstract.
-
-**A line the app author never writes cannot carry a bug.** So the payoff is measured as how little
-the author owns. The worked example is [`dummy/social-media-clone`](dummy/social-media-clone/) — the
-deployed demo, `As of 2026-08-20`, counted with `git ls-files` + `tokei 14.0.0`. Every figure below
-is **code** lines, never `wc -l`: comments are 21% of this app's raw lines, so a raw count overstates
-it by a fifth. Where a raw number appears it is labelled raw.
-
-**One action, 51 code lines.** [`apps/web/app/messages/action.ts`](dummy/social-media-clone/apps/web/app/messages/action.ts)
-declares `sendMessage` in 73 raw / **51 code** lines. Everything it projects is committed, generated
-and drift-checked by `x verify` — none of it hand-written:
-
-| Projected from those 51 lines | In the committed artefact |
-|---|---|
-| the `POST /api/messages/send` operation | **59 lines** of [`openapi.json`](dummy/social-media-clone/openapi.json) — `operationId`, `requestBody`, 200/400/403, tags, `x-ultimate.capability: message:send` |
-| `SendMessageInput` + `SendMessageOutput` JSON Schema | **20** + **34** lines |
-| the `x.manifest.json` row | **66** lines — input and output schema, policy, permissions, cache invalidations |
-| the shared `Problem` response | **37** lines, one copy behind all 11 operations |
-| an MCP tool | `mcpTool: sendMessage`, on the same policy object the HTTP route uses |
-| `.tool()` `.openapi()` `.client()` `.job()` `.contract()` | five handles on the returned `ActionDefinition`, none of them declared |
-
-**51 hand-written lines → 179 lines of committed generated interface**, plus the `Problem` block and
-the five handles. The rest of the app holds the shape:
-
-| Hand-written | Code | Projects |
-|---|---|---|
-| 4 actions in [`app/friends/actions.ts`](dummy/social-media-clone/apps/web/app/friends/actions.ts) | 102 raw / **65** | 4 endpoints, 4 OpenAPI operations, 8 schemas, 4 MCP tools, 4 permissions — **~16 code lines per fully-projected endpoint** |
-| 13 entities, 14 files under [`packages/db/src/schema/`](dummy/social-media-clone/packages/db/src/schema/) | 428 raw / **287** | a 175-line SQL migration, an 1,101-line snapshot, a checksum, 13 manifest entity rows |
-| one `defineAdmin` call, [`apps/admin/app/admin/admin.ts`](dummy/social-media-clone/apps/admin/app/admin/admin.ts) | 120 raw / **73** | 5 screens over 3 entities — columns, filters, validation, labels, audit and nav all derived from the entities |
-
-**The whole app.** Every tracked file the author owns. Excluded: 6 committed generated artefacts
-(`x.manifest.json`, `openapi.json`, `x.verify.json`, the migration `.sql`/`.snapshot.json`/`.hash` —
-4,462 raw lines between them), all markdown, one `.png`.
-
-| Kind | Files | Code |
-|---|---|---|
-| TypeScript and TSX, tests excluded | 120 | 4,791 |
-| Tests | 45 | 2,482 |
-| SCSS | 25 | 1,658 |
-| the `en` catalog | 1 | 397 |
-| config, Compose, Dockerfiles, env, shell | 31 | 381 |
-| **Total** | **222** | **9,709** |
-| production only — total minus tests | 177 | **7,227** |
-
-| Framework : app | Ratio |
-|---|---|
-| the **17 runtime packages this app executes** (63,949 code) : its production code (7,227) | **8.8 : 1** |
-| all framework source (107,809 code, 1,080 files) : everything hand-written here (9,709) | **11.1 : 1** |
-| the same, plus the framework's 144,046 lines of test code : hand-written (9,709) | 25.9 : 1 — test code on one side only, so read it as reassurance, not leverage |
-
-Re-derive all three (`tokei` 14.0.0; `node_modules`, `.x/`, `dist/` and `coverage/` are gitignored,
-so `git ls-files` never enters them):
-
-```sh
-# the app, author-owned
-git ls-files dummy/social-media-clone \
-  | grep -Ev '\.(md|png)$|x\.(manifest|verify)\.json$|openapi\.json$|\.(sql|hash)$|\.snapshot\.json$' \
-  | xargs tokei
-
-# all framework source — no tests, no .d.ts, no generated icon glyphs
-git ls-files 'packages/*' | grep -E '\.(ts|tsx|scss|css)$' \
-  | grep -Ev '\.test\.|\.d\.ts$|packages/ui/src/icons/glyphs/' | xargs tokei
-
-# only the 17 runtime packages this app imports
-git ls-files packages/{action,admin,cache,core,db,entity,http,i18n,jobs,mcp,policy,pwa,query,realtime,render,schema,ui} \
-  | grep -E '\.(ts|tsx|scss|css)$' \
-  | grep -Ev '\.test\.|\.d\.ts$|icons/glyphs/' | xargs tokei
-```
-
-The 1,767 generated Lucide glyph files are excluded on purpose — leaving them in inflates the
-framework side by 15% with code nobody wrote. `tokei` classifies 218 of the 222 app files; `.env*`
-and `.gitignore` carry no language and contribute nothing.
-
-**What the app is**, from its own `x.manifest.json` and not from its plan: 16 routes · 13 entities ·
-11 actions · 1 query · 3 jobs · 2 cron tasks · 33 permissions · 11 app error codes · 7 MCP tools · 11
-OpenAPI operations · 23 OpenAPI schemas · 1 locale.
-
-**What the number does not say.** Five things, none of them buried:
-
-| Not claimed | Why |
-|---|---|
-| that it passes its own 17-step gate | **15 of 17.** `boundaries` and `budgets` are pinned red in [`scripts/lib/gated-apps.ts:94`](scripts/lib/gated-apps.ts) — `X_BOUNDARY_SITE_TO_APP` ×3, because the static feed imports the authed post service, and `X_BUDGET_UNMEASURED`, because no `.x/build-stats.json` has ever existed here |
-| that low lines means high leverage | Partly it means **few features**. Roughly half of `DOMAIN.md` is a plan, not a build: there is no `createPost`, `deletePost`, `addComment`, `likePost` or `unlikePost` anywhere in the tree, and `likes` and `comments` are entities with migrations and no write path. The manifest carries **1** query where [`DOMAIN.md`](dummy/social-media-clone/DOMAIN.md) designs nine |
-| that the framework wrote the auth | It did not. 13 non-test files (`apps/web/app/auth/`, `shared/session.ts`, `shared/auth-policy.ts`, `api/auth.ts`, the `sessions` table) hand-write argon2id parameters, `__Host-` cookie prefixes, session token hashing and a captcha — **521 code lines**, **7.2% of production code** — and `@ultimat3/auth` is imported **nowhere** in this app. `@ultimat3/storage` is likewise unimported despite a media feature. The largest thing the framework could have projected here and did not |
-| that live messaging works | The one live query is declared and unit-tested and **not wired**: nothing calls `installRealtimeTopics` at boot, because the framework offers no seam — [`apps/web/api/realtime.ts:10`](dummy/social-media-clone/apps/web/api/realtime.ts) says so in its own header |
-| that the typed client is proven | It is projected and unused. There is no `.client()` call in either tracked app; the demo's forms post HTML. True of the API surface, untested by this app |
-
-19 of the 30 packages are imported at all, 17 of them at runtime — which is why **8.8 : 1** is the
-ratio led with rather than the flattering one. [`examples/dummy`](examples/dummy/README.md) reaches
-13.8 : 1 on the identical method and is pinned red on 6 of 17 steps including `typecheck`, so the
-demo is what gets quoted.
-
-**The larger win is not the lines.** It is that the bugs are found once. The sweeps recorded in
-[`CHANGELOG.md`](CHANGELOG.md) and in PRs #174–#186 closed defects like these — in the *framework*,
-where a fix reaches every app at once:
-
-| Found once, here | What it would have cost an app |
-|---|---|
-| Every authenticated websocket carried `actor: null`, because Bun runs `websocket.open` inside `server.upgrade()` | every channel subscribe on an authed client denied; per-row visibility deciding about nobody |
-| An unreadable TOTP secret verified against a code that needs no secret | one shared code stream across every broken secret in the table |
-| A `delete` bypassed the subscriber's own visibility rule | row ids leaking across tenants on the socket |
-| An ISR route with a policy served the first actor's HTML to everybody | one actor's page cached under a bare pathname |
-| A limiter shed vanished from `queue_depth` | the autoscaler and the backlog page going quiet exactly when the queue saturated |
-| `t.date` resolved a zone-less string against the container's timezone | one wire value meaning two instants on two pods |
-
-Each of those is the kind of defect that ships, sits quietly, and surfaces as an incident. Finding
-them is slow, specialised work. Doing it once in a framework is the difference between paying that
-cost per-app and paying it per-ecosystem — and it is why the sweeps are described here rather than
-tidied out of the history.
-
----
-
-## Why Bun, why SolidJS
-
-Two picks that are load-bearing rather than fashionable, and both for the same reason: they remove
-a layer an agent would otherwise have to reason about.
-
-**Bun** is one toolchain where there were six. Runtime, bundler, test runner, package manager,
-`node:` compatibility, an HTTP and WebSocket server, hashing and SQLite are the same binary — so
-there is no `tsconfig`-versus-bundler-versus-jest disagreement to debug, and no chain of tools each
-with its own idea of what a module is. It runs TypeScript directly, which is why **the tarball
-published to npm is the source you read**: no `dist/`, no source-map hop when an agent steps into
-`node_modules`. And the natives are why the dependency list is two packages long — HTTP, WS,
-hashing, SQLite, test running and bundling are already there, so most of what a framework would
-reach for is not a decision at all.
-
-**SolidJS** compiles away. Fine-grained reactivity means an update touches the one text node that
-changed rather than re-running a component and diffing a virtual DOM, and there is no re-render
-model to hold in your head — no dependency arrays, no memo hooks, no rules about where state may be
-read. That matters twice here: the runtime is small enough that `render: 'static'` genuinely ships
-**zero** JavaScript, and the mental model is small enough that an agent writing its four-hundredth
-component is not carrying a rulebook about when a closure captures a stale value.
-
-Neither is a bet on popularity. They are the two choices that make the framework's own promises
-cheap to keep — one command that means shippable, and a static path that never pays for the app
-path.
-
----
-
-## The thesis
-
-Every framework built in the last fifteen years optimised for a human typing code. Ultimate assumes the code is written by an agent and reviewed by a tired senior engineer working through their own AI agent and AI reviewer.
-
-The goal is the one Rails had: **shrink the set of problems the author has to hold in
-their head, so they spend their attention on the app's features and not on the app's
-infrastructure.** An agent that has to decide on a migration tool, a queue driver, a
-cache key scheme and an authz model has spent its budget before writing a feature.
-
-That single change of audience rewrites every default:
-
-| Because the author is an agent… | Ultimate does this |
-|---|---|
-| ambiguity costs tokens and correctness | **one way to do each thing** — no second-best path to choose between |
-| repeated definitions drift | **define once, project everywhere** — one `action` becomes six artifacts |
-| documented conventions get ignored | **enforced, not documented** — a violated convention is a build error |
-| errors are the feedback loop | **errors are instructions** — stable code + cause + the exact fix command |
-| "is it done?" needs a machine answer | **`x verify`** — green means shippable, and it's the whole contract |
-| output must be machine-readable | **`--json` on everything**, end to end |
-
-## Wrap, don't reinvent
-
-The framework wraps libraries so you don't have to. Your app wraps the framework so your agent doesn't have to. Two layers, one goal: **the least app code that can express the app** — more generated code is more bugs, so the unit of progress is lines *not* written.
-
-| Layer | Wraps | So that |
-|---|---|---|
-| Bun natives | Postgres, Redis, S3, WS, the bundler, the test runner | a whole class of dependency never enters the lockfile — see the stack table below |
-| **Ultimate** | those natives, behind eight primitives | an agent writes `entity` / `action` / `job` — never a connection pool, a queue, or a cache-key scheme |
-| **Your app** | those primitives, behind your own domain vocabulary | a feature is a declaration, not an integration |
-
-The rule that stops this becoming an abstraction tower: **a wrapper must delete a decision, not rename one.** Reinvention is reserved for the places where wrapping would leak the thing being avoided — which is why there is no ORM, and why the router is ours.
-
-The framework makes the big decisions so the agent spends its budget on your product. Breadth is not the enemy of control; undeclared coupling is. Every capability arrives as an interface with one shipped implementation — assemble like Lego, and drop to the seam when Lego runs out.
-
-→ [The thesis, in full](docs/idea/00-thesis.md)
-
-## 60 seconds
+## Run it
 
 ```sh
 bunx create-ultimate myapp && cd myapp && x dev
 ```
 
-No Docker. No env scavenger hunt. Embedded Postgres, in-process NATS, S3 → a local directory. What you get is a running app with auth, a seeded database, a working example route, and a dev dashboard at `/_x`.
+No Docker, no env scavenger hunt. Embedded Postgres, in-process NATS, S3 → a local directory, a seeded database, a working route and a dev dashboard at `/_x`.
 
-Every `@ultimat3/*` dependency it writes is pinned to one exact version. They move together — never mix versions across the scope.
+Working on the framework itself:
+
+```sh
+bun install
+bun run verify            # the gate. Green = shippable
+bun run x -- doctor --json   # the CLI, in-repo
+```
 
 ## One `action`, six artifacts
 
-This is the load-bearing idea. You write one declaration:
+**Define once, project everywhere** (axiom 2) — the load-bearing idea, and the reason an app here is small. You write one declaration:
 
 ```ts
 export const publishPost = action({
@@ -283,132 +70,41 @@ export const publishPost = action({
 });
 ```
 
-> **`As of 2026-08`, the handler's `ctx` is not the full `Ctx`.** Over HTTP it is a cast of the
-> request context: it carries `actor`, `locale`, `tz`, `requestId` and `traceId`, and it does **not**
-> carry `logger`, `now()`, `clock`, `signal` or `services`. So `ctx.posts` and `ctx.logger.info(...)`
-> throw on the HTTP path, though both work under a job. Import your service and call the job handle
-> directly, as above. Tracked, with the fix, in [Known gaps](wiki/Known-Gaps.md).
-
-Ultimate generates all of this from it:
-
 | # | Artifact | Detail |
 |---|---|---|
-| 1 | `POST /api/posts/publish` | the HTTP route, with validation and authz wired |
-| 2 | OpenAPI entry | deterministic output, diffed by `x verify` against the committed spec |
-| 3 | typed RPC client | `api.publishPost(...)` — a typo is a compile error *in the component* |
-| 4 | an MCP tool | **identical authz.** One policy, two surfaces. |
+| 1 | `POST /api/posts/publish` | the HTTP route, validation and authz wired |
+| 2 | an OpenAPI operation | deterministic, diffed by `x verify`'s `contract-diff` step against the committed spec |
+| 3 | a typed RPC client | `api.publishPost(...)` — a typo is a compile error *in the component* |
+| 4 | an MCP tool | **the same policy object.** One authz system, two surfaces |
 | 5 | a job-callable handle | enqueue the same logic as durable work, no rewrite |
 | 6 | a contract test + policy test stub | passing, not a TODO |
 
-**Authz is defined once and enforced across HTTP, live queries, jobs, and MCP.** Two authz systems is how every Meteor-like framework died.
+None of the six is hand-written and every one is drift-checked by `x verify`. Measured on the deployed demo: **~16 code lines per fully-projected endpoint**, and one 51-line action producing 179 lines of committed generated interface — [the counts and how to re-derive them](#how-much-code-you-do-not-write).
+
+**Authz is defined once and enforced across HTTP, live queries, jobs and MCP.** Two authz systems is how every framework of this shape has died.
+
+> **`As of 2026-08`, the handler's `ctx` is not the full `Ctx`.** Over HTTP it is a cast of the request context: it carries `actor`, `locale`, `tz`, `requestId` and `traceId`, and **not** `logger`, `now()`, `clock`, `signal` or `services`. So `ctx.posts` and `ctx.logger.info(...)` throw on the HTTP path, though both work under a job. Import your service and call the job handle directly, as above. Tracked with the fix in [Known gaps](wiki/Known-Gaps.md).
 
 ## The eight primitives
 
-Everything in the framework is one of these. If a feature doesn't fit, it doesn't ship.
+Everything in the framework is one of these. **A feature that fits none of them does not ship** — and there is no ninth: `PRIMITIVE_KINDS` in [`packages/core/src/registrar.ts`](packages/core/src/registrar.ts) is the single source, pinned by a test.
 
-| Primitive | Is |
-|---|---|
-| `entity` | a table + its domain type + invariants |
-| `policy` | an authz rule, evaluated in every surface |
-| `action` | a mutation or command (server-authoritative) |
-| `mutator` | an action with an optimistic local twin (offline/realtime) |
-| `query` | a read; optionally live (subscribable) |
-| `job` | durable background work, optionally multi-step |
-| `route` | a URL + render mode + metadata + offline strategy |
-| `task` | a scheduled trigger (cron) that enqueues jobs |
-
-→ [The eight primitives, in full](docs/idea/02-primitives.md)
-
-## What you get for free
-
-Not "supported". Not "documented". **Enforced, and impossible to get wrong.**
-
-| Concern | The default | The enforcement |
+| Primitive | Is | Canonical shape |
 |---|---|---|
-| **i18n** | flat catalogs, `Intl` for everything numeric | a missing key in a shipped locale fails `x verify`; misses render loudly as `⟦key⟧` |
-| **Dark theme** | semantic tokens, OS-following with an explicit override that wins | a raw hex in a component is a lint failure; one token source of truth |
-| **Timezones** | store UTC, format with an explicit IANA zone | no formatter has an ambient default; a cron without a `tz` won't compile |
-| **Money** | integer minor units + currency, always attached | cross-currency arithmetic is refused; the exponent comes from the ISO table, never `/100` |
-| **SEO** | typed metadata, JSON-LD, sitemap from the route table | a `site/` route with no description is a build error |
-| **Offline** | `sw.js` generated from the route table | the offline fallback route is required *by the type* |
-| **Admin** | Django-grade CRUD derived from the entity registry | `defineAdmin()` — 20 lines to a working dashboard |
-| **MCP** | every action is a tool | and **your app's** dashboards expose their own MCP surface |
-| **Metrics** | counters, gauges and histograms on the OpenTelemetry data model; `/metrics` in Prometheus text | no dependency, and the Helm chart's HPA metrics are the ones the framework already emits |
-| **Secrets** | `Secret` redacts **by value** — `toString`, `toJSON`, the logger, at any depth, under any key | frozen, so a spread cannot unwrap it; `.env.example` is generated from the typed env declaration |
+| `entity` | a table + its domain type + invariants the database also enforces | [spec](docs/idea/02-primitives.md#entity) · [package](packages/entity/README.md) · [wiki](wiki/Entities-And-Migrations.md) |
+| `policy` | one authz rule, evaluated identically in every surface | [spec](docs/idea/02-primitives.md#policy) · [package](packages/policy/README.md) · [wiki](wiki/Policies-And-Authz.md) |
+| `action` | a server-authoritative mutation — the load-bearing one | [spec](docs/idea/02-primitives.md#action--the-load-bearing-one) · [package](packages/action/README.md) · [wiki](wiki/Actions.md) |
+| `mutator` | an action with an optimistic local twin | [spec](docs/idea/02-primitives.md#mutator) · [package](packages/realtime/README.md) · [wiki](wiki/Realtime.md) |
+| `query` | a read, optionally live | [spec](docs/idea/02-primitives.md#query) · [package](packages/query/README.md) · [wiki](wiki/Queries-And-Live-Queries.md) |
+| `job` | durable background work, optionally multi-step | [spec](docs/idea/02-primitives.md#job) · [package](packages/jobs/README.md) · [wiki](wiki/Jobs-And-Workflows.md) |
+| `route` | a URL + render mode + metadata + offline strategy | [spec](docs/idea/02-primitives.md#route) · [package](packages/render/README.md) · [wiki](wiki/Routes-And-Render-Modes.md) |
+| `task` | a scheduled trigger that enqueues jobs | [spec](docs/idea/02-primitives.md#task) · [package](packages/jobs/README.md) · [wiki](wiki/Scheduled-Tasks.md) |
 
-## Rendering — SSR only where it pays
-
-Render mode is a route-level property, not a global one. A landing page is static or ISR at a 0kb JS baseline; a dashboard streams. The `site/` surface **cannot** import from `app/` — a build error, not a lint warning — so the marketing path can never grow the app's bundle through a shared component.
-
-| Surface | Default mode | JS baseline |
-|---|---|---|
-| `site/` | `static` / `isr` | **0kb**, enforced |
-| `app/` | `stream` | a per-route budget that fails the build when blown |
-| `api/` | none | n/a |
-
-→ [Surfaces](docs/idea/06-surfaces.md) · [Rendering and SEO](docs/idea/07-rendering-seo.md)
-
-## Realtime — a ladder, not a cliff
-
-Three tiers, the same mutator shape at every rung. Tier 2 → tier 3 is a config flag, not a rewrite. Tiers 1–2 ship today; tier 3 is not in 4.0.0 and lands in a later major, behind the interfaces that are already here.
-
-| Tier | What | Covers |
-|---|---|---|
-| 1 · **Channels** | `ctx.publish(topic, msg)` over Bun's native WS pub/sub | presence, cursors, notifications |
-| 2 · **Live queries** | declare server-side with a policy, receive a Solid signal | **90% of "realtime app"** |
-| 3 · **Local-first** *(not in 4.0.0)* | optimistic mutators, OPFS SQLite, offline queue, rebase | offline writes that reconcile |
-
-→ [Realtime design and its honest limits](docs/idea/03-realtime.md)
-
-## From pre-MVP to planet-scale
-
-The same app code on one PaaS dyno and on a replicated cluster. Climbing is a driver swap, an env var, and someone else's infrastructure — the eight primitives, their shapes, their authz, the manifest, the OpenAPI and the typed client never move.
-
-| Rung | You run | App code change |
-|---|---|---|
-| 0 | one process on a PaaS, their managed Postgres | **none** |
-| 1 | one service per `ROLE`, managed Postgres + a shared cache tier | none, plus config |
-| 2 | one box, Compose, all six roles, NATS beside them | none, plus config |
-| 3 | Kubernetes, per-role HPAs, logical replication for the change feed | none, plus config |
-| 4 | distributed SQL (YugabyteDB), JetStream R3, metrics and traces wired end to end | none for the datastore swap — with named incompatibilities |
-
-**This is the design, not a demonstration.** `As of 2026-08` exactly one rung is measured — rung 1, the single node, by the two runs above: 50k for reachability, 10k for delivery. Rung 4 has never been run. [`17-scale-ladder.md`](docs/idea/17-scale-ladder.md) states rung by rung what is real today and what is intent, and names the places the invariant currently breaks. Fintech, agent platforms, multi-tenant dashboards: that is what the architecture is *for*, and nobody's production traffic has tested the claim yet.
-
-→ [The scale ladder](docs/idea/17-scale-ladder.md) · [Running it for real](docs/ops/README.md) · [Mobile and desktop targets](docs/idea/16-app-targets.md)
-
-## Stack — locked, deliberately
-
-| Layer | Decision | Why |
-|---|---|---|
-| Runtime | **Bun ≥ 1.3, only** | native SQL / Redis / S3 / WS / test / bundler / image — kills ~15 deps |
-| HTTP | thin layer over `Bun.serve` | we own the lifecycle, so context/tracing/authz can't be skipped |
-| DB | **Postgres**, no ORM | `entity()` is the one table declaration; `postgresDriver()` emits hand-written parameterised SQL, so an agent reads the statement and self-corrects |
-| Validation | **Standard Schema**, builtin provider default | dependency-free and shipped; ArkType/Zod/Valibot swap in behind `configureSchemaProvider()` with a ~40-line adapter you write |
-| Auth | **Better Auth**, wrapped | MIT, self-hosted, with our policy layer on top |
-| Frontend | **SolidJS, pinned `1.9.14`** + our own router | fine-grained reactivity on the stable line; Solid 2 is still `2.0.0-beta.N`, and we vendor the router rather than track an alpha |
-| Styling | **SCSS modules + design tokens** | no Tailwind (diff noise), no CSS-in-JS (runtime cost) |
-| Jobs | Postgres queue default; Redis/NATS drivers not in 4.0.0 | zero-infra start, a real scale path behind one interface |
-| Observability | **OpenTelemetry, always on** | one trace across HTTP → job → live query |
-
-**Excluded on purpose:** GraphQL · multi-runtime · multi-ORM · a second CSS solution · React Server Components · a plugin API in 1.x · vendor edge/KV primitives.
-
-## Steal explicitly
-
-| From | What we took |
-|---|---|
-| **Rails** | convention over configuration, generators, one blessed path, batteries included |
-| **Meteor** | realtime as a default, not an add-on |
-| **Next.js** | per-route rendering modes, ISR, streaming shells |
-| **Laravel** | queues, mail, storage, scheduler in-box; great error pages |
-| **Phoenix / LiveView** | server-authoritative realtime, channels, presence |
-| **Zero / Replicache** | optimistic mutators that run identically client and server |
-| **Inngest** | durable step workflows |
-| **Elixir / OTP** | supervision, graceful drain, role-based processes |
-| **Django** | admin-grade introspection, migrations that don't lie |
+A new capability arrives as a **factory over an existing primitive**, never as a new kind of thing: `llm()` returns an action, `backfill()` returns a job. → [The eight primitives, in full](docs/idea/02-primitives.md)
 
 ## Errors are instructions
 
-Same three strings in the terminal, the browser overlay, and `--json`:
+Not a mock-up. The three strings below are built in [`packages/db/src/errors.ts:249`](packages/db/src/errors.ts) and render identically in the terminal, in the browser overlay and under `--json`:
 
 ```
 X_DB_DRIFT: schema differs from migrations
@@ -416,146 +112,264 @@ X_DB_DRIFT: schema differs from migrations
   fix:   x db gen "add publish_at"
 ```
 
-Every framework error carries a stable code, a cause, and a command that fixes it. → [The error contract](docs/architecture/04-error-contract.md)
+**The `fix:` line is a command you run, never advice.** A stable code, the concrete cause, and the next thing to type — so a failure costs one round-trip instead of a search. Enforced, not hoped for: a `fix:` naming no command, no call and no file fails the gate's `errors` step, and every `x …` any page prints is resolved against the real command registry.
 
-## How much does a feature actually cost?
+`x errors explain <CODE> --json` and the MCP `errors.explain` tool answer with the same three strings. A shipped code never changes meaning and is never reused. → [Every code](wiki/Error-Codes.md) · [The contract](docs/architecture/04-error-contract.md)
 
-Measured, not asserted — from the social-network demo in [`dummy/social-media-clone`](dummy/social-media-clone), which was built to find out.
-
-**Adding "block a user" end to end: 3 files.** One entity, one rule, one action.
-
-```ts
-// packages/db/src/schema/blocks.ts — the whole table
-export const blocks = entity('blocks', {
-  columns: {
-    blockerId: uuid().references(() => users.id, { onDelete: 'cascade' }),
-    blockedId: uuid().references(() => users.id, { onDelete: 'cascade' }),
-    createdAt: timestamp().defaultNow(),
-  },
-  // The composite key IS the idempotency mechanism: blocking twice is a no-op at the storage
-  // layer, not because a caller remembered to check first.
-  primaryKey: ['blockerId', 'blockedId'],
-  indexes: [{ on: ['blockedId'] }],
-});
-```
-
-```ts
-// apps/web/shared/visibility.ts — one rule, every surface
-export const canSeePost = (actor: Actor | null, post: PostRow): boolean => {
-  if (post.deletedAt !== null) return false;
-  // Blocks come FIRST and both ways. Check the audience ladder first and a `public` post stays
-  // visible to someone who blocked its author — the specific rule has to beat the general one.
-  if (isBlocked(actor, post.authorId)) return false;
-  if (isSelf(actor, post.authorId)) return true;
-  return isVisibleAudience(post.audience, isFriend(actor, post.authorId));
-};
-```
-
-That rule is enforced on the public feed, the profile page, the signed-in feed, the API and the MCP
-tool — because each of them asks the same function. **There is no `WHERE audience = 'public'`
-anywhere in the app.** A `where` clause would be a second, weaker copy that drifts the first time
-either changes.
-
-**No registry to edit.** Registration is the import scan: `defineApi` takes whole modules, so the
-export name *is* the primitive's name. There is no composition root, no DI container, no
-`app.route(...)` list. For comparison, two production codebases were measured while designing this:
-
-| Codebase | Feature | Cost |
-|---|---|---|
-| a TypeScript monorepo | one thumbs-up button | **11 files + 5 edits** in two god-files (469 and 610 LOC) across 4 workspaces |
-| the same | an achievements system | **~50 files**; the entity redeclared **7×** |
-| a Rails monolith | one CRUD resource + one MCP verb | **18 files + 2 frozen-array registry edits** |
-| the same | one real domain entity | **81 files** |
-
-The number that matters is not file count, it is **how many places one shape is declared**. A
-thumbs-up rating was declared **9 times** in that TS monorepo — table, query row, branded id, enum,
-request schema, service interface, wiring impl, route validation, client type — plus 4 registration
-edits carrying no information at all. Here, `entity()` is declared once and the row type, the
-migration, the insert shape, the admin screen, the OpenAPI schema and the client type are all
-projections of it. Rename a column and every one of them fails to compile, which is the point.
-
-## What your app looks like
-
-A monorepo, so you can add mobile, desktop, or an extension later without restructuring — and so shared code stays shared.
-
-```
-myapp/
-  apps/
-    web/          site/ · app/ · api/ · shared/     ← the three surfaces
-    admin/        the generated admin dashboard
-    mobile/       native Swift/Kotlin, later
-    desktop/      Tauri, later
-  packages/
-    domain/       pure types + constants, no I/O
-    db/           entity declarations + SQL migrations, no business logic
-    core/         your business services — shared by web, admin, worker
-    i18n/         your catalogs
-    ui/           your components, on top of @ultimat3/ui
-    mcp/          your app's own MCP tools
-  app.config.ts   the one config file
-```
-
-`site/` **cannot** import from `app/` — a build error, not a lint warning. That one rule is what stops a marketing page from pulling in the charting library through a shared `<Button>` that grew a dependency.
-
-You write features. The layout, the boundaries, the components, and the plumbing are already there. → [The generated app, explained](docs/architecture/12-generated-app.md)
-
-## CLI
+## The gate
 
 ```sh
-x new / dev / build / verify / deploy
-x g resource|action|job|route|policy|entity|query|task   # complete, passing tests — no TODO stubs
-x db gen|migrate|reset|studio|branch
-x mcp serve
-x doctor                                                 # env, versions, drift, ports
+bun run verify        # this repo. In an app: x verify
 ```
 
-Every command takes `--json`. → [CLI reference](wiki/CLI-Reference.md)
+**Eighteen steps, in cost order**, and the same list runs in the framework repo and in a generated app — whole, or not at all. There is no `--only` and no `--skip`.
 
-## New in 1.1.0
+`typecheck` · `lint` · `boundaries` · `filesize` · `package-shape` · `errors` · `unit` · `contract` · `live` · `job` · `e2e` · `eval` · `drift` · `contract-diff` · `budgets` · `seo` · `i18n` · `manifest` · `roadmap`
 
-| Landed | What it is |
+The list is data, not prose — `VERIFY_STEP_NAMES` in [`packages/cli/src/verify-step.ts`](packages/cli/src/verify-step.ts), and `bun run x -- verify --json` prints it with each step's verdict. **Green means shippable**; that is the whole contract.
+
+| Also | Command |
 |---|---|
-| **`x` serves in production** | `serve.ts` boots a role with no dev watcher and no `/_x`; `ROLE=migrate` applies migrations and exits — the release phase a PaaS asks for. `x new` writes `apps/web/server.ts`, `prerender.ts`, a Dockerfile and `docker-compose.prod.yml` |
-| **Metrics** | counter / gauge / histogram on the OTel data model, a `MetricExporter` seam, and `/metrics` in Prometheus text with no dependency |
-| **`Secret`** | redaction by value, at any depth, under any key, frozen against a spread |
-| **`resolveEnvironment()`** | `development \| test \| staging \| production` from `ULTIMATE_ENV`, plus `renderEnvExample()` so `.env.example` cannot drift from the typed declaration |
-| **Page-level UI** | `AppShell` (with a working skip link), `PageHeader`, `Section`, `Toolbar`, `defineTheme()` as the one brand-override seam, and a generated [`CATALOG.md`](packages/ui/CATALOG.md) |
-| **Test harness** | factory traits, associations and `create()`, plus `sharedExamples` / `behavesLike` |
-| **[`docs/ops/`](docs/ops/README.md)** | the operations manual — rungs, secrets, observability, datastore sizing, disaster recovery, runbooks |
-| **Design, not code** | [`16-app-targets.md`](docs/idea/16-app-targets.md) (mobile + desktop) and [`17-scale-ladder.md`](docs/idea/17-scale-ladder.md) are specs, with nothing shipped behind them yet |
+| both tracked apps' own gates, on a ratchet | `bun run scripts/reference-app-gate.ts` |
+| import boundaries alone | `bun run boundaries` |
+| regenerate the framework manifest | `bun run manifest` |
+| one test file · one test name | `bun test packages/core/src/errors.test.ts` · `bun test -t 'formats the fix line'` |
 
-Full detail, including the four known gaps: [CHANGELOG.md](CHANGELOG.md).
+## Every number here has a command beside it
 
-## Documentation
+A version, a count or a status written into a file goes stale on the next commit; the command does not. **Run the right-hand column — never quote the left.**
 
-| Where | What |
+| Fact | Read it yourself |
 |---|---|
-| [docs/idea/](docs/idea/README.md) | **what and why** — the design spec, primitive by primitive |
-| [docs/architecture/](docs/architecture/README.md) | **how it's built** — internals, for changing the framework itself |
-| [docs/ops/](docs/ops/README.md) | **how to run it** — PaaS → Compose → Kubernetes, secrets, observability, datastore sizing, runbooks. Recommendations; the framework depends on none of it |
-| [the wiki](https://github.com/developerz-ai/ultimate/wiki) | the reference manual and the one public documentation surface — every field, flag, and error code. Source in [`wiki/`](wiki/Home.md) |
-| [llms.txt](llms.txt) | the machine-readable map — start here if you're an agent |
-| [packages/ui/CATALOG.md](packages/ui/CATALOG.md) | 46 components with every prop and the token vocabulary, generated from source and drift-tested |
-| [examples/dummy/](examples/dummy/README.md) | the reference app: every primitive, once, idiomatically |
+| what npm serves, and what `bunx create-ultimate` installs | `npm view @ultimat3/core version` |
+| every package that moves together, with its tier | `bun run scripts/list-workspaces.ts --json` |
+| the repository is stamped at one version | `bun run scripts/release.ts --check <version>` |
+| every package is on the registry at that version, attested | `bun run scripts/registry-audit.ts --json` |
+| the gate's steps, in order | `bun run x -- verify --json` |
+| every command and flag this build ships | `bun run x -- help --json` |
+| every `X_*` code, its owner and the file declaring it | `bun run manifest` → `framework.manifest.json` |
+| the realtime capacity figures, audited against the committed run | [`CLAUDE.md`](CLAUDE.md)'s status section — [`scripts/bench-claims.ts`](scripts/bench-claims.ts) fails the gate when they drift |
 
-**Start here:** [the thesis](docs/idea/00-thesis.md) → [the primitives](docs/idea/02-primitives.md) → [adding a feature](docs/architecture/15-adding-a-feature.md).
+`As of 2026-08-20`: 30 workspaces, 29 `@ultimat3/*` plus the unscoped `create-ultimate`, versioned and published in lockstep — one version, one commit, one tag, 30 tarballs. [`PUBLISHING.md`](PUBLISHING.md) owns the mechanics; [`CLAUDE.md`](CLAUDE.md) carries the full status table, one runnable check per row.
+
+**Never claimed:** no adoption numbers, no production deployments, no testimonials. None exist yet, and this file will say so until they do.
+
+## Navigate
+
+One hop per question.
+
+| You want | Go |
+|---|---|
+| the reference manual — every field, flag, error code | [wiki/](wiki/Home.md) · [browsable](https://github.com/developerz-ai/ultimate/wiki) |
+| **what to do, step by step, to add a feature** | [docs/architecture/15-adding-a-feature.md](docs/architecture/15-adding-a-feature.md) |
+| why a decision was made | [docs/idea/](docs/idea/README.md) |
+| how a subsystem actually works | [docs/architecture/](docs/architecture/README.md) |
+| running an app in production | [docs/ops/](docs/ops/README.md) |
+| the coding contract in full | [docs/architecture/00-conventions.md](docs/architecture/00-conventions.md) |
+| why an import failed | [docs/architecture/02-boundaries.md](docs/architecture/02-boundaries.md) |
+| an `X_*` code | [wiki/Error-Codes.md](wiki/Error-Codes.md) · `bun run x -- errors explain <CODE> --json` |
+| a CLI flag | [wiki/CLI-Reference.md](wiki/CLI-Reference.md) |
+| upgrading across a major | [wiki/Upgrading.md](wiki/Upgrading.md) |
+| what is broken and known | [wiki/Known-Gaps.md](wiki/Known-Gaps.md) · [wiki/Troubleshooting.md](wiki/Troubleshooting.md) |
+| idiomatic usage, every primitive once | [examples/dummy/](examples/dummy/README.md) |
+| a deployed app, warts included | [dummy/social-media-clone/](dummy/social-media-clone/) |
+| the machine-readable repo map | [llms.txt](llms.txt) |
+| conventions an agent cannot infer | [AGENTS.md](AGENTS.md) · [CLAUDE.md](CLAUDE.md) |
+| what changed, and what breaks | [CHANGELOG.md](CHANGELOG.md) |
+| the release process | [PUBLISHING.md](PUBLISHING.md) · [docs/architecture/19-cutting-a-major.md](docs/architecture/19-cutting-a-major.md) |
+
+[`CLAUDE.md`](CLAUDE.md) carries the same table for an agent already inside the repo, plus the tier rules and the non-negotiables. This one is the entry point; that one is the working contract.
+
+## The packages
+
+One package, one responsibility. **Imports may only go DOWN a tier** — never sideways, never up; a violation is a build error (`bun run boundaries`). Each carries `README.md` (its public API) beside `CLAUDE.md` (its boundary, deps and commands).
+
+Derived from `bun run scripts/list-workspaces.ts --json` and each package's own `description`. Re-run it rather than trusting this table.
+
+| Tier | Package | Owns |
+|---|---|---|
+| 0 | [`@ultimat3/core`](packages/core/README.md) | Ultimate's foundation: errors, context, env, config, clock, ids, logging, telemetry, lifecycle |
+| 0 | [`@ultimat3/schema`](packages/schema/README.md) | Ultimate's validation seam: Standard Schema interface, the `t` namespace, JSON Schema output |
+| 1 | [`@ultimat3/cache`](packages/cache/README.md) | Tagged caching: request memo, LRU, Redis, CDN — one invalidation graph |
+| 1 | [`@ultimat3/db`](packages/db/README.md) | Postgres access, transactions, migrations and drift detection |
+| 1 | [`@ultimat3/flags`](packages/flags/README.md) | Feature flags: permanent switches, and temporary ones that cannot be forgotten |
+| 1 | [`@ultimat3/i18n`](packages/i18n/README.md) | Dependency-free translator, catalog flattening, locale negotiation and loud missing-key rendering |
+| 1 | [`@ultimat3/money`](packages/money/README.md) | Integer minor units with an attached currency: arithmetic, allocation, rounding, `Intl` formatting |
+| 1 | [`@ultimat3/seo`](packages/seo/README.md) | Enforced SEO: typed meta, JSON-LD, sitemap, robots, feeds, responsive images, perf budgets |
+| 1 | [`@ultimat3/storage`](packages/storage/README.md) | Named disks over `Bun.file` and `Bun.s3`: safe keys, signed URLs, sniffed uploads |
+| 1 | [`@ultimat3/time`](packages/time/README.md) | UTC instants, DST-correct zone math, cron, durations and `Intl` formatting with an explicit timezone |
+| 2 | [`@ultimat3/auth`](packages/auth/README.md) | Sessions, passwords, OAuth, MFA and api keys — resolved to one `Actor` |
+| 2 | [`@ultimat3/entity`](packages/entity/README.md) | A table + its domain type + invariants the database also enforces |
+| 2 | [`@ultimat3/http`](packages/http/README.md) | Owned request lifecycle over `Bun.serve`: router, ordered pipeline, problem+json errors |
+| 2 | [`@ultimat3/policy`](packages/policy/README.md) | The one authz rule, evaluated identically in every surface |
+| 3 | [`@ultimat3/action`](packages/action/README.md) | The action primitive: one declaration projected to route, OpenAPI, client, MCP tool, job handle, tests |
+| 3 | [`@ultimat3/jobs`](packages/jobs/README.md) | Durable background work: steps, transactional outbox, cron tasks, one driver interface |
+| 3 | [`@ultimat3/query`](packages/query/README.md) | The query primitive: a policy-checked read, optionally live, with cursor pagination and an incremental matcher |
+| 3 | [`@ultimat3/realtime`](packages/realtime/README.md) | Three-tier realtime: channels, live queries, local-first sync — one protocol, one mutator shape |
+| 4 | [`@ultimat3/ai`](packages/ai/README.md) | LLM gateway, versioned prompts, evals as tests, embeddings, hybrid vector search, RAG |
+| 4 | [`@ultimat3/mail`](packages/mail/README.md) | Transactional email as data: one template renders HTML and text, sent through a job |
+| 4 | [`@ultimat3/manifest`](packages/manifest/README.md) | `x.manifest.json`: deterministic generated facts, contract diff, `AGENTS.md` budget |
+| 4 | [`@ultimat3/mcp`](packages/mcp/README.md) | MCP server, dev tools, and the action-to-tool projection — one authz system, two surfaces |
+| 4 | [`@ultimat3/pwa`](packages/pwa/README.md) | Generated service worker, web manifest, icons, push and version-skew handling |
+| 4 | [`@ultimat3/render`](packages/render/README.md) | The route primitive and the five render modes: `static`, `isr`, `ssr`, `stream`, `spa` |
+| 4 | [`@ultimat3/ui`](packages/ui/README.md) | SolidJS design system: semantic design tokens, dark/RTL-ready SCSS modules, a11y primitives. Every component and prop: [`CATALOG.md`](packages/ui/CATALOG.md) |
+| 5 | [`@ultimat3/admin`](packages/admin/README.md) | Two dashboards: the `/_x` framework dev panels and the generated, AI-first app admin |
+| 5 | [`@ultimat3/cli`](packages/cli/README.md) | The `x` binary: new, dev, build, verify, generate, db, mcp, doctor, deploy |
+| 5 | [`@ultimat3/scraping`](packages/scraping/README.md) | Browser automation as a job: `scrape()` returns a `JobHandle` |
+| 5 | [`@ultimat3/testing`](packages/testing/README.md) | Test harness: cloned template DBs per worker, frozen clock, sealed network, 6 test types |
+| 6 | [`create-ultimate`](packages/create-ultimate/README.md) | `bunx create-ultimate myapp` — scaffold an Ultimate monorepo |
+
+Tier table, executable: [`scripts/lib/tiers.ts`](scripts/lib/tiers.ts). Declared sideways edges, each earning its line: `realtime → query`, `cli → admin`, `cli → testing`, `create-ultimate → cli`. → [Package map](docs/architecture/01-package-map.md) · [Boundaries](docs/architecture/02-boundaries.md)
+
+## What is enforced, not documented
+
+A convention that is not a build error does not exist (axiom 3).
+
+| Concern | The default | The enforcement |
+|---|---|---|
+| **i18n** | flat catalogs, `Intl` for everything numeric | a missing key in a shipped locale fails the gate; misses render loudly as `⟦key⟧` |
+| **Dark theme** | semantic tokens, OS-following with an explicit override that wins | a raw hex in a component is a lint failure |
+| **Timezones** | store UTC, format with an explicit IANA zone | no formatter has an ambient default; a cron without a `tz` will not compile |
+| **Money** | integer minor units + currency, always attached | cross-currency arithmetic is refused; the exponent comes from the ISO table, never `/100` |
+| **SEO** | typed metadata, JSON-LD, sitemap from the route table | its own gate step; a `site/` route with no description fails the build |
+| **Offline** | `sw.js` generated from the route table | the offline fallback route is required *by the type* |
+| **Errors** | `X_SCREAMING_SNAKE` code + cause + an executable `fix:` | a bare `Error` fails the `errors` step, in tests too |
+| **Import tiers** | one package, one responsibility | a sideways or upward import fails `boundaries` |
+| **Secrets** | `Secret` redacts **by value** — `toString`, `toJSON`, the logger, at any depth | frozen, so a spread cannot unwrap it; `.env.example` generated from the typed env declaration |
+| **Generated facts** | `x.manifest.json` and `openapi.json` | stale or drifted fails `manifest` / `contract-diff` |
+
+→ [Conventions in full](docs/architecture/00-conventions.md) · [The error contract](docs/architecture/04-error-contract.md)
+
+## Surfaces and render modes
+
+Render mode is a route-level property, never a global one. `site/` **cannot** import from `app/` — a build error, not a lint warning, so a marketing page can never grow the app's bundle through a shared component.
+
+| Surface | Default mode | JS baseline |
+|---|---|---|
+| `site/` | `static` / `isr` | **0kb**, enforced |
+| `app/` | `stream` | a per-route budget that fails the build when blown |
+| `api/` | none | n/a |
+
+→ [Surfaces](docs/idea/06-surfaces.md) · [Rendering and SEO](docs/idea/07-rendering-seo.md) · [Rendering internals](docs/architecture/09-rendering-internals.md)
+
+## Realtime — a ladder, not a cliff
+
+Three tiers, the same mutator shape at every rung. Tiers 1–2 ship; tier 3 is deferred behind the interfaces already here.
+
+| Tier | What | Covers |
+|---|---|---|
+| 1 · **Channels** | `ctx.publish(topic, msg)` over Bun's native WS pub/sub | presence, cursors, notifications |
+| 2 · **Live queries** | declared server-side with a policy, received as a Solid signal | most of what "realtime app" means |
+| 3 · **Local-first** *(not shipped)* | optimistic mutators, OPFS SQLite, offline queue, rebase | offline writes that reconcile |
+
+Capacity is measured **on one node** and published with its scope: per-node recovery from a forced restart, not a multi-node result and not a throughput figure. The audited figures live in [`CLAUDE.md`](CLAUDE.md) — [`scripts/bench-claims.ts`](scripts/bench-claims.ts) fails the gate when they disagree with the committed run. Reproduce:
+
+```sh
+bun run scripts/bench/restart-bench.ts --clients 10000 --probe-interval-ms 200
+```
+
+Committed reports and transcripts: [`scripts/bench/results/`](scripts/bench/results/). → [Realtime design and its limits](docs/idea/03-realtime.md) · [Internals](docs/architecture/07-realtime-internals.md)
+
+## From a PaaS dyno to a cluster
+
+The same app code at every rung. Climbing is a driver swap, an env var and someone else's infrastructure — the primitives, their authz, the manifest, the OpenAPI and the typed client never move.
+
+| Rung | You run | App code change |
+|---|---|---|
+| 0 | one process on a PaaS, their managed Postgres | **none** |
+| 1 | one service per `ROLE`, managed Postgres + a shared cache tier | none, plus config |
+| 2 | one box, Compose, all six roles, NATS beside them | none, plus config |
+| 3 | Kubernetes, per-role HPAs, logical replication for the change feed | none, plus config |
+| 4 | distributed SQL, JetStream R3, metrics and traces end to end | none for the datastore swap — with named incompatibilities |
+
+**This is the design, not a demonstration.** One rung is measured. [`17-scale-ladder.md`](docs/idea/17-scale-ladder.md) states rung by rung what is real and what is intent, and names where the "no app code change" invariant breaks today. Six roles, selected by `ROLE` from one image: `web` `sync` `worker` `scheduler` `migrate` `replicator` ([`packages/core/src/roles.ts`](packages/core/src/roles.ts)).
+
+→ [Scale ladder](docs/idea/17-scale-ladder.md) · [Running it for real](docs/ops/README.md) · [Topology runtime](docs/architecture/13-topology-runtime.md)
+
+## The CLI
+
+```sh
+x new / dev / build / test / verify / deploy / doctor
+x g resource|action|mutator|backfill|job|route|policy|entity|query|task|island|admin:page|guard
+#   generators emit code plus real, typed test files — never a TODO stub
+x db gen|migrate|reset|seed|studio|branch|backfill
+x jobs | tasks | routes | actions | queries | entities | policy   # introspection, all --json
+x errors explain <CODE> | x docs "<question>" | x mcp serve
+```
+
+Every command and every error takes `--json`. Nine commands are registered and **planned** — they exit `X_NOT_IMPLEMENTED` with a `fix:` naming the closest shipped command, because "not built yet" and "not a command" are different facts. The shipped set, the planned set and every flag: `bun run x -- help --json`, and [the CLI reference](wiki/CLI-Reference.md).
+
+## How much code you do not write
+
+An agent's scarcest resource is context, and most of it goes on infrastructure that has nothing to do with the product. Measured on [`dummy/social-media-clone`](dummy/social-media-clone/) — the deployed demo, built to find out — with `git ls-files` + `tokei 14.0.0`, `As of 2026-08-20`. Every figure is **code** lines, never `wc -l`: comments are ~21% of this app's raw lines.
+
+| Measured | Figure |
+|---|---|
+| everything the author owns, 218 files | **9,712** code lines |
+| production only, tests excluded | **7,230** |
+| a fully-projected endpoint — input schema, output schema, policy, OpenAPI operation, MCP tool, typed client | **~16 code lines**, from 4 actions in [`app/friends/actions.ts`](dummy/social-media-clone/apps/web/app/friends/actions.ts) |
+| one action, 51 code lines | **179 lines** of committed generated interface — OpenAPI operation, two JSON Schemas, the manifest row — plus five handles it never declares |
+
+Re-derive it — `node_modules`, `.x/`, `dist/` and `coverage/` are gitignored, so `git ls-files` never enters them:
+
+```sh
+# the app, author-owned
+git ls-files dummy/social-media-clone \
+  | grep -Ev '\.(md|png)$|x\.(manifest|verify)\.json$|openapi\.json$|\.(sql|hash)$|\.snapshot\.json$' \
+  | xargs tokei
+
+# all framework source — no tests, no .d.ts, no generated icon glyphs
+git ls-files 'packages/*' | grep -E '\.(ts|tsx|scss|css)$' \
+  | grep -Ev '\.test\.|\.d\.ts$|packages/ui/src/icons/glyphs/' | xargs tokei
+```
+
+The 1,767 generated Lucide glyph files are excluded on purpose — leaving them in inflates the framework side with code nobody wrote.
+
+**Read it as *code you never own, never test and never fix*** — not as "a DIY build would be nine times bigger". It would not be; a DIY build reaches for libraries too. What it measures is how much of the surface is already decided, and where a bug gets fixed when one is found.
+
+**What the number does not say.** Five things, none of them buried:
+
+| Not claimed | Why |
+|---|---|
+| that the demo passes its own gate | **16 of 18.** `boundaries` and `budgets` are pinned red in [`scripts/lib/gated-apps.ts`](scripts/lib/gated-apps.ts) — `X_BOUNDARY_SITE_TO_APP` ×3, because the static feed imports the authed post service, and `X_BUDGET_UNMEASURED`, because no `.x/build-stats.json` has ever existed there. [`examples/dummy`](examples/dummy/README.md) is pinned on 4 steps including `typecheck` |
+| that low lines means high leverage | partly it means **few features**. Roughly half of [`DOMAIN.md`](dummy/social-media-clone/DOMAIN.md) is a plan, not a build: `likes` and `comments` are entities with migrations and no write path |
+| that the framework wrote the auth | it did not. 13 non-test files hand-write argon2id parameters, `__Host-` cookie prefixes, session token hashing and a captcha, and **`@ultimat3/auth` is imported nowhere in that app**. `@ultimat3/storage` likewise, despite a media feature. The largest thing the framework could have projected and did not |
+| that live messaging works | the one live query is declared, unit-tested and **not wired**: nothing calls `installRealtimeTopics` at boot, and [`apps/web/api/realtime.ts`](dummy/social-media-clone/apps/web/api/realtime.ts) says so in its own header |
+| that the typed client is proven | it is projected and unused. There is **no `.client()` call in either tracked app**; the demo's forms post HTML |
+
+**The larger win is not the lines** — it is that a bug is found once, here, where the fix reaches every app at once. The sweeps in [`CHANGELOG.md`](CHANGELOG.md) closed defects of exactly that kind:
+
+| Found once, here | What it would have cost an app |
+|---|---|
+| every authenticated websocket carried `actor: null`, because Bun runs `websocket.open` inside `server.upgrade()` | every channel subscribe on an authed client denied |
+| an unreadable TOTP secret verified against a code that needs no secret | one shared code stream across every broken secret in the table |
+| a `delete` bypassed the subscriber's own visibility rule | row ids leaking across tenants on the socket |
+| an ISR route with a policy served the first actor's HTML to everybody | one actor's page cached under a bare pathname |
+| a limiter shed vanished from `queue_depth` | the autoscaler going quiet exactly when the queue saturated |
+| `t.date` resolved a zone-less string against the container's timezone | one wire value meaning two instants on two pods |
+
+## Design axioms
+
+Eight, and they override any instinct that conflicts: **one way to do each thing** · **define once, project everywhere** · **enforced, not documented** · **errors are instructions** · **one command means shippable** · **the static path never pays for the app path** · **deploy anywhere = containers only** · **Ultimate ships mechanism; your app ships convention**.
+
+An app extends the framework by **wrapping**, never by forking, patching or petitioning — the primitives are plain functions returning values, so an app's own `tenantEntity` or `auditedMutator` yields primitives the registry, the manifest, admin and MCP treat identically. There is no plugin API.
+
+→ [The thesis and the axioms in full](docs/idea/00-thesis.md) · [Mechanism, not convention](docs/idea/19-mechanism-not-convention.md) · [Build vs wrap](docs/idea/18-build-vs-wrap.md) · [The locked stack](docs/idea/01-stack.md)
+
+## Roadmap
+
+Twelve milestones, each ending in a working demo app and a green gate. **0–10 are shipped; 11 is open on one thing** — the demo app proven on Compose *and* Kubernetes from a single image, rolling restart invisible. Its artifacts all ship, including a Helm chart written by `x new`; the proof needs real infrastructure and has not been run. The status markers in that table are enforced by the gate's `roadmap` step, so they cannot quietly rot.
+
+→ [The full roadmap](docs/idea/14-roadmap.md) · [The risks, stated plainly](docs/idea/15-risks.md) · [What is deliberately excluded](docs/idea/00-thesis.md)
 
 ## Contributing
 
 ```sh
 bun install
-bun run verify        # the 17-step gate: typecheck → lint → boundaries → tests → drift → budgets → manifest → roadmap. Green = shippable.
+bun run verify
 ```
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/architecture/00-conventions.md](docs/architecture/00-conventions.md) first. The tier boundaries in that second file are enforced by `bun run boundaries` — a sideways import fails the build, by design.
-
-## Roadmap
-
-Twelve milestones, each ending in a working demo app and a green `x verify`. **Milestones 0–10 are shipped.** Milestone 11 — deploy and docs — is open on one thing: the demo app proven on Compose **and** K8s from a single image, rolling restart invisible. Its artifacts all ship, and 1.1.0 closed the gap that made the proof impossible to attempt — a scaffolded app now produces a deployable image — but the proof itself needs real infrastructure and has not been run. The status markers in that table are enforced by `x verify`'s `roadmap` step, so they cannot quietly rot.
-
-The realtime kill criterion that 1.0.0 **waived** is now met: milestone 6 gated tier-2 realtime on a measured 50k-socket forced-restart benchmark, and that number is measured and committed — at one node, which is the scope stated above.
-
-→ [The full roadmap](docs/idea/14-roadmap.md) · [The risks, stated plainly](docs/idea/15-risks.md)
+Read [CONTRIBUTING.md](CONTRIBUTING.md), then [docs/architecture/00-conventions.md](docs/architecture/00-conventions.md) and [docs/architecture/15-adding-a-feature.md](docs/architecture/15-adding-a-feature.md). The tier boundaries are enforced by `bun run boundaries` — a sideways import fails the build, by design. A breaking change needs a section in [wiki/Upgrading.md](wiki/Upgrading.md) the moment it lands: [docs/architecture/19-cutting-a-major.md](docs/architecture/19-cutting-a-major.md).
 
 ## License
 

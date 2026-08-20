@@ -20,6 +20,13 @@ import { islandWithoutCollector } from './island-collector';
 import type { JsxComponent, JsxProps } from './jsx';
 import { isJsxNode } from './jsx';
 
+/**
+ * The id of the element every document wraps its route component in — one name, because a service
+ * worker, a test and a client entry all address the same element. It was `SPA_ROOT_ID` in
+ * `render-spa.ts` and named a mode that no longer exists, while every mode has always used it.
+ */
+export const ROOT_ELEMENT_ID = 'x-root';
+
 /** Depth is bounded so a component that renders itself fails with a cause instead of a stack trace. */
 const MAX_DEPTH = 500;
 

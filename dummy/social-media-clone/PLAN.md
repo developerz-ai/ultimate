@@ -114,7 +114,7 @@ Verdicts measured against the code, not the docs.
 | 10 | Parallel tests | opt-in, unmeasured | `x test --workers` shards (LPT bin-packing, real). But `x verify` bypasses it, scaffolds get `"test": "bun test"`, and `--parallel` measured *slower* (isolate re-runs the preload). No published suite wall-clock |
 | 11 | `.claude/` + `.mcp.json` scaffolding | MISSING | `x new` writes `AGENTS.md` + `CLAUDE.md` and nothing else. No agents, no commands, no MCP client config — although the app already *has* an MCP server to point at |
 | 12 | `/idea` `/reset` `/feature` | MISSING for apps | four commands exist for framework maintainers; none is scaffolded into an app |
-| 13 | SCSS system | EXISTS, strong | 46 components, ~25 mixins, `defineTheme()`, WCAG-tested token pairs. One live defect: scaffolded `shared/tokens.scss` `@use`s six variables that do not exist |
+| 13 | SCSS system | EXISTS, strong | 52 components, ~25 mixins, `defineTheme()`, WCAG-tested token pairs. One live defect: scaffolded `shared/tokens.scss` `@use`s six variables that do not exist |
 | 14 | hCaptcha | MISSING | verifier + widget + `captcha: true` on an action. A factory over `action`, so the eight-primitive rule holds |
 | 15 | File uploads | half | signed URLs, magic-byte sniffing and drivers all exist; **nothing mounts `/_storage`**, there is no client `upload()`, and no UI component |
 | 16 | Search | partial | FTS exists only inside `@ultimat3/ai` for RAG; a plain entity gets `LIKE` |
@@ -148,7 +148,7 @@ Every scaffolded app therefore ships, on day one:
 | Drive its own app | the app's own MCP server, already scaffolded (`ai.mcp.expose`), with **the same policy objects** as HTTP | a second authz path |
 | Run anything operational | `scripts/<resource>/<verb>.ts` + `scripts/help.ts` | improvising a throwaway script every session |
 | Know the house rules | `CLAUDE.md` + `AGENTS.md` (already scaffolded) + `.claude/agents` + `.claude/commands` | prose nobody loads |
-| Ship safely | `x verify` — one command, 17 steps, green means shippable | a checklist |
+| Ship safely | `x verify` — one command, 19 steps, green means shippable | a checklist |
 
 The `.mcp.json` is committed, secrets referenced as `${VAR}` and never inlined, and every `${VAR}`
 lands in `.env.example` in the same commit.

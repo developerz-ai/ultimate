@@ -11,7 +11,7 @@ Commands and the `x verify` step count, `As of 2026-08`:
 | `x new <name>` | scaffolds the monorepo | interactive-free; auth, seeded DB, example route |
 | `x dev` | every role in one process | embedded Postgres/events/storage, `/_x` mounted |
 | `x build --target docker\|binary\|static` | one artifact | `ROLE` selects behaviour at start |
-| `x verify` | **the gate** | 17 named steps, each with pass/fail + duration |
+| `x verify` | **the gate** | 19 named steps, each with pass/fail + duration |
 | `x g <primitive> <name>` | scaffolds a primitive **with a passing test** | never a TODO stub |
 | `x db gen\|migrate\|reset\|branch\|backfill` | everything DB | `branch` = copy-on-write clone + preview URL; `backfill` dry-runs unless `--write`. `x db studio` is **planned** — it parses, and exits `X_NOT_IMPLEMENTED` naming `/_x`'s db panel |
 | `x mcp serve` | `@ultimat3/mcp`'s 13 dev tools, over stdio or HTTP | one catalog, one scope set, both transports |
@@ -47,7 +47,7 @@ X_DB_DRIFT: schema differs from migrations
 
 ```sh
 x verify --json
-# {"ok":false,"command":"verify","summary":"1 of 17 steps failed","steps":[...]}
+# {"ok":false,"command":"verify","summary":"1 of 19 steps failed","steps":[...]}
 ```
 
 ## `x verify` steps

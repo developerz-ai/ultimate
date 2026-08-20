@@ -58,7 +58,7 @@ export const admin = defineAdmin({
   audit: memoryAuditLog({ sinks: [auditTable] }),
 });
 
-export const routes = adminRoutes(admin); // generated views `spa`, custom pages `ssr`, all gated
+export const routes = adminRoutes(admin); // every view `ssr`, gated — an admin screen is per-actor
 ```
 
 ### The views are TSX, and the pieces come apart

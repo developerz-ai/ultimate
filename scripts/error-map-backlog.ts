@@ -106,7 +106,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
   ],
   // tier 1 — catalog faults, raised by the build and by `x i18n`. The request-time one is
   // `X_LOCALE_UNSUPPORTED`, which is unpinned.
-  i18n: ['X_CATALOG_INVALID', 'X_CATALOG_MISSING_KEYS'],
+  i18n: ['X_CATALOG_INVALID', 'X_CATALOG_MISSING_KEYS', 'X_CATALOG_UNREGISTERED'],
   // tier 1 — two classes, and only the second is arithmetic.
   //
   // `X_CURRENCY_INVALID` and `X_CURRENCY_REDEFINED` are `registerCurrency`'s refusals and nothing

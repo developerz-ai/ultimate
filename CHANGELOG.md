@@ -8,7 +8,68 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **BREAKING —** `isValidTimeZone`, `assertTimeZone` and `canonicalTimeZone` refuse every single-label
+  timezone name except `UTC`. A zone is `Area/Location`; `Intl` accepting a string is not evidence it is
+  one, and at ICU 78 the two stopped agreeing — `CET`, `EST`, `GMT` and `MST` resolve there where ICU 75
+  threw, so a Bun upgrade alone reopened the "no date without an explicit IANA zone" rule, silently and in
+  the direction that fails dangerous. The judgement is now structural. 43 names change answer (#251):
+
+  | Refused | Replace with |
+  |---|---|
+  | `Japan` `GB` `GB-Eire` `Eire` `W-SU` `PRC` `ROK` `ROC` `Singapore` `Israel` `Iran` `Egypt` `Cuba` `Jamaica` `Poland` `Portugal` `Turkey` `Hongkong` `Iceland` `Libya` `Navajo` `Kwajalein` `NZ` `NZ-CHAT` | the `Area/Location` spelling: `Asia/Tokyo`, `Europe/London`, `Europe/London`, `Europe/Dublin`, `Europe/Moscow`, `Asia/Shanghai`, `Asia/Seoul`, `Asia/Taipei`, `Asia/Singapore`, `Asia/Jerusalem`, `Asia/Tehran`, `Africa/Cairo`, `America/Havana`, `America/Jamaica`, `Europe/Warsaw`, `Europe/Lisbon`, `Europe/Istanbul`, `Asia/Hong_Kong`, `Atlantic/Reykjavik`, `Africa/Tripoli`, `America/Denver`, `Pacific/Kwajalein`, `Pacific/Auckland`, `Pacific/Chatham` |
+  | `UCT` `Universal` `Zulu` | `UTC` |
+  | `GMT` `GMT0` `GMT+0` `GMT-0` `Greenwich` | `Etc/GMT`, which keeps the `GMT` label; `UTC` renders `UTC` |
+  | `CET` `EET` `MET` `WET` `EST` `MST` `HST` `EST5EDT` `CST6CDT` `MST7MDT` `PST8PDT` | no mechanical replacement, and that is the defect: an abbreviation names no jurisdiction and carries no DST rule. Name the city — `Europe/Paris` for `CET`, `America/New_York` for `EST5EDT`, `America/Phoenix` for `MST` |
+
+  The first three rows are textual: each replacement renders the identical wall clock and offset, verified
+  against seven probe instants including both 2026 DST transitions. `Etc/GMT+2` is unaffected — only a
+  LEADING sign is a bare offset. No denylist: a list of refused abbreviations grows with every tzdata
+  release, and there is no structural rule that keeps `CET` out and lets `Japan` in.
+
+- **BREAKING —** the image pipeline is `Bun.Image`, and its terminals are async. `transformImageBytes()`
+  and `blurDataUrl()` return a `Promise`; add `await`. Every consumer inside the framework
+  (`storage.transformImage`, `seo`'s `builtinImageDriver`, `pwa`'s `BuiltinImagePipeline`) was already
+  `async` and its signature is unchanged.
+
+  The hand-rolled JPEG and PNG codecs and the Lanczos resampler are deleted — **1,679 lines** — and
+  replaced by `Bun.Image`'s statically-linked libjpeg-turbo / libspng / libwebp with SIMD resize
+  kernels. Still zero dependencies: no `sharp`, no native build step (#252).
+
+  - **WebP encodes now.** `ENCODABLE_FORMATS` is `png | jpeg | webp`; `DECODABLE_FORMATS` is
+    `png | jpeg | webp | gif`. `@ultimat3/storage`'s default variant format and its default `.webp`
+    key extension finally agree — a `srcset` entry can be served, not only named.
+  - **AVIF and HEIC are refused on EVERY platform**, deliberately. `Bun.Image.backend` is pinned to
+    `'bun'` on every call, so the static codecs and Highway geometry produce identical bytes on a
+    laptop and on a node — which `variantKey`'s content-addressed cache requires. A platform-dependent
+    variant is a cache that never hits. Producing AVIF means a CDN or a custom `ImageTransformDriver`.
+  - **BREAKING — `blurDataUrl(bytes, width)` lost its `width`.** It is `Bun.Image.placeholder()`: a
+    deterministic ThumbHash `data:image/png;base64,…`, at most 32px on its long edge.
+    `BLUR_PLACEHOLDER_WIDTH` and `@ultimat3/storage`'s re-export of it are deleted — there is no width
+    to name. ThumbHash quantises the aspect ratio; `responsiveImage()` paints the LQIP as
+    `background-size: cover` inside a box sized from the real dimensions, so nothing shifts.
+  - **BREAKING — with no `format`, the SOURCE format is kept** (PNG if the source is one the pipeline
+    cannot write). The old rule guessed from the pixels and turned an opaque PNG into a JPEG. A
+    heuristic that *can* flatten a logo eventually does.
+  - **BREAKING — deleted exports:** `decodeJpeg`, `encodeJpeg`, `decodePng`, `encodePng`,
+    `resizeRaster`, `defaultFormatFor`, `DEFAULT_JPEG_QUALITY` (now `DEFAULT_IMAGE_QUALITY`),
+    `BLUR_PLACEHOLDER_WIDTH`. `encodeImage` / `decodeImage` survive as the raw-pixel seam and are now
+    **8-bit RGBA PNG only** — `Bun.Image` has no compositor and no raw-pixel terminal, and the PWA
+    maskable safe zone needs both.
+  - EXIF `Orientation` is now applied to JPEG sources, which the old decoder ignored.
+  - `Bun.Image`'s `ERR_IMAGE_*` rejections map onto the existing `X_IMAGE_UNSUPPORTED` /
+    `X_IMAGE_TOO_LARGE` / `X_IMAGE_DECODE_FAILED`. No new code.
+
+### Fixed
+
+- island JSX compiles to real SolidJS reactivity. `Bun.build` was called with no `plugins`, so island
+  JSX became `React.createElement` against a `React` that is never imported and every island
+  containing JSX threw `ReferenceError` on first interaction, while the build reported success and
+  `x verify` stayed green. Islands are now compiled with `babel-preset-solid` (#243)
+- a browser bundle can load `@ultimat3/core`: three module-scope `AsyncLocalStorage` constructions moved
+  onto one lazy seam, so `@ultimat3/ui` no longer throws `TypeError: undefined is not a constructor` at
+  module evaluation (#244)
 
 ## 5.0.1
 

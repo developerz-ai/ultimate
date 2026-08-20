@@ -224,7 +224,7 @@ Thrown by more than one package, or by the gate about any of them; every package
 | `X_RATE_LIMITED` | `http` | 429 | token bucket exhausted for `(tenant, actor, route)` | retry after `data.retryAfterMs` |
 | `X_CATALOG_MISSING_KEYS` | `i18n` | build | a locale's catalog lacks a key source calls `t()` with | `x i18n sync <locale>` |
 | `X_CURRENCY_MISMATCH` | `money` | 500 | arithmetic across two currencies | convert explicitly first |
-| `X_TIMEZONE_INVALID` | `time` | 500 | a `zone` that is not an IANA identifier | pass an IANA id such as `Europe/Berlin`, never `CET` |
+| `X_TIMEZONE_INVALID` | `time` | 500 | a `zone` that is not an IANA `Area/Location` identifier | pass an `Area/Location` id such as `Europe/Berlin` — never `CET`, and never a single-label legacy name like `Japan` |
 | `X_TEST_NETWORK_SEALED` | `testing` | test | unmocked egress inside a test | mock the named URL |
 
 There is no runtime code for *formatting with no zone at all*: `FormatContext.zone` is required

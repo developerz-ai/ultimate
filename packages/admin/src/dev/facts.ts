@@ -14,7 +14,7 @@
  */
 export interface RouteFact {
   readonly path: string;
-  /** `RouteDescriptor.mode` — `ssr`, `isr`, `static`, `stream`, `spa`. */
+  /** `RouteDescriptor.mode` — `static`, `isr`, `ssr`, `stream`. */
   readonly render: string;
   readonly offline: string;
   readonly hydrate: string;

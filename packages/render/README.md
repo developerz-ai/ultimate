@@ -1,6 +1,6 @@
 # 🖼 @ultimat3/render
 
-The `route` primitive and the five render modes.
+The `route` primitive and the four render modes.
 
 | Mode | Behavior | Use |
 |---|---|---|
@@ -8,11 +8,10 @@ The `route` primitive and the five render modes.
 | `isr` | static + background regen on tag/TTL | catalogs, profiles |
 | `ssr` | per-request full render | fresh SEO pages |
 | `stream` | static shell flushed instantly, holes streamed | **default for app pages** |
-| `spa` | shell only, client fetches | dashboards behind auth |
 
 ```ts
 export const config = defineRoute({
-  render:     'isr',                  // static | isr | ssr | stream | spa
+  render:     'isr',                  // static | isr | ssr | stream
   revalidate: { tags: [tag.post] },
   prerender:  () => db.posts.slugs(),
   offline:    'precache',             // precache | runtime | network-only
@@ -104,9 +103,8 @@ a hydrating `site/` route below.
 | `isr` | needs a trigger: `revalidate.tags` or `revalidate.ttl`; **no `policy`** — one cached document per URL cannot answer two actors | `X_ROUTE_MODE_INVALID` |
 | `ssr` | cannot be prerendered | `X_ROUTE_MODE_INVALID` |
 | `stream` | at least one `<Suspense>` boundary | `X_ROUTE_MODE_INVALID` |
-| `spa` | requires a `policy` (authed dashboards only) | `X_ROUTE_MODE_INVALID` |
 
-Plus surface rules: `site/` allows `static | isr | ssr`, `app/` allows `stream | spa | ssr`,
+Plus surface rules: `site/` allows `static | isr | ssr`, `app/` allows `stream | ssr`,
 `api/` renders nothing, and a `site/` route that opts into hydration without a `budget.js`
 is a build error.
 
@@ -284,10 +282,9 @@ would paper over the contradiction.
 | `checkSurfaceBoundary`, `assertSurfaceBoundary`, `surfaceOf` | the hard boundary |
 | `renderStatic`, `enumeratePrerender` | build-time render, content hashing |
 | `createIsrController`, `invalidateAndRevalidate` | SWR + single-flight + tag triggers |
-| `renderSsr`, `streamResult`, `renderSpa` | the per-request modes |
+| `renderSsr`, `streamResult` | the per-request modes |
 | `emitIslandAttributes`, `hydrateRuntime` | the four hydration strategies |
 | `graphFor`, `checkBudget`, `assertBudget` | two bundle graphs, per-route budgets |
-| `createRouter` | the vendored client router |
 | `mergeHead`, `renderHead`, `themeScript` | `<head>` merge + the one inlined script |
 
 ## Notes
@@ -311,7 +308,11 @@ would paper over the contradiction.
 - **`hydrate: 'never'`** emits no attributes beyond the marker and no runtime — the `site/`
   0kb default is mechanical, not aspirational. A page that renders an island anyway is
   `X_ISLAND_NOT_HYDRATED`, not a silently dead button.
-- **The client router is vendored** rather than depending on a moving SolidStart alpha. It
-  imports no `solid-js`: reactive primitives and the DOM host are injected.
+- **A gated page is `ssr`**, never a client-rendered shell. `spa` and `createRouter` were
+  deleted `As of 2026-08-20`: `renderSpa` never read the route's component and no build ever produced the
+  `chunks` it preloaded, so every `spa` route served an empty `<div id="x-root">`, and the router
+  that shell would have needed had no caller in the framework or in either tracked app. A page
+  whose body belongs in the browser declares `island({ src })` — one interactivity model, one
+  bundler entry point, one budget measured against real bytes.
 - `@ultimat3/http`'s `html()` / `stream()` turn a `RenderResult` into a `Response`; render
   never constructs one.

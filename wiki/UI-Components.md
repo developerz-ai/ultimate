@@ -1,12 +1,12 @@
 # UI components
 
-`@ultimat3/ui` — 46 SolidJS components on the semantic tokens in [Theming](Theming). SCSS modules, logical properties, no Tailwind, no CSS-in-JS.
+`@ultimat3/ui` — 52 SolidJS components on the semantic tokens in [Theming](Theming). SCSS modules, logical properties, no Tailwind, no CSS-in-JS.
 
 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)).
 
 ## The catalog is generated — read it, don't ask
 
-**[`packages/ui/CATALOG.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/ui/CATALOG.md)** documents all 46 components with every prop, every type, and the token scales, parsed straight out of `packages/ui/src/components/*.tsx`. It ships inside the npm tarball, so it is on disk at `node_modules/@ultimat3/ui/CATALOG.md` in any app.
+**[`packages/ui/CATALOG.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/ui/CATALOG.md)** documents all 52 components with every prop, every type, and the token scales, parsed straight out of `packages/ui/src/components/*.tsx`. It ships inside the npm tarball, so it is on disk at `node_modules/@ultimat3/ui/CATALOG.md` in any app.
 
 | Concern | Answer |
 |---|---|

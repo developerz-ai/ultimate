@@ -21,7 +21,19 @@ import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 
-export const DOC_GLOBS: readonly string[] = ['wiki/**/*.md', 'docs/**/*.md'];
+/**
+ * Every page that hands a reader a command, not just the two doc trees. It was `wiki/` + `docs/`
+ * alone, so `README.md`, `CLAUDE.md`, `AGENTS.md`, `PUBLISHING.md` and all 30 package READMEs went
+ * unchecked — which is how the README's `x g` kind list stayed four kinds short of the registry.
+ * The same set `scripts/version-stamps.ts` already reads, for the same reason: an agent does not
+ * know which directory a page lives in before it runs what the page told it to.
+ */
+export const DOC_GLOBS: readonly string[] = [
+  '*.md',
+  'wiki/**/*.md',
+  'docs/**/*.md',
+  'packages/*/*.md',
+];
 export const ALLOW_FILE = 'scripts/doc-commands-allow.ts';
 
 /**
@@ -37,14 +49,40 @@ export const ALLOW_FILE = 'scripts/doc-commands-allow.ts';
  * has exactly one owner.
  */
 export const skipDocPath = (path: string): boolean =>
-  path.startsWith('docs/plans/') || path === 'wiki/Error-Codes.md';
+  path.startsWith('docs/plans/') || path === 'CHANGELOG.md' || path === 'wiki/Error-Codes.md';
+
+/**
+ * A per-file count of citations that do not resolve, tolerated because they were already there
+ * when this rule learned to read the file. It may SHRINK and never grow — the ratchet
+ * `scripts/test-bare-error.ts` runs, for the reason it gives: 23 sites across seven packages were
+ * sitting under a green gate, and refusing to widen the rule until every one is fixed is how a
+ * rule stays narrow forever.
+ *
+ * An entry is a COUNT, not a verdict. Most of `packages/cli/CLAUDE.md`'s are deliberate — that file
+ * documents this checker's own findings and has to quote the commands that do not exist — and a
+ * deliberate citation belongs in `DOC_COMMAND_ALLOWANCES`, which records WHY. Moving one there
+ * lowers the number here; fixing a genuinely wrong line lowers it too. Both are progress.
+ */
+export const DOC_COMMAND_PINS: Readonly<Record<string, number>> = {
+  'packages/action/README.md': 2,
+  'packages/admin/CLAUDE.md': 1,
+  'packages/admin/README.md': 1,
+  'packages/cli/CLAUDE.md': 12,
+  'packages/db/CLAUDE.md': 1,
+  'packages/db/README.md': 1,
+  'packages/entity/CLAUDE.md': 1,
+  'packages/flags/CLAUDE.md': 1,
+  'packages/flags/README.md': 1,
+  'packages/mail/README.md': 1,
+  'packages/scraping/CLAUDE.md': 1,
+};
 
 /**
  * `unresolved` is the hazard. `allowance` is the list's own hygiene — an entry matching nothing is
  * a waiver nobody reads, and the page it named may have been fixed or deleted. `vacuous` is the
  * false green: a glob that matches no file answers "every citation resolved" over nothing.
  */
-export type DocCommandGapKind = 'unresolved' | 'allowance' | 'vacuous';
+export type DocCommandGapKind = 'unresolved' | 'allowance' | 'vacuous' | 'pin';
 
 export interface DocCommandGap {
   readonly kind: DocCommandGapKind;
@@ -58,6 +96,8 @@ export interface DocCommandInput {
   readonly files: readonly MarkdownFile[];
   readonly catalog: CommandCatalog;
   readonly allow: readonly DocCommandAllowance[];
+  /** Path → how many unresolved citations that file may still hold. See `DOC_COMMAND_PINS`. */
+  readonly pins: Readonly<Record<string, number>>;
 }
 
 const allows = (allowance: DocCommandAllowance, path: string, subject: string): boolean =>
@@ -82,6 +122,8 @@ export function checkDocCommands(input: DocCommandInput): readonly DocCommandGap
   }
   const gaps: DocCommandGap[] = [];
   const used = new Set<DocCommandAllowance>();
+  /** How many unresolved citations each pinned file actually holds, so the pin can be compared. */
+  const counted = new Map<string, number>();
   // One finding per line per invocation, not one per code span: a table row routinely writes
   // `x env check --fix` twice, and two identical findings read as two defects.
   const reported = new Set<string>();
@@ -97,7 +139,25 @@ export function checkDocCommands(input: DocCommandInput): readonly DocCommandGap
     const at = `${one.path}:${one.line}`;
     if (reported.has(`${at} ${fault.subject}`)) continue;
     reported.add(`${at} ${fault.subject}`);
+    const pinned = input.pins[one.path];
+    if (pinned !== undefined) {
+      counted.set(one.path, (counted.get(one.path) ?? 0) + 1);
+      continue;
+    }
     gaps.push({ kind: 'unresolved', at, subject: fault.subject, detail: fault.reason });
+  }
+  // A pin above what the file now holds is a waiver nobody needs: the same rule the allowance list
+  // runs, one file set on. It may only come down, so a stale one is a finding rather than slack.
+  for (const [path, pinned] of Object.entries(input.pins)) {
+    const found = counted.get(path) ?? 0;
+    if (found === pinned) continue;
+    gaps.push({
+      kind: 'pin',
+      at: `${ALLOW_FILE.replace('-allow', '')}`,
+      subject: path,
+      detail:
+        found > pinned ? `${found} now, pinned at ${pinned}` : `${found} now, pinned at ${pinned}`,
+    });
   }
   for (const allowance of input.allow) {
     if (used.has(allowance)) continue;
@@ -132,10 +192,18 @@ const vacuousFinding = (gap: DocCommandGap): Finding => ({
   at: gap.at,
 });
 
+const pinFinding = (gap: DocCommandGap): Finding => ({
+  code: 'X_DOC_COMMAND_PIN_STALE',
+  cause: `${gap.subject} holds ${gap.detail} unresolved x citations`,
+  fix: `set DOC_COMMAND_PINS['${gap.subject}'] in scripts/doc-commands.ts to the first number in "${gap.detail}", or delete the entry when it reaches 0`,
+  at: gap.subject,
+});
+
 const FINDINGS: Readonly<Record<DocCommandGapKind, (gap: DocCommandGap) => Finding>> = {
   unresolved: unresolvedFinding,
   allowance: allowanceFinding,
   vacuous: vacuousFinding,
+  pin: pinFinding,
 };
 
 export const docCommandFindingFor = (gap: DocCommandGap): Finding => FINDINGS[gap.kind](gap);
@@ -154,6 +222,7 @@ export const docCommandGaps = async (root: string): Promise<readonly DocCommandG
     files: await readDocPages(root),
     catalog: await loadCommandCatalog(),
     allow: DOC_COMMAND_ALLOWANCES,
+    pins: DOC_COMMAND_PINS,
   });
 
 /** What this repo contributes to `x verify`'s `manifest` step. */
@@ -171,7 +240,7 @@ if (import.meta.main) {
       script: 'doc-commands',
       summary:
         gaps.length === 0
-          ? `${files.length} pages, every documented x invocation resolves against the registry`
+          ? `${files.length} pages, every documented x invocation resolves against the registry (${Object.values(DOC_COMMAND_PINS).reduce((sum, n) => sum + n, 0)} pinned across ${Object.keys(DOC_COMMAND_PINS).length} package pages, which may only shrink)`
           : `${gaps.length} documented x invocation(s) this build cannot run, across ${files.length} pages`,
       findings: gaps.map(docCommandFindingFor),
     },

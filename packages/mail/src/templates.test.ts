@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test';
 import { translatorFor } from '@ultimat3/i18n';
 import type { MailBlock } from './blocks';
-import { registerMailCatalog } from './catalog';
 import type { MailDefinition } from './mail';
 import { type RenderedMail, renderMail } from './render';
 import {
@@ -13,8 +12,6 @@ import {
   verifyEmailMail,
   welcomeMail,
 } from './templates';
-
-registerMailCatalog();
 
 /** A key, not a sentence: lowercase dotted segments, never a space. */
 const KEY_RE = /^[a-z0-9]+(\.[a-z0-9-]+)+$/;

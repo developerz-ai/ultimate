@@ -88,7 +88,7 @@ Follow in order. Each page states what it was executed against in its own first 
 |---|---|
 | [I18n](I18n) | flat catalogs, loud misses, locale routing, `hreflang` |
 | [Theming](Theming) | 24 semantic colour roles as RGB channels, every token scale, `defineTheme()`, what contrast is gated |
-| [UI components](UI-Components) | the four page composites, and the generated 46-component catalog |
+| [UI components](UI-Components) | the four page composites, and the generated 52-component catalog |
 | [Timezones and dates](Timezones-And-Dates) | store UTC, format with an explicit IANA zone, frozen clocks in tests |
 | [Money](Money) | `Money = { minor, currency }`, never a float |
 | [Resource management](Resource-Management) | `Disposable` db resources, `using`/`await using`, idempotent release, compile-time pins |
@@ -132,6 +132,6 @@ Follow in order. Each page states what it was executed against in its own first 
 | [`docs/ops/`](https://github.com/developerz-ai/ultimate/tree/main/docs/ops) | running an app for real: the PaaS → Compose → Kubernetes ladder, secrets, observability, datastore sizing, disaster recovery, runbooks. **Recommendations only** — the framework depends on none of it |
 | [`docs/idea/16-app-targets.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/16-app-targets.md) | three targets, one backend, two view layers — **design only, not shipped behaviour** |
 | [`docs/idea/17-scale-ladder.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/idea/17-scale-ladder.md) | why the app code is identical at rung 0 and rung 4 — **shipped, not design only**: 24 of its 26 seam rows are marked shipped, rungs 0–2 are real, and the places the invariant breaks today are named |
-| [`packages/ui/CATALOG.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/ui/CATALOG.md) | all 46 components with every prop, generated from source and drift-tested |
+| [`packages/ui/CATALOG.md`](https://github.com/developerz-ai/ultimate/blob/main/packages/ui/CATALOG.md) | all 52 components with every prop, generated from source and drift-tested |
 | [`framework.manifest.json`](https://github.com/developerz-ai/ultimate/blob/main/framework.manifest.json) | every package, tier, and `X_*` code with its owner — generated |
 | [llms.txt](https://github.com/developerz-ai/ultimate/blob/main/llms.txt) | the machine-readable repo map for agents |

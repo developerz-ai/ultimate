@@ -4,12 +4,23 @@
 // is a real determinate `progressbar` rather than a styled div.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
 import { byTag, fire, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
 import { Combobox } from './Combobox';
 import { Dropzone } from './Dropzone';
 import { FileInput } from './FileInput';
 import type { FileCandidate, FileSelection } from './file-input-view';
+
+/**
+ * What this component must render for a ui key, looked up BY THE KEY in the catalog it ships in.
+ *
+ * These assertions read `⟦ui.x⟧` until 5.1.0, because `registerFrameworkCatalog()` had one caller
+ * and a unit test was never it — so every framework string was a loud miss here and the marker was
+ * the only observable. It is registered by importing `@ultimat3/i18n` now, so the marker is gone;
+ * the KEY is still what is asserted, which is what these tests are about.
+ */
+const uiString = (key: string): string => FRAMEWORK_CATALOG[key] ?? `no catalog entry for ${key}`;
 
 const PNG = { name: 'a.png', type: 'image/png', size: 10 };
 const PDF = { name: 'b.pdf', type: 'application/pdf', size: 10 };
@@ -77,7 +88,7 @@ describe('the file controls', () => {
       expect(bar.props['aria-valuemin']).toBe(0);
       expect(bar.props['aria-valuemax']).toBe(100);
       expect(bar.props['aria-valuenow']).toBe(42);
-      expect(bar.props['aria-label']).toBe(`⟦${UI_KEYS.loading}⟧`);
+      expect(bar.props['aria-label']).toBe(uiString(UI_KEYS.loading));
       expect(bar.props['style']).toEqual({ '--file-progress': '42%' });
     });
 
@@ -206,7 +217,7 @@ describe('the file controls', () => {
       expect(withAttr(zone(), 'role', 'progressbar')).toEqual([]);
       const bar = one(withAttr(zone({ progress: 0.25 }), 'role', 'progressbar'), 'progressbar');
       expect(bar.props['aria-valuenow']).toBe(25);
-      expect(bar.props['aria-label']).toBe(`⟦${UI_KEYS.loading}⟧`);
+      expect(bar.props['aria-label']).toBe(uiString(UI_KEYS.loading));
     });
   });
 

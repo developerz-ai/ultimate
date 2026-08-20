@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { tag } from '@ultimat3/cache';
 import { RouteModeInvalidError } from './errors';
-import { assertModeInvariants, defaultHydrate } from './modes';
+import { assertModeInvariants, defaultHydrate, MODE_SPECS, RENDER_MODES } from './modes';
 import { clearRoutes, registerRoute } from './registry';
-import type { RouteConfig, RouteGuard, RouteMetaFn } from './route';
+import type { RenderMode, RouteConfig, RouteGuard, RouteMetaFn } from './route';
 import { defineRoute } from './route';
+import { SURFACE_SPECS } from './surfaces';
 
 const meta = (() => ({ title: 'T', description: 'd'.repeat(60) })) as unknown as RouteMetaFn;
 const guard: RouteGuard = { permission: 'dashboard:read' };
@@ -112,14 +113,39 @@ describe('per-mode registration invariants', () => {
     expect(fix).toContain('remove prerender');
   });
 
-  test('spa requires a policy — it is for authed dashboards', () => {
-    expect(() =>
-      defineRoute({ render: 'spa', offline: 'precache', hydrate: 'idle', meta }),
-    ).toThrow(RouteModeInvalidError);
+  // `spa` was a mode with no renderer: `renderSpa` never read `entry.component` and the client
+  // bundle that was supposed to fill `#x-root` was never built by anything, so every `spa` route
+  // ever declared served an empty document. It is gone, and the refusal is what says so — a
+  // deleted mode that merely stopped being listed would fail at the first blank page instead.
+  test("render: 'spa' is not a mode, and the refusal lists the four that are", () => {
+    let fix = '';
+    let cause = '';
+    try {
+      // `as RenderMode` because the union no longer holds it: the value an app has on disk today
+      // reaches `defineRoute` from JS and from a stale `.tsx` alike, and this is the check that
+      // greets it.
+      defineRoute({
+        render: 'spa' as RenderMode,
+        offline: 'precache',
+        hydrate: 'idle',
+        meta,
+        policy: guard,
+      });
+    } catch (error) {
+      fix = fixOf(error);
+      cause = error instanceof RouteModeInvalidError ? error.cause : '';
+    }
+    expect(cause).toContain('"spa" is not a render mode');
+    expect(fix).toBe('use one of static | isr | ssr | stream');
+  });
 
-    expect(() =>
-      defineRoute({ render: 'spa', offline: 'precache', hydrate: 'idle', meta, policy: guard }),
-    ).not.toThrow();
+  test('the mode table and the surface tables agree on exactly four modes', () => {
+    // Pinned, not derived: a sixth mode arriving with no renderer is the defect `spa` was, and
+    // a table that only ever grows cannot report it.
+    expect(RENDER_MODES).toEqual(['static', 'isr', 'ssr', 'stream']);
+    expect(Object.keys(MODE_SPECS)).toEqual([...RENDER_MODES]);
+    expect(SURFACE_SPECS.app.allowedModes).toEqual(['stream', 'ssr']);
+    expect(SURFACE_SPECS.site.allowedModes).toEqual(['static', 'isr', 'ssr']);
   });
 
   test('stream requires at least one suspense boundary', () => {

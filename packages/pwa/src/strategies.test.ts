@@ -45,7 +45,6 @@ describe('render mode → strategy', () => {
     ['isr', 'stale-while-revalidate'],
     ['ssr', 'network-first'],
     ['stream', 'stale-while-revalidate'],
-    ['spa', 'cache-first'],
   ])('%s → %s', (mode, expected) => {
     expect(MODE_STRATEGY[mode]).toBe(expected);
     expect(strategyFor(route({ mode }))).toBe(expected);

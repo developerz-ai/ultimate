@@ -289,6 +289,11 @@ whether or not anyone updates this table.
 
 ## Ongoing releases (automated)
 
+0. **On a major only:** `wiki/Upgrading.md` already carries a `## <previous major>.x → <new major>`
+   section, written when the first breaking change landed — releasing it is deleting `unreleased`
+   from its heading and updating the summary table's counts. If the section does not exist, stop and
+   write it before tagging; the procedure is
+   [`docs/architecture/19-cutting-a-major.md`](docs/architecture/19-cutting-a-major.md).
 1. `bun run scripts/release.ts --bump patch|minor|major` — bumps every package in lockstep and
    appends the changelog entry.
 2. Commit, tag `vX.Y.Z`, push.

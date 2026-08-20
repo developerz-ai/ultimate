@@ -19,7 +19,7 @@ export const STRATEGY_NAMES: readonly StrategyName[] = [
   'network-only',
 ];
 
-export type PwaRenderMode = 'static' | 'isr' | 'ssr' | 'stream' | 'spa';
+export type PwaRenderMode = 'static' | 'isr' | 'ssr' | 'stream';
 export type PwaOfflineStrategy = 'precache' | 'runtime' | 'network-only';
 
 /**
@@ -47,7 +47,6 @@ export const MODE_STRATEGY: Readonly<Record<PwaRenderMode, StrategyName>> = Obje
   isr: 'stale-while-revalidate',
   ssr: 'network-first',
   stream: 'stale-while-revalidate',
-  spa: 'cache-first',
 });
 
 export function strategyFor(route: PwaRoute): StrategyName {

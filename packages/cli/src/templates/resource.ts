@@ -58,12 +58,29 @@ unitTest('${feature.pascal}NotFoundError carries a code, a cause and a fix', () 
 });
 `;
 
+/**
+ * The generated component reaches strings through the APP's catalog module — the one that calls
+ * `defineCatalogs()` — so a component that renders a string depends on the module that registers
+ * them. `t` from `@ultimat3/i18n` renders while depending on nothing, which is how a shipped app
+ * served every string as a loud miss with a green gate (issue #249). An app with no catalog module
+ * keeps the framework import: emitting one that cannot resolve is worse than the wrong idiom.
+ */
+const catalogImport = (module: string | undefined): string =>
+  module === undefined
+    ? "import { t } from '@ultimat3/i18n';"
+    : `import { useT } from '${module}';`;
+
+/** `useT()` is per render, so each component binds it in its own body. */
+const translatorBinding = (module: string | undefined): string =>
+  module === undefined ? '' : '\n  const t = useT();\n';
+
 const uiSource = (
   feature: NameSet,
+  module: string | undefined,
 ): string => `// Presentation only. No fetching, no business logic: the list arrives as a prop from the route,
 // which got it from the live query.
 
-import { t } from '@ultimat3/i18n';
+${catalogImport(module)}
 import { For } from 'solid-js';
 import type { ${feature.pascal} } from './entity';
 import styles from './ui.module.scss';
@@ -72,7 +89,7 @@ export interface ${feature.pascal}ListProps {
   readonly rows: readonly ${feature.pascal}[];
 }
 
-export function ${feature.pascal}List(props: ${feature.pascal}ListProps) {
+export function ${feature.pascal}List(props: ${feature.pascal}ListProps) {${translatorBinding(module)}
   return (
     <ul class={styles.list}>
       <For each={props.rows} fallback={<li>{t('app.${feature.kebab}.empty')}</li>}>
@@ -103,10 +120,11 @@ const uiStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
 
 const cardSource = (
   feature: NameSet,
+  module: string | undefined,
 ): string => `// One ${feature.camel} rendered on its own — the list's \`item\` shown outside a list, so a
 // detail route and a search result render the identical markup.
 
-import { t } from '@ultimat3/i18n';
+${catalogImport(module)}
 import type { ${feature.pascal} } from '../entity';
 import styles from '../ui.module.scss';
 
@@ -114,7 +132,7 @@ export interface ${feature.pascal}CardProps {
   readonly row: ${feature.pascal};
 }
 
-export function ${feature.pascal}Card(props: ${feature.pascal}CardProps) {
+export function ${feature.pascal}Card(props: ${feature.pascal}CardProps) {${translatorBinding(module)}
   return (
     <article class={styles.item}>
       <h3>{props.row.title}</h3>
@@ -126,10 +144,11 @@ export function ${feature.pascal}Card(props: ${feature.pascal}CardProps) {
 
 const formSource = (
   feature: NameSet,
+  module: string | undefined,
 ): string => `// Presentation only: the mutator this submits to owns validation server-side, so this form
 // never re-implements the invariant — a blank title fails at the boundary, not in the DOM.
 
-import { t } from '@ultimat3/i18n';
+${catalogImport(module)}
 import { createSignal } from 'solid-js';
 import styles from '../ui.module.scss';
 
@@ -138,7 +157,7 @@ export interface ${feature.pascal}FormProps {
 }
 
 export function ${feature.pascal}Form(props: ${feature.pascal}FormProps) {
-  const [title, setTitle] = createSignal('');
+  const [title, setTitle] = createSignal('');${translatorBinding(module)}
   return (
     <form
       class={styles.item}
@@ -174,6 +193,11 @@ export interface ResourceOptions extends FeatureTarget {
   readonly admin?: boolean;
   /** Every locale the feature's catalog ships for. Defaults to `['en']`. */
   readonly locales?: readonly string[];
+  /**
+   * The app's own catalog module — `@<app>/i18n`, read off `packages/i18n/package.json` by
+   * `resolveCatalogModule`. Absent only for an app that ships no such package.
+   */
+  readonly catalogModule?: string;
 }
 
 export function resourceFiles(rawName: string, target: ResourceOptions): readonly GeneratedFile[] {
@@ -190,10 +214,16 @@ export function resourceFiles(rawName: string, target: ResourceOptions): readonl
     ...jobFiles(`reindex-${feature.kebab}`, slice),
     { path: `${dir}/service.ts`, contents: serviceSource(feature) },
     { path: `${dir}/service.test.ts`, contents: serviceTest(feature) },
-    { path: `${dir}/ui.tsx`, contents: uiSource(feature) },
+    { path: `${dir}/ui.tsx`, contents: uiSource(feature, target.catalogModule) },
     { path: `${dir}/ui.module.scss`, contents: uiStyle() },
-    { path: `${dir}/ui/${feature.kebab}-card.tsx`, contents: cardSource(feature) },
-    { path: `${dir}/ui/${feature.kebab}-form.tsx`, contents: formSource(feature) },
+    {
+      path: `${dir}/ui/${feature.kebab}-card.tsx`,
+      contents: cardSource(feature, target.catalogModule),
+    },
+    {
+      path: `${dir}/ui/${feature.kebab}-form.tsx`,
+      contents: formSource(feature, target.catalogModule),
+    },
     ...locales.map((locale) => ({
       path: catalogPath(locale),
       contents: catalogSource(feature),

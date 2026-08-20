@@ -7,6 +7,7 @@ import { frameworkVersion, VERSION_DEFINE } from '@ultimat3/core';
 import { requireAppRoot } from './app-root';
 import { runVerify } from './cmd-verify';
 import type { CliCommand, CommandContext } from './command';
+import { externalArgs } from './compile-externals';
 import { BuildEntryMissingError, UnknownCommandError } from './errors';
 import type { ExecResult } from './exec';
 import { execOutput } from './exec';
@@ -58,6 +59,11 @@ export function dockerArgs(root: string, tag: string): readonly string[] {
  * `frameworkVersion()` has nothing to read and throws — which is exactly how this target came to
  * compile an artifact that could never boot. The value is this CLI's own `@ultimat3/core`, which is
  * the app's too: the packages release in lockstep and `x new` pins them together.
+ *
+ * `externalArgs()` is not optional either, and for the opposite reason: it names the one specifier
+ * this graph must NOT resolve. `apps/web/server.ts` reaches `serve.ts`, which reaches the island
+ * builder, which reaches `@babel/core` — whose `.cts`-config loader requires a package we
+ * deliberately do not install. Bun 1.3 fails the compile on it. See `compile-externals.ts`.
  */
 export function binaryArgs(root: string, out: string): readonly string[] {
   return [
@@ -67,6 +73,7 @@ export function binaryArgs(root: string, out: string): readonly string[] {
     '--minify',
     '--define',
     `${VERSION_DEFINE}=${JSON.stringify(frameworkVersion())}`,
+    ...externalArgs(),
     join(root, BUILD_ENTRY.binary),
     '--outfile',
     out,

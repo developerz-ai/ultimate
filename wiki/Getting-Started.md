@@ -34,7 +34,7 @@ Nothing to install first. No Docker daemon, no `.env` scavenger hunt, no service
 | Landing page | `apps/web/site/` | `static`, **0kb JS**, real meta + JSON-LD |
 | Dashboard | `apps/web/app/` | `stream`, auth'd |
 | Admin app | `apps/admin/` | already exposes MCP over your actions |
-| Green gate | `x verify` | 17 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, manifest, roadmap |
+| Green gate | `x verify` | 19 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, manifest, roadmap |
 
 `x dev` runs **every role in one process** with isolation simulated, not skipped: separate ALS contexts, a real Postgres queue, real logical replication, a real SIGTERM drain on `x dev restart`. Nothing in the framework branches on `if (dev)` — only the drivers differ.
 

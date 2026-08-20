@@ -8,7 +8,6 @@ import {
 } from '@ultimat3/jobs';
 import { t } from '@ultimat3/schema';
 import { blocks } from './blocks';
-import { registerMailCatalog } from './catalog';
 import {
   createMemoryDriver,
   type MemoryMailDriver,
@@ -25,7 +24,6 @@ import {
   sendById,
 } from './mail';
 
-registerMailCatalog();
 registerCatalog(
   'en',
   loadCatalog({

@@ -12,7 +12,9 @@ Imported by every package that renders a string.
 | `define-catalogs.ts` | the app's one registration call. Boot only, composes the four below. |
 | `interpolate.ts` | `{var}` + CLDR plural selection. No catalog access (takes a `has` predicate). |
 | `locales.ts` | supported set, normalize, negotiate, RTL. No catalogs. |
-| `context.ts` | request locale via ALS, the registry, the ambient `t` and `useI18n`. |
+| `context.ts` | request locale via ALS, the registry + the base layer under it, the ambient `t` and `useI18n`. |
+| `framework.ts` | the framework's own strings, installed as the base layer at module scope. |
+| `registration.ts` | are the catalogs an app SHIPS in the registry it READS? No file access. |
 | `extract.ts` | static scan + audit for `x verify`. |
 | `catalogs/en.json` | data, not code. |
 
@@ -28,13 +30,29 @@ Imported by every package that renders a string.
   negotiated `en` in a file that never mentioned locales. No partial call can widen the set back. The
   test harness restores it at each file boundary (`@ultimat3/testing`'s `registry-snapshot.ts`).
 - A miss renders `⟦key⟧`. Never add a fallback locale chain — it hides gaps.
-- **`FRAMEWORK_CATALOG` registers under `FRAMEWORK_CATALOG_LOCALE` (`en`) only**, and
-  `registerFrameworkCatalog()` takes no locale — passing one is a compile error. It ran per locale
-  until 2026-08, so an `es`-only app served `Page not found` and English `ui.*` chrome with
-  `isMiss` reading FALSE, which is the fallback chain the line above refuses, wearing registration
-  as a disguise. It is also a real no-op when the locale already has a catalog: `registerCatalog`
-  merges its ARGUMENT last, so a second call reverted every app override of a framework key.
-  A non-`en` app translates the framework keys it renders into its own catalog.
+- **`FRAMEWORK_CATALOG` is the base layer**, installed by `framework.ts` at module scope —
+  importing `@ultimat3/i18n` is what registers it, so no app can forget it and `resetCatalogs()`
+  puts it back. It was `registerFrameworkCatalog()`, whose ONE caller was `defineCatalogs`, so an
+  app whose catalog module nothing imported served `⟦errors.notFound.title⟧` on its 404 page and
+  `⟦ui.*⟧` in every design-system control, with `x verify` green (issue #249). Under
+  `FRAMEWORK_CATALOG_LOCALE` (`en`) **only**: it ran per locale until 2026-08, so an `es`-only app
+  served `Page not found` with `isMiss` reading FALSE — the fallback chain the line above refuses,
+  wearing registration as a disguise. A non-`en` app translates the framework keys it renders into
+  its own catalog.
+- **The base layer merges UNDER whatever `registerCatalog` seated, never over it**, so an app's
+  override of a framework key survives every later install and the install is idempotent by
+  construction rather than by a module flag `resetCatalogs()` would go stale against.
+  `registerBaseCatalog` is **framework packages only** — `@ultimat3/mail` calls it for `mail.*`,
+  which had the identical defect and the identical fix. It is not a second app path: everything
+  installed there loses to `registerCatalog` on the same key, so the strongest thing an app could
+  achieve by calling it is strings its own `defineCatalogs()` overrides. That the rule is
+  documented and not a build error is the one hole in this file; closing it is a `boundaries` rule
+  refusing the specifier outside `packages/*/src`.
+- **A catalog on disk is not a registered catalog.** `catalogRegistrationGaps` /
+  `assertCatalogsRegistered` answer the runtime question per locale — `X_CATALOG_UNREGISTERED` —
+  and `x verify`'s `i18n` step is what asks it of an app. An app reads strings through its OWN
+  module (`useT()` from `packages/i18n/src/index.ts`), never `t` from `@ultimat3/i18n`, so that
+  registration is a consequence of rendering rather than something a boot has to remember.
 - Only an **own** property of `vars` is a variable — `interpolate` guards with `Object.hasOwn`.
   A plain object inherits `constructor`, `toString`, `valueOf` and `__proto__`, so a bare
   `vars[name]` rendered a function's source into the page for a template nobody wrote a variable

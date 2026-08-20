@@ -2,11 +2,9 @@ import { expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
 import { blocks } from './blocks';
-import { registerMailCatalog } from './catalog';
 import { BASE_LAYOUT, MAIL_TOKENS, type MailToken } from './layout';
 import { type RenderableMail, renderMail } from './render';
 
-registerMailCatalog();
 registerCatalog(
   'en',
   loadCatalog({
