@@ -77,7 +77,7 @@ export function patchFromChange(change: ChangeEvent): RowPatch | null {
  * swapping the matcher — or adopting an external protocol's, per the risk register — touches this
  * function only.
  */
-export function matcherFor(live: LiveQuery): IncrementalMatcher {
+export function matcherFor(live: LiveQuery, projection?: () => Projection): IncrementalMatcher {
   return {
     entities: live.reads,
     match: (change, rows) => {
@@ -89,13 +89,53 @@ export function matcherFor(live: LiveQuery): IncrementalMatcher {
         row,
         ...(change.before === null ? {} : { before: change.before }),
       });
-      return toBridgeResult(patches, change);
+      // The window's own rows are the fallback, so a matcher built without a `projection` reader
+      // still narrows once the window holds anything — `live-definition.ts` supplies one because
+      // an EMPTY window is the case rows cannot answer.
+      return toBridgeResult(patches, change, projection?.() ?? projectionOf(rows));
     },
   };
 }
 
+/**
+ * The columns a query's result set actually carries, learned from the rows it returned. `undefined`
+ * means nothing has been read yet, and then nothing is narrowed — the shape is unknown, and
+ * inventing one would drop columns a caller is owed.
+ */
+export type Projection = ReadonlySet<string> | undefined;
+
+/** The projection a window's own rows describe. Empty window, no answer. */
+export const projectionOf = (rows: readonly Row[]): Projection =>
+  rows[0] === undefined ? undefined : new Set(Object.keys(rows[0]));
+
+/**
+ * One row, restricted to the columns the result set carries.
+ *
+ * A `ChangeEvent` carries the whole TABLE row — that is what logical replication emits and what
+ * `setRowObserver` emits — while a live query's result set is whatever its `sql` returned. Sending
+ * the change row through unnarrowed put every column of the table on the socket, including the ones
+ * a projection exists to withhold: `examples/dummy`'s feed projects ten columns and a single publish
+ * delivered `body` to every subscriber. The per-subscriber gate cannot help — it decides whether a
+ * ROW is delivered, never which of its columns.
+ *
+ * `id` always survives: it is the row's identity on the wire, and `applyToWindow` and every client
+ * store key by it.
+ */
+export function narrowRow(row: JsonObject, projection: Projection): JsonObject {
+  if (projection === undefined) return row;
+  const out: JsonObject = {};
+  for (const key of Object.keys(row)) {
+    if (key === 'id' || projection.has(key)) out[key] = row[key] as JsonObject[string];
+  }
+  return out;
+}
+
 /** `Patch<Row>` (add/update/remove/refill, positional) -> the wire's `RowPatch`. */
-export function toBridgeResult(patches: readonly Patch<Row>[], change: ChangeEvent): BridgeResult {
+export function toBridgeResult(
+  patches: readonly Patch<Row>[],
+  change: ChangeEvent,
+  projection?: Projection,
+): BridgeResult {
   const out: RowPatch[] = [];
   let refill = false;
   for (const patch of patches) {
@@ -104,7 +144,7 @@ export function toBridgeResult(patches: readonly Patch<Row>[], change: ChangeEve
         out.push({
           op: 'insert',
           id: patch.row.id,
-          row: patch.row,
+          row: narrowRow(patch.row, projection),
           lsn: change.lsn,
           index: patch.position,
         });
@@ -113,7 +153,10 @@ export function toBridgeResult(patches: readonly Patch<Row>[], change: ChangeEve
         out.push({
           op: 'update',
           id: patch.row.id,
-          row: { id: patch.row.id, ...changedColumns(change.before, patch.row) },
+          row: narrowRow(
+            { id: patch.row.id, ...changedColumns(change.before, patch.row) },
+            projection,
+          ),
           lsn: change.lsn,
           index: patch.position,
         });

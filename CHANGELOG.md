@@ -8,7 +8,30 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **A live query no longer re-delivers the raw table row, and no longer mis-orders a projected
+  window** (#230). Two defects with one cause: a `ChangeEvent` carries the whole TABLE row, and a
+  live query's result set is whatever its `sql` returned.
+
+  **The leak.** Every patch forwarded the change row unnarrowed, so a column the projection dropped
+  went out on the socket the moment it CHANGED. `examples/dummy`'s feed projects ten columns and one
+  publish delivered `updatedAt`; a salary or a private note would have gone the same way. The
+  per-subscriber gate could not help — it decides whether a ROW is delivered, never which of its
+  columns. A patch row is now narrowed to the columns the query actually returned, learned from its
+  own reads (a projection lives inside the `sql` closure and there is nothing static to read it
+  from). `id` always survives; an unknown projection narrows nothing.
+
+  **The mis-ordering.** `match()` decides position against the rows the WINDOW holds, so an
+  `orderBy` on a column the projection omits measured a real value against nothing: every update
+  read as a move, and an arriving row landed wherever `undefined` sorted. A position the window
+  cannot answer for is now a `refill` — one re-read and a re-snapshot — rather than a guess. A
+  DELETE still patches incrementally, because it decides no position.
+
+  The rule generalises what `assertSeekable` already applies to a cursor: **a sort key has to be
+  readable on the row.** `examples/dummy`'s `PostSummary` now carries `createdAt` for that reason,
+  which also puts its feed back on the incremental path — the assertion that file was written with,
+  and which had never been true.
 
 ## 5.0.0
 

@@ -78,6 +78,10 @@ const summary = (slug: string) => ({
   likeCount: 0,
   publishedAt: new Date(SLOT_AT - 3_600_000),
   authorId: id(1),
+  // `PostSummary` carries the key `liveFeed` orders by. A feed row that omitted it made the live
+  // matcher re-read the whole window on every change (#230), so it is part of the shape now — and
+  // `digestEmail` parses that shape, which is what makes this row have to carry it too.
+  createdAt: new Date(SLOT_AT - 7_200_000),
   authorName: 'Ada Lovelace',
 });
 

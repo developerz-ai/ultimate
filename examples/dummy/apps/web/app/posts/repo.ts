@@ -53,6 +53,9 @@ const SUMMARY_COLUMNS = {
   likeCount: true,
   publishedAt: true,
   authorId: true,
+  // The key `liveFeed` orders by. A live query's rows must carry it — see `PostSummary` — and a
+  // projection that drops it makes every change to the feed a full re-read.
+  createdAt: true,
 } as const;
 
 /** The comment columns the view carries: `orgId` scopes the read, it is not wire data. */
@@ -117,6 +120,7 @@ const summaryView = (row: Pick<Post, keyof typeof SUMMARY_COLUMNS> & WithAuthor)
   likeCount: row.likeCount,
   publishedAt: row.publishedAt,
   authorId: row.authorId,
+  createdAt: row.createdAt,
   authorName: authorName(row.author),
 });
 

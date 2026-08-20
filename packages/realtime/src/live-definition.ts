@@ -13,7 +13,7 @@ import { type AnyQuery, queryHash, queryName } from '@ultimat3/query';
 import { LiveRowUnidentifiedError } from './errors';
 import { isRow, type JsonValue, type Row } from './json';
 import type { LiveQueryDefinition, SnapshotResult } from './live-contract';
-import { type IncrementalMatcher, matcherFor } from './matcher-bridge';
+import { type IncrementalMatcher, matcherFor, type Projection } from './matcher-bridge';
 import { authorizeWithPolicy, visibleWithPolicy } from './policy-gate';
 
 export interface LiveDefinitionOptions {
@@ -48,6 +48,25 @@ interface SharedWindow {
   readonly rowEntity: string;
   read(): Promise<readonly Row[]>;
 }
+
+/**
+ * The columns this query's result set carries, learned from the rows it returns rather than
+ * declared — a projection lives inside the `sql` provider's closure and there is nothing static to
+ * read it from. Learned once and kept, because the case the window's own rows cannot answer is an
+ * EMPTY window: the first row to arrive would otherwise be sent as the whole table row.
+ */
+const learnProjection = (): { read: () => Projection; teach: (rows: readonly Row[]) => void } => {
+  let projection: Projection;
+  return {
+    read: () => projection,
+    // Never unlearned: a window that empties still describes the same result set, and forgetting
+    // would put the leak back on the first row to return.
+    teach: (rows) => {
+      if (projection === undefined && rows[0] !== undefined)
+        projection = new Set(Object.keys(rows[0]));
+    },
+  };
+};
 
 /**
  * A matcher for an input nothing has resolved yet. It refuses to decide rather than reporting "no
@@ -88,12 +107,17 @@ export function liveQueryDefinition(
     // that patches them describe the same `(query, input)` by construction. Asking `sourceFor` for
     // a second subject-less copy — which is what this did — paid for the parse and the `sql()`
     // twice per query id and left two descriptions of one read that agreed only by luck.
+    const projection = learnProjection();
     const built: SharedWindow = {
-      matcher: matcherFor(live),
+      matcher: matcherFor(live, projection.read),
       // `assertMatchable` already refused a shape without one, so this is the entity the matcher
       // patches rows of — the same name `ChangeEvent.entity` and `tx.<table>` use.
       rowEntity: live.shape.entity,
-      read: async () => rowsOf(name, await live.execute()),
+      read: async () => {
+        const rows = rowsOf(name, await live.execute());
+        projection.teach(rows);
+        return rows;
+      },
     };
     windows.set(qid, built);
     evictOldest(windows, options.maxWindows ?? 256);

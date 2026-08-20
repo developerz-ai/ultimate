@@ -22,6 +22,9 @@ const notes = entity('notes', {
     id: uuid().primaryKey(),
     orgId: uuid().tenant(),
     title: text({ max: 40 }),
+    // On the table and NOT in the query's projection below — the column #230 used to put on the
+    // socket the moment any note changed.
+    secret: text({ max: 40 }).default('classified'),
   },
 });
 
@@ -40,7 +43,12 @@ const liveNotes = query({
   live: true,
   sql: ({ orgId }) =>
     from<{ id: string; orgId: string; title: string }>('notes', async () => {
-      const page = await db.notes.where({ orgId }).orderBy('id').limit(50).page();
+      const page = await db.notes
+        .where({ orgId })
+        .orderBy('id')
+        .limit(50)
+        .select({ id: true, orgId: true, title: true })
+        .page();
       return page.rows;
     })
       .where({ orgId })
@@ -229,6 +237,33 @@ describe(testName('unit', 'the subscribe fixture drives a whole sync node'), () 
     await expect(
       driver.subscribe<{ id: string }>(liveNotes, { orgId: ACME }, stranger),
     ).rejects.toBeUltimateError('X_FORBIDDEN');
+  });
+
+  /**
+   * #230, end to end and through a real node: a live query whose rows are a PROJECTION must not
+   * receive the table's other columns on a change. `liveNotes` selects `id`, `orgId` and `title`
+   * through its own read, so `secret` exists on the row and never on the wire.
+   */
+  bunTest('a patch never carries a column the query did not select', async () => {
+    const feed = await driver.subscribe<{ id: string; title: string }>(
+      liveNotes,
+      { orgId: ACME },
+      member('m1', ACME),
+    );
+
+    // BOTH columns, and that is the whole test: an update patch carries only the columns that
+    // CHANGED, so a `secret` left alone is absent whether or not anything narrows. The leak is a
+    // non-projected column that MOVES.
+    await as(member('m1', ACME), () =>
+      db.notes.update(NOTE_ONE, { title: 'renamed', secret: 'moved' }),
+    );
+    await feed.settled();
+
+    expect(feed.patches()).toHaveLength(1);
+    for (const patch of feed.patches()) {
+      expect(Object.keys(patch.row)).not.toContain('secret');
+    }
+    for (const row of feed.rows()) expect(Object.hasOwn(row, 'secret')).toBe(false);
   });
 
   // The bound this driver states out loud: a filtered write names rows the row observer never saw,

@@ -64,6 +64,23 @@ export function match<TRow extends object>(
     return inSet ? removeAt(shape, index, id, true, rows.length) : [];
   }
   if (!belongs) return [];
+
+  // Everything below this line decides a POSITION, and a position is decided against the rows the
+  // window HOLDS. A result set is whatever the query's `sql` returned, so a PROJECTION that drops an
+  // ordering column leaves `compareRows` measuring the change row's real value against nothing —
+  // never equal on the update path, so every change read as a move, and arbitrary on the insert
+  // path, so a new row landed wherever `undefined` sorted. In `examples/dummy` that turned one
+  // publish into a `remove` + `insert` whose re-inserted row was the raw table row (#230).
+  //
+  // Refusing to decide is the honest answer, and `refill` already means it: "the window is a guess,
+  // re-read it". The node turns it into one read plus a re-snapshot. A DELETE never reaches here —
+  // it is addressed by the index the id was found at, which needs no ordering — so a projected
+  // query still removes rows incrementally.
+  const sample = rows[0];
+  if (sample !== undefined && unprojectedOrderKey(shape, sample) !== undefined) {
+    return [{ kind: 'refill', from: 0 }];
+  }
+
   if (!inSet) return insert(shape, rows, event.row);
 
   // Present and still matching: a change to an ordering column is a move, not an update.
@@ -108,6 +125,25 @@ function insert<TRow extends object>(
     }
   }
   return patches;
+}
+
+/**
+ * The first `orderBy` column the result set's own rows do not carry, or `undefined` when every one
+ * of them is readable there.
+ *
+ * `Object.hasOwn`, never a value check: a nullable column that IS null still has its key, and
+ * `isNull` deliberately treats an absent key and a SQL NULL as one absence everywhere else. Here
+ * they are different facts — "this row's value is nothing" versus "this shape cannot answer" — and
+ * only the key tells them apart.
+ *
+ * Asked of the row the WINDOW holds, never of the change row: the change row comes off the table
+ * and carries every column, so it can always answer. What decides is whether the client's copy can.
+ */
+export function unprojectedOrderKey(shape: QueryShape, held: object): string | undefined {
+  for (const key of shape.orderBy) {
+    if (!Object.hasOwn(held, key.column)) return key.column;
+  }
+  return undefined;
 }
 
 /**

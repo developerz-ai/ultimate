@@ -680,7 +680,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `live-contract.ts` | what a live query IS: `LiveQueryDefinition`, `SnapshotResult`, `LiveSubscription`. Four modules need the shape and none of them needs the registry that runs it. The **id** is not here and not anywhere in this package — it is `@ultimat3/query`'s `queryHash` |
 | `json.ts` | the wire's value types and `fnv1a` (drift), the one hash still owned here. The canonical form and the sharing-key hash are `@ultimat3/core`'s (`canonicalJson`, `fingerprint`) — `json.test.ts` pins that `fnv1a` is never mistakable for one |
 | `live-definition.ts` | the only bridge from a declared `query({ live: true })` to a registrable definition — and `policy-gate.ts`'s only caller |
-| `matcher-bridge.ts` | the only `@ultimat3/query` matcher seam |
+| `matcher-bridge.ts` | the only `@ultimat3/query` matcher seam — and where a patch row is narrowed to the columns the query returned |
 
 ## Commands
 
@@ -698,3 +698,21 @@ the same whitelist drops an old client's copy, and a new client's omission decod
 field always held. Bumping for either refuses every in-flight client on a rolling deploy and buys
 nothing — the version guards incompatibility, not novelty. Removing a field something *does* read
 is the opposite case and bumps.
+
+**A patch carries the result set's columns, never the table's** — `narrowRow` in
+`matcher-bridge.ts`, `As of 2026-08-20`. A `ChangeEvent` carries the whole TABLE row (that is what
+logical replication emits, and what `@ultimat3/entity`'s `setRowObserver` emits), while a live
+query's result set is whatever its `sql` returned. Every patch used to forward the change row
+unnarrowed, so a column a projection exists to withhold went out on the socket the moment it
+CHANGED — `examples/dummy`'s feed projects ten columns and one publish delivered `updatedAt` to
+every subscriber (#230). The per-subscriber gate cannot help: it decides whether a ROW is delivered,
+never which of its columns.
+
+`id` always survives the narrowing — it is the row's identity on the wire, and `applyToWindow` and
+every client store key by it. An **unknown** projection narrows nothing, because "nothing has been
+read yet" is not "the result set has no columns".
+
+The projection is **learned from the query's own reads**, in `live-definition.ts`: a projection
+lives inside the `sql` provider's closure and there is nothing static to read it from. Learned and
+kept rather than re-derived per fanout, because the case the window's own rows cannot answer is an
+EMPTY window — the first row to arrive would otherwise go out whole.

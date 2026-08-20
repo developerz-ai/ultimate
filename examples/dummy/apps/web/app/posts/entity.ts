@@ -39,8 +39,18 @@ export const PostView = t.object({
 
 export type PostView = Infer<typeof PostView>;
 
-/** The feed row: same post, minus the body, because 50 bodies is not a feed. */
-export const PostSummary = PostView.omit('body');
+/**
+ * The feed row: same post, minus the body, because 50 bodies is not a feed — plus `createdAt`,
+ * which `PostView` deliberately omits and this row cannot.
+ *
+ * `liveFeed` orders by `createdAt desc, id`, and **a live query's rows have to carry the key they
+ * are ordered by**. Without it the incremental matcher compares the change row's real `createdAt`
+ * against nothing on the row the client holds, cannot place the row, and re-reads the whole window
+ * on every change — the same rule `assertSeekable` already applies to a cursor's sort key, now
+ * applied to the live window (#230). It is also the honest shape: a client handed a feed sorted by
+ * creation time can neither re-sort nor resume without the value it was sorted on.
+ */
+export const PostSummary = PostView.omit('body').extend({ createdAt: t.date });
 
 export type PostSummary = Infer<typeof PostSummary>;
 
