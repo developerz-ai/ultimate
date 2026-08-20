@@ -10,6 +10,63 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 Nothing yet.
 
+## 4.1.0 - 2026-08-20
+
+A minor: one new export, one behaviour change at the error renderers, and six `fix:` lines that
+told the reader to edit a field nothing reads. No breaking change — `bun add @ultimat3/core@4.1.0`
+over 4.0.0 needs no edit.
+
+### Added
+
+- **`singleLine(text)` from `@ultimat3/core`.** Escapes every C0 control, DEL, `\u2028` and
+  `\u2029`, and leaves everything else byte-identical. Exported because six renderers of the
+  3-line contract format need it and five of them are in other packages.
+
+### Fixed
+
+- **A caller-controlled `string` can no longer add a line to the 3-line contract format** (#97).
+  `bun run error-render` refuses an `unknown` reaching a `cause:`; a value that is already a
+  `string` renders without throwing, so the gate had nothing to object to — while a newline in one
+  writes a second line an operator reads as a genuine framework message. Three such holes shipped
+  in `@ultimat3/auth`, the worst reachable by an unauthenticated stranger with one crafted OIDC
+  token. Every field interpolated into that format now goes through `singleLine`, at the renderer
+  and never at the call site: `UltimateError.format()`, `SchemaError.format()`,
+  `renderErrorLines` (`@ultimat3/http`), `renderFrameworkError` (`@ultimat3/mcp`), and
+  `renderFinding` / `detailLines` (`@ultimat3/cli`).
+
+  **What changes for you:** a `cause` or `fix` that legitimately contained a newline now renders
+  `\n` instead of breaking the line. Nothing in this repo authored one. The structured logger and
+  the problem document were never affected — both emit JSON, which already escapes it — and
+  neither was the overlay's markup; the exposure was the terminal, CI logs, and the overlay's
+  `<pre>`.
+
+- **Six `fix:` lines in `@ultimat3/jobs` named a field that has no reader** (#223).
+  `JobsConfig.driver` is declared and read by nothing — boot always builds `createPgDriver` — so
+  `set jobs: { driver: 'postgres' } in app.config.ts` repaired nothing and returned the reader to
+  the identical throw. Each now names `setJobDriver(createPgDriver())`, the seam that actually
+  swaps the driver, and keeps the runnable command for rows already queued.
+
+  **The field itself is unchanged and still selects nothing.** `jobs: { driver: 'redis' }` does
+  not throw — it silently gives you Postgres. Deleting it is breaking and waits for the next
+  major; #223 records the alternative (wire it, so it throws honestly).
+
+### Gate
+
+- **The never-throw-a-bare-`Error` rule now covers test files** (#132). It was prose there —
+  `checkErrorFixes` opens with `if (isTest(path)) continue` — and 422 sites had accumulated.
+  `scripts/test-bare-error.ts` reports a `throw new Error(…)`, which is a test stating its own
+  verdict, and never a `new Error` merely handed to the code under test. Repo-internal: `scripts/`
+  ships in no package.
+
+### Every PR in this release
+
+- the never-throw-a-bare-Error rule now covers test files (#226)
+- two never-executed lines in the reference app's invite path (#227)
+- escape line breaks where the 3-line format is rendered (#225)
+- six shipped fix: lines told the reader to edit a field nothing reads (#224)
+- 4.0.0 is on the registry, and twenty pages still said 3.0.0 (#222)
+- two steps that succeed and do not do their job
+
 ## 4.0.0 - 2026-08-20
 
 Six bug sweeps since 3.0.0. The second was six independent auditors over the packages the 3.0.0
