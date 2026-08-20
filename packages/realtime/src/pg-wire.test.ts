@@ -337,9 +337,10 @@ describe('responseFields / describeFields / serverError', () => {
    * cycle, and a test may.
    */
   test('the 42704 fix names the publication the change feed actually defaults to', () => {
+    // The whole command, not the two halves separately: a fix naming the right publication in its
+    // explanatory tail and the WRONG one in the statement would satisfy both partial assertions.
     const fix = FIXES['42704'] ?? '';
-    expect(fix).toInclude(DEFAULT_REPLICATION_PUBLICATION);
-    expect(fix).toInclude('CREATE PUBLICATION');
+    expect(fix).toInclude(`CREATE PUBLICATION ${DEFAULT_REPLICATION_PUBLICATION} FOR ALL TABLES`);
     expect(fix).not.toInclude('x db replication');
   });
 

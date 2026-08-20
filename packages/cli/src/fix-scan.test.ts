@@ -338,3 +338,40 @@ describe('scanFixes · a fix read out of a table', () => {
     ).toBe(0);
   });
 });
+
+/**
+ * The three ways one-hop resolution could read a table the call site cannot reach. All three answer
+ * `unreadable` rather than a guess: a gate that judged fix lines from the wrong object would report
+ * findings nobody can act on, which is the failure mode `error-render.ts` calls the weakest joint.
+ */
+describe('scanFixes · a lookup this scan refuses to resolve', () => {
+  test('a name declared twice is not resolved, because nothing here tracks scope', () => {
+    const source =
+      "const FIXES = { a: 'x doctor --json' };\n" +
+      "function inner() { const FIXES = { a: 'check it' }; return new E({ code: X, fix: FIXES.a }); }";
+    expect(scanFixSites(source, 'a.ts')).toEqual({ sites: [], unreadable: 1 });
+  });
+
+  test('a factory call is not a table — its argument is the input, not the result', () => {
+    const source =
+      "const FIXES = makeTable({ a: 'check it' });\n" +
+      'const e = (k: string) => new E({ code: X, fix: FIXES[k] });';
+    expect(scanFixSites(source, 'a.ts')).toEqual({ sites: [], unreadable: 1 });
+  });
+
+  test('a let is not a table — the last assignment is what a call reads', () => {
+    const source =
+      "let FIXES = { a: 'x doctor --json' };\n" +
+      'const e = (k: string) => new E({ code: X, fix: FIXES[k] });';
+    expect(scanFixSites(source, 'a.ts')).toEqual({ sites: [], unreadable: 1 });
+  });
+
+  // `a: on ? 'x' : 'y'` carries TWO colons at the entry's own depth. Resuming at the first would
+  // read the else branch again and report one entry as two fix lines.
+  test('a conditional entry is one entry, read once', () => {
+    const source =
+      "const FIXES = { a: on ? 'x doctor --json' : 'x verify --json', b: 'x db migrate' };\n" +
+      'const e = (k: string) => new E({ code: X, fix: FIXES[k] });';
+    expect(fixes(source)).toEqual(['x doctor --json', 'x verify --json', 'x db migrate']);
+  });
+});

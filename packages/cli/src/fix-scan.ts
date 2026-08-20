@@ -213,24 +213,56 @@ const TABLE_NAME = /^[A-Z][A-Z0-9_]*$/;
 
 const LOOKUP_HEAD = /^\s*([A-Za-z_$][\w$]*)\s*[[.]/;
 
+/** The one wrapper a table is allowed to arrive in. Any other call is a factory, not a table. */
+const FREEZE = 'Object.freeze(';
+
 /**
  * Where the object literal bound to `name` opens in this file, or `undefined` when this file does
  * not declare one. One hop and same-file only, deliberately: a table is a `const` a few lines
  * above the factory that reads it in every instance measured here, and following a chain or a
- * second file is where a text scan starts guessing. `Object.freeze({…})` and a bare `{…}` both
- * resolve, because the wrapper is a call whose argument is still the table.
+ * second file is where a text scan starts guessing.
+ *
+ * Conservative in three ways, and each one answers `undefined` so the caller counts the site
+ * instead of reading an unrelated object. **A name declared twice is not resolved at all**: this
+ * scan tracks no lexical scope, so a nested `const FIXES` would otherwise be read as the outer one
+ * and the gate would judge fix lines from a table the call site cannot reach. **Only a bare `{…}`
+ * or the exact `Object.freeze({…})`**: `makeTable({…})` is a call whose result this cannot know,
+ * and reading its argument would report the input to a factory as the factory's output. **And only
+ * a `const`** — a `let` can be reassigned, and the last assignment is what a call reads.
+ *
+ * `name` is always `LOOKUP_HEAD`'s capture, `[A-Za-z_$][\w$]*`, so it carries no regex
+ * metacharacter and the pattern below is linear whatever a source file contains.
  */
 function tableOpen(masked: string, name: string): number | undefined {
-  const declaration = new RegExp(`(?<![.\\w$])const\\s+${name}\\s*(?::[^=;]*)?=\\s*`).exec(masked);
-  if (declaration === null) return undefined;
-  for (let i = declaration.index + declaration[0].length; i < masked.length; i += 1) {
+  const declaration = new RegExp(`(?<![.\\w$])const\\s+${name}\\s*(?::[^=;]*)?=\\s*`, 'g');
+  const first = declaration.exec(masked);
+  if (first === null || declaration.exec(masked) !== null) return undefined;
+  const rest = masked.slice(first.index + first[0].length);
+  const value = rest.trimStart();
+  const skipped = rest.length - value.length;
+  const from = first.index + first[0].length + skipped;
+  if (value.startsWith('{')) return from;
+  if (!value.startsWith(FREEZE)) return undefined;
+  const inner = value.slice(FREEZE.length).trimStart();
+  return inner.startsWith('{') ? from + (value.length - inner.length) : undefined;
+}
+
+/** Where this entry's value stops: the next `,` at the entry's own depth, or the table's `}`. */
+function entryEnd(masked: string, from: number): number {
+  let depth = 0;
+  for (let i = from; i < masked.length; i += 1) {
     const ch = masked[i] as string;
-    if (ch === '{') return i;
-    // `Object.freeze(` — a word, a dot, an open paren or whitespace is still on the way to the
-    // table. Anything else means this const is bound to something that is not one.
-    if (!/[\s\w$.(]/.test(ch)) return undefined;
+    if (QUOTES.has(ch)) {
+      i = Math.max(i, endOfLiteral(masked, i) - 1);
+      continue;
+    }
+    if (OPENERS.has(ch)) depth += 1;
+    else if (CLOSERS.has(ch)) {
+      if (depth === 0) return i;
+      depth -= 1;
+    } else if (depth === 0 && ch === ',') return i;
   }
-  return undefined;
+  return masked.length;
 }
 
 /**
@@ -263,6 +295,10 @@ function tableFixSites(
       for (const literal of valueLiterals(masked, source, i + 1, lineAt)) {
         sites.push({ ...literal, at });
       }
+      // Past the whole value, because `valueLiterals` already read all of it. A conditional value
+      // carries a SECOND colon at this same depth — `a: on ? 'x doctor' : 'x verify'` — and
+      // resuming here would read its else branch a second time and report one entry twice.
+      i = Math.max(i, entryEnd(masked, i + 1) - 1);
     }
   }
   return sites;
