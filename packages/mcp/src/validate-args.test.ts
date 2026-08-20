@@ -322,9 +322,13 @@ describe('validateArgs: a property named after one of Object.prototype', () => {
   // A schema that really does declare one of those names is the reason the discriminator is
   // `Object.hasOwn` rather than a deny-list: declared is declared, and it still validates.
   test('a schema that declares such a property validates it like any other', () => {
+    // The inner schema is annotated rather than inlined: `constructor` resolves to
+    // `Object.prototype.constructor` before the index signature of `properties`, so the literal
+    // never receives `JsonSchema` as its contextual type and `'string'` widens to `string`.
+    const stringProperty: JsonSchema = { type: 'string' };
     const declared: JsonSchema = {
       type: 'object',
-      properties: { constructor: { type: 'string' } },
+      properties: { constructor: stringProperty },
       required: ['constructor'],
       additionalProperties: false,
     };

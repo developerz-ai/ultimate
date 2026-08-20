@@ -172,12 +172,12 @@ describe('unit · the login path', () => {
         },
       }),
     );
-    process.env.SHOP_PASSWORD = 'hunter2';
+    process.env['SHOP_PASSWORD'] = 'hunter2';
     const report = (await handle.run(runArgs({ page: 1 }))) as ScrapeReport<{ id: string }>;
     expect(logins).toBe(1);
     expect(report.rows).toHaveLength(2);
     expect(await store.load('no-tenant/orders/account-a')).toBeDefined();
-    delete process.env.SHOP_PASSWORD;
+    delete process.env['SHOP_PASSWORD'];
   });
 
   test('a refused credential is recorded, and the next run never reaches the site', async () => {

@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { ReplicationFailedError, ReplicationProtocolError } from './errors';
 import { md5Password, SCRAM_SHA_256, scramNonce, scramSession } from './pg-auth';
 import { ByteReader } from './pg-bytes';
-import { PgConnection } from './pg-connection';
+import { PgConnection, type PgConnectionOptions } from './pg-connection';
 import {
   authCleartext,
   authGssapi,

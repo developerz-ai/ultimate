@@ -29,6 +29,12 @@ interface Bus {
   /** Whatever the transport reported in the background. Collected so it never reaches the log. */
   readonly reported: readonly unknown[];
   readonly transport: (overrides?: Partial<NatsTransportOptions>) => NatsTransport;
+  /**
+   * A transport with NO `onError` — the key ABSENT, not set to `undefined`. `onError` is optional,
+   * so "nobody is listening" is a missing property, and `{ onError: undefined }` cannot say that
+   * under `exactOptionalPropertyTypes`. This is the shape that falls back to the log.
+   */
+  readonly transportWithoutOnError: () => NatsTransport;
   readonly dials: () => number;
   /** What the transport handed the client as its reconnect policy, from the last dial. */
   readonly reconnectDelay: () => (() => number) | undefined;
@@ -46,21 +52,21 @@ function bus(options: { version?: string } = {}): Bus {
     delay = clientOptions.reconnectDelay;
     return open(clientOptions);
   };
+  const base = {
+    url: 'nats://bus.test:4222',
+    bucket: 'x-test',
+    clock,
+    rng: () => 0.5,
+    connect,
+  } satisfies Partial<NatsTransportOptions>;
   return {
     broker,
     reported,
     dials: () => dials,
     reconnectDelay: () => delay,
     transport: (overrides = {}) =>
-      new NatsTransport({
-        url: 'nats://bus.test:4222',
-        bucket: 'x-test',
-        clock,
-        rng: () => 0.5,
-        onError: (error) => reported.push(error),
-        connect,
-        ...overrides,
-      }),
+      new NatsTransport({ ...base, onError: (error) => reported.push(error), ...overrides }),
+    transportWithoutOnError: () => new NatsTransport({ ...base }),
   };
 }
 
@@ -308,7 +314,7 @@ describe('NatsTransport', () => {
 
   test('a background failure with no onError reaches the log rather than silence', async () => {
     const harness = bus();
-    const transport = harness.transport({ onError: undefined });
+    const transport = harness.transportWithoutOnError();
     const logged = spyOn(logger, 'error').mockImplementation(() => undefined);
 
     try {

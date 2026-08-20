@@ -14,6 +14,12 @@ import type { JsxProps } from './jsx';
 
 const FILE = 'apps/web/site/pricing/page.tsx';
 
+// `'idle'` wherever the strategy is incidental: it is a real `HydrateStrategy` (the collector
+// emits it verbatim into `directive.strategy`, so `'load'` — a name no strategy has carried since
+// the four were fixed — was writing a value the client runtime cannot dispatch on), it is not
+// `'never'` so `assertHydrates` passes, and it is not `'interaction'` so no test picks up replay
+// events it did not ask for.
+
 const specOf = (over: Partial<IslandSpec> = {}): IslandSpec => ({
   moduleId: 'cart',
   src: './cart.island.tsx',
@@ -39,7 +45,7 @@ beforeEach(() => {
 
 describe('createIslandCollector · record', () => {
   test('numbers the instances per module, so two of one island get two ids and one entry', () => {
-    const collector = createIslandCollector({ file: FILE, hydrate: 'load' });
+    const collector = createIslandCollector({ file: FILE, hydrate: 'idle' });
     const cart = specOf();
     const first = collector.record(cart, {});
     const second = collector.record(cart, {});
@@ -73,24 +79,24 @@ describe('createIslandCollector · record', () => {
   });
 
   test('an empty prop bag is omitted from the directive rather than emitted as {}', () => {
-    const collector = createIslandCollector({ file: FILE, hydrate: 'load' });
+    const collector = createIslandCollector({ file: FILE, hydrate: 'idle' });
     expect(Object.hasOwn(collector.record(specOf(), {}), 'props')).toBe(false);
     const withProps = collector.record(specOf({ propKeys: ['id'] }), { id: 'p1' } as JsxProps);
     expect(withProps.props).toEqual({ id: 'p1' });
   });
 
   test('replay events default only under interaction, and a declaration still wins', () => {
-    const load = createIslandCollector({ file: FILE, hydrate: 'load' });
-    expect(load.record(specOf(), {}).events).toBeUndefined();
+    const idle = createIslandCollector({ file: FILE, hydrate: 'idle' });
+    expect(idle.record(specOf(), {}).events).toBeUndefined();
 
     const interaction = createIslandCollector({ file: FILE, hydrate: 'interaction' });
     expect(interaction.record(specOf(), {}).events).toEqual(DEFAULT_REPLAY_EVENTS);
     expect(interaction.record(specOf({ events: ['pointerdown'] }), {}).events).toEqual([
       'pointerdown',
     ]);
-    // A declared list is kept whatever the strategy: `load` above answered undefined, not the
+    // A declared list is kept whatever the strategy: `idle` above answered undefined, not the
     // default, so this is the declaration and not the fallback.
-    expect(load.record(specOf({ events: ['focusin'] }), {}).events).toEqual(['focusin']);
+    expect(idle.record(specOf({ events: ['focusin'] }), {}).events).toEqual(['focusin']);
   });
 
   test('rootMargin travels only when declared', () => {
@@ -106,7 +112,7 @@ describe('createIslandCollector · two modules, one id', () => {
   test('is refused, naming both resolved entries', () => {
     const collector = createIslandCollector({
       file: FILE,
-      hydrate: 'load',
+      hydrate: 'idle',
       resolve: (src) => `/_x/${src.replace('./', '')}`,
     });
     collector.record(specOf({ src: './cart.island.tsx' }), {});
@@ -121,7 +127,7 @@ describe('createIslandCollector · two modules, one id', () => {
   });
 
   test('the same id resolving to the same entry is the ordinary two-instance case', () => {
-    const collector = createIslandCollector({ file: FILE, hydrate: 'load' });
+    const collector = createIslandCollector({ file: FILE, hydrate: 'idle' });
     collector.record(specOf(), {});
     expect(() => collector.record(specOf(), {})).not.toThrow();
     expect(islandModuleIds(collector.directives)).toEqual(['cart']);
@@ -129,9 +135,9 @@ describe('createIslandCollector · two modules, one id', () => {
 
   test('a collector is per render — a second one does not inherit the first claim', () => {
     const resolve = (src: string) => `/_x/${src.replace('./', '')}`;
-    const first = createIslandCollector({ file: FILE, hydrate: 'load', resolve });
+    const first = createIslandCollector({ file: FILE, hydrate: 'idle', resolve });
     first.record(specOf({ src: './cart.island.tsx' }), {});
-    const second = createIslandCollector({ file: FILE, hydrate: 'load', resolve });
+    const second = createIslandCollector({ file: FILE, hydrate: 'idle', resolve });
     expect(() => second.record(specOf({ src: './other.island.tsx' }), {})).not.toThrow();
     expect(second.directives).toHaveLength(1);
   });
@@ -146,7 +152,7 @@ describe('createIslandCollector · an entry that cannot be emitted', () => {
   ])('%s in the resolver output is refused', (_name, resolved) => {
     const collector = createIslandCollector({
       file: FILE,
-      hydrate: 'load',
+      hydrate: 'idle',
       resolve: () => resolved,
     });
     const error = thrownBy(() => collector.record(specOf(), {}));
@@ -158,7 +164,7 @@ describe('createIslandCollector · an entry that cannot be emitted', () => {
   test('a plain URL path is accepted, so the check is the characters and not the shape', () => {
     const collector = createIslandCollector({
       file: FILE,
-      hydrate: 'load',
+      hydrate: 'idle',
       resolve: () => '/_x/chunks/cart-9f3a.js',
     });
     expect(collector.record(specOf(), {}).entry).toBe('/_x/chunks/cart-9f3a.js');

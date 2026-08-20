@@ -6,6 +6,7 @@
 import type { Money } from '@ultimat3/money';
 import { detailOf, withoutKey } from './error-body';
 import { AiKeyMissingError, AiTransportError } from './errors';
+import type { AiFetch } from './fetch-seam';
 import type { Effort, ModelId, ThinkingMode } from './models';
 import { ANTHROPIC_MODEL_IDS, DEFAULT_MODEL, modelIds, modelSpec, reasoningBody } from './models';
 import { readSse } from './sse';
@@ -180,7 +181,7 @@ export interface AnthropicProviderInput {
   readonly apiKey?: string;
   readonly baseUrl?: string;
   /** Injectable so a test can assert the request body without a network. Defaults to `fetch`. */
-  readonly fetch?: typeof fetch;
+  readonly fetch?: AiFetch;
 }
 
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -303,7 +304,7 @@ export class AnthropicProvider implements Provider {
     if (apiKey === undefined || apiKey === '') {
       throw new AiKeyMissingError({ provider: this.name, envVar: API_KEY_ENV });
     }
-    const doFetch = this.config.fetch ?? fetch;
+    const doFetch: AiFetch = this.config.fetch ?? fetch;
     const url = `${this.config.baseUrl ?? 'https://api.anthropic.com'}/v1/messages`;
     const response = await doFetch(url, {
       method: 'POST',

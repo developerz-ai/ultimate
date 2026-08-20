@@ -11,29 +11,37 @@
 // about its own: a pin keyed on a file and a line goes stale on every edit to the file above it,
 // and churn teaches a reader to regenerate a ratchet without looking at it.
 //
-// Cheapest first — this is the order the remaining packages should be sliced in, one PR per
-// batch. The classes are the 2026-08-19 measurement and are advisory; the number is the rule:
+// What is left, and the order to slice it in. The classes are advisory; the number is the rule:
 //
 // | Package | Errors | The classes behind the count |
 // |---|---|---|
-// | testing | 20 | TS2339, TS2353, TS2322, TS2345 |
 // | action | 21 | TS4111, TS2353, TS2322, TS2769 |
-// | realtime | 22 | TS2769, TS2339, TS2741, TS2353 |
-// | jobs | 25 | TS2722, TS7006, TS4111, TS2741 |
-// | scraping | 27 | TS4111, TS2741, TS2554 |
-// | mcp | 30 | TS2345, TS4111, TS2339, TS2739 |
-// | render | 48 | TS2379 (`exactOptionalPropertyTypes`), TS2322, TS2345, TS2739 |
-// | cli | 60 | TS2345, TS2769, TS2322, TS18046 |
-// | entity | 78 | TS4111 (index-signature access), TS2769, TS18048 |
+// | entity | 22 | TS4111 (index-signature access), TS2769, TS18048 |
+// | cli | 59 | TS2345, TS2769, TS2322, TS18046 |
 //
-// At zero and staying there: `create-ultimate`, `money`, `seo` (never had a line), plus the 18
-// closed by the first phase-2 batch — `core`, `schema`, `i18n`, `time`, `pwa`, `storage`, `db`,
-// `cache`, `flags`, `auth`, `http`, `policy`, `query`, `mail`, `manifest`, `ui`, `ai`, `admin`.
-// 115 errors, and four of them were the type being wrong rather than the test: `LocaleSources`
-// refused the `undefined` its own sibling reader produces, `testActor()` minted an `Actor` with no
-// `kind` and no `scopes` so `hasScope()` threw out of a predicate, `RowProvider` forbade the
-// synchronous thunk `Builder.execute` has always awaited, and `ERROR_STATUS` was typed open in the
-// one table whose whole argument is that it is closed.
+// At zero and staying there: 27 of 30 workspaces. `create-ultimate`, `money` and `seo` never had a
+// line; the other 24 were closed in two batches, 344 errors, and eleven of them were the type
+// being wrong rather than the test:
+//
+// | Where | What shipped |
+// |---|---|
+// | `i18n/context.ts` | `LocaleSources` refused the `undefined` its own sibling reader produces |
+// | `policy/test-kit.ts` | `testActor()` minted an `Actor` with no `kind`/`scopes`, so `hasScope()` threw out of a predicate |
+// | `query/source.ts` | `RowProvider` forbade the synchronous thunk `execute` has always awaited |
+// | `http/error-map.ts` | `ERROR_STATUS` was typed open in the one table whose argument is that it is closed |
+// | `scraping/session-state.ts` | `isCookie` claimed `value is ScrapeCookie` after checking 2 of 6 fields |
+// | `scraping/http.ts` + `robots-fetch.ts` | `fetch?: typeof fetch` — an option no caller could fill |
+// | `ai/{provider,openai-provider,remote-embedder}.ts` | the same, nine double casts deep |
+// | `realtime/rebase.ts` | `rebaseFrame` declared the whole union and built one member |
+// | `jobs/driver-memory.ts` | `close` optional on a driver that always implements it |
+// | `realtime/presence.test.ts` | a `Transport` built by spreading a class instance — no prototype, no `publish` |
+// | `jobs/step-options.test.ts` | a two-arg `waitForEvent` call put `{ timeout }` on the `event` parameter |
+//
+// Two constraints this program imposes that nothing else does. `tsconfig.tests.json` is a SINGLE
+// program, so a `declare module` in a `.test.ts` is globally visible — write an augmentation in
+// `packages/testing/src/matcher-surface.ts` or a `.d.ts`, never in a test. And a fixture module
+// under `src/` is subject to the coverage gate, so every export in one must be reachable from a
+// test or it reads as `X_COVERAGE_UNMEASURED`.
 //
 // Shrink it with `bun run scripts/test-typecheck-gate.ts --unpin <pkg>[,<pkg>]`, which lowers a
 // count to what is measured and refuses to raise one. Raising a count is a hand edit, in a review.
@@ -55,21 +63,21 @@ export const TEST_TYPECHECK_PINS: Readonly<Record<string, number>> = {
   flags: 0,
   http: 0,
   i18n: 0,
-  jobs: 25,
+  jobs: 0,
   mail: 0,
   manifest: 0,
-  mcp: 30,
+  mcp: 0,
   money: 0,
   policy: 0,
   pwa: 0,
   query: 0,
-  realtime: 22,
-  render: 48,
+  realtime: 0,
+  render: 0,
   schema: 0,
-  scraping: 27,
+  scraping: 0,
   seo: 0,
   storage: 0,
-  testing: 20,
+  testing: 0,
   time: 0,
   ui: 0,
 };

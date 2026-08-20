@@ -161,6 +161,21 @@ export function requestedFixtures(body: (...args: never[]) => unknown): readonly
 export type FixtureBody = (fixtures: Fixtures) => void | Promise<void>;
 
 /**
+ * What the RUNNER hands a body, which is wider than `Fixtures` and always was: `defineFixtures`
+ * accepts a key `Fixtures` does not name — "the app's", per its own docstring — so a body
+ * destructuring an app-registered fixture is the primary case, not an edge. `runWithFixtures`
+ * built exactly this shape and then asserted it back to `Fixtures` to call the body.
+ *
+ * `fixtureTest` still takes `FixtureBody`, so nothing an app writes gets looser: the framework
+ * keys stay exactly typed, and an app types its OWN keys by augmenting `Fixtures`, which remains
+ * the one documented way to do it.
+ */
+export type FixtureBag = Fixtures & Readonly<Record<string, unknown>>;
+
+/** The runner's body. Looser than `FixtureBody` for the reason `FixtureBag` states. */
+export type FixtureRunBody = (bag: FixtureBag) => unknown;
+
+/**
  * A fixture that installs process-global state — the ambient job driver, the ambient mail
  * driver — implements one of the standard disposal symbols to put it back. Bun shares one
  * process across every test file, so a fixture that skips this does not leak within its own
@@ -187,8 +202,8 @@ const disposerOf = (value: unknown): (() => PromiseLike<void> | void) | undefine
  * testing, and it cannot be observed through a registration. Not in the package's public API:
  * `fixtureTest` stays the one way to write a test with fixtures.
  */
-export async function runWithFixtures(body: FixtureBody): Promise<void> {
-  const wanted = requestedFixtures(body as (...args: never[]) => unknown);
+export async function runWithFixtures(body: FixtureRunBody): Promise<void> {
+  const wanted = requestedFixtures(body);
   // Partial by construction — only what the body destructured is built. Handed over as the
   // full `Fixtures` because the keys came from that same body: a key it did not name is a key
   // it cannot read, so the missing ones are unobservable.
@@ -205,7 +220,7 @@ export async function runWithFixtures(body: FixtureBody): Promise<void> {
       built.push(value);
       bag[key] = value;
     }
-    await body(bag as Fixtures);
+    await body(bag as FixtureBag);
   } catch (error) {
     failure = { error };
   }

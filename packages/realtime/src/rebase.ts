@@ -9,7 +9,7 @@
 import { RebaseConflictError } from './errors';
 import type { Row } from './json';
 import type { LocalStore, LocalTx, TableMap } from './local-store';
-import { type ConflictStrategyName, type Frame, PROTOCOL_VERSION } from './sync-protocol';
+import { type ConflictStrategyName, PROTOCOL_VERSION, type RebaseFrame } from './sync-protocol';
 
 export interface MergeArgs {
   /** Local row as the user last saw it, before any rollback. */
@@ -246,7 +246,12 @@ function numberAt(row: Row | null | undefined, field: string): number | null {
   return typeof value === 'number' ? value : null;
 }
 
-export function rebaseFrame(ack: ServerAck, strategy: ConflictStrategy): Frame {
+/**
+ * `RebaseFrame`, not `Frame`: this builds exactly one member of the union and declaring the whole
+ * union threw that away, so every caller had to re-narrow a frame it had just constructed before it
+ * could read `strategy` or `row` back off it.
+ */
+export function rebaseFrame(ack: ServerAck, strategy: ConflictStrategy): RebaseFrame {
   return {
     type: 'rebase',
     v: PROTOCOL_VERSION,

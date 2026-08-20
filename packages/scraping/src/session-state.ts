@@ -157,11 +157,35 @@ export function storageSessionStore(
   };
 }
 
-const isCookie = (value: unknown): value is ScrapeCookie =>
-  typeof value === 'object' &&
-  value !== null &&
-  typeof (value as { name?: unknown }).name === 'string' &&
-  typeof (value as { value?: unknown }).value === 'string';
+/**
+ * A stored cookie is somebody else's JSON. `name` and `value` are what makes it a cookie at all;
+ * the four scope fields `ScrapeCookie` REQUIRES are completed here rather than asserted.
+ *
+ * Asserting them was the bug: this was a `value is ScrapeCookie` predicate that checked two of
+ * that type's six required fields, so a stored `{ name, value }` left `parseSessionState` typed as
+ * a whole cookie with no `domain` — and `cookieHeaderFor`, a public export, hands it to
+ * `cookieDomainMatches`, which calls `.trim()` on it and throws a bare `TypeError`.
+ *
+ * The defaults are the ones `cookie-scope.ts` already documents. An empty `domain` matches NO
+ * host, which is the point: an unscoped cookie must reach nothing, because the only other way to
+ * scope it is to infer the domain from whichever URL is asking, and that is exactly how a
+ * `bank.test` session cookie reaches `evilbank.test`. `/` is §5.1.4's reading of an absent path,
+ * and an attribute a jar never wrote is `false`.
+ */
+const toCookie = (value: unknown): ScrapeCookie | undefined => {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const entry = value as Partial<ScrapeCookie>;
+  if (typeof entry.name !== 'string' || typeof entry.value !== 'string') return undefined;
+  return {
+    name: entry.name,
+    value: entry.value,
+    domain: typeof entry.domain === 'string' ? entry.domain : '',
+    path: typeof entry.path === 'string' ? entry.path : '/',
+    ...(typeof entry.expires === 'number' ? { expires: entry.expires } : {}),
+    httpOnly: entry.httpOnly === true,
+    secure: entry.secure === true,
+  };
+};
 
 /** Stored JSON is `unknown`. Read structurally, and answer `undefined` rather than half a session. */
 export function parseSessionState(raw: unknown, key: string): SessionState | undefined {
@@ -172,7 +196,7 @@ export function parseSessionState(raw: unknown, key: string): SessionState | und
     key,
     savedAt: value.savedAt,
     ...(typeof value.refusedAt === 'string' ? { refusedAt: value.refusedAt } : {}),
-    cookies: value.cookies.filter((cookie): cookie is ScrapeCookie => isCookie(cookie)),
+    cookies: value.cookies.flatMap((cookie: unknown) => toCookie(cookie) ?? []),
     headers: value.headers ?? {},
     storage: value.storage ?? {},
     userAgent: value.userAgent ?? '',

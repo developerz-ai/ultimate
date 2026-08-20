@@ -68,6 +68,9 @@ const throttled = (rate: number): Throttled => {
     },
   });
   const definition: BackfillDefinition<Row> = {
+    // REQUIRED, and the same declaration the real `slow-sweep` below makes: the source narrows to
+    // one org itself, so the pass declares no tenant of its own.
+    tenant: 'none',
     name: 'paced-sweep',
     source: () => table.where({ orgId: ORG }),
     handle: ({ rows: page, index }) => {

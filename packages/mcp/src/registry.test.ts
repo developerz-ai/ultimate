@@ -66,7 +66,12 @@ describe('visibleToCaller', () => {
 
   test('a truthy non-boolean does not widen the gate — only a literal true admits', () => {
     // A JS caller (or a predicate returning the permission it matched) must not be an "allow".
-    const truthy = tool({ name: 'truthy', visibleTo: (() => 'admin') as () => boolean });
+    // `@ts-expect-error` IS the first half of the assertion: `McpVisibility` refuses a predicate
+    // that answers anything but `boolean`, so a typed app cannot write this. What the runtime
+    // check below adds is the untyped caller the type system cannot reach — drop the `=== true`
+    // in `visibleToCaller` and this test goes red while the directive stays needed.
+    // @ts-expect-error a predicate returning a string is not assignable to McpVisibility
+    const truthy = tool({ name: 'truthy', visibleTo: () => 'admin' });
     expect(visibleToCaller(truthy, caller({ role: 'admin' }))).toBe(false);
   });
 });
@@ -225,10 +230,13 @@ describe('ToolRegistry.resolve ordering: visibility -> scope -> args -> ok', () 
 
   test('a missing rawArgs defaults to an empty object rather than throwing', () => {
     const registry = new ToolRegistry();
-    registry.register(tool({ name: 'open' }));
+    // The registered instance, not `registry.get()`: `get` answers `AnyMcpTool | undefined`, so
+    // asserting against it would pass on a resolution that handed back nothing at all.
+    const t = tool({ name: 'open' });
+    registry.register(t);
     expect(registry.resolve('open', undefined, caller())).toEqual({
       kind: 'ok',
-      tool: registry.get('open'),
+      tool: t,
       args: {},
     });
   });
@@ -288,8 +296,14 @@ describe('textResult / jsonResult', () => {
     ]) {
       const result = jsonResult(value);
       expect(result.isError).toBe(true);
-      expect(typeof result.content[0]?.text).toBe('string');
-      expect(result.content[0]?.text).toContain('not JSON');
+      // Narrowed, not cast: `ContentBlock` is a union, and a `resource` block here would be as
+      // wrong an answer as a non-string `text`. The `typeof` check stays — narrowing proves the
+      // declared type, and this proves the value.
+      const first = result.content[0];
+      expect(first?.type).toBe('text');
+      const text = first?.type === 'text' ? first.text : undefined;
+      expect(typeof text).toBe('string');
+      expect(text).toContain('not JSON');
     }
   });
 

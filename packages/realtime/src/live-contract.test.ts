@@ -12,6 +12,7 @@
 import { describe, expect, test } from 'bun:test';
 import { userActor } from '@ultimat3/core';
 import { queryHash } from '@ultimat3/query';
+import { RingChangeBuffer } from './change-buffer';
 import { formatLsn } from './changefeed';
 import type { JsonValue, Row } from './json';
 import type { LiveQueryDefinition } from './live-contract';
@@ -41,9 +42,10 @@ const definition: LiveQueryDefinition = {
 };
 
 const registryWith = (): LiveQueryRegistry => {
-  const registry = new LiveQueryRegistry({
-    source: { snapshot: async () => await Promise.resolve([]) },
-  });
+  // The REAL retained-change source. `LiveQueryRegistryOptions.source` is a `ResumeSource`
+  // (`append` / `since` / `headLsn`), and the stub that stood here declared a `snapshot` method the
+  // seam has never had — so anything reaching for the resume window would have hit `undefined`.
+  const registry = new LiveQueryRegistry({ source: new RingChangeBuffer() });
   registry.register(definition);
   return registry;
 };

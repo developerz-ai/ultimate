@@ -22,6 +22,24 @@ import type { NetworkRing } from './rings';
 import type { RobotsGate } from './robots';
 import type { SessionSnapshot } from './session-state';
 
+/**
+ * Just the call. `typeof fetch` also carries `preconnect`, which no test double and no app wrapper
+ * can supply — so an option typed `typeof fetch` was unusable without a double cast, which is
+ * exactly what every caller of it had written. The same seam `@ultimat3/cache`, `@ultimat3/auth`
+ * and `@ultimat3/mail` already name.
+ */
+export type ScrapeFetch = (input: string, init: ScrapeFetchInit) => Promise<Response>;
+
+/**
+ * `RequestInit` plus the one Bun extension this package sets. Named rather than cast: the DOM's
+ * `RequestInit` has no `proxy`, and an `as RequestInit` over the literal silenced the excess-key
+ * check for `proxy` AND for every neighbouring key it was standing next to.
+ */
+export interface ScrapeFetchInit extends RequestInit {
+  /** The session's exit. A different exit IP mid-session is a different client to an anti-bot. */
+  readonly proxy?: string | undefined;
+}
+
 export interface HttpRequestInit {
   readonly method?: string | undefined;
   readonly headers?: Readonly<Record<string, string>> | undefined;
@@ -80,7 +98,7 @@ export interface HttpTransportInit {
   readonly onActivity?: (() => void) | undefined;
   /** The SAME proxy the browser dialled through. A different exit IP is a different client. */
   readonly proxy?: string | undefined;
-  readonly fetch?: typeof fetch | undefined;
+  readonly fetch?: ScrapeFetch | undefined;
 }
 
 /**
@@ -132,7 +150,7 @@ export function responseOver(
  * robots rule, and neither is re-implemented for the second leg.
  */
 export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
-  const call = init.fetch ?? fetch;
+  const call: ScrapeFetch = init.fetch ?? fetch;
   return {
     async request(url: string, request: HttpRequestInit = {}): Promise<ScrapeResponse> {
       init.onActivity?.();
@@ -162,7 +180,7 @@ export function httpOverFetch(init: HttpTransportInit): ScrapeHttp {
           ...(request.body === undefined ? {} : { body: request.body }),
           signal: AbortSignal.any(signals),
           ...(init.proxy === undefined ? {} : { proxy: init.proxy }),
-        } as RequestInit);
+        });
         init.network.push({
           method: request.method ?? 'GET',
           url,

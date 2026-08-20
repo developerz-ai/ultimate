@@ -41,6 +41,8 @@ function spaEntryWithoutPolicy(): RouteEntry {
     hydrate: 'idle',
     meta: async () => ({ title: 'T', description: 'd'.repeat(60) }),
     budget: {},
+    // Required on the descriptor, and the honest value: this shell declares no island.
+    islands: [],
   };
   return {
     file: 'apps/web/app/dashboard/page.tsx',

@@ -189,7 +189,9 @@ describe('the event poll actually paces a waiting step', () => {
   test('a declared eventPoll is how long the run parks, not the 30s default', async () => {
     const harness = await claimOne({
       eventPoll: '1s',
-      run: ({ step }) => step.waitForEvent('invoice.paid', { timeout: '1h' }),
+      // `waitForEvent(name, event, options)` — three arguments. Called with two, `{ timeout }`
+      // landed on the `event` parameter and the declared timeout was never read at all.
+      run: ({ step }) => step.waitForEvent('await-payment', 'invoice.paid', { timeout: '1h' }),
     });
 
     const execution = await harness.execute();

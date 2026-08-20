@@ -297,13 +297,13 @@ describe('the pg driver`s introspection', () => {
 
   test('cancel answers the cancelled row, and undefined for a job no longer cancellable', async () => {
     const cancelled = executorFor({ x_jobs: [row({ state: 'dead', last_error: 'cancelled' })] });
-    const record = await driverWith(cancelled).introspect?.cancel('job-1', 'operator');
+    const record = await driverWith(cancelled).introspect?.cancel?.('job-1', 'operator');
     expect(cancelled.calls[0]?.sql).toBe(SQL_CANCEL);
     expect(cancelled.calls[0]?.params).toEqual(['job-1', 'operator']);
     expect(record?.lastError).toBe('cancelled');
 
     const gone = executorFor();
-    expect(await driverWith(gone).introspect?.cancel('job-1')).toBeUndefined();
+    expect(await driverWith(gone).introspect?.cancel?.('job-1')).toBeUndefined();
     expect(gone.calls[0]?.params).toEqual(['job-1', null]);
   });
 });

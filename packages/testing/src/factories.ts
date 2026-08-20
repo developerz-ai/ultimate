@@ -63,7 +63,15 @@ export interface FactoryOptions<TRow, TTraits extends TraitMap<TRow> = TraitMap<
   /** Values for every column the entity requires; called once per built row. */
   defaults(index: number, ids: FactoryIds): TRow;
   readonly traits?: TTraits;
-  readonly associations?: AssociationMap<TRow>;
+  /**
+   * `NoInfer`, because `AssociationMap<TRow>` is homomorphic over `keyof TRow` and TypeScript
+   * reverse-maps it into an inference candidate: a factory declaring `associations: { orgId }`
+   * inferred `TRow = { orgId: string }` and silently dropped every other column from `build()`,
+   * `Partial<TRow>` overrides and `Trait<TRow>`. Associations are a SUBSET of the columns by
+   * construction, so they can never be a correct source for the row type — `defaults` is, and it
+   * is the one member required to name every column.
+   */
+  readonly associations?: AssociationMap<NoInfer<TRow>>;
 }
 
 export interface Factory<TRow, TTrait extends string = string> {

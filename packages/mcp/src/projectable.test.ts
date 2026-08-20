@@ -23,7 +23,7 @@ import { t } from '@ultimat3/schema';
 import { defineAppMcp } from './app-tools';
 import type { ProjectablePrimitive } from './from-action';
 import { asProjectable } from './projectable';
-import type { McpCaller, McpToolResult } from './registry';
+import type { AnyMcpTool, McpCaller, McpToolResult } from './registry';
 
 const owner = agentActor({ id: 'a1', orgId: 'o1', roles: ['owner'] });
 const guest = agentActor({ id: 'a2', orgId: 'o1', roles: ['guest'] });
@@ -148,7 +148,10 @@ describe('a written-out list of real primitives projects like the registry sweep
 
   test('the listed projection is byte-identical to what include: exposed produces', () => {
     const target = exposedAction();
-    const strip = (tool: { name: string; description: string; destructive: boolean }) => ({
+    // `AnyMcpTool`, because `destructive` is OPTIONAL on it — an inline shape that required the
+    // field described a tool this package never produces, and both projections carry `undefined`
+    // for a read. What is compared is still all three fields, on both sides, from one function.
+    const strip = (tool: AnyMcpTool) => ({
       name: tool.name,
       description: tool.description,
       destructive: tool.destructive,

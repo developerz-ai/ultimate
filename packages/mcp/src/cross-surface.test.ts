@@ -54,7 +54,9 @@ const Input = t.object({
 const caller: McpCaller = {
   role: 'owner',
   actor: agentActor({ id: 'agent-1', orgId: 'o1', roles: ['owner'] }),
-  scopes: [],
+  // A SET, and empty on purpose: no tool declared here carries a `scope`, so the scope gate is
+  // out of this file's question. An empty array is not a set and never was one.
+  scopes: new Set(),
 };
 
 const declare = () =>
@@ -118,9 +120,9 @@ describe('one declaration, three schema surfaces', () => {
     (schema.properties ?? {}) as Record<string, unknown>;
 
   test('`pattern` reaches every surface an agent or a client reads', async () => {
-    const openapi = props(openapiSchema()).orderRef as Record<string, unknown>;
-    const tool = props(archiveOrder.tool().inputSchema).orderRef as Record<string, unknown>;
-    const listed = props(await listedSchema()).orderRef as Record<string, unknown>;
+    const openapi = props(openapiSchema())['orderRef'] as Record<string, unknown>;
+    const tool = props(archiveOrder.tool().inputSchema)['orderRef'] as Record<string, unknown>;
+    const listed = props(await listedSchema())['orderRef'] as Record<string, unknown>;
 
     expect(openapi['pattern']).toBe(ORDER_REF.source);
     expect(tool['pattern']).toBe(ORDER_REF.source);
@@ -131,9 +133,9 @@ describe('one declaration, three schema surfaces', () => {
   test('`nullable` reaches every surface, and never by making the field optional', async () => {
     const nullBranch = { type: 'null' };
 
-    const openapi = props(openapiSchema()).note as Record<string, unknown>;
-    const tool = props(archiveOrder.tool().inputSchema).note as Record<string, unknown>;
-    const listed = props(await listedSchema()).note as Record<string, unknown>;
+    const openapi = props(openapiSchema())['note'] as Record<string, unknown>;
+    const tool = props(archiveOrder.tool().inputSchema)['note'] as Record<string, unknown>;
+    const listed = props(await listedSchema())['note'] as Record<string, unknown>;
 
     for (const projected of [openapi, tool, listed]) {
       expect(projected['anyOf']).toContainEqual(nullBranch);
@@ -194,11 +196,16 @@ describe('one declaration, ONE tool name', () => {
   };
 
   /** The operation as the published document carries it, located by id rather than by path. */
-  const openapiMcpTool = (): unknown => {
+  const openapiMcpTool = (): string | undefined => {
     for (const item of Object.values(buildOpenApi().paths)) {
       const operation = (item as { post?: Record<string, unknown> }).post;
       if (operation?.['operationId'] === 'archiveOrder') {
-        return (operation['x-ultimate'] as Record<string, unknown> | undefined)?.['mcpTool'];
+        const published = (operation['x-ultimate'] as Record<string, unknown> | undefined)?.[
+          'mcpTool'
+        ];
+        // Checked, not asserted: the document is `unknown` here, and a published name that is not
+        // a string is a name no `tools/call` can ever resolve — which is this block's whole claim.
+        return typeof published === 'string' ? published : undefined;
       }
     }
     return undefined;
@@ -212,7 +219,11 @@ describe('one declaration, ONE tool name', () => {
     // The three an action publishes. Each was `archive_order` until 2026-08, and none of the
     // three is a name this catalog has ever contained.
     expect(served).toContain(archiveOrder.tool().name);
-    expect(served).toContain(openapiMcpTool());
+    // Asserted defined first: `toContain(undefined)` would be a comparison against nothing, and a
+    // missing `x-ultimate.mcpTool` is exactly one of the drifts this file reports.
+    const published = openapiMcpTool();
+    expect(published).toBeDefined();
+    expect(served).toContain(published ?? '');
     expect(served).toContain(archiveOrder.describe().mcp.tool);
     // A query publishes one; `QueryDescriptor` carries no `mcp` block, so there is no fourth.
     expect(served).toContain(recentOrders.tool().name);

@@ -47,7 +47,7 @@ describe('routeDataFor', () => {
     const config = defineRoute({
       ...base,
       load: (ctx) => ({ id: ctx.params['id'] }),
-      meta: (data) => ({ title: `post ${data.id}` }),
+      meta: (ctx) => ({ title: `post ${ctx.data.id}` }),
     });
     expect(await routeDataFor(config, CTX)).toEqual({ id: '7' });
   });

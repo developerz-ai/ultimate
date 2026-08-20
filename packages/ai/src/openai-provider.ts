@@ -11,6 +11,7 @@ import type { Secret } from '@ultimat3/core';
 import { isSecret, revealSecret } from '@ultimat3/core';
 import { detailOf, withoutKey } from './error-body';
 import { AiKeyMissingError, AiRequestInvalidError, AiTransportError } from './errors';
+import type { AiFetch } from './fetch-seam';
 import type { ModelId } from './models';
 import { chatCompletionBody } from './openai-body';
 // Imported for its registration side effect: a provider that cannot price what it serves throws
@@ -66,7 +67,7 @@ export interface OpenAiProviderInput {
    */
   readonly name?: string;
   /** Injectable so a test can assert the request body without a network. Defaults to `fetch`. */
-  readonly fetch?: typeof fetch;
+  readonly fetch?: AiFetch;
 }
 
 /**
@@ -197,7 +198,7 @@ class OpenAiProvider implements Provider {
     signal: AbortSignal | undefined,
   ): Promise<Response> {
     const apiKey = this.apiKey();
-    const doFetch = this.config.fetch ?? fetch;
+    const doFetch: AiFetch = this.config.fetch ?? fetch;
     const response = await doFetch(this.url(), {
       method: 'POST',
       headers: {

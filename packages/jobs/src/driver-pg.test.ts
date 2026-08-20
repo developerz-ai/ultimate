@@ -18,6 +18,14 @@ import {
 } from './driver-pg-sql';
 import { DriverUnavailableError, JobDuplicateError } from './errors';
 
+/**
+ * The row the live-key lookup answers, typed `unknown` for the reason `recordingExecutor`'s
+ * parameter is: `PgExecutor.query<R>` is generic over the CALLER's row type, so no fake can name
+ * it. `unknown` is also what a driver really gets back — a row off the wire that nothing has
+ * validated yet — so the one cast stays at that boundary instead of being restated per test.
+ */
+const LIVE_KEY_ROW: readonly unknown[] = [{ id: 'job-9', run_id: 'run-9' }];
+
 function recordingExecutor(rows: readonly unknown[] = []): PgExecutor & {
   readonly calls: { sql: string; params: readonly unknown[] }[];
 } {
@@ -235,14 +243,13 @@ describe('pg enqueue, ack and nack', () => {
       query<R>(sql: string, params: readonly unknown[]): Promise<readonly R[]> {
         calls.push({ sql, params });
         call += 1;
-        return Promise.resolve(
-          (call === 1 ? [] : [{ id: 'job-9', run_id: 'run-9' }]) as readonly R[],
-        );
+        return Promise.resolve((call === 1 ? [] : LIVE_KEY_ROW) as readonly R[]);
       },
     };
     await createPgDriver({ executor }).enqueue({
       name: 'onboardOrg',
       queue: 'default',
+      input: { orgId: 'org-1' },
       idempotencyKey: 'onboard:org-1',
       maxAttempts: 5,
       tenantId: 'org-1',
@@ -256,14 +263,13 @@ describe('pg enqueue, ack and nack', () => {
     const executor: PgExecutor = {
       query<R>(): Promise<readonly R[]> {
         call += 1;
-        return Promise.resolve(
-          (call === 1 ? [] : [{ id: 'job-9', run_id: 'run-9' }]) as readonly R[],
-        );
+        return Promise.resolve((call === 1 ? [] : LIVE_KEY_ROW) as readonly R[]);
       },
     };
     const enqueue = createPgDriver({ executor }).enqueue({
       name: 'onboardOrg',
       queue: 'default',
+      input: { orgId: 'org-1' },
       idempotencyKey: 'onboard:org-1',
       maxAttempts: 5,
       onConflict: 'error',
@@ -279,6 +285,7 @@ describe('pg enqueue, ack and nack', () => {
     const enqueue = createPgDriver({ executor }).enqueue({
       name: 'onboardOrg',
       queue: 'default',
+      input: { orgId: 'org-1' },
       idempotencyKey: 'onboard:org-1',
       maxAttempts: 5,
     });

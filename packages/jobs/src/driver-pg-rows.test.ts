@@ -124,11 +124,16 @@ describe('toStepRecord', () => {
     expect(Object.hasOwn(record, 'error')).toBe(false);
   });
 
-  test('a suspended step carries its wake time and the event it waits for, as numbers', () => {
+  // `'waiting'`, not `'suspended'`: `'suspended'` is a JOB state (`JobRecord['state']`), and
+  // `StepStatus` is `completed | sleeping | waiting | failed`. `toStepRecord` casts the column
+  // with `as`, so the wrong vocabulary flowed through this mapper unchallenged — `steps.ts` writes
+  // `'waiting'` for a `waitForEvent` step, and that row is the one carrying all three of
+  // `wake_at`, `event` and `correlation_key`.
+  test('a waiting step carries its wake time and the event it waits for, as numbers', () => {
     expect(
       toStepRecord(
         stepRow({
-          status: 'suspended',
+          status: 'waiting',
           wake_at: '9000',
           completed_at: '5000',
           event: 'invoice.paid',
@@ -139,7 +144,7 @@ describe('toStepRecord', () => {
     ).toEqual({
       runId: 'run-1',
       name: 'charge',
-      status: 'suspended',
+      status: 'waiting',
       output: { chargeId: 'ch_1' },
       startedAt: 1000,
       attempts: 1,

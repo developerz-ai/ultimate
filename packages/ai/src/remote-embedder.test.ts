@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import { cosine } from './embeddings';
+import type { AiFetch } from './fetch-seam';
 import { RemoteEmbedder } from './remote-embedder';
 
 interface Call {
@@ -9,16 +10,16 @@ interface Call {
   readonly body: { model?: string; input?: string[] };
 }
 
-function fakeFetch(calls: Call[], reply: (call: Call, index: number) => Response): typeof fetch {
-  const impl = async (input: unknown, init?: RequestInit): Promise<Response> => {
-    calls.push({
-      url: String(input),
-      headers: { ...(init?.headers as Record<string, string> | undefined) },
-      body: JSON.parse(String(init?.body ?? '{}')) as Call['body'],
-    });
-    return reply(calls[calls.length - 1] as Call, calls.length - 1);
+function fakeFetch(calls: Call[], reply: (call: Call, index: number) => Response): AiFetch {
+  return async (input, init) => {
+    const call: Call = {
+      url: input,
+      headers: { ...(init.headers as Record<string, string> | undefined) },
+      body: JSON.parse(String(init.body ?? '{}')) as Call['body'],
+    };
+    calls.push(call);
+    return reply(call, calls.length - 1);
   };
-  return impl as unknown as typeof fetch;
 }
 
 /** A provider reply whose vectors encode their own input index, so order is checkable. */
@@ -173,8 +174,8 @@ describe('RemoteEmbedder outbound safety', () => {
 
   test('every request carries an AbortSignal', async () => {
     let seen: unknown;
-    const impl = async (_input: unknown, init?: RequestInit): Promise<Response> => {
-      seen = init?.signal;
+    const impl: AiFetch = async (_input, init) => {
+      seen = init.signal;
       return embeddingsFor(['a'], 0);
     };
     const remote = new RemoteEmbedder({
@@ -182,16 +183,16 @@ describe('RemoteEmbedder outbound safety', () => {
       dimension: 2,
       apiKey: 'key-1',
       baseUrl: 'https://embeddings.test/v1',
-      fetch: impl as unknown as typeof fetch,
+      fetch: impl,
     });
     await remote.embed(['a']);
     expect(seen).toBeInstanceOf(AbortSignal);
   });
 
   test('a deadline that expires is a coded transport failure, never a bare DOMException', async () => {
-    const impl = async (_input: unknown, init?: RequestInit): Promise<Response> =>
+    const impl: AiFetch = async (_input, init) =>
       await new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener('abort', () => {
+        init.signal?.addEventListener('abort', () => {
           reject(init.signal?.reason ?? new Error('aborted'));
         });
       });
@@ -201,13 +202,13 @@ describe('RemoteEmbedder outbound safety', () => {
       apiKey: 'key-1',
       baseUrl: 'https://embeddings.test/v1',
       timeoutMs: 5,
-      fetch: impl as unknown as typeof fetch,
+      fetch: impl,
     });
     expect(await codeOf(() => remote.embed(['a']))).toBe('X_AI_PROVIDER_UNAVAILABLE');
   });
 
   test('a response body past the cap is refused rather than buffered', async () => {
-    const impl = async (): Promise<Response> =>
+    const impl: AiFetch = async () =>
       new Response(JSON.stringify({ data: [{ index: 0, embedding: new Array(4096).fill(1) }] }), {
         headers: { 'content-type': 'application/json' },
       });
@@ -217,7 +218,7 @@ describe('RemoteEmbedder outbound safety', () => {
       apiKey: 'key-1',
       baseUrl: 'https://embeddings.test/v1',
       maxResponseBytes: 512,
-      fetch: impl as unknown as typeof fetch,
+      fetch: impl,
     });
     expect(await codeOf(() => remote.embed(['a']))).toBe('X_AI_PROVIDER_UNAVAILABLE');
   });

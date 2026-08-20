@@ -4,10 +4,20 @@ import type { DevHost } from './dev-server';
 import { DEV_SCOPES, devTools } from './dev-server';
 import type { QueryRows } from './query-limits';
 import type { DatabaseTarget } from './readonly-sql';
-import type { AnyMcpTool, McpCaller } from './registry';
+import type { AnyMcpTool, McpCaller, McpToolResult } from './registry';
 import { ToolRegistry } from './registry';
 
 const agent = { kind: 'agent', id: 'a1' } as unknown as Actor;
+
+/**
+ * The first block's text. `ContentBlock` is a UNION — a `resource` block carries a `uri` and no
+ * text — so the narrowing is part of the assertion: a tool that answered a resource where the test
+ * expects text reads as `undefined` here rather than compiling against a field it never had.
+ */
+const textOf = (result: McpToolResult | undefined): string | undefined => {
+  const first = result?.content[0];
+  return first?.type === 'text' ? first.text : undefined;
+};
 
 /** What layers 1–2 hand back when they both engaged and the statement matched nothing. */
 const EMPTY_ROWS: QueryRows = {
@@ -119,7 +129,7 @@ describe('db.query is read-only, enforced', () => {
   test('the answer names every layer that engaged, parse and caps included', async () => {
     const { tool } = toolset(BRANCH);
     const result = await tool('db.query').handle({ sql: 'select 1' }, caller);
-    const answer = JSON.parse(result.content[0]?.text ?? '{}') as {
+    const answer = JSON.parse(textOf(result) ?? '{}') as {
       guards: string[];
       truncatedBy: string | null;
     };
@@ -146,7 +156,7 @@ describe('db.query is read-only, enforced', () => {
     });
     const tool = tools.find((t) => t.name === 'db.query');
     const result = await tool?.handle({ sql: 'select n from wide', limit: 9999 }, caller);
-    const answer = JSON.parse(result?.content[0]?.text ?? '{}') as {
+    const answer = JSON.parse(textOf(result) ?? '{}') as {
       rowCount: number;
       truncated: boolean;
       truncatedBy: string | null;
@@ -210,7 +220,7 @@ describe('catalog shape', () => {
     const found = await tool('errors.explain').handle({ code: 'X_DB_DRIFT' }, caller);
     // The payload is JSON, so the fix command arrives with escaped quotes — assert on the
     // parsed object rather than the wire text, which can never match an unescaped string.
-    const explained = JSON.parse((found.content[0] as { text: string }).text) as {
+    const explained = JSON.parse(textOf(found) ?? 'null') as {
       code: string;
       cause: string;
       fix: string;
@@ -224,8 +234,7 @@ describe('catalog shape', () => {
 });
 
 describe('the read tools return what the host answered, each from its own source', () => {
-  const parse = (result: { content: readonly { text: string }[] }): unknown =>
-    JSON.parse(result.content[0]?.text ?? 'null');
+  const parse = (result: McpToolResult): unknown => JSON.parse(textOf(result) ?? 'null');
 
   test('routes.list, schema.describe and policies.list do not share a source', async () => {
     const { tool } = toolset(BRANCH);
@@ -269,7 +278,7 @@ describe('the read tools return what the host answered, each from its own source
   test('manifest.read hands back the manifest as text, not as re-encoded JSON', async () => {
     const { tool } = toolset(BRANCH);
     const result = await tool('manifest.read').handle({}, caller);
-    expect(result.content[0]?.text).toBe('{"version":1}');
+    expect(textOf(result)).toBe('{"version":1}');
   });
 });
 
@@ -337,7 +346,7 @@ describe('the tools that execute something report failure as isError', () => {
     if (tail === undefined) expect.unreachable('no logs.tail tool');
 
     const result = await tail.handle({}, caller);
-    expect(result.content[0]?.text).toBe('a\nb');
+    expect(textOf(result)).toBe('a\nb');
     await tail.handle({ lines: 5, role: 'worker' }, caller);
     await tail.handle({ lines: '5', role: 12 }, caller);
     expect(asked).toEqual([

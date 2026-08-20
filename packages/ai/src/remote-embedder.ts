@@ -10,6 +10,7 @@ import { readWithinLimit } from '@ultimat3/core';
 import type { Embedder } from './embeddings';
 import { normalize } from './embeddings';
 import { AiKeyMissingError, AiTransportError, EmbedderDimMismatchError } from './errors';
+import type { AiFetch } from './fetch-seam';
 
 const API_KEY_ENV = 'EMBEDDINGS_API_KEY';
 const DEFAULT_BASE_URL = 'https://api.voyageai.com/v1';
@@ -44,7 +45,7 @@ export interface RemoteEmbedderInput {
   /** Bytes this process will hold of one response. Defaults to 32 MiB. */
   readonly maxResponseBytes?: number;
   /** Injectable so a test can assert the request body without a network. Defaults to `fetch`. */
-  readonly fetch?: typeof fetch;
+  readonly fetch?: AiFetch;
 }
 
 export class RemoteEmbedder implements Embedder {
@@ -77,7 +78,7 @@ export class RemoteEmbedder implements Embedder {
     if (apiKey === undefined || apiKey === '') {
       throw new AiKeyMissingError({ provider: this.name, envVar: API_KEY_ENV });
     }
-    const doFetch = this.config.fetch ?? fetch;
+    const doFetch: AiFetch = this.config.fetch ?? fetch;
     const timeoutMs = this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const url = `${this.config.baseUrl ?? DEFAULT_BASE_URL}/embeddings`;
     let response: Response;

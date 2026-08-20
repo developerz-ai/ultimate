@@ -25,11 +25,18 @@ afterAll(() => {
  * The narrowest `DbClient` a point read needs. Typed structurally rather than imported:
  * `@ultimat3/db` is not a dependency of this package, and the row is all the repository reads.
  */
-const clientOver = (row: Readonly<Record<string, unknown>>) => ({
-  query: () => Promise.resolve([row]),
-  one: () => Promise.resolve(row),
-  execute: () => Promise.resolve(1),
-});
+const clientOver = (row: Readonly<Record<string, unknown>>) => {
+  // Held as `unknown`: `DbClient.query<T>`/`one<T>` are generic over the CALLER's row type, so no
+  // fake can name it — and `unknown` is what a driver really has, bytes off the wire that nothing
+  // has validated. One assertion, at that boundary, instead of one per method body.
+  const opaque: unknown = row;
+  const rows: readonly unknown[] = [row];
+  return {
+    query: <T>(): Promise<readonly T[]> => Promise.resolve(rows as readonly T[]),
+    one: <T>(): Promise<T> => Promise.resolve(opaque as T),
+    execute: () => Promise.resolve(1),
+  };
+};
 
 /** The same physical row, read the way a repository reads one. */
 const throughRepository = async (
@@ -53,7 +60,7 @@ test('a scaled amount is one object on both surfaces', async () => {
     price_scale: 6,
   };
 
-  const live = entityRow(physical);
+  const live: Readonly<Record<string, unknown>> = entityRow(physical);
   const stored = await throughRepository(physical);
 
   // Both sides absolutely, so the two cannot fail open together and still agree.
@@ -81,7 +88,7 @@ test('an unscaled amount carries no scale key on either surface', async () => {
     price_scale: null,
   };
 
-  const live = entityRow(physical);
+  const live: Readonly<Record<string, unknown>> = entityRow(physical);
   const stored = await throughRepository(physical);
 
   expect(live).toStrictEqual({
@@ -102,7 +109,7 @@ test('a projection that left the scale column out reads as no scale, not as zero
     price_currency: 'USD',
   };
 
-  const live = entityRow(physical);
+  const live: Readonly<Record<string, unknown>> = entityRow(physical);
   const stored = await throughRepository(physical);
 
   expect(priceOf(live)).toStrictEqual({ minor: 1990, currency: 'USD' });
@@ -119,7 +126,7 @@ test('the scale column never survives as a property of its own', async () => {
     price_scale: 6,
   };
 
-  const live = entityRow(physical);
+  const live: Readonly<Record<string, unknown>> = entityRow(physical);
   const stored = await throughRepository(physical);
 
   expect(Object.keys(live)).toEqual(['id', 'title', 'price']);

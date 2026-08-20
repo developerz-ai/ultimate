@@ -131,7 +131,7 @@ describe('unit · the fake page`s DOM answers the real target`s reads', () => {
     });
     const target = await openOver(browser);
 
-    await target.click('#pay');
+    await target.click('#pay', 0);
 
     expect(target.url()).toBe('https://shop.test/receipt');
     expect(await target.content()).toContain('Paid');
@@ -141,7 +141,7 @@ describe('unit · the fake page`s DOM answers the real target`s reads', () => {
   test('a click with no route leaves the page where it was', async () => {
     const browser = fakeCdpBrowser(PAGE);
     const target = await openOver(browser);
-    await target.click('#pay');
+    await target.click('#pay', 0);
     expect(target.url()).toBe('https://shop.test/orders');
   });
 
@@ -185,8 +185,8 @@ describe('unit · the fake page`s DOM answers the real target`s reads', () => {
   test('screenshot and pdf answer bytes, so the artifact path has something to write', async () => {
     const browser = fakeCdpBrowser(PAGE);
     const target = await openOver(browser);
-    expect([...(await target.screenshot({ fullPage: true }))]).toEqual([1, 2, 3]);
-    expect([...(await target.pdf({}))]).toEqual([4, 5]);
+    expect([...(await target.screenshot({ fullPage: true, timeoutMs: 1_000 }))]).toEqual([1, 2, 3]);
+    expect([...(await target.pdf({ timeoutMs: 1_000 }))]).toEqual([4, 5]);
   });
 });
 
