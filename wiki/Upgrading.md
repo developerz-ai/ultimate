@@ -39,7 +39,7 @@ One breaking entry so far, and it is a **runtime** refusal with no compile error
 
 ### Start here — the one edit
 
-Every single-label timezone name except `UTC` is refused. `isValidTimeZone` answers `false`, `canonicalTimeZone` answers `undefined`, `assertTimeZone` throws `X_TIMEZONE_INVALID` — and every `@ultimat3/time` formatter is downstream of that one call. **43 names change answer**, tabulated once under [`[Unreleased]` in `CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md#unreleased); that table is the source and is deliberately not copied here.
+Every single-label timezone name except `UTC` is refused. `isValidTimeZone` answers `false`, `canonicalTimeZone` answers `undefined`, `assertTimeZone` throws `X_TIMEZONE_INVALID` — and every `@ultimat3/time` formatter is downstream of that one call. **43 names change answer**, tabulated once under [the `6.0.0` section of `CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md#600); that table is the source and is deliberately not copied here.
 
 ```diff
 - formatDate(at, { locale, zone: 'CET' })
