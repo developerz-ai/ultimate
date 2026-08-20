@@ -13,7 +13,7 @@
 [![CI](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml/badge.svg)](https://github.com/developerz-ai/ultimate/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/bun-%E2%89%A5%201.3-black.svg?logo=bun)](https://bun.sh)
-[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/npm/v/%40ultimat3%2Fcore?label=version&color=blue)](https://www.npmjs.com/package/@ultimat3/core)
 
 </div>
 
@@ -49,13 +49,13 @@ are the difference between an agent that ships and one that thrashes.
 
 Reproduce it: `bun run scripts/bench/restart-bench.ts --clients 10000 --probe-interval-ms 200` — the committed report and the run's own transcript are in [`scripts/bench/results/`](scripts/bench/results/).
 
-**Not claimed at 3.0.0:**
+**Not claimed at 4.0.0:**
 
 | Open | Where it stands |
 |---|---|
 | **Two-platform deploy proof** | 1.1.0 gave a scaffolded app a real deployable artifact — `x new` writes `apps/web/server.ts`, `prerender.ts`, a Dockerfile and `docker-compose.prod.yml`, and `ROLE=migrate` runs release-phase migrations. The **proof** is still open: the demo app on Compose **and** K8s from one image, with an invisible rolling restart, is [milestone 11](docs/idea/14-roadmap.md) and has not been demonstrated |
 | **Known gaps shipped in 1.1.0** | all four are fixed in 2.0.0 — but a fix and a proof are different things, and one of the four still lacks the proof. `x build --target binary` no longer crashes at import — the version read is lazy and `x build` passes `--define ULTIMATE_FRAMEWORK_VERSION`, and [`docker/Dockerfile`](docker/Dockerfile) passes it too and ends in `/out/app --version`, so a binary that cannot answer fails the image build rather than the first command an operator runs. The target is still unproven end to end: booting is not serving, and no scaffolded app has been compiled and served from a bare VM · `docker-compose.prod.yml` no longer pairs a published host port with `replicas` above 1: `web` and `sync` declare `replicas: 1` in all four files and each header names the two ways up, which makes the one-box ceiling declared rather than broken, not lifted · the shared cache tier's Lua invalidation no longer `DEL`s keys it never declares in `KEYS` · `resolveEnvironment` exists only in `core`, and `@ultimat3/seo` exports neither it nor `SeoEnvironment` — a **breaking** change, which is part of why 2.0.0 is a major. Detail in [CHANGELOG.md](CHANGELOG.md), per-row workarounds for the 1.x packages in [Known gaps](https://github.com/developerz-ai/ultimate/wiki/Known-Gaps) |
-| **Deferred past 3.0.0** | realtime tier 3 local-first (`persist: true`), the plugin API, multi-region replication, the Redis/NATS **job** drivers — none of them ships in 3.0.0 either, each behind the interface that ships today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
+| **Deferred past 4.0.0** | realtime tier 3 local-first (`persist: true`), the plugin API, multi-region replication, the Redis/NATS **job** drivers — none of them ships in 4.0.0 either, each behind the interface that ships today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than pretending to work |
 
 **Never claimed:** no adoption numbers, no production deployments, no testimonials. None exist yet, and this file will say so until they do.
 
@@ -350,13 +350,13 @@ Render mode is a route-level property, not a global one. A landing page is stati
 
 ## Realtime — a ladder, not a cliff
 
-Three tiers, the same mutator shape at every rung. Tier 2 → tier 3 is a config flag, not a rewrite. Tiers 1–2 ship today; tier 3 is not in 3.0.0 and lands in a later major, behind the interfaces that are already here.
+Three tiers, the same mutator shape at every rung. Tier 2 → tier 3 is a config flag, not a rewrite. Tiers 1–2 ship today; tier 3 is not in 4.0.0 and lands in a later major, behind the interfaces that are already here.
 
 | Tier | What | Covers |
 |---|---|---|
 | 1 · **Channels** | `ctx.publish(topic, msg)` over Bun's native WS pub/sub | presence, cursors, notifications |
 | 2 · **Live queries** | declare server-side with a policy, receive a Solid signal | **90% of "realtime app"** |
-| 3 · **Local-first** *(not in 3.0.0)* | optimistic mutators, OPFS SQLite, offline queue, rebase | offline writes that reconcile |
+| 3 · **Local-first** *(not in 4.0.0)* | optimistic mutators, OPFS SQLite, offline queue, rebase | offline writes that reconcile |
 
 → [Realtime design and its honest limits](docs/idea/03-realtime.md)
 
@@ -387,7 +387,7 @@ The same app code on one PaaS dyno and on a replicated cluster. Climbing is a dr
 | Auth | **Better Auth**, wrapped | MIT, self-hosted, with our policy layer on top |
 | Frontend | **SolidJS, pinned `1.9.14`** + our own router | fine-grained reactivity on the stable line; Solid 2 is still `2.0.0-beta.N`, and we vendor the router rather than track an alpha |
 | Styling | **SCSS modules + design tokens** | no Tailwind (diff noise), no CSS-in-JS (runtime cost) |
-| Jobs | Postgres queue default; Redis/NATS drivers not in 3.0.0 | zero-infra start, a real scale path behind one interface |
+| Jobs | Postgres queue default; Redis/NATS drivers not in 4.0.0 | zero-infra start, a real scale path behind one interface |
 | Observability | **OpenTelemetry, always on** | one trace across HTTP → job → live query |
 
 **Excluded on purpose:** GraphQL · multi-runtime · multi-ORM · a second CSS solution · React Server Components · a plugin API in 1.x · vendor edge/KV primitives.

@@ -174,16 +174,18 @@ export interface JobDriver {
 
 The three optional members degrade rather than refuse: no `introspect` is `x jobs ls` with nothing to list, no `backfills` is a `backfill()` pass that runs with no bookkeeping, and no `close` is a driver holding nothing to hand back.
 
-Two implementations ship in 1.0.0. Two more are **not in 3.0.0** — interface-complete stubs, so an app typechecks against them, and every method throws `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than silently dropping a job.
+Two implementations ship in 1.0.0. Two more are **not in 4.0.0** — interface-complete stubs, so an app typechecks against them, and every method throws `X_NOT_IMPLEMENTED` with a runnable `fix:` rather than silently dropping a job.
 
 | Driver | Status `As of 2026-08` | When | Trade-off |
 |---|---|---|---|
 | `postgres` (default) | **shipped** | always, up to ~thousands of jobs/sec. `x dev` runs it too, against the embedded PGlite | outbox is free (same DB, same tx); `SELECT ... FOR UPDATE SKIP LOCKED` claiming; zero extra infra |
 | `memory` | **shipped**, not a `jobs.driver` value | tests and fixtures — reached through `createMemoryDriver()`, and as `x jobs drain --to memory` | in-process; nothing survives a restart |
-| `redis` | **not in 3.0.0 — throws `X_NOT_IMPLEMENTED`** | high-throughput, short jobs | would need the outbox relay; loses "queue state in one backup" |
-| `nats` | **not in 3.0.0 — throws `X_NOT_IMPLEMENTED`** | very high fanout, multi-region, JetStream retention | strongest delivery semantics, most operational surface |
+| `redis` | **not in 4.0.0 — throws `X_NOT_IMPLEMENTED`** | high-throughput, short jobs | would need the outbox relay; loses "queue state in one backup" |
+| `nats` | **not in 4.0.0 — throws `X_NOT_IMPLEMENTED`** | very high fanout, multi-region, JetStream retention | strongest delivery semantics, most operational surface |
 
-`jobs.driver` in `app.config.ts` accepts `'postgres' | 'redis' | 'nats'` — and only `'postgres'` runs. Setting it to `redis` or `nats` typechecks and boots, then throws on the first enqueue: deliberate, and why the stubs exist instead of an absent export.
+**`jobs.driver` selects nothing** `As of 2026-08-20`, and this page said it did. `JobsConfig.driver` accepts `'postgres' | 'redis' | 'nats'`, and it **has no reader anywhere** — boot always builds `createPgDriver`, stated in [`packages/jobs/src/driver.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/jobs/src/driver.ts)'s own header. So setting it to `redis` does not boot-and-then-throw, as this page claimed: it changes nothing at all and you silently get Postgres, which is the more dangerous of the two behaviours because nothing reports it.
+
+**The seam that does work is `setJobDriver(driver)`** — swap the driver, zero job-code change, which is what the interface buys. The `redis` and `nats` stubs are real and throw `X_NOT_IMPLEMENTED` on every method; you reach them by constructing one and passing it to `setJobDriver`, never through config. Tracked as [issue #223](https://github.com/developerz-ai/ultimate/issues/223): the field is a declaration nothing reads, the same shape 4.0.0 deleted for `realtime.heartbeatMs` and `PrecacheAsset.critical`, and removing it is breaking — so it waits for the next major.
 
 `x jobs drain --to <driver>` moves in-flight rows between drivers, and `--to memory` is the only target that completes today: `--to redis` and `--to nats` construct the target and fail on the first enqueue with `X_NOT_IMPLEMENTED`. The cross-driver migration procedure is not in 3.0.0 — see [Upgrading](Upgrading).
 
@@ -226,7 +228,7 @@ Every command supports `--json`. See [CLI reference](CLI-Reference).
 | `X_IDEMPOTENCY_CONFLICT` | same key, different payload, or still in flight | fresh key for a different payload; otherwise retry after the first settles |
 | `X_DRAINING` | claim attempted on a worker that received SIGTERM | none — the job stays queued and another worker claims it |
 | `X_FORBIDDEN` | the job's actor fails the originating action's policy | grant the permission, or enqueue as a system actor |
-| `X_NOT_IMPLEMENTED` | the `redis` or `nats` driver was reached — neither is in 3.0.0 | set `jobs.driver: 'postgres'` in `app.config.ts` (it is already the default) |
+| `X_NOT_IMPLEMENTED` | the `redis` or `nats` driver was reached — neither is in 4.0.0 | call `setJobDriver(createPgDriver({ executor }))`, or `setJobDriver(createMemoryDriver())` in a test. **Not** `jobs.driver` in `app.config.ts` — that field has no reader, so editing it cannot repair this. To move rows already queued: `x jobs drain --to memory --json` |
 
 Full index: [Error codes](Error-Codes). Verbatim error shapes live in each package's `src/errors.ts`.
 

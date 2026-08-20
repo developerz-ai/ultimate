@@ -8,18 +8,20 @@ Honest answers. Where something is not built yet, it says so.
 
 **`As of 2026-08`.** Stable API, semver from here. 29 `@ultimat3/*` packages plus the unscoped `create-ultimate` — **30 in all** — are **versioned** in lockstep: one version, one commit, one tag.
 
-**Publication is a separate step from versioning, and 3.0.0's has run.** Repository, tag and registry are the same version; there are no publication holes — every one of the 30 is on npm.
+**Publication is a separate step from versioning, and for the current release it has run.** Repository, tag and registry are the same version; there are no publication holes — every one of the 30 is on npm.
 
-| Fact | State `As of 2026-08-19` | Resolve it yourself |
+| Fact | State `As of 2026-08-20` | Resolve it yourself |
 |---|---|---|
-| What you can install | **3.0.0** — `bunx create-ultimate myapp` gives you it | `npm view @ultimat3/core version` |
-| Repository version | **3.0.0**, all 30 stamped in one commit | the top section of [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) |
-| Tagged | `v3.0.0` is on origin, and the GitHub Release for it is published | [the repository's tags](https://github.com/developerz-ai/ultimate/tags) |
-| On the registry | **all 30**, at 3.0.0 | `npm view @ultimat3/scraping version` |
-| Provenance | 1.1.0, 1.2.0 and 3.0.0 carry an attestation; **2.0.0 does not** | `npm view @ultimat3/core@3.0.0 dist.attestations` |
-| Who published it | `GitHub Actions`, over OIDC, on all 30 at 3.0.0 | `npm view @ultimat3/core@3.0.0 _npmUser` |
+| What you can install | whatever `latest` is — `bunx create-ultimate myapp` gives you it | `npm view @ultimat3/core version` |
+| Repository version | all 30 stamped in one commit | the top section of [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) |
+| Tagged | the tag is on origin, annotated, and its GitHub Release is published | `git ls-remote --tags origin 'refs/tags/v<version>*'` — expect the ref and its peeled `^{}` line — then `gh release view v<version> --json tagName,isDraft,publishedAt` |
+| On the registry | **all 30**, at that version | `npm view @ultimat3/scraping version` |
+| Provenance | 1.1.0, 1.2.0, 3.0.0 and 4.0.0 carry an attestation; **2.0.0 does not** | `npm view @ultimat3/core dist.attestations` |
+| Who published it | `GitHub Actions`, over OIDC, on all 30 | `npm view @ultimat3/core _npmUser` |
 
-3.0.0 is the first release the workflow published since 1.2.0. 2.0.0 is the exception in the line: it was hand-published, with no trusted publisher attached for the OIDC exchange to verify against, so its tarballs carry no attestation and `_npmUser: sebyx07`. 1.0.0 was the manual bootstrap. `@ultimat3/scraping` and `@ultimat3/flags` were the two never-published packages and both are closed — each by the one-time manual bootstrap every package needs before a trusted publisher can attach.
+Only the [footer](_Footer) stamps the number, so this table names the command instead of a version that goes stale on the next tag. In the repository, `bun run scripts/registry-audit.ts --json` covers the **registry** rows in one call — not the tag or the Release, which it never asks about — and `registry-audit.yml` runs it daily and opens an issue on any disagreement.
+
+3.0.0 and 4.0.0 both went out through the workflow. 2.0.0 is the exception in the line: it was hand-published, with no trusted publisher attached for the OIDC exchange to verify against, so its tarballs carry no attestation and `_npmUser: sebyx07`. 1.0.0 was the manual bootstrap. `@ultimat3/scraping` and `@ultimat3/flags` were the two never-published packages and both are closed — each by the one-time manual bootstrap every package needs before a trusted publisher can attach.
 
 That is exactly what the version claims — a stable API under semver, not a promise about your infrastructure.
 
@@ -29,7 +31,7 @@ What it does **not** claim:
 |---|---|
 | A multi-node realtime result | the 50k forced-restart benchmark **is** measured and committed, but on **one** `sync` node over `InProcessTransport` — it never crossed NATS. Fanout across nodes, throughput, and per-node socket capacity are all still targets, not results ([Realtime](Realtime)) |
 | The two-platform deploy proof | all three build targets ship — `x build --target docker`, `x build --target binary`, `x build --target static` — and so do the compose files and the Helm chart. The demo app running on Compose **and** K8s from one image, with a rolling restart invisible to connected clients, is milestone 11's remaining item ([Deployment](Deployment)) |
-| Not in 3.0.0 | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — all behind the interfaces that ship today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` line rather than pretending to work |
+| Not in 4.0.0 | realtime tier 3 (`persist: true`, local-first), the plugin API, multi-region replication, and the Redis/NATS **job** drivers — all behind the interfaces that ship today. The job drivers throw `X_NOT_IMPLEMENTED` with a runnable `fix:` line rather than pretending to work |
 
 ### What is actually finished?
 
@@ -119,7 +121,7 @@ Yes. `realtime.tier: 1` with `transport: 'memory'` is the default, and a tier-1 
 
 ### What happens if the sync engine doesn't work out?
 
-It is roughly **70% of total effort** and the single largest risk. Tiers 1–2 shipped in milestone 6 and are under semver; tier 3 local-first is not in 3.0.0. The reconnect benchmark that gated topology — 50k sockets, a forced `sync` restart, recovery time and DB load — **is measured at 1.1.0**: all 50,000 reconnected, 49,981 received a channel patch inside the window, p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path ([Realtime](Realtime)). That is **reachability** — first patch on the reconnected socket — not consistency; the delivery half is a separate 10,000-client run, **1,666,882 patches received, 0 observed sequence gaps** — a lower bound, since a hole is only visible between two frames one connection received ([Realtime](Realtime)) — and `As of 2026-08` the only run that counts lost patches at all. Both were run on **one** node, so multi-node fanout is still unproven. If the incremental matcher turns out to be the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback.
+It is roughly **70% of total effort** and the single largest risk. Tiers 1–2 shipped in milestone 6 and are under semver; tier 3 local-first is not in 4.0.0. The reconnect benchmark that gated topology — 50k sockets, a forced `sync` restart, recovery time and DB load — **is measured at 1.1.0**: all 50,000 reconnected, 49,981 received a channel patch inside the window, p50 54.0s / p90 105.5s, 156,851 connect attempts shed before any query path ([Realtime](Realtime)). That is **reachability** — first patch on the reconnected socket — not consistency; the delivery half is a separate 10,000-client run, **1,666,882 patches received, 0 observed sequence gaps** — a lower bound, since a hole is only visible between two frames one connection received ([Realtime](Realtime)) — and `As of 2026-08` the only run that counts lost patches at all. Both were run on **one** node, so multi-node fanout is still unproven. If the incremental matcher turns out to be the bottleneck, wrapping an existing protocol (Zero's) is an accepted fallback.
 
 ### Why ship realtime last if it's the differentiator?
 
@@ -133,7 +135,7 @@ Stated risk, not a hidden one. `As of 2026-08` long-running Bun processes are le
 
 ### Where do plugins fit?
 
-Nowhere — the plugin API is not in 1.x, not in 2.x and not in 3.0.0. Semver covers the documented surface, not internals, and a plugin API freezes internals permanently. Fork the blessed path if you need something else; extension points earn their existence from real forks, not from speculation.
+Nowhere — the plugin API is not in 1.x, not in 2.x, not in 3.x and not in 4.0.0. Semver covers the documented surface, not internals, and a plugin API freezes internals permanently. Fork the blessed path if you need something else; extension points earn their existence from real forks, not from speculation.
 
 ### Will you add an adapter for my host or my ORM?
 

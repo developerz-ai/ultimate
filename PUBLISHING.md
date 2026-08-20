@@ -8,17 +8,23 @@ Releases use **OIDC trusted publishing** from GitHub Actions
 mints a short-lived token from the run's OIDC identity and attaches a provenance attestation
 automatically.
 
-**`As of 2026-08-19`: 30 workspaces publish, all 30 are on the registry at 3.0.0, and every 3.0.0
-tarball carries a provenance attestation.** `v3.0.0` is tagged and pushed, its GitHub Release is
-published, and the run that Release triggered is what put those 30 versions on npm — the first
-workflow-published release since 1.2.0.
+**`As of 2026-08-20`: 30 workspaces publish, all 30 are on the registry at 4.0.0, and every 4.0.0
+tarball carries a provenance attestation.** `v4.0.0` is tagged and pushed, its GitHub Release is
+published, and the run that Release triggered is what put those 30 versions on npm — the second
+workflow-published release in a row, after 3.0.0 ended the gap since 1.2.0.
+
+One command answers the whole table below at once: **`bun run scripts/registry-audit.ts --json`**,
+which resolves every derived name against npm and either says `30/30 publishable packages are on npm
+at 4.0.0, every one attested` or names each gap with a runnable `fix:`. `registry-audit.yml` runs it
+daily and files a `registry-drift` issue on a gap.
 
 | Fact | Read it yourself |
 |---|---|
 | what npm serves | `npm view @ultimat3/core version` |
-| attested, and by whom | `npm view @ultimat3/core@3.0.0 dist.attestations _npmUser` |
+| attested, and by whom | `npm view @ultimat3/core@4.0.0 dist.attestations _npmUser` |
 | the derived publish list, in order | `bun run scripts/release-workflow.ts --json` |
-| the repository is stamped at one version | `bun run scripts/release.ts --check 3.0.0` |
+| the repository is stamped at one version | `bun run scripts/release.ts --check 4.0.0` |
+| every package is on npm at that version | `bun run scripts/registry-audit.ts --json` |
 
 **There is no publication hole today, and there have been two.** `@ultimat3/flags` was the first:
 the workflow listed its `-w` flags by hand and omitted it. That list is now **derived** from
@@ -123,14 +129,14 @@ approval-gated environment, which is the half GitHub cannot enforce, and it must
 
 ## Human steps outside this file
 
-**`As of 2026-08-19` all four are done, for all 30 packages, and 3.0.0 went out through the
-workflow because of it** — every 3.0.0 tarball carries an attestation and `_npmUser: GitHub Actions`
-(`npm view @ultimat3/core@3.0.0 dist.attestations _npmUser`).
+**`As of 2026-08-20` all four are done, for all 30 packages, and 3.0.0 and then 4.0.0 both went out
+through the workflow because of it** — every tarball in both carries an attestation and
+`_npmUser: GitHub Actions` (`npm view @ultimat3/core@4.0.0 dist.attestations _npmUser`).
 
 **2.0.0 is the exception in the line, and its cause was step 3.** With no trusted publisher
 attached, the OIDC exchange had nothing to verify against, so the workflow could not publish and
 2.0.0 went out by hand: every `@ultimat3/*` package at 2.0.0 carries `_npmUser: sebyx07` and **no
-`dist.attestations`**, while 1.1.0, 1.2.0 and 3.0.0 carry both.
+`dist.attestations`**, while 1.1.0, 1.2.0, 3.0.0 and 4.0.0 carry both.
 
 **Steps 3 and 4 on 2026-08-19 were not the first publishers this repo ever had.** 1.1.0 and 1.2.0
 published under earlier ones — `npm view @ultimat3/core@1.2.0 _npmUser.trustedPublisher` answers an
@@ -168,7 +174,8 @@ one that breaks a release.
 **None of them fails loudly if you skip it** — that is the whole problem, and it is why each is
 written out with what skipping it actually costs. Step 1 is the only one that breaks a release, and
 it breaks it deep into the run, after packages have published irreversibly. **Nothing is owed
-today** `As of 2026-08-19` — the 3.0.0 run reached all 30. Steps 1, 3 and 4 come due again for the
+today** `As of 2026-08-20` — the 4.0.0 run reached all 30, and `bun run scripts/registry-audit.ts
+--json` is how you confirm that rather than believing this sentence. Steps 1, 3 and 4 come due again for the
 next package added after a release run: `bun run scripts/release-workflow.ts --json` lists what the next
 run will reach, and `npm view <pkg> version` on a name it lists is how you find the one that is not
 there yet.
@@ -224,8 +231,8 @@ package can be silently absent again; the loud failure is the feature.
 **This happened once already, and was closed.** `@ultimat3/flags` was the same shape — never
 published, in the derived list, fifth of 29 — and 2.0.0 closed it with exactly this command. Its
 version history is the shape a bootstrap leaves behind, and it is two versions long: `npm view
-@ultimat3/flags versions` answers `2.0.0` (hand-published, no attestation) and `3.0.0` (the
-workflow, with provenance). `@ultimat3/scraping` reads identically.
+@ultimat3/flags versions` answers `2.0.0` (hand-published, no attestation) and then `3.0.0` and
+`4.0.0` (the workflow, with provenance). `@ultimat3/scraping` reads identically.
 
 ### 2. Create the `npm-publish` environment with required reviewers
 
@@ -315,7 +322,7 @@ pass `verify` while the tag says `v1.10.1` — and every publish then dies `EPUB
 version already on the registry, one package at a time, halfway through a release. `--check` anchors
 the comparison to the version read off the tag.
 
-`As of 2026-08-19` `git describe` answers `v3.0.0` and `bun run scripts/release.ts --check 3.0.0`
+`As of 2026-08-20` `git describe` answers `v4.0.0` and `bun run scripts/release.ts --check 4.0.0`
 passes, and the check itself is a step of the workflow
 ([`.github/workflows/release.yml`](.github/workflows/release.yml), the `bun run scripts/release.ts
 --check` run). Earlier in 2026-08 this repo was in exactly the broken state: `git describe` answered

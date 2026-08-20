@@ -71,7 +71,7 @@ Start Postgres with `wal_level=logical`, `max_replication_slots=8` and `max_wal_
 
 ## Rung 2 → 3: Kubernetes
 
-**`x new` writes the chart**, `As of 2026-08-19` — `docker/helm`, 8 files, one `Deployment` per role — so `x deploy --method helm` runs `helm upgrade --install` against it with nothing to copy in. On 3.0.0 and below `x new` writes none and the command exits `X_NOT_IMPLEMENTED`: copy [`docker/helm`](https://github.com/developerz-ai/ultimate/tree/main/docker/helm) from the framework repo.
+**`x new` writes the chart**, `As of 2026-08-19` — `docker/helm`, 8 files — a `Deployment` for each of the four roles enabled by default (`web`, `sync`, `worker`, `scheduler`), `replicator` behind `enabled: false`, and `migrate` as a `Job` — so `x deploy --method helm` runs `helm upgrade --install` against it with nothing to copy in. On 3.0.0 and below `x new` writes none and the command exits `X_NOT_IMPLEMENTED`: copy [`docker/helm`](https://github.com/developerz-ai/ultimate/tree/main/docker/helm) from the framework repo.
 
 The alternative is the flat manifests in [`docs/ops/01-kubernetes.md`](https://github.com/developerz-ai/ultimate/blob/main/docs/ops/01-kubernetes.md). Carry one, never both — a repo with a chart *and* a manifest tree has two sources of truth for the same pod. Deleting `docker/helm` is how you choose the manifests: the command then fails with helm's own error, not the framework's.
 
@@ -109,7 +109,7 @@ Point `OTEL_EXPORTER_OTLP_ENDPOINT` at your collector's **HTTP** receiver, `:431
 | Concern | Interface | Decided by |
 |---|---|---|
 | rows | `@ultimat3/db` · `DbClient` | `DATABASE_URL` — unset is PGlite, and PGlite is `x dev` only |
-| job queue | `@ultimat3/jobs` · `JobDriver` | `jobs.driver: 'postgres'`. Redis and NATS drivers are interface-complete stubs that throw `X_NOT_IMPLEMENTED` — not in 3.0.0 |
+| job queue | `@ultimat3/jobs` · `JobDriver` | `jobs.driver: 'postgres'`. Redis and NATS drivers are interface-complete stubs that throw `X_NOT_IMPLEMENTED` — not in 4.0.0 |
 | realtime fanout | `@ultimat3/realtime` · `Transport` | `NATS_URL` |
 | change feed | `@ultimat3/realtime` · `ChangeFeed` | `REPLICATION_*` |
 | cache | `@ultimat3/cache` · `CacheTier` | `cache.tiers` + `REDIS_URL` |
@@ -141,7 +141,7 @@ Named rather than left to be discovered:
 | a custom-metrics adapter, which the chart's HPAs need and the framework never ships | 3–4 |
 | `x logs` planned — `X_NOT_IMPLEMENTED`, with `x dev` → the `/_x` timeline panel as its fix | any |
 | Redis and NATS **job** drivers throw `X_NOT_IMPLEMENTED` | any |
-| realtime tier 3 (local-first, `persist: true`), the plugin API, multi-region replication | not in 3.0.0 |
+| realtime tier 3 (local-first, `persist: true`), the plugin API, multi-region replication | not in 4.0.0 |
 
 Each sits behind an interface that ships today and fails loudly, rather than pretending to work. The full list, with a workaround per row: [Known gaps](Known-Gaps).
 
