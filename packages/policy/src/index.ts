@@ -65,7 +65,7 @@ export {
   or,
   policyPermissions,
 } from './policy';
-export type { Actor, PolicyActorFields, RoleDef, RoleMap } from './roles';
+export type { Actor, RoleDef, RoleMap } from './roles';
 export {
   clearRoles,
   defineRoles,

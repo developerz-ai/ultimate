@@ -2,6 +2,7 @@
 // ONCE per actor per role-map generation (the live-query path evaluates policy per subscriber),
 // and a role revoked by a later `defineRoles()` takes effect immediately (no stale-authz window).
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { serviceActor, userActor } from '@ultimat3/core';
 import { actorHas, actorPermissions } from './grant-index';
 import { clearPermissions, definePermissions } from './permissions';
 import { and, can } from './policy';
@@ -108,5 +109,39 @@ describe('the per-actor grant index', () => {
         );
       }
     }
+  });
+});
+
+// The seam this package and core share. `permissions` used to be declared HERE, on
+// `PolicyActorFields`, and core's `Actor` had no such field — so an actor holding a direct grant
+// could not be built by the one thing that builds actors. Every caller wrote
+// `{ ...userActor({ id }), permissions: [...] }`, which is a spread over a frozen object producing
+// an unfrozen one: a shape no production path ever mints, in the fixtures that prove authz.
+describe('a direct grant is minted by core’s own builder', () => {
+  beforeEach(() => {
+    defineRoles({ viewer: { grants: ['post:read'] } });
+  });
+
+  test('a service token built with serviceActor() holds the grant policy reads', () => {
+    const token = serviceActor({ id: 'svc-1', permissions: ['post:publish'] });
+    expect(actorHas(token, 'post:publish')).toBe(true);
+    expect(actorHas(token, 'post:delete')).toBe(false);
+  });
+
+  test('roles and direct grants combine on one actor, deduped and sorted', () => {
+    const both = userActor({ id: 'u1', roles: ['viewer'], permissions: ['post:publish'] });
+    expect(actorPermissions(both)).toEqual(['post:publish', 'post:read']);
+  });
+
+  test('the actor a policy decides about is frozen, exactly as a request-minted one is', () => {
+    const token = serviceActor({ id: 'svc-1', permissions: ['post:publish'] });
+    expect(Object.isFrozen(token)).toBe(true);
+    expect(actorHas(token, 'post:publish')).toBe(true);
+  });
+
+  test('an actor minted with no grants is denied rather than throwing', () => {
+    const nobody = userActor({ id: 'u2' });
+    expect(actorPermissions(nobody)).toEqual([]);
+    expect(actorHas(nobody, 'post:publish')).toBe(false);
   });
 });
