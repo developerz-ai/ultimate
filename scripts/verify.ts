@@ -38,6 +38,7 @@ import { docCommandFindings } from './doc-commands';
 import { docFixFindings } from './doc-fixes';
 import { errorStatusCompleteness } from './error-map';
 import { errorRendering } from './error-render';
+import { generatorCountFindings } from './generator-counts';
 import { frameworkCatalogFindings } from './i18n-catalog';
 import { imageContractFindings } from './image-contract';
 import { flagBool, parseScriptArgs } from './lib/args';
@@ -45,9 +46,12 @@ import { writeOut } from './lib/log';
 import { repoRoot } from './lib/run';
 import { DEFAULT_OUT, frameworkManifestDrift } from './manifest';
 import { readmeFenceFindings } from './readme-fences';
+import { releaseFactFindings } from './release-facts';
 import { publishListFindings } from './release-workflow';
 import { checkRoadmap } from './roadmap';
+import { testFixFindings } from './test-fix-citations';
 import { testTypecheckFindings } from './test-typecheck-gate';
+import { throwFindings } from './to-throw-returns';
 import { versionStampFindings } from './version-stamps';
 import { frameDocFindings } from './wiki-frames';
 import { wikiTableFindings } from './wiki-tables';
@@ -173,6 +177,13 @@ export const errorCodeDocs: HostCheck = async (root) => {
  * could print `x db query "select id …"` — and `x db` has no `query`, which is a second failure
  * handed to a reader already holding one.
  *
+ * `testFixFindings` and `throwFindings` join it because both are the same contract one file set
+ * further on. `checkErrorFixes` holds every `fix:` in `src/` to being runnable and skips tests, so a
+ * fixture error, a helper that builds one and an assertion pinning a fix string were unchecked —
+ * and `x schema show` and `x logs tail` are what that costs. `throwFindings` is the other half of
+ * an error assertion: bun's synchronous `toThrow` PASSES when the callback returns an Error rather
+ * than throwing one, and this repo exports 196 functions that return one.
+ *
  * The completeness rule is deliberately NOT its own step: `VerifyStepName` is a closed union owned
  * by `@ultimat3/cli`, and a generated app would inherit a step name that only this repo can run.
  * It blocks `x verify` either way, which is what "enforced, not documented" asks for.
@@ -182,6 +193,8 @@ export const errorContract: HostCheck = async (root) => [
   ...(await errorRendering(root)),
   ...(await errorStatusCompleteness(root)),
   ...(await docFixFindings(root)),
+  ...(await testFixFindings(root)),
+  ...(await throwFindings(root)),
 ];
 
 /**
@@ -200,6 +213,8 @@ export const errorContract: HostCheck = async (root) => [
  * | `versionStampFindings` | one page stamps a version, it is the shipped one, and the workspaces agree | every workspace manifest |
  * | `readmeFenceFindings` | a fenced `ts`/`tsx` example in a package README typechecks | `tsc`, on a ratchet |
  * | `testTypecheckFindings` | this repo's TEST sources typecheck — every package config excludes them, so `tsc -b` reads none of the 966 | `tsc -p tsconfig.tests.json`, on a ratchet |
+ * | `generatorCountFindings` | a documented `N files` for `x new` / `x g resource` is what the generator still emits — five had gone stale and were corrected by hand | `planNewApp()` / `generate()`, the planners `--dry-run` calls |
+ * | `releaseFactFindings` | the package COUNT ten pages restate is the count on disk; `SECURITY.md` claimed 28 two majors late | `listWorkspaces()` |
  *
  * `testTypecheckFindings` rides HERE and not on `typecheck`, which is where it belongs by meaning:
  * that step takes no host findings at all (`packages/cli/src/cmd-verify.ts` calls `hostFindings`
@@ -223,6 +238,8 @@ export const frameworkFiles: HostCheck = async (root) => [
   ...(await versionStampFindings(root)),
   ...(await readmeFenceFindings(root)),
   ...(await testTypecheckFindings(root)),
+  ...(await generatorCountFindings(root)),
+  ...(await releaseFactFindings(root)),
 ];
 
 export const HOST_CHECKS: Partial<Record<VerifyStepName, HostCheck>> = {

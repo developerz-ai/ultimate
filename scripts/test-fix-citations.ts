@@ -139,7 +139,9 @@ const staleFinding = (gap: TestFixGap): Finding => ({
 const unscannedFinding = (): Finding => ({
   code: 'X_TEST_FIX_UNSCANNED',
   cause: 'no test file matched, so this rule reported green over a file set it never read',
-  fix: `check TEST_GLOBS in scripts/${SCRIPT}.ts still matches this repo's test layout`,
+  // Literal path for the same reason release-facts.ts records: an interpolated `${SCRIPT}`
+  // renders as `scripts/<value>.ts` to the static fix-line contract, which then names no file.
+  fix: "edit TEST_GLOBS in scripts/test-fix-citations.ts so it matches this repo's test layout",
   at: `scripts/${SCRIPT}.ts`,
 });
 

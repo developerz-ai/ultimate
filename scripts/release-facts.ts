@@ -157,7 +157,9 @@ const vacuousFinding = (): Finding => ({
   code: 'X_DOC_RELEASE_FACT_UNSCANNED',
   cause:
     'no page states a package count, so this rule read nothing and reported green over ten pages that restate one',
-  fix: `check FACT_GLOBS and the patterns in scripts/${SCRIPT}.ts still match how the pages write it`,
+  // The path is a literal, not `scripts/${SCRIPT}.ts`: the fix-line contract reads these
+  // statically and an interpolation renders as `scripts/<value>.ts`, which names no file.
+  fix: 'edit FACT_GLOBS in scripts/release-facts.ts so it matches how the pages state a count',
   at: `scripts/${SCRIPT}.ts`,
 });
 
