@@ -41,7 +41,7 @@ describe('unit · boundaries', () => {
     const violation = checkBoundaries([
       file('packages/http/src/server.ts', "import { db } from '@ultimat3/query';"),
     ])[0];
-    if (violation === undefined) throw new Error('expected a violation');
+    if (violation === undefined) expect.unreachable('expected a violation');
     const finding = findingFor(violation);
     expect(finding.code).toBe('X_BOUNDARY_VIOLATION');
     expect(finding.cause).toContain('http (tier 2) imports @ultimat3/query (tier 3)');
@@ -84,7 +84,7 @@ describe('unit · boundaries', () => {
       file('packages/cli/src/index.ts', "import { thing } from '@ultimat3/not-a-package';"),
     ]);
     const violation = violations[0];
-    if (violation === undefined) throw new Error('expected a violation');
+    if (violation === undefined) expect.unreachable('expected a violation');
     expect(violation.reason).toBe('unknown-package');
     expect(findingFor(violation).fix).toContain('scripts/lib/tiers.ts');
   });

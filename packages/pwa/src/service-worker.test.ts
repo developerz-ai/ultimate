@@ -280,7 +280,7 @@ function swHarness() {
           answer = p;
         },
       });
-      if (answer === undefined) throw new Error(`no handler answered ${path}`);
+      if (answer === undefined) expect.unreachable(`no handler answered ${path}`);
       return await answer;
     },
   };

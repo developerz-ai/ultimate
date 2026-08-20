@@ -71,7 +71,7 @@ describe('the policy assertion', () => {
     // short-circuits on a null actor, so the predicate is unreachable here — asserted by
     // making it throw if it is ever reached.
     const guarded = can('post:publish', () => {
-      throw new Error('the tenancy predicate ran for an actor of null');
+      expect.unreachable('the tenancy predicate ran for an actor of null');
     });
     await denial(publish(guarded)).run();
   });

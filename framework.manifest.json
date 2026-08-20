@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "d6caf3ee01275e0e2015bbd481ee9c73dc6554f8e9496cc58848689a4ba78b3f",
+  "buildId": "77294b3d3beb1741e3bb9e931778231671a4c4afb353bb83ffb226e7d8a114d9",
   "tiers": {
     "0": [
       "core",
@@ -2351,6 +2351,21 @@
       "code": "X_TENANCY_UNSCOPED",
       "owner": "entity",
       "at": "packages/entity/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_BARE_ERROR",
+      "owner": "scripts",
+      "at": "scripts/test-bare-error.ts"
+    },
+    {
+      "code": "X_TEST_BARE_ERROR_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/test-bare-error.ts"
+    },
+    {
+      "code": "X_TEST_BARE_ERROR_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/test-bare-error.ts"
     },
     {
       "code": "X_TEST_DB_UNAVAILABLE",

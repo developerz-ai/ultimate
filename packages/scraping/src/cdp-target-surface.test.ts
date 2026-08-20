@@ -13,7 +13,9 @@ import { scrapeTimeout } from './error-throws';
 const caught = async (promise: Promise<unknown>): Promise<unknown> => {
   try {
     await promise;
-    throw new Error('the call resolved, and the test needs the failure it was supposed to raise');
+    expect.unreachable(
+      'the call resolved, and the test needs the failure it was supposed to raise',
+    );
   } catch (thrown) {
     return thrown;
   }

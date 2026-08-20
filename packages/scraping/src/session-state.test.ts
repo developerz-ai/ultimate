@@ -66,7 +66,7 @@ function fakeStorage(seed: Readonly<Record<string, string>> = {}): StorageDriver
     },
     get(key) {
       const found = objects.get(key);
-      if (found === undefined) throw new Error(`no object at ${key}`);
+      if (found === undefined) expect.unreachable(`no object at ${key}`);
       return Promise.resolve({ object: object(key), bytes: new TextEncoder().encode(found) });
     },
     delete(key) {
