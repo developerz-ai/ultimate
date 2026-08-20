@@ -34,6 +34,7 @@ X_DB_DRIFT: schema differs from migrations
 | `X_INVARIANT` | invariant violated | framework state that "cannot happen" happened | report it with `x doctor --json` output attached |
 | `X_UNREACHABLE` | unreachable branch was reached | an exhaustive `switch` met a value the type says cannot exist | narrow the union at the call site |
 | `X_NOT_IMPLEMENTED` | this driver does not implement the requested feature | an interface-complete driver whose remote half is unwritten | use the default driver, or implement the named method |
+| `X_ASYNC_CONTEXT_UNAVAILABLE` | async context unavailable | `node:async_hooks` is stubbed to `{}` in this runtime, so nothing can be made ambient — a browser bundle | the scope is server-only: open it in `apps/web/server.ts` or a route handler, and keep every module that opens one out of the import graph of a client island entry |
 | `X_NO_CONTEXT` | no request context is active | framework code called outside the ALS context | `runWithContext(createContext({ … }), fn)` |
 | `X_SERVICE_MISSING` | service is not registered on the request context | `ctx.<service>` used without providing it | pass it in `createContext({ services: { … } })` |
 | `X_SERVICE_DUPLICATE` | a service name is registered twice | two `defineService('name', ...)` calls used the same name | rename one of the two declarations |

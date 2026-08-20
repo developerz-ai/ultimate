@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "93daaafcf078589bc4501699e1881a0f64181bfbabedc2188f42c6f98102182b",
+  "buildId": "4a212e87b080759b7b19828bd37e5a82d813f61898c4307a02cbd29f46e25dde",
   "tiers": {
     "0": [
       "core",
@@ -401,6 +401,11 @@
       "code": "X_APP_PACKAGE_INVALID",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_ASYNC_CONTEXT_UNAVAILABLE",
+      "owner": "core",
+      "at": "packages/core/src/error-codes.ts"
     },
     {
       "code": "X_AUDIT_SINK_FAILED",

@@ -2,13 +2,16 @@
 // the mechanism; this is the ONE door through it, because a swap with no reason and no origin is
 // indistinguishable in an audit trail from the customer doing it themselves.
 
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { type Actor, actorLabel, actorOrigin } from './actor';
 import { assert } from './assert';
+import { asyncContext } from './async-context';
 import { useContext, withChildContext } from './context';
 import { currentSpan } from './telemetry';
 
-const storage = new AsyncLocalStorage<string>();
+// The same lazily-opened seam `context.ts` uses. Its `run()` cannot be reached in a runtime with
+// no async context: `impersonate()` calls `useContext()` first, and that throws `X_NO_CONTEXT`
+// there — so no second refusal is written here for symmetry's sake.
+const impersonation = asyncContext<string>('the impersonation reason');
 
 /**
  * Run `fn` as `actor`, recording who asked and why.
@@ -45,7 +48,7 @@ export function impersonate<T>(actor: Actor, reason: string, fn: () => T): T {
     'actor.label': label,
     'impersonation.reason': reason,
   });
-  return withChildContext({ actor: impersonated }, () => storage.run(reason, fn));
+  return withChildContext({ actor: impersonated }, () => impersonation.run(reason, fn));
 }
 
 /**
@@ -53,10 +56,10 @@ export function impersonate<T>(actor: Actor, reason: string, fn: () => T): T {
  * an app where nobody is impersonating. Read by an audit sink, and by nothing else.
  */
 export function impersonationReason(): string | undefined {
-  return storage.getStore();
+  return impersonation.get();
 }
 
 /** Is the caller acting as somebody else right now? */
 export function isImpersonating(): boolean {
-  return storage.getStore() !== undefined;
+  return impersonation.get() !== undefined;
 }
