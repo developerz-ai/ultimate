@@ -4,13 +4,12 @@
 
 import { describe, expect, test } from 'bun:test';
 import { diffSchema } from './drift';
-import {
-  type ColumnDescriptionLike,
-  type EntityDescriptionLike,
-  generateMigration,
-  type IndexDescriptionLike,
-  snapshotOf,
-} from './generate';
+import type {
+  ColumnDescriptionLike,
+  EntityDescriptionLike,
+  IndexDescriptionLike,
+} from './entity-shape';
+import { generateMigration, snapshotOf } from './generate';
 import type { SchemaDescription } from './introspect';
 
 const column = (

@@ -5,7 +5,7 @@
 
 import { baseClient, type DbClient } from './client';
 import { DbError } from './errors';
-import { foreignKeyTarget } from './foreign-key';
+import { addForeignKey, dropForeignKey, foreignKeyTarget, onDeleteRule } from './foreign-key';
 import {
   type ForeignKeyDescription,
   findTable,
@@ -24,7 +24,8 @@ export type DriftKind =
   | 'unknown-schema'
   | 'missing-index'
   | 'changed-index'
-  | 'missing-foreign-key';
+  | 'missing-foreign-key'
+  | 'changed-foreign-key';
 
 export interface DriftDifference {
   readonly kind: DriftKind;
@@ -166,6 +167,37 @@ function missingForeignKey(table: string, key: ForeignKeyDescription): DriftDiff
 }
 
 /**
+ * The key points where it was declared to point and one side's `on delete` rule is not the other's
+ * — reported apart from `missing-foreign-key` because it is a different repair: the constraint is
+ * there, and what changed is what happens to the child rows.
+ *
+ * The `fix` is the pair, not `x db migrate`: a rule cannot be altered in place, `add constraint`
+ * alone is `42710` on a name already taken, and no `x db gen` diff emits either statement, so
+ * naming a command would send a reader to one that generates an empty migration. Same reasoning
+ * as `changedColumn`.
+ */
+function changedForeignKey(
+  table: string,
+  declared: ForeignKeyDescription,
+  held: ForeignKeyDescription,
+): DriftDifference {
+  const rule = onDeleteRule(held.onDelete);
+  return {
+    kind: 'changed-foreign-key',
+    table,
+    column: null,
+    cause:
+      `foreign key on "${table}" (${declared.columns.join(', ')}) to ` +
+      `"${declared.referencedTable}" ` +
+      `${rule === null ? 'declares no on delete rule' : `is on delete ${rule}`}, not what ` +
+      'migrations declare',
+    fix:
+      `${dropForeignKey(table, held.name)} ${addForeignKey(table, declared)}` +
+      '   # in a new migration',
+  };
+}
+
+/**
  * Indexes migrations declare, against the ones the catalog holds — by column list and by
  * uniqueness, which is what caught a composite index rebuilt with its columns the other way round
  * while `ok: true` said the schema agreed.
@@ -176,11 +208,17 @@ function missingForeignKey(table: string, key: ForeignKeyDescription): DriftDiff
  * would be eight findings against a correct database, which is how a drift check earns being
  * ignored (`appTables` exists for the same reason).
  *
- * The predicate and the direction are deliberately **not** compared: the catalog returns its own
- * rewriting of an expression (`(deleted_at IS NULL)`) and a snapshot holds the author's spelling,
- * so a text comparison reports drift on two identical indexes. `x db gen` compares them instead,
- * where both sides are generated — see `redefineIndex` in `generate.ts`. Named in
- * `wiki/Known-Gaps.md`.
+ * Three of the four parts of an index are compared here; the fourth never will be. The predicate's
+ * **text** is uncomparable and stays so — the catalog answers its own rewriting of the expression
+ * (`(deleted_at IS NULL)`) where the snapshot holds the author's spelling (`deleted_at is null`),
+ * and normalising that means shipping an expression parser to compete with the server's. `x db gen`
+ * compares the text instead, where both sides are generated (`redefineIndex`).
+ *
+ * Its **presence** is not text but a boolean, and the direction is a closed enum on both sides, so
+ * both are compared: a partial index recreated as a total one silently widens the constraint, and
+ * a `desc` index rebuilt ascending by hand serves a feed's newest page off the wrong end. `asc` is
+ * normalised to `null` first — `createIndex` writes `"col" asc`, which Postgres stores as
+ * not-descending, so the raw values differ on every ascending index in a correct database.
  */
 function compareIndexes(live: TableDescription, expected: TableDescription): DriftDifference[] {
   const differences: DriftDifference[] = [];
@@ -201,6 +239,26 @@ function compareIndexes(live: TableDescription, expected: TableDescription): Dri
       differences.push(
         changedIndex(live.name, index.name, counterpart.unique ? 'is unique' : 'is not unique'),
       );
+      continue;
+    }
+    if ((counterpart.order ?? 'asc') !== (index.order ?? 'asc')) {
+      differences.push(
+        changedIndex(
+          live.name,
+          index.name,
+          counterpart.order === 'desc' ? 'is descending' : 'is ascending',
+        ),
+      );
+      continue;
+    }
+    if ((counterpart.where === null) !== (index.where === null)) {
+      differences.push(
+        changedIndex(
+          live.name,
+          index.name,
+          counterpart.where === null ? 'covers every row' : 'is partial',
+        ),
+      );
     }
   }
   return differences;
@@ -213,17 +271,31 @@ function compareIndexes(live: TableDescription, expected: TableDescription): Dri
  * and a constraint that points the same columns at the same table is the same constraint whatever
  * it is called; comparing the name would report drift on a database that is exactly right.
  *
- * `onDelete` is not compared either: the catalog spells it as a single character (`a`, `c`, `r`)
- * and no generated clause declares one, so a snapshot has nothing truthful to hold there. Only the
- * declared side is judged, for the reason `compareIndexes` gives. Named in `wiki/Known-Gaps.md`.
+ * `onDelete` **is** compared now, through `onDeleteRule`. It is not part of a key's identity — a
+ * key is the same key under a different rule, which is why the difference is `changed-foreign-key`
+ * rather than one `missing` — but it is a fact about the database a snapshot records truthfully
+ * since `addForeignKey` spells the clause out. Both sides go through the same normalisation: the
+ * catalog answers `c` where a snapshot holds `cascade`, and Postgres records `a` (`no action`) on
+ * every key that declared nothing.
+ *
+ * Only the declared side is judged, for the reason `compareIndexes` gives.
  */
 function compareForeignKeys(live: TableDescription, expected: TableDescription): DriftDifference[] {
   // The same identity `x db gen` diffs on (`foreign-key.ts`): a generator and a detector that
   // disagreed about whether two keys are the same key is drift on a correct database.
-  const present = new Set(live.foreignKeys.map(foreignKeyTarget));
-  return expected.foreignKeys
-    .filter((key) => !present.has(foreignKeyTarget(key)))
-    .map((key) => missingForeignKey(live.name, key));
+  const present = new Map(live.foreignKeys.map((key) => [foreignKeyTarget(key), key] as const));
+  const differences: DriftDifference[] = [];
+  for (const key of expected.foreignKeys) {
+    const counterpart = present.get(foreignKeyTarget(key));
+    if (counterpart === undefined) {
+      differences.push(missingForeignKey(live.name, key));
+      continue;
+    }
+    if (onDeleteRule(counterpart.onDelete) !== onDeleteRule(key.onDelete)) {
+      differences.push(changedForeignKey(live.name, key, counterpart));
+    }
+  }
+  return differences;
 }
 
 /**

@@ -149,8 +149,12 @@ pool's idle timeout (`migrate`'s is 10s) closes it, releasing the lock mid-migra
 hid the first half by accident — its pool is `max: 1`, so every statement found the same connection.
 No other role and no test has that. The pin is therefore also why the lock scope hands its session
 *down*: on `max: 1` a statement sent to the pool while the pin is held waits for a connection that
-cannot come back until the migration blocking on it finishes. `lock: false` (`x db branch`, a
-private database) reserves nothing and takes no lock, exactly as before.
+cannot come back until the migration blocking on it finishes. `lock: false` reserves nothing and takes no lock, exactly as
+before — for a database only this process can reach. **No shipped path passes it**: both option
+comments named `x db branch`, which does not, and the only callers in the repo are
+`migrate-pin.test.ts`'s. The option stays because it is public API shipped in 3.0.0 and the "no pin
+was taken" assertions cannot be written without it; the false attribution is pinned out by
+`migrate-pin.test.ts`, which also refuses a passer appearing inside this package.
 
 Pinned by `migrate.live.test.ts` against a real Postgres: two concurrent `migrate()` calls (one
 applies, the other skips — never both, never a unique-violation crash) and a migration that fails
@@ -335,12 +339,27 @@ a bad argument is not a fact about the ledger), thrown by `rollbackStepsInvalid`
 lock is taken and before the ledger is read. Same discipline as `poolMaxInvalid`: a number this
 build cannot honour is refused, never reinterpreted.
 
+**`reapBranches` sweeps branches of THIS database, never the server's, `As of 2026-08-19`** (issue
+#133, closed). `listBranches` walks `pg_database` for the whole server and admits every database
+carrying the marker, so two Ultimate apps on one Postgres plus one nightly reap was the other app's
+branches dropped. The discriminator was in hand and thrown away: `createBranch` already resolves
+`options.base ?? currentDatabase(client)` and wrote only the timestamp. The marker is now
+`ultimate:branch:<base>:<iso>` and `BranchInfo.base` carries it, so the reaper skips a branch whose
+base is not the database it is connected to. **Split on the ISO tail, never on the first `:`** — a
+database name may contain one and an instant certainly does. A pre-3.x one-segment comment matches
+no base, keeps its readable date for `x db branch ls`, and is **skipped, never dropped**: a branch
+of nothing is not a branch of this database, which is what makes the change self-healing with no
+migration. Postgres records no template lineage in the catalog and `datdba` is shared when both
+apps use one role, so writing the base down at creation is the only answer there is.
+`@ultimat3/cli`'s `ls`/`drop` scope by the `<source>_branch_` name prefix instead — its own guard,
+and unaffected.
+
 **`reapBranches` skips a `createdAt` it cannot parse; it never reads one as infinitely old.**
 `NaN > cutoff` is `false`, which is the same answer "older than the cutoff" gives — so a
 `COMMENT ON DATABASE` that was truncated or hand-edited used to be a database DROPPED on the next
 nightly sweep whatever `maxAgeMs` said. `Date.parse` + `Number.isFinite`, the discipline
-`@ultimat3/seo`'s `feed-dates.ts` applies to the same question. (Distinct from the open
-source-blindness of the reaper, issue #133.)
+`@ultimat3/seo`'s `feed-dates.ts` applies to the same question. (Whose branches it may touch at
+all is the paragraph above.)
 
 **One send is one statement, so `migrate()` and `rollback()` split the script.** `tx.execute(raw(
 migration.up))` on a text holding two commands is where the two drivers disagreed, and the
@@ -471,11 +490,16 @@ never emitted one and would answer with an empty migration.
 catches a composite index rebuilt with its columns the other way round while the column diff said
 `ok: true`. A live index no snapshot names is deliberately **not** reported: Postgres creates one for
 every primary key and every unique constraint, so counting those is eight findings against a correct
-database, the same argument `appTables()` makes. The predicate and the direction are not compared
-either — the catalog returns its own rewriting of an expression (`(deleted_at IS NULL)`) and the
-snapshot holds the author's spelling, so a text comparison reports two identical indexes as drift.
-`x db gen` compares them instead (`redefineIndex`), where both sides are generated. Named in
-`wiki/Known-Gaps.md`.
+database, the same argument `appTables()` makes. **Three of the four parts are compared, and the fourth never
+will be**, `As of 2026-08-19`: the predicate's *text* stays uncompared, because the catalog returns
+its own rewriting of an expression (`(deleted_at IS NULL)`) where the snapshot holds the author's
+spelling, and normalising that is an expression parser competing with the server's — `x db gen`
+compares the text instead (`redefineIndex`), where both sides are generated. Its *presence* is a
+boolean, not text, and the direction is a closed enum on both sides, so both are compared now: a
+partial index recreated as a total one silently widens the constraint, and a `desc` index rebuilt
+ascending serves a feed's newest page off the wrong end. `asc` normalises to `null` first —
+`createIndex` writes `"col" asc`, which Postgres stores as not-descending, so the raw values differ
+on every ascending index in a correct database.
 
 `compareForeignKeys` judges **declared** keys the same way, and matches on **where the key points**
 — its columns, its target table, its target columns — never on the constraint name. That identity is
@@ -485,8 +509,14 @@ reported on a correct database. `snapshotOf` names a key `<table>_<column>_fkey`
 would have called an inline `references` clause — and `addForeignKey` now writes that name out, so
 the snapshot records a name the migration beside it chose rather than one it guessed; a hand-written
 migration may still have said `constraint fk_posts_org`, and a key pointing the same way under
-another name is the same key. `onDelete` is not compared: the catalog spells it `a`/`c`/`r` and no
-generated clause has ever declared one, so a snapshot has nothing truthful to hold there. Before
+another name is the same key. `onDelete` **is** compared, `As of 2026-08-19`, through `onDeleteRule`
+(`foreign-key.ts`) — the one normalisation both sides pass through, because the catalog spells the
+rule `a`/`c`/`r`/`n`/`d` and a description spells it out, and `a` (`no action`) is what a key that
+declared nothing has. A difference is `changed-foreign-key`, never a `missing` one: the rule is not
+part of a key's identity (`foreignKeyTarget` ignores it, pinned by `foreign-key.test.ts`), the
+constraint is there, and what changed is what happens to the child rows. Its `fix` is the drop/add
+pair built from `dropForeignKey`/`addForeignKey`, not `x db migrate` — a rule cannot be altered in
+place and no `x db gen` diff emits one for a schema already applied. Before
 this, `snapshotOf` recorded `foreignKeys: []` beside an `up` emitting `references "orgs" ("id")` — a
 snapshot denying a constraint its own migration creates — so `alter table … drop constraint` on the
 database answered `ok: true`.
@@ -505,7 +535,32 @@ referencing each other cannot be expressed inline in any order, and separate con
 order at all. The same call site answers the other half — a `references()` added to a column that
 already exists now emits its `add constraint`, where before `up` came out **empty**, `x db gen`
 wrote no file, and `x verify`'s drift step stayed red forever with `x db gen "…"` as a fix that did
-nothing. Removing a `references()` still emits nothing, exactly as a removed index does.
+nothing.
+
+**`foreignKeyPlan` walks both directions, `As of 2026-08-19`.** A *removed* `references()` used to
+emit nothing while the snapshot beside it recorded `foreignKeys: []` — so the orphan constraint
+stayed on the database **and** the record denied one the catalog holds, which `compareForeignKeys`
+can never see because it judges the declared side. That is not parity with a removed index: a
+removed index leaves the snapshot correct by omission, and this snapshot lied. The drop names the
+constraint **the previous snapshot recorded**, never the one this generator would have chosen — a
+hand-written `fk_legacy` is `42704` under the generated spelling — and a key whose columns this
+migration is dropping is skipped, because `drop column` takes the constraint with it. A key whose
+`onDelete` moved is a drop **and** an add, the rebuild `redefineIndex` performs for the parts of an
+index Postgres cannot alter in place.
+
+**`on delete` reaches the SQL, `As of 2026-08-19`.** `entity()` has carried
+`references(() => orgs.id, { onDelete: 'cascade' })` since 1.0, it type-checked, and the clause it
+produced was `references "orgs" ("id");` — a declared cascade the database refused the delete
+under instead. It was lost twice over: `describeColumn` renders `references` as the flat string
+`"orgs.id"`, which has no room for it, and `ReferenceDescription` had no field for it either. Both
+carry it now, `addForeignKey` writes it out, and a rule Postgres does not have is `X_INVARIANT`
+rather than spliced DDL — the discipline `createIndex` already applies to an index naming no column.
+
+**`entity-shape.ts` holds the three `*Like` interfaces**, split out of `generate.ts` for the line
+ceiling and along the seam the tier already draws: they are the structural mirror of
+`@ultimat3/entity`'s description, which is how a snapshot crosses tier 2 → tier 1 with no import.
+`ColumnDescriptionLike.onDelete` is optional for exactly that reason — a description written before
+the field existed still satisfies the shape.
 
 **`snapshot-json.ts` writes the sidecar's bytes, and they must be a fixed point of Biome.** A
 scaffolded app's `lint` step is `biome check .` over `"includes": ["**"]`, and `.sql`/`.hash` are

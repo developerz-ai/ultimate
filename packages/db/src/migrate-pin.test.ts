@@ -249,3 +249,41 @@ describe('the migration advisory lock', () => {
     expect(pool.events.filter((event) => event === 'reserve')).toHaveLength(1);
   });
 });
+
+/**
+ * `lock` is a shipped, exported option with no shipped caller: `x db branch` — which both doc
+ * comments named — does not pass it, and the only passers in the repo are the tests above. A
+ * comment naming a caller that does not exist sends a reader to read that caller, and
+ * `wiki/Migrations-And-Behaviour` already states the truth, so source and docs disagreed.
+ *
+ * Not deletable, which is why this is a pin and not a removal: it is public API shipped in 3.0.0,
+ * and the "no pin was taken" assertions above would become unwritable without it.
+ */
+describe('the `lock` option documents what it is for, not a caller it does not have', () => {
+  const source = async (): Promise<string> => Bun.file(`${import.meta.dir}/migrate.ts`).text();
+
+  test('neither comment attributes the option to a command', async () => {
+    expect(await source()).not.toContain('Only `x db branch` does this');
+  });
+
+  test('both comments say what makes a database private', async () => {
+    const declarations = (await source()).match(/Skip the advisory lock[^*]*/g) ?? [];
+    expect(declarations).toHaveLength(2);
+    for (const declaration of declarations) {
+      expect(declaration).toContain('branch');
+      expect(declaration).toContain('test');
+    }
+  });
+
+  test('and this package ships no caller that passes it', async () => {
+    // The claim, enforced where it can be: a source file here that starts passing `lock` makes
+    // the comment false again, and the failure names the file to re-word it with.
+    const passers: string[] = [];
+    for await (const path of new Bun.Glob('*.ts').scan({ cwd: import.meta.dir })) {
+      if (path.endsWith('.test.ts')) continue;
+      const text = await Bun.file(`${import.meta.dir}/${path}`).text();
+      if (/\block:\s*(false|true)/.test(text)) passers.push(path);
+    }
+    expect(passers).toEqual([]);
+  });
+});

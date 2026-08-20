@@ -2,13 +2,12 @@
 // carrying all of it, and a definition that moved dropped and recreated rather than skipped.
 
 import { describe, expect, test } from 'bun:test';
-import {
-  type ColumnDescriptionLike,
-  type EntityDescriptionLike,
-  generateMigration,
-  type IndexDescriptionLike,
-  snapshotOf,
-} from './generate';
+import type {
+  ColumnDescriptionLike,
+  EntityDescriptionLike,
+  IndexDescriptionLike,
+} from './entity-shape';
+import { generateMigration, snapshotOf } from './generate';
 
 const column = (
   name: string,

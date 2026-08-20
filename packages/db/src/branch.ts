@@ -10,13 +10,41 @@ import { identifier, literal, sql } from './sql';
 
 const BRANCH_NAME = /^[a-z0-9_-]+$/;
 
-/** Written as a database comment at creation time — `pg_database` has no created_at. */
+/**
+ * Written as a database comment at creation time — `pg_database` has no created_at, and no
+ * template lineage either. The payload is `<base>:<iso>`: the database this clone came from, then
+ * the instant it was made, always UTC through `toISOString()`.
+ *
+ * The base is half the marker because nothing else can answer "whose branch is this". Postgres
+ * records no lineage in the catalog and `datdba` is shared when both apps connect as one role, so
+ * a reaper reading the marker alone sweeps every Ultimate app on the server (issue #133).
+ */
 const BRANCH_MARKER = 'ultimate:branch:';
+
+/**
+ * `<base>:<iso>`, split on the ISO tail rather than on the first `:` — a database name may contain
+ * one and an ISO instant certainly does. A comment that does not match is a pre-3.x one-segment
+ * marker: its date is still readable, and its base is `null`, which is what keeps `reapBranches`
+ * off it. Unknown, never guessed at.
+ */
+const MARKER_PAYLOAD = /^(.*):(\d{4,}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)$/;
 
 export interface BranchInfo {
   readonly name: string;
+  /** The database this branch was cloned from. `null` on a branch made before 3.0 recorded it. */
+  readonly base: string | null;
   readonly createdAt: string | null;
   readonly sizeBytes: number;
+}
+
+function parseMarker(comment: string): Pick<BranchInfo, 'base' | 'createdAt'> {
+  const payload = comment.slice(BRANCH_MARKER.length);
+  const parts = MARKER_PAYLOAD.exec(payload);
+  const [, base, createdAt] = parts ?? [];
+  if (base === undefined || createdAt === undefined) {
+    return { base: null, createdAt: payload === '' ? null : payload };
+  }
+  return { base: base === '' ? null : base, createdAt };
 }
 
 export function assertBranchName(branch: string): string {
@@ -54,9 +82,11 @@ export async function createBranch(
   await client.execute(sql`create database ${identifier(branch)} template ${identifier(base)}`);
   const createdAt = (options.now ?? systemClock.now()).toISOString();
   await client.execute(
-    sql`comment on database ${identifier(branch)} is ${literal(`${BRANCH_MARKER}${createdAt}`)}`,
+    sql`comment on database ${identifier(branch)} is ${literal(
+      `${BRANCH_MARKER}${base}:${createdAt}`,
+    )}`,
   );
-  return { name: branch, createdAt, sizeBytes: 0 };
+  return { name: branch, base, createdAt, sizeBytes: 0 };
 }
 
 export async function currentDatabase(client: DbClient = baseClient()): Promise<string> {
@@ -85,7 +115,7 @@ export async function listBranches(options: BranchOptions = {}): Promise<readonl
     .filter((row) => row.comment?.startsWith(BRANCH_MARKER) === true)
     .map((row) => ({
       name: row.name,
-      createdAt: row.comment?.slice(BRANCH_MARKER.length) ?? null,
+      ...parseMarker(row.comment ?? ''),
       sizeBytes: Number(row.size_bytes),
     }));
 }
@@ -127,12 +157,24 @@ export interface ReapOptions extends DropBranchOptions {
   readonly maxAgeMs: number;
 }
 
-/** Preview environments leak branches; this is what the nightly `reapBranches` task calls. */
+/**
+ * Preview environments leak branches; this is what the nightly `reapBranches` task calls.
+ *
+ * **Branches of THIS database only** (issue #133). `listBranches` walks `pg_database` for the whole
+ * server, so two Ultimate apps sharing one Postgres plus one nightly sweep was the other app's
+ * branches dropped — a `DROP DATABASE` nothing recovers from and nobody asked for. A branch whose
+ * base is not this database is skipped, and so is a pre-3.x marker that records no base at all:
+ * a branch of nothing is not a branch of this database, which makes the change self-healing with
+ * no migration — the next `createBranch` writes the base down.
+ */
 export async function reapBranches(options: ReapOptions): Promise<readonly string[]> {
   const cutoff = (options.now ?? systemClock.now()).getTime() - options.maxAgeMs;
-  const branches = await listBranches(options);
+  const client = options.client ?? baseClient();
+  const here = await currentDatabase(client);
+  const branches = await listBranches({ ...options, client });
   const dropped: string[] = [];
   for (const branch of branches) {
+    if (branch.base !== here) continue;
     if (branch.createdAt === null) continue;
     const createdAtMs = Date.parse(branch.createdAt);
     // `NaN > cutoff` is `false`, which is the same answer "older than the cutoff" gives — so a

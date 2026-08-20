@@ -48,6 +48,7 @@ describe('the resolved foreign keys the map is built from', () => {
         targetEntity: 'relation_map_authors',
         targetProperty: 'id',
         targetColumn: 'id',
+        onDelete: null,
       },
     ]);
     expect(getEntity(books.$name)?.references()).toEqual(books.$references());
