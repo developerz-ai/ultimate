@@ -167,6 +167,7 @@ Milestone detail: [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md).
 | test (one file) | `bun test packages/core/src/errors.test.ts` |
 | test (one name) | `bun test -t 'formats the fix line'` |
 | import boundaries | `bun run boundaries` |
+| bare Errors in tests | `bun run scripts/test-bare-error.ts` — a step of the gate's `errors` check, standalone. A test may not report its own verdict by throwing a bare `Error`; `expect.unreachable` is the idiom. A ratchet, because 422 sites were already there — `--unpin <pkg>` lowers a count and refuses to raise one. A `new Error` **not thrown** is the subject's input and is never reported |
 | unsafe error rendering | `bun run error-render` — a step of the gate's `errors` check, standalone. Refuses an `unknown` reaching a `cause:`/`fix:` through `${x}`, `JSON.stringify(x)` or `String(x)`; all three throw on real app values, and the bug shipped three times before it was mechanised |
 | regenerate manifest | `bun run manifest` |
 | list workspaces | `bun run workspaces:list` |
@@ -246,6 +247,7 @@ Everything in the framework is one of these. **If a feature doesn't fit one of t
 - **No new dependencies** without a strong reason stated in the PR. Bun's natives replace most of them. The strong-reason bar and where a dependency may live (driver/transport seam only, never the primitive vocabulary) is [`docs/idea/18-build-vs-wrap.md`](docs/idea/18-build-vs-wrap.md)'s build-vs-wrap criterion.
 - **No `any`.** Biome fails the build. Use `unknown` + a schema parse.
 - **Never throw a bare `Error`.** Subclass `UltimateError` with a code, a cause, and an executable `fix:`. Codes are `X_SCREAMING_SNAKE` and stable forever once shipped.
+  **In tests too, `As of 2026-08`** — `checkErrorFixes` skips test files, so the rule was prose there and 422 sites accumulated under a green gate. `scripts/test-bare-error.ts` is the mechanical half, on a per-package ratchet. It reports a `throw new Error(…)`, which is the test stating its own **verdict**, and never a `new Error` that is merely handed to the code under test — a foreign error is legitimate **input**, which `packages/realtime/CLAUDE.md` has always said.
 - **SRP.** One file, one job. Target < 200 LOC, hard ceiling ~500. Split before you exceed it.
 - **Named exports only.** No default exports. `src/index.ts` re-exports the public API explicitly — no blind `export *`.
 - **`import type` / `export type`** for type-only imports (`verbatimModuleSyntax` is on).

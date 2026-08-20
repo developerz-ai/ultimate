@@ -143,7 +143,7 @@ describe('an actor name is data, never a prototype key', () => {
 describe('testActor mints an actor core’s own helpers can read', () => {
   test('kind and scopes are present, so hasScope() answers instead of throwing', () => {
     const actor = testActor('reader', { scopes: ['tenancy:cross'] }).actor;
-    if (actor === null) throw new Error('testActor always mints an actor');
+    if (actor === null) expect.unreachable('testActor always mints an actor');
 
     expect(actor.kind).toBe('user');
     expect(hasScope(actor, 'tenancy:cross')).toBe(true);
@@ -153,7 +153,7 @@ describe('testActor mints an actor core’s own helpers can read', () => {
 
   test('an actor with no scopes declared still carries an empty list, never undefined', () => {
     const actor = testActor('nobody').actor;
-    if (actor === null) throw new Error('testActor always mints an actor');
+    if (actor === null) expect.unreachable('testActor always mints an actor');
 
     expect(actor.scopes).toEqual([]);
     expect(hasScope(actor, 'anything')).toBe(false);
@@ -161,7 +161,7 @@ describe('testActor mints an actor core’s own helpers can read', () => {
 
   test('actorLabel() renders the kind, so a decision log names who was denied', () => {
     const actor = testActor('u1', { orgId: 'org-1' }).actor;
-    if (actor === null) throw new Error('testActor always mints an actor');
+    if (actor === null) expect.unreachable('testActor always mints an actor');
 
     expect(actorLabel(actor)).toBe('user:u1@org-1');
   });
@@ -175,7 +175,7 @@ describe('a test actor is structurally a production actor', () => {
 
   test('frozen, with frozen grant lists, exactly as a request-minted actor is', () => {
     const actor = testActor('ada', { roles: ['editor'], permissions: ['post:publish'] }).actor;
-    if (actor === null) throw new Error('testActor always mints an actor');
+    if (actor === null) expect.unreachable('testActor always mints an actor');
 
     expect(Object.isFrozen(actor)).toBe(Object.isFrozen(production));
     expect(Object.isFrozen(actor.roles)).toBe(Object.isFrozen(production.roles));
@@ -185,7 +185,7 @@ describe('a test actor is structurally a production actor', () => {
 
   test('carries every key a built actor carries, so a new field cannot be missed here', () => {
     const actor = testActor('ada').actor;
-    if (actor === null) throw new Error('testActor always mints an actor');
+    if (actor === null) expect.unreachable('testActor always mints an actor');
 
     // `orgId` is the one deliberate difference — `null` here, `undefined` there — so it is
     // compared as a KEY and not as a value; `@ultimat3/query`'s `orgless()` reads both alike.

@@ -49,6 +49,7 @@ import { readmeFenceFindings } from './readme-fences';
 import { releaseFactFindings } from './release-facts';
 import { publishListFindings } from './release-workflow';
 import { checkRoadmap } from './roadmap';
+import { bareErrorFindings } from './test-bare-error';
 import { testFixFindings } from './test-fix-citations';
 import { testTypecheckFindings } from './test-typecheck-gate';
 import { throwFindings } from './to-throw-returns';
@@ -177,12 +178,14 @@ export const errorCodeDocs: HostCheck = async (root) => {
  * could print `x db query "select id …"` — and `x db` has no `query`, which is a second failure
  * handed to a reader already holding one.
  *
- * `testFixFindings` and `throwFindings` join it because both are the same contract one file set
- * further on. `checkErrorFixes` holds every `fix:` in `src/` to being runnable and skips tests, so a
+ * `testFixFindings`, `bareErrorFindings` and `throwFindings` join it because all three are the same
+ * contract one file set further on. `checkErrorFixes` holds every `fix:` in `src/` to being runnable and skips tests, so a
  * fixture error, a helper that builds one and an assertion pinning a fix string were unchecked —
  * and `x schema show` and `x logs tail` are what that costs. `throwFindings` is the other half of
  * an error assertion: bun's synchronous `toThrow` PASSES when the callback returns an Error rather
- * than throwing one, and this repo exports 196 functions that return one.
+ * than throwing one, and this repo exports 196 functions that return one. `bareErrorFindings` is the rule itself in
+ * that file set: `CLAUDE.md` says never throw a bare `Error` and the enforced check skips tests, so
+ * 422 sites sat under a green gate — a convention that is not a build error does not exist.
  *
  * The completeness rule is deliberately NOT its own step: `VerifyStepName` is a closed union owned
  * by `@ultimat3/cli`, and a generated app would inherit a step name that only this repo can run.
@@ -194,6 +197,7 @@ export const errorContract: HostCheck = async (root) => [
   ...(await errorStatusCompleteness(root)),
   ...(await docFixFindings(root)),
   ...(await testFixFindings(root)),
+  ...(await bareErrorFindings(root)),
   ...(await throwFindings(root)),
 ];
 

@@ -9,7 +9,7 @@ import { packageTemplates, TIER_NUMBERS, tierProblem, withPackageReference } fro
 
 const fileNamed = (name: string, tier: number, path: string): string => {
   const file = packageTemplates(name, tier, 'one line').find((entry) => entry.path === path);
-  if (file === undefined) throw new Error(`no ${path} in the templates`);
+  if (file === undefined) expect.unreachable(`no ${path} in the templates`);
   return file.contents;
 };
 

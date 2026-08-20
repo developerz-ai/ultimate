@@ -212,7 +212,7 @@ describe('network-only', () => {
   function uncachedEnv(network: () => Promise<Response>): StrategyEnv {
     return {
       open: (): Promise<StrategyCache> => {
-        throw new Error('network-only opened a cache');
+        expect.unreachable('network-only opened a cache');
       },
       fetch: network,
     };
