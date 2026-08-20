@@ -50,14 +50,6 @@ export const GATED_APPS: readonly GatedApp[] = [
         'same two classes, not new ones. 137 → 138 is the TS 7 bump alone, and it added no new ' +
         'class either — the WHOLE file breaks down as TS2339 ×68, TS2322 ×30, TS2345 ×29 and a ' +
         "tail of 11, which is the same set the lines above describe. Still the data-substrate work's to close",
-      live:
-        'X_TEST_FIXTURE_UNAVAILABLE on all 5 tests: `subscribe` is declared by @ultimat3/testing’s ' +
-        'preload and nothing in the repo drives it — fixture-drivers.ts registers ' +
-        'unavailableFixture for it and no in-process replicator exists in any package. NOT the ' +
-        'unscoped repo this line used to blame: no repo, query or migration is involved. ' +
-        'Registering one in examples/dummy/scripts/test-setup.ts would be the app deciding what a ' +
-        'live subscription is, so it closes when the framework ships the driver — the same gap ' +
-        '`page` leaves on e2e, and its own fix line names a driver that does not exist',
       e2e:
         'X_TEST_FIXTURE_UNAVAILABLE on all 6 tests: the `page` fixture is declared and nothing in ' +
         'this process drives it, so not one of them reaches a built page. NOT the data substrate ' +

@@ -112,6 +112,8 @@ export type {
   UpsertArgs,
 } from './repo';
 export { memoryRepo, memoryTransactor } from './repo';
+export type { RowBulkChange, RowChange, RowChangeOp, RowObserver } from './row-observer';
+export { observedRepo, rowObserver, setRowObserver } from './row-observer';
 export type {
   Seed,
   SeedContext,

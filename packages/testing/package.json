@@ -41,6 +41,8 @@
     "@ultimat3/jobs": "4.1.0",
     "@ultimat3/mail": "4.1.0",
     "@ultimat3/policy": "4.1.0",
+    "@ultimat3/query": "4.1.0",
+    "@ultimat3/realtime": "4.1.0",
     "@ultimat3/time": "4.1.0"
   }
 }

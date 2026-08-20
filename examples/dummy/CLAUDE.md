@@ -116,8 +116,9 @@ Feature slice: `apps/web/app/<feature>/{entity,repo,service,actions,mutator,live
   inside a `x verify`, which refuses to run while recording.
 - Test fixtures come from `scripts/test-setup.ts`, the one preload in `bunfig.toml`. `seed` and
   `actorFor` are Postly's; everything else is the framework's — `clock`, `mail`, `network`,
-  `runJobs` built in-process, and `page`, `budget`, `signIn`, `deploy`, `subscribe` waiting on a
-  driver (`X_TEST_FIXTURE_UNAVAILABLE` until one is installed). A test that destructures a name
+  `runJobs` and `subscribe` built in-process, and `page`, `budget`, `signIn`, `deploy` waiting on a
+  driver (`X_TEST_FIXTURE_UNAVAILABLE` until one is installed). `subscribe` builds a whole `sync`
+  node in this process — see `app/posts/live.live.test.ts`, whose five tests had never run. A test that destructures a name
   nobody registered fails with `X_TEST_FIXTURE_UNKNOWN` — register it there, once. Never register
   a framework name here: two apps would then disagree about what a `page` is.
 
