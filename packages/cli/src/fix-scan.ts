@@ -202,6 +202,73 @@ function helperFixSites(
 }
 
 /**
+ * The identifier a `fix:` value LOOKS UP, when the value is a lookup and nothing else:
+ * `fix: SQLSTATE_FIXES[code]`, `fix: SQLSTATE_FIXES.X_DB_POOL_EXHAUSTED`, and the `.replace(…)`
+ * that `@ultimat3/db` puts after the first of those. The value expression then holds NO literal at
+ * its own depth, so `valueLiterals` answered `[]` and the site was dropped without being counted —
+ * six shipped fix lines that no rule had ever read, and nothing to catch a seventh (#97).
+ */
+/** A constant's spelling, and the only head whose failure to resolve is worth counting. */
+const TABLE_NAME = /^[A-Z][A-Z0-9_]*$/;
+
+const LOOKUP_HEAD = /^\s*([A-Za-z_$][\w$]*)\s*[[.]/;
+
+/**
+ * Where the object literal bound to `name` opens in this file, or `undefined` when this file does
+ * not declare one. One hop and same-file only, deliberately: a table is a `const` a few lines
+ * above the factory that reads it in every instance measured here, and following a chain or a
+ * second file is where a text scan starts guessing. `Object.freeze({…})` and a bare `{…}` both
+ * resolve, because the wrapper is a call whose argument is still the table.
+ */
+function tableOpen(masked: string, name: string): number | undefined {
+  const declaration = new RegExp(`(?<![.\\w$])const\\s+${name}\\s*(?::[^=;]*)?=\\s*`).exec(masked);
+  if (declaration === null) return undefined;
+  for (let i = declaration.index + declaration[0].length; i < masked.length; i += 1) {
+    const ch = masked[i] as string;
+    if (ch === '{') return i;
+    // `Object.freeze(` — a word, a dot, an open paren or whitespace is still on the way to the
+    // table. Anything else means this const is bound to something that is not one.
+    if (!/[\s\w$.(]/.test(ch)) return undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Every fix string a table holds, read at its entries' own depth. A value that is a concatenation
+ * yields one site per literal, exactly as a `fix:` key does — the rule is per line, and half a fix
+ * carrying a banned phrase is still a fix line an agent is handed.
+ */
+function tableFixSites(
+  masked: string,
+  source: string,
+  at: string,
+  open: number,
+  lineAt: (index: number) => number,
+): readonly FixSite[] {
+  const sites: FixSite[] = [];
+  let depth = 0;
+  for (let i = open; i < masked.length; i += 1) {
+    const ch = masked[i] as string;
+    // A quoted KEY (`'23505': '…'`) is skipped whole, so its closing quote cannot be read as the
+    // opener of the value and shift every literal after it by one.
+    if (QUOTES.has(ch)) {
+      i = Math.max(i, endOfLiteral(masked, i) - 1);
+      continue;
+    }
+    if (OPENERS.has(ch)) depth += 1;
+    else if (CLOSERS.has(ch)) {
+      depth -= 1;
+      if (depth === 0) break;
+    } else if (depth === 1 && ch === ':') {
+      for (const literal of valueLiterals(masked, source, i + 1, lineAt)) {
+        sites.push({ ...literal, at });
+      }
+    }
+  }
+  return sites;
+}
+
+/**
  * Every string a `fix:` can evaluate to. Searched over the masked source, so a `fix:` written
  * inside a doc comment or interpolated into a message is not mistaken for a declaration. A `fix`
  * computed at runtime — a bare identifier, a parameter, a table lookup with no literal fallback —
@@ -227,11 +294,29 @@ export function scanFixSites(
   const masked = maskLiterals(source);
   const lineAt = lineIndex(masked);
   const sites: FixSite[] = [];
+  const tables = new Set<string>();
   for (const key of masked.matchAll(FIX_KEY)) {
     const start = key.index + key[0].length;
-    for (const literal of valueLiterals(masked, source, start, lineAt)) {
-      sites.push({ ...literal, at });
+    const literals = valueLiterals(masked, source, start, lineAt);
+    for (const literal of literals) sites.push({ ...literal, at });
+    // A lookup is recorded whether or not the expression also held a literal: `TABLE[k] ?? 'x'`
+    // is two answers and both are fix lines. The NAME is collected rather than the table resolved
+    // here, so a table read at four call sites is checked once instead of reported four times.
+    const head = LOOKUP_HEAD.exec(masked.slice(start, start + 200))?.[1];
+    if (head !== undefined) tables.add(head);
+  }
+  for (const name of tables) {
+    const open = tableOpen(masked, name);
+    if (open !== undefined) {
+      sites.push(...tableFixSites(masked, source, at, open, lineAt));
+      continue;
     }
+    // Nothing resolved. `init.fix` is a property of a parameter, already read wherever that
+    // parameter was filled, and counting it would make the coverage line describe re-passes rather
+    // than blind spots. A SCREAMING_SNAKE head is the one that cannot be that: it names a constant,
+    // and a constant this file does not declare is a table in another file — a real hole, and the
+    // one shape this scan says out loud instead of dropping.
+    if (TABLE_NAME.test(name)) unreadable.count += 1;
   }
   // A name declared here wins over one imported under the same name: the declaration is what a
   // call in this file actually reaches, and reading both would report one argument twice.

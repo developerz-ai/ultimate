@@ -291,3 +291,60 @@ describe('the 3-line contract holds under a hostile cause', () => {
     expect(error.format({ docs: true }).split('\n')).toHaveLength(4);
   });
 });
+
+/**
+ * WHERE the escape happens, which is the whole of #97's second half. It was at the six renderers,
+ * and six is a number that only goes up: a seventh renderer in this repo, and every renderer in
+ * every APP, would each have had to remember. `format()` is not the only reader — a crash handler
+ * prints `.message`, a log line takes `.cause`, `--json` takes `toJSON()`, and a `<pre>` takes
+ * whichever the overlay reaches for. The constructor is the one place all of them come through.
+ */
+describe('a hostile field cannot carry a line break out of the constructor', () => {
+  const hostile = new UltimateError({
+    code: 'X_INVARIANT',
+    cause: `iss was ${FORGED}`,
+    fix: ['x doctor --json', '  cause: forged'].join('\n'),
+    docs: 'https://evil.example/\u000awhatever',
+  });
+
+  test('every field a renderer can reach is already one line', () => {
+    for (const field of [hostile.code, hostile.title, hostile.cause, hostile.fix, hostile.docs]) {
+      expect(field).not.toInclude('\n');
+      expect(field).not.toInclude('\r');
+    }
+  });
+
+  test('message — the one field an uncaught throw prints — is one line', () => {
+    expect(hostile.message).not.toInclude('\n');
+    expect(hostile.message).toInclude(String.raw`\nX_OK: everything is fine`);
+  });
+
+  test('toJSON carries the escaped text, so --json and the terminal agree', () => {
+    const json = hostile.toJSON();
+    expect(json.cause).toBe(hostile.cause);
+    expect(json.fix).toBe(hostile.fix);
+    expect(json.cause).not.toInclude('\n');
+  });
+
+  // Two escapes must equal one, or the call sites that already escape — `@ultimat3/auth` renders
+  // `claims.iss` at its source — would double their backslashes the day this landed.
+  test('escaping is idempotent, so a call site that already escaped is unharmed', () => {
+    const once = new UltimateError({ code: 'X_INVARIANT', cause: FORGED, fix: 'x doctor --json' });
+    const twice = new UltimateError({
+      code: 'X_INVARIANT',
+      cause: once.cause,
+      fix: 'x doctor --json',
+    });
+    expect(twice.cause).toBe(once.cause);
+  });
+
+  test('ordinary prose is untouched', () => {
+    const plain = new UltimateError({
+      code: 'X_INVARIANT',
+      cause: 'posts[0].title: expected string, received number',
+      fix: 'x doctor --json',
+    });
+    expect(plain.cause).toBe('posts[0].title: expected string, received number');
+    expect(plain.fix).toBe('x doctor --json');
+  });
+});

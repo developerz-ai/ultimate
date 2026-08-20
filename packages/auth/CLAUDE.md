@@ -137,6 +137,11 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   presented), and `accountLocked`'s `key` (built by `ipKey` from a caller-supplied address).
   `${provider}` is NOT in that set — it is registry-validated on every shipped path, so it is boot
   config like `clientIdEnv`, not request data. Swept whole `As of 2026-08`.
+  **`UltimateError`'s constructor now escapes every line-bearing field as well** (`As of
+  2026-08-20`), so a line break cannot leave this package whether or not a call site remembers.
+  These three renders stay and are not a second path: `renderCauseValue` also QUOTES, which is what
+  makes a forged `iss` legible as a value rather than as prose — the constructor is a floor under
+  every field, not a replacement for saying which value is foreign.
 - `readCookie` never throws on a malformed value. The `Cookie:` header is attacker-controlled and
   `decodeURIComponent('%')` is a bare `URIError`, which would escape every coded path in this
   package — the raw value goes to the signature or hash check, which is the readable refusal.
