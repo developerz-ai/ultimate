@@ -104,7 +104,7 @@ export const portHolder = (port: number): PortHolder => {
   const name = parsed?.[1];
   if (parsed !== null && name !== undefined) return { command: name, pid: Number(parsed[2]) };
 
-  const lsof = Bun.spawnSync(['lsof', '-nP', '-iTCP:' + String(port), '-sTCP:LISTEN', '-Fpc'], {
+  const lsof = Bun.spawnSync(['lsof', '-nP', `-iTCP:${String(port)}`, '-sTCP:LISTEN', '-Fpc'], {
     stderr: 'ignore',
   });
   const lines = (lsof.stdout?.toString() ?? '').split('\n');
