@@ -44,6 +44,19 @@ const catalogImport = (module: string | undefined): string =>
     ? "import { t } from '@ultimat3/i18n';"
     : `import { useT } from '${module}';`;
 
+/**
+ * The two imports, in the order biome's organize-imports wants — which DEPENDS on the app's scope
+ * and cannot be hardcoded either way. An app catalog (`@myapp/i18n`) sorts BEFORE
+ * `@ultimat3/admin`; the fallback `@ultimat3/i18n` sorts AFTER it. Emitting one fixed order makes
+ * every generated admin page a lint error in exactly one of the two cases, and each case is
+ * covered by a different job — the fallback by `templates`' own linter test, the app-scoped one
+ * only by `scaffold-smoke`, which runs the generators against a real scaffold.
+ */
+const pageImports = (module: string | undefined): string =>
+  [`import type { AdminCustomPage, AdminPageProps } from '@ultimat3/admin';`, catalogImport(module)]
+    .sort((a, b) => (a.slice(a.indexOf("'")) < b.slice(b.indexOf("'")) ? -1 : 1))
+    .join('\n');
+
 /** `useT()` is per render, so the component binds it in its own body. */
 const translatorBinding = (module: string | undefined): string =>
   module === undefined ? '' : '\n  const t = useT();\n';
@@ -65,8 +78,7 @@ const pageSource = (
 //   import { ${declaration}Page } from './${name}';
 //   defineAdmin({ …, pages: […, ${declaration}Page] })
 
-import type { AdminCustomPage, AdminPageProps } from '@ultimat3/admin';
-${catalogImport(module)}
+${pageImports(module)}
 
 export function ${Name}Page(props: AdminPageProps) {${translatorBinding(module)}
   return (
