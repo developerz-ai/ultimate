@@ -1,0 +1,19 @@
+{
+  "//": "The test programs, which the shipped package configs exclude. One config, not thirty: every package's tsconfig.json is composite, so dropping its `exclude` would emit each .test.ts into dist/. This one is noEmit + non-composite, so it typechecks the same files and writes nothing. Run by `bun run scripts/test-typecheck-gate.ts`, on a ratchet; it is not part of `tsc -b`.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": [
+    "packages/testing/src/matcher-surface.ts",
+    "packages/*/src/**/*.test.ts",
+    "packages/*/src/**/*.test.tsx",
+    "packages/*/e2e/**/*.ts",
+    "packages/*/e2e/**/*.tsx"
+  ]
+}

@@ -80,6 +80,13 @@ function endOfTypeAlias(text: string, from: number): number {
  * scanning for `=>` calls a types-only file executable. Hence a scanner: strip comments and
  * re-export statements, then remove `interface` blocks by brace matching and `type` aliases to
  * their depth-zero `;`, and ask whether anything is left.
+ *
+ * `declare module` and `declare global` are removed the same way, and for the same reason the
+ * `declare const` line above exists: an ambient block emits nothing at runtime, so bun writes no
+ * lcov record for a file built only from one. Their bodies go with them — an augmentation's
+ * members are declarations whatever they look like. Without this, `matcher-surface.ts` (a
+ * `declare module 'bun:test'` and nothing else) read as executable and was reported as a real
+ * module no test imports, which is the opposite of what it is.
  */
 export function hasExecutableCode(source: string): boolean {
   let text = source
@@ -90,6 +97,15 @@ export function hasExecutableCode(source: string): boolean {
     // `declare const x: T;` is ambient — it emits nothing, and `type-pins.ts` files are built
     // almost entirely from them.
     .replace(/^[ \t]*declare\s+(?:const|let|var|function|class)\b[^;]*;[ \t]*$/gm, '');
+
+  // Ambient blocks first: their bodies hold `interface` members that the loop below would strip
+  // individually, leaving a bare `declare module '…' { }` shell behind that reads as code.
+  for (;;) {
+    const ambient = /(?:^|\n)[ \t]*declare\s+(?:module\s+'[^']*'|global)\s*\{/.exec(text);
+    if (ambient === null) break;
+    const start = ambient.index + (ambient[0].startsWith('\n') ? 1 : 0);
+    text = text.slice(0, start) + text.slice(skipBalanced(text, text.indexOf('{', start)));
+  }
 
   for (;;) {
     const found = /(?:^|\n)[ \t]*(?:export\s+)?(?:declare\s+)?(interface|type)\s/.exec(text);
