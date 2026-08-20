@@ -10,7 +10,22 @@ import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot, run } from './lib/run';
 
-const REQUIRED_BUN = [1, 3, 0] as const;
+// A floor on CONTRIBUTORS to this repo, and a different question from `engines.bun`, which is a
+// floor on who may INSTALL `@ultimat3/*`. That one deliberately stays `>=1.3.0`: no package here
+// uses a 1.4-only API, so forbidding an install that demonstrably works would be a false claim.
+//
+// So there are deliberately TWO constants named `REQUIRED_BUN` holding different numbers, and the
+// other one is not stale: `packages/cli/src/app-root.ts` is `1.3.0` because `x doctor` runs on a
+// USER's machine, where the consumer floor is the right answer. Raising that one to match this one
+// would red every app on Bun 1.3 for a rule that is about this repository's CI.
+//
+// This one tracks the series CI runs (`.github/actions/setup/action.yml`, `1.4.x`), because that is
+// the only thing this check can usefully say. Bun 1.3 and 1.4 do not build identically — 1.3.14
+// fails a bundle on an unresolvable `require()` inside a `catch` where 1.4 emits a runtime throw —
+// so a contributor whose Bun differs from CI's is not running the gate CI runs, and on 2026-08-20
+// that gap merged a red PR behind a green local `bun run verify`. Matching the pin is the whole
+// point; a floor a series behind it blesses a machine that agrees with nothing in the repo.
+const REQUIRED_BUN = [1, 4, 0] as const;
 
 const bunTooOld = (version: string): boolean => {
   const parts = version.split('.').map((part) => Number.parseInt(part, 10) || 0);
@@ -30,7 +45,9 @@ const lines: string[] = [];
 if (bunTooOld(Bun.version)) {
   findings.push({
     code: 'X_BUN_VERSION',
-    cause: `Bun ${Bun.version} is older than the required 1.3.0`,
+    // Rendered from the constant, never restated: a hardcoded number here drifts silently the next
+    // time the floor moves, and this string is the only thing the contributor reads.
+    cause: `Bun ${Bun.version} is older than the required ${REQUIRED_BUN.join('.')}`,
     fix: 'bun upgrade',
   });
 } else {
