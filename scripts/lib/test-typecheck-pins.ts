@@ -47,7 +47,7 @@ export const TEST_TYPECHECK_PINS: Readonly<Record<string, number>> = {
   ai: 0,
   auth: 0,
   cache: 0,
-  cli: 60,
+  cli: 59,
   core: 0,
   'create-ultimate': 0,
   db: 0,
