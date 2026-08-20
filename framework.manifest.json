@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "e095d954eeaae7714173584e01da978f18f00b550c0749a99b721bea18fb11c7",
+  "buildId": "4327ad44a9651abffaa9adfe67814c310ffee33e54121c44a6ec89de1b651771",
   "tiers": {
     "0": [
       "core",
@@ -1788,9 +1788,19 @@
       "at": "scripts/registry-audit.ts"
     },
     {
+      "code": "X_RELEASE_FLAG_UNKNOWN",
+      "owner": "scripts",
+      "at": "scripts/release.ts"
+    },
+    {
       "code": "X_RELEASE_VERSION_SKEW",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_RELEASE_VERSION_UNSTATED",
+      "owner": "scripts",
+      "at": "scripts/release.ts"
     },
     {
       "code": "X_REPLICATION_FAILED",

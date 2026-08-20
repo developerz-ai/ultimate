@@ -8,9 +8,11 @@ import {
   changelogEntry,
   insertRelease,
   nextVersion,
+  RELEASE_FLAGS,
   readReleaseVersion,
   repinFrameworkDeps,
   setOwnVersion,
+  unknownReleaseFlags,
 } from './release';
 
 const MANIFEST = `{
@@ -150,9 +152,32 @@ describe('unit · the version to publish is decided, never guessed', () => {
         version: nextVersion('1.2.0', bump),
       });
     }
-    expect(readReleaseVersion({ explicit: undefined, bump: undefined, current: '1.2.0' })).toEqual({
-      version: '1.2.1',
-    });
+  });
+
+  // This assertion used to read `toEqual({ version: '1.2.1' })` — it pinned the implicit patch
+  // default as if it were a feature. It is the reason `bun run scripts/release.ts --help` rewrote
+  // 47 manifests and the helm chart: no `--help` exists, the parser shrugged, and "no explicit, no
+  // bump" meant "release a patch". A release is the most expensive thing here to undo.
+  test('neither --version nor --bump is a refusal, never a patch bump', () => {
+    const result = readReleaseVersion({ explicit: undefined, bump: undefined, current: '1.2.0' });
+    expect('findings' in result).toBe(true);
+    const findings = 'findings' in result ? result.findings : [];
+    expect(findings[0]?.code).toBe('X_RELEASE_VERSION_UNSTATED');
+    expect(findings[0]?.cause).toContain('1.2.0');
+    expect(findings[0]?.fix).toStartWith('bun run scripts/release.ts');
+  });
+
+  test('a flag this script does not declare is refused before anything is decided', () => {
+    expect(unknownReleaseFlags(['help'])).toEqual(['help']);
+    expect(unknownReleaseFlags(['bump', 'json', 'dry-run'])).toEqual([]);
+    // Sorted, so the refusal reads the same however the shell ordered them.
+    expect(unknownReleaseFlags(['zebra', 'check', 'apple'])).toEqual(['apple', 'zebra']);
+  });
+
+  test('every flag the docs tell a reader to pass is declared', () => {
+    for (const flag of ['version', 'bump', 'check', 'dry-run', 'json']) {
+      expect(RELEASE_FLAGS).toContain(flag);
+    }
   });
 
   test('the fix line is a command a shell can run verbatim', () => {
