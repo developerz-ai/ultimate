@@ -88,6 +88,36 @@ export { type Currency, formatMoney } from './format';
     expect(hasExecutableCode("import { a } from './a';\nexport const b = a();\n")).toBe(true);
   });
 
+  test('an ambient module augmentation emits nothing', () => {
+    // `packages/testing/src/matcher-surface.ts` is exactly this shape and nothing else. The inner
+    // `interface` was stripped by the declaration loop, which left a bare `declare module '…' { }`
+    // shell behind — non-empty, so the file read as a real module no test imports. It is the
+    // opposite: an augmentation emits no runtime code, so bun writes no lcov record for it.
+    expect(
+      hasExecutableCode(`declare module 'bun:test' {
+  interface Matchers<T> extends UltimateMatchers<T> {}
+}
+`),
+    ).toBe(false);
+    expect(
+      hasExecutableCode(`declare global {
+  interface Window { readonly x: number }
+}
+`),
+    ).toBe(false);
+  });
+
+  test('an ambient block does not hide real code beside it', () => {
+    // The strip must remove the block, never everything after it.
+    expect(
+      hasExecutableCode(`declare global {
+  interface W { readonly x: 1 }
+}
+export const y = 2;
+`),
+    ).toBe(true);
+  });
+
   test('comments alone are not executable code', () => {
     expect(hasExecutableCode('// just a note\n/* and a block */\n')).toBe(false);
   });
