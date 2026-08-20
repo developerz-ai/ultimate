@@ -605,6 +605,16 @@
               }
             },
             "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
           }
         },
         "summary": "createAccount",
@@ -664,6 +674,16 @@
               }
             },
             "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
           }
         },
         "summary": "runAdminAction",
@@ -744,6 +764,16 @@
               }
             },
             "description": "X_IDEMPOTENCY_CONFLICT"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
           }
         },
         "summary": "Ask another user to be friends",
@@ -824,6 +854,16 @@
               }
             },
             "description": "X_IDEMPOTENCY_CONFLICT"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
           }
         },
         "summary": "Accept or decline a friend request addressed to the caller",
@@ -883,6 +923,16 @@
               }
             },
             "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
           }
         },
         "summary": "Readiness of this process",
@@ -942,6 +992,16 @@
               }
             },
             "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
           }
         },
         "summary": "Send a message to a conversation the actor is already in",
@@ -1022,6 +1082,16 @@
               }
             },
             "description": "X_IDEMPOTENCY_CONFLICT"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
           }
         },
         "summary": "Mark the acting user's notifications as read",
@@ -1081,6 +1151,16 @@
               }
             },
             "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
           }
         },
         "summary": "createSession",
@@ -1140,6 +1220,16 @@
               }
             },
             "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
           }
         },
         "summary": "destroySession",
@@ -1220,6 +1310,16 @@
               }
             },
             "description": "X_IDEMPOTENCY_CONFLICT"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
           }
         },
         "summary": "Block a user and decline any friendship between them",
@@ -1279,6 +1379,16 @@
               }
             },
             "description": "policy denied"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "X_BODY_INVALID"
           }
         },
         "summary": "Lift a block this user placed",
