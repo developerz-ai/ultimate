@@ -172,7 +172,10 @@ export function jobFiles(rawName: string, target: FeatureTarget): readonly Gener
     // file nobody asked for. `x g task` inherits this by composing `jobFiles` below.
     ...sliceFoundation(target, ['entity']),
     { path: `${dir}/${name.kebab}.ts`, contents: jobSource(name) },
-    { path: `${dir}/${name.kebab}.test.ts`, contents: jobTest(name) },
+    // `.job.test.ts`, because the gate types a test by its FILENAME: a `jobTest` in a plain
+    // `<name>.test.ts` runs under `unit`, and `x test job` answers X_TEST_NO_FILES in an app that
+    // is full of them. Same lesson `x g route` already carries for `page.e2e.test.ts`.
+    { path: `${dir}/${name.kebab}.job.test.ts`, contents: jobTest(name) },
   ];
 }
 
@@ -182,7 +185,8 @@ export function taskFiles(rawName: string, target: FeatureTarget): readonly Gene
   const dir = `${target.surfaceDir}/${target.feature}/tasks`;
   return [
     { path: `${dir}/${name.kebab}.ts`, contents: taskSource(name, jobName) },
-    { path: `${dir}/${name.kebab}.test.ts`, contents: taskTest(name, jobName) },
+    // A task's test is a `jobTest` too — it drives a queue — so it takes the same suffix.
+    { path: `${dir}/${name.kebab}.job.test.ts`, contents: taskTest(name, jobName) },
     ...jobFiles(`${rawName}-job`, target),
   ];
 }

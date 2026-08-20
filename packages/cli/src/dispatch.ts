@@ -5,8 +5,9 @@
 import { isAbsolute, resolve } from 'node:path';
 import { requireAppRoot, requireBunVersion } from './app-root';
 import { createHelpCommand } from './cmd-help';
+import { plannedCommandFor } from './cmd-planned';
 import type { CommandContext } from './command';
-import { UnknownCommandError } from './errors';
+import { CliNotImplementedError, UnknownCommandError } from './errors';
 import type { Runner } from './exec';
 import { exec } from './exec';
 import type { CommandResult } from './output';
@@ -42,14 +43,33 @@ const errorResult = (command: string, error: unknown): CommandResult => ({
  * end without terminating the test runner.
  */
 export async function dispatch(options: DispatchOptions): Promise<number> {
-  let args: ParsedArgs;
+  // Its own branch, ahead of the parse: an unsupported Bun is a fact about the environment and
+  // outranks anything argv says, including the planned pre-empt below.
   try {
     requireBunVersion(options.bunVersion);
+  } catch (error) {
+    options.write(render(errorResult('x', error), wantsJson(options.argv)));
+    return 1;
+  }
+
+  let args: ParsedArgs;
+  try {
     args = parseArgs(options.argv, SPECS);
   } catch (error) {
+    // A PLANNED command is not built, so every invocation of one must say that and nothing else.
+    // The parser refuses an undeclared flag before any `run` is reached and a planned command
+    // declares only the four globals, so `x logs tail --follow` reported X_CLI_BAD_FLAG — a flag
+    // list for a command that does not exist yet — while `x logs tail` reported the honest
+    // X_NOT_IMPLEMENTED with a runnable fix. Substituted here rather than in `parse.ts`, which is
+    // pure and knows nothing about what a command means; the precedent is the help swap below.
+    const planned = plannedCommandFor(commandFor(options.argv[0] ?? '')?.spec.name);
+    const failure =
+      planned === undefined
+        ? error
+        : new CliNotImplementedError({ feature: `x ${planned.name}`, fix: planned.fix });
     // `wantsJson`, not `includes('--json')`: a typo'd flag or a typo'd command is exactly the case
     // an agent hits while always passing `-j`, and the short form rendered prose it then parsed.
-    const result = errorResult('x', error);
+    const result = errorResult(planned?.name ?? 'x', failure);
     options.write(render(result, wantsJson(options.argv)));
     return 1;
   }

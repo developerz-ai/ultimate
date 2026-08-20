@@ -22,7 +22,8 @@ const generated = (name = 'normalize-titles'): { source: string; test: string } 
   };
   return {
     source: at(`app/post/backfills/${name}.ts`),
-    test: at(`app/post/backfills/${name}.test.ts`),
+    // `.job.test.ts`: a sweep is a job, so the gate's `job` step is the one that must select it.
+    test: at(`app/post/backfills/${name}.job.test.ts`),
   };
 };
 
@@ -32,7 +33,7 @@ describe('unit · x g backfill', () => {
     // The slice's own modules come first and are `if-absent`; the backfill's two are the run's.
     expect(files.filter((file) => file.merge === undefined).map((file) => file.path)).toEqual([
       'app/post/backfills/normalize-titles.ts',
-      'app/post/backfills/normalize-titles.test.ts',
+      'app/post/backfills/normalize-titles.job.test.ts',
     ]);
     // `../entity` is what the declaration reads and what the generated test builds rows of, so the
     // generator writes it too — the run that emitted the import is the run that has to close it.

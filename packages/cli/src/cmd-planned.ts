@@ -91,6 +91,19 @@ export const PLANNED_COMMANDS: readonly PlannedCommand[] = [
   },
 ];
 
+/**
+ * The planned command a resolved command NAME belongs to, if any. Exported for `dispatch.ts`'s
+ * parse-failure branch: the parser refuses an undeclared flag before any `run` is reached, and a
+ * planned command declares only the four global flags — so `x logs tail --follow` answered
+ * X_CLI_BAD_FLAG listing "known: json, help, cwd, verbose", a flag set belonging to a command that
+ * does not exist yet, while `x logs tail` answered the honest X_NOT_IMPLEMENTED one invocation away.
+ *
+ * Takes the name `commandFor` resolved, never the raw word: aliases are that function's business
+ * and a second matcher here would be a second answer to "which command did they type".
+ */
+export const plannedCommandFor = (name: string | undefined): PlannedCommand | undefined =>
+  PLANNED_COMMANDS.find((planned) => planned.name === name);
+
 export interface PlannedSubcommand {
   readonly command: string;
   readonly subcommand: string;

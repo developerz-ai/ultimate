@@ -2,11 +2,10 @@
 // not know the name of a cloud, a KV store or an edge runtime (axiom 7). What it emits is a plan
 // anything that runs containers can execute.
 
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
-import { BadFlagError, CliNotImplementedError, UnknownCommandError } from './errors';
+import { BadFlagError, UnknownCommandError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagBool, flagString } from './parse';
@@ -157,13 +156,13 @@ export const deployCommand: CliCommand = {
   async run(ctx: CommandContext): Promise<CommandResult> {
     const root = requireAppRoot('deploy', ctx.cwd).dir;
     const image = flagString(ctx.args, 'image') ?? 'ultimate-app:dev';
+    // No "is there a chart?" branch. It threw X_NOT_IMPLEMENTED — "this build does not implement
+    // helm" — over a build that implements it completely (`planDeploy` above); what was missing was
+    // a FILE, and its fix said to copy it from the framework repository, which `packages/cli`'s
+    // `files:` ships in no tarball. `x new` writes `docker/helm` now, the way it has always written
+    // `docker/docker-compose.prod.yml`. An app that deleted the chart gets helm's own error through
+    // X_DEPLOY_FAILED, whose fix is the exact command to rerun.
     const method = readMethod(flagString(ctx.args, 'method'));
-    if (method === 'helm' && !existsSync(join(root, 'docker', 'helm'))) {
-      throw new CliNotImplementedError({
-        feature: 'helm deploy without docker/helm in the app',
-        fix: 'copy docker/helm from the framework repo, or use: x deploy --method compose',
-      });
-    }
     const plan = planDeploy(image, method, root);
     const planJson: JsonValue = {
       image: plan.image,

@@ -206,6 +206,21 @@ describe('unit · x new · the suite floor the app is gated on', () => {
     });
   }
 
+  // The other half of the same rule: a suite the scaffold DOES ship a file for must be pinned, or
+  // a generator that renames its test back to `<name>.test.ts` silently empties the step and the
+  // gate stays green. `contract` is in both variants (the health action's), `live` and `job` come
+  // with the example slice.
+  test('it pins every typed suite the variant ships a file for', () => {
+    for (const example of [false, true]) {
+      const floor = parseVerifyFloor(emitted(VERIFY_FLOOR_FILE, example));
+      const files = planNewApp({ name: 'demo-app', example });
+      for (const type of ['contract', 'live', 'job'] as const) {
+        if (!files.some((file) => belongsToType(file.path, type))) continue;
+        expect([example, type, floor.steps.includes(type)]).toEqual([example, type, true]);
+      }
+    }
+  });
+
   // `e2eTest` is `test.skip` until an app registers a browser driver, so the scaffolded
   // `page.e2e.test.ts` runs zero tests — a floor naming `e2e` would fail `x verify` on the
   // scaffold's own placeholder rather than on anything the author did.
@@ -292,5 +307,47 @@ describe('unit · x new · writing into the parent directory', () => {
     } finally {
       rmSync(parent, { recursive: true, force: true });
     }
+  });
+});
+
+// `registerActions` and `registerQueries` run on the framework's own module scan; NOTHING registers
+// a job that way. A job module no `defineApi` hands over keeps the positional name `job()` gave it
+// — measured in a scaffolded app: `x manifest --json` reported `counts.jobs: 2` and named one of
+// them `anonymous-job-2`, in `x.manifest.json`, on the queue row and in every dead-letter trace.
+describe('unit · x new · the API surface registers the app own primitives by name', () => {
+  const apiIndex = (example: boolean): string => emitted('apps/web/api/index.ts', example);
+
+  /** Every relative specifier the file imports, as the repo path it resolves to. */
+  const importedPaths = (source: string): readonly string[] =>
+    [...source.matchAll(/from '(\.[^']+)'/g)].map(
+      (match) => `${join('apps/web/api', match[1] ?? '')}.ts`,
+    );
+
+  for (const example of [false, true]) {
+    test(`--${example ? 'example' : 'no-example'} declares its surface through defineApi`, () => {
+      expect(apiIndex(example)).toContain("import { defineApi } from '@ultimat3/action';");
+      expect(apiIndex(example)).toContain('export const api = defineApi({');
+    });
+
+    // A specifier that resolves to nothing is TS2307 in an app whose `bun install` succeeded.
+    test(`--${example ? 'example' : 'no-example'} imports only modules the scaffold writes`, () => {
+      const paths = planNewApp({ name: 'demo-app', example }).map((file) => file.path);
+      const imported = importedPaths(apiIndex(example));
+      expect(imported.length).toBeGreaterThan(0);
+      for (const path of imported) expect([path, paths.includes(path)]).toEqual([path, true]);
+    });
+  }
+
+  test('every job module the example slice writes is handed to defineApi', () => {
+    const paths = planNewApp({ name: 'demo-app', example: true }).map((file) => file.path);
+    const jobs = paths.filter(
+      (path) => path.includes('/jobs/') && path.endsWith('.ts') && !path.includes('.test.'),
+    );
+    expect(jobs.length).toBeGreaterThan(0);
+    const imported = importedPaths(apiIndex(true));
+    for (const job of jobs) expect([job, imported.includes(job)]).toEqual([job, true]);
+    // Handed over as JOBS: `actions: [reindexPost]` would register nothing and read as correct.
+    const list = /jobs: \[(?<names>[^\]]*)\]/.exec(apiIndex(true))?.groups?.['names'] ?? '';
+    expect(list.split(',').map((entry) => entry.trim())).toContain('reindexPost');
   });
 });

@@ -3,6 +3,7 @@
 // a restructure. Every file here is real, typed and covered — no placeholder that fails to boot.
 
 import type { GeneratedFile, NameSet } from './naming';
+import { apiFiles } from './scaffold-api';
 import { icon } from './scaffold-icon';
 import { rolesFiles } from './scaffold-roles';
 
@@ -182,48 +183,6 @@ const offlineStyle = (): string => `@use '@ultimat3/ui/tokens' as tokens;
   background: tokens.role('bg');
   color: tokens.role('fg-muted');
 }
-`;
-
-const apiAction =
-  (): string => `// api/ holds actions only: no rendering, no components. This one is the readiness probe every
-// role exposes, declared as an action so it appears in OpenAPI and MCP like everything else.
-
-import { action, t } from '@ultimat3/action';
-import { allow } from '@ultimat3/policy';
-
-export const health = action({
-  input: t.object({}),
-  output: t.object({ ok: t.boolean, role: t.string }),
-  // Public, said out loud. \`can('x:y')\` is the other branch; a missing policy is a build error,
-  // so "anyone may call this" has to be a declaration too.
-  policy: allow('public'),
-  mcp: { expose: true, description: 'Readiness of this process' },
-  async handle({ ctx }) {
-    return { ok: true, role: ctx.role };
-  },
-});
-`;
-
-const apiTest =
-  (): string => `// The health action's contract, run as the framework generates it: garbage input refused, the
-// operation in the OpenAPI document. The declaration is the source; this only runs it.
-import { contractTest, expect } from '@ultimat3/testing';
-import { health } from './health';
-
-// Named here because every projection needs a stable name and this file does not boot the app.
-// At boot \`registerActions\` stamps the same name onto the same object.
-const target = health.named('health');
-
-contractTest('health is an action exposed over MCP', () => {
-  expect(target.kind).toBe('action');
-  expect(target.mcp?.expose).toBe(true);
-});
-
-contractTest('health projects one MCP tool and one OpenAPI operation', () => {
-  // Same policy object on both surfaces — a public action says so once, not once per surface.
-  expect(target.tool().policy).toBe(target.policy);
-  expect(target.openapi().operationId).toBe('health');
-});
 `;
 
 const sharedTokens =
@@ -432,7 +391,8 @@ restructure.
 | Start | \`x new ${app.kebab}-${surface}\` inside this directory, or wire it by hand |
 `;
 
-export function appFiles(app: NameSet): readonly GeneratedFile[] {
+/** `example` reaches only `apps/web/api/index.ts`: the slice it registers is written elsewhere. */
+export function appFiles(app: NameSet, example: boolean): readonly GeneratedFile[] {
   return [
     { path: 'apps/web/package.json', contents: webPackage(app) },
     { path: 'apps/web/tsconfig.json', contents: tsconfig() },
@@ -447,8 +407,8 @@ export function appFiles(app: NameSet): readonly GeneratedFile[] {
     { path: 'apps/web/app/dashboard/page.test.ts', contents: dashboardTest() },
     { path: 'apps/web/app/offline.tsx', contents: offlineFallback() },
     { path: 'apps/web/app/offline.module.scss', contents: offlineStyle() },
-    { path: 'apps/web/api/health.ts', contents: apiAction() },
-    { path: 'apps/web/api/health.test.ts', contents: apiTest() },
+    // The third surface, and the one call that registers what the app declares — `scaffold-api.ts`.
+    ...apiFiles(example),
     { path: 'apps/web/shared/tokens.scss', contents: sharedTokens() },
     { path: 'apps/web/shared/global.scss', contents: sharedGlobalStyle() },
     { path: 'apps/web/shared/global.ts', contents: sharedGlobalModule() },

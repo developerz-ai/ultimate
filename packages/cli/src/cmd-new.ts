@@ -26,7 +26,7 @@ export function planNewApp(options: NewAppOptions): readonly GeneratedFile[] {
   const app = names(options.name);
   const files: GeneratedFile[] = [
     ...repoFiles(app, loadVersion(), options.example),
-    ...appFiles(app),
+    ...appFiles(app, options.example),
   ];
   if (options.example) {
     files.push(...resourceFiles('post', { surfaceDir: 'apps/web/app', feature: 'post' }));
