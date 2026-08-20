@@ -30,7 +30,10 @@ export const insertMember = (row: {
   role: MemberRole;
   tz: AppZone;
   locale: AppLocale;
-}): Promise<MemberView> => db.members.insert(row).returning();
+  // `insert` RESOLVES with the stored row — there is no `.returning()` on a write of one row, and
+  // `db.members.insert(row).returning()` was a `TypeError` on the first invite this app ever ran.
+  // `update(...).returning()` below is a different builder and is correct.
+}): Promise<MemberView> => db.members.insert(row);
 
 export const setPlan = (orgId: OrgId, planCode: PlanCode): Promise<OrgView> =>
   db.orgs.where({ id: orgId }).update({ planCode }).returning();

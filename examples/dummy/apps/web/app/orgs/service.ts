@@ -14,6 +14,7 @@ import {
 import type { AppLocale, AppTheme, AppZone } from '@postly/domain';
 import { type MemberId, type OrgId, type PlanCode, seatLimit } from '@postly/domain';
 import { type Ctx, defineService } from '@ultimat3/core';
+import { newId } from '@ultimat3/entity';
 import type { UploadGrant, UploadRequest } from '@ultimat3/storage';
 import { daysBetween, instant } from '@ultimat3/time';
 import { NotAMember } from '../../shared/errors';
@@ -57,7 +58,19 @@ export const orgsService = defineService('orgs', (ctx: Ctx) => ({
     const inviter = await memberById(ctx.actor.orgId, ctx.actor.memberId);
     return insertMember({
       orgId: org.id as OrgId,
-      userId: await ctx.auth.ensureUser(input.email),
+      // A fresh identity, linked when they first sign in — `members.userId` is Better Auth's id
+      // and this app owns no user table, so there is nothing here to look one up in.
+      //
+      // It read `ctx.auth.ensureUser(input.email)` until 2026-08, and `ctx.auth` was NEVER a
+      // service: nothing declares it in `CtxServices`, nothing registers it, and the string index
+      // signature on `Ctx` made `ctx.anything` compile as `unknown` — so this line type-checked and
+      // was a `TypeError` on the first invite. Exactly the defect `shared/services.ts` records for
+      // `session` and `channel`; this was the third instance, and the one still live.
+      //
+      // Deliberately NOT a lookup by email across orgs: `repo.ts` says `allDigestRecipients` is the
+      // one statement in this app that spans tenants, and a second one here would be an oracle for
+      // "does this address have an account anywhere".
+      userId: newId(),
       email: input.email,
       name: input.email.split('@')[0] ?? input.email,
       role: input.role,
