@@ -2,7 +2,7 @@
 // is a no-op so unconfigured apps pay nothing, and trace context is serialised explicitly
 // (`traceparent`) so a trace survives HTTP -> job -> live query.
 
-import { AsyncLocalStorage } from 'node:async_hooks';
+import { asyncContext } from './async-context';
 import { type Clock, systemClock } from './clock';
 import { tryUseContext } from './context';
 import { renderThrowable } from './error-render';
@@ -118,7 +118,10 @@ export function memoryExporter(): MemoryExporter {
   };
 }
 
-const activeSpan = new AsyncLocalStorage<Span>();
+// The same lazily-opened seam `context.ts` uses, and for the same reason: a module-scope
+// `new AsyncLocalStorage()` throws at EVALUATION in a browser bundle, taking every importer of
+// `@ultimat3/core` down with it. `async-context.ts` owns the argument.
+const activeSpan = asyncContext<Span>('the active span');
 
 let exporter: SpanExporter = noopExporter;
 let clock: Clock = systemClock;
@@ -161,12 +164,12 @@ export function serviceResource(): SpanResource {
 }
 
 export function currentSpan(): Span | undefined {
-  return activeSpan.getStore();
+  return activeSpan.get();
 }
 
 /** The trace the caller is inside: active span, else the request context, else a fresh trace. */
 export function currentSpanContext(): SpanContext | undefined {
-  const span = activeSpan.getStore();
+  const span = activeSpan.get();
   if (span !== undefined) return span.context;
   const ctx = tryUseContext();
   if (ctx === undefined) return undefined;

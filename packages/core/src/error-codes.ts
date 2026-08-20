@@ -28,6 +28,7 @@ export function errorDocsUrl(code: string): string {
 /** Codes owned by `@ultimat3/core`. Every other package calls `registerErrorCodes()`. */
 const CORE_CODE_TITLES = {
   X_ABORTED: 'operation aborted',
+  X_ASYNC_CONTEXT_UNAVAILABLE: 'async context unavailable',
   X_CONFIG_INVALID: 'app.config.ts is invalid',
   X_CURSOR_INVALID: 'pagination cursor is malformed, tampered with or from another query',
   X_CURSOR_SECRET_DEV: 'cursors are signed with the shipped development key',

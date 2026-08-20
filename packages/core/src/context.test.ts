@@ -181,3 +181,30 @@ describe('request-scoped log fields', () => {
     expect(JSON.parse(lines[0] ?? '{}')).not.toHaveProperty('orgId');
   });
 });
+
+/**
+ * The browser-bundle guard for the whole package — including this module — lives in
+ * `async-context.test.ts`, beside the seam that owns the defect. What is asserted here is the
+ * half that seam must not have changed: the server.
+ */
+describe('the server path is unchanged by the lazy storage', () => {
+  test('resolves the same context object inside the scope, and none outside it', () => {
+    const ctx = createContext({ locale: 'de-DE' });
+    expect(hasContext()).toBe(false);
+    const seen = runWithContext(ctx, () => {
+      expect(hasContext()).toBe(true);
+      return useContext();
+    });
+    expect(seen).toBe(ctx);
+    expect(hasContext()).toBe(false);
+    expect(tryUseContext()).toBeUndefined();
+  });
+
+  test('propagates across an await, which is the whole reason for AsyncLocalStorage', async () => {
+    const ctx = createContext({ locale: 'fr-FR' });
+    await runWithContext(ctx, async () => {
+      await Bun.sleep(1);
+      expect(useContext().locale).toBe('fr-FR');
+    });
+  });
+});

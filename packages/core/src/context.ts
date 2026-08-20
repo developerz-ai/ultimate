@@ -2,8 +2,8 @@
 // service bag reach every layer through AsyncLocalStorage instead of being threaded as
 // parameters — otherwise every signature in the framework grows a `ctx` argument twice.
 
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { type Actor, anonymousActor } from './actor';
+import { asyncContext } from './async-context';
 import { type Clock, systemClock } from './clock';
 import { UltimateError } from './errors';
 import { traceId as newTraceId, uuid } from './ids';
@@ -72,7 +72,12 @@ export interface CtxInit {
 
 export type CtxPatch = Omit<CtxInit, 'requestId'>;
 
-const storage = new AsyncLocalStorage<Ctx>();
+/**
+ * `async-context.ts` owns why this is a lazily-opened seam rather than a module-scope
+ * `new AsyncLocalStorage()`, and why a browser gets `undefined` from a read and an error from a
+ * write. It is the same seam `telemetry.ts` and `impersonate.ts` open, on purpose: one answer.
+ */
+const requestContext = asyncContext<Ctx>('the request context');
 
 const neverAborted = new AbortController().signal;
 
@@ -133,16 +138,16 @@ export function createContext(init: CtxInit = {}): Ctx {
 }
 
 export function runWithContext<T>(ctx: Ctx, fn: () => T): T {
-  return storage.run(ctx, fn);
+  return requestContext.run(ctx, fn);
 }
 
 /** The context, or `undefined` outside a request. Prefer `useContext()` in app code. */
 export function tryUseContext(): Ctx | undefined {
-  return storage.getStore();
+  return requestContext.get();
 }
 
 export function useContext(): Ctx {
-  const ctx = storage.getStore();
+  const ctx = tryUseContext();
   if (ctx === undefined) {
     throw new UltimateError({
       code: 'X_NO_CONTEXT',
@@ -154,7 +159,7 @@ export function useContext(): Ctx {
 }
 
 export function hasContext(): boolean {
-  return storage.getStore() !== undefined;
+  return tryUseContext() !== undefined;
 }
 
 /**
@@ -183,7 +188,7 @@ export function withChildContext<T>(patch: CtxPatch, fn: () => T): T {
     signal: patch.signal ?? parent.signal,
     services: { ...carried, ...(patch.services ?? {}) },
   });
-  return storage.run(child, fn);
+  return requestContext.run(child, fn);
 }
 
 /** Resolve a late-bound service. Throws `X_SERVICE_MISSING` rather than returning undefined. */
@@ -222,7 +227,7 @@ export function throwIfAborted(ctx: Ctx = useContext()): void {
  * never mistaken for the customer's own.
  */
 setLoggerContextFields(() => {
-  const ctx = storage.getStore();
+  const ctx = tryUseContext();
   if (ctx === undefined) return undefined;
   const { actor } = ctx;
   return {

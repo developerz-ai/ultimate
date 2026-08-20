@@ -25,6 +25,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
   // by an image/secrets path that answers nothing. `X_CURSOR_INVALID` left on purpose: it IS a
   // request, and it has a row.
   core: [
+    'X_ASYNC_CONTEXT_UNAVAILABLE',
     'X_CONFIG_INVALID',
     'X_CURSOR_SECRET_DEV',
     'X_ENVIRONMENT_INVALID',
