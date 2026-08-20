@@ -32,6 +32,17 @@
   so `currentTimeZone()` answered `UTC` for every request and every `@ultimat3/ui` server render
   formatted in UTC regardless of the zone the caller sent. Two ambient defaults is the worst
   possible version of the rule above. Never reintroduce either half.
+- **`Intl` answers "can I format this", never "is this an IANA zone", and the two stopped
+  agreeing.** ICU 78 (Bun 1.4) RESOLVES `CET`, `EST`, `EST5EDT`, `GMT`, `MST` and their families
+  where ICU 75 threw, so a runtime upgrade alone reopened the golden rule above — silently, and in
+  the direction that fails dangerous: an abbreviation names no DST rule. So the judgement is never
+  delegated to `Intl`. `canonicalTimeZone` asserts the structural property itself: a zone is
+  `Area/Location`, and `UTC` is the one legal exception. Never a denylist of the names ICU newly
+  accepts — that list grows with every tzdata and ICU release, and no rule in it keeps `CET` out
+  while letting `Japan` in, both being one label. The single-label `backward` links go with them
+  (`Japan` → `Asia/Tokyo`, `GB` → `Europe/London`) and that is the point: the slashed spelling is
+  the one that survives being a formatter-cache key. **Breaking at 6.0.0.** `zones.test.ts` pins
+  one named case per refused name, so an ICU bump that reopens one names it.
 - **Never cache an `Intl` formatter on a raw caller string.** A zone and a locale both arrive from
   a request header, so the key must be canonical (`canonicalTimeZone` for a zone, `canonicalLocale`
   for a locale) and the cache must be bounded (`cachedFormatter`). **`cachedFormatter`,

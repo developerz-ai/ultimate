@@ -65,6 +65,85 @@ describe('isValidTimeZone', () => {
     expect(isValidTimeZone('+01:00')).toBe(false);
     expect(isValidTimeZone('')).toBe(false);
   });
+
+  // ICU 78 (Bun 1.4) resolves every one of these where ICU 75 threw, so the guard cannot ask
+  // `Intl` whether a string is an IANA zone and asserts `Area/Location` itself. One case per name,
+  // named, so a later ICU bump that reopens one fails with the name in the report rather than
+  // silently widening the guard.
+  const ABBREVIATIONS = [
+    'CET',
+    'EET',
+    'MET',
+    'WET',
+    'EST',
+    'MST',
+    'HST',
+    'GMT',
+    'GMT0',
+    'UCT',
+    'Zulu',
+    'EST5EDT',
+    'CST6CDT',
+    'MST7MDT',
+    'PST8PDT',
+  ];
+
+  test.each(ABBREVIATIONS)('rejects %s — an abbreviation carries no DST rule', (zone) => {
+    expect(isValidTimeZone(zone)).toBe(false);
+    // Every casing, because `Intl` accepts every casing and the string arrives from a header.
+    expect(isValidTimeZone(zone.toLowerCase())).toBe(false);
+    expect(canonicalTimeZone(zone)).toBe(undefined);
+  });
+
+  // Single-label `backward` links name real zones, and refusing them is deliberate rather than ICU
+  // drift: no structural rule keeps `CET` out and lets `Japan` in, both being one label, and the
+  // alternative is a denylist that grows with every tzdata release. `Asia/Tokyo` is the spelling
+  // that survives being a formatter-cache key. BREAKING at 6.0.0 — `Japan` → `Asia/Tokyo`.
+  test.each(['Japan', 'GB', 'Eire', 'W-SU', 'PRC', 'ROK', 'Singapore', 'Israel', 'Universal'])(
+    'rejects the single-label legacy link %s',
+    (zone) => {
+      expect(isValidTimeZone(zone)).toBe(false);
+      expect(canonicalTimeZone(zone)).toBe(undefined);
+    },
+  );
+
+  test.each(['Europe/Berlin', 'UTC', 'utc', 'US/Eastern', 'Asia/Calcutta', 'Etc/GMT+2'])(
+    'still accepts %s',
+    (zone) => {
+      expect(isValidTimeZone(zone)).toBe(true);
+    },
+  );
+});
+
+// Axiom 4, applied to a refusal that grew a second class. `Japan` and `CET` are both refused and
+// the remedies are not the same — one swaps mechanically, the other has no replacement at all —
+// so a `fix:` describing only abbreviations left an operator holding `"Japan"` reading about `CET`.
+describe('X_TIMEZONE_INVALID instructs both refused classes', () => {
+  function refusal(zone: string): UltimateError {
+    try {
+      assertTimeZone(zone);
+    } catch (error) {
+      if (isUltimateError(error)) return error;
+    }
+    return expect.unreachable(`${zone} must be refused with an UltimateError`);
+  }
+
+  test('the cause names the input and the shape it is missing', () => {
+    expect(refusal('Japan').cause).toBe('"Japan" is not an IANA Area/Location zone name');
+    expect(refusal('CET').cause).toBe('"CET" is not an IANA Area/Location zone name');
+  });
+
+  test('the fix carries the mechanical swap, the class that has none, and how to look one up', () => {
+    const fix = refusal('Japan').fix;
+    // The legacy-link half: a replacement the operator can paste, not a description of the rule.
+    expect(fix).toContain('Japan → Asia/Tokyo');
+    // The abbreviation half, and WHY it gets no replacement rather than a wrong one.
+    expect(fix).toContain('carry no DST rule');
+    expect(fix).toContain("Intl.supportedValuesOf('timeZone')");
+    // One code, one instruction: an abbreviation and an offset read the same remedy.
+    expect(refusal('CET').fix).toBe(fix);
+    expect(refusal('+01:00').fix).toBe(fix);
+  });
 });
 
 // `Intl` accepts every casing of an IANA name, and every formatter cache was keyed on the raw
