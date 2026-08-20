@@ -4,7 +4,7 @@
 
 import type { RouteMeta } from './meta';
 
-export type RenderMode = 'static' | 'isr' | 'ssr' | 'stream' | 'spa';
+export type RenderMode = 'static' | 'isr' | 'ssr' | 'stream';
 
 /** `site/` is the only surface SEO applies to; `app/` is behind auth. */
 export type Surface = 'site' | 'app' | 'api';

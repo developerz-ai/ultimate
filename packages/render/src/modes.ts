@@ -1,5 +1,5 @@
 /**
- * The five render modes as a table of invariants, checked at registration.
+ * The four render modes as a table of invariants, checked at registration.
  * Each mode has properties the framework can rely on; a config that contradicts one is
  * rejected with `X_ROUTE_MODE_INVALID` and the exact edit that fixes it. A mode whose
  * invariant is only documented is a mode that silently degrades in production.
@@ -12,7 +12,7 @@ import { HYDRATE_STRATEGIES } from './route';
 import type { Surface } from './surfaces';
 import { SURFACE_SPECS, surfaceAllows } from './surfaces';
 
-export const RENDER_MODES = ['static', 'isr', 'ssr', 'stream', 'spa'] as const;
+export const RENDER_MODES = ['static', 'isr', 'ssr', 'stream'] as const;
 
 /**
  * Everything about a route except the two keys carrying its data generic. Mode invariants never
@@ -35,8 +35,6 @@ export interface ModeSpec {
   readonly needsRevalidate: boolean;
   /** Does the mode need at least one `<Suspense>` boundary to mean anything? */
   readonly needsSuspense: boolean;
-  /** Does the mode need a `policy` (it renders no data, so the shell must be gated)? */
-  readonly needsPolicy: boolean;
   readonly description: string;
 }
 
@@ -47,7 +45,6 @@ export const MODE_SPECS: Readonly<Record<RenderMode, ModeSpec>> = Object.freeze(
     prerenderable: true,
     needsRevalidate: false,
     needsSuspense: false,
-    needsPolicy: false,
     description: 'built once, served as a file',
   },
   isr: {
@@ -56,7 +53,6 @@ export const MODE_SPECS: Readonly<Record<RenderMode, ModeSpec>> = Object.freeze(
     prerenderable: true,
     needsRevalidate: true,
     needsSuspense: false,
-    needsPolicy: false,
     description: 'static + background regen on tag/TTL',
   },
   ssr: {
@@ -65,7 +61,6 @@ export const MODE_SPECS: Readonly<Record<RenderMode, ModeSpec>> = Object.freeze(
     prerenderable: false,
     needsRevalidate: false,
     needsSuspense: false,
-    needsPolicy: false,
     description: 'per-request full render',
   },
   stream: {
@@ -74,17 +69,7 @@ export const MODE_SPECS: Readonly<Record<RenderMode, ModeSpec>> = Object.freeze(
     prerenderable: false,
     needsRevalidate: false,
     needsSuspense: true,
-    needsPolicy: false,
     description: 'static shell flushed instantly, holes streamed',
-  },
-  spa: {
-    mode: 'spa',
-    perRequestState: false,
-    prerenderable: true,
-    needsRevalidate: false,
-    needsSuspense: false,
-    needsPolicy: true,
-    description: 'shell only, client fetches',
   },
 });
 
@@ -116,7 +101,7 @@ export function assertModeShape(config: RouteShape): void {
     throw new RouteModeInvalidError(
       "render: 'static' cannot read per-request state, but a `policy` was declared " +
         `(${config.policy.permission} needs an actor)`,
-      "change render to 'ssr' (fresh, gated) or 'spa' (gated shell), or drop the policy",
+      "change render to 'ssr' — per-request and gated — or drop the policy",
     );
   }
   if (config.render === 'static' && config.revalidate !== undefined) {
@@ -135,7 +120,7 @@ export function assertModeShape(config: RouteShape): void {
     throw new RouteModeInvalidError(
       "render: 'isr' caches one document per URL and cannot be gated, but a `policy` was " +
         `declared (${config.policy.permission} varies the answer per actor)`,
-      "change render to 'ssr' (fresh, gated) or 'spa' (gated shell), or drop the policy",
+      "change render to 'ssr' — per-request and gated — or drop the policy",
     );
   }
 
@@ -152,14 +137,6 @@ export function assertModeShape(config: RouteShape): void {
     throw new RouteModeInvalidError(
       "render: 'ssr' renders per request and cannot be prerendered, but `prerender` was declared",
       "change render to 'isr' to prerender and regenerate, or remove prerender",
-    );
-  }
-
-  // spa: the shell carries no data, so authz has to live on the route itself.
-  if (config.render === 'spa' && config.policy === undefined) {
-    throw new RouteModeInvalidError(
-      "render: 'spa' ships a shell with no server-rendered data and requires a `policy`",
-      "add policy: can('dashboard:read') — or use 'stream' for a public page",
     );
   }
 }

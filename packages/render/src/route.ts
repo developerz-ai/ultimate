@@ -21,7 +21,7 @@ import type { IslandSpec } from './island';
 import { drainDeclaredIslands } from './island';
 import { assertModeShape } from './modes';
 
-export type RenderMode = 'static' | 'isr' | 'ssr' | 'stream' | 'spa';
+export type RenderMode = 'static' | 'isr' | 'ssr' | 'stream';
 export type OfflineStrategy = 'precache' | 'runtime' | 'network-only';
 export type HydrateStrategy = 'idle' | 'visible' | 'interaction' | 'never';
 

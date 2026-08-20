@@ -58,7 +58,7 @@ export function solid(): SolidRuntime {
   if (hasDom()) {
     throw runtimeMissingError(
       'a registered Solid runtime',
-      "add setSolidRuntime(await import('solid-js')) to the CLIENT entry before render — a server render needs none",
+      "add setSolidRuntime(await import('solid-js')) at the top of your *.island.tsx's mount() — a server render needs none",
     );
   }
   return INERT_SOLID_RUNTIME;

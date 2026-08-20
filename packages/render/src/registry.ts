@@ -370,9 +370,9 @@ export function matchRoute(pathname: string): RouteMatch | null {
  * `decodeURIComponent('%zz')` throws a bare `URIError` — no code, no fix line — which escaped
  * `matchRoute` as a 500 and an error-monitor page for somebody's typo.
  *
- * Exported for `router-client.ts`, which answers the same question about the same pathname on the
- * other side of the wire: two decoders is how the client throws out of a popstate listener for an
- * address the server 404s.
+ * Still exported after `router-client.ts` went with `createRouter`: it is the one answer to "is
+ * this segment decodable?" on this side of the wire, and a second copy of it is how one of the two
+ * ends up throwing where the other 404s.
  */
 export function decodeSegment(value: string): string | undefined {
   try {

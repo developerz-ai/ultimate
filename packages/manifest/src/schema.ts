@@ -25,7 +25,7 @@ export type JsonValue =
   | readonly JsonValue[]
   | { readonly [key: string]: JsonValue };
 
-export type RenderMode = 'static' | 'isr' | 'ssr' | 'stream' | 'spa';
+export type RenderMode = 'static' | 'isr' | 'ssr' | 'stream';
 export type OfflineStrategy = 'precache' | 'runtime' | 'network-only';
 export type HydrateStrategy = 'idle' | 'visible' | 'interaction' | 'never';
 

@@ -1,7 +1,7 @@
 // The one bridge from the admin's route table to @ultimat3/render, and the one place a policy
-// is composed onto an admin page. A generated view is `spa`: it is behind auth, so there is
-// nothing to prerender and nothing a CDN may hold — and `network-only` keeps a stale org's rows
-// out of a service worker cache. A custom page is `ssr`, because its guard runs on the server.
+// is composed onto an admin page. Every admin route is `ssr`: it is behind auth, so its guard runs
+// on the server, there is nothing to prerender and nothing a CDN may hold — and `network-only`
+// keeps a stale org's rows out of a service worker cache.
 
 import { t } from '@ultimat3/i18n';
 import { defineRoute, type RouteGuard } from '@ultimat3/render';
@@ -31,12 +31,11 @@ export interface AdminRouteConfig {
  * which is the whole mechanism. The coarse gate is `permissions[0]` (always `admin:read`, put
  * there by `permissionsForOperation`/`pagePermissions`); the rest of the pair is decided per
  * request by `decideAll`, in `crud.ts` for a generated view and in `page-guard.tsx` for a page.
- * An empty list is refused here too: `render: 'spa'` and `'ssr'` would both ship a public shell.
+ * An empty list is refused here too: `render: 'ssr'` with no policy is a public dashboard.
  */
 export function adminRouteConfig(route: AdminRoute): AdminRouteConfig {
   const permission = route.permissions[0];
   if (permission === undefined) throw new AdminPageUnguardedError({ path: route.path });
-  const custom = route.component !== undefined;
   const policy: RouteGuard = { permission };
 
   return {
@@ -47,11 +46,16 @@ export function adminRouteConfig(route: AdminRoute): AdminRouteConfig {
     component: route.component === undefined ? null : guardedPage(route, route.component),
     policy,
     config: defineRoute({
-      // A custom page renders server data behind the guard; a generated view is a shell that
-      // fetches through the admin's own gated calls. One mode each, never an author's choice.
-      render: custom ? 'ssr' : 'spa',
+      // One mode for every admin route, never an author's choice. A generated view was `spa` — a
+      // shell the browser was supposed to fill — until `spa` was deleted: nothing ever built the
+      // client bundle it preloaded and `renderSpa` never read the route's component, so every
+      // generated view served an empty `<div id="x-root">`. `ssr` renders the same rows behind the
+      // same guard, and the interactive part of a screen arrives as an `island({ src })`, budgeted
+      // in real bytes. `hydrate: 'never'` follows from that: an admin view is a pure function of
+      // its props (no `createSignal`, no local state), so the page level has nothing to hydrate.
+      render: 'ssr',
       offline: 'network-only',
-      hydrate: custom ? 'never' : 'idle',
+      hydrate: 'never',
       policy,
       meta: () => ({ title: t(route.titleKey) }),
     }),

@@ -99,20 +99,29 @@ describe('the barrel re-exports the modules themselves, never copies', () => {
     expect(barrel.registeredStylesheets).toBe(loader.registeredStylesheets);
   });
 
-  test('the five render modes each reach the barrel', async () => {
+  test('the four render modes each reach the barrel, and no fifth is exported', async () => {
     // One entry point per mode: the package's headline promise is that a route declares a mode
     // and the framework owns the rest, so a mode missing from the surface is a mode an app
     // cannot use however well it is implemented.
     const html = await import('./render-html');
     const isr = await import('./render-isr');
-    const spa = await import('./render-spa');
     const ssr = await import('./render-ssr');
     const staticMode = await import('./render-static');
     expect(barrel.renderToHtml).toBe(html.renderToHtml);
     expect(barrel.createIsrController).toBe(isr.createIsrController);
-    expect(barrel.renderSpa).toBe(spa.renderSpa);
     expect(barrel.renderSsr).toBe(ssr.renderSsr);
     expect(barrel.renderStatic).toBe(staticMode.renderStatic);
+
+    // The other half of the same promise, and the one this package got wrong: `renderSpa` and
+    // `createRouter` were on the barrel with no implementation behind them — `renderSpa` never
+    // read the route's component and shipped an empty `<div id="x-root">`, and `createRouter`
+    // had no caller in the framework or in either tracked app. An exported name nothing
+    // exercises is a promise `x routes` and the manifest both repeat.
+    const surface = Object.keys(barrel);
+    expect(surface).not.toContain('renderSpa');
+    expect(surface).not.toContain('renderSpaShell');
+    expect(surface).not.toContain('createRouter');
+    expect(barrel.ROOT_ELEMENT_ID).toBe(html.ROOT_ELEMENT_ID);
   });
 
   test('the head renderer the wiki tells callers to use is present and is head.ts’s', async () => {

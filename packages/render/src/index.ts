@@ -120,7 +120,7 @@ export {
   routePathFromFile,
 } from './registry';
 export type { RenderHtmlOptions } from './render-html';
-export { renderComponent, renderToHtml } from './render-html';
+export { ROOT_ELEMENT_ID, renderComponent, renderToHtml } from './render-html';
 export type {
   IsrController,
   IsrControllerOptions,
@@ -138,8 +138,6 @@ export {
   isrKey,
   memoryIsrStore,
 } from './render-isr';
-export type { SpaShell, SpaShellInput } from './render-spa';
-export { renderSpa, renderSpaShell, SPA_ROOT_ID } from './render-spa';
 export type { SsrOptions, SsrRenderFn, SsrRenderInput } from './render-ssr';
 export { renderSsr, ssrHeaders } from './render-ssr';
 export type { StaticArtifact, StaticBuildOptions, StaticRenderFn } from './render-static';
@@ -195,19 +193,6 @@ export {
 export type { RouteComponent } from './route-component';
 export { pageComponentOf } from './route-component';
 export { metaContextFor, routeDataFor } from './route-data';
-export type {
-  NavigateOptions,
-  NavigationGuard,
-  PrefetchContainer,
-  PrefetchLink,
-  ReactivePrimitives,
-  ResolvedRoute,
-  Router,
-  RouterHost,
-  RouterOptions,
-  RouterRoute,
-} from './router-client';
-export { createRouter } from './router-client';
 export type {
   BoundaryRule,
   BoundaryViolation,

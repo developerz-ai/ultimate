@@ -15,7 +15,7 @@ const sources = staticDevSources({
     },
     {
       path: '/app',
-      render: 'spa',
+      render: 'ssr',
       offline: 'network-only',
       hydrate: 'idle',
       handler: 'app/index.tsx',
@@ -111,7 +111,7 @@ describe('every panel is a rendering of its --json', () => {
       overBudget: string[];
     };
     expect(data.routes[0]?.handler).toBe('app/index.tsx');
-    expect(data.byRenderMode).toEqual({ isr: 1, spa: 1 });
+    expect(data.byRenderMode).toEqual({ isr: 1, ssr: 1 });
     expect(data.overBudget).toEqual(['/posts/:slug']);
     // `missingMeta` is gone, not renamed: `defineRoute()` refuses a route with no `meta`, so
     // the list could never have had a member and the panel filled it with EVERY route instead.

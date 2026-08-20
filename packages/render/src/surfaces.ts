@@ -36,7 +36,7 @@ export const SURFACE_SPECS: Readonly<Record<Surface, SurfaceSpec>> = Object.free
   app: {
     surface: 'app',
     defaultMode: 'stream',
-    allowedModes: ['stream', 'spa', 'ssr'],
+    allowedModes: ['stream', 'ssr'],
     jsBaselineBytes: 14_336,
     mayImport: ['shared'],
     mayImportTypes: ['shared', 'api'],

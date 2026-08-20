@@ -102,7 +102,7 @@ export function providerNeedsRuntimeError(): UiError {
     code: UI_ERROR_CODES.runtimeMissing,
     cause:
       '<UiProvider> needs a registered Solid runtime; a server render has none, and its values would reach no component',
-    fix: 'delete <UiProvider> from the server tree — useUi() already reads the request locale and time zone; keep the provider in the client entry, after setSolidRuntime()',
+    fix: 'delete <UiProvider> from the server tree — useUi() already reads the request locale and time zone; keep the provider inside your *.island.tsx, under the mount() that called setSolidRuntime()',
   });
 }
 
