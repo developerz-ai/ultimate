@@ -25,7 +25,7 @@ bunx x g resource todo --dry-run
   + apps/web/app/todo/ui.tsx  ui.module.scss  ui/todo-card.tsx  ui/todo-form.tsx
   + packages/i18n/catalogs/en.json
   + apps/web/app/todos/page.tsx  page.module.scss  page.test.ts  page.e2e.test.ts
-✓ wrote 25 file(s) for resource todo
+✓ wrote 27 file(s) for resource todo
 ```
 
 Drop `--dry-run` to write them. `x g` never clobbers — an existing file is `X_GENERATE_CONFLICT`; the i18n catalog is merged key-by-key rather than overwritten; and a **slice module** (`entity.ts`, `repo.ts`, `policy.ts`, `errors.ts`) the slice already has is skipped, `--force` included, because it belongs to the slice rather than to the generator that needed it. **A run whose catalog merge gains no key writes 24**: a merge that changes nothing is skipped rather than counted.
@@ -34,7 +34,7 @@ Drop `--dry-run` to write them. `x g` never clobbers — an existing file is `X_
 
 | Generator | Emits |
 |---|---|
-| `x g resource <n>` | the whole slice above — 25 files, 27 with `--admin --live` |
+| `x g resource <n>` | the whole slice above — 27 files, 29 with `--admin --live` |
 | `x g entity` / `policy` / `action` / `mutator` / `query` / `job` / `task` | that primitive plus its test — **and the slice modules its own source imports**, when the slice has none: `x g job` is 5 files into a bare slice, `x g action` 8. Which ones differ per generator, so a job plants no `policy.ts` ([CLI reference § x g](CLI-Reference)) |
 | `x g route <path> --surface site\|app` | `page.tsx`, its stylesheet, its test, its catalog keys |
 

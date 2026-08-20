@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "dbfedc3aa6d6b65e546daffc0d9477c55f27d7bc6502c5ed9d95ea8576e9a0a6",
+  "buildId": "e095d954eeaae7714173584e01da978f18f00b550c0749a99b721bea18fb11c7",
   "tiers": {
     "0": [
       "core",
@@ -783,6 +783,16 @@
       "at": "scripts/doc-commands.ts"
     },
     {
+      "code": "X_DOC_FILE_COUNT_STALE",
+      "owner": "scripts",
+      "at": "scripts/generator-counts.ts"
+    },
+    {
+      "code": "X_DOC_FILE_COUNT_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/generator-counts.ts"
+    },
+    {
       "code": "X_DOC_FIX_UNRUNNABLE",
       "owner": "scripts",
       "at": "scripts/doc-fixes.ts"
@@ -791,6 +801,16 @@
       "code": "X_DOC_FIX_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/doc-fixes.ts"
+    },
+    {
+      "code": "X_DOC_RELEASE_FACT_STALE",
+      "owner": "scripts",
+      "at": "scripts/release-facts.ts"
+    },
+    {
+      "code": "X_DOC_RELEASE_FACT_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/release-facts.ts"
     },
     {
       "code": "X_DRAINING",
@@ -2328,6 +2348,21 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_TEST_FIX_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/test-fix-citations.ts"
+    },
+    {
+      "code": "X_TEST_FIX_UNRUNNABLE",
+      "owner": "scripts",
+      "at": "scripts/test-fix-citations.ts"
+    },
+    {
+      "code": "X_TEST_FIX_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/test-fix-citations.ts"
+    },
+    {
       "code": "X_TEST_FIXTURE_UNAVAILABLE",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
@@ -2381,6 +2416,11 @@
       "code": "X_TEST_SHARD_FAILED",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_TEST_THROW_NOT_THROWN",
+      "owner": "scripts",
+      "at": "scripts/to-throw-returns.ts"
     },
     {
       "code": "X_TEST_TYPECHECK_PIN_STALE",
