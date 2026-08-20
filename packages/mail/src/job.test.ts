@@ -1,7 +1,6 @@
 import { expect, test } from 'bun:test';
 import { isUltimateError } from '@ultimat3/core';
 import type { JobRunArgs } from '@ultimat3/jobs';
-import { registerMailCatalog } from './catalog';
 import type { MailMessage } from './driver';
 import { resetMailDriver, setMailDriver } from './driver';
 import { driverUnavailable } from './errors';
@@ -9,8 +8,6 @@ import { mailIdempotencyKey } from './idempotency';
 import { sendMailJob } from './job';
 import { renderMessage, type SendOptions } from './mail';
 import { welcomeMail } from './templates';
-
-registerMailCatalog();
 
 const TO: SendOptions = { to: 'ada@example.test', locale: 'en', tz: 'UTC' };
 

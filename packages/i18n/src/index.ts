@@ -23,6 +23,7 @@ export {
   type LocaleSources,
   localeConfig,
   localeCookieOf,
+  registerBaseCatalog,
   registerCatalog,
   registeredLocales,
   resetCatalogs,
@@ -41,6 +42,8 @@ export {
 export {
   catalogInvalid,
   catalogMissingKeys,
+  catalogsNeverRegistered,
+  catalogUnregistered,
   I18N_ERROR_CODES,
   I18N_ERROR_TITLES,
   I18nError,
@@ -61,11 +64,7 @@ export {
   type LocaleAudit,
   mergeExtractions,
 } from './extract';
-export {
-  FRAMEWORK_CATALOG,
-  FRAMEWORK_CATALOG_LOCALE,
-  registerFrameworkCatalog,
-} from './framework';
+export { FRAMEWORK_CATALOG, FRAMEWORK_CATALOG_LOCALE } from './framework';
 export {
   type InterpolationValue,
   type InterpolationVars,
@@ -91,6 +90,11 @@ export {
   parseAcceptLanguage,
   SUPPORTED_LOCALES,
 } from './locales';
+export {
+  assertCatalogsRegistered,
+  type CatalogRegistrationGap,
+  catalogRegistrationGaps,
+} from './registration';
 export {
   createTranslator,
   isMiss,

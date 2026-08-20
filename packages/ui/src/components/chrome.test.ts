@@ -3,6 +3,7 @@
 // check and the half these components exist to get right.
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
 import { attachRef, byTag, fire, one, probe, renderNodes, unprobe, withAttr } from '../jsx-probe';
 import type { SolidContext } from '../theme/solid-adapter';
@@ -13,6 +14,16 @@ import { Field } from './Field';
 import { Form } from './Form';
 import { Tabs } from './Tabs';
 import { Toast } from './Toast';
+
+/**
+ * What this component must render for a ui key, looked up BY THE KEY in the catalog it ships in.
+ *
+ * These assertions read `⟦ui.x⟧` until 5.1.0, because `registerFrameworkCatalog()` had one caller
+ * and a unit test was never it — so every framework string was a loud miss here and the marker was
+ * the only observable. It is registered by importing `@ultimat3/i18n` now, so the marker is gone;
+ * the KEY is still what is asserted, which is what these tests are about.
+ */
+const uiString = (key: string): string => FRAMEWORK_CATALOG[key] ?? `no catalog entry for ${key}`;
 
 /**
  * `<Form>` reaches for a runtime only to schedule the focus move, so this is the smallest one that
@@ -60,7 +71,7 @@ describe('the page chrome', () => {
       const skip = one(byTag(nodes, 'a'), 'skip link');
       const main = one(byTag(nodes, 'main'), '<main>');
 
-      expect(skip.props['children']).toBe(`⟦${UI_KEYS.skip}⟧`);
+      expect(skip.props['children']).toBe(uiString(UI_KEYS.skip));
       expect(skip.props['href']).toBe(`#${main.props['id']}`);
       // -1 is what makes the skip link move FOCUS and not only the viewport.
       expect(main.props['tabindex']).toBe(-1);
@@ -77,7 +88,9 @@ describe('the page chrome', () => {
         sidebar: 'links',
       });
       expect(one(byTag(full, 'header'), '<header>').props['children']).toBe('top');
-      expect(one(byTag(full, 'nav'), '<nav>').props['aria-label']).toBe(`⟦${UI_KEYS.navigation}⟧`);
+      expect(one(byTag(full, 'nav'), '<nav>').props['aria-label']).toBe(
+        uiString(UI_KEYS.navigation),
+      );
     });
 
     test('the sidebar name and the skip label are overridable, in the caller’s language', () => {
@@ -148,7 +161,7 @@ describe('the page chrome', () => {
       const nodes = renderNodes(Field, { label: 'Email', required: true, children: () => null });
       const marker = one(withAttr(nodes, 'title'), 'required marker');
       expect(marker.props['children']).toBe('*');
-      expect(marker.props['title']).toBe(`⟦${UI_KEYS.required}⟧`);
+      expect(marker.props['title']).toBe(uiString(UI_KEYS.required));
     });
 
     test('markOptional renders the translated marker instead', () => {
@@ -158,7 +171,7 @@ describe('the page chrome', () => {
         children: () => null,
       });
       expect(byTag(nodes, 'span').map((node) => node.props['children'])).toEqual([
-        `⟦${UI_KEYS.optional}⟧`,
+        uiString(UI_KEYS.optional),
       ]);
       expect(withAttr(nodes, 'title')).toEqual([]);
     });
@@ -287,7 +300,7 @@ describe('the page chrome', () => {
       expect(one(byTag(nodes, 'p'), 'title').props['children']).toBe('Draft');
 
       const close = one(byTag(nodes, 'button'), 'dismiss');
-      expect(close.props['aria-label']).toBe(`⟦${UI_KEYS.dismiss}⟧`);
+      expect(close.props['aria-label']).toBe(uiString(UI_KEYS.dismiss));
       fire(close, 'onClick', {});
       expect(dismissed).toBe(1);
     });

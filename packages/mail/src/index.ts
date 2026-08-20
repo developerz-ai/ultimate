@@ -7,12 +7,7 @@ export { t } from '@ultimat3/schema';
 export type { CalloutTone, MailBlock, MailTemplate, TemplateArgs } from './blocks';
 export { blocks } from './blocks';
 
-export {
-  MAIL_CATALOG,
-  MAIL_CATALOG_LOCALE,
-  MAIL_CATALOG_SOURCE,
-  registerMailCatalog,
-} from './catalog';
+export { MAIL_CATALOG, MAIL_CATALOG_LOCALE, MAIL_CATALOG_SOURCE } from './catalog';
 export type {
   MailDriver,
   MailMessage,

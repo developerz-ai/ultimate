@@ -3,9 +3,20 @@
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { UltimateError } from '@ultimat3/core';
+import { FRAMEWORK_CATALOG } from '@ultimat3/i18n';
 import { UI_KEYS } from '../i18n-keys';
 import { byTag, probe, renderNodes, unprobe } from '../jsx-probe';
 import { ErrorState, errorParts } from './ErrorState';
+
+/**
+ * What this component must render for a ui key, looked up BY THE KEY in the catalog it ships in.
+ *
+ * These assertions read `⟦ui.x⟧` until 5.1.0, because `registerFrameworkCatalog()` had one caller
+ * and a unit test was never it — so every framework string was a loud miss here and the marker was
+ * the only observable. It is registered by importing `@ultimat3/i18n` now, so the marker is gone;
+ * the KEY is still what is asserted, which is what these tests are about.
+ */
+const uiString = (key: string): string => FRAMEWORK_CATALOG[key] ?? `no catalog entry for ${key}`;
 
 describe('errorParts', () => {
   test('an UltimateError is passed through verbatim, never paraphrased', () => {
@@ -65,7 +76,7 @@ describe('errorParts', () => {
 /**
  * The other half — which strings the component RENDERS, as opposed to which ones `errorParts`
  * computes. The translator outside a request is the loud-miss one, so a resolved key comes out as
- * `⟦ui.error.title⟧`: that is the assertion. A key rendered as its own English text would mean the
+ * uiString('ui.error.title'): that is the assertion. A key rendered as its own English text would mean the
  * component wrote the string itself.
  */
 describe('<ErrorState> resolves its own chrome through the catalog', () => {
@@ -80,7 +91,7 @@ describe('<ErrorState> resolves its own chrome through the catalog', () => {
       error: new UltimateError({ code: 'X_ID_INVALID', cause: 'not a uuid', fix: 'parseId()' }),
       showDocs: false,
     });
-    expect(text(byTag(nodes, 'span'))).toContain(UI_KEYS.error);
+    expect(text(byTag(nodes, 'span'))).toContain(uiString(UI_KEYS.error));
   });
 
   test('the code is labelled, like the cause and the fix beside it', () => {
@@ -90,7 +101,7 @@ describe('<ErrorState> resolves its own chrome through the catalog', () => {
     });
     const labels = text(byTag(nodes, 'dt'));
     for (const key of [UI_KEYS.errorCode, UI_KEYS.errorCause, UI_KEYS.errorFix]) {
-      expect(labels).toContain(key);
+      expect(labels).toContain(uiString(key));
     }
   });
 });

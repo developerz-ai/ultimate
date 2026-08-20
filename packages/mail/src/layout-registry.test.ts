@@ -8,7 +8,6 @@
 import { describe, expect, test } from 'bun:test';
 import { loadCatalog, registerCatalog } from '@ultimat3/i18n';
 import { blocks } from './blocks';
-import { registerMailCatalog } from './catalog';
 import {
   BASE_LAYOUT,
   type LayoutInput,
@@ -18,7 +17,6 @@ import {
 } from './layout';
 import { type RenderableMail, renderMail } from './render';
 
-registerMailCatalog();
 registerCatalog(
   'en',
   loadCatalog({ test: { layout: { subject: 'Receipt for {name}', body: 'One line.' } } }),

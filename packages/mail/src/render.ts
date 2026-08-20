@@ -5,6 +5,13 @@
 
 import { directionOf, type TranslateVars, type Translator, translatorFor } from '@ultimat3/i18n';
 import type { CalloutTone, MailBlock, MailTemplate } from './blocks';
+// The renderer depends on the strings it renders. This is the only module that resolves a `mail.*`
+// key, and `catalog.ts` installs them at ITS module scope — so importing it here is what makes
+// "a rendered mail has words in it" structural rather than something a caller has to arrange.
+// Without this edge, only the package ENTRY reached the catalog: every deep import of `render.ts`
+// produced `⟦mail.welcome.subject⟧`, and the tests that would have noticed were the ones calling
+// `registerMailCatalog()` themselves — the exact shape of issue #249.
+import './catalog';
 import { layoutUnknown, textMissing } from './errors';
 import { escapeHtml, safeUrl, styleAttr } from './html';
 import { layoutFor, registeredLayouts, token } from './layout';

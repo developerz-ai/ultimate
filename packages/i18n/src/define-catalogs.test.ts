@@ -5,6 +5,7 @@
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import {
+  catalogFor,
   configureLocales,
   localeConfig,
   registeredLocales,
@@ -115,7 +116,11 @@ describe('defineCatalogs', () => {
     );
 
     expect(code).toBe('X_LOCALE_UNSUPPORTED');
-    expect(registeredLocales()).toEqual([]);
+    // The base layer is always there — `registeredLocales()` is `['en']` in any process that
+    // imported this package. What must be absent is every key the refused call would have added.
+    expect(registeredLocales()).toEqual(['en']);
+    expect(catalogFor('en')['nav.home']).toBeUndefined();
+    expect(catalogFor('es')).toEqual({});
   });
 
   test('rejects a non-string leaf with X_CATALOG_INVALID before registering any locale', () => {
@@ -125,7 +130,9 @@ describe('defineCatalogs', () => {
 
     expect(code).toBe('X_CATALOG_INVALID');
     // `en` is loadable and comes first: a half-registered app is what the two-pass load prevents.
-    expect(registeredLocales()).toEqual([]);
+    // Asserted on the KEYS, not on `registeredLocales()`, which the framework's base layer fills.
+    expect(catalogFor('en')['nav.home']).toBeUndefined();
+    expect(catalogFor('es')).toEqual({});
   });
 
   test('plural families survive the round trip', () => {

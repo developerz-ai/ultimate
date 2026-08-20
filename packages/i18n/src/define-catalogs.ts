@@ -7,7 +7,6 @@
 import { type Catalog, catalogKeys, loadCatalog, mergeCatalogs } from './catalog';
 import { configureLocales, registerCatalog } from './context';
 import { localeUnsupported } from './errors';
-import { registerFrameworkCatalog } from './framework';
 
 /** Locale tag → the catalog file's parsed contents, nested exactly as authored. */
 export type CatalogSources = Readonly<Record<string, unknown>>;
@@ -38,12 +37,9 @@ export function defineCatalogs<TLocales extends CatalogSources>(
   // whole, not leave half the locales live and the other half missing.
   const loaded = locales.map((locale) => [locale, loadCatalog(input.locales[locale])] as const);
 
-  // Framework first, app second. `registerCatalog` merges and the later call wins, which is how an
-  // app overrides `errors.notFound.title` without forking the framework catalog. ONCE, not once
-  // per locale: the framework catalog is English, and registering it under every locale filled
-  // `es` with English for every key the app had not translated — `isMiss` false, gap invisible,
-  // the exact fallback chain `⟦key⟧` exists to refuse.
-  registerFrameworkCatalog();
+  // No framework-catalog call here, and that is deliberate: `framework.ts` installs it as the base
+  // layer at package import, so it is already under this app's strings whether or not THIS module
+  // ever runs. `registerCatalog` merges its argument last, so app strings still win the same keys.
   for (const [locale, catalog] of loaded) {
     registerCatalog(locale, catalog);
   }

@@ -161,22 +161,54 @@ const registry = new Map<Locale, Catalog>();
 const translators = new Map<Locale, Translator>();
 
 /**
- * Register a locale's catalog. Called with the framework catalog first and the app
- * catalog second so app strings override framework strings for the same key.
+ * The layer under every app catalog: strings this framework ships and no app can be asked to
+ * register. `framework.ts` installs its own at module scope, so importing `@ultimat3/i18n` at all
+ * is what puts `errors.*`, `auth.*` and `ui.*` in the registry — an app that never reaches
+ * `defineCatalogs()` still renders a 404 page in words, not in `⟦errors.notFound.title⟧`.
+ * Kept apart from `registry` for one reason: `resetCatalogs()` must be able to drop everything an
+ * app registered WITHOUT dropping strings the framework itself renders.
+ */
+const base = new Map<Locale, Catalog>();
+
+/**
+ * Install a base layer. **Framework packages only** — a package whose own templates render strings
+ * an app never registers (`@ultimat3/mail`'s `mail.*`) calls this at module scope, so importing it
+ * is what installs them. An app has exactly one registration call, `defineCatalogs`, and this is
+ * not a second one: everything installed here loses to `registerCatalog` on the same key, so the
+ * strongest thing an app could achieve by calling it is strings that its own catalog overrides.
+ *
+ * More than one framework contributor is merged into the base itself rather than fighting over the
+ * locale, so a package whose strings arrive later cannot displace `framework.ts`'s.
+ */
+export function registerBaseCatalog(locale: Locale, catalog: Catalog): void {
+  const existing = base.get(locale);
+  base.set(locale, existing === undefined ? catalog : mergeCatalogs(existing, catalog));
+  installBase();
+}
+
+/**
+ * Base UNDER app, never over it — `mergeCatalogs` takes the later argument, so the registered
+ * catalog goes second and an app's override of `errors.notFound.title` survives every install.
+ * Merging rather than skipping an occupied locale is what makes this order-independent: a base
+ * registered after an app's `defineCatalogs()` still lands, and a repeat is a no-op because the
+ * app's value already won the same key.
+ */
+function installBase(): void {
+  for (const [locale, catalog] of base) {
+    const existing = registry.get(locale);
+    registry.set(locale, existing === undefined ? catalog : mergeCatalogs(catalog, existing));
+    translators.delete(locale);
+  }
+}
+
+/**
+ * Register a locale's catalog. App strings arrive here and override the base layer for the same
+ * key, because the merge takes the argument last.
  */
 export function registerCatalog(locale: Locale, catalog: Catalog): void {
   const existing = registry.get(locale);
   registry.set(locale, existing === undefined ? catalog : mergeCatalogs(existing, catalog));
   translators.delete(locale);
-}
-
-/**
- * Whether this locale has a catalog at all. Distinct from `catalogFor`, which answers `{}` for
- * "registered but empty" and for "never registered" alike — `registerFrameworkCatalog` needs to
- * tell those apart to stay idempotent.
- */
-export function hasCatalog(locale: Locale): boolean {
-  return registry.has(locale);
 }
 
 export function registeredLocales(): Locale[] {
@@ -225,8 +257,15 @@ export function resetLocaleConfig(): void {
   config = freshDefaultConfig();
 }
 
-/** Test/CLI seam: drop every registered catalog. */
+/**
+ * Test/CLI seam: drop every catalog an APP registered, and put the base layer back.
+ *
+ * Not a full clear: the framework's own strings are installed by importing this package, once per
+ * process, so a clear that took them out could never restore them — every test after the first
+ * reset rendered `⟦errors.notFound.title⟧` for a string no app owns.
+ */
 export function resetCatalogs(): void {
   registry.clear();
   translators.clear();
+  installBase();
 }
