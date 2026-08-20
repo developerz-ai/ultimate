@@ -4,8 +4,14 @@ node_modules
 **/dist
 **/*.tsbuildinfo
 .git
-.env
-.env.*.local
+# Anchored, non-recursive patterns do not match a nested file, and `.env` alone does not match
+# `.env.production` — the file docker-compose.prod.yml's `env_file:` tells the operator to create.
+# Both shipped inside the image until 2026-08-19. `.env.example` is the committed template.
+**/.env
+**/.env.*
+!**/.env.example
+# An .npmrc carries a registry auth token; none is tracked here and none should be baked in.
+**/.npmrc
 coverage
 **/test-results
 **/playwright-report
