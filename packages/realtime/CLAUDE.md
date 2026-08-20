@@ -214,6 +214,22 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   threw skipped the close and the pump await, leaking the socket and telling a supervisor the
   teardown was over before it had begun. Every step runs whatever the step before it did, and the
   first failure is rethrown only once the connection is closed and the pump has ended.
+- **`REPLICA IDENTITY FULL` is asked about at preflight, warned about, and counted — never thrown**
+  (added 2026-08-19). `pg-replication.ts`'s `#deliver` hands a `delete` its `message.before`,
+  and under any identity but FULL that tuple is the KEY COLUMNS ALONE — which `toRow` accepts,
+  because it only requires a text `id`. So `bridgeChange` decided "did this row leave the result
+  set" from a one-column row, `visible` read `undefined` for every column the identity did not
+  carry, and nothing anywhere recorded that it had happened: no emit, no check, and
+  `X_LIVE_REPLICA_IDENTITY` existed in neither the source nor the manifest. The check is a fourth
+  `connection.query` in `preflight`, and it **must** stay ahead of
+  `pg_create_logical_replication_slot` — changing the identity after a slot exists does not reach
+  what that slot decodes. It WARNS (`logger.warn(code, { cause, fix, tables })`, the message being
+  the code alone) because a throw would stop every app on the default identity from booting, which
+  is a worse outcome than the partial rows. `ReplicationStreamStats.partialBefore` is the runtime
+  half, read off `PgRelation.replicaIdentity` and never off the tuple: a DEFAULT-identity table
+  whose non-key columns happen to be NULL sends the bytes a FULL one does, so counting absent keys
+  would undercount exactly the rows a policy is most likely to misjudge. A hard refusal in the
+  `x verify` step is the follow-up and lives in `@ultimat3/cli`.
 - A change lsn is `<16 hex commit position><8 hex row position in that transaction>`. Never order by
   either half alone: the commit lsn repeats within a transaction, and per-record WAL positions are
   not monotonic across transactions. Never make it depend on wall time, the entity list or a process
@@ -532,9 +548,11 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
   socket it opens against the *new* node. Two silent windows and the client closes with `4000` and
   arms the reconnect. It is one
   self-re-arming tick on the injected `Scheduler`, not an interval: a client is either beating on a
-  live socket or backing off toward a new one, never both. The 15s is restated from
-  `realtime.heartbeatMs` rather than read — that is server config and this is browser code — and
-  `realtime.heartbeatMs` is read by nothing today.
+  live socket or backing off toward a new one, never both. The 15s is the client's OWN number:
+  `realtime.heartbeatMs` was a `RealtimeConfig` key read by nothing and it is **deleted**
+  (2026-08-19). The server half of the beat stays derived — `PresenceRegistry.heartbeatMs` is
+  `max(1000, floor(ttlMs / 3))`, the same rule `idleSweepPeriodMs` follows, because a second knob
+  is a second number that can disagree with the one it is a fraction of.
 - **Every question a hot path asks is indexed, never scanned.** `SubscriptionBook` keeps
   `#bySocket` and a per-tenant count beside `#bySid`, and `SocketRegistry` keeps `#byTopic` beside
   the socket table. Both replaced a walk of the whole node that ran once per socket or once per
@@ -627,6 +645,7 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 | `live-query.ts` / `live-definition.ts` / `changefeed.ts` / `changefeed-env.ts` / `replicator.ts` / `pg-advisory-lock.ts` / `fanout.ts` / `transport-env.ts` / `matcher-bridge.ts` | tier 2 |
 | `pg-bytes.ts` / `pg-wire.ts` / `pg-auth.ts` / `pg-connection.ts` / `pg-socket.ts` | the Postgres v3 client: bytes, frames, SASL, session, socket |
 | `pgoutput.ts` / `pg-entity-row.ts` / `pg-replication.ts` | WAL decode → `ChangeEvent`, and the lsn that orders it |
+| `pg-preflight.ts` | the four questions asked before `START_REPLICATION` — `wal_level`, the publication, every entity's replica identity, the slot — plus `assertIdentifier`, the charset all four interpolate through |
 | `nats-client.ts` | the bus port: publish/subscribe/request/requestMany/close/version/connected, and `parseNatsUrl` — the library takes `host:port` plus credentials and never reads a URL's userinfo |
 | `nats-lib-client.ts` | the `nats` adapter — **the only file in the repo that imports `nats`** |
 | `nats-jetstream.ts` / `nats-kv.ts` / `nats-transport.ts` | the JetStream KV bucket, presence over it, and the production `Transport` — all three written against the port |

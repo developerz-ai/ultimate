@@ -90,6 +90,7 @@ export {
   RealtimeError,
   type RealtimeErrorCode,
   RebaseConflictError,
+  ReplicaIdentityError,
   ReplicationFailedError,
   ReplicationProtocolError,
   ReplicatorSlotHeldError,

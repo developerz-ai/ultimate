@@ -2,6 +2,7 @@
 // dev/tests and against a shared tier in a multi-replica deployment — installed through
 // `createServer({ rateLimitStore })`, and refused at boot when its scope cannot keep the app's
 // declaration; the bucket maths lives here so every driver agrees on the numbers.
+import { type Clock, systemClock } from '@ultimat3/core';
 import { rateLimited, rateLimitInvalid, rateLimitNotShared, rateLimitScopeUnset } from './errors';
 
 /**
@@ -289,10 +290,20 @@ export interface RateLimiter {
 export const createRateLimiter = (options: {
   config: RateLimitConfig;
   store?: RateLimitStore;
-  now?: () => number;
+  /**
+   * The one source of "now" for the bucket maths. `Date.now()` used to be read inline here, and
+   * BOTH production call sites (`server.ts`, `pipeline.ts`) build their limiter without an
+   * override — so the limiter that actually throttles requests could not be frozen by any test,
+   * while `@ultimat3/auth`'s credential limiter has taken an injected `Clock` since it shipped.
+   * Defaulted rather than required, the same shape as `createRequestContext`'s `init.clock`;
+   * `PipelineDeps.limiter` stays the one seam for handing the pipeline a limiter of your own,
+   * because a second `clock` beside it would be a second way to set one number.
+   */
+  clock?: Clock;
 }): RateLimiter => {
   const store = options.store ?? memoryRateLimitStore();
-  const now = options.now ?? (() => Date.now());
+  const clock = options.clock ?? systemClock;
+  const now = (): number => clock.now().getTime();
   const bucketFor = (name: string): Bucket =>
     options.config.buckets[name] ??
     options.config.buckets[options.config.defaultBucket] ??

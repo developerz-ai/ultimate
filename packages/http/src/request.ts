@@ -3,7 +3,7 @@
 // context so they cannot drift from what the pipeline resolved.
 
 import type { Actor } from '@ultimat3/core';
-import { readWithinLimit } from '@ultimat3/core';
+import { readWithinLimit, renderThrowable } from '@ultimat3/core';
 import type { RequestContext } from './context';
 import { bodyInvalid, buildSkew } from './errors';
 import { readCookie } from './locale';
@@ -186,7 +186,12 @@ export class UltimateRequest {
         }).formData();
         return Object.fromEntries(form);
       } catch (error) {
-        throw bodyInvalid(this.pathname, [`could not parse ${type}: ${String(error)}`]);
+        // The parser's own message is a diagnostic, not an instruction, and it quotes the bytes
+        // it choked on — so it rides in `meta`, rendered by core rather than by `String(error)`,
+        // which is itself a `TypeError` on a null-prototype throwable.
+        throw bodyInvalid(this.pathname, ['could not parse multipart/form-data'], {
+          parseError: renderThrowable(error),
+        });
       }
     }
 
@@ -198,8 +203,23 @@ export class UltimateRequest {
       }
       if (type.startsWith('text/')) return body;
     } catch (error) {
-      throw bodyInvalid(this.pathname, [`could not parse ${type}: ${String(error)}`]);
+      // `JSON.parse` is the only thing above that throws — `new URLSearchParams(s)` and the
+      // `text/` branch accept any string — so the caller-facing half can name the format without
+      // echoing the `content-type` header the caller chose.
+      throw bodyInvalid(this.pathname, ['could not parse the body as JSON'], {
+        parseError: renderThrowable(error),
+        contentType: type,
+      });
     }
-    throw bodyInvalid(this.pathname, [`unsupported content-type ${type}`]);
+    // The list of what IS accepted, which is the actionable half; the value the caller sent is
+    // theirs already and is a log field here rather than a string in the message.
+    throw bodyInvalid(
+      this.pathname,
+      [
+        'content-type is not one of application/json, application/x-www-form-urlencoded, ' +
+          'multipart/form-data, text/*',
+      ],
+      { contentType: type },
+    );
   }
 }

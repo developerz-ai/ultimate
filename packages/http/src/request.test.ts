@@ -276,7 +276,7 @@ describe('bodyRaw() — content-type dispatch', () => {
     expect(await req.bodyRaw()).toEqual({ a: 1, b: 'two' });
   });
 
-  test('malformed JSON throws X_BODY_INVALID mentioning the content-type and the parse error', async () => {
+  test('malformed JSON throws X_BODY_INVALID naming the parse, never the payload', async () => {
     const { req } = build('https://example.com/x', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -284,8 +284,38 @@ describe('bodyRaw() — content-type dispatch', () => {
     });
     const error = await captureError(() => req.bodyRaw());
     expect(error?.code).toBe('X_BODY_INVALID');
-    expect(error?.cause).toContain('application/json');
     expect(error?.cause).toContain('could not parse');
+  });
+
+  // The runtime's own `SyntaxError` quotes the token it choked on, so `String(error)` in the
+  // catch put a FRAGMENT OF THE REQUEST BODY into `cause` — which `stages.ts` writes to the log
+  // store as a field redaction-by-key cannot see, and `toProblem` sends back to the caller.
+  test('a malformed body never echoes a fragment of itself into the cause', async () => {
+    const { req } = build('https://example.com/x', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{"password": hunter2SuperSecret}',
+    });
+    const error = await captureError(() => req.bodyRaw());
+    expect(error?.code).toBe('X_BODY_INVALID');
+    expect(error?.cause).not.toContain('hunter2SuperSecret');
+    expect(error?.cause).not.toContain('password');
+    // The diagnostic is kept where an operator can have it and a caller cannot: `meta` is never
+    // rendered into the problem document, and it is rendered by core, not by `String(error)`.
+    expect(String(error?.meta?.['parseError'])).toContain('hunter2SuperSecret');
+  });
+
+  test('a rejected content-type is described, never echoed', async () => {
+    const { req } = build('https://example.com/x', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-marker-9f3c' },
+      body: 'x',
+    });
+    const error = await captureError(() => req.bodyRaw());
+    expect(error?.code).toBe('X_BODY_INVALID');
+    expect(error?.cause).not.toContain('x-marker-9f3c');
+    expect(error?.cause).toContain('application/json');
+    expect(error?.meta?.['contentType']).toBe('application/x-marker-9f3c');
   });
 
   test('application/x-www-form-urlencoded parses into a plain object', async () => {
@@ -323,8 +353,8 @@ describe('bodyRaw() — content-type dispatch', () => {
     });
     const error = await captureError(() => req.bodyRaw());
     expect(error?.code).toBe('X_BODY_INVALID');
-    expect(error?.cause).toContain('unsupported content-type');
-    expect(error?.cause).toContain('application/octet-stream');
+    expect(error?.cause).toContain('content-type is not one of');
+    expect(error?.meta?.['contentType']).toBe('application/octet-stream');
   });
 });
 

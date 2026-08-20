@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "45e1f7998146f13aaf1137817b5eac0a4c0269927a7aa45b815062d8bf3a8855",
+  "buildId": "499021ccdd2bbd49ae6965921148a5dc941c925a15ab30704fc5d0c37186ead2",
   "tiers": {
     "0": [
       "core",
@@ -1174,6 +1174,11 @@
     },
     {
       "code": "X_LIVE_QUERY_UNKNOWN",
+      "owner": "realtime",
+      "at": "packages/realtime/src/errors.ts"
+    },
+    {
+      "code": "X_LIVE_REPLICA_IDENTITY",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
     },

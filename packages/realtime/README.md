@@ -265,15 +265,17 @@ new LiveClient({ signal, connect, buildId, heartbeatMs: 15_000 }); // 0 disables
 
 | Property | Behaviour |
 |---|---|
-| Default | `DEFAULT_HEARTBEAT_MS`, 15s. The same number as the server's `realtime.heartbeatMs`, restated rather than read: that is server config and this is browser code |
+| Default | `DEFAULT_HEARTBEAT_MS`, 15s. The client's own number and the only one: `realtime.heartbeatMs` in `app.config.ts` was deleted 2026-08-19 because nothing read it |
 | One beat | a `hello` — which carries no cursors at all; `HelloFrame` has no resume list, so a beat and an opening frame are byte-identical — plus one subscribe frame per topic held |
 | Why the topics | on the node, repeating the subscribe frame **is** the presence heartbeat; presence has no frame of its own in either direction |
 | Not a deploy check | `update-available` answers a skew between the build id recorded at the upgrade and the node's own, and neither can change on an open socket — so every `hello` on one socket answers the same forever. A client hears about a deploy on the socket it opens against the **new** node |
 | Silence | nothing received for **two** intervals ⇒ close `4000` (a private-use code, so it is distinguishable in a log) and arm the reconnect. Judged from the last frame of any kind, since the point is that bytes still cross |
 | Not an interval | one armed tick, re-armed by itself, on the same injected `Scheduler` the reconnect uses — a client is either beating on a live socket or backing off toward a new one, never both |
 
-`realtime.heartbeatMs` in `app.config.ts` is **read by nothing** `As of 2026-08`; this option is the
-only knob that changes behaviour.
+`realtime.heartbeatMs` in `app.config.ts` is **gone** `As of 2026-08-19` — it was read by nothing,
+and an app that still sets it fails `x verify`'s typecheck step with TS2353 (`'heartbeatMs' does not
+exist in type 'Input<RealtimeConfig>'`). Delete the line; this option is the only knob that changes
+behaviour, and the node's presence beat is derived from its TTL rather than configured.
 
 ### A `send` that returned is not an acknowledgement
 
@@ -423,8 +425,9 @@ wire twice by a reconnect that raced an ack.
   told it is gone; one that does not gets nothing, counted as `rowsDenied`.
 - **`PgLogicalReplicationFeed` decodes `pgoutput` off a real slot** — its own Postgres v3 client
   (SCRAM-SHA-256, in-band TLS, CopyBoth), no driver dependency. It preflights `wal_level`, the
-  publication and the slot, creates the slot when there is none, and confirms the slot as it goes so
-  the WAL does not grow without bound. `InMemoryChangeFeed` + `InProcessTransport` remain the
+  publication, every entity's replica identity and the slot — in that order, because the identity
+  check is worthless once the slot exists — creates the slot when there is none, and confirms the
+  slot as it goes so the WAL does not grow without bound. `InMemoryChangeFeed` + `InProcessTransport` remain the
   defaults for `x dev` and every test.
 - **`selectChangeFeed(env, { entities })` decides which feed a boot installs** — same law
   `selectMailDriver` follows: an unset variable means the embedded default. It returns `{ feed,
@@ -467,8 +470,18 @@ wire twice by a reconnect that raced an ack.
   *transactions* in commit order, so per-record WAL positions are not monotonic across them. The
   pair sorts in delivery order and is byte-identical on replay, which is what turns at-least-once
   redelivery into a drop instead of a duplicate.
-- **A live query needs `REPLICA IDENTITY FULL`.** Deciding whether a row *left* a result set needs
-  the old values; with the default identity a delete replicates only the key columns.
+- **A live query needs `REPLICA IDENTITY FULL`, and the replicator now says so** (`As of
+  2026-08-19`). Deciding whether a row *left* a result set needs the old values; with the default
+  identity a delete replicates only the key columns, and `toRow` accepts that tuple because it only
+  requires a text `id`. `preflight` asks `pg_class.relreplident` for every entity in the list — the
+  fourth question it asks, and **before** `pg_create_logical_replication_slot`, since changing the
+  identity after a slot exists does not reach the rows that slot will decode. It is a **coded
+  warning**, `X_LIVE_REPLICA_IDENTITY`, whose `fix:` is the `ALTER TABLE <t> REPLICA IDENTITY FULL;`
+  per named table — not a throw, because every app on the default identity would otherwise stop
+  booting, which is worse than the partial rows. `ReplicationStreamStats.partialBefore` is the
+  running half: one per change delivered off a relation that is not FULL, so the decisions it
+  actually cost are countable rather than silent. A hard refusal at `x verify` time is the
+  follow-up.
 - Tier 3's OPFS SQLite store is browser-only and throws until the browser entry ships; `MemoryLocalStore`
   implements the full journal/rollback/replay semantics today. It holds membership and the journal;
   the row values are the client's one `IdentityMap`, which is what a browser store has to inherit
@@ -483,8 +496,8 @@ wire twice by a reconnect that raced an ack.
 `X_PROTOCOL_VERSION` · `X_CURSOR_STALE` ·
 `X_REBASE_CONFLICT` · `X_TRANSPORT_UNAVAILABLE` · `X_TRANSPORT_PROTOCOL` ·
 `X_REPLICATION_FAILED` · `X_REPLICATION_PROTOCOL` · `X_REPLICATOR_SLOT_HELD` ·
-`X_LIVE_CLIENT_MISSING` · `X_LIVE_QUERY_UNKNOWN` · `X_SOCKET_UNAUTHENTICATED` ·
-`X_SOCKET_AUTH_UNAVAILABLE` · `X_NOT_IMPLEMENTED`
+`X_LIVE_CLIENT_MISSING` · `X_LIVE_QUERY_UNKNOWN` · `X_LIVE_REPLICA_IDENTITY` ·
+`X_SOCKET_UNAUTHENTICATED` · `X_SOCKET_AUTH_UNAVAILABLE` · `X_NOT_IMPLEMENTED`
 
 Topics deny by default: a topic with no matching guard is forbidden. An authz hole is not a config
 option someone forgot to set.

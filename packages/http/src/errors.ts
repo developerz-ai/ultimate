@@ -160,10 +160,23 @@ export const pathInvalid = (pathname: string, segment: string): HttpError =>
     fix: 'send the segment percent-encoded — encodeURIComponent(value); a literal % is %25',
   });
 
-export const bodyInvalid = (pathname: string, issues: readonly string[]): HttpError =>
+/**
+ * `issues` is the CALLER-facing half and must name only facts the framework itself chose — a
+ * schema rule, a byte count, a content-type the router supports. Anything the caller sent goes in
+ * `meta`, which `toProblem` never renders and `stages.ts` never writes into the log message: a
+ * `cause` reaches the log store as an unredactable field AND the problem document, so a value
+ * baked into it has no key left to redact. The runtime's `SyntaxError` quotes the token it choked
+ * on, which is how a fragment of `{"password": …}` used to travel in both directions at once.
+ */
+export const bodyInvalid = (
+  pathname: string,
+  issues: readonly string[],
+  meta?: Readonly<Record<string, unknown>>,
+): HttpError =>
   new HttpError({
     code: 'X_BODY_INVALID',
     cause: `${pathname} body rejected: ${issues.join('; ')}`,
+    ...(meta === undefined ? {} : { meta }),
     // `x schema show` is not a command — not in the registry and not in `PLANNED_COMMANDS`, so it
     // exits `X_CLI_UNKNOWN_COMMAND`. The same axiom-4 inversion `x logs tail` had in `error-map`:
     // the one instruction the reader is given fails when they run it. `x routes` ships, and

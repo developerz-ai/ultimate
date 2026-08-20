@@ -42,6 +42,7 @@ const ADDED_SINCE = [
   'X_SOCKET_UNAUTHENTICATED',
   'X_SOCKET_AUTH_UNAVAILABLE',
   'X_FRAME_RATE_LIMIT',
+  'X_LIVE_REPLICA_IDENTITY',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */

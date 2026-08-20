@@ -90,6 +90,17 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   and not reported and therefore kept for the full retention. The message is the CODE alone. The
   other half is `@ultimat3/schema`'s `describeValue` (shape, never content) and it is the
   load-bearing one; this half is what makes the value redactable at all.
+- **A rejected BODY is not a log field either — `bodyInvalid`'s `issues` may name only what the
+  framework chose** (`As of 2026-08-19`). `request.ts` built `could not parse ${type}: ${String(error)}`,
+  and the runtime's `SyntaxError` quotes the token it choked on: a `POST` of
+  `{"password": hunter2SuperSecret}` answered `422` with that identifier in `cause`, which goes to
+  the CALLER through `toProblem` and to the log store as the unredactable field `cause`. Two rules,
+  both needed. The caller-facing `issues` are a fixed vocabulary — `could not parse the body as
+  JSON`, and the LIST of accepted content-types rather than the one that was sent — and everything
+  the caller supplied rides in `bodyInvalid`'s third argument, `meta`, which `toProblem` never
+  renders. The parser's own message goes through core's `renderThrowable`, never `String(error)`:
+  `bun run error-render` cannot see this class of defect, because a `catch` binding is not a
+  parameter, so it is a review rule here and a blind spot there.
 - **A browser that fails `auth: 'required'` is redirected; an agent gets the problem document.**
   One condition, two audiences, decided once in `auth-redirect.ts` and applied in the `error-map`
   stage before the overlay. `config.signInPath` is `null` until an app names its page, because a
@@ -236,6 +247,14 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   and it evicts the entries **closest to full** first: throwing away a spent bucket is a free
   reset for whoever spent it, so the most-throttled key is the last one to go. Never swap that
   comparator for insertion order or an LRU — recency is not the same as worthlessness here.
+- **The limiter takes a `Clock`; `Date.now()` is not read here** (`As of 2026-08-19`). `rate-limit.ts`
+  read it inline while BOTH production call sites (`server.ts`, `pipeline.ts`) built their limiter
+  with no override, so the bucket maths that decides whether a caller is throttled could not be
+  frozen by any test — while `@ultimat3/auth`'s credential limiter has taken an injected `Clock`
+  since it shipped. `createRateLimiter({ clock })` defaults to `systemClock`, the same shape as
+  `createRequestContext`'s `init.clock`. Deliberately NOT a `clock` on `PipelineDeps`:
+  `deps.limiter` is already the one seam for handing the pipeline a limiter you built, and a second
+  entry point for one number is axiom 1.
 - **Where the limiter's counters live is DECLARED by the app, never inferred, and refused at
   boot — and there is no default.** `DEFAULT_RATE_LIMIT` carries no `scope`, so
   `resolveRateLimitConfig` refuses `X_RATE_LIMIT_SCOPE_UNSET` at `defineHttpConfig` when a limiter
