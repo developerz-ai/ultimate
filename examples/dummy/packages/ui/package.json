@@ -18,9 +18,9 @@
   "dependencies": {
     "@postly/domain": "0.0.1",
     "@postly/i18n": "0.0.1",
-    "@ultimat3/money": "5.0.0",
-    "@ultimat3/render": "5.0.0",
-    "@ultimat3/ui": "5.0.0",
+    "@ultimat3/money": "5.0.1",
+    "@ultimat3/render": "5.0.1",
+    "@ultimat3/ui": "5.0.1",
     "solid-js": "1.9.14"
   }
 }
