@@ -49,9 +49,11 @@ would surface as a failed install of a version that cannot be unpublished.
 ```sh
 bun run scripts/release.ts --bump minor        # or --version 1.1.0
 bun install                                    # regenerate bun.lock, by hand — never Dependabot
+bun run scripts/lockfile-pins.ts --write       # bun install answers "no changes" and leaves
+bun install --frozen-lockfile                  # every workspace pin at the OLD version
 bun run verify                                 # the gate, including the lockstep check
 git add -A && git commit -m "release: 1.1.0"
-git tag v1.1.0 && git push --follow-tags
+git tag -a v1.1.0 -m 1.1.0 && git push origin v1.1.0   # -a: --follow-tags SKIPS a lightweight tag
 ```
 
 Then publish a GitHub Release for the tag — that is what triggers the workflow.
