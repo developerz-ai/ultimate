@@ -3,6 +3,9 @@
 // packages are tier 5, so importing it here would be the reverse of the one declared `cli → testing`
 // edge. A structural seam keeps the direction honest and survives the bundler changing underneath.
 
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { islandMountMissing, islandNotBuilt } from './errors';
 import { createIslandDocument, FakeElement, handlerFor, parseHtml } from './island-dom';
 
@@ -73,13 +76,21 @@ function entryOf(module: unknown, file: string): IslandEntry {
   return { mount: mount as IslandEntry['mount'] };
 }
 
+/** One directory per process, outside the app under test — so no test leaves a `.mjs` behind. */
+const MODULE_DIR = mkdtempSync(join(tmpdir(), 'ultimate-island-'));
+
 /**
- * A `data:` URL, not a temp file: `import()` needs a specifier, and the URL is derived from the
- * bytes — so an edited island is a different module rather than a cache hit on the same path, and
- * no test leaves a `.mjs` behind in the app it just built.
+ * A temp file named by the chunk's own hash, NOT a `data:` URL. The URL form read better and
+ * crashed the coverage reporter: `bun test --coverage` panics with `range end index N out of range
+ * for slice of length 4096` on `import()` of any `data:` module whose URL exceeds ~4 kB, and an
+ * island chunk is 12-55 kB. Measured on Bun 1.4.0, threshold at a URL length of 4032; without
+ * `--coverage` the same import is fine, which is why only the per-package CI job ever saw it.
+ *
+ * The property the URL form was chosen for survives: the name is derived from the bytes, so an
+ * edited island is a different module rather than a cache hit on the same path.
  */
 const moduleUrlFor = (code: string): string =>
-  `data:text/javascript;base64,${Buffer.from(code, 'utf8').toString('base64')}`;
+  join(MODULE_DIR, `${Bun.SHA256.hash(code, 'hex').slice(0, 16)}.mjs`);
 
 function installGlobals(values: Readonly<Record<string, unknown>>): () => void {
   const host = globalThis as unknown as Record<string, unknown>;
@@ -112,7 +123,9 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
   const { documentElement, globals } = createIslandDocument();
   const restore = installGlobals({ ...globals, ...options.globals });
   try {
-    const entry = entryOf(await import(moduleUrlFor(chunk.code)), chunk.file);
+    const path = moduleUrlFor(chunk.code);
+    await Bun.write(path, chunk.code);
+    const entry = entryOf(await import(path), chunk.file);
     const el = new FakeElement('div');
     if (options.shell !== undefined) {
       for (const child of [...parseHtml(options.shell).children]) el.appendChild(child);

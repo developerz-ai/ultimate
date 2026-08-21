@@ -363,3 +363,22 @@ describe(testName('unit', 'the island fixture refuses by name'), () => {
     expect(Reflect.get(globalThis, 'document')).toBe(before);
   });
 });
+
+describe(testName('unit', 'the chunk is imported from a file, never a data: URL'), () => {
+  // A source rule, because the failure it guards is invisible to `bun test`: `bun test --coverage`
+  // panics with `range end index N out of range for slice of length 4096` on `import()` of any
+  // `data:` module over ~4 kB, and every island chunk is 12-55 kB. Only the per-package CI job runs
+  // coverage, so the whole suite went green locally while `package (cli)` and `package (testing)`
+  // dumped core. The `data:` form reads better and is the one to reach for again; this is what says
+  // no. Measured on Bun 1.4.0 — delete this the day that panic is fixed upstream.
+  const source = (): Promise<string> => Bun.file(`${import.meta.dir}/fixture-island.ts`).text();
+
+  test('the module specifier the fixture builds is a path', async () => {
+    expect(await source()).not.toContain('data:text/javascript');
+  });
+
+  test('and the pattern that would see it is really in the file to be seen', async () => {
+    // Negative control: a rule matching a string no version of the file ever held cannot fail.
+    expect(await source()).toContain('moduleUrlFor');
+  });
+});
