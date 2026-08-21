@@ -60,6 +60,12 @@ export {
   plannedCommands,
   plannedSubcommand,
 } from './cmd-planned';
+// `shotCommand`, `prCommand` and `ciCommand` are deliberately NOT re-exported here. They reach
+// `x` through `registry.ts`, which is the only thing that makes a command exist — and the barrel
+// is the surface an APP imports. Exporting them puts `cmd-shot.ts` in the module graph of every
+// app that imports `@ultimat3/cli`, which then has to resolve `@ultimat3/scraping` — a browser
+// driver it never uses. Measured: it reds `tsc -b` on `dummy/social-media-clone` with five
+// TS2307s in files that app never calls. The app path does not pay for the tool path.
 export { actionsCommand, entitiesCommand, queriesCommand } from './cmd-registries';
 export { renderRouteTable, routesCommand } from './cmd-routes';
 export { testCommand } from './cmd-test';

@@ -3,6 +3,7 @@
 
 import { affectedCommand } from './cmd-affected';
 import { buildCommand } from './cmd-build';
+import { ciCommand } from './cmd-ci';
 import { dbCommand } from './cmd-db';
 import { deployCommand } from './cmd-deploy';
 import { devCommand } from './cmd-dev';
@@ -20,9 +21,11 @@ import { mcpCommand } from './cmd-mcp';
 import { newCommand } from './cmd-new';
 import { plannedCommands } from './cmd-planned';
 import { policyCommand } from './cmd-policy';
+import { prCommand } from './cmd-pr';
 import { actionsCommand, entitiesCommand, queriesCommand } from './cmd-registries';
 import { routesCommand } from './cmd-routes';
 import { secretsCommand } from './cmd-secrets';
+import { shotCommand } from './cmd-shot';
 import { tasksCommand } from './cmd-tasks';
 import { testCommand } from './cmd-test';
 import { verifyCommand } from './cmd-verify';
@@ -71,6 +74,9 @@ const CORE: readonly CliCommand[] = [
   docsCommand,
   fixCommand,
   affectedCommand,
+  shotCommand,
+  prCommand,
+  ciCommand,
 ];
 
 /**

@@ -50,6 +50,13 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_ERROR_FIX_INVALID: 'x verify --json   # the finding names the file, the line and the fix text',
   X_WORKSPACE_DEP_UNDECLARED:
     'x verify --json   # the package-shape finding carries the dependency line to add',
+  X_SHOT_BROWSER_MISSING: 'bun add -d puppeteer-core',
+  X_GH_UNAVAILABLE: 'gh auth login   # install first from https://cli.github.com',
+  X_GH_NOT_AUTHENTICATED: 'gh auth login',
+  X_GH_COMMAND_FAILED: 'x ci --json   # the finding carries the gh invocation that failed',
+  X_GH_RESPONSE_INVALID: 'x pr review --json   # the finding names the field that did not parse',
+  X_PR_NOT_FOUND: 'x pr review --pr 1 --json   # or open one first with: gh pr create',
+  X_CI_RUN_NOT_FOUND: 'x ci --branch main --json',
   X_ERROR_CODE_UNDOCUMENTED: 'x verify --json   # the finding names the code and the missing page',
   X_ERROR_CODE_UNREGISTERED:
     'x errors list --json   # register the code in its package src/errors.ts, or move its row under "Reserved codes"',

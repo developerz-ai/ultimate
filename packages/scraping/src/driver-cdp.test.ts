@@ -188,6 +188,30 @@ describe('unit · the wedge watchdog reaches the waits — incident #1, on the a
   });
 });
 
+describe('unit · an island that throws reaches the PAGE vocabulary, not just the target', () => {
+  test('a pageerror on the browser is a page error on session.page, stack and all', async () => {
+    // End to end through the real driver's own path — launcher, `opened()`, `cdpTarget`,
+    // `pageOverTarget` — because the ring is only useful if it survives every one of those. The
+    // `Error` is INPUT, the payload the library hands the handler.
+    const launcher = fakeCdpLauncher({ url: 'https://shop.test/', html: '<p>hi</p>' });
+    const session = await localBrowser({ launcher }).open(init());
+    try {
+      const thrown = new TypeError('cart.items is undefined');
+      thrown.stack =
+        'TypeError: cart.items is undefined\n    at Cart (/app/islands/cart.tsx:31:18)';
+      launcher.browser.emitPageError(thrown);
+      const errors = session.page.pageErrors();
+      expect(errors.map((error) => error.message)).toEqual(['cart.items is undefined']);
+      expect(errors[0]?.stack).toContain('islands/cart.tsx:31:18');
+      expect(session.page.pageErrorsDropped()).toBe(0);
+      // And the session is still usable: an uncaught exception is not a dead renderer.
+      expect(await session.page.text('p')).toBe('hi');
+    } finally {
+      await session.close();
+    }
+  });
+});
+
 describe('unit · the session reports the exit it dialled', () => {
   // The proxy is a DRIVER option, resolved after the robots gate the run hands to `open()` has
   // already been built — so the session has to say what it dialled, or the default `/robots.txt`

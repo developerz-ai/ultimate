@@ -218,6 +218,17 @@ describe('unit · where the drivers genuinely cannot agree, pinned in one place'
     expect(boxes).toEqual({ fake: false, fixture: false, puppeteer: true });
   });
 
+  test('every driver ANSWERS pageErrors(); only a JS engine can ever fill it', async () => {
+    // The divergence, pinned beside the box one: `fake` and `fixture` parse markup and execute
+    // none of it, so nothing there can throw an uncaught exception — but the method answers on all
+    // three, or `page.pageErrors()` would be a call an author has to know their driver to make.
+    await forEachDriver(async (session, name) => {
+      await session.page.goto(URL_A);
+      expect(session.page.pageErrors(), name).toEqual([]);
+      expect(session.page.pageErrorsDropped(), name).toBe(0);
+    });
+  });
+
   test('SessionSnapshot.headers is answerable OFFLINE and empty on the real driver', async () => {
     const restore = {
       cookies: [],

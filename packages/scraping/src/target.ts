@@ -3,7 +3,7 @@
 // lets `page-over-target.ts` be the ONE implementation of `ScrapePage` for the real browser, the
 // fixture replayer and the fake alike.
 
-import type { ConsoleRing, NetworkRing } from './rings';
+import type { ConsoleRing, NetworkRing, PageErrorRing } from './rings';
 import type { SessionSnapshot } from './session-state';
 
 /**
@@ -96,6 +96,15 @@ export interface ScrapeTarget {
   readonly driver: string;
   readonly console: ConsoleRing;
   readonly network: NetworkRing;
+  /**
+   * REQUIRED, and empty is a legitimate answer. A driver with no JS engine has no uncaught
+   * exception to report and answers an empty ring; an optional member would instead let a driver
+   * be silent about errors it CAN see, which is precisely the blind spot this ring closes — and
+   * `ScrapePage.pageErrors()` would then be a method that answers nothing on an unknown subset of
+   * drivers. A third-party driver added before 2026-08-21 gets a type error naming this field,
+   * which is the whole enforcement.
+   */
+  readonly pageErrors: PageErrorRing;
   url(): string;
   goto(url: string, options: GotoOptions): Promise<void>;
   /** Serialised HTML of THIS target — the document for a page, the subtree for a frame. */

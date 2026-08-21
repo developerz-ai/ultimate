@@ -225,14 +225,19 @@ export function defaultHydrate(surface: Surface): HydrateStrategy {
  * (`settings.island.tsx`) is 17,797 B. No `budget.js` under 4096 was reachable by any of them, on
  * any surface, because the allowance is measured above the baseline and not against it.
  *
- * The number: 17,797 (the heaviest island this repo actually ships) + 881 (`hydrateRuntimeBytes`
+ * The number: 17,797 (the heaviest island this repo actually ships) + 1,010 (`hydrateRuntimeBytes`
  * for one directive at `DEFAULT_ISLAND_HYDRATE`, which is `'interaction'` — `route.ts:33`, applied
- * at `:253` to any island route declaring no `hydrate`) = **18,678**. That is the worst case an
+ * at `:253` to any island route declaring no `hydrate`) = **18,807**. That is the worst case an
  * app reaches without writing a number down. 20,480 is NOT that rounded up — the next whole
- * kilobyte above it is 19,456 — it is one whole kB further, leaving 1,802 B of headroom and still
- * under 2x 18,678, so a route bundling the same island twice is refused. `modes.test.ts` asserts
- * all three. `idle` costs 615 and `visible` 687, so an island route that declares its strategy
- * pays less; the default is what the budget has to clear. It is not
+ * kilobyte above it is 19,456 — it is one whole kB further, leaving 1,673 B of headroom and still
+ * under 2x 18,807, so a route bundling the same island twice is refused. `island-budget.test.ts`
+ * asserts all three. `idle` costs 744 and `visible` 816, so an island route that declares its
+ * strategy pays less; the default is what the budget has to clear.
+ *
+ * All three grew by 129 B on 2026-08-21 (from 881 / 615 / 687), when the prelude learned to mark a
+ * mount's OUTCOME so `x shot` can tell an island that RAN from one that only started loading. The
+ * headroom absorbed it and the conclusion is unchanged — which is the point of stating the
+ * arithmetic here rather than the answer alone. It is not
  * derived from Solid's own size on purpose — this package may not import or name `solid-js`
  * (`CLAUDE.md`), so a constant tracking the runtime's version would be a dependency in a comment.
  *

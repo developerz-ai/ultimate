@@ -32,11 +32,12 @@ export const TIERS: Readonly<Record<number, readonly string[]>> = {
  * | `realtime -> query` | tier 3 is one feature: a live query is a query plus a subscription, and splitting it would duplicate the SQL shape |
  * | `create-ultimate -> cli` | a published shim whose whole job is to call `x new`; the alternative is a second copy of the templates |
  * | `cli -> admin` | `x dev` MOUNTS the `/_x` dashboard, it does not reimplement it; the panels are a product of the same tier, and the alternative is a second dev dashboard living in the CLI |
+ * | `cli -> scraping` | `x shot` drives a real browser, and `@ultimat3/scraping` is the one package that can: it declares the CDP library's shape structurally (`cdp-port.ts`) and takes no runtime dependency, so the CLI passes the app's own `puppeteer` in. Moving `scraping` down to 4 would have removed the need for this line and is REFUSED: `packages/scraping/CLAUDE.md` places it at 5 deliberately, reserving room for `recover: 'agent'` to import `@ultimat3/ai` (tier 4), and a package at 4 cannot import a package at 4. That file predicted this edge before anything imported the package |
  * | `cli -> testing` | `@ultimat3/testing` IS the framework's harness, and `serve.live.test.ts` spawns the scaffolded `server.ts` as a child and has to let one real port through the seal. It was already live as `../../testing/src/sealed-network` — a relative specifier the checker could not see — and the alternatives are worse: core's `markListening()` would announce a socket a CHILD opened, and a second unseal in the CLI is a second sealed-network |
  */
 export const SIDEWAYS_ALLOW: Readonly<Record<string, readonly string[]>> = {
   realtime: ['query'],
-  cli: ['admin', 'testing'],
+  cli: ['admin', 'scraping', 'testing'],
   'create-ultimate': ['cli'],
 };
 

@@ -20,8 +20,15 @@ claims and that page does not carry is a capability an app author cannot find.
 because `recover: 'agent'` is designed to import `@ultimat3/ai` (tier 4), and a package at 4 cannot
 import a package at 4. Moving up later would be a table change with consumers already attached.
 
-The cost is real and worth stating: `cli` is also tier 5, so `x scrape` will need a declared
-`cli -> scraping` edge in `scripts/lib/tiers.ts`. Not declared yet — nothing imports this package.
+The cost is real and worth stating: `cli` is also tier 5, so a CLI command that drives a browser
+needs a declared `cli -> scraping` edge in `scripts/lib/tiers.ts`. **Declared 2026-08-21**, when
+`x shot` became its first importer.
+
+Moving this package down to 4 was considered at that point and refused, which is the decision this
+section exists to survive: tier 4 is what today's imports allow, so the move would have deleted the
+exception line — but it would also have foreclosed `recover: 'agent'`, and a table with one fewer
+line is not worth a capability. The reasoning that retired `admin -> ui` does not transfer: `ui` was
+at 5 by accident, this package is at 5 on purpose.
 
 ## puppeteer-core is NOT a dependency
 
@@ -62,6 +69,7 @@ and a value cannot leak. `driver-parity.test.ts` runs the real driver's code pat
 | a launched browser is never orphaned | `driver-cdp.ts`'s `opened()` rolls back with `browser.close()` on any throw between the launch and the `WedgeGuard` (`driver-cdp.test.ts`) — `runScrape`'s `finally` cannot close a session `open()` never returned |
 | restored `localStorage` lands on its ORIGIN | `cdp-target.ts` defers the storage half to the first navigation that reaches `session.origin` (`cdp-target.test.ts`); `restore()` runs on `about:blank`, which has no storage to write to and is not the site |
 | a permanent refusal is never re-labelled retryable | `cdp-target.ts`'s `guard()` passes `X_NOT_IMPLEMENTED` through — the one code that means "this build does not have the feature", which a browser cannot produce — and wraps everything else as `X_SCRAPE_BROWSER_UNREACHABLE`. `instanceof UltimateError` is the naive version and is wrong: it would unwrap an `X_SCRAPE_TIMEOUT` raised while the socket was already dead, and that wrap is what makes a disconnect legible (`cdp-target-surface.test.ts` pins both sides). The half this package cannot close: `X_NOT_IMPLEMENTED` is core's code and nobody classifies it, so `classifyThrown` reads it as unclassified and the job's attempt count still governs — `registerErrorRetry({ X_NOT_IMPLEMENTED: 'terminal' })` belongs in `@ultimat3/core`, beside the code it names, not in a second package's table |
+| an uncaught page exception is OBSERVED, and is not a crash | `cdp-target.ts` subscribes to `pageerror` beside `console` and `request` — puppeteer's `PageEvent.PageError` ("an uncaught exception happens within the page"), which is NOT `PageEvent.Error` ("the page crashes") one line below it and must never reach `crashed`: that latch answers `X_SCRAPE_PAGE_CRASHED`, registered `terminal`, for a page that still renders. Until 2026-08-21 nothing in the package subscribed to it at all, so an island that threw was invisible to `page.console()` and to `x shot`'s verdict alike. `ScrapeTarget.pageErrors` is a REQUIRED ring — the offline target builds one and never pushes to it (`driver-parity.test.ts` pins the divergence: no JS engine offline), because an optional one would let a driver be silent about errors it can see. Entries go through `pageErrorEntry()` (`rings.ts`), which is what keeps a stack — the field that names the island — and truncates it at `MAX_PAGE_ERROR_CHARS` |
 | a `Promise`-typed method REJECTS, never throws | `cdp-target.ts`'s `download()` returns `Promise.reject(…)`, `html-target.ts`'s is `async`, and `page-over-target.ts` forwards through an `async` method so a third-party `ScrapeTarget` that throws synchronously still reaches the caller's `.catch()`. A synchronous throw from a promise-typed method jumps over `page.download().catch(…)` entirely |
 | Chrome is never needed for `bun test` | `fakeBrowser`/`fakePage` run on Bun's own `HTMLRewriter` |
 

@@ -74,7 +74,6 @@ export const DOC_COMMAND_PINS: Readonly<Record<string, number>> = {
   'packages/flags/CLAUDE.md': 1,
   'packages/flags/README.md': 1,
   'packages/mail/README.md': 1,
-  'packages/scraping/CLAUDE.md': 1,
 };
 
 /**

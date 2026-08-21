@@ -301,6 +301,26 @@ island (remove it), or the `island()` call sits below the `defineRoute` that wou
 be drained. A `'never'` route is also left with no derived budget, deliberately — a ceiling there
 would paper over the contradiction.
 
+### "Booted" and "mounted" are different facts, and the DOM says which
+
+| In the DOM | Means |
+|---|---|
+| `data-x-island`, `data-x-hydrate` | **declared** — emitted for every island, `'never'` included |
+| `el.__x` set, neither marker | **importing** — the chunk was requested, `mount()` has not settled |
+| `data-x-mounted=""` | **running** — `mount()` resolved |
+| `data-x-failed="<message>"` | **threw** — `mount()` rejected, and this is why |
+
+`el.__x` is assigned when `import()` is *called*, so on its own it cannot tell a chunk still
+downloading from one whose `mount()` threw — and the second is the half that gates a deploy. Both
+markers are set by the runtime, never by `emitIslandAttributes`: the server does not know the
+answer. A rejection still rethrows, so `el.__x` stays rejected and the `interaction` replay queue is
+never flushed into an island that did not mount. `ISLAND_MOUNTED_ATTRIBUTE` and
+`ISLAND_FAILED_ATTRIBUTE` are exported so a reader (`x shot`, an app's own test) names them once.
+
+`IDLE_HYDRATE_TIMEOUT_MS` (2000) is the `requestIdleCallback` deadline the `idle` runtime is built
+from, exported for the same reason: anything waiting for hydration has to wait at least this long,
+and a second copy of the number is a settle that shoots early and calls a healthy page broken.
+
 ## Public API
 
 | Export | Owns |
@@ -314,6 +334,7 @@ would paper over the contradiction.
 | `createIsrController`, `invalidateAndRevalidate` | SWR + single-flight + tag triggers |
 | `renderSsr`, `streamResult` | the per-request modes |
 | `emitIslandAttributes`, `hydrateRuntime` | the four hydration strategies |
+| `ISLAND_MOUNTED_ATTRIBUTE`, `ISLAND_FAILED_ATTRIBUTE`, `IDLE_HYDRATE_TIMEOUT_MS` | what hydration looks like from outside the page |
 | `graphFor`, `checkBudget`, `assertBudget` | two bundle graphs, per-route budgets |
 | `mergeHead`, `renderHead`, `themeScript` | `<head>` merge + the one inlined script |
 

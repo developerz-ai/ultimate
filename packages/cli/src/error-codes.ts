@@ -97,6 +97,13 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_SECRETS_EDITOR_MISSING',
   'X_SECRETS_EDIT_FAILED',
   'X_WORKSPACE_DEP_UNDECLARED',
+  'X_SHOT_BROWSER_MISSING',
+  'X_GH_UNAVAILABLE',
+  'X_GH_NOT_AUTHENTICATED',
+  'X_GH_COMMAND_FAILED',
+  'X_GH_RESPONSE_INVALID',
+  'X_PR_NOT_FOUND',
+  'X_CI_RUN_NOT_FOUND',
 ] as const;
 
 /**
@@ -190,6 +197,13 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_SECRETS_EDITOR_MISSING: 'no $EDITOR to open the decrypted secrets in',
   X_SECRETS_EDIT_FAILED: 'the editor exited non-zero, so nothing was resealed',
   X_WORKSPACE_DEP_UNDECLARED: 'a workspace imports another workspace it does not declare',
+  X_SHOT_BROWSER_MISSING: 'x shot found no browser library in the app',
+  X_GH_UNAVAILABLE: 'the GitHub CLI is not runnable from here',
+  X_GH_NOT_AUTHENTICATED: 'gh holds no credentials for this host',
+  X_GH_COMMAND_FAILED: 'a gh invocation exited non-zero',
+  X_GH_RESPONSE_INVALID: "gh's output is not the shape the command reads",
+  X_PR_NOT_FOUND: 'no pull request for this checkout',
+  X_CI_RUN_NOT_FOUND: 'no workflow run for this branch',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

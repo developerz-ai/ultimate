@@ -17,7 +17,7 @@ An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, ne
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 80 As of 2026-08 — 77 inside the section of the major that shipped it, 3 under [Unreleased]
+# 81 As of 2026-08-21 — 77 inside the section of the major that shipped it, 4 under [Unreleased]
 ```
 
 Each entry changes a surface the table below covers.

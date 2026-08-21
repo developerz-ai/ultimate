@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "b6114fb68b78ef07da13729b7b93e91e292d40ed7d56fff1d62e9f12ba651a91",
+  "buildId": "0329f843a7a99e6fe56b5a581e98d1a5ed6a1b5394872ea438b5a32757d96bf3",
   "tiers": {
     "0": [
       "core",
@@ -603,6 +603,11 @@
       "at": "scripts/chart-version.ts"
     },
     {
+      "code": "X_CI_RUN_NOT_FOUND",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
       "code": "X_CLI_BAD_FLAG",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
@@ -1079,6 +1084,26 @@
     },
     {
       "code": "X_GENERATE_JSON_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_GH_COMMAND_FAILED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_GH_NOT_AUTHENTICATED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_GH_RESPONSE_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_GH_UNAVAILABLE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
@@ -1654,6 +1679,11 @@
     },
     {
       "code": "X_PORT_INVALID",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_PR_NOT_FOUND",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
     },
@@ -2266,6 +2296,11 @@
       "code": "X_SETUP_INSTALL_FAILED",
       "owner": "scripts",
       "at": "scripts/setup.ts"
+    },
+    {
+      "code": "X_SHOT_BROWSER_MISSING",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_SHUTDOWN_TIMEOUT",

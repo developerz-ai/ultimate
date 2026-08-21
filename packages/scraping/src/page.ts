@@ -8,7 +8,7 @@
 
 import type { Secret } from '@ultimat3/core';
 import type { ActionabilityState } from './actionability';
-import type { ConsoleLine, NetworkEntry } from './rings';
+import type { ConsoleLine, NetworkEntry, PageError } from './rings';
 import type { SessionSnapshot } from './session-state';
 import type { ElementSnapshot, ScrapeCookie, ScrapeDownloadFile } from './target';
 
@@ -93,6 +93,13 @@ export interface ScrapePage extends ScrapeFrame {
   session(): Promise<SessionSnapshot>;
   /** The bounded tail. Bounded because a long run's full history is an OOM, not a log. */
   console(): readonly ConsoleLine[];
+  /**
+   * The uncaught exceptions the page threw, which `console()` does NOT carry: an island that
+   * throws calls no console method, so a scrape reading console alone sees a page that looks
+   * silent and is broken. Empty on a driver with no JS engine — the offline drivers parse HTML
+   * and never execute it, so nothing there can throw.
+   */
+  pageErrors(): readonly PageError[];
   network(): readonly NetworkEntry[];
   /**
    * How many entries the bound above threw away. It is the same honesty `Ring.dropped` carries:
@@ -100,4 +107,10 @@ export interface ScrapePage extends ScrapeFrame {
    * is non-zero, and a scrape that blocked 5,000 images otherwise reports 200 with no hint.
    */
   networkDropped(): number;
+  /**
+   * The same honesty for the errors, and it is the count a verdict gates on: an island throwing
+   * inside a `requestAnimationFrame` produces thousands, and "3 page errors" read off a bounded
+   * tail of 200 would be a number a reader trusts and should not.
+   */
+  pageErrorsDropped(): number;
 }

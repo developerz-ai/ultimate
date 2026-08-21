@@ -7,6 +7,8 @@ import { downloadTimeout } from './error-throws';
 import { htmlTarget } from './html-target';
 import { pageOverTarget } from './page-over-target';
 import type { PageRecording } from './recording';
+import type { PageError } from './rings';
+import { createRing, pageErrorEntry } from './rings';
 import type { ScrapeTarget } from './target';
 
 const codeOf = async (promise: Promise<unknown>): Promise<string | undefined> => {
@@ -113,6 +115,59 @@ describe('unit · the rings are bounded', () => {
     for (let index = 0; index < 10; index += 1) ring.push(index);
     expect(ring.entries()).toEqual([7, 8, 9]);
     expect(ring.dropped).toBe(7);
+  });
+});
+
+describe('unit · pageErrors() reports what the DRIVER saw, drops included', () => {
+  const targetWithErrors = (capacity: number): ScrapeTarget => {
+    const recording: PageRecording = { url: 'https://shop.test/o', html: '<p>o</p>' };
+    const base = htmlTarget({
+      driver: 'fixture',
+      lookup: () => Promise.resolve(recording),
+      rules: { allowHosts: ['shop.test'] },
+      clock: testClock(),
+      source: 'test/fixtures',
+      start: recording,
+    });
+    // A driver's ring, filled the way a driver fills it. `ScrapeTarget` is the seam a third party
+    // implements, so what is under test here is the FORWARDING, not any one driver's capture.
+    return { ...base, pageErrors: createRing<PageError>(capacity) };
+  };
+
+  const pageOver = (target: ScrapeTarget) =>
+    pageOverTarget(target, {
+      clock: testClock(),
+      allowHosts: ['shop.test'],
+      defaultTimeoutMs: 100,
+    });
+
+  test('every entry the driver captured reaches the page vocabulary, stack and all', () => {
+    const target = targetWithErrors(10);
+    target.pageErrors.push(
+      pageErrorEntry({ message: 'boom', stack: 'at Cart (/app/islands/cart.tsx:9:3)', at: 4 }),
+    );
+    const errors = pageOver(target).pageErrors();
+    expect(errors.map((error) => error.message)).toEqual(['boom']);
+    expect(errors[0]?.stack).toContain('cart.tsx:9:3');
+  });
+
+  test('and pageErrorsDropped() makes the count a FLOOR when the bound bit', () => {
+    // The same honesty `networkDropped()` carries: "2 page errors" read off a truncated tail is a
+    // number a reader trusts and should not, and the error count is what a verdict gates on.
+    const target = targetWithErrors(2);
+    for (const index of [1, 2, 3, 4, 5])
+      target.pageErrors.push(pageErrorEntry({ message: `boom ${index}`, at: index }));
+    const page = pageOver(target);
+    expect(page.pageErrors().map((error) => error.message)).toEqual(['boom 4', 'boom 5']);
+    expect(page.pageErrorsDropped()).toBe(3);
+  });
+
+  test('an offline driver answers an EMPTY list, never a missing method', () => {
+    // The divergence, stated where a caller meets it: no JS engine offline, so nothing can throw
+    // — but `pageErrors()` still answers, or the vocabulary would be driver-dependent.
+    const page = fakePage('<p>hello</p>');
+    expect(page.pageErrors()).toEqual([]);
+    expect(page.pageErrorsDropped()).toBe(0);
   });
 });
 

@@ -66,6 +66,9 @@
       "path": "../schema"
     },
     {
+      "path": "../scraping"
+    },
+    {
       "path": "../seo"
     },
     {

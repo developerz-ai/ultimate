@@ -10,8 +10,16 @@ import type { ScrapeClock } from './clock';
 import { browserUnreachable, pageCrashed, scrapeNotImplemented } from './error-throws';
 import type { InterceptRules } from './intercept';
 import { interceptVerdict, refusalEntry } from './intercept';
-import type { ConsoleLine, NetworkEntry, ResourceType } from './rings';
-import { createRing, RESOURCE_TYPES } from './rings';
+import type {
+  ConsoleLine,
+  ConsoleRing,
+  NetworkEntry,
+  NetworkRing,
+  PageError,
+  PageErrorRing,
+  ResourceType,
+} from './rings';
+import { createRing, pageErrorEntry, RESOURCE_TYPES } from './rings';
 import type { SessionSnapshot } from './session-state';
 import type {
   CaptureOptions,
@@ -89,6 +97,25 @@ const readStringFrom = (owner: unknown, key: string): string | undefined => {
 };
 
 /**
+ * A `pageerror` payload, read defensively — never cast, and never assumed to be an `Error`.
+ *
+ * `readStringFrom`, the same reader the console handler uses, because the payload has the same
+ * problem: `message` and `stack` are an own property on one build and an accessor on another, and
+ * a schema parse cannot call an accessor. A page can also `throw 'a string'` or throw a frozen
+ * object with no `message` at all — both reach here, and both are recorded as SOMETHING having
+ * thrown, because an entry with a poor message is still the difference between "the island threw"
+ * and silence.
+ */
+const readPageError = (payload: unknown, at: number): PageError => {
+  if (typeof payload === 'string') return pageErrorEntry({ message: payload, at });
+  return pageErrorEntry({
+    message: readStringFrom(payload, 'message') ?? '',
+    stack: readStringFrom(payload, 'stack'),
+    at,
+  });
+};
+
+/**
  * The one failure `guard()` must NOT re-label, and the line is drawn at exactly one code.
  *
  * `X_NOT_IMPLEMENTED` is the only code that says "this build does not have the feature" — a fact
@@ -117,16 +144,24 @@ export interface CdpTargetInit {
 }
 
 /**
+ * Everything `arm()` writes into. Named rather than positional: three rings of near-identical
+ * type plus a latch is a call site nobody can read, and swapping two of them is a mistake the
+ * compiler cannot catch.
+ */
+interface CdpSinks {
+  readonly network: NetworkRing;
+  readonly console: ConsoleRing;
+  readonly pageErrors: PageErrorRing;
+  readonly crashed: { value: string | undefined };
+}
+
+/**
  * Interception is armed BEFORE the first navigation and refuses at the request, not after the
  * response — an `allowHosts` that reported afterwards would be a log line about bytes that
  * already left the container.
  */
-async function arm(
-  init: CdpTargetInit,
-  network: ReturnType<typeof createRing<NetworkEntry>>,
-  console_: ReturnType<typeof createRing<ConsoleLine>>,
-  crashed: { value: string | undefined },
-): Promise<void> {
+async function arm(init: CdpTargetInit, sinks: CdpSinks): Promise<void> {
+  const { network, console: console_, pageErrors, crashed } = sinks;
   await init.page.setRequestInterception(true);
   init.page.on('request', (payload) => {
     const request = asRequest(payload);
@@ -154,6 +189,23 @@ async function arm(
       at: init.clock.now().getTime(),
     });
   });
+  /**
+   * The page threw and nothing caught it. THE gap this ring closes: a screenshot of an island
+   * that threw during hydration is a picture of the server-rendered markup, indistinguishable
+   * from a page that worked — and `console` does not carry it, because throwing calls no console
+   * method. Subscribed here, beside the others, so a target is observing before its first
+   * navigation: an exception raised during load has no second chance to be recorded.
+   *
+   * NOT the same event as `error` below, and the difference is the whole reason this is a
+   * separate handler: puppeteer's `pageerror` is "an uncaught exception happens within the page"
+   * and its `error` is "the page crashes" (`PageEvent.PageError` / `PageEvent.Error`). One is the
+   * app being broken and the session is fine; the other is the tab being gone. Recording a
+   * `pageerror` into `crashed` would make every scrape of a page with one bad island answer
+   * X_SCRAPE_PAGE_CRASHED — a code registered `terminal` — for a page still perfectly usable.
+   */
+  init.page.on('pageerror', (payload) => {
+    pageErrors.push(readPageError(payload, init.clock.now().getTime()));
+  });
   // A renderer that dies must be a CODE, not a hang: every later call answers X_SCRAPE_PAGE_CRASHED
   // instead of waiting out its own timeout against a tab that is gone.
   init.page.on('error', (payload) => {
@@ -164,8 +216,9 @@ async function arm(
 export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
   const console_ = createRing<ConsoleLine>(init.ringCapacity);
   const network = createRing<NetworkEntry>(init.ringCapacity);
+  const pageErrors = createRing<PageError>(init.ringCapacity);
   const crashed: { value: string | undefined } = { value: undefined };
-  await arm(init, network, console_, crashed);
+  await arm(init, { network, console: console_, pageErrors, crashed });
   let pendingStorage: SessionSnapshot | undefined;
 
   const originOf = (url: string): string => {
@@ -233,6 +286,9 @@ export async function cdpTarget(init: CdpTargetInit): Promise<ScrapeTarget> {
     driver: CDP_DRIVER,
     console: console_,
     network,
+    // Shared with every frame target below, through the spread: an exception is the PAGE's, and a
+    // per-frame ring would hide a throw from an iframe behind whichever handle the caller held.
+    pageErrors,
     url: () => init.page.url(),
     goto: (url: string, options: GotoOptions) =>
       guard('goto', async () => {

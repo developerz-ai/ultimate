@@ -166,6 +166,62 @@ const CATALOG = {
   'cli.affected.none': 'no workspace is affected by {base}...HEAD, from {changed} changed file(s)',
   'cli.affected.rootWide':
     '  every workspace: {files} belongs to none of them and changes what all of them compile',
+  // `x shot` — the picture is the `lines`, the verdict is the artifact. The summary names the
+  // GATING fact, and a redirect comes first: a photograph of the sign-in page with every island
+  // missing reads as a bug in the app, and it is a bug in the capture.
+  'cli.shot.ok': '{route} clean — {islands} island(s) mounted, nothing logged and nothing threw',
+  'cli.shot.errors': '{route}: {errors} console error(s) — verdict.json names each one',
+  'cli.shot.redirected': '{route} redirected to {url} — the picture is not the route asked for',
+  'cli.shot.server.booted': '  server   booted for this shot on {url}',
+  'cli.shot.server.reused': '  server   the x dev already running on {url}',
+  'cli.shot.canvas': '  canvas   {width}x{height}',
+  'cli.shot.canvasUnreadable': '  canvas   unreadable — {bytes} byte(s), not a decodable image',
+  'cli.shot.islands': '  islands  {booted} of {declared} mounted ({strategies})',
+  'cli.shot.islandsUnknown': '  islands  not counted — the page answered no probe',
+  'cli.shot.network': '  network  {requests} request(s), {refused} refused, {dropped} dropped',
+  'cli.shot.console': '  console  {level}: {text}',
+  'cli.shot.threw': '{route}: {thrown} uncaught exception(s) — {first}',
+  'cli.shot.pageError': '  threw    {message}  {at}',
+  'cli.shot.picture': '  picture  {path}',
+  'cli.shot.verdict': '  verdict  {path}',
+  'cli.shot.blind.status':
+    'HTTP response status is not observed — the port records requests, never responses',
+  'cli.ci.failed':
+    '{failed} of {runs} workflow run(s) on {branch} failed — {findings} finding(s) recovered from the log',
+  'cli.ci.green': 'every one of {runs} workflow run(s) on {branch} passed',
+  'cli.ci.job': '  {conclusion}  {job}  ({steps})',
+  'cli.ci.jobs.other': '  {count} other job(s) in this run',
+  'cli.ci.logs.empty': '  the failed step wrote no log — {url}',
+  /** The conclusion of a run GitHub has not finished — a value, not a column key. */
+  'cli.ci.pending': 'pending',
+  'cli.ci.run': '{conclusion}  {workflow}  {url}',
+  'cli.ci.running':
+    '{running} of {runs} workflow run(s) on {branch} has not finished — nothing has failed yet',
+  'cli.ci.tail': '  log tail, {job}:',
+  'cli.pr.body.truncated': '      … {hidden} more line(s) — re-run with --full',
+  /** The line of a thread whose anchor GitHub answers null for — a value, not a column key. */
+  'cli.pr.line.unknown': '-',
+  'cli.pr.replied': 'replied on thread {id}: {url}',
+  // Resolving closes a CONVERSATION. Whether the finding is fixed is a fact about the code that
+  // no GitHub mutation observes, and a summary saying "addressed" would assert one from the other.
+  'cli.pr.resolved':
+    'thread {id} is marked resolved on GitHub — that records the conversation, not that the finding is fixed',
+  'cli.pr.review.count':
+    '{unresolved} unresolved and {resolved} resolved review thread(s) on {repo}#{pr}',
+  'cli.pr.review.current': '  submitted against the current head {head}',
+  'cli.pr.review.decision': '  review: {decision} by {author} at {submitted}',
+  'cli.pr.review.none': 'no review thread is anchored to a line on {repo}#{pr}',
+  'cli.pr.review.stale':
+    '  submitted against {commit}; the head is now {head} ({committed}) — this decision predates the current code',
+  'cli.pr.review.truncated':
+    '  more than {count} threads — this is the first page, not the whole review',
+  'cli.pr.review.undecided': '  GitHub reports no review decision yet',
+  'cli.pr.thread.closed': '  resolved    {path}:{line}  {id}',
+  'cli.pr.thread.comment': '    {author} at {createdAt}',
+  'cli.pr.thread.more': '    {hidden} more comment(s) on this thread',
+  'cli.pr.thread.open': '  unresolved  {path}:{line}  {id}',
+  'cli.pr.thread.outdated':
+    '    the diff has moved under this thread — {line} is where the comment was written',
   'cli.test.fail': '{failed} of {workers} shard(s) failed',
   'cli.test.affected.none': 'nothing is affected by {base}...HEAD — 0 test file(s) ran',
   'cli.test.pass': '{files} test file(s) on {workers} worker(s) passed in {ms}ms',

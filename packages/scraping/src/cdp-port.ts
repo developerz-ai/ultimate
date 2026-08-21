@@ -37,6 +37,17 @@ export interface CdpPageLike {
   screenshot(options: { readonly fullPage?: boolean }): Promise<Uint8Array | string>;
   pdf(options?: Record<string, unknown>): Promise<Uint8Array>;
   setRequestInterception(enabled: boolean): Promise<void>;
+  /**
+   * `event` stays a bare `string` — a union of the four names this package subscribes to would be
+   * this file naming somebody else's event vocabulary, which is the thing it exists not to do, and
+   * a launcher whose emitter is wider would then fail to satisfy the port for no reason.
+   *
+   * Those four, and the pair that is easy to confuse: `request`, `console`, `pageerror` — an
+   * uncaught exception INSIDE the page, which leaves the session perfectly usable — and `error`,
+   * which is the renderer CRASHING and is what `X_SCRAPE_PAGE_CRASHED` is raised from. Every
+   * payload arrives `unknown` and is read defensively in `cdp-target.ts`; nothing here may name
+   * the library's own types for them.
+   */
   on(event: string, handler: (payload: unknown) => void): unknown;
   frames(): readonly CdpFrameLike[];
   close(): Promise<void>;

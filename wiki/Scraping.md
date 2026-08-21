@@ -83,8 +83,27 @@ One interface, three drivers, no driver type in it.
 | `download({ timeout })` | whatever the last click produced, or `X_SCRAPE_DOWNLOAD_TIMEOUT` |
 | `cookies` / `session` | the handoff to the HTTP leg, as a value you can inspect |
 | `console()` / `network()` | bounded rings, 200 entries each |
+| `pageErrors()` / `pageErrorsDropped()` | uncaught exceptions, a **third** ring — not console lines |
 
 `screenshot`/`pdf` take **no `timeout`** — `CaptureRequest.timeout` and the port's `CaptureOptions.timeoutMs` were deleted in 4.0.0 ([Upgrading](Upgrading)). No driver had ever honoured them, and a deadline enforced above the driver would have had to race `ScrapeClock.sleep`, which under `testClock` resolves on the first microtask — so every capture in every test would have timed out. The driver's own default is the honest bound.
+
+**`pageErrors()` is a separate stream from `console()`, and that is not tidiness.** An uncaught
+exception calls no console method, so a page whose script died can answer `console(): []` — gate on
+console alone and it reads as clean. Nothing in this package observed `pageerror` before
+2026-08-21: `console` and the renderer-crash `error` event were subscribed, and a throw fell between
+them. The two events are also not interchangeable — `error` latches the crash flag, after which every
+call answers `X_SCRAPE_PAGE_CRASHED`, which is classified **terminal**; routing a `pageerror` there
+would dead-letter a scrape of a page that still renders perfectly.
+
+A `PageError` carries `message`, an optional `stack` and `at`. **Keep the stack** — it names the
+module and line that threw (`at Cart (/app/islands/cart.tsx:31:18)`), which is the difference between
+a report and a lead; `message` alone says what went wrong and never where. It is truncated at
+`MAX_PAGE_ERROR_CHARS` (4,000) and marked when it is, because one blown stack is thousands of frames.
+An absent `stack` means the payload carried none — a `throw 'string'` — never that the throw had no
+origin.
+
+`pageErrorsDropped()` makes the count a **floor**: the ring is bounded, so `pageErrors().length` is
+what survived eviction and not what happened.
 
 `click` takes **no index**. It clicks the first match, on every driver.
 

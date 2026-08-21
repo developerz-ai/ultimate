@@ -84,6 +84,29 @@ Both legs replay from **one** fixture directory (`fixtureBrowser(dir)`), so a hy
 login, session handoff, HTTP bulk fetch — is tested end to end. Both legs apply the same robots
 gate, offline included.
 
+## What the page reports back, and the one thing a picture cannot say
+
+Three bounded rings, read off `ScrapePage`. Bounded because a ten-thousand-page run that kept
+every line holds the whole browsing history in the worker's heap — and each read says how much the
+bound threw away, so a count taken from one is never quietly a floor.
+
+| Read | Answers |
+|---|---|
+| `page.console()` | `ConsoleLine[]` — what the page LOGGED |
+| `page.pageErrors()` / `page.pageErrorsDropped()` | `PageError[]` — what the page THREW and nobody caught, with the `stack` when the exception carried one |
+| `page.network()` / `page.networkDropped()` | `NetworkEntry[]` — every request, refusals included |
+
+`console()` and `pageErrors()` are separate streams because they are separate events: an island
+that throws during hydration calls no console method, so a scrape reading the console alone sees a
+page that looks silent and is broken — and a screenshot of it is a picture of the server-rendered
+markup, indistinguishable from one that worked.
+
+Empty is a legitimate answer, never a missing method: the offline drivers parse markup and execute
+none of it, so nothing there can throw. `ScrapeTarget.pageErrors` is a **required** ring for the
+same reason — a third-party driver that could omit it would be silent about errors it can see.
+Entries are built with `pageErrorEntry()`, which truncates at `MAX_PAGE_ERROR_CHARS`: the ring
+bounds the count, and one `Maximum call stack size exceeded` is thousands of frames.
+
 ## What it owns
 
 | Module | Owns |
