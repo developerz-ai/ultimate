@@ -12,7 +12,7 @@ This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x`
 
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
-**Status:** 6.0.0, released, `As of 2026-08-21`. 29 `@ultimat3/*` packages plus the unscoped
+**Status:** repository stamped **7.0.0**, registry still **6.0.0** — the release is in flight, `As of 2026-08-21`. 29 `@ultimat3/*` packages plus the unscoped
 `create-ultimate` — 30 in all — **versioned** in lockstep and **published** in lockstep: one version,
 one commit, one tag, 30 tarballs.
 
@@ -24,7 +24,7 @@ the Release, which are the two rows below it.
 
 | Fact | State, `As of 2026-08-21` | Read it yourself |
 |---|---|---|
-| Repository version | 6.0.0, every workspace stamped | `bun run scripts/release.ts --check 6.0.0` |
+| Repository version | **7.0.0**, every workspace stamped | `bun run scripts/release.ts --check 7.0.0` |
 | Publishable workspaces | 30 | `bun run scripts/release-workflow.ts --json` |
 | On the registry | **all 30 at 6.0.0**, no holes | `bun run scripts/registry-audit.ts --json` |
 | npm `latest` | **6.0.0** — `bunx create-ultimate myapp` installs it | `npm view @ultimat3/core version` |

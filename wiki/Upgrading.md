@@ -2,22 +2,23 @@
 
 **`As of 2026-08`. Semver applies from here.** A breaking change to a documented API needs a major. Every `@ultimat3/*` version is pinned exactly and moves in lockstep — never mix versions.
 
-**Five majors have shipped.** [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
+**Six majors have shipped.** [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) is the source; none ships a codemod, so every entry is a manual edit the entry itself names. **One section per major**, newest first — read the ones between your pin and your target, oldest first.
 
 | From → to | Breaking entries | Read |
 |---|---|---|
+| 6.x → 7.0.0 | **4** | the `7.0.0` section, in order |
 | 5.x → 6.0.0 | **7** | the `6.0.0` section, in order |
 | 4.x → 5.0.0 | **2**, over six surfaces, each a declaration that promised what the code did not do | the `5.0.0` section, in order |
 | 3.0.0 → 4.0.0 | **25**, from a sweep that closed every known gap | the `4.0.0` section, in order |
 | 2.0.0 → 3.0.0 | **10**, all from a five-agent bug sweep | the `3.0.0` section, in order |
 | 1.x → 2.0.0 | **33** | the `2.0.0` section, in order |
-| 1.x → 6.0.0 | **77** | all five sections, oldest first |
+| 1.x → 7.0.0 | **81** | all six sections, oldest first |
 
 An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, never curated:
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 81 As of 2026-08-21 — 77 inside the section of the major that shipped it, 4 under [Unreleased]
+# 81 As of 2026-08-21 — all 81 inside the section of the major that shipped it, 0 under [Unreleased]
 ```
 
 Each entry changes a surface the table below covers.
@@ -31,11 +32,47 @@ Each entry changes a surface the table below covers.
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
 
-## Unreleased — two renames, no version yet
+## 6.x → 7.0.0, entry by entry
 
-**Not on npm and not in a major.** These two entries sit under `## [Unreleased]` in [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) and have no section in the table above, because the version that ships them does not exist yet. They are here so the edit is written down where the rest of them are.
+**Four breaking entries, and only one of them can reach you at runtime.** Three are compile errors
+the moment you upgrade; the fourth is a type you may never have named. None ships a codemod.
 
-Both are **type-only renames in `@ultimat3/pwa`**, both compile errors the moment you upgrade, both mechanical. No member changed — only the name the type is declared under.
+| # | Surface | Costs you an edit if |
+|---|---|---|
+| 1 | `ScrapeTarget.pageErrors` | you implement `ScrapeDriver`/`ScrapeTarget` yourself |
+| 2 | `PwaRenderMode` | you import that type name |
+| 3 | `PwaOfflineStrategy` | you import that type name |
+| 4 | `PrerenderReport.skipped` | you read `x build --target static --json`, or the report in code |
+
+### 1. `ScrapeTarget` gains a required `pageErrors: PageErrorRing`
+
+**Only a third-party driver author pays this**, and nothing in an ordinary app implements
+`ScrapeTarget`. If you build one — the shape `packages/scraping/README.md`'s driver-author example
+builds — construct the ring and, if your transport can observe uncaught page exceptions, push to it.
+
+```diff
++ import { createRing, type PageErrorRing } from '@ultimat3/scraping';
+
+  const target: ScrapeTarget = {
+    // …
++   pageErrors: createRing(200),
+  };
+```
+
+A driver that **cannot** observe them builds the ring and never pushes — which is exactly what the
+offline targets do. That is the whole migration.
+
+**Required rather than optional, deliberately.** An optional ring lets a driver stay *silent* about
+errors it can see, which is the gap this closed: nothing in `@ultimat3/scraping` subscribed to
+`pageerror` at all, so an island that **threw** was invisible. A throw calls no console method, so
+`console()` answered `[]` and a page whose script had died read as clean.
+
+New on `ScrapePage`, and additive — no edit needed to consume them: `pageErrors()` and
+`pageErrorsDropped()`. The dropped count makes the list a **floor**, not a total.
+
+### 2 and 3. `PwaRenderMode` and `PwaOfflineStrategy` are deleted from `@ultimat3/pwa`
+
+Two type-only renames. No member changed — only the name the type is declared under.
 
 | Was | Is | Members, unchanged |
 |---|---|---|
@@ -47,11 +84,34 @@ Both are **type-only renames in `@ultimat3/pwa`**, both compile errors the momen
 + import type { RenderMode, OfflineStrategy } from '@ultimat3/pwa';
 ```
 
-`@ultimat3/pwa` re-exports both under the canonical name, so the import path does not have to move — `@ultimat3/core` is where they are declared and is equally correct.
+`@ultimat3/pwa` re-exports both under the canonical name, so the import path does not have to move —
+`@ultimat3/core` is where they are declared and is equally correct.
 
-**Why the alias existed and why it could not stay.** Tier 4 may not import tier 4, so `@ultimat3/pwa` wrote its own copy of a set `@ultimat3/render` already had. That copy is what kept `spa` mapped to `cache-first` after `spa` was deleted in 6.0.0 — the one strategy that gives an `app/` route a **shared** cache entry, i.e. one signed-in member's HTML served to the next. The vocabulary is now declared once at tier 0, in `@ultimat3/core`, and `bun run scripts/render-modes.ts --json` refuses a second declaration anywhere in `packages/*/src`.
+**Why the alias existed and why it could not stay.** Tier 4 may not import tier 4, so `@ultimat3/pwa`
+wrote its own copy of a set `@ultimat3/render` already had. That copy is what kept `spa` mapped to
+`cache-first` after `spa` was deleted in 6.0.0 — the one strategy that gives an `app/` route a
+**shared** cache entry, i.e. one signed-in member's HTML served to the next. The vocabulary is now
+declared once at tier 0, and `bun run scripts/render-modes.ts --json` refuses a second declaration
+anywhere in `packages/*/src`.
 
-Nothing else in this batch costs an edit: `asyncContext` is a new export, and the `Object.freeze` and async-context repairs changed no exported name.
+### 4. `PrerenderReport.skipped` carries the reason, not just the path
+
+`readonly string[]` → `readonly SkippedRoute[]`, where a `SkippedRoute` is
+`{ route, surface, render, reason, why }`. `PrerenderedPage` also gains `route`, the declared path a
+concrete URL came from.
+
+```diff
+- for (const path of report.skipped) console.log(`skipped ${path}`);
++ for (const skipped of report.skipped) console.log(`skipped ${skipped.route}: ${skipped.why}`);
+```
+
+`x build --target static --json` now returns `emitted` and `skipped`, and the human path prints the
+same rows.
+
+**Why it changed.** `.x/static/` held a partial site and said nothing about the difference: `app/`
+routes exist only through the server, so a tool pointed at the directory filed *"the island did not
+mount"* against a route that was never emitted. A list of paths cannot distinguish "not emitted
+because it needs a server" from "not emitted because it is broken", and those are opposite facts.
 
 ## 5.x → 6.0.0, entry by entry
 
