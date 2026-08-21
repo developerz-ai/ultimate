@@ -43,15 +43,14 @@ export function enabledCapabilities(capabilities: ResolvedCapabilities): readonl
 }
 
 /** Manifest members a capability owns. Absent capability → absent member. */
-export const CAPABILITY_MANIFEST_KEYS: Readonly<Record<Capability, readonly string[]>> =
-  Object.freeze({
-    push: [],
-    backgroundSync: [],
-    badging: [],
-    shareTarget: ['share_target'],
-    fileHandlers: ['file_handlers'],
-    protocolHandlers: ['protocol_handlers'],
-  });
+export const CAPABILITY_MANIFEST_KEYS = Object.freeze<Record<Capability, readonly string[]>>({
+  push: [],
+  backgroundSync: [],
+  badging: [],
+  shareTarget: ['share_target'],
+  fileHandlers: ['file_handlers'],
+  protocolHandlers: ['protocol_handlers'],
+});
 
 /**
  * The service-worker code each capability emits — its listener, and anything that listener alone
@@ -64,13 +63,11 @@ export const CAPABILITY_MANIFEST_KEYS: Readonly<Record<Capability, readonly stri
  * already serves, so the member is the whole feature and the worker has no branch to add.
  * `shareTarget` named `/_x/share-target` here for two releases and no block ever emitted it.
  */
-export const CAPABILITY_SW_MARKERS: Readonly<Record<Capability, readonly string[]>> = Object.freeze(
-  {
-    push: ["addEventListener('push'", "addEventListener('notificationclick'"],
-    backgroundSync: ["addEventListener('sync'", 'class PwaSyncError'],
-    badging: ['navigator.setAppBadge'],
-    shareTarget: [],
-    fileHandlers: [],
-    protocolHandlers: [],
-  },
-);
+export const CAPABILITY_SW_MARKERS = Object.freeze<Record<Capability, readonly string[]>>({
+  push: ["addEventListener('push'", "addEventListener('notificationclick'"],
+  backgroundSync: ["addEventListener('sync'", 'class PwaSyncError'],
+  badging: ['navigator.setAppBadge'],
+  shareTarget: [],
+  fileHandlers: [],
+  protocolHandlers: [],
+});

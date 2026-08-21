@@ -14,6 +14,7 @@ reaches down to this package for it. **Never** import `entity`, `jobs`, `http` o
 | Reading a caught value | `renderThrowable()` from core; never `error instanceof Error ? error.message : String(error)` — both halves RUN app code (a `Proxy` trap, `Symbol.toPrimitive`) and `checkDb` backs `/readyz`, where a render that throws is an exception in place of the report the kubelet asked for |
 | Errors | subclass `DbError`; never `throw new Error` **in source**. A test simulating a *database* failure throws `dbUnavailable()`; a test simulating the *caller's body* failing throws a bare `Error` on purpose — an arbitrary throw is exactly what rollback and disposal must survive, and a `DbError` there would prove the narrower thing |
 | New code | add to `DB_ERROR_CODES` **and** `DB_ERROR_TITLES` in `errors.ts` |
+| A value ambient across an `await` | `asyncContext<T>(subject)` from `@ultimat3/core` — never `new AsyncLocalStorage`. Three scopes here use it: `transaction.ts`, `attribution.ts`, `expected-loop.ts` |
 | Exports | explicit in `src/index.ts`; no `export *` |
 | Files | < 200 LOC, one responsibility, `kebab-case.ts`, test beside source |
 
@@ -27,6 +28,20 @@ Deliberate cycle (safe — nothing is referenced at module-evaluation time):
 `client.ts ⇄ transaction.ts`, and `pglite.ts → transaction.ts` for the same reason. `db()`
 consults `currentTx()`; `withTransaction` uses `baseClient()`, never `db()`, or it would re-enter
 itself. Keep both sides `function` declarations so hoisting covers the TDZ.
+
+**The three ambient scopes open through core's one lazy seam, and that is a build error rather than
+a convention, `As of 2026-08`.** `transaction.ts` (`TxState`), `attribution.ts` (the entity/op
+pair) and `expected-loop.ts` (the reason) each constructed a module-scope `AsyncLocalStorage` until
+#255. A bundler stubs `node:async_hooks` to `{}` — Bun's `target: 'browser'` emits
+`var { AsyncLocalStorage } = (() => ({}))` — so the `new` threw
+`TypeError: undefined is not a constructor` at module **evaluation**, before any app code ran, and
+took every importer of that file down with it. Through `asyncContext<T>(subject)` the module
+evaluates, `get()` answers `undefined` (in a browser nothing IS in flight, so that is the true
+answer) and `run()` throws `X_ASYNC_CONTEXT_UNAVAILABLE` naming the scope. The server pays nothing:
+`getStore()` before any `run()` answered `undefined` whether the storage existed or not.
+`scripts/async-context-guard.ts` refuses a `new AsyncLocalStorage` — and the import that binds the
+class, aliased or namespaced — anywhere but `packages/core/src/async-context.ts`, and
+`scripts/async-context-guard.test.ts` runs it over the tree in the gate's `unit` step.
 
 `pglite.ts` is a pool of exactly one: PGlite is a single session, so `reserve()` (backed by
 `pglite-turns.ts`) is what stops two concurrent `BEGIN`s becoming one transaction. Three rules
@@ -45,7 +60,7 @@ seam `observe.ts` already draws.
 
 **The second rule fences on `inLiveTx()`, never on `currentTx() !== undefined`** — the two are
 different questions and reading the second as the first was a cross-transaction write. The
-`AsyncLocalStorage` store rides into every promise chain started inside `withTransaction`, so a
+async-context store rides into every promise chain started inside `withTransaction`, so a
 statement the app forgot to `await` still found a store after COMMIT, skipped the turn queue, and
 landed inside whichever unit of work held the single session next: measured `BEGIN`, `select 'inside
 tx'`, `COMMIT`, `BEGIN`, `select 'straggler'`, `select 'inside tx 2'`, `COMMIT` — committed by a
@@ -213,7 +228,7 @@ report and the return value cannot disagree about one statement.
 
 `attribution.ts` is `StatementEvent.attribution`'s producer: `withStatementAttribution(entity, op,
 fn)` runs `fn` with every statement it issues — at any depth, across every `await` — attributed to
-that pair, on an `AsyncLocalStorage` the same shape `expected-loop.ts` already uses. Four rules,
+that pair, on an async context the same shape `expected-loop.ts` already uses. Four rules,
 none optional. **Guard first** — it reads `statementObserver()` before touching the scope at all
 and, with nothing installed, hands straight to `fn`: one property read, one branch, no object
 allocated, on the path every statement in the process takes (axiom 6) — which is also why the pair
@@ -263,14 +278,14 @@ the process. The OTel `kind` is `client`; the database is the remote peer.
 
 `expected-loop.ts` is the **only** suppression mechanism, and the reason it is a scope rather than
 a pragma or a list is the same reason `observe.ts` is one observer: a second path is the tax
-(axiom 1). `expectedQueryLoop(reason, fn)` rides an `AsyncLocalStorage`, so it survives every
+(axiom 1). `expectedQueryLoop(reason, fn)` rides an async context, so it survives every
 `await` at any depth and two loops running concurrently never read each other; nesting keeps the
 innermost reason, because the closest scope is the one describing this loop. A blank reason is
 `X_INVARIANT` through core's `assert` — no new code for it, and an exemption with no argument is a
 pragma with extra steps. Three rules. **The funnel stamps, the consumer reads** — `runOn` and
 `statement()` call `expectedQueryLoopReason()` inside the branch that already found an observer and
 put the answer on the event as `expected`; a detector that judges a whole request runs long after
-every scope in it closed, so reading the ALS later would find nothing. **It suppresses a verdict,
+every scope in it closed, so reading the scope later would find nothing. **It suppresses a verdict,
 not a statement** — the SQL is still sent, still observed, and the span still opens, so anything
 that measures still sees the loop and only the thing that warns is told the author already
 answered. **It costs nothing uninstalled** — the read lives inside the observer branch, so the

@@ -2,9 +2,8 @@
 // `x.manifest.json`; every checker here reports against `file`, so an agent can
 // open the exact source rather than guess which route a URL came from.
 
+import type { RenderMode } from '@ultimat3/core';
 import type { RouteMeta } from './meta';
-
-export type RenderMode = 'static' | 'isr' | 'ssr' | 'stream';
 
 /** `site/` is the only surface SEO applies to; `app/` is behind auth. */
 export type Surface = 'site' | 'app' | 'api';

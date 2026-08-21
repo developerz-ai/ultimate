@@ -21,7 +21,7 @@
  *     async chain — abandoning the iterator stops delivery, never the accounting.
  */
 
-import { AsyncLocalStorage } from 'node:async_hooks';
+import { asyncContext } from '@ultimat3/core';
 import { AiTransportError } from './errors';
 import type { Gateway } from './gateway';
 import type { GenerateRequest, GenerateResult } from './provider';
@@ -102,7 +102,9 @@ export class LlmSink {
   }
 }
 
-const sinks = new AsyncLocalStorage<LlmSink>();
+// Core's one lazy seam, never a construction here: a module-scope `new` threw at EVALUATION in a
+// browser bundle, where the bundler stubs `node:async_hooks` to `{}`.
+const sinks = asyncContext<LlmSink>('an LLM stream sink');
 
 /** Mark everything `fn` awaits as a streamed invocation. */
 export function withLlmSink<T>(sink: LlmSink, fn: () => Promise<T>): Promise<T> {
@@ -111,7 +113,7 @@ export function withLlmSink<T>(sink: LlmSink, fn: () => Promise<T>): Promise<T> 
 
 /** The sink of the streamed invocation this call belongs to, or `undefined` for a plain one. */
 export function currentLlmSink(): LlmSink | undefined {
-  return sinks.getStore();
+  return sinks.get();
 }
 
 /**

@@ -4,10 +4,13 @@
 
 import { ConfigInvalidError } from './errors';
 import { ROLES, type Role } from './roles';
+// `app.config.ts` CONSUMES the route vocabulary; it does not own it. Declaring `OfflineStrategy`
+// here is what made it copyable — `render`, `manifest` and `pwa` each wrote their own rather than
+// import a name that reads like a config key.
+import type { OfflineStrategy } from './route-vocabulary';
 import { isIanaZoneName } from './time-zone-name';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
-export type OfflineStrategy = 'precache' | 'runtime' | 'network-only';
 export type CacheTier = 'memo' | 'lru' | 'shared' | 'isr' | 'cdn';
 export type RealtimeTier = 'channels' | 'live-queries' | 'local-first';
 export type RealtimeTransport = 'memory' | 'nats' | 'redis';

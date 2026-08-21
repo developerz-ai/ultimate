@@ -3,11 +3,11 @@
 // reads exactly like forgetting the tenant, and never a config list of exempt entities (axiom 1):
 // both put the argument somewhere other than the read it defends.
 
-// `node:` because Bun exposes no native async-context primitive: the scope has to outlive every
-// `await` inside it, and `AsyncLocalStorage` is the only thing that carries a value across them.
-// A module-scope flag would be shared by two concurrent requests — one of them ordinary.
-import { AsyncLocalStorage } from 'node:async_hooks';
-import { actorLabel, assert, hasScope, tryUseContext } from '@ultimat3/core';
+// The scope has to outlive every `await` inside it and a module-scope flag would be shared by two
+// concurrent requests — one of them ordinary — so it needs an async context. Opened through core's
+// one lazy seam rather than a `node:async_hooks` construction here, which threw at module
+// EVALUATION in a browser bundle (the bundler stubs the module to `{}`).
+import { actorLabel, assert, asyncContext, hasScope, tryUseContext } from '@ultimat3/core';
 import { crossTenantDenied } from './errors';
 
 /**
@@ -18,7 +18,7 @@ import { crossTenantDenied } from './errors';
  */
 export const CROSS_TENANT_SCOPE = 'tenancy:cross';
 
-const storage = new AsyncLocalStorage<string>();
+const storage = asyncContext<string>('the cross-tenant reason');
 
 /**
  * Run `fn` with the tenant guard lifted — every read and write it issues, at any depth and across
@@ -54,7 +54,7 @@ export function crossTenant<T>(reason: string, fn: () => T): T {
  * The innermost enclosing reason, or `undefined` outside every scope — which is every query in an
  * app that never calls `crossTenant`. Read by the tenant guard, and by nothing else.
  */
-export const crossTenantReason = (): string | undefined => storage.getStore();
+export const crossTenantReason = (): string | undefined => storage.get();
 
 /**
  * The capability check itself, run at `crossTenant()` and again for every plan built inside it.

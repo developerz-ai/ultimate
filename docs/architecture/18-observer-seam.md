@@ -85,7 +85,7 @@ impossible. A reporting-only observer (the dev ledger) must not throw.
 would make "which diagnostic saw this statement" order-dependent, and the one consumer that needs
 several — the dev server — composes them itself, in its own order, where that order is reviewable.
 
-## Attribution: two scopes, both `AsyncLocalStorage`
+## Attribution: two scopes, both on core's one async-context seam
 
 The funnel knows the SQL. It does not know that the SQL came from `findById` on `members` — by the
 time a statement exists, it has left `postgresRepo` by several stack frames and at least one
@@ -104,8 +104,22 @@ that context down across the `await`s a module-scope variable could not survive:
   to anything that only measures. Applied in `packages/admin/src/search.ts` (one indexed lookup per
   search field, argued optimal in the call) and twice in `packages/db/src/migrate.ts`.
 
-Both scopes cost nothing when no observer is installed — `withStatementAttribution` checks
-`statementObserver() === undefined` and calls `fn()` directly, entering no `AsyncLocalStorage` scope
+Neither constructs an `AsyncLocalStorage`. Both open through `asyncContext<T>(subject)`
+(`packages/core/src/async-context.ts`), the framework's one lazily-constructed store, `As of
+2026-08`. What that buys is a browser bundle: a bundler stubs `node:async_hooks` to `{}`, so a
+module-scope `new` threw `TypeError: undefined is not a constructor` at module EVALUATION and every
+importer of `@ultimat3/db` died before a line of app code ran. Now the module evaluates, `get()`
+answers `undefined` — nothing is in flight in a browser, which is TRUE — and `run()` throws
+`X_ASYNC_CONTEXT_UNAVAILABLE`, naming the scope that could not be opened. The server pays nothing:
+`getStore()` before any `run()` answers `undefined` whether the storage was ever constructed or not.
+
+**A build error, not a convention.** `scripts/async-context-guard.ts` refuses a
+`new AsyncLocalStorage` — and the import that binds the class, aliased or namespaced — anywhere but
+that one file, and `scripts/async-context-guard.test.ts` runs it over the real tree as part of the
+gate's `unit` step.
+
+Both scopes cost nothing when no observer is installed — `withStatementAttribution` reads
+`statementObserver() === undefined` and calls `fn()` directly, entering no async-context scope
 at all. That is why the pair travels as two plain strings rather than a pre-built
 `StatementAttribution` object: allocating one before the branch could decline it would tax every
 production statement in the process for a diagnostic that is off.
@@ -158,7 +172,7 @@ Nothing above this seam changes shape when it is off:
 
 - `runOn`/`statement` call `sendOn`/`send` directly on the `undefined` branch — the exact call the
   funnel made before the seam existed.
-- No `performance.now()` read, no span, no `StatementEvent` allocated, no `AsyncLocalStorage` scope
+- No `performance.now()` read, no span, no `StatementEvent` allocated, no async-context scope
   entered by either `withStatementAttribution` or `expectedQueryLoop`.
 - `packages/db/src/observe.test.ts` pins this directly: with no observer installed, `runOn`'s
   behavior is byte-identical to the pre-seam funnel.

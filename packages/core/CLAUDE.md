@@ -14,6 +14,7 @@ is a change to every package.
 | New code | add to `CORE_CODE_TITLES` in `error-codes.ts`, else the title is auto-humanised |
 | Time | take a `Clock`; `Date.now()` / `new Date()` only inside `clock.ts` |
 | Context | never thread `ctx` as a parameter — `useContext()` |
+| A value ambient across an `await` | `asyncContext<T>(subject)` from `async-context.ts`, in **every** package — never `new AsyncLocalStorage` |
 | Exports | add to `src/index.ts` explicitly; no `export *`. Three subjects that each span a dozen modules arrive through `src/exports/` — every name is still written out in `index.ts`, so the public surface is one file to read |
 | Files | < 200 LOC, 500 hard ceiling, one responsibility, `kebab-case.ts`, test beside source |
 | Type claims | `type-pins.ts`, never a `.test.ts` — `tsconfig.json` excludes tests, so `tsc` never reads one |
@@ -21,6 +22,23 @@ is a change to every package.
 Deliberate cycles (safe — nothing is referenced at module-evaluation time):
 `errors.ts ⇄ error-codes.ts`. Keep it that way: no top-level `UltimateError` use in
 `error-codes.ts`.
+
+**`async-context.ts` is the framework's ONE `AsyncLocalStorage`, and that is a framework rule
+rather than a core one, `As of 2026-08-20`.** `asyncContext` is exported from `src/index.ts` and
+six modules outside this package opened their own before they adopted it — `@ultimat3/db`'s
+transaction, statement attribution and expected-loop scopes, `@ultimat3/entity`'s `crossTenant`,
+`@ultimat3/ai`'s budget ledger and LLM stream sink. Each was a module-scope `new` a browser bundler
+turns into `TypeError: undefined is not a constructor` at module EVALUATION, so importing any of
+those packages from a client bundle failed before a line of app code ran. Reads degrade to
+`undefined`, writes throw `X_ASYNC_CONTEXT_UNAVAILABLE`; the server pays nothing, because
+`getStore()` before any `run()` answers `undefined` whether the storage exists or not.
+
+The mechanical half is `scripts/async-context-guard.ts`, collected by `x verify`'s `unit` step
+through `scripts/async-context-guard.test.ts` — it refuses a `new AsyncLocalStorage` **and** the
+import that binds the class, aliased or namespaced, anywhere but this one file. The browser-barrel
+test in `async-context.test.ts` covers the same defect for core alone and cannot see another
+package; the guard cannot see a runtime `await import('node:async_hooks')`. Neither is the other's
+duplicate.
 
 `error-render.ts` imports nothing, including from this package — an error factory that dies
 formatting its own message is the failure it exists to prevent, so it cannot depend on anything
@@ -85,6 +103,7 @@ shape against a locally declared sample interface for exactly that reason.
 |---|---|---|
 | which deploy this is | `environment.ts` (`ULTIMATE_ENV`) | the twin of `ROLE`; never declare a second env var for it |
 | what this process does | `roles.ts` (`ROLE`) | |
+| how a route renders, caches offline and hydrates | `route-vocabulary.ts` (`RENDER_MODES`, `OFFLINE_STRATEGIES`, `HYDRATE_STRATEGIES`) | tier 0 because SIX packages name them and imports only go down — `render`, `http`, `seo`, `manifest` and `pwa` each kept a hand-copy until 2026-08, and `'spa'` was deleted from one while five went on admitting it under a green typecheck. Every union is `(typeof ARRAY)[number]`, pinned in `type-pins.ts`; `scripts/render-modes.test.ts` refuses a second declaration anywhere in `packages/*/src`. Re-export it, never restate it |
 | which build of the APP this is | `app-version.ts` (`APP_VERSION`) | one reader, `dev` by default: `db` writes it into `x_migrations` and `jobs` into `x_backfills`, and `jobs` cannot reach `db` for the answer |
 | the values | `env.ts` | `checkEnv().values` holds REAL secrets — anything that prints goes through `maskedEnvValues()` |
 | `.env.example` | `env-example.ts` | a projection of the schema, never hand-maintained |

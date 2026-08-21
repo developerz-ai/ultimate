@@ -86,7 +86,7 @@ The `/_x` **dev** dashboard is a standalone page with no stylesheet pipeline, so
 |---|---|---|
 | Login / error pages | `ssr` | no shell to precache, must be correct on first byte |
 | List and detail screens | `stream` | shell instantly, table streams when the query resolves |
-| Job step timelines, live inspector | `spa` + live query | behind auth, entirely interactive, no SEO value |
+| Job step timelines, live inspector | `ssr` + `hydrate: 'never'` + live query | behind auth and no SEO value, but a generated view is a pure function of its props — the interactive part arrives as an `island({ src })`, budgeted in real bytes. Every generated route is `ssr`; `packages/admin/src/routes.ts` declares one mode for all of them, never an author's choice |
 | Offline | `network-only` | an operator acting on stale operational data is worse than an error |
 
 See [Routes and render modes](Routes-And-Render-Modes).

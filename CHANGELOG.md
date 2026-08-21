@@ -8,7 +8,184 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`asyncContext<T>(subject)` is public API on `@ultimat3/core`**, with its `AsyncContext<T>` type.
+  One lazily-constructed `AsyncLocalStorage` for the whole framework, and the answer to "what happens
+  where there is no async context" in one place: **reads degrade, writes throw.** `get()` answers
+  `undefined` — in a browser nothing IS in flight, so that is the true answer — and `run()` throws
+  `X_ASYNC_CONTEXT_UNAVAILABLE` naming the scope that could not be opened, instead of leaving a bare
+  `TypeError` from a stack mentioning no file the caller wrote. A server pays nothing: `getStore()`
+  before any `run()` answered `undefined` whether the storage was ever constructed or not (#255)
+- `scripts/gate-codes.ts` — `wiki/Error-Codes.md`'s "never ships to an app" parenthesis, held complete
+  in **both** directions: every code it names has a table row, and every `X_*` code `scripts/` declares
+  is named in it. Codes: `X_GATE_CODE_UNDOCUMENTED`, `X_GATE_CODE_BACKLOG_STALE`.
+
+  Nothing read that parenthesis. `checkErrorCodeDocs` is satisfied by any `` `X_*` `` in backticks
+  **anywhere** on the page — `documentedCodes` is one whole-file regex — so being named *inside* the
+  list counted as being documented; from the other side `checkErrorCodeRegistry` exempts gate codes by
+  scanning `scripts/`, never by reading the list. A hand-copy of a derived set with no check on it,
+  which is the shape `gate-steps.ts` and `release-facts.ts` already exist for.
+
+  **26 codes were wrong on day one**, so it shipped on a ratchet, and this change drains it to zero:
+
+  | Was | Count | Fixed by |
+  |---|---|---|
+  | named in the list, no table row — documented by parenthesis only | 20 | a row written from the script that declares the code |
+  | declared under `scripts/`, absent from the list | 6 | added to the parenthesis |
+
+  The 20 rows come from `coverage-gate.ts`, `generator-counts.ts`, `release-facts.ts`, `lockfile-pins.ts`,
+  `release.ts`, `test-bare-error.ts`, `test-fix-citations.ts`, `to-throw-returns.ts` and
+  `test-typecheck-gate.ts` — cause and fix read off each declaration site, never invented from the
+  code's name. The six are the four `X_REGISTRY_*`, whose rows sat **above** `## Reserved codes` where
+  the page promises `x errors explain` answers for them (it answers `X_ERROR_CODE_UNKNOWN`), plus this
+  rule's own two. `scripts/gate-codes-backlog.ts` is now empty, so the next gap reds the gate rather
+  than joining a list.
+- `scripts/changelog-check.ts` — `CHANGELOG.md`'s sections and `wiki/Upgrading.md`'s migration counts,
+  held to each other. Seven rules, one per way the two files can disagree, collected by the gate's
+  `unit` step through `scripts/changelog-check.test.ts` (#267)
+
+  | Rule | Refuses |
+  |---|---|
+  | `duplicate` | two `## ` headings naming one version |
+  | `empty` | a released section with no body |
+  | `unreleased-breaking` | a `BREAKING —` entry under `## [Unreleased]` at a tagged commit |
+  | `count` | a `wiki/Upgrading.md` row whose number is not that major's own section's `BREAKING —` count |
+  | `total` | the aggregate row disagreeing with the sum of the per-major rows |
+  | `missing-row` | a released major from 2.0.0 on with no row sending the reader to its section |
+  | `unscanned` | no row sends the reader to any single version section, so the rule read nothing |
+
+  The count it replaces was derived from the **whole file**, which cannot see a migration filed under
+  the wrong heading: a misplaced entry only makes the number smaller. Codes:
+  `X_DOC_CHANGELOG_SECTION_INVALID`, `X_DOC_CHANGELOG_UNRELEASED_BREAKING`,
+  `X_DOC_MIGRATION_COUNT_STALE`, `X_DOC_MIGRATION_UNSCANNED`.
+
+### Changed
+
+- **The route vocabulary is declared once, at tier 0.** `RENDER_MODES`/`RenderMode`,
+  `OFFLINE_STRATEGIES`/`OfflineStrategy` and `HYDRATE_STRATEGIES`/`HydrateStrategy` now live in
+  `packages/core/src/route-vocabulary.ts`, each union **derived** from its array — `(typeof
+  ARRAY)[number]` — so the pair cannot disagree. `@ultimat3/render`, `http`, `seo`, `manifest` and
+  `pwa` re-export what their own signatures take; `@ultimat3/core`'s `config.ts` imports
+  `OfflineStrategy` instead of declaring it. **Re-export, never restate** (#261).
+
+  **14 declarations across six packages became one**, measured `As of 2026-08` by running this
+  change's own scanner over the commit before it. Imports go down tiers only, so copying was the
+  available move and every package took it — and `'spa'` was deleted from one copy in 6.0.0 while
+  five others went on admitting it under a green project-wide typecheck. `@ultimat3/pwa`'s copy
+  mapped `spa` to `cache-first`, the one strategy that gives an `app/` route a **shared** cache
+  entry: one member's authed HTML served to the next.
+
+  `scripts/render-modes.ts` refuses copy #13 by **literal set, not by name** — the copy that did the
+  damage was called `PwaRenderMode`, and a rule keyed on the word `RenderMode` reads straight past
+  it. Two shared members is a copy; one is a coincidence and stays silent (`CacheTier` holds `isr`,
+  `StrategyName` holds `network-only`, `ChangeFreq` holds `never`). The margin is exactly one:
+  the highest innocent overlap in the tree is **1**, across seven sets. The rule checks the
+  sanctioned module first and in the opposite direction — it must declare all three, by name — so a
+  scan that read nothing cannot answer what a clean tree answers. `packages/core/src/type-pins.ts`
+  pins each union to its members with a mutual-assignability `Exact<A, B>`, tuple-wrapped so a
+  distributed `extends` cannot hide a widening.
+
+- **BREAKING — `PwaRenderMode` is deleted from `@ultimat3/pwa`.** It was this package's own NAME for
+  `RenderMode`, hand-copied because tier 4 may not import tier 4, and the copy is why `spa` kept
+  mapping to `cache-first` after `spa` was deleted from the vocabulary. **Migration:**
+  `import type { RenderMode } from '@ultimat3/core'` — or from `@ultimat3/pwa`, which re-exports it
+  under that name — and rename every use. Members unchanged: `'static' | 'isr' | 'ssr' | 'stream'`
+  (#261)
+- **BREAKING — `PwaOfflineStrategy` is deleted from `@ultimat3/pwa`**, same reason, same members:
+  `'precache' | 'runtime' | 'network-only'`. **Migration:**
+  `import type { OfflineStrategy } from '@ultimat3/core'` — or from `@ultimat3/pwa` — and rename
+  every use (#261)
+
+### Fixed
+
+- **Six more module-scope `AsyncLocalStorage` constructions, all outside core, all with the same
+  browser defect** (#255, the follow-up #244 left open). A bundler stubs `node:async_hooks` to `{}` —
+  Bun's `target: 'browser'` emits `var { AsyncLocalStorage } = (() => ({}))` — so the `new` threw
+  `TypeError: undefined is not a constructor` at module **evaluation**, before a line of app code ran,
+  and took every importer of that file with it. Each now opens through core's seam.
+
+  | Site | Scope |
+  |---|---|
+  | `packages/db/src/transaction.ts` | the open transaction (`currentTx`, `inLiveTx`) |
+  | `packages/db/src/attribution.ts` | the entity/op pair on `StatementEvent.attribution` |
+  | `packages/db/src/expected-loop.ts` | the written reason a loop of statements is deliberate |
+  | `packages/entity/src/cross-tenant.ts` | the written reason a read spans tenants |
+  | `packages/ai/src/budget.ts` | the ambient budget ledger |
+  | `packages/ai/src/llm-stream.ts` | the streamed-invocation sink |
+
+  **And it is a build error now, not a convention** (axiom 3): `scripts/async-context-guard.ts`
+  refuses a `new AsyncLocalStorage` **and** the import that binds the class — aliased, or reached
+  through a namespace import — anywhere but `packages/core/src/async-context.ts`. It reads
+  `packages/*/src`, `packages/*/e2e` and `scripts/`, comment-stripped, and runs in the gate's `unit`
+  step through `scripts/async-context-guard.test.ts`. A floor rather than a proof: a runtime
+  `await import('node:async_hooks')` and a constructor stashed in a variable are both outside what it
+  can see, and its header says so.
+- **`scripts/release.ts` promotes `[Unreleased]` instead of appending a section generated from commit
+  subjects** (#267). `[Unreleased]` **is** the release notes — written as each change lands, migration
+  and all — so a release renames that heading to the version and opens a fresh empty one above it.
+  Appending is what put two `## 5.0.1` headings and two `## 5.0.0` headings in the file — a dateless
+  generated section above the hand-written one, each time — and both pairs sat there from `release: 5.0.1`
+  until `release: 6.0.0` merged them by hand. `v6.0.0` still carries the other half of the same defect:
+  its section holds **two** `### Fixed` blocks, the hand-written one and a generated one restating `#243`
+  as `#253` and `#244` as `#256` in merge-subject words. And the commit before that release had all of
+  6.0.0's migration under `## [Unreleased]` while `wiki/Upgrading.md` already sent the reader to a
+  `6.0.0` section the file did not have — promoted by hand, in the release commit, which is the manual
+  step this replaces. Promotion cannot produce any of those shapes: one heading, renamed, never
+  duplicated, and commit subjects land as a `### Commits` block **inside** the promoted section under a
+  heading no hand-written section uses.
+
+  Two refusals, both raised before a single manifest is rewritten and under `--dry-run` too, because
+  finding out after 47 files have moved is the expensive order to find it out in:
+  `X_RELEASE_UNRELEASED_MISSING` when there is no `## [Unreleased]` heading to promote, and
+  `X_DOC_CHANGELOG_SECTION_INVALID` when it is empty and no commit landed since the previous tag. The
+  report also states whether the previous tag was found, since a clone without it lists no commits and
+  a silent empty list reads exactly like a quiet release.
+- **21 closed-key `Object.freeze` tables accepted an unknown key in silence.**
+  `const X: Readonly<Record<K, V>> = Object.freeze({…})` passes the literal to
+  `Object.freeze<T>(o: T)`, which **infers** `T` from it — so the literal is no longer fresh by the
+  time the annotation is checked, excess-property checking never runs, and an extra key compiles.
+  A *missing* key still errored, which is why the form looked like it was working.
+
+  Not a hypothesis. Four sites were reverted to the old form with a bogus key added and **all four
+  compiled clean**: `ROLE_INFO`, `SURFACE_SPECS`, `POOL_PROFILES` and `CAPABILITY_MANIFEST_KEYS`.
+  `POOL_PROFILES` is `Record<Role, PoolProfile>` — a pool configuration for a role that does not
+  exist — and `SURFACE_SPECS` a spec for a surface `locateSurface` can never return. Same shape as
+  `spa: 'cache-first'`, in four more places.
+
+  All 21 now spell the type argument — `Object.freeze<Record<K, V>>({…})` — and all 21 fail
+  `TS2353` on an extra key. Four tables stay **deliberately open**, `Record<string, …>` registries
+  keyed by codes another package or an external spec owns:
+
+  | Open table | Keyed by |
+  |---|---|
+  | `SCHEMA_ERROR_CODE_TITLES` (`packages/core/src/schema-error-codes.ts`) | `@ultimat3/schema`'s codes, which core may not import |
+  | `SCHEMA_ERROR_CODES` (`packages/schema/src/errors.ts`) | the same codes, at their source |
+  | `DB_SQLSTATE_CODES` (`packages/db/src/sqlstate.ts`) | Postgres SQLSTATE |
+  | `FORMAT_MAP` (`packages/schema/src/json-schema.ts`) | JSON Schema `format` names |
+
+  `scripts/frozen-records.ts` holds the rule, read as text rather than through `tsc` — it runs in
+  the gate's `unit` step, where a type-checker would be a second build of the whole graph. Its
+  header names what a text scan cannot see: a `freeze` that is not a top-level `const`'s
+  initialiser, a key type laundered through an alias, a `as Record<K, V>` cast, an interface
+  annotation. `scripts/frozen-records.test.ts` carries the floor that keeps that silence honest —
+  `explicit >= 21`, `annotated-open >= 4` — because deleting a constraint leaves no annotation for
+  the rule to contradict and shows up only as the number falling.
+- **Two tests that could red the gate for reasons belonging to no change** (#264), both made
+  algorithmic rather than given a longer timeout.
+
+  `packages/time/src/cron-occurrence.test.ts` asserted `performance.now()` under 20 ms to prove an
+  unmatchable day/month is refused at parse time without walking. Measured on this repo the same call
+  is 3.2 ms at worst idle and 21.3 ms at worst under eight `bun test` workers, so the bound separated a
+  loaded box from an unloaded one and never the walk from the parse. It now asserts **which** refusal
+  arrives, and the budget backstop is exercised on a `CronExpression` assembled past the parser.
+
+  `examples/dummy/type-chain.test.ts` diffed the whole diagnostic set before and after a rename. Eight
+  identical `tsc --noEmit` runs over an unchanged tree answered 117, 119 and 120 diagnostics — the same
+  115 in-app ones byte for byte, plus 1 to 4 TS6307 lines about framework files reached through the
+  `node_modules` symlink, whose blamed importer is a race between TypeScript's parallel workers. The
+  diff is now scoped to diagnostics inside the app, where the rename is the only thing that can move
+  them.
 
 ## 6.0.0
 
@@ -132,16 +309,11 @@ Nothing yet.
   JSX became `React.createElement` against a `React` that is never imported and every island
   containing JSX threw `ReferenceError` on first interaction, while the build reported success and
   `x verify` stayed green. Islands are now compiled with `babel-preset-solid` (#243)
-- a browser bundle can load `@ultimat3/core`: three module-scope `AsyncLocalStorage` constructions moved
-  onto one lazy seam, so `@ultimat3/ui` no longer throws `TypeError: undefined is not a constructor` at
-  module evaluation (#244)
-
-### Fixed
-
-- island JSX compiles to real Solid reactivity, not to an undefined React (#253)
-- one lazy AsyncLocalStorage, so a browser bundle can load @ultimat3/core (#256)
-- One timezone rule everywhere, and CI runs the Bun this repo runs (#265)
-- 6.0.0: Solid reactivity that works, Bun.Image, and four defects that shipped green (#263)
+- a browser bundle can load `@ultimat3/core`: **core's** three module-scope `AsyncLocalStorage`
+  constructions — the request context, the active span, the impersonation reason — moved onto one lazy
+  seam, so `@ultimat3/ui` no longer throws `TypeError: undefined is not a constructor` at module
+  evaluation (#244). The seam was private to core here, and six more constructions outside it were
+  untouched and unwatched; both are `[Unreleased]` (#255)
 
 ## 5.0.1 - 2026-08-20
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "ed73e93edf511ece8c99f6ae90dec24ab47960cfddcbfd5e03344851fd0ed254",
+  "buildId": "5ce2746255a0c1b6a5d972a17fd3bd34bfb542255424cc395c591ae3a48fdf1e",
   "tiers": {
     "0": [
       "core",
@@ -788,6 +788,16 @@
       "at": "packages/admin/src/errors.ts"
     },
     {
+      "code": "X_DOC_CHANGELOG_SECTION_INVALID",
+      "owner": "scripts",
+      "at": "scripts/changelog-check.ts"
+    },
+    {
+      "code": "X_DOC_CHANGELOG_UNRELEASED_BREAKING",
+      "owner": "scripts",
+      "at": "scripts/changelog-check.ts"
+    },
+    {
       "code": "X_DOC_COMMAND_ALLOWANCE_STALE",
       "owner": "scripts",
       "at": "scripts/doc-commands.ts"
@@ -836,6 +846,16 @@
       "code": "X_DOC_GATE_STEPS_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/gate-steps.ts"
+    },
+    {
+      "code": "X_DOC_MIGRATION_COUNT_STALE",
+      "owner": "scripts",
+      "at": "scripts/changelog-check.ts"
+    },
+    {
+      "code": "X_DOC_MIGRATION_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/changelog-check.ts"
     },
     {
       "code": "X_DOC_RELEASE_FACT_STALE",
@@ -1031,6 +1051,16 @@
       "code": "X_FRAME_RATE_LIMIT",
       "owner": "realtime",
       "at": "packages/realtime/src/errors.ts"
+    },
+    {
+      "code": "X_GATE_CODE_BACKLOG_STALE",
+      "owner": "scripts",
+      "at": "scripts/gate-codes.ts"
+    },
+    {
+      "code": "X_GATE_CODE_UNDOCUMENTED",
+      "owner": "scripts",
+      "at": "scripts/gate-codes.ts"
     },
     {
       "code": "X_GENERATE_CONFLICT",
@@ -1829,6 +1859,11 @@
     },
     {
       "code": "X_RELEASE_FLAG_UNKNOWN",
+      "owner": "scripts",
+      "at": "scripts/release.ts"
+    },
+    {
+      "code": "X_RELEASE_UNRELEASED_MISSING",
       "owner": "scripts",
       "at": "scripts/release.ts"
     },

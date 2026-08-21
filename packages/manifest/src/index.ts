@@ -1,6 +1,7 @@
 // Public API of @ultimat3/manifest. Explicit — `x verify`, `x manifest`, and the MCP
 // `manifest.read` resource are all built from exactly these exports.
 
+export type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
 export type { AgentsMdCheck, CheckAgentsMdInput } from './agents-md';
 export {
   AGENTS_MD_FILENAME,
@@ -46,15 +47,12 @@ export type {
   ColumnFact,
   EntityFact,
   ErrorCodeFact,
-  HydrateStrategy,
   JobFact,
   JsonValue,
   Manifest,
-  OfflineStrategy,
   PolicyFact,
   QueryFact,
   RateLimitFact,
-  RenderMode,
   RouteFact,
   TaskFact,
 } from './schema';

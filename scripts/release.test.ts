@@ -3,13 +3,15 @@
 // installable, and where a new section lands in a newest-first changelog.
 
 import { describe, expect, test } from 'bun:test';
+import { checkChangelog } from './changelog-check';
 import {
   BUMPS,
-  changelogEntry,
-  insertRelease,
+  commitBlock,
   nextVersion,
+  promoteUnreleased,
   RELEASE_FLAGS,
   readReleaseVersion,
+  releaseDate,
   repinFrameworkDeps,
   setOwnVersion,
   unknownReleaseFlags,
@@ -90,41 +92,109 @@ describe('repinFrameworkDeps', () => {
   });
 });
 
-describe('insertRelease', () => {
-  const changelog = ['# Changelog', '', '## [Unreleased]', '', '### Added', '', '- a thing', ''];
+describe('promoteUnreleased', () => {
+  const changelog = [
+    '# Changelog',
+    '',
+    'Preamble.',
+    '',
+    '## [Unreleased]',
+    '',
+    '### Changed',
+    '',
+    '- **BREAKING — a thing moved.** Do the edit.',
+    '',
+    '## 1.0.0 - 2026-08-10',
+    '',
+    '- first',
+    '',
+  ].join('\n');
 
-  test('lands under [Unreleased] and above every previous version', () => {
-    const once = insertRelease(
-      `${changelog.join('\n')}\n## 1.0.0\n\n- first\n`,
-      '## 1.1.0\n\n- next\n',
+  const promote = (text: string, version = '2.0.0', subjects: readonly string[] = []): string => {
+    const result = promoteUnreleased({ changelog: text, version, date: '2026-08-20', subjects });
+    return 'changelog' in result ? result.changelog : '';
+  };
+
+  // The whole issue, in one assertion: the migration ends up IN the version's own section, and
+  // there is exactly one heading for that version — not a generated one above a hand-written one.
+  test('the [Unreleased] body becomes the version section, migration and all', () => {
+    const out = promote(changelog);
+    const headings = out.split('\n').filter((line) => line.startsWith('## '));
+    expect(headings).toEqual(['## [Unreleased]', '## 2.0.0 - 2026-08-20', '## 1.0.0 - 2026-08-10']);
+    const section = out.slice(out.indexOf('## 2.0.0'), out.indexOf('## 1.0.0'));
+    expect(section).toContain('- **BREAKING — a thing moved.** Do the edit.');
+  });
+
+  test('a fresh, empty [Unreleased] is opened above it', () => {
+    const out = promote(changelog);
+    const head = out.slice(out.indexOf('## [Unreleased]'), out.indexOf('## 2.0.0'));
+    expect(head).toBe('## [Unreleased]\n\nNothing yet.\n\n');
+    expect(head).not.toContain('BREAKING');
+  });
+
+  // A second release is a second promotion, and the placeholder must not accumulate down the file.
+  test('the placeholder is never carried into a release section', () => {
+    const next = promote(changelog).replace('Nothing yet.', '- **BREAKING — the next one.** Edit.');
+    const twice = promote(next, '2.0.1');
+    expect(twice.split('Nothing yet.').length - 1).toBe(1);
+    expect(twice.indexOf('Nothing yet.')).toBeLessThan(twice.indexOf('## 2.0.1'));
+  });
+
+  test('commit subjects land INSIDE the section, under a heading nothing hand-written uses', () => {
+    const out = promote(changelog, '2.0.0', ['fix(cli): a thing', 'docs: another']);
+    const section = out.slice(out.indexOf('## 2.0.0'), out.indexOf('## 1.0.0'));
+    expect(section).toContain('### Commits\n\n- fix(cli): a thing\n- docs: another\n');
+    // Verbatim: a subject is provenance, and rewriting it is how it stops matching `git log`.
+    expect(section).not.toContain('### Fixed');
+  });
+
+  test('the promoted file passes the changelog gate rules, tagged', () => {
+    const upgrading = [
+      '| From → to | Breaking entries | Read |',
+      '|---|---|---|',
+      '| 1.x → 2.0.0 | **1** | the `2.0.0` section, in order |',
+    ].join('\n');
+    expect(
+      checkChangelog({ changelog: promote(changelog), upgrading, taggedVersion: '2.0.0' }),
+    ).toEqual([]);
+    // And the file it was promoted FROM does not, which is what the promotion is for.
+    expect(
+      checkChangelog({ changelog, upgrading, taggedVersion: '2.0.0' }).map((gap) => gap.kind),
+    ).toContain('unreleased-breaking');
+  });
+
+  test('no [Unreleased] heading is a refusal, never a guess', () => {
+    const result = promoteUnreleased({
+      changelog: '# Changelog\n\n## 1.0.0\n\n- first\n',
+      version: '2.0.0',
+      date: '2026-08-20',
+      subjects: [],
+    });
+    expect('findings' in result && result.findings[0]?.code).toBe('X_RELEASE_UNRELEASED_MISSING');
+  });
+
+  test('nothing to say is a refusal too, so no release ships an empty section', () => {
+    const result = promoteUnreleased({
+      changelog: '# Changelog\n\n## [Unreleased]\n\nNothing yet.\n\n## 1.0.0\n\n- first\n',
+      version: '1.0.1',
+      date: '2026-08-20',
+      subjects: [],
+    });
+    expect('findings' in result && result.findings[0]?.code).toBe(
+      'X_DOC_CHANGELOG_SECTION_INVALID',
     );
-    const headings = once.split('\n').filter((line) => line.startsWith('## '));
-    expect(headings).toEqual(['## [Unreleased]', '## 1.1.0', '## 1.0.0']);
   });
 
-  // Appending was the old behaviour: correct for the first release, and wrong for every one after,
-  // because the file then read oldest-first from its third entry on.
-  test('a second release does not sort below the first', () => {
-    const first = insertRelease(`${changelog.join('\n')}\n`, '## 1.0.0\n\n- first\n');
-    const second = insertRelease(first, '## 1.0.1\n\n- fix\n');
-    expect(second.indexOf('## 1.0.1')).toBeLessThan(second.indexOf('## 1.0.0'));
-  });
-
-  test('appends when the file has no version heading yet', () => {
-    expect(insertRelease('# Changelog\n', '## 1.0.0\n')).toBe('# Changelog\n\n## 1.0.0\n');
+  test('an empty subject list adds no heading at all', () => {
+    expect(commitBlock([])).toEqual([]);
   });
 });
 
-describe('changelogEntry', () => {
-  test('groups conventional subjects under Keep a Changelog headings', () => {
-    const entry = changelogEntry('1.0.0', ['feat(cli): x verify', 'fix(http): 401 on anonymous']);
-    expect(entry).toContain('## 1.0.0');
-    expect(entry).toContain('### Added\n\n- x verify');
-    expect(entry).toContain('### Fixed\n\n- 401 on anonymous');
-  });
-
-  test('an unconventional subject still lands somewhere, verbatim', () => {
-    expect(changelogEntry('1.0.0', ['tidy up'])).toContain('### Changed\n\n- tidy up');
+describe('releaseDate', () => {
+  // No date without an explicit IANA zone, this script included: a release cut at 23:00 local must
+  // not be dated a day away from the tag it is committed with.
+  test('is ISO-8601 in UTC', () => {
+    expect(releaseDate(new Date('2026-08-20T23:30:00-05:00'))).toBe('2026-08-21');
   });
 });
 

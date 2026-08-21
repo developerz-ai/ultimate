@@ -1,5 +1,11 @@
 /** Public API of `@ultimat3/pwa`. You never open `sw.js`; you call these. */
 
+/**
+ * `PwaRenderMode` and `PwaOfflineStrategy` were this package's own NAMES for tier 0's vocabulary —
+ * the alias was the copy. `PwaRoute` takes both in its signature, so the canonical names are
+ * re-exported here; a consumer still needs one import, and now it names the real type.
+ */
+export type { OfflineStrategy, RenderMode } from '@ultimat3/core';
 export type { BackgroundSyncOptions, RetryPolicy } from './background-sync';
 export {
   backgroundSyncSource,
@@ -111,8 +117,6 @@ export {
 export type { RouteRule, ServiceWorkerConfig, ServiceWorkerOutput } from './service-worker';
 export { assertScope, generateServiceWorker, routeRules } from './service-worker';
 export type {
-  PwaOfflineStrategy,
-  PwaRenderMode,
   PwaRoute,
   StrategyCache,
   StrategyEnv,

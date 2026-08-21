@@ -3,13 +3,14 @@
 // A scope with a written reason — never a comment pragma and never a config list of exempt call
 // sites (axiom 1), because both put the argument somewhere other than the loop it defends.
 
-// `node:` because Bun exposes no native async-context primitive: the reason has to outlive every
-// `await` inside the scope, and `AsyncLocalStorage` is the only thing that carries a value across
-// them. A module-scope variable would be shared by two concurrent loops.
-import { AsyncLocalStorage } from 'node:async_hooks';
-import { assert } from '@ultimat3/core';
+// The reason has to outlive every `await` inside the scope and a module-scope variable would be
+// shared by two concurrent loops, so it needs an async context — opened through core's one lazy
+// seam rather than a `node:async_hooks` construction here, which threw at module EVALUATION in a
+// browser bundle (the bundler stubs the module to `{}`) and took every importer of `@ultimat3/db`
+// with it.
+import { assert, asyncContext } from '@ultimat3/core';
 
-const storage = new AsyncLocalStorage<string>();
+const storage = asyncContext<string>('the expected-loop reason');
 
 /**
  * Run `fn` with every statement it issues — at any depth, across every `await` — marked expected
@@ -49,5 +50,5 @@ export function expectedQueryLoop<T>(reason: string, fn: () => T): T {
  * answer captured at the moment the statement settled.
  */
 export function expectedQueryLoopReason(): string | undefined {
-  return storage.getStore();
+  return storage.get();
 }

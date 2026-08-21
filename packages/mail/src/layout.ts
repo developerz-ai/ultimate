@@ -21,21 +21,20 @@ export type MailToken =
   | 'calloutDangerBg'
   | 'calloutDangerText';
 
-export const MAIL_TOKENS: Readonly<Record<MailToken, Readonly<Record<ColorScheme, string>>>> =
-  Object.freeze({
-    pageBg: { light: '#f4f5f7', dark: '#0b0d10' },
-    surfaceBg: { light: '#ffffff', dark: '#14181d' },
-    textPrimary: { light: '#16191d', dark: '#e7eaee' },
-    textMuted: { light: '#5c6470', dark: '#9aa4b1' },
-    borderSubtle: { light: '#e2e6ea', dark: '#262c33' },
-    accentBg: { light: '#2f6df6', dark: '#4f86ff' },
-    accentText: { light: '#ffffff', dark: '#0b0d10' },
-    linkText: { light: '#2f6df6', dark: '#7aa7ff' },
-    calloutInfoBg: { light: '#eef3ff', dark: '#141c2c' },
-    calloutInfoText: { light: '#1f3f8f', dark: '#b9cdfb' },
-    calloutDangerBg: { light: '#fdeceb', dark: '#2a1416' },
-    calloutDangerText: { light: '#8c2118', dark: '#f5b3ad' },
-  });
+export const MAIL_TOKENS = Object.freeze<Record<MailToken, Readonly<Record<ColorScheme, string>>>>({
+  pageBg: { light: '#f4f5f7', dark: '#0b0d10' },
+  surfaceBg: { light: '#ffffff', dark: '#14181d' },
+  textPrimary: { light: '#16191d', dark: '#e7eaee' },
+  textMuted: { light: '#5c6470', dark: '#9aa4b1' },
+  borderSubtle: { light: '#e2e6ea', dark: '#262c33' },
+  accentBg: { light: '#2f6df6', dark: '#4f86ff' },
+  accentText: { light: '#ffffff', dark: '#0b0d10' },
+  linkText: { light: '#2f6df6', dark: '#7aa7ff' },
+  calloutInfoBg: { light: '#eef3ff', dark: '#141c2c' },
+  calloutInfoText: { light: '#1f3f8f', dark: '#b9cdfb' },
+  calloutDangerBg: { light: '#fdeceb', dark: '#2a1416' },
+  calloutDangerText: { light: '#8c2118', dark: '#f5b3ad' },
+});
 
 /** Resolve a token to a hex value. The only function in the package that returns a colour. */
 export function token(name: MailToken, scheme: ColorScheme = 'light'): string {

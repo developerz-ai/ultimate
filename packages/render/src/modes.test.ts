@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { tag } from '@ultimat3/cache';
+import type { RenderMode } from '@ultimat3/core';
+import { RENDER_MODES } from '@ultimat3/core';
 import { RouteModeInvalidError } from './errors';
-import { assertModeInvariants, defaultHydrate, MODE_SPECS, RENDER_MODES } from './modes';
+import { assertModeInvariants, defaultHydrate, MODE_SPECS } from './modes';
 import { clearRoutes, registerRoute } from './registry';
-import type { RenderMode, RouteConfig, RouteGuard, RouteMetaFn } from './route';
+import type { RouteConfig, RouteGuard, RouteMetaFn } from './route';
 import { defineRoute } from './route';
 import { SURFACE_SPECS } from './surfaces';
 

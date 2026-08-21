@@ -4,12 +4,13 @@
 // wrong answer that looks like a real one, and the caller has no signal anything happened.
 // A thrown X_AI_BUDGET_EXCEEDED with the remaining count is strictly more useful.
 //
-// The carrier is an AsyncLocalStorage so nested calls (a RAG retrieval, a tool call that
-// generates, an eval judge) all debit the same ledger without threading it through every
-// signature. `node:async_hooks` is used directly because Bun implements it natively and the
-// framework's ALS context is established at the HTTP boundary, above this package.
+// The carrier is an async context so nested calls (a RAG retrieval, a tool call that generates,
+// an eval judge) all debit the same ledger without threading it through every signature. It opens
+// through `@ultimat3/core`'s one lazy seam rather than constructing an `AsyncLocalStorage` here: a
+// module-scope `new` threw at EVALUATION in a browser bundle, where the bundler stubs
+// `node:async_hooks` to `{}`, and took every importer of `@ultimat3/ai` with it.
 
-import { AsyncLocalStorage } from 'node:async_hooks';
+import { asyncContext } from '@ultimat3/core';
 import type { Money } from '@ultimat3/money';
 import { assertSameCurrency } from '@ultimat3/money';
 import { AiBudgetExceededError } from './errors';
@@ -307,7 +308,7 @@ function tighterMoney(a: Money | undefined, b: Money | undefined): Money | undef
   return a.minor <= b.minor ? a : b;
 }
 
-const storage = new AsyncLocalStorage<BudgetLedger>();
+const storage = asyncContext<BudgetLedger>('an AI budget');
 
 /** Run `fn` with `ledger` as the ambient budget for everything it awaits. */
 export function withBudget<T>(ledger: BudgetLedger, fn: () => Promise<T>): Promise<T> {
@@ -316,5 +317,5 @@ export function withBudget<T>(ledger: BudgetLedger, fn: () => Promise<T>): Promi
 
 /** The ambient ledger, or `undefined` outside a budget scope (spend is then unmetered). */
 export function currentBudget(): BudgetLedger | undefined {
-  return storage.getStore();
+  return storage.get();
 }

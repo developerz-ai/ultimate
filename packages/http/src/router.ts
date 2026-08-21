@@ -10,6 +10,7 @@
 // param branch would also match, and a dead end in the static branch still falls
 // back to the param branch. Two routes that would tie are a build error
 // (`X_ROUTE_CONFLICT`) rather than a coin flip.
+import type { RenderMode } from '@ultimat3/core';
 import type { RequestContext } from './context';
 import { routeConflict } from './errors';
 import type { Bucket } from './rate-limit';
@@ -28,8 +29,6 @@ export const HTTP_METHODS: readonly HttpMethod[] = [
   'DELETE',
   'OPTIONS',
 ];
-
-export type RenderMode = 'static' | 'isr' | 'ssr' | 'stream';
 
 export type RouteParams = Readonly<Record<string, string>>;
 

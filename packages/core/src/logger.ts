@@ -17,7 +17,7 @@ export const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal', '
 
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
-const LEVEL_WEIGHT: Readonly<Record<LogLevel, number>> = Object.freeze({
+const LEVEL_WEIGHT = Object.freeze<Record<LogLevel, number>>({
   trace: 10,
   debug: 20,
   info: 30,

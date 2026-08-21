@@ -5,14 +5,13 @@
  * invariant is only documented is a mode that silently degrades in production.
  */
 
+import type { HydrateStrategy, RenderMode } from '@ultimat3/core';
+import { HYDRATE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
 import { parseTtlMs } from './duration';
 import { RouteModeInvalidError } from './errors';
-import type { HydrateStrategy, RenderMode, RouteConfig } from './route';
-import { HYDRATE_STRATEGIES } from './route';
+import type { RouteConfig } from './route';
 import type { Surface } from './surfaces';
 import { SURFACE_SPECS, surfaceAllows } from './surfaces';
-
-export const RENDER_MODES = ['static', 'isr', 'ssr', 'stream'] as const;
 
 /**
  * Everything about a route except the two keys carrying its data generic. Mode invariants never
@@ -38,7 +37,9 @@ export interface ModeSpec {
   readonly description: string;
 }
 
-export const MODE_SPECS: Readonly<Record<RenderMode, ModeSpec>> = Object.freeze({
+/** Keyed with an explicit type argument for the reason `MODE_STRATEGY` in `@ultimat3/pwa`
+ * gives: a `const X: Record<…> = Object.freeze({…})` accepts an extra key in silence. */
+export const MODE_SPECS = Object.freeze<Record<RenderMode, ModeSpec>>({
   static: {
     mode: 'static',
     perRequestState: false,

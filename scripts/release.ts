@@ -113,46 +113,113 @@ export const repinFrameworkDeps = (raw: string, version: string): string =>
     EXACT_PIN.test(range) ? `"${name}": "${version}"` : match,
   );
 
+export const UNRELEASED_HEADING = '## [Unreleased]';
+/** What a fresh `[Unreleased]` says once the release has taken its body. */
+export const UNRELEASED_PLACEHOLDER = 'Nothing yet.';
+
 /**
- * Keep a Changelog is newest-first. Appending put the second release below the first and every
- * release below that, so the file read oldest-first from its third entry on. The new section goes
- * directly under the `## [Unreleased]` block — above every previous version, below the preamble.
+ * The commit subjects go INSIDE the promoted section, under a heading no hand-written section uses.
+ * Generating `### Added` / `### Fixed` / `### Changed` was how a release ended up with two
+ * `### Fixed` blocks in one section — the generated one below the hand-written one, saying the same
+ * thing in worse words.
  */
-export function insertRelease(changelog: string, entry: string): string {
-  const lines = changelog.split('\n');
-  const at = lines.findIndex((line) => /^## /.test(line) && !line.includes('[Unreleased]'));
-  if (at === -1) return `${changelog.trimEnd()}\n\n${entry}`;
-  return [...lines.slice(0, at), ...`${entry}\n`.split('\n'), ...lines.slice(at)].join('\n');
+export const commitBlock = (subjects: readonly string[]): readonly string[] =>
+  subjects.length === 0
+    ? []
+    : ['### Commits', '', ...subjects.map((subject) => `- ${subject}`), ''];
+
+/**
+ * PROMOTE, never append. `[Unreleased]` IS the release notes — hand-written as each change lands,
+ * migration and all — so a release renames that heading to the version and opens a fresh empty
+ * `[Unreleased]` above it.
+ *
+ * What appending produced is commit 8fe7c56d — `git show 8fe7c56d:CHANGELOG.md`, this script's own
+ * output for `release: 6.0.0`: seven `BREAKING —` entries still under `## [Unreleased]`, a
+ * `## 6.0.0` holding six merge subjects and nothing else, and two `## 5.0.1` plus two `## 5.0.0`
+ * headings left by the two runs before it — an auto section above a hand-written one, same version.
+ * `wiki/Upgrading.md` pointed at the `6.0.0` section throughout.
+ *
+ * `git show v6.0.0:CHANGELOG.md` does NOT show this: the tag points at 93443aeb, a human repairing
+ * 8fe7c56d by hand. Read the tag and the bug is invisible; read 8fe7c56d and it is the whole diff.
+ *
+ * Promotion cannot produce either shape: one section per version, because there is one heading and
+ * it is renamed rather than duplicated.
+ *
+ * Keep a Changelog stays newest-first for free — `[Unreleased]` is the top section, so the version
+ * it becomes lands above every previous one.
+ */
+export function promoteUnreleased(input: {
+  readonly changelog: string;
+  readonly version: string;
+  readonly date: string;
+  readonly subjects: readonly string[];
+}): { readonly changelog: string } | { readonly findings: readonly Finding[] } {
+  const lines = input.changelog.split('\n');
+  const at = lines.findIndex((line) => /^## \[Unreleased\]/i.test(line));
+  if (at === -1) {
+    return {
+      findings: [
+        {
+          code: 'X_RELEASE_UNRELEASED_MISSING',
+          cause: 'CHANGELOG.md has no `## [Unreleased]` heading, so there is nothing to promote',
+          fix: 'add `## [Unreleased]` under the preamble of CHANGELOG.md, above the newest version',
+          at: 'CHANGELOG.md',
+        },
+      ],
+    };
+  }
+  let end = lines.length;
+  for (let index = at + 1; index < lines.length; index += 1) {
+    if ((lines[index] ?? '').startsWith('## ')) {
+      end = index;
+      break;
+    }
+  }
+  const body = lines
+    .slice(at + 1, end)
+    .filter((line) => line.trim() !== UNRELEASED_PLACEHOLDER)
+    .join('\n')
+    .trim();
+  const commits = commitBlock(input.subjects);
+  if (body.length === 0 && commits.length === 0) {
+    return {
+      findings: [
+        {
+          code: 'X_DOC_CHANGELOG_SECTION_INVALID',
+          cause: `[Unreleased] is empty and no commit landed since the previous tag, so ${input.version} would ship a section that says nothing`,
+          fix: 'write the release notes under `## [Unreleased]` in CHANGELOG.md, then run this again',
+          at: 'CHANGELOG.md',
+        },
+      ],
+    };
+  }
+  const section = [`## ${input.version} - ${input.date}`, ''];
+  if (body.length > 0) section.push(...body.split('\n'), '');
+  section.push(...commits);
+  return {
+    changelog: [
+      ...lines.slice(0, at),
+      UNRELEASED_HEADING,
+      '',
+      UNRELEASED_PLACEHOLDER,
+      '',
+      ...section,
+      ...lines.slice(end),
+    ].join('\n'),
+  };
 }
 
-/** Conventional-commit subjects since the last tag, grouped. Bodies are left to the git log. */
-export function changelogEntry(version: string, subjects: readonly string[]): string {
-  const groups: Readonly<Record<string, string>> = {
-    feat: 'Added',
-    fix: 'Fixed',
-    perf: 'Fixed',
-    refactor: 'Changed',
-    docs: 'Changed',
-  };
-  const buckets = new Map<string, string[]>();
-  for (const subject of subjects) {
-    const match = /^(\w+)(?:\([^)]*\))?!?:\s*(.+)$/.exec(subject);
-    const heading = groups[match?.[1] ?? ''] ?? 'Changed';
-    const text = match?.[2] ?? subject;
-    const bucket = buckets.get(heading) ?? [];
-    bucket.push(text);
-    buckets.set(heading, bucket);
-  }
-  const lines = [`## ${version}`, ''];
-  for (const heading of ['Added', 'Fixed', 'Changed']) {
-    const items = buckets.get(heading);
-    if (items === undefined || items.length === 0) continue;
-    lines.push(`### ${heading}`, '');
-    for (const item of items) lines.push(`- ${item}`);
-    lines.push('');
-  }
-  return lines.join('\n');
-}
+/**
+ * `en-CA` is ISO-8601 by locale, and the zone is stated because nothing here may format a date
+ * without one. UTC, so a release cut at 23:00 in one timezone is not dated a day apart from the tag.
+ */
+export const releaseDate = (at: Date): string =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'UTC',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(at);
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
@@ -233,6 +300,9 @@ if (import.meta.main) {
     fix: `git diff packages/${workspace.dir}/package.json — this release realigns it to ${version}`,
     at: `packages/${workspace.dir}/package.json`,
   }));
+  // Bounded by the PREVIOUS tag, so a subject that shipped in an earlier release cannot appear
+  // under this one. A clone without that tag answers nothing rather than everything — the report
+  // says so on its own line, because a silent empty list reads exactly like a quiet release.
   const log = await run(['git', 'log', '--pretty=format:%s', `v${current}..HEAD`], { cwd: root });
   const subjects = log.ok ? log.output.split('\n').filter((line) => line.trim().length > 0) : [];
 
@@ -240,6 +310,32 @@ if (import.meta.main) {
   // reference app included, because they all resolve out of one lockfile.
   const published = new Set(publishable.map((workspace) => join(workspace.path, 'package.json')));
   const manifests = await workspaceManifests(root);
+
+  // Computed before a single manifest is rewritten, and under `--dry-run` too: a changelog that
+  // cannot be promoted is a release that must not start, and finding that out after 47 files have
+  // moved is the expensive order to find it out in.
+  const changelogPath = join(root, 'CHANGELOG.md');
+  const date = releaseDate(new Date());
+  const promoted = promoteUnreleased({
+    changelog: await Bun.file(changelogPath)
+      .text()
+      .catch(() => ''),
+    version,
+    date,
+    subjects,
+  });
+  if ('findings' in promoted) {
+    report(
+      {
+        ok: false,
+        script: 'release',
+        summary: 'refusing to release: CHANGELOG.md cannot be promoted',
+        findings: promoted.findings,
+        data: { version, current, dryRun },
+      },
+      args.json,
+    );
+  }
 
   if (!dryRun) {
     for (const path of manifests) {
@@ -255,11 +351,7 @@ if (import.meta.main) {
     if (await chart.exists()) {
       await Bun.write(chartPath, setChartVersions(await chart.text(), version));
     }
-    const changelogPath = join(root, 'CHANGELOG.md');
-    const existing = await Bun.file(changelogPath)
-      .text()
-      .catch(() => '# Changelog\n\n');
-    await Bun.write(changelogPath, insertRelease(existing, changelogEntry(version, subjects)));
+    await Bun.write(changelogPath, promoted.changelog);
   }
 
   report(
@@ -278,7 +370,10 @@ if (import.meta.main) {
         `  packages  ${publishable.map((workspace) => workspace.name).join(', ')}`,
         `  manifests ${manifests.length} rewritten (${published.size} published, the rest repinned)`,
         `  chart     ${CHART_FILE} version + appVersion -> ${version}`,
-        `  commits   ${subjects.length}`,
+        `  changelog [Unreleased] promoted to "## ${version} - ${date}", a fresh [Unreleased] above it`,
+        log.ok
+          ? `  commits   ${subjects.length} since v${current}, appended under ### Commits`
+          : `  commits   none listed — this clone has no v${current} tag to bound the range`,
         `  next      bun install, commit, tag v${version}, then publish a GitHub Release`,
       ],
       data: {
@@ -287,6 +382,8 @@ if (import.meta.main) {
         packages: publishable.map((workspace) => workspace.name),
         manifests: manifests.length,
         commits: subjects.length,
+        previousTagFound: log.ok,
+        changelogDate: date,
         dryRun,
       },
     },

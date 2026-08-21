@@ -1,6 +1,7 @@
 // The public surface of @ultimat3/http. Explicit, never `export *`: what is not
 // listed here is an implementation detail and may change without a major bump.
 
+export type { RenderMode } from '@ultimat3/core';
 export { NEXT_PARAM, nextAfterSignIn, signInRedirect } from './auth-redirect';
 export type { HttpConfig, HttpConfigInput } from './config';
 export { defineHttpConfig, stripBasePath } from './config';
@@ -129,7 +130,6 @@ export {
 export type {
   HttpMethod,
   MatchResult,
-  RenderMode,
   Route,
   RouteDescription,
   RouteHandler,

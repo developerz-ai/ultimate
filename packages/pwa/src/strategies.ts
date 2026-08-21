@@ -4,6 +4,7 @@
  * its bytes have to be, so the mapping is derived and the override is the exception.
  */
 
+import type { OfflineStrategy, RenderMode } from '@ultimat3/core';
 import { PwaStrategyExhaustedError } from './errors';
 
 export type StrategyName =
@@ -19,9 +20,6 @@ export const STRATEGY_NAMES: readonly StrategyName[] = [
   'network-only',
 ];
 
-export type PwaRenderMode = 'static' | 'isr' | 'ssr' | 'stream';
-export type PwaOfflineStrategy = 'precache' | 'runtime' | 'network-only';
-
 /**
  * Structural view of `@ultimat3/render`'s `RouteDescriptor`. Tier-4 packages must not
  * import each other, so route data arrives as data and this is the shape it must have.
@@ -29,8 +27,8 @@ export type PwaOfflineStrategy = 'precache' | 'runtime' | 'network-only';
 export interface PwaRoute {
   readonly path: string;
   readonly surface: 'site' | 'app' | 'api';
-  readonly mode: PwaRenderMode;
-  readonly offline: PwaOfflineStrategy;
+  readonly mode: RenderMode;
+  readonly offline: OfflineStrategy;
   readonly dynamic?: boolean;
   /** Explicit per-route override; wins over the derived strategy. */
   readonly strategy?: StrategyName;
@@ -41,8 +39,20 @@ export interface PwaRoute {
   readonly dataUrl?: string;
 }
 
-/** Render mode → runtime strategy. The whole reason `sw.js` is generated, not written. */
-export const MODE_STRATEGY: Readonly<Record<PwaRenderMode, StrategyName>> = Object.freeze({
+/**
+ * Render mode → runtime strategy. The whole reason `sw.js` is generated, not written.
+ *
+ * Two separate things make the closed set hold, and the table needed both. `Record<RenderMode, …>`
+ * over the TIER-0 union is the exhaustiveness check — this was keyed on a hand-copy, which is how
+ * `spa` went on mapping to `cache-first` after `spa` was deleted from the vocabulary: the one
+ * strategy that gives an `app/` route a SHARED cache entry, i.e. one member's authed HTML served
+ * to the next. And `Object.freeze<T>({…})` with an EXPLICIT type argument, never
+ * `const X: T = Object.freeze({…})` — the second form infers `T` from the literal and the
+ * annotation only checks assignability afterwards, so the literal's freshness is already gone and
+ * an EXTRA key compiles in silence. Named, the literal is contextually typed and a missing key
+ * AND an extra key are both build errors.
+ */
+export const MODE_STRATEGY = Object.freeze<Record<RenderMode, StrategyName>>({
   static: 'cache-first',
   isr: 'stale-while-revalidate',
   ssr: 'network-first',
@@ -138,12 +148,12 @@ export async function networkOnly(
   }
 }
 
-export const STRATEGY_FNS: Readonly<
+export const STRATEGY_FNS = Object.freeze<
   Record<
     StrategyName,
     (request: Request, env: StrategyEnv, options: StrategyOptions) => Promise<Response>
   >
-> = Object.freeze({
+>({
   'cache-first': cacheFirst,
   'network-first': networkFirst,
   'stale-while-revalidate': staleWhileRevalidate,
@@ -176,7 +186,7 @@ async function fallbackOrThrow(options: StrategyOptions): Promise<Response> {
  * service worker is a generated artifact with no bundler in the loop — the shapes are
  * identical on purpose and `strategies.test.ts` asserts both halves stay in step.
  */
-export const STRATEGY_SOURCE: Readonly<Record<StrategyName, string>> = Object.freeze({
+export const STRATEGY_SOURCE = Object.freeze<Record<StrategyName, string>>({
   'cache-first': `async function cacheFirst(req,cn,fb){
   const c=await caches.open(cn);const hit=await c.match(req);if(hit)return hit;
   try{const r=await fetch(req);if(r.ok)await c.put(req,r.clone());return r}catch(e){if(fb)return fb();throw e}
@@ -198,7 +208,7 @@ export const STRATEGY_SOURCE: Readonly<Record<StrategyName, string>> = Object.fr
 }`,
 });
 
-export const STRATEGY_FN_NAMES: Readonly<Record<StrategyName, string>> = Object.freeze({
+export const STRATEGY_FN_NAMES = Object.freeze<Record<StrategyName, string>>({
   'cache-first': 'cacheFirst',
   'network-first': 'networkFirst',
   'stale-while-revalidate': 'staleWhileRevalidate',

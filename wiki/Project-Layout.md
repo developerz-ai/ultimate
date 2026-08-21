@@ -7,7 +7,7 @@ myapp/
   apps/
     web/                  # the Ultimate app — the three surfaces live here
       site/               # static/isr, 0kb JS baseline, SEO-critical
-      app/                # auth'd, stream/spa, realtime, heavy
+      app/                # auth'd, stream/ssr, realtime, heavy
       api/                # actions only, no rendering
       shared/             # tokens, primitives, entity types, policies
     admin/                # generated admin dashboard (Ultimate app, role=web)
@@ -35,7 +35,7 @@ Four directories, two bundle graphs, one hard boundary.
 | Surface | Audience | Default render | JS baseline | Auth | May import |
 |---|---|---|---|---|---|
 | `site/` | anonymous, crawlers | `static` / `isr` | **0kb** | none | `shared/` |
-| `app/` | signed-in users | `stream` (or `spa`) | whatever the budget allows | required | `shared/`, `api/` types |
+| `app/` | signed-in users | `stream` (or `ssr`) | whatever the budget allows | required | `shared/`, `api/` types |
 | `api/` | programs, agents, the typed client | none | n/a | policy per action | `shared/` |
 | `shared/` | both | n/a | must stay 0-dep-heavy | n/a | nothing app-local |
 
