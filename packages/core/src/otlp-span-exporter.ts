@@ -23,7 +23,7 @@ import type {
 } from './telemetry';
 
 /** OTLP's `SpanKind` enum; `UNSPECIFIED` is 0 and Ultimate never emits it. */
-const SPAN_KIND: Readonly<Record<SpanKind, number>> = Object.freeze({
+const SPAN_KIND = Object.freeze<Record<SpanKind, number>>({
   internal: 1,
   server: 2,
   client: 3,
@@ -31,7 +31,7 @@ const SPAN_KIND: Readonly<Record<SpanKind, number>> = Object.freeze({
   consumer: 5,
 });
 
-const STATUS_CODE: Readonly<Record<SpanStatusCode, number>> = Object.freeze({
+const STATUS_CODE = Object.freeze<Record<SpanStatusCode, number>>({
   unset: 0,
   ok: 1,
   error: 2,

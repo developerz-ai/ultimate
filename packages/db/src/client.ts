@@ -61,7 +61,7 @@ export interface PoolProfile {
 }
 
 /** Sized per role because the failure modes differ: RPS bursts vs. queue depth vs. run-once. */
-export const POOL_PROFILES: Readonly<Record<Role, PoolProfile>> = Object.freeze({
+export const POOL_PROFILES = Object.freeze<Record<Role, PoolProfile>>({
   web: {
     max: 20,
     statementTimeoutMs: 10_000,

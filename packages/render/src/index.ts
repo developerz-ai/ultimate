@@ -9,6 +9,15 @@ import { installRenderLoader } from './module-loader';
 // places one fact can be wrong instead of none.
 installRenderLoader();
 
+/**
+ * The route vocabulary is declared once, at tier 0 (`@ultimat3/core`), and re-exported here
+ * because `defineRoute`, `MODE_SPECS`, `surfaceAllows` and `RouteDescriptor` all take these types
+ * in their signatures: a consumer calling this package's API should not need a second import to
+ * name its arguments. A re-export is not a declaration — `scripts/render-modes.test.ts` refuses a
+ * second declaration, which is what makes re-exporting safe where copying was not.
+ */
+export type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
+export { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
 export type { CompiledStylesheet } from './css-modules';
 export { compileStylesheet, isCssModule, isGlobalStylesheet, scopeClasses } from './css-modules';
 export { parseTtlMs } from './duration';
@@ -89,7 +98,6 @@ export {
   defaultHydrate,
   defaultIslandBudget,
   MODE_SPECS,
-  RENDER_MODES,
 } from './modes';
 export type { Stylesheet } from './module-loader';
 export {
@@ -162,11 +170,8 @@ export {
   streamResult,
 } from './render-stream';
 export type {
-  HydrateStrategy,
   LoadRequirement,
-  OfflineStrategy,
   PrerenderFn,
-  RenderMode,
   RenderResult,
   RevalidateConfig,
   RouteBudget,
@@ -182,14 +187,7 @@ export type {
   RouteMetaFn,
   RouteParams,
 } from './route';
-export {
-  DEFAULT_ISLAND_HYDRATE,
-  defineRoute,
-  HYDRATE_STRATEGIES,
-  isRouteConfig,
-  OFFLINE_STRATEGIES,
-  tagKeys,
-} from './route';
+export { DEFAULT_ISLAND_HYDRATE, defineRoute, isRouteConfig, tagKeys } from './route';
 export type { RouteComponent } from './route-component';
 export { pageComponentOf } from './route-component';
 export { metaContextFor, routeDataFor } from './route-data';

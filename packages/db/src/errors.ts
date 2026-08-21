@@ -121,7 +121,7 @@ export const dbUnavailable = (detail: string, sourceError?: unknown): DbError =>
  * named, so the fix points at the one index or key that refused the row rather than at the idea
  * of one; `driverError` substitutes the placeholder when the driver reported none.
  */
-const SQLSTATE_FIXES: Readonly<Record<DbSqlStateCode, string>> = Object.freeze({
+const SQLSTATE_FIXES = Object.freeze<Record<DbSqlStateCode, string>>({
   X_DB_UNIQUE_VIOLATION:
     'upsertAll(rows, { onConflict: [...] }) over the columns {constraint} covers — ' +
     'or catch X_DB_UNIQUE_VIOLATION and answer 409, which is what a raced signup is',

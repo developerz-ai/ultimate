@@ -3,13 +3,15 @@
 // instead of fifty copies of one `select`. A scope, not a parameter: the statement leaves several
 // frames and at least one microtask below the repository call that caused it.
 
-// `node:` for the same reason `expected-loop.ts` needs it — Bun exposes no native async-context
-// primitive, and the pair has to survive every `await` between the repository call and the
-// statement it causes. A module-scope variable would be shared by two concurrent requests.
-import { AsyncLocalStorage } from 'node:async_hooks';
+// The pair has to survive every `await` between the repository call and the statement it causes,
+// and a module-scope variable would be shared by two concurrent requests — so it needs an async
+// context. It opens through core's seam for the same reason `expected-loop.ts` does: constructing
+// an `AsyncLocalStorage` here threw at module EVALUATION in a browser bundle, where
+// `node:async_hooks` is stubbed to `{}`, taking every importer of `@ultimat3/db` down with it.
+import { asyncContext } from '@ultimat3/core';
 import { type StatementAttribution, statementObserver } from './observe';
 
-const storage = new AsyncLocalStorage<StatementAttribution>();
+const storage = asyncContext<StatementAttribution>('the statement attribution');
 
 /**
  * Run `fn` with every statement it issues — at any depth, across every `await` — attributed to
@@ -41,5 +43,5 @@ export function withStatementAttribution<T>(entity: string, op: string, fn: () =
  * same answer captured at the moment the statement settled.
  */
 export function statementAttribution(): StatementAttribution | undefined {
-  return storage.getStore();
+  return storage.get();
 }

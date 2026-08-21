@@ -568,9 +568,22 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   the tenant is a request-time value, so the seam is the enforcement.
 - **`crossTenant(reason, fn)` (`cross-tenant.ts`) is the ONE way to read across tenants**, for the
   three cases that have no single one: an admin surface over every org, background reconciliation,
-  support tooling. An `AsyncLocalStorage` scope with a written reason, the same shape
+  support tooling. An async-context scope with a written reason, the same shape
   `@ultimat3/db`'s `expectedQueryLoop` has, never a boolean argument on a repository call — which
   reads exactly like forgetting the tenant — and never a config list of exempt entities (axiom 1).
+  The scope opens through `asyncContext<string>('the cross-tenant reason')` from `@ultimat3/core`,
+  **never a `new AsyncLocalStorage` here, and that is a build error rather than a convention `As of
+  2026-08`** — `scripts/async-context-guard.ts` refuses the construction *and* the import that
+  binds the class, anywhere but `packages/core/src/async-context.ts`, and
+  `scripts/async-context-guard.test.ts` runs it over the tree in the gate's `unit` step. The
+  module-scope `new` this replaced threw `TypeError: undefined is not a constructor` at module
+  **evaluation** in a browser bundle, where the bundler stubs `node:async_hooks` to `{}`, taking
+  every importer of `cross-tenant.ts` with it. Now the module evaluates and `crossTenantReason()`
+  answers `undefined` there — in a browser nothing IS in flight, so that is the true answer. A
+  write is the case that names itself: `storage.run` throws `X_ASYNC_CONTEXT_UNAVAILABLE` instead
+  of a bare `TypeError`, though `crossTenant()` reaches it only past `assertCrossTenant`, which
+  wants a request context a browser does not have. A server pays nothing either way —
+  `getStore()` before any `run()` answered `undefined` whether the storage existed or not.
   **The capability is proven twice**: `CROSS_TENANT_SCOPE` (`tenancy:cross`) on the actor, at the
   call and again at every plan built inside it, because `withChildContext({ actor })` swaps the
   actor without closing the scope and an impersonated caller must not inherit it —

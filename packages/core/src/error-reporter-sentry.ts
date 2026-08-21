@@ -64,7 +64,7 @@ export function parseSentryDsn(dsn: string): SentryDsn {
 }
 
 /** The protocol's own level names. `warning`/`error`/`fatal` happen to be the same three words. */
-const LEVELS: Readonly<Record<ErrorSeverity, string>> = Object.freeze({
+const LEVELS = Object.freeze<Record<ErrorSeverity, string>>({
   warning: 'warning',
   error: 'error',
   fatal: 'fatal',

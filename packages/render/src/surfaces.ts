@@ -5,8 +5,8 @@
  * aspirational. Violations are build errors, resolved through the whole chain.
  */
 
+import type { RenderMode } from '@ultimat3/core';
 import { SurfaceBoundaryError } from './errors';
-import type { RenderMode } from './route';
 
 export type Surface = 'site' | 'app' | 'api' | 'shared';
 
@@ -24,7 +24,7 @@ export interface SurfaceSpec {
   readonly mayImportTypes: readonly Surface[];
 }
 
-export const SURFACE_SPECS: Readonly<Record<Surface, SurfaceSpec>> = Object.freeze({
+export const SURFACE_SPECS = Object.freeze<Record<Surface, SurfaceSpec>>({
   site: {
     surface: 'site',
     defaultMode: 'static',

@@ -8,7 +8,93 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`asyncContext<T>(subject)` is public API on `@ultimat3/core`**, with its `AsyncContext<T>` type.
+  One lazily-constructed `AsyncLocalStorage` for the whole framework, and the answer to "what happens
+  where there is no async context" in one place: **reads degrade, writes throw.** `get()` answers
+  `undefined` — in a browser nothing IS in flight, so that is the true answer — and `run()` throws
+  `X_ASYNC_CONTEXT_UNAVAILABLE` naming the scope that could not be opened, instead of leaving a bare
+  `TypeError` from a stack mentioning no file the caller wrote. A server pays nothing: `getStore()`
+  before any `run()` answered `undefined` whether the storage was ever constructed or not (#255)
+- `scripts/changelog-check.ts` — `CHANGELOG.md`'s sections and `wiki/Upgrading.md`'s migration counts,
+  held to each other. Seven rules, one per way the two files can disagree, collected by the gate's
+  `unit` step through `scripts/changelog-check.test.ts` (#267)
+
+  | Rule | Refuses |
+  |---|---|
+  | `duplicate` | two `## ` headings naming one version |
+  | `empty` | a released section with no body |
+  | `unreleased-breaking` | a `BREAKING —` entry under `## [Unreleased]` at a tagged commit |
+  | `count` | a `wiki/Upgrading.md` row whose number is not that major's own section's `BREAKING —` count |
+  | `total` | the aggregate row disagreeing with the sum of the per-major rows |
+  | `missing-row` | a released major from 2.0.0 on with no row sending the reader to its section |
+  | `unscanned` | no row sends the reader to any single version section, so the rule read nothing |
+
+  The count it replaces was derived from the **whole file**, which cannot see a migration filed under
+  the wrong heading: a misplaced entry only makes the number smaller. Codes:
+  `X_DOC_CHANGELOG_SECTION_INVALID`, `X_DOC_CHANGELOG_UNRELEASED_BREAKING`,
+  `X_DOC_MIGRATION_COUNT_STALE`, `X_DOC_MIGRATION_UNSCANNED`.
+
+### Fixed
+
+- **Six more module-scope `AsyncLocalStorage` constructions, all outside core, all with the same
+  browser defect** (#255, the follow-up #244 left open). A bundler stubs `node:async_hooks` to `{}` —
+  Bun's `target: 'browser'` emits `var { AsyncLocalStorage } = (() => ({}))` — so the `new` threw
+  `TypeError: undefined is not a constructor` at module **evaluation**, before a line of app code ran,
+  and took every importer of that file with it. Each now opens through core's seam.
+
+  | Site | Scope |
+  |---|---|
+  | `packages/db/src/transaction.ts` | the open transaction (`currentTx`, `inLiveTx`) |
+  | `packages/db/src/attribution.ts` | the entity/op pair on `StatementEvent.attribution` |
+  | `packages/db/src/expected-loop.ts` | the written reason a loop of statements is deliberate |
+  | `packages/entity/src/cross-tenant.ts` | the written reason a read spans tenants |
+  | `packages/ai/src/budget.ts` | the ambient budget ledger |
+  | `packages/ai/src/llm-stream.ts` | the streamed-invocation sink |
+
+  **And it is a build error now, not a convention** (axiom 3): `scripts/async-context-guard.ts`
+  refuses a `new AsyncLocalStorage` **and** the import that binds the class — aliased, or reached
+  through a namespace import — anywhere but `packages/core/src/async-context.ts`. It reads
+  `packages/*/src`, `packages/*/e2e` and `scripts/`, comment-stripped, and runs in the gate's `unit`
+  step through `scripts/async-context-guard.test.ts`. A floor rather than a proof: a runtime
+  `await import('node:async_hooks')` and a constructor stashed in a variable are both outside what it
+  can see, and its header says so.
+- **`scripts/release.ts` promotes `[Unreleased]` instead of appending a section generated from commit
+  subjects** (#267). `[Unreleased]` **is** the release notes — written as each change lands, migration
+  and all — so a release renames that heading to the version and opens a fresh empty one above it.
+  Appending is what put two `## 5.0.1` headings and two `## 5.0.0` headings in the file — a dateless
+  generated section above the hand-written one, each time — and both pairs sat there from `release: 5.0.1`
+  until `release: 6.0.0` merged them by hand. `v6.0.0` still carries the other half of the same defect:
+  its section holds **two** `### Fixed` blocks, the hand-written one and a generated one restating `#243`
+  as `#253` and `#244` as `#256` in merge-subject words. And the commit before that release had all of
+  6.0.0's migration under `## [Unreleased]` while `wiki/Upgrading.md` already sent the reader to a
+  `6.0.0` section the file did not have — promoted by hand, in the release commit, which is the manual
+  step this replaces. Promotion cannot produce any of those shapes: one heading, renamed, never
+  duplicated, and commit subjects land as a `### Commits` block **inside** the promoted section under a
+  heading no hand-written section uses.
+
+  Two refusals, both raised before a single manifest is rewritten and under `--dry-run` too, because
+  finding out after 47 files have moved is the expensive order to find it out in:
+  `X_RELEASE_UNRELEASED_MISSING` when there is no `## [Unreleased]` heading to promote, and
+  `X_DOC_CHANGELOG_SECTION_INVALID` when it is empty and no commit landed since the previous tag. The
+  report also states whether the previous tag was found, since a clone without it lists no commits and
+  a silent empty list reads exactly like a quiet release.
+- **Two tests that could red the gate for reasons belonging to no change** (#264), both made
+  algorithmic rather than given a longer timeout.
+
+  `packages/time/src/cron-occurrence.test.ts` asserted `performance.now()` under 20 ms to prove an
+  unmatchable day/month is refused at parse time without walking. Measured on this repo the same call
+  is 3.2 ms at worst idle and 21.3 ms at worst under eight `bun test` workers, so the bound separated a
+  loaded box from an unloaded one and never the walk from the parse. It now asserts **which** refusal
+  arrives, and the budget backstop is exercised on a `CronExpression` assembled past the parser.
+
+  `examples/dummy/type-chain.test.ts` diffed the whole diagnostic set before and after a rename. Eight
+  identical `tsc --noEmit` runs over an unchanged tree answered 117, 119 and 120 diagnostics — the same
+  115 in-app ones byte for byte, plus 1 to 4 TS6307 lines about framework files reached through the
+  `node_modules` symlink, whose blamed importer is a race between TypeScript's parallel workers. The
+  diff is now scoped to diagnostics inside the app, where the rename is the only thing that can move
+  them.
 
 ## 6.0.0
 
@@ -132,16 +218,11 @@ Nothing yet.
   JSX became `React.createElement` against a `React` that is never imported and every island
   containing JSX threw `ReferenceError` on first interaction, while the build reported success and
   `x verify` stayed green. Islands are now compiled with `babel-preset-solid` (#243)
-- a browser bundle can load `@ultimat3/core`: three module-scope `AsyncLocalStorage` constructions moved
-  onto one lazy seam, so `@ultimat3/ui` no longer throws `TypeError: undefined is not a constructor` at
-  module evaluation (#244)
-
-### Fixed
-
-- island JSX compiles to real Solid reactivity, not to an undefined React (#253)
-- one lazy AsyncLocalStorage, so a browser bundle can load @ultimat3/core (#256)
-- One timezone rule everywhere, and CI runs the Bun this repo runs (#265)
-- 6.0.0: Solid reactivity that works, Bun.Image, and four defects that shipped green (#263)
+- a browser bundle can load `@ultimat3/core`: **core's** three module-scope `AsyncLocalStorage`
+  constructions — the request context, the active span, the impersonation reason — moved onto one lazy
+  seam, so `@ultimat3/ui` no longer throws `TypeError: undefined is not a constructor` at module
+  evaluation (#244). The seam was private to core here, and six more constructions outside it were
+  untouched and unwatched; both are `[Unreleased]` (#255)
 
 ## 5.0.1 - 2026-08-20
 

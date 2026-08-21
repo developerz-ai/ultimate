@@ -5,6 +5,11 @@
 // Every collection is `readonly` and every field is a plain JSON value: the manifest must
 // round-trip through `JSON.stringify` without loss, because that is how it is stored.
 
+// The route vocabulary is `@ultimat3/core`'s, at tier 0. It is IMPORTED rather than restated even
+// though every other field here is a plain literal: the manifest's `render` field means the same
+// thing as the route's, and two spellings of one closed set is what `'spa'` escaped through.
+import type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
+
 /**
  * Bumped when a reader built for the previous version would be WRONG, not merely incomplete:
  * a field removed, retyped, or given a new meaning.
@@ -24,10 +29,6 @@ export type JsonValue =
   | null
   | readonly JsonValue[]
   | { readonly [key: string]: JsonValue };
-
-export type RenderMode = 'static' | 'isr' | 'ssr' | 'stream';
-export type OfflineStrategy = 'precache' | 'runtime' | 'network-only';
-export type HydrateStrategy = 'idle' | 'visible' | 'interaction' | 'never';
 
 export interface RouteFact {
   readonly url: string;

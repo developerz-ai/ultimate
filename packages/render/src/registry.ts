@@ -5,6 +5,7 @@
  * from. Nothing downstream may keep its own list of routes.
  */
 
+import type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
 import {
   RouteDuplicateError,
   RouteFileInvalidError,
@@ -12,14 +13,7 @@ import {
   SurfaceBoundaryError,
 } from './errors';
 import { assertModeInvariants, defaultIslandBudget } from './modes';
-import type {
-  HydrateStrategy,
-  OfflineStrategy,
-  RenderMode,
-  RouteConfig,
-  RouteData,
-  RouteParams,
-} from './route';
+import type { RouteConfig, RouteData, RouteParams } from './route';
 import { isRouteConfig, tagKeys } from './route';
 import type { RouteComponent } from './route-component';
 import type { Surface } from './surfaces';
@@ -29,7 +23,7 @@ import { locateSurface } from './surfaces';
  * The one filename a route may carry, per surface. `shared/` is absent on purpose: it is a leaf
  * of helpers with no URL, so a route file there has nowhere to resolve to.
  */
-export const ROUTE_FILENAME: Readonly<Partial<Record<Surface, string>>> = Object.freeze({
+export const ROUTE_FILENAME = Object.freeze<Partial<Record<Surface, string>>>({
   site: 'page.tsx',
   app: 'page.tsx',
   api: 'route.ts',

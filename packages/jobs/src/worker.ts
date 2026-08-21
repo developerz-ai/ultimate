@@ -31,13 +31,12 @@ const QUEUE_DEPTH_INTERVAL_MS = 15_000;
  * is deliberately unmapped: parking a run is control flow, so counting it would make every
  * `step.sleep` read as a finished job and make the failure ratio meaningless.
  */
-const JOB_OUTCOME_LABELS: Readonly<Record<JobOutcome, 'ok' | 'failed' | 'dead' | null>> =
-  Object.freeze({
-    completed: 'ok',
-    suspended: null,
-    retried: 'failed',
-    'dead-lettered': 'dead',
-  });
+const JOB_OUTCOME_LABELS = Object.freeze<Record<JobOutcome, 'ok' | 'failed' | 'dead' | null>>({
+  completed: 'ok',
+  suspended: null,
+  retried: 'failed',
+  'dead-lettered': 'dead',
+});
 
 export interface WorkerOptions {
   readonly driver: JobDriver;

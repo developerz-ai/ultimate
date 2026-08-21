@@ -51,7 +51,7 @@ export interface JsonSchema {
 
 export type JsonSchemaDialect = '2020-12' | 'draft-07';
 
-const DIALECTS: Readonly<Record<JsonSchemaDialect, string>> = Object.freeze({
+const DIALECTS = Object.freeze<Record<JsonSchemaDialect, string>>({
   '2020-12': 'https://json-schema.org/draft/2020-12/schema',
   'draft-07': 'http://json-schema.org/draft-07/schema#',
 });

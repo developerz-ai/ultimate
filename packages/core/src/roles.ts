@@ -26,7 +26,7 @@ export interface RoleInfo {
   readonly stateful: boolean;
 }
 
-export const ROLE_INFO: Readonly<Record<Role, RoleInfo>> = Object.freeze({
+export const ROLE_INFO = Object.freeze<Record<Role, RoleInfo>>({
   web: { role: 'web', scalesOn: 'rps', maxReplicas: null, stateful: false },
   sync: { role: 'sync', scalesOn: 'ws-connections', maxReplicas: null, stateful: false },
   worker: { role: 'worker', scalesOn: 'queue-depth', maxReplicas: null, stateful: false },

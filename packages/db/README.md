@@ -261,7 +261,7 @@ reader cannot tell a considered loop from a silenced one.
 
 | | |
 |---|---|
-| Scope | an `AsyncLocalStorage`: it survives every `await` at any depth, and two loops running at once never read each other. Nesting keeps the innermost reason |
+| Scope | core's `asyncContext<string>('the expected-loop reason')`, never a `new AsyncLocalStorage` here: it survives every `await` at any depth, and two loops running at once never read each other. Nesting keeps the innermost reason |
 | What it carries | `StatementEvent.expected`, stamped by both funnels at settle time — a diagnostic judging a whole request runs after every scope in it closed |
 | What it suppresses | a **verdict**, never a statement. The SQL is still sent, still observed, still a span: only the thing that warns is told the author already answered |
 | What it costs | nothing without a diagnostic — the reason is read inside the branch that already checks for an installed observer |
@@ -269,6 +269,22 @@ reader cannot tell a considered loop from a silenced one.
 The framework's own deliberate loops declare themselves at source: `migrate()` and `rollback()`
 (one transaction per migration, so a failure leaves an exact ledger) and `@ultimat3/admin`'s
 cross-entity search (one indexed lookup per text field).
+
+**Every ambient scope in this package opens through `asyncContext<T>(subject)` from
+`@ultimat3/core`** — the transaction store, the attribution pair and this reason — and none of the
+three constructs an `AsyncLocalStorage`, `As of 2026-08`. What changed is what a browser bundle
+does with these three modules: a bundler stubs `node:async_hooks` to `{}`, so the module-scope `new`
+threw `TypeError: undefined is not a constructor` at module **evaluation** — before a line of app
+code ran, and taking every importer of the file with it. Now the module evaluates, a read answers
+`undefined` (nothing is in flight in a browser, so that is the true answer), and a write throws
+`X_ASYNC_CONTEXT_UNAVAILABLE` naming the scope it could not open. A server pays nothing —
+`getStore()` before any `run()` answered `undefined` either way. Not a claim that the whole package
+bundles: `pglite-branch.ts` imports `node:fs/promises`, which is a separate question.
+
+The rule is a **build error**, not a convention: `scripts/async-context-guard.ts` refuses a
+`new AsyncLocalStorage` — and the import that binds the class, aliased or namespaced — anywhere but
+`packages/core/src/async-context.ts`, and `scripts/async-context-guard.test.ts` runs it over the
+tree in the gate's `unit` step.
 
 ## A statement knows who compiled it
 
@@ -282,7 +298,7 @@ return withStatementAttribution('members', 'findById', () =>
 
 | | |
 |---|---|
-| Scope | an `AsyncLocalStorage`, `expectedQueryLoop()`'s own shape: it survives every `await` at any depth, and nesting keeps the innermost pair |
+| Scope | core's `asyncContext<StatementAttribution>()`, `expectedQueryLoop()`'s own shape: it survives every `await` at any depth, and nesting keeps the innermost pair |
 | What it carries | `StatementEvent.attribution`, stamped by both funnels at settle time, next to `expected` |
 | Producer | `@ultimat3/entity`'s `postgresRepo` — the last caller that still knows the entity and the operation once the SQL exists |
 | What it costs | nothing uninstalled — `statementObserver()` is read first, and with nothing installed `fn` runs directly; no scope entered, no object allocated |

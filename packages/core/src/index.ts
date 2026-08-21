@@ -31,6 +31,7 @@ export {
 } from './actor';
 export { APP_VERSION_KEY, appVersion, DEFAULT_APP_VERSION } from './app-version';
 export { assert, assertNever, type InvariantOptions, invariant } from './assert';
+export { type AsyncContext, asyncContext } from './async-context';
 export { canonicalJson, fingerprint } from './canonical-json';
 export { type Clock, type FrozenClock, frozenClock, systemClock } from './clock';
 export type {
@@ -45,7 +46,6 @@ export type {
   DatabaseConfig,
   JobsConfig,
   McpConfig,
-  OfflineStrategy,
   PwaConfig,
   RealtimeConfig,
   RealtimeTier,
@@ -479,6 +479,8 @@ export type { Err, Ok, Result } from './result';
 export { err, isErr, isOk, map, mapErr, ok, tryCatch, unwrap, unwrapOr } from './result';
 export type { ResolveRoleOptions, Role, RoleInfo, ScalingSignal } from './roles';
 export { DEFAULT_ROLE, isRole, ROLE_INFO, ROLES, resolveRole } from './roles';
+export type { HydrateStrategy, OfflineStrategy, RenderMode } from './route-vocabulary';
+export { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from './route-vocabulary';
 export { safeUrl, URL_ATTRIBUTES } from './safe-url';
 export { defineService, resetServices, type ServiceFactory } from './service';
 export { timingSafeEqual } from './timing-safe-equal';

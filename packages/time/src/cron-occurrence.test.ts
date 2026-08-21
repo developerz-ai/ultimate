@@ -6,6 +6,7 @@ import {
   nextCronOccurrenceMs,
   nextCronOccurrences,
 } from './cron-occurrence';
+import { type CronExpression, parseCron } from './cron-parse';
 import { fromIso, toIso } from './instant';
 import { toZoned } from './zoned';
 
@@ -54,31 +55,54 @@ describe('nextCronOccurrence', () => {
   // T9. This used to be answered by exhausting the 200,000-step budget: ~150 ms of blocking CPU
   // per call, and `firedSince` — the scheduler leader loop's entry point — pays it every tick.
   // The day/month combination is decidable from the parsed fields alone.
-  test('an unmatchable date is refused at PARSE time, in constant time', () => {
-    const started = performance.now();
-    const error = errorOf(() =>
+  test('an unmatchable date is refused at PARSE time, having walked no steps at all', () => {
+    const refused = errorOf(() =>
       nextCronOccurrence('0 0 30 2 *', UTC, fromIso('2026-03-14T00:00:00Z')),
     );
-    const spent = performance.now() - started;
-    const cause = String(error.cause);
-    expect(error.code).toBe('X_CRON_INVALID');
+    expect(refused.code).toBe('X_CRON_INVALID');
     // The cause names the combination rather than the budget: a search that ran out of steps says
     // nothing about WHY, and "30" and "february" are the two words a reader needs.
-    expect(cause).toContain('february');
-    expect(cause).not.toContain('search steps');
-    // Generous by two orders of magnitude — the point is that no walk happened at all.
-    expect(spent).toBeLessThan(20);
+    expect(String(refused.cause)).toContain('february');
+    expect(String(refused.cause)).not.toContain('search steps');
+
+    // WHICH refusal arrived is the step count, and that is why nothing here is timed. This used to
+    // assert `performance.now()` under 20 ms: measured on this repo, the same call is 3.2 ms at
+    // worst idle and 21.3 ms at worst under eight `bun test` workers, so the bound separated a
+    // loaded box from an unloaded one and never the walk from the parse. `UNMATCHABLE_PAST_THE_PARSER`
+    // is the identical field set handed in already parsed, so `parseCronOnce` has nothing left to
+    // check — it walks, and the test below pins that it dies on the budget. Landing on the parse
+    // refusal here instead of that one is what says no step was taken.
+    expect(String(refused.cause)).toContain('never occurs in');
   });
 
   test('the search budget still guards the walk it was written for', () => {
-    // Untouched: the constant-time check answers the day/month case, and MAX_STEPS stays the
-    // backstop for anything it cannot see.
-    const error = errorOf(() =>
-      nextCronOccurrence('0 0 * * *', UTC, fromIso('2026-03-14T00:00:00Z')),
+    // The backstop, exercised on the one input that can still reach it: fields the parser would
+    // have refused, assembled behind it. Untouched by the parse-time check above — MAX_STEPS stays
+    // the answer for anything that check cannot see. The count is pinned on purpose: a budget
+    // quietly lowered is a far-future schedule that stops resolving, which is the assertion under
+    // this one.
+    const exhausted = errorOf(() =>
+      nextCronOccurrence(UNMATCHABLE_PAST_THE_PARSER, UTC, fromIso('2026-03-14T00:00:00Z')),
     );
-    expect(error.code).toBe('no-throw');
+    expect(exhausted.code).toBe('X_CRON_INVALID');
+    expect(String(exhausted.cause)).toContain('200000 search steps');
+    // And a schedule that CAN fire is untouched by either refusal.
+    expect(toIso(nextCronOccurrence('0 0 29 2 *', UTC, fromIso('2026-03-14T00:00:00Z')))).toBe(
+      '2028-02-29T00:00:00.000Z',
+    );
   });
 });
+
+/**
+ * The 30th of February, past the one place that can refuse it. Every field comes from the real
+ * parser — only `months` is moved, from a January the day exists in to a February it never does —
+ * so this is the same expression the test above hands in as a string, minus the parse.
+ */
+const UNMATCHABLE_PAST_THE_PARSER: CronExpression = {
+  ...parseCron('0 0 30 1 *'),
+  source: '0 0 30 2 *',
+  months: [2],
+};
 
 describe('nextCronOccurrence across a DST boundary', () => {
   // Europe/Berlin springs forward 2026-03-29 at 02:00 local (01:00Z).

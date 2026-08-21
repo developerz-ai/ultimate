@@ -3,8 +3,7 @@
 // the transactional outbox is only atomic because `currentTx()` finds this store. Nesting maps
 // to SAVEPOINTs, so an inner failure never silently aborts the outer unit of work.
 
-import { AsyncLocalStorage } from 'node:async_hooks';
-import { assert, nanoid } from '@ultimat3/core';
+import { assert, asyncContext, nanoid } from '@ultimat3/core';
 import { baseClient, type DbClient, type DbConnection, isReservable } from './client';
 import { serializationExhausted } from './errors';
 import { raw, type SqlFragment } from './sql';
@@ -79,11 +78,15 @@ interface TxState {
   readonly live: { value: boolean };
 }
 
-const storage = new AsyncLocalStorage<TxState>();
+// Core's one lazy seam, never a construction here: a module-scope `new` threw at EVALUATION in a
+// browser bundle, where the bundler stubs `node:async_hooks` to `{}`, and took every importer of
+// `@ultimat3/db` with it. `get()` still answers `undefined` outside a scope, so the server pays
+// nothing for the deferral.
+const storage = asyncContext<TxState>('a database transaction');
 
 /** The open transaction, or `undefined` outside one. `@ultimat3/jobs` calls this per enqueue. */
 export function currentTx(): DbTx | undefined {
-  return storage.getStore()?.tx;
+  return storage.get()?.tx;
 }
 
 /**
@@ -96,7 +99,7 @@ export function currentTx(): DbTx | undefined {
  * reservation, whose own `held` fence already re-queues them.
  */
 export function inLiveTx(): boolean {
-  return storage.getStore()?.live.value === true;
+  return storage.get()?.live.value === true;
 }
 
 export function beginStatement(options: TransactionOptions): string {
@@ -217,7 +220,7 @@ export async function withTransaction<T>(
     `withTransaction({ retry }) needs a whole number of extra attempts, 0 or more; a budget that is not one opens nothing and runs fn zero times`,
     "pass an integer — withTransaction(fn, { retry: 3, isolation: 'serializable' }) — and parse it before you pass it: Number(process.env.DB_RETRY) is NaN when the variable is unset",
   );
-  const outer = storage.getStore();
+  const outer = storage.get();
   if (outer !== undefined) {
     // A nested scope is a SAVEPOINT, and a savepoint cannot survive the thing `retry` exists for:
     // measured against Postgres 17, a `40001` aborts the **whole** transaction, so the

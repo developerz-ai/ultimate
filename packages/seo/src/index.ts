@@ -1,5 +1,6 @@
 // The public surface of @ultimat3/seo. Explicit named exports only.
 
+export type { RenderMode } from '@ultimat3/core';
 export type { SeoErrorCode, SeoErrorInit } from './errors';
 export {
   canonicalMismatch,
@@ -90,7 +91,7 @@ export {
 } from './meta';
 export type { RobotsConfig, RobotsGroup } from './robots';
 export { buildRobots, isIndexable } from './robots';
-export type { ChangeFreq, RenderMode, RouteRecord, Surface } from './routes';
+export type { ChangeFreq, RouteRecord, Surface } from './routes';
 export { expandRoute, indexableRoutes, isDynamic } from './routes';
 export type { BuildFeedOptions, Feed, FeedAuthor, FeedChannel, FeedItem } from './rss';
 export { buildFeed } from './rss';

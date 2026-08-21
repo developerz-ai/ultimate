@@ -1,4 +1,5 @@
-// Compile-time pins for the actor-facts seam and the config surface. Source, not a `.test.ts`,
+// Compile-time pins for the actor-facts seam, the config surface and the route vocabulary. Source,
+// not a `.test.ts`,
 // on purpose:
 // `tsconfig.json` excludes `src/**/*.test.ts`, so `tsc -b` never reads a test file and a
 // type-level assertion written there can never fail. This module emits nothing and exports
@@ -6,6 +7,7 @@
 
 import type { Actor, ActorFactMap, FactKeysOf, FactMapOf } from './actor';
 import type { AppConfigInput, DatabaseConfig } from './config';
+import type { HydrateStrategy, OfflineStrategy, RenderMode } from './route-vocabulary';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
 type Assert<T extends true> = T;
@@ -97,4 +99,29 @@ type _DatabaseInputCarriesNoDeadField = Assert<
   Extract<keyof NonNullable<AppConfigInput['database']>, DeadDatabaseField> extends never
     ? true
     : false
+>;
+
+/**
+ * Mutual assignability, not one-way. The tuples are load-bearing: a bare `A extends B` distributes
+ * over a union and answers `true` for every member separately, so it cannot see a widening — which
+ * is the only thing these three pins are looking for.
+ */
+type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+/**
+ * Each route vocabulary's union must stay DERIVED from its array. `(typeof ARRAY)[number]` is what
+ * makes the pair unable to disagree, and it is one careless edit from being a hand-written union
+ * again — which is the shape six packages shipped until `route-vocabulary.ts` existed. Restating
+ * the members here is a pin, not a copy: nothing imports these, and a member added to the array
+ * without a word in the changelog is a build error rather than a silent widening five packages
+ * inherit through a re-export.
+ */
+type _RenderModeIsItsArray = Assert<Exact<RenderMode, 'static' | 'isr' | 'ssr' | 'stream'>>;
+
+type _OfflineStrategyIsItsArray = Assert<
+  Exact<OfflineStrategy, 'precache' | 'runtime' | 'network-only'>
+>;
+
+type _HydrateStrategyIsItsArray = Assert<
+  Exact<HydrateStrategy, 'idle' | 'visible' | 'interaction' | 'never'>
 >;

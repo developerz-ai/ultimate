@@ -4,6 +4,7 @@
  * one place a route says it ships JavaScript, and the directives stay a per-render fact.
  */
 
+import type { HydrateStrategy } from '@ultimat3/core';
 import { IslandInvalidError, IslandNotHydratedError } from './errors';
 import type { IslandDirective } from './hydrate';
 import { DEFAULT_REPLAY_EVENTS } from './hydrate';
@@ -12,7 +13,6 @@ import { isEmittableSpecifier, islandNeverDrained } from './island';
 import type { IslandProps } from './island-props';
 import { checkIslandProps } from './island-props';
 import type { JsxProps } from './jsx';
-import type { HydrateStrategy } from './route';
 
 /** The distinct client entries a rendered page pulled in — one per module, however many instances. */
 export function islandModuleIds(directives: readonly IslandDirective[]): readonly string[] {

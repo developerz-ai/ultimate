@@ -17,7 +17,7 @@ An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, ne
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 71 As of 2026-08 — 70 shipped, 1 under [Unreleased]
+# 77 As of 2026-08 — every one inside the section of the major that shipped it
 ```
 
 Each entry changes a surface the table below covers.
@@ -35,7 +35,7 @@ Each entry changes a surface the table below covers.
 
 **Nothing here is installable until `npm view @ultimat3/core version` answers `6.0.0`.** Run that first; `As of 2026-08` it does not. This section is written as each change lands rather than at the tag, so entries are **appended** — re-read it when `latest` moves.
 
-One breaking entry so far, and it is a **runtime** refusal with no compile error in front of it.
+Seven breaking entries, and the first is a **runtime** refusal with no compile error in front of it.
 
 ### Start here — the one edit
 
@@ -85,7 +85,7 @@ Run it from the app root. Every hit is a single-label zone; `'UTC'` is the only 
 | Fix | What changes for you |
 |---|---|
 | island JSX compiles through `babel-preset-solid` | client-side Solid reactivity inside an island works at all. An island containing JSX compiled to `React.createElement` and threw `ReferenceError: React is not defined` on first interaction, with the gate green. Two build-time dependencies join `@ultimat3/cli`; zero bytes reach your client bundle ([#243](https://github.com/developerz-ai/ultimate/issues/243)) |
-| `@ultimat3/core` loads in a browser bundle | three module-scope `AsyncLocalStorage` constructions moved onto one lazy seam, so `@ultimat3/ui` no longer throws `TypeError: undefined is not a constructor` at module evaluation ([#244](https://github.com/developerz-ai/ultimate/issues/244)) |
+| `@ultimat3/core` loads in a browser bundle | **core's** three module-scope `AsyncLocalStorage` constructions — the request context, the active span, the impersonation reason — moved onto one lazy seam, so `@ultimat3/ui` no longer throws `TypeError: undefined is not a constructor` at module evaluation ([#244](https://github.com/developerz-ai/ultimate/issues/244)). Six more constructions **outside** core were untouched at 6.0.0 and carry the same defect — `@ultimat3/db`, `@ultimat3/entity`, `@ultimat3/ai`; they are `[Unreleased]`, along with the guard that makes the rule a build error ([#255](https://github.com/developerz-ai/ultimate/issues/255)) |
 
 Rebuild to pick either up.
 

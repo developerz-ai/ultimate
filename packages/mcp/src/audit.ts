@@ -58,7 +58,7 @@ export interface McpAuditEntry {
  * the whole enumeration surface; `invalid-args` is a well-behaved client misreading a schema,
  * and an unexpected throw is the only `error` because it is the only one that is a bug.
  */
-const LEVEL: Readonly<Record<McpOutcome, 'info' | 'warn' | 'error'>> = Object.freeze({
+const LEVEL = Object.freeze<Record<McpOutcome, 'info' | 'warn' | 'error'>>({
   ok: 'info',
   hidden: 'warn',
   'scope-denied': 'warn',

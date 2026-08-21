@@ -9,7 +9,8 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | rendering an app's value into a `cause` / `fix` without throwing | `error-render.ts` |
 | code → `{ title, docs }` registry, `registerErrorCodes()` | `error-codes.ts` |
 | `Result<T, E>` for boundaries where throwing is wrong | `result.ts` |
-| request context on `AsyncLocalStorage` | `context.ts` |
+| the one lazy `AsyncLocalStorage`, every ambient scope in the framework | `async-context.ts` |
+| request context on that seam | `context.ts` |
 | `Actor` (`user \| service \| agent \| anonymous`) | `actor.ts` |
 | acting as another actor, with an origin and a reason | `impersonate.ts` |
 | is an error worth retrying? one classification per code | `error-retry.ts` |
@@ -20,6 +21,7 @@ Zero dependencies, zero `@ultimat3/*` imports.
 | the committed encrypted secrets envelope, AES-256-GCM | `secrets.ts` |
 | the two secrets files, and decrypted values → `defineEnv` | `secrets-store.ts` |
 | `defineConfig()` for `app.config.ts` | `config.ts` |
+| the closed route vocabulary every renderer names | `route-vocabulary.ts` |
 | runtime roles + `ROLE` resolution | `roles.ts` |
 | `Clock` — the only source of "now" | `clock.ts` |
 | UUIDv7, nanoid, branded ids | `ids.ts` |

@@ -14,19 +14,14 @@
 
 import type { CacheTag } from '@ultimat3/cache';
 import { serializeTags } from '@ultimat3/cache';
+import type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
+import { OFFLINE_STRATEGIES } from '@ultimat3/core';
 import type { Translator } from '@ultimat3/i18n';
 import type { RouteMeta } from '@ultimat3/seo';
 import { RouteLoadInvalidError, RouteMetaMissingError, RouteOfflineMissingError } from './errors';
 import type { IslandSpec } from './island';
 import { drainDeclaredIslands } from './island';
 import { assertModeShape } from './modes';
-
-export type RenderMode = 'static' | 'isr' | 'ssr' | 'stream';
-export type OfflineStrategy = 'precache' | 'runtime' | 'network-only';
-export type HydrateStrategy = 'idle' | 'visible' | 'interaction' | 'never';
-
-export const OFFLINE_STRATEGIES = ['precache', 'runtime', 'network-only'] as const;
-export const HYDRATE_STRATEGIES = ['idle', 'visible', 'interaction', 'never'] as const;
 
 /**
  * What a page that declares an island hydrates as when it says nothing. The most conservative of

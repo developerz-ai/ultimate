@@ -5,8 +5,8 @@
  * answered instead of swallowed.
  */
 
+import type { HydrateStrategy } from '@ultimat3/core';
 import { escapeAttribute, escapeJsonContent } from './html';
-import type { HydrateStrategy } from './route';
 
 export interface IslandDirective {
   /** Unique per INSTANCE: two of the same island on a page need two prop bags to find. */

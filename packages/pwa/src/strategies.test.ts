@@ -1,12 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import type { RenderMode } from '@ultimat3/core';
 import { PwaStrategyExhaustedError } from './errors';
-import type {
-  PwaRenderMode,
-  PwaRoute,
-  StrategyCache,
-  StrategyEnv,
-  StrategyName,
-} from './strategies';
+import type { PwaRoute, StrategyCache, StrategyEnv, StrategyName } from './strategies';
 import {
   cacheFirst,
   MODE_STRATEGY,
@@ -20,7 +15,7 @@ import {
   strategyFor,
 } from './strategies';
 
-function route(partial: Partial<PwaRoute> & { mode: PwaRenderMode }): PwaRoute {
+function route(partial: Partial<PwaRoute> & { mode: RenderMode }): PwaRoute {
   return {
     path: '/x',
     surface: 'app',
@@ -40,7 +35,7 @@ function fakeEnv(seed: Map<string, Response>, network: () => Promise<Response>):
 }
 
 describe('render mode → strategy', () => {
-  test.each<[PwaRenderMode, StrategyName]>([
+  test.each<[RenderMode, StrategyName]>([
     ['static', 'cache-first'],
     ['isr', 'stale-while-revalidate'],
     ['ssr', 'network-first'],

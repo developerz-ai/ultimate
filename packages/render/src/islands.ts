@@ -5,11 +5,11 @@
  * opt-in, budgeted island.
  */
 
+import type { HydrateStrategy } from '@ultimat3/core';
 import { BudgetExceededError } from './errors';
 import type { IslandDirective } from './hydrate';
 import { hydrateRuntimeBytes } from './hydrate';
 import type { RouteEntry } from './registry';
-import type { HydrateStrategy } from './route';
 import type { Surface } from './surfaces';
 import { SURFACE_SPECS } from './surfaces';
 

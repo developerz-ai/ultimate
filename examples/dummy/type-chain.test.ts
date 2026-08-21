@@ -70,6 +70,20 @@ const DIAGNOSTICS_REPORTED = 1;
 const key = (d: Diagnostic): string => `${d.file}:${d.line} ${d.code} ${d.message}`;
 
 /**
+ * Inside this app — `apps/…`, `packages/…`, never `../../packages/cli/…`. A rename in this app's
+ * schema cannot reach a framework source (nothing in `packages/` imports Postly), so a diagnostic
+ * out there is never this test's finding; and the compiler does not report the same set of them
+ * twice. Eight identical `tsc --noEmit -p tsconfig.json` runs over an unchanged tree, at idle,
+ * answered 117, 119 and 120 diagnostics — always the same 115 in-app ones, byte for byte, and 1 to
+ * 4 TS6307 "not listed within the file list of project" lines about framework files reached
+ * through the `node_modules` symlink. TypeScript 7 checks in parallel, and which importer it
+ * blames for an unlisted file is a race between its workers, so a diff over the raw set reads that
+ * race as a hop the rename broke. Contention only shifts the odds — this is not a timing flake and
+ * a longer timeout would not have touched it.
+ */
+const inApp = (d: Diagnostic): boolean => !d.file.startsWith('..');
+
+/**
  * Both shapes, because a config error (TS5083 / TS6046 / TS18003) carries no `file(line,col):`
  * prefix. Parsing only the prefixed form would let a compiler that never opened a single source
  * file report zero diagnostics, and a baseline of zero is a baseline that proves nothing.
@@ -211,7 +225,8 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
     // Before any diff: a compiler that did not run produces an empty baseline, and every
     // assertion below would then pass or fail for a reason that has nothing to do with the chain.
     expect(harnessFault(before)).toBe('');
-    const beforeKeys = new Set(before.diagnostics.map(key));
+    const beforeInApp = before.diagnostics.filter(inApp);
+    const beforeKeys = new Set(beforeInApp.map(key));
 
     // Sanity: every file the rename is about to hit compiles clean today. Otherwise a
     // diagnostic appearing "after" the rename could just be pre-existing noise wearing a new line
@@ -244,7 +259,7 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
      * Deriving the set from the baseline rather than listing it keeps this honest — a file that
      * gets repaired drops out on its own, and its next real regression is caught.
      */
-    const alreadyFailing = new Set(before.diagnostics.map((d) => d.file));
+    const alreadyFailing = new Set(beforeInApp.map((d) => d.file));
 
     let after: TypecheckRun;
     const release = guardRestore(SCHEMA_FILE, pristine);
@@ -259,7 +274,7 @@ describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', 
 
     expect(harnessFault(after)).toBe('');
     const introduced = after.diagnostics.filter(
-      (d) => !beforeKeys.has(key(d)) && !alreadyFailing.has(d.file),
+      (d) => inApp(d) && !beforeKeys.has(key(d)) && !alreadyFailing.has(d.file),
     );
 
     // The rename must surface as new, attributable failures — not vanish into whatever the app's

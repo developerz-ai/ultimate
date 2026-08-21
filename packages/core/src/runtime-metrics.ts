@@ -14,7 +14,7 @@ import type { ScalingSignal } from './roles';
  * own comment ("via the ingress metric adapter") already assumes. The other two are instantaneous
  * values a scrape can read directly, so their series names are the chart's words verbatim.
  */
-export const SCALING_METRICS: Readonly<Record<ScalingSignal, string | null>> = Object.freeze({
+export const SCALING_METRICS = Object.freeze<Record<ScalingSignal, string | null>>({
   rps: 'http_requests_total',
   'ws-connections': 'connections',
   'queue-depth': 'queue_depth',
