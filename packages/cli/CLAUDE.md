@@ -816,10 +816,13 @@ typechecked there by default; an app whose tsconfig names an explicit `include` 
 ## Two generators that scaffold something other than a primitive
 
 `x g island <name> [--at <dir>]` writes a **client entry point**, not a component: the filename is
-how the bundler discovers it and `mount` is how the hydration runtime calls it, so those two are
-what `templates/island.test.ts` pins and everything else in the file is example code. `--at` takes
-the directory directly rather than deriving one, because the caller that cannot guess is
-`X_ISLAND_INVALID` — its cause already holds the exact path a page's `src` resolved to, so its
+how the bundler discovers it and `mount` is how the hydration runtime calls it, so the filename,
+the `mount` export and that `mount` RENDERS are what `templates/island.test.ts` pins — it builds
+the emitted entry with `buildIslands` and drives it with `mountIsland`, so a template that
+typechecks and does not mount is a failing test. It runs the mutation too, rather than describing
+it: the same island with `{count()}` replaced by `{0}` must fail the assertion the live one passes.
+`--at` takes the directory directly rather than deriving one, because the caller that cannot guess
+is `X_ISLAND_INVALID` — its cause already holds the exact path a page's `src` resolved to, so its
 `fix:` hands that path straight back.
 
 `x g admin:page <name> --permission <perm> [--at <dir>]` writes an ordinary TSX component and **no

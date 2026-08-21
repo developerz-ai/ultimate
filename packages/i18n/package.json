@@ -4,6 +4,10 @@
   "description": "Dependency-free translator, catalog flattening, locale negotiation and loud missing-key rendering",
   "license": "MIT",
   "type": "module",
+  "sideEffects": [
+    "./src/errors.ts",
+    "./src/framework.ts"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/developerz-ai/ultimate.git",

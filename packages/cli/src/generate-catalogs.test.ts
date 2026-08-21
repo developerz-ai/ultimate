@@ -43,11 +43,15 @@ describe('unit · the catalogs x g writes', () => {
     expect(page?.contents).toContain("t('app.pricing.title')");
   });
 
-  test('a resource ships the card and form components, and their i18n keys', () => {
+  test('a resource ships the card component and the form ISLAND, and their i18n keys', () => {
     const files = generate({ kind: 'resource', name: 'invoice' });
     const paths = files.map((file) => file.path);
     expect(paths).toContain('apps/web/app/invoice/ui/invoice-card.tsx');
-    expect(paths).toContain('apps/web/app/invoice/ui/invoice-form.tsx');
+    // The form is a CLIENT entry now, not a component: `*.island.tsx` is the only name the island
+    // build discovers, and a plain `.tsx` holding a signal and an `onSubmit` was compiled by nobody
+    // — `renderComponent` dropped both handlers and read the signal once, as `''` (#248).
+    expect(paths).toContain('apps/web/app/invoice/invoice-form.island.tsx');
+    expect(paths).not.toContain('apps/web/app/invoice/ui/invoice-form.tsx');
     expect(catalogKeysOf(catalogFile(files, 'en')?.contents)).toContain('app.invoice.empty');
   });
 

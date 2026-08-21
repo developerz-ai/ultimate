@@ -8,6 +8,7 @@ import { clearRoutes, defineRoute, island, registerRoute, routeEntries } from '@
 import { appManifest } from './app-manifest';
 import { checkBudgets, readBuildStats } from './budgets';
 import { isPrerenderable, prerenderSite } from './prerender';
+import { readStaticReport } from './static-report';
 
 const ROOT = join(import.meta.dir, '..', '.prerender-fixture');
 
@@ -62,7 +63,7 @@ describe('x build --target static', () => {
     const report = await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
 
     expect(report.pages.map((page) => page.file)).toEqual(['index.html']);
-    expect(report.skipped).toEqual(['/dashboard']);
+    expect(report.skipped.map((route) => route.route)).toEqual(['/dashboard']);
     // A stream route on disk would be a shell nothing can ever fill — the file must not exist.
     expect(await Bun.file(join(out, 'dashboard/index.html')).exists()).toBe(false);
   });
@@ -118,7 +119,7 @@ describe('x build --target static', () => {
 
     // Unchanged: a mode whose staleness nothing can correct never lands on disk.
     expect(report.pages.map((page) => page.file)).toEqual(['index.html']);
-    expect(report.skipped).toEqual(['/dashboard']);
+    expect(report.skipped.map((route) => route.route)).toEqual(['/dashboard']);
     expect(await Bun.file(join(out, 'dashboard/index.html')).exists()).toBe(false);
 
     const stats = await readBuildStats(ROOT);
@@ -158,7 +159,102 @@ describe('x build --target static', () => {
     });
     const report = await prerenderSite({ root: ROOT, out: join(ROOT, 'static') });
     expect(report.pages).toEqual([]);
-    expect(report.skipped).toEqual(['/dashboard']);
+    expect(report.skipped.map((route) => route.route)).toEqual(['/dashboard']);
+  });
+});
+
+// #242: `.x/static/` held a partial site and said nothing about the difference. A screenshot tool
+// was pointed at it, photographed the landing page and filed "the island did not mount" against a
+// route that had never been in the artifact. Every declared route is now in exactly one of two
+// lists, and the skipped ones carry the cause an author can act on.
+
+/** `site/` + `isr`: prerenderable BY SURFACE, skipped by mode — the other half of the distinction. */
+const isrRoute = defineRoute({
+  render: 'isr',
+  hydrate: 'never',
+  offline: 'runtime',
+  revalidate: { tags: [{ entity: 'blog' }] },
+  budget: { js: '0kb' },
+  meta: () => ({ title: 'Blog', description: 'regenerates' }),
+});
+
+/** `render: 'static'` with a dynamic param and no `prerender()` — enumerates nothing. */
+const dynamicStaticRoute = defineRoute({
+  render: 'static',
+  hydrate: 'never',
+  offline: 'precache',
+  budget: { js: '0kb' },
+  meta: () => ({ title: 'Post', description: 'one per slug' }),
+});
+
+describe('the static build says what it emitted and what it did not', () => {
+  test('every declared route lands in exactly one of emitted and skipped', async () => {
+    registerRoute({ file: 'apps/web/site/page.tsx', config: staticRoute });
+    registerRoute({ file: 'apps/web/site/blog/page.tsx', config: isrRoute });
+    registerRoute({
+      file: 'apps/web/app/dashboard/page.tsx',
+      config: streamRoute,
+      suspenseBoundaries: 1,
+    });
+    registerRoute({ file: 'apps/web/site/posts/[id]/page.tsx', config: dynamicStaticRoute });
+
+    const declared = routeEntries().map((entry) => entry.path);
+    const out = join(ROOT, 'static');
+    await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
+
+    const report = await readStaticReport(ROOT);
+    expect(report?.target).toBe('static');
+    const emitted = new Set((report?.emitted ?? []).map((page) => page.route));
+    const skipped = new Set((report?.skipped ?? []).map((route) => route.route));
+
+    // A route in NEITHER list is the original defect wearing a new shape. `/posts/:id` is the one
+    // that used to vanish: `render: 'static'` put it past the skip branch, and `enumeratePrerender`
+    // answered `[]`, so it wrote no file and was reported nowhere.
+    for (const path of declared) {
+      // Exactly one — in both is a double count, in NEITHER is the defect.
+      expect(`${path}: ${Number(emitted.has(path)) + Number(skipped.has(path))}`).toBe(
+        `${path}: 1`,
+      );
+    }
+    expect([...emitted].sort()).toEqual(['/']);
+    expect([...skipped].sort()).toEqual(['/blog', '/dashboard', '/posts/:id']);
+  });
+
+  test('the reason names the actual cause, and app/ does not borrow site/ ssr’s', async () => {
+    registerRoute({ file: 'apps/web/site/blog/page.tsx', config: isrRoute });
+    registerRoute({
+      file: 'apps/web/app/dashboard/page.tsx',
+      config: streamRoute,
+      suspenseBoundaries: 1,
+    });
+    const report = await prerenderSite({ root: ROOT, out: join(ROOT, 'static') });
+    const by = new Map(report.skipped.map((route) => [route.route, route]));
+
+    // `app/` allows only stream|ssr, so the SURFACE is the cause and no `render:` edit helps.
+    expect(by.get('/dashboard')?.reason).toBe('surface-forbids-static');
+    expect(by.get('/dashboard')?.why).toContain('app/');
+    expect(by.get('/dashboard')?.why).not.toContain("change it to render: 'static'");
+
+    // `site/` + isr is a different cause with a different edit, and a flat reason string that
+    // collapsed the two is what produces the next false bug report.
+    expect(by.get('/blog')?.reason).toBe('mode-revalidates');
+    expect(by.get('/blog')?.why).toContain("change it to render: 'static'");
+    expect(by.get('/blog')?.why).not.toBe(by.get('/dashboard')?.why);
+  });
+
+  test('the emitted rows carry the file on disk, so the artifact can be checked against them', async () => {
+    registerRoute({ file: 'apps/web/site/page.tsx', config: staticRoute });
+    const out = join(ROOT, 'static');
+    const report = await prerenderSite({ root: ROOT, out, origin: 'https://example.test' });
+
+    const onDisk = await readStaticReport(ROOT);
+    expect(onDisk?.emitted).toEqual([{ route: '/', path: '/', file: 'index.html' }]);
+    expect(onDisk?.out).toBe(out);
+    // The written file is the one the row names — the check the screenshot tool could not make.
+    for (const page of onDisk?.emitted ?? []) {
+      expect(await Bun.file(join(out, page.file)).exists()).toBe(true);
+    }
+    expect(report.report).toBe(join(ROOT, '.x', 'static-report.json'));
   });
 });
 

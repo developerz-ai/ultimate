@@ -47,7 +47,7 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
   | Rule | Refuses |
   |---|---|
-  | `duplicate` | two `## ` headings naming one version |
+  | `duplicate` | two `##` headings naming one version |
   | `empty` | a released section with no body |
   | `unreleased-breaking` | a `BREAKING —` entry under `## [Unreleased]` at a tagged commit |
   | `count` | a `wiki/Upgrading.md` row whose number is not that major's own section's `BREAKING —` count |
@@ -59,6 +59,25 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   the wrong heading: a misplaced entry only makes the number smaller. Codes:
   `X_DOC_CHANGELOG_SECTION_INVALID`, `X_DOC_CHANGELOG_UNRELEASED_BREAKING`,
   `X_DOC_MIGRATION_COUNT_STALE`, `X_DOC_MIGRATION_UNSCANNED`.
+
+- `scripts/side-effects.ts` — every `package.json`'s `sideEffects` field held true of its package.
+  Codes: `X_SIDE_EFFECTS_UNDECLARED`, `X_SIDE_EFFECTS_ENTRY_STALE`, `X_SIDE_EFFECTS_MISSING`,
+  `X_SIDE_EFFECTS_PIN_STALE`, `X_SIDE_EFFECTS_UNSCANNED`.
+
+  Nothing could catch a package declaring `sideEffects: false` while a module of it called something
+  at import time — the field was a claim with no reader, which is the shape `gate-codes.ts` and
+  `changelog-check.ts` already exist for. It refuses a module that provably runs at import time and is
+  excluded from the array, and an entry matching **no file**: a stale glob protects nothing while
+  reading as a rule still in force.
+
+  **`false` is the dangerous value, and it is measured rather than argued.** On `@ultimat3/core`,
+  `false` drops `packages/core/src/schema-error-codes.ts` — which registers **`@ultimat3/schema`'s**
+  four code titles, because schema is tier 0 and cannot register its own. The array keeps it. Cost of
+  that honesty: ~376 B an island. Cost of declaring nothing at all: 22,214 → 5,948 B on an island
+  importing `@ultimat3/time`, once core declared one.
+
+  A ratchet, because 24 of 30 packages were silent on day one. `--explain --json` prints the array the
+  tree measures, so draining it is one command plus review (#259)
 
 ### Changed
 
@@ -96,6 +115,59 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   `'precache' | 'runtime' | 'network-only'`. **Migration:**
   `import type { OfflineStrategy } from '@ultimat3/core'` — or from `@ultimat3/pwa` — and rename
   every use (#261)
+- **BREAKING — `PrerenderReport.skipped` carries the reason a route was dropped, not just its path.**
+  `readonly string[]` → `readonly SkippedRoute[]` (`{ route, surface, render, reason, why }`), and
+  `PrerenderedPage` gains `route`, the declared path a concrete URL came from. `x build --target
+  static --json` now returns `emitted` and `skipped`, and the human path prints the same rows.
+
+  `.x/static/` held a partial site and said nothing about the difference: `app/` routes exist only
+  through the server, and a screenshot tool pointed at the directory filed *"the island did not
+  mount"* against a route that had never been in the artefact — while that route's island **chunk**
+  sat in `islands/` beside the pages, because a skipped route is still built and still weighed.
+
+  Surface is asked BEFORE mode, and the two produce different sentences: `app/` allows only
+  `stream | ssr`, so no `render:` edit can put an `app/` route in the artefact and its `why` does not
+  offer one. On `site/`, the mode IS the cause and `change it to render: 'static'` is a real edit.
+
+  A third cause the issue did not name, and the same defect wearing a new shape: a `render: 'static'`
+  route with a param and no `prerender()` passed the skip branch by its mode, wrote **zero** files,
+  and was reported in NEITHER list. It is now `no-prerender-paths`. The invariant that catches it —
+  every declared route lands in exactly one of the two lists — is the test, not the count.
+
+  **Migration:** an app's `apps/web/prerender.ts` prints `report.skipped` and needs no edit; the JSON
+  it emits is richer. Code reading `report.skipped[0]` as a string reads `.route` instead (#242)
+
+- **`sideEffects` declared on six packages, as an array — never `false`.** `@ultimat3/core`, `i18n`,
+  `money`, `render`, `ui` and `time`. Every one calls `registerErrorCodes()` (or `registerBaseCatalog()`,
+  or `installRenderLoader()`) at module scope, deliberately, so `false` would hand a bundler permission
+  to delete it. Measured, per island chunk:
+
+  | island imports | before | after |
+  |---|---|---|
+  | `instant` from `@ultimat3/time` | 22,214 | **5,948** |
+  | `createTranslator` from `@ultimat3/i18n` | 31,750 | **6,866** |
+  | `formatMoney` from `@ultimat3/money` | 39,596 | **23,660** |
+  | `setSolidRuntime` from `@ultimat3/ui` | 44,804 | **28,825** |
+
+  `@ultimat3/render` declares `./src/index.ts`, not a `.scss` glob: the barrel **is** the side effect
+  (`index.ts:10` calls `installRenderLoader()`), and `packages/render/src` contains no `.scss` at all,
+  so the glob would have been stale on arrival (#259)
+- **`DEFAULT_ISLAND_JS_BYTES` 4096 → 20480**, so `site/` → `20kb` and `app/` → `34kb`. The old number
+  was **unreachable by every Solid island on every surface**, and its own doc comment said why without
+  noticing: it justified 4 kB as "roughly twice what the reference app's real island costs", and that
+  island uses **no Solid at all**. The one shape that does not pay the runtime set the budget for the
+  ones that do.
+
+  Measured floor for any island calling Solid's `render()`: **12,588 bytes** — `render(() => <p>hello</p>, el)`,
+  no signal, no event, production build. Against a 3,481 B author allowance that is 3.6× over on arrival.
+  Solid's dev/production delta is only ~1,334 B, so this was never the dev bundle.
+
+  The new number is derived and pinned by test: 17,797 (`settings.island.tsx`, the heaviest island this
+  repo ships) + 615 (one hydrate directive's runtime — **not** the 1,019 the old comment claimed),
+  rounded up, 11% headroom. Still real bytes on disk; nothing about the check was weakened.
+
+  A widening: an app failing `X_BUDGET_EXCEEDED` on a derived island budget may now pass. **No app can
+  newly fail** — a larger limit only ever un-fails (#254)
 
 ### Fixed
 
@@ -117,10 +189,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   **And it is a build error now, not a convention** (axiom 3): `scripts/async-context-guard.ts`
   refuses a `new AsyncLocalStorage` **and** the import that binds the class — aliased, or reached
   through a namespace import — anywhere but `packages/core/src/async-context.ts`. It reads
-  `packages/*/src`, `packages/*/e2e` and `scripts/`, comment-stripped, and runs in the gate's `unit`
-  step through `scripts/async-context-guard.test.ts`. A floor rather than a proof: a runtime
-  `await import('node:async_hooks')` and a constructor stashed in a variable are both outside what it
-  can see, and its header says so.
+  `packages/*/src`, `packages/*/e2e`, `scripts/` and both tracked apps, comment-stripped, and runs
+  in the gate's `unit` step through `scripts/async-context-guard.test.ts`. A floor rather than a
+  proof: a runtime `await import('node:async_hooks')` and a constructor stashed in a variable are
+  both outside what it can see, and its header says so.
 - **`scripts/release.ts` promotes `[Unreleased]` instead of appending a section generated from commit
   subjects** (#267). `[Unreleased]` **is** the release notes — written as each change lands, migration
   and all — so a release renames that heading to the version and opens a fresh empty one above it.

@@ -212,14 +212,31 @@ export function defaultHydrate(surface: Surface): HydrateStrategy {
 }
 
 /**
- * What an island route may spend ABOVE its surface's baseline when it declares no `budget.js`.
+ * What an island route may spend ABOVE its surface's baseline when it declares no `budget.js` —
+ * the island chunk plus the hydration runtime, which is what `routeJsBytes` adds to the baseline.
  *
- * A number, not "unlimited", because the guard means nothing otherwise — and 4kb because that is
- * roughly twice what the reference app's real island costs (875 B of chunk plus a 1,019 B runtime),
- * which is enough for a second small island and not enough to hide a library. A declared
- * `budget.js` still wins, and exceeding this one still fails with the island named.
+ * **20kb, and it is calibrated on a Solid island** (`As of 2026-08-21`). It was 4096, justified in
+ * this comment as "twice what the reference app's real island costs (875 B of chunk plus a 1,019 B
+ * runtime)" — and that island, `contact-sales.island.tsx`, imports no `solid-js` at all. Calibrating
+ * a JSX budget on the one island shape that does not pay the JSX runtime made the default
+ * unreachable for every island that does: measured with `buildIslands`, minified, production Solid,
+ * `render(() => <p>hello</p>, el)` is **12,588 B** — the floor, before an author writes anything —
+ * a signal + a button + reactive text is 13,663 B, and the reference app's real Solid island
+ * (`settings.island.tsx`) is 17,797 B. No `budget.js` under 4096 was reachable by any of them, on
+ * any surface, because the allowance is measured above the baseline and not against it.
+ *
+ * The number: 17,797 (the heaviest island this repo actually ships) + 615 (`hydrateRuntimeBytes`
+ * for one directive) = 18,412, rounded up to the next whole kilobyte with headroom. It is not
+ * derived from Solid's own size on purpose — this package may not import or name `solid-js`
+ * (`CLAUDE.md`), so a constant tracking the runtime's version would be a dependency in a comment.
+ *
+ * Still a real ceiling, still real bytes on disk: an island that pulls a design system in
+ * (`@ultimat3/ui`'s `<Switch>` measures 36,335 B) or ships an engine twice must write its own
+ * number down, which is the whole point. Two defaults keyed on "does the graph reach Solid?" is
+ * not an option even setting axiom 1 aside: `registry.ts` reads this at REGISTRATION, before any
+ * bundle exists, so the answer is not available where the constant is used.
  */
-export const DEFAULT_ISLAND_JS_BYTES = 4096;
+export const DEFAULT_ISLAND_JS_BYTES = 20_480;
 
 /**
  * The derived ceiling for a route whose hydration came from an island. Relative to the surface

@@ -14,6 +14,13 @@ import { execOutput } from './exec';
 import { msg } from './messages';
 import type { CommandResult } from './output';
 import { flagString } from './parse';
+import type { StaticReport } from './static-report';
+import {
+  readStaticReport,
+  removeStaticReport,
+  renderStaticReport,
+  staticReportData,
+} from './static-report';
 
 export const BUILD_TARGETS = ['docker', 'binary', 'static'] as const;
 
@@ -111,14 +118,19 @@ export function preflightResult(verify: CommandResult): CommandResult {
  * `✗ built docker`; and the builder's own logs went only into `lines`, which is declared human-only
  * and which `renderJson` drops — so CI, which runs `--json`, got the exit code and nothing to act
  * on. The output now rides in `data` and `lines` renders that same string.
+ *
+ * `report` is the static target's inventory, and BOTH renderers get it: `--json` is the house rule,
+ * but an agent reading terminal output is the primary developer here, so a silent human path is the
+ * same defect in a different costume. `lines` still carries nothing `data` does not (#242).
  */
 export function buildResult(input: {
   readonly target: BuildTarget;
   readonly artifact: string;
   readonly command: readonly string[];
   readonly result: ExecResult;
+  readonly report?: StaticReport;
 }): CommandResult {
-  const { result, target } = input;
+  const { report, result, target } = input;
   const output = result.ok ? '' : execOutput(result);
   return {
     ok: result.ok,
@@ -139,8 +151,13 @@ export function buildResult(input: {
       artifact: input.artifact,
       durationMs: result.durationMs,
       ...(result.ok ? {} : { output }),
+      ...staticReportData(report),
     },
-    lines: result.ok ? [] : output.split('\n'),
+    lines: result.ok
+      ? report === undefined
+        ? []
+        : renderStaticReport(report)
+      : output.split('\n'),
   };
 }
 
@@ -178,11 +195,20 @@ export const buildCommand: CliCommand = {
       flagString(ctx.args, 'out') ?? join(root, '.x', target === 'static' ? 'static' : 'app');
     const tag = flagString(ctx.args, 'tag') ?? 'ultimate-app:dev';
     const command = argsFor(target, { root, tag, out });
+    // Removed BEFORE the builder runs, so a build that writes no inventory can never be reported
+    // with the last one's: a stale emitted list is worse than none, because it reads as this run's.
+    if (target === 'static') await removeStaticReport(root);
+    const result = await ctx.runner(command, { cwd: root });
+    // `prerenderSite` writes it; an app whose `apps/web/prerender.ts` does not call that writes no
+    // `.x/build-stats.json` either, and `x verify`'s `budgets` step already reds that app with
+    // `X_BUDGET_UNMEASURED` — so the absence needs no second code here.
+    const report = target === 'static' && result.ok ? await readStaticReport(root) : undefined;
     return buildResult({
       target,
       artifact: target === 'docker' ? tag : out,
       command,
-      result: await ctx.runner(command, { cwd: root }),
+      result,
+      ...(report === undefined ? {} : { report }),
     });
   },
 };

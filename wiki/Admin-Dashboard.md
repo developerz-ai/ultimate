@@ -82,12 +82,25 @@ The `/_x` **dev** dashboard is a standalone page with no stylesheet pipeline, so
 
 ## Render modes
 
-| Surface | Mode | Why |
+**One shape for every generated route, from one call site** — `adminRouteConfig` in
+[`packages/admin/src/routes.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/admin/src/routes.ts),
+never an author's choice, `As of 2026-08`.
+
+| Key | Value | Why |
 |---|---|---|
-| Login / error pages | `ssr` | no shell to precache, must be correct on first byte |
-| List and detail screens | `stream` | shell instantly, table streams when the query resolves |
-| Job step timelines, live inspector | `ssr` + `hydrate: 'never'` + live query | behind auth and no SEO value, but a generated view is a pure function of its props — the interactive part arrives as an `island({ src })`, budgeted in real bytes. Every generated route is `ssr`; `packages/admin/src/routes.ts` declares one mode for all of them, never an author's choice |
-| Offline | `network-only` | an operator acting on stale operational data is worse than an error |
+| `render` | `ssr` | behind auth and with no SEO value, but it has to be correct on first byte. It was `spa` until 6.0.0 deleted that mode: nothing built the client bundle it preloaded and `renderSpa` never read the route's component, so every generated view served an empty `<div id="x-root">` |
+| `offline` | `network-only` | an operator acting on stale operational data is worse than an error |
+| `hydrate` | `never` | a generated view is a pure function of its props — no `createSignal`, no local state — so the page level has nothing to boot. It also means a generated screen declares **no island**: an island rendered on a route at `never` is `X_ISLAND_NOT_HYDRATED`, whose fix is to remove the `never` |
+| `policy` | `permissions[0]`, always | the author never writes this `defineRoute` call, so the author cannot omit the guard; an empty permission list is `X_ADMIN_PAGE_UNGUARDED` at construction |
+
+Interactivity is a screen you write yourself under `apps/admin/app/<feature>/` — a normal Ultimate
+route, where `hydrate` derives from the island it declares.
+
+The **job step timeline** and the **live query inspector** are not admin routes: they are `/_x`
+panels (`panel-timeline.ts`, `panel-live.ts`), mounted by `devDashboard()`, which throws rather
+than mounting when `ROLE` and the environment say production. The live panel reads registered live
+queries and their subscribers out of introspection — `@ultimat3/admin` does not depend on
+`@ultimat3/realtime` and subscribes to nothing.
 
 See [Routes and render modes](Routes-And-Render-Modes).
 

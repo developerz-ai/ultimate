@@ -1,0 +1,207 @@
+// The inventory of one `x build --target static`: which declared route reached the artifact, which
+// did not, and WHY for each. Written by the prerenderer, read back by `x build`, so both renderers
+// state the same thing. A skipped route with no reason is what turned "the island did not mount"
+// into a bug report about a page that had never been in `.x/static/` at all (#242).
+
+import { existsSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import type { RenderMode } from '@ultimat3/core';
+import type { Surface } from '@ultimat3/render';
+import { SURFACE_SPECS, surfaceAllows } from '@ultimat3/render';
+import type { JsonValue } from './output';
+
+/** Beside `.x/build-stats.json`, and written by the same call — see `readStaticReport` below. */
+export const STATIC_REPORT_FILE = join('.x', 'static-report.json');
+
+export const SKIP_REASONS = [
+  'surface-forbids-static',
+  'mode-revalidates',
+  'mode-per-request',
+  'no-prerender-paths',
+] as const;
+
+export type SkipReason = (typeof SKIP_REASONS)[number];
+
+/**
+ * Type ALIASES, never interfaces — every shape below is JSON on both sides of a file, and only an
+ * alias carries the implicit index signature that makes it assignable to `JsonValue`. As
+ * interfaces, `data: { emitted, skipped }` in `cmd-build.ts` was TS2322 (`not assignable to type
+ * 'JsonValue'`) with nothing wrong in either file, and the obvious fixes — a cast, a widened
+ * annotation — are the two this repo refuses. Same rule `RouteContext` in `@ultimat3/render` is an
+ * alias for.
+ */
+
+/** The two declarations a skip decision reads. Narrower than `RouteEntry` so a test can state one. */
+export type RouteFacts = {
+  readonly surface: Surface;
+  readonly render: RenderMode;
+};
+
+export type SkippedRoute = RouteFacts & {
+  /** The DECLARED path, `/blog/:slug` — never a filled one, so the author can grep for it. */
+  readonly route: string;
+  readonly reason: SkipReason;
+  readonly why: string;
+};
+
+/** One HTML file in the artifact, and the declared route that produced it. */
+export type EmittedPage = {
+  readonly route: string;
+  readonly path: string;
+  /** Relative to the build output root, POSIX — the file a screenshot tool actually opens. */
+  readonly file: string;
+};
+
+export type StaticReport = {
+  readonly target: 'static';
+  readonly out: string;
+  readonly buildId: string;
+  readonly emitted: readonly EmittedPage[];
+  readonly skipped: readonly SkippedRoute[];
+};
+
+/**
+ * The ONE decision about what lands on a CDN — `isPrerenderable` is derived from it, so the answer
+ * and the reason can never disagree.
+ *
+ * Surface is asked FIRST, and that ordering is the whole finding. `app/` allows `stream | ssr` and
+ * nothing else, so no `render:` edit can put an app/ route into the artifact: the surface is the
+ * cause, and naming the mode would send an author to change the one thing that cannot help. On a
+ * surface that DOES allow `static`, the mode is the cause and the edit is real — which is why the
+ * two produce different sentences below rather than one flat "not prerendered".
+ */
+export function skipReasonFor(route: RouteFacts): SkipReason | null {
+  if (!surfaceAllows(route.surface, 'static')) return 'surface-forbids-static';
+  if (route.render === 'static') return null;
+  return route.render === 'isr' ? 'mode-revalidates' : 'mode-per-request';
+}
+
+/**
+ * `Object.freeze<Record<…>>`, never `const X: Readonly<Record<…>> = Object.freeze({…})`: the second
+ * form infers from the literal and accepts an EXTRA key in silence (`bun run frozen-records`).
+ *
+ * English rather than `t()`, for the reason every `cause:`/`fix:` in this repo is English: this is
+ * a diagnostic an agent pastes into a report, and `wiki/Error-Codes.md` is the same surface.
+ */
+const WHY = Object.freeze<Record<SkipReason, (route: RouteFacts) => string>>({
+  'surface-forbids-static': (route) =>
+    `${route.surface}/ surface — server-rendered, not prerendered; ` +
+    `${route.surface}/ allows ${SURFACE_SPECS[route.surface].allowedModes.join(' | ') || 'no render mode'}, ` +
+    'so no route on it can ever reach the artifact',
+  'mode-revalidates': (route) =>
+    `render: '${route.render}' regenerates on a tag or ttl and a published file cannot, ` +
+    "so it is served by the app — change it to render: 'static' to emit it",
+  'mode-per-request': (route) =>
+    `render: '${route.render}' is rendered per request, so it is served by the app — ` +
+    "change it to render: 'static' to emit it",
+  'no-prerender-paths': (route) =>
+    `render: '${route.render}' with dynamic params and no prerender() paths, so the build ` +
+    'enumerated nothing to write — add prerender() to the route',
+});
+
+/** The reason as a row: the code a machine keys off, and the sentence a human reads. */
+export function skippedRoute(
+  input: RouteFacts & { readonly route: string },
+  reason: SkipReason,
+): SkippedRoute {
+  return {
+    route: input.route,
+    surface: input.surface,
+    render: input.render,
+    reason,
+    why: WHY[reason](input),
+  };
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const isSkipped = (value: unknown): value is SkippedRoute =>
+  isRecord(value) &&
+  typeof value['route'] === 'string' &&
+  typeof value['surface'] === 'string' &&
+  typeof value['render'] === 'string' &&
+  typeof value['why'] === 'string' &&
+  (SKIP_REASONS as readonly string[]).includes(String(value['reason']));
+
+const isEmitted = (value: unknown): value is EmittedPage =>
+  isRecord(value) &&
+  typeof value['route'] === 'string' &&
+  typeof value['path'] === 'string' &&
+  typeof value['file'] === 'string';
+
+/**
+ * Parsed, never cast. The file is this build's own output, but `x build` reads it back off disk
+ * after a subprocess — a truncated write or a hand-edit must read as "no report", which the caller
+ * already handles, rather than as a report with a `skipped` nobody can render.
+ */
+export function parseStaticReport(value: unknown): StaticReport | undefined {
+  if (!isRecord(value)) return undefined;
+  const { target, out, buildId, emitted, skipped } = value;
+  if (target !== 'static' || typeof out !== 'string' || typeof buildId !== 'string') {
+    return undefined;
+  }
+  if (!Array.isArray(emitted) || !emitted.every(isEmitted)) return undefined;
+  if (!Array.isArray(skipped) || !skipped.every(isSkipped)) return undefined;
+  return { target, out, buildId, emitted, skipped };
+}
+
+export async function writeStaticReport(root: string, report: StaticReport): Promise<string> {
+  const path = join(root, STATIC_REPORT_FILE);
+  await Bun.write(path, `${JSON.stringify(report, null, 2)}\n`);
+  return path;
+}
+
+/**
+ * `undefined` means no report — an app whose `apps/web/prerender.ts` does not call `prerenderSite`.
+ * That app also writes no `.x/build-stats.json` (one call writes both), so `x verify`'s `budgets`
+ * step already reds it with `X_BUDGET_UNMEASURED`; this side stays quiet rather than adding a
+ * second code for one cause.
+ */
+export async function readStaticReport(root: string): Promise<StaticReport | undefined> {
+  const path = join(root, STATIC_REPORT_FILE);
+  if (!existsSync(path)) return undefined;
+  try {
+    return parseStaticReport(await Bun.file(path).json());
+  } catch {
+    return undefined;
+  }
+}
+
+/** Deleted before the builder is spawned, so a failed build can never report the last one's list. */
+export async function removeStaticReport(root: string): Promise<void> {
+  await rm(join(root, STATIC_REPORT_FILE), { force: true });
+}
+
+/**
+ * The `--json` half, beside `renderStaticReport`'s human one — and a `Record<string, JsonValue>`
+ * rather than a `JsonValue`, because `x build` SPREADS it into `data` beside `target` and
+ * `artifact`: a bare `JsonValue` admits a string, so the spread is TS2698 (`spread types may only
+ * be created from object types`) and no annotation at the call site can rescue it.
+ *
+ * A field the compiler cannot prove is JSON reds HERE, at the projection, rather than at whichever
+ * caller happens to hand the report to a renderer.
+ */
+export function staticReportData(report: StaticReport | undefined): Record<string, JsonValue> {
+  // Never `{ ...report }`: `out` is an absolute build path and `buildId` is this run's, neither of
+  // which the inventory is about — `data` already carries `artifact` and the build's own id.
+  return report === undefined ? {} : { emitted: report.emitted, skipped: report.skipped };
+}
+
+/**
+ * The human half. Fixed-width columns headed by the JSON's own field names, exactly as
+ * `renderRouteTable` is — the renderer invents no prose, so `--json` and the terminal cannot drift.
+ */
+export function renderStaticReport(report: StaticReport): readonly string[] {
+  const rows: readonly (readonly string[])[] = [
+    ...report.emitted.map((page) => ['emitted', page.route, page.file]),
+    ...report.skipped.map((route) => ['skipped', route.route, route.why]),
+  ];
+  const widths = [0, 1].map((index) =>
+    Math.max(...rows.map((row) => (row[index] ?? '').length), 0),
+  );
+  return rows.map((row) =>
+    `  ${row.map((cell, index) => cell.padEnd(widths[index] ?? 0)).join('  ')}`.trimEnd(),
+  );
+}

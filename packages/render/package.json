@@ -4,6 +4,10 @@
   "description": "The route primitive and the five render modes: static, isr, ssr, stream, spa.",
   "license": "MIT",
   "type": "module",
+  "sideEffects": [
+    "./src/errors.ts",
+    "./src/index.ts"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/developerz-ai/ultimate.git",

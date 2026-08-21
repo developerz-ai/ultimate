@@ -184,15 +184,34 @@ out three things. `hydrate` and `budget.js` are **derived from `island()`**, `As
 | Omitted | Derived | Overridden by |
 |---|---|---|
 | `hydrate` | `'interaction'` when the module declared an island, `'never'` when it did not | stating `hydrate` — the only way to say `idle` or `visible` |
-| `budget.js` | the surface baseline + 4kb (`site/` → `4kb`, `app/` → `18kb`) | stating `budget: { js }` |
+| `budget.js` | the surface baseline + 20kb (`site/` → `20kb`, `app/` → `34kb`) | stating `budget: { js }` |
 
 Both were required and both were punished: an island on a route still at `'never'` is
 `X_ISLAND_NOT_HYDRATED`, and a `site/` route off `'never'` with no `budget.js` is refused at
 registration. Two failures for one omission the `island()` call above had already answered.
 
-4kb because the reference app's real island is 875 B of chunk plus a 1,019 B runtime — room for a
-second small island, not enough to hide a library. It is a ceiling, not a pass: exceeding it is
-`X_BUDGET_EXCEEDED`, naming the island.
+20kb because a Solid island cannot cost less. Measured through `buildIslands`, minified, against
+production Solid, `As of 2026-08`:
+
+| Island | Bytes |
+|---|---|
+| `render(() => <p>hello</p>, el)` — the floor, before an author writes a line | 12,588 |
+| a signal, a button and reactive text | 13,663 |
+| `settings.island.tsx`, the heaviest island this repo ships | 17,797 |
+| one directive's hydration runtime, which the budget also weighs | 615 |
+
+17,797 + 615 = 18,412, rounded up to the next whole kilobyte with headroom.
+
+It was **4kb** until `As of 2026-08`, sized from `contact-sales.island.tsx` — 875 B of chunk, and
+no `solid-js` import anywhere in it. Calibrating a JSX budget on the one island shape that does not
+pay the JSX runtime put the default a factor of three below the floor of every island that does:
+no `budget.js` under 4096 was reachable on any surface, because the allowance is measured ABOVE the
+baseline and not against it. (Its second number was wrong too — the hydration runtime is 615 B for
+one directive, never 1,019.)
+
+Still a ceiling and not a pass: exceeding it is `X_BUDGET_EXCEEDED`, naming the island. An island
+that pulls a design system in — `@ultimat3/ui`'s `<Switch>` measures 36,335 B — writes its own
+number down, which is the point of the field.
 
 `island()` goes **above** `defineRoute`, where JavaScript already puts a `const` the page uses:
 `defineRoute` drains the declarations made before it. Below it, the route resolves to `'never'` and
@@ -205,7 +224,7 @@ route's — because two islands wanting different timings would leave `RouteDesc
 | The route says | The island says |
 |---|---|
 | `hydrate` — WHEN it wakes, once, for the whole route, and only when the default is wrong | `src` — WHICH module, and `props` — what it may receive |
-| `budget.js` — how many bytes that is allowed to cost, when 4kb is not the number | `tag`, `events`, `rootMargin` — how the wrapper behaves |
+| `budget.js` — how many bytes that is allowed to cost, when 20kb is not the number | `tag`, `events`, `rootMargin` — how the wrapper behaves |
 
 ### An island node is a JSX child
 

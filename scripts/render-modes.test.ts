@@ -1,9 +1,7 @@
 // The enforcement half of `scripts/render-modes.ts`: this file IS the build error. The gate's
 // `unit` step runs every `scripts/**/*.test.ts`, so a second declaration of the route vocabulary
-// fails `bun run verify` with no extra wiring.
-//
-// The real repo is asserted NON-VACUOUSLY — a scanner that read nothing would otherwise report
-// "no copies", which is the same answer a clean repo gives and the failure this check exists for.
+// fails `bun run verify` with no extra wiring. The real repo is asserted NON-VACUOUSLY — a scanner
+// that read nothing would otherwise report "no copies", the same answer a clean repo gives.
 
 import { describe, expect, test } from 'bun:test';
 import { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
@@ -112,6 +110,44 @@ describe('the scan cannot pass by reading nothing', () => {
   });
 });
 
+describe('a declaration the old scan could not see', () => {
+  test('is reported when it is NESTED — a namespace is not a hiding place', () => {
+    const nested =
+      'export namespace Compat {\n' +
+      "  export type PwaRenderMode = 'static' | 'isr' | 'ssr';\n" +
+      '}\n';
+    const findings = checkVocabulary([sanctioned, file('packages/pwa/src/compat.ts', nested)]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.at).toBe('packages/pwa/src/compat.ts:2');
+  });
+
+  test('is reported when a doc comment sits BETWEEN the members', () => {
+    const documented =
+      'export type RenderMode =\n' +
+      '  /** Prerendered at build. */\n' +
+      "  | 'static'\n" +
+      '  /** Revalidated on a tag. */\n' +
+      "  | 'isr';\n";
+    const findings = checkVocabulary([sanctioned, file('packages/seo/src/m.ts', documented)]);
+    expect(findings).toHaveLength(1);
+  });
+
+  test('is NOT reported when it is QUOTED inside a template literal', () => {
+    const template =
+      'export const routeTemplate = `\n' +
+      "export type RenderMode = 'static' | 'isr' | 'ssr';\n" +
+      '`;\n';
+    expect(
+      checkVocabulary([sanctioned, file('packages/cli/src/templates/route.ts', template)]),
+    ).toEqual([]);
+  });
+
+  test('is NOT reported when it is COMMENTED OUT', () => {
+    const commented = "// export type RenderMode = 'static' | 'isr' | 'ssr';\n";
+    expect(checkVocabulary([sanctioned, file('packages/pwa/src/a.ts', commented)])).toEqual([]);
+  });
+});
+
 describe('what the scanner reads', () => {
   test('a set below the copy threshold is not a set it reports at all', () => {
     expect(scanLiteralSets("export type One = 'static';\n")).toEqual([]);
@@ -141,5 +177,18 @@ describe('this repository', () => {
     const names = scanLiteralSets(text).map((one) => one.name);
     for (const vocabulary of VOCABULARIES) expect(names).toContain(vocabulary.name);
     expect(VOCABULARIES).toHaveLength(3);
+  });
+
+  test('and it reads a real union whose members carry a doc comment each', async () => {
+    const text = await Bun.file(`${ROOT}/packages/money/src/rounding.ts`).text();
+    const set = scanLiteralSets(text).find((one) => one.name === 'RoundingMode');
+    expect(set?.members).toEqual(['half-up', 'half-even', 'down', 'up']);
+  });
+
+  test('and it reads no declaration out of a real scaffold TEMPLATE, which only quotes one', async () => {
+    const at = 'packages/cli/src/templates/scaffold-domain-package.ts';
+    const text = await Bun.file(`${ROOT}/${at}`).text();
+    expect(text).toContain("export const ROLES = ['owner', 'member', 'viewer'] as const;");
+    expect(scanLiteralSets(text).map((one) => one.name)).not.toContain('ROLES');
   });
 });

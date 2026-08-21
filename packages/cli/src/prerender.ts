@@ -14,13 +14,19 @@ import { measureDocumentJs, writeBuildStats } from './budgets';
 import { routeDocument } from './dev-render';
 import type { IslandBundle } from './island-bundle';
 import { buildIslands, writeIslands } from './island-bundle';
+import type { SkippedRoute } from './static-report';
+import { skippedRoute, skipReasonFor, writeStaticReport } from './static-report';
 
 /**
- * `static` only. `isr` revalidates and `ssr`/`stream`/`spa` need a process, so writing any of them
- * to disk would publish a page whose staleness nothing can correct — and the route already
- * declared which of the five it is.
+ * `static` only. `isr` revalidates and `ssr`/`stream` need a process, so writing any of them to
+ * disk would publish a page whose staleness nothing can correct — and the route already declared
+ * which of the four it is.
+ *
+ * DERIVED from `skipReasonFor`, never a second `=== 'static'`: the answer and the reason reported
+ * beside it are one decision, and two copies of it is how a route came to be dropped silently.
  */
-export const isPrerenderable = (entry: RouteEntry): boolean => entry.config.render === 'static';
+export const isPrerenderable = (entry: RouteEntry): boolean =>
+  skipReasonFor({ surface: entry.surface, render: entry.config.render }) === null;
 
 export interface PrerenderOptions {
   readonly root: string;
@@ -30,6 +36,8 @@ export interface PrerenderOptions {
 }
 
 export interface PrerenderedPage {
+  /** The DECLARED route, `/blog/:slug` — one route can write many pages, and the report groups them. */
+  readonly route: string;
   readonly path: string;
   /** Relative to `out`, POSIX, as `renderStatic` computed it. */
   readonly file: string;
@@ -47,8 +55,13 @@ export interface PrerenderReport {
   readonly out: string;
   readonly buildId: string;
   readonly pages: readonly PrerenderedPage[];
-  /** Routes that exist and are not static. Reported, so "only 2 pages" is never a mystery. */
-  readonly skipped: readonly string[];
+  /**
+   * Every declared route that wrote no file, WITH the cause. A bare path list was the whole of
+   * #242: `.x/static/` held a partial site, the report said only which paths were missing, and a
+   * screenshot tool pointed at the directory filed "the island did not mount" against a route that
+   * had never been in the artifact. The reason is what tells an author whether an edit exists.
+   */
+  readonly skipped: readonly SkippedRoute[];
   /**
    * Routes whose budget this build could not weigh, with the reason. `X_BUDGET_UNMEASURED` is what
    * the gate then reports for each; this is the half that says WHY, which a per-route finding read
@@ -57,6 +70,8 @@ export interface PrerenderReport {
   readonly unmeasured: readonly UnmeasuredRoute[];
   /** Where the measured stats landed, for the `budgets` gate step to read. */
   readonly stats: string;
+  /** Where the emitted/skipped inventory landed, for `x build --target static` to read back. */
+  readonly report: string;
   /** Client entries emitted, one chunk each. Reported so "which JS shipped?" needs no unzip. */
   readonly islands: readonly string[];
 }
@@ -104,7 +119,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   const buildId = (await appManifest(options.root)).manifest.buildId;
   const origin = options.origin ?? DEFAULT_ORIGIN;
   const pages: PrerenderedPage[] = [];
-  const skipped: string[] = [];
+  const skipped: SkippedRoute[] = [];
   const routes: RouteStats[] = [];
   const unmeasured: UnmeasuredRoute[] = [];
 
@@ -115,8 +130,10 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
   await writeIslands(islands, options.out);
 
   for (const entry of routeEntries()) {
-    if (!isPrerenderable(entry)) {
-      skipped.push(entry.path);
+    const facts = { surface: entry.surface, render: entry.config.render, route: entry.path };
+    const reason = skipReasonFor(facts);
+    if (reason !== null) {
+      skipped.push(skippedRoute(facts, reason));
       if (!declaresBudget(entry)) continue;
       // Non-fatal, and that is deliberate: an ssr page's `load` may want a request, a session or a
       // database this build does not have, and a `x build --target static` that started failing on
@@ -152,10 +169,24 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
         ),
       { buildId },
     );
+    // `enumeratePrerender` answers `[]` for a dynamic route with no `prerender()`, so a
+    // `render: 'static'` route with a param writes nothing and used to be reported NOWHERE — past
+    // the skip branch by its mode, absent from `pages` by its zero artifacts. A route in neither
+    // list is the defect this report exists to close, wearing its other shape.
+    if (artifacts.length === 0) {
+      skipped.push(skippedRoute(facts, 'no-prerender-paths'));
+      continue;
+    }
     for (const artifact of artifacts) {
       const file = join(options.out, artifact.outputPath);
       const bytes = await Bun.write(file, artifact.html);
-      pages.push({ path: artifact.path, file: artifact.outputPath, hash: artifact.hash, bytes });
+      pages.push({
+        route: entry.path,
+        path: artifact.path,
+        file: artifact.outputPath,
+        hash: artifact.hash,
+        bytes,
+      });
       // Measured from the document that was just written, so the `budgets` step compares a
       // declared budget against bytes that exist on disk rather than against a graph's estimate.
       const measured = await measureDocumentJs(artifact.html, options.out);
@@ -168,6 +199,16 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     }
   }
   const stats = await writeBuildStats(options.root, { routes });
+  // Written LAST and by the same call that writes the stats, so an app whose `prerender.ts` does
+  // not reach `prerenderSite` produces neither — and `x verify`'s `budgets` step already reds that
+  // app with `X_BUDGET_UNMEASURED`, which is why this side needs no second code of its own.
+  const report = await writeStaticReport(options.root, {
+    target: 'static',
+    out: options.out,
+    buildId,
+    emitted: pages.map((page) => ({ route: page.route, path: page.path, file: page.file })),
+    skipped,
+  });
   return {
     out: options.out,
     buildId,
@@ -175,6 +216,7 @@ export async function prerenderSite(options: PrerenderOptions): Promise<Prerende
     skipped,
     unmeasured,
     stats,
+    report,
     islands: islands.chunks.map((chunk) => chunk.file),
   };
 }

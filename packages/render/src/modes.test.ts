@@ -3,7 +3,13 @@ import { tag } from '@ultimat3/cache';
 import type { RenderMode } from '@ultimat3/core';
 import { RENDER_MODES } from '@ultimat3/core';
 import { RouteModeInvalidError } from './errors';
-import { assertModeInvariants, defaultHydrate, MODE_SPECS } from './modes';
+import {
+  assertModeInvariants,
+  DEFAULT_ISLAND_JS_BYTES,
+  defaultHydrate,
+  defaultIslandBudget,
+  MODE_SPECS,
+} from './modes';
 import { clearRoutes, registerRoute } from './registry';
 import type { RouteConfig, RouteGuard, RouteMetaFn } from './route';
 import { defineRoute } from './route';
@@ -420,5 +426,59 @@ describe('defaultHydrate', () => {
       config: defineRoute({ render: 'static', offline: 'precache', meta }),
     });
     expect(entry.config.hydrate).toBe(defaultHydrate('site'));
+  });
+});
+
+describe('DEFAULT_ISLAND_JS_BYTES', () => {
+  /**
+   * Measured with `buildIslands` from `@ultimat3/cli`, minified, production Solid resolved, on
+   * 2026-08-21. Not imported: this package may not reach tier 5, and a budget test that built a
+   * bundle would be an `.e2e.` suite rather than a unit one. Restated here so the constant above
+   * has a number to fail against — a budget with no test is the state that shipped a default no
+   * island could meet.
+   */
+  const MEASURED = {
+    nonSolidIsland: 875,
+    solidFloor: 12_588,
+    trivialCounter: 13_663,
+    referenceAppIsland: 17_797,
+    hydrateRuntimeOneDirective: 615,
+  } as const;
+
+  test('a Solid island can reach it — the property 4096 did not have', () => {
+    // The floor is what `render()` costs before an author writes a line. A default below it is a
+    // ceiling every JSX island fails on arrival, whatever it contains.
+    expect(DEFAULT_ISLAND_JS_BYTES).toBeGreaterThan(
+      MEASURED.solidFloor + MEASURED.hydrateRuntimeOneDirective,
+    );
+    expect(DEFAULT_ISLAND_JS_BYTES).toBeGreaterThan(
+      MEASURED.referenceAppIsland + MEASURED.hydrateRuntimeOneDirective,
+    );
+  });
+
+  test('it is still a ceiling — headroom over the real island, not a blank cheque', () => {
+    const spent = MEASURED.referenceAppIsland + MEASURED.hydrateRuntimeOneDirective;
+    // Under 2x, so a second copy of the same island is refused rather than waved through, which is
+    // the shape of the defect this check exists for: `three` and `three/webgpu` bundled twice.
+    expect(DEFAULT_ISLAND_JS_BYTES).toBeLessThan(spent * 2);
+    expect(DEFAULT_ISLAND_JS_BYTES % 1024).toBe(0);
+  });
+
+  test('the derived ceiling is the surface baseline plus the allowance, per surface', () => {
+    // Relative, never absolute: `site/` starts at 0 and `app/` at 14kb, so one number would be
+    // either a ceiling `app/` fails on arrival or one `site/` can never reach.
+    for (const surface of ['site', 'app'] as const) {
+      const bytes = SURFACE_SPECS[surface].jsBaselineBytes + DEFAULT_ISLAND_JS_BYTES;
+      expect(defaultIslandBudget(surface)).toBe(`${bytes / 1024}kb`);
+    }
+    expect(defaultIslandBudget('site')).toBe('20kb');
+    expect(defaultIslandBudget('app')).toBe('34kb');
+  });
+
+  test('the non-Solid island the old default was calibrated on still fits, with room', () => {
+    // Not a regression guard on 875 B — a statement that raising the number did not stop the
+    // cheapest shape from being cheap. It is the *calibration* that was wrong, not the island.
+    expect(MEASURED.nonSolidIsland).toBeLessThan(DEFAULT_ISLAND_JS_BYTES);
+    expect(MEASURED.trivialCounter).toBeLessThan(DEFAULT_ISLAND_JS_BYTES);
   });
 });

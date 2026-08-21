@@ -78,7 +78,7 @@ $ x new myapp --dry-run --json
 {"ok":true,"command":"new","summary":"…","data":{"dir":"/home/me/myapp","files":["README.md","AGENTS.md",…],"dryRun":true}}
 ```
 
-**125 files** with the example slice, **99** with `--no-example` — measured on `main` `As of 2026-08-19`, up from 114/90 because `x new` now writes the Helm chart (8 files), `apps/web/api/index.ts`, and one more test per generated action. Both numbers move the moment a template is added, and no gate reads them ([Known gaps](Known-Gaps)), so derive rather than quote:
+**126 files** with the example slice, **99** with `--no-example` — measured on `main` `As of 2026-08-21`, up from 114/90 because `x new` now writes the Helm chart (8 files), `apps/web/api/index.ts`, one more test per generated action, and the example slice's form as an island (`post-form.island.tsx` plus its test, replacing one `ui/post-form.tsx`). Both numbers move the moment a template is added, and `scripts/generator-counts.ts` — a step of `x verify`'s `manifest` check — turns a stale one red on the same commit. Derive rather than quote anyway:
 
 ```bash
 x new myapp --dry-run --json | jq '.data.files | length'
@@ -215,7 +215,7 @@ Alias: `x generate`.
 | `--force` | boolean | `false` | overwrite existing files |
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
 
-`resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the plural route and a test beside each declaration — **27 files** (29 with `--admin --live`), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>` then `x db gen "create <name>"`. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). Every generator produces code that passes `x verify` unmodified. Errors: `X_GENERATE_CONFLICT`.
+`resource` emits the whole slice — `entity`, `repo`, `policy`, `errors`, `service`, `actions`, `live`, `jobs`, `ui`, the form island, the plural route and a test beside each declaration — **28 files** (30 with `--admin`; `--live` adds nothing, a resource already ships a live query), and **no migration**: `x db gen` is the only writer of `packages/db/migrations`, so a new slice is `x g resource <name>` then `x db gen "create <name>"`. `backfill` emits a `backfill()` declaration with its `source()` and `handle()` to fill in — see [Migrations and backfills](Migrations-And-Backfills). Every generator produces code that passes `x verify` unmodified. Errors: `X_GENERATE_CONFLICT`.
 
 **A narrower generator plants the slice modules its own source imports**, `As of 2026-08` — they used to be `x g resource`'s alone, so `x g job` into a hand-written slice emitted `import * as repo from '../repo'` against a file nobody had written. Which modules differ per generator, on purpose: a job has no request behind it and evaluates no policy, so `x g job` plants no `policy.ts`.
 
@@ -495,6 +495,30 @@ x build --target docker|binary|static [--tag name] [--out path] [--json]
 All three are written by `x new`. A missing one is `X_BUILD_ENTRY_MISSING`, whose `fix` names the file and points at a fresh scaffold — the usual cause is an app scaffolded before 1.1.0 wrote `server.ts` and `prerender.ts`, or a deleted `docker/Dockerfile`.
 
 Runs the static verify steps first (`typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors`); if any fail, exits non-zero without building. The content-hash build ID every target shares is `x.manifest.json`'s, written by `x manifest`, not computed here. Errors: `X_BUILD_ENTRY_MISSING`, `X_BUILD_FAILED`; an unknown `--target` is `X_CLI_UNKNOWN_COMMAND` with `build --target docker` as the suggestion.
+
+### `--target static` names every route it emitted, and every one it did not
+
+`.x/static/` is a **partial site**: `site/` routes declaring `render: 'static'` become files, and everything else is served by the app. Both renderers say so — `data.emitted` and `data.skipped` under `--json`, the same rows as a table in the terminal. A screenshot tool pointed at the directory used to photograph the landing page and file "the island did not mount" against a route that had never been in the artifact.
+
+| Field | Row | Meaning |
+|---|---|---|
+| `emitted` | `{ route, path, file }` | one **file**, and the declared route that produced it — `/blog/:slug` writes one row per prerendered path |
+| `skipped` | `{ route, surface, render, reason, why }` | one declared route that wrote nothing, and the cause |
+
+**Every declared route is in exactly one of the two.** A route in neither is the defect this exists to close.
+
+`reason` is a closed set, and the four are not one cause wearing four names — the surface is asked **first**, because `app/` allows only `stream | ssr` and no `render:` edit can put an `app/` route in the artifact:
+
+| `reason` | Cause | Is there an edit? |
+|---|---|---|
+| `surface-forbids-static` | the surface cannot declare `render: 'static'` at all (`app/`) | no — move the route to `site/`, or serve it |
+| `mode-revalidates` | `render: 'isr'` regenerates on a tag or ttl, which a published file cannot | yes — `render: 'static'` |
+| `mode-per-request` | `render: 'ssr'` / `'stream'` on a surface that *does* allow static | yes — `render: 'static'` |
+| `no-prerender-paths` | `render: 'static'` with dynamic params and no `prerender()`, so nothing enumerated | yes — add `prerender()` |
+
+Both lists come from `prerenderSite`, which writes `.x/static-report.json` beside `.x/build-stats.json`; `x build` deletes any previous copy before it spawns the builder, so a stale inventory can never be reported as this run's. An app whose `apps/web/prerender.ts` does not call `prerenderSite` writes neither file, and `x verify`'s `budgets` step already reds it with `X_BUDGET_UNMEASURED`.
+
+Budgets are unchanged and still measured in **real bytes on disk** — `measureDocumentJs` weighs every `<script src>` and every `data-x-entry` island chunk in the emitted document against the files in `out`, which is what catches one engine imported twice. A route that is skipped here is still weighed: it is rendered in memory and thrown away, so a `budget:` on an `ssr` or `isr` route has a number.
 
 > `--target binary` adds `--define ULTIMATE_FRAMEWORK_VERSION="<version>"`. A single-file executable carries no `package.json`, so the define is the only thing the framework's version read can find — build one with a bare `bun build --compile` and it exits `X_INVARIANT` at the first read, naming the flag. One define answers for both reads: `@ultimat3/cli` ships in lockstep with `@ultimat3/core`, so `x --version` inside a binary falls back to the same flag rather than declaring a second one. What is still unmeasured is the target end to end: no scaffolded app has been compiled and served from a bare VM ([Known gaps](Known-Gaps)).
 

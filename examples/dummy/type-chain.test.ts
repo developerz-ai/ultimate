@@ -80,8 +80,15 @@ const key = (d: Diagnostic): string => `${d.file}:${d.line} ${d.code} ${d.messag
  * blames for an unlisted file is a race between its workers, so a diff over the raw set reads that
  * race as a hop the rename broke. Contention only shifts the odds — this is not a timing flake and
  * a longer timeout would not have touched it.
+ *
+ * `d.file !== ''` first, and it is not cosmetic: a project-wide config error carries no path (see
+ * `parseDiagnostics`), so a bare `..` test answered TRUE for the one class this filter cannot
+ * attribute to anything. It would then enter `beforeKeys` and `alreadyFailing`, and a config error
+ * the rename INTRODUCED could be excused as pre-existing. `harnessFault` refuses that run first
+ * today — which makes this a second line of defence rather than a live bug, and a predicate whose
+ * correctness depends on another function running first is one edit from being neither.
  */
-const inApp = (d: Diagnostic): boolean => !d.file.startsWith('..');
+const inApp = (d: Diagnostic): boolean => d.file !== '' && !d.file.startsWith('..');
 
 /**
  * Both shapes, because a config error (TS5083 / TS6046 / TS18003) carries no `file(line,col):`
@@ -194,6 +201,40 @@ function guardRestore(path: string, contents: string): () => void {
 
 /** Captured once, before anything can mutate it, so the restore assertion has a real reference. */
 let pristine = '';
+
+// Pure, over fixtures: the three parsing and filtering decisions the proof below rests on, none of
+// which the 30-second run can report on because it asserts on their OUTPUT. Milliseconds.
+describe('type chain · what the diff is computed over', () => {
+  const at = (file: string, code = 'TS2339'): Diagnostic => ({ file, line: 1, code, message: 'x' });
+
+  test('a project-wide error really does arrive with no path', () => {
+    expect(
+      parseDiagnostics('error TS6046: Argument for --module option must be a string.'),
+    ).toEqual([
+      {
+        file: '',
+        line: 0,
+        code: 'TS6046',
+        message: 'Argument for --module option must be a string.',
+      },
+    ]);
+  });
+
+  test('and is not an in-app diagnostic, so it can never be excused as pre-existing', () => {
+    expect(inApp(at('', 'TS6046'))).toBe(false);
+    expect(inApp(at('apps/web/app/posts/repo.ts'))).toBe(true);
+    expect(inApp(at('../../packages/cli/src/bin.ts', 'TS6307'))).toBe(false);
+  });
+
+  test('and fails the run outright, which is the line of defence in front of that one', () => {
+    const run: TypecheckRun = {
+      exitCode: DIAGNOSTICS_REPORTED,
+      diagnostics: [at('', 'TS6046')],
+      output: 'error TS6046: x',
+    };
+    expect(harnessFault(run)).toContain('no source file was ever checked');
+  });
+});
 
 describe('type chain · the rename proof (docs/architecture/05-type-chain.md)', () => {
   beforeAll(async () => {

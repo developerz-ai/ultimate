@@ -30,8 +30,9 @@ transaction, statement attribution and expected-loop scopes, `@ultimat3/entity`'
 `@ultimat3/ai`'s budget ledger and LLM stream sink. Each was a module-scope `new` a browser bundler
 turns into `TypeError: undefined is not a constructor` at module EVALUATION, so importing any of
 those packages from a client bundle failed before a line of app code ran. Reads degrade to
-`undefined`, writes throw `X_ASYNC_CONTEXT_UNAVAILABLE`; the server pays nothing, because
-`getStore()` before any `run()` answers `undefined` whether the storage exists or not.
+`undefined`, writes throw `X_ASYNC_CONTEXT_UNAVAILABLE`; deferring the construction changes nothing
+a server can observe — the storage is built on the first `get()` or `run()` rather than at module
+evaluation, and `getStore()` outside a scope answers `undefined` either way.
 
 The mechanical half is `scripts/async-context-guard.ts`, collected by `x verify`'s `unit` step
 through `scripts/async-context-guard.test.ts` — it refuses a `new AsyncLocalStorage` **and** the

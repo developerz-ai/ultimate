@@ -90,6 +90,9 @@ site/dist/
 packages/cli/.app-fixture/
 packages/cli/.dev-fixture/
 packages/cli/.mcp-fixture/
+packages/cli/.island-fixture/
+packages/cli/.overrides-fixture/
+packages/cli/.prerender-fixture/
 
 # Scratch credential files. A mis-set path once wrote an npm session token into the repo root.
 .npmrc-login

@@ -50,9 +50,11 @@ export function adminRouteConfig(route: AdminRoute): AdminRouteConfig {
       // shell the browser was supposed to fill — until `spa` was deleted: nothing ever built the
       // client bundle it preloaded and `renderSpa` never read the route's component, so every
       // generated view served an empty `<div id="x-root">`. `ssr` renders the same rows behind the
-      // same guard, and the interactive part of a screen arrives as an `island({ src })`, budgeted
-      // in real bytes. `hydrate: 'never'` follows from that: an admin view is a pure function of
-      // its props (no `createSignal`, no local state), so the page level has nothing to hydrate.
+      // same guard, once per request, and `hydrate: 'never'` means the screen ships no JS at all:
+      // an admin view is a pure function of its props (no `createSignal`, no local state), so
+      // there is nothing to hydrate. `never` is a REFUSAL and not just a default — an `island()`
+      // rendered on this route throws `X_ISLAND_NOT_HYDRATED` (`@ultimat3/render`'s
+      // `island-collector.ts`), and no admin module declares one.
       render: 'ssr',
       offline: 'network-only',
       hydrate: 'never',

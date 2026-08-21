@@ -16,16 +16,18 @@ export interface AsyncContext<T> {
 }
 
 /**
- * The storage is constructed on first `run()`, never at module scope. That is the whole point of
- * this file: a browser bundler stubs `node:async_hooks` to `{}` — Bun's `target: 'browser'` emits
- * `var { AsyncLocalStorage } = (() => ({}))` — so a module-scope `new` threw
+ * The storage is constructed on the first `get()` or `run()`, never at module scope. That is the
+ * whole point of this file: a browser bundler stubs `node:async_hooks` to `{}` — Bun's
+ * `target: 'browser'` emits `var { AsyncLocalStorage } = (() => ({}))` — so a module-scope `new` threw
  * `TypeError: undefined is not a constructor` at module EVALUATION, and every package that
  * transitively imports core was dead on arrival in a client bundle. `@ultimat3/ui` calls itself a
  * SolidJS design system and could not be put on a client by the only client bundler the framework
  * has, for this reason and no other.
  *
- * The server pays nothing: `getStore()` before any `run()` answers `undefined` whether the storage
- * was ever constructed or not, so deferring the construction changes no observable behaviour.
+ * The laziness buys the browser bundle, not a server allocation. `open()` runs on a READ as well as
+ * a write, so a server whose first call is `get()` constructs the storage there — it is deferred,
+ * never skipped. What deferring changes is nothing observable: `getStore()` outside a scope answers
+ * `undefined` whether the storage was ever constructed or not, which is what makes it safe.
  *
  * **Reads degrade, writes throw**, and that split is the doctrine rather than a convenience.
  * `get()` answers `undefined` in a browser because that is TRUE — nothing is in flight there, so

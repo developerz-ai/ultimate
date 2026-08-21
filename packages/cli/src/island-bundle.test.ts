@@ -5,10 +5,17 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
+import type { MountedIsland } from '@ultimat3/testing';
+import { mountIsland } from '@ultimat3/testing';
 import { buildIslands, discoverIslands, ISLAND_BASE_PATH, islandBundle } from './island-bundle';
 import { transformIslandTsx } from './solid-loader';
 
-const ROOT = join(import.meta.dir, '..', '.island-fixture');
+// `.island-fixture/bundle`, never `.island-fixture` itself. This suite wipes its root in both
+// `beforeEach` and `afterEach`, and `templates/island-fixture.ts` puts every labelled app root
+// under that same directory — so owning the parent deleted a sibling suite's app mid-build, which
+// bun surfaced only under the full concurrent run as `ENOENT … counter.island.tsx`. Nobody owns
+// the parent now.
+const ROOT = join(import.meta.dir, '..', '.island-fixture', 'bundle');
 
 const MODULE = (text: string): string =>
   `export function mount(el: HTMLElement): void { el.textContent = ${JSON.stringify(text)}; }\n`;
@@ -78,6 +85,29 @@ describe('buildIslands', () => {
     expect(new Set(urls).size).toBe(2);
   });
 
+  test('only: builds the one island named, and nothing else in the app', async () => {
+    await write('apps/web/site/counter.island.tsx', MODULE('one'));
+    await write('apps/web/app/panel.island.tsx', MODULE('two'));
+
+    const bundle = await buildIslands(ROOT, { only: 'apps/web/app/panel.island.tsx' });
+    expect(bundle.chunks.map((chunk) => chunk.file)).toEqual(['apps/web/app/panel.island.tsx']);
+    // The same chunk either way: `only` is a filter on the entry LIST, never a second build.
+    const whole = await buildIslands(ROOT);
+    expect(bundle.chunks[0]?.url).toBe(whole.chunkAt(bundle.chunks[0]?.url ?? '')?.url);
+  });
+
+  test('only: naming a file the app does not have is X_ISLAND_INVALID, not an empty bundle', async () => {
+    await write('apps/web/site/counter.island.tsx', MODULE('one'));
+    // An empty bundle would surface two steps later, as a chunk table with no entry for a path the
+    // caller can see on disk — which is the shape of the bug, not a report of it.
+    expect(
+      await buildIslands(ROOT, { only: 'apps/web/site/typo.island.tsx' }).then(
+        () => 'built',
+        codeOf,
+      ),
+    ).toBe('X_ISLAND_INVALID');
+  });
+
   test('a client entry that will not compile fails the build naming the file', async () => {
     await write(
       'apps/web/site/broken.island.tsx',
@@ -113,230 +143,25 @@ describe('resolverFor', () => {
   });
 });
 
-// A minimal DOM, because `bun test` has none and no DOM library may be added. It implements what
-// compiled Solid touches and nothing else: `nodeType`, `Text.data`, `insertBefore`/`replaceChild`,
-// `className`, delegated `$$event` properties, and a `<template>` whose `innerHTML` is parsed —
-// `generate: 'dom'` builds every element from `_$template("<button …>")`, so a stub without one
-// cannot run a single compiled island.
-class FakeNode {
-  readonly nodeType: number = 1;
-  children: FakeNode[] = [];
-  parentNode: FakeNode | null = null;
-  appendChild(child: FakeNode): FakeNode {
-    child.parentNode = this;
-    this.children.push(child);
-    return child;
-  }
-  insertBefore(child: FakeNode, ref: FakeNode | null): FakeNode {
-    const at = ref === null ? -1 : this.children.indexOf(ref);
-    child.parentNode = this;
-    this.children.splice(at < 0 ? this.children.length : at, 0, child);
-    return child;
-  }
-  replaceChild(next: FakeNode, prev: FakeNode): FakeNode {
-    const at = this.children.indexOf(prev);
-    if (at >= 0) this.children[at] = next;
-    next.parentNode = this;
-    return prev;
-  }
-  removeChild(child: FakeNode): FakeNode {
-    this.children = this.children.filter((each) => each !== child);
-    return child;
-  }
-  remove(): void {
-    this.parentNode?.removeChild(this);
-  }
-  cloneNode(deep?: boolean): FakeNode {
-    const copy = new FakeNode();
-    if (deep === true) for (const child of this.children) copy.appendChild(child.cloneNode(true));
-    return copy;
-  }
-  get childNodes(): readonly FakeNode[] {
-    return this.children;
-  }
-  get firstChild(): FakeNode | null {
-    return this.children[0] ?? null;
-  }
-  get nextSibling(): FakeNode | null {
-    const siblings = this.parentNode?.children ?? [];
-    return siblings[siblings.indexOf(this) + 1] ?? null;
-  }
-  get textContent(): string {
-    return this.children.map((child) => child.textContent).join('');
-  }
-  set textContent(text: string) {
-    this.children = text === '' ? [] : [new FakeText(text)];
-  }
-}
-
-// `data`, not a private field: Solid updates a text node in place through `node.data = value`, and
-// a stub without it reports a mount that renders once and never re-renders.
-class FakeText extends FakeNode {
-  override readonly nodeType = 3;
-  constructor(public data: string) {
-    super();
-  }
-  override get textContent(): string {
-    return this.data;
-  }
-  override set textContent(text: string) {
-    this.data = text;
-  }
-  override cloneNode(): FakeText {
-    return new FakeText(this.data);
-  }
-}
-
-class FakeElement extends FakeNode {
-  readonly attributes = new Map<string, string>();
-  readonly listeners = new Map<string, (event: unknown) => void>();
-  readonly classList = { add: (): void => {} };
-  readonly style = {};
-  constructor(readonly tagName: string) {
-    super();
-  }
-  get nodeName(): string {
-    return this.tagName.toUpperCase();
-  }
-  /** `_$className` assigns the PROPERTY, never the attribute — the class assertions read this. */
-  get className(): string {
-    return this.attributes.get('class') ?? '';
-  }
-  set className(value: string) {
-    this.attributes.set('class', String(value));
-  }
-  setAttribute(name: string, value: string): void {
-    this.attributes.set(name, String(value));
-  }
-  getAttribute(name: string): string | null {
-    return this.attributes.get(name) ?? null;
-  }
-  hasAttribute(name: string): boolean {
-    return this.attributes.has(name);
-  }
-  removeAttribute(name: string): void {
-    this.attributes.delete(name);
-  }
-  addEventListener(name: string, fn: (event: unknown) => void): void {
-    this.listeners.set(name, fn);
-  }
-  removeEventListener(name: string): void {
-    this.listeners.delete(name);
-  }
-  override cloneNode(deep?: boolean): FakeElement {
-    const copy = new FakeElement(this.tagName);
-    for (const [name, value] of this.attributes) copy.attributes.set(name, value);
-    if (deep === true) for (const child of this.children) copy.appendChild(child.cloneNode(true));
-    return copy;
-  }
-}
-
-class FakeTemplate extends FakeElement {
-  content: FakeNode = new FakeNode();
-  constructor() {
-    super('template');
-  }
-  set innerHTML(html: string) {
-    this.content = parseHtml(html);
-  }
-}
-
-const VOID_TAGS = new Set(['br', 'hr', 'img', 'input', 'meta', 'link']);
-const TOKEN =
-  /<(\/?)([a-zA-Z][\w-]*)((?:\s+[^\s=/>]+(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?)*)\s*(\/?)>|([^<]+)/g;
-
-/** Only what `babel-preset-solid` emits into a template: tags, static attributes and text. */
-function parseHtml(html: string): FakeNode {
-  const root = new FakeNode();
-  const open: FakeNode[] = [root];
-  for (const match of html.matchAll(TOKEN)) {
-    const parent = open[open.length - 1] as FakeNode;
-    if (match[5] !== undefined) {
-      parent.appendChild(new FakeText(match[5]));
-      continue;
-    }
-    if (match[1] === '/') {
-      if (open.length > 1) open.pop();
-      continue;
-    }
-    const element = new FakeElement(match[2] as string);
-    for (const attr of (match[3] ?? '').matchAll(
-      /([^\s=/>]+)(?:=(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g,
-    )) {
-      if (attr[1] !== undefined) element.setAttribute(attr[1], attr[2] ?? attr[3] ?? attr[4] ?? '');
-    }
-    parent.appendChild(element);
-    if (match[4] !== '/' && !VOID_TAGS.has(element.tagName)) open.push(element);
-  }
-  return root;
-}
-
-const DOM_GLOBALS: Readonly<Record<string, unknown>> = {
-  // Solid's event delegation reads `window` before it reads anything else.
-  window: globalThis,
-  Element: FakeElement,
-  SVGElement: FakeElement,
-  Node: FakeNode,
-  Text: FakeText,
-  document: {
-    createElement: (tag: string): FakeElement =>
-      tag === 'template' ? new FakeTemplate() : new FakeElement(tag),
-    createElementNS: (_ns: string, tag: string): FakeElement => new FakeElement(tag),
-    createTextNode: (text: string): FakeText => new FakeText(text),
-    createComment: (): FakeText => new FakeText(''),
-    importNode: (node: FakeNode, deep?: boolean): FakeNode => node.cloneNode(deep),
-    addEventListener: (): void => {},
-    removeEventListener: (): void => {},
-  },
-};
-
-/** Installed for one assertion and taken straight back out: these are process-global. */
-async function withFakeDom<T>(body: () => Promise<T>): Promise<T> {
-  const host = globalThis as unknown as Record<string, unknown>;
-  const saved = new Map(Object.keys(DOM_GLOBALS).map((key) => [key, host[key]]));
-  Object.assign(host, DOM_GLOBALS);
-  try {
-    return await body();
-  } finally {
-    for (const [key, value] of saved) {
-      if (value === undefined) delete host[key];
-      else host[key] = value;
-    }
-  }
-}
-
-/** The delegated handler Solid parks on the node, or a listener it attached — either counts. */
-function clickHandlerOf(element: FakeElement): ((event: unknown) => void) | undefined {
-  const delegated = (element as unknown as { $$click?: (event: unknown) => void }).$$click;
-  return delegated ?? element.listeners.get('click');
-}
-
-interface Mounted {
-  readonly code: string;
-  readonly el: FakeElement;
-  readonly button: FakeElement;
-  click(): void;
-}
+const ISLAND = 'apps/web/site/counter.island.tsx';
 
 /**
- * Build the island at `ISLAND`, import the chunk the way `hydrate.ts` does and run its `mount`.
- * A unique chunk name per call: a module is cached by resolved path for the life of the process.
+ * The micro-DOM and the mount driver are `@ultimat3/testing`'s — `cli -> testing` is a declared
+ * sideways edge and `@ultimat3/testing` is already a runtime dependency of this package. A second
+ * copy here was ~195 lines that could only drift away from the one the reference app is tested
+ * against, which is the whole of issue #260.
+ *
+ * `only:` because these cases mount ONE island and `buildIslands` otherwise Babel-compiles and
+ * bundles every other island in the fixture on every case.
  */
-async function mountIsland(props: unknown): Promise<Mounted> {
-  const chunk = (await buildIslands(ROOT)).chunks[0];
-  const code = chunk?.code ?? '';
-  const out = join(ROOT, `chunk-${Math.random().toString(36).slice(2)}.mjs`);
-  await Bun.write(out, code);
-  return withFakeDom(async () => {
-    const entry = (await import(out)) as { mount: (el: unknown, props: unknown) => void };
-    const el = new FakeElement('div');
-    entry.mount(el, props);
-    const button = el.children[0] as FakeElement;
-    return { code, el, button, click: (): void => clickHandlerOf(button)?.({}) };
+async function mountCounter(props: unknown): Promise<MountedIsland> {
+  return mountIsland({
+    build: (root: string) => buildIslands(root, { only: ISLAND }),
+    root: ROOT,
+    file: ISLAND,
+    props,
   });
 }
-
-const ISLAND = 'apps/web/site/counter.island.tsx';
 
 // The island an author actually writes: `{n()}` straight into the markup, `class={…}` straight onto
 // the element, no hand-written thunk anywhere. Solid's reactivity is a COMPILE-time contract, so
@@ -399,18 +224,20 @@ const BADGE_COMPONENT = `export function Badge(props: { readonly n: number }) {
 describe('an island that renders JSX', () => {
   test('the naive island — no hand-written thunk — is reactive in text AND in an attribute', async () => {
     await write(ISLAND, NAIVE_ISLAND);
-    const mounted = await mountIsland({ label: 'count' });
+    using mounted = await mountCounter({ label: 'count' });
 
-    expect(mounted.button.tagName).toBe('button');
+    expect(mounted.all('button')).toHaveLength(1);
     expect(mounted.el.textContent).toBe('count 0');
-    expect(mounted.button.className).toBe('zero');
+    expect(mounted.find('button')?.className).toBe('zero');
 
-    mounted.click();
+    // `fire` answers whether a handler RAN: a compiled island that attached none and a selector
+    // that matched nothing are the same silence, and the local driver reported neither.
+    expect(mounted.fire('button', 'click')).toBe(true);
 
     // Text and attribute bindings fail INDEPENDENTLY — a compiler emitting the wrong effect
     // convention keeps text working while every attribute silently dies — so both are asserted.
     expect(mounted.el.textContent).toBe('count 1');
-    expect(mounted.button.className).toBe('pos');
+    expect(mounted.find('button')?.className).toBe('pos');
   });
 
   test('the transform emits Solid compiled output, never a runtime hyperscript call', async () => {
@@ -427,7 +254,7 @@ describe('an island that renders JSX', () => {
 
   test('the chunk carries no React free variable', async () => {
     await write(ISLAND, NAIVE_ISLAND);
-    const mounted = await mountIsland({ label: 'count' });
+    using mounted = await mountCounter({ label: 'count' });
 
     // `React` is undefined in a browser chunk that imports nothing: `mount` throws on its first
     // line, forever, and `Bun.build` still answers `success: true` with no log.
@@ -437,7 +264,7 @@ describe('an island that renders JSX', () => {
   test('an island importing a plain .tsx compiles that component too', async () => {
     await write(ISLAND, COMPOSED_ISLAND);
     await write('apps/web/site/badge.tsx', BADGE_COMPONENT);
-    const mounted = await mountIsland({});
+    using mounted = await mountCounter({});
 
     // A `.island.tsx`-only filter leaves `badge.tsx` to Bun's own bundler, which reads the app's
     // `jsx: "preserve"` and emits `React.createElement("span", …)` — the original bug, one import
@@ -445,16 +272,19 @@ describe('an island that renders JSX', () => {
     // already exactly the set that ships to a browser.
     expect(mounted.code).not.toMatch(/\bReact\b/);
     expect(mounted.el.textContent).toBe('0');
-    mounted.click();
+    // The <span class="badge"> the plain component renders, INSIDE the button — `find` walks
+    // descendants only, so this is the compiled component and never the host the test built.
+    expect(mounted.find('span')?.className).toBe('badge');
+    expect(mounted.fire('button', 'click')).toBe(true);
     expect(mounted.el.textContent).toBe('1');
   });
 
   test('an island written with explicit thunks keeps working', async () => {
     await write(ISLAND, THUNK_ISLAND);
-    const mounted = await mountIsland({ label: 'clicks' });
+    using mounted = await mountCounter({ label: 'clicks' });
 
     expect(mounted.el.textContent).toBe('clicks 0');
-    mounted.click();
+    expect(mounted.fire('button', 'click')).toBe(true);
     expect(mounted.el.textContent).toBe('clicks 1');
   });
 

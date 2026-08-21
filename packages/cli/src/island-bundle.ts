@@ -13,6 +13,8 @@ import {
   islandModuleId,
 } from '@ultimat3/render';
 import { IslandBuildFailedError } from './errors';
+import { solidProductionPlugin } from './island-solid-production';
+import { islandStylesPlugin } from './island-styles';
 import { solidJsxPlugin } from './solid-loader';
 
 /**
@@ -84,7 +86,13 @@ async function buildOne(root: string, file: string): Promise<IslandChunk> {
       // an island. The app's tsconfig says `jsx: "preserve"`, which makes the bundler fall back to
       // classic `React.createElement` — emitted into a browser chunk that imports no React, with
       // `success: true` and no log. Every island shipped that way through five majors.
-      plugins: [solidJsxPlugin],
+      //
+      // The other two close the same shape of failure — a wrong answer `Bun.build` reports as
+      // `success: true`: without the second, `target: 'browser'` resolves the `development`
+      // export condition and the chunk carries Solid's dev build; without the third, Bun's file
+      // loader resolves a `.module.scss` to its asset PATH, so `styles['x']` is `undefined` and
+      // every element renders unclassed.
+      plugins: [solidJsxPlugin, solidProductionPlugin, islandStylesPlugin],
     });
   } catch (error) {
     throw new IslandBuildFailedError({ file, logs: describeBuildError(error) });
@@ -121,11 +129,42 @@ function describeBuildError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+export interface BuildIslandsOptions {
+  /**
+   * Build ONE island, named app-root-relative — the whole option surface. A test that mounts a
+   * single island otherwise pays every OTHER island's Babel pass and `Bun.build` on every file,
+   * and the reference app is the one that feels it.
+   *
+   * Optional, and it must stay optional: `buildIslands` is on `@ultimat3/cli`'s public surface and
+   * `@ultimat3/testing`'s `IslandBuilder` satisfies it STRUCTURALLY as `(root: string) => …`, which
+   * is what keeps the `cli -> testing` edge pointing the one legal way.
+   */
+  readonly only?: string;
+}
+
 /** Build every island in the app. An app with none returns an empty bundle and costs one glob. */
-export async function buildIslands(root: string): Promise<IslandBundle> {
-  const files = await discoverIslands(root);
+export async function buildIslands(
+  root: string,
+  options: BuildIslandsOptions = {},
+): Promise<IslandBundle> {
+  const discovered = await discoverIslands(root);
+  const only = options.only;
+  const files = only === undefined ? discovered : discovered.filter((file) => file === only);
+  // A filter that matches nothing is a typo in the CALLER, never an app with no islands. Answering
+  // an empty bundle here would surface two steps later, as a chunk table with no entry for a file
+  // the caller can see on disk.
+  if (only !== undefined && files.length === 0) throw onlyMissing(only, discovered);
   const chunks = await Promise.all(files.map((file) => buildOne(root, file)));
   return islandBundle(chunks);
+}
+
+/** Same code as an unbuildable `src`: "this path cannot become a client entry" is one condition. */
+function onlyMissing(only: string, discovered: readonly string[]): IslandInvalidError {
+  return new IslandInvalidError(
+    `buildIslands was asked for ${JSON.stringify(only)} alone, which is not one of the ` +
+      `${discovered.length} islands this app has (${discovered.length === 0 ? 'none' : discovered.join(', ')})`,
+    `pass only: '<app-root-relative path>${ISLAND_EXTENSION}', exactly as discoverIslands reports it`,
+  );
 }
 
 export function islandBundle(chunks: readonly IslandChunk[]): IslandBundle {

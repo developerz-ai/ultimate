@@ -277,8 +277,10 @@ does with these three modules: a bundler stubs `node:async_hooks` to `{}`, so th
 threw `TypeError: undefined is not a constructor` at module **evaluation** — before a line of app
 code ran, and taking every importer of the file with it. Now the module evaluates, a read answers
 `undefined` (nothing is in flight in a browser, so that is the true answer), and a write throws
-`X_ASYNC_CONTEXT_UNAVAILABLE` naming the scope it could not open. A server pays nothing —
-`getStore()` before any `run()` answered `undefined` either way. Not a claim that the whole package
+`X_ASYNC_CONTEXT_UNAVAILABLE` naming the scope it could not open. A server saves no allocation —
+the store is built on the first `get()` **or** `run()`, so a read constructs it too. What the
+laziness costs is nothing observable: `getStore()` outside a scope answers `undefined` whether the
+storage was ever constructed or not. Not a claim that the whole package
 bundles: `pglite-branch.ts` imports `node:fs/promises`, which is a separate question.
 
 The rule is a **build error**, not a convention: `scripts/async-context-guard.ts` refuses a

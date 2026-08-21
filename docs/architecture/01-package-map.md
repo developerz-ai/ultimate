@@ -78,16 +78,16 @@ Decided **2026-08**, when the Postgres entity driver needed a home. `db` imports
 
 ## Dependency graph
 
-Arrow = imports. Only representative edges are drawn; the tier rule is the complete truth.
+Arrow = a dependency the importing package's own `package.json` declares, `As of 2026-08-21`. Representative, not exhaustive — `cli` alone declares 23 — and an arrow that is drawn is real: a `render --> query`, a `ui --> render` and eight more like them sat here describing imports no manifest and no module ever made. The tier rule is the complete truth, and `bun run boundaries` is what enforces it.
 
 ```mermaid
 graph TD
   create-ultimate["create-ultimate (unlisted)"]
   subgraph T5["tier 5"]
-    cli; testing; admin; ui
+    cli; testing; admin; scraping
   end
   subgraph T4["tier 4"]
-    render; pwa; mcp; ai; manifest; mail
+    render; pwa; mcp; ai; manifest; mail; ui
   end
   subgraph T3["tier 3"]
     action; query; jobs; realtime
@@ -108,19 +108,20 @@ graph TD
   cli --> render
   cli --> pwa
   cli --> testing
-  testing --> action
+  testing --> query
   testing --> jobs
   testing --> realtime
   admin --> ui
   admin --> mcp
-  ui --> render
-  ui --> i18n
-  ui --> money
+  scraping --> jobs
+  scraping --> storage
 
-  render --> query
   render --> cache
   render --> seo
-  pwa --> core
+  render --> i18n
+  ui --> i18n
+  ui --> money
+  pwa --> seo
   mcp --> action
   mcp --> query
   mcp --> policy
@@ -129,18 +130,17 @@ graph TD
   manifest --> action
   manifest --> query
   manifest --> jobs
+  mail --> jobs
 
   action --> policy
   action --> http
-  action --> entity
   action --> cache
   query --> policy
-  query --> entity
+  query --> http
   query --> cache
   jobs --> entity
   jobs --> time
-  realtime --> policy
-  realtime --> http
+  realtime --> query
 
   entity --> schema
   entity --> db
@@ -148,17 +148,18 @@ graph TD
   db --> core
   storage --> core
   flags --> core
-  policy --> i18n
+  policy --> core
   http --> i18n
   http --> time
-  cache --> time
-  seo --> i18n
+  cache --> core
+  seo --> core
 
   i18n --> core
-  money --> core
+  money --> schema
   time --> core
-  schema --> core
 ```
+
+`schema` has no arrow out of it: it declares no `@ultimat3/*` dependency at all, which is why `schema` → `core` needs no sideways exception — `packages/schema/src/errors.ts:2` reproduces `UltimateError`'s shape structurally and brands it with the same `Symbol.for('ultimate.error')`.
 
 ## One reason to change
 
@@ -169,4 +170,4 @@ graph TD
 | A package imports upward | the dependency is inverted | pass an interface down, implement it above |
 | A file exceeds ~500 LOC | it has multiple responsibilities | split by concern, per [`00-conventions.md`](./00-conventions.md) |
 
-Every package ships `README.md` (what it owns, its public API, why it exists) and `CLAUDE.md` (boundary, deps, commands — under 40 lines). `src/index.ts` re-exports the public API explicitly; `export *` is allowed only for a pure-type module.
+Every package ships `README.md` (what it owns, its public API, why it exists) and `CLAUDE.md` (boundary, deps, commands, and the failures that shaped them). `src/index.ts` re-exports the public API explicitly; `export *` is allowed only for a pure-type module.

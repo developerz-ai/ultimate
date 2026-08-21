@@ -188,11 +188,12 @@ refuses to allow.
 | 6 | `apps/web/app/post/actions/{create,archive}-post.ts` | one `action` each: `input`, `output`, `policy`, `cache.invalidates`, `mcp: { expose: true }` |
 | 7 | `apps/web/app/post/live/post-list.ts` | `query({ live: true })`, ordered and bounded |
 | 8 | `apps/web/app/post/jobs/reindex-post.ts` | one job with the `idempotencyKey` the type requires |
-| 9 | `apps/web/app/post/ui.tsx` + `ui.module.scss` + `ui/post-{card,form}.tsx` | components, tokens only, `t()` only |
+| 9 | `apps/web/app/post/ui.tsx` + `ui.module.scss` + `ui/post-card.tsx` | server components, tokens only, `t()` only |
+| 9a | `apps/web/app/post/post-form.island.tsx` | the slice's one CLIENT entry, `As of 2026-08-21`. The form is an island because that is the only shape the framework compiles for a browser: a plain `.tsx` with a signal and an `onSubmit` is not a smaller version of it — the island glob never discovers it, a server render drops every `on*` prop and reads each signal exactly once. It replaced `ui/post-form.tsx`, which is where the count moved from 27 to 28 |
 | 10 | `apps/web/app/posts/page.tsx` + `page.module.scss` | `defineRoute`: `render`, `hydrate`, `offline`, `budget`, `meta` |
 | 11 | `packages/i18n/catalogs/<locale>.json` (`--locales`, default `en`), merged into the existing file | every key the components and the route use — so the build is green |
 | 12 | `apps/web/app/post/admin/resource.ts` (`--admin`) | the `AdminResourceOptions` override — title key, list columns, page size |
-| 13 | `*.test.ts` beside each declaration — entity, policy, both actions, the query, the job, the service, the route, the admin override | unit, contract, live and job tests that pass on the first run |
+| 13 | `*.test.ts` beside each declaration — entity, policy, both actions, the query, the job, the service, the route, the island, the admin override | unit, contract, live and job tests that pass on the first run. The island's own builds the emitted entry with `buildIslands` and drives it with `mountIsland`, so a form that typechecks and does not mount is red |
 | 14 | `x.manifest.json` | rescanned and rewritten after any `x g` run that wrote a file |
 
 Nothing is a stub, and nothing is a `TODO`. The generated tests assert the invariants a slice can

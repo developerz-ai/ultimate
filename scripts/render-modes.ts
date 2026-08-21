@@ -1,16 +1,10 @@
 #!/usr/bin/env bun
 // One rule: NOTHING outside `packages/core/src/route-vocabulary.ts` may declare the route
-// vocabulary. Fourteen declarations of three closed sets lived across six packages until they were
-// consolidated into tier 0, and the copies were not a style problem — `'spa'` was deleted from
-// `RENDER_MODES` and the repo typechecked green project-wide with five copies still admitting it,
-// `@ultimat3/pwa` mapping it to `cache-first`, the one strategy that gives an `app/` route a
-// SHARED cache entry. This is what stops copy #13.
-//
-// It compares LITERAL SETS, not names, because the copy that did the damage was called
-// `PwaRenderMode`: a rule keyed on the word `RenderMode` would have read straight past it.
-//
+// vocabulary — compared by LITERAL SET, never by name, because the copy that did the damage was
+// called `PwaRenderMode` and a rule keyed on the word `RenderMode` reads straight past it.
 //   bun run scripts/render-modes.ts [--json]
 
+import { maskLiterals, stripComments } from '@ultimat3/cli';
 import { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
 import { parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
@@ -30,6 +24,11 @@ export interface Vocabulary {
  * Imported, never re-typed here: a check that restated the members would be the thirteenth copy.
  * The unions are derived from these arrays in the module itself, so there is no separate type to
  * compare — that half of the old failure mode is gone by construction.
+ *
+ * Fourteen declarations of these three sets lived across six packages, and they were not a style
+ * problem: `'spa'` was deleted from `RENDER_MODES` and the repo typechecked green project-wide
+ * with five copies still admitting it, `@ultimat3/pwa` mapping it to `cache-first` — the one
+ * strategy that gives an `app/` route a SHARED cache entry. This is what stops copy #13.
  */
 export const VOCABULARIES: readonly Vocabulary[] = [
   { name: 'RENDER_MODES', members: [...RENDER_MODES] },
@@ -63,10 +62,22 @@ export interface Finding {
 }
 
 const LITERAL = /(['"])([^'"]*)\1/g;
-const UNION = /^(?:export )?type ([A-Za-z_$][\w$]*) =([^;]*);/gm;
-const AS_CONST = /^(?:export )?const ([A-Za-z_$][\w$]*) = \[([^\]]*)\] as const;/gm;
+// `^[\t ]*` and not `^`: a declaration nested in a namespace or a block is indented, and a guard
+// a newline evades is not a guard. `\s*=` for the same reason — Biome wraps a long one.
+const UNION = /^[\t ]*(?:export )?(?:declare )?type ([A-Za-z_$][\w$]*)\s*=([^;]*);/gm;
+const AS_CONST =
+  /^[\t ]*(?:export )?(?:declare )?const ([A-Za-z_$][\w$]*)\s*=\s*\[([^\]]*)\]\s*as const;/gm;
 
 const lineOf = (text: string, index: number): number => text.slice(0, index).split('\n').length;
+
+/**
+ * Whether the declaration `decl` found at `index` is CODE, asked of `maskLiterals`' output — where
+ * a string's contents are blanked and every offset is preserved, so the keyword survives exactly
+ * when it was never inside one. `@ultimat3/cli`'s scaffold templates emit route source as strings,
+ * and reading one of those as a declaration invents a finding no edit can clear.
+ */
+const isCode = (masked: string, index: number, decl: string): boolean =>
+  masked[index + (decl.length - decl.trimStart().length)] !== ' ';
 
 const membersOf = (body: string): readonly string[] =>
   [...body.matchAll(LITERAL)].map((match) => match[2] as string);
@@ -76,30 +87,33 @@ const closedSet = (body: string, separators: RegExp): boolean =>
   body.replace(LITERAL, '').replace(separators, '').trim() === '';
 
 /**
- * Every closed set of string literals a file declares at column 0, read as TEXT.
+ * Every closed set of string literals a file declares, read as TEXT — `type NAME = 'a' | 'b';` and
+ * `const NAME = ['a', 'b'] as const;`, at any indentation, with an optional `export`/`declare`.
  *
- * What it understands: `type NAME = 'a' | 'b';` and `const NAME = ['a', 'b'] as const;`, each with
- * an optional `export` and starting at column 0.
+ * Read from `stripComments` so a doc comment BETWEEN two members does not make the set unreadable
+ * (`RoundingMode` and `VERIFY_STEP_NAMES` are both written that way), and positioned against
+ * `maskLiterals` so a set quoted inside a template literal is not read as a declaration.
  *
- * What it does NOT understand — and therefore what a determined copier could still hide a set in:
- * an INDENTED or nested declaration, a set built from another type (`keyof typeof X`, `Exclude<…>`),
- * an array without `as const`, backtick literals, an object literal's keys, and a set spelled
- * inside a template literal (`@ultimat3/cli`'s route templates emit source as strings). Those are
- * silence, not findings, because a scan over one file cannot tell a declaration from a quotation —
- * the vacuity guard below is what keeps that silence from becoming the whole answer.
+ * What it still does NOT understand, and therefore what needs review rather than a green check: a
+ * set built from another type (`keyof typeof X`, `Exclude<…>`), an array without `as const`,
+ * backtick members, an `enum`, and an object literal's keys. Those are silence, not findings — the
+ * vacuity guard below is what keeps that silence from becoming the whole answer.
  */
 export function scanLiteralSets(source: string): readonly LiteralSet[] {
+  const text = stripComments(source);
+  const masked = maskLiterals(source);
   const found: LiteralSet[] = [];
   for (const [pattern, separators] of [
     [UNION, /[|\s]/g],
     [AS_CONST, /[,\s]/g],
   ] as const) {
-    for (const match of source.matchAll(pattern)) {
+    for (const match of text.matchAll(pattern)) {
+      if (!isCode(masked, match.index, match[0] as string)) continue;
       const body = match[2] as string;
       if (!closedSet(body, separators)) continue;
       const members = membersOf(body);
       if (members.length < COPY_THRESHOLD) continue;
-      found.push({ name: match[1] as string, line: lineOf(source, match.index), members });
+      found.push({ name: match[1] as string, line: lineOf(text, match.index), members });
     }
   }
   return found;

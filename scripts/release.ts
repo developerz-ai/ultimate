@@ -7,6 +7,7 @@
 
 import { join } from 'node:path';
 import { checkPackageShape, SEMVER } from '@ultimat3/cli';
+import { parseChangelog } from './changelog-check';
 import { CHART_FILE, setChartVersions } from './chart-version';
 import { flagBool, flagString, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
@@ -142,8 +143,12 @@ export const commitBlock = (subjects: readonly string[]): readonly string[] =>
  * `git show v6.0.0:CHANGELOG.md` does NOT show this: the tag points at 93443aeb, a human repairing
  * 8fe7c56d by hand. Read the tag and the bug is invisible; read 8fe7c56d and it is the whole diff.
  *
- * Promotion cannot produce either shape: one section per version, because there is one heading and
- * it is renamed rather than duplicated.
+ * Promotion cannot produce either shape ON ITS OWN: one heading is renamed rather than duplicated.
+ * It can still be ASKED for a version the page already holds — `--version 6.0.0` re-run after a
+ * botched release, or run against 93443aeb, where a human had already written that section by hand
+ * — and renaming `[Unreleased]` to a heading that exists puts a second one directly above it. That
+ * is refused, not written: `checkChangelog` would red on the result, and it would red after 47
+ * manifests, the chart and CHANGELOG.md had already moved.
  *
  * Keep a Changelog stays newest-first for free — `[Unreleased]` is the top section, so the version
  * it becomes lands above every previous one.
@@ -154,6 +159,21 @@ export function promoteUnreleased(input: {
   readonly date: string;
   readonly subjects: readonly string[];
 }): { readonly changelog: string } | { readonly findings: readonly Finding[] } {
+  // `parseChangelog`, not a regex of this file's own: what counts as "the 6.0.0 section" is the
+  // gate's question, and two answers to it is how a release passes here and reds there.
+  const held = parseChangelog(input.changelog).find((section) => section.version === input.version);
+  if (held !== undefined) {
+    return {
+      findings: [
+        {
+          code: 'X_DOC_CHANGELOG_SECTION_INVALID',
+          cause: `CHANGELOG.md:${held.line} already holds \`## ${held.heading}\`, so promoting [Unreleased] to ${input.version} would write a second section for one version`,
+          fix: `release a version CHANGELOG.md does not already hold: bun run scripts/release.ts --bump patch --dry-run --json, or delete the \`## ${held.heading}\` section if that release never shipped`,
+          at: `CHANGELOG.md:${held.line}`,
+        },
+      ],
+    };
+  }
   const lines = input.changelog.split('\n');
   const at = lines.findIndex((line) => /^## \[Unreleased\]/i.test(line));
   if (at === -1) {

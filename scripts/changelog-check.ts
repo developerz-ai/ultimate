@@ -145,6 +145,10 @@ export type ChangelogGapKind =
   | 'empty'
   | 'unreleased-breaking'
   | 'count'
+  // A row whose target section does not exist is NOT a stale count: there is no section to read a
+  // count from, so the edit is to the row or to CHANGELOG.md. One kind per edit, because the kind
+  // is what picks the `fix:` line.
+  | 'unknown-section'
   | 'missing-row'
   | 'total'
   | 'unscanned';
@@ -212,14 +216,19 @@ export function checkChangelog(input: ChangelogInput): readonly ChangelogGap[] {
     const section = byVersion.get(row.target ?? '');
     const actual = section?.breaking ?? 0;
     if (row.claimed === actual && section !== undefined) continue;
-    gaps.push({
-      kind: 'count',
-      at: `${UPGRADING_PATH}:${row.line}`,
-      detail:
-        section === undefined
-          ? `names a \`${row.target}\` section that ${CHANGELOG_PATH} does not have`
-          : `claims ${row.claimed} breaking entries; the \`${row.target}\` section of ${CHANGELOG_PATH} holds ${actual}`,
-    });
+    gaps.push(
+      section === undefined
+        ? {
+            kind: 'unknown-section',
+            at: `${UPGRADING_PATH}:${row.line}`,
+            detail: `names a \`${row.target}\` section that ${CHANGELOG_PATH} does not have`,
+          }
+        : {
+            kind: 'count',
+            at: `${UPGRADING_PATH}:${row.line}`,
+            detail: `claims ${row.claimed} breaking entries; the \`${row.target}\` section of ${CHANGELOG_PATH} holds ${actual}`,
+          },
+    );
   }
 
   const expectedTotal = single.reduce(
@@ -278,6 +287,24 @@ export function changelogFinding(gap: ChangelogGap): Finding {
       // reader a command that validates the promotion and does not perform it. Axiom 4 at the one
       // point it is read: state the edit, and say which command performs it and which only checks.
       fix: 'move those entries under the released version heading in CHANGELOG.md — a release performs this promotion (bun run scripts/release.ts --bump major), and --dry-run only validates it',
+      at: gap.at,
+    };
+  }
+  if (gap.kind === 'missing-row') {
+    return {
+      code: 'X_DOC_MIGRATION_COUNT_STALE',
+      cause: `${gap.at} ${gap.detail}`,
+      // The row does not exist, so there is no count to set — the edit is to write the row. A
+      // literal path, never an interpolation: the fix-line rule reads these statically.
+      fix: 'add a row to the summary table in wiki/Upgrading.md for the version the cause names, whose third cell reads "the `X.Y.Z` section, in order", then rerun: bun run scripts/changelog-check.ts --json',
+      at: UPGRADING_PATH,
+    };
+  }
+  if (gap.kind === 'unknown-section') {
+    return {
+      code: 'X_DOC_MIGRATION_COUNT_STALE',
+      cause: `${gap.at} ${gap.detail}`,
+      fix: `point that row at a version CHANGELOG.md has a section for, or write the section it names in CHANGELOG.md, then rerun: ${RERUN}`,
       at: gap.at,
     };
   }

@@ -13,8 +13,8 @@ bun run verify        # or: bun run x verify
 packages/<name>/
   package.json         # name @ultimat3/<name>, exports ./src/index.ts, publishConfig
   tsconfig.json        # extends ../../tsconfig.base.json, composite
-  README.md            # what it owns, its public API, why it exists (30-80 lines)
-  CLAUDE.md            # boundary + deps + commands, <40 lines, compressed style
+  README.md            # what it owns, its public API, why it exists
+  CLAUDE.md            # boundary + deps + commands, compressed style
   src/index.ts         # explicit public exports
   src/errors.ts        # this package's X_* codes
   src/<concern>.ts     # one responsibility each
@@ -174,7 +174,7 @@ Everything in `wiki/`, `docs/`, and every `README.md` / `CLAUDE.md` uses compres
 | No meta-framing, no rhetoric, no trailing summary | "This section covers…" is deleted in review |
 | Date load-bearing claims | `As of 2026-08` |
 | No fabricated numbers | no benchmarks that were not run, no adoption counts, no invented dates |
-| `CLAUDE.md` per package | <40 lines: boundary, deps, commands |
+| `README.md` + `CLAUDE.md` per package | both required — `x verify`'s `package-shape` step refuses a package missing either (`PACKAGE_FILES` in `packages/cli/src/workspace-checks.ts`). Neither has a length cap: this page stated `<40 lines` for a `CLAUDE.md` until 2026-08-21 and 28 of 30 packages were over it (`packages/cli/CLAUDE.md` is 843), and `30-80 lines` for a `README.md`, which **no** package met. An unenforced number that the tree contradicts is deleted rather than renumbered |
 
 Never generate prose documentation at runtime. Facts come from code (`x.manifest.json`, regenerated every build); conventions come from a human (`AGENTS.md`, short, hand-written).
 

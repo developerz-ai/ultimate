@@ -65,10 +65,12 @@ export const config = defineRoute({
   offline: 'runtime',
   /**
    * No `hydrate` and no `budget.js` here on purpose: the island below is the whole declaration.
-   * A route carrying one hydrates on `interaction` and gets `site/`'s 4kb ceiling derived for it,
+   * A route carrying one hydrates on `interaction` and gets `site/`'s 20kb ceiling derived for it,
    * so the two facts the framework can work out are not two more lines to forget. The measured
-   * cost is 1894 bytes — an 875-byte chunk plus the interaction runtime. `lcp` stays because
-   * nothing derives it.
+   * cost is 1894 bytes — an 875-byte chunk plus the interaction runtime. Well under, and it stays
+   * that way because this island imports no `solid-js`: any island that calls Solid's `render()`
+   * starts at 12,588 bytes, which is why the ceiling is 20kb and not the 4kb this comment used to
+   * name (#254). `lcp` stays because nothing derives it.
    */
   budget: { lcp: 1500 },
   /**

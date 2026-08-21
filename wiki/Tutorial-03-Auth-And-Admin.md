@@ -174,8 +174,10 @@ export const config = defineRoute({
   render: 'ssr',
   hydrate: 'idle',
   offline: 'network-only',
-  // Behind auth, and `ssr` is the one mode that can be: it renders per request, so the guard runs
-  // on the server before the page does. `static` and `isr` refuse a policy outright.
+  // Behind auth, so the mode has to render per request: `ssr` and `stream` both do, and both take
+  // a `policy`. `static` and `isr` refuse one outright — a file on disk has no actor to decide
+  // against, and an ISR document is cached per URL, so the first actor's HTML would be served to
+  // every later one who passes the same policy.
   policy: { permission: 'admin:read' },
   budget: { js: '120kb' },
   meta: ({ t }) => ({ title: t('admin.home.title'), description: t('admin.home.description') }),
