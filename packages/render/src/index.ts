@@ -63,6 +63,9 @@ export {
   emitIslandProps,
   hydrateRuntime,
   hydrateRuntimeBytes,
+  IDLE_HYDRATE_TIMEOUT_MS,
+  ISLAND_FAILED_ATTRIBUTE,
+  ISLAND_MOUNTED_ATTRIBUTE,
   requiredStrategies,
 } from './hydrate';
 export type { IslandComponent, IslandDeclaration, IslandNode, IslandSpec } from './island';

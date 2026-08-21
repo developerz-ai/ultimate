@@ -60,11 +60,15 @@ describe('unit · parseArgs', () => {
   // The exact set, so adding or removing one is a deliberate edit and not a side effect of an
   // array's order. `x db gen` writes a migration file and `x db reset` drops the database; a bare
   // `x mcp` used to START A SERVER, which is the one thing a word typed by mistake must not do.
+  // `x pr` joined them in 6.1.0: two of its three subcommands WRITE to somebody else's pull request
+  // — `resolve` closes a thread and `reply` posts a comment under your name — and neither is
+  // undoable by re-running the command. A default of `review` would read as the safe choice and is
+  // not the point: the point is that a mistyped word must not reach a subcommand at all.
   test('exactly the commands whose bare form is dangerous refuse it', () => {
     const refusing = SPECS_SHIPPED.filter(
       (spec) => (spec.subcommands ?? []).length > 0 && spec.defaultSubcommand === undefined,
     ).map((spec) => spec.name);
-    expect(refusing.sort()).toEqual(['db', 'mcp']);
+    expect(refusing.sort()).toEqual(['db', 'mcp', 'pr']);
   });
 
   test('accepts --json on every command and exposes it as a boolean', () => {

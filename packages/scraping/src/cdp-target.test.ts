@@ -214,3 +214,77 @@ describe('unit · a console line keeps its level', () => {
     expect(page.console.entries().map((line) => line.text)).toEqual(['a warning']);
   });
 });
+
+describe('unit · an uncaught page exception is recorded, and is NOT a console line', () => {
+  /**
+   * The gap this closes: an island that throws during hydration leaves a screenshot that is a
+   * picture of the server-rendered markup — identical to the one a working page produces. The
+   * page called no console method, so `console()` is empty for it, and until this ring existed
+   * nothing in the package subscribed to `pageerror` at all.
+   *
+   * The `new Error` below is INPUT — the payload puppeteer hands the handler — never this test
+   * reporting its own verdict, which is `expect.unreachable`'s job.
+   */
+  const thrown = (): Error => {
+    const error = new TypeError('cart.items is undefined');
+    error.stack =
+      'TypeError: cart.items is undefined\n    at Cart (/app/islands/cart.tsx:31:18)\n    at hydrate';
+    return error;
+  };
+
+  test('it lands in pageErrors, with the stack that names the island', async () => {
+    const { rec, target } = open();
+    const page = await target;
+    rec.emit('pageerror', thrown());
+    const errors = page.pageErrors.entries();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toBe('cart.items is undefined');
+    expect(errors[0]?.stack).toContain('islands/cart.tsx:31:18');
+  });
+
+  test('and it never leaks into console() — two streams, because they are two events', async () => {
+    const { rec, target } = open();
+    const page = await target;
+    rec.emit('pageerror', thrown());
+    // A `console.error` that the page never made would send an author reading the console tail
+    // looking for a log line that does not exist.
+    expect(page.console.entries()).toEqual([]);
+  });
+
+  test('the session stays USABLE — a throw in the page is not a dead renderer', async () => {
+    // `pageerror` and `error` are different puppeteer events (`PageEvent.PageError` is "an
+    // uncaught exception happens within the page"; `PageEvent.Error` is "the page crashes").
+    // Latching the first as a crash would answer X_SCRAPE_PAGE_CRASHED — registered `terminal`,
+    // so dead-lettered without a retry — for a page that still renders and still clicks.
+    const { rec, target } = open();
+    const page = await target;
+    rec.emit('pageerror', thrown());
+    await expect(page.content()).resolves.toBe('');
+    expect(page.pageErrors.entries()).toHaveLength(1);
+  });
+
+  test('a page that threw a STRING, or an object with no message, is still recorded', async () => {
+    // Not every uncaught value is an `Error`: `throw 'nope'` is legal in a page, and an entry with
+    // a poor message is still the difference between "the island threw" and silence.
+    const { rec, target } = open();
+    const page = await target;
+    rec.emit('pageerror', 'nope');
+    rec.emit('pageerror', { detail: 'no message here' });
+    expect(page.pageErrors.entries().map((error) => error.message)).toEqual(['nope', '']);
+    expect(page.pageErrors.entries().map((error) => error.stack)).toEqual([undefined, undefined]);
+  });
+
+  test('the ring is BOUNDED and honest — a rAF loop that throws cannot eat the heap', async () => {
+    const rec = recorder();
+    const page = await cdpTarget({
+      page: rec.page,
+      browser: rec.browser,
+      rules: { allowHosts: ['*'] },
+      clock: testClock(),
+      ringCapacity: 2,
+    });
+    for (const index of [1, 2, 3, 4]) rec.emit('pageerror', new Error(`boom ${index}`));
+    expect(page.pageErrors.entries().map((error) => error.message)).toEqual(['boom 3', 'boom 4']);
+    expect(page.pageErrors.dropped).toBe(2);
+  });
+});

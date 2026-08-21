@@ -73,7 +73,7 @@ function stubbedDriver(): PgliteDriver & { on(match: RegExp, response: StubRespo
     async query(text): Promise<PgliteResult> {
       for (let index = stubs.length - 1; index >= 0; index -= 1) {
         const stub = stubs[index];
-        if (stub !== undefined && stub.match.test(text)) {
+        if (stub?.match.test(text) === true) {
           return { rows: stub.response.rows ?? [], affectedRows: stub.response.affectedRows };
         }
       }

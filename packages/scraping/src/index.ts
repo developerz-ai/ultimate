@@ -137,10 +137,18 @@ export type {
   ConsoleRing,
   NetworkEntry,
   NetworkRing,
+  PageError,
+  PageErrorRing,
   ResourceType,
   Ring,
 } from './rings';
-export { createRing, DEFAULT_RING_CAPACITY, RESOURCE_TYPES } from './rings';
+export {
+  createRing,
+  DEFAULT_RING_CAPACITY,
+  MAX_PAGE_ERROR_CHARS,
+  pageErrorEntry,
+  RESOURCE_TYPES,
+} from './rings';
 export type { RobotsFetch, RobotsGate, RobotsGateInit, RobotsPolicy, RobotsRules } from './robots';
 export { createRobotsGate, DEFAULT_ROBOTS_AGENT, parseRobots, robotsAllows } from './robots';
 export type { RobotsFetchInit } from './robots-fetch';

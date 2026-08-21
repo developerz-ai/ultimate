@@ -212,7 +212,9 @@ export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePa
     cookies: (): Promise<readonly ScrapeCookie[]> => target.cookies(),
     session: () => target.session(),
     console: () => target.console.entries(),
+    pageErrors: () => target.pageErrors.entries(),
     network: () => target.network.entries(),
     networkDropped: () => target.network.dropped,
+    pageErrorsDropped: () => target.pageErrors.dropped,
   };
 }

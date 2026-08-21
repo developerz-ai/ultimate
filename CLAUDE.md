@@ -222,7 +222,9 @@ A package may import from strictly lower tiers. Never sideways within a tier, ne
 | 4 | `render`, `pwa`, `mcp`, `ai`, `manifest`, `mail`, `ui` |
 | 5 | `admin`, `testing`, `cli`, `scraping` |
 
-Declared sideways edges, each earning its line: `realtime → query`, `cli → admin`, `cli → testing`, `create-ultimate → cli`.
+Declared sideways edges, each earning its line: `realtime → query`, `cli → admin`, `cli → scraping`, `cli → testing`, `create-ultimate → cli`.
+
+**`cli → scraping` was declared 2026-08-21, and moving `scraping` down to tier 4 instead was refused.** `x shot` drives a real browser and `@ultimat3/scraping` is the one package that can. Its real imports are `core`, `jobs`, `schema` and `storage` — highest tier 3 — so tier 4 *is* its floor, and the `admin → ui` argument above would say to move it and delete the exception. That argument does not apply here, because tier 5 is not a misplacement: [`packages/scraping/CLAUDE.md`](packages/scraping/CLAUDE.md) puts it at 5 to reserve room for `recover: 'agent'` to import `@ultimat3/ai` (tier 4), and a package at 4 cannot import a package at 4. That file named this edge before anything imported the package: it wrote that because `cli` is also tier 5, a CLI command driving a browser would one day need a declared `cli → scraping` edge in the table. A tier that is holding a position is not a hole; deleting it would trade a documented future capability for one fewer line in a table.
 
 **`admin → ui` is gone, and `ui` moved 5 → 4, decided 2026-08-19.** The edge was justified on
 composition grounds — "the admin dashboard *is* the ui kit" — which is true and was never the

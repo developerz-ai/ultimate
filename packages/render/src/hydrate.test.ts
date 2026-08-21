@@ -1,18 +1,16 @@
-// Pins the per-island directive → markup/runtime contract: `never` must stay inert and cost
-// nothing, the other strategies must each emit exactly their own runtime block, in a fixed
+// Pins the per-island directive → markup/runtime contract as TEXT: `never` must stay inert and
+// cost nothing, the other strategies must each emit exactly their own runtime block, in a fixed
 // order regardless of directive order, and `hydrateRuntimeBytes` must agree with the runtime text.
+// Running that text is `hydrate-runtime.test.ts` — a different question, with a fixture to build.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import {
   DEFAULT_REPLAY_EVENTS,
   emitIslandAttributes,
   emitIslandProps,
   hydrateRuntime,
   hydrateRuntimeBytes,
+  IDLE_HYDRATE_TIMEOUT_MS,
   type IslandDirective,
   requiredStrategies,
 } from './hydrate';
@@ -223,142 +221,12 @@ describe('DEFAULT_REPLAY_EVENTS', () => {
   });
 });
 
-// The emitted runtime, EXECUTED. Everything above pins the STRING; the replay contract is a
-// promise ordering inside it, and a string assertion cannot see an early flush. Driven by a
-// deferred mount rather than by a timer: the failure is "the queue flushed before the chunk
-// mounted", which is an ordering fact, and a wall-clock assertion would only be a slower guess.
-describe('the interaction runtime, executed', () => {
-  interface Harness {
-    /** Fire one replayable event at the island, as a real listener would receive it. */
-    readonly fire: (type: string) => void;
-    /** Event types the runtime re-dispatched onto the target. */
-    readonly replayed: readonly string[];
-    /** Let the island's `mount` finish. */
-    readonly finishMount: () => void;
-    readonly mounts: () => number;
-    readonly dispose: () => Promise<void>;
-  }
-
-  /** One turn of the loop, so a promise chain that WOULD have flushed has flushed. */
-  const settle = async (): Promise<void> => {
-    for (let i = 0; i < 8; i += 1) await Promise.resolve();
-    await new Promise((resolve) => {
-      setTimeout(resolve, 0);
-    });
-  };
-
-  async function bootInteractionRuntime(): Promise<Harness> {
-    const dir = await mkdtemp(join(tmpdir(), 'ultimate-hydrate-'));
-    const globals = globalThis as unknown as Record<string, unknown>;
-
-    let mounts = 0;
-    let finishMount = (): void => undefined;
-    const gate = new Promise<void>((resolve) => {
-      finishMount = resolve;
-    });
-    globals['__xTestMount'] = (): Promise<void> => {
-      mounts += 1;
-      return gate;
-    };
-
-    const island = join(dir, 'island.mjs');
-    await writeFile(island, 'export function mount(){return globalThis.__xTestMount()}\n', 'utf8');
-
-    const replayed: string[] = [];
-    class FakeEvent {
-      readonly type: string;
-      readonly target: unknown;
-      constructor(type: string, init: { target: unknown }) {
-        this.type = type;
-        this.target = init.target;
-      }
-    }
-    const listeners = new Map<string, ((event: FakeEvent) => void)[]>();
-    const element = {
-      getAttribute: (name: string): string | null =>
-        name === 'data-x-entry' ? pathToFileURL(island).href : null,
-      addEventListener: (name: string, fn: (event: FakeEvent) => void): void => {
-        listeners.set(name, [...(listeners.get(name) ?? []), fn]);
-      },
-      removeEventListener: (name: string, fn: (event: FakeEvent) => void): void => {
-        listeners.set(
-          name,
-          (listeners.get(name) ?? []).filter((one) => one !== fn),
-        );
-      },
-      dispatchEvent: (event: FakeEvent): boolean => {
-        replayed.push(event.type);
-        return true;
-      },
-    };
-    globals['document'] = {
-      querySelectorAll: (selector: string): unknown[] =>
-        selector.includes('interaction') ? [element] : [],
-      // No props script: the island takes none, so `boot` must still reach the import.
-      querySelector: (): unknown => null,
-    };
-
-    const runtime = join(dir, 'runtime.mjs');
-    const source = hydrateRuntime([directive({ strategy: 'interaction', events: ['click'] })])
-      .replace('<script type="module">', '')
-      .replace('</script>', '');
-    await writeFile(runtime, source, 'utf8');
-    await import(pathToFileURL(runtime).href);
-
-    return {
-      fire: (type) => {
-        for (const fn of listeners.get(type) ?? []) fn(new FakeEvent(type, { target: element }));
-      },
-      replayed,
-      finishMount,
-      mounts: () => mounts,
-      dispose: async () => {
-        globals['document'] = undefined;
-        globals['__xTestMount'] = undefined;
-        await rm(dir, { recursive: true, force: true });
-      },
-    };
-  }
-
-  // The bug: `boot` set `el.__x = 1` and returned a RESOLVED promise to every later caller, so a
-  // second click while the chunk was still loading flushed the queue into an island that did not
-  // exist yet — the events were re-dispatched at nothing and the listeners were already gone.
-  test('a second interaction before the chunk mounts does not flush the queue', async () => {
-    const harness = await bootInteractionRuntime();
-    try {
-      harness.fire('click');
-      harness.fire('click');
-      await settle();
-
-      expect(harness.replayed).toEqual([]);
-
-      harness.finishMount();
-      await settle();
-
-      expect(harness.mounts()).toBe(1);
-      expect(harness.replayed).toEqual(['click', 'click']);
-    } finally {
-      await harness.dispose();
-    }
-  });
-
-  test('one interaction still replays once the chunk mounts', async () => {
-    const harness = await bootInteractionRuntime();
-    try {
-      harness.fire('click');
-      await settle();
-      expect(harness.replayed).toEqual([]);
-
-      harness.finishMount();
-      await settle();
-      expect(harness.replayed).toEqual(['click']);
-
-      // Listeners are removed once drained, so a click after the mount is the island's own.
-      harness.fire('click');
-      await settle();
-      expect(harness.replayed).toEqual(['click']);
-    } finally {
-      await harness.dispose();
-    }
+describe('IDLE_HYDRATE_TIMEOUT_MS', () => {
+  test('the idle runtime is BUILT from the constant, never a second copy of the number', () => {
+    // `x shot` waits this long before it photographs the page. A restated literal here is a
+    // settle that shoots before the idle deadline and reports an unhydrated page as broken.
+    const html = hydrateRuntime([directive({ strategy: 'idle' })]);
+    const timeouts = [...html.matchAll(/timeout:(\d+)/g)].map((match) => Number(match[1]));
+    expect(timeouts).toEqual([IDLE_HYDRATE_TIMEOUT_MS]);
   });
 });

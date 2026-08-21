@@ -13,7 +13,7 @@ import type { InterceptRules } from './intercept';
 import { interceptVerdict, refusalEntry } from './intercept';
 import type { PageRecording } from './recording';
 import { splitDownload } from './recording';
-import type { ConsoleLine, NetworkEntry } from './rings';
+import type { ConsoleLine, NetworkEntry, PageError } from './rings';
 import { createRing } from './rings';
 import type { SessionSnapshot } from './session-state';
 import { EMPTY_SESSION } from './session-state';
@@ -74,6 +74,12 @@ const keyOf = (selector: string, element: ElementSnapshot | undefined): string =
 export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
   const consoleRing = createRing<ConsoleLine>();
   const networkRing = createRing<NetworkEntry>();
+  // Built and never pushed to, deliberately: this target parses markup and executes none of it, so
+  // there is no uncaught exception for it to have. It ANSWERS rather than omitting the ring —
+  // `page.pageErrors()` returning `[]` here is the honest "nothing threw, and nothing could",
+  // where a missing ring would be a page method that throws on two of the three drivers.
+  // `driver-parity.test.ts` pins the divergence, beside the box/hit-target one it already carries.
+  const pageErrorRing = createRing<PageError>();
   const overlay = new Map<string, string>();
   let page: PageRecording = init.start ?? EMPTY;
   let armed: string | undefined;
@@ -164,6 +170,7 @@ export function htmlTarget(init: HtmlTargetInit): ScrapeTarget {
     driver: init.driver,
     console: consoleRing,
     network: networkRing,
+    pageErrors: pageErrorRing,
     url: () => page.url,
     goto: (url: string, _options: GotoOptions): Promise<void> => navigate(url),
     content: (): Promise<string> => {

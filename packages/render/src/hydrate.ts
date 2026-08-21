@@ -30,6 +30,28 @@ export interface IslandDirective {
 export const DEFAULT_REPLAY_EVENTS = ['click', 'input', 'change', 'submit', 'keydown'] as const;
 
 /**
+ * How long `idle` waits before hydrating anyway. Exported because a second reader exists and it
+ * has to agree: `x shot` leaves the page alone for this long before it photographs it, and a
+ * settle shorter than this timeout reports an unhydrated page for one that hydrates perfectly.
+ * The runtime string below interpolates it — two copies of one number is the drift axiom 2 refuses.
+ */
+export const IDLE_HYDRATE_TIMEOUT_MS = 2_000;
+
+/**
+ * Set by the runtime when the island's `mount()` RESOLVED. `el.__x` is set when `import()` is
+ * called, so it answers "the chunk was requested" and nothing more — three facts (declared,
+ * importing, running) had two observables between them, and the missing one is the half that gates.
+ */
+export const ISLAND_MOUNTED_ATTRIBUTE = 'data-x-mounted';
+
+/**
+ * Set by the runtime when `mount()` REJECTED, to the error's message. A failed island and one still
+ * loading are the two states an agent most needs to tell apart, and with a success marker alone
+ * they are the same absence.
+ */
+export const ISLAND_FAILED_ATTRIBUTE = 'data-x-failed';
+
+/**
  * The island's markup wrapper. `never` gets attributes only, so the HTML is inert and the
  * runtime below is never emitted for that island.
  */
@@ -84,20 +106,28 @@ export function requiredStrategies(
 // resolved promise. As a flag, a second click during the chunk's load short-circuited to
 // `Promise.resolve()`, and the interaction runtime flushed its replay queue into an island that
 // had not mounted — the events went to nothing and the listeners were already removed.
+//
+// The mount markers are what make the boot promise's OUTCOME readable from the DOM — by `x shot`,
+// by an app's own test, by a human in devtools. `el.__x` exists from the moment `import()` is
+// called, so it cannot tell a chunk that is still downloading from one whose `mount()` threw.
+// The rejection handler rethrows: swallowing it would resolve `el.__x`, and the interaction
+// runtime below would then flush its replay queue into an island that never mounted — the bug
+// `el.__x`-as-a-promise was introduced to fix, reintroduced one layer further out.
 const RUNTIME_PRELUDE = `
-var Q={};
 function boot(el){var e=el.getAttribute('data-x-entry');
 if(!e)return Promise.resolve();if(el.__x)return el.__x;
 var p=document.querySelector('script[data-x-props="'+el.getAttribute('data-x-island')+'"]');
 var props=p?JSON.parse(p.textContent||'{}'):{};
-return el.__x=import(e).then(function(m){return m.mount(el,props)})}
+return el.__x=import(e).then(function(m){return m.mount(el,props)}).then(
+function(r){el.setAttribute('${ISLAND_MOUNTED_ATTRIBUTE}','');return r},
+function(x){el.setAttribute('${ISLAND_FAILED_ATTRIBUTE}',x&&x.message||'1');throw x})}
 function each(s,f){Array.prototype.forEach.call(document.querySelectorAll(s),f)}
 `.trim();
 
 const RUNTIME_IDLE = `
 each('[data-x-hydrate="idle"]',function(el){
 var go=function(){boot(el)};
-if('requestIdleCallback'in window)requestIdleCallback(go,{timeout:2000});else setTimeout(go,1)})
+if('requestIdleCallback'in window)requestIdleCallback(go,{timeout:${IDLE_HYDRATE_TIMEOUT_MS}});else setTimeout(go,1)})
 `.trim();
 
 const RUNTIME_VISIBLE = `

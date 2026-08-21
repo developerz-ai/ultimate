@@ -10,6 +10,60 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
+- **`x shot <route>` — a rendered route on disk, plus a `verdict.json` a picture cannot carry.**
+  The framework's stated primary developer is an agent, and an agent cannot open a browser or look
+  at a dev server. It can read a file and run a command that prints; this makes a route into both
+  (#241).
+
+  It drives `x dev` on a scratch port, never the static build — `--target static` prerenders `site/`
+  only, so an `app/` route would photograph the landing page and report its island missing, which
+  reads as a bug in the app. `ok` is three conditions, each of them something a picture cannot show:
+  nothing logged an error, **nothing threw**, and the document photographed is the route asked for.
+  The framework ships no browser: `puppeteer-core` is imported from the app, and its absence is
+  `X_SHOT_BROWSER_MISSING` with `bun add -d puppeteer-core`. Never a step of `x verify` — a gate that
+  needs a browser goes red for reasons unrelated to the change, and CI does not install one.
+
+- **`x pr review` / `x pr resolve` / `x pr reply` — the inline review threads `gh` will not show
+  you.** `gh pr view --comments` shows *issue* comments; the actionable findings are anchored to
+  lines and reachable only through GraphQL, and the thread id needed to resolve one exists nowhere
+  else (#241).
+
+  It encodes two hazards that have both bitten in this repo. **A review decision goes stale** — it
+  survives later pushes, so `CHANGES_REQUESTED` can predate the commits that addressed it — and the
+  discriminator is the deciding review's **commit oid** against `headRefOid`, never timestamps: two
+  reviews seconds apart can straddle a push, and the timestamp then calls one of them current. It
+  reads `latestOpinionatedReviews` rather than `reviews(last: n)`, because the newest reviews are
+  routinely all `COMMENTED` at the current head, and dating the decision from "most recent" reports
+  a stale `CHANGES_REQUESTED` as current — the hazard, inverted. **An outdated thread has
+  `line: null`**, so `originalLine` is selected too and a thread whose diff moved still has a
+  locator. Resolving is reported as closing a *conversation*, never as fixing a finding: that is a
+  fact about the code no GitHub mutation observes.
+
+- **`x ci` — the findings inside the failed step's log, in one command.** `gh run view` prints a
+  tree of ticks and one cross, and the error is inside a per-job log that is mostly setup noise. For
+  a `verify` job the log tail **is** the findings block — the gate already prints `X_*` codes and
+  executable `fix:` lines — so `x ci` reads them back out into `findings[]` in the standard shape
+  (#241).
+
+- **`ScrapePage.pageErrors()` and `pageErrorsDropped()` on `@ultimat3/scraping`**, with the
+  `PageError` type. Uncaught page exceptions were never observed by this package: `cdp-target.ts`
+  subscribed to `console` and to the renderer-crash `error` event, and **nothing subscribed to
+  `pageerror`** — so an island that *threw* was invisible, which is precisely the case `x shot`
+  exists to catch. Console and page errors are two streams, deliberately: a throw calls no console
+  method, and `ConsoleLine` has nowhere to keep a stack. The stack survives (to 4,000 chars, then
+  truncated and marked) because it names the island module and line that threw, and `message` alone
+  says what went wrong and never where.
+
+- **`IDLE_HYDRATE_TIMEOUT_MS`, `ISLAND_MOUNTED_ATTRIBUTE` and `ISLAND_FAILED_ATTRIBUTE` on
+  `@ultimat3/render`.** The hydration prelude now marks a mount's **outcome** — `data-x-mounted` on
+  resolve, `data-x-failed="<message>"` on reject — so *declared*, *booted*, *mounted* and *failed*
+  are four separate numbers instead of one guess. A screenshot of a page looks identical whether an
+  island mounted or exploded; this is what lets `verdict.json` name the island and quote its error.
+  +129 B once in the shared prelude (+139 for the markers, −10 for a dead `var Q={};` deleted in the
+  same change), so `hydrateRuntimeBytes` moves 615 → 744 (`idle`), 687 → 816 (`visible`), 881 →
+  1,010 (`interaction`). `DEFAULT_ISLAND_JS_BYTES` is unchanged and still holds: the worst case is
+  now 18,807 against 20,480, still under 2×.
+
 - **`x affected` — the workspaces a diff can have broken, transitively**, plus `x test --affected`
   to run exactly those. `x affected [--base <ref>] [--dirty] [--paths] [--json]`. The gate stays
   un-narrowable: this narrows the **feedback**, which is a different thing, and every app was
@@ -33,6 +87,18 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`readWorkspaceGraph` / `scanWorkspaces` are public API on `@ultimat3/cli`**, with `WorkspaceNode`
   and `WorkspaceScan`. The dependency graph a repo declares, readable — which is the whole of #239's
   complaint: it existed only inside `tsc`.
+
+### Changed
+
+- **BREAKING — `ScrapeTarget` gains a required `pageErrors: PageErrorRing` member.** A third-party
+  `ScrapeDriver` implementing `ScrapeTarget` directly (the shape `packages/scraping/README.md`'s
+  driver-author example builds) must construct the ring and, if it can observe uncaught page
+  exceptions, push to it. `createRing(capacity)` is exported and is the whole of it; a driver that
+  cannot observe them builds the ring and never pushes, which is what the offline targets do.
+
+  Required rather than optional deliberately: an optional ring lets a driver stay **silent** about
+  errors it can see, which is the exact gap being closed. Nothing in this repo implements the
+  interface outside `@ultimat3/scraping` itself, so no in-tree code changes.
 
 ### Fixed
 

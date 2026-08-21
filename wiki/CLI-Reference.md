@@ -48,6 +48,9 @@ x version              # CLI version
 | `x i18n` | add, sync, check catalogs | shipped |
 | `x test <type>` | run one of the six test types, or the whole suite | shipped |
 | `x affected` | the workspaces a diff can have broken, transitively | shipped |
+| `x shot <route>` | photograph one route from a real browser, plus a `verdict.json` a picture cannot carry | shipped |
+| `x pr review\|resolve\|reply` | inline review threads — the ones `gh pr view --comments` does not show | shipped |
+| `x ci` | the workflow runs for this branch, and the findings inside the failed step's log | shipped |
 | `x errors explain <CODE>` | code → cause, fix, docs | shipped |
 | `x docs "<question>"` | framework docs, offline, from `node_modules` | shipped |
 | `x fix boundary <file>` | plan the minimal cut for an import that crossed a surface boundary (never rewrites) | shipped |
@@ -888,6 +891,62 @@ Three rules the set obeys:
 **`--base` is the default and `--dirty` is opt-in, which is the reverse of the obvious design.** This repo runs several agents concurrently in **one checkout** (no worktrees), so a working-tree diff returns every agent's uncommitted work at once and the "affected" set quietly expands to nearly the whole monorepo — narrowing nothing while reading as though it did. A ref diff is stable under that. `--dirty` is the right answer for one developer iterating alone.
 
 **Typecheck is deliberately not scoped.** `bun run typecheck` is `tsc -b`, a project build over a shared `.tsbuildinfo`, so a "scoped" typecheck is either the whole project anyway or a weaker check. The time is in the tests, which is what `x test --affected` narrows.
+
+## x shot
+
+```bash
+x shot <route> [--port 0] [--out <dir>] [--no-full] [--settle 2000]
+               [--timeout 30000] [--browser <path>] [--allow-hosts a.com,b.com] [--json]
+```
+
+**The framework's stated primary developer is an agent, and an agent cannot look at anything.** It can read a file and run a command that prints. `x shot` turns a rendered route into both.
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `<route>` | required | a path on the app. An absolute URL is `X_CLI_BAD_FLAG` — pointing a headless browser inside your network at someone else's site is not a screenshot tool's job |
+| `--port` | `0` | the kernel picks a free one. **Never 3000**, which another project usually holds |
+| `--out` | `<root>/.x/shot/<slug>/` | `.x/` is already gitignored in every scaffold |
+| `--full` | on (`--no-full` for the fold) | puppeteer's 800×600 viewport crops nearly every route |
+| `--settle` | `2000` | matches the hydration runtime's own `requestIdleCallback` timeout |
+| `--timeout` | `30000` | one navigation |
+| `--browser` | `PUPPETEER_EXECUTABLE_PATH`, then `CHROME_PATH` | refused before anything boots if the path does not exist |
+| `--allow-hosts` | the app's host only | extra hosts the page may request |
+
+**`verdict.json` is the half that gates**, and the more important of the two files: a picture cannot tell you the island threw or logged. It carries the console lines, the island counts, the canvas size, the network tallies — and `blind`, which names what this capture could **not** observe. A tool that silently omits what it cannot see is worse than one that says so.
+
+`ok` is exactly two conditions: **zero console errors** and **`requestedUrl === finalUrl`**. The second matters most: a route behind `auth: 'required'` photographs the sign-in page and reports every island missing, which reads as a bug in the app when it is a bug in the capture.
+
+**It drives `x dev`, never the static build.** `x build --target static` prerenders `site/` only, so an `app/` route would photograph the landing page. If an `x dev` is already running on the checkout it is **reused** rather than booted over — embedded Postgres is single-writer, so a second boot is `X_DEV_ALREADY_RUNNING` and no picture is ever taken. The verdict says which happened.
+
+**The framework ships no browser.** `x shot` imports `puppeteer-core` from the app and answers `X_SHOT_BROWSER_MISSING` with `bun add -d puppeteer-core` when it is absent. Playwright is not an alternative: its `connectOverCDP` cannot perform the WebSocket upgrade under Bun.
+
+**Never a step of `x verify`.** A gate that needs a browser goes red for reasons unrelated to the change, and CI does not install one.
+
+## x pr · x ci
+
+```bash
+x pr review [--pr <n>] [--repo owner/name] [--all] [--full] [--json]
+x pr resolve <thread-id> [--json]
+x pr reply <thread-id> --body "…" [--json]
+x ci [--branch <name>] [--run <id>] [--repo owner/name] [--tail <n>] [--full] [--json]
+```
+
+**`gh pr view --comments` does not show inline review threads.** It shows *issue* comments; the actionable findings are anchored to lines and reachable only through GraphQL, and the thread id needed to resolve one exists nowhere else. That is the whole reason `x pr` exists — otherwise every team on Ultimate rediscovers the same query.
+
+Two hazards it encodes, both of which have bitten in this repo:
+
+| Hazard | What `x pr review` does |
+|---|---|
+| **A review decision goes stale.** It survives later pushes, so `CHANGES_REQUESTED` can predate the commits that addressed it | compares the deciding review's **commit oid** against `headRefOid` and says `stale` outright. Not timestamps — two reviews seconds apart can straddle a push, and the timestamp then calls one of them current |
+| **An outdated thread has `line: null`** | selects `originalLine` too, so a thread whose diff moved still has a locator instead of arriving anchorless |
+
+It reads `latestOpinionatedReviews`, not `reviews(last: n)`: the most recent reviews are often all `COMMENTED` at the current head, so dating the decision from "the newest review" reports a stale `CHANGES_REQUESTED` as current — the hazard, inverted.
+
+**Resolving closes a conversation, not a finding.** Whether the code is fixed is a fact no GitHub mutation observes, and `x pr resolve` says so rather than implying otherwise.
+
+`x ci` exists because *"`gh run view` prints a tree of ticks and one cross, and the error is inside a per-job log that is mostly setup noise."* For a `verify` job the log tail **is** the findings block — this repo's gate already prints `X_*` codes and executable `fix:` lines — so `x ci` reads them back out into `findings[]` in the standard shape. `ok: false` iff a run failed; `x pr review` always exits 0, because unresolved threads are the work to do, not a failure of the command that listed them.
+
+**Neither is a step of `x verify`.** A gate that needs network and a GitHub token goes red for reasons unrelated to the change.
 
 ## x errors
 

@@ -36,6 +36,12 @@ type Handlers = Map<string, ((payload: unknown) => void)[]>;
 export interface FakeCdpBrowser extends CdpBrowserLike {
   /** Fire a request event, as a real browser would when the page fetches a subresource. */
   emitRequest(url: string, resourceType: string): void;
+  /**
+   * Fire `pageerror` — the page threw and nothing caught it. `payload` is whatever the library
+   * would hand a handler, `unknown` on purpose: a page can throw a string as easily as an `Error`,
+   * and the target reads it defensively either way.
+   */
+  emitPageError(payload: unknown): void;
   readonly aborted: readonly string[];
   readonly closed: boolean;
 }
@@ -129,6 +135,9 @@ export function fakeCdpBrowser(init: FakeCdpPageInit): FakeCdpBrowser {
           continue: () => Promise.resolve(),
         });
       }
+    },
+    emitPageError(payload: unknown): void {
+      for (const handler of handlers.get('pageerror') ?? []) handler(payload);
     },
     aborted,
     get closed(): boolean {

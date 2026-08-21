@@ -150,6 +150,38 @@ emits a file `defineCatalogs` rejects at the app's first boot. `merge: 'json'` u
 (`json-merge.ts`) for the same reason: `x new` and `x g resource` both contribute under `app`, and
 a shallow spread keeps one of them.
 
+## Three commands that reach outside the process, and none of them is a gate step
+
+`x shot`, `x pr` and `x ci` exist because of the one line in the root `CLAUDE.md` that shapes this
+whole package: **the primary developer is an AI agent.** An agent cannot open a browser, cannot look
+at a running dev server and cannot read the GitHub web UI. It can read a file, and it can run a
+command that prints. These three turn each of those into a file and a print.
+
+They are also the only three commands that need something the process does not have — a browser, a
+network, a GitHub token — which is why **none of them is a step of `x verify`**, and why that is not
+an oversight to be corrected later. A gate that needs a browser goes red for reasons unrelated to the
+change, and CI does not install one.
+
+| | Reaches for | Never |
+|---|---|---|
+| `x shot <route>` | `x dev` on a scratch port, plus the app's own `puppeteer-core` through `@ultimat3/scraping` | the static build — `--target static` prerenders `site/` only, so an `app/` route would photograph the landing page |
+| `x pr review\|resolve\|reply` | `gh api graphql`, through the injected `Runner` | `gh pr view --comments`, which shows *issue* comments and not the line-anchored threads that carry the findings |
+| `x ci` | `gh run view --log-failed`, one call | a per-job log fetch — the run and all its jobs come back together |
+
+**`verdict.json` names its own blind spots, and that is the design.** `x shot` reports what it could
+not observe alongside what it did. A capture tool that silently omits what it cannot see is worse
+than one that says so, because the omission reads as a clean result.
+
+**`x shot` reuses a running `x dev` rather than booting a second one.** Embedded Postgres is
+single-writer, so a second boot is `X_DEV_ALREADY_RUNNING` and no picture is ever taken. A reused
+server's `stop()` deliberately does not clear the other process's lock.
+
+**`gh` is invoked through `ctx.runner`, never `Bun.spawn` directly** — that is what lets every test
+supply a reply table and assert the exact argv with no network and no `gh` installed. `GhOptions.fix`
+is a **required** field, so shelling out to GitHub without stating a remedy is a type error rather
+than a review comment. A GraphQL response is untrusted input and is parsed against a schema, never
+cast: a `null` where an id was expected would otherwise become a mutation against `undefined`.
+
 ## The `errors` step enforces the error contract
 
 | File | Job |
