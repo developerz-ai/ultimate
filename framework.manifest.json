@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "5ce2746255a0c1b6a5d972a17fd3bd34bfb542255424cc395c591ae3a48fdf1e",
+  "buildId": "257a63064034db6337de8c22343c796fb5e5362a18341296114279e0ffc35b46",
   "tiers": {
     "0": [
       "core",
@@ -856,6 +856,16 @@
       "code": "X_DOC_MIGRATION_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/changelog-check.ts"
+    },
+    {
+      "code": "X_DOC_PACKAGE_GRAPH_STALE",
+      "owner": "scripts",
+      "at": "scripts/package-map-graph.ts"
+    },
+    {
+      "code": "X_DOC_PACKAGE_GRAPH_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/package-map-graph.ts"
     },
     {
       "code": "X_DOC_RELEASE_FACT_STALE",
@@ -2263,6 +2273,31 @@
       "at": "packages/core/src/error-codes.ts"
     },
     {
+      "code": "X_SIDE_EFFECTS_ENTRY_STALE",
+      "owner": "scripts",
+      "at": "scripts/side-effects.ts"
+    },
+    {
+      "code": "X_SIDE_EFFECTS_MISSING",
+      "owner": "scripts",
+      "at": "scripts/side-effects.ts"
+    },
+    {
+      "code": "X_SIDE_EFFECTS_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/side-effects.ts"
+    },
+    {
+      "code": "X_SIDE_EFFECTS_UNDECLARED",
+      "owner": "scripts",
+      "at": "scripts/side-effects.ts"
+    },
+    {
+      "code": "X_SIDE_EFFECTS_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/side-effects.ts"
+    },
+    {
       "code": "X_SITEMAP_TOO_LARGE",
       "owner": "seo",
       "at": "packages/seo/src/errors.ts"
@@ -2479,6 +2514,16 @@
     },
     {
       "code": "X_TEST_FIXTURE_UNKNOWN",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_ISLAND_NO_MOUNT",
+      "owner": "testing",
+      "at": "packages/testing/src/errors.ts"
+    },
+    {
+      "code": "X_TEST_ISLAND_NOT_BUILT",
       "owner": "testing",
       "at": "packages/testing/src/errors.ts"
     },

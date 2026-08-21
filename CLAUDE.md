@@ -12,24 +12,24 @@ This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x`
 
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
-**Status:** 5.0.1, released, `As of 2026-08-20`. 29 `@ultimat3/*` packages plus the unscoped
+**Status:** 6.0.0, released, `As of 2026-08-21`. 29 `@ultimat3/*` packages plus the unscoped
 `create-ultimate` — 30 in all — **versioned** in lockstep and **published** in lockstep: one version,
 one commit, one tag, 30 tarballs.
 
 **Repository, tag and registry agree.** Never read a number here as the installable one; run the
 command beside it — that is the only thing here that cannot go stale. `bun run scripts/registry-audit.ts --json`
-covers the **npm** rows in one call — it answers `30/30 publishable packages are on npm at 5.0.1,
+covers the **npm** rows in one call — it answers `30/30 publishable packages are on npm at 6.0.0,
 every one attested` or names each gap with a runnable `fix:` — and it asks nothing about the tag or
 the Release, which are the two rows below it.
 
-| Fact | State, `As of 2026-08-20` | Read it yourself |
+| Fact | State, `As of 2026-08-21` | Read it yourself |
 |---|---|---|
-| Repository version | 5.0.1, every workspace stamped | `bun run scripts/release.ts --check 5.0.1` |
+| Repository version | 6.0.0, every workspace stamped | `bun run scripts/release.ts --check 6.0.0` |
 | Publishable workspaces | 30 | `bun run scripts/release-workflow.ts --json` |
-| On the registry | **all 30 at 5.0.1**, no holes | `bun run scripts/registry-audit.ts --json` |
-| npm `latest` | **5.0.1** — `bunx create-ultimate myapp` installs it | `npm view @ultimat3/core version` |
-| Provenance | every 5.0.1 tarball attested, `_npmUser: GitHub Actions` | `npm view @ultimat3/core@5.0.1 dist.attestations _npmUser` |
-| Tag and Release | `v5.0.1` pushed **annotated**, GitHub Release published — the Release is what triggers the workflow | `git ls-remote --tags origin 'refs/tags/v5.0.1*'` — both the ref **and** its peeled `^{}` line, which is what proves it is annotated and on the remote; then `gh release view v5.0.1 --json tagName,isDraft,publishedAt`. **Not** `git tag --list`, which reads the local repository and answered `v4.0.0` throughout the window in which the tag had never been pushed |
+| On the registry | **all 30 at 6.0.0**, no holes | `bun run scripts/registry-audit.ts --json` |
+| npm `latest` | **6.0.0** — `bunx create-ultimate myapp` installs it | `npm view @ultimat3/core version` |
+| Provenance | every 6.0.0 tarball attested, `_npmUser: GitHub Actions` | `npm view @ultimat3/core@6.0.0 dist.attestations _npmUser` |
+| Tag and Release | `v6.0.0` pushed **annotated**, GitHub Release published — the Release is what triggers the workflow | `git ls-remote --tags origin 'refs/tags/v6.0.0*'` — both the ref **and** its peeled `^{}` line, which is what proves it is annotated and on the remote; then `gh release view v6.0.0 --json tagName,isDraft,publishedAt`. **Not** `git tag --list`, which reads the local repository and answered `v4.0.0` throughout the window in which the tag had never been pushed |
 | OIDC trusted publisher | attached to all 30, with `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
 
 **A lightweight tag is not a release trigger, and `--follow-tags` will not push one.** `v4.0.0` was
@@ -181,7 +181,8 @@ Milestone detail: [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md).
 | open closed-key tables | `bun run frozen-records` — a step of the gate's `unit` check, standalone. Refuses `const X: Readonly<Record<K, V>> = Object.freeze({…})`, which infers `T` from the literal and so accepts an EXTRA key in silence. `Object.freeze<Record<K, V>>({…})` is the one form. 21 sites, 4 left deliberately open on `Record<string, …>` |
 | a second `AsyncLocalStorage` | `bun run async-context-guard` — a step of the gate's `unit` check, standalone. `packages/core/src/async-context.ts` is the one module that may construct one **or import the class**; every other scope opens through `asyncContext<T>(subject)`. A module-scope `new` throws `TypeError` at module evaluation in a browser bundle |
 | undocumented gate codes | `bun run gate-codes` — a step of the gate's `unit` check, standalone. `wiki/Error-Codes.md`'s never-ships list is a hand-copy of a derived set; nothing read it, because `checkErrorCodeDocs` counts any `X_*` in backticks **anywhere on the page** as documentation. A ratchet: 26 violations on day one |
-| changelog and migration drift | `bun run changelog-check` — a step of the gate's `unit` check, standalone. Two `## ` headings sharing a version, an empty released section, `BREAKING —` still under `[Unreleased]` at a tagged commit, and each major's `wiki/Upgrading.md` count against **that section's own** entries — a count derived from the whole file cannot see a misplaced entry, because it only makes the number smaller |
+| dishonest `sideEffects` | `bun run side-effects` — a step of the gate's `unit` check, standalone. Refuses a package whose `sideEffects` excludes a module that provably runs at import time, and an entry matching no file — a stale entry protects nothing while reading as a rule still in force. **Never `false` where a `registerErrorCodes()` runs**: measured, `false` on `@ultimat3/core` drops `schema-error-codes.ts`, which registers `@ultimat3/schema`'s titles because schema (tier 0) cannot register its own. The array form costs ~376 B an island against the lie, and 22,214 → 5,948 B against declaring nothing. A ratchet — 24 of 30 packages silent on day one; `--explain --json` prints the array the tree measures |
+| changelog and migration drift | `bun run changelog-check` — a step of the gate's `unit` check, standalone. Two `##` headings sharing a version, an empty released section, `BREAKING —` still under `[Unreleased]` at a tagged commit, and each major's `wiki/Upgrading.md` count against **that section's own** entries — a count derived from the whole file cannot see a misplaced entry, because it only makes the number smaller |
 | regenerate manifest | `bun run manifest` |
 | list workspaces | `bun run workspaces:list` |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |

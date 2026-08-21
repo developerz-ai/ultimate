@@ -119,10 +119,24 @@ describe('the committed wiki/Error-Codes.md', () => {
           unlistedPins: GATE_CODE_UNLISTED,
         }),
       ).toEqual([]);
-      // Load-bearing pins: drop them all and the real page reds, so the ratchet is measuring
-      // something rather than pinning an empty set.
-      const unpinned = checkGateCodes({ declared, page, noRowPins: [], unlistedPins: [] });
-      expect(unpinned.length).toBe(GATE_CODE_NO_ROW.length + GATE_CODE_UNLISTED.length);
+      // Both lists are drained, so "drop the pins and the page reds" is the assertion above it
+      // rerun with the same arguments — it can only ever answer 0. The drained state is what is
+      // worth pinning: the next gap reds the gate outright, and the day a pin comes back this
+      // line names which direction stopped being enforced.
+      expect([...GATE_CODE_NO_ROW, ...GATE_CODE_UNLISTED]).toEqual([]);
+
+      // Non-vacuity, in each direction, against the REAL page one edit worse — a rule that cannot
+      // red over the file it guards is the false green this whole script exists for.
+      const unlisted = page.replace('`X_GATE_CODE_BACKLOG_STALE`, ', '');
+      expect(unlisted).not.toBe(page);
+      expect(checkGateCodes({ declared, page: unlisted, noRowPins: [], unlistedPins: [] })).toEqual(
+        [{ kind: 'unlisted', code: 'X_GATE_CODE_BACKLOG_STALE' }],
+      );
+      const noRow = page.replace('| `X_GATE_CODE_UNDOCUMENTED` |', '| `X_SOMETHING_ELSE` |');
+      expect(noRow).not.toBe(page);
+      expect(checkGateCodes({ declared, page: noRow, noRowPins: [], unlistedPins: [] })).toEqual([
+        { kind: 'no-row', code: 'X_GATE_CODE_UNDOCUMENTED' },
+      ]);
     },
     REPO_SCAN_TIMEOUT_MS,
   );

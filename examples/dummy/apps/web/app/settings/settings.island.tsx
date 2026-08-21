@@ -5,10 +5,15 @@
  * inside the island's wrapper, so the screen paints before a byte of this module arrives; `mount`
  * replaces that shell with the editor, which is the part only a browser can do.
  *
- * It imports no stylesheet, and cannot: `Bun.build` resolves a `.module.scss` to a URL STRING
- * rather than to the class map the server hashed, so `styles['x']` would arrive `undefined` and
- * every element would render unclassed, silently. `page.module.scss` reaches this markup by tag
- * instead, from the `.editor` wrapper the page renders around it.
+ * An island MAY import a `.module.scss`. The island build runs `@ultimat3/render`'s own
+ * `loadStylesheet` over every `.s?css` (`packages/cli/src/island-styles.ts`), so the default export
+ * is the class map and not Bun's asset URL string, and the rules register into the same map a
+ * document renders from — `buildIslands` runs before the first render. Class names agree with the
+ * server by construction: the scope hash is over the file's BASENAME plus its source, never its
+ * absolute path (`packages/render/src/css-modules.ts`).
+ *
+ * This one imports none anyway, which is a size decision and no longer a limit: `page.module.scss`
+ * reaches this markup by tag, from the `.editor` wrapper the page renders around it.
  */
 
 import type { JSX } from 'solid-js';
@@ -60,11 +65,14 @@ type SaveState = 'idle' | 'saved' | 'failed';
  * `Intl.DateTimeFormat` with an explicit IANA zone, and not `<DateTime>` — which is what every
  * SERVER render in this app uses, including the shell this module replaces.
  *
- * Measured, not assumed: importing anything at all from `@ultimat3/ui` costs 51 kB in a browser
- * chunk and anything from `@ultimat3/time` costs 21 kB, because neither package's index barrel
- * tree-shakes — `instant`, a one-line brand cast, weighs the same as the whole package. Against a
- * 15 kB Solid runtime that is the difference between an 18 kB island and a 65 kB one. The rule the
- * framework actually enforces is "no date without an explicit IANA `timeZone`", and this obeys it.
+ * A size decision, not a style one. An index barrel that does not tree-shake charges the browser
+ * chunk for the WHOLE package, so `instant` — a one-line brand cast — would weigh what
+ * `@ultimat3/time` weighs, and one `<DateTime>` would weigh what `@ultimat3/ui` weighs; each is
+ * several times this island's own compiled markup. No figure is quoted here on purpose: both move
+ * whenever a package's `sideEffects` field does, and the numbers this comment used to carry were
+ * stale within a release. Measure instead — `buildIslands` in `settings.island.test.ts` reports the
+ * chunk. `Intl` is already in the browser and costs nothing. The rule the framework enforces is
+ * "no date without an explicit IANA `timeZone`", and this obeys it.
  */
 const previewOf = (isoInstant: string, locale: string, zone: string): string =>
   new Intl.DateTimeFormat(locale, {

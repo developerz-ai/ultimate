@@ -91,18 +91,22 @@ export function runtimeMissingError(api: string, fix: string): UiError {
 }
 
 /**
- * `<UiProvider>` on a server render. No new code: a reactive runtime is absent, which is exactly
- * what X_UI_RUNTIME_MISSING already names — and a code is stable forever once shipped. The throw
- * is the point. A Provider in an inert tree reaches no descendant (they are walked outside every
- * owner), so rendering the children anyway would drop the locale, zone, currency and translator it
- * was handed while looking like it worked.
+ * `<UiProvider>` with no runtime registered. No new code: a reactive runtime is absent, which is
+ * exactly what X_UI_RUNTIME_MISSING already names — and a code is stable forever once shipped. The
+ * throw is the point. A Provider in an inert tree reaches no descendant (they are walked outside
+ * every owner), so rendering the children anyway would drop the locale, zone, currency and
+ * translator it was handed while looking like it worked.
+ *
+ * TWO callers reach here, not one, and the cause used to name only the first: a server render,
+ * which has no runtime by design, and an island whose `mount` never called `setSolidRuntime` —
+ * which is a real bug in a real browser, and was being told it was a server render.
  */
 export function providerNeedsRuntimeError(): UiError {
   return new UiError({
     code: UI_ERROR_CODES.runtimeMissing,
     cause:
-      '<UiProvider> needs a registered Solid runtime; a server render has none, and its values would reach no component',
-    fix: 'delete <UiProvider> from the server tree — useUi() already reads the request locale and time zone; keep the provider inside your *.island.tsx, under the mount() that called setSolidRuntime()',
+      '<UiProvider> was rendered with no Solid runtime registered, so its locale, time zone, currency and translator would reach no component',
+    fix: "in an island, paste `import * as solidRuntime from 'solid-js';` at the top of the *.island.tsx and `setSolidRuntime(solidRuntime);` as the first line of its mount(), above the render() that builds <UiProvider>; on the server, delete <UiProvider> — useUi() already reads the request locale and time zone",
   });
 }
 

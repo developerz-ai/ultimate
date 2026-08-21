@@ -73,15 +73,28 @@ describe('a browser bundle of @ultimat3/core', () => {
 
   function barrel(): Promise<BrowserBarrel> {
     built ??= (async (): Promise<BrowserBarrel> => {
-      const output = await Bun.build({
-        entrypoints: [join(import.meta.dir, 'index.ts')],
-        target: 'browser',
-      });
+      // Bundled through a re-exporting wrapper, the way an app consumes the barrel — NOT with
+      // `index.ts` as the entry point. Bun 1.4.0 shakes the bindings out of a pure re-export entry
+      // that a `sideEffects` field does not name, while still emitting the `export { … }` clause,
+      // so the direct build answers `"recordRequest" is not declared in this file` (#276). The
+      // chunk it produced had no declarations at all, which made every assertion below vacuous.
+      const dir = await mkdtemp(join(tmpdir(), 'ultimate-core-'));
+      const entry = join(dir, 'entry.ts');
+      await Bun.write(
+        entry,
+        `export * from ${JSON.stringify(join(import.meta.dir, 'index.ts'))};\n`,
+      );
+      const output = await Bun.build({ entrypoints: [entry], target: 'browser' });
       expect(output.success).toBe(true);
       const chunk = output.outputs[0] ?? expect.unreachable('the browser build emitted no chunk');
       // A fresh path per run: the module cache would otherwise serve a chunk built before a fix.
-      const file = join(await mkdtemp(join(tmpdir(), 'ultimate-core-')), 'barrel.mjs');
-      await Bun.write(file, await chunk.text());
+      const file = join(dir, 'barrel.mjs');
+      const code = await chunk.text();
+      // Non-vacuity: a chunk that is only an `export { … }` clause passes every assertion below
+      // while proving nothing. This is what #276 produced, undetected, until the barrel test grew
+      // the same check.
+      expect(code.replace(/export\s*\{[^}]*\};?/g, '').trim()).not.toBe('');
+      await Bun.write(file, code);
       return import(file) as Promise<BrowserBarrel>;
     })();
     return built;

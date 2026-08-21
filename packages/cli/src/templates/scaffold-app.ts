@@ -136,6 +136,8 @@ export const config = defineRoute({
   // therefore failed x routes with X_ROUTE_MODE_INVALID on the first run, printing a fix nobody
   // could follow. Ship the mode that works. Async data needs no boundary: await it in the page.
   render: 'ssr',
+  // Stated with no island on the page, deliberately and for free — \`apps/admin/app/admin/page.tsx\`
+  // carries the reason.
   hydrate: 'visible',
   offline: 'runtime',
   // Auth is a policy, never a route-local flag: one authz system, evaluated everywhere.
@@ -325,10 +327,16 @@ import { defineRoute } from '@ultimat3/render';
 
 export const config = defineRoute({
   render: 'ssr',
+  // Stated on a page whose body is one \`<h1>\`, and it costs nothing: the hydration runtime is
+  // emitted per island DIRECTIVE, so \`hydrateRuntime([])\` is \`''\` and this document ships 0 bytes
+  // (\`packages/render/src/hydrate.ts\`). It buys the first island being ONE file's edit —
+  // \`hydrate: 'never'\` beside an island is \`X_ISLAND_NOT_HYDRATED\`, which defineRoute refuses.
   hydrate: 'idle',
   offline: 'network-only',
-  // Behind auth, and \`ssr\` is the one mode that can be: it renders per request, so the guard runs
-  // on the server before the page does. \`static\` and \`isr\` refuse a policy outright.
+  // Behind auth, so the mode has to render per request: \`ssr\` and \`stream\` both do, and both take
+  // a \`policy\`. \`static\` and \`isr\` refuse one outright — a file on disk has no actor to decide
+  // against, and an ISR document is cached per URL, so the first actor's HTML would be served to
+  // every later one who passes the same policy.
   policy: { permission: 'admin:read' },
   budget: { js: '120kb' },
   meta: ({ t }) => ({ title: t('admin.home.title'), description: t('admin.home.description') }),
@@ -394,6 +402,12 @@ const prerender =
 // whatever its mode, so \`x verify\`'s \`budgets\` step has a number for it. \`unmeasured\` is the list
 // this build could not render — each one is an X_BUDGET_UNMEASURED at the gate, and this is where
 // the reason is.
+//
+// It writes the whole of \`pages\` and \`skipped\`, never a COUNT of either. A count is what let a
+// partial artifact read as a complete one: someone pointed a screenshot tool at \`.x/static\` and
+// filed "the island did not mount" against a route that had never been emitted (issue #242). Each
+// skipped route carries its own \`reason\` and \`why\`, and \`report\` is where the same inventory
+// landed on disk — which is what \`x build --target static --json\` reads back.
 
 import { join } from 'node:path';
 import { prerenderSite } from '@ultimat3/cli';
@@ -410,7 +424,7 @@ const origin = Bun.env.SITE_ORIGIN;
 if (import.meta.main) {
   const report = await prerenderSite({ root, out, ...(origin === undefined ? {} : { origin }) });
   await Bun.stdout.write(
-    \`\${JSON.stringify({ ok: true, out: report.out, pages: report.pages.length, skipped: report.skipped, unmeasured: report.unmeasured })}\\n\`,
+    \`\${JSON.stringify({ ok: true, out: report.out, emitted: report.pages, skipped: report.skipped, unmeasured: report.unmeasured, report: report.report })}\\n\`,
   );
 }
 `;

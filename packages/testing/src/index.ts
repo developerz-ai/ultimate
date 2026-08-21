@@ -83,6 +83,17 @@ export type {
   TestDeploy,
 } from './fixture-drivers';
 export { DRIVER_FIXTURE_NEEDS, driverFixtures, unavailableFixture } from './fixture-drivers';
+// The island fixture. `build` is a PARAMETER — `buildIslands` lives in `@ultimat3/cli`, which is
+// tier 5 like this package and whose one declared edge points the other way, so an app supplies it:
+// `mountIsland({ build: buildIslands, root, file })`.
+export type {
+  IslandBuilder,
+  IslandBundleLike,
+  IslandChunkLike,
+  MountedIsland,
+  MountIslandOptions,
+} from './fixture-island';
+export { mountIsland } from './fixture-island';
 export type { JobRunTrace, RunJobs, StepTally } from './fixture-jobs';
 export { createRunJobs } from './fixture-jobs';
 export type { MailRef, TestMail } from './fixture-mail';
@@ -102,6 +113,8 @@ export {
 } from './framework-fixtures';
 export type { AppHandle, AppOptions, BootedApp } from './harness';
 export { describeApp, testApp } from './harness';
+// Type-only: the micro-DOM is the fixture's to build, and a test only ever names what it handed back.
+export type { FakeElement, FakeNode, FakeText } from './island-dom';
 export type { LiveConnection, LiveNodeHandle, LiveNodeOptions } from './live-node';
 export { createLiveNode } from './live-node';
 export type { LiveReplicator, LiveReplicatorOptions } from './live-replicator';

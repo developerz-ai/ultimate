@@ -20,6 +20,8 @@ frozen clock. Never let a test reach the network unmocked — it fails by design
 | `fixtures.ts` | the registry + `test('…', ({ clock }) => …)` injection |
 | `fixture-{clock,mail,jobs,network,statements}.ts` | the five fixtures the framework builds in-process |
 | `fixture-drivers.ts` | the five it declares but a driver must build — `page` `budget` `signIn` `deploy` `subscribe` |
+| `fixture-island.ts` | `mountIsland()` — build an island, import its chunk, run its `mount`. The BUILDER is a parameter |
+| `island-dom.ts` | the micro-DOM `mountIsland` drives: what compiled Solid touches, and nothing else |
 | `framework-fixtures.ts` | registers both sets; the app registers only what it owns |
 | `registry-leak-guard.ts` | fails the run naming the FILE that left a process-global registry dirty, and restores the ones that can be restored at the same boundary |
 | `registry-snapshot.ts` | `captureProcessRegistries()` / `restoreProcessRegistries()` — the locale config, the catalogs, the permission set and the role map, put back as a file inherited them. A module-scope declaration evaluates once per process (`bun test` without `--isolate`, `As of 2026-08`), so a neighbour's `clearPermissions()` is otherwise permanent |
@@ -235,10 +237,52 @@ core's `markListening()`, so a test may call its own `handle.url()` on a kernel-
 the seal fully on. Unsealing (`ULTIMATE_TEST_ALLOW_NET=1`) stays reserved for a deliberate live
 integration — never for a socket test.
 
+## Testing an island
+
+An island is the only client-side code Ultimate ships, so it is the only code an app cannot test
+by calling a function. `mountIsland` builds one with the same bundler `x build` uses, imports the
+emitted chunk the way the hydration runtime does, and runs its `mount` over a DOM small enough to
+read.
+
+```ts
+import { buildIslands } from '@ultimat3/cli';
+import { expect, mountIsland, test } from '@ultimat3/testing';
+
+declare const fakeFetch: typeof fetch; // yours — the island's own network, stubbed
+
+test('the counter is reactive', async () => {
+  using island = await mountIsland({
+    build: buildIslands,
+    root: import.meta.dir + '/../../..',
+    file: 'apps/web/site/counter.island.tsx',
+    props: { label: 'count' },
+    shell: '<p>0</p>',                 // what the server rendered; mount must replace it
+    globals: { fetch: fakeFetch },     // anything the micro-DOM does not supply
+  });
+
+  expect(island.text('[data-role="count"]')).toBe('count 0');
+  expect(island.fire('button', 'click')).toBe(true);
+  expect(island.text('[data-role="count"]')).toBe('count 1');
+});
+```
+
+**`build` is a parameter, not an import.** `buildIslands` lives in `@ultimat3/cli`, which is tier 5
+like this package, and the one declared edge between them runs `cli → testing` — so importing it
+here would be a tier violation `bun run boundaries` fails on. The app supplies it, which is one
+line and makes the direction visible instead of hidden.
+
+**`fire` answers whether a handler RAN.** A selector that matches nothing and an island that
+attached no handler are the same silence; the second is a bug and the first is a typo in the test.
+
+**A mount installs process-global state**, so `MountedIsland` is `Disposable` — `using`, or
+`island[Symbol.dispose]()` in an `afterAll`. Left installed it hands a fake `document` to every
+later FILE in the run.
+
 ## Errors
 
 `X_TEST_NETWORK_SEALED` `X_TEST_DB_UNAVAILABLE` `X_TEST_NONDETERMINISTIC` `X_TEST_FIXTURE_UNKNOWN`
 `X_TEST_FACTORY_TRAIT_UNKNOWN` `X_TEST_FACTORY_NOT_PERSISTED` `X_TEST_REGISTRY_LEAK`
+`X_TEST_ISLAND_NOT_BUILT` `X_TEST_ISLAND_NO_MOUNT`
 
 ## One process, one registry
 

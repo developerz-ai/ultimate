@@ -582,8 +582,10 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
   answers `undefined` there — in a browser nothing IS in flight, so that is the true answer. A
   write is the case that names itself: `storage.run` throws `X_ASYNC_CONTEXT_UNAVAILABLE` instead
   of a bare `TypeError`, though `crossTenant()` reaches it only past `assertCrossTenant`, which
-  wants a request context a browser does not have. A server pays nothing either way —
-  `getStore()` before any `run()` answered `undefined` whether the storage existed or not.
+  wants a request context a browser does not have. A server saves no allocation — the store is
+  built on the first `get()` **or** `run()`, so a read constructs it too; what the laziness costs
+  is nothing observable, since `getStore()` outside a scope answers `undefined` whether the storage
+  existed or not.
   **The capability is proven twice**: `CROSS_TENANT_SCOPE` (`tenancy:cross`) on the actor, at the
   call and again at every plan built inside it, because `withChildContext({ actor })` swaps the
   actor without closing the scope and an impersonated caller must not inherit it —

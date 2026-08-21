@@ -218,7 +218,7 @@ bunx x routes
 ```text
   path        surface  render  hydrate  offline       file
   /           site     static  never    precache      apps/web/site/page.tsx
-  /admin      app      ssr     never    network-only  apps/admin/app/admin/page.tsx
+  /admin      app      ssr     idle     network-only  apps/admin/app/admin/page.tsx
   /dashboard  app      ssr     visible  runtime       apps/web/app/dashboard/page.tsx
   /posts      app      ssr     visible  runtime       apps/web/app/posts/page.tsx
 ✓ 4 routes

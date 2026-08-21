@@ -1,21 +1,10 @@
 #!/usr/bin/env bun
 // One rule: `Object.freeze` over an object literal whose type is a CLOSED-KEY `Record` must pass
 // that type as an explicit type argument — `Object.freeze<Record<K, V>>({…})`, never
-// `const X: Readonly<Record<K, V>> = Object.freeze({…})`.
-//
-// The second form looks like it constrains a closed set and does not. `Object.freeze<T>(o: T)`
-// INFERS `T` from the literal, so the literal is no longer fresh by the time the annotation is
-// checked, and excess-property checking never runs: a missing key is an error, an extra key
-// compiles in silence. Measured on 21 sites — every one of them silent before, every one a
-// `TS2353` after.
-//
-// It is not a style rule. `spa: 'cache-first'` sat in `@ultimat3/pwa`'s render-mode table after
-// `spa` was deleted from the vocabulary, mapping a mode that did not exist onto the one strategy
-// that gives an `app/` route a SHARED cache entry — one member's authed HTML served to the next —
-// and `tsc` had nothing to say about it.
-//
+// `const X: Readonly<Record<K, V>> = Object.freeze({…})`, which infers `T` from the literal.
 //   bun run scripts/frozen-records.ts [--json]
 
+import { maskLiterals, stripComments } from '@ultimat3/cli';
 import { parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -29,6 +18,15 @@ const SCRIPT = 'frozen-records';
  */
 export const OPEN_KEY_TYPES: readonly string[] = ['string', 'number', 'symbol', 'PropertyKey'];
 
+/**
+ * Why the second form is not a style rule. `Object.freeze<T>(o: T)` INFERS `T` from the literal, so
+ * the literal is no longer fresh by the time the annotation is checked and excess-property checking
+ * never runs: a missing key is an error, an extra key compiles in silence. `spa: 'cache-first'` sat
+ * in `@ultimat3/pwa`'s render-mode table after `spa` was deleted from the vocabulary — a mode that
+ * did not exist mapped onto the one strategy that gives an `app/` route a SHARED cache entry, one
+ * member's authed HTML served to the next — and `tsc` had nothing to say about it. Measured on 21
+ * sites: every one silent before, every one a `TS2353` after.
+ */
 export type FreezeShape =
   /** `Object.freeze<T>({…})` — the literal is contextually typed. Correct. */
   | 'explicit'
@@ -58,11 +56,98 @@ export interface Finding {
   readonly fix: string;
 }
 
-/** `const NAME: <annotation> = Object.freeze(` and `const NAME = Object.freeze<`, at column 0. */
+/**
+ * `const NAME: <annotation> = Object.freeze(` and `const NAME = Object.freeze<`, at ANY
+ * indentation — `^[\t ]*` and not `^`, because a declaration nested in a namespace or a block is
+ * indented and a guard a newline evades is not a guard.
+ */
 const DECLARED_FREEZE =
-  /^(?:export )?const ([A-Za-z_$][\w$]*)(?::([\s\S]{0,400}?))?\s*=\s*Object\.freeze(<)?\s*\(?/gm;
+  /^[\t ]*(?:export )?const ([A-Za-z_$][\w$]*)(?::([\s\S]{0,400}?))?\s*=\s*Object\.freeze(<)?\s*\(?/gm;
+
+/** `type NAME = <body>;`, the shape an annotation can launder a closed `Record` through. */
+const TYPE_ALIAS = /^[\t ]*(?:export )?(?:declare )?type ([A-Za-z_$][\w$]*)\s*=([^;]*);/gm;
+
+const IDENTIFIER = /[A-Za-z_$][\w$]*/g;
+
+/** Deeper than any alias chain in this tree, and finite where a self-referential alias is not. */
+const ALIAS_HOPS = 4;
 
 const lineOf = (text: string, index: number): number => text.slice(0, index).split('\n').length;
+
+/**
+ * Whether the declaration `decl` found at `index` is CODE, asked of `maskLiterals`' output — where
+ * a string's contents are blanked and every offset is preserved, so the keyword survives exactly
+ * when it was never inside one. `@ultimat3/cli`'s scaffold templates emit source as strings, and
+ * reading one of those as a declaration invents a finding no edit can clear.
+ */
+const isCode = (masked: string, index: number, decl: string): boolean =>
+  masked[index + (decl.length - decl.trimStart().length)] !== ' ';
+
+/**
+ * `packages/pwa/src/a.ts` → `packages/pwa`, the unit an alias table is built over. A name declared
+ * in two packages is two unrelated types, and TypeScript would never resolve one through the other.
+ */
+export const packageOf = (at: string): string => at.split('/').slice(0, 2).join('/');
+
+/**
+ * An alias body worth following: a `Record<…>`, or a chain of wrappers and names that may reach
+ * one. `{`-bearing bodies are excluded on purpose — `type Ctx = { rows: Record<string, R> }` is not
+ * a Record annotation, and expanding it would reclassify every `const c: Ctx = Object.freeze({…})`
+ * as a table.
+ */
+const followable = (body: string): boolean =>
+  !body.includes('{') && (body.includes('Record<') || /^[\w$<>,\s.]+$/.test(body));
+
+/**
+ * Every `type X = …` in the given files that an annotation could name a closed `Record` through.
+ * The defect is identical whether the type is spelled inline or borrowed: `const X: FrozenModes =
+ * Object.freeze({…})` loses the literal's freshness exactly as `Readonly<Record<K, V>>` does, and
+ * was read as `unconstrained` until this table existed.
+ *
+ * A name declared TWICE with two bodies is dropped, not resolved. The earlier rule kept the body
+ * mentioning `Record<` and called that the conservative half; it is the opposite one. Keeping the
+ * `Record<` body maximises FINDINGS, and a finding produced by a name collision is a false one —
+ * `type Config = { host: string }` in `mail`, annotated onto a freeze there, resolved through
+ * `pwa`'s `type Config = Readonly<Record<RenderMode, …>>` and reported `mail` for a key type `mail`
+ * never wrote. 19 alias names are declared in more than one package `As of 2026-08-21` — `Row`,
+ * `JsonObject`, `RouteParams` among them — and three already carry a `Record<` body, so this is one
+ * closed-key alias away rather than hypothetical. Refusing an ambiguous name is silence; resolving
+ * it wrongly is a red gate no edit at the cited site can honestly clear.
+ */
+export function aliasTable(files: readonly SourceFile[]): ReadonlyMap<string, string> {
+  const aliases = new Map<string, string>();
+  const ambiguous = new Set<string>();
+  for (const file of files) {
+    const text = stripComments(file.text);
+    const masked = maskLiterals(file.text);
+    for (const match of text.matchAll(TYPE_ALIAS)) {
+      if (!isCode(masked, match.index, match[0] as string)) continue;
+      const body = (match[2] as string).trim();
+      const name = match[1] as string;
+      if (!followable(body)) continue;
+      const held = aliases.get(name);
+      if (held === undefined) aliases.set(name, body);
+      else if (held !== body) ambiguous.add(name);
+    }
+  }
+  for (const name of ambiguous) aliases.delete(name);
+  return aliases;
+}
+
+/**
+ * An annotation with every alias name it mentions replaced by that alias's body, repeatedly, so an
+ * indirection two hops deep still resolves. Bounded rather than run to a fixed point: an alias that
+ * mentions itself never settles.
+ */
+export function expandAliases(annotation: string, aliases: ReadonlyMap<string, string>): string {
+  let out = annotation;
+  for (let hop = 0; hop < ALIAS_HOPS; hop += 1) {
+    const next = out.replace(IDENTIFIER, (name) => aliases.get(name) ?? name);
+    if (next === out) break;
+    out = next;
+  }
+  return out;
+}
 
 /**
  * The first type argument of the OUTERMOST `Record<…>` in an annotation, by angle-bracket depth.
@@ -93,23 +178,34 @@ export const isOpenKey = (keyType: string): boolean =>
 /**
  * Every `Object.freeze` a file declares a `const` from, classified. Read as TEXT, deliberately not
  * with `tsc`: this runs in the `unit` step, where a type-checker is not available and would be a
- * second build of the whole graph.
+ * second build of the whole graph. Comments come out first, so an annotation carrying one is still
+ * readable; `maskLiterals` decides what is code, so a freeze quoted in a scaffold template is not.
  *
  * What it CANNOT see, and therefore what still needs review rather than a green check:
- *   - a `freeze` that is not the initialiser of a top-level `const` — a `return Object.freeze({…})`
- *     inside a factory, a nested `Object.freeze` in a property value, an indented declaration;
- *   - a type laundered through an alias: `const X: FrozenModes = Object.freeze({…})` where
- *     `FrozenModes = Readonly<Record<Mode, V>>` resolves to a closed key this scan cannot follow;
+ *   - a `freeze` that is not the initialiser of a `const` — a `return Object.freeze({…})` inside a
+ *     factory, a nested `Object.freeze` in a property value, a `let`;
  *   - `Object.freeze({…}) as Record<K, V>` — a cast, which loses freshness the same way;
+ *   - an alias declared outside the scanned tree, in ANOTHER package (the table is built per
+ *     package, so an alias reached by a cross-package import does not resolve), or declared twice
+ *     inside one package with two bodies (`aliasTable` refuses an ambiguous name);
+ *   - an alias whose body is an object type rather than a `Record` (`followable` refuses it) —
+ *     including a mapped type spelled by hand;
  *   - an interface annotation (`const c: Clock = Object.freeze({…})`), which also admits an extra
  *     property. Deliberately out of scope: an extra property on a config object is dead weight,
  *     where an extra ROW in a closed-key table is a lookup nothing can reach.
  * Each of those is silence, not a pass. The vacuity guard below is what keeps the silence from
  * becoming the whole answer.
  */
-export function scanFreezeSites(text: string, at: string): readonly FreezeSite[] {
+export function scanFreezeSites(
+  source: string,
+  at: string,
+  aliases: ReadonlyMap<string, string> = new Map(),
+): readonly FreezeSite[] {
+  const text = stripComments(source);
+  const masked = maskLiterals(source);
   const sites: FreezeSite[] = [];
   for (const match of text.matchAll(DECLARED_FREEZE)) {
+    if (!isCode(masked, match.index, match[0] as string)) continue;
     const name = match[1] as string;
     const annotation = match[2];
     const line = lineOf(text, match.index);
@@ -122,7 +218,8 @@ export function scanFreezeSites(text: string, at: string): readonly FreezeSite[]
       .slice(match.index + match[0].length)
       .trimStart()
       .startsWith('{');
-    const keyType = annotation === undefined ? undefined : recordKeyType(annotation);
+    const keyType =
+      annotation === undefined ? undefined : recordKeyType(expandAliases(annotation, aliases));
     if (annotation === undefined || keyType === undefined || !literal) {
       sites.push({ at, line, name, shape: 'unconstrained' });
       continue;
@@ -157,9 +254,18 @@ export interface FrozenReport {
  */
 export function checkFrozenRecords(files: readonly SourceFile[]): FrozenReport {
   const counts = { explicit: 0, 'annotated-closed': 0, 'annotated-open': 0, unconstrained: 0 };
+  const owned = new Map<string, SourceFile[]>();
+  for (const file of files) {
+    const list = owned.get(packageOf(file.at));
+    if (list === undefined) owned.set(packageOf(file.at), [file]);
+    else list.push(file);
+  }
+  const tables = new Map<string, ReadonlyMap<string, string>>();
+  for (const [pkg, list] of owned) tables.set(pkg, aliasTable(list));
   const findings: Finding[] = [];
   for (const file of files) {
-    for (const site of scanFreezeSites(file.text, file.at)) {
+    const aliases = tables.get(packageOf(file.at)) ?? new Map<string, string>();
+    for (const site of scanFreezeSites(file.text, file.at, aliases)) {
       counts[site.shape] += 1;
       if (site.shape === 'annotated-closed') findings.push(finding(site));
     }

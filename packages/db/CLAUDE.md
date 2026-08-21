@@ -32,13 +32,15 @@ itself. Keep both sides `function` declarations so hoisting covers the TDZ.
 **The three ambient scopes open through core's one lazy seam, and that is a build error rather than
 a convention, `As of 2026-08`.** `transaction.ts` (`TxState`), `attribution.ts` (the entity/op
 pair) and `expected-loop.ts` (the reason) each constructed a module-scope `AsyncLocalStorage` until
-#255. A bundler stubs `node:async_hooks` to `{}` — Bun's `target: 'browser'` emits
+issue #255 closed it. A bundler stubs `node:async_hooks` to `{}` — Bun's `target: 'browser'` emits
 `var { AsyncLocalStorage } = (() => ({}))` — so the `new` threw
 `TypeError: undefined is not a constructor` at module **evaluation**, before any app code ran, and
 took every importer of that file down with it. Through `asyncContext<T>(subject)` the module
 evaluates, `get()` answers `undefined` (in a browser nothing IS in flight, so that is the true
-answer) and `run()` throws `X_ASYNC_CONTEXT_UNAVAILABLE` naming the scope. The server pays nothing:
-`getStore()` before any `run()` answered `undefined` whether the storage existed or not.
+answer) and `run()` throws `X_ASYNC_CONTEXT_UNAVAILABLE` naming the scope. Deferring the
+construction changes nothing a server can observe: the storage is built on the first `get()` or
+`run()` rather than at module load, and `getStore()` outside a scope answers `undefined` either
+way — one object per scope, on first use, in place of one at module evaluation.
 `scripts/async-context-guard.ts` refuses a `new AsyncLocalStorage` — and the import that binds the
 class, aliased or namespaced — anywhere but `packages/core/src/async-context.ts`, and
 `scripts/async-context-guard.test.ts` runs it over the tree in the gate's `unit` step.

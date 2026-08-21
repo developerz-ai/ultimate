@@ -8,6 +8,7 @@ import {
   FixtureUnknownError,
   fixtureUnknown,
   hostOf,
+  islandMountMissing,
   NetworkRaceError,
   NetworkSealedError,
   TESTING_ERROR_CODES,
@@ -136,5 +137,50 @@ describe(testName('unit', 'the three matcher/eval failures name the call to edit
     expect(error.code).toBe('X_TEST_NETWORK_RACE');
     expect(error.cause).toBe('sealed network lost its original fetch mid-request');
     expect(error.fix).toContain('do not call unsealNetwork()');
+  });
+});
+
+/**
+ * The one fix in this file that has to be pasted into a file the framework did not write, so it is
+ * the one where an invented identifier costs the reader a compile error rather than a keystroke.
+ * `Props`, `Island` and `render` were all three, and the error already knows the answer to two of
+ * them: the exports the chunk DOES have are in its own cause.
+ */
+describe(testName('unit', 'X_TEST_ISLAND_NO_MOUNT pastes names that resolve'), () => {
+  test('the component in the paste is an export the chunk really has', () => {
+    const error = islandMountMissing('apps/web/site/counter.island.tsx', ['Counter', 'PROPS']);
+
+    expect(error.fix).toContain('<Counter {...props} />');
+    expect(error.fix).toContain('Parameters<typeof Counter>[0]');
+    // The import too: `render` is not a global, and a paste that assumes one is a second error.
+    expect(error.fix).toContain("import { render } from 'solid-js/web';");
+    expect(error.fix).toContain('"apps/web/site/counter.island.tsx"');
+    // The three names nothing in the reader's file declares.
+    expect(error.fix).not.toContain('<Island');
+    expect(error.fix).not.toContain(': Props');
+  });
+
+  test('a lowercase-only export is still preferred over an invented name', () => {
+    const error = islandMountMissing('apps/web/site/counter.island.tsx', ['counter']);
+
+    expect(error.fix).toContain('<counter {...props} />');
+  });
+
+  test('an export that is not an identifier is never pasted into JSX', () => {
+    // `export { x as 'a b' }` and `export default` are both legal ES and neither can be written as
+    // a JSX tag. A paste that emitted one would be a syntax error in the reader's file.
+    const error = islandMountMissing('apps/web/site/counter.island.tsx', ['default', 'a b']);
+
+    expect(error.fix).not.toContain('<default');
+    expect(error.fix).not.toContain('<a b');
+    expect(error.fix).toContain('x g island <name> --at apps/web/site');
+  });
+
+  test('a chunk exporting nothing at all names the generator, not a phantom component', () => {
+    const error = islandMountMissing('apps/web/site/counter.island.tsx', []);
+
+    expect(error.code).toBe('X_TEST_ISLAND_NO_MOUNT');
+    expect(error.fix).toContain('x g island <name> --at apps/web/site');
+    expect(error.cause).toContain('exports nothing');
   });
 });

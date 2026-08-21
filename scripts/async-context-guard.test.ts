@@ -4,13 +4,14 @@
 // so this needs no step of its own.
 
 import { describe, expect, test } from 'bun:test';
+import { join } from 'node:path';
 import {
   ASYNC_CONTEXT_SEAM,
   type AsyncStorageSite,
   asyncStorageFinding,
   checkAsyncStorage,
+  collectGuardedFiles,
 } from './async-context-guard';
-import { collectSourceFiles } from './boundaries';
 import { repoRoot } from './lib/run';
 
 const one = (source: string, path = 'packages/thing/src/scope.ts'): readonly AsyncStorageSite[] =>
@@ -60,12 +61,42 @@ export type Store = AsyncLocalStorage<string>;
     ]);
   });
 
-  test('its finding names the file, the line and a fix that is a call to paste', () => {
+  test('an app is source too — the rule does not stop at the package boundary', () => {
+    const sites = one(
+      "import { AsyncLocalStorage } from 'node:async_hooks';\nexport const s = new AsyncLocalStorage();",
+      'examples/dummy/apps/web/shared/scope.ts',
+    );
+    expect(kinds(sites)).toEqual(['binding:AsyncLocalStorage', 'construction:AsyncLocalStorage']);
+  });
+
+  test('its finding names the file, the line, the edit to make and a command to re-read', () => {
     const site = one('const store = new AsyncLocalStorage();')[0];
     const finding = asyncStorageFinding(site ?? expect.unreachable('no site was reported'));
     expect(finding.code).toBe('X_ASYNC_CONTEXT_UNAVAILABLE');
     expect(finding.at).toBe('packages/thing/src/scope.ts:1');
+    // The three halves of the fix line, each asserted: WHERE, WHAT, and the command that re-reads
+    // the tree once the edit is made. Prose alone passed the first of these and none of the rest.
+    expect(finding.fix).toContain('packages/thing/src/scope.ts:1');
     expect(finding.fix).toContain("asyncContext<T>('what the scope carries')");
+    expect(finding.fix).toContain('bun run async-context-guard --json');
+  });
+
+  /**
+   * The runnable half of the fix line, held to the repo rather than to a string: a `bun run <name>`
+   * naming a script `package.json` does not declare is the defect `scripts/test-fix-citations.ts`
+   * exists for, and that gate only reads citations beginning `x `.
+   */
+  test('and the command it names is a script this repo declares', async () => {
+    const raw: unknown = JSON.parse(await Bun.file(join(repoRoot(), 'package.json')).text());
+    const declared = new Set<string>();
+    if (typeof raw === 'object' && raw !== null && 'scripts' in raw) {
+      const scripts = raw.scripts;
+      if (typeof scripts === 'object' && scripts !== null) {
+        for (const name of Object.keys(scripts)) declared.add(name);
+      }
+    }
+    expect(declared.size).toBeGreaterThan(0);
+    expect(declared.has('async-context-guard')).toBe(true);
   });
 });
 
@@ -101,12 +132,16 @@ const storage = new AsyncLocalStorage<string>();
   });
 });
 
-describe('the framework tree', () => {
+describe('the whole tree, apps included', () => {
   test('holds exactly one AsyncLocalStorage, and it is the seam', async () => {
-    const files = await collectSourceFiles(repoRoot());
-    // Non-vacuity: the collector must actually be reading the packages this rule is about.
+    const files = await collectGuardedFiles(repoRoot());
+    // Non-vacuity, in three parts: the collector must be reading the packages this rule is about,
+    // AND both tracked apps — an app that constructs one is the gap this scan was widened to close,
+    // and a green run over a set that never contained an app file would report the same "ok".
     expect(files.length).toBeGreaterThan(1000);
     expect(files.some((file) => file.path === 'packages/db/src/transaction.ts')).toBe(true);
+    expect(files.some((file) => file.path.startsWith('examples/dummy/apps/'))).toBe(true);
+    expect(files.some((file) => file.path.startsWith('dummy/social-media-clone/apps/'))).toBe(true);
     expect(checkAsyncStorage(files).map(asyncStorageFinding)).toEqual([]);
   }, 60_000);
 
@@ -116,7 +151,7 @@ describe('the framework tree', () => {
    * means the tree is clean only if this one is red.
    */
   test('would report the seam`s own construction from any other path', async () => {
-    const files = await collectSourceFiles(repoRoot());
+    const files = await collectGuardedFiles(repoRoot());
     const seam =
       files.find((file) => file.path === ASYNC_CONTEXT_SEAM) ??
       expect.unreachable(`${ASYNC_CONTEXT_SEAM} is not in the collected source set`);

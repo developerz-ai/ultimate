@@ -6,7 +6,8 @@
 // of that package with it. Core fixed its own three sites behind a lazy seam and nothing watched
 // the other six (#244, #255), which is the definition of a convention rather than a rule.
 //
-// WHAT IT SEES, over comment-stripped source:
+// WHAT IT SEES, over comment-stripped source — every package, every script, and BOTH tracked
+// apps, because an app's modules bundle for the browser exactly as a package's do:
 //   - `new AsyncLocalStorage`, `new ALS` where `ALS` is an alias bound by an import of
 //     `node:async_hooks`, and `new hooks.AsyncLocalStorage` through a namespace import;
 //   - the IMPORT itself — any binding of the class, aliased or namespaced, outside the seam.
@@ -15,15 +16,16 @@
 //
 // WHAT IT CANNOT SEE, honestly: `await import('node:async_hooks')` and any other runtime
 // resolution; the constructor stored in a variable or returned by a factory and `new`ed off that
-// (`const C = hooks.AsyncLocalStorage; new C()`); a construction inside a `.test.ts`, which is
-// skipped because a test is not in anybody's bundle and this file's own fixture is one; and
-// anything outside `collectSourceFiles`'s reach — `packages/*/src`, `packages/*/e2e` and
-// `scripts/`, so neither tracked app is read. A floor, not a proof.
+// (`const C = hooks.AsyncLocalStorage; new C()`); and a construction inside a `.test.ts`, which is
+// skipped because a test is not in anybody's bundle and this file's own fixture is one. A floor,
+// not a proof — and the two runtime forms are closed by `scripts/browser-barrel.test.ts`, which
+// evaluates the built chunk instead of reading it.
 //
 //   bun run scripts/async-context-guard.ts [--json]
 
+import { join } from 'node:path';
 import { stripComments } from '@ultimat3/cli';
-import { collectSourceFiles, type SourceFile } from './boundaries';
+import { APP_ROOTS, collectSourceFiles, type SourceFile } from './boundaries';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -131,7 +133,13 @@ export function checkAsyncStorage(files: readonly SourceFile[]): readonly AsyncS
   return sites;
 }
 
-const FIX = `open the scope through the seam instead — import { asyncContext } from '@ultimat3/core', then const scope = asyncContext<T>('what the scope carries'), scope.get() and scope.run(value, fn)`;
+/**
+ * The edit, at the file and line that needs it, plus the command that re-reads the tree once it is
+ * made. No command can perform this repair — the replacement is a scope whose subject only the
+ * author of the module knows — so it is the house's other legal shape: an edit naming a file.
+ */
+const fixFor = (site: AsyncStorageSite): string =>
+  `edit ${site.file}:${site.line} — delete ${site.name} and open the scope through the seam instead: import { asyncContext } from '@ultimat3/core', then const scope = asyncContext<T>('what the scope carries'), scope.get() and scope.run(value, fn); re-read the tree with: bun run async-context-guard --json`;
 
 export function asyncStorageFinding(site: AsyncStorageSite): Finding {
   const cause =
@@ -143,20 +151,47 @@ export function asyncStorageFinding(site: AsyncStorageSite): Finding {
     // async_hooks. Reused rather than minted so the guard and the throw name one fact.
     code: 'X_ASYNC_CONTEXT_UNAVAILABLE',
     cause,
-    fix: FIX,
+    fix: fixFor(site),
     at: `${site.file}:${site.line}`,
   };
 }
 
+/**
+ * `collectSourceFiles` reaches a package's `src` and `e2e` plus `scripts/` and stops there, so an
+ * app could construct its own and pass a rule stated repo-wide. A tracked app is source in
+ * this repo and its modules bundle for the browser exactly as a package's do. Same two roots
+ * `collectSharedFiles` in `scripts/boundaries.ts` already walks, so an app added under either
+ * enters this rule by existing rather than by being listed.
+ */
+const APP_SOURCES = `${APP_ROOTS}/*/**/*.{ts,tsx}`;
+
+/** Built output and installed dependencies are nobody's source, and `node_modules` symlinks loop. */
+const NOT_SOURCE = /(?:^|\/)(?:node_modules|dist|\.x)\//;
+
+async function collectAppFiles(root: string): Promise<readonly SourceFile[]> {
+  const files: SourceFile[] = [];
+  for await (const path of new Bun.Glob(APP_SOURCES).scan({ cwd: root, absolute: false })) {
+    const posix = path.split('\\').join('/');
+    if (NOT_SOURCE.test(posix)) continue;
+    files.push({ path: posix, source: await Bun.file(join(root, posix)).text() });
+  }
+  return files;
+}
+
+/** Everything the rule reads: the framework's own source AND every app this repo tracks. */
+export async function collectGuardedFiles(root: string): Promise<readonly SourceFile[]> {
+  return [...(await collectSourceFiles(root)), ...(await collectAppFiles(root))];
+}
+
 /** The rule over the real tree — what the test and the command both ask. */
 export async function asyncStorageSites(root: string): Promise<readonly AsyncStorageSite[]> {
-  return checkAsyncStorage(await collectSourceFiles(root));
+  return checkAsyncStorage(await collectGuardedFiles(root));
 }
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
-  const files = await collectSourceFiles(root);
+  const files = await collectGuardedFiles(root);
   const sites = checkAsyncStorage(files);
   report(
     {

@@ -6,12 +6,14 @@ import { describe, expect, test } from 'bun:test';
 import type { ChangelogGapKind } from './changelog-check';
 import {
   BREAKING_ENTRY,
+  CHANGELOG_PATH,
   changelogFinding,
   checkChangelog,
   parseChangelog,
   parseDerivedTotal,
   parseMigrationTable,
   taggedVersion,
+  UPGRADING_PATH,
 } from './changelog-check';
 import { repoRoot } from './lib/run';
 
@@ -202,6 +204,7 @@ describe('findings', () => {
       'empty',
       'unreleased-breaking',
       'count',
+      'unknown-section',
       'missing-row',
       'total',
       'unscanned',
@@ -214,6 +217,38 @@ describe('findings', () => {
     expect(
       changelogFinding({ kind: 'unreleased-breaking', at: 'CHANGELOG.md:9', detail: 'd' }).fix,
     ).toContain('CHANGELOG.md');
+  });
+
+  // Axiom 4, on the one line the reader acts on. `missing-row` fires when NO row exists, so
+  // "set that count" names an edit that has no subject — there is no count on the page to set.
+  test('the missing-row fix says to add the row, because there is no count to set', () => {
+    const third = GOOD_CHANGELOG.replace(
+      '## 2.0.0 - 2026-08-17',
+      '## 3.0.0 - 2026-08-19\n\nA major.\n\n## 2.0.0 - 2026-08-17',
+    );
+    const gap = checkChangelog({ changelog: third, upgrading: GOOD_UPGRADING }).find(
+      (one) => one.kind === 'missing-row',
+    );
+    expect(gap).toBeDefined();
+    const finding = changelogFinding(gap ?? { kind: 'missing-row', at: '', detail: '' });
+    expect(finding.code).toBe('X_DOC_MIGRATION_COUNT_STALE');
+    expect(finding.fix).toContain(UPGRADING_PATH);
+    expect(finding.fix).toStartWith('add a row');
+    expect(finding.fix).not.toContain('set that count');
+  });
+
+  // The same defect one row along: the row exists and points at a section that does not, so the
+  // count it claims cannot be read from anywhere. The edit is to the row or to CHANGELOG.md.
+  test('a row naming a section CHANGELOG.md does not have is not told to set a count', () => {
+    const finding = checkChangelog({
+      changelog: GOOD_CHANGELOG,
+      upgrading: GOOD_UPGRADING.replace('the `2.0.0` section', 'the `9.9.9` section'),
+    })
+      .map(changelogFinding)
+      .find((one) => one.cause.includes('does not have'));
+    expect(finding).toBeDefined();
+    expect(finding?.fix).not.toContain('set that count');
+    expect(finding?.fix).toContain(CHANGELOG_PATH);
   });
 
   test('the unscanned kind names the file to edit, not the file it read', () => {

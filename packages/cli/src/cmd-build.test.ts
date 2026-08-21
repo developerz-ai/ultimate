@@ -18,9 +18,11 @@ import { planNewApp } from './cmd-new';
 import type { CommandContext } from './command';
 import type { ExecResult, Runner } from './exec';
 import type { CommandResult } from './output';
-import { renderJson } from './output';
+import { renderHuman, renderJson } from './output';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
+import type { StaticReport } from './static-report';
+import { STATIC_REPORT_FILE, writeStaticReport } from './static-report';
 import type { ThrownShape } from './thrown-by';
 import { thrownBy } from './thrown-by';
 
@@ -218,6 +220,130 @@ test('--out overrides where a binary lands, and the default is .x/app', async ()
       buildContext(['build', '--target', 'binary', '--out', '/tmp/x-build-out'], dir, b),
     );
     expect(overridden.at(-1)).toContain('/tmp/x-build-out');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 60_000);
+
+// #242: `x build --target static` wrote a partial site and said nothing about the difference.
+// `.x/static/` looked complete, a screenshot tool was pointed at it, and "the island did not mount"
+// was filed against a route that had never been in the artifact. Both renderers now say which
+// routes are in it and why the rest are not.
+
+const REPORT: StaticReport = {
+  target: 'static',
+  out: '/app/.x/static',
+  buildId: 'b1',
+  emitted: [
+    { route: '/', path: '/', file: 'index.html' },
+    { route: '/offline', path: '/offline', file: 'offline/index.html' },
+  ],
+  skipped: [
+    {
+      route: '/feed',
+      surface: 'app',
+      render: 'stream',
+      reason: 'surface-forbids-static',
+      why: 'app/ surface — server-rendered, not prerendered',
+    },
+    {
+      route: '/pricing',
+      surface: 'site',
+      render: 'isr',
+      reason: 'mode-revalidates',
+      why: "render: 'isr' regenerates on a tag or ttl",
+    },
+  ],
+};
+
+test('a static build reports emitted and skipped, with a why per skipped route', () => {
+  const built = buildResult({
+    target: 'static',
+    artifact: '/app/.x/static',
+    command: ['bun', 'run', 'prerender.ts'],
+    result: { ...exec(true), command: ['bun', 'run', 'prerender.ts'] },
+    report: REPORT,
+  });
+  const payload = JSON.parse(renderJson(built)) as {
+    data: { emitted?: readonly { route: string }[]; skipped?: readonly { why: string }[] };
+  };
+  expect(payload.data.emitted?.map((page) => page.route)).toEqual(['/', '/offline']);
+  expect(payload.data.skipped?.map((route) => route.why)).toEqual([
+    'app/ surface — server-rendered, not prerendered',
+    "render: 'isr' regenerates on a tag or ttl",
+  ]);
+});
+
+test('the HUMAN output says it too — a silent terminal is the same bug in a different costume', () => {
+  const text = renderHuman(
+    buildResult({
+      target: 'static',
+      artifact: '/app/.x/static',
+      command: ['bun', 'run', 'prerender.ts'],
+      result: { ...exec(true), command: ['bun', 'run', 'prerender.ts'] },
+      report: REPORT,
+    }),
+  );
+  // The route that produced the false bug report, and the reason it was never in the directory.
+  expect(text).toContain('/feed');
+  expect(text).toContain('app/ surface');
+  expect(text).toContain('index.html');
+  expect(text).toContain('built static');
+});
+
+test('a target with no inventory carries no emitted/skipped keys at all', () => {
+  const payload = JSON.parse(
+    renderJson(
+      buildResult({
+        target: 'docker',
+        artifact: 'app:dev',
+        command: ['docker', 'build'],
+        result: exec(true),
+      }),
+    ),
+  ) as { data: Record<string, unknown> };
+  expect('emitted' in payload.data).toBe(false);
+  expect('skipped' in payload.data).toBe(false);
+});
+
+test('a PREVIOUS build’s inventory is never reported as this one’s', async () => {
+  const dir = await buildRoot();
+  try {
+    await Bun.write(join(dir, 'apps/web/prerender.ts'), 'export {};\n');
+    await writeStaticReport(dir, { ...REPORT, buildId: 'stale' });
+    // This runner spawns nothing real, so it writes no report — the stale one must not survive.
+    const { runner } = scriptedRunner();
+    const result = await buildCommand.run(
+      buildContext(['build', '--target', 'static'], dir, runner),
+    );
+    expect(result.ok).toBe(true);
+    expect((result.data as Record<string, unknown>)['emitted']).toBeUndefined();
+    expect(await Bun.file(join(dir, STATIC_REPORT_FILE)).exists()).toBe(false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}, 60_000);
+
+test('x build --target static reads the inventory the prerenderer just wrote', async () => {
+  const dir = await buildRoot();
+  try {
+    await Bun.write(join(dir, 'apps/web/prerender.ts'), 'export {};\n');
+    const runner: Runner = async (command) => {
+      if (command.includes(join(dir, 'apps/web/prerender.ts'))) {
+        await writeStaticReport(dir, { ...REPORT, out: join(dir, '.x', 'static') });
+      }
+      return { command, code: 0, ok: true, stdout: '', stderr: '', durationMs: 3 };
+    };
+    const result = await buildCommand.run(
+      buildContext(['build', '--target', 'static'], dir, runner),
+    );
+    const data = result.data as { skipped?: readonly { route: string; reason: string }[] };
+    expect(data.skipped?.map((route) => route.route)).toEqual(['/feed', '/pricing']);
+    // Two causes, kept apart: an app/ route and an isr site/ route are not skipped for one reason.
+    expect(data.skipped?.map((route) => route.reason)).toEqual([
+      'surface-forbids-static',
+      'mode-revalidates',
+    ]);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -19,6 +19,14 @@ export type Surface = 'site' | 'app';
  * that was absent from `x routes`, from the manifest and from `budgets`. Ship the mode that works.
  */
 const RENDER: Record<Surface, string> = { site: 'isr', app: 'ssr' };
+/**
+ * `app` is `'visible'` on a page the generator writes with no island, and that is not an oversight.
+ * A declared strategy costs nothing when there is nothing to hydrate — `hydrateRuntime` is emitted
+ * per island DIRECTIVE and answers `''` for a page with none (`packages/render/src/hydrate.ts`), so
+ * `x routes` reads `visible` while the document ships 0 bytes. What it buys is that adding the
+ * first island is one edit: a declared `'never'` beside an island is `X_ISLAND_NOT_HYDRATED`, which
+ * `defineRoute` refuses on purpose, so the scaffold would break at the moment it is first used.
+ */
 const HYDRATE: Record<Surface, string> = { site: 'never', app: 'visible' };
 const OFFLINE: Record<Surface, string> = { site: 'precache', app: 'runtime' };
 /**
@@ -66,7 +74,12 @@ export const routeParams = (path: string): readonly string[] =>
     return name === undefined ? [] : [name];
   });
 
-const routeDir = (surface: Surface, path: string): string =>
+/**
+ * Where the page lands. Exported because an island's `src` is resolved relative to the PAGE, and
+ * only this function knows where `x g resource`'s page went — a second copy of the formula in the
+ * resource generator is how the specifier it prints stops matching the file it writes.
+ */
+export const routeDir = (surface: Surface, path: string): string =>
   `apps/web/${surface}/${segmentsOf(path).join('/')}`;
 
 /**

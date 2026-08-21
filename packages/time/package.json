@@ -4,6 +4,9 @@
   "description": "UTC instants, DST-correct zone math, cron, durations and Intl formatting with an explicit timezone",
   "license": "MIT",
   "type": "module",
+  "sideEffects": [
+    "./src/errors.ts"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/developerz-ai/ultimate.git",

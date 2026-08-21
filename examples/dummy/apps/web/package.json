@@ -31,6 +31,7 @@
     "@ultimat3/core": "6.0.0",
     "@ultimat3/entity": "6.0.0",
     "@ultimat3/flags": "6.0.0",
+    "@ultimat3/http": "6.0.0",
     "@ultimat3/jobs": "6.0.0",
     "@ultimat3/mail": "6.0.0",
     "@ultimat3/policy": "6.0.0",

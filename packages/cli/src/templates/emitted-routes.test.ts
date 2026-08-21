@@ -10,6 +10,7 @@ import {
   assertModeInvariants,
   defineRoute,
   HYDRATE_STRATEGIES,
+  hydrateRuntimeBytes,
   OFFLINE_STRATEGIES,
   RENDER_MODES,
 } from '@ultimat3/render';
@@ -89,6 +90,24 @@ describe('unit · every generated route is one the framework will register', () 
     // The hydrate branch above skips an undeclared one, so a `hydrate` regex that stopped matching
     // everywhere would turn that branch into a check that never runs. At least one must match.
     expect(routes.some((route) => /\bhydrate: '/.test(route.source))).toBe(true);
+  });
+
+  /**
+   * The claim `route.ts`'s `HYDRATE` table and `scaffold-app.ts`'s admin page both state in prose,
+   * RUN. Every generated `app/` page declares a strategy (`visible`, `idle`) and declares no
+   * island, which reads like a runtime shipped for nothing — and is not: `hydrateRuntime` is
+   * emitted per island DIRECTIVE, so a page with none ships `''` whatever it declared. If that ever
+   * stops holding, every scaffolded app pays for an island it does not have, on its first page.
+   */
+  test('a generated hydrate strategy on an island-free page costs no bytes', () => {
+    const declaring = emittedRoutes().filter((route) => /\bhydrate: '(?!never)/.test(route.source));
+    // Or this checks nothing: `never` pages are not the subject and would pass vacuously.
+    expect(declaring.length).toBeGreaterThan(0);
+    for (const route of declaring) {
+      // A page that DOES declare an island has earned its strategy and is not this test's subject.
+      if (route.source.includes('island({')) continue;
+      expect(hydrateRuntimeBytes([])).toBe(0);
+    }
   });
 
   test('no generated defineRoute throws X_ROUTE_MODE_INVALID', () => {

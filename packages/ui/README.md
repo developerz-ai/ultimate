@@ -186,7 +186,7 @@ to render on the server.**
 | | Server render | Client render |
 |---|---|---|
 | The renderer | `@ultimat3/render`'s inert JSX factory — a component is a plain function, called once | Solid, with a reactive graph |
-| The runtime | `INERT_SOLID_RUNTIME`, handed out automatically: signals hold, memos recompute on read, effects never run | the real one, registered once: `setSolidRuntime(await import('solid-js'))` |
+| The runtime | `INERT_SOLID_RUNTIME`, handed out automatically: signals hold, memos recompute on read, effects never run | the real one, registered once: `setSolidRuntime(solidRuntime)`, from `import * as solidRuntime from 'solid-js'` |
 | Where `useUi()` reads | the request — `currentLocale()`, `currentTimeZone()`, `useI18n()` | `<UiProvider>`, through Solid's context |
 | `<UiProvider>` | **throws** `X_UI_RUNTIME_MISSING` | the one injection point |
 
@@ -220,19 +220,74 @@ import '../../shared/global'; // `shared/global.scss` is the app's one `@use '@u
 ```
 
 ```tsx
-// A client entry — an island, or a hydrated app shell. Both lines, in this order, once.
+// A client entry — an island's `mount()`, or a hydrated app shell. In this order, once.
+import { createTranslator } from '@ultimat3/i18n';
 import { setSolidRuntime, UiProvider } from '@ultimat3/ui';
+import type { JSX } from 'solid-js';
+import * as solidRuntime from 'solid-js';
+import { render } from 'solid-js/web';
 
-setSolidRuntime(await import('solid-js'));
+interface Props {
+  readonly locale: string;
+  readonly timeZone: string;
+  readonly currency: string;
+  /** The `ui.*` keys this tree renders, resolved on the server. A catalog crosses the seam as
+   *  JSON; a `Translator` is a function and cannot. */
+  readonly strings: Readonly<Record<string, string>>;
+  readonly tree: JSX.Element;
+}
 
-<UiProvider locale="ar-EG" timeZone="Africa/Cairo" currency="EGP" t={t}>
-  {tree}
-</UiProvider>
+export function mount(el: HTMLElement, props: Props): void {
+  // NOT `await import('solid-js')`: the chunk already carries Solid statically, so the await buys
+  // no bytes and makes `mount` async — and the hydration runtime calls it synchronously.
+  setSolidRuntime(solidRuntime);
+  el.textContent = ''; // Solid's `render` APPENDS; the server's shell would stay above this one.
+  render(
+    () => (
+      <UiProvider
+        locale={props.locale}
+        timeZone={props.timeZone}
+        currency={props.currency}
+        t={createTranslator(props.strings, props.locale)}
+      >
+        {props.tree}
+      </UiProvider>
+    ),
+    el,
+  );
+}
 ```
 
+**The prop is `t`, it takes a `Translator`, and omitting it is not neutral.** `<UiProvider>` with
+no `t` falls back to `fallbackTranslator(locale)` — `createTranslator({}, locale)`, an **empty**
+catalog — so every built-in string in the tree renders its key: `<Dialog>`'s close button reads
+`⟦ui.close⟧`, `<Field>`'s marker `⟦ui.required⟧`. The keys are `UI_KEYS`, and they live in the
+framework catalog the SERVER has registered; a browser chunk has none, which is why
+`translatorFor(locale)` on the client is the same empty answer wearing a better name. Send the
+subset the island renders and build the translator from it. `t` itself — `@ultimat3/i18n`'s bare
+exported function — is not a `Translator` and is `TS2739` in this position.
+
+An island's own copy is a different thing and stays a plain prop: it arrives already translated,
+as text, because `t()`'s catalog does not cross the seam and neither does a callback.
+
 `Field` owns the ids, so `aria-describedby` / `aria-invalid` can never drift from
-what is rendered. `UiProvider` sets `lang` + `dir` on `<html>`; nothing else is
-needed to make that form correct in Arabic.
+what is rendered. `UiProvider` sets `lang` + `dir` on `<html>` from `locale`, so
+`ar-EG` needs no second stylesheet and no second component.
+
+**An island pays for the barrel, not for the component it named.** Measured through
+`buildIslands` — minified, production Solid, `As of 2026-08-21`:
+
+| An island that imports | Chunk |
+|---|---|
+| nothing | 52 B |
+| `setSolidRuntime` alone | 5.7 kB |
+| `<UiProvider>` + one `<Button>` | 49.0 kB, of which Solid's own runtime is 12.2 kB |
+| `<UiProvider>` + `<Form>` + `<Input>` + `<Button>` | 54.8 kB |
+
+There are no component subpath exports, so `import { Button }` reaches the whole index —
+issue **#275**. `@ultimat3/ui/icons/*` is the one part of the package already shaped the
+other way, and is what the components want. Budget an island against these numbers, not
+against the component's own source.
 
 ## `<Text>` and `<Image>`
 

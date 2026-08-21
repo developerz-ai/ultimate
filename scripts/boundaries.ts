@@ -301,11 +301,19 @@ export function sharedLeafFindingFor(violation: SharedLeafViolation): Finding {
 
 /** Tests are excluded, as they are in `checkAppBoundaries`: a test is never bundled, and the leaf
  * rule exists to keep bundle graphs apart (axiom 6). */
+/**
+ * The two roots this repo tracks an app under. One fact, stated once: `scripts/async-context-guard.ts`
+ * asks the same question over the same roots, and an app added under either should enter both rules
+ * by existing rather than by someone remembering a second glob.
+ *
+ * The demo app under `dummy/` is the one CI publishes an image for on every push to main, and the
+ * header's reason for checking these rules here — that the app gate runs advisory-only — applies to
+ * it verbatim. Its 8 `shared/` modules were checked by nothing.
+ */
+export const APP_ROOTS = '{examples,dummy}';
+
 export async function collectSharedFiles(root: string): Promise<readonly SourceFile[]> {
-  // `{examples,dummy}`: the demo app under `dummy/` is the one CI publishes an image for on every
-  // push to main, and the header's reason for checking the rule here — that the app gate runs
-  // advisory-only — applies to it verbatim. Its 8 `shared/` modules were checked by nothing.
-  const files = await readFiles(root, '{examples,dummy}/*/apps/*/shared/**/*.{ts,tsx}');
+  const files = await readFiles(root, `${APP_ROOTS}/*/apps/*/shared/**/*.{ts,tsx}`);
   return files.filter((file) => !file.path.includes('.test.'));
 }
 

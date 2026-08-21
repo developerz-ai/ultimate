@@ -44,7 +44,7 @@ export const README_FENCE_BACKLOG: Readonly<Record<string, number>> = {
   storage: 3,
   testing: 6,
   time: 1,
-  ui: 5,
+  ui: 4,
 };
 
 /** What this package is allowed to have failing today. Absent means zero: a new package's

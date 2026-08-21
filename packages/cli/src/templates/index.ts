@@ -30,6 +30,7 @@ export type { QueryOptions } from './query';
 export { queryFiles } from './query';
 export type { ResourceOptions } from './resource';
 export { resourceFiles } from './resource';
+export { formIslandFiles } from './resource-form-island';
 export type { RouteOptions, Surface } from './route';
 export { routeFiles } from './route';
 export { appFiles } from './scaffold-app';

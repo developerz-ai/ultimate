@@ -9,10 +9,19 @@ import { INERT_SOLID_RUNTIME } from './inert-runtime';
 export type Accessor<T> = () => T;
 export type Setter<T> = (next: T) => void;
 
+/**
+ * `children` is REQUIRED, and that one keyword is what makes `setSolidRuntime(solidRuntime)`
+ * compile at all. Solid's own `ContextProviderComponent` takes `FlowProps`, whose `children` is
+ * required, and a function taking `children?` is not assignable to one taking `children` — so
+ * `typeof import('solid-js')` did not satisfy `SolidRuntime` and the registration this package
+ * documents was a type error nobody had ever compiled: it had zero non-test callers (issue #246),
+ * and every test passed a hand-written fake that matched the declaration instead of the runtime.
+ * `JSX.Element` already includes `undefined`, so a provider with no children still type-checks.
+ */
 export interface SolidContext<T> {
   readonly id: symbol;
   readonly defaultValue: T;
-  readonly Provider: (props: { value: T; children?: JSX.Element }) => JSX.Element;
+  readonly Provider: (props: { value: T; children: JSX.Element }) => JSX.Element;
 }
 
 /** The exact slice of solid-js the design system touches. */
@@ -56,9 +65,16 @@ function hasDom(): boolean {
 export function solid(): SolidRuntime {
   if (runtime !== null) return runtime;
   if (hasDom()) {
+    // Two lines to paste, and both are real: `x g resource` writes exactly them into the slice's
+    // `*-form.island.tsx`. The line this used to hand out was `setSolidRuntime(await
+    // import('solid-js'))`, which makes `mount` ASYNC for nothing — an island chunk already
+    // carries Solid statically, because the same file imports `render` from `solid-js/web`.
     throw runtimeMissingError(
       'a registered Solid runtime',
-      "add setSolidRuntime(await import('solid-js')) at the top of your *.island.tsx's mount() — a server render needs none",
+      // ONE literal, never a concatenation: `fix-scan.ts` reads a single literal in this position
+      // and counts anything else `unreadable`, so a fix split across `+` is a fix the gate stops
+      // checking.
+      "paste `import * as solidRuntime from 'solid-js';` at the top of your *.island.tsx and `setSolidRuntime(solidRuntime);` as the first line of its mount(), above render() — a server render needs none",
     );
   }
   return INERT_SOLID_RUNTIME;

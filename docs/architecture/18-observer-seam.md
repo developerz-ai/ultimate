@@ -110,8 +110,10 @@ Neither constructs an `AsyncLocalStorage`. Both open through `asyncContext<T>(su
 module-scope `new` threw `TypeError: undefined is not a constructor` at module EVALUATION and every
 importer of `@ultimat3/db` died before a line of app code ran. Now the module evaluates, `get()`
 answers `undefined` — nothing is in flight in a browser, which is TRUE — and `run()` throws
-`X_ASYNC_CONTEXT_UNAVAILABLE`, naming the scope that could not be opened. The server pays nothing:
-`getStore()` before any `run()` answers `undefined` whether the storage was ever constructed or not.
+`X_ASYNC_CONTEXT_UNAVAILABLE`, naming the scope that could not be opened. The server saves no
+allocation — `open()` runs on a read as well as a write, so the first `get()` constructs the store
+just as `run()` does. What the laziness costs is nothing observable: `getStore()` outside a scope
+answers `undefined` whether the storage was ever constructed or not.
 
 **A build error, not a convention.** `scripts/async-context-guard.ts` refuses a
 `new AsyncLocalStorage` — and the import that binds the class, aliased or namespaced — anywhere but

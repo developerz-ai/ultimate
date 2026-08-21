@@ -177,6 +177,13 @@ export type { DeclaredFlag } from './flag-reads';
 export { checkFlagReads, declaredFlags, readsFlag } from './flag-reads';
 export type { Guard } from './guards';
 export { findingProblem, GUARD_DIR, guardFindings, guardPaths } from './guards';
+// The island bundler, and only its entry point. An island is the one module Ultimate ships to a
+// browser, so an app has to be able to build one to TEST one — `mountIsland` from
+// `@ultimat3/testing` takes this function as its `build` parameter (issue #260). `discoverIslands`,
+// `islandBundle`, `writeIslands`, `ISLAND_BASE_PATH` and `ISLAND_GLOB` stay internal: they are
+// `x build`'s and `x dev`'s wiring, and every name here is a semver promise forever.
+export type { IslandBundle, IslandChunk } from './island-bundle';
+export { buildIslands } from './island-bundle';
 export type { DrainFailure, DrainOutcome, DrainSkip } from './jobs-drain';
 export { drainJobs } from './jobs-drain';
 export type { JobsListFilter, JobsListResult } from './jobs-report';
@@ -235,6 +242,24 @@ export {
   isVendored,
   SOURCE_GLOBS,
 } from './source-files';
+export type {
+  EmittedPage,
+  RouteFacts,
+  SkippedRoute,
+  SkipReason,
+  StaticReport,
+} from './static-report';
+export {
+  parseStaticReport,
+  readStaticReport,
+  removeStaticReport,
+  renderStaticReport,
+  SKIP_REASONS,
+  STATIC_REPORT_FILE,
+  skippedRoute,
+  skipReasonFor,
+  writeStaticReport,
+} from './static-report';
 export type { TestCounts } from './test-counts';
 export { countsOf } from './test-counts';
 export type { TestFile } from './test-select';

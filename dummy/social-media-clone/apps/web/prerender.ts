@@ -14,6 +14,6 @@ const origin = Bun.env.SITE_ORIGIN;
 if (import.meta.main) {
   const report = await prerenderSite({ root, out, ...(origin === undefined ? {} : { origin }) });
   await Bun.stdout.write(
-    `${JSON.stringify({ ok: true, out: report.out, pages: report.pages.length, skipped: report.skipped })}\n`,
+    `${JSON.stringify({ ok: true, out: report.out, emitted: report.pages, skipped: report.skipped, report: report.report })}\n`,
   );
 }

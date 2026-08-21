@@ -18,12 +18,14 @@ import {
 import { createIslandCollector, islandModuleIds } from './island-collector';
 import { ISLAND_PROPS_MAX_BYTES } from './island-props';
 import type { Island } from './islands';
-import { assertBudget, checkBudget, routeJsBytes } from './islands';
+import { assertBudget, checkBudget, parseByteBudget, routeJsBytes } from './islands';
 import { h } from './jsx';
+import { DEFAULT_ISLAND_JS_BYTES, defaultIslandBudget } from './modes';
 import { clearRoutes, registerRoute } from './registry';
 import { renderToHtml } from './render-html';
 import type { RouteMetaFn } from './route';
 import { defineRoute } from './route';
+import { SURFACE_SPECS } from './surfaces';
 
 const meta = (() => ({ title: 'Pricing', description: 'd'.repeat(60) })) as unknown as RouteMetaFn;
 
@@ -354,9 +356,11 @@ describe('island · declaring one is the whole declaration', () => {
     expect(config.hydrate).toBe('interaction');
     expect(config.islands.map((spec) => spec.moduleId)).toEqual(['contact-modal']);
 
-    // 2. the ceiling the route never stated — relative to site/'s 0kb baseline
+    // 2. the ceiling the route never stated — site/'s 0kb baseline plus the island allowance,
+    // whose SIZE is `modes.ts`'s business and whose application here is this test's
     const entry = registerRoute({ file: PAGE, config });
-    expect(entry.config.budget.js).toBe('4kb');
+    expect(entry.config.budget.js).toBe(defaultIslandBudget('site'));
+    expect(parseByteBudget(entry.config.budget.js)).toBe(DEFAULT_ISLAND_JS_BYTES);
     expect(entry.islands).toEqual(['contact-modal']);
 
     // 3. it renders, and the browser is told to boot it
@@ -422,13 +426,21 @@ describe('island · declaring one is the whole declaration', () => {
   test('the derived ceiling is above the surface baseline, not a number site/ and app/ share', () => {
     island({ src: `./contact-modal${ISLAND_EXTENSION}` });
     const config = defineRoute({ render: 'stream', offline: 'runtime', meta });
-    // app/ starts at 14kb of framework runtime; 4kb would be a budget the route fails on arrival.
+    // app/ ships 14kb of framework runtime before any island opts in, so the allowance ALONE
+    // would be a ceiling every app/ route fails on arrival.
     const entry = registerRoute({
       file: 'apps/web/app/dashboard/page.tsx',
       config,
       suspenseBoundaries: 1,
     });
-    expect(entry.config.budget.js).toBe('18kb');
+    expect(entry.config.budget.js).toBe(defaultIslandBudget('app'));
+    // …and the two surfaces do not share it: the gap IS app/'s baseline. Derived, never restated —
+    // `'18kb'` made one correction of `DEFAULT_ISLAND_JS_BYTES` (`modes.test.ts` owns its value)
+    // a two-file edit, and this file was never about the number.
+    expect(parseByteBudget(entry.config.budget.js)).toBe(
+      (parseByteBudget(defaultIslandBudget('site')) ?? 0) + SURFACE_SPECS.app.jsBaselineBytes,
+    );
+    expect(SURFACE_SPECS.app.jsBaselineBytes).toBeGreaterThan(0);
   });
 
   test('islands drain per route: the next page is not billed for this one', () => {

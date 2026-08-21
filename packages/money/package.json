@@ -4,6 +4,9 @@
   "description": "Integer minor units with an attached currency: arithmetic, allocation, rounding, Intl formatting",
   "license": "MIT",
   "type": "module",
+  "sideEffects": [
+    "./src/errors.ts"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/developerz-ai/ultimate.git",

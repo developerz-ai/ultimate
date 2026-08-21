@@ -185,6 +185,41 @@ describe('promoteUnreleased', () => {
     );
   });
 
+  // 93443aeb is a human writing a version's section by hand after a botched release, which is the
+  // shape this refuses: the section for `version` is already on the page, so promotion would put a
+  // SECOND one above it — the two-headings-per-version defect the promotion rewrite was for, one
+  // step further along. Refused here, so it happens before the 47 manifests move.
+  test('a version the changelog already holds is a refusal, not a second section', () => {
+    const held = [
+      '# Changelog',
+      '',
+      '## [Unreleased]',
+      '',
+      '- **BREAKING — a thing moved.** Do the edit.',
+      '',
+      '## 6.0.0 - 2026-08-19',
+      '',
+      '- released by hand',
+      '',
+    ].join('\n');
+    const result = promoteUnreleased({
+      changelog: held,
+      version: '6.0.0',
+      date: '2026-08-20',
+      subjects: ['fix(cli): a thing'],
+    });
+    expect('findings' in result && result.findings[0]?.code).toBe(
+      'X_DOC_CHANGELOG_SECTION_INVALID',
+    );
+    expect('changelog' in result).toBe(false);
+  });
+
+  // The refusal is about the TARGET version only — an unrelated section on the page is not one.
+  test('a different version already on the page still promotes', () => {
+    const out = promote(changelog, '2.0.0');
+    expect(out.split('\n').filter((line) => line.startsWith('## 2.0.0')).length).toBe(1);
+  });
+
   test('an empty subject list adds no heading at all', () => {
     expect(commitBlock([])).toEqual([]);
   });

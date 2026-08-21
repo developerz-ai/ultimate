@@ -20,7 +20,7 @@ Rationale lives in [`../idea/00-thesis.md`](../idea/00-thesis.md). This file is 
 
 Imports go **down only**. Never sideways within a tier, never upward. Enforced by `bun run boundaries`; a violation names the importing file, the imported module and the allowed tiers.
 
-**The table is not repeated here, on purpose.** [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) is the executable copy and exactly two prose copies are permitted — the root [`CLAUDE.md`](../../CLAUDE.md) and [`01-package-map.md`](01-package-map.md) — because `scripts/tier-table-drift.test.ts` reads those two and nothing else. A third copy on this page went stale in five rows before it was deleted: it still placed `ui` at 5, and had never heard of `db`, `storage`, `flags`, `auth`, `mail` or `scraping`.
+**[`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) is the executable copy, and exactly two prose copies are permitted** — the root [`CLAUDE.md`](../../CLAUDE.md) and [`01-package-map.md`](01-package-map.md) — because `scripts/tier-table-drift.test.ts` reads those two and nothing else. A third copy on this page went stale in five rows before it was deleted: it still placed `ui` at 5, and had never heard of `db`, `storage`, `flags`, `auth`, `mail` or `scraping`.
 
 **Adding a package:** pick the tier first. If it doesn't fit one, the design is wrong — fix the design, don't widen the table. `bun run scripts/new-package.ts <name> --tier <n>` scaffolds it correctly.
 
@@ -50,7 +50,7 @@ packages/<name>/
   package.json         # @ultimat3/<name>, exports ./src/index.ts, publishConfig
   tsconfig.json        # extends ../../tsconfig.base.json, composite
   README.md            # what it owns, its public API, why it exists
-  CLAUDE.md            # boundary + deps + commands, < 40 lines
+  CLAUDE.md            # boundary + deps + commands + the failures that shaped them
   src/index.ts         # explicit named re-exports of the public API
   src/errors.ts        # this package's X_* codes
   src/<concern>.ts     # one responsibility each
@@ -142,7 +142,7 @@ Default answer: **no**. Bun's natives (`Bun.sql`, `Bun.redis`, `Bun.s3`, WS, tes
 
 ## Formatting
 
-Biome owns it. Single quotes, semicolons, 2-space indent, 100 columns, trailing commas, organized imports. `bun run lint:fix` before committing; the pre-commit hook does it anyway. Don't hand-format and don't argue with the formatter.
+Biome owns it. Single quotes, semicolons, 2-space indent, 100 columns, trailing commas, organized imports. `bun run lint:fix` before committing: the pre-commit hook runs `bunx biome check --staged`, which reports and does **not** fix — without `--write` Biome answers `No fixes applied` and the commit is refused. Don't hand-format and don't argue with the formatter.
 
 ## Docs you write
 

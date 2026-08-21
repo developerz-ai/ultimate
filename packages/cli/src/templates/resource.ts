@@ -13,7 +13,8 @@ import type { GeneratedFile, NameSet } from './naming';
 import { names, pascal } from './naming';
 import { policyFiles } from './policy';
 import { queryFiles } from './query';
-import { routeFiles } from './route';
+import { formIslandFiles } from './resource-form-island';
+import { routeDir, routeFiles } from './route';
 
 const serviceSource = (
   feature: NameSet,
@@ -142,40 +143,6 @@ export function ${feature.pascal}Card(props: ${feature.pascal}CardProps) {${tran
 }
 `;
 
-const formSource = (
-  feature: NameSet,
-  module: string | undefined,
-): string => `// Presentation only: the mutator this submits to owns validation server-side, so this form
-// never re-implements the invariant — a blank title fails at the boundary, not in the DOM.
-
-${catalogImport(module)}
-import { createSignal } from 'solid-js';
-import styles from '../ui.module.scss';
-
-export interface ${feature.pascal}FormProps {
-  readonly onSubmit: (title: string) => void;
-}
-
-export function ${feature.pascal}Form(props: ${feature.pascal}FormProps) {
-  const [title, setTitle] = createSignal('');${translatorBinding(module)}
-  return (
-    <form
-      class={styles.item}
-      onSubmit={(event) => {
-        event.preventDefault();
-        props.onSubmit(title());
-      }}
-    >
-      <label>
-        {t('app.${feature.kebab}.titleLabel')}
-        <input value={title()} onInput={(event) => setTitle(event.currentTarget.value)} />
-      </label>
-      <button type="submit">{t('app.${feature.kebab}.submit')}</button>
-    </form>
-  );
-}
-`;
-
 // `admin.<feature>.title` is always here, `--admin` or not: `defineAdmin()` resolves that key the
 // moment anyone writes the override, and a missing key renders ⟦key⟧ and fails the i18n gate,
 // while an unused key is only ever reported (`auditCatalogs` fails on `missing`, never `unused`).
@@ -185,6 +152,8 @@ const catalogSource = (feature: NameSet): string =>
     [`app.${feature.kebab}.updated`]: 'Last updated',
     [`app.${feature.kebab}.titleLabel`]: 'Title',
     [`app.${feature.kebab}.submit`]: 'Save',
+    [`app.${feature.kebab}.saved`]: 'Saved',
+    [`app.${feature.kebab}.retry`]: 'Try again',
     [`admin.${feature.kebab}.title`]: pascal(feature.plural),
   });
 
@@ -204,6 +173,10 @@ export function resourceFiles(rawName: string, target: ResourceOptions): readonl
   const feature = names(rawName);
   const slice: FeatureTarget = { surfaceDir: target.surfaceDir, feature: feature.kebab };
   const dir = `${slice.surfaceDir}/${slice.feature}`;
+  // The page this same call writes, from the function that decides where a route goes — the island
+  // specifier is resolved against it, so re-deriving the path here would be two answers to one
+  // question and only one of them reaches `routeFiles`.
+  const pageDir = routeDir('app', feature.pluralKebab);
   const locales = resolveLocales(target.locales);
   return [
     ...entityFiles(rawName, slice),
@@ -220,18 +193,24 @@ export function resourceFiles(rawName: string, target: ResourceOptions): readonl
       path: `${dir}/ui/${feature.kebab}-card.tsx`,
       contents: cardSource(feature, target.catalogModule),
     },
-    {
-      path: `${dir}/ui/${feature.kebab}-form.tsx`,
-      contents: formSource(feature, target.catalogModule),
-    },
+    ...formIslandFiles(feature, dir, pageDir),
     ...locales.map((locale) => ({
       path: catalogPath(locale),
       contents: catalogSource(feature),
       merge: 'json' as const,
     })),
-    // Always an app route: a slice ships a live query, a form and actions, and `generate()`
+    // Always an app route: a slice ships a live query, a form island and actions, and `generate()`
     // refuses `--surface site` for a resource rather than emit them behind a 0kb budget.
-    ...routeFiles(feature.pluralKebab, { surface: 'app', locales }),
+    //
+    // `catalogModule` travels with it. It did not, so the page a RESOURCE writes imported `t` from
+    // `@ultimat3/i18n` while the components beside it imported `useT` from the app's own catalog
+    // module — one command, two idioms, and the framework-import one is issue #249's: it renders
+    // strings while depending on nothing that registers them.
+    ...routeFiles(feature.pluralKebab, {
+      surface: 'app',
+      locales,
+      ...(target.catalogModule === undefined ? {} : { catalogModule: target.catalogModule }),
+    }),
     ...(target.admin === true ? adminFiles(rawName, slice) : []),
   ];
 }
