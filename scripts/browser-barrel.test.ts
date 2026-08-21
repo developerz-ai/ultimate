@@ -148,8 +148,24 @@ const barrelPath = (name: string): string => join(repoRoot(), 'packages', name, 
  * to be true OF. The defect is pinned as a negative control below, so the day Bun fixes it this
  * file reds and says the wrapper can go.
  */
-const barrelChunk = (name: string): Promise<Chunk> =>
-  fixture(`barrel-${name}`, `export * from ${JSON.stringify(barrelPath(name))};\n`);
+const built = new Map<string, Promise<Chunk>>();
+
+/**
+ * One build per barrel per RUN. The three assertions below each asked for the same chunk, and the
+ * `db-alias` control asks for a fourth — 13 subprocess builds where 4 answer the same question.
+ * Measured on this tree: `ai` 152ms/1,263,194 B, `entity` 136ms/1,145,605 B, `db` 68ms, `core` 58ms,
+ * so ~900ms and 18 abandoned `mkdtemp` directories per run went on rebuilding an immutable answer.
+ *
+ * Not in tension with `browserBuild`'s fresh path per build: that is about never serving a chunk
+ * built BEFORE a fix, and no source in this repo changes between two tests of one process.
+ */
+const barrelChunk = (name: string): Promise<Chunk> => {
+  const held = built.get(name);
+  if (held !== undefined) return held;
+  const chunk = fixture(`barrel-${name}`, `export * from ${JSON.stringify(barrelPath(name))};\n`);
+  built.set(name, chunk);
+  return chunk;
+};
 
 /** The chunk minus its trailing `export { … };` clause — the half a bad tree-shake empties. */
 const bodyOf = (chunk: Chunk): string => chunk.text.replace(/export\s*\{[^}]*\};?\s*$/, '').trim();
@@ -324,6 +340,14 @@ describe('the barrel set', () => {
       'const store = new AsyncLocalStorage();\n',
     );
     expect(seamPackages(root)).toEqual(['adopter']);
+  });
+
+  test('a barrel is built ONCE per run, not once per assertion', async () => {
+    const name = BARRELS[0] as string;
+    const [first, second] = await Promise.all([barrelChunk(name), barrelChunk(name)]);
+    // The same object, not an equal one: two callers, one build, one temp directory.
+    expect(first).toBe(second);
+    expect(barrelChunk(name)).toBe(barrelChunk(name));
   });
 
   test('and every derived entry has a barrel this suite can build', () => {

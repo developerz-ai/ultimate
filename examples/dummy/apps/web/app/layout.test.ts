@@ -14,7 +14,9 @@ import { expect, test } from '@ultimat3/testing';
 /** Both surfaces: `site/` renders on the server too, and inherits exactly the same failure. */
 const SURFACES = 'apps/web/{app,site}/**/*.tsx';
 
-const APP_ROOT = new URL('../../../', import.meta.url).pathname;
+// `Bun.fileURLToPath`, never `.pathname`: a file URL percent-encodes, so a checkout under a
+// directory with a space in it hands `Bun.Glob.scan` an ENOENT naming a path nobody typed.
+const APP_ROOT = Bun.fileURLToPath(new URL('../../../', import.meta.url));
 
 /**
  * Transpiled, never the raw text: comments are the file's argument ABOUT the rule — this one's

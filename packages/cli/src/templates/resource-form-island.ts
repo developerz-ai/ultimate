@@ -3,18 +3,38 @@
 // is not a smaller version of this — the island glob never discovers it, and a server render drops
 // every `on*` prop (`packages/render/src/html.ts`) and reads each signal exactly once.
 
+// Bun ships no path API, and the one arithmetic this file does is a specifier: the island's path
+// seen from the page's directory, which `island-bundle.ts` resolves the same way at build time.
+import { posix } from 'node:path';
 import { upToAppRoot } from './island';
 import type { GeneratedFile, NameSet } from './naming';
 
+/**
+ * What the PAGE has to write, which is not what the island's own directory would suggest.
+ *
+ * `island({ src })` resolves against the route file, and `x g resource widget` writes its page at
+ * `apps/web/app/widgets/` while the island lands in `apps/web/app/widget/` — so the `'./…'` this
+ * file used to print resolved to `apps/web/app/widgets/widget-form.island.tsx`, a path the build
+ * never bundles, and an author following the comment got `X_ISLAND_INVALID`. Derived from the two
+ * directories rather than written down, so it cannot disagree with where the files actually go.
+ */
+export const formIslandSpecifier = (feature: NameSet, dir: string, pageDir: string): string => {
+  const relative = posix.join(posix.relative(pageDir, dir), `${feature.kebab}-form.island.tsx`);
+  return relative.startsWith('.') ? relative : `./${relative}`;
+};
+
 const formIslandSource = (
   feature: NameSet,
+  specifier: string,
 ): string => `// ${feature.pascal}Form: the only module of the ${feature.kebab} slice a browser downloads.
 //
-// The page names this file by SPECIFIER, never by import:
+// The page names this file by SPECIFIER, never by import — and the specifier is resolved against
+// the PAGE, which is one directory across from this one:
 //   const ${feature.pascal}Form = island({
-//     src: './${feature.kebab}-form.island.tsx',
+//     src: '${specifier}',
 //     props: ['endpoint', 'locale', 'labels'],
 //   });
+//   <${feature.pascal}Form endpoint={derivePath('create${feature.pascal}').path} locale={locale} labels={labels} />
 // A string has no import edge, so the page's bundle graph stays the page's (axiom 6).
 
 import { Button, Form, Input, setSolidRuntime, UiProvider } from '@ultimat3/ui';
@@ -53,13 +73,20 @@ function ${feature.pascal}FormBody(props: ${feature.pascal}FormProps): JSX.Eleme
   const [title, setTitle] = createSignal('');
   const [state, setState] = createSignal<SaveState>('idle');
 
+  // A rejected \`fetch\` — offline, DNS, an aborted request — is the same OUTCOME as a refused one,
+  // and it is the one \`retry\` exists for. Without the catch, \`setState\` is never reached: the
+  // status line stays empty, and the rejection escapes the \`void send()\` below as an unhandled one.
   const send = async (): Promise<void> => {
-    const response = await fetch(props.endpoint, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ title: title() }),
-    });
-    setState(response.ok ? 'saved' : 'failed');
+    try {
+      const response = await fetch(props.endpoint, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: title() }),
+      });
+      setState(response.ok ? 'saved' : 'failed');
+    } catch {
+      setState('failed');
+    }
   };
 
   const status = (): string => {
@@ -144,6 +171,9 @@ const LABELS = { title: 'Title', submit: 'Save', saved: 'Saved', retry: 'Try aga
 
 const calls: { url: string; body: Record<string, unknown> }[] = [];
 
+/** One stub, both outcomes: the mount costs seconds, so the network's answer is a switch. */
+let networkFails = false;
+
 let mounted: MountedIsland;
 
 // The build is a Babel pass plus a browser bundle — seconds, not milliseconds. It lives in
@@ -160,15 +190,25 @@ beforeAll(async () => {
     globals: {
       fetch: (url: string, init: { body: string }): Promise<{ ok: boolean }> => {
         calls.push({ url, body: JSON.parse(init.body) as Record<string, unknown> });
-        return Promise.resolve({ ok: true });
+        // What a browser rejects with when there is no network. Not a response: \`response.ok\`
+        // is never read on this path, which is exactly why the form has to catch it.
+        return networkFails
+          ? Promise.reject(new TypeError('Failed to fetch'))
+          : Promise.resolve({ ok: true });
       },
     },
   });
 }, 60_000);
 
 // The fake \`document\` is process-global: left installed it reaches every LATER FILE in the run.
+//
+// \`?.\` on a binding the type says is always set: TypeScript's definite-assignment analysis does not
+// cross the \`beforeAll\` closure, so a setup that REJECTED leaves this undefined at run time — and
+// bun runs \`afterAll\` regardless. Unguarded, the build failure is followed by a \`TypeError:
+// undefined is not an object\` that says nothing, and that second line is the one a tail reads.
+// Nothing is skipped by the guard: \`mountIsland\` restores the process itself when a mount throws.
 afterAll(() => {
-  mounted[Symbol.dispose]();
+  mounted?.[Symbol.dispose]();
 });
 
 /**
@@ -201,15 +241,35 @@ describe('the ${feature.kebab} form island', () => {
     // The signal reached the DOM: an eager JSX factory renders '' here and never runs again.
     expect(mounted.text('[data-role="status"]')).toBe(LABELS.saved);
   });
+
+  test('a request that never got a response still reaches retry', async () => {
+    // The outcome \`retry\` is FOR. A \`fetch\` that rejects reaches no \`response.ok\`, so without
+    // the catch in \`send\` the status line stays on its last value and the rejection escapes.
+    networkFails = true;
+    expect(mounted.fire('form', 'submit', { preventDefault: () => {} })).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mounted.text('[data-role="status"]')).toBe(LABELS.retry);
+  });
 });
 `;
 
-/** The slice's form, as the one client shape: `<dir>/<feature>-form.island.tsx` plus its test. */
-export function formIslandFiles(feature: NameSet, dir: string): readonly GeneratedFile[] {
+/**
+ * The slice's form, as the one client shape: `<dir>/<feature>-form.island.tsx` plus its test.
+ *
+ * `pageDir` is the directory of the page that declares it — the caller's, because only the caller
+ * runs both generators and knows where the other one put its file.
+ */
+export function formIslandFiles(
+  feature: NameSet,
+  dir: string,
+  pageDir: string,
+): readonly GeneratedFile[] {
   return [
     {
       path: `${dir}/${feature.kebab}-form.island.tsx`,
-      contents: formIslandSource(feature),
+      contents: formIslandSource(feature, formIslandSpecifier(feature, dir, pageDir)),
     },
     {
       path: `${dir}/${feature.kebab}-form.island.test.ts`,

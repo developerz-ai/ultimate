@@ -83,6 +83,47 @@ describe('what counts as an arrow', () => {
     expect(graph.unreadable.map((one) => one.line)).toEqual([3]);
   });
 
+  /**
+   * The five forms an enumeration of link operators missed. Each is a valid mermaid link, so each
+   * DRAWS an arrow for a reader; each fell through to the node scan and left no trace at all, which
+   * is how a `render === query` could sit on the page under a green gate.
+   */
+  test.each([
+    ['a thick link', '  render === query'],
+    ['a longer thick link', '  render ====== query'],
+    ['a dotted link of length 2', '  render -..- query'],
+    ['a dotted link of length 3', '  render -...- query'],
+    ['a dotted ARROW of length 2', '  render -..-> query'],
+    ['a dotted link carrying text', '  render -. why .-> query'],
+    ['a thick arrow', '  render ==> query'],
+    ['a cross link', '  render --x query'],
+  ])('%s is reported, never dropped in silence', (_label, line) => {
+    const graph = readPackageGraph(fence('mermaid', ['graph TD', line, '  c --> d']));
+    expect(graph.unreadable.map((one) => one.line)).toEqual([3]);
+    expect(graph.edges).toEqual([{ from: 'c', to: 'd', line: 4 }]);
+  });
+
+  test('a hyphenated node name is not a link — one dash is a name, two are an operator', () => {
+    const graph = readPackageGraph(
+      fence('mermaid', ['graph TD', '  create-ultimate', '  create-ultimate --> cli']),
+    );
+    expect(graph.unreadable).toEqual([]);
+    expect(graph.nodes.has('create-ultimate')).toBe(true);
+  });
+
+  test('a directive is read as a directive, never as an unparseable edge', () => {
+    const graph = readPackageGraph(
+      fence('mermaid', [
+        'graph TD',
+        '  classDef pinned stroke-dasharray: 5--5',
+        '  linkStyle 0 stroke:#333',
+        '  a --> b',
+      ]),
+    );
+    expect(graph.unreadable).toEqual([]);
+    expect(graph.edges).toHaveLength(1);
+  });
+
   test('cleanMermaid keeps the node name and drops the label', () => {
     expect(cleanMermaid('  create-ultimate["create-ultimate (unlisted)"]')).toBe('create-ultimate');
   });
@@ -188,6 +229,67 @@ describe('a rule with no input fails rather than passes', () => {
     expect(findings[0]?.code).toBe(UNSCANNED);
     expect(findings[0]?.at).toBe('scripts/package-map-graph.ts');
   });
+
+  test('a manifest that will not parse is a finding that names the FILE, not the cwd', () => {
+    const findings = checkPackageMapGraph({
+      markdown: fence('mermaid', ['graph TD', '  render --> cache']),
+      workspaces: [],
+      unreadable: ['packages/render/package.json'],
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.code).toBe(UNSCANNED);
+    expect(findings[0]?.at).toBe('packages/render/package.json');
+    expect(findings[0]?.fix).toContain('packages/render/package.json');
+  });
+
+  /**
+   * The half no unit test could reach: `listWorkspaces` reads every manifest FIRST, and its
+   * rejection came out of the top of the script — exit 1 with a stack trace, no `ok`, no `code`,
+   * nothing under `--json`. A scratch tree with one broken file is the only way to ask.
+   */
+  test('a broken manifest on disk is a structured finding, not an unhandled rejection', async () => {
+    const scratch = await mkdtemp(join(tmpdir(), 'ultimate-bad-manifest-'));
+    try {
+      await Bun.write(
+        join(scratch, 'packages/render/package.json'),
+        '{ "name": "@ultimat3/render", ',
+      );
+      await Bun.write(
+        join(scratch, 'packages/cache/package.json'),
+        '{ "name": "@ultimat3/cache", "version": "1.0.0" }',
+      );
+      await Bun.write(join(scratch, PACKAGE_MAP), fence('mermaid', ['graph TD', '  a --> b']));
+      const read = await readGraphWorkspaces(scratch);
+      expect(read.unreadable).toEqual(['packages/render/package.json']);
+      const findings = await packageMapGraphFindings(scratch);
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.code).toBe(UNSCANNED);
+      expect(findings[0]?.at).toBe('packages/render/package.json');
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  /**
+   * Valid JSON that is not a manifest. It parses, so `listWorkspaces` is happy and the old cast to
+   * `RawManifest` would have read `.dependencies` off an array — `undefined`, i.e. "declares no
+   * dependency", turning every arrow out of that package into an unbacked one.
+   */
+  test('a manifest that parses to a non-object is unreadable, not a package with no deps', async () => {
+    const scratch = await mkdtemp(join(tmpdir(), 'ultimate-non-object-manifest-'));
+    try {
+      await Bun.write(join(scratch, 'packages/render/package.json'), '[]');
+      await Bun.write(
+        join(scratch, 'packages/cache/package.json'),
+        '{ "name": "@ultimat3/cache", "version": "1.0.0" }',
+      );
+      const read = await readGraphWorkspaces(scratch);
+      expect(read.unreadable).toEqual(['packages/render/package.json']);
+      expect(read.workspaces.map((one) => one.dir)).toEqual(['cache']);
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('the real tree', () => {
@@ -197,7 +299,9 @@ describe('the real tree', () => {
 
   test('non-vacuous: the page really does draw a graph of the real workspaces', async () => {
     const graph = readPackageGraph(await Bun.file(join(ROOT, PACKAGE_MAP)).text());
-    const dirs = new Set((await readGraphWorkspaces(ROOT)).map((one) => one.dir));
+    const { workspaces, unreadable } = await readGraphWorkspaces(ROOT);
+    expect(unreadable).toEqual([]);
+    const dirs = new Set(workspaces.map((one) => one.dir));
     expect(graph.blocks).toBe(1);
     expect(graph.edges.length).toBeGreaterThan(40);
     expect(graph.unreadable).toEqual([]);
@@ -215,7 +319,7 @@ describe('the real tree', () => {
     const original = await Bun.file(source).text();
     const scratch = await mkdtemp(join(tmpdir(), 'ultimate-package-map-'));
     try {
-      for (const one of await readGraphWorkspaces(ROOT)) {
+      for (const one of (await readGraphWorkspaces(ROOT)).workspaces) {
         await Bun.write(
           join(scratch, 'packages', one.dir, 'package.json'),
           await Bun.file(join(ROOT, 'packages', one.dir, 'package.json')).text(),

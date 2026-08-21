@@ -84,6 +84,12 @@ const isCode = (masked: string, index: number, decl: string): boolean =>
   masked[index + (decl.length - decl.trimStart().length)] !== ' ';
 
 /**
+ * `packages/pwa/src/a.ts` → `packages/pwa`, the unit an alias table is built over. A name declared
+ * in two packages is two unrelated types, and TypeScript would never resolve one through the other.
+ */
+export const packageOf = (at: string): string => at.split('/').slice(0, 2).join('/');
+
+/**
  * An alias body worth following: a `Record<…>`, or a chain of wrappers and names that may reach
  * one. `{`-bearing bodies are excluded on purpose — `type Ctx = { rows: Record<string, R> }` is not
  * a Record annotation, and expanding it would reclassify every `const c: Ctx = Object.freeze({…})`
@@ -93,14 +99,24 @@ const followable = (body: string): boolean =>
   !body.includes('{') && (body.includes('Record<') || /^[\w$<>,\s.]+$/.test(body));
 
 /**
- * Every `type X = …` in the tree that an annotation could name a closed `Record` through. The
- * defect is identical whether the type is spelled inline or borrowed: `const X: FrozenModes =
+ * Every `type X = …` in the given files that an annotation could name a closed `Record` through.
+ * The defect is identical whether the type is spelled inline or borrowed: `const X: FrozenModes =
  * Object.freeze({…})` loses the literal's freshness exactly as `Readonly<Record<K, V>>` does, and
- * was read as `unconstrained` until this table existed. A name declared twice keeps the body that
- * mentions `Record<` — the conservative half, since that is the one that can fail.
+ * was read as `unconstrained` until this table existed.
+ *
+ * A name declared TWICE with two bodies is dropped, not resolved. The earlier rule kept the body
+ * mentioning `Record<` and called that the conservative half; it is the opposite one. Keeping the
+ * `Record<` body maximises FINDINGS, and a finding produced by a name collision is a false one —
+ * `type Config = { host: string }` in `mail`, annotated onto a freeze there, resolved through
+ * `pwa`'s `type Config = Readonly<Record<RenderMode, …>>` and reported `mail` for a key type `mail`
+ * never wrote. 19 alias names are declared in more than one package `As of 2026-08-21` — `Row`,
+ * `JsonObject`, `RouteParams` among them — and three already carry a `Record<` body, so this is one
+ * closed-key alias away rather than hypothetical. Refusing an ambiguous name is silence; resolving
+ * it wrongly is a red gate no edit at the cited site can honestly clear.
  */
 export function aliasTable(files: readonly SourceFile[]): ReadonlyMap<string, string> {
   const aliases = new Map<string, string>();
+  const ambiguous = new Set<string>();
   for (const file of files) {
     const text = stripComments(file.text);
     const masked = maskLiterals(file.text);
@@ -109,9 +125,12 @@ export function aliasTable(files: readonly SourceFile[]): ReadonlyMap<string, st
       const body = (match[2] as string).trim();
       const name = match[1] as string;
       if (!followable(body)) continue;
-      if (!aliases.has(name) || body.includes('Record<')) aliases.set(name, body);
+      const held = aliases.get(name);
+      if (held === undefined) aliases.set(name, body);
+      else if (held !== body) ambiguous.add(name);
     }
   }
+  for (const name of ambiguous) aliases.delete(name);
   return aliases;
 }
 
@@ -166,8 +185,11 @@ export const isOpenKey = (keyType: string): boolean =>
  *   - a `freeze` that is not the initialiser of a `const` — a `return Object.freeze({…})` inside a
  *     factory, a nested `Object.freeze` in a property value, a `let`;
  *   - `Object.freeze({…}) as Record<K, V>` — a cast, which loses freshness the same way;
- *   - an alias declared outside the scanned tree, or one whose body is an object type rather than
- *     a `Record` (`followable` refuses it) — including a mapped type spelled by hand;
+ *   - an alias declared outside the scanned tree, in ANOTHER package (the table is built per
+ *     package, so an alias reached by a cross-package import does not resolve), or declared twice
+ *     inside one package with two bodies (`aliasTable` refuses an ambiguous name);
+ *   - an alias whose body is an object type rather than a `Record` (`followable` refuses it) —
+ *     including a mapped type spelled by hand;
  *   - an interface annotation (`const c: Clock = Object.freeze({…})`), which also admits an extra
  *     property. Deliberately out of scope: an extra property on a config object is dead weight,
  *     where an extra ROW in a closed-key table is a lookup nothing can reach.
@@ -232,9 +254,17 @@ export interface FrozenReport {
  */
 export function checkFrozenRecords(files: readonly SourceFile[]): FrozenReport {
   const counts = { explicit: 0, 'annotated-closed': 0, 'annotated-open': 0, unconstrained: 0 };
-  const aliases = aliasTable(files);
+  const owned = new Map<string, SourceFile[]>();
+  for (const file of files) {
+    const list = owned.get(packageOf(file.at));
+    if (list === undefined) owned.set(packageOf(file.at), [file]);
+    else list.push(file);
+  }
+  const tables = new Map<string, ReadonlyMap<string, string>>();
+  for (const [pkg, list] of owned) tables.set(pkg, aliasTable(list));
   const findings: Finding[] = [];
   for (const file of files) {
+    const aliases = tables.get(packageOf(file.at)) ?? new Map<string, string>();
     for (const site of scanFreezeSites(file.text, file.at, aliases)) {
       counts[site.shape] += 1;
       if (site.shape === 'annotated-closed') findings.push(finding(site));

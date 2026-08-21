@@ -6,29 +6,61 @@
 /** `[data-role="preview"]` — the one selector shape a mounted island is queried by. */
 const ATTRIBUTE_SELECTOR = /^\[([\w-]+)="([^"]*)"\]$/;
 
+/**
+ * A node belongs to ONE parent, and the DOM enforces that by moving it: every attach detaches the
+ * node from wherever it was first. Not a nicety — `reconcileArrays` re-orders a `<For>` by calling
+ * `parentNode.insertBefore(child, ref)` on a child already in that parent (`solid-js/web`'s
+ * `web.js:155`, `:163`, `:184`), so an attach that only pushes leaves the node in BOTH positions
+ * and a five-row list becomes ten in an order no assertion can read back.
+ */
+function detach(node: FakeNode): void {
+  const parent = node.parentNode;
+  if (parent === null) return;
+  const at = parent.children.indexOf(node);
+  if (at >= 0) parent.children.splice(at, 1);
+  node.parentNode = null;
+}
+
 export class FakeNode {
   readonly nodeType: number = 1;
   children: FakeNode[] = [];
   parentNode: FakeNode | null = null;
   appendChild(child: FakeNode): FakeNode {
+    detach(child);
     child.parentNode = this;
     this.children.push(child);
     return child;
   }
+  /** `ref === child` is the spec's own no-op, spelled the way the spec spells it — the reference
+   *  becomes the node's next sibling, so a node asked to precede itself lands back where it was. */
   insertBefore(child: FakeNode, ref: FakeNode | null): FakeNode {
-    const at = ref === null ? -1 : this.children.indexOf(ref);
+    const target = ref === child ? child.nextSibling : ref;
+    detach(child);
+    const at = target === null ? -1 : this.children.indexOf(target);
     child.parentNode = this;
     this.children.splice(at < 0 ? this.children.length : at, 0, child);
     return child;
   }
+  /** The node that leaves keeps no parent: `reconcileArrays` calls `.remove()` on nodes it has
+   *  already replaced, and a stale `parentNode` would take a live row out of the list instead. */
   replaceChild(next: FakeNode, prev: FakeNode): FakeNode {
-    const at = this.children.indexOf(prev);
-    if (at >= 0) this.children[at] = next;
+    // The guard comes BEFORE the detach: a call that replaces nothing must move nothing either,
+    // and detaching `next` first would take it out of the tree it was in and put it nowhere.
+    if (next === prev || this.children.indexOf(prev) < 0) return prev;
+    detach(next);
+    // Read the index again — detaching `next` out of THIS parent shifts everything after it.
+    this.children[this.children.indexOf(prev)] = next;
     next.parentNode = this;
+    prev.parentNode = null;
     return prev;
   }
+  /** A node that is not a child is left whole — the DOM throws `NotFoundError`, and clearing the
+   *  parent of a node belonging to someone else would be the worse of the two answers. */
   removeChild(child: FakeNode): FakeNode {
-    this.children = this.children.filter((each) => each !== child);
+    const at = this.children.indexOf(child);
+    if (at < 0) return child;
+    this.children.splice(at, 1);
+    child.parentNode = null;
     return child;
   }
   remove(): void {
@@ -52,8 +84,13 @@ export class FakeNode {
   get textContent(): string {
     return this.children.map((child) => child.textContent).join('');
   }
+  /** The dropped children are DETACHED, not merely forgotten: `el.textContent = ''` opens every
+   *  island's `mount` and closes Solid's `render` disposer (`web.js:201`), and a shell node left
+   *  holding its old parent is a node two trees claim. */
   set textContent(text: string) {
-    this.children = text === '' ? [] : [new FakeText(text)];
+    for (const child of this.children) child.parentNode = null;
+    this.children = [];
+    if (text !== '') this.appendChild(new FakeText(text));
   }
 }
 

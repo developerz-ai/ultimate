@@ -221,6 +221,7 @@ import '../../shared/global'; // `shared/global.scss` is the app's one `@use '@u
 
 ```tsx
 // A client entry — an island's `mount()`, or a hydrated app shell. In this order, once.
+import { createTranslator } from '@ultimat3/i18n';
 import { setSolidRuntime, UiProvider } from '@ultimat3/ui';
 import type { JSX } from 'solid-js';
 import * as solidRuntime from 'solid-js';
@@ -230,6 +231,9 @@ interface Props {
   readonly locale: string;
   readonly timeZone: string;
   readonly currency: string;
+  /** The `ui.*` keys this tree renders, resolved on the server. A catalog crosses the seam as
+   *  JSON; a `Translator` is a function and cannot. */
+  readonly strings: Readonly<Record<string, string>>;
   readonly tree: JSX.Element;
 }
 
@@ -240,10 +244,12 @@ export function mount(el: HTMLElement, props: Props): void {
   el.textContent = ''; // Solid's `render` APPENDS; the server's shell would stay above this one.
   render(
     () => (
-      // No `t`: an island's strings arrive already translated, as props. The prop takes a
-      // `Translator` — `translatorFor(locale)` — and never `t` itself, which is a bare function
-      // and TS2739 here.
-      <UiProvider locale={props.locale} timeZone={props.timeZone} currency={props.currency}>
+      <UiProvider
+        locale={props.locale}
+        timeZone={props.timeZone}
+        currency={props.currency}
+        t={createTranslator(props.strings, props.locale)}
+      >
         {props.tree}
       </UiProvider>
     ),
@@ -251,6 +257,18 @@ export function mount(el: HTMLElement, props: Props): void {
   );
 }
 ```
+
+**The prop is `t`, it takes a `Translator`, and omitting it is not neutral.** `<UiProvider>` with
+no `t` falls back to `fallbackTranslator(locale)` — `createTranslator({}, locale)`, an **empty**
+catalog — so every built-in string in the tree renders its key: `<Dialog>`'s close button reads
+`⟦ui.close⟧`, `<Field>`'s marker `⟦ui.required⟧`. The keys are `UI_KEYS`, and they live in the
+framework catalog the SERVER has registered; a browser chunk has none, which is why
+`translatorFor(locale)` on the client is the same empty answer wearing a better name. Send the
+subset the island renders and build the translator from it. `t` itself — `@ultimat3/i18n`'s bare
+exported function — is not a `Translator` and is `TS2739` in this position.
+
+An island's own copy is a different thing and stays a plain prop: it arrives already translated,
+as text, because `t()`'s catalog does not cross the seam and neither does a callback.
 
 `Field` owns the ids, so `aria-describedby` / `aria-invalid` can never drift from
 what is rendered. `UiProvider` sets `lang` + `dir` on `<html>` from `locale`, so

@@ -3,6 +3,8 @@
 // report in #242 — an `app/` route and a non-static `site/` route are not skipped for one reason.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+// `node:` by necessity: Bun ships no path API, and `rm(…, { force: true })` removes a fixture
+// root that may not exist without a branch.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { RENDER_MODES } from '@ultimat3/core';
@@ -127,6 +129,33 @@ describe('the report on disk', () => {
     expect(await readStaticReport(ROOT)).toBeUndefined();
     expect(parseStaticReport(null)).toBeUndefined();
     expect(parseStaticReport({ ...REPORT, skipped: [{ route: '/x' }] })).toBeUndefined();
+  });
+
+  test('a report naming a surface or a mode that does not exist reads as no report', async () => {
+    // The half a `typeof === 'string'` check cannot see. `SkippedRoute.surface` is declared
+    // `Surface`, so a parse that admits any string hands every later reader a value its own type
+    // says is impossible — `SURFACE_SPECS['sight']` is `undefined`, and the crash lands wherever
+    // the first indexer happens to be rather than here, at the file that was already malformed.
+    const rowOf = (over: Record<string, unknown>): unknown => ({
+      ...REPORT,
+      skipped: [{ ...REPORT.skipped[0], ...over }],
+    });
+    expect(parseStaticReport(rowOf({ surface: 'sight' }))).toBeUndefined();
+    expect(parseStaticReport(rowOf({ render: 'STATIC' }))).toBeUndefined();
+    expect(parseStaticReport(rowOf({ reason: 'because' }))).toBeUndefined();
+    // Not a blanket refusal: every declared member still parses, so a widened vocabulary in
+    // `@ultimat3/render` or `@ultimat3/core` reaches this parser without an edit here.
+    for (const surface of SURFACES) {
+      for (const render of RENDER_MODES) {
+        expect(parseStaticReport(rowOf({ surface, render }))).toBeDefined();
+      }
+    }
+  });
+
+  test('a root with no report at all reads as no report, without a stat call of its own', async () => {
+    // `existsSync` used to answer this and was redundant: `Bun.file(path).json()` rejects on a
+    // missing file into the same catch. Pinned so the branch that replaced it cannot be deleted.
+    expect(await readStaticReport(join(ROOT, 'never-built'))).toBeUndefined();
   });
 });
 

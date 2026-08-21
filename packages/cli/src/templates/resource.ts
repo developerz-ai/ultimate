@@ -14,7 +14,7 @@ import { names, pascal } from './naming';
 import { policyFiles } from './policy';
 import { queryFiles } from './query';
 import { formIslandFiles } from './resource-form-island';
-import { routeFiles } from './route';
+import { routeDir, routeFiles } from './route';
 
 const serviceSource = (
   feature: NameSet,
@@ -173,6 +173,10 @@ export function resourceFiles(rawName: string, target: ResourceOptions): readonl
   const feature = names(rawName);
   const slice: FeatureTarget = { surfaceDir: target.surfaceDir, feature: feature.kebab };
   const dir = `${slice.surfaceDir}/${slice.feature}`;
+  // The page this same call writes, from the function that decides where a route goes — the island
+  // specifier is resolved against it, so re-deriving the path here would be two answers to one
+  // question and only one of them reaches `routeFiles`.
+  const pageDir = routeDir('app', feature.pluralKebab);
   const locales = resolveLocales(target.locales);
   return [
     ...entityFiles(rawName, slice),
@@ -189,7 +193,7 @@ export function resourceFiles(rawName: string, target: ResourceOptions): readonl
       path: `${dir}/ui/${feature.kebab}-card.tsx`,
       contents: cardSource(feature, target.catalogModule),
     },
-    ...formIslandFiles(feature, dir),
+    ...formIslandFiles(feature, dir, pageDir),
     ...locales.map((locale) => ({
       path: catalogPath(locale),
       contents: catalogSource(feature),

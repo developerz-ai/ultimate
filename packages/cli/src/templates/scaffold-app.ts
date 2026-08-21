@@ -136,6 +136,8 @@ export const config = defineRoute({
   // therefore failed x routes with X_ROUTE_MODE_INVALID on the first run, printing a fix nobody
   // could follow. Ship the mode that works. Async data needs no boundary: await it in the page.
   render: 'ssr',
+  // Stated with no island on the page, deliberately and for free — \`apps/admin/app/admin/page.tsx\`
+  // carries the reason.
   hydrate: 'visible',
   offline: 'runtime',
   // Auth is a policy, never a route-local flag: one authz system, evaluated everywhere.
@@ -325,6 +327,10 @@ import { defineRoute } from '@ultimat3/render';
 
 export const config = defineRoute({
   render: 'ssr',
+  // Stated on a page whose body is one \`<h1>\`, and it costs nothing: the hydration runtime is
+  // emitted per island DIRECTIVE, so \`hydrateRuntime([])\` is \`''\` and this document ships 0 bytes
+  // (\`packages/render/src/hydrate.ts\`). It buys the first island being ONE file's edit —
+  // \`hydrate: 'never'\` beside an island is \`X_ISLAND_NOT_HYDRATED\`, which defineRoute refuses.
   hydrate: 'idle',
   offline: 'network-only',
   // Behind auth, so the mode has to render per request: \`ssr\` and \`stream\` both do, and both take

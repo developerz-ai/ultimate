@@ -225,6 +225,57 @@ describe(testName('unit', 'the island fixture mounts a compiled island'), () => 
     expect('clicked' in second.documentElement.dataset).toBe(false);
   });
 
+  test('a global that refuses assignment takes the whole install back out with it', async () => {
+    const KEY = 'ultimateIslandSealedProbe';
+    Object.defineProperty(globalThis, KEY, { get: () => 'sealed', configurable: true });
+    try {
+      const thrown = await mount(
+        LIVE_ISLAND,
+        { label: 'count' },
+        {
+          globals: { [KEY]: 'fake' },
+        },
+      ).then(
+        () => 'mounted',
+        (error: unknown) => (error as Error).constructor.name,
+      );
+
+      expect(thrown).toBe('TypeError');
+      // The DOM globals go in FIRST and the caller's own keys last, so the throw always lands with
+      // a fake `document` already installed — and it lands AHEAD of `mountIsland`'s own `try`,
+      // which is the one that would have taken it back out. Every later FILE in the run would
+      // render against it, and fail somewhere with no thread back here.
+      expect(Reflect.get(globalThis, 'document')).toBeUndefined();
+      expect(Reflect.get(globalThis, 'Element')).toBeUndefined();
+    } finally {
+      Reflect.deleteProperty(globalThis, KEY);
+    }
+  });
+
+  test('a global that exists holding undefined is restored, not deleted', async () => {
+    const KEY = 'ultimateIslandUndefinedProbe';
+    Reflect.set(globalThis, KEY, undefined);
+    try {
+      {
+        using mounted = await mount(
+          LIVE_ISLAND,
+          { label: 'count' },
+          { globals: { [KEY]: 'fake' } },
+        );
+        expect(mounted.text('[data-role="count"]')).toBe('count 0');
+        expect(Reflect.get(globalThis, KEY)).toBe('fake');
+      }
+
+      // A saved VALUE cannot tell "no such global" from "a global holding undefined", so the
+      // teardown deleted both — and `KEY in globalThis` flipped true to false behind the test that
+      // owns it. A saved DESCRIPTOR distinguishes them; `undefined` is the absent one.
+      expect(Object.hasOwn(globalThis, KEY)).toBe(true);
+      expect(Reflect.get(globalThis, KEY)).toBeUndefined();
+    } finally {
+      Reflect.deleteProperty(globalThis, KEY);
+    }
+  });
+
   test('dispose hands the process back its own globals', async () => {
     const before = Reflect.get(globalThis, 'document');
     {
@@ -379,6 +430,6 @@ describe(testName('unit', 'the chunk is imported from a file, never a data: URL'
 
   test('and the pattern that would see it is really in the file to be seen', async () => {
     // Negative control: a rule matching a string no version of the file ever held cannot fail.
-    expect(await source()).toContain('moduleUrlFor');
+    expect(await source()).toContain('modulePathFor');
   });
 });

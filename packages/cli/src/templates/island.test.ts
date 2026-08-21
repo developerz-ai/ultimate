@@ -95,6 +95,9 @@ describe('unit · the island x g island emits actually mounts', () => {
     });
 
     expect(mounted.fire('button', 'click')).toBe(true);
-    expect(mounted.text('[data-role="count"]')).not.toBe('1');
+    // The EXACT text, never `not.toBe('1')`: `text()` answers `''` for a selector that matches
+    // nothing, so the negative form also passes for an island whose output node vanished — a
+    // mutation test that cannot tell a dead signal from a dead assertion.
+    expect(mounted.text('[data-role="count"]')).toBe('0');
   }, 60_000);
 });

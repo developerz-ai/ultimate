@@ -25,7 +25,7 @@
 
 import { join } from 'node:path';
 import { stripComments } from '@ultimat3/cli';
-import { collectSourceFiles, type SourceFile } from './boundaries';
+import { APP_ROOTS, collectSourceFiles, type SourceFile } from './boundaries';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -163,7 +163,7 @@ export function asyncStorageFinding(site: AsyncStorageSite): Finding {
  * `collectSharedFiles` in `scripts/boundaries.ts` already walks, so an app added under either
  * enters this rule by existing rather than by being listed.
  */
-const APP_SOURCES = '{examples,dummy}/*/**/*.{ts,tsx}';
+const APP_SOURCES = `${APP_ROOTS}/*/**/*.{ts,tsx}`;
 
 /** Built output and installed dependencies are nobody's source, and `node_modules` symlinks loop. */
 const NOT_SOURCE = /(?:^|\/)(?:node_modules|dist|\.x)\//;

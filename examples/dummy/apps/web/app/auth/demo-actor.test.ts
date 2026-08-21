@@ -106,8 +106,14 @@ describe('installation is development-only', () => {
         stderr: 'pipe',
       },
     );
-    const [out, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
-    expect(code).toBe(0);
+    const [out, err, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    // The child's stack is the only evidence of WHICH module failed to evaluate. Left in the pipe,
+    // an import this app breaks reports `expected 0, received 1` and names nothing.
+    if (code !== 0) expect.unreachable(`the import exited ${code}:\n${err}`);
     expect(out).toContain('VERDICT installed');
   });
 

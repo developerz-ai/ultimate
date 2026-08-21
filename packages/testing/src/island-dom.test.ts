@@ -101,6 +101,130 @@ export function mount(el, props) {
   });
 });
 
+describe(testName('unit', 'attaching a node MOVES it, as the DOM does'), () => {
+  // The half `reconcileArrays` depends on and a stub reaches for last: `parentNode.insertBefore(b,
+  // ref)` is called on a child ALREADY in that parent whenever a `<For>` re-orders
+  // (`solid-js/web`'s `web.js:155`, `:163`, `:184`), and `a[i].remove()` is how it drops one. An
+  // attach that does not detach first leaves the node in BOTH places, so the list grows a duplicate
+  // per move; a remove that leaves `parentNode` set makes an orphan answer `nextSibling` with its
+  // old parent's FIRST child instead of `null`.
+  const MOVING_ISLAND = `export function mount(el, props) {
+  const shellChild = el.firstChild;
+  el.textContent = '';
+  const list = document.createElement('ul');
+  const spare = document.createElement('ol');
+  const row = (label) => {
+    const li = document.createElement('li');
+    li.appendChild(document.createTextNode(label));
+    return li;
+  };
+  for (const label of props.items) list.appendChild(row(label));
+  el.appendChild(list);
+  el.appendChild(spare);
+  el.setAttribute('data-shell', String(shellChild !== null && shellChild.parentNode === null));
+
+  const report = (value) => el.setAttribute('data-report', String(value));
+  list.addEventListener('x-rotate', () => {
+    list.insertBefore(list.children[list.children.length - 1], list.children[0]);
+  });
+  list.addEventListener('x-adopt', () => spare.appendChild(list.children[0]));
+  list.addEventListener('x-swap', () => {
+    const gone = list.replaceChild(row('new'), list.children[1]);
+    report(gone.parentNode === null);
+  });
+  list.addEventListener('x-hoist', () => list.replaceChild(list.children[2], list.children[0]));
+  list.addEventListener('x-self', () => list.insertBefore(list.children[0], list.children[0]));
+  list.addEventListener('x-foreign', () => list.removeChild(spare.children[0]));
+  list.addEventListener('x-drop', () => {
+    const gone = list.removeChild(list.children[0]);
+    report((gone.parentNode === null) + '|' + (gone.nextSibling === null));
+  });
+}
+`;
+
+  const labels = (island: { all: (sel: string) => readonly { textContent: string }[] }): string[] =>
+    island.all('li').map((row) => row.textContent);
+
+  const mountList = (shell?: string) =>
+    mount(MOVING_ISLAND, { items: ['a', 'b', 'c'] }, shell === undefined ? {} : { shell });
+
+  test('insertBefore re-orders a row already in the list instead of copying it', async () => {
+    using island = await mountList();
+
+    expect(island.fire('ul', 'x-rotate')).toBe(true);
+    // Four rows here, not three, is the whole defect: `<For>` re-ordering a list of five would
+    // leave ten, in an order no assertion could read back.
+    expect(labels(island)).toEqual(['c', 'a', 'b']);
+  });
+
+  test('appendChild moves a row to another parent, it does not clone it', async () => {
+    using island = await mountList();
+
+    expect(island.fire('ul', 'x-adopt')).toBe(true);
+    // Document order, and `all` walks the whole subtree: the moved row now reads LAST, after the
+    // two it left behind. A copy would read `a, b, c, a` — the same node twice, in two parents.
+    expect(labels(island)).toEqual(['b', 'c', 'a']);
+  });
+
+  test('replaceChild leaves the node it replaced with no parent', async () => {
+    using island = await mountList();
+
+    expect(island.fire('ul', 'x-swap')).toBe(true);
+    expect(labels(island)).toEqual(['a', 'new', 'c']);
+    expect(island.el.getAttribute('data-report')).toBe('true');
+  });
+
+  test('replaceChild with a row already in the list moves it, leaving two', async () => {
+    // `reconcileArrays` calls `parentNode.replaceChild(b[i], a[j])` on nodes from the NEW list
+    // (`web.js:185`), which for a keyed `<For>` re-order are already children of that parent — so
+    // the node has to leave its old index. Without that, `a, b, c` replaced by its own third row
+    // reads `c, b, c`: the same node twice, once where it never went.
+    using island = await mountList();
+
+    expect(island.fire('ul', 'x-hoist')).toBe(true);
+    expect(labels(island)).toEqual(['c', 'b']);
+  });
+
+  test('a removed node is an orphan, so its nextSibling is null and not its old first sibling', async () => {
+    using island = await mountList();
+
+    expect(island.fire('ul', 'x-drop')).toBe(true);
+    expect(labels(island)).toEqual(['b', 'c']);
+    // `false|false` is what a filter-only removal answers, and the second half is the dangerous
+    // one: `indexOf` of a node no longer in the array is -1, so `siblings[-1 + 1]` hands back the
+    // list's new FIRST child as the orphan's next sibling.
+    expect(island.el.getAttribute('data-report')).toBe('true|true');
+  });
+
+  test('a node asked to precede itself stays where it is', async () => {
+    // The spec's own step — "if referenceChild is node, set referenceChild to node's next
+    // sibling" — and without it the detach makes the reference unfindable and the row lands at the
+    // END. A silent re-order of a list nobody asked to re-order.
+    using island = await mountList();
+
+    expect(island.fire('ul', 'x-self')).toBe(true);
+    expect(labels(island)).toEqual(['a', 'b', 'c']);
+  });
+
+  test('removing a node that belongs to another parent takes nothing out of this one', async () => {
+    using island = await mountList();
+    expect(island.fire('ul', 'x-adopt')).toBe(true);
+
+    // The DOM throws `NotFoundError` here; this answers a no-op. What it must NOT do is what an
+    // unguarded `splice(indexOf(child), 1)` does with -1 — silently drop the LAST row instead.
+    expect(island.fire('ul', 'x-foreign')).toBe(true);
+    expect(labels(island)).toEqual(['b', 'c', 'a']);
+  });
+
+  test('clearing textContent detaches the shell it dropped', async () => {
+    // `el.textContent = ''` opens every island's `mount` and closes Solid's own `render` disposer
+    // (`web.js:201`), so a shell node that keeps its parent is a node two trees claim.
+    using island = await mountList('<p>server</p>');
+
+    expect(island.el.getAttribute('data-shell')).toBe('true');
+  });
+});
+
 describe(testName('unit', 'a fragment template: importNode over the content node itself'), () => {
   // `babel-preset-solid` emits `_tmpl$ = t.content.firstChild` for a single-root template and
   // clones the CONTENT node for a fragment — two roots, no wrapper. That second shape reaches

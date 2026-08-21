@@ -3,6 +3,8 @@
 // option that removes it — `conditions`, `production`, `env` and `define` were each measured under
 // Bun 1.4 and none of them does — so without this seam an island ships the dev bundle silently.
 
+// `node:path` by necessity: Bun ships no path API, and this file resolves a package entry back
+// to the directory its `exports` map is relative to.
 import { dirname, join } from 'node:path';
 import type { BunPlugin } from 'bun';
 import { IslandBuildFailedError } from './errors';

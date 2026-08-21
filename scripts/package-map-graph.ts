@@ -16,13 +16,19 @@
 //
 //   bun run scripts/package-map-graph.ts [--json]
 
+// `node:` — Bun has no path-join primitive of its own.
+import { join } from 'node:path';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
+import type { Workspace } from './lib/workspaces';
 import { listWorkspaces } from './lib/workspaces';
 
 const SCRIPT = 'package-map-graph';
+
+/** The manifests this rule reads — the one a finding names when none of them could be read. */
+const PACKAGES_GLOB = 'packages/*/package.json';
 
 /** The one page that draws the graph, and the file every finding points at. */
 export const PACKAGE_MAP = 'docs/architecture/01-package-map.md';
@@ -88,9 +94,19 @@ export const cleanMermaid = (text: string): string =>
     .trim();
 
 const EDGE = /^([A-Za-z_][\w.-]*)\s*-->\s*([A-Za-z_][\w.-]*)$/;
-/** Every OTHER mermaid link operator, so an edge this rule cannot parse is reported rather than
- * silently absent — a graph check that skips what it does not understand answers a clean page. */
-const OTHER_LINK = /-\.-|={2,}[>ox]|--[xo]|<--|-{3,}/;
+/**
+ * Every OTHER mermaid link operator, so an edge this rule cannot parse is reported rather than
+ * silently absent — a graph check that skips what it does not understand answers a clean page.
+ *
+ * A RUN of two or more of `-`, `=` and `.`, rather than an enumeration of the operators. Every
+ * link in the flowchart grammar carries one — normal `---`/`-->`/`--x`/`<-->`, thick `===`/`==>`,
+ * dotted `-.-`/`-..-`/`-...->`, and each of the three with inline text (`-- t -->`, `== t ==>`,
+ * `-. t .->`) — and enumerating them let FIVE valid forms fall through to the node scan and vanish:
+ * `===`, `-..-`, `-...-`, `-..->` and `-. t .->`. A thick `render === query` on the page was drawn
+ * for a reader, unbacked by any manifest, and read by nothing. `create-ultimate` is the near miss
+ * the run length answers: a node id carries single `-`, never two.
+ */
+const OTHER_LINK = /[-=.]{2,}/;
 const DIRECTIVE =
   /^(graph|flowchart|subgraph|end|classDef|class|style|linkStyle|click|direction)\b/;
 const NODE = /^[A-Za-z_][\w.-]*$/;
@@ -126,11 +142,13 @@ export function readPackageGraph(markdown: string): PackageGraph {
       nodes.add(to);
       continue;
     }
-    if (text.includes('-->') || OTHER_LINK.test(text)) {
+    // A directive is never an edge, so reading it first can hide no arrow — while reading it last
+    // would red the gate on a `classDef` that happens to carry a run, a finding no edit can clear.
+    if (DIRECTIVE.test(text)) continue;
+    if (OTHER_LINK.test(text)) {
       unreadable.push(entry);
       continue;
     }
-    if (DIRECTIVE.test(text)) continue;
     for (const token of text.split(/[;,]/)) {
       const name = token.trim();
       if (NODE.test(name)) nodes.add(name);
@@ -154,6 +172,8 @@ export interface PackageGraphInput {
   /** `undefined` when the page could not be read — a state that must fail, never skip. */
   readonly markdown: string | undefined;
   readonly workspaces: readonly GraphWorkspace[];
+  /** Manifests that would not parse. A finding, never an unhandled rejection with no `--json`. */
+  readonly unreadable?: readonly string[];
 }
 
 const unscanned = (cause: string, fix: string, at = PACKAGE_MAP): Finding => ({
@@ -184,6 +204,16 @@ export function checkPackageMapGraph(input: PackageGraphInput): readonly Finding
         `restore ${PACKAGE_MAP}, or point PACKAGE_MAP in scripts/package-map-graph.ts at the page that draws the graph`,
       ),
     ];
+  }
+  // Before the vacuity check below, which would otherwise blame the caller's cwd for a broken file.
+  if (input.unreadable !== undefined && input.unreadable.length > 0) {
+    return input.unreadable.map((at) =>
+      unscanned(
+        `${at} could not be read as a JSON manifest, so the dependencies behind every arrow out of that package are unknown and no arrow was checked`,
+        `repair the manifest at ${at} — \`bun -e 'await Bun.file("<path>").json()'\` prints the parse error and its offset for one file, and \`bun run scripts/list-workspaces.ts --json\` names every manifest this rule reads`,
+        at,
+      ),
+    );
   }
   if (input.workspaces.length === 0) {
     return [
@@ -245,36 +275,86 @@ export function checkPackageMapGraph(input: PackageGraphInput): readonly Finding
   return findings;
 }
 
-interface RawManifest {
-  readonly dependencies?: Readonly<Record<string, string>>;
-  readonly peerDependencies?: Readonly<Record<string, string>>;
+/** A JSON object, narrowed. The hand parse that replaces an `as RawManifest` on a value
+ *  `Bun.file().json()` hands over untyped: a manifest is whatever is on disk, not what we hoped. */
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** Every dependency NAME a parsed manifest declares, across both fields this rule reads. */
+export const manifestDeps = (parsed: unknown): readonly string[] =>
+  !isRecord(parsed)
+    ? []
+    : ['dependencies', 'peerDependencies'].flatMap((field) => {
+        const held = parsed[field];
+        return isRecord(held) ? Object.keys(held) : [];
+      });
+
+export interface GraphWorkspaces {
+  readonly workspaces: readonly GraphWorkspace[];
+  /** Repo-relative manifests that would not parse — reported, never thrown out of the process. */
+  readonly unreadable: readonly string[];
+}
+
+/** Which manifests do not parse. Asked only after a read failed, so the finding names a FILE:
+ *  `listWorkspaces` rejects on the first bad one without saying which, and its rejection reached
+ *  the top of the script — no result, no `--json`, no code, nothing an agent could act on. */
+async function unparsableManifests(root: string): Promise<readonly string[]> {
+  const bad: string[] = [];
+  for await (const relative of new Bun.Glob(PACKAGES_GLOB).scan({ cwd: root })) {
+    try {
+      await Bun.file(join(root, relative)).json();
+    } catch {
+      bad.push(relative);
+    }
+  }
+  return bad.sort();
 }
 
 /** In-repo dependencies only: an arrow on this graph is never `nats` or `sass`. */
-export async function readGraphWorkspaces(root: string): Promise<readonly GraphWorkspace[]> {
-  const workspaces = await listWorkspaces(root);
-  const names = new Set(workspaces.map((workspace) => workspace.name));
-  return Promise.all(
-    workspaces.map(async (workspace) => {
-      const manifest = (await Bun.file(`${workspace.path}/package.json`).json()) as RawManifest;
-      const declared = { ...manifest.dependencies, ...manifest.peerDependencies };
-      return {
-        dir: workspace.dir,
-        name: workspace.name,
-        version: workspace.version,
-        private: workspace.private,
-        tier: workspace.tier,
-        deps: Object.keys(declared).filter((name) => names.has(name)),
-      };
-    }),
-  );
+export async function readGraphWorkspaces(root: string): Promise<GraphWorkspaces> {
+  let listed: readonly Workspace[];
+  try {
+    listed = await listWorkspaces(root);
+  } catch {
+    const unreadable = await unparsableManifests(root);
+    // A rejection with no bad manifest behind it is still a refusal, never a clean answer.
+    return { workspaces: [], unreadable: unreadable.length > 0 ? unreadable : [PACKAGES_GLOB] };
+  }
+  const names = new Set(listed.map((workspace) => workspace.name));
+  const unreadable: string[] = [];
+  const workspaces: GraphWorkspace[] = [];
+  for (const workspace of listed) {
+    let parsed: unknown;
+    try {
+      parsed = await Bun.file(join(workspace.path, 'package.json')).json();
+    } catch {
+      parsed = undefined;
+    }
+    // A manifest that parses to `[]`, `null` or a number reads as "declares no dependency", which
+    // would report every arrow out of that package as unbacked. Unreadable is the honest answer.
+    if (!isRecord(parsed)) {
+      unreadable.push(`packages/${workspace.dir}/package.json`);
+      continue;
+    }
+    workspaces.push({
+      dir: workspace.dir,
+      name: workspace.name,
+      version: workspace.version,
+      private: workspace.private,
+      tier: workspace.tier,
+      deps: manifestDeps(parsed).filter((name) => names.has(name)),
+    });
+  }
+  return { workspaces, unreadable };
 }
 
 export async function packageMapGraphFindings(root: string): Promise<readonly Finding[]> {
   const page = Bun.file(`${root}/${PACKAGE_MAP}`);
+  const { workspaces, unreadable } = await readGraphWorkspaces(root);
   return checkPackageMapGraph({
     markdown: (await page.exists()) ? await page.text() : undefined,
-    workspaces: await readGraphWorkspaces(root),
+    workspaces,
+    unreadable,
   });
 }
 
@@ -283,8 +363,8 @@ if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const page = Bun.file(`${root}/${PACKAGE_MAP}`);
   const markdown = (await page.exists()) ? await page.text() : undefined;
-  const workspaces = await readGraphWorkspaces(root);
-  const findings = checkPackageMapGraph({ markdown, workspaces });
+  const { workspaces, unreadable } = await readGraphWorkspaces(root);
+  const findings = checkPackageMapGraph({ markdown, workspaces, unreadable });
   const graph = markdown === undefined ? undefined : readPackageGraph(markdown);
   report(
     {

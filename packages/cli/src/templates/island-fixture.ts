@@ -3,6 +3,8 @@
 // `import { Button } from '@ultimat3/ui'` is proven by a build that actually resolves it, and not
 // by a string assertion that the import is present.
 
+// `node:` by necessity, and SYNC by necessity: `[Symbol.dispose]` cannot await, so the teardown
+// half has to be synchronous — and Bun ships neither a path API nor a `symlink`.
 import { mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { GeneratedFile } from './naming';

@@ -17,6 +17,7 @@ import {
   scanTopLevelEffects,
   sideEffectFinding,
   sideEffectGaps,
+  unknownPins,
 } from './side-effects';
 
 const ROOT = repoRoot();
@@ -148,6 +149,13 @@ describe('the ratchet', () => {
     expect(finding.at).toBe(PINS_FILE);
     expect(finding.fix).toContain('--unpin packages/x');
   });
+
+  test('a name --unpin cannot act on is refused, not answered "nothing to lower"', () => {
+    // `--unpin packages/does-not-exist` used to exit 0 with a sentence about a package that is not
+    // in the tree, so a typo in the fix line the gate printed read as success.
+    expect(unknownPins(['packages/does-not-exist'])).toEqual(['packages/does-not-exist']);
+    expect(unknownPins([SIDE_EFFECTS_UNDECLARED[0] as string])).toEqual([]);
+  });
 });
 
 describe('vacuity', () => {
@@ -192,6 +200,51 @@ describe('readPackageFacts', () => {
 
     expect(facts).toHaveLength(1);
     expect(facts[0]?.effects).toEqual([{ path: 'src/errors.ts', line: 1 }]);
+  });
+
+  /**
+   * The boundary the header claims and nothing used to enforce. `join` collapses `..`, so
+   * `../../beta/src/effect` resolved to a real file OUTSIDE the package and the reported path was
+   * the other package's absolute path sliced at THIS package's length. Measured before the fix:
+   * `packages/alpha/rc/effect.ts`, a file in neither package, and the two findings chase each other
+   * — the `UNDECLARED` fix asks for the entry, `ENTRY_STALE` refuses it, and `x verify` cannot go
+   * green by any edit.
+   */
+  test('a relative import that LEAVES the package is not this package effect', async () => {
+    await write(
+      'packages/alpha/package.json',
+      JSON.stringify({ name: '@fake/alpha', sideEffects: [], exports: { '.': './src/index.ts' } }),
+    );
+    await write('packages/alpha/src/index.ts', "export * from '../../beta/src/effect';\n");
+    await write(
+      'packages/beta/package.json',
+      JSON.stringify({
+        name: '@fake/beta',
+        sideEffects: ['./src/effect.ts'],
+        exports: { '.': './src/effect.ts' },
+      }),
+    );
+    await write('packages/beta/src/effect.ts', 'registerErrorCodes({});\nexport const b = 1;\n');
+
+    const facts = await readPackageFacts(FIXTURE);
+    const alpha = facts.find((one) => one.dir === 'packages/alpha');
+    const beta = facts.find((one) => one.dir === 'packages/beta');
+    // beta owns its own effect, and declares it; alpha owns none, so nothing is reported twice.
+    expect(alpha?.effects).toEqual([]);
+    expect(beta?.effects).toEqual([{ path: 'src/effect.ts', line: 1 }]);
+    expect(checkSideEffects({ packages: facts, pins: [] })).toEqual([]);
+  });
+
+  test('an exports target that points outside the package is not walked either', async () => {
+    await write(
+      'packages/alpha/package.json',
+      JSON.stringify({ name: '@fake/alpha', sideEffects: [], exports: '../beta/src/effect.ts' }),
+    );
+    await write('packages/beta/package.json', JSON.stringify({ name: '@fake/beta' }));
+    await write('packages/beta/src/effect.ts', 'registerErrorCodes({});\n');
+
+    const facts = await readPackageFacts(FIXTURE);
+    expect(facts.find((one) => one.dir === 'packages/alpha')?.effects).toEqual([]);
   });
 
   test('a module reachable only through a re-export still counts', async () => {

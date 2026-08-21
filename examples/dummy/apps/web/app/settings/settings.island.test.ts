@@ -98,14 +98,24 @@ beforeAll(async () => {
 }, 60_000);
 
 // The fake `document` is process-global: left installed it reaches every LATER FILE in the run.
+// `?.` because a `beforeAll` that threw leaves `mounted` unassigned, and an unguarded dispose then
+// adds a meaningless `TypeError` AFTER the coded cause — bun prints both, so the real error is the
+// one that scrolls away. The type stays `MountedIsland`, not `| undefined`: widening it reds every
+// `mounted.…` read below with TS18048.
 afterAll(() => {
-  mounted[Symbol.dispose]();
+  mounted?.[Symbol.dispose]();
 });
 
 /**
  * One mount, driven as a session: the cases below run in order against the same island, because
  * building the real chunk is a Babel pass plus a browser bundle and repeating it per case would
- * pay seconds for state each case sets up anyway. What each one asserts is independent.
+ * pay seconds for state each case sets up anyway.
+ *
+ * Declaration order is therefore LOAD-BEARING, not incidental — each case continues the selection
+ * the last one left, and `save` posts all three at once. `bun test --randomize` reds this file
+ * (measured: `--seed=7` reds the status case), and that is the price of one mount rather than a
+ * defect to route around. What a case may not do is paste a value a SIBLING chose: it reads it
+ * from the control instead, so a failure names the case that broke and not the one after it.
  */
 describe('the settings island', () => {
   test('mount replaces the server shell with the editor', () => {
@@ -129,8 +139,11 @@ describe('the settings island', () => {
   });
 
   test('the locale reaches the same preview, so both signals are tracked', () => {
+    // The zone the case above left selected, read rather than pasted: a literal here would be this
+    // case asserting a sibling's outcome as its own premise.
+    const zone = selectAt(1).value;
     choose(selectAt(0), 'es');
-    expect(mounted.text('[data-role="preview"]')).toBe(expectedPreview('es', 'Asia/Tokyo'));
+    expect(mounted.text('[data-role="preview"]')).toBe(expectedPreview('es', zone));
   });
 
   test("theme writes <html data-theme> at once, and 'system' takes it back off", () => {

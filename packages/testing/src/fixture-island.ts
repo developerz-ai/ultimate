@@ -89,19 +89,41 @@ const MODULE_DIR = mkdtempSync(join(tmpdir(), 'ultimate-island-'));
  * The property the URL form was chosen for survives: the name is derived from the bytes, so an
  * edited island is a different module rather than a cache hit on the same path.
  */
-const moduleUrlFor = (code: string): string =>
+const modulePathFor = (code: string): string =>
   join(MODULE_DIR, `${Bun.SHA256.hash(code, 'hex').slice(0, 16)}.mjs`);
 
+/**
+ * DESCRIPTORS, not values, and all-or-nothing.
+ *
+ * A saved value cannot tell "no such global" from "a global holding `undefined`", so a teardown
+ * reading one deletes both — and `key in globalThis` flips behind whoever owned it. It also cannot
+ * put an accessor back as an accessor.
+ *
+ * The rollback is the half with teeth. This runs BEFORE `mountIsland`'s own `try`, so an
+ * assignment that throws — a getter-only own global among the caller's `globals` — would leave the
+ * fake `document` already installed ahead of it for the whole rest of the process, which is the
+ * exact leak the `catch` below exists to prevent.
+ */
 function installGlobals(values: Readonly<Record<string, unknown>>): () => void {
   const host = globalThis as unknown as Record<string, unknown>;
-  const saved = new Map(Object.keys(values).map((key) => [key, host[key]]));
-  Object.assign(host, values);
-  return (): void => {
-    for (const [key, value] of saved) {
-      if (value === undefined) delete host[key];
-      else host[key] = value;
+  const saved = Object.keys(values).map(
+    (key) => [key, Object.getOwnPropertyDescriptor(host, key)] as const,
+  );
+  const restore = (): void => {
+    for (const [key, descriptor] of saved) {
+      if (descriptor === undefined) delete host[key];
+      else Object.defineProperty(host, key, descriptor);
     }
   };
+  try {
+    // Assignment, not `defineProperty`: a global with a setter is meant to see the write, and
+    // `Object.assign` over the lot would report the same failure with nothing rolled back.
+    for (const [key, value] of Object.entries(values)) host[key] = value;
+  } catch (error) {
+    restore();
+    throw error;
+  }
+  return restore;
 }
 
 /**
@@ -123,7 +145,7 @@ export async function mountIsland(options: MountIslandOptions): Promise<MountedI
   const { documentElement, globals } = createIslandDocument();
   const restore = installGlobals({ ...globals, ...options.globals });
   try {
-    const path = moduleUrlFor(chunk.code);
+    const path = modulePathFor(chunk.code);
     await Bun.write(path, chunk.code);
     const entry = entryOf(await import(path), chunk.file);
     const el = new FakeElement('div');

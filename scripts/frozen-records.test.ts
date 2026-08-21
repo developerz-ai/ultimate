@@ -127,6 +127,41 @@ describe('a closed key laundered through an alias', () => {
     expect(aliasTable([file('a.ts', 'type Ctx = { r: Record<M, R> };\n')]).size).toBe(0);
   });
 
+  test('is NOT borrowed from ANOTHER package that happens to share the type name', () => {
+    // The false-finding class a repo-global table produced: `mail` writes its own `Config`, and the
+    // finding named `RenderMode` — a type `mail` neither declares nor imports.
+    const report = checkFrozenRecords([
+      good,
+      file(
+        'packages/pwa/src/modes.ts',
+        'export type Config = Readonly<Record<RenderMode, string>>;\n',
+      ),
+      file(
+        'packages/mail/src/config.ts',
+        "export type Config = { host: string };\nexport const MAIL: Config = Object.freeze({\n  host: 'x',\n});\n",
+      ),
+    ]);
+    expect(report.findings).toEqual([]);
+    expect(report.counts.unconstrained).toBe(1);
+  });
+
+  test('is NOT resolved when ONE package declares the name twice with two bodies', () => {
+    const report = checkFrozenRecords([
+      good,
+      file('packages/jobs/src/a.ts', 'export type Table = Readonly<Record<Outcome, string>>;\n'),
+      file('packages/jobs/src/b.ts', 'type Table = ReadonlyArray<string>;\n'),
+      file('packages/jobs/src/c.ts', "const T: Table = Object.freeze({\n  ok: 'x',\n});\n"),
+    ]);
+    expect(report.findings).toEqual([]);
+    expect(report.counts.unconstrained).toBe(1);
+    expect(
+      aliasTable([
+        file('packages/jobs/src/a.ts', 'type Table = Readonly<Record<Outcome, string>>;\n'),
+        file('packages/jobs/src/b.ts', 'type Table = ReadonlyArray<string>;\n'),
+      ]).has('Table'),
+    ).toBe(false);
+  });
+
   test('an interface annotation is still left alone — an alias table has no entry for one', () => {
     const report = checkFrozenRecords([
       good,

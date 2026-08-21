@@ -3,12 +3,15 @@
 // state the same thing. A skipped route with no reason is what turned "the island did not mount"
 // into a bug report about a page that had never been in `.x/static/` at all (#242).
 
-import { existsSync } from 'node:fs';
+// `node:` twice, and only where Bun answers nothing: Bun ships no path API, and `rm(…, { force })`
+// deletes a report that may not be there without a branch. `existsSync` was a third and is gone —
+// `Bun.file(path).json()` already rejects on a missing file, into the catch that answers `undefined`.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { RenderMode } from '@ultimat3/core';
+import { RENDER_MODES } from '@ultimat3/core';
 import type { Surface } from '@ultimat3/render';
-import { SURFACE_SPECS, surfaceAllows } from '@ultimat3/render';
+import { SURFACE_SPECS, SURFACES, surfaceAllows } from '@ultimat3/render';
 import type { JsonValue } from './output';
 
 /** Beside `.x/build-stats.json`, and written by the same call — see `readStaticReport` below. */
@@ -117,13 +120,24 @@ export function skippedRoute(
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
+/**
+ * A closed vocabulary, checked against the vocabulary itself. `typeof value === 'string'` is what
+ * `surface` and `render` were held to, and a string is not a `Surface`: the parse then handed back
+ * a `SkippedRoute` whose declared type says `'site' | 'app' | 'api' | 'shared'` while it holds
+ * whatever the file said, so `SURFACE_SPECS[route.surface]` on the read side is `undefined` at the
+ * first reader that indexes it. `SKIP_REASONS` was already checked this way; these two are the same
+ * kind of field and get the same rule.
+ */
+const inDomain = (domain: readonly string[], value: unknown): boolean =>
+  typeof value === 'string' && domain.includes(value);
+
 const isSkipped = (value: unknown): value is SkippedRoute =>
   isRecord(value) &&
   typeof value['route'] === 'string' &&
-  typeof value['surface'] === 'string' &&
-  typeof value['render'] === 'string' &&
+  inDomain(SURFACES, value['surface']) &&
+  inDomain(RENDER_MODES, value['render']) &&
   typeof value['why'] === 'string' &&
-  (SKIP_REASONS as readonly string[]).includes(String(value['reason']));
+  inDomain(SKIP_REASONS, value['reason']);
 
 const isEmitted = (value: unknown): value is EmittedPage =>
   isRecord(value) &&
@@ -160,10 +174,8 @@ export async function writeStaticReport(root: string, report: StaticReport): Pro
  * second code for one cause.
  */
 export async function readStaticReport(root: string): Promise<StaticReport | undefined> {
-  const path = join(root, STATIC_REPORT_FILE);
-  if (!existsSync(path)) return undefined;
   try {
-    return parseStaticReport(await Bun.file(path).json());
+    return parseStaticReport(await Bun.file(join(root, STATIC_REPORT_FILE)).json());
   } catch {
     return undefined;
   }

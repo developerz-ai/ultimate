@@ -3,6 +3,8 @@
 // without the plugin under test a correct island ships the dev bundle with `success: true`.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+// `node:` by necessity: Bun ships no path API, and `rm(…, { force: true })` removes a fixture
+// root that may not exist without a branch.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { buildIslands } from './island-bundle';

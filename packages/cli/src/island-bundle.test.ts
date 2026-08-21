@@ -2,6 +2,8 @@
 // test is what lands in the chunk table, and a fake builder would prove nothing about it.
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+// `node:` by necessity: Bun ships no path API, and `rm(…, { force: true })` removes a fixture
+// root that may not exist without a branch.
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
@@ -34,6 +36,9 @@ afterEach(async () => {
 
 const codeOf = (error: unknown): string =>
   error instanceof UltimateError ? error.code : `not an UltimateError: ${String(error)}`;
+
+const fixOf = (error: unknown): string =>
+  error instanceof UltimateError ? error.fix : `not an UltimateError: ${String(error)}`;
 
 describe('discoverIslands', () => {
   test('finds a client entry on every surface that renders a document, and only those', async () => {
@@ -106,6 +111,33 @@ describe('buildIslands', () => {
         codeOf,
       ),
     ).toBe('X_ISLAND_INVALID');
+  });
+
+  // The `fix:` RUN, not read. It said `pass only: '<app-root-relative path>.island.tsx'` — a
+  // placeholder, and no gate could see it: `fixProblem` fails a fix only for advice with no
+  // command token, and that sentence carried neither. Pasting what the error hands back has to
+  // build, or the line is prose about a repair rather than the repair.
+  test('only: the fix names a path that builds, and pasting it does', async () => {
+    await write('apps/web/app/panel.island.tsx', MODULE('two'));
+    const fix = await buildIslands(ROOT, { only: 'panel.island.tsx' }).then(() => '', fixOf);
+
+    // The basename survives a wrong PREFIX, which is what a route-relative specifier is.
+    expect(fix).toBe("buildIslands(root, { only: 'apps/web/app/panel.island.tsx' })");
+    const pasted = /only: '(?<file>[^']+)'/.exec(fix)?.groups?.['file'] ?? '';
+    const bundle = await buildIslands(ROOT, { only: pasted });
+    expect(bundle.chunks.map((chunk) => chunk.file)).toEqual(['apps/web/app/panel.island.tsx']);
+  });
+
+  test('only: an app with no islands at all is told to write the one it asked for', async () => {
+    // Nothing to point at, so the fix cannot be a path — it is the command that creates the file,
+    // split off the caller's own argument, exactly as an unresolvable page `src` is answered.
+    const fix = await buildIslands(ROOT, { only: 'apps/web/site/typo.island.tsx' }).then(
+      () => '',
+      fixOf,
+    );
+    expect(fix).toBe('x g island typo --at apps/web/site');
+    // Neither form may hand back a shape to fill in: that is the defect, stated once for both.
+    expect(fix).not.toContain('<');
   });
 
   test('a client entry that will not compile fails the build naming the file', async () => {

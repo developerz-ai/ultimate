@@ -139,8 +139,14 @@ beforeAll(async () => {
 }, 60_000);
 
 // The fake \`document\` is process-global: left installed it reaches every LATER FILE in the run.
+//
+// \`?.\` on a binding the type says is always set: TypeScript's definite-assignment analysis does not
+// cross the \`beforeAll\` closure, so a setup that REJECTED leaves this undefined at run time — and
+// bun runs \`afterAll\` regardless. Unguarded, the build failure is followed by a \`TypeError:
+// undefined is not an object\` that says nothing, and that second line is the one a tail reads.
+// Nothing is skipped by the guard: \`mountIsland\` restores the process itself when a mount throws.
 afterAll(() => {
-  mounted[Symbol.dispose]();
+  mounted?.[Symbol.dispose]();
 });
 
 describe('the ${name} island', () => {

@@ -117,6 +117,36 @@ describe('unit · a generated test is named for the step it runs under', () => {
 
 // The five, each named — a table failure above says "something drifted", and these say which
 // generator and to which filename it must go back.
+describe('unit · a generated fixture is torn down only if it was ever set up', () => {
+  /**
+   * `let mounted: MountedIsland;` is assigned inside `beforeAll`, and TypeScript's
+   * definite-assignment analysis does not cross that closure — so the type says "always there" and
+   * a rejected setup leaves it `undefined`. bun runs `afterAll` anyway: measured on 1.4.0, a
+   * `beforeAll` that throws `X_BUILD_FAILED` reports TWO failures, the coded one and
+   * `TypeError: undefined is not an object (evaluating 'mounted[Symbol.dispose]')` — and the
+   * TypeError is last, which is what a tailed log shows. Nothing is lost by guarding: `mountIsland`
+   * restores the process itself when a mount throws.
+   */
+  test('a generated afterAll disposes through `?.`, never bare', () => {
+    const offenders = emitted().flatMap((file) => {
+      if (!/\.test\.tsx?$/.test(file.path)) return [];
+      const source = stripComments(file.contents);
+      if (!source.includes('beforeAll(')) return [];
+      return /(?<!\?\.)\[Symbol\.dispose\]\(/.test(source) ? [`${file.from}: ${file.path}`] : [];
+    });
+    expect(offenders).toEqual([]);
+  });
+
+  test('the rule has subjects, or it is a check over an empty list', () => {
+    // Two templates emit one: `x g island` and `x g resource`'s form. A rule whose subject set
+    // silently empties passes forever, which is the shape this suite exists to refuse.
+    const disposers = emitted().filter(
+      (file) => /\.test\.tsx?$/.test(file.path) && file.contents.includes('[Symbol.dispose]('),
+    );
+    expect(disposers.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe('unit · each generator writes its test where its own step can select it', () => {
   const target = { surfaceDir: 'apps/web/app', feature: 'invoice' } as const;
 

@@ -246,6 +246,17 @@ const exportTargets = (exports: unknown): readonly string[] => {
   return Object.values(exports as Record<string, unknown>).flatMap(exportTargets);
 };
 
+/**
+ * Under the package, and not merely reachable from it. `join` collapses `..`, so a relative
+ * specifier CAN leave: `../../core/src/errors` resolves to a real file, and `path` below is then
+ * `file.slice(absolute.length + 1)` — ANOTHER package's absolute path sliced at this one's length.
+ * Measured on a scratch tree: `packages/beta/src/effect.ts` reached from `packages/alpha` reported
+ * `packages/alpha/rc/effect.ts`, a file in neither, and the two findings chase each other —
+ * `X_SIDE_EFFECTS_UNDECLARED` demands the entry, `X_SIDE_EFFECTS_ENTRY_STALE` refuses it because
+ * nothing on disk matches, and no edit clears either. The exact shape lines 92-93 argue against.
+ */
+const inside = (absolute: string, file: string): boolean => file.startsWith(`${absolute}/`);
+
 const CANDIDATES = ['', '.ts', '.tsx', '/index.ts', '/index.tsx'];
 
 async function resolveRelative(from: string, spec: string): Promise<string | null> {
@@ -265,8 +276,9 @@ async function resolveRelative(from: string, spec: string): Promise<string | nul
  * (`if (import.meta.main)`, `bin.ts`) must NOT be demanded in the field — noise in `sideEffects` is
  * how the field stops being read, and this is where the noise is filtered out.
  *
- * Relative specifiers only. A cross-package import stops at the boundary, which is the other
- * package's `sideEffects` to answer for.
+ * Relative specifiers only, and only INSIDE the package — a cross-package import stops at the
+ * boundary, which is the other package's `sideEffects` to answer for. `inside` is what makes that
+ * sentence true rather than merely written.
  */
 export async function reachableEffects(
   root: string,
@@ -276,7 +288,8 @@ export async function reachableEffects(
   const absolute = join(root, dir);
   const queue = exportTargets(exports)
     .filter((target) => /\.tsx?$/.test(target))
-    .map((target) => join(absolute, target));
+    .map((target) => join(absolute, target))
+    .filter((file) => inside(absolute, file));
   const seen = new Set<string>();
   const effects: EffectModule[] = [];
   while (queue.length > 0) {
@@ -293,7 +306,7 @@ export async function reachableEffects(
       const spec = match[1] ?? match[2] ?? match[3];
       if (spec === undefined) continue;
       const resolved = await resolveRelative(file, spec);
-      if (resolved !== null) queue.push(resolved);
+      if (resolved !== null && inside(absolute, resolved)) queue.push(resolved);
     }
   }
   return effects.sort((a, b) => a.path.localeCompare(b.path));
@@ -344,6 +357,15 @@ export const explainSideEffects = async (
   );
 
 /**
+ * Names `--unpin` cannot act on: not on the ratchet at all. Without this the summary answered
+ * `nothing to lower — every named package still declares no sideEffects` for
+ * `--unpin packages/does-not-exist`, which is `ok: true` for a typo and a sentence about a package
+ * that does not exist. `reference-app-gate.ts --unpin` refuses the same way, with the same code.
+ */
+export const unknownPins = (names: readonly string[]): readonly string[] =>
+  names.filter((name) => !SIDE_EFFECTS_UNDECLARED.includes(name));
+
+/**
  * Lower the ratchet for the named packages, by editing the array above. The edit
  * `X_SIDE_EFFECTS_PIN_STALE` names, performed — a fix line that is a command is only true if the
  * command exists.
@@ -379,6 +401,26 @@ if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
   const unpin = flagList(args, 'unpin');
+  const unknown = unknownPins(unpin);
+  if (unknown.length > 0) {
+    const cause = `--unpin names ${unknown.join(', ')}, which ${unknown.length === 1 ? 'is' : 'are'} not on the ratchet, so nothing would have been lowered and the command would still have answered ok`;
+    report(
+      {
+        ok: false,
+        script: SCRIPT,
+        summary: cause,
+        findings: [
+          {
+            code: 'X_CLI_BAD_FLAG',
+            cause,
+            fix: `spell each one as its repo-relative directory, e.g. packages/action — the ratchet is the SIDE_EFFECTS_UNDECLARED array in ${PINS_FILE}`,
+            at: PINS_FILE,
+          },
+        ],
+      },
+      args.json,
+    );
+  }
   if (unpin.length > 0) {
     const lowered = await applyUnpin(root, unpin);
     report(

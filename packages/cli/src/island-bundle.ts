@@ -158,13 +158,33 @@ export async function buildIslands(
   return islandBundle(chunks);
 }
 
-/** Same code as an unbuildable `src`: "this path cannot become a client entry" is one condition. */
+/**
+ * Same code as an unbuildable `src`: "this path cannot become a client entry" is one condition.
+ *
+ * Two fixes, because there are two causes and only one of them can be repaired by naming a path.
+ * The line was `pass only: '<app-root-relative path>.island.tsx'` — a placeholder nobody can run,
+ * which no gate could see: `fixProblem` fails a fix only for ADVICE with no command token, and a
+ * sentence with neither is not advice. Both forms below are constructed from what the caller
+ * already handed in, so neither can name a path this app does not have.
+ */
 function onlyMissing(only: string, discovered: readonly string[]): IslandInvalidError {
-  return new IslandInvalidError(
+  const cause =
     `buildIslands was asked for ${JSON.stringify(only)} alone, which is not one of the ` +
-      `${discovered.length} islands this app has (${discovered.length === 0 ? 'none' : discovered.join(', ')})`,
-    `pass only: '<app-root-relative path>${ISLAND_EXTENSION}', exactly as discoverIslands reports it`,
-  );
+    `${discovered.length} islands this app has (${discovered.length === 0 ? 'none' : discovered.join(', ')})`;
+  // The basename match first: a filter that misses normally missed on the PREFIX — a route-relative
+  // specifier where `discoverIslands`' app-root-relative path was wanted — and the filename
+  // survives that. Falling back to the first keeps the fix a real path rather than a shape.
+  const nearest =
+    discovered.find((file) => posix.basename(file) === posix.basename(only)) ?? discovered[0];
+  // An app with no islands cannot be pointed at one, so the fix WRITES the file that was asked
+  // for — the same command `entryMissing` hands back, split off the same path.
+  if (nearest === undefined) {
+    return new IslandInvalidError(
+      cause,
+      `x g island ${posix.basename(only, ISLAND_EXTENSION)} --at ${posix.dirname(only)}`,
+    );
+  }
+  return new IslandInvalidError(cause, `buildIslands(root, { only: '${nearest}' })`);
 }
 
 export function islandBundle(chunks: readonly IslandChunk[]): IslandBundle {

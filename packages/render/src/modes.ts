@@ -225,8 +225,14 @@ export function defaultHydrate(surface: Surface): HydrateStrategy {
  * (`settings.island.tsx`) is 17,797 B. No `budget.js` under 4096 was reachable by any of them, on
  * any surface, because the allowance is measured above the baseline and not against it.
  *
- * The number: 17,797 (the heaviest island this repo actually ships) + 615 (`hydrateRuntimeBytes`
- * for one directive) = 18,412, rounded up to the next whole kilobyte with headroom. It is not
+ * The number: 17,797 (the heaviest island this repo actually ships) + 881 (`hydrateRuntimeBytes`
+ * for one directive at `DEFAULT_ISLAND_HYDRATE`, which is `'interaction'` — `route.ts:33`, applied
+ * at `:253` to any island route declaring no `hydrate`) = **18,678**. That is the worst case an
+ * app reaches without writing a number down. 20,480 is NOT that rounded up — the next whole
+ * kilobyte above it is 19,456 — it is one whole kB further, leaving 1,802 B of headroom and still
+ * under 2x 18,678, so a route bundling the same island twice is refused. `modes.test.ts` asserts
+ * all three. `idle` costs 615 and `visible` 687, so an island route that declares its strategy
+ * pays less; the default is what the budget has to clear. It is not
  * derived from Solid's own size on purpose — this package may not import or name `solid-js`
  * (`CLAUDE.md`), so a constant tracking the runtime's version would be a dependency in a comment.
  *
