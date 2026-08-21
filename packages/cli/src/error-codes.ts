@@ -96,6 +96,7 @@ export const CLI_OWNED_ERROR_CODES = [
   // CLI's problem alone, and core would have no `fix:` to offer for one.
   'X_SECRETS_EDITOR_MISSING',
   'X_SECRETS_EDIT_FAILED',
+  'X_WORKSPACE_DEP_UNDECLARED',
 ] as const;
 
 /**
@@ -188,6 +189,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_CLI_FLAG_UNREAD: 'a command declares a flag no code reads',
   X_SECRETS_EDITOR_MISSING: 'no $EDITOR to open the decrypted secrets in',
   X_SECRETS_EDIT_FAILED: 'the editor exited non-zero, so nothing was resealed',
+  X_WORKSPACE_DEP_UNDECLARED: 'a workspace imports another workspace it does not declare',
 };
 
 // One unconditional call, so a second package claiming one of the CLI's codes throws

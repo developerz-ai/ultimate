@@ -159,7 +159,15 @@ const CATALOG = {
   'cli.routes.empty': 'no routes in the manifest — run `x manifest` first',
   'cli.tasks.count': '{count} task(s)',
   'cli.tasks.shown': '{name} — {cron} ({tz}), next {next}',
+  'cli.affected.count':
+    '{count} workspace(s) affected by {base}...HEAD, from {changed} changed file(s)',
+  'cli.affected.dirty':
+    '  including the working tree (--dirty): every uncommitted change in this checkout, whoever made it',
+  'cli.affected.none': 'no workspace is affected by {base}...HEAD, from {changed} changed file(s)',
+  'cli.affected.rootWide':
+    '  every workspace: {files} belongs to none of them and changes what all of them compile',
   'cli.test.fail': '{failed} of {workers} shard(s) failed',
+  'cli.test.affected.none': 'nothing is affected by {base}...HEAD — 0 test file(s) ran',
   'cli.test.pass': '{files} test file(s) on {workers} worker(s) passed in {ms}ms',
   'cli.test.sampled': 'sampled {kept} of {total} {type} file(s)',
   'cli.test.type.fail': '{type} — {failed} of {workers} shard(s) failed',

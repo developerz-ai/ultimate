@@ -47,6 +47,7 @@ x version              # CLI version
 | `x policy` | which clause decided a permission, and why | shipped |
 | `x i18n` | add, sync, check catalogs | shipped |
 | `x test <type>` | run one of the six test types, or the whole suite | shipped |
+| `x affected` | the workspaces a diff can have broken, transitively | shipped |
 | `x errors explain <CODE>` | code → cause, fix, docs | shipped |
 | `x docs "<question>"` | framework docs, offline, from `node_modules` | shipped |
 | `x fix boundary <file>` | plan the minimal cut for an import that crossed a surface boundary (never rewrites) | shipped |
@@ -844,7 +845,7 @@ Errors: `X_CATALOG_MISSING_KEYS` (per locale, as a finding), `X_CATALOG_INVALID`
 
 ```bash
 x test [unit|contract|live|job|e2e|eval] [--filter text] [--sample N]
-       [--workers N] [--worker I] [--json]
+       [--affected [--base <ref>] [--dirty]] [--workers N] [--worker I] [--json]
 ```
 
 | Flag | Type | Default | Meaning |
@@ -854,8 +855,39 @@ x test [unit|contract|live|job|e2e|eval] [--filter text] [--sample N]
 | `--sample` | string | — | run at most N files of the selection, deterministically. A fast signal for the eval loop — **never a gate** |
 | `--workers` | string | CPUs | process count; each worker gets its own template-cloned database |
 | `--worker` | string | — | rerun only shard I of the same split, reproducing a CI worker failure locally |
+| `--affected` | boolean | off | narrow the selection to the workspaces the diff touches and everything that depends on them. `--base`/`--dirty` without it are refused, not ignored |
+| `--base` | string | `main` | the ref to diff against, merge-base (`<base>...HEAD`). Needs `--affected` |
+| `--dirty` | boolean | off | union the working tree in — uncommitted and untracked. Needs `--affected` |
 
 The type rule is `x verify`'s, not a second one — so `x test contract` runs exactly what the gate's `contract` step runs. A selection that matches no files is `X_TEST_NO_FILES`; an unknown type is `X_CLI_BAD_FLAG` naming the six and suggesting the nearest.
+
+`--affected` narrows the FEEDBACK, never the gate. `x verify` stays un-narrowable — there is no `--only` and no `--skip` — because a gate that can be scoped is a gate that can be scoped wrong. Nothing affected is **green with zero spawns**, not a failure: editing a `.md` should not fail a build. A failing shard's `fix:` carries `--affected --base <ref>` back with it, because `--affected` decides which files exist to shard at all and a rerun without it re-splits the whole corpus into a different shard 2.
+
+## x affected
+
+```bash
+x affected [--base <ref>] [--dirty] [--paths] [--json]
+```
+
+| Flag | Type | Default | Meaning |
+|---|---|---|---|
+| `--base` | string | `main` | the ref to diff against. The diff is `<base>...HEAD` — **three dots**, so it is measured from the merge-base and an unrelated commit on `main` does not widen the answer |
+| `--dirty` | boolean | off | union the working tree in: uncommitted changes plus untracked files |
+| `--paths` | boolean | off | print bare directories, one per line, for piping. `--json` is byte-identical either way |
+
+**Transitive, or it is worse than nothing.** `A → B → C` means a change in `C` must reach `A`; a single pass over an unordered list reaches only `B`, and a scoped run that misses a transitive dependent is a green checkmark on a broken repo. The graph it walks is the one every workspace's `package.json` declares — which is why `package-shape` refuses an undeclared cross-workspace import (`X_WORKSPACE_DEP_UNDECLARED`): an edge missing from a manifest is an edge missing from this answer, silently.
+
+Three rules the set obeys:
+
+| Change | Affected |
+|---|---|
+| a root file — `tsconfig.json`, `biome.json`, `bunfig.toml`, `bun.lock`, root `package.json`, `app.config.ts` | **every** workspace. These change what all of them compile or resolve |
+| a workspace's own `package.json` | that workspace only |
+| a `.md` | nothing. A doc has no compilation unit to re-check |
+
+**`--base` is the default and `--dirty` is opt-in, which is the reverse of the obvious design.** This repo runs several agents concurrently in **one checkout** (no worktrees), so a working-tree diff returns every agent's uncommitted work at once and the "affected" set quietly expands to nearly the whole monorepo — narrowing nothing while reading as though it did. A ref diff is stable under that. `--dirty` is the right answer for one developer iterating alone.
+
+**Typecheck is deliberately not scoped.** `bun run typecheck` is `tsc -b`, a project build over a shared `.tsbuildinfo`, so a "scoped" typecheck is either the whole project anyway or a weaker check. The time is in the tests, which is what `x test --affected` narrows.
 
 ## x errors
 

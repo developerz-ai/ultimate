@@ -9,5 +9,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ../../tsconfig.json"
+  },
+  "dependencies": {
+    "@social-media-clone/domain": "0.0.0"
   }
 }

@@ -35,6 +35,7 @@ import type { VerifyStep } from './verify-step';
 import { fromExec, fromFindings, hostFindings } from './verify-step';
 import { TEST_STEPS } from './verify-tests';
 import { checkFileSizes, checkPackageShape, hasWorkspacePackages } from './workspace-checks';
+import { checkWorkspaceDependencies } from './workspace-graph';
 
 /** The one file that makes the `roadmap` step answerable, and therefore what `applies` reads. */
 const ROADMAP_FILE = join('docs', 'idea', '14-roadmap.md');
@@ -100,7 +101,16 @@ export const VERIFY_STEPS: readonly VerifyStep[] = [
     name: 'package-shape',
     summary: 'every package ships the same contract files',
     applies: (ctx) => hasWorkspacePackages(ctx.root),
-    run: async (ctx) => fromFindings(await checkPackageShape(ctx.root)),
+    // The dependency rule rides here rather than becoming a twentieth step because it is this
+    // step's own question — what does a workspace owe the repo it lives in? — asked of the
+    // manifest's `dependencies` instead of its `files`. It is deliberately NOT inside
+    // `checkPackageShape`: `scripts/release.ts --check` calls that one to ask whether the tree is
+    // at the version a tag claims, and an undeclared import is not that question.
+    run: async (ctx) =>
+      fromFindings([
+        ...(await checkPackageShape(ctx.root)),
+        ...(await checkWorkspaceDependencies(ctx.root)),
+      ]),
   },
   {
     name: 'errors',

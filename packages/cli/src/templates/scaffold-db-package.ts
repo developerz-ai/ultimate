@@ -13,6 +13,37 @@ import { packageShapeFiles, workspacePackageJson } from './scaffold-package-shap
 
 const DESCRIPTION = 'Entity re-exports and SQL migrations, no business logic';
 
+/**
+ * The example slice's entity lives in `apps/web/app/post/`, so `src/schema.ts` re-exports it from
+ * there — an edge this manifest has to declare or it exists only inside the root tsconfig's
+ * `paths`, where `bun --filter` and every change-detection tool are blind to it
+ * (`X_WORKSPACE_DEP_UNDECLARED`). Written here rather than through `workspacePackageJson` for the
+ * reason `scaffold-i18n.ts` states: that helper is the dependency-free shape.
+ *
+ * Under `--no-example` there is no entity and no import, so there is no dependency either: a pin
+ * for an edge the package does not have is the same lie in the other direction.
+ */
+const dbPackage = (app: NameSet, example: boolean): string =>
+  example
+    ? `{
+  "name": "@${app.kebab}/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "${DESCRIPTION}",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
+  },
+  "dependencies": {
+    "@${app.kebab}/web": "0.0.0"
+  }
+}
+`
+    : workspacePackageJson(app, 'db', DESCRIPTION);
+
 const dbIndex =
   (): string => `// Schema and migrations only — no business logic lives in this package. The client itself is
 // @ultimat3/db's: one connection pool, sized by ROLE, shared by every package in the app.
@@ -101,7 +132,7 @@ export const ${app.camel}Seed = defineSeed('${app.kebab}', async () => {
 
 /** Every file the `packages/db` workspace ships, in the order `x new` writes them. */
 export const dbPackageFiles = (app: NameSet, example: boolean): readonly GeneratedFile[] => [
-  { path: 'packages/db/package.json', contents: workspacePackageJson(app, 'db', DESCRIPTION) },
+  { path: 'packages/db/package.json', contents: dbPackage(app, example) },
   ...packageShapeFiles(app, 'db', DESCRIPTION),
   { path: 'packages/db/src/index.ts', contents: dbIndex() },
   { path: 'packages/db/src/schema.ts', contents: dbSchema(app, example) },

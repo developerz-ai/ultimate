@@ -3,9 +3,42 @@
 // itself.
 
 import type { GeneratedFile, NameSet } from './naming';
-import { packageShapeFiles, workspacePackageJson } from './scaffold-package-shape';
+import { packageShapeFiles } from './scaffold-package-shape';
 
 const DESCRIPTION = "The app's own MCP tools";
+
+/**
+ * Writes its own manifest, for the reason `scaffold-i18n.ts` does: `workspacePackageJson` is the
+ * dependency-free shape, and this package has a real dependency — `src/index.ts` below imports the
+ * app's actions out of `apps/web/api`, because `registerActions` has to see them.
+ *
+ * The edge points AT the app, which is unusual and correct. `apps/web` is a workspace like any
+ * other; reversing it would put the tool catalog upstream of the actions it projects. Declared
+ * rather than left to the root tsconfig's `paths`: an undeclared edge resolves for `tsc` and for
+ * nothing else — not for `bun --filter` ordering, not for any tool asking what a change affects
+ * (`X_WORKSPACE_DEP_UNDECLARED`).
+ *
+ * `"0.0.0"` and not `workspace:*`: it is the version `apps/web` really carries, which is what
+ * `checkLockstep` compares a sibling pin against, and it is the one spelling every other manifest
+ * `x new` writes already uses.
+ */
+const mcpPackage = (app: NameSet): string => `{
+  "name": "@${app.kebab}/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "${DESCRIPTION}",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json"
+  },
+  "dependencies": {
+    "@${app.kebab}/web": "0.0.0"
+  }
+}
+`;
 
 const mcpIndex = (
   app: NameSet,
@@ -42,7 +75,7 @@ unitTest('the app exposes its actions as MCP tools', () => {
 
 /** Every file the `packages/mcp` workspace ships, in the order `x new` writes them. */
 export const mcpPackageFiles = (app: NameSet): readonly GeneratedFile[] => [
-  { path: 'packages/mcp/package.json', contents: workspacePackageJson(app, 'mcp', DESCRIPTION) },
+  { path: 'packages/mcp/package.json', contents: mcpPackage(app) },
   ...packageShapeFiles(app, 'mcp', DESCRIPTION),
   { path: 'packages/mcp/src/index.ts', contents: mcpIndex(app) },
   { path: 'packages/mcp/src/index.test.ts', contents: mcpTest() },

@@ -1,6 +1,7 @@
 // The command registry: the one list the parser, the help catalogue and the dispatcher all read.
 // A command that is not here does not exist — there is no second place to register one.
 
+import { affectedCommand } from './cmd-affected';
 import { buildCommand } from './cmd-build';
 import { dbCommand } from './cmd-db';
 import { deployCommand } from './cmd-deploy';
@@ -69,6 +70,7 @@ const CORE: readonly CliCommand[] = [
   errorsCommand,
   docsCommand,
   fixCommand,
+  affectedCommand,
 ];
 
 /**

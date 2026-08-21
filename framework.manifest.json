@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "257a63064034db6337de8c22343c796fb5e5362a18341296114279e0ffc35b46",
+  "buildId": "b6114fb68b78ef07da13729b7b93e91e292d40ed7d56fff1d62e9f12ba651a91",
   "tiers": {
     "0": [
       "core",
@@ -2741,6 +2741,11 @@
       "code": "X_WIKI_TABLE_MALFORMED",
       "owner": "scripts",
       "at": "scripts/wiki-tables.ts"
+    },
+    {
+      "code": "X_WORKSPACE_DEP_UNDECLARED",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_WRITE_UNFILTERED",
