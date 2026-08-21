@@ -311,4 +311,10 @@ export {
   SEMVER,
   workspacePackages,
 } from './workspace-checks';
+export type { WorkspaceNode, WorkspaceScan } from './workspace-graph';
+// The graph itself, not just the gate's verdict on it: issue #239's complaint is that a
+// scaffolded repo's dependency graph exists only inside `tsc`, so an app's own tooling has
+// nothing to read. `checkWorkspaceDependencies` stays internal — it is reached through
+// `x verify`, which is the one way a rule is enforced here.
+export { readWorkspaceGraph, scanWorkspaces } from './workspace-graph';
 export { writeLine } from './write-line';

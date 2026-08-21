@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { testCommand } from './cmd-test';
 import type { ExecOptions, Runner } from './exec';
 import { renderJson } from './output';
-import { flagString, parseArgs } from './parse';
+import { flagBool, flagString, parseArgs } from './parse';
 import type { TestFile } from './test-select';
 import type { Shard } from './test-shards';
 import {
@@ -301,6 +301,29 @@ describe('unit · reproduceFor', () => {
 
   test('no type, filter or sample matches today’s bare form', () => {
     expect(reproduceFor(shard(0), { workers: 3 })).toBe('x test --workers 3 --worker 0');
+  });
+
+  // The fourth input to the split, and the one that was silently dropped: `--affected` decides
+  // which files exist to shard at all, so a rerun without it re-splits the whole corpus and its
+  // shard 2 is a DIFFERENT shard 2. Round-tripped through the real spec for the same reason the
+  // case above is: a reproduction the shipped parser rejects reproduces nothing.
+  test('the --affected narrowing survives into the rerun, base and all', () => {
+    const command = reproduceFor(shard(2), {
+      workers: 4,
+      affected: { base: 'origin/main', dirty: false },
+    });
+    expect(command).toBe('x test --affected --base origin/main --workers 4 --worker 2');
+
+    const parsed = parseArgs(command.split(' ').slice(1), [testCommand.spec]);
+    expect(flagBool(parsed, 'affected')).toBe(true);
+    expect(flagString(parsed, 'base')).toBe('origin/main');
+    expect(flagString(parsed, 'worker')).toBe('2');
+  });
+
+  test('--dirty survives too, because it changes which files the split saw', () => {
+    expect(reproduceFor(shard(1), { workers: 2, affected: { base: 'main', dirty: true } })).toBe(
+      'x test --affected --base main --dirty --workers 2 --worker 1',
+    );
   });
 
   test('a filter with whitespace stays one argument, not two', () => {

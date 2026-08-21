@@ -67,6 +67,17 @@ and the `tsc -b` that proves it took. Private packages are exempt (a generated a
 private), and a root that declares **no** `references` array is not judged at all: project
 references are opt-in, and a scaffolded app builds through `extends` + `include`.
 
+`workspace-graph.ts` is `package-shape`'s fifth rule: **every cross-workspace import is declared
+in the importing workspace's own manifest**. Without it a scaffolded repo's dependency graph exists
+only inside `tsc` — imports resolve through the root `tsconfig.json` `paths`, so affected-package
+detection, `bun --filter` ordering and "what breaks if I change this" all read manifests and all
+answer too small a set (issue #239, found in a real app where a change reaching five packages
+reported one). `X_WORKSPACE_DEP_UNDECLARED` names the manifest and the exact line to add. Shipped
+source only: a test file's import is not judged, because `packages/*` here declares no
+`devDependencies` by design and the root's hoist is what resolves them. A manifest the scan cannot
+read is its own finding rather than a silent skip — a skipped workspace is a hiding place for the
+very edge the rule is looking for.
+
 `app-agents-md.ts` is why the `manifest` step declares no `applies` at all. The drift half needs
 a committed `x.manifest.json` to compare against, but `AGENTS.md` is required of every repo the
 gate runs in — so the step always has a question to answer, and gating both halves on the file

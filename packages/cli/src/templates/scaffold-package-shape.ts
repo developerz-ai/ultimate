@@ -50,8 +50,13 @@ export const packageShapeFiles = (
 
 /**
  * The manifest every scaffolded `packages/*` carries. Private, versionless-by-convention and
- * dependency-free: these packages only re-export a framework package's types, so the one that does
- * name a dependency writes its own (`scaffold-i18n.ts`, and it says why). Lives beside
+ * dependency-free: these packages only re-export a framework package's types. Three now DO name a
+ * dependency and each writes its own manifest — `scaffold-i18n.ts`, `scaffold-mcp-package.ts` and
+ * `scaffold-db-package.ts` (the last only under `--example`, which is the branch that emits the
+ * import). Each says why at its own site. They write their own rather than taking a `dependencies`
+ * parameter here because the edge is a fact about the SOURCE that template emits, and a parameter
+ * would let a caller declare an edge its generated code does not have — which is the drift
+ * `X_WORKSPACE_DEP_UNDECLARED` exists to catch, pointed the other way. Lives beside
  * `packageShapeFiles` because every caller of one calls the other.
  */
 export const workspacePackageJson = (app: NameSet, name: string, description: string): string => `{

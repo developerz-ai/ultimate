@@ -3,6 +3,7 @@
 // cmd-test.ts because a printed reproduction is only true if it carries every input to the split —
 // that rule is this file's, and argv parsing is that one's.
 
+import type { AffectedSelection } from './affected';
 import { docsFor } from './error-codes';
 import type { Runner } from './exec';
 import { execOutput } from './exec';
@@ -72,12 +73,18 @@ export interface ReproduceOptions {
   readonly type?: TestType;
   /** Files `--sample` kept, so the rerun samples the same corpus instead of the whole type. */
   readonly sample?: number;
+  /**
+   * The `--affected` narrowing, when there was one. The fourth input to the split and the one most
+   * easily forgotten: `--affected` decides which files exist to shard at all, so a rerun without it
+   * re-splits the WHOLE corpus and its shard 2 is a different shard 2.
+   */
+  readonly affected?: AffectedSelection;
 }
 
 /**
- * Every input to the split, printed back. The type and `--filter` decide which files exist to
- * shard, `--sample` decides how many of them survive, `--workers` decides the bins — drop any one
- * and the command still runs, over a different file set, which reproduces nothing.
+ * Every input to the split, printed back. The type, `--filter` and `--affected` decide which files
+ * exist to shard, `--sample` decides how many of them survive, `--workers` decides the bins — drop
+ * any one and the command still runs, over a different file set, which reproduces nothing.
  */
 export function reproduceFor(shard: Shard, options: ReproduceOptions): string {
   return [
@@ -85,6 +92,12 @@ export function reproduceFor(shard: Shard, options: ReproduceOptions): string {
     ...(options.type === undefined ? [] : [quoteArg(options.type)]),
     ...(options.filter === undefined ? [] : ['--filter', quoteArg(options.filter)]),
     ...(options.sample === undefined ? [] : ['--sample', String(options.sample)]),
+    // `--base` is emitted always rather than only when non-default: the default is `main`, and a
+    // rerun days later against a moved `main` is a different diff wearing the same flag.
+    ...(options.affected === undefined
+      ? []
+      : ['--affected', '--base', quoteArg(options.affected.base)]),
+    ...(options.affected?.dirty === true ? ['--dirty'] : []),
     '--workers',
     String(options.workers),
     '--worker',
@@ -107,6 +120,8 @@ export interface RunShardsOptions {
    * shard of the sample and would otherwise report that shard's size as the corpus.
    */
   readonly sample?: { readonly kept: number; readonly total: number };
+  /** Passed straight to `reproduceFor`: see `ReproduceOptions.affected`. */
+  readonly affected?: AffectedSelection;
 }
 
 /** The reproduction's inputs, resolved once: `workers` is the split's real width, not the ask. */
@@ -115,6 +130,7 @@ const planOf = (options: RunShardsOptions, workers: number): ReproduceOptions =>
   ...(options.filter === undefined ? {} : { filter: options.filter }),
   ...(options.type === undefined ? {} : { type: options.type }),
   ...(options.sample === undefined ? {} : { sample: options.sample.kept }),
+  ...(options.affected === undefined ? {} : { affected: options.affected }),
 });
 
 const failureOf = (shard: Shard, code: number, plan: ReproduceOptions): Finding => ({

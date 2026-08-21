@@ -10,6 +10,64 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Added
 
+- **`x affected` — the workspaces a diff can have broken, transitively**, plus `x test --affected`
+  to run exactly those. `x affected [--base <ref>] [--dirty] [--paths] [--json]`. The gate stays
+  un-narrowable: this narrows the **feedback**, which is a different thing, and every app was
+  otherwise going to grow its own — "an invented one that misses a transitive dependent is a green
+  checkmark on a broken repo" (#240).
+
+  Three rules the set obeys, each a test: a **root** file (`tsconfig.json`, `biome.json`,
+  `bunfig.toml`, `bun.lock`, root `package.json`, `app.config.ts`) affects **every** workspace; a
+  workspace's own `package.json` affects only it; a `.md` affects **nothing**, having no compilation
+  unit to re-check. The closure is a queue over a reverse-dependency index, not a single pass — for
+  `A → B → C` a one-pass sweep answers `{B, C}` and drops `A`, which is the failure mode the issue
+  names and the mutation the test pins.
+
+  **`--base` is the default and `--dirty` is opt-in, which is the reverse of the obvious design.**
+  Ultimate is built by several agents in **one checkout** (no worktrees), so a working-tree diff
+  returns every agent's uncommitted work and the "affected" set quietly expands to nearly the whole
+  monorepo — narrowing nothing while reading as though it did. Typecheck is deliberately not scoped:
+  `tsc -b` is a project build over a shared `.tsbuildinfo`, so a scoped typecheck is either the whole
+  project anyway or a weaker check.
+
+- **`readWorkspaceGraph` / `scanWorkspaces` are public API on `@ultimat3/cli`**, with `WorkspaceNode`
+  and `WorkspaceScan`. The dependency graph a repo declares, readable — which is the whole of #239's
+  complaint: it existed only inside `tsc`.
+
+### Fixed
+
+- **`x new` scaffolds the dependency edges it generates, and `package-shape` keeps them true.** A
+  scaffolded `packages/*` manifest declared no dependency on any other workspace, so imports resolved
+  through the root `tsconfig.json` `paths` alone and **the dependency graph existed only inside
+  `tsc`**. Anything wanting to reason about it — affected-package detection, incremental CI,
+  `bun --filter` ordering, "what breaks if I change this" — had nothing to read. Found in a real app,
+  where a change-detection tool returned one package for a change that reached five (#239).
+
+  Two halves, because the scaffold alone decays: `packages/mcp` and (under `--example`) `packages/db`
+  now declare the app edge their generated source imports, and the gate's `package-shape` step gains
+  `X_WORKSPACE_DEP_UNDECLARED` — every cross-workspace import must be declared by the workspace making
+  it. The edges are **package → app**, which is what the generated code really does: the mcp tool
+  catalog imports `@<app>/web/api/health`, and reversing it would put the catalog upstream of the
+  actions it projects.
+
+  Shipped source only. A test file's import is not judged: `packages/*` here declares no
+  `devDependencies` by design and the root's hoist is what resolves them, so judging tests would red
+  five framework packages whose only honest fix is a block none of them is supposed to have. A
+  manifest the scan cannot read is its **own** finding rather than a silent skip — a skipped
+  workspace is a hiding place for exactly the edge the rule is looking for.
+
+  The `fix:` pins the target's own version rather than `workspace:*`, which the issue asked for and
+  which is wrong here: `checkLockstep` compares every `@ultimat3/*` sibling pin against the lockstep
+  version, so `workspace:*` would trade `X_WORKSPACE_DEP_UNDECLARED` for `X_RELEASE_VERSION_SKEW`.
+
+- **A failing `x test --affected` shard printed a `fix:` that reproduced a different shard.**
+  `reproduceFor` carries every input to the split back into its own command — its header says why:
+  "drop any one and the command still runs, over a different file set, which reproduces nothing."
+  `--affected` is a fourth such input and was not carried, so `x test --affected --workers 4` failing
+  on shard 2 printed `x test --workers 4 --worker 2`, which re-splits the **whole** corpus into a
+  different shard 2. `--base` is emitted always rather than only when non-default: the default is
+  `main`, and a rerun days later against a moved `main` is a different diff wearing the same flag.
+
 - **`asyncContext<T>(subject)` is public API on `@ultimat3/core`**, with its `AsyncContext<T>` type.
   One lazily-constructed `AsyncLocalStorage` for the whole framework, and the answer to "what happens
   where there is no async context" in one place: **reads degrade, writes throw.** `get()` answers
