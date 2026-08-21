@@ -184,7 +184,7 @@ A URL + render mode + metadata + offline strategy.
 
 ```ts
 export const config = defineRoute({
-  render:     'isr',                  // static | isr | ssr | stream | spa
+  render:     'isr',                  // static | isr | ssr | stream
   revalidate: { tags: [tag.post] },
   prerender:  () => db.posts.slugs(),
   offline:    'precache',             // precache | runtime | network-only
@@ -201,7 +201,7 @@ export const config = defineRoute({
 | Owns | render mode, hydration timing, metadata, offline strategy |
 | Never | touch the DB directly, hold business logic, or omit `meta.description` in `site/` — that is a build error, `X_SEO_META_MISSING` — the same code for a missing title, with `cause` naming the field |
 
-Render modes: `static` (built once), `isr` (static + background regen), `ssr` (per-request), `stream` (shell flushed instantly, holes streamed — **default for app pages**), `spa` (shell only). Table in [Routes and render modes](Routes-And-Render-Modes).
+Render modes: `static` (built once), `isr` (static + background regen), `ssr` (per-request), `stream` (shell flushed instantly, holes streamed — **default for app pages**). Four, declared once in `@ultimat3/core` as `RENDER_MODES`; `spa` was the fifth until 6.0.0. Table in [Routes and render modes](Routes-And-Render-Modes).
 
 ## `task`
 

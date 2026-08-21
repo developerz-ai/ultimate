@@ -17,6 +17,30 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   `X_ASYNC_CONTEXT_UNAVAILABLE` naming the scope that could not be opened, instead of leaving a bare
   `TypeError` from a stack mentioning no file the caller wrote. A server pays nothing: `getStore()`
   before any `run()` answered `undefined` whether the storage was ever constructed or not (#255)
+- `scripts/gate-codes.ts` — `wiki/Error-Codes.md`'s "never ships to an app" parenthesis, held complete
+  in **both** directions: every code it names has a table row, and every `X_*` code `scripts/` declares
+  is named in it. Codes: `X_GATE_CODE_UNDOCUMENTED`, `X_GATE_CODE_BACKLOG_STALE`.
+
+  Nothing read that parenthesis. `checkErrorCodeDocs` is satisfied by any `` `X_*` `` in backticks
+  **anywhere** on the page — `documentedCodes` is one whole-file regex — so being named *inside* the
+  list counted as being documented; from the other side `checkErrorCodeRegistry` exempts gate codes by
+  scanning `scripts/`, never by reading the list. A hand-copy of a derived set with no check on it,
+  which is the shape `gate-steps.ts` and `release-facts.ts` already exist for.
+
+  **26 codes were wrong on day one**, so it shipped on a ratchet, and this change drains it to zero:
+
+  | Was | Count | Fixed by |
+  |---|---|---|
+  | named in the list, no table row — documented by parenthesis only | 20 | a row written from the script that declares the code |
+  | declared under `scripts/`, absent from the list | 6 | added to the parenthesis |
+
+  The 20 rows come from `coverage-gate.ts`, `generator-counts.ts`, `release-facts.ts`, `lockfile-pins.ts`,
+  `release.ts`, `test-bare-error.ts`, `test-fix-citations.ts`, `to-throw-returns.ts` and
+  `test-typecheck-gate.ts` — cause and fix read off each declaration site, never invented from the
+  code's name. The six are the four `X_REGISTRY_*`, whose rows sat **above** `## Reserved codes` where
+  the page promises `x errors explain` answers for them (it answers `X_ERROR_CODE_UNKNOWN`), plus this
+  rule's own two. `scripts/gate-codes-backlog.ts` is now empty, so the next gap reds the gate rather
+  than joining a list.
 - `scripts/changelog-check.ts` — `CHANGELOG.md`'s sections and `wiki/Upgrading.md`'s migration counts,
   held to each other. Seven rules, one per way the two files can disagree, collected by the gate's
   `unit` step through `scripts/changelog-check.test.ts` (#267)
@@ -35,6 +59,43 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   the wrong heading: a misplaced entry only makes the number smaller. Codes:
   `X_DOC_CHANGELOG_SECTION_INVALID`, `X_DOC_CHANGELOG_UNRELEASED_BREAKING`,
   `X_DOC_MIGRATION_COUNT_STALE`, `X_DOC_MIGRATION_UNSCANNED`.
+
+### Changed
+
+- **The route vocabulary is declared once, at tier 0.** `RENDER_MODES`/`RenderMode`,
+  `OFFLINE_STRATEGIES`/`OfflineStrategy` and `HYDRATE_STRATEGIES`/`HydrateStrategy` now live in
+  `packages/core/src/route-vocabulary.ts`, each union **derived** from its array — `(typeof
+  ARRAY)[number]` — so the pair cannot disagree. `@ultimat3/render`, `http`, `seo`, `manifest` and
+  `pwa` re-export what their own signatures take; `@ultimat3/core`'s `config.ts` imports
+  `OfflineStrategy` instead of declaring it. **Re-export, never restate** (#261).
+
+  **14 declarations across six packages became one**, measured `As of 2026-08` by running this
+  change's own scanner over the commit before it. Imports go down tiers only, so copying was the
+  available move and every package took it — and `'spa'` was deleted from one copy in 6.0.0 while
+  five others went on admitting it under a green project-wide typecheck. `@ultimat3/pwa`'s copy
+  mapped `spa` to `cache-first`, the one strategy that gives an `app/` route a **shared** cache
+  entry: one member's authed HTML served to the next.
+
+  `scripts/render-modes.ts` refuses copy #13 by **literal set, not by name** — the copy that did the
+  damage was called `PwaRenderMode`, and a rule keyed on the word `RenderMode` reads straight past
+  it. Two shared members is a copy; one is a coincidence and stays silent (`CacheTier` holds `isr`,
+  `StrategyName` holds `network-only`, `ChangeFreq` holds `never`). The margin is exactly one:
+  the highest innocent overlap in the tree is **1**, across seven sets. The rule checks the
+  sanctioned module first and in the opposite direction — it must declare all three, by name — so a
+  scan that read nothing cannot answer what a clean tree answers. `packages/core/src/type-pins.ts`
+  pins each union to its members with a mutual-assignability `Exact<A, B>`, tuple-wrapped so a
+  distributed `extends` cannot hide a widening.
+
+- **BREAKING — `PwaRenderMode` is deleted from `@ultimat3/pwa`.** It was this package's own NAME for
+  `RenderMode`, hand-copied because tier 4 may not import tier 4, and the copy is why `spa` kept
+  mapping to `cache-first` after `spa` was deleted from the vocabulary. **Migration:**
+  `import type { RenderMode } from '@ultimat3/core'` — or from `@ultimat3/pwa`, which re-exports it
+  under that name — and rename every use. Members unchanged: `'static' | 'isr' | 'ssr' | 'stream'`
+  (#261)
+- **BREAKING — `PwaOfflineStrategy` is deleted from `@ultimat3/pwa`**, same reason, same members:
+  `'precache' | 'runtime' | 'network-only'`. **Migration:**
+  `import type { OfflineStrategy } from '@ultimat3/core'` — or from `@ultimat3/pwa` — and rename
+  every use (#261)
 
 ### Fixed
 
@@ -80,6 +141,36 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   `X_DOC_CHANGELOG_SECTION_INVALID` when it is empty and no commit landed since the previous tag. The
   report also states whether the previous tag was found, since a clone without it lists no commits and
   a silent empty list reads exactly like a quiet release.
+- **21 closed-key `Object.freeze` tables accepted an unknown key in silence.**
+  `const X: Readonly<Record<K, V>> = Object.freeze({…})` passes the literal to
+  `Object.freeze<T>(o: T)`, which **infers** `T` from it — so the literal is no longer fresh by the
+  time the annotation is checked, excess-property checking never runs, and an extra key compiles.
+  A *missing* key still errored, which is why the form looked like it was working.
+
+  Not a hypothesis. Four sites were reverted to the old form with a bogus key added and **all four
+  compiled clean**: `ROLE_INFO`, `SURFACE_SPECS`, `POOL_PROFILES` and `CAPABILITY_MANIFEST_KEYS`.
+  `POOL_PROFILES` is `Record<Role, PoolProfile>` — a pool configuration for a role that does not
+  exist — and `SURFACE_SPECS` a spec for a surface `locateSurface` can never return. Same shape as
+  `spa: 'cache-first'`, in four more places.
+
+  All 21 now spell the type argument — `Object.freeze<Record<K, V>>({…})` — and all 21 fail
+  `TS2353` on an extra key. Four tables stay **deliberately open**, `Record<string, …>` registries
+  keyed by codes another package or an external spec owns:
+
+  | Open table | Keyed by |
+  |---|---|
+  | `SCHEMA_ERROR_CODE_TITLES` (`packages/core/src/schema-error-codes.ts`) | `@ultimat3/schema`'s codes, which core may not import |
+  | `SCHEMA_ERROR_CODES` (`packages/schema/src/errors.ts`) | the same codes, at their source |
+  | `DB_SQLSTATE_CODES` (`packages/db/src/sqlstate.ts`) | Postgres SQLSTATE |
+  | `FORMAT_MAP` (`packages/schema/src/json-schema.ts`) | JSON Schema `format` names |
+
+  `scripts/frozen-records.ts` holds the rule, read as text rather than through `tsc` — it runs in
+  the gate's `unit` step, where a type-checker would be a second build of the whole graph. Its
+  header names what a text scan cannot see: a `freeze` that is not a top-level `const`'s
+  initialiser, a key type laundered through an alias, a `as Record<K, V>` cast, an interface
+  annotation. `scripts/frozen-records.test.ts` carries the floor that keeps that silence honest —
+  `explicit >= 21`, `annotated-open >= 4` — because deleting a constraint leaves no annotation for
+  the rule to contradict and shows up only as the number falling.
 - **Two tests that could red the gate for reasons belonging to no change** (#264), both made
   algorithmic rather than given a longer timeout.
 

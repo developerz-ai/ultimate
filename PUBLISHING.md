@@ -289,13 +289,23 @@ whether or not anyone updates this table.
 
 ## Ongoing releases (automated)
 
+**`## [Unreleased]` in `CHANGELOG.md` IS the release notes.** Write them there as each change
+lands; step 1 renames that heading to the version and opens a fresh empty `[Unreleased]` above it.
+A release with nothing under `[Unreleased]` and no commit since the previous tag is **refused**
+(`X_DOC_CHANGELOG_SECTION_INVALID`), never published as an empty section.
+
 0. **On a major only:** `wiki/Upgrading.md` already carries a `## <previous major>.x → <new major>`
    section, written when the first breaking change landed — releasing it is deleting `unreleased`
    from its heading and updating the summary table's counts. If the section does not exist, stop and
    write it before tagging; the procedure is
    [`docs/architecture/19-cutting-a-major.md`](docs/architecture/19-cutting-a-major.md).
+   The counts are checked against that major's own `CHANGELOG.md` section —
+   `bun run scripts/changelog-check.ts --json`.
 1. `bun run scripts/release.ts --bump patch|minor|major` — bumps every package in lockstep and
-   appends the changelog entry.
+   **promotes** `## [Unreleased]` to `## X.Y.Z - <date>`, opening a fresh empty `[Unreleased]` above
+   it. Commit subjects since the previous tag are appended **inside** that section under
+   `### Commits`. Dry it first: `--bump patch --dry-run --json` computes the promotion, refuses on
+   the same findings, and writes nothing.
 2. Commit, tag `vX.Y.Z`, push.
 3. Publish a GitHub Release for that tag (or **Actions → release → Run workflow** with the tag
    selected and the version typed in). **A branch will not do**: the workflow's first step refuses

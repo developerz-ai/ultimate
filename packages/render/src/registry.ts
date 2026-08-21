@@ -20,10 +20,15 @@ import type { Surface } from './surfaces';
 import { locateSurface } from './surfaces';
 
 /**
- * The one filename a route may carry, per surface. `shared/` is absent on purpose: it is a leaf
- * of helpers with no URL, so a route file there has nowhere to resolve to.
+ * The one filename a route may carry, per surface. `shared/` is `Exclude`d rather than merely
+ * absent: it is a leaf of helpers with no URL, so a route file there has nowhere to resolve to —
+ * and stating that in the key type makes the other three MANDATORY. `Partial<Record<Surface, …>>`
+ * said the same thing about `shared` and let any of the three go missing, which only three
+ * registration tests would have caught. A dropped `api` row is not a crash: `assertRouteFilename`
+ * reads `undefined` as "this file is under shared/", so every `api/` route author would have been
+ * told their file is a leaf of helpers.
  */
-export const ROUTE_FILENAME = Object.freeze<Partial<Record<Surface, string>>>({
+export const ROUTE_FILENAME = Object.freeze<Record<Exclude<Surface, 'shared'>, string>>({
   site: 'page.tsx',
   app: 'page.tsx',
   api: 'route.ts',
@@ -131,7 +136,9 @@ const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")
  * author already meant, plus the one filename that surface accepts.
  */
 function assertRouteFilename(file: string, surface: Surface, basename: string | undefined): void {
-  const expected = ROUTE_FILENAME[surface];
+  // `shared` is the one surface with no filename, and the key type now says so — which is why
+  // this is a comparison rather than an `undefined` check on the lookup.
+  const expected = surface === 'shared' ? undefined : ROUTE_FILENAME[surface];
   if (expected === undefined) {
     throw new RouteFileInvalidError(
       `${file} is under shared/, which is a leaf of helpers with no URL — a route cannot live there`,

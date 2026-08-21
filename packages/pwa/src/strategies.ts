@@ -42,19 +42,15 @@ export interface PwaRoute {
 /**
  * Render mode → runtime strategy. The whole reason `sw.js` is generated, not written.
  *
- * `Record<RenderMode, …>` over the tier-0 union is the exhaustiveness check: a mode with no row is
- * a compile error, and a row for a mode that does not exist is a compile error too. That second
- * half is the one that mattered — `spa` kept mapping to `cache-first` here after it was deleted
- * from the vocabulary, the one strategy that gives an `app/` route a SHARED cache entry, i.e. one
- * member's authed HTML served to the next. It compiled because this Record was keyed on a copy.
- */
-/**
- * `Object.freeze<T>({…})` with an EXPLICIT type argument, never `const X: T = Object.freeze({…})`.
- * The second form loses the object literal's freshness — the literal is inferred first and the
- * annotation only checks assignability afterwards — so an EXTRA key compiles silently. That is not
- * a hypothetical: `spa: 'cache-first'` sat in `@ultimat3/pwa`'s copy of this table after `spa` was
- * deleted from the vocabulary, and `tsc` had nothing to say. Naming the type argument makes the
- * literal contextually typed, so a missing key AND an extra key are both build errors.
+ * Two separate things make the closed set hold, and the table needed both. `Record<RenderMode, …>`
+ * over the TIER-0 union is the exhaustiveness check — this was keyed on a hand-copy, which is how
+ * `spa` went on mapping to `cache-first` after `spa` was deleted from the vocabulary: the one
+ * strategy that gives an `app/` route a SHARED cache entry, i.e. one member's authed HTML served
+ * to the next. And `Object.freeze<T>({…})` with an EXPLICIT type argument, never
+ * `const X: T = Object.freeze({…})` — the second form infers `T` from the literal and the
+ * annotation only checks assignability afterwards, so the literal's freshness is already gone and
+ * an EXTRA key compiles in silence. Named, the literal is contextually typed and a missing key
+ * AND an extra key are both build errors.
  */
 export const MODE_STRATEGY = Object.freeze<Record<RenderMode, StrategyName>>({
   static: 'cache-first',

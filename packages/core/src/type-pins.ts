@@ -1,9 +1,7 @@
-// Compile-time pins for the actor-facts seam, the config surface and the route vocabulary. Source,
-// not a `.test.ts`,
-// on purpose:
-// `tsconfig.json` excludes `src/**/*.test.ts`, so `tsc -b` never reads a test file and a
-// type-level assertion written there can never fail. This module emits nothing and exports
-// nothing anybody imports — a regression is a build error, the only enforcement that counts.
+// Compile-time pins for the actor-facts seam, the config surface and the route vocabulary.
+// Source, not a `.test.ts`, on purpose: `tsconfig.json` excludes `src/**/*.test.ts`, so `tsc -b`
+// never reads a test file and a type-level assertion written there can never fail. This module
+// emits nothing and exports nothing anybody imports — a regression is a build error.
 
 import type { Actor, ActorFactMap, FactKeysOf, FactMapOf } from './actor';
 import type { AppConfigInput, DatabaseConfig } from './config';

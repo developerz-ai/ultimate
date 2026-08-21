@@ -166,26 +166,23 @@ Two different things share the word.
 | `/_x` | the **dev** dashboard from `@ultimat3/admin`, 11 panels | dev-only, never mounted in `ROLE=web` | in `x dev`, immediately |
 | `apps/admin/` | a generated Ultimate app running `ROLE=web` | `admin:read` on the route config | a one-page shell; you build the screens |
 
-The scaffolded shell:
+The scaffolded shell, `As of 2026-08`:
 
 ```ts
-// apps/admin/app/page.tsx
+// apps/admin/app/admin/page.tsx
 export const config = defineRoute({
-  render: 'spa',
+  render: 'ssr',
   hydrate: 'idle',
   offline: 'network-only',
-  // A spa renders no data, so the shell itself must be gated — @ultimat3/render requires it.
+  // Behind auth, and `ssr` is the one mode that can be: it renders per request, so the guard runs
+  // on the server before the page does. `static` and `isr` refuse a policy outright.
   policy: { permission: 'admin:read' },
-  budget: { js: '120kb', lcp: 3000 },
-  meta: () => ({ title: t('admin.home.title'), description: t('admin.home.description') }),
+  budget: { js: '120kb' },
+  meta: ({ t }) => ({ title: t('admin.home.title'), description: t('admin.home.description') }),
 });
 ```
 
-It claims `/`, colliding with the site landing page — `X_ROUTE_DUPLICATE`. Move it, because the directory is the URL:
-
-```bash
-mv apps/admin/app/page.tsx apps/admin/app/admin/page.tsx
-```
+**`app/admin/page.tsx`, not `app/page.tsx`** — the directory is the URL relative to the surface root, so the shallower path resolves to `/` and collides with `apps/web/site/page.tsx`: `x dev` loads both surfaces into one route table, and the scaffold used to fail its own `x routes` with `X_ROUTE_DUPLICATE`. `x new` now writes the deeper path, and `/admin` is also `@ultimat3/admin`'s own `basePath` default, so the two agree rather than merely not clashing. Nothing to move.
 
 ### Per-entity screens
 

@@ -17,7 +17,7 @@ An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, ne
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 77 As of 2026-08 — every one inside the section of the major that shipped it
+# 79 As of 2026-08 — 77 inside the section of the major that shipped it, 2 under [Unreleased]
 ```
 
 Each entry changes a surface the table below covers.
@@ -30,6 +30,28 @@ Each entry changes a surface the table below covers.
 | that a package resolves at it | `npm view @ultimat3/scraping@<version> version` | that version, not `E404` |
 | that the tarball is attested | `npm view @ultimat3/core dist.attestations` | a `provenance` object |
 | every name that must move together | `bun run scripts/release-workflow.ts --json` | the 30 derived names — check each |
+
+## Unreleased — two renames, no version yet
+
+**Not on npm and not in a major.** These two entries sit under `## [Unreleased]` in [`CHANGELOG.md`](https://github.com/developerz-ai/ultimate/blob/main/CHANGELOG.md) and have no section in the table above, because the version that ships them does not exist yet. They are here so the edit is written down where the rest of them are.
+
+Both are **type-only renames in `@ultimat3/pwa`**, both compile errors the moment you upgrade, both mechanical. No member changed — only the name the type is declared under.
+
+| Was | Is | Members, unchanged |
+|---|---|---|
+| `PwaRenderMode` | `RenderMode` | `'static' \| 'isr' \| 'ssr' \| 'stream'` |
+| `PwaOfflineStrategy` | `OfflineStrategy` | `'precache' \| 'runtime' \| 'network-only'` |
+
+```diff
+- import type { PwaRenderMode, PwaOfflineStrategy } from '@ultimat3/pwa';
++ import type { RenderMode, OfflineStrategy } from '@ultimat3/pwa';
+```
+
+`@ultimat3/pwa` re-exports both under the canonical name, so the import path does not have to move — `@ultimat3/core` is where they are declared and is equally correct.
+
+**Why the alias existed and why it could not stay.** Tier 4 may not import tier 4, so `@ultimat3/pwa` wrote its own copy of a set `@ultimat3/render` already had. That copy is what kept `spa` mapped to `cache-first` after `spa` was deleted in 6.0.0 — the one strategy that gives an `app/` route a **shared** cache entry, i.e. one signed-in member's HTML served to the next. The vocabulary is now declared once at tier 0, in `@ultimat3/core`, and `bun run scripts/render-modes.ts --json` refuses a second declaration anywhere in `packages/*/src`.
+
+Nothing else in this batch costs an edit: `asyncContext` is a new export, and the `Object.freeze` and async-context repairs changed no exported name.
 
 ## 5.x → 6.0.0, entry by entry
 

@@ -19,14 +19,17 @@ tier 5  admin, testing, cli, scraping               (may import tier 0-4)
 
 [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) is the executable copy of this block; `bun run boundaries` reads that one. Prose and code must agree.
 
+`SIDEWAYS_ALLOW` in [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) is the executable copy of this table, `As of 2026-08`. Four edges, each earning its line:
+
 | Sideways exception | Why |
 |---|---|
-| `schema` → `core` | needs `UltimateError` for parse failures. `core` imports nothing. |
-| `admin` → `ui` | the admin dashboard *is* the ui kit, composed. Inverting it ships every widget through props. |
 | `realtime` → `query` | tier 3 is one feature: a live query is a query plus a subscription. Splitting duplicates the SQL shape. |
 | `cli` → `admin` | `x dev` **mounts** `/_x`; it does not reimplement it. The panels are a tier-5 product, and the alternative is a second dev dashboard inside the CLI. |
-| `create-ultimate` → `cli` | a published shim whose whole job is `x new`. The alternative is a second copy of the templates. |
-| everything else | none. Siblings share **types only**, declared in the lowest tier that needs them. |
+| `cli` → `testing` | `@ultimat3/testing` **is** the framework's harness, and `serve.live.test.ts` spawns the scaffolded `server.ts` as a child, so one real port has to pass the seal. It was already live as a relative specifier the checker could not see, and was declared once `bun run boundaries` learned to follow those. |
+| `create-ultimate` → `cli` | a published shim whose whole job is `x new`. The alternative is a second copy of the templates. `create-ultimate` sits above the table at tier 6, and this is its **only** permitted import. |
+| everything else | none. Siblings share **types only**, declared in the lowest tier that needs them — see [`00-conventions.md`](00-conventions.md#one-declaration-at-the-lowest-tier-that-can-hold-it). |
+
+**Two rows left this table and neither was a rule change.** `schema` → `core` never existed: `packages/schema/src/errors.ts:2` says `SchemaError` reproduces `UltimateError`'s shape **structurally** rather than importing it, so tier 0 imports nothing and needs no exception. `admin` → `ui` is now an ordinary **downward** import: `ui` imports `core`, `i18n`, `money` and `time`, so tier 5 was two tiers above its floor, and moving it to 4 made the edge legal on the plain rule. `ui` sits at 4 rather than at its floor so `render` → `ui` stays forbidden — the static bundle graph may not reach the design system, which is axiom 6. An exception line in an enforcement table is a rule with a hole in it, and deleting the hole beats arguing for it.
 
 ### Why `db` is tier 1
 

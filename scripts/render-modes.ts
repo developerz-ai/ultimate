@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // One rule: NOTHING outside `packages/core/src/route-vocabulary.ts` may declare the route
-// vocabulary. Twelve declarations of three closed sets lived across six packages until they were
+// vocabulary. Fourteen declarations of three closed sets lived across six packages until they were
 // consolidated into tier 0, and the copies were not a style problem — `'spa'` was deleted from
 // `RENDER_MODES` and the repo typechecked green project-wide with five copies still admitting it,
 // `@ultimat3/pwa` mapping it to `cache-first`, the one strategy that gives an `app/` route a

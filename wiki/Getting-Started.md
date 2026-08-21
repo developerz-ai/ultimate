@@ -169,7 +169,7 @@ $ x verify
 | [Policies and authz](Policies-And-Authz) | one authz system, tenancy, denials |
 | [Queries and live queries](Queries-And-Live-Queries) | reads, `live: true` |
 | [Jobs and workflows](Jobs-And-Workflows) | durable steps, idempotency |
-| [Routes and render modes](Routes-And-Render-Modes) | `static` / `isr` / `ssr` / `stream` / `spa` |
+| [Routes and render modes](Routes-And-Render-Modes) | `static` / `isr` / `ssr` / `stream` |
 | [Testing](Testing) | six test types, DB-clone parallelism |
 | [CLI reference](CLI-Reference) | every command, every `--json` |
 | [Error codes](Error-Codes) | code → cause → fix |

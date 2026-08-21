@@ -8,7 +8,7 @@ A `route` is a URL + render mode + metadata + offline strategy. Render mode is a
 
 ```ts
 export const config = defineRoute({
-  render:     'isr',                  // static | isr | ssr | stream | spa
+  render:     'isr',                  // static | isr | ssr | stream
   revalidate: { tags: [tag.post] },
   prerender:  () => db.posts.slugs(),
   offline:    'precache',             // precache | runtime | network-only
@@ -45,14 +45,14 @@ Validation runs at **module evaluation**. `defineRoute` checks the shape and the
 |---|---|---|
 | `offline` present and a known strategy | `defineRoute` | `X_ROUTE_OFFLINE_MISSING` |
 | `meta` is a function | `defineRoute` | `X_ROUTE_META_MISSING` |
-| mode-local: known `render` and `hydrate`; `static` with a `policy` or a `revalidate`; `isr` with no trigger; `ssr` with a `prerender`; `spa` with no `policy` | `defineRoute` | `X_ROUTE_MODE_INVALID` |
+| mode-local: known `render` and `hydrate`; `static` with a `policy` or a `revalidate`; `isr` with a `policy` or with no trigger; `ssr` with a `prerender` | `defineRoute` | `X_ROUTE_MODE_INVALID` |
 | surface-dependent: mode allowed on the surface; `site/` hydration without `budget.js`; `stream` with no `<Suspense>`; `prerender` on a non-prerenderable mode | `registerRoute` | `X_ROUTE_MODE_INVALID` |
 | the config came from `defineRoute` and not straight from the author | `registerRoute` | `X_ROUTE_UNNORMALIZED` |
 | two files claiming one URL | `registerRoute` | `X_ROUTE_DUPLICATE` |
 
 The split is about what is knowable, not about strictness: everything decidable from the config alone is decided at import; the rest needs the file's surface, which only the route table knows.
 
-## Five render modes
+## Four render modes
 
 | Mode | Behavior | Use |
 |---|---|---|
@@ -60,19 +60,32 @@ The split is about what is knowable, not about strictness: everything decidable 
 | `isr` | static + background regen on tag/TTL | catalogs, profiles |
 | `ssr` | per-request full render | fresh SEO pages |
 | `stream` | static shell flushed instantly, holes streamed | **default for app pages** |
-| `spa` | shell only, client fetches | dashboards behind auth |
 
 | Surface | Default | Allowed |
 |---|---|---|
 | `site/` | `static` | `static`, `isr`, `ssr` |
-| `app/` | `stream` | `stream`, `spa`, `ssr` |
+| `app/` | `stream` | `stream`, `ssr` |
 | `api/` | n/a | no rendering at all |
 
 A mode outside a surface's allowed set is a build error, not a runtime fallback. Surfaces and their boundaries: [Project layout](Project-Layout).
 
+**`spa` was the fifth mode and was deleted in 6.0.0.** It served `<body><div id="x-root"></div></body>` for the framework's whole history — 200, correct headers, blank page — because `renderSpa` preloaded a `chunks` array no build ever produced and never read the route's component. `render: 'spa'` is now `X_ROUTE_MODE_INVALID` at `defineRoute` time; the migration is one line, `render: 'ssr'`, in [Upgrading](Upgrading).
+
+## One declaration of the vocabulary, at tier 0
+
+`As of 2026-08` the three closed sets a route is declared in — `RENDER_MODES`, `OFFLINE_STRATEGIES`, `HYDRATE_STRATEGIES` — are declared **once**, in `@ultimat3/core`, with each union derived from its array so the pair cannot disagree.
+
+| Import it from | When |
+|---|---|
+| `@ultimat3/core` | anywhere. It is tier 0, so no package is below it |
+| `@ultimat3/render` | you are already importing `defineRoute` — it re-exports all three, types and arrays |
+| `@ultimat3/http` · `@ultimat3/seo` · `@ultimat3/manifest` · `@ultimat3/pwa` | that package's own signatures take one, so it re-exports what it takes |
+
+**Re-export, never restate.** Six packages each kept a hand-written copy until 2026-08 — 14 declarations in all — because imports only go down tiers and copying was the move available. `'spa'` was then deleted from one of them and five went on admitting it under a green project-wide typecheck; `@ultimat3/pwa`'s copy mapped it to `cache-first`, the one strategy that gives an `app/` route a **shared** cache entry. `bun run scripts/render-modes.ts --json` refuses a second declaration, matching on the literal set rather than the name — the copy that did the damage was called `PwaRenderMode`.
+
 ## Why `stream` is the app default
 
-An authed page needs fresh data and fast first paint. `ssr` gives freshness and a slow TTFB (the whole page waits for the slowest query). `spa` gives an instant shell, a spinner farm, and no HTML for anything. `stream` gives both halves: shell now, data as it resolves.
+An authed page needs fresh data and fast first paint. `ssr` gives freshness and a slow TTFB — the whole page waits for the slowest query. `stream` gives both halves: shell now, data as it resolves. A page whose body belongs in the browser declares an `island({ src })`, budgeted in real bytes; there is no client-side-only mode and no client router.
 
 ```tsx
 export default function Dashboard() {

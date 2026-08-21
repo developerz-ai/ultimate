@@ -14,7 +14,7 @@ The edit an agent should make is the route's `offline` field, then `x build`. No
 
 ```ts
 export const config = defineRoute({
-  render:     'isr',                  // static | isr | ssr | stream | spa
+  render:     'isr',                  // static | isr | ssr | stream
   revalidate: { tags: [tag.post] },
   prerender:  () => db.posts.slugs(),
   offline:    'precache',             // precache | runtime | network-only
@@ -33,7 +33,6 @@ export const config = defineRoute({
 | The JS/CSS chunks those routes import | real bundle graph, not a glob |
 | Fonts, icons, and `priority` images they reference | asset graph |
 | The offline fallback route | required (see below) |
-| The app shell for `spa` routes | build output |
 
 Excluded always: `api/` responses, anything under an authenticated path unless `offline: 'precache'` is explicit, and any asset over the configured single-file cap.
 
@@ -41,13 +40,21 @@ Total precache size is a **budget** — exceeding it fails `x verify` rather tha
 
 ### Runtime strategy from render mode
 
-| `render` | `offline` default | Strategy | Rationale |
-|---|---|---|---|
-| `static` | `precache` | cache-first, revalidate on build ID change | immutable per build |
-| `isr` | `runtime` | stale-while-revalidate | matches ISR's own semantics exactly |
-| `ssr` | `network-only` | network, offline fallback on failure | caching a per-request render is a correctness bug |
-| `stream` | `runtime` | network-first for the document, cache-first for chunks | shell freshness matters; chunks are content-hashed |
-| `spa` | `precache` | shell cache-first, data network-only | the shell is static; the data never is |
+`MODE_STRATEGY` in `packages/pwa/src/strategies.ts`, read by `strategyFor()` and keyed on
+`Record<RenderMode, StrategyName>` — a mode with no row and a row for a mode that does not exist
+are both compile errors, `As of 2026-08`.
+
+| `render` | Strategy | Rationale |
+|---|---|---|
+| `static` | `cache-first` | immutable per build |
+| `isr` | `stale-while-revalidate` | matches ISR's own semantics exactly |
+| `ssr` | `network-first` | caching a per-request render is a correctness bug; the offline fallback answers on failure |
+| `stream` | `stale-while-revalidate` | the shell is the cacheable part and the holes re-fetch anyway |
+
+**There is no per-mode `offline` default** — `offline` is required by `defineRoute`'s type and again
+at runtime (`X_ROUTE_OFFLINE_MISSING`). It is read *before* the mode: `offline: 'network-only'` is a
+declaration that this URL is never answered from a cache, and `strategyFor` returns `network-only`
+without consulting the table. A per-route `strategy` overrides both.
 
 Overriding `offline` is allowed. Contradictions are **not** rejected `As of 2026-08`: `offline: 'precache'` on a `render: 'ssr'` route is accepted, and `X_SW_UNCACHEABLE` is a reserved name nothing raises ([Error codes → Not thrown yet](Error-Codes#not-thrown-yet)). The scope half *is* enforced — `X_SW_SCOPE_INVALID`, when the service-worker scope cannot serve the routes it precaches. Until the coherence check ships, review the pairing yourself: a per-request render has no cacheable body, so `precache` on `ssr` means the shell is served stale.
 

@@ -18,20 +18,26 @@ Rationale lives in [`../idea/00-thesis.md`](../idea/00-thesis.md). This file is 
 
 ## Package tiers
 
-Imports go **down only**. Never sideways within a tier, never upward.
+Imports go **down only**. Never sideways within a tier, never upward. Enforced by `bun run boundaries`; a violation names the importing file, the imported module and the allowed tiers.
 
-| Tier | Packages | May import |
-|---|---|---|
-| 0 | `core`, `schema` | nothing (`@ultimat3/*`) |
-| 1 | `i18n`, `money`, `time`, `cache`, `seo` | tier 0 |
-| 2 | `entity`, `policy`, `http` | tier 0–1 |
-| 3 | `action`, `query`, `jobs`, `realtime` | tier 0–2 |
-| 4 | `render`, `pwa`, `mcp`, `ai`, `manifest` | tier 0–3 |
-| 5 | `ui`, `admin`, `testing`, `cli` | tier 0–4 |
-
-Enforced by `bun run boundaries`. A violation reports the importing file, the imported module, and the allowed tiers.
+**The table is not repeated here, on purpose.** [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) is the executable copy and exactly two prose copies are permitted — the root [`CLAUDE.md`](../../CLAUDE.md) and [`01-package-map.md`](01-package-map.md) — because `scripts/tier-table-drift.test.ts` reads those two and nothing else. A third copy on this page went stale in five rows before it was deleted: it still placed `ui` at 5, and had never heard of `db`, `storage`, `flags`, `auth`, `mail` or `scraping`.
 
 **Adding a package:** pick the tier first. If it doesn't fit one, the design is wrong — fix the design, don't widen the table. `bun run scripts/new-package.ts <name> --tier <n>` scaffolds it correctly.
+
+### One declaration, at the lowest tier that can hold it
+
+A closed vocabulary two packages both name goes in the **lowest tier either can import** — not in whichever package "owns" the concept. Re-export it upward from any package whose own signatures take it; a re-export is not a declaration.
+
+Imports only go down, so a sideways need becomes a copy, and a copy drifts **silently**: the route vocabulary (`RenderMode`, `OfflineStrategy`, `HydrateStrategy`) reached **14 declarations across six packages** before `'spa'` was deleted from one of them and five went on admitting it under a green project-wide typecheck — `@ultimat3/pwa`'s copy mapping it to `cache-first`, the one strategy that gives an `app/` route a shared cache entry. It now lives once, at tier 0, in `packages/core/src/route-vocabulary.ts`, with each union derived from its array so the pair cannot disagree.
+
+| Rule | |
+|---|---|
+| Where | the lowest tier that can hold it — tier 0 for anything the whole graph names |
+| Shape | `export const X = [...] as const` and `export type X = (typeof X)[number]`, never a hand-written union beside its array |
+| Upward | re-export from each package whose API takes it, so a consumer needs one import |
+| Never | restate the members. `bun run scripts/render-modes.ts --json` matches on the **literal set**, not the name — the copy that did the damage was called `PwaRenderMode` |
+
+Two shared members is a copy; one is a coincidence and stays silent. The margin is measured, not guessed: the highest innocent overlap in this repo is **1** (`CacheTier` holds `isr`, `StrategyName` holds `network-only`, `ChangeFreq` holds `never`), `As of 2026-08`.
 
 Details: [`02-boundaries.md`](02-boundaries.md).
 
