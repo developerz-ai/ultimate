@@ -67,9 +67,13 @@ export const sqlTypeOf = (meta: ColumnMeta): string => {
   }
   if (meta.kind === 'array') {
     const element = meta.element?.$meta;
-    // `arrayOf` refuses an element that is not one scalar column, so this is total in practice;
-    // `text[]` is the answer that keeps a description renderable rather than throwing inside a
-    // projection, which is the one place an error has no caller to instruct.
+    // The element KIND is bounded by `arrayOf`, which refuses money, a nested array, `jsonb` and
+    // `bytea` at declaration — it refused only the first two until 2026-08, so this line emitted a
+    // real `jsonb[]`/`bytea[]` for a column `bindValues` wrote as `{"",""}`: a DDL type for a value
+    // that could not survive the trip. What is NOT bounded is `element` itself, which is absent on
+    // any `ColumnMeta` nobody built through `arrayOf()`; `text[]` keeps such a description
+    // renderable rather than throwing inside a projection, the one place an error has no caller to
+    // instruct.
     return `${element === undefined ? 'text' : sqlTypeOf(element)}[]`;
   }
   return meta.kind;

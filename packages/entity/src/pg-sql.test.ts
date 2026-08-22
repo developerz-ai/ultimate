@@ -124,6 +124,21 @@ describe('predicateSql, via selectStatement', () => {
     expect(stmt.text).toContain(`"title" ${token} $`);
   });
 
+  // The Postgres half of `memory-match.test.ts`'s NULL table, provable without a server: the five
+  // ordering operators emit a BARE comparison, so a NULL on either side is UNKNOWN and the row is
+  // never returned. `eq`, `neq` and `in` are the three that read a NULL as a value, and they are
+  // the three that carry `is null` / `is distinct from` — which is exactly why the memory driver
+  // guards those five and not these three.
+  test.each(['gt', 'gte', 'lt', 'lte', 'like'] as const)(
+    '%s never widens itself with "is null" — a NULL row is unreachable in Postgres',
+    (op) => {
+      // Named per column: the statement always carries the soft-delete `"deleted_at" is null`.
+      const stmt = where({ column: 'title', op, value: 'x' });
+      expect(stmt.text).not.toContain('"title" is null');
+      expect(stmt.text).not.toContain('"title" is distinct from');
+    },
+  );
+
   test('is-null and is-not-null bind nothing', () => {
     expect(where({ column: 'title', op: 'is-null' }).text).toContain('"title" is null');
     expect(where({ column: 'title', op: 'is-not-null' }).text).toContain('"title" is not null');

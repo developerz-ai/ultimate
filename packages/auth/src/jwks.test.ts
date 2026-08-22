@@ -346,7 +346,8 @@ describe('a key set the process cannot reach at all', () => {
       jwksUri: 'https://op.test/jwks',
       clock,
       // Not an Error: `AbortSignal.timeout` rejects with a DOMException, and a runtime is free
-      // to reject with anything at all — which is why the detail has a fallback.
+      // to reject with anything at all — which is why `renderThrowable` renders the VALUE rather
+      // than testing it with `instanceof`, whose own trap can throw.
       fetch: async () => {
         throw { name: 'AbortError' } as unknown as Error;
       },
@@ -354,7 +355,8 @@ describe('a key set the process cannot reach at all', () => {
     const thrown = await keys.keyFor('k1', 'RS256').catch((error: unknown) => error);
     const error = thrown instanceof AuthError ? thrown : null;
     expect(error?.code).toBe('X_OAUTH_EXCHANGE_FAILED');
-    expect(error?.cause).toContain('the request failed before a response arrived');
+    expect(error?.cause).toContain('AbortError');
+    expect(error?.cause).not.toContain('[object Object]');
     expect(error?.cause).not.toContain('[object Object]');
   });
 });

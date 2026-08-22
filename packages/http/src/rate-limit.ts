@@ -3,7 +3,12 @@
 // `createServer({ rateLimitStore })`, and refused at boot when its scope cannot keep the app's
 // declaration; the bucket maths lives here so every driver agrees on the numbers.
 import { type Clock, systemClock } from '@ultimat3/core';
-import { rateLimited, rateLimitInvalid, rateLimitNotShared, rateLimitScopeUnset } from './errors';
+import {
+  rateLimited,
+  rateLimitInvalid,
+  rateLimitNotShared,
+  rateLimitScopeUnset,
+} from './rate-limit-errors';
 
 /**
  * Where a limiter's counters live. A store says which it provides; `RateLimitConfig` says which
@@ -148,6 +153,34 @@ const forgetAt = (state: BucketState, bucket: Bucket, nowMs: number): number => 
   return nowMs + Math.ceil((toFull / bucket.refillPerSecond) * 1000);
 };
 
+/**
+ * The numbers a caller is owed, given what the bucket holds AFTER the take. Exported because a
+ * store that keeps its counters in Postgres does the refill and the spend in SQL and has nothing
+ * left to compute them with — and two drivers deriving `retryAfterSeconds` separately is two
+ * answers to "when may I come back", one of which is wrong. `allowed` is passed rather than
+ * inferred: `tokens` alone cannot tell a spend that landed at 0.5 from a refusal with 0.5 left.
+ */
+export const rateLimitDecision = (
+  bucket: Bucket,
+  tokens: number,
+  cost: number,
+  allowed: boolean,
+  nowMs: number,
+): RateLimitDecision => {
+  const deficit = allowed ? bucket.capacity - tokens : cost - tokens;
+  // A bucket that never refills would give an infinite reset; clamp to a day so the
+  // Retry-After header stays a number a client can act on.
+  const secondsToRefill =
+    bucket.refillPerSecond > 0 ? Math.min(86_400, deficit / bucket.refillPerSecond) : 86_400;
+  return {
+    allowed,
+    limit: bucket.capacity,
+    remaining: Math.floor(tokens),
+    resetAtMs: nowMs + Math.ceil(secondsToRefill * 1000),
+    retryAfterSeconds: allowed ? 0 : Math.max(1, Math.ceil(secondsToRefill)),
+  };
+};
+
 const decide = (
   state: BucketState,
   bucket: Bucket,
@@ -160,18 +193,7 @@ const decide = (
   const allowed = tokens >= cost;
   state.tokens = allowed ? tokens - cost : tokens;
   state.forgetAtMs = forgetAt(state, bucket, nowMs);
-  const deficit = allowed ? bucket.capacity - state.tokens : cost - state.tokens;
-  // A bucket that never refills would give an infinite reset; clamp to a day so the
-  // Retry-After header stays a number a client can act on.
-  const secondsToRefill =
-    bucket.refillPerSecond > 0 ? Math.min(86_400, deficit / bucket.refillPerSecond) : 86_400;
-  return {
-    allowed,
-    limit: bucket.capacity,
-    remaining: Math.floor(state.tokens),
-    resetAtMs: nowMs + Math.ceil(secondsToRefill * 1000),
-    retryAfterSeconds: allowed ? 0 : Math.max(1, Math.ceil(secondsToRefill)),
-  };
+  return rateLimitDecision(bucket, state.tokens, cost, allowed, nowMs);
 };
 
 /**

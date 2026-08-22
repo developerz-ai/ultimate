@@ -4,8 +4,8 @@
 // and a bucket name with nothing behind it falls through `bucketFor` to `default`.
 
 import type { HttpConfig } from './config';
-import { rateLimitBucketConflict, rateLimitBucketUnbound } from './errors';
 import type { Bucket, RateLimiter } from './rate-limit';
+import { rateLimitBucketConflict, rateLimitBucketUnbound } from './rate-limit-errors';
 import type { Route } from './router';
 
 const same = (a: Bucket, b: Bucket): boolean =>

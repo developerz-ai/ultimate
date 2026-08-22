@@ -102,6 +102,12 @@ export const bindValues = <Row>(
  * One array element, as a Postgres array literal spells it. Quoted always: an unquoted element
  * containing a comma, a brace or a backslash is a different array, and an empty string unquoted
  * is nothing at all.
+ *
+ * The `object` branch is the LAST resort and never a declared column's value: `arrayOf()` refuses
+ * `jsonb`, `bytea`, `money` and a nested array at declaration (`columns-data.ts`) precisely because
+ * this line has no literal for them and rendered every one as `""` — silently, and only against a
+ * real table, since `memoryRepo` stores the value it was handed. A `Date` is the one object shape
+ * with a literal, so it is named above.
  */
 const arrayElement = (value: unknown): string => {
   if (value === null || value === undefined) return 'NULL';

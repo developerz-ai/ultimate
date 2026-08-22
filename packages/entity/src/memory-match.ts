@@ -31,6 +31,9 @@ import type { ColumnKind } from './types';
  */
 const DECIMAL_TEXT: ReadonlySet<ColumnKind> = new Set<ColumnKind>(['bigint', 'numeric']);
 
+/** Absent and NULL are one thing to a predicate: a column the projection left out is not a value. */
+const isNull = (value: unknown): boolean => value === null || value === undefined;
+
 const sign = <T extends number | bigint | string>(left: T, right: T): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
@@ -139,6 +142,13 @@ export const matchesPredicate = <Row>(
   const kind = kindOf(entity, predicate.column);
   const actual = valueAt(row, predicate.column);
   const same = (candidate: unknown): boolean => sameValueOfKind(kind, actual, candidate);
+  // `col > NULL` is UNKNOWN in SQL and UNKNOWN is not a match, so a NULL on EITHER side matches no
+  // row here either — `predicateSql` emits a bare `"col" > $1` and Postgres returns nothing. Without
+  // this the fall-through compared `String(null)` as the text `"null"`, which sorts after `"5"` and
+  // before `"z"`: `gt(seats, 5)` answered the null row in memory and never in production, and
+  // `lt(seats, null)` answered every row. The guard is HERE and not in `compareByKind`, which also
+  // orders a page — a sort puts NULLs last (`asc nulls last`) rather than dropping them.
+  const unknown = (): boolean => isNull(actual) || isNull(predicate.value);
   const order = (): number => compareByKind(kind, actual, predicate.value);
   switch (predicate.op) {
     case 'eq':
@@ -150,20 +160,20 @@ export const matchesPredicate = <Row>(
     case 'in':
       return Array.isArray(predicate.value) && predicate.value.some(same);
     case 'gt':
-      return order() > 0;
+      return !unknown() && order() > 0;
     case 'gte':
-      return order() >= 0;
+      return !unknown() && order() >= 0;
     case 'lt':
-      return order() < 0;
+      return !unknown() && order() < 0;
     case 'lte':
-      return order() <= 0;
+      return !unknown() && order() <= 0;
     // Real LIKE semantics, so `'draft%'` means "starts with" here exactly as it does in Postgres.
     // Treating the pattern as a substring would make the two drivers disagree.
     case 'like':
-      return likePattern(entity.$name, String(predicate.value)).test(String(actual));
+      return !unknown() && likePattern(entity.$name, String(predicate.value)).test(String(actual));
     case 'is-null':
-      return actual === null || actual === undefined;
+      return isNull(actual);
     case 'is-not-null':
-      return actual !== null && actual !== undefined;
+      return !isNull(actual);
   }
 };

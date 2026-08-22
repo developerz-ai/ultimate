@@ -11,7 +11,7 @@
 import { describeValue, formatIssues, type StandardSchemaV1, validate } from '@ultimat3/schema';
 import { isPlainDate, type PlainDate, plainDateUtc } from '@ultimat3/time';
 import { column } from './column';
-import { invariantViolated } from './errors';
+import { EntityError, invariantViolated } from './errors';
 import type { AnyColumn, Column, ColumnMeta } from './types';
 
 const reject = (rule: string, detail: string): never => {
@@ -27,9 +27,13 @@ const got = (value: unknown): string => `got ${describeValue(value)}`;
  * place for one — the value arrives from the DATABASE as often as from a caller, so the row type
  * would be a claim nothing ever checked.
  *
- * The object is bound as an object, never as a string: a JSON string parameter is stored as a JSON
- * *string* by Postgres (measured — `'{"a":1}'` comes back as the text, not the object), so
- * stringifying here would change the value's type in the table.
+ * The value crosses to Postgres as TEXT and is cast back — `bindValues` calls `JSON.stringify` and
+ * `cellCast` (`pg-sql.ts`) writes `::text::jsonb` — and both halves are load-bearing. The driver
+ * seam refuses a plain object as a parameter (`X_SQL_UNSAFE`), so the object cannot cross as
+ * itself; and under a bare `$1::jsonb` the server describes the parameter as `jsonb`, Bun's `sql`
+ * JSON-ENCODES the string it was handed, and `{"a":1}` lands as a JSON *string* — `jsonb_typeof`
+ * answers `string` (measured, Postgres 17.10). Pinning the parameter to `text` first is what makes
+ * the server parse the characters, so neither half may be changed without the other.
  */
 export const json = <T>(schema: StandardSchemaV1<unknown, T>): Column<T> =>
   column<T>('jsonb', (value) => {
@@ -175,22 +179,63 @@ export const bytes = (): Column<Uint8Array> =>
     return Object.getPrototypeOf(value) === Uint8Array.prototype ? value : new Uint8Array(value);
   });
 
+/** The element kinds `arrayElement` (`pg-row.ts`) has no literal for, and why each one is refused. */
+const ARRAY_ELEMENT_REFUSED = ['money', 'array', 'jsonb', 'bytea'] as const;
+
+type RefusedElement = (typeof ARRAY_ELEMENT_REFUSED)[number];
+
+const isRefusedElement = (kind: string): kind is RefusedElement =>
+  (ARRAY_ELEMENT_REFUSED as readonly string[]).includes(kind);
+
+/**
+ * One column per refused element kind: the shape that holds the same list and can be written.
+ * `Object.freeze<Record<K, V>>` and never `Readonly<Record<K, V>> = Object.freeze({…})`, which
+ * infers the key set from the literal and would accept a fifth key in silence.
+ */
+const ARRAY_ELEMENT_FIXES = Object.freeze<Record<RefusedElement, string>>({
+  money: 'give each amount its own row in a child table with one money() column',
+  array: 'flatten it — arrayOf(text()) is one column — or give each inner list its own row',
+  jsonb:
+    'json(t.array(<element schema>))   # one jsonb column holds the whole list, per-member validated',
+  bytea: 'give each blob its own row in a child table with one bytes() column',
+});
+
+/**
+ * An element the Postgres array literal cannot carry, refused where the schema is still being
+ * written. Two different reasons, one code — the situation is a single one, "this list needs a
+ * different column" — so only the cause and the fix branch.
+ *
+ * `money` and `array` are not ONE column: three physical columns for an amount, and a nested array
+ * has no unambiguous literal form. `jsonb` and `bytea` are one column each and were the silent
+ * half: `arrayElement` renders any object as `""`, so two objects bound as `{"",""}` and one blob
+ * as `{""}` (measured), while `memoryRepo` kept the value — a loss no test in this tree could see
+ * and only a table could show.
+ *
+ * Not `reject()`: a declaration is repaired by an EDIT, and `reject`'s
+ * `x entities describe column --json` is `X_DECLARATION_UNKNOWN` — no entity is named `column`, and
+ * there is no entity at all yet. So each fix is the call that holds the list instead.
+ */
+const arrayElementRefused = (kind: RefusedElement): EntityError => {
+  const singleColumn = kind === 'money' || kind === 'array';
+  return new EntityError({
+    code: 'X_INVARIANT_VIOLATED',
+    cause: singleColumn
+      ? `arrayOf(${kind}) has no single column behind it — an array element is one scalar column, and ${kind === 'money' ? 'money is three (minor, currency, scale)' : 'a nested array has no unambiguous literal form'}`
+      : `arrayOf(${kind}) has no array literal form — every element would cross to Postgres as an empty string while memoryRepo kept the value, so the loss is invisible until the row is read back`,
+    fix: ARRAY_ELEMENT_FIXES[kind],
+  });
+};
+
 /**
  * `<element>[]` — a Postgres array of a SCALAR column. The element is a column, so its own
  * `$parse` decides every member: `arrayOf(text({ max: 40 }))` refuses a 41-character tag exactly
  * where a `text()` column would.
  *
- * Money and arrays of arrays are refused rather than approximated: money is three physical columns
- * and cannot be one array element, and a nested array has no unambiguous literal form.
+ * Four element kinds are refused rather than approximated — see `arrayElementRefused`.
  */
 export const arrayOf = <T>(element: Column<T>): Column<readonly T[]> => {
   const kind = element.$meta.kind;
-  if (kind === 'money' || kind === 'array') {
-    reject(
-      'array',
-      `arrayOf(${kind}) has no single column behind it — an array element is one scalar column`,
-    );
-  }
+  if (isRefusedElement(kind)) throw arrayElementRefused(kind);
   return column<readonly T[]>(
     'array',
     (value) => {

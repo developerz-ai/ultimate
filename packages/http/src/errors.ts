@@ -28,6 +28,7 @@ export const HTTP_OWNED_ERROR_CODES = [
   'X_RATE_LIMIT_BUCKET_UNBOUND',
   'X_RATE_LIMIT_SCOPE_UNSET',
   'X_RATE_LIMIT_INVALID',
+  'X_RATE_LIMIT_STORE_UNAVAILABLE',
   'X_TRUST_PROXY_UNSET',
   'X_OVERLOADED',
   'X_CSRF_BLOCKED',
@@ -79,6 +80,7 @@ export const HTTP_ERROR_TITLES: Readonly<Record<HttpOwnedErrorCode, string>> = {
   X_RATE_LIMIT_BUCKET_UNBOUND: 'the installed limiter cannot enforce a bucket a route declares',
   X_RATE_LIMIT_SCOPE_UNSET: 'the deployment has not said where the rate limiter keeps its counters',
   X_RATE_LIMIT_INVALID: 'a declared rate limit computes to numbers the limiter cannot run on',
+  X_RATE_LIMIT_STORE_UNAVAILABLE: 'the shared rate-limit store did not answer, so nothing decided',
   X_TRUST_PROXY_UNSET: 'proxy headers are trusted without saying how many proxies are in front',
   X_OVERLOADED: 'in-flight requests are at the configured ceiling',
   X_CSRF_BLOCKED: 'a credentialed write arrived from an origin that is not allowed to make it',
@@ -191,25 +193,29 @@ export const unauthenticated = (pathname: string): HttpError =>
     fix: "send a session cookie or Authorization header, or set meta.auth to 'public'",
   });
 
-export const forbidden = (pathname: string, reason: string): HttpError =>
+/**
+ * `x policy explain` resolves a policy SUBJECT — a permission, an action name or a query name.
+ * A route pathname is none of those, and the only callers of this factory (`stages.ts`' `authz`)
+ * had nothing but `ctx.url.pathname` to hand it: `x policy explain /settings` exits
+ * `X_DECLARATION_UNKNOWN`, so the one command a 403 told the reader to run was the one command
+ * that could not work. `route.meta.policy` is what the stage was evaluating and what the index
+ * can resolve, so that is the argument.
+ */
+const POLICY_SUBJECT = /^[a-z0-9_-]+:[a-z0-9_-]+$/;
+
+/**
+ * A composite policy renders `and(a:b, c:d)`, which is not a subject either — so anything that is
+ * not a bare `resource:verb` degrades to the route table, the shape `bodyInvalid` above uses. A
+ * fix that names the wrong thing is not a fix; a fix that resolves is.
+ */
+export const forbidden = (pathname: string, reason: string, policy?: string): HttpError =>
   new HttpError({
     code: 'X_FORBIDDEN',
     cause: `${pathname} denied: ${reason}`,
-    fix: `x policy explain ${pathname} --json   # shows which clause denied`,
-  });
-
-/**
- * The KEY never reaches the caller. `rateLimitKey` is `${routeName}|org:${orgId}` — or
- * `actor:${actorId}` — so the old cause handed an anonymous caller promoted to an org bucket the
- * internal org id, in a 429 anyone can provoke. It rides in `meta`, which the problem document
- * does not render and the error reporter does.
- */
-export const rateLimited = (key: string, retryAfterSeconds: number): HttpError =>
-  new HttpError({
-    code: 'X_RATE_LIMITED',
-    cause: `the rate limit for this caller is exhausted; it refills in ${retryAfterSeconds}s`,
-    fix: 'retry after the Retry-After header, or raise rateLimit.buckets in app.config.ts',
-    meta: { key, retryAfterSeconds },
+    fix:
+      policy !== undefined && POLICY_SUBJECT.test(policy)
+        ? `x policy explain ${policy} --json   # shows which clause denied`
+        : `x routes --json   # find ${pathname}, then read the policy it declares`,
   });
 
 export const buildSkew = (clientBuildId: string, serverBuildId: string): HttpError =>
@@ -280,139 +286,11 @@ export const corsConfigInvalid = (reason: string): HttpError =>
     fix: "in app.config.ts set http.cors.credentials: false, or replace http.cors.origins: ['*'] with the exact origins allowed to call this app",
   });
 
-/**
- * At `createServer`/`createPipeline`, never on the request. `replicas: 3` behind one config means
- * each process holds its own counters, so every configured number is enforced three times over —
- * a green `x verify` and a limit that is not the limit. The declaration is the app's because the
- * framework cannot see its replica count, and a framework that guessed would guess wrong.
- */
-export const rateLimitNotShared = (found: 'process' | 'disabled'): HttpError =>
-  new HttpError({
-    code: 'X_RATE_LIMIT_NOT_SHARED',
-    cause:
-      found === 'disabled'
-        ? "http.rateLimit.scope is 'shared' but http.rateLimit.enabled is false, so the fleet-wide limit is enforced nowhere"
-        : "http.rateLimit.scope is 'shared' but the installed store keeps its counters in this process, so each replica would enforce the full bucket on its own",
-    fix: "pass a store whose scope is 'shared' — createServer({ routes, rateLimitStore }) — or set http.rateLimit.scope: 'process' in app.config.ts to accept per-replica limits",
-  });
-
-/**
- * The numbers of one bucket, spelled structurally so `errors.ts` stays free of an import from
- * `rate-limit.ts` — which imports this file.
- */
-interface BucketNumbers {
-  readonly capacity: number;
-  readonly refillPerSecond: number;
-}
-
-const numbers = (bucket: BucketNumbers): string => `${bucket.capacity} / ${bucket.refillPerSecond}`;
-
-/**
- * Two declarations of one bucket, at `createServer`/`createPipeline`. Neither wins: an app that
- * configures `rateLimit.buckets.<name>` and a route that declares its own numbers under that name
- * disagree about what is enforced, and whichever a merge picked would leave the other a number
- * someone read and nothing applies — the failure this seam exists to end. The message speaks
- * capacity and refill rather than the `limit`/`windowMs` an action declares, because that is what
- * the limiter runs on; `toBucket` (`rate-limit.ts`, this package) is the conversion between them —
- * it lives here because http owns `Bucket` and the maths, and both tier-3 callers need it.
- */
-export const rateLimitBucketConflict = (input: {
-  bucket: string;
-  /** `null` when the other declaration is `app.config.ts` rather than a second route. */
-  otherRoute: string | null;
-  route: string;
-  other: BucketNumbers;
-  declared: BucketNumbers;
-}): HttpError =>
-  new HttpError({
-    code: 'X_RATE_LIMIT_BUCKET_CONFLICT',
-    cause: `bucket "${input.bucket}" has two declarations: ${
-      input.otherRoute === null
-        ? 'http.rateLimit.buckets in app.config.ts'
-        : `route "${input.otherRoute}"`
-    } says ${numbers(input.other)}, route "${input.route}" says ${numbers(input.declared)} (capacity / refill per second)${
-      input.otherRoute === null
-        ? `; if ${numbers(input.other)} is what this deployment means to enforce, then the route's declaration is the half that is wrong and app.config.ts is not where to say so`
-        : ''
-    }`,
-    // One edit, named. Two joined by "or" leaves the reader to decide which declaration is
-    // authoritative — and the route is, always: it sits beside the handler and it is what the
-    // OpenAPI operation publishes, so a config entry duplicating it is the copy that goes stale.
-    fix:
-      input.otherRoute === null
-        ? `delete http.rateLimit.buckets.${input.bucket} from app.config.ts — the route's declaration is the one the OpenAPI operation publishes, so edit the numbers there if ${numbers(input.declared)} is wrong`
-        : `rename the bucket route "${input.route}" declares — one name is one limit, and "${input.bucket}" is already route "${input.otherRoute}"'s`,
-  });
-
-/**
- * A route declares its own bucket and the INSTALLED limiter cannot enforce it — at
- * `createPipeline`, never on the request. `createRateLimiter` closes over the config it was built
- * with, so a limiter constructed before the routes existed resolves the route's bucket name
- * through `bucketFor`, misses, and falls through to `default`: measured at 120 burst and 21 of 21
- * requests allowed for a route declaring 5. Silent, and looser than what the author wrote.
- *
- * Refused rather than rebound, for two reasons. A `RateLimiter` is opaque — no store and no table
- * are reachable through it — so "binding" it would mean discarding the caller's limiter and the
- * store it carries, which is a different silent failure. And a caller who built their own limiter
- * may have meant their own numbers; picking for them is the precedence mistake
- * `X_RATE_LIMIT_BUCKET_CONFLICT` exists to refuse.
- */
-export const rateLimitBucketUnbound = (input: {
-  bucket: string;
-  route: string;
-  declared: BucketNumbers;
-  /** What the limiter holds under that name, or `null` for "holds nothing / declares no table". */
-  found: BucketNumbers | null;
-}): HttpError =>
-  new HttpError({
-    code: 'X_RATE_LIMIT_BUCKET_UNBOUND',
-    cause: `route "${input.route}" declares bucket "${input.bucket}" as ${numbers(input.declared)} (capacity / refill per second) and the installed limiter ${
-      input.found === null
-        ? 'does not hold that bucket, so the route would run on the default one'
-        : `holds ${numbers(input.found)} for it`
-    }`,
-    fix: 'pass the STORE and let the pipeline build the limiter — createServer({ routes, rateLimitStore }) — so the bucket table is the one the routes registered',
-  });
-
 export const routeConflict = (path: string, detail: string): HttpError =>
   new HttpError({
     code: 'X_ROUTE_CONFLICT',
     cause: `${path} conflicts with an already registered route: ${detail}`,
     fix: `x routes list --json   # remove or rename one of the two routes at ${path}`,
-  });
-
-/**
- * At `defineHttpConfig`, never on the request. `scope` used to DEFAULT to `'process'`, so an app
- * that declared nothing enforced every configured number once per replica — three times over on
- * the chart this repo ships — with a green `x verify` and nothing to read. The boot check that
- * catches the other half (`assertRateLimitScope`) only fires for an app that said `'shared'`, so
- * the silent case was exactly the one nobody declared. One process is still a legal answer; it is
- * no longer an assumed one.
- */
-export const rateLimitScopeUnset = (): HttpError =>
-  new HttpError({
-    code: 'X_RATE_LIMIT_SCOPE_UNSET',
-    cause:
-      'http.rateLimit is enabled and the deployment has not declared http.rateLimit.scope, so the numbers below it are per replica rather than per fleet',
-    fix: "in app.config.ts set http.rateLimit.scope: 'process' if this app runs as ONE replica, or 'shared' plus createServer({ routes, rateLimitStore }) for a fleet-wide limit",
-  });
-
-/**
- * A `{ limit, windowMs }` pair the limiter cannot run on. Raised by `toBucket` (`rate-limit.ts`),
- * which lives in this PACKAGE because http owns `Bucket` and the maths, and two tier-3 packages
- * (`action`, `query`) need the same conversion without importing each other.
- */
-export const rateLimitInvalid = (input: {
-  readonly owner: string;
-  readonly limit: number;
-  readonly windowMs: number;
-  readonly reason: string;
-}): HttpError =>
-  new HttpError({
-    code: 'X_RATE_LIMIT_INVALID',
-    cause: `"${input.owner}" declares rateLimit { limit: ${input.limit}, windowMs: ${input.windowMs} }: ${input.reason}`,
-    fix: `edit the \`rateLimit:\` on ${input.owner} to a whole allowance over a real window — e.g. { limit: 5, windowMs: 600_000 } for five per ten minutes — or delete it to keep the default bucket`,
-    meta: { owner: input.owner, limit: input.limit, windowMs: input.windowMs },
   });
 
 /**

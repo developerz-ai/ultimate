@@ -4,9 +4,10 @@
 // would each be a wrong value nobody could see until the table was read back somewhere else.
 
 import { afterAll, describe, expect, test } from 'bun:test';
+import { UltimateError } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import type { PlainDate } from '@ultimat3/time';
-import { text, timestamp, uuid } from './columns';
+import { money, text, timestamp, uuid } from './columns';
 import { arrayOf, bigint, bytes, date, decimal, json } from './columns-data';
 import { sqlTypeOf } from './describe';
 import { entity } from './entity';
@@ -21,6 +22,16 @@ const caught = (run: () => unknown): string | undefined => {
     run();
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
+  }
+  return undefined;
+};
+
+/** The `fix:` line a refusal emits — the half of an error `message` does not carry. */
+const fixOf = (run: () => unknown): string | undefined => {
+  try {
+    run();
+  } catch (error) {
+    return error instanceof UltimateError ? error.fix : undefined;
   }
   return undefined;
 };
@@ -142,6 +153,25 @@ describe('unit · bytes() and arrayOf()', () => {
 
   test('an element with no single column behind it is refused at declaration', () => {
     expect(caught(() => arrayOf(arrayOf(text())))).toContain('one scalar column');
+    expect(caught(() => arrayOf(money()))).toContain('one scalar column');
+  });
+
+  // The loss this refusal exists for was production-only: `bindValues` rendered every object
+  // element as `""` — measured, two objects bound as `{"",""}` and one blob as `{""}` — while
+  // `memoryRepo` kept the value, so every test in the tree passed and only the table was wrong.
+  test('a jsonb or bytea element is refused at declaration, where the object is still visible', () => {
+    expect(caught(() => arrayOf(json(t.object({ a: t.string }))))).toContain('empty string');
+    expect(caught(() => arrayOf(bytes()))).toContain('empty string');
+  });
+
+  test('each refusal names the column that holds the list instead, as a call to paste', () => {
+    // Never `x entities describe column --json`, which `reject()` emits: there is no entity to
+    // describe at declaration time, so that command is `X_DECLARATION_UNKNOWN` — a fix line that
+    // reproduces an error rather than repairing one.
+    expect(fixOf(() => arrayOf(json(t.object({ a: t.string }))))).toContain('json(t.array(');
+    expect(fixOf(() => arrayOf(bytes()))).toContain('bytes()');
+    expect(fixOf(() => arrayOf(bytes()))).not.toContain('x entities describe column');
+    expect(fixOf(() => arrayOf(money()))).not.toContain('x entities describe column');
   });
 });
 

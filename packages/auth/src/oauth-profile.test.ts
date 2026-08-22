@@ -201,7 +201,7 @@ describe('the userinfo call, when it does not come back', () => {
         },
       }),
     );
-    expect(isUltimateError(error) && error.cause).toContain('the request failed before a response');
+    expect(isUltimateError(error) && error.cause).toContain('AbortError');
     expect(isUltimateError(error) && error.cause).not.toContain('[object Object]');
   });
 

@@ -180,7 +180,9 @@ describe('an issuer the process cannot reach', () => {
       },
     }).catch((error: unknown) => error);
     const error = thrown instanceof AuthError ? thrown : null;
-    expect(error?.cause).toContain('the request failed before a response arrived');
+    // `renderThrowable` renders the value it was handed; the canned sentence it replaced said
+    // less and hid which value arrived.
+    expect(error?.cause).toContain('AbortError');
     expect(error?.cause).not.toContain('[object Object]');
   });
 });

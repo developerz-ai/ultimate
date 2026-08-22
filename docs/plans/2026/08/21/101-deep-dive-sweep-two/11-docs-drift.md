@@ -28,6 +28,19 @@ Every row was checked against the tree during the audit. Counts are measured `As
 | `dummy/social-media-clone/docker/docker-compose.prod.yml:71`, `…/docker/README.md:11`, `examples/dummy/docker/docker-compose.prod.yml:52`, `…/docker/README.md:11`, `wiki/Scheduled-Tasks.md:98`, `wiki/Timezones-And-Dates.md:94`, `wiki/Tutorial-04-Jobs-And-Realtime.md:84`, `wiki/Tutorial-06-Growing-Up.md:41` | scheduler leader = Postgres advisory lock | expiring lease row (`dev-roles.ts:315-318`, `driver-pg-ddl.ts:144`); the prior sweep fixed the framework files and not these |
 | `packages/entity/src/describe.ts:70` | `arrayOf` element encoding "total in practice" | false; slice 03 |
 
+## Found during execution, 2026-08-22 — not in the original audit
+
+| File | Says | Tree |
+|---|---|---|
+| root `CLAUDE.md`, command table, "test (one name)" | `bun test -t 'formats the fix line'` | matches **zero** tests in the repo — `grep -rn "formats the fix line"` finds nothing. Worse, running it loads all 1,143 test files into one process and reports 16 fails / 19 errors from cross-file module-scope collisions, so the documented example not only does not work, it looks like a broken repo. Replace with a name that exists |
+| root `CLAUDE.md` primitives section | two factory examples, "the rule's **second** instance" | six factories ship; `PRIMITIVE_FACTORIES` (landed #288) is now the derived list — point at it and delete the ordinal |
+| `packages/ai/src/hive.ts` header | "The fourth instance of the framework's factory rule" | at most one of the three files claiming "fourth" can be right; slice 05 deletes it |
+| `packages/scraping/src/scrape.ts` header | "The rule's fourth instance" | same; slice 06 deletes it |
+| `packages/core/CLAUDE.md`, `wiki/` readiness prose | `/readyz` semantics | `HealthReport.registered` shipped in #288; an empty registry still answers **200**, which is now a documented three-state table rather than an implied binary. Any page describing `/readyz` as "ready = all checks pass" must say what zero checks means |
+| `scripts/error-map-backlog.ts` core group | — | gained `X_OTLP_HEADERS_INVALID` in #288; the group comment's description of what core's unpinned codes have in common still holds, but confirm the count if any prose states one |
+
+**Note on this plan's own citations.** Three `file:line` references in `02-tier1.md` point at lines that do not exist (`context.ts:670-674` in a 271-line file; `tier-failures.ts:559`; `invalidate.ts:384`), and `01`'s step 4 implies an error code was new when it already existed. The findings were all real. Left as written — this file is the historical record of what the audit saw — but any future slice must locate defects **by content, not by line number**.
+
 ## Steps
 1. Land slice 09's widened `gate-steps` first; fix every line it reports (the 17/18 rows above are its output).
 2. Edit the remaining rows by hand; where a number can be derived (`Error-Codes.md` per-package counts, `frozen-records` sites, package count), derive it in the script that already reads the set and delete the prose number, per axiom 3.

@@ -4,7 +4,7 @@
 // token is verified here, so no caller downstream can forget to.
 
 import type { Clock } from '@ultimat3/core';
-import { EnvMissingError, renderCauseValue, systemClock } from '@ultimat3/core';
+import { EnvMissingError, renderCauseValue, renderThrowable, systemClock } from '@ultimat3/core';
 import { oauthExchangeFailed, restartAt } from './errors';
 import { type IdTokenClaims, verifyIdToken } from './id-token';
 import { isRecord } from './json';
@@ -143,7 +143,10 @@ async function postForm(
       signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
     });
   } catch (error) {
-    const reason = error instanceof Error ? error.message : 'the request failed before a response';
+    // `renderThrowable`, never `error.message` behind an `instanceof`: the rejection comes from
+    // an injected `fetch`, and `instanceof` itself throws on a value whose `getPrototypeOf` trap
+    // does — losing the one refusal that tells a caller the code is already spent.
+    const reason = renderThrowable(error);
     throw oauthExchangeFailed({
       provider,
       stage: 'token',

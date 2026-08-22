@@ -16,8 +16,9 @@ import {
   statusFor,
   toProblem,
 } from './error-map';
-import { bodyInvalid, forbidden, HTTP_ERROR_CODES, rateLimited, routeNotFound } from './errors';
+import { bodyInvalid, forbidden, HTTP_ERROR_CODES, routeNotFound } from './errors';
 import { createPipeline } from './pipeline';
+import { rateLimited } from './rate-limit-errors';
 import { text } from './response';
 import { createRouter, type Route } from './router';
 

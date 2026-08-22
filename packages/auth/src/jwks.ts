@@ -7,7 +7,7 @@
 // no credential, so a signature check has to exist before those doors are opened.
 
 import type { Clock } from '@ultimat3/core';
-import { systemClock } from '@ultimat3/core';
+import { renderThrowable, systemClock } from '@ultimat3/core';
 import { oauthExchangeFailed, oauthTokenInvalid } from './errors';
 import { decodeJwtSegment, isRecord } from './json';
 import type { OAuthProvider } from './oauth';
@@ -115,8 +115,9 @@ export function createJwksClient(options: JwksClientOptions): JwksKeySource {
       throw oauthExchangeFailed({
         provider: options.provider,
         stage: 'jwks',
-        detail:
-          error instanceof Error ? error.message : 'the request failed before a response arrived',
+        // `renderThrowable`: this catch is the last frame that can still answer with a code, and
+        // the `kid` that got here came out of an attacker-supplied JWT header.
+        detail: renderThrowable(error),
         fix: `curl -sS -m 5 ${options.jwksUri}`,
       });
     }

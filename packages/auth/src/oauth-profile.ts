@@ -3,7 +3,7 @@
 // when there is not. `emailVerified` is carried honestly rather than assumed — it is what
 // decides whether this login may attach itself to an existing account by address.
 
-import { logger } from '@ultimat3/core';
+import { logger, renderThrowable } from '@ultimat3/core';
 import { oauthExchangeFailed, restartAt } from './errors';
 import { idTokenEmailVerified, isVerifiedFlag } from './id-token';
 import { isRecord } from './json';
@@ -61,7 +61,11 @@ async function getJson(
       signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
     });
   } catch (error) {
-    const reason = error instanceof Error ? error.message : 'the request failed before a response';
+    // `renderThrowable`, never `error.message` behind an `instanceof`: `fetch` is INJECTED here,
+    // so the rejection is whatever a driver or a proxy threw — and `instanceof` runs the value's
+    // own `getPrototypeOf` trap, which would replace this coded refusal with a bare `TypeError`
+    // raised from inside the catch that exists to raise it. Same rule as `@ultimat3/cache`.
+    const reason = renderThrowable(error);
     throw oauthExchangeFailed({
       provider,
       stage: 'userinfo',
