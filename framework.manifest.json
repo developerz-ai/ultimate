@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "55d931030b80b821b037146e8918ad00ae6b89b36fe3c37203c1f60e34928ab6",
+  "buildId": "6d2b8a35846f789ed28a9d0a5589739c832861ed98a3d4315f4b06d0b85432b2",
   "tiers": {
     "0": [
       "core",
@@ -1814,6 +1814,11 @@
     },
     {
       "code": "X_RATE_LIMIT_SCOPE_UNSET",
+      "owner": "http",
+      "at": "packages/http/src/errors.ts"
+    },
+    {
+      "code": "X_RATE_LIMIT_STORE_UNAVAILABLE",
       "owner": "http",
       "at": "packages/http/src/errors.ts"
     },

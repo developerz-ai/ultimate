@@ -255,6 +255,22 @@ export {
   orgKey,
   orgRateLimit,
 } from './rate-limit';
+export type {
+  PgExecutor,
+  PostgresAuthLimiter,
+  PostgresAuthLimiterOptions,
+} from './rate-limit-postgres';
+export {
+  postgresAuthLimiter,
+  SQL_AUTH_FORGET_KEY,
+  SQL_AUTH_KEY_LOCK,
+  SQL_AUTH_LIMIT_TABLES,
+  SQL_AUTH_LOCK,
+  SQL_AUTH_LOCKED_UNTIL,
+  SQL_AUTH_PURGE,
+  SQL_AUTH_RECORD_FAILURE,
+  SQL_AUTH_RESET,
+} from './rate-limit-postgres';
 export type { DisabledUser } from './revocation';
 export {
   disableUser,

@@ -60,6 +60,34 @@ Steps: add `(islands?.failed ?? 0) === 0` to `ok`; a fourth `shotSummary` branch
 ## `x deploy`
 - `packages/cli/src/cmd-deploy.ts:118-132,179` — compose branch never uses `image`; `--json` reports the requested ref while `docker compose` resolves `${IMAGE:-…}` from the ambient env. **Proven** with `--dry-run`. Deferred from the prior sweep. Pass `{ env: { IMAGE: plan.image } }` through the `Runner` (`exec.ts:24,56`); the helm branch (`:79-86`) is the correct shape.
 
+## Carried in from slice 03 (found during execution, 2026-08-22)
+
+- **Wire the shared rate-limit stores that slice 03 shipped.** `startWeb`/`startServices` must
+  install both and run their two `if not exists` table statements the way boot already runs
+  `SQL_IDEMPOTENCY_TABLE`:
+  `postgresRateLimitStore({ executor })` from `@ultimat3/http` and `postgresAuthLimiter({ executor, clock, policy })`
+  from `@ultimat3/auth`. **Do NOT write a new executor wrapper** — `pgExecutorFor(client: DbClient): PgExecutor`
+  already exists at `packages/cli/src/dev-queue.ts:74`, was built for `@ultimat3/jobs`' structurally
+  identical seam, and `dev-roles.ts:318` already calls it with the value in scope. `Bun.sql` does
+  NOT satisfy `PgExecutor` (`Bun.sql.query` is `undefined`).
+  Auth needs **two** limiters over one table — `policy: rateLimit` and `policy: orgRateLimit(rateLimit)`;
+  keys are prefix-disjoint (`account:`/`ip:`/`org:`). Neither table self-bounds, so `purgeExpired`
+  wants a `task`; http's **requires** `nowMs` from the same clock the limiter uses (a purge reading
+  the server's clock instead of the caller's deleted a bucket holding 0 of 4 tokens — that bug is
+  fixed in the store, do not reintroduce it at the call site).
+  Once wired, `dev-roles.ts:227`'s hardcoded process-scoped limiter and the interim warning can go.
+
+- **`nearest()` / edit distance now exists twice.** `packages/cli/src/parse.ts`'s `nearest` (tier 5)
+  and the new `packages/policy/src/nearest-permission.ts` (tier 2), which could not import it
+  because that would be an upward import. Same algorithm, same cutoff (≤ 3), kept in agreement by
+  hand — which axiom 1 forbids. **Hoist the function to `@ultimat3/core` (tier 0)** and delete both
+  copies; `nearest-permission.ts` carries a header comment saying exactly this so it is easy to
+  remove. Three call sites. Land it in this PR, since `cli` holds one of the two copies.
+- **`packages/cli/src/dev-storage.ts:88`** calls `policy`'s `forbidden(policy.label, …)`, which
+  slice 03 corrected to branch on whether the label is a bare `permission:action`. It inherits the
+  fix with no edit — but confirm the value passed there really is a `Policy.label` and not something
+  else, or the branch is wrong at this one caller.
+
 ## Tests
 - `cmd-shot.test.ts` — `failed: 1` → `ok: false`, summary names the island; clean run → `ok: true`, `redirected: false`; `readRoute('//evil/x')` and `readRoute('\\evil')` → `X_CLI_BAD_FLAG`.
 - `output.test.ts` — `renderHuman({ lines: ['[2Jx'] })` contains no ``, byte-equal to `renderFinding`'s escape of the same string.

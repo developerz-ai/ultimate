@@ -10,6 +10,34 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **`arrayOf(json(…))` and `arrayOf(bytes())` were legal and lost the data.** `arrayElement`
+  rendered any object as `''`, so a declared `jsonb[]`/`bytea[]` column reached Postgres as
+  `{"",""}` — while `memoryRepo` kept the value, making the loss production-only and invisible to
+  every test. Both element kinds are now refused at declaration, which is the smaller change and
+  matches "one scalar literal form"; neither tracked app used either. `describe.ts`'s claim that
+  element encoding was "total in practice" is deleted, because it was the false premise.
+
+- **The memory driver matched NULL rows on `gt`/`gte`/`lt`/`lte`/`like`; Postgres never does.**
+  `compareByKind` fell through to comparing `String(left)` against `String(right)`, so `String(null)`
+  was compared as text and `like` ran over the literal `"null"` — a green test suite over a
+  production miss. `eq`/`neq`/`in` are correct and unchanged: they compile to `is null` /
+  `is distinct from`. The guard sits in `matchesPredicate`, not `compareByKind`, because the latter
+  also sorts a page, where NULLs must order rather than vanish.
+
+- **Three `fix:` lines that generated something the reader could not run.** `policy`'s
+  `forbidden()` emitted `x policy explain and(post:publish, org:administer)` for a composite label;
+  `http`'s emitted `x policy explain /settings`, a pathname the declaration index does not hold —
+  both answered `X_DECLARATION_UNKNOWN`. Worst of the three, `X_PERMISSION_UNKNOWN` led with
+  *"add `'billing:wirte'` to definePermissions"* — it told the caller to create their own typo as a
+  real permission. It now suggests the nearest declared permission first.
+
+- **Four OAuth paths turned a coded refusal into an uncoded crash on a hostile rejection.**
+  `oauth-profile`, `oauth-exchange`, `jwks` and `oauth-discovery` each rendered an injected
+  `fetch`'s rejection with `error instanceof Error ? … : …`, which throws on a `Proxy` whose
+  `getPrototypeOf` throws. All four now use `renderThrowable`. The tests that pinned the old canned
+  fallback string were rewritten rather than preserved: they asserted a sentence that hid which
+  value actually arrived.
+
 - **`drain()` published its memo after the accept phase had already run, so a shutdown hook that
   called it recursed.** `drainPromise` was assigned after the async IIFE body, and
   `settleWithin` invokes `work()` synchronously — so an `{ phase: 'accept' }` hook calling
@@ -82,7 +110,58 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   sitemap never lists.** `x-default` is now emitted only when the default locale names a URL the
   route actually emits.
 
+- **`postgresAuthLimiter.recordFailure` could be raced past its own threshold from a transaction.**
+  `PgExecutor` accepts a transaction handle, and the failure insert and the sliding-window count are
+  two statements — so two OUTER transactions recording a failure for one account each counted the
+  committed rows plus their own, both read one short of `maxAttempts`, and both committed. Three
+  failures, no lockout, on the credential path. The insert now takes `pg_advisory_xact_lock` on the
+  key before the row lands, so the second transaction's count runs against a snapshot that holds
+  the first's row. Autocommit is unchanged and pays no extra round trip; the guarantee is READ
+  COMMITTED, which is what `withTransaction` opens with no `isolation:`.
+
+- **`x_rate_limit` was never created by the boot, so the first request a shared-limit deployment
+  served died on a missing relation.** `applySchema` (`@ultimat3/cli`'s `dev-queue.ts`) installed
+  `SQL_JOBS_TABLE` and `SQL_IDEMPOTENCY_TABLE` and not `SQL_RATE_LIMIT_TABLE`, while
+  `runtime.rateLimitStore` accepted `postgresRateLimitStore` — a store whose table only a manual
+  DDL run could have created. It is applied on every boot, whether or not this process installs the
+  store: `create table if not exists` on an unused table costs one round trip.
+
+- **`arrayOf()`'s four refusals handed back prose and one placeholder.** `json(t.array(<element
+  schema>))` is a syntax error when pasted, and the other three named no edit at all. Each is now a
+  mechanical one-line repair with nothing for the reader to supply, and `columns-data.test.ts`
+  asserts the complete string rather than a substring of it.
+
+- **The edit-distance suggester existed twice, kept in agreement by hand.**
+  `packages/cli/src/parse.ts`'s `nearest` (tier 5) and `packages/policy/src/nearest-permission.ts`
+  (tier 2, which could not import it — tier 5 from tier 2 is an upward import): same algorithm, same
+  ≤ 3 cutoff, two places for either to drift. Both are deleted; the one implementation is
+  `nearestName` in `@ultimat3/core` (tier 0), which every package can reach. `@ultimat3/cli` still
+  exports `nearest` — it shipped on that surface, so removing it would be a major for a rename —
+  and it is now one line delegating to core's function, not a second copy of the algorithm.
+
 ### Added
+
+- **A shared rate-limit store and a shared auth limiter** — `postgresRateLimitStore`
+  (`@ultimat3/http`) and `postgresAuthLimiter` (`@ultimat3/auth`), both over a structural
+  `PgExecutor` seam so neither package acquires a driver dependency. Every limit and lockout was
+  per-process while `x new` scaffolds `replicas: 2` and the framework chart ships `3`.
+
+  To be exact about what was wrong, because the audit that found this described it backwards: the
+  limiter did **not** fail silently. `assertRateLimitScope` already refused a `'shared'` declaration
+  the installed store could not satisfy, and `resolveRateLimitConfig` already refused an unset
+  scope. It failed **closed** — `scope: 'shared'` was undeployable, because nothing shipped that
+  could satisfy it. The seams were complete; only the implementations were missing. Now they exist.
+
+  Both stores take their clock from the caller. A live test caught the reason that matters: the
+  purge statement first used `extract(epoch from now())` — the *server's* clock — while `last_ms`
+  is written from the *caller's*. Against the framework's frozen test clock that read a
+  20,000,000-second refill and deleted a bucket holding 0 of 4 tokens, handing out a free limit
+  reset from the cleanup task. Neither statement calls `now()` anywhere.
+
+- **`X_RATE_LIMIT_STORE_UNAVAILABLE`** — the shared store answered no row for a statement whose
+  `returning` clause always produces one. Raised rather than defaulted: a limiter that cannot read
+  its bucket has no safe assumption, and guessing `allowed` hands the fleet-wide budget to every
+  replica at once.
 
 - **`PRIMITIVE_FACTORIES`** in `@ultimat3/core`'s registrar, beside `PRIMITIVE_KINDS`: the six
   shipped factories over an existing primitive (`llm`, `agent`, `hive`, `agentJob` → `action`/`job`;

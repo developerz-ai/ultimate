@@ -3,7 +3,7 @@
 // an action with no policy never compiles. The code and its factory stay published for a
 // declaration site that cannot express the requirement in a type — a config-driven route table,
 // a policy resolved by name — and `policyMissing()` is how such a site says it.
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { nearestName, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const POLICY_ERROR_CODES = [
   'X_FORBIDDEN',
@@ -42,12 +42,27 @@ export class PolicyError extends UltimateError {
   }
 }
 
+/**
+ * A label `x policy explain` can resolve: one declared permission, `<resource>:<verb>`.
+ *
+ * Every other `Policy` renders its label as a DESCRIPTION — `and(post:publish, org:administer)`,
+ * `not(post:publish)`, `allow`, `deny(read-only mode)` — and `knownPolicySubjects()` holds
+ * permissions, action names and route paths, none of which those match. Interpolating one produced
+ * `x policy explain and(post:publish, org:administer)`, reproduced in `examples/dummy` as
+ * `X_DECLARATION_UNKNOWN`: a fix line whose only effect is a second error.
+ */
+const BARE_PERMISSION = /^[a-z0-9_-]+:[a-z0-9_-]+$/;
+
 /** `reason` comes from a decision and is always safe to log: no row data, no PII. */
 export const forbidden = (label: string, reason: string): PolicyError =>
   new PolicyError({
     code: 'X_FORBIDDEN',
     cause: `${label} denied: ${reason}`,
-    fix: `x policy explain ${label} --json   # shows which clause decided and why`,
+    // `x policy list --json` is what `X_DECLARATION_UNKNOWN`'s own fix falls back to, so a reader
+    // who follows either one lands in the same place.
+    fix: BARE_PERMISSION.test(label)
+      ? `x policy explain ${label} --json   # shows which clause decided and why`
+      : `x policy list --json   # then: x policy explain <permission> --json for the clause that decided`,
   });
 
 export const policyMissing = (subject: string): PolicyError =>
@@ -68,9 +83,25 @@ export const roleRedefined = (role: string, first: string, second: string): Poli
     fix: `x policy list --json   # then keep ONE definition of "${role}": rename the second, or fold its grants into the first`,
   });
 
-export const permissionUnknown = (permission: string, known: readonly string[]): PolicyError =>
-  new PolicyError({
+/**
+ * The nearest declared permission comes FIRST, and the declare-it path second.
+ *
+ * The other order is what shipped: `add 'billing:wirte' to definePermissions([...])` reads as an
+ * instruction to declare the typo, and a permission nothing grants and nothing enforces is a
+ * silent hole — `assertPermission` then passes, every `can('billing:wirte')` denies, and the
+ * failure moves from this throw to a page that renders empty. Only the generated `policy.test.ts`
+ * caught it. A typo is by far the likelier of the two readings, so it leads.
+ */
+export const permissionUnknown = (permission: string, known: readonly string[]): PolicyError => {
+  const nearest = nearestName(permission, known);
+  return new PolicyError({
     code: 'X_PERMISSION_UNKNOWN',
+    // The COUNT, never the set: an app with 200 permissions would bury the fix line under names
+    // nobody asked for, and `x policy list --json` is one command away.
     cause: `"${permission}" is not in the permission set (${known.length} known)`,
-    fix: `add '${permission}' to definePermissions([...]) — or fix the typo`,
+    fix:
+      nearest === undefined
+        ? `add '${permission}' to definePermissions([...]) if it is genuinely new — otherwise x policy list --json shows the ${known.length} already declared`
+        : `use '${nearest}', the nearest declared permission — or add '${permission}' to definePermissions([...]) if it is genuinely new`,
   });
+};

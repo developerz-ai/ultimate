@@ -753,6 +753,7 @@ Columns + invariants; the row type is derived from the columns. Tier 2.
 | `types.ts` | `Column`, `RowOf`, `Insertable`, `IdOf` — the type derivation. `COLUMN_KINDS` is the runtime array `ColumnKind` DERIVES from (the shape core's `PRIMITIVE_KINDS` uses), so a package answering "one case per kind" reads a real list rather than spelling its own |
 | `column.ts` / `columns.ts` | the chain + property-key binding; the blessed builders; `columnName`/`moneyColumns`, the ONE physical-name resolver; `narrowMoney`, the one write-side narrowing both drivers run |
 | `columns-data.ts` | the wide vocabulary an existing schema needs: `json`, `decimal`, `date`, `bigint`, `bytes`, `arrayOf` |
+| `array-element.ts` | which element kinds `arrayOf()` refuses, and the one-line edit that repairs each |
 | `expr.ts` / `invariants.ts` | the `invariants: (c) => …` rule language; bind + `toSql()` DDL |
 | `entity.ts` / `describe.ts` | `entity()`, `$row`; the `EntityDescription` projection |
 | `view.ts` | `$view(keys)` — the row projection an action names as its `output` |

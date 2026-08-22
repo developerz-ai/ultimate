@@ -97,8 +97,46 @@ the one nobody declared. A limiter with `enabled: false` owes no declaration: no
 so nothing can be wrong.
 
 `rateLimitStore` feeds the `PipelineDeps.limiter` seam rather than sitting beside it: the bucket
-maths stays in `createRateLimiter`, so every driver agrees on the numbers. **No shared store ships
-yet, `As of 2026-08`** — `memoryRateLimitStore()` is the only implementation in the framework.
+maths stays in `createRateLimiter`, so every driver agrees on the numbers.
+
+**A shared store ships, `As of 2026-08`** — `postgresRateLimitStore({ executor })`, one table
+and one `insert … on conflict` per take, so N replicas count against one bucket. Until it landed,
+`scope: 'shared'` was a declaration nothing in the framework could satisfy while `x new` scaffolded
+`replicas: 2`. `executor` is a `PgExecutor` — anything speaking `query(text, values)`, which is one
+line over the client the boot already opened; **never `Bun.sql`**, whose `.query` is `undefined`.
+
+```ts
+import { db, type SqlFragment } from '@ultimat3/db';
+import {
+  createServer,
+  defineHttpConfig,
+  type PgExecutor,
+  postgresRateLimitStore,
+  type Route,
+} from '@ultimat3/http';
+
+declare const routes: readonly Route[];
+
+// The client this process already opened, wrapped in one line. `@ultimat3/cli`'s `pgExecutorFor`
+// is this exact function, and it is what the boot passes when it installs the store for you.
+const client = db();
+const executor: PgExecutor = {
+  query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
+    client.query<R>({ text, values } satisfies SqlFragment),
+};
+
+createServer({
+  routes,
+  config: defineHttpConfig({ rateLimit: { scope: 'shared' } }),
+  rateLimitStore: postgresRateLimitStore({ executor }),
+});
+```
+
+The table bounds itself only when something asks it to: `store.purgeExpired(ctx.now().getTime())`
+from a `task` drops every bucket that has refilled to capacity, which is the memory store's forget
+rule. `nowMs` is required and must come from the same clock the takes use — measured against the
+server's clock instead, the offset between the two reads as refill and deletes buckets a throttled
+caller is still sitting in.
 
 The maths reads an injected `Clock`, defaulting to `systemClock`: `createRateLimiter({ config,
 clock })`. **Breaking, `As of 2026-08-19`** — it took `now?: () => number` before and read

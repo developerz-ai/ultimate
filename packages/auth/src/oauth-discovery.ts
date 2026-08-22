@@ -3,6 +3,7 @@
 // boot, no dependency — an enterprise IdP is then three lines instead of a hand-copied table of
 // four endpoints that nobody re-checks when the vendor moves one.
 
+import { renderThrowable } from '@ultimat3/core';
 import { oauthExchangeFailed } from './errors';
 import { isRecord } from './json';
 import type { OAuthProvider } from './oauth';
@@ -61,8 +62,9 @@ export async function discoverOAuthProvider(
     throw oauthExchangeFailed({
       provider: input.id,
       stage: 'discovery',
-      detail:
-        error instanceof Error ? error.message : 'the request failed before a response arrived',
+      // `renderThrowable`: an injected `fetch` may reject with anything, `instanceof` throws on a
+      // value that traps `getPrototypeOf`, and a bare `TypeError` here is an uncoded crash.
+      detail: renderThrowable(error),
       fix: `curl -sS -m 5 ${url}`,
     });
   }

@@ -107,8 +107,53 @@ exemption here — the token arrived in a header.
 
 `maxKeys` is not compared — it bounds one process' table, not a limit. A custom limiter therefore
 does **not** own its own configuration: the policy stays the app's single statement of the limits,
-and the boot check is what keeps it true. **No shared limiter ships yet, `As of 2026-08`** —
-`createAuthLimiter` is the only implementation in the framework.
+and the boot check is what keeps it true.
+
+**A shared limiter ships, `As of 2026-08`** — `postgresAuthLimiter({ executor, clock, policy })`,
+two tables, a row per failure so the window still SLIDES across replicas. Until it landed,
+`scope: 'shared'` was a declaration nothing in the framework could satisfy while `x new` scaffolded
+`replicas: 2` — `maxAttempts × 2` guesses per account. `executor` is a `PgExecutor`, anything
+speaking `query(text, values)`; **never `Bun.sql`**, whose `.query` is `undefined`.
+
+```ts
+import {
+  type AuthAdapter,
+  type AuthRateLimitPolicy,
+  DEFAULT_AUTH_RATE_LIMIT,
+  defineAuth,
+  orgRateLimit,
+  type PgExecutor,
+  postgresAuthLimiter,
+} from '@ultimat3/auth';
+import { type Clock, systemClock } from '@ultimat3/core';
+import { db, type SqlFragment } from '@ultimat3/db';
+
+declare const adapter: AuthAdapter;
+const clock: Clock = systemClock;
+
+// The client this process already opened, wrapped in one line.
+const client = db();
+const executor: PgExecutor = {
+  query: <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
+    client.query<R>({ text, values } satisfies SqlFragment),
+};
+
+const rateLimit: AuthRateLimitPolicy = { ...DEFAULT_AUTH_RATE_LIMIT, scope: 'shared' };
+
+defineAuth({
+  adapter,
+  clock,
+  rateLimit,
+  limiter: postgresAuthLimiter({ executor, clock, policy: rateLimit }),
+  orgLimiter: postgresAuthLimiter({ executor, clock, policy: orgRateLimit(rateLimit) }),
+});
+```
+
+Both limiters share one table: the keys are prefixed (`account:`, `ip:`, `org:`) and every limit
+travels as a statement parameter, so the tenant bucket's wider allowance cannot leak into the
+account bucket's. It reports `maxKeys: undefined` — there is no in-process table to bound — and
+neither table forgets on its own: `limiter.purgeExpired()` from a `task` drops failures past the
+window and lockouts that have expired, both measured against the injected clock.
 
 ## Providers are a registry, not a union
 

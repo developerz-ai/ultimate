@@ -1,4 +1,4 @@
-import { singleLine } from '@ultimat3/core';
+import { nearestName, singleLine } from '@ultimat3/core';
 // `x errors explain <CODE>` / `x errors list` — the error table, programmatically. An agent that
 // hits an `X_*` code should not have to leave the terminal to learn what it means, and a code it
 // invented should come back refused: the answer to an unregistered code is "no such code", never
@@ -13,7 +13,6 @@ import { ErrorCodeUnknownError, MissingPositionalError } from './errors';
 import { explainErrorCode, explainEveryErrorCode } from './mcp-errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
-import { nearest } from './parse';
 
 export const ERRORS_SUBCOMMANDS = ['explain', 'list'] as const;
 
@@ -44,7 +43,7 @@ const detailLines = (explanation: ErrorExplanation): readonly string[] => [
 function explainOne(code: string): CommandResult {
   const explanation = explainErrorCode(code);
   if (explanation === undefined) {
-    const suggestion = nearest(
+    const suggestion = nearestName(
       code,
       explainEveryErrorCode().map((entry) => entry.code),
     );

@@ -3,7 +3,7 @@
 // an agent reading `0 3 * * *` and guessing. CLI wiring only; the pure computation lives in
 // `tasks-facts.ts` — the same split `cmd-jobs.ts` makes against `jobs-report.ts`.
 
-import { systemClock } from '@ultimat3/core';
+import { nearestName, systemClock } from '@ultimat3/core';
 import type { TaskHandle } from '@ultimat3/jobs';
 import type { CronPhrases } from '@ultimat3/time';
 import { loadApp } from './app-load';
@@ -12,7 +12,7 @@ import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, DeclarationUnknownError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
-import { flagString, nearest } from './parse';
+import { flagString } from './parse';
 import { renderTable } from './table';
 import {
   findTaskHandle,
@@ -92,7 +92,7 @@ function requireHandle(ctx: CommandContext): TaskHandle {
   const handle = findTaskHandle(name);
   if (handle !== undefined) return handle;
   const known = knownTaskNames();
-  const suggestion = nearest(name, known);
+  const suggestion = nearestName(name, known);
   throw new DeclarationUnknownError(
     suggestion === undefined
       ? { kind: 'tasks', singular: 'task', name, known, verb: 'show' }

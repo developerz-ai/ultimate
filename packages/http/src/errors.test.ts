@@ -18,7 +18,6 @@ import {
   noRequest,
   pathInvalid,
   pipelineNoResponse,
-  rateLimited,
   routeConflict,
   routeNotFound,
   serverNotStarted,
@@ -101,27 +100,28 @@ describe('forbidden', () => {
     expect(error.code).toBe('X_FORBIDDEN');
     expect(error.cause).toContain('/x');
     expect(error.cause).toContain('not the owner');
-    expect(error.fix).toBe('x policy explain /x --json   # shows which clause denied');
     expect(error.docs).toBe('https://ultimate.dev/errors/X_FORBIDDEN');
   });
-});
 
-describe('rateLimited', () => {
-  // The KEY is `${routeName}|org:${orgId}` or `|actor:${actorId}`, and a 429 is a response any
-  // caller can provoke — so an anonymous caller promoted to an org bucket used to learn the
-  // internal org id from the body. It rides in `meta`, which `toProblem` does not render.
-  test('the cause names the window and NEVER the key; the key is meta only', () => {
-    const error = rateLimited('posts.create|org:o_9fd21', 7);
-    expect(error).toBeInstanceOf(HttpError);
-    expect(error.code).toBe('X_RATE_LIMITED');
-    expect(error.cause).not.toContain('o_9fd21');
-    expect(error.cause).not.toContain('posts.create');
-    expect(error.meta?.['key']).toBe('posts.create|org:o_9fd21');
-    expect(error.cause).toContain('7s');
-    expect(error.fix).toBe(
-      'retry after the Retry-After header, or raise rateLimit.buckets in app.config.ts',
-    );
-    expect(error.docs).toBe('https://ultimate.dev/errors/X_RATE_LIMITED');
+  // `x policy explain` resolves a policy SUBJECT. A route pathname is not one — reproduced in
+  // `examples/dummy`: `x policy explain /settings` exits `X_DECLARATION_UNKNOWN`, so the one
+  // command this error told the reader to run was the one command that could not work.
+  test('names the POLICY, never the pathname, when the route declares one', () => {
+    const error = forbidden('/settings', 'not the owner', 'member:self');
+    expect(error.fix).toBe('x policy explain member:self --json   # shows which clause denied');
+    expect(error.fix).not.toContain('/settings');
+  });
+
+  test('falls back to the route table when no policy is known', () => {
+    const error = forbidden('/x', 'not the owner');
+    expect(error.fix).toBe('x routes --json   # find /x, then read the policy it declares');
+  });
+
+  // A composite label renders `and(a:b, c:d)`, which `x policy explain` cannot resolve either —
+  // the same defect one layer up. Anything that is not a bare subject goes to the route table.
+  test('a composite label is not a subject, so it does not become an explain argument', () => {
+    const error = forbidden('/x', 'denied', 'and(post:publish, org:member)');
+    expect(error.fix).toBe('x routes --json   # find /x, then read the policy it declares');
   });
 });
 
@@ -238,8 +238,8 @@ const OWNED_CODES: readonly string[] = HTTP_OWNED_ERROR_CODES;
 const BORROWED_CODES: readonly string[] = HTTP_BORROWED_ERROR_CODES;
 
 describe('HTTP_ERROR_CODES', () => {
-  test('contains exactly the 25 documented codes', () => {
-    expect(HTTP_ERROR_CODES.length).toBe(25);
+  test('contains exactly the 26 documented codes', () => {
+    expect(HTTP_ERROR_CODES.length).toBe(26);
     expect([...EVERY_CODE].sort()).toEqual(
       [
         'X_ROUTE_NOT_FOUND',
@@ -261,6 +261,7 @@ describe('HTTP_ERROR_CODES', () => {
         'X_RATE_LIMIT_BUCKET_CONFLICT',
         'X_RATE_LIMIT_BUCKET_UNBOUND',
         'X_RATE_LIMIT_SCOPE_UNSET',
+        'X_RATE_LIMIT_STORE_UNAVAILABLE',
         'X_RATE_LIMIT_INVALID',
         'X_TRUST_PROXY_UNSET',
         'X_OVERLOADED',

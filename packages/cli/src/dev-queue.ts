@@ -20,6 +20,7 @@ import {
   setDbClient,
 } from '@ultimat3/db';
 import type { Tx } from '@ultimat3/entity';
+import { SQL_RATE_LIMIT_TABLE } from '@ultimat3/http';
 import type { EventBus, JobDriver, OutboxStore, PgExecutor } from '@ultimat3/jobs';
 import {
   createJobsFacade,
@@ -82,16 +83,20 @@ export function pgExecutorFor(client: DbClient): PgExecutor {
  * Every table this process's framework packages own, applied before anything reads one.
  *
  * PGlite speaks the extended protocol, which carries one statement per round trip, so the DDL is
- * applied statement by statement. Safe to split on `;`: both constants are fixed, with no
- * semicolon inside a literal, and each package's own SQL test is where that stays true.
+ * applied statement by statement. Safe to split on `;`: every constant is fixed, with no semicolon
+ * inside a literal, and each package's own SQL test is where that stays true.
  *
- * `SQL_IDEMPOTENCY_TABLE` is here and not in `@ultimat3/action` because a package that holds no
- * database dependency cannot apply its own schema — the same reason `SQL_JOBS_TABLE` is applied
- * here. Without it `postgresIdempotencyStore` is a store whose first reservation fails on a
- * missing relation, which is how a retried `POST /api/payments/charge` charges a card twice.
+ * `SQL_IDEMPOTENCY_TABLE` and `SQL_RATE_LIMIT_TABLE` are here and not in `@ultimat3/action` or
+ * `@ultimat3/http` because a package that holds no database dependency cannot apply its own schema
+ * — the same reason `SQL_JOBS_TABLE` is applied here. Each one absent is the same failure at a
+ * different door: a retried `POST /api/payments/charge` charges the card twice, and the FIRST
+ * request a `rateLimitStore` deployment serves dies on a missing `x_rate_limit` relation. The
+ * table is installed whether or not this boot passes `runtime.rateLimitStore` — `create table if
+ * not exists` on an unused table costs one round trip at boot, and a store installed later must
+ * not be the thing that discovers the schema was never applied.
  */
 async function applySchema(client: DevDbClient): Promise<void> {
-  for (const ddl of [SQL_JOBS_TABLE, SQL_IDEMPOTENCY_TABLE]) {
+  for (const ddl of [SQL_JOBS_TABLE, SQL_IDEMPOTENCY_TABLE, SQL_RATE_LIMIT_TABLE]) {
     for (const statement of ddl.split(';')) {
       if (statement.trim().length > 0) await client.execute(raw(statement));
     }

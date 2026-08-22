@@ -52,12 +52,6 @@ export {
   overloaded,
   pathInvalid,
   pipelineNoResponse,
-  rateLimitBucketConflict,
-  rateLimitBucketUnbound,
-  rateLimited,
-  rateLimitInvalid,
-  rateLimitNotShared,
-  rateLimitScopeUnset,
   requestTimedOut,
   routeConflict,
   routeNotFound,
@@ -105,11 +99,33 @@ export {
   DEFAULT_MAX_RATE_LIMIT_KEYS,
   DEFAULT_RATE_LIMIT,
   memoryRateLimitStore,
+  rateLimitDecision,
   rateLimitKey,
   resolveRateLimitConfig,
   toBucket,
 } from './rate-limit';
 export { assertRouteBuckets, withRouteBuckets } from './rate-limit-buckets';
+export {
+  rateLimitBucketConflict,
+  rateLimitBucketUnbound,
+  rateLimited,
+  rateLimitInvalid,
+  rateLimitNotShared,
+  rateLimitScopeUnset,
+  rateLimitStoreUnavailable,
+} from './rate-limit-errors';
+export type {
+  PgExecutor,
+  PostgresRateLimitStore,
+  PostgresRateLimitStoreOptions,
+} from './rate-limit-postgres';
+export {
+  postgresRateLimitStore,
+  SQL_RATE_LIMIT_PURGE,
+  SQL_RATE_LIMIT_RESET,
+  SQL_RATE_LIMIT_TABLE,
+  SQL_RATE_LIMIT_TAKE,
+} from './rate-limit-postgres';
 export { setRedirect, takeRedirect } from './redirect';
 export type { QueryValues } from './request';
 export { UltimateRequest } from './request';

@@ -4,9 +4,10 @@
 // would each be a wrong value nobody could see until the table was read back somewhere else.
 
 import { afterAll, describe, expect, test } from 'bun:test';
+import { UltimateError } from '@ultimat3/core';
 import { t } from '@ultimat3/schema';
 import type { PlainDate } from '@ultimat3/time';
-import { text, timestamp, uuid } from './columns';
+import { money, text, timestamp, uuid } from './columns';
 import { arrayOf, bigint, bytes, date, decimal, json } from './columns-data';
 import { sqlTypeOf } from './describe';
 import { entity } from './entity';
@@ -21,6 +22,16 @@ const caught = (run: () => unknown): string | undefined => {
     run();
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
+  }
+  return undefined;
+};
+
+/** The `fix:` line a refusal emits — the half of an error `message` does not carry. */
+const fixOf = (run: () => unknown): string | undefined => {
+  try {
+    run();
+  } catch (error) {
+    return error instanceof UltimateError ? error.fix : undefined;
   }
   return undefined;
 };
@@ -142,6 +153,56 @@ describe('unit · bytes() and arrayOf()', () => {
 
   test('an element with no single column behind it is refused at declaration', () => {
     expect(caught(() => arrayOf(arrayOf(text())))).toContain('one scalar column');
+    expect(caught(() => arrayOf(money()))).toContain('one scalar column');
+  });
+
+  // The loss this refusal exists for was production-only: `bindValues` rendered every object
+  // element as `""` — measured, two objects bound as `{"",""}` and one blob as `{""}` — while
+  // `memoryRepo` kept the value, so every test in the tree passed and only the table was wrong.
+  test('a jsonb or bytea element is refused at declaration, where the object is still visible', () => {
+    expect(caught(() => arrayOf(json(t.object({ a: t.string }))))).toContain('empty string');
+    expect(caught(() => arrayOf(bytes()))).toContain('empty string');
+  });
+
+  // Whole strings, not substrings: a `toContain('json(t.array(')` passed while the rest of the
+  // line read `json(t.array(<element schema>))`, and a reader who pastes `<element schema>` gets a
+  // syntax error. What the fix must be is a MECHANICAL edit with nothing left to supply.
+  test('each refusal is one complete edit, with no placeholder to fill in', () => {
+    expect(fixOf(() => arrayOf(json(t.object({ a: t.string }))))).toBe(
+      'rewrite arrayOf(json(S)) as json(t.array(S)) with S unchanged — one jsonb column holds the ' +
+        'whole list and t.array still validates every member',
+    );
+    expect(fixOf(() => arrayOf(bytes()))).toBe(
+      'move the list to its own entity and relate it — ' +
+        "entity('blobs', { columns: { data: bytes() } }) — then drop this column: one row per blob, " +
+        'and bytea has no array literal that survives the driver',
+    );
+    expect(fixOf(() => arrayOf(money()))).toBe(
+      'move the list to its own entity and relate it — ' +
+        "entity('amounts', { columns: { amount: money() } }) — then drop this column: an array " +
+        'column is ONE column and money() is three (minor, currency, scale)',
+    );
+    expect(fixOf(() => arrayOf(arrayOf(text())))).toBe(
+      'rewrite arrayOf(arrayOf(x)) as arrayOf(x) if the nesting carries no meaning, or move the ' +
+        "inner list to its own entity and relate it — entity('items', { columns: { value: text() } })",
+    );
+  });
+
+  // Never `x entities describe column --json`, which `reject()` emits: there is no entity to
+  // describe at declaration time, so that command is `X_DECLARATION_UNKNOWN` — a fix line that
+  // reproduces an error rather than repairing one. And nothing may reach the reader unfinished:
+  // an angle-bracket slot is the placeholder form this refusal shipped with.
+  test('no refusal cites a command that cannot run, and none carries a placeholder', () => {
+    const fixes = [
+      fixOf(() => arrayOf(json(t.object({ a: t.string })))),
+      fixOf(() => arrayOf(bytes())),
+      fixOf(() => arrayOf(money())),
+      fixOf(() => arrayOf(arrayOf(text()))),
+    ];
+    for (const fix of fixes) {
+      expect(fix).not.toContain('x entities describe column');
+      expect(fix).not.toMatch(/<[a-z][a-z ]*>/);
+    }
   });
 });
 

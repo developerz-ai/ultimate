@@ -52,6 +52,8 @@ export const ERROR_STATUS = {
   X_TRUST_PROXY_UNSET: 500,
   // Raised by `toBucket` while a route or an action is being projected, never on the request.
   X_RATE_LIMIT_INVALID: 500,
+  // The shared store did not answer, so nothing decided. An operator's fault, never the caller's.
+  X_RATE_LIMIT_STORE_UNAVAILABLE: 500,
   // The two the `admit` stage answers with, and the only 503s the pipeline produces. Both carry
   // `retry-after`: a shed request that does not say when to come back is a request that comes
   // back immediately, which is the load it was shed to avoid.

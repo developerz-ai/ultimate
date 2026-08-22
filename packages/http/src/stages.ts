@@ -28,7 +28,6 @@ import {
   methodNotAllowed,
   overloaded,
   pathInvalid,
-  rateLimited,
   routeNotFound,
   unauthenticated,
 } from './errors';
@@ -37,6 +36,7 @@ import { readCookie } from './locale';
 import { compose, type Middleware } from './middleware';
 import { overlayResponse, wantsOverlay } from './overlay';
 import { type RateLimiter, rateLimitKey } from './rate-limit';
+import { rateLimited } from './rate-limit-errors';
 import type { UltimateRequest } from './request';
 import { addVary, applyCacheHeaders, problem, redirect } from './response';
 import { matchRoute, type Route, type RouteHandler, type RouteTable } from './router';
@@ -266,11 +266,15 @@ export const stageRunners = (input: StageRunnersInput): Record<StageName, StageR
       if (hooks.authorize === undefined) {
         // A declared policy with no evaluator is a wiring bug, and failing open
         // here is exactly how a framework ends up with two authz systems.
-        throw forbidden(ctx.url.pathname, `no authorizer wired for policy ${route.meta.policy}`);
+        throw forbidden(
+          ctx.url.pathname,
+          `no authorizer wired for policy ${route.meta.policy}`,
+          route.meta.policy,
+        );
       }
       const decision = await hooks.authorize(route, request, ctx);
       ctx.authz = decision;
-      if (!decision.allowed) throw forbidden(ctx.url.pathname, decision.reason);
+      if (!decision.allowed) throw forbidden(ctx.url.pathname, decision.reason, route.meta.policy);
       return undefined;
     },
 

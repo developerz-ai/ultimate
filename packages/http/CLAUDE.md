@@ -144,6 +144,14 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   because `@ultimat3/action`'s `invoke` loads the row a row-level rule reads and this stage
   cannot. Deciding in both places is two authz systems, and the one that answers first is the
   one holding less.
+- **A 403's `fix:` names the POLICY, never the pathname** (`As of 2026-08`). `forbidden` emitted
+  `x policy explain ${ctx.url.pathname}`, and `x policy explain` resolves a policy SUBJECT — a
+  permission, an action name or a query name. A page pathname is none of them, so the one command
+  the error told the reader to run exited `X_DECLARATION_UNKNOWN` (`x policy explain /settings`,
+  reproduced in `examples/dummy`). The third argument is `route.meta.policy`, which is what the
+  `authz` stage was evaluating and what the index can resolve; anything that is not a bare
+  `resource:verb` — a composite renders `and(a:b, c:d)` — degrades to `x routes --json`, the shape
+  `bodyInvalid` already uses. A fix that names the wrong thing is not a fix.
 - **`ctx.actor` is never null.** `asCtx` publishes the request context itself as core's `Ctx`,
   and `Ctx.actor` is an `Actor` — so "nobody" is core's anonymous actor, not `null`. The
   `authenticate` hook still says it with `null`; the `auth` stage is where that becomes
@@ -280,6 +288,19 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   supported way to install one is `createServer({ rateLimitStore })`, which builds the limiter
   through `createRateLimiter` and hands it to the `PipelineDeps.limiter` seam that already
   existed; never add a second limiter entry point beside it.
+- **The shared store is `postgresRateLimitStore({ executor })`, and it is what makes
+  `scope: 'shared'` satisfiable** (`As of 2026-08`). Before it, `assertRateLimitScope` refused
+  every store the framework shipped, so the declaration required by a chart with `replicas: 3` had no
+  answer. `PgExecutor` is declared STRUCTURALLY here, exactly as `@ultimat3/action`'s idempotency
+  store declares it: this package has no `@ultimat3/db` dependency, and taking one to type a single
+  method would put the database package in http's install graph. The refill expression is repeated
+  four times inside `on conflict do update` **on purpose** — only a direct `x_rate_limit.<column>`
+  reference reads the row as it is after the lock, so a CTE computing it once would compute from
+  the statement's own snapshot and lose a concurrent spend. `spent` is a stored column because the
+  token count alone cannot tell a take that landed at 0.5 from a refusal with 0.5 left, and the
+  invented answer would be "allowed". `purgeExpired(nowMs)` takes the CALLER's clock and never
+  `now()`: `last_ms` is written from the caller's, so measuring against the server's reads the
+  offset between the two as refill and deletes buckets a throttled caller is still sitting in.
 - **A bucket a route names is a bucket something must register.** `meta.rateLimit` selects by
   name and `meta.rateLimitBucket` carries the numbers; `withRouteBuckets` (`rate-limit-buckets.ts`)
   merges them into `config.rateLimit.buckets` at construction, in `createServer` and again in
@@ -336,6 +357,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
 | `auth-redirect.ts` | where an unauthenticated browser goes, and where it comes back to |
 | `cache-policy.ts` | the default `CacheHint` for a route that declared none — route AND actor |
 | `rate-limit.ts` | the token-bucket maths, the store interface, the memory driver and `toBucket` |
+| `rate-limit-postgres.ts` | the SHARED store: one table, one `insert … on conflict` per take, over a structural `PgExecutor` |
+| `rate-limit-errors.ts` | every refusal a rate limit produces — the 429 and the six declaration faults. Split off `errors.ts` at the ceiling; the codes and titles stay there, one registry |
 | `correlation.ts` | the inbound request id and trace, read before the context and the span exist |
 | `forwarded.ts` | one hop-indexed reader for every header a trusted proxy writes |
 | `peer-identity.ts` | Envoy XFCC -> `ctx.peer`, on that same trust rule |

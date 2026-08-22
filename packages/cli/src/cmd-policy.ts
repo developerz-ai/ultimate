@@ -2,13 +2,14 @@
 // only: the fact-gathering (registries, matrix rows) lives in `policy-facts.ts`, so the matrix
 // logic is testable without an app — same split as `cmd-jobs.ts` / `jobs-report.ts`.
 
+import { nearestName } from '@ultimat3/core';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
 import { DeclarationUnknownError, MissingPositionalError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
-import { nearest } from './parse';
+
 import type { DeclarationExplanation } from './policy-facts';
 import { explainPolicy, knownPolicySubjects, listPolicy } from './policy-facts';
 import { renderTable } from './table';
@@ -91,7 +92,7 @@ function runExplain(ctx: CommandContext, findings: readonly Finding[]): CommandR
   const explanation = explainPolicy(name);
   if (explanation === undefined) {
     const known = knownPolicySubjects();
-    const suggestion = nearest(name, known);
+    const suggestion = nearestName(name, known);
     throw new DeclarationUnknownError(
       suggestion === undefined
         ? { kind: 'policy', singular: 'policy subject', name, known, verb: 'explain' }

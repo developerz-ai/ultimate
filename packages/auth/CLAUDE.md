@@ -49,6 +49,28 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
   on it. The point is that `Auth.rateLimit` is what an operator reads as "what this deployment
   enforces", so an injected limiter may not quietly enforce something else. Nothing here reads the
   environment to guess a replica count. `defineAuth({ limiter })` is the one install point.
+- **`postgresAuthLimiter` is the shared limiter, and a row per FAILURE is what makes it correct**
+  (`As of 2026-08`). `assertAuthLimiterPolicy` refused a per-process limiter under
+  `scope: 'shared'` and there was nothing else to pass, so the declaration was unsatisfiable while
+  `x new` scaffolds `replicas: 2`. A counter column plus a window end would have been a FIXED
+  window — `maxAttempts` at the end of one window and `maxAttempts` again at the start of the next,
+  twice the declared allowance under the same declared numbers, on the credential path — so
+  failures are rows and the count is `at_ms > now - windowMs`. The insert and the count are two
+  statements, never one CTE: every CTE in a statement reads that statement's snapshot and cannot
+  see the row being written beside it, so the lockout would fire one attempt late. **Two statements
+  is also why the insert takes `pg_advisory_xact_lock` on the key** — `PgExecutor` accepts a
+  transaction handle, so two OUTER transactions each counted committed rows plus their own, both
+  read one short of `maxAttempts`, and both committed: three failures and an open account. The lock
+  parks the second transaction's insert until the first commits, so its count runs against a
+  snapshot that holds the first's row. Autocommit pays one no-op and no extra round trip; the
+  guarantee is READ COMMITTED, because a snapshot-isolated outer transaction pins its count at
+  transaction start and no lock can undo that. `auth.ts` records account → ip → org in that fixed
+  order, which is what keeps two concurrent sign-ins from taking two of these locks in opposite
+  ones. `greatest` on the lockout upsert EXTENDS and never shortens — two replicas do not share a
+  clock, and the one that lags must not be able to bring a live lockout forward. `PgExecutor` is
+  declared structurally
+  even though this package already depends on `@ultimat3/db`: the connection is the HOST's, so the
+  limiter takes the pool the boot opened rather than opening a second one.
 - **`normaliseEmail` is the ONE normalisation, it lives ABOVE the `AuthAdapter` seam, and no
   adapter may fold case** (`As of 2026-08`). `MemoryAdapter` lowercased and trimmed on both
   `findUserByEmail` and `createUser`; `BuiltinAdapter` issues `where email = $1` against a plain
@@ -260,6 +282,7 @@ Tier 2. Produces the `Actor`; produces nothing else. Authorization is `@ultimat3
 | `session.ts` | two expiries, rotation, revocation, device list, the cookie |
 | `adapter.ts` | the seam; `builtin-adapter.ts` (Postgres) + `memory-adapter.ts` |
 | `rate-limit.ts` | per-ip, per-account and per-org buckets, lockout, scope check, `loginFailed()` |
+| `rate-limit-postgres.ts` | the SHARED limiter: two tables, a row per failure, over a structural `PgExecutor` |
 | `oauth.ts` | `OAuthProvider`, PKCE, `beginOAuth`, the callback gate. No I/O, no env |
 | `oauth-builtins.ts` | the three shipped IdPs, as data. Imports only the type, so no cycle |
 | `oauth-registry.ts` | the registry: `registerOAuthProvider`, `providerFor`, `oauthProviderIds` |
@@ -294,4 +317,9 @@ Gotchas:
   this package **owns**, unconditionally, and lists the borrowed two in `AUTH_BORROWED_ERROR_CODES`
   without a title. A `hasErrorCode()` guard would suppress the `X_ERROR_CODE_DUPLICATE` that is
   supposed to fire when two packages claim one code.
-- Tests run against `MemoryAdapter`; nothing in this package needs a database.
+- Tests run against `MemoryAdapter`; no ADAPTER test needs a database. The two exceptions are
+  `postgresAuthLimiter`'s, and they are exceptions in the shape the repo already has: the
+  scripted-executor twin (`rate-limit-postgres.test.ts`) proves the protocol with no server,
+  and `rate-limit-postgres.live.test.ts` is `describe.skip` without `TEST_DATABASE_URL` — the
+  same pairing `@ultimat3/http`'s rate-limit store and `@ultimat3/realtime`'s Postgres files
+  use. A limiter whose statements were never executed is a credential control nobody has run.
