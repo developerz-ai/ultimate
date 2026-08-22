@@ -154,6 +154,17 @@ describe('unit · the ratchet moves in one direction', () => {
     expect(catchRenderFindingFor(gaps[0] as never).code).toBe('X_CATCH_RENDER_UNSCANNED');
   });
 
+  /**
+   * `at` is what review tooling anchors on, so a finding whose `at` names a file its own `fix:`
+   * never edits sends the reader to the wrong place. Asserted as the two agreeing, rather than as
+   * one literal, because the pair is the rule.
+   */
+  test('the UNSCANNED finding anchors on the file its fix edits', () => {
+    const finding = catchRenderFindingFor(checkCatchRenders({ files: [], pins: {} })[0] as never);
+    expect(finding.at).toBe('scripts/boundaries.ts');
+    expect(finding.fix).toContain('scripts/boundaries.ts');
+  });
+
   test('a test file is in nobody`s shipped path and is not counted', () => {
     expect(checkCatchRenders({ files: [file('packages/x/src/a.test.ts')], pins: {} })).toEqual([]);
     expect(site('packages/x/src/a.ts').path).toBe('packages/x/src/a.ts');

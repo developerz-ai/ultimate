@@ -257,12 +257,18 @@ const staleFinding = (gap: CatchRenderGap): Finding => ({
   at: CATCH_PINS_FILE,
 });
 
+/**
+ * `at` is the file the `fix:` EDITS — `scripts/boundaries.ts`, which owns `SOURCE_PATTERNS` — and
+ * not this file, which the repair never touches. Review tooling anchors on `at`, so the two
+ * disagreeing sends a reader to the wrong file; `config-readers.ts`, `doc-fixes.ts` and
+ * `side-effects.ts` all point their `unscanned` finding at the file their own fix line names.
+ */
 const unscannedFinding = (): Finding => ({
   code: 'X_CATCH_RENDER_UNSCANNED',
   cause:
     'no source file was read, so every package reports zero and the ratchet enforces nothing — a glob that matches nothing reads exactly like a clean tree',
   fix: 'edit SOURCE_PATTERNS in scripts/boundaries.ts so it matches this repo layout, then bun run scripts/catch-render.ts',
-  at: 'scripts/catch-render.ts',
+  at: 'scripts/boundaries.ts',
 });
 
 const FINDINGS: Readonly<Record<CatchRenderGapKind, (gap: CatchRenderGap) => Finding>> = {
