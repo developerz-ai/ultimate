@@ -178,17 +178,41 @@ describe('unit · the ratchet moves in one direction', () => {
    * A key holding regex syntax, beside a neighbour it would match unescaped: `a.b`'s `.` is any
    * character, so the raw form finds `axb` first and lowers the wrong row — the ratchet then
    * enforces the wrong count on the wrong package, with nothing red anywhere.
+   *
+   * That key is also QUOTED in the file, because `a.b` is not an identifier and the formatter
+   * writes what TypeScript accepts. A pattern demanding the bare form matched no row at all, so
+   * `--unpin` reported "nothing to lower" over a live pin — the ratchet's own fix line, run, and
+   * nothing changed. `create-ultimate` is the shipped name of that shape.
    */
-  test('a key with a metacharacter lowers its own row, never a similarly shaped neighbour', async () => {
+  test('a key with a metacharacter lowers its own quoted row, never a similarly shaped neighbour', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'ultimate-catch-meta-'));
     const path = join(dir, CATCH_PINS_FILE);
     await Bun.write(path, 'export const CATCH_RENDER_PINS = {\n  axb: 4,\n  "a.b": 3,\n};\n');
 
     // `axb` sorts first in the file, so an unescaped `a.b` would match and rewrite that line.
-    expect(await applyCatchRenderUnpin(dir, ['a.b'], { 'a.b': 1 }, { axb: 4, 'a.b': 3 })).toEqual(
-      [],
+    expect(await applyCatchRenderUnpin(dir, ['a.b'], { 'a.b': 1 }, { axb: 4, 'a.b': 3 })).toEqual([
+      'a.b -> 1',
+    ]);
+    const after = await Bun.file(path).text();
+    expect(after).toContain('"a.b": 1');
+    expect(after).toContain('axb: 4');
+  });
+
+  /** Zero deletes the quoted row too, and leaves the file parseable — `a.b: 0` never appears. */
+  test('a quoted key at zero loses its whole row', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-catch-quoted-'));
+    const path = join(dir, CATCH_PINS_FILE);
+    await Bun.write(
+      path,
+      "export const CATCH_RENDER_PINS = {\n  'create-ultimate': 2,\n  ui: 1,\n};\n",
     );
-    expect(await Bun.file(path).text()).toContain('axb: 4');
+
+    expect(
+      await applyCatchRenderUnpin(dir, ['create-ultimate'], {}, { 'create-ultimate': 2, ui: 1 }),
+    ).toEqual(['create-ultimate -> 0']);
+    const after = await Bun.file(path).text();
+    expect(after).not.toContain('create-ultimate');
+    expect(after).toContain('ui: 1');
   });
 
   test('--unpin lowers a stale pin and refuses to raise one', async () => {

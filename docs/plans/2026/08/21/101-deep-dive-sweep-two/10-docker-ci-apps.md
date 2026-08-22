@@ -53,5 +53,6 @@ The scaffold template (`packages/cli/src/templates/scaffold-container.ts`) is th
 - Command: `bun test scripts/bun-pin.test.ts scripts/compose-parity.test.ts scripts/scaffold-smoke-parity.test.ts`.
 
 ## Done when
+
 - `scaffold-smoke` runs both scaffolds with `--fix-follow` and `scaffold-smoke-parity.test.ts` is green.
 - `x deploy --method compose --dry-run --json` in both apps lists six steps with no unknown service; the parity test is green; `deploy-social-demo.yml` builds on 1.4 and the demo still answers.

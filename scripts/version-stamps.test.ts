@@ -9,7 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRoot } from './lib/run';
-import { readRootManifest } from './lib/workspaces';
+import { readRootManifest, workspaceManifests } from './lib/workspaces';
 import {
   checkVersionStamps,
   compareVersions,
@@ -222,9 +222,9 @@ describe('a root that is not a repo', () => {
       expect(await readRootManifest(dir)).toMatchObject({ kind: 'unparsable' });
       const finding = (await versionStampFindings(dir)).find((one) => one.at === 'package.json');
       if (finding === undefined) return expect.unreachable('a broken root manifest is a finding');
-      expect(finding.cause).toContain('is not valid JSON');
-      expect(finding.fix).toContain('repair package.json so it parses');
-      expect(finding.fix).not.toContain('run this from the repository root');
+      expect(finding.cause).toContain('cannot be read as a workspace manifest');
+      expect(finding.fix).toContain("Bun.file('package.json').json()");
+      expect(finding.fix).not.toContain('git rev-parse');
     });
   });
 
@@ -232,7 +232,55 @@ describe('a root that is not a repo', () => {
     await withoutRoot(async (dir) => {
       expect(await readRootManifest(dir)).toEqual({ kind: 'absent' });
       const finding = (await versionStampFindings(dir)).find((one) => one.at === 'package.json');
-      expect(finding?.fix).toContain('run this from the repository root');
+      expect(finding?.fix).toContain('cd "$(git rev-parse --show-toplevel)"');
+    });
+  });
+
+  /**
+   * Both fix lines RUN as pasted. A line opening with prose — `repair package.json so it parses —
+   * …` — stops a shell at `repair`, so the validation command behind it is never reached by the
+   * operator who pasted it, which is axiom 4 stated and not kept.
+   */
+  test('each root-manifest fix opens with a command a shell can run', async () => {
+    await withoutRoot(async (dir) => {
+      const absent = (await versionStampFindings(dir)).find((one) => one.at === 'package.json');
+      await Bun.write(join(dir, 'package.json'), '{ "workspaces": ["packages/*"], }\n');
+      const broken = (await versionStampFindings(dir)).find((one) => one.at === 'package.json');
+      for (const fix of [absent?.fix ?? '', broken?.fix ?? '']) {
+        expect(['bun', 'bunx', 'cd', 'x']).toContain(fix.split(' ')[0] ?? '');
+      }
+    });
+  });
+
+  /**
+   * JSON that PARSES is not JSON of the right shape, and the cast that used to stand here made
+   * every other shape read as an array of globs. The string form npm accepts left
+   * `workspaceManifests` iterating the string's characters — a scan of `a/package.json`,
+   * `p/package.json`, … reported as a clean tree — and yarn's object form is not iterable at all,
+   * so it threw a `TypeError` out of a `HostCheck` where a finding belonged.
+   */
+  test.each([
+    ['a string', '{ "workspaces": "apps/*" }\n'],
+    ['an object', '{ "workspaces": { "packages": ["packages/*"] } }\n'],
+    ['numbers', '{ "workspaces": ["packages/*", 7] }\n'],
+    ['not an object at all', '["packages/*"]\n'],
+  ])('a root manifest whose workspaces is %s is unparsable, never scanned', async (_what, text) => {
+    await withoutRoot(async (dir) => {
+      await Bun.write(join(dir, 'package.json'), text);
+      expect(await readRootManifest(dir)).toMatchObject({ kind: 'unparsable' });
+      expect(await workspaceManifests(dir)).toEqual([]);
+      const finding = (await versionStampFindings(dir)).find((one) => one.at === 'package.json');
+      expect(finding?.cause).toContain('cannot be read as a workspace manifest');
+    });
+  });
+
+  /** The two shapes that ARE readable: an array of globs, and a manifest declaring none. */
+  test('an array of globs reads, and a manifest with no workspaces key reads as none', async () => {
+    await withoutRoot(async (dir) => {
+      await Bun.write(join(dir, 'package.json'), '{ "workspaces": ["packages/*"] }\n');
+      expect(await readRootManifest(dir)).toEqual({ kind: 'read', patterns: ['packages/*'] });
+      await Bun.write(join(dir, 'package.json'), '{ "name": "solo" }\n');
+      expect(await readRootManifest(dir)).toEqual({ kind: 'read', patterns: [] });
     });
   });
 });

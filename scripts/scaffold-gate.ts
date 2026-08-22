@@ -15,7 +15,7 @@
 //   bun run scripts/scaffold-gate.ts <app dir> [--allow-red budgets] [--fix-follow] [--json]
 
 import type { Runner } from '@ultimat3/cli';
-import { exec, VERIFY_STEP_NAMES } from '@ultimat3/cli';
+import { exec, quoteArg, VERIFY_STEP_NAMES } from '@ultimat3/cli';
 import { flagBool, flagList, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -28,8 +28,12 @@ export const WAIVER_FILE = '.github/workflows/ci.yml';
 
 const SCRIPT = 'scaffold-gate';
 
-/** Runnable in the scaffolded app itself, which is the only place the gate can be reproduced. */
-export const reproduce = (dir: string): string => `cd ${dir} && bun run verify --json`;
+/**
+ * Runnable in the scaffolded app itself, which is the only place the gate can be reproduced.
+ * `quoteArg` because the directory is the runner's, not ours: `x new --dir` accepts a path with a
+ * space in it, and `cd /tmp/my app` enters `/tmp/my` or nothing at all.
+ */
+export const reproduce = (dir: string): string => `cd ${quoteArg(dir)} && bun run verify --json`;
 
 export interface ScaffoldGateInput {
   /** The scaffolded app's root, as given — a temp directory on a runner, a path on a laptop. */

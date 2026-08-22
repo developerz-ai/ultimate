@@ -64,14 +64,21 @@ export async function applyCatchRenderUnpin(
     if (found >= pinned) continue;
     // `RegExp.escape`, never the raw key: a workspace name holding regex syntax matches a
     // NEIGHBOURING row — `a.b` matches `axb` — so the ratchet lowers a count on the wrong package
-    // and then enforces it there. One escape, both expressions.
+    // and then enforces it there. One escape, every expression.
     const key = RegExp.escape(pkg);
-    const entry = new RegExp(`^(\\s*)${key}: \\d+,$`, 'm');
+    // Quoted OR bare, and CAPTURED rather than rebuilt. A key that is not an identifier is quoted
+    // by the formatter — `'create-ultimate': 0` is how `scripts/lib/test-typecheck-pins.ts`
+    // already spells one — so a pattern demanding the bare form matches nothing there: `--unpin`
+    // answers "nothing to lower" over a live pin, and the ratchet holds slack no edit can release.
+    // Writing `$2` back preserves the file's own spelling; writing `${pkg}` would emit
+    // `create-ultimate: 0`, which is not valid TypeScript.
+    const spelt = `(['"]?${key}['"]?)`;
+    const entry = new RegExp(`^(\\s*)${spelt}: \\d+,$`, 'm');
     if (!entry.test(text)) continue;
     text =
       found === 0
-        ? text.replace(new RegExp(`^\\s*${key}: \\d+,\\n`, 'm'), '')
-        : text.replace(entry, `$1${pkg}: ${String(found)},`);
+        ? text.replace(new RegExp(`^\\s*${spelt}: \\d+,\\n`, 'm'), '')
+        : text.replace(entry, `$1$2: ${String(found)},`);
     written.push(`${pkg} -> ${String(found)}`);
   }
   if (written.length > 0) await Bun.write(path, text);

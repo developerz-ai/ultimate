@@ -177,6 +177,18 @@ export interface VersionInput {
   readonly rootManifest?: RootManifest;
 }
 
+/**
+ * The two root-manifest details, as constants: the `fix` in `vacuousFinding` branches on WHICH of them a gap
+ * carries, and a rule that sniffed the prose would hand out the wrong instruction the first time
+ * a sentence was reworded. `unreadable` is both a manifest that does not parse AND one that parses
+ * into a shape `workspaces` cannot be read out of — one repair, made by a human, either way.
+ */
+const ROOT_UNREADABLE = (problem: string): string =>
+  `cannot be read as a workspace manifest (${problem}), so no dependency range was compared`;
+
+/** No `package.json` at all: this ran somewhere that is not the repository root. */
+const ROOT_ABSENT = 'is not there, so no dependency range was compared';
+
 /** Pure, so the negative case is a fixture rather than a hand-edit to a published page. */
 export function checkVersionStamps(input: VersionInput): readonly VersionGap[] {
   const gaps: VersionGap[] = [];
@@ -189,8 +201,8 @@ export function checkVersionStamps(input: VersionInput): readonly VersionGap[] {
       at: ROOT_MANIFEST,
       detail:
         input.rootManifest.kind === 'unparsable'
-          ? `is not valid JSON (${input.rootManifest.problem}), so no dependency range was compared`
-          : 'declares no workspaces this rule could read, so no dependency range was compared',
+          ? ROOT_UNREADABLE(input.rootManifest.problem)
+          : ROOT_ABSENT,
     });
   }
   const declared = [...new Set(Object.values(input.versions))].sort(compareVersions);
@@ -309,11 +321,16 @@ const vacuousFinding = (gap: VersionGap): Finding =>
     ? {
         code: 'X_VERSION_STAMP_UNSCANNED',
         cause: `${ROOT_MANIFEST} ${gap.detail}`,
-        // Two fixes, because the two causes ask for opposite actions. A literal command either
-        // way, not an interpolation: the fix-line rule reads these statically.
-        fix: gap.detail.startsWith('is not valid JSON')
-          ? 'repair package.json so it parses — bun -e "await Bun.file(\'package.json\').json()" prints the offending position — then bun run scripts/version-stamps.ts --json'
-          : 'run this from the repository root — the directory whose package.json declares "workspaces" — then bun run scripts/version-stamps.ts --json',
+        // Two fixes, because the two causes ask for opposite actions, and each LEADS with the
+        // command: a line whose first word is prose stops a shell at `repair`, so the validation
+        // command behind it was never reached by the operator pasting it. What only a human can do
+        // — repair the JSON, write `"workspaces"` as an array — rides behind a `#`, where a shell
+        // ignores it. A literal either way, not an interpolation: the fix-line rule reads these
+        // statically.
+        fix:
+          gap.detail === ROOT_ABSENT
+            ? 'cd "$(git rev-parse --show-toplevel)" && bun run scripts/version-stamps.ts --json   # the repository root is the directory whose package.json declares "workspaces"'
+            : 'bun -e "console.log(await Bun.file(\'package.json\').json())"   # prints the manifest it could read, or the parse error — repair package.json until "workspaces" is an array of globs, then: bun run scripts/version-stamps.ts --json',
         at: gap.at,
       }
     : {

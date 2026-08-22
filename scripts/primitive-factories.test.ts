@@ -215,10 +215,16 @@ describe('unit · the scan itself can fail', () => {
     expect([...kinds.keys()]).toHaveLength(9);
   });
 
-  /** A cycle in `extends` terminates too: a name already in the map is never re-entered. */
+  /**
+   * A cycle in `extends` terminates too: a name already in the map is never re-entered.
+   *
+   * `export` on both, because `EXTENDS` matches `export interface` and nothing else — a bare
+   * `interface` fixture is read by the scanner as no declaration at all, so the test passed over
+   * a cycle it never built and could not have failed if the walk had hung.
+   */
   test('a cycle among unknown bases neither hangs nor adds a kind', () => {
     const kinds = primitiveTypes([
-      'interface P extends Q<I, O> {}\ninterface Q extends P<I, O> {}',
+      'export interface P extends Q<I, O> {}\nexport interface Q extends P<I, O> {}',
     ]);
     expect([...kinds.keys()].sort()).toEqual([...ROOTS.keys()].sort());
   });

@@ -60,18 +60,45 @@ export type RootManifest =
   | { readonly kind: 'absent' }
   | { readonly kind: 'unparsable'; readonly problem: string };
 
+/**
+ * `workspaces` as Bun writes it — an array of glob strings — or the sentence saying what it is
+ * instead. Parsed from `unknown` rather than cast: JSON that parses is not JSON of the right
+ * SHAPE, and a cast made every other shape read as an array. `"workspaces": "apps/*"` (the string
+ * npm also accepts) let `workspaceManifests` iterate the string's CHARACTERS, so it globbed
+ * `a/package.json`, `p/package.json`, … and reported a clean tree it had never scanned; the object
+ * form yarn accepts, `{ "packages": [...] }`, is not iterable at all and threw a `TypeError` out
+ * of a `HostCheck` — the stack trace this module's own header says must never leave here.
+ */
+const declaredPatterns = (
+  manifest: unknown,
+): { readonly patterns: readonly string[] } | { readonly problem: string } => {
+  if (typeof manifest !== 'object' || manifest === null || Array.isArray(manifest)) {
+    return { problem: 'is valid JSON and not an object, so it declares no workspaces' };
+  }
+  const declared: unknown = (manifest as Record<string, unknown>)['workspaces'];
+  if (declared === undefined) return { patterns: [] };
+  if (!Array.isArray(declared) || declared.some((pattern) => typeof pattern !== 'string')) {
+    return { problem: '"workspaces" is not an array of glob strings' };
+  }
+  return { patterns: declared as readonly string[] };
+};
+
 /** Never throws: this runs inside a `HostCheck`, where a throw is a stack trace, not a finding. */
 export async function readRootManifest(root: string): Promise<RootManifest> {
   const file = Bun.file(join(root, 'package.json'));
   if (!(await file.exists())) return { kind: 'absent' };
+  let manifest: unknown;
   try {
-    const manifest = (await file.json()) as { readonly workspaces?: readonly string[] };
-    return { kind: 'read', patterns: manifest.workspaces ?? [] };
+    manifest = await file.json();
   } catch (error) {
     // The thrown value is genuinely unknown, and core's renderer is the one spelling that cannot
     // itself throw on a hostile `toString` — the rule `packages/cli/src/cmd-new.ts` states.
     return { kind: 'unparsable', problem: renderThrowable(error) };
   }
+  const read = declaredPatterns(manifest);
+  return 'problem' in read
+    ? { kind: 'unparsable', problem: read.problem }
+    : { kind: 'read', patterns: read.patterns };
 }
 
 /**

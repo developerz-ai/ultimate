@@ -1,10 +1,6 @@
 // The pages allowed to cite an `app.config.ts` key `AppConfig` does not declare, one entry each,
 // with the reason. Read by `scripts/doc-config-keys.ts`; an entry that matches nothing is a finding,
 // so the list can only shrink by being wrong.
-//
-// Not a reason: "we will fix it later". Drift is a finding. The one legitimate reason is that the
-// citation is a SYMPTOM of a defect that lives somewhere else and is a release decision, recorded
-// here so the gap is visible rather than absent.
 
 /** Where the table lives, so a stale-pin finding can name the file to edit. */
 export const DOC_CONFIG_PINS_FILE = 'scripts/lib/doc-config-key-pins.ts';
@@ -20,6 +16,10 @@ export interface DocConfigKeyAllowance {
 }
 
 /**
+ * Not a reason: "we will fix it later". Drift is a finding. The one legitimate reason is that the
+ * citation is a SYMPTOM of a defect that lives somewhere else and is a release decision, recorded
+ * here so the gap is visible rather than absent.
+ *
  * Measured 2026-08-22, the day the citation reader learned to see an unknown top-level SECTION
  * rather than only an unknown leaf under a known one. All four are ONE defect and it is not in
  * these pages: `packages/http/src/config.ts` opens with "The HTTP slice of `app.config.ts`" and

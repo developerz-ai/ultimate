@@ -122,7 +122,7 @@ X_DB_DRIFT: schema differs from migrations
 bun run verify        # this repo. In an app: x verify
 ```
 
-**Eighteen steps, in cost order**, and the same list runs in the framework repo and in a generated app — whole, or not at all. There is no `--only` and no `--skip`.
+**Nineteen steps, in cost order**, and the same list runs in the framework repo and in a generated app — whole, or not at all. There is no `--only` and no `--skip`.
 
 `typecheck` · `lint` · `boundaries` · `filesize` · `package-shape` · `errors` · `unit` · `contract` · `live` · `job` · `e2e` · `eval` · `drift` · `contract-diff` · `budgets` · `seo` · `i18n` · `manifest` · `roadmap`
 

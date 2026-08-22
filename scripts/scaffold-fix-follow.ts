@@ -12,6 +12,7 @@
 // catch, and an unbounded loop reports it as a hung job instead of as a finding.
 
 import type { Runner } from '@ultimat3/cli';
+import { quoteArg } from '@ultimat3/cli';
 import type { Finding } from './lib/log';
 import type { GateStep } from './reference-app-gate';
 import { parseSteps, redSteps } from './reference-app-gate';
@@ -118,9 +119,20 @@ export async function followFixes(dir: string, runner: Runner): Promise<FixFollo
 const roundLine = (round: FixFollowRound): string =>
   `round ${String(round.round)}: ${round.red.join(', ') || 'none'} red, ${String(round.ran.length)} fix line(s) run`;
 
-/** Where a scaffolded app is reproduced, so every finding below is one paste away from a repeat. */
+/**
+ * Where a scaffolded app is reproduced, so every finding below is one paste away from a repeat.
+ *
+ * From the REPOSITORY ROOT, and never through a `cd` into the scaffold. `cd <dir>` moves the
+ * directory both remaining arguments resolve from: `../../scripts/scaffold-gate.ts` is the gate
+ * only for an app exactly two levels below the root, and a relative `<dir>` the `x new --dir`
+ * contract accepts — `myapp`, `apps/demo` — then names a second directory that does not exist. The
+ * gate runs the app's own `x verify` itself, so the line needs no `cd` and no second path.
+ *
+ * `quoteArg` on the one dynamic operand: a scaffold under `/tmp/my app` splits into two arguments
+ * unquoted, and the gate reads the first as its whole target.
+ */
 export const reproduceFollow = (dir: string): string =>
-  `cd ${dir} && bun run verify --json && bun run ../../scripts/scaffold-gate.ts ${dir} --fix-follow`;
+  `bun run scripts/scaffold-gate.ts ${quoteArg(dir)} --fix-follow --json`;
 
 /**
  * A step table `parseSteps` could not read is its OWN failure, not a red step — the loop knows
@@ -133,7 +145,7 @@ export const reproduceFollow = (dir: string): string =>
 const unreadableFinding = (dir: string, when: string): Finding => ({
   code: 'X_SCAFFOLD_VERIFY_UNREADABLE',
   cause: `x verify --json in the scaffolded app at ${dir} printed no step table this gate could parse ${when}, so no step's verdict is known and every finding below it would name a step that was never reported`,
-  fix: `cd ${dir} && bun run verify --json`,
+  fix: `cd ${quoteArg(dir)} && bun run verify --json`,
   at: dir,
 });
 
@@ -161,7 +173,7 @@ export function fixFollowFindings(dir: string, result: FixFollowResult): readonl
     findings.push({
       code: 'X_SCAFFOLD_FIX_LOOP',
       cause: `the scaffolded app at ${dir} is still red on ${result.red.join(', ') || 'a step it did not print'} after following its own fix lines for ${String(result.rounds.length)} round(s) — ${result.rounds.map(roundLine).join('; ')}`,
-      fix: `run the last round's fix line by hand in ${dir} and read what it changes — a fix that reintroduces its own red is the defect; reproduce with: ${reproduceFollow(dir)}`,
+      fix: `run the last round's fix line by hand in ${quoteArg(dir)} and read what it changes — a fix that reintroduces its own red is the defect; reproduce with: ${reproduceFollow(dir)}`,
       at: dir,
     });
   }
@@ -190,7 +202,7 @@ export async function staticBuildFindings(
       {
         code: 'X_SCAFFOLD_BUILD_FAILED',
         cause: `x build --target static failed in the scaffolded app at ${dir}, so nothing downstream of a build is under test: ${built.stderr.trim().split('\n').at(-1) ?? `exit ${String(built.code)}`}`,
-        fix: `cd ${dir} && bun run x build --target static`,
+        fix: `cd ${quoteArg(dir)} && bun run x build --target static`,
         at: dir,
       },
     ];
@@ -205,7 +217,7 @@ export async function staticBuildFindings(
     {
       code: 'X_SCAFFOLD_BUILD_REGRESSED',
       cause: `${step} was green in the scaffolded app at ${dir} and is red after x build --target static — the build writes files the ${step} step then reads, so a fresh app is shippable only until its first build`,
-      fix: `cd ${dir} && bun run x build --target static && bun run verify --json, then exclude what the build writes in that app's biome.json`,
+      fix: `cd ${quoteArg(dir)} && bun run x build --target static && bun run verify --json   # then exclude what the build writes in that app's biome.json`,
       at: dir,
     },
   ];

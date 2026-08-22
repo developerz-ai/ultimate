@@ -12,6 +12,7 @@ import {
   fixFollowFindings,
   followFixes,
   MAX_ROUNDS,
+  reproduceFollow,
   runnableFix,
   staticBuildFindings,
 } from './scaffold-fix-follow';
@@ -171,6 +172,33 @@ describe('unit · the loop', () => {
     expect(findings.map((finding) => finding.code)).toEqual(['X_SCAFFOLD_VERIFY_UNREADABLE']);
     expect(findings[0]?.fix).toBe(`cd ${DIR} && bun run verify --json`);
     expect(findings[0]?.cause).toContain('no step table this gate could parse');
+  });
+
+  /**
+   * The directory is the runner's, not ours — `x new --dir` accepts a path with a space — and an
+   * unquoted `cd /tmp/my app` enters `/tmp/my`, or nothing, and then runs the app's gate wherever
+   * it landed. A fix that runs the wrong thing is worse than one that does not run.
+   */
+  test('a scaffold path with a space is quoted in every command the findings emit', async () => {
+    const spaced = '/tmp/my app';
+    const { runner } = fakeRunner(['nothing here is json']);
+    const findings = fixFollowFindings(spaced, await followFixes(spaced, runner));
+    expect(findings[0]?.fix).toBe(`cd '/tmp/my app' && bun run verify --json`);
+    expect(reproduceFollow(spaced)).toContain(`'/tmp/my app'`);
+  });
+
+  /**
+   * The reproduce line runs from the REPOSITORY ROOT and names one path. It used to `cd <dir>`
+   * first and then reach back with `../../scripts/scaffold-gate.ts <dir>` — both operands resolved
+   * from inside the scaffold, so an app one level down found no gate and a relative `--dir` named
+   * a second directory that was not there.
+   */
+  test('the reproduce line is one root-relative command, with no cd and no ../..', () => {
+    expect(reproduceFollow(DIR)).toBe(
+      `bun run scripts/scaffold-gate.ts ${DIR} --fix-follow --json`,
+    );
+    expect(reproduceFollow(DIR)).not.toContain('..');
+    expect(reproduceFollow(DIR)).not.toContain('cd ');
   });
 });
 
