@@ -78,7 +78,7 @@ export interface JobDriver {
 | `pg` (default) | `x_jobs`, `x_job_steps`, `x_backfills`, `x_outbox`, `x_rate_buckets` | yes | outbox is free (same DB, same tx); `SKIP LOCKED` claiming; zero extra infra |
 | `memory` | in-process maps, lost with the process | yes | tests and `x dev` only — nothing survives a restart, so it is never a deployment target |
 | `redis` | streams + consumer groups, outbox relay in front | no | high throughput, short jobs; loses "queue state in one backup" |
-| `nats` | JetStream, outbox relay in front | no | strongest delivery semantics, most operational surface. `As of 2026-07` `claim` throws `X_NOT_IMPLEMENTED` with `fix: set jobs.driver = "pg" in app.config.ts` |
+| `nats` | JetStream, outbox relay in front | no | strongest delivery semantics, most operational surface. `As of 2026-08-22` `claim` throws `X_NOT_IMPLEMENTED`. There is no driver switch to answer with: `JobsConfig.driver` accepted `postgres`/`redis`/`nats`, had no reader anywhere, and boot always built the Postgres driver — so it was deleted in 5.0.0 and Postgres is simply what runs |
 
 `x_backfills` is the odd one out: it is not queue state but the ledger of what a `backfill()` pass has already swept, hanging off `JobDriver.backfills` because it ships in the same DDL as `x_jobs` — `As of 2026-08` only the `pg` and `memory` drivers carry one, and a driver without it runs backfills with no bookkeeping rather than refusing them.
 

@@ -13,19 +13,30 @@ const agents = (app: NameSet): string => `# AGENTS.md
 Human-authored, short, stable. Facts live in \`x.manifest.json\`; this file holds only what an
 agent cannot infer from the code.
 
-| Rule | Detail |
-|---|---|
-| One gate | \`x verify\` — green means shippable. Never merge red. |
-| One way | generators, not hand-rolled files: \`x g resource\`, \`x g action\`, \`x g route\` |
-| Surfaces | \`site/\` is 0kb JS and may not import \`app/\`; \`shared/\` is a leaf |
-| Data | routes call actions and queries; only \`repo.ts\` touches the database |
-| Errors | never \`throw new Error\` — subclass \`UltimateError\` with a code, a cause and a fix |
-| Money | integer minor units + ISO code, never a float |
-| Time | store UTC, format with an explicit IANA time zone |
-| Strings | every user-facing string goes through \`t()\` |
-| Colour | semantic tokens only, never a raw hex |
+Every row below names what refuses it. A rule with nothing in the last column is a rule that does
+not exist — five of these had an empty column and were each measured green on \`x verify\`.
 
-Commands: \`x dev\`, \`x verify\`, \`x g <primitive>\`, \`x db branch create <name>\`, \`x doctor\`.
+| Rule | Detail | Refused by |
+|---|---|---|
+| One gate | \`x verify\` — green means shippable. Never merge red. | the gate itself |
+| One way | generators, not hand-rolled files: \`x g resource\`, \`x g action\`, \`x g route\` | review |
+| Surfaces | \`site/\` is 0kb JS and may not import \`app/\`; \`shared/\` is a leaf | \`X_BOUNDARY_SITE_TO_APP\` |
+| Data | routes call actions and queries; only \`repo.ts\` touches the database | \`X_BOUNDARY_ROUTE_TO_DB\` |
+| Errors | never \`throw new Error\` — subclass \`UltimateError\` with a code, a cause and a fix | \`guards/bare-error.ts\` |
+| Money | \`{ minor, currency }\`, never a float — \`money()\` on the column | the type: \`price: 19.99\` is TS2322, \`number\` is not \`MoneyInput\` |
+| Time | store UTC, format with an explicit IANA time zone | \`guards/unzoned-date.ts\` |
+| Strings | every user-facing string goes through \`t()\` | \`guards/untranslated-string.ts\` |
+| Colour | semantic tokens only, never a raw hex | \`guards/raw-colour.ts\` |
+
+\`guards/\` is yours: each file is one rule, discovered by \`x verify\` and run inside its
+\`boundaries\` step. Delete one to drop the rule, and \`x g guard <name>\` writes the next.
+
+Money is the one row with no guard, deliberately: a float has no static signature a text rule can
+see, and the type already fires — measured, \`price: 19.99\` in a seed is
+\`TS2322: Type 'number' is not assignable to type 'MoneyInput'\`. A guard that pretended to check
+it would be worse than the type that really does.
+
+Commands: \`x dev\`, \`x verify\`, \`x g <primitive>\`, \`x g guard <name>\`, \`x db branch create <name>\`, \`x doctor\`.
 
 Project notes for ${app.kebab}: replace this line with the conventions a newcomer could not guess.
 `;

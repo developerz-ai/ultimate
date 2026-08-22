@@ -3,6 +3,8 @@
 // has to build a fake tree for. Mirrors @ultimat3/manifest's emit.ts, which does this same job for
 // an app's x.manifest.json.
 
+import { canonicalJson } from '@ultimat3/core';
+
 export interface FrameworkManifest {
   readonly version: 1;
   readonly buildId: string;
@@ -59,22 +61,8 @@ export function frameworkManifestJson(manifest: FrameworkManifest): string {
  */
 export function contentHash(body: FrameworkManifestBody): string {
   const hasher = new Bun.CryptoHasher('sha256');
-  hasher.update(canonical(body));
+  hasher.update(canonicalJson(body));
   return hasher.digest('hex');
-}
-
-/** Sorted-key JSON. Never `JSON.stringify(value)` directly — key order is not a contract. */
-export function canonical(value: unknown): string {
-  return JSON.stringify(sortKeys(value));
-}
-
-function sortKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortKeys);
-  if (typeof value !== 'object' || value === null) return value;
-  const record = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(record).sort()) out[key] = sortKeys(record[key]);
-  return out;
 }
 
 /** Read and structurally check the committed file. `undefined` when absent or unparseable. */
@@ -113,7 +101,7 @@ export function manifestDrift(
 ): readonly string[] {
   if (onDisk === undefined) return ['file is missing or unreadable'];
   const differences = KEY_ORDER.filter(
-    (key) => key !== 'buildId' && canonical(onDisk[key]) !== canonical(fresh[key]),
+    (key) => key !== 'buildId' && canonicalJson(onDisk[key]) !== canonicalJson(fresh[key]),
   ).map((key) => `${key} differs`);
   // A body that matches under a `buildId` that does not means the file was hand-edited: still drift.
   if (differences.length === 0 && onDisk.buildId !== fresh.buildId) return ['buildId differs'];

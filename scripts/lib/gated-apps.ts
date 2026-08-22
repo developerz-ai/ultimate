@@ -16,7 +16,7 @@ export interface GatedApp {
    * Steps of this app's gate allowed to fail today, each naming the work that owns it. A step
    * absent from the table MUST pass — that is what makes the app blocking while it is still being
    * repaired. Lines are only ever deleted: a new red step is a regression, and a pinned step that
-   * turns green fails the gate until its line goes. An empty table means 17 of 17.
+   * turns green fails the gate until its line goes. An empty table means the app asserts every step — the count is `VERIFY_STEP_NAMES.length`, never written here, because a number in prose beside a derived list is a number that goes stale.
    */
   readonly expectedRed: Readonly<Record<string, string>>;
 }

@@ -21,6 +21,7 @@ import {
   SPECS,
   VERIFY_STEPS,
 } from '@ultimat3/cli';
+import { renderThrowable } from '@ultimat3/core';
 import { benchClaimFindings } from './bench-claims';
 import {
   adminFlattenerFindingFor,
@@ -31,6 +32,7 @@ import {
   collectSharedFiles,
   collectSourceFiles,
   findingFor,
+  floorFindings,
   sharedLeafFindingFor,
 } from './boundaries';
 import { chartVersionFindings } from './chart-version';
@@ -81,19 +83,46 @@ import { wikiTableFindings } from './wiki-tables';
  * about its own source that the framework cannot know" — the flattener rule is not a tier rule
  * either — and it runs third, before any suite, which is where a millisecond-cost text rule belongs.
  */
-export const tierBoundaries: HostCheck = async (root) => [
-  ...checkBoundaries(await collectSourceFiles(root)).map(findingFor),
-  ...checkSharedLeaf(await collectSharedFiles(root)).map(sharedLeafFindingFor),
-  ...checkAdminFlattener(await collectAdminFiles(root)).map(adminFlattenerFindingFor),
-  ...(await frameworkCatalogFindings(root)),
-  ...(await imageContractFindings(root)),
-  // The CLI's own declarations, held to each other: a flag the parser accepts that no file reads is
-  // a promise `x help` prints with nothing behind it. `x deploy --critical` said "forces clients to
-  // reload" and reached no reader outside the plan JSON. Host-side, because a generated app ships no
-  // `packages/cli/src` — and on `boundaries` rather than an eighteenth step, for the reason the
-  // `errors` step's comment already gives: `VerifyStepName` is a closed union the CLI owns.
-  ...(await checkFlagReads(SPECS, join(root, 'packages', 'cli', 'src'))),
-];
+export const tierBoundaries: HostCheck = async (root) => {
+  // One scan for both halves of the tier rule. Two would transpile 4,000 files twice for an answer
+  // read off the same specifiers.
+  const source = await collectSourceFiles(root);
+  return [
+    ...checkBoundaries(source).map(findingFor),
+    // The FLOOR half of the same table: a package sitting above the lowest tier its own imports
+    // allow needs a written reason, because `scripts/lib/tiers.ts` claimed that placement was
+    // "checked by this file's own rule" while nothing computed a floor at all.
+    ...floorFindings(source),
+    ...checkSharedLeaf(await collectSharedFiles(root)).map(sharedLeafFindingFor),
+    ...checkAdminFlattener(await collectAdminFiles(root)).map(adminFlattenerFindingFor),
+    ...(await frameworkCatalogFindings(root)),
+    ...(await imageContractFindings(root)),
+    // The CLI's own declarations, held to each other: a flag the parser accepts that no file reads is
+    // a promise `x help` prints with nothing behind it. `x deploy --critical` said "forces clients to
+    // reload" and reached no reader outside the plan JSON. Host-side, because a generated app ships no
+    // `packages/cli/src` — and on `boundaries` rather than an eighteenth step, for the reason the
+    // `errors` step's comment already gives: `VerifyStepName` is a closed union the CLI owns.
+    ...(await checkFlagReads(SPECS, join(root, 'packages', 'cli', 'src'))),
+  ];
+};
+
+/**
+ * Why a generation failure is described through `renderThrowable` and not `error instanceof Error
+ * ? error.message : String(error)`, which is what stood here. BOTH halves of that spelling can
+ * throw while describing a throw, in the one branch with nothing left to report with:
+ * `instanceof` runs a `Proxy`'s `getPrototypeOf` trap (measured — `verify.test.ts` throws from
+ * one), `.message` is an ordinary property read and so may be a throwing getter, and `String(x)`
+ * dies on a null-prototype object (`No default value`) or any `toString` that throws.
+ *
+ * `String(aSymbol)` is NOT one of them and answers `'Symbol(nope)'` — it is `${aSymbol}` that
+ * throws, which is a different spelling and a different site. Stated because the audit that found
+ * this line said Symbol, and a reason that is not true is worse than no reason.
+ *
+ * Named and exported so the hostile value is a test argument rather than a mocked module;
+ * `scripts/registry-audit.ts`'s `failureDetail` is the same shape for the same reason.
+ */
+export const manifestFailureCause = (error: unknown): string =>
+  `the framework manifest could not be generated: ${renderThrowable(error)}`;
 
 /**
  * The framework's own manifest is generated from the packages: it must still generate, and the
@@ -111,7 +140,7 @@ export const frameworkManifest: HostCheck = async (root) => {
         // that is a failed gate step — `X_MANIFEST_STALE` belongs to a committed `openapi.json`
         // the code has moved past, `X_MANIFEST_DRIFT` to a committed manifest.
         code: 'X_VERIFY_FAILED',
-        cause: `the framework manifest could not be generated: ${error instanceof Error ? error.message : String(error)}`,
+        cause: manifestFailureCause(error),
         fix: 'bun run manifest',
         docs: 'https://ultimate.dev/errors/X_VERIFY_FAILED',
         at: DEFAULT_OUT,

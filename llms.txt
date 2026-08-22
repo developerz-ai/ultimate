@@ -1,6 +1,6 @@
 # Ultimate
 
-> A full-stack, Bun-only, opinionated web framework: Rails' philosophy on a Bun + Postgres + SolidJS stack, where the primary developer is an AI agent. Everything is one of eight primitives — `entity`, `policy`, `action`, `mutator`, `query`, `job`, `route`, `task` — and one `action` declaration projects into an HTTP route, an OpenAPI operation, a typed client, a job handle, an MCP tool and a test, all on one `policy`. There is never a second authorization system. The CLI binary is `x`; every command and every error takes `--json`, and every framework error carries a stable `X_*` code, a concrete cause and the exact command that fixes it. `x verify` is the single gate: eighteen steps, green means shippable. Install with `bunx create-ultimate myapp`.
+> A full-stack, Bun-only, opinionated web framework: Rails' philosophy on a Bun + Postgres + SolidJS stack, where the primary developer is an AI agent. Everything is one of eight primitives — `entity`, `policy`, `action`, `mutator`, `query`, `job`, `route`, `task` — and one `action` declaration projects into an HTTP route, an OpenAPI operation, a typed client, a job handle, an MCP tool and a test, all on one `policy`. There is never a second authorization system. The CLI binary is `x`; every command and every error takes `--json`, and every framework error carries a stable `X_*` code, a concrete cause and the exact command that fixes it. `x verify` is the single gate: nineteen steps, green means shippable. Install with `bunx create-ultimate myapp`.
 
 This file is a link map, not a status page. **It states no version, count or verdict without the command that resolves it** — a number written here goes stale on the next commit and the command does not. `As of 2026-08-20`.
 
@@ -43,7 +43,7 @@ This file is a link map, not a status page. **It states no version, count or ver
 
 ## The gate
 
-- `x verify` runs eighteen steps in cost order, and the framework repo and a generated app run exactly that list, whole: `typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors`, `unit`, `contract`, `live`, `job`, `e2e`, `eval`, `drift`, `contract-diff`, `budgets`, `seo`, `manifest`, `roadmap`. There is no `--only` and no `--skip`.
+- `x verify` runs nineteen steps in cost order, and the framework repo and a generated app run exactly that list, whole: `typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors`, `unit`, `contract`, `live`, `job`, `e2e`, `eval`, `drift`, `contract-diff`, `budgets`, `seo`, `i18n`, `manifest`, `roadmap`. There is no `--only` and no `--skip`.
 - In this repo the gate is `bun run verify`; both tracked apps run their own on a ratchet with `bun run scripts/reference-app-gate.ts`.
 - [Testing internals](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/14-testing-internals.md): the six test types, template-DB cloning, the frozen clock, the sealed network, and the exact order of the gate.
 - [wiki/Testing.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Testing.md): the reference version, including how to write each test type.

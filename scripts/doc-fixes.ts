@@ -14,6 +14,7 @@
 
 import type { CommandCatalog } from '@ultimat3/cli';
 import { citationFault, fixCitations, fixProblem, loadCommandCatalog } from '@ultimat3/cli';
+import { docConfigKeyFindings } from './doc-config-keys';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -171,25 +172,37 @@ export async function docFixGaps(root: string): Promise<readonly DocFixGap[]> {
   });
 }
 
-/** What this repo contributes to `x verify`'s `errors` step. */
-export const docFixFindings = async (root: string): Promise<readonly Finding[]> =>
-  (await docFixGaps(root)).map(docFixFindingFor);
+/**
+ * What this repo contributes to `x verify`'s `errors` step: BOTH halves of "a fix is runnable".
+ *
+ * The command half is above. The CONFIG half is `doc-config-keys.ts` — a `fix:` may cite an
+ * `app.config.ts` key as well as a command, and only the command was ever resolved, so
+ * `set jobs.driver = 'pg' in app.config.ts` passed this rule while `jobs.driver` was deleted in
+ * 5.0.0. Composed here rather than as a step of its own: same claim, same gate step, and a caller
+ * that already imports one import gets the other.
+ */
+export const docFixFindings = async (root: string): Promise<readonly Finding[]> => [
+  ...(await docFixGaps(root)).map(docFixFindingFor),
+  ...(await docConfigKeyFindings(root)),
+];
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
   const page = Bun.file(`${root}/${FIX_REFERENCE}`);
   const cells = (await page.exists()) ? readFixCells(await page.text()).length : 0;
-  const gaps = await docFixGaps(root);
+  // `docFixFindings`, not `docFixGaps`: the standalone command must answer exactly what the gate
+  // step answers, or `bun run scripts/doc-fixes.ts` prints green over a red `errors` step.
+  const findings = await docFixFindings(root);
   report(
     {
-      ok: gaps.length === 0,
+      ok: findings.length === 0,
       script: 'doc-fixes',
       summary:
-        gaps.length === 0
-          ? `${cells} Fix cells in ${FIX_REFERENCE}, every one an instruction this build can run`
-          : `${gaps.length} of ${cells} Fix cells in ${FIX_REFERENCE} cannot be run as written`,
-      findings: gaps.map(docFixFindingFor),
+        findings.length === 0
+          ? `${cells} Fix cells in ${FIX_REFERENCE} and every documented app.config.ts key, all resolvable`
+          : `${findings.length} unrunnable instruction(s) — ${cells} Fix cells in ${FIX_REFERENCE} read, plus every app.config.ts key the docs cite`,
+      findings,
     },
     args.json,
   );

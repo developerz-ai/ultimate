@@ -3,9 +3,15 @@
 // stamps nothing would otherwise let this rule compare the shipped version against no sentence.
 
 import { describe, expect, test } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { repoRoot } from './lib/run';
 import {
   checkVersionStamps,
+  compareVersions,
+  readInternalDeps,
+  readLockedDeps,
   readStampPages,
   readStamps,
   STAMP_PAGE,
@@ -121,7 +127,7 @@ describe('lockstep is a claim about dependencies and about the lockfile', () => 
     const gaps = checkVersionStamps({
       files: [footer(stamped)],
       versions: lockstep,
-      internalDeps: { admin: { '@ultimat3/core': '0.9.0' } },
+      internalDeps: { 'packages/admin': { '@ultimat3/core': '0.9.0' } },
     });
     expect(gaps.map((gap) => gap.kind)).toEqual(['dependency']);
     expect(gaps[0]?.at).toBe('packages/admin/package.json');
@@ -132,7 +138,7 @@ describe('lockstep is a claim about dependencies and about the lockfile', () => 
       checkVersionStamps({
         files: [footer(stamped)],
         versions: lockstep,
-        internalDeps: { admin: { '@ultimat3/core': '1.2.0' } },
+        internalDeps: { 'packages/admin': { '@ultimat3/core': '1.2.0' } },
       }),
     ).toEqual([]);
   });
@@ -144,8 +150,8 @@ describe('lockstep is a claim about dependencies and about the lockfile', () => 
     const gaps = checkVersionStamps({
       files: [footer(stamped)],
       versions: lockstep,
-      internalDeps: { admin: { '@ultimat3/core': '1.2.0' } },
-      lockedDeps: { admin: { '@ultimat3/core': '2.0.0' } },
+      internalDeps: { 'packages/admin': { '@ultimat3/core': '1.2.0' } },
+      lockedDeps: { 'packages/admin': { '@ultimat3/core': '2.0.0' } },
     });
     expect(gaps.map((gap) => gap.kind)).toEqual(['lockfile']);
     expect(gaps[0]?.at).toBe('bun.lock');
@@ -157,10 +163,71 @@ describe('lockstep is a claim about dependencies and about the lockfile', () => 
       checkVersionStamps({
         files: [footer(stamped)],
         versions: lockstep,
-        internalDeps: { admin: {} },
-        lockedDeps: { admin: { '@ultimat3/gone': '1.2.0' } },
+        internalDeps: { 'packages/admin': {} },
+        lockedDeps: { 'packages/admin': { '@ultimat3/gone': '1.2.0' } },
       }),
     ).toEqual([]);
+  });
+});
+
+describe('a root that is not a repo', () => {
+  /**
+   * This rule runs as a HostCheck inside `x verify`, which turns a THROW into an internal failure
+   * and hands the operator a stack trace where a finding belonged. Three `verify.test.ts` cases
+   * drive it against a temp directory holding one wiki page and no root manifest at all.
+   */
+  const withoutRoot = async (run: (dir: string) => Promise<void>): Promise<void> => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-version-stamps-'));
+    try {
+      await run(dir);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  };
+
+  test('is a finding, never an ENOENT — the dependency scan cannot throw at a caller', async () => {
+    await withoutRoot(async (dir) => {
+      const findings = await versionStampFindings(dir);
+      expect(findings.map((finding) => finding.code)).toContain('X_VERSION_STAMP_UNSCANNED');
+      expect(findings.some((finding) => finding.at === 'package.json')).toBe(true);
+    });
+  });
+
+  test('and the scan answers no dependencies rather than refusing to answer', async () => {
+    await withoutRoot(async (dir) => {
+      expect(await readInternalDeps(dir)).toEqual({});
+    });
+  });
+
+  test('a root manifest that IS readable produces no such finding', async () => {
+    await withoutRoot(async (dir) => {
+      await Bun.write(join(dir, 'package.json'), '{ "workspaces": ["packages/*"] }\n');
+      const findings = await versionStampFindings(dir);
+      expect(findings.some((finding) => finding.at === 'package.json')).toBe(false);
+    });
+  });
+});
+
+describe('which version this tree ships', () => {
+  test('is decided in SEMVER order — a string compare inverts at the first two-digit major', () => {
+    // `'10.0.0' < '9.0.0'` lexicographically, so `.sort()[0]` answers 10.0.0 as the lowest and
+    // every workspace on 9.x then reads as the one out of lockstep.
+    expect(['9.0.0', '10.0.0'].sort(compareVersions)).toEqual(['9.0.0', '10.0.0']);
+    expect(compareVersions('10.0.0', '9.0.0')).toBeGreaterThan(0);
+    expect(compareVersions('1.2.10', '1.2.9')).toBeGreaterThan(0);
+    expect(compareVersions('7.0.0', '7.0.0')).toBe(0);
+  });
+
+  test('and the shipped version is the lowest one, which is what names the odd workspaces', () => {
+    const gaps = checkVersionStamps({
+      files: [footer('v9.0.0 `As of 2026-08`.')],
+      versions: { '@ultimat3/core': '9.0.0', '@ultimat3/cli': '10.0.0' },
+    });
+    // Under a string compare the shipped version was 10.0.0 and `core@9.0.0` was the odd one.
+    expect(gaps.find((gap) => gap.kind === 'lockstep')?.detail).toBe(
+      '9.0.0 everywhere except @ultimat3/cli@10.0.0',
+    );
+    expect(gaps.some((gap) => gap.kind === 'stale')).toBe(false);
   });
 });
 
@@ -172,5 +239,21 @@ describe('against this repo', () => {
 
   test('the tree is in lockstep and the footer is current', async () => {
     expect(await versionStampFindings(repoRoot())).toEqual([]);
+  });
+
+  test('and the scan reaches the APP workspaces, which share this lockfile', async () => {
+    // The reason the green above is worth anything: a `packages/*` glob judged 8 of 48 blocks, and
+    // 53 of the 72 stale ranges found on 2026-08-22 sat in a workspace it could not see.
+    const declared = await readInternalDeps(repoRoot());
+    expect(Object.keys(declared)).toContain('examples/dummy/apps/web');
+    expect(Object.keys(declared)).toContain('dummy/social-media-clone');
+    expect(declared['packages/i18n']?.['@ultimat3/core']).toBeDefined();
+  });
+
+  test('and the lockfile reader reads the same blocks, `i18n` among them', async () => {
+    const locked = await readLockedDeps(repoRoot());
+    expect(Object.keys(locked)).toContain('examples/dummy/apps/web');
+    // `[a-z-]+` read `@ultimat3/i18n` as no dependency at all — eight ranges, invisible.
+    expect(locked['packages/http']?.['@ultimat3/i18n']).toBeDefined();
   });
 });

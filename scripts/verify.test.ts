@@ -13,6 +13,7 @@ import {
   frameworkFiles,
   frameworkManifest,
   HOST_CHECKS,
+  manifestFailureCause,
   tierBoundaries,
 } from './verify';
 
@@ -23,6 +24,42 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 /** One key off a parsed tsconfig, checked rather than cast — the file is data, not a type. */
 const field = (value: unknown, key: string): unknown => (isRecord(value) ? value[key] : undefined);
+
+describe('unit · a generation failure is described, never re-thrown', () => {
+  // Two values `error instanceof Error ? error.message : String(error)` — what stood here — cannot
+  // survive: a Proxy makes `instanceof` throw from its trap, and a null-prototype object makes
+  // `String()` throw `No default value`. Either leaves `x verify` reporting an uncoded crash
+  // instead of X_VERIFY_FAILED with a `bun run manifest` beside it.
+  test('a null-prototype object is rendered rather than thrown from', () => {
+    // `String(Object.create(null))` throws; this is the half a Symbol does NOT demonstrate, since
+    // `String(aSymbol)` answers 'Symbol(nope)' and only `${aSymbol}` throws.
+    expect(manifestFailureCause(Object.create(null))).toContain(
+      'the framework manifest could not be generated',
+    );
+  });
+
+  test('a thrown Symbol is rendered rather than thrown from', () => {
+    expect(manifestFailureCause(Symbol('nope'))).toContain('Symbol(nope)');
+  });
+
+  test('a Proxy whose getPrototypeOf trap throws is rendered too', () => {
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          throw new TypeError('no prototype for you');
+        },
+      },
+    );
+    expect(manifestFailureCause(hostile)).toContain(
+      'the framework manifest could not be generated',
+    );
+  });
+
+  test('an ordinary Error still contributes its message', () => {
+    expect(manifestFailureCause(new Error('spawn failed'))).toContain('spawn failed');
+  });
+});
 
 describe('unit · the repo gate is the CLI gate', () => {
   test('the repo adds rules to steps, never steps of its own', () => {

@@ -110,7 +110,7 @@ Any plan that violates one is wrong, not "a tradeoff":
 2. **Define once, project everywhere.** One `action` → HTTP + OpenAPI + typed client + job handle + MCP tool + tests. A plan that hand-writes one of those projections is planning drift.
 3. **Enforced, not documented.** Every slice that introduces a convention names the build error that enforces it. "We'll remember to" is not a plan step.
 4. **Errors are instructions.** New failure → a stable `X_SCREAMING_SNAKE` code declared in the owning package's registry, a cause, an **executable** `fix:`, a row in [`wiki/Error-Codes.md`](../../wiki/Error-Codes.md). Shipped codes never change.
-5. **One command means shippable.** Every plan ends at `bun run verify` green — all 17 steps.
+5. **One command means shippable.** Every plan ends at `bun run verify` green — all 19 steps.
 6. **Static path never pays for the app path.** `site/` is 0kb JS and may not import `app/`; `shared/` is a leaf.
 7. **Deploy anywhere = containers only.** No platform primitives in the framework.
 

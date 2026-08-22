@@ -12,6 +12,7 @@ import { dbPackageFiles } from './scaffold-db-package';
 import { docsFiles } from './scaffold-docs';
 import { domainPackageFiles } from './scaffold-domain-package';
 import { envExampleSource, envSchemaSource } from './scaffold-env';
+import { scaffoldGuardFiles } from './scaffold-guards';
 import { i18nFiles } from './scaffold-i18n';
 import { mcpPackageFiles } from './scaffold-mcp-package';
 import { uiPackageFiles } from './scaffold-ui-package';
@@ -70,6 +71,7 @@ const rootPackage = (app: NameSet, version: string): string => `{
     "@ultimat3/query": "^${version}",
     "@ultimat3/render": "^${version}",
     "@ultimat3/schema": "^${version}",
+    "@ultimat3/seo": "^${version}",
     "@ultimat3/ui": "^${version}",
     "solid-js": "1.9.14"
   },
@@ -121,11 +123,13 @@ const envDeclaration = (): string => `${envSchemaSource()}
 export const env = defineEnv(envSchema);`;
 
 /**
- * No `installPrompt`. `PwaConfig` declares it, `defineConfig` defaults it, and NO file reads it —
- * `packages/core/src/config.ts` carries the marker saying so. Scaffolding it wrote a switch with
- * no wire into every generated app, and the note belongs HERE rather than in the emitted file: an
- * app author has no use for a comment about a framework key their config does not name. Deleting
- * the key itself is core's edit; not writing it is this template's half.
+ * No `installPrompt`, no `afterSignInPath`, no `modelEnv`. All three were declared by
+ * `defineConfig`, defaulted by it, and read by NO file; all three are DELETED from
+ * `packages/core/src/config.ts` as of 2026-08-22, whose header now records the removal rather than
+ * the marker this comment used to cite. So scaffolding one is no longer a switch with no wire — it
+ * is `TS2353` in the generated app's first `x verify`. The note belongs HERE rather than in the
+ * emitted file: an app author has no use for a comment about keys their config does not name.
+ * `scaffold-config.test.ts` is what keeps them from growing back.
  */
 const appConfig = (
   app: NameSet,
@@ -164,10 +168,34 @@ export const config = defineConfig({
 // otherwise fail `lint` on a file no author typed and `x db gen` would rewrite anyway.
 // `preset`, not `recommended`: the older key is deprecated from 2.5 on and every `bun run lint`
 // in the scaffolded app printed the migration notice for a config the app never wrote by hand.
+//
+// `!**/.x` is the one that makes the app's fix chain terminate. `x build` writes MINIFIED island
+// bundles to `.x/static/islands/<name>-<contenthash>.js`; without the exclusion `lint` reported
+// ~175 `noCommaOperator`/`noAssignInExpressions` errors in Bun's own output, and the `fix:` for
+// that step — `biome check --write .` — still exits 1, so `x verify` was red forever on a pristine
+// scaffold the moment `x build` ran (which the `budgets` step's own `fix:` tells the author to do).
+// `--unsafe` was worse: it REWROTE a content-hashed chunk in place, 55,499 → 83,605 bytes, so the
+// name no longer matched the bytes and `.x/build-stats.json` no longer matched the artifact.
+// `--no-example` hid it, because an app with no island has nothing under `.x/static/islands`.
+//
+// `vcs.useIgnoreFile` is the second half and not a duplicate of the first: it makes every future
+// generated directory the app adds to `.gitignore` excluded by the act of ignoring it, rather than
+// by an edit to this file nobody will remember to make. It needs `.gitignore` to EXIST — Biome
+// exits 1 with `couldn't find an ignore file` when it does not — which `x new` writes, and which
+// is why the two are declared together rather than one of them alone.
 const biome = (): string => `{
   "$schema": "https://biomejs.dev/schemas/${BIOME_VERSION}/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
-    "includes": ["**", "!**/migrations", "!x.manifest.json", "!openapi.json"]
+    "includes": [
+      "**",
+      "!**/.x",
+      "!**/dist",
+      "!**/.output",
+      "!**/migrations",
+      "!x.manifest.json",
+      "!openapi.json"
+    ]
   },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
   "linter": {
@@ -304,6 +332,9 @@ export function repoFiles(
     // One call per workspace package, in write order. Each owns its own files (`scaffold-i18n.ts`
     // already did), so this list stays a table of contents rather than a second copy of every
     // package's contents.
+    // The app's own conventions, as build errors. Not a package — `guards/` sits at the repo root
+    // because the gate discovers it there, and every rule it holds is about the whole app.
+    ...scaffoldGuardFiles(),
     ...domainPackageFiles(app),
     ...dbPackageFiles(app, example),
     ...i18nFiles(app, version),

@@ -1,3 +1,4 @@
+import { renderThrowable } from '@ultimat3/core';
 // Decodes pgoutput logical-replication messages (protocol version 1, Postgres >= 12) into typed
 // PgOutputMessage values, and the postgres text-format values inside each tuple into JsonValue.
 // Pure byte decoding: no sockets, no I/O. A decoder instance owns the per-connection relation
@@ -92,7 +93,7 @@ function decodeValue(typeOid: number, text: string): JsonValue {
       } catch (cause) {
         throw new ReplicationProtocolError({
           stage: 'value',
-          detail: `type oid ${typeOid} carried invalid json: ${String(cause)}`,
+          detail: `type oid ${typeOid} carried invalid json: ${renderThrowable(cause)}`,
         });
       }
       return parsed as JsonValue;

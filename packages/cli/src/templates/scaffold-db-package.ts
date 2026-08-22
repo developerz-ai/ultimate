@@ -1,6 +1,6 @@
-// The generated app's `packages/db`: the entity re-export list the migration generator reads and
-// the deterministic seed. No business logic — that is the package's own stated boundary, and it is
-// why `example` reaches only the two files describing the slice's table.
+// The generated app's `packages/db`: the entity re-export list the app's own modules import from
+// and the deterministic seed. No business logic — that is the package's own stated boundary, and it
+// is why `example` reaches only the two files describing the slice's table.
 //
 // No migration. `x db gen` is the ONE writer of `packages/db/migrations`, and a scaffold that hand-
 // wrote `0000_initial.sql` was a second one: it declared a `posts` table the generator had never
@@ -56,8 +56,16 @@ export * as schema from './schema';
 // never written, so each one ships its empty counterpart instead of a reference to a file that is
 // not there — `export { post } from …` alone made `x new --no-example` an app that cannot compile.
 
-const SCHEMA_HEADER = `// Every entity the app declares, re-exported here. This list is what the migration generator
-// reads, so an entity that is not exported here does not exist as far as the database is concerned.`;
+// Not "what the migration generator reads" — that claim shipped into every generated app and was
+// false. `x db gen` and `x verify`'s `drift` step both project the ENTITY REGISTRY that `loadApp`
+// fills (`describeEntities()`, `packages/cli/src/app-entities.ts`), so an entity declared anywhere
+// `loadApp` reaches is already in the migration whether or not this file names it. Re-exporting an
+// entity here does exactly one thing, and it is worth doing: it gives `seed.ts` and every other
+// consumer ONE import to reach the app's tables through.
+const SCHEMA_HEADER = `// Every entity the app declares, re-exported here so the seed and anything else that needs a table
+// reach them through one import. It is not what the migration generator reads: \`x db gen\` and the
+// \`drift\` step project the entity registry, so an entity is in the migration because it was
+// declared, never because it was listed here.`;
 
 const dbSchema = (app: NameSet, example: boolean): string =>
   example
@@ -65,7 +73,7 @@ const dbSchema = (app: NameSet, example: boolean): string =>
 export { post } from '@${app.kebab}/web/app/post/entity';
 `
     : `${SCHEMA_HEADER}
-// \`x g entity <name>\` writes the entity; add its export here so the database learns about it.
+// \`x g entity <name>\` writes the entity; add its export here to reach it through \`@${app.kebab}/db\`.
 export {};
 `;
 

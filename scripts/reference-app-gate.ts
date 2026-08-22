@@ -401,7 +401,7 @@ export const unpin = async (root: string, token: string): Promise<ScriptResult> 
   return {
     ok: true,
     script: SCRIPT,
-    summary: `${app.dir}: unpinned ${request.steps.join(', ')} — ${left.length === 0 ? 'no pins left, the app is asserting 17 of 17' : `${left.join(', ')} still pinned`}`,
+    summary: `${app.dir}: unpinned ${request.steps.join(', ')} — ${left.length === 0 ? `no pins left, the app is asserting ${VERIFY_STEP_NAMES.length} of ${VERIFY_STEP_NAMES.length}` : `${left.join(', ')} still pinned`}`,
     lines: [`  ${PINS_FILE} rewritten`, '  now run: bun run scripts/reference-app-gate.ts'],
     data: { app: app.dir, removed: request.steps, pinned: left },
   };
