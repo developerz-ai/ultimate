@@ -80,8 +80,11 @@ notes: >
       instruction ("cleaned released all green"): the release IS in scope — every slice merged and
       green on main, then `scripts/release.ts` stamps 8.0.0 across all 30 workspaces, an ANNOTATED
       `git tag -a v8.0.0` is pushed, a GitHub Release is published (the Release is the workflow's
-      trigger; a lightweight tag is not), a human approves the `npm-publish` environment gate, and
-      `scripts/registry-audit.ts --json` must then answer 30/30 at 8.0.0, every one attested.
+      trigger; a lightweight tag is not), the `npm-publish` environment gate is approved by its
+      named reviewer — the operator, or the agent holding `workflow` scope, which is what that
+      scope means and what `.claude/commands/feature.md` documents — on a green run and on THIS
+      ask, and `scripts/registry-audit.ts --json` must then answer 30/30 at 8.0.0, every one
+      attested. The ask is the authorisation; the credential is only the reach.
   D2: WIRE @ultimat3/seo. `x new` scaffolds `site/sitemap.xml/route.ts` and `site/robots.txt/route.ts`
       over `buildSitemap`/`buildRobots`. Lands in the scaffold slice (08), not in slice 02.
   D3: DELETE `PwaConfig.installPrompt`, `AuthConfig.afterSignInPath`, `AiConfig.modelEnv`.
@@ -95,7 +98,8 @@ notes: >
       landing four breaking changes. Write `policy`'s and `pwa`'s sentences; move nothing.
   D6: ADD `x verify --only <step>`; header and `--json` both carry `NOT A GATE RUN`; the no-flag
       run is still the gate.
-  D7: DEFER `updateSignal` / `x deploy --critical`. Not this plan's call — filed as an issue.
+  D7: DEFER `updateSignal` / `x deploy --critical`. Not this plan's call — filed as #289 (wire
+      it behind a real `--critical`, or delete the export; #161 closed the flag's promise only).
   D8: DELETE render's `matchRoute`/`RouteMatch` (`registry.ts:337-370`). http's trie is the live one.
   D9: DELETE `invalidateWireTags` now (restore with `x cache`). `recentTierFailures` stays deferred
       by #117.

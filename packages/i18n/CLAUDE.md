@@ -76,6 +76,16 @@ Imported by every package that renders a string.
   entry, or the cap counts spellings instead of locales. Never re-key either map on the raw tag;
   `context.test.ts`'s `the translator cache` and `interpolate.test.ts`'s `the plural-rules cache`
   are what notice.
+- **A tag `canonicalLocale` REFUSES shares one key, and `translatorFor` resolves the catalog
+  through that key.** Two holes in the rule above, both reachable from a header. `?? locale` put a
+  malformed tag back in as its own key, so a bounded cache was still one a client could flush —
+  they collapse onto `INVALID_LOCALE_KEY` (`rulesCache`: onto `en`, which is what they render as
+  anyway), and a REGISTERED tag ICU will not canonicalise is the one exception, keying on itself.
+  And `registry.has(locale) ? locale : key` read the registry under two spellings but never the
+  registered one: `registerCatalog('en-US', …)` then `translatorFor('en-us')` matched neither, so it
+  cached an EMPTY translator under `en-us` and the later `translatorFor('en-US')` was served it.
+  `registeredUnder` is what makes the catalog independent of which spelling arrived first — resolve
+  BEFORE `cachedFormatter`, never inside the branch that already missed.
 - Plural selection is `Intl.PluralRules`. Never `count === 1`. Variants are underscore suffixes on
   the leaf — a CLDR category (`_zero _one _two _few _many _other`), or `n` / `n_plural` as the
   two-form shortcut; pair `n_one` with `n_other`, never with `n_plural`. Never a nested

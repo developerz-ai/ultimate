@@ -306,6 +306,41 @@ describe('the translator cache', () => {
     expect(translatorFor('en-us')).toBe(translatorFor('en-US'));
   });
 
+  test('a catalog registered as `en-US` answers `en-us`, whichever spelling reads FIRST', () => {
+    // The order-dependent half of the same key. `translatorFor('en-us')` matched neither
+    // `registry.has('en-us')` nor `catalogFor('en-us')`, so it cached an EMPTY translator under
+    // the canonical key — and the later `translatorFor('en-US')`, whose catalog was right there,
+    // was served that same empty translator from the cache. Whether an app's strings rendered
+    // depended on which spelling a request carried first, which is not a property a catalog has.
+    registerCatalog('en-US', flattenCatalog({ nav: { home: 'Home' } }));
+    expect(translatorFor('en-us')('nav.home')).toBe('Home');
+    expect(translatorFor('en-US')('nav.home')).toBe('Home');
+    resetCatalogs();
+  });
+
+  test('every tag that is not a locale shares ONE entry, so junk cannot fill the cap', () => {
+    // The bound is on a map a REQUEST value keys into: `translatorFor` is exported raw and
+    // `packages/mail/src/render.ts` hands it an unnormalised value. Keyed on the raw tag, a
+    // malformed `Accept-Language` took a slot each and evicted locales that were real — a bounded
+    // cache a client can still flush. Nothing is registered under any of them, so one entry is
+    // all they were ever worth.
+    const warm = translatorFor('en-x-junk-warm');
+    for (let index = 0; index < MAX_CACHED_FORMATTERS; index += 1) {
+      translatorFor(`junk_${index} tag`);
+    }
+    expect(translatorFor('en-x-junk-warm')).toBe(warm);
+  });
+
+  test('a REGISTERED tag ICU will not canonicalise still keys on itself', () => {
+    // The exception the collapse must not swallow: `en_US` is not a structurally valid tag, so
+    // `canonicalLocale` refuses it — but an app that registered it asked for that catalog by name,
+    // and answering it from the shared junk entry would hand back the empty one.
+    registerCatalog('en_US', flattenCatalog({ nav: { home: 'Underscored' } }));
+    expect(translatorFor('en_US')('nav.home')).toBe('Underscored');
+    expect(translatorFor('also not a tag')('nav.home')).toBe('⟦nav.home⟧');
+    resetCatalogs();
+  });
+
   test('a registration evicts the entry a request built, under the SAME key it cached', () => {
     // `en-US` is the case that separates the two: the cache key is `en-us`, so a `delete(locale)`
     // on the caller's own spelling misses it and the next reader is served the catalog that was

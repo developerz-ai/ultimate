@@ -162,6 +162,13 @@ const registry = new Map<Locale, Catalog>();
 const translators = new Map<string, Translator>();
 
 /**
+ * The one key every unregistered tag that is not a locale at all shares. A `Symbol` cannot be a
+ * `Map<string, …>` key and a NUL cannot appear in a structurally valid tag, so nothing a caller
+ * sends can collide with it.
+ */
+const INVALID_LOCALE_KEY = '\u0000invalid';
+
+/**
  * The one key `translatorFor` caches under and every registration evicts by.
  *
  * `translatorFor` is exported raw and `packages/mail/src/render.ts` hands it a value nothing
@@ -170,9 +177,36 @@ const translators = new Map<string, Translator>();
  * `cachedFormatter`'s bound a bound on LOCALES rather than on spellings; lowercasing is what keeps
  * the key equal to the one an app registered (`zh-hant`, never ICU's `zh-Hant`), so a later
  * `registerCatalog` still drops the entry a request built.
+ *
+ * A tag `canonicalLocale` refuses (`en_US`, `''`, `not a locale`) is not a spelling of anything, so
+ * it collapses onto ONE key rather than keying on itself: a bound that a request value can key into
+ * counts junk against the cap and evicts locales that are real. Registered spellings are the
+ * exception and key on themselves — an app that registered a tag ICU will not canonicalise must
+ * still be handed its own catalog, and `registerCatalog` stores before it evicts, so both sides of
+ * that decision read the same registry.
  */
 function translatorKey(locale: Locale): string {
-  return (canonicalLocale(locale) ?? locale).toLowerCase();
+  const canonical = canonicalLocale(locale);
+  if (canonical !== undefined) return canonical.toLowerCase();
+  return registry.has(locale) ? locale.toLowerCase() : INVALID_LOCALE_KEY;
+}
+
+/**
+ * The registered spelling `key` stands for, or `undefined` when no catalog was registered for it.
+ *
+ * The caller's own spelling wins when it was registered, so an app that registered `en` keeps
+ * answering `en`. Otherwise the registry is read through the SAME canonical key the cache is
+ * keyed by: `registerCatalog('en-US', …)` followed by `translatorFor('en-us')` matched neither
+ * `registry.has(locale)` nor `catalogFor(key)`, so it cached an EMPTY translator under `en-us` —
+ * and the later `translatorFor('en-US')` was served that same empty translator from the cache.
+ * Which of the two spellings a request carried first decided whether the app's strings rendered.
+ */
+function registeredUnder(locale: Locale, key: string): Locale | undefined {
+  if (registry.has(locale)) return locale;
+  for (const registered of registry.keys()) {
+    if (translatorKey(registered) === key) return registered;
+  }
+  return undefined;
 }
 
 /**
@@ -240,11 +274,11 @@ export function catalogFor(locale: Locale): Catalog {
  */
 export function translatorFor<TCatalog = Catalog>(locale: Locale): Translator<TCatalog> {
   const key = translatorKey(locale);
-  // The registry is read under the caller's own spelling when it holds it and under the canonical
-  // key otherwise — never the reverse, so an app that registered `en` keeps answering `en`, and
-  // `translatorFor('EN')` now finds that catalog instead of minting an empty translator beside it.
+  // Resolved BEFORE the memo, so what lands under `key` is the catalog that key stands for and
+  // not whichever spelling asked first. The caller's own tag reaches `createTranslator` either
+  // way — the catalog is chosen by locale, the formatting by what the caller actually sent.
   const translator = cachedFormatter(translators, key, () =>
-    createTranslator(catalogFor(registry.has(locale) ? locale : key), locale),
+    createTranslator(catalogFor(registeredUnder(locale, key) ?? locale), locale),
   );
   // One cast, one place. `TCatalog` narrows the key parameter and nothing else, so the memoized
   // object already is the right value — the registry cannot be keyed by an app's catalog type.

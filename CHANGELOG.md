@@ -62,8 +62,9 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 - **`X_MONEY_NOT_INTEGER`'s `fix:` did not run.** It offered `fromDecimal('12.345', 'USD')`, which
   raises the same code, and for `1e21` it offered `fromDecimal('1e+21', …)`, which `DECIMAL`
   refuses. The fix now leads with `money(Math.round(v), 'CCY')` — the caller wrote `money(v, ccy)`,
-  so `v` is minor units, and offering `fromDecimal` first silently reinterprets it 100× off — and
-  withdraws the offer entirely where no call could run. A test executes every call the fix names.
+  so `v` is minor units, and offering `fromDecimal` first silently rescales it by the currency's
+  own exponent (100× for USD, 1,000× for KWD, and 1× for JPY, where the bug hides) — and withdraws
+  the offer entirely where no call could run. A test executes every call the fix names.
 
 - **The 53 shipped currency rows were mutable**, so `currencyInfo('USD').exponent = 3` silently
   rescaled every USD amount. Rows and `CURRENCIES` are frozen at declaration and `CurrencyInfo`'s

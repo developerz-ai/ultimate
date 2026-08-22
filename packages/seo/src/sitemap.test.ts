@@ -103,6 +103,21 @@ describe('sitemapUrls', () => {
     });
     expect(urls[0]?.alternates?.map((alternate) => alternate.hreflang)).toEqual(['en', 'de']);
   });
+
+  test('a localizePath collision does not make an unlisted defaultLocale look present', async () => {
+    // The hole a path match leaves: `localizePath` is the caller's, so two locales may land on one
+    // URL. `defaultLocale: 'fr'` is outside `locales`, its unprefixed `/pricing` is what `en`
+    // emits here, and asking "does any entry carry this path" answered yes — `x-default` then
+    // spoke for `fr`, which this cluster does not carry, off `en`'s href. Only the entry whose
+    // LOCALE is the default can prove the default's own URL is emitted.
+    const urls = await sitemapUrls([route({ path: '/pricing', file: 'site/pricing/page.tsx' })], {
+      ...BASE,
+      locales: ['en', 'de'],
+      defaultLocale: 'fr',
+      localizePath: (path, locale) => (locale === 'en' ? path : `/${locale}${path}`),
+    });
+    expect(urls[0]?.alternates?.map((alternate) => alternate.hreflang)).toEqual(['en', 'de']);
+  });
 });
 
 describe('buildSitemap', () => {

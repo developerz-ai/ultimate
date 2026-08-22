@@ -45,15 +45,24 @@ export interface PrimitiveFactory {
  * their owning packages has a row. Adding a factory means adding a row, not editing a sentence.
  *
  * Sorted by package then name so the diff of a new row is one line.
+ *
+ * Every ROW is frozen, not just the list. `readonly` fields are a compile-time claim and this is a
+ * public export: freezing the array alone left `PRIMITIVE_FACTORIES[0].kind = 'entity'` a silent
+ * write from any untyped caller, which is the same defect `@ultimat3/money`'s currency rows
+ * carried — a table the framework hands out is a constant at RUNTIME or it is not a constant.
  */
-export const PRIMITIVE_FACTORIES = Object.freeze<readonly PrimitiveFactory[]>([
-  { factory: 'agent', pkg: '@ultimat3/ai', kind: 'action' },
-  { factory: 'agentJob', pkg: '@ultimat3/ai', kind: 'job' },
-  { factory: 'hive', pkg: '@ultimat3/ai', kind: 'action' },
-  { factory: 'llm', pkg: '@ultimat3/ai', kind: 'action' },
-  { factory: 'backfill', pkg: '@ultimat3/jobs', kind: 'job' },
-  { factory: 'scrape', pkg: '@ultimat3/scraping', kind: 'job' },
-]);
+export const PRIMITIVE_FACTORIES = Object.freeze<readonly PrimitiveFactory[]>(
+  (
+    [
+      { factory: 'agent', pkg: '@ultimat3/ai', kind: 'action' },
+      { factory: 'agentJob', pkg: '@ultimat3/ai', kind: 'job' },
+      { factory: 'hive', pkg: '@ultimat3/ai', kind: 'action' },
+      { factory: 'llm', pkg: '@ultimat3/ai', kind: 'action' },
+      { factory: 'backfill', pkg: '@ultimat3/jobs', kind: 'job' },
+      { factory: 'scrape', pkg: '@ultimat3/scraping', kind: 'job' },
+    ] satisfies readonly PrimitiveFactory[]
+  ).map((entry) => Object.freeze(entry)),
+);
 
 /**
  * What a registrar hands back: the primitives it actually took, each carrying the name

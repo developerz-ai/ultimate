@@ -112,6 +112,20 @@ describe('PRIMITIVE_FACTORIES', () => {
   test('is frozen, so a caller cannot grow the vocabulary at runtime', () => {
     expect(Object.isFrozen(PRIMITIVE_FACTORIES)).toBe(true);
   });
+
+  test('every ROW is frozen too, so a caller cannot rewrite what a factory returns', () => {
+    // A frozen array holding writable rows guards the LIST while leaving every value in it open —
+    // the half that would have mattered, because `kind` is what `x affected` and the manifest read
+    // to decide which primitive a factory produces. `readonly` is a compile-time claim; this is the
+    // caller that has no types. A module is always strict, so the write THROWS rather than being
+    // dropped in silence.
+    expect(PRIMITIVE_FACTORIES.filter((entry) => !Object.isFrozen(entry))).toEqual([]);
+    const untyped = PRIMITIVE_FACTORIES[0] as unknown as { kind: string };
+    expect(() => {
+      untyped.kind = 'entity';
+    }).toThrow(TypeError);
+    expect(PRIMITIVE_FACTORIES[0]?.kind).toBe('action');
+  });
 });
 
 describe('primitiveRegistrar', () => {

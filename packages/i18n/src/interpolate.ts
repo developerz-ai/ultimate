@@ -119,8 +119,10 @@ const rulesCache = new Map<string, Intl.PluralRules>();
  */
 function pluralRulesFor(locale: string): Intl.PluralRules {
   // The canonical tag is the key AND what reaches `Intl`, so the rules a key answers with never
-  // depend on which spelling of it arrived first.
-  const tag = canonicalLocale(locale) ?? locale;
+  // depend on which spelling of it arrived first. A tag `canonicalLocale` refuses is not a locale
+  // at all and this function already degrades to English for it — so `en` is the key too, rather
+  // than one bounded slot per junk string a client chose to send.
+  const tag = canonicalLocale(locale) ?? 'en';
   return cachedFormatter(rulesCache, tag, () => {
     try {
       return new Intl.PluralRules(tag);

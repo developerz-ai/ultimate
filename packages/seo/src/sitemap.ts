@@ -63,15 +63,18 @@ function localize(path: string, locale: string, options: BuildSitemapOptions): s
  * The path `x-default` may point at: the default locale's own, and only when this route emits it.
  * `undefined` when no `defaultLocale` was declared, or when it names a locale outside `locales` —
  * in both cases the URL it would carry is one the sitemap does not contain.
+ *
+ * Matched on the LOCALE, never on the path. Recomputing the default's URL and asking whether any
+ * entry carries it made a `localizePath` that maps two locales onto one URL answer yes for a
+ * `defaultLocale` outside `locales`: the href existed, but it belonged to another locale, so
+ * `x-default` spoke for a locale this cluster does not carry. The entry that emits it is the only
+ * thing that can prove it exists, so read the answer off that entry.
  */
 function defaultLocaleUrl(
-  path: string,
   localised: readonly { readonly locale: string; readonly path: string }[],
   options: BuildSitemapOptions,
 ): string | undefined {
-  if (options.defaultLocale === undefined) return undefined;
-  const candidate = localize(path, options.defaultLocale, options);
-  return localised.some((entry) => entry.path === candidate) ? candidate : undefined;
+  return localised.find((entry) => entry.locale === options.defaultLocale)?.path;
 }
 
 /** Every concrete URL the route table produces, with per-locale alternates. */
@@ -101,7 +104,7 @@ export async function sitemapUrls(
       // outside itself, which is the shape a search engine drops the whole cluster for. Same rule
       // as `meta.ts`'s `hreflangSet`, which takes the fallback href explicitly rather than
       // assuming one exists.
-      const fallback = defaultLocaleUrl(path, localised, options);
+      const fallback = defaultLocaleUrl(localised, options);
       if (alternates.length > 0 && fallback !== undefined) {
         alternates.push({ hreflang: 'x-default', href: absoluteUrl(options.baseUrl, fallback) });
       }

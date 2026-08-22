@@ -145,7 +145,7 @@ describe('pluralRulesFor', () => {
     expect(() => new Intl.PluralRules('this is not a tag')).toThrow(RangeError);
     expect(pluralCategory(1, 'this is not a tag')).toBe('one');
     expect(pluralCategory(7, 'this is not a tag')).toBe('other');
-    // Cached under the bad tag, so the second call answers the same without re-throwing.
+    // Cached, so the second call answers the same without re-throwing.
     expect(pluralCategory(1, 'this is not a tag')).toBe('one');
     expect(pluralKeyCandidates('items', 1, 'this is not a tag')).toEqual([
       'items_one',
@@ -194,6 +194,22 @@ describe('the plural-rules cache', () => {
     recordConstructions((built) => {
       pluralCategory(1, 'en-x-rules-oldest');
       expect(built).toEqual(['en-x-rules-oldest']);
+    });
+  });
+
+  test('every tag that is not a locale shares ONE entry, so junk cannot fill the cap', () => {
+    // The bound is on a map a REQUEST value keys into. Keyed on the raw tag, 5,000 malformed
+    // `Accept-Language` values each took a slot and evicted five thousand locales that were real
+    // — a bounded cache a client can still flush. They all answer with English rules, so one
+    // entry is all they were ever worth.
+    pluralCategory(1, 'not a tag at all');
+    for (let index = 0; index < MAX_CACHED_FORMATTERS; index += 1) {
+      pluralCategory(1, `junk_${index} tag`);
+    }
+    recordConstructions((built) => {
+      // Still warm after MAX_CACHED_FORMATTERS more malformed tags: they never occupied a slot.
+      expect(pluralCategory(1, 'a different junk value')).toBe('one');
+      expect(built).toEqual([]);
     });
   });
 

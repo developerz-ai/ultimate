@@ -112,7 +112,12 @@ There is no `test:changed`-style command here, and there should not be: a comman
 
 ## Check what you can reach before you decide what to hand back
 
-**Credentials ARE the authorisation. Access = full access, by default.** If the token, the key and the scope are sitting there for you to use, the user has already decided; asking again is not caution, it is an interruption. A step you *could* have run and instead described is not delegation. So establish your reach at the START of the run, not when you hit the wall — the arc ends where your credentials end, and nowhere earlier.
+**Credentials are REACH, and the ask is the authorisation.** Two different questions, and conflating them is how an agent publishes a version nobody asked for. A token answers *what could I do*; the user's own words answer *what am I here to do*. Neither substitutes for the other:
+
+- **Inside the ask, a credential you hold is a step you take.** Do not stop to request permission you were already handed — the arc ends where your credentials end, and nowhere earlier. A step you *could* have run and instead described is not delegation. So establish your reach at the START of the run, not when you hit the wall.
+- **Outside the ask, a credential authorises nothing.** `NPM_TOKEN` in `.env` is not a request to publish, and `workflow` scope is not a request to release. **An irreversible act needs the user's own words** — a release, a force-push, a deletion, anything a later commit cannot undo. "Fix this bug" does not carry "and ship 8.0.0" no matter what the token could reach.
+
+**One approval owner per irreversible act, named in advance.** For a release that is the `npm-publish` environment gate, and holding `workflow` scope is what makes *you* its reviewer for this run — the same person's credential either way. Approve on a green run, on an ask that named the release, and say that you did.
 
 This does not loosen the four things that always stop you (bottom of this section) — those stop you *with* full access, because no credential makes a shipped error code safe to change.
 
@@ -122,15 +127,18 @@ This does not loosen the four things that always stop you (bottom of this sectio
 ls -a | grep -i '^\.env'                                   # which env files exist
 grep -oE '^[A-Za-z_][A-Za-z0-9_]*' .env | sort -u          # key NAMES only — never cat .env
 gh auth status                                              # gh scopes: repo, workflow, read:org
-git remote -v && gh repo view --json viewerPermission       # can you push, can you merge
+gh repo view --json nameWithOwner,viewerPermission          # can you push, can you merge
+git remote -v | sed -E 's#//[^/@]+@#//***@#'                # remotes, credentials redacted
 ```
+
+**Never bare `git remote -v`.** A remote cloned by `gh` or by CI is `https://x-access-token:<token>@github.com/…`, so the unredacted form prints a live credential into your transcript — the one thing the line below forbids. `gh repo view` answers the permission question without touching the URL at all; the redacted `sed` is there only for *which* remotes exist.
 
 Then say in one line what you can do end-to-end and what you cannot. Do not print a value, a token, a password or a TOTP code — not in a message, not in a commit, not in a PR body, not in a log. `.env` is git-ignored and stays that way; if a command needs a secret, pass it through the environment (`NPM_CONFIG_OTP="$(…)" cmd`), never as literal text you wrote out.
 
 | Reachable when… | You own, without asking |
 |---|---|
 | `gh auth status` has `repo` | branch, push, open the PR, `claudetm merge-pr` / `gh pr merge --squash`, close issues |
-| `gh auth status` has `workflow` | re-run a red job, and **approve the `npm-publish` environment** — `gh api repos/{owner}/{repo}/actions/runs/<id>/pending_deployments -X POST -f state=approved -f comment='…' -F 'environment_ids[]=<id>'`. Holding `workflow` **is** the approval — that is what the scope means. Approve on a green run and say you did; never on a run whose CI is not green |
+| `gh auth status` has `workflow` | re-run a red job, and **approve the `npm-publish` environment** — `gh api repos/{owner}/{repo}/actions/runs/<id>/pending_deployments -X POST -f state=approved -f comment='…' -F 'environment_ids[]=<id>'`. Holding `workflow` makes you the gate's reviewer — that is what the scope means. Approve only on a run whose CI is green **and** whose release the user asked for, and say you did |
 | `.env` has `NPM_TOKEN` | `npm view` / `npm whoami` reads, `registry-audit.ts`, the post-publish confirmation |
 | `.env` has `NPM_TOTP_SECRET` or `NPM_TOTP_URI` | a fresh OTP, generated at call time (a ~25-line Bun HMAC-SHA1 snippet; `oathtool` is usually not installed), never stored and never echoed |
 | **nothing** — `trust-publishers.ts --check` is NOT reachable from a token | Measured 2026-08-22: `npx npm@12 trust list <pkg>` answers `E401 … You must be logged in to publish packages` even with a valid `_authToken` and a fresh `NPM_CONFIG_OTP`, because npm restricts 2FA-bypass tokens for account-level reads. The script then reports **0/30 packages trust …**, which is a false negative, not a finding — do not "fix" it and do not treat it as a release blocker. The real signal is the LAST release's provenance: `npm view @ultimat3/core@<last> _npmUser dist.attestations` answering `GitHub Actions` + a `trustedPublisher.oidcConfigId` proves the OIDC path is live and the next release will publish the same way |
