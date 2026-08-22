@@ -115,7 +115,7 @@ because it needs a server" from "not emitted because it is broken", and those ar
 
 ## 5.x → 6.0.0, entry by entry
 
-**Nothing here is installable until `npm view @ultimat3/core version` answers `6.0.0`.** Run that first; `As of 2026-08` it does not. This section is written as each change lands rather than at the tag, so entries are **appended** — re-read it when `latest` moves.
+**Installable `As of 2026-08-21`** — `npm view @ultimat3/core version` answers `7.0.0`, so 6.0.0 is behind `latest` and every entry below is a step you take on the way to it. Run that command anyway rather than trusting this line; a version written into a page goes stale on the next tag.
 
 Seven breaking entries, and the first is a **runtime** refusal with no compile error in front of it.
 
