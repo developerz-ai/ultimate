@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "9b081912650d8aa6101bbae40935886b60d63237c6baba4f91bff161003f12a8",
+  "buildId": "4af3e9ae6c27097cfccc67e8d5bcfff49a215df01512691101ba4e4b6b5bc710",
   "tiers": {
     "0": [
       "core",
@@ -598,6 +598,21 @@
       "at": "packages/i18n/src/errors.ts"
     },
     {
+      "code": "X_CATCH_RENDER_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/catch-render.ts"
+    },
+    {
+      "code": "X_CATCH_RENDER_UNSAFE",
+      "owner": "scripts",
+      "at": "scripts/catch-render.ts"
+    },
+    {
+      "code": "X_CATCH_RENDER_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/catch-render.ts"
+    },
+    {
       "code": "X_CHART_VERSION_STALE",
       "owner": "scripts",
       "at": "scripts/chart-version.ts"
@@ -631,6 +646,21 @@
       "code": "X_CONFIG_INVALID",
       "owner": "core",
       "at": "packages/core/src/error-codes.ts"
+    },
+    {
+      "code": "X_CONFIG_KEY_UNREAD",
+      "owner": "scripts",
+      "at": "scripts/config-readers.ts"
+    },
+    {
+      "code": "X_CONFIG_READER_PIN_STALE",
+      "owner": "scripts",
+      "at": "scripts/config-readers.ts"
+    },
+    {
+      "code": "X_CONFIG_READERS_UNSCANNED",
+      "owner": "scripts",
+      "at": "scripts/config-readers.ts"
     },
     {
       "code": "X_CONTRACT_DRIFT",
@@ -813,6 +843,11 @@
       "at": "scripts/doc-commands.ts"
     },
     {
+      "code": "X_DOC_COMMAND_PIN_EXCEEDED",
+      "owner": "scripts",
+      "at": "scripts/doc-commands.ts"
+    },
+    {
       "code": "X_DOC_COMMAND_PIN_STALE",
       "owner": "scripts",
       "at": "scripts/doc-commands.ts"
@@ -826,6 +861,11 @@
       "code": "X_DOC_COMMAND_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/doc-commands.ts"
+    },
+    {
+      "code": "X_DOC_CONFIG_KEY_UNKNOWN",
+      "owner": "scripts",
+      "at": "scripts/doc-config-keys.ts"
     },
     {
       "code": "X_DOC_FILE_COUNT_STALE",
@@ -2053,9 +2093,29 @@
       "at": "packages/cli/src/error-codes.ts"
     },
     {
+      "code": "X_SCAFFOLD_BUILD_FAILED",
+      "owner": "scripts",
+      "at": "scripts/scaffold-fix-follow.ts"
+    },
+    {
+      "code": "X_SCAFFOLD_BUILD_REGRESSED",
+      "owner": "scripts",
+      "at": "scripts/scaffold-fix-follow.ts"
+    },
+    {
       "code": "X_SCAFFOLD_FIRST_RUN_FAILED",
       "owner": "scripts",
       "at": "scripts/scaffold-first-run.ts"
+    },
+    {
+      "code": "X_SCAFFOLD_FIX_LOOP",
+      "owner": "scripts",
+      "at": "scripts/scaffold-fix-follow.ts"
+    },
+    {
+      "code": "X_SCAFFOLD_FIX_UNFOLLOWED",
+      "owner": "scripts",
+      "at": "scripts/scaffold-fix-follow.ts"
     },
     {
       "code": "X_SCAFFOLD_GATE_RED",
@@ -2666,6 +2726,16 @@
       "code": "X_THEME_INVALID",
       "owner": "ui",
       "at": "packages/ui/src/errors.ts"
+    },
+    {
+      "code": "X_TIER_FLOOR_STALE",
+      "owner": "scripts",
+      "at": "scripts/lib/tiers.ts"
+    },
+    {
+      "code": "X_TIER_FLOOR_UNDECLARED",
+      "owner": "scripts",
+      "at": "scripts/lib/tiers.ts"
     },
     {
       "code": "X_TIMEOUT",

@@ -2,8 +2,9 @@
 // Bun's cross-package dilution, and the ratchet that fails in both directions.
 
 import { describe, expect, test } from 'bun:test';
-import { hasExecutableCode, judge, scopeLcov } from './coverage-gate';
+import { hasExecutableCode, judge, scopeLcov, unimportedSources } from './coverage-gate';
 import { COVERAGE_TARGET, PIN_SLACK } from './lib/coverage-pins';
+import { repoRoot } from './lib/run';
 
 /** Two records for the package under test, one for a package it merely imported. */
 const LCOV = [
@@ -216,5 +217,26 @@ describe('the ratchet', () => {
 
   test('a package over the target with no pin is silent', () => {
     expect(judge(reading(99, 99), undefined).findings).toEqual([]);
+  });
+});
+
+describe('unimportedSources', () => {
+  const FILE = 'packages/money/src/money.ts';
+
+  test('an app package of the same name does not answer for the framework one', () => {
+    // The collision `scopeLcov` fixed with `startsWith`, re-entered one screen below through
+    // `endsWith('/' + rel)`: both tracked apps carry `packages/money/src/`, so this record used to
+    // mark the FRAMEWORK file as covered and X_COVERAGE_UNIMPORTED went quiet over it.
+    const lcov = `SF:examples/dummy/${FILE}\nend_of_record\n`;
+    expect(unimportedSources(repoRoot(), 'money', lcov)).toContain(FILE);
+  });
+
+  test('a record for the file itself still counts, absolute or root-relative', () => {
+    const root = repoRoot();
+    expect(unimportedSources(root, 'money', `SF:${FILE}\nend_of_record\n`)).not.toContain(FILE);
+    expect(unimportedSources(root, 'money', `SF:./${FILE}\nend_of_record\n`)).not.toContain(FILE);
+    expect(unimportedSources(root, 'money', `SF:${root}/${FILE}\nend_of_record\n`)).not.toContain(
+      FILE,
+    );
   });
 });

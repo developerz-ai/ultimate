@@ -67,13 +67,14 @@ x version              # CLI version
 ## x new
 
 ```bash
-x new <name> [--dir path] [--no-example] [--dry-run] [--force] [--json]
+x new <name> [--dir path] [--no-example] [--no-git] [--dry-run] [--force] [--json]
 ```
 
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
 | `--dir` | string | cwd | parent directory to create the app in |
 | `--example` / `--no-example` | boolean | `true` | include the example feature slice (default: on; `--no-example` for an empty `app/`) |
+| `--git` / `--no-git` | boolean | `true` | `git init`, then one commit named `x new`. On by default because four surfaces assume a repository — `X_ROUTE_FILE_INVALID`'s fix, `x affected`, `x ci` and `x pr`. A git that is absent or fails never fails `x new`: the tree is the verdict, and `data.git` carries `{ initialized, committed, problem }` |
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
 | `--force` | boolean | `false` | write into a directory that already exists |
 
@@ -82,7 +83,7 @@ $ x new myapp --dry-run --json
 {"ok":true,"command":"new","summary":"…","data":{"dir":"/home/me/myapp","files":["README.md","AGENTS.md",…],"dryRun":true}}
 ```
 
-**126 files** with the example slice, **99** with `--no-example` — measured on `main` `As of 2026-08-21`, up from 114/90 because `x new` now writes the Helm chart (8 files), `apps/web/api/index.ts`, one more test per generated action, and the example slice's form as an island (`post-form.island.tsx` plus its test, replacing one `ui/post-form.tsx`). Both numbers move the moment a template is added, and `scripts/generator-counts.ts` — a step of `x verify`'s `manifest` check — turns a stale one red on the same commit. Derive rather than quote anyway:
+**134 files** with the example slice, **107** with `--no-example` — measured on `main` `As of 2026-08-22`, up from 126/99 because `x new` now writes the Helm chart (8 files), `apps/web/api/index.ts`, one more test per generated action, and the example slice's form as an island (`post-form.island.tsx` plus its test, replacing one `ui/post-form.tsx`). Both numbers move the moment a template is added, and `scripts/generator-counts.ts` — a step of `x verify`'s `manifest` check — turns a stale one red on the same commit. Derive rather than quote anyway:
 
 ```bash
 x new myapp --dry-run --json | jq '.data.files | length'

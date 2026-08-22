@@ -6,7 +6,7 @@ infer from the code.
 
 `x verify` here is **blocking on the framework repo's CI**, through the ratchet in
 `../../scripts/lib/gated-apps.ts`: this app's own `expectedRed` pins `boundaries` and `budgets` —
-2 red of 17 as of 2026-08-19 — and every other step must stay green. `boundaries` is
+2 red of 19 as of 2026-08-22 — and every other step must stay green. `boundaries` is
 `X_BOUNDARY_SITE_TO_APP` ×3, `apps/web/site/feed/page.tsx` reaching `apps/web/app/posts/service.ts`;
 `budgets` is `X_BUDGET_UNMEASURED` on every route declaring one, because no `.x/build-stats.json`
 has ever existed here — closed by running `x build` ahead of the gate. `drift` is **not** pinned and

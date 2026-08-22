@@ -50,7 +50,8 @@
   `@ultimat3/ai` / `@ultimat3/mail`. The same pattern has now been found and fixed at **fifteen sites
   across five packages** in this sweep (`cache`, `auth` ×4, `ai` ×4, `mail` ×3, plus the ones already
   correct) — every one found by a human-style read, none by a gate. `instanceof` throws on a hostile
-  value and `String(x)` throws on a Symbol, so each site turns a coded refusal into an uncoded crash.
+  value, `String(x)` throws on a null-prototype object or a throwing `toString`, and `${x}` throws on
+  a Symbol — so each site turns a coded refusal into an uncoded crash.
   **Add the second rule**: a `catch` binding reaching a `cause:`/`fix:`/`detail:` through
   `instanceof` / `String()` / `${}` / `JSON.stringify()`. A ratchet, like `test-bare-error.ts`.
   Without it this defect class has no mechanical half at all, which is axiom 3 saying it does not exist.

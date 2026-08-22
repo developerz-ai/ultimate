@@ -4,6 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { ExecResult } from '@ultimat3/cli';
+import { VERIFY_STEP_NAMES } from '@ultimat3/cli';
 import { flagList, parseScriptArgs } from './lib/args';
 import { repoRoot } from './lib/run';
 import type { GateStep } from './reference-app-gate';
@@ -18,10 +19,21 @@ const step = (name: string, ok: boolean, skipped = false): GateStep => ({
 
 const DIR = '/tmp/demoapp';
 
+/**
+ * The declared step set defaults to the names the table itself carries, so every assertion below
+ * about red/stale keeps asking ONLY about red and stale. `declaredStepIssues` is the third rule and
+ * gets its own describe: mixing it in here would make each of these tests fail for two reasons.
+ */
+const findingsFor = (
+  steps: readonly GateStep[] | undefined,
+  allowRed: readonly string[],
+  declaredSteps: readonly string[] = (steps ?? []).map((entry) => entry.name),
+) => scaffoldFindings({ dir: DIR, steps, allowRed, declaredSteps });
+
 describe('unit · scaffoldFindings', () => {
   test('a red step nobody allowed fails the job, and names the step', () => {
     const steps = [step('typecheck', false), step('lint', false), step('unit', true)];
-    const findings = scaffoldFindings({ dir: DIR, steps, allowRed: ['typecheck'] });
+    const findings = findingsFor(steps, ['typecheck']);
     expect(findings.map((finding) => finding.code)).toEqual(['X_SCAFFOLD_GATE_RED']);
     expect(findings[0]?.cause).toContain('lint');
     expect(findings[0]?.cause).not.toContain('typecheck');
@@ -30,7 +42,7 @@ describe('unit · scaffoldFindings', () => {
 
   test('the allowed step failing on its own is the passing case', () => {
     const steps = [step('typecheck', false), step('lint', true), step('e2e', true, true)];
-    expect(scaffoldFindings({ dir: DIR, steps, allowRed: ['typecheck'] })).toEqual([]);
+    expect(findingsFor(steps, ['typecheck'])).toEqual([]);
   });
 
   /**
@@ -40,7 +52,7 @@ describe('unit · scaffoldFindings', () => {
    */
   test('an allowed step that has started passing is a waiver to delete', () => {
     const steps = [step('typecheck', true), step('lint', true)];
-    const findings = scaffoldFindings({ dir: DIR, steps, allowRed: ['typecheck'] });
+    const findings = findingsFor(steps, ['typecheck']);
     expect(findings.map((finding) => finding.code)).toEqual(['X_SCAFFOLD_GATE_RED']);
     expect(findings[0]?.fix).toBe(
       `drop --allow-red typecheck from the scaffold-smoke verify step in ${WAIVER_FILE}`,
@@ -49,12 +61,12 @@ describe('unit · scaffoldFindings', () => {
   });
 
   test('a green gate with no waiver at all raises nothing', () => {
-    expect(scaffoldFindings({ dir: DIR, steps: [step('lint', true)], allowRed: [] })).toEqual([]);
+    expect(findingsFor([step('lint', true)], [])).toEqual([]);
   });
 
   test('no step table is the worst outcome, never a silent pass', () => {
     for (const steps of [undefined, []]) {
-      const findings = scaffoldFindings({ dir: DIR, steps, allowRed: ['typecheck'] });
+      const findings = findingsFor(steps, ['typecheck'], ['typecheck', 'lint']);
       expect(findings).toHaveLength(1);
       expect(findings[0]?.code).toBe('X_SCAFFOLD_GATE_RED');
       expect(findings[0]?.fix).toBe(reproduce(DIR));
@@ -63,9 +75,66 @@ describe('unit · scaffoldFindings', () => {
 
   test('a skipped step is not red, so it neither fails the job nor satisfies a waiver', () => {
     const steps = [step('typecheck', false), step('e2e', true, true)];
-    expect(scaffoldFindings({ dir: DIR, steps, allowRed: ['typecheck'] })).toEqual([]);
-    const findings = scaffoldFindings({ dir: DIR, steps, allowRed: ['typecheck', 'e2e'] });
+    expect(findingsFor(steps, ['typecheck'])).toEqual([]);
+    const findings = findingsFor(steps, ['typecheck', 'e2e']);
     expect(findings[0]?.cause).toContain('e2e');
+  });
+});
+
+/**
+ * The hole this describe closes, and it is the one the whole file was written around: every rule
+ * above reads the steps the table CONTAINS. A gate that dies after step four prints four green
+ * steps, and `redSteps` finds nothing red, and `allowRed` is empty — so `scaffold-smoke` reported
+ * "can a stranger scaffold an app that gates?" as yes on the strength of four steps out of 19.
+ */
+describe('unit · a short table is a finding, not a green scaffold', () => {
+  const DECLARED = ['typecheck', 'lint', 'unit', 'e2e'];
+
+  test('a gate that crashed mid-run and printed four of its steps is reported', () => {
+    const steps = [step('typecheck', true), step('lint', true)];
+    const findings = findingsFor(steps, [], DECLARED);
+    expect(findings.map((finding) => finding.code)).toEqual(['X_SCAFFOLD_GATE_RED']);
+    expect(findings[0]?.cause).toContain('unit is declared but missing from the step table');
+    expect(findings[0]?.cause).toContain('e2e is declared but missing');
+    expect(findings[0]?.fix).toBe(reproduce(DIR));
+  });
+
+  test('a name nobody declares, and a name printed twice, are the other two shapes', () => {
+    const invented = findingsFor(
+      [...DECLARED.map((name) => step(name, true)), step('inventedStep', true)],
+      [],
+      DECLARED,
+    );
+    expect(invented[0]?.cause).toContain(
+      'inventedStep is in the step table but not a declared step',
+    );
+    const twice = findingsFor(
+      [...DECLARED.map((name) => step(name, true)), step('lint', true)],
+      [],
+      DECLARED,
+    );
+    expect(twice[0]?.cause).toContain('lint appears more than once');
+  });
+
+  test('the complete table stays silent, so the rule reports a gap and not a table', () => {
+    expect(
+      findingsFor(
+        DECLARED.map((name) => step(name, true)),
+        [],
+        DECLARED,
+      ),
+    ).toEqual([]);
+  });
+
+  /**
+   * The real call site passes `VERIFY_STEP_NAMES`, so the closed world above is not a different
+   * rule from the shipped one. Without this, every test here could agree with a check the script
+   * never performs.
+   */
+  test('and the shipped call is held to the real declared set', () => {
+    const findings = findingsFor([step('lint', true)], [], VERIFY_STEP_NAMES);
+    expect(findings[0]?.cause).toContain('is declared but missing from the step table');
+    expect(VERIFY_STEP_NAMES.length).toBeGreaterThan(1);
   });
 });
 

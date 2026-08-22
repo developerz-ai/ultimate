@@ -27,6 +27,17 @@ The scaffold template (`packages/cli/src/templates/scaffold-container.ts`) is th
 5. `docker-compose.dev.yml`: remove `app`.
 6. `scaffold-container.ts:195,211`: "expiring lease row" wording.
 
+## Carried in from slices 08/09 (found during execution, 2026-08-22)
+
+- **`scaffold-smoke` must pass `--fix-follow` and run BOTH scaffolds.** `scripts/scaffold-gate.ts`
+  now takes `--fix-follow` (parse `x verify --json`, run each `fix:` verbatim, re-run, assert green
+  within 3 rounds, then `x build --target static` and assert `lint` stays green). Without the flag
+  in `ci.yml`, that loop ships as a capability with no caller — which is the exact class of thing
+  this sweep spent eight PRs deleting. `scaffold-gate.ts` takes one dir per run by design, so CI
+  needs **two** invocations: the default scaffold and `--no-example`. The `--no-example` one matters
+  most: it has no islands, which is precisely why it stayed green while the default scaffold's fix
+  chain was an infinite loop.
+
 ## Tests
 - `scripts/bun-pin.test.ts` reds before step 2, green after.
 - New `scripts/compose-parity.test.ts`: for each compose file in `docker/`, `examples/*/docker`, `dummy/*/docker` — every role in `DEPLOY_ROLES` is a service; `backfill` declares `entrypoint`; every serving role `depends_on` `migrate`; no `healthcheck` invokes `/app/x`. Reds on `main` for all three files.

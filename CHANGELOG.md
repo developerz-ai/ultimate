@@ -222,7 +222,8 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 - **Seven more `instanceof`-on-a-caught-value sites** in `@ultimat3/ai` and `@ultimat3/mail`, two
   reachable through an injected `fetch`. `instanceof` throws on a hostile value and `String(x)`
-  throws on a Symbol, turning a coded refusal into an uncoded crash.
+  throws on a null-prototype object or one whose `toString` throws, turning a coded refusal into
+  an uncoded crash. (`String(aSymbol)` is fine — it is `${aSymbol}` that throws.)
 
 - **`@ultimat3/testing` created a temp directory in every test process that imported its barrel** —
   even one importing it for `expect` alone — and removed none of them. Now created on first island

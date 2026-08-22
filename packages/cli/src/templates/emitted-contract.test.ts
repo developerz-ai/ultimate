@@ -131,12 +131,16 @@ describe('unit · every emitted file survives the linter the scaffold configures
     test(`every generator survives biome check for a feature named ${feature}`, async () => {
       // The scaffold's biome.json rides along: the battery is linted under the app's config, not
       // this repo's, which excludes different paths and would answer a different question.
-      const config = emitted().find(
-        (file) => file.variant === 'x new' && file.path === 'biome.json',
+      //
+      // And `.gitignore` with it, because that config declares `vcs.useIgnoreFile` — Biome exits 1
+      // with `couldn't find an ignore file` when the file the config names is absent, so a harness
+      // carrying one half of the pair asks a question no real app ever asks.
+      const config = emitted().filter(
+        (file) => file.variant === 'x new' && ['biome.json', '.gitignore'].includes(file.path),
       );
-      expect(config).toBeDefined();
+      expect(config.map((file) => file.path).sort()).toEqual(['.gitignore', 'biome.json']);
       const seen = new Set<string>();
-      const files: EmittedText[] = config === undefined ? [] : [config];
+      const files: EmittedText[] = [...config];
       for (const options of battery(feature)) {
         for (const file of generate(options)) {
           if (seen.has(file.path) || typeof file.contents !== 'string') continue;

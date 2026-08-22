@@ -121,7 +121,7 @@ describe('one route filename per surface', () => {
     expect(failure.code).toBe('X_ROUTE_FILE_INVALID');
     expect(failure.cause).toContain(file);
     const stem = target.slice(0, target.lastIndexOf('/'));
-    expect(failure.fix).toBe(`mkdir -p -- '${stem}' && git mv -- '${file}' '${target}'`);
+    expect(failure.fix).toBe(`mkdir -p -- '${stem}' && mv -- '${file}' '${target}'`);
   });
 
   test.each([
@@ -134,7 +134,7 @@ describe('one route filename per surface', () => {
   ])('%s already meant its directory, so the fix renames in place', (file, target) => {
     const failure = thrownBy(() => routePathFromFile(file));
     expect(failure.code).toBe('X_ROUTE_FILE_INVALID');
-    expect(failure.fix).toBe(`git mv -- '${file}' '${target}'`);
+    expect(failure.fix).toBe(`mv -- '${file}' '${target}'`);
   });
 
   test('shared/ is a leaf: no filename makes a route there', () => {
@@ -173,7 +173,6 @@ describe('one route filename per surface', () => {
         '--',
         'apps/web/site/my page',
         '&&',
-        'git',
         'mv',
         '--',
         file,
@@ -195,7 +194,6 @@ describe('one route filename per surface', () => {
         '--',
         "apps/web/site/o'brien",
         '&&',
-        'git',
         'mv',
         '--',
         file,
@@ -214,7 +212,7 @@ describe('one route filename per surface', () => {
       // meaning at all; asserting the exact quoted substring is what actually proves that.
       expect(failure.fix).toContain(`'${file}'`);
       expect(failure.fix).toContain(`'${target}'`);
-      expect(shellWords(failure.fix)).toEqual(['git', 'mv', '--', file, target]);
+      expect(shellWords(failure.fix)).toEqual(['mv', '--', file, target]);
     });
   });
 });

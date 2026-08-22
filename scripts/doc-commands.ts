@@ -35,6 +35,8 @@ export const DOC_GLOBS: readonly string[] = [
   'packages/*/*.md',
 ];
 export const ALLOW_FILE = 'scripts/doc-commands-allow.ts';
+/** Where `DOC_COMMAND_PINS` lives — the file a pin finding tells its reader to edit. */
+export const PINS_FILE = 'scripts/doc-commands.ts';
 
 /**
  * Two pages this rule does not read, for two different reasons.
@@ -80,8 +82,14 @@ export const DOC_COMMAND_PINS: Readonly<Record<string, number>> = {
  * `unresolved` is the hazard. `allowance` is the list's own hygiene — an entry matching nothing is
  * a waiver nobody reads, and the page it named may have been fixed or deleted. `vacuous` is the
  * false green: a glob that matches no file answers "every citation resolved" over nothing.
+ *
+ * `pin` and `pin-exceeded` are the two DIRECTIONS a pin can be wrong in, and they are separate
+ * kinds because the edit they ask for is opposite. They were one kind under a ternary whose two
+ * branches were character-for-character identical, so a file that had GROWN past its pin was
+ * handed `set DOC_COMMAND_PINS[…] to <the bigger number>` — a ratchet printing the instruction for
+ * raising itself, which is the one thing `scripts/lib/unpin.ts` exists to stop elsewhere.
  */
-export type DocCommandGapKind = 'unresolved' | 'allowance' | 'vacuous' | 'pin';
+export type DocCommandGapKind = 'unresolved' | 'allowance' | 'vacuous' | 'pin' | 'pin-exceeded';
 
 export interface DocCommandGap {
   readonly kind: DocCommandGapKind;
@@ -151,11 +159,10 @@ export function checkDocCommands(input: DocCommandInput): readonly DocCommandGap
     const found = counted.get(path) ?? 0;
     if (found === pinned) continue;
     gaps.push({
-      kind: 'pin',
-      at: `${ALLOW_FILE.replace('-allow', '')}`,
+      kind: found > pinned ? 'pin-exceeded' : 'pin',
+      at: PINS_FILE,
       subject: path,
-      detail:
-        found > pinned ? `${found} now, pinned at ${pinned}` : `${found} now, pinned at ${pinned}`,
+      detail: `${found} now, pinned at ${pinned}`,
     });
   }
   for (const allowance of input.allow) {
@@ -191,10 +198,23 @@ const vacuousFinding = (gap: DocCommandGap): Finding => ({
   at: gap.at,
 });
 
+/** The pin is ABOVE what the file holds: the file improved and the ratchet has to follow it down. */
 const pinFinding = (gap: DocCommandGap): Finding => ({
   code: 'X_DOC_COMMAND_PIN_STALE',
   cause: `${gap.subject} holds ${gap.detail} unresolved x citations`,
-  fix: `set DOC_COMMAND_PINS['${gap.subject}'] in scripts/doc-commands.ts to the first number in "${gap.detail}", or delete the entry when it reaches 0`,
+  fix: `set DOC_COMMAND_PINS['${gap.subject}'] in ${PINS_FILE} to the first number in "${gap.detail}", or delete the entry when it reaches 0`,
+  at: gap.subject,
+});
+
+/**
+ * The other direction, and the one the shared fix line was wrong for: the file now holds MORE than
+ * its pin. Raising the number is the one edit that must not be offered, so this finding does not
+ * mention it.
+ */
+const pinExceededFinding = (gap: DocCommandGap): Finding => ({
+  code: 'X_DOC_COMMAND_PIN_EXCEEDED',
+  cause: `${gap.subject} holds ${gap.detail} unresolved x citations — a pin may only come down`,
+  fix: `x help --json   # then correct the citations in ${gap.subject} that name no invocation it lists, or record a deliberate one as { path, cites, kind, why } in DOC_COMMAND_ALLOWANCES in ${ALLOW_FILE}`,
   at: gap.subject,
 });
 
@@ -203,6 +223,7 @@ const FINDINGS: Readonly<Record<DocCommandGapKind, (gap: DocCommandGap) => Findi
   allowance: allowanceFinding,
   vacuous: vacuousFinding,
   pin: pinFinding,
+  'pin-exceeded': pinExceededFinding,
 };
 
 export const docCommandFindingFor = (gap: DocCommandGap): Finding => FINDINGS[gap.kind](gap);
