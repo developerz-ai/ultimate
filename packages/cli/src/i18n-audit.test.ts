@@ -141,8 +141,11 @@ describe('unit · runtimeKeyPatterns', () => {
     const patterns = runtimeKeyPatterns({
       usages: [],
       dynamic: [
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
         { expression: '`plans.${props.plan}.name`', file: 'a.tsx', line: 1, column: 1 },
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
         { expression: '`plans.${props.plan}.description`', file: 'a.tsx', line: 2, column: 1 },
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
         { expression: '`posts.status.${post.status}`', file: 'b.tsx', line: 3, column: 1 },
       ],
     });
@@ -156,6 +159,7 @@ describe('unit · runtimeKeyPatterns', () => {
         dynamic: [
           { expression: 'key', file: 'a.ts', line: 1, column: 1 },
           { expression: "cond ? 'a.b' : 'a.c'", file: 'a.ts', line: 2, column: 1 },
+          // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
           { expression: '`${anything}.name`', file: 'a.ts', line: 3, column: 1 },
         ],
       }),
@@ -164,6 +168,7 @@ describe('unit · runtimeKeyPatterns', () => {
 
   test('a key only reachable dynamically is not reported unused', async () => {
     const dir = tempRoot('x-i18n-runtime-');
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the input is source text — a literal ${…} is the case under test
     await Bun.write(join(dir, 'apps/web/app/page.tsx'), 't(`plans.${plan}.name`);\n');
     await Bun.write(
       join(dir, 'packages/i18n/catalogs/en.json'),

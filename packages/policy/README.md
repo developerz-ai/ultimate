@@ -84,7 +84,8 @@ every permission a tree references, `not()` clauses included. It is what a compl
 to read: `label` renders a composite as `and(post:publish, org:administer)`, which is a sentence,
 never a permission.
 
-`admitsAnonymous(policy)` is the other derived question, and it is a **walk, not a root read**:
+`admitsAnonymous(policy)` is the other derived question `As of 2026-08`, and it is a **walk, not a
+root read**:
 whether an anonymous caller can be allowed at all. `policy.kind === 'allow'` is the read it
 replaces, and it answered "needs a session" for `or(allow(), can('x:y'))` — so an HTTP route 401'd
 a caller the policy itself allows, while the same policy over MCP or a job let that caller in.

@@ -129,7 +129,7 @@ describe('the postgres idempotency store', () => {
     await store.settle('chargeCard:k1', { ok: true }, RESERVATION_ID);
     await store.fail?.(
       'chargeCard:k1',
-      { code: 'X_OUTPUT_INVALID', cause: 'late', fix: 'none' },
+      { code: 'X_OUTPUT_INVALID', cause: 'late', fix: 'send a fresh Idempotency-Key header' },
       RESERVATION_ID,
     );
 

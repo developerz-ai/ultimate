@@ -46,7 +46,7 @@ frame handler is unchanged between rungs.
 
 ## Two entries, and which one an island may import
 
-`@ultimat3/realtime` is the **client** half — the hooks, the identity map, the offline queue, the
+`As of 2026-08`, `@ultimat3/realtime` is the **client** half — the hooks, the identity map, the offline queue, the
 wire and the reconnect vocabulary. `@ultimat3/realtime/server` is the bus, the Postgres replication
 path and the sync node. A name lives in exactly one of them; the `Entry` column below says which.
 

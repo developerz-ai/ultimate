@@ -1,12 +1,7 @@
-// Every statement that returns a WHOLE `x_jobs` row, and the one column list they share. Apart
-// from `driver-pg-sql.ts` because that file is at its size ceiling — the same split
-// `driver-pg-ddl.ts` took — and re-exported from it, so no importer moved.
-//
-// They exist at all because `select *` was what four of them were: `PgExecutor` is an injected
-// seam over any client that speaks `(text, values)`, and a client with no type map decodes
-// `timestamptz` as TEXT. `toJobRecord` then reads `Number('2026-01-01 00:00:00+00')` — `NaN` for
-// `runAt`, `createdAt` and `updatedAt`, printed by `x jobs ls`, `x jobs show` and `x jobs cancel`.
-// `SQL_CLAIM` had always projected epoch ms; these are the reads that had opted out of it.
+// Every statement returning a WHOLE `x_jobs` row, and the one column list they share. They ask
+// Postgres for epoch ms because `select *` left the decoding to the client's type map: one with
+// none decodes `timestamptz` as TEXT, so `toJobRecord` read `Number('2026-01-01 00:00:00+00')`
+// and `x jobs ls` / `show` / `cancel` printed `NaN` for every timestamp.
 
 /**
  * The `JobRow` shape as a projection. Asking Postgres for epoch ms is what makes the decoding

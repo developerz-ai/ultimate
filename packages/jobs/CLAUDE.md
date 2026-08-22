@@ -570,13 +570,16 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
 - **No read returns a WHOLE row, and `driver-pg-sql.test.ts` is what enforces it** (`As of
   2026-08-22`). `PgExecutor` is an injected seam over any client that speaks `(text, values)`, and a
   client with no type map decodes `timestamptz` as TEXT — so `toJobRecord`/`toStepRecord` read
-  `Number('2026-01-01 00:00:00+00')` and answered `NaN`. Five statements were `select *` /
+  `Number('2026-01-01 00:00:00+00')` and answered `NaN`. Six statements were `select *` /
   `returning *` and shipped that way: `pgStepStore.list`, `introspect.job`, `introspect.list`,
-  `introspect.deadLetters`, `introspect.requeue`, plus `SQL_CANCEL`. Every one of them feeds a
+  `introspect.deadLetters`, `introspect.requeue` and `SQL_CANCEL`. Every one of them feeds a
   surface an operator reads — `x jobs ls`, `x jobs show`, `x jobs cancel` — and `SQL_CLAIM` had
   projected epoch ms all along, so the driver disagreed with itself. The guard is a scan of every
-  file here that compiles SQL, with comments stripped: a `select *` anywhere in them is a failing
-  test, not a review note.
+  production file in this directory, DISCOVERED rather than listed and with comments stripped: a
+  `select *` anywhere in them, in either case, is a failing test rather than a review note. It
+  reads the directory because the hand-kept list it replaces had already missed one
+  (`driver-pg-ddl.ts`) — a registry a new SQL source opts out of by simply not joining it is a
+  guard with the shape of a rule and none of the force.
 - **A run's acquisitions are handed back even when the wiring throws.** `worker-run.ts` starts the
   lease heartbeat first, so every line between it and the `try` can leak an interval renewing the
   lease of a job that never ran, with nothing left holding a reference to stop it. `context()` was

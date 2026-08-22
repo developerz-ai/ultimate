@@ -54,18 +54,8 @@ export type {
   Recorder,
   TraceEntry,
 } from './policy';
-export {
-  ALLOWED,
-  admitsAnonymous,
-  allow,
-  and,
-  can,
-  denied,
-  deny,
-  not,
-  or,
-  policyPermissions,
-} from './policy';
+export { ALLOWED, allow, and, can, denied, deny, not, or, policyPermissions } from './policy';
+export { admitsAnonymous } from './policy-anonymous';
 export type { Actor, RoleDef, RoleMap } from './roles';
 export {
   clearRoles,

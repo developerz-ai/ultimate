@@ -22,10 +22,12 @@ export class IdempotencyConflictError extends UltimateError {
         reason === 'payload-mismatch'
           ? `idempotency key "${key}" was already used with a different payload`
           : `idempotency key "${key}" is still in flight from an earlier request`,
+      // A paste-able call, the spelling `IdempotencyKeyInvalidError` already uses: both failures
+      // are the CLIENT's to act on, and one header built two ways is two ways to get it wrong.
       fix:
         reason === 'payload-mismatch'
-          ? 'send a fresh Idempotency-Key header for a different payload'
-          : 'retry the same Idempotency-Key after the first request settles',
+          ? 'set the Idempotency-Key header to a fresh crypto.randomUUID() — one key per payload, since this one already names a different request'
+          : 'resend this request with the same Idempotency-Key once the first one settles — a fresh crypto.randomUUID() here would run the mutation twice',
       docs: docs('X_IDEMPOTENCY_CONFLICT'),
     });
   }

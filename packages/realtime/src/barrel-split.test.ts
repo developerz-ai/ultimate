@@ -14,6 +14,11 @@ const barrelSource = async (file: 'index' | 'server'): Promise<string> =>
  * Every name a barrel re-exports, types included. The barrels are mechanical `export { … } from`
  * blocks, so the brace contents are the whole surface — `export *` is banned repo-wide, which is
  * what makes reading the braces total rather than a guess.
+ *
+ * The PUBLIC name, which for `export { Local as Public }` is the half after `as`. Reading the
+ * local one instead is how a duplicate hides: two barrels exporting different types under one
+ * `Public` record two different source names here and pass, and the value check above cannot see
+ * them either, because a type-only export leaves no runtime namespace entry to collide.
  */
 function declaredNames(source: string): ReadonlySet<string> {
   const names = new Set<string>();
@@ -22,7 +27,8 @@ function declaredNames(source: string): ReadonlySet<string> {
       const name = raw
         .trim()
         .replace(/^type\s+/, '')
-        .split(/\s+as\s+/)[0]
+        .split(/\s+as\s+/)
+        .at(-1)
         ?.trim();
       if (name) names.add(name);
     }

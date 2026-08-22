@@ -157,7 +157,7 @@ describe('a settlement is fenced on the reservation still being in flight', () =
     await store.settle('k', { runs: 1 }, reservation.record.id);
     await store.fail(
       'k',
-      { code: 'X_OUTPUT_INVALID', cause: 'late', fix: 'none' },
+      { code: 'X_OUTPUT_INVALID', cause: 'late', fix: 'send a fresh Idempotency-Key header' },
       reservation.record.id,
     );
 
@@ -217,7 +217,11 @@ describe('a settlement is fenced on the reservation that produced it', () => {
 
   test("a straggler's FAILURE cannot fail a live reservation either", async () => {
     const { store, first, second } = await reclaimed();
-    await store.fail('k', { code: 'X_OUTPUT_INVALID', cause: 'late', fix: 'none' }, first);
+    await store.fail(
+      'k',
+      { code: 'X_OUTPUT_INVALID', cause: 'late', fix: 'send a fresh Idempotency-Key header' },
+      first,
+    );
 
     const record = await store.get('k');
     expect(record?.status).toBe('in-flight');

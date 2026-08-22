@@ -3,7 +3,8 @@ import { evaluate, explain, renderTrace } from './evaluate';
 import { actorHas } from './grant-index';
 import { clearPermissions, definePermissions } from './permissions';
 import type { Policy } from './policy';
-import { admitsAnonymous, allow, and, can, deny, not, or, policyPermissions } from './policy';
+import { allow, and, can, deny, not, or, policyPermissions } from './policy';
+import { admitsAnonymous } from './policy-anonymous';
 import { clearRoles, defineRoles, expandRoles } from './roles';
 import { testActor } from './test-kit';
 
