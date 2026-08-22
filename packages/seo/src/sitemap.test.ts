@@ -66,6 +66,42 @@ describe('sitemapUrls', () => {
       'es',
       'x-default',
     ]);
+    // And it points at the URL the sitemap actually lists for that locale, not merely at a path.
+    const xDefault = urls[0]?.alternates?.find((alternate) => alternate.hreflang === 'x-default');
+    expect(xDefault?.href).toBe('https://ultimate.dev/pricing');
+    expect(urls.map((url) => url.loc)).toContain(xDefault?.href ?? '');
+  });
+
+  test('no defaultLocale means no x-default — every URL is prefixed and none is the fallback', async () => {
+    // With `locales` and no `defaultLocale`, `localize` prefixes EVERY locale, so the unprefixed
+    // path is a URL this sitemap never lists — and `x-default` pointed straight at it. An
+    // hreflang cluster naming a URL outside itself is the shape a search engine drops the whole
+    // cluster for, which costs the alternates that WERE right.
+    const urls = await sitemapUrls([route({ path: '/pricing', file: 'site/pricing/page.tsx' })], {
+      ...BASE,
+      locales: ['en', 'de'],
+    });
+    expect(urls.map((url) => url.loc)).toEqual([
+      'https://ultimate.dev/en/pricing',
+      'https://ultimate.dev/de/pricing',
+    ]);
+    expect(urls[0]?.alternates?.map((alternate) => alternate.hreflang)).toEqual(['en', 'de']);
+    for (const url of urls) {
+      for (const alternate of url.alternates ?? []) {
+        expect(urls.map((each) => each.loc)).toContain(alternate.href);
+      }
+    }
+  });
+
+  test('a defaultLocale outside `locales` names no URL either, so it emits no x-default', async () => {
+    // `defaultLocale: 'fr'` with `locales: ['en','de']` unprefixes a locale the sitemap does not
+    // emit — the same dangling href by a different route into it.
+    const urls = await sitemapUrls([route({ path: '/pricing', file: 'site/pricing/page.tsx' })], {
+      ...BASE,
+      locales: ['en', 'de'],
+      defaultLocale: 'fr',
+    });
+    expect(urls[0]?.alternates?.map((alternate) => alternate.hreflang)).toEqual(['en', 'de']);
   });
 });
 

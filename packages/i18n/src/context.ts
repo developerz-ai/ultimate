@@ -3,7 +3,7 @@
  * No call site passes a locale by hand — `t()` here is the ambient translator.
  */
 
-import { tryUseContext } from '@ultimat3/core';
+import { cachedFormatter, canonicalLocale, tryUseContext } from '@ultimat3/core';
 import { type Catalog, mergeCatalogs } from './catalog';
 import {
   DEFAULT_LOCALE,
@@ -147,9 +147,10 @@ export function currentLocale(): Locale {
   const locale = tryUseContext()?.locale;
   if (locale === undefined || locale === '') return config.fallback;
   // Normalised HERE, the same call `resolveLocale` makes for every source it reads. `Ctx.locale`
-  // is a plain string core never validates, and every distinct one it holds bought a PERMANENT
-  // `Translator` in `translators` plus a permanent `Intl.PluralRules` in `interpolate`'s
-  // `rulesCache` — two unbounded module-level maps keyed by whatever a request carried.
+  // is a plain string core never validates, so this is the step that keeps a request's own
+  // spelling out of the catalog lookup entirely. `translators` and `interpolate`'s `rulesCache`
+  // are bounded now and no longer grow with it — but a bound EVICTS, and an ambient locale an app
+  // never registered would still answer every key with a loud miss.
   return normalizeLocale(locale, config.supported, config.fallback);
 }
 
@@ -158,7 +159,21 @@ export function currentDirection(): Direction {
 }
 
 const registry = new Map<Locale, Catalog>();
-const translators = new Map<Locale, Translator>();
+const translators = new Map<string, Translator>();
+
+/**
+ * The one key `translatorFor` caches under and every registration evicts by.
+ *
+ * `translatorFor` is exported raw and `packages/mail/src/render.ts` hands it a value nothing
+ * normalised, so this map was keyed on whatever spelling a request carried — permanently, and
+ * `en-us` and `en-US` bought two `Translator`s for one locale. Canonicalising is what makes
+ * `cachedFormatter`'s bound a bound on LOCALES rather than on spellings; lowercasing is what keeps
+ * the key equal to the one an app registered (`zh-hant`, never ICU's `zh-Hant`), so a later
+ * `registerCatalog` still drops the entry a request built.
+ */
+function translatorKey(locale: Locale): string {
+  return (canonicalLocale(locale) ?? locale).toLowerCase();
+}
 
 /**
  * The layer under every app catalog: strings this framework ships and no app can be asked to
@@ -197,7 +212,7 @@ function installBase(): void {
   for (const [locale, catalog] of base) {
     const existing = registry.get(locale);
     registry.set(locale, existing === undefined ? catalog : mergeCatalogs(catalog, existing));
-    translators.delete(locale);
+    translators.delete(translatorKey(locale));
   }
 }
 
@@ -208,7 +223,7 @@ function installBase(): void {
 export function registerCatalog(locale: Locale, catalog: Catalog): void {
   const existing = registry.get(locale);
   registry.set(locale, existing === undefined ? catalog : mergeCatalogs(existing, catalog));
-  translators.delete(locale);
+  translators.delete(translatorKey(locale));
 }
 
 export function registeredLocales(): Locale[] {
@@ -224,11 +239,13 @@ export function catalogFor(locale: Locale): Catalog {
  * `TCatalog` narrows the key type only; the runtime catalog is whatever is registered.
  */
 export function translatorFor<TCatalog = Catalog>(locale: Locale): Translator<TCatalog> {
-  let translator = translators.get(locale);
-  if (translator === undefined) {
-    translator = createTranslator(catalogFor(locale), locale);
-    translators.set(locale, translator);
-  }
+  const key = translatorKey(locale);
+  // The registry is read under the caller's own spelling when it holds it and under the canonical
+  // key otherwise — never the reverse, so an app that registered `en` keeps answering `en`, and
+  // `translatorFor('EN')` now finds that catalog instead of minting an empty translator beside it.
+  const translator = cachedFormatter(translators, key, () =>
+    createTranslator(catalogFor(registry.has(locale) ? locale : key), locale),
+  );
   // One cast, one place. `TCatalog` narrows the key parameter and nothing else, so the memoized
   // object already is the right value — the registry cannot be keyed by an app's catalog type.
   return translator as unknown as Translator<TCatalog>;

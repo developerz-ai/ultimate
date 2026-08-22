@@ -211,6 +211,36 @@ describe('purgePost', () => {
     expect(failure?.fix).toBe('curl -sS -m 5 -o /dev/null https://cdn.test/purge');
     expect(failure?.cause).toContain('ECONNREFUSED');
   });
+
+  test('a rejection that fights being read is still a coded purge failure', async () => {
+    // `fetch` is INJECTED, so the rejected value is whatever a driver or an app-supplied double
+    // threw. `error instanceof Error` runs the proxy's `getPrototypeOf` trap, so the guard itself
+    // threw and the catch that exists to CODE this failure raised a bare `TypeError` out of the
+    // purge instead — no code, no `retryable`, no probe to run. `renderThrowable` is the renderer
+    // that cannot itself throw, which is why `@ultimat3/cache` allows no other.
+    const hostile = new Proxy(new Error('ECONNRESET'), {
+      getPrototypeOf(): never {
+        throw new TypeError('this value refuses to be identified');
+      },
+    });
+
+    const failure = await purgePost({
+      driver: 'cloudflare',
+      url: 'https://cdn.test/purge',
+      headers: {},
+      body: {},
+      timeoutMs: 10,
+      fetch: () => Promise.reject(hostile),
+    }).then(
+      () => undefined,
+      (error: unknown) =>
+        error as { code?: string; cause?: string; fix?: string; meta?: { retryable?: boolean } },
+    );
+
+    expect(failure?.code).toBe('X_CACHE_PURGE_FAILED');
+    expect(failure?.meta?.retryable).toBe(true);
+    expect(failure?.fix).toBe('curl -sS -m 5 -o /dev/null https://cdn.test/purge');
+  });
 });
 
 describe('defaultPurgeFetch', () => {

@@ -63,3 +63,20 @@ export function mergeSetOptions(
     ...(negativeTtlMs === undefined ? {} : { negativeTtlMs }),
   };
 }
+
+/**
+ * Did `latest` gain a tag `written` does not carry?
+ *
+ * Compared on the wire form — the identity every tier indexes by and the one `mergeTags` above
+ * dedupes on — so "already written" means the same thing to both, and a re-fill is asked for
+ * exactly when a joiner brought something new.
+ */
+export function tagsAddedSince(
+  written: CacheSetOptions | undefined,
+  latest: CacheSetOptions | undefined,
+): boolean {
+  const added = latest?.tags;
+  if (added === undefined || added.length === 0) return false;
+  const seen = new Set((written?.tags ?? []).map(serializeTag));
+  return added.some((owned) => !seen.has(serializeTag(owned)));
+}

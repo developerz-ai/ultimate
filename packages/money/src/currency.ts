@@ -11,68 +11,80 @@ import { currencyDeclarationInvalid, currencyRedefined, currencyUnknown } from '
 /** Uppercase ISO-4217 alphabetic code. */
 export type CurrencyCode = string;
 
+/**
+ * `readonly` on all three, because `currencyInfo()` hands the SHIPPED row out by reference and
+ * `exponent` decides what every stored `minor` in that currency counts: one
+ * `currencyInfo('USD').exponent = 3` silently rescales every USD amount in the process by a power
+ * of ten. The compiler is the first of the two guards; `Object.freeze` on every row below is the
+ * second, for the caller that has no types.
+ */
 export interface CurrencyInfo {
-  code: CurrencyCode;
+  readonly code: CurrencyCode;
   /** Number of decimal digits in the minor unit: USD 2, JPY 0, KWD 3. */
-  exponent: number;
-  name: string;
+  readonly exponent: number;
+  readonly name: string;
 }
 
-const TABLE: readonly CurrencyInfo[] = [
-  { code: 'AED', exponent: 2, name: 'UAE Dirham' },
-  { code: 'ARS', exponent: 2, name: 'Argentine Peso' },
-  { code: 'AUD', exponent: 2, name: 'Australian Dollar' },
-  { code: 'BGN', exponent: 2, name: 'Bulgarian Lev' },
-  { code: 'BHD', exponent: 3, name: 'Bahraini Dinar' },
-  { code: 'BRL', exponent: 2, name: 'Brazilian Real' },
-  { code: 'CAD', exponent: 2, name: 'Canadian Dollar' },
-  { code: 'CHF', exponent: 2, name: 'Swiss Franc' },
-  { code: 'CLP', exponent: 0, name: 'Chilean Peso' },
-  { code: 'CNY', exponent: 2, name: 'Yuan Renminbi' },
-  { code: 'COP', exponent: 2, name: 'Colombian Peso' },
-  { code: 'CZK', exponent: 2, name: 'Czech Koruna' },
-  { code: 'DKK', exponent: 2, name: 'Danish Krone' },
-  { code: 'EGP', exponent: 2, name: 'Egyptian Pound' },
-  { code: 'EUR', exponent: 2, name: 'Euro' },
-  { code: 'GBP', exponent: 2, name: 'Pound Sterling' },
-  { code: 'HKD', exponent: 2, name: 'Hong Kong Dollar' },
-  { code: 'HUF', exponent: 2, name: 'Forint' },
-  { code: 'IDR', exponent: 2, name: 'Rupiah' },
-  { code: 'ILS', exponent: 2, name: 'New Israeli Sheqel' },
-  { code: 'INR', exponent: 2, name: 'Indian Rupee' },
-  { code: 'ISK', exponent: 0, name: 'Iceland Krona' },
-  { code: 'JOD', exponent: 3, name: 'Jordanian Dinar' },
-  { code: 'JPY', exponent: 0, name: 'Yen' },
-  { code: 'KES', exponent: 2, name: 'Kenyan Shilling' },
-  { code: 'KRW', exponent: 0, name: 'Won' },
-  { code: 'KWD', exponent: 3, name: 'Kuwaiti Dinar' },
-  { code: 'MAD', exponent: 2, name: 'Moroccan Dirham' },
-  { code: 'MXN', exponent: 2, name: 'Mexican Peso' },
-  { code: 'MYR', exponent: 2, name: 'Malaysian Ringgit' },
-  { code: 'NGN', exponent: 2, name: 'Naira' },
-  { code: 'NOK', exponent: 2, name: 'Norwegian Krone' },
-  { code: 'NZD', exponent: 2, name: 'New Zealand Dollar' },
-  { code: 'OMR', exponent: 3, name: 'Rial Omani' },
-  { code: 'PEN', exponent: 2, name: 'Sol' },
-  { code: 'PHP', exponent: 2, name: 'Philippine Peso' },
-  { code: 'PKR', exponent: 2, name: 'Pakistan Rupee' },
-  { code: 'PLN', exponent: 2, name: 'Zloty' },
-  { code: 'RON', exponent: 2, name: 'Romanian Leu' },
-  { code: 'RSD', exponent: 2, name: 'Serbian Dinar' },
-  { code: 'SAR', exponent: 2, name: 'Saudi Riyal' },
-  { code: 'SEK', exponent: 2, name: 'Swedish Krona' },
-  { code: 'SGD', exponent: 2, name: 'Singapore Dollar' },
-  { code: 'THB', exponent: 2, name: 'Baht' },
-  { code: 'TND', exponent: 3, name: 'Tunisian Dinar' },
-  { code: 'TRY', exponent: 2, name: 'Turkish Lira' },
-  { code: 'TWD', exponent: 2, name: 'New Taiwan Dollar' },
-  { code: 'UAH', exponent: 2, name: 'Hryvnia' },
-  { code: 'USD', exponent: 2, name: 'US Dollar' },
-  { code: 'UYU', exponent: 2, name: 'Peso Uruguayo' },
-  { code: 'VND', exponent: 0, name: 'Dong' },
-  { code: 'XOF', exponent: 0, name: 'CFA Franc BCEAO' },
-  { code: 'ZAR', exponent: 2, name: 'Rand' },
-];
+const TABLE: readonly CurrencyInfo[] = Object.freeze(
+  [
+    { code: 'AED', exponent: 2, name: 'UAE Dirham' },
+    { code: 'ARS', exponent: 2, name: 'Argentine Peso' },
+    { code: 'AUD', exponent: 2, name: 'Australian Dollar' },
+    { code: 'BGN', exponent: 2, name: 'Bulgarian Lev' },
+    { code: 'BHD', exponent: 3, name: 'Bahraini Dinar' },
+    { code: 'BRL', exponent: 2, name: 'Brazilian Real' },
+    { code: 'CAD', exponent: 2, name: 'Canadian Dollar' },
+    { code: 'CHF', exponent: 2, name: 'Swiss Franc' },
+    { code: 'CLP', exponent: 0, name: 'Chilean Peso' },
+    { code: 'CNY', exponent: 2, name: 'Yuan Renminbi' },
+    { code: 'COP', exponent: 2, name: 'Colombian Peso' },
+    { code: 'CZK', exponent: 2, name: 'Czech Koruna' },
+    { code: 'DKK', exponent: 2, name: 'Danish Krone' },
+    { code: 'EGP', exponent: 2, name: 'Egyptian Pound' },
+    { code: 'EUR', exponent: 2, name: 'Euro' },
+    { code: 'GBP', exponent: 2, name: 'Pound Sterling' },
+    { code: 'HKD', exponent: 2, name: 'Hong Kong Dollar' },
+    { code: 'HUF', exponent: 2, name: 'Forint' },
+    { code: 'IDR', exponent: 2, name: 'Rupiah' },
+    { code: 'ILS', exponent: 2, name: 'New Israeli Sheqel' },
+    { code: 'INR', exponent: 2, name: 'Indian Rupee' },
+    { code: 'ISK', exponent: 0, name: 'Iceland Krona' },
+    { code: 'JOD', exponent: 3, name: 'Jordanian Dinar' },
+    { code: 'JPY', exponent: 0, name: 'Yen' },
+    { code: 'KES', exponent: 2, name: 'Kenyan Shilling' },
+    { code: 'KRW', exponent: 0, name: 'Won' },
+    { code: 'KWD', exponent: 3, name: 'Kuwaiti Dinar' },
+    { code: 'MAD', exponent: 2, name: 'Moroccan Dirham' },
+    { code: 'MXN', exponent: 2, name: 'Mexican Peso' },
+    { code: 'MYR', exponent: 2, name: 'Malaysian Ringgit' },
+    { code: 'NGN', exponent: 2, name: 'Naira' },
+    { code: 'NOK', exponent: 2, name: 'Norwegian Krone' },
+    { code: 'NZD', exponent: 2, name: 'New Zealand Dollar' },
+    { code: 'OMR', exponent: 3, name: 'Rial Omani' },
+    { code: 'PEN', exponent: 2, name: 'Sol' },
+    { code: 'PHP', exponent: 2, name: 'Philippine Peso' },
+    { code: 'PKR', exponent: 2, name: 'Pakistan Rupee' },
+    { code: 'PLN', exponent: 2, name: 'Zloty' },
+    { code: 'RON', exponent: 2, name: 'Romanian Leu' },
+    { code: 'RSD', exponent: 2, name: 'Serbian Dinar' },
+    { code: 'SAR', exponent: 2, name: 'Saudi Riyal' },
+    { code: 'SEK', exponent: 2, name: 'Swedish Krona' },
+    { code: 'SGD', exponent: 2, name: 'Singapore Dollar' },
+    { code: 'THB', exponent: 2, name: 'Baht' },
+    { code: 'TND', exponent: 3, name: 'Tunisian Dinar' },
+    { code: 'TRY', exponent: 2, name: 'Turkish Lira' },
+    { code: 'TWD', exponent: 2, name: 'New Taiwan Dollar' },
+    { code: 'UAH', exponent: 2, name: 'Hryvnia' },
+    { code: 'USD', exponent: 2, name: 'US Dollar' },
+    { code: 'UYU', exponent: 2, name: 'Peso Uruguayo' },
+    { code: 'VND', exponent: 0, name: 'Dong' },
+    { code: 'XOF', exponent: 0, name: 'CFA Franc BCEAO' },
+    { code: 'ZAR', exponent: 2, name: 'Rand' },
+    // Each ROW frozen too, not just the array: `CURRENCIES[0].exponent = 3` reaches the same
+    // object `currencyInfo` returns, and a frozen array holding writable rows guards the list
+    // while leaving every value in it open. `registerCurrency` already freezes what an app adds.
+  ].map((row) => Object.freeze(row)),
+);
 
 const BY_CODE: ReadonlyMap<string, CurrencyInfo> = new Map(
   TABLE.map((info) => [info.code, info] as const),

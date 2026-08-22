@@ -3,7 +3,7 @@
  * a wrong reset is a wrong `<html lang>` in every later file of the same `bun test` process.
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { createContext, runWithContext } from '@ultimat3/core';
+import { createContext, MAX_CACHED_FORMATTERS, runWithContext } from '@ultimat3/core';
 import { flattenCatalog } from './catalog';
 import {
   configureLocales,
@@ -16,6 +16,7 @@ import {
   resetLocaleConfig,
   resolveLocale,
   t,
+  translatorFor,
   useI18n,
 } from './context';
 import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from './locales';
@@ -276,5 +277,43 @@ describe('currentDirection', () => {
   test('outside any context it is the configured fallback’s direction', () => {
     configureLocales({ supported: ['en', 'he'], fallback: 'he' });
     expect(currentDirection()).toBe('rtl');
+  });
+});
+
+describe('the translator cache', () => {
+  test('is bounded — the oldest locale is evicted, not kept for the life of the process', () => {
+    // `translatorFor` is exported raw and `packages/mail/src/render.ts` passes it a value nothing
+    // normalised, so the key is a REQUEST value. Keyed raw into an unbounded `Map`, 5,000
+    // distinct-but-valid tags through this function and `pluralCategory` retained +79.9 MB after
+    // `Bun.gc(true)` — memory the client chooses. A rebuild is a new function object, which is
+    // what makes the eviction observable: first key in, first key out.
+    const oldest = translatorFor('en-x-oldest');
+    for (let index = 0; index < MAX_CACHED_FORMATTERS; index += 1) {
+      translatorFor(`en-x-a${index}`);
+    }
+    expect(translatorFor('en-x-oldest')).not.toBe(oldest);
+  });
+
+  test('a locale still inside the cap is answered from the cache, never rebuilt', () => {
+    // The bound must not become "no cache at all": building a translator per render is the waste
+    // the memo exists to avoid.
+    const warm = translatorFor('en-x-warm');
+    expect(translatorFor('en-x-warm')).toBe(warm);
+  });
+
+  test('two spellings of one locale share ONE entry', () => {
+    // Canonicalised, so the cap counts LOCALES rather than the spellings a header chose.
+    expect(translatorFor('en-us')).toBe(translatorFor('en-US'));
+  });
+
+  test('a registration evicts the entry a request built, under the SAME key it cached', () => {
+    // `en-US` is the case that separates the two: the cache key is `en-us`, so a `delete(locale)`
+    // on the caller's own spelling misses it and the next reader is served the catalog that was
+    // replaced — a stale string for the life of the process.
+    registerCatalog('en-US', flattenCatalog({ nav: { home: 'Home' } }));
+    expect(translatorFor('en-US')('nav.home')).toBe('Home');
+    registerCatalog('en-US', flattenCatalog({ nav: { home: 'Start' } }));
+    expect(translatorFor('en-US')('nav.home')).toBe('Start');
+    resetCatalogs();
   });
 });

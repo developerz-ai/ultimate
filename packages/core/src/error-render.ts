@@ -252,17 +252,17 @@ export function renderMetaRecord(
  * There is no dev-only escape hatch on purpose — a flag is one misconfigured environment away
  * from being the same breach.
  *
- * A deliberate, character-for-character duplicate of `describeValue` in
- * `packages/schema/src/describe-value.ts`, for the reason `SCHEMA_ERROR_CODE_TITLES` is one:
- * `@ultimat3/schema` is tier 0 alongside this package, so neither may import the other. Keep the
- * two identical; changing one alone is the bug.
+ * A deliberate duplicate of `describeValue` in `packages/schema/src/describe-value.ts`, for the
+ * reason `SCHEMA_ERROR_CODE_TITLES` is one: `@ultimat3/schema` is tier 0 alongside this package,
+ * so neither may import the other. Keep the two answering IDENTICALLY — that is what
+ * `packages/cli/src/describe-value-pin.test.ts` holds — and changing one alone is the bug.
  */
 export function describeValue(value: unknown): string {
   if (value === undefined) return 'undefined';
   if (value === null) return 'null';
   switch (typeof value) {
     case 'string':
-      return countOf(value.length, 'string', 'character');
+      return countOf(charCount(value), 'string', 'character');
     case 'number':
       return describeNumber(value);
     case 'boolean':
@@ -293,4 +293,16 @@ function countOf(size: number, noun: string, unit: string): string {
   if (size === 0) return `an empty ${noun}`;
   const article = noun === 'array' ? 'an' : 'a';
   return `${article} ${noun} of ${size} ${unit}${size === 1 ? '' : 's'}`;
+}
+
+/**
+ * The twin of `@ultimat3/schema`'s `char-count.ts`, duplicated for the same reason `describeValue`
+ * is: both packages are tier 0 and neither may import the other. Code points, because the rules
+ * that reject a string count in them and the message must quote the same unit — `'👍'.length` is 2.
+ * Only a surrogate makes the two counts differ, so every ASCII value keeps the O(1) read.
+ */
+const HAS_SURROGATE = /[\uD800-\uDBFF]/;
+
+function charCount(value: string): number {
+  return HAS_SURROGATE.test(value) ? [...value].length : value.length;
 }

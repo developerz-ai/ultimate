@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { MAX_CACHED_FORMATTERS } from '@ultimat3/core';
 import {
   interpolate,
   PLURAL_CATEGORIES,
@@ -152,5 +153,57 @@ describe('pluralRulesFor', () => {
       'items_plural',
       'items_other',
     ]);
+  });
+});
+
+describe('the plural-rules cache', () => {
+  /** Records every tag `Intl.PluralRules` is actually constructed with, and restores itself. */
+  function recordConstructions(run: (built: unknown[]) => void): void {
+    const built: unknown[] = [];
+    const real = Intl.PluralRules;
+    // `defineProperty` and not an assignment: `Intl.PluralRules` is declared read-only, so
+    // `Intl.PluralRules = proxy` is a compile error and the cast that silences it is the `any`
+    // this repo does not allow.
+    const install = (value: typeof Intl.PluralRules): void => {
+      Object.defineProperty(Intl, 'PluralRules', { value, configurable: true, writable: true });
+    };
+    install(
+      new Proxy(real, {
+        construct(target, args, newTarget) {
+          built.push(args[0]);
+          return Reflect.construct(target, args, newTarget);
+        },
+      }),
+    );
+    try {
+      run(built);
+    } finally {
+      install(real);
+    }
+  }
+
+  test('is bounded — the oldest tag is evicted, not kept for the life of the process', () => {
+    // `locale` is whatever `Accept-Language` sent, and `pluralCategory` is exported raw. Keyed
+    // raw into an unbounded `Map`, every distinct-but-valid tag a client chose to send bought a
+    // PERMANENT `Intl.PluralRules`. Asserted where the bound is decided — ICU allocates natively,
+    // so the JS heap never showed the growth: first key in is first key out.
+    pluralCategory(1, 'en-x-rules-oldest');
+    for (let index = 0; index < MAX_CACHED_FORMATTERS; index += 1) {
+      pluralCategory(1, `en-x-rules-a${index}`);
+    }
+    recordConstructions((built) => {
+      pluralCategory(1, 'en-x-rules-oldest');
+      expect(built).toEqual(['en-x-rules-oldest']);
+    });
+  });
+
+  test('two spellings of one tag share one entry', () => {
+    pluralCategory(1, 'en-x-rules-warm');
+    recordConstructions((built) => {
+      // The canonical tag is the key AND what reaches `Intl`, so a header spelling one locale
+      // three ways does not mint three permanent rule objects.
+      expect(pluralCategory(1, 'EN-x-RULES-WARM')).toBe('one');
+      expect(built).toEqual([]);
+    });
   });
 });

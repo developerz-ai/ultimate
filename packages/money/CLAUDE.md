@@ -120,6 +120,20 @@ shape is still additive and this is still a minor version.
   or an empty name is `X_CURRENCY_INVALID`; a second declaration of one code is
   `X_CURRENCY_REDEFINED`, and an **identical** one is a no-op so a twice-imported module is not a
   crash. A shipped ISO row cannot be redefined at all.
+- **A shipped row is frozen, and `CurrencyInfo`'s three fields are `readonly`.** `currencyInfo()`
+  hands the row itself out by reference, and `exponent` decides what every stored `minor` in that
+  currency counts — one `currencyInfo('USD').exponent = 3` silently rescales every USD amount in
+  the process by a power of ten, through the one door `registerCurrency` already refuses
+  (`X_CURRENCY_REDEFINED`). The compiler is the first guard, `Object.freeze` on the array AND on
+  every row the second, for the caller that has no types. Both halves: a frozen array of writable
+  rows guards the list and leaves every value in it open.
+- **A `fix:` naming `fromDecimal` must name a call that RUNS.** `moneyNotInteger` emitted
+  `fromDecimal('<minor>', '<ccy>')` for every arrival: it threw this same code straight back for
+  anything past the currency's own digits, read `fromDecimal('1e+21', …)` for a magnitude
+  `DECIMAL` refuses, and read `fromDecimal('0', …)` for `NaN`, which runs and invents an amount.
+  Three arrivals, three instructions — a rounding call for a fractional minor, `{ scale: d }` or
+  `{ rounding: 'half-up' }` when the value is really a major-unit amount, and NO call at all where
+  none could work. `errors.test.ts` executes every call a `X_MONEY_NOT_INTEGER` fix line names.
 - **Two enumerations, two questions.** `CURRENCIES` is the constant this package ships;
   `currencyCodes()` is what this process accepts, registrations included, and it is the list
   `X_CURRENCY_UNKNOWN`'s fix line names — so it must include them or that fix is the dead end it

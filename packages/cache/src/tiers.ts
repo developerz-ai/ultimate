@@ -8,7 +8,7 @@ import { systemClock } from '@ultimat3/core';
 import { CacheJitterInvalidError, CacheTtlInvalidError } from './errors';
 import type { CacheFence } from './fence';
 import { markInvalidated, sampleFence } from './fence';
-import { mergeSetOptions, ttlOptionsFor } from './set-options';
+import { mergeSetOptions, tagsAddedSince, ttlOptionsFor } from './set-options';
 import { createSingleFlight } from './single-flight';
 import type { CacheTag } from './tags';
 import { bestEffort } from './tier-failures';
@@ -255,6 +255,10 @@ export function createCacheStack(
     tiers: ordered,
 
     async read<T>(key: string, load: () => Promise<T>, setOptions?: CacheSetOptions): Promise<T> {
+      // Outside the flight on purpose, and the cost is known: N concurrent misses each walk the
+      // ladder before any of them joins, so a cold key pays N gets per rung. Moving it inside
+      // would serialise every HIT behind whichever caller happened to arrive first — the common
+      // case paying for the rare one. Carried as a Low; measure before changing it.
       const hit = await lookup<T>(key, setOptions);
       if (hit !== undefined) return hit.value;
 
@@ -273,9 +277,22 @@ export function createCacheStack(
           const value = await load();
           // Joiners merged their own tags into the load they shared; covering is retroactive, so
           // a tag that arrived mid-load is fenced back to the sample rather than from now.
+          const publish = async (options: CacheSetOptions | undefined): Promise<void> => {
+            if (options?.tags !== undefined) fence.cover({ tags: options.tags });
+            await fill(key, value, options, fence);
+          };
           const merged = shared() ?? setOptions;
-          if (merged?.tags !== undefined) fence.cover({ tags: merged.tags });
-          await fill(key, value, merged, fence);
+          await publish(merged);
+          // The flight stays open until this whole `work` settles, and `fill` is one await per
+          // rung — so a joiner can still merge a tag after the read above, and the entry that
+          // landed would carry the leader's tags alone, which `invalidateTags` can never reach.
+          // Re-read once and re-fill EVERY tier: re-reading per tier instead would land the near
+          // tier — the one every later read hits first — with the FEWEST tags, so an invalidation
+          // would clear the far rungs and leave the near one serving. A joiner arriving inside
+          // the second pass is left where a plain cache hit already leaves one: reading a value
+          // that was published without its tag.
+          const late = shared() ?? setOptions;
+          if (tagsAddedSince(merged, late)) await publish(late);
           return value;
         },
         { context: setOptions ?? {}, merge: mergeSetOptions },

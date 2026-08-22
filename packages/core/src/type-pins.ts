@@ -1,10 +1,12 @@
-// Compile-time pins for the actor-facts seam, the config surface and the route vocabulary.
+// Compile-time pins for the actor-facts seam, the config surface, the request-context patch and
+// the route vocabulary.
 // Source, not a `.test.ts`, on purpose: `tsconfig.json` excludes `src/**/*.test.ts`, so `tsc -b`
 // never reads a test file and a type-level assertion written there can never fail. This module
 // emits nothing and exports nothing anybody imports — a regression is a build error.
 
 import type { Actor, ActorFactMap, FactKeysOf, FactMapOf } from './actor';
 import type { AppConfigInput, DatabaseConfig } from './config';
+import type { CtxPatch } from './context';
 import type { HydrateStrategy, OfflineStrategy, RenderMode } from './route-vocabulary';
 
 /** Fails to compile when `T` is anything but `true`. The whole mechanism. */
@@ -97,6 +99,23 @@ type _DatabaseInputCarriesNoDeadField = Assert<
   Extract<keyof NonNullable<AppConfigInput['database']>, DeadDatabaseField> extends never
     ? true
     : false
+>;
+
+/**
+ * Neither id a child context may patch. `withChildContext` forwards the parent's `buildId`
+ * verbatim, so `{ buildId }` on the patch was an option that read as honoured and was dropped
+ * without a word — the same silent-no-op class as the three `database` fields above, one tier
+ * lower. `requestId` is here beside it because the two are refused for the same reason.
+ */
+type UnpatchableCtxKey = 'requestId' | 'buildId';
+
+type _CtxPatchRefusesTheIds = Assert<
+  Extract<keyof CtxPatch, UnpatchableCtxKey> extends never ? true : false
+>;
+
+/** And the keys a child MAY change are still there — a pin that empties the type is not a pin. */
+type _CtxPatchStillPatchesTheRest = Assert<
+  'actor' | 'locale' | 'tz' extends keyof CtxPatch ? true : false
 >;
 
 /**

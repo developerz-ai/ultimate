@@ -290,6 +290,14 @@ describe('describeValue', () => {
     expect(describeValue(true)).toBe('a boolean');
     expect(describeValue(new Date(Number.NaN))).toBe('an invalid Date');
   });
+
+  test('counts characters, staying byte-identical to schema`s copy on an astral value', () => {
+    // The deliberate twin in `packages/schema/src/describe-value.ts` counts code points because
+    // the rules that reject a string do; `packages/cli/src/describe-value-pin.test.ts` holds the
+    // two equal, and it cannot see a divergence its cases never reach.
+    expect(describeValue('👍')).toBe('a string of 1 character');
+    expect(describeValue('👍a')).toBe('a string of 2 characters');
+  });
 });
 
 /** A forged OIDC `iss` claim: closes the sentence, then forges a whole framework line. */

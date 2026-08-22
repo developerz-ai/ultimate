@@ -167,7 +167,13 @@ export function currentSpan(): Span | undefined {
   return activeSpan.get();
 }
 
-/** The trace the caller is inside: active span, else the request context, else a fresh trace. */
+/**
+ * The trace the caller is inside: active span, else the request context, else a fresh trace.
+ *
+ * The context branch carries an EMPTY `spanId` on purpose, and that emptiness is the discriminator
+ * every reader must honour: it is a trace id this process minted, not a span an upstream reported.
+ * `traceFlags: 1` here is the header this process would send onward, never a decision it received.
+ */
 export function currentSpanContext(): SpanContext | undefined {
   const span = activeSpan.get();
   if (span !== undefined) return span.context;
@@ -176,8 +182,20 @@ export function currentSpanContext(): SpanContext | undefined {
   return { traceId: ctx.traceId, spanId: '', traceFlags: 1 };
 }
 
+/**
+ * A parent an upstream actually reported, as opposed to the synthetic one `currentSpanContext()`
+ * builds from a request context. Only the first carries a sampling decision: reading the synthetic
+ * one as inbound made `parentBasedRatioSampler` inherit a bit nobody sent, so every HTTP root span
+ * was exported at every ratio — `pipeline.ts` is `runWithContext` then `withSpan`, which is that
+ * exact pair — and the one lever between "tracing is on" and "the collector melts" did nothing.
+ */
+function inboundParent(parent: SpanContext | undefined): SpanContext | undefined {
+  return parent === undefined || parent.spanId === '' ? undefined : parent;
+}
+
 export function startSpan(name: string, options?: StartSpanOptions): Span {
   const parent = options?.parent ?? currentSpanContext();
+  const inbound = inboundParent(parent);
   const attributes: Record<string, AttributeValue> = { ...(options?.attributes ?? {}) };
   // The bit is decided ONCE, here, and every child of this span inherits it through `parent` —
   // so one trace is sampled or not sampled as a whole. Before this, `traceFlags` was hardcoded to
@@ -186,7 +204,7 @@ export function startSpan(name: string, options?: StartSpanOptions): Span {
   const context: SpanContext = {
     traceId: parent?.traceId ?? newTraceId(),
     spanId: newSpanId(),
-    traceFlags: currentSampler().shouldSample(name, parent, attributes) ? 1 : 0,
+    traceFlags: currentSampler().shouldSample(name, inbound, attributes) ? 1 : 0,
   };
   const events: SpanEvent[] = [];
   const startedAt = clock.now().getTime();
@@ -245,7 +263,7 @@ export function startSpan(name: string, options?: StartSpanOptions): Span {
       // `traceparent`; it is simply not exported.
       if ((context.traceFlags & 1) === 0) return;
       const endedAt = clock.now().getTime();
-      const parentSpanId = parent === undefined || parent.spanId === '' ? undefined : parent.spanId;
+      const parentSpanId = inbound?.spanId;
       exporter.export({
         name,
         kind: options?.kind ?? 'internal',

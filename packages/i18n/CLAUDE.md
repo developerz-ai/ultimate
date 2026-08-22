@@ -67,6 +67,15 @@ Imported by every package that renders a string.
   travels as data (`t(row.labelKey)`). Both halves are load-bearing: the guard in `translator.ts`
   makes it true of a catalog this package did not build, the null prototype makes `__proto__` an
   ordinary key instead of one the setter silently swallows. Never reintroduce either.
+- **Both module-level caches are bounded and canonically keyed, through `@ultimat3/core`'s
+  `cachedFormatter` / `canonicalLocale`** — `context.ts`'s `translators` and `interpolate.ts`'s
+  `rulesCache`. `translatorFor` and `pluralCategory` are exported raw and `@ultimat3/mail` passes
+  an unnormalised value, so the key is a REQUEST value: keyed raw into an unbounded `Map`, 5,000
+  distinct-but-valid tags retained +108 MB after `Bun.gc(true)`, against +11 MB bounded. The bound
+  and the canonical key are two halves of ONE rule — `en-us` and `en-US` must not each buy an
+  entry, or the cap counts spellings instead of locales. Never re-key either map on the raw tag;
+  `context.test.ts`'s `the translator cache` and `interpolate.test.ts`'s `the plural-rules cache`
+  are what notice.
 - Plural selection is `Intl.PluralRules`. Never `count === 1`. Variants are underscore suffixes on
   the leaf — a CLDR category (`_zero _one _two _few _many _other`), or `n` / `n_plural` as the
   two-form shortcut; pair `n_one` with `n_other`, never with `n_plural`. Never a nested

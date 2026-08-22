@@ -15,6 +15,20 @@ export class OtlpEndpointInvalidError extends UltimateError {
   }
 }
 
+/**
+ * Separate from `OtlpEndpointInvalidError` on purpose. The endpoint code's title says the ENDPOINT
+ * is missing or malformed, so raising it for a bad header escape sends the first reader of
+ * `x errors explain` to inspect `OTEL_EXPORTER_OTLP_ENDPOINT` — a variable that is fine. An
+ * accurate `cause:` does not rescue a title that misdirects.
+ */
+export class OtlpHeadersInvalidError extends UltimateError {
+  static readonly code = 'X_OTLP_HEADERS_INVALID';
+  override readonly name = 'OtlpHeadersInvalidError';
+  constructor(init: CodedErrorInit) {
+    super({ ...init, code: OtlpHeadersInvalidError.code });
+  }
+}
+
 export class OtlpProtocolUnsupportedError extends UltimateError {
   static readonly code = 'X_OTLP_PROTOCOL_UNSUPPORTED';
   override readonly name = 'OtlpProtocolUnsupportedError';
@@ -112,6 +126,25 @@ export function otlpEndpoint(
   });
 }
 
+/**
+ * One header value, percent-decoded. `decodeURIComponent` throws a bare `URIError` on a malformed
+ * escape (`%zz`, a lone `%`), and the whole of `otlpHeaders` runs at exporter construction — so a
+ * typo in an operator-set variable took the process down with an error carrying no code, no cause
+ * and no fix. Refused instead, naming the variable and the header KEY: the value is the
+ * collector's credential and a `cause:` is folded into a log line.
+ */
+function decodeHeaderValue(key: string, raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    throw new OtlpHeadersInvalidError({
+      cause: `${OTLP_HEADERS_KEY} carries a malformed percent-escape in the "${key}" value, so the header cannot be decoded`,
+      fix: `set ${OTLP_HEADERS_KEY}=${key}=<encoded>, where <encoded> is what bun -e 'console.log(encodeURIComponent(process.argv[1]))' <value> prints — or drop the stray % from the "${key}" value if it was meant literally`,
+      meta: { header: key },
+    });
+  }
+}
+
 /** `key=value,key2=value2`, percent-decoded — the spec's format for collector auth headers. */
 export function otlpHeaders(
   explicit?: Readonly<Record<string, string>> | undefined,
@@ -125,7 +158,7 @@ export function otlpHeaders(
       if (index <= 0) continue;
       const key = pair.slice(0, index).trim().toLowerCase();
       if (key === '') continue;
-      headers[key] = decodeURIComponent(pair.slice(index + 1).trim());
+      headers[key] = decodeHeaderValue(key, pair.slice(index + 1).trim());
     }
   }
   for (const [key, value] of Object.entries(explicit ?? {})) headers[key.toLowerCase()] = value;

@@ -39,6 +39,21 @@ describe('compareDecimalText orders digits, never their spelling', () => {
     expect(compareDecimalText('+7', '007')).toBe(0);
   });
 
+  test('a numeric has ONE zero, so a minus sign in front of it orders nothing', () => {
+    // Postgres: `select '-0'::numeric = '0'::numeric` is true. Comparing the sign before the
+    // magnitude cut a keyset page between two rows the database calls equal.
+    expect(compareDecimalText('-0', '0')).toBe(0);
+    expect(compareDecimalText('0', '-0')).toBe(0);
+    expect(compareDecimalText('-0.00', '0')).toBe(0);
+    expect(compareDecimalText('-0.0', '+0.000')).toBe(0);
+  });
+
+  test('zero still orders against a real value on both sides', () => {
+    expect(compareDecimalText('-0', '1')).toBe(-1);
+    expect(compareDecimalText('-0', '-1')).toBe(1);
+    expect(sorted(['-0', '-1', '1', '0'])).toEqual(['-1', '-0', '0', '1']);
+  });
+
   test('a bigint and a number are the digits they spell', () => {
     expect(compareDecimalText(9n, '10')).toBe(-1);
     expect(compareDecimalText(2, '10')).toBe(-1);

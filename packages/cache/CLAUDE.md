@@ -40,9 +40,10 @@ Tier 1. Tagged caching + THE invalidation graph.
   `TierName` plus `'query-read'` — closed, and deliberately NOT a widening of `TierName`: a name
   missing from `TIER_ORDER` sorts to `-1`, ahead of the request memo. A label is a log facet; a
   `TierName` is a position on the ladder.
-- **A refusal is rendered with `renderThrowable()`, never `error.message`** — the four sites that
-  absorb one (`bestEffort`'s log entry, and `fanOut`'s tier, ISR and broadcast catch blocks). A
-  tier, a revalidator and a broadcast are all app-supplied, so the value they reject with is too:
+- **A refusal is rendered with `renderThrowable()`, never `error.message`** — the five sites that
+  absorb one (`bestEffort`'s log entry, `fanOut`'s tier, ISR and broadcast catch blocks, and
+  `purgePost`'s transport catch). A tier, a revalidator, a broadcast and the `fetch` a purge driver
+  is given are all app-supplied, so the value they reject with is too:
   `instanceof` runs a `Proxy`'s `getPrototypeOf` trap and `String()` runs `Symbol.toPrimitive`, so
   building the log line used to raise INSTEAD of absorbing the refusal — on the business write that
   triggered the bust, which is the one caller both contracts promise to protect. The code field
@@ -131,7 +132,13 @@ Tier 1. Tagged caching + THE invalidation graph.
   carrying only the leader's tags: the joiner's tag reached nothing, so the invalidation it declared
   never fired. Tags union, TTLs take the SHORTEST — an entry held longer than a caller asked for is
   stale to that caller. `work` reads the merge through `shared()` **after** the load, or it sees
-  only what the leader brought.
+  only what the leader brought — and **once more after the fill**, because the flight stays open
+  for the whole ladder and a joiner merging a tag mid-fill hit the identical hole one rung later.
+  The second read re-fills EVERY tier rather than the rungs still to come: re-reading per tier
+  would land the near tier — the one every later read hits first — with the FEWEST tags, so an
+  invalidation would clear the far rungs and leave the near one serving. `tagsAddedSince` in
+  `set-options.ts` is what makes the second pass conditional; `tiers.test.ts`'s
+  `a single-flight joiner that arrives during the FILL` is what notices.
 - **`negativeTtlMs` is the stack's decision, not a tier's.** Only `createCacheStack` sees what
   `load()` answered, so the `null`/`undefined` branch lives in `ttlOptionsFor` there and reaches a
   tier as an ordinary `ttlMs`.

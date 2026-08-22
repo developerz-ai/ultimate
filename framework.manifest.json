@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "46686ff68d3d6771f248ca39a10ecce36ba4b4640e6f083576c683669280e64f",
+  "buildId": "55d931030b80b821b037146e8918ad00ae6b89b36fe3c37203c1f60e34928ab6",
   "tiers": {
     "0": [
       "core",
@@ -1604,6 +1604,11 @@
     },
     {
       "code": "X_OTLP_ENDPOINT_INVALID",
+      "owner": "core",
+      "at": "packages/core/src/error-codes.ts"
+    },
+    {
+      "code": "X_OTLP_HEADERS_INVALID",
       "owner": "core",
       "at": "packages/core/src/error-codes.ts"
     },

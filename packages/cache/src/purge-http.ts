@@ -3,6 +3,7 @@
 // forces. Kept apart from the drivers because "which failure can succeed unchanged" is one
 // judgement, and two copies of it would drift into two answers for the same 429.
 
+import { renderThrowable } from '@ultimat3/core';
 import { CacheDriverUnavailableError, CachePurgeFailedError } from './errors';
 
 /** Just the call. `typeof fetch` also carries `preconnect`, which no test double should have to. */
@@ -152,7 +153,11 @@ export async function purgePost(input: PurgePostInput): Promise<Response> {
       signal: AbortSignal.timeout(input.timeoutMs),
     });
   } catch (error) {
-    const reason = error instanceof Error ? error.message : 'the request failed before a response';
+    // `renderThrowable`, never `error.message` behind an `instanceof`: `fetch` is INJECTED here,
+    // so the rejection is whatever a driver or a test double threw — and `instanceof` itself
+    // throws on a `Proxy` whose `getPrototypeOf` does, which would replace the coded refusal this
+    // catch exists to raise with a bare `TypeError` from inside it. Same rule as `invalidate.ts`.
+    const reason = renderThrowable(error);
     throw new CachePurgeFailedError({
       driver: input.driver,
       detail: `${reason} — nothing left this host for ${input.url} (egress, DNS or TLS)`,

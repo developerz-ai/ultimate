@@ -44,7 +44,10 @@ export interface BuildSitemapOptions {
   locales?: readonly string[];
   /** Defaults to `/{locale}{path}`. */
   localizePath?: (path: string, locale: string) => string;
-  /** The locale whose URLs are unprefixed and become `x-default`. */
+  /**
+   * The locale whose URLs are unprefixed and become `x-default`. **Omitted, no `x-default` is
+   * emitted at all** — there is no unprefixed URL in the sitemap for it to name.
+   */
   defaultLocale?: string;
   maxUrls?: number;
   lastmod?: string;
@@ -54,6 +57,21 @@ function localize(path: string, locale: string, options: BuildSitemapOptions): s
   if (locale === options.defaultLocale) return path;
   const fn = options.localizePath ?? ((p: string, l: string) => `/${l}${p === '/' ? '' : p}`);
   return fn(path, locale);
+}
+
+/**
+ * The path `x-default` may point at: the default locale's own, and only when this route emits it.
+ * `undefined` when no `defaultLocale` was declared, or when it names a locale outside `locales` —
+ * in both cases the URL it would carry is one the sitemap does not contain.
+ */
+function defaultLocaleUrl(
+  path: string,
+  localised: readonly { readonly locale: string; readonly path: string }[],
+  options: BuildSitemapOptions,
+): string | undefined {
+  if (options.defaultLocale === undefined) return undefined;
+  const candidate = localize(path, options.defaultLocale, options);
+  return localised.some((entry) => entry.path === candidate) ? candidate : undefined;
 }
 
 /** Every concrete URL the route table produces, with per-locale alternates. */
@@ -66,23 +84,33 @@ export async function sitemapUrls(
 
   for (const route of indexableRoutes(routes)) {
     for (const path of await expandRoute(route)) {
-      const alternates: SitemapAlternate[] = locales.map((locale) => ({
-        hreflang: locale,
-        href: absoluteUrl(options.baseUrl, localize(path, locale, options)),
+      // Localised once, then read three times — the alternates, the `x-default` candidate and the
+      // `<loc>`s below are three questions with one answer, and they drifted apart when each
+      // computed its own.
+      const localised = locales.map((locale) => ({
+        locale,
+        path: localize(path, locale, options),
       }));
-      if (alternates.length > 0) {
-        alternates.push({
-          hreflang: 'x-default',
-          href: absoluteUrl(options.baseUrl, path),
-        });
+      const alternates: SitemapAlternate[] = localised.map((entry) => ({
+        hreflang: entry.locale,
+        href: absoluteUrl(options.baseUrl, entry.path),
+      }));
+      // `x-default` only when it names a URL THIS sitemap lists. It was the bare `path` for every
+      // route: with `locales` set and no `defaultLocale`, every `<loc>` is prefixed and the
+      // unprefixed path is one the sitemap never mentions — an hreflang cluster pointing at a URL
+      // outside itself, which is the shape a search engine drops the whole cluster for. Same rule
+      // as `meta.ts`'s `hreflangSet`, which takes the fallback href explicitly rather than
+      // assuming one exists.
+      const fallback = defaultLocaleUrl(path, localised, options);
+      if (alternates.length > 0 && fallback !== undefined) {
+        alternates.push({ hreflang: 'x-default', href: absoluteUrl(options.baseUrl, fallback) });
       }
 
       const lastmod = route.lastmod ?? options.lastmod;
-      const emitFor =
-        locales.length === 0 ? [path] : locales.map((l) => localize(path, l, options));
-      for (const localised of emitFor) {
+      const emitFor = locales.length === 0 ? [path] : localised.map((entry) => entry.path);
+      for (const emitted of emitFor) {
         urls.push({
-          loc: absoluteUrl(options.baseUrl, localised),
+          loc: absoluteUrl(options.baseUrl, emitted),
           ...(lastmod === undefined ? {} : { lastmod }),
           ...(route.changefreq === undefined ? {} : { changefreq: route.changefreq }),
           ...(route.priority === undefined ? {} : { priority: route.priority }),

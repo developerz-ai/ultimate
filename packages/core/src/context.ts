@@ -70,7 +70,13 @@ export interface CtxInit {
   readonly services?: ServiceBag | undefined;
 }
 
-export type CtxPatch = Omit<CtxInit, 'requestId'>;
+/**
+ * Neither id a child may change. `requestId` because one request is one request however many
+ * scopes it opens; `buildId` because a child context is the same DEPLOY — `withChildContext`
+ * has always forwarded the parent's, so accepting the key was an option that read as honoured and
+ * was dropped in silence. Pinned in `type-pins.ts`.
+ */
+export type CtxPatch = Omit<CtxInit, 'requestId' | 'buildId'>;
 
 /**
  * `async-context.ts` owns why this is a lazily-opened seam rather than a module-scope
