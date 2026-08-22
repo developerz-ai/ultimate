@@ -302,7 +302,7 @@ export const devCommand: CliCommand = {
     // `fix:` named `x dev`. Neither is discoverable from the message; both are trivial once the
     // preflight has the state directory and the port in front of it.
     const services = resolveServices(root, ctx.env);
-    const { clearedStale } = await preflight({
+    const { clearedStale, release } = await preflight({
       stateDir: services.stateDir,
       port,
       // The address the web role will actually bind, never a wider one: probing `0.0.0.0` would
@@ -310,6 +310,9 @@ export const devCommand: CliCommand = {
       hostname: DEV_BINDING.hostname,
       embeddedDb: services.db.mode === 'embedded',
     });
+    // The directory is CLAIMED from here down, so a boot that throws has to give it back — the
+    // `releaseBoot` shape, with one acquisition. Without it the first failed `x dev` in a shell
+    // refuses every later one with a pid that is no longer running.
     const server = await startDev({
       root,
       port,
@@ -319,6 +322,9 @@ export const devCommand: CliCommand = {
         if (!ctx.args.json)
           process.stdout.write(`${msg('cli.dev.hmr', { file, ms: durationMs })}\n`);
       },
+    }).catch((error: unknown) => {
+      release();
+      throw error;
     });
     const result: CommandResult = {
       ok: server.findings.length === 0,

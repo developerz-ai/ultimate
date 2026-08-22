@@ -8,7 +8,8 @@
 // would, and `node:path` because Bun exposes no path API to build what either of them takes.
 import { type FileHandle, mkdir, open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { catalogKeys } from '@ultimat3/i18n';
+import type { Catalog } from '@ultimat3/i18n';
+import { auditCatalogs, catalogKeys } from '@ultimat3/i18n';
 import { loadApp } from './app-load';
 import { requireAppRoot } from './app-root';
 import type { CliCommand, CommandContext } from './command';
@@ -17,11 +18,17 @@ import {
   auditApp,
   loadCatalogs,
   resolveDefaultLocale,
+  scanSource,
   seedCatalog,
   serializeCatalog,
   syncCatalog,
 } from './i18n-audit';
-import { checkRegistration, missingKeyFindings } from './i18n-registration';
+import {
+  checkRegistration,
+  loudMiss,
+  missingKeyFindings,
+  withPlaceholdersMissing,
+} from './i18n-registration';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import { renderTable } from './table';
@@ -102,7 +109,11 @@ function resolveOneLocale(ctx: CommandContext, sub: string): string {
 }
 
 async function runCheck(root: string): Promise<CommandResult> {
-  const { report, catalogs, extraction, ignoreUnused } = await auditApp(root);
+  const { report: audited, catalogs, extraction, ignoreUnused } = await auditApp(root);
+  // Corrected once, before anything reads it: the table's `missing` column, the summary count, the
+  // findings and `--json`'s `data` are four projections of one report, and a placeholder counted in
+  // only some of them is the command disagreeing with itself about the same app.
+  const report = withPlaceholdersMissing(audited, catalogs);
   // The runtime question, asked after the file question and never instead of it: a catalog can be
   // complete on disk, used everywhere in source, and reach no registry at all (issue #249).
   const registration = await checkRegistration({ root, catalogs, extraction, ignoreUnused });
@@ -182,6 +193,40 @@ async function runAdd(root: string, ctx: CommandContext): Promise<CommandResult>
   };
 }
 
+/**
+ * `x i18n sync <defaultLocale>` merges the default locale into itself, so `added` was empty **by
+ * construction** — exit 0, "0 key(s) added", and `x i18n check` still red over the same keys. That
+ * command is `X_CATALOG_MISSING_KEYS`'s own `fix:`, and `i18n` is a step of the gate, so the only
+ * escape left was a hand edit nothing named.
+ *
+ * The source of truth for the default locale is not another catalog — there is none above it — it
+ * is the SOURCE: every key `t()` calls that this catalog does not define, seeded with `loudMiss`,
+ * the marker `@ultimat3/i18n` already renders for an absent key. The author is then one obvious
+ * edit per key from done, with each key sitting exactly where that edit goes — and the gate stays
+ * RED until they make it, because `withPlaceholdersMissing` counts every one as still missing.
+ *
+ * The seeding and the refusal read ONE definition of the marker (`i18n-registration.ts`): two
+ * spellings would be a placeholder this command writes and the gate cannot see.
+ *
+ * The list is the `missing` one `x i18n check` prints and `X_CATALOG_MISSING_KEYS` names, read
+ * through the same two functions the check reads it through: `auditCatalogs` rather than
+ * `missingFrom`, because a `pl` catalog defining `items_many` and no bare `items` is complete and a
+ * plain key diff would seed a placeholder over it, then `withPlaceholdersMissing` so "missing"
+ * means here exactly what it means to the gate.
+ */
+async function untranslatedKeys(
+  root: string,
+  catalogs: Readonly<Record<string, Catalog>>,
+  locale: string,
+): Promise<readonly string[]> {
+  const extraction = await scanSource(root);
+  const report = withPlaceholdersMissing(auditCatalogs({ extraction, catalogs }), catalogs);
+  return report.locales.find((audit) => audit.locale === locale)?.missing ?? [];
+}
+
+const placeholderCatalog = (keys: readonly string[]): Catalog =>
+  Object.fromEntries(keys.map((key) => [key, loudMiss(key)]));
+
 async function runSync(root: string, ctx: CommandContext): Promise<CommandResult> {
   const locale = resolveOneLocale(ctx, 'sync');
   const catalogs = await loadCatalogs(root);
@@ -197,7 +242,12 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
 
   const app = await loadApp(root);
   const from = resolveDefaultLocale(app.defaultLocale, catalogs);
-  const source = from === undefined ? {} : (catalogs[from] ?? {});
+  // `from === locale` is the default locale asked to sync itself, and `undefined` is an app with
+  // no resolvable default at all — one branch, because both have no catalog to merge from.
+  const seeded = from === undefined || from === locale;
+  const source = seeded
+    ? placeholderCatalog(await untranslatedKeys(root, catalogs, locale))
+    : (catalogs[from] ?? {});
   const { merged, added } = syncCatalog(target, source);
   if (added.length > 0) await Bun.write(join(root, catalogPath(locale)), serializeCatalog(merged));
 
@@ -208,8 +258,20 @@ async function runSync(root: string, ctx: CommandContext): Promise<CommandResult
     ok: true,
     command: 'i18n',
     summary: msg('cli.i18n.synced', { locale, from: from ?? locale, added: added.length, total }),
+    // The keys themselves, raw — `runCheck` lists gaps the same way, because a key is a value an
+    // author copies and never prose the catalog owns.
+    lines: seeded ? added.map((key) => `  ${key}`) : [],
     findings: app.findings,
-    data: { locale, from: from ?? locale, added, total, path: catalogPath(locale) },
+    data: {
+      locale,
+      from: from ?? locale,
+      added,
+      total,
+      path: catalogPath(locale),
+      // Which of `added` still need a human. Empty on a real merge, where every value is a real
+      // string copied from the default locale — `--json` must be able to tell the two apart.
+      placeholders: seeded ? added : [],
+    },
   };
 }
 

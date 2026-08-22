@@ -37,6 +37,7 @@ const PAGE = [
   '</body></html>',
 ].join('');
 
+/** One island MOUNTED and one REJECTED — the page a picture cannot tell from a working one. */
 const PROBE_ANSWER = JSON.stringify({
   declared: 3,
   booted: 2,
@@ -46,10 +47,48 @@ const PROBE_ANSWER = JSON.stringify({
   failures: [{ island: 'cart', message: 'TypeError: total is not a function' }],
 });
 
-const siteDriver = (): ScrapeDriver =>
-  fakeBrowser([
-    { url: `${SERVER_URL}${ROUTE}`, html: PAGE, evaluate: { [ISLAND_PROBE]: PROBE_ANSWER } },
-  ]);
+/** The same page with both boots resolved. Its own fixture, because "clean" is its own claim. */
+const CLEAN_ANSWER = JSON.stringify({
+  declared: 3,
+  booted: 2,
+  mounted: 2,
+  failed: 0,
+  byStrategy: { idle: 1, visible: 1, never: 1 },
+  failures: [],
+});
+
+const driverAnswering = (answer: string): ScrapeDriver =>
+  fakeBrowser([{ url: `${SERVER_URL}${ROUTE}`, html: PAGE, evaluate: { [ISLAND_PROBE]: answer } }]);
+
+const siteDriver = (): ScrapeDriver => driverAnswering(PROBE_ANSWER);
+
+/**
+ * A driver whose probe answers a DIFFERENT thing each time it is asked — the one seam that can
+ * tell "read once" from "read until it settles". Composed over the real fake, so everything the
+ * page is asked that is not the probe stays honest.
+ */
+const probing = (answers: readonly string[]): ScrapeDriver => {
+  const base = siteDriver();
+  return {
+    name: base.name,
+    open: async (init): Promise<ScrapeSession> => {
+      const session = await base.open(init);
+      let index = 0;
+      return {
+        ...session,
+        page: {
+          ...session.page,
+          evaluate: (expression: string): Promise<unknown> => {
+            if (expression !== ISLAND_PROBE) return session.page.evaluate(expression);
+            const answer = answers[Math.min(index, answers.length - 1)] ?? 'null';
+            index += 1;
+            return Promise.resolve(JSON.parse(answer) as unknown);
+          },
+        },
+      };
+    },
+  };
+};
 
 /**
  * The offline drivers record no console lines — there is no JS engine to log — so the one seam
@@ -135,7 +174,7 @@ describe('unit · one route, two artifacts', () => {
   // of this page looks identical whether `cart` mounted or exploded.
   test('the island probe reaches the page and its answer reaches the artifact', async () => {
     const out = join(dir, 'islands');
-    await runShot(runFor(out));
+    const artifacts = await runShot(runFor(out));
     expect((await readVerdict(out))['islands']).toEqual({
       declared: 3,
       booted: 2,
@@ -144,6 +183,37 @@ describe('unit · one route, two artifacts', () => {
       byStrategy: { idle: 1, visible: 1, never: 1 },
       failures: [{ island: 'cart', message: 'TypeError: total is not a function' }],
     });
+    // Asserting the artifact ALONE is how this shipped: the marker reached verdict.json and the
+    // verdict read it nowhere, so `cart` exploding was reported as `ok: true`, "clean".
+    expect(artifacts.verdict.ok).toBe(false);
+    expect((await readVerdict(out))['ok']).toBe(false);
+  });
+
+  test('a page whose every mount resolved is ok, and says so once', async () => {
+    const out = join(dir, 'clean');
+    const artifacts = await runShot(runFor(out, { driver: driverAnswering(CLEAN_ANSWER) }));
+    expect([artifacts.verdict.ok, artifacts.verdict.redirected]).toEqual([true, false]);
+  });
+
+  /**
+   * The wiring, not the loop: `runShot` must re-read the probe rather than take the one reading
+   * that lands at the boot deadline. `settleMs: 2` makes the window two real milliseconds, so the
+   * proof costs nothing.
+   */
+  test('the verdict is taken after the mounts settle, not at the boot deadline', async () => {
+    const out = join(dir, 'settled');
+    const unsettled = JSON.stringify({
+      declared: 3,
+      booted: 2,
+      mounted: 0,
+      failed: 0,
+      byStrategy: { idle: 1, visible: 1, never: 1 },
+      failures: [],
+    });
+    const artifacts = await runShot(
+      runFor(out, { driver: probing([unsettled, CLEAN_ANSWER]), settleMs: 2 }),
+    );
+    expect(artifacts.verdict.islands?.mounted).toBe(2);
   });
 
   test('a page the probe cannot answer leaves islands null and still writes the picture', async () => {
@@ -220,6 +290,53 @@ describe('unit · the route argument', () => {
       'root',
       'posts-slug',
       'etc',
+    ]);
+  });
+});
+
+describe('unit · a route that leaves the origin is not a route', () => {
+  const refusal = (raw: string): Record<string, unknown> => {
+    try {
+      readRoute(raw);
+      return {};
+    } catch (thrown: unknown) {
+      return thrown as Record<string, unknown>;
+    }
+  };
+
+  /**
+   * The layer whose own comment says a route can never be an origin, refusing the four spellings
+   * that made it one. Every one is `new URL(raw, 'http://localhost:4321')` landing on
+   * `http://evil.example/x`: a leading `//` is a protocol-relative URL, a backslash IS a slash to
+   * every URL parser, and a tab is DELETED by the parser before the path is read — so `x shot
+   * //localhost:9200/_cat/indices` photographed whatever else was on the dev box. The host check
+   * one layer down (`allowHostsFrom`) never saw it: it names hostnames, and the hostname it was
+   * given was the one the page had already left.
+   */
+  test('a protocol-relative, backslashed or tab-smuggled origin is refused', () => {
+    for (const raw of [
+      '//evil.example/x',
+      '\\\\evil.example\\x',
+      '/\\/evil.example/x',
+      '/\t/evil.example/x',
+      '///evil',
+    ]) {
+      const error = refusal(raw);
+      expect([raw, error['code'], error['fix']]).toEqual([
+        raw,
+        'X_CLI_BAD_FLAG',
+        'x shot /<path> --json',
+      ]);
+    }
+  });
+
+  // The refusal may not cost a route an app really has: a bracketed dynamic segment and a
+  // non-ASCII path both resolve on the app's own origin, whatever the parser re-encodes.
+  test('a real route is still a route, brackets and accents included', () => {
+    expect([readRoute('/posts/[slug]'), readRoute('/caf\u00e9'), readRoute('a/b')]).toEqual([
+      '/posts/[slug]',
+      '/caf\u00e9',
+      '/a/b',
     ]);
   });
 });

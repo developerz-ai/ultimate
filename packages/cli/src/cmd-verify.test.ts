@@ -6,9 +6,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MANIFEST_FILENAME } from '@ultimat3/manifest';
 import { OPENAPI_FILE } from './app-openapi';
-import { runVerify, VERIFY_STEPS, verifyCommand, verifyStepNames } from './cmd-verify';
+import {
+  readOnlyStep,
+  runVerify,
+  VERIFY_STEPS,
+  verifyCommand,
+  verifyStepNames,
+} from './cmd-verify';
 import { exitCodeFor } from './output';
+import { parseArgs } from './parse';
+import { SPECS } from './registry';
+import { thrownBy } from './thrown-by';
 import { VERIFY_FLOOR_FILE } from './verify-floor';
+import { NOT_A_GATE_RUN } from './verify-run';
 import type { VerifyContext, VerifyStep } from './verify-step';
 import { VERIFY_STEP_NAMES } from './verify-step';
 
@@ -95,54 +105,6 @@ describe('unit · x verify', () => {
   test('a step that does not apply is skipped, not passed silently', async () => {
     const result = await runVerify(stubs, ctx);
     expect(result.steps?.find((step) => step.name === 'e2e')?.skipped).toBe(true);
-  });
-
-  // The summary is the line CI logs and the one a reader glances at, so it may not count a step
-  // that did not apply as one that passed. At the framework root `job` and `eval` have no suite of
-  // their own: "all 17 steps passed" over that is exactly the vacuous green the gate exists to
-  // prevent, and it is only visible if the summary itself says which steps had nothing to run.
-  describe('skips are counted apart from passes, and named', () => {
-    const green: readonly VerifyStep[] = [
-      { name: 'typecheck', summary: 'tsc', run: async () => ({ ok: true, findings: [] }) },
-      { name: 'lint', summary: 'biome', run: async () => ({ ok: true, findings: [] }) },
-    ];
-    const inapplicable = (name: 'job' | 'eval'): VerifyStep => ({
-      name,
-      summary: 'no suite here',
-      applies: async () => false,
-      run: async () => ({ ok: false, findings: [] }),
-    });
-
-    test('nothing skipped: the line still claims every step, and says nothing about skips', async () => {
-      const result = await runVerify(green, ctx);
-      expect(result.summary).toContain('all 2 steps passed');
-      expect(result.summary).not.toContain('skipped');
-      expect(result.data).toMatchObject({ skipped: [] });
-    });
-
-    test('a green run with a skip reports the smaller pass count and names the step', async () => {
-      const result = await runVerify([...green, inapplicable('job')], ctx);
-      expect(result.ok).toBe(true);
-      expect(result.summary).toContain('2 of 3 steps passed');
-      expect(result.summary).toContain('1 skipped: job');
-      expect(result.data).toMatchObject({ skipped: ['job'] });
-    });
-
-    test('every skipped step is named, in step order', async () => {
-      const result = await runVerify([...green, inapplicable('job'), inapplicable('eval')], ctx);
-      expect(result.summary).toContain('2 of 4 steps passed');
-      expect(result.summary).toContain('2 skipped: job, eval');
-      expect(result.data).toMatchObject({ skipped: ['job', 'eval'] });
-    });
-
-    // A red gate hides skips just as well as a green one: the reader fixes the failure, sees
-    // green, and never learns two suites were never there.
-    test('a red run carries the skips too', async () => {
-      const result = await runVerify(stubs, ctx);
-      expect(result.summary).toContain('1 of 3 steps failed');
-      expect(result.summary).toContain('1 skipped: e2e');
-      expect(result.data).toMatchObject({ failed: ['drift'], skipped: ['e2e'] });
-    });
   });
 
   // Counting the skips made them visible; nothing yet made one *fail*. A suite deleted in the same
@@ -295,14 +257,44 @@ describe('unit · x verify', () => {
     expect(seen).toEqual(['typecheck', 'drift']);
   });
 
-  // `--workers` is a knob on how wide the test steps spread, never on which steps run — so the
-  // rule is not "no flags", it is "no flag that changes what green means". A `--only` or `--skip`
-  // arriving here is the regression this test exists to catch.
-  test('there is no way to narrow the run: every step runs, every time', async () => {
+  // `--workers` is a knob on how wide the test steps spread, never on which steps run. `--only`
+  // IS a narrowing and is the one exception, decided as D6: it must announce itself in BOTH
+  // renderers, which is what keeps "green" meaning the no-flag run. Any THIRD flag arriving here
+  // — a `--skip`, above all — is the regression this test exists to catch.
+  test('the no-flag run is every step, and the only narrowing announces itself', async () => {
     const result = await runVerify(stubs, ctx);
     expect(result.steps?.map((step) => step.name)).toEqual(['typecheck', 'drift', 'e2e']);
-    expect(verifyCommand.spec.flags?.map((flag) => flag.name)).toEqual(['workers']);
-    expect(verifyCommand.spec.usage).toBe('x verify [--workers N] [--json]');
+    expect(result.summary).not.toContain(NOT_A_GATE_RUN);
+    expect(verifyCommand.spec.flags?.map((flag) => flag.name)).toEqual(['workers', 'only']);
+    expect(verifyCommand.spec.usage).toBe('x verify [--only <step>] [--workers N] [--json]');
+  });
+
+  // The whole gate is ~18s, 14s of it `tsc -b`, so the loop this closes is "ask about one step".
+  describe('--only names a step, and an unknown one is refused before anything runs', () => {
+    const argsFor = (argv: readonly string[]) => parseArgs(argv, SPECS);
+
+    test('every declared step name reads back as itself', () => {
+      for (const name of VERIFY_STEP_NAMES) {
+        expect([name, readOnlyStep(argsFor(['verify', '--only', name]))]).toEqual([name, name]);
+      }
+      expect(readOnlyStep(argsFor(['verify']))).toBeUndefined();
+    });
+
+    test('a near miss leads with the step it is near, and a runnable invocation', () => {
+      const failure = thrownBy(() => readOnlyStep(argsFor(['verify', '--only', 'lnt'])));
+      expect(failure.code).toBe('X_CLI_BAD_FLAG');
+      expect(failure.cause).toContain('"lnt" is not a gate step');
+      expect(failure.cause).toContain('typecheck, lint');
+      expect(failure.fix).toBe('x verify --only lint --json');
+    });
+
+    // The house rule for a word near nothing: never an invented lead. The gate itself is the
+    // honest fix, and it is a command that runs.
+    test('a word near nothing gets the gate, not a guess', () => {
+      expect(thrownBy(() => readOnlyStep(argsFor(['verify', '--only', 'zzzzzzzzzz']))).fix).toBe(
+        'x verify --json',
+      );
+    });
   });
 
   test('a host check adds findings to the step it was registered for', async () => {

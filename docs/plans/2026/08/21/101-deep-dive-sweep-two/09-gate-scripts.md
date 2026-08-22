@@ -82,6 +82,15 @@
   (`lru`, `cdn`), which is that check's own stated threshold. **The divergence must be decided
   (#293) before the guard lands**, or the guard just reds a known-bad pair.
 
+- **`gate-steps.ts` did not see `packages/cli/README.md`'s wrong list, measured 2026-08-22.** That
+  page spelled the count as the WORD "Seventeen" and listed 17 step names, omitting `seo` and
+  `i18n` — and the check was green over it. Two separate misses: `OF_TOTAL` requires the literal
+  word `steps` beside a numeral, so a spelled-out count is invisible; and nothing compares a bare
+  space-separated run of step names against `VERIFY_STEP_NAMES`. Both are now corrected by hand in
+  that README, so the check must learn to catch them or the same page rots again. Widen to: a
+  spelled-out number adjacent to a step list, and any run of ≥5 known step names treated as a list
+  claiming completeness.
+
 ## Tests
 - Each script above has a `.test.ts` beside it asserting against `repoRoot()` (the pattern `changelog-check.test.ts` uses); the lockfile one additionally runs against a fixture lock carrying an `i18n` and an `examples/x` block.
 - `scripts/gate-steps.test.ts` — a fixture `llms.txt` stating 18 → `kind: 'count'`; "16 of 18" under gate context → reported.

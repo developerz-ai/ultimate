@@ -69,9 +69,14 @@ export async function startSync(options: StartRolesOptions): Promise<RunningSync
   const hub = new ChannelHub({ transport: options.runtime.transport, sockets });
   // The node evaluated no credential of its own and no host ever handed it one, so every socket
   // the framework opened was anonymous and every guard, gate, presence entry and tenant cap
-  // decided against `null`. An explicit override first — only that one can carry an `expiresAt`
-  // and a `refresh`, which is the whole of re-authorization — then the app's own HTTP resolver,
-  // then nothing at all, which is what `x dev` with no authenticator should stay.
+  // decided against `null`. An explicit override first, then the app's own HTTP resolver, then
+  // nothing at all, which is what `x dev` with no authenticator should stay.
+  //
+  // BOTH of the first two re-authorize: `syncAuthenticator` carries an `expiresAt` and a `refresh`
+  // of its own (`SYNC_GRANT_TTL_MS`), re-asking the app's resolver with the upgrade's own
+  // `cookie`/`authorization`, so `logout` closes the socket and not only the HTTP session. The
+  // override is how a deployment states a window its credential already declares (a token's
+  // `exp`), or resolves identity from a header the adapter deliberately does not retain.
   const authenticate = options.overrides?.syncAuthenticate ?? syncAuthenticator(options.buildId);
   const node = createSyncNode({
     hub,

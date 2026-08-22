@@ -15,7 +15,7 @@ import { join as joinPath } from 'node:path';
 // The POSIX variants resolve specifiers against import-graph keys, which are POSIX on every host.
 import { dirname, join, normalize, relative } from 'node:path/posix';
 import type { BoundaryRule, ImportGraph } from '@ultimat3/render';
-import { checkSurfaceBoundary, importGraph } from '@ultimat3/render';
+import { checkSurfaceBoundary, importGraph, SURFACES } from '@ultimat3/render';
 import type { Finding } from './output';
 
 export const BOUNDARY_CODES = [
@@ -132,8 +132,35 @@ const surfaceFindings = (graph: ImportGraph): readonly Finding[] =>
     };
   });
 
-/** `apps/web/app/posts/service.ts` → `posts`: the primitive a generator would be told to make. */
-const subjectOf = (path: string, fallback: string): string => path.split('/').at(-2) ?? fallback;
+/**
+ * The surface names, from `@ultimat3/render`'s own list rather than a copy: a resource can never
+ * be called one, because the directory carrying that name is the surface itself.
+ */
+const SURFACE_NAMES: ReadonlySet<string> = new Set<string>(SURFACES);
+
+/**
+ * `apps/web/app/posts/service.ts` → `posts`: the primitive a generator would be told to make.
+ *
+ * `undefined` at a surface ROOT, where the directory above the file is the surface. The old
+ * answer there was the surface's own name, so `X_BOUNDARY_ROUTE_TO_DB` on `apps/web/site/page.tsx`
+ * said `x g query site` — a runnable line that generates seven files and a `sites` table for a
+ * landing page whose only problem is one import. A fix that does the wrong thing successfully is
+ * worse than one that refuses, so the caller names the file and asks for a name instead.
+ */
+function subjectOf(path: string): string | undefined {
+  const parent = path.split('/').at(-2);
+  return parent === undefined || SURFACE_NAMES.has(parent) ? undefined : parent;
+}
+
+/**
+ * `x g query posts` where the path names a resource, `x g query <name>` where it names a surface.
+ * The placeholder form is the shape `MissingPositionalError` already hands out (`x g route
+ * <name>`) and the one the `errors` step leaves unjudged in that slot — an open positional, where
+ * a reader substituting a word makes the line run. The path rides in the `#` comment because a
+ * `fix:` is copied on its own, and `Finding.at` is a field an agent pasting one line never sees.
+ */
+const generate = (kind: 'query' | 'action', path: string, then: string): string =>
+  `x g ${kind} ${subjectOf(path) ?? '<name>'}   # ${then} ${path}`;
 
 /**
  * Both fixes are one runnable line, with the rest of the instruction behind a `#` — a fix a
@@ -147,7 +174,7 @@ function layerFindings(scanned: readonly ScannedFile[]): readonly Finding[] {
         findings.push({
           code: 'X_BOUNDARY_ROUTE_TO_DB',
           cause: `route imports the database ("${specifier}") — routes call actions and queries`,
-          fix: `x g query ${subjectOf(file.path, 'rows')}   # then call it from the route`,
+          fix: generate('query', file.path, 'then call it from'),
           docs: docs('X_BOUNDARY_ROUTE_TO_DB'),
           at: file.path,
         });
@@ -156,7 +183,7 @@ function layerFindings(scanned: readonly ScannedFile[]): readonly Finding[] {
         findings.push({
           code: 'X_BOUNDARY_SERVICE_TO_HTTP',
           cause: `service imports HTTP ("${specifier}") — a service that knows about requests cannot be reused by a job`,
-          fix: `x g action ${subjectOf(file.path, 'service')}   # read the request there, pass the service plain values`,
+          fix: generate('action', file.path, 'read the request there and pass plain values to'),
           docs: docs('X_BOUNDARY_SERVICE_TO_HTTP'),
           at: file.path,
         });

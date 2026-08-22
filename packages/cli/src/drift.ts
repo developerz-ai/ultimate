@@ -11,7 +11,9 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { describeEntities } from '@ultimat3/entity';
 import { countDeclaredEntities } from './app-entities';
+import { loadApp } from './app-load';
 // One declaration of where migrations live, and it belongs to the module that reads them —
 // `x db migrate` and this sidecar must never disagree about the directory they share.
 import { hashFileName, MIGRATIONS_DIR } from './migrations';
@@ -20,7 +22,48 @@ import type { Finding } from './output';
 export const DB_PACKAGE = join('packages', 'db');
 const SCHEMA_GLOB = 'packages/db/src/**/*.ts';
 
-/** Content hash of the whole schema, order-independent per file path. */
+/**
+ * Canonical JSON: object keys sorted, arrays in their own order. The registry's description is a
+ * BUILD INPUT committed to disk as a hash, so a field reordered inside `describe()` upstream would
+ * otherwise move every app's hash and report drift over a framework upgrade nobody made.
+ */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (typeof value === 'object' && value !== null) {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a < b ? -1 : a > b ? 1 : 0,
+    );
+    return `{${entries.map(([key, held]) => `${JSON.stringify(key)}:${canonicalJson(held)}`).join(',')}}`;
+  }
+  // `undefined` has no JSON form and an optional field left unset must hash as absent, not throw.
+  return JSON.stringify(value) ?? 'null';
+}
+
+/**
+ * What the app's entities declare, as the registry describes them — the half `SCHEMA_GLOB` cannot
+ * see. `x new` puts an entity at `apps/web/app/<feature>/entity.ts` and `packages/db/src/schema.ts`
+ * merely re-exports it, so a column added there moved NO byte the glob reads: three generated
+ * entities and one migration reported clean, with every `.hash` sidecar identical. The registry is
+ * the same fact `x db gen` diffs (`describeEntities()`), so the check and the generator now read
+ * one schema instead of two.
+ *
+ * `loadApp` is what fills that registry, and it is called on every path rather than only where the
+ * caller happens to have loaded already: a hash computed against an EMPTY registry would differ
+ * from the one `x db gen` recorded with the app loaded, and every app would read as drifted.
+ * A module that will not import leaves the registry SHORT rather than raising — the stance
+ * `countDeclaredEntities` already documents — so `x doctor` still answers on the app it diagnoses.
+ */
+async function declaredSchemaJson(root: string): Promise<string> {
+  await loadApp(root);
+  return canonicalJson(describeEntities());
+}
+
+/**
+ * Content hash of the whole schema: the entity registry first, then every non-test file under
+ * `packages/db/src`, order-independent per file path. Both halves, because they answer different
+ * questions — the registry is what reaches the database, and the glob is what catches a seed or a
+ * helper moving under it (which is what `reconcileSchemaHash` exists to re-record).
+ */
 export async function schemaHash(root: string): Promise<string> {
   const glob = new Bun.Glob(SCHEMA_GLOB);
   const paths: string[] = [];
@@ -29,6 +72,7 @@ export async function schemaHash(root: string): Promise<string> {
   }
   paths.sort();
   const hasher = new Bun.CryptoHasher('sha256');
+  hasher.update(await declaredSchemaJson(root));
   for (const path of paths) {
     hasher.update(path);
     hasher.update(await Bun.file(join(root, path)).text());
@@ -77,9 +121,10 @@ export interface HashReconciliation {
 }
 
 /**
- * Re-record the sidecar for a migration that is already the right one. `SCHEMA_GLOB` covers every
- * non-test file under `packages/db/src`, not only the ones that imply DDL, so editing a seed or a
- * helper moves the hash with no diff behind it — and `X_DB_DRIFT`'s `fix:` has to have somewhere to
+ * Re-record the sidecar for a migration that is already the right one. Neither half of the hash is
+ * DDL-only — `SCHEMA_GLOB` covers every non-test file under `packages/db/src`, and the registry
+ * carries invariants and tags a diff can leave empty — so an edit can move the hash with no
+ * statement behind it, and `X_DB_DRIFT`'s `fix:` has to have somewhere to
  * land or the instruction is unfollowable. The caller owes the proof that the DDL genuinely did not
  * move (`db-generate.ts` reaches this only on an empty diff off a fully loaded registry); this
  * function decides only whether a write is needed.
@@ -107,9 +152,9 @@ export type DeclaredEntityCount = () => Promise<number>;
  * Empty result = no drift. A missing db package is not drift (an app may have no database yet);
  * a schema with no migration at all is — *provided* the app declares an entity for one to record.
  *
- * The entity count is read lazily and ONLY in that first branch, so an app past its first migration
- * pays nothing for it: every other path answers from file hashes alone, with no app load and no
- * database, which is what lets the gate run this in a CI with neither.
+ * The entity count is read lazily and ONLY in that first branch; the hash itself loads the app on
+ * every path, because the registry is half of what it covers. Still no database anywhere here,
+ * which is what lets the gate run this in a CI with nothing listening.
  */
 export async function checkSourceDrift(
   root: string,

@@ -59,10 +59,19 @@ export interface VerifyContext {
   readonly hostChecks?: Partial<Record<VerifyStepName, HostCheck>>;
   /**
    * How wide the parallel test steps go. Absent means `defaultWorkers()` — a knob, never a
-   * narrowing: no value of it changes which steps run or what "green" means, which is why this is
-   * the only flag `x verify` accepts beyond the global ones.
+   * narrowing: no value of it changes which steps run or what "green" means.
    */
   readonly workers?: number;
+  /**
+   * ONE step, by name — an iteration loop, and the one thing here that IS a narrowing. Every
+   * iteration of the whole gate costs ~18s (14s of it `tsc -b`), which is the cost of asking a
+   * question about one step. It does not weaken axiom 5, and the two rules that keep it honest are
+   * mechanical rather than remembered: a run with this set prints `NOT A GATE RUN` in the summary
+   * AND carries `notAGateRun` in `--json` (`verify-run.ts`), so no reader of either can mistake it
+   * for the gate; and nothing writes `x.verify.json`, so the suite floor cannot be lowered by a
+   * run that never executed the suites. Green still means the no-flag run, unchanged.
+   */
+  readonly only?: VerifyStepName;
 }
 
 export interface StepOutcome {

@@ -172,14 +172,17 @@ describe('unit · x deploy --method is a closed set', () => {
 function recordingRunner(failing?: { role: string; code: number }): {
   runner: CommandContext['runner'];
   ran: string[][];
+  envs: (Readonly<Record<string, string>> | undefined)[];
 } {
   const ran: string[][] = [];
-  const runner: CommandContext['runner'] = async (command) => {
+  const envs: (Readonly<Record<string, string>> | undefined)[] = [];
+  const runner: CommandContext['runner'] = async (command, options) => {
     ran.push([...command]);
+    envs.push(options.env);
     const code = failing !== undefined && command.at(-1) === failing.role ? failing.code : 0;
     return { command, code, ok: code === 0, stdout: '', stderr: '', durationMs: 3 };
   };
-  return { runner, ran };
+  return { runner, ran, envs };
 }
 
 const runContext = (
@@ -231,7 +234,13 @@ describe('unit · x deploy actually runs the plan it printed', () => {
     expect(plan.data).toMatchObject({ image: 'repo/app:1.2.3', method: 'compose' });
     // `toMatchObject` cannot see an extra key, so the absence is asserted directly: this field was
     // the flag's only destination, and an operator reading it back was reading their own input.
-    expect(Object.keys(plan.data as Record<string, unknown>)).toEqual(['image', 'method', 'steps']);
+    // `env` is the counter-example the rule allows — every step below is spawned with it.
+    expect(Object.keys(plan.data as Record<string, unknown>)).toEqual([
+      'image',
+      'method',
+      'env',
+      'steps',
+    ]);
   });
 
   test('--critical is refused now, and the refusal names the flags that exist', async () => {
@@ -304,5 +313,32 @@ describe('unit · x deploy --method helm runs the chart the scaffold writes', ()
     expect(result.findings?.[0]?.fix).toBe(
       `${(ran.at(-1) ?? []).join(' ')}   # run it directly to see the full output`,
     );
+  });
+});
+
+/**
+ * `docker-compose.prod.yml` resolves every service's image from `${IMAGE:-ultimate-app:latest}`,
+ * so `--image` decided nothing at all on the compose method: `--json` reported the reference the
+ * operator asked for while the six `docker compose` steps read `IMAGE` out of the ambient
+ * environment — or, unset, deployed `ultimate-app:latest`. The flag and the deploy have to be the
+ * same fact.
+ */
+describe('unit · x deploy --method compose passes the image it reports', () => {
+  test('every compose step runs with IMAGE set to the requested reference', async () => {
+    const root = appRoot();
+    const { runner, ran, envs } = recordingRunner();
+    const result = await deployCommand.run(
+      runContext(['deploy', '--image', 'ghcr.io/you/app:1.2.3'], root, runner),
+    );
+    expect(result.ok).toBe(true);
+    expect(ran).toHaveLength(DEPLOY_ROLES.length);
+    for (const env of envs) expect(env).toEqual({ IMAGE: 'ghcr.io/you/app:1.2.3' });
+  });
+
+  test('the dry run says so too, so the plan an operator reads is the plan that runs', () => {
+    expect(planDeploy('repo/app:tag', 'compose', '/app').env).toEqual({ IMAGE: 'repo/app:tag' });
+    // Helm carries no IMAGE: the chart reads `--set image.repository/tag`, and an env var the
+    // chart never looks at would be a second answer to "which image is this".
+    expect(planDeploy('repo/app:tag', 'helm', '/app').env).toEqual({});
   });
 });

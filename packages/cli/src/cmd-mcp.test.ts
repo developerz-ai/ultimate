@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import { resetAppLoad } from './app-load';
 import type { McpHttpServer } from './cmd-mcp';
-import { mcpCommand, startMcpHttp } from './cmd-mcp';
+import { mcpCommand, startMcpHttp, stdioResult } from './cmd-mcp';
 import type { CommandContext } from './command';
 import { CliNotImplementedError } from './errors';
 import type { Runner } from './exec';
@@ -81,7 +81,9 @@ async function refusalFor(argv: readonly string[]): Promise<UltimateError> {
     (error: unknown) => error,
   );
   if (!(thrown instanceof UltimateError)) {
-    throw new Error(`expected x ${argv.join(' ')} to be refused, got ${String(thrown)}`);
+    // `expect.unreachable`, never a bare `Error`: its `never` return narrows `thrown` for the line
+    // below, and the report lands on the assertion rather than on the throw.
+    expect.unreachable(`x ${argv.join(' ')} should be refused, got ${String(thrown)}`);
   }
   return thrown;
 }
@@ -236,4 +238,30 @@ describe('unit · x mcp serve --transport http', () => {
     const response = await fetch(`${data.url.replace('/mcp', '')}/tools`, { method: 'POST' });
     expect(response.status).toBe(404);
   });
+});
+
+/**
+ * Under `--transport stdio`, stdout is the WIRE: `serveStdio` reads JSON-RPC frames off stdin and
+ * writes them to fd 1. This file's own header has always said "nothing here writes to it
+ * directly", and the command's result — `✓ mcp stdio serving 13 tools`, rendered by `dispatch`
+ * after the loop exits — went to fd 1 anyway, which is a malformed frame to whatever is still
+ * reading. Under `--json` it is worse: a second document after the protocol traffic.
+ */
+describe('unit · x mcp serve --transport stdio leaves stdout to the protocol', () => {
+  test('the session result is addressed to stderr, and says what it served', () => {
+    const result = stdioResult(13);
+    expect(result.stream).toBe('stderr');
+    expect(result.summary).toBe('mcp stdio serving 13 tools');
+    expect(result.data).toEqual({ transport: 'stdio', tools: 13 });
+  });
+
+  test('the http transport keeps stdout: its url and token ARE the answer', async () => {
+    const host = await createDevMcpServer({ root: ROOT, env: {}, runner });
+    const served = startMcpHttp(host, 0);
+    try {
+      expect(served.result.stream).toBeUndefined();
+    } finally {
+      await served.stop();
+    }
+  }, 30_000);
 });

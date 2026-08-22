@@ -12,6 +12,7 @@ import { decodeImage, probeImage } from '@ultimat3/core';
 import type { NestedCatalog } from '@ultimat3/i18n';
 import { catalogKeys, defineCatalogs, loadCatalog } from '@ultimat3/i18n';
 import { BuiltinImagePipeline } from '@ultimat3/pwa';
+import { renderHelp } from './cmd-help';
 import { newCommand, planNewApp, writeNewApp } from './cmd-new';
 import type { CommandContext } from './command';
 import { MissingPositionalError } from './errors';
@@ -349,5 +350,31 @@ describe('unit · x new · the API surface registers the app own primitives by n
     // Handed over as JOBS: `actions: [reindexPost]` would register nothing and read as correct.
     const list = /jobs: \[(?<names>[^\]]*)\]/.exec(apiIndex(true))?.groups?.['names'] ?? '';
     expect(list.split(',').map((entry) => entry.trim())).toContain('reindexPost');
+  });
+});
+
+/**
+ * `x new --help` used to contradict itself: the usage line offered `--no-example`, the flag table
+ * listed `--example`, and neither said which way the scaffold goes when you type neither. The
+ * example slice is 126 files against 99, so "which one do I get" is the first question the page has
+ * to answer — and `default: true` is a field only `--json` renders.
+ */
+describe('unit · x new --help states the default it scaffolds with', () => {
+  test('the example flag names its default and the spelling that turns it off', () => {
+    const flag = newCommand.spec.flags?.find((entry) => entry.name === 'example');
+    expect(flag?.default).toBe(true);
+    expect(flag?.summary).toContain('--no-example');
+    expect(flag?.summary).toContain('default');
+    // The rendered page carries both spellings on one line, so a reader never has to reconcile
+    // the usage line with the flag table.
+    const line = renderHelp(SPECS, 'new').find((entry) => entry.includes('--example'));
+    expect(line).toBeDefined();
+    expect(line).toContain('--no-example');
+  });
+
+  test('and the flag still decides what is written', () => {
+    const withExample = planNewApp({ name: 'demo', example: true }).length;
+    const without = planNewApp({ name: 'demo', example: false }).length;
+    expect(withExample).toBeGreaterThan(without);
   });
 });

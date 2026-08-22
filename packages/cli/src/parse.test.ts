@@ -35,10 +35,10 @@ describe('unit · parseArgs', () => {
     const error = thrownBy(() => parseArgs(['db'], SPECS));
     expect(error.code).toBe('X_CLI_BAD_FLAG');
     expect(error.cause).toContain('gen, migrate, branch');
-    // `x help db`, not `x db --help`: the subcommand is resolved AFTER the flag loop, so the
-    // latter throws this same error again — a fix line that reproduces its own failure.
     expect(error.fix).toBe('x help db');
-    expect(thrownBy(() => parseArgs(['db', '--help'], SPECS)).code).toBe('X_CLI_BAD_FLAG');
+    // `x db --help` is the OTHER way to the same page, and it used to throw this same error — the
+    // subcommand was resolved after the flag loop and `--help` never got a chance to answer.
+    expect(parseArgs(['db', '--help'], SPECS).help).toBe(true);
   });
 
   test('a declared default subcommand is the one that answers a bare invocation', () => {
@@ -175,5 +175,120 @@ describe('unit · parseArgs', () => {
     expect(parseArgs(['--help'], SPECS).command).toBe('help');
     expect(parseArgs(['help', 'db'], SPECS).positionals).toEqual(['db']);
     expect(parseArgs(['--version'], SPECS).command).toBe('version');
+  });
+});
+
+/**
+ * The four rules about a flag's RELATIONSHIP to the rest of argv: `--help` outranks a missing
+ * subcommand, a value that looks like a flag is refused with the form that would pass it, `--no-`
+ * belongs to booleans, and a flag one subcommand declares is refused under the others. Each one
+ * shipped as a silent wrong answer rather than a refusal, which is the direction that costs a file.
+ */
+describe('unit · parseArgs · flags against the rest of argv', () => {
+  test('--help is honoured before a missing subcommand is refused', () => {
+    for (const token of ['--help', '-h']) {
+      const args = parseArgs(['db', token], SPECS);
+      expect([token, args.command, args.help]).toEqual([token, 'db', true]);
+    }
+    // Every shipped command that takes a subcommand, because the defect was in the parser and so
+    // was every one of them: `x db --help`, `x mcp --help`, `x pr --help` all exited 1.
+    for (const spec of SPECS_SHIPPED) {
+      if ((spec.subcommands ?? []).length === 0) continue;
+      expect([spec.name, parseArgs([spec.name, '--help'], SPECS_SHIPPED).help]).toEqual([
+        spec.name,
+        true,
+      ]);
+    }
+  });
+
+  test('a value that begins with -- is refused with the form that would pass it', () => {
+    const failure = thrownBy(() => parseArgs(['db', 'branch', '--name', '--json'], SPECS));
+    expect(failure.code).toBe('X_CLI_BAD_FLAG');
+    expect(failure.cause).toBe(
+      '--name on "x db": expects a value, and "--json" is a flag — write --name=--json to pass it as the value',
+    );
+  });
+
+  test('--no- on a string flag is refused, never read as its value', () => {
+    const failure = thrownBy(() => parseArgs(['db', 'branch', '--no-name', 'feat-billing'], SPECS));
+    expect(failure.code).toBe('X_CLI_BAD_FLAG');
+    expect(failure.cause).toBe(
+      '--name on "x db": --no- negates a boolean flag, and --name takes a value',
+    );
+    expect(failure.fix).toBe('x db --help');
+  });
+
+  test('a flag a subcommand does not read is refused, not ignored', () => {
+    const specs: readonly CommandSpec[] = [
+      {
+        name: 'db',
+        summary: 'database',
+        usage: 'x db <sub>',
+        subcommands: ['gen', 'seed', 'backfill'],
+        flags: [
+          { name: 'dry-run', type: 'boolean', summary: 'seed: …', subcommands: ['seed'] },
+          { name: 'status', type: 'string', summary: 'backfill: …', subcommands: ['backfill'] },
+        ],
+      },
+    ];
+    const failure = thrownBy(() => parseArgs(['db', 'gen', 'add publish_at', '--dry-run'], specs));
+    expect(failure.code).toBe('X_CLI_BAD_FLAG');
+    expect(failure.cause).toBe(
+      '--dry-run on "x db gen": read by x db seed only — "gen" would ignore it',
+    );
+    // Runnable, and it carries the caller's own value: a `fix:` is pasted into a shell verbatim.
+    expect(failure.fix).toBe('x db seed --dry-run');
+    expect(thrownBy(() => parseArgs(['db', 'gen', '--status', 'a b'], specs)).fix).toBe(
+      "x db backfill --status 'a b'",
+    );
+    // The subcommand that DOES declare it still takes it, and an undeclared flag is unrestricted.
+    expect(flagBool(parseArgs(['db', 'seed', '--dry-run'], specs), 'dry-run')).toBe(true);
+    // `--help` outranks this too: usage must be readable from any invocation.
+    expect(parseArgs(['db', 'gen', '--dry-run', '--help'], specs).help).toBe(true);
+  });
+
+  /**
+   * The mechanical half of the rule, over every shipped command. A flag summary that opens
+   * `<subcommand>:` is a claim about which invocation reads it — `x db`'s nine, `x jobs`'
+   * four, `x tasks`' one, `x pr`'s three — and prose drifts in silence. `subcommands` is what
+   * the parser reads, so this is what holds the two to one fact.
+   *
+   * `x g` is deliberately out of scope and is the one shape this cannot judge: it declares
+   * `positionalChoices` and NO subcommands, so `resource:` / `admin:page:` in `cmd-generate.ts`
+   * name a positional rather than a subcommand, and `parseArgs` has no word to validate against
+   * at the point this check runs.
+   */
+  test('a flag summary that names a subcommand is scoped to that subcommand', () => {
+    for (const spec of SPECS_SHIPPED) {
+      const subcommands: readonly string[] = spec.subcommands ?? [];
+      for (const flag of spec.flags ?? []) {
+        const prefix = flag.summary.split(':')[0] ?? '';
+        if (!subcommands.includes(prefix)) continue;
+        expect([spec.name, flag.name, flag.subcommands]).toEqual([spec.name, flag.name, [prefix]]);
+      }
+    }
+  });
+
+  // Well-formedness of the declaration itself: a flag scoped to a word its command does not
+  // declare is a flag no invocation can ever pass, which is worse than an unscoped one.
+  test('every shipped flag scope names subcommands its command actually declares', () => {
+    for (const spec of SPECS_SHIPPED) {
+      for (const flag of spec.flags ?? []) {
+        if (flag.subcommands === undefined) continue;
+        expect([spec.name, flag.name, flag.subcommands.length > 0]).toEqual([
+          spec.name,
+          flag.name,
+          true,
+        ]);
+        for (const sub of flag.subcommands) {
+          expect([spec.name, flag.name, sub, (spec.subcommands ?? []).includes(sub)]).toEqual([
+            spec.name,
+            flag.name,
+            sub,
+            true,
+          ]);
+        }
+      }
+    }
   });
 });

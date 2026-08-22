@@ -52,6 +52,17 @@ export interface CommandResult {
    * could show is how the two drift.
    */
   readonly hold?: () => Promise<void>;
+  /**
+   * Which fd this result is written to. `stdout` for every command, absent included — and
+   * `stderr` for the one case where fd 1 is not the command's to write on: `x mcp serve
+   * --transport stdio`, whose stdout carries JSON-RPC frames, and where the `✓ mcp stdio serving
+   * 13 tools` line printed after the loop exits is a malformed frame to whatever is reading.
+   *
+   * Behaviour, not a fact, exactly like `hold` above — so NEITHER renderer carries it. It says
+   * where a rendered line goes, and a payload that also claimed it would be a second answer to a
+   * question `dispatch` has already answered by choosing the sink.
+   */
+  readonly stream?: 'stdout' | 'stderr';
 }
 
 export interface UltimateErrorShape {
@@ -158,13 +169,22 @@ export function renderHuman(result: CommandResult, verbose = false): string {
   for (const step of result.steps ?? []) {
     out.push(`  ${mark(step)} ${step.name.padEnd(18)} ${step.durationMs}ms${width(step)}`);
     for (const finding of step.findings) out.push(renderFinding(finding, '      '));
+    // NOT escaped, and that is the one exception: `output` is this process's own captured
+    // subprocess stdout — `bun test`'s colour is the reason a human reads it at all, and it is
+    // already split on its real newlines rather than carrying them inside one entry.
     if (step.output !== undefined && step.output.length > 0 && (verbose || !step.ok)) {
       for (const line of step.output.trimEnd().split('\n')) out.push(`      | ${line}`);
     }
   }
-  for (const line of result.lines ?? []) out.push(line);
+  // Every free-text line through the SAME `singleLine` the 3-line format runs, because this is
+  // where text the CLI did not write reaches fd 1: a GitHub review body (`x pr`), a CI log tail
+  // (`x ci`), a page's own console (`x shot`). It was emitted verbatim, so an ESC byte in a PR
+  // comment retitled the window and cleared the screen, and a newline in one entry printed a
+  // second line a reader — or the agent this command exists for — takes for the renderer's own.
+  for (const line of result.lines ?? []) out.push(singleLine(line));
   for (const finding of result.findings ?? []) out.push(renderFinding(finding, '  '));
-  out.push(`${result.ok ? '✓' : '✗'} ${result.summary}`);
+  // The summary is foreign too: `cli.shot.threw` interpolates a page's own error message.
+  out.push(`${result.ok ? '✓' : '✗'} ${singleLine(result.summary)}`);
   return out.join('\n');
 }
 

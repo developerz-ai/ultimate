@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { SURFACES } from '@ultimat3/render';
 import type { SourceFile } from './app-boundaries';
 import {
   appImportGraph,
@@ -58,6 +59,41 @@ describe('unit · app boundaries', () => {
     ]);
     expect(findings[0]?.code).toBe('X_BOUNDARY_SERVICE_TO_HTTP');
     expect(findings[0]?.fix).toStartWith('x g action orders');
+  });
+
+  // The fix line that generated the wrong thing. `subjectOf` read the directory above the file, so
+  // a surface-ROOT route made the SURFACE the resource: `x g query site` — a line that runs, writes
+  // seven files and adds a `sites` table, for a landing page whose only fault is one import.
+  // Measured on the unfixed helper: `x g query site   # then call it from the route`.
+  test('a surface-root route asks for a name — it never proposes the surface as a resource', () => {
+    const findings = checkImportRules([
+      file('apps/web/site/page.tsx', "import { db } from '@acme/db';"),
+    ]);
+    expect(findings[0]?.code).toBe('X_BOUNDARY_ROUTE_TO_DB');
+    expect(findings[0]?.fix).toBe('x g query <name>   # then call it from apps/web/site/page.tsx');
+    for (const surface of SURFACES) expect(findings[0]?.fix).not.toContain(`x g query ${surface} `);
+  });
+
+  // The same helper backs the service rule, so it carries the same hole and the same test.
+  test('a surface-root service asks for a name too, and names the file it belongs to', () => {
+    const findings = checkImportRules([
+      file('apps/web/app/service.ts', "import { request } from '@ultimat3/http';"),
+    ]);
+    expect(findings[0]?.code).toBe('X_BOUNDARY_SERVICE_TO_HTTP');
+    expect(findings[0]?.fix).toStartWith('x g action <name>   #');
+    expect(findings[0]?.fix).toContain('apps/web/app/service.ts');
+    for (const surface of SURFACES)
+      expect(findings[0]?.fix).not.toContain(`x g action ${surface} `);
+  });
+
+  // Every surface, not just the two above: `api` and `shared` reach these rules through the same
+  // globs, and a set that excluded one would leave a third `x g query api` shipping.
+  test('no surface name is ever the resource, on any of the four', () => {
+    for (const surface of SURFACES) {
+      const path = `apps/web/${surface}/page.tsx`;
+      const findings = checkImportRules([file(path, "import { db } from '@acme/db';")]);
+      expect(findings[0]?.fix).toBe(`x g query <name>   # then call it from ${path}`);
+    }
   });
 
   test('a legal import graph produces no findings', () => {

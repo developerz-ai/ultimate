@@ -227,10 +227,33 @@ export const jobsCommand: CliCommand = {
       { name: 'state', type: 'string', summary: 'filter by job state' },
       { name: 'limit', type: 'string', summary: 'max rows to return' },
       { name: 'name', type: 'string', summary: 'filter by job name' },
-      { name: 'from-step', type: 'string', summary: 'retry: drop this step so it re-executes' },
-      { name: 'reason', type: 'string', summary: 'cancel: why, recorded on the job' },
-      { name: 'to', type: 'string', summary: 'drain target driver: memory, redis, nats' },
-      { name: 'dry-run', type: 'boolean', summary: 'drain: report the plan, move nothing' },
+      // Each of these is read by ONE subcommand — `retryJob`, `cancelJob`, `runDrain` — and says
+      // so in its own summary. The scope is what makes the parser refuse it anywhere else instead
+      // of accepting it and ignoring it: `x db gen --dry-run` parsed and wrote the migration.
+      {
+        name: 'from-step',
+        type: 'string',
+        summary: 'retry: drop this step so it re-executes',
+        subcommands: ['retry'],
+      },
+      {
+        name: 'reason',
+        type: 'string',
+        summary: 'cancel: why, recorded on the job',
+        subcommands: ['cancel'],
+      },
+      {
+        name: 'to',
+        type: 'string',
+        summary: 'drain: target driver — memory, redis, nats',
+        subcommands: ['drain'],
+      },
+      {
+        name: 'dry-run',
+        type: 'boolean',
+        summary: 'drain: report the plan, move nothing',
+        subcommands: ['drain'],
+      },
     ],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {

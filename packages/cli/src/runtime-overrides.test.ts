@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { noopPurgeDriver } from '@ultimat3/cache';
 import type { UltimateError } from '@ultimat3/core';
-import { resetLifecycle } from '@ultimat3/core';
+import { logger, resetLifecycle } from '@ultimat3/core';
 import { memoryRateLimitStore } from '@ultimat3/http';
 import {
   createMemoryDriver,
@@ -134,6 +134,32 @@ describe('the web role reads the seams startRoles never passed', () => {
     // Declared and enforced together: `assertRateLimitScope` would have refused the boot if the
     // config said `'shared'` and the installed store did not.
     expect(running.server?.config.rateLimit.scope).toBe('shared');
+  });
+
+  test('a per-process store the host PASSED is warned about, with the multiplier it enforces', async () => {
+    const lines: string[] = [];
+    const original = logger.warn;
+    logger.warn = (line: string) => lines.push(line);
+    try {
+      running = await startRoles({
+        roles: ['web'],
+        port: 0,
+        buildId: 'test',
+        runtime: fakeRuntime(),
+        env: {},
+        routes: [],
+        // `memoryRateLimitStore()` is `scope: 'process'`, which `assertRateLimitScope` cannot
+        // refuse: the config derives its scope from this very object, so the two agree and the
+        // boot is legal. What is left to say is what it COSTS, which nothing said.
+        overrides: { rateLimitStore: memoryRateLimitStore() },
+      });
+    } finally {
+      logger.warn = original;
+    }
+    const warned = lines.find((line) => line.includes('per process'));
+    expect(warned).toContain('3x every number');
+    expect(warned).toContain('runtime.rateLimitStore');
+    expect(running.server?.config.rateLimit.scope).toBe('process');
   });
 
   test('no store is one process, declared — never the silent default that shipped 3x the limit', async () => {

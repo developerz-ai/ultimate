@@ -2,6 +2,7 @@
 // because "what a generator emits" and "which spelling reaches it" are two jobs — and the file
 // that held both had reached the 500-line ceiling, one generator short of failing its own gate.
 
+import { nearestName } from '@ultimat3/core';
 import { BadFlagError, MissingPositionalError, UnknownCommandError } from './errors';
 import type { Surface } from './templates';
 
@@ -42,13 +43,30 @@ export function assertSurfaceSupported(kind: Generator, surface: Surface, name: 
   });
 }
 
+/**
+ * The generator a spelling reaches, or a refusal that leads with the one it is nearest.
+ *
+ * The lead used to be the literal `g resource`, whatever was typed: `x g rout x` — one edit from
+ * `route` — answered `fix: x g resource`, the WRONG PRIMITIVE, and one that refuses in turn
+ * because it carries no `<name>`. `nearestName` is what `parse.ts` already does with a mistyped
+ * command, over this file's own list.
+ *
+ * Two rules hold the fix line to a command that runs. A near miss is completed with that
+ * generator's own `EXAMPLE_NAME`, because `x g route <name>` pasted into a shell is a redirect.
+ * A word near NOTHING gets `x help g` rather than an invented lead — the same rule `parse.test.ts`
+ * pins for a command that resembles nothing, and the reason `nearestName` is never asked about an
+ * ABSENT kind: the empty string is within the cutoff of `job`, so `x g` would "suggest" a
+ * generator nobody typed.
+ */
 export function readKind(raw: string | undefined): Generator {
   const kinds: readonly string[] = GENERATORS;
   if (raw !== undefined && kinds.includes(raw)) return raw as Generator;
+  const near = raw === undefined ? undefined : nearestName(raw, kinds);
+  const suggestion = GENERATORS.find((kind) => kind === near);
   throw new UnknownCommandError({
     path: `g ${raw ?? ''}`.trim(),
     known: GENERATORS,
-    suggestion: 'g resource',
+    suggestion: suggestion === undefined ? 'help g' : `g ${suggestion} ${EXAMPLE_NAME[suggestion]}`,
   });
 }
 

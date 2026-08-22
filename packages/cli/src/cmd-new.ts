@@ -72,9 +72,12 @@ export const newCommand: CliCommand = {
     flags: [
       { name: 'dir', type: 'string', summary: 'parent directory (default: cwd)' },
       {
+        // The summary carries the default and the negation because the page has to answer "which
+        // one do I get if I type neither": the usage line offered `--no-example`, this table said
+        // `--example`, and `default: true` is a field only `--json` renders. 126 files against 99.
         name: 'example',
         type: 'boolean',
-        summary: 'include the example feature slice',
+        summary: 'include the example feature slice (default: on; --no-example for an empty app/)',
         default: true,
       },
       { name: 'dry-run', type: 'boolean', summary: 'print the file list, write nothing' },

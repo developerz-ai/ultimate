@@ -10,6 +10,8 @@
 // and `join` builds the host-separator path to its config file.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import type { TestType } from '@ultimat3/testing';
+import { TEST_TYPES } from '@ultimat3/testing';
 import { checkEvalBaselines, checkEvalCoverage, checkEvalRecording } from './app-evals';
 import { APP_CONFIG_FILE } from './app-root';
 import { countsOf } from './test-counts';
@@ -20,9 +22,15 @@ import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
 import { fromExec, fromFindings } from './verify-step';
 import { runParallel } from './verify-test-run';
 
-export const TEST_TYPES = ['unit', 'contract', 'live', 'job', 'e2e', 'eval'] as const;
-
-export type TestType = (typeof TEST_TYPES)[number];
+/**
+ * The six types are `@ultimat3/testing`'s declaration, not a list restated here: `unitTest`,
+ * `contractTest` and the rest prefix a test's reported name with one of these words, and this
+ * package selects a suite by the same word. A copy is one edit away from a step that discovers
+ * files no helper produces. `cli -> testing` is a declared sideways edge (`scripts/lib/tiers.ts`)
+ * and `@ultimat3/testing` is already a runtime dependency of this package.
+ */
+export type { TestType } from '@ultimat3/testing';
+export { TEST_TYPES } from '@ultimat3/testing';
 
 type TypedTest = Exclude<TestType, 'unit'>;
 

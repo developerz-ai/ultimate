@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { TEST_TYPES as TESTING_TEST_TYPES } from '@ultimat3/testing';
 import type { ExecOptions, ExecResult } from './exec';
 import { belongsToType } from './test-select';
 import { SHARD_COMMAND_PREFIX } from './test-shards';
@@ -209,5 +210,20 @@ describe('unit · the two types that cannot be split stay serial', () => {
 
   test('the serial list is exactly the two types with a documented reason', () => {
     expect([...SERIAL_TYPES]).toEqual(['live', 'e2e']);
+  });
+});
+
+/**
+ * The six types are `@ultimat3/testing`'s declaration — `unitTest`, `contractTest` and the rest
+ * prefix a test's reported name with one, and this package selects a suite by the same word. Two
+ * lists is one edit away from a gate step that discovers files no helper produces, or a helper
+ * whose type no step runs.
+ */
+describe('unit · the test-type vocabulary has one owner', () => {
+  test('the gate reads the same list the test helpers declare', () => {
+    expect(TEST_TYPES).toBe(TESTING_TEST_TYPES);
+    // `cli -> testing` is a declared sideways edge and `@ultimat3/testing` is already a runtime
+    // dependency of this package, so the import is the cheap half of the fix.
+    expect(TEST_STEPS.map((step) => step.name)).toEqual([...TESTING_TEST_TYPES]);
   });
 });

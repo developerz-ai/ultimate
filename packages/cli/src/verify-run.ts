@@ -14,8 +14,19 @@ import {
 import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
 
 /**
+ * What a narrowed run says, in both renderers. A TOKEN and not a `msg()` key, deliberately: it
+ * rides in `--json` verbatim, and a string that changed with the locale would be a string a
+ * machine cannot test for — the same reason an `X_*` code is never translated.
+ */
+export const NOT_A_GATE_RUN = 'NOT A GATE RUN';
+
+/**
  * Run every step in order, never bailing early: an agent fixing three things at once needs all
  * three findings from one run, not one per round-trip.
+ *
+ * `ctx.only` narrows the list to one step. The narrowing lives HERE rather than in `cmd-verify.ts`
+ * so that every caller of the runner — the command, `x build`, the MCP host — gets the banner and
+ * the `--json` flag with it, instead of one of them filtering a list quietly.
  */
 export async function runVerify(
   steps: readonly VerifyStep[],
@@ -23,7 +34,8 @@ export async function runVerify(
 ): Promise<CommandResult> {
   const floor = await readVerifyFloor(ctx.root);
   const results: StepResult[] = [];
-  for (const step of steps) {
+  const selected = ctx.only === undefined ? steps : steps.filter((step) => step.name === ctx.only);
+  for (const step of selected) {
     const applies = step.applies === undefined ? true : await step.applies(ctx);
     if (!applies) {
       // A skip this repo already ruled out is not a skip. The step ran here before — the floor is
@@ -67,14 +79,28 @@ export async function runVerify(
   const failedSteps = results.filter((step) => !step.ok).map((step) => step.name);
   const skippedSteps = results.filter((step) => step.skipped === true).map((step) => step.name);
   const totalMs = results.reduce((sum, step) => sum + step.durationMs, 0);
+  const summary = verifySummary({
+    results,
+    failed: failedSteps,
+    skipped: skippedSteps,
+    totalMs,
+  });
   return {
     ok: failedSteps.length === 0,
     command: 'verify',
-    summary: verifySummary({ results, failed: failedSteps, skipped: skippedSteps, totalMs }),
+    summary: ctx.only === undefined ? summary : `${NOT_A_GATE_RUN} — ${summary}`,
     steps: results,
     // `skipped` is a list beside `failed` and not a count, because the two answer the same kind of
     // question — *which* steps, not how many — and a caller ratcheting on coverage needs the names.
-    data: { failed: failedSteps, skipped: skippedSteps, durationMs: totalMs },
+    data: {
+      failed: failedSteps,
+      skipped: skippedSteps,
+      durationMs: totalMs,
+      // A BOOLEAN beside the banner, so a reader of `--json` never has to substring-match a
+      // summary line to learn that this run checked one thing.
+      ...(ctx.only === undefined ? {} : { notAGateRun: true, only: ctx.only }),
+    },
+    // The step's own status: one step, so `failedSteps` is that step and nothing else.
     exitCode: failedSteps.length === 0 ? 0 : 1,
   };
 }

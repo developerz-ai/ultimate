@@ -45,6 +45,11 @@ export interface RuntimeOverrides {
    * Where the HTTP rate limiter keeps its counters. It also DECIDES `rateLimit.scope`: a store
    * that says `'shared'` is a deployment declaring fleet-wide numbers, and `assertRateLimitScope`
    * holds the two halves together rather than a literal in the boot contradicting the store.
+   *
+   * Omitted, the boot installs `postgresRateLimitStore` over the pool it already opened
+   * (`startServices`) — so this replaces a SHARED default, not an absent one. A store whose scope
+   * is `'process'` is legal and warned about: it is every declared limit enforced once per
+   * replica, and `docker/helm/values.yaml` runs three.
    */
   readonly rateLimitStore?: RateLimitStore;
   /**
@@ -59,8 +64,11 @@ export interface RuntimeOverrides {
   readonly images?: ImageTransformDriver;
   /**
    * Who is dialling the `sync` node. Omitted, the app's own `configureAuthenticator()` is adapted
-   * — this field exists because that adapter can only ever answer `{ actor }`, and a real
-   * deployment's token has an `expiresAt` and a `refresh`, which is the whole of re-authorization.
+   * — and that adapter now carries `expiresAt` and `refresh` of its own (`SYNC_GRANT_TTL_MS`),
+   * re-asking the app's resolver with the upgrade's own `cookie`/`authorization`. So this field is
+   * no longer the only way to get re-authorization; it is how a deployment states a window the
+   * credential itself declares (a token's `exp`), or resolves identity from a header the adapter
+   * deliberately does not retain per socket.
    */
   readonly syncAuthenticate?: SyncAuthenticator;
 }

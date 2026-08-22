@@ -12,6 +12,7 @@ import {
   catalogRegistrationGaps,
   catalogsNeverRegistered,
   catalogUnregistered,
+  pluralVariantsOf,
   registeredLocales,
 } from '@ultimat3/i18n';
 import { loadApp } from './app-load';
@@ -105,9 +106,68 @@ export async function checkRegistration(input: RegistrationInput): Promise<Regis
 }
 
 /**
- * The file half: a key source uses that a locale's catalog does not define. Built here rather than
- * in `cmd-i18n.ts` because `x verify`'s `i18n` step reports the same finding, and a second
- * construction of it is two renderers of one fact waiting to drift.
+ * `⟦key⟧` — `@ultimat3/i18n`'s own loud miss, spelled ONCE for the whole CLI. `x i18n sync <default>`
+ * writes it and the two checks below refuse it, so a second spelling would be a placeholder one
+ * half of this package writes and the other half cannot see.
+ */
+const MISS_OPEN = '\u27E6';
+const MISS_CLOSE = '\u27E7';
+
+/** What `x i18n sync` seeds a key with when there is no catalog above it to copy a value from. */
+export const loudMiss = (key: string): string => `${MISS_OPEN}${key}${MISS_CLOSE}`;
+
+/**
+ * A value that is a placeholder rather than a translation. Any `⟦…⟧`, not just `⟦<this key>⟧`:
+ * an author who renames a key and leaves the old marker behind still ships a placeholder.
+ */
+export const isLoudMiss = (value: string | undefined): boolean =>
+  value?.startsWith(MISS_OPEN) === true && value.endsWith(MISS_CLOSE);
+
+/**
+ * Whether `locale` answers `key` with a placeholder. Every spelling `definesKey` accepts is
+ * checked — `pluralVariantsOf` is `@ultimat3/i18n`'s own list, the same one `auditCatalogs` uses,
+ * so "defined" and "defined with a real string" can never disagree about which entries count.
+ * `some`, not `every`: a plural family with one untranslated category renders `⟦items_many⟧` on
+ * exactly the rows that hit it.
+ */
+const answersWithPlaceholder = (catalog: Catalog, key: string): boolean =>
+  [key, ...pluralVariantsOf(key)].some(
+    (candidate) => Object.hasOwn(catalog, candidate) && isLoudMiss(catalog[candidate]),
+  );
+
+/**
+ * The audit, with every placeholder counted as the missing key it stands in for.
+ *
+ * `auditCatalogs` asks `Object.hasOwn` and nothing else, so a key present with ANY value is not
+ * missing — including `⟦key⟧`, which is the value `x i18n sync <defaultLocale>` writes for every
+ * gap it closes. Without this, following `X_CATALOG_MISSING_KEYS`'s own `fix:` turns the `i18n`
+ * gate step green over strings no human has ever read: issue #249's ending, reached by running the
+ * command the error recommends. The hole predates the seeding — a hand-written `"TODO"` bought the
+ * same green — but one command now writes sixteen of them, so it is a hole with a shortcut to it.
+ *
+ * Applied HERE and not in `auditCatalogs`: `⟦…⟧` is what the CLI writes, and `@ultimat3/i18n`'s
+ * audit answering "is this key defined" is a different question from "is this app shippable".
+ */
+export function withPlaceholdersMissing(
+  report: ExtractReport,
+  catalogs: Readonly<Record<Locale, Catalog>>,
+): ExtractReport {
+  const locales = report.locales.map((audit) => {
+    const catalog = catalogs[audit.locale] ?? {};
+    const known = new Set(audit.missing);
+    const placeheld = report.used.filter(
+      (key) => !known.has(key) && answersWithPlaceholder(catalog, key),
+    );
+    if (placeheld.length === 0) return audit;
+    return { ...audit, missing: [...audit.missing, ...placeheld].sort() };
+  });
+  return { ...report, locales, ok: locales.every((audit) => audit.missing.length === 0) };
+}
+
+/**
+ * The file half: a key source uses that a locale's catalog does not define, or defines with a
+ * placeholder. Built here rather than in `cmd-i18n.ts` because `x verify`'s `i18n` step reports
+ * the same finding, and a second construction of it is two renderers of one fact waiting to drift.
  */
 export function missingKeyFindings(report: ExtractReport): readonly Finding[] {
   return report.locales
@@ -126,5 +186,8 @@ export function missingKeyFindings(report: ExtractReport): readonly Finding[] {
 export async function catalogFindings(root: string): Promise<readonly Finding[]> {
   const { report, catalogs, extraction, ignoreUnused } = await auditApp(root);
   const registration = await checkRegistration({ root, catalogs, extraction, ignoreUnused });
-  return [...missingKeyFindings(report), ...registration.findings];
+  return [
+    ...missingKeyFindings(withPlaceholdersMissing(report, catalogs)),
+    ...registration.findings,
+  ];
 }

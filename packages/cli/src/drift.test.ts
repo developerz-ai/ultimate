@@ -15,6 +15,7 @@ import {
   writeSchemaHash,
 } from './drift';
 import { MIGRATIONS_DIR } from './migrations';
+import type { Finding } from './output';
 
 const appRoot = (): string => mkdtempSync(join(tmpdir(), 'x-drift-'));
 
@@ -206,6 +207,100 @@ describe('unit · source drift', () => {
         '0001_initial.hash',
         '0002_change.hash',
       ]);
+    });
+  });
+});
+
+// The half `SCHEMA_GLOB` cannot see, and the reason it needs its own describe block: `x new` puts
+// an entity at `apps/web/app/<feature>/entity.ts` and `packages/db/src/schema.ts` only re-exports
+// it, so every byte the glob reads is identical before and after a column is added. Measured on the
+// unfixed check: three generated entities, one migration, `drift` green, every `.hash` identical.
+//
+// Every case runs in a SUBPROCESS, for the two reasons `app-entities.test.ts` gives and one more:
+// `import()` caches, so a module edited inside one process registers its FIRST version forever —
+// an in-process edit-then-rehash cannot tell a fixed check from a broken one.
+describe('unit · entities outside packages/db are schema', () => {
+  const REPO_ROOT = join(import.meta.dir, '..', '..', '..');
+  const DRIFT_MODULE = join(import.meta.dir, 'drift.ts');
+  /** Absolute, because the temp app has no `node_modules`: a bare specifier registers nothing. */
+  const ENTITY_MODULE = join(import.meta.dir, '..', '..', 'entity', 'src', 'index.ts');
+
+  /** One `x` invocation: one process, one app load, one registry. */
+  async function inFreshProcess(root: string, expression: string): Promise<string> {
+    const script =
+      `const drift = await import(${JSON.stringify(DRIFT_MODULE)});\n` +
+      `await Bun.stdout.write(String(await (${expression})(${JSON.stringify(root)})));\n`;
+    const proc = Bun.spawn(['bun', '-e', script], {
+      cwd: REPO_ROOT,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+    expect({ code, stderr: await new Response(proc.stderr).text() }).toMatchObject({ code: 0 });
+    return out.trim();
+  }
+
+  const writeEntity = (root: string, columns: string): Promise<number> =>
+    Bun.write(
+      join(root, 'apps', 'web', 'app', 'post', 'entity.ts'),
+      `import { entity, text, uuid } from ${JSON.stringify(ENTITY_MODULE)};\n` +
+        `export const post = entity('drift_test_posts', { columns: { ${columns} } });\n`,
+    );
+
+  /** The scaffold's own layout: the entity lives under `apps/`, `packages/db` re-exports it. */
+  async function scaffold(root: string, columns: string): Promise<void> {
+    await writeEntity(root, columns);
+    await writeSchema(root, "export { post } from '../../../apps/web/app/post/entity';\n");
+    await Bun.write(join(root, MIGRATIONS_DIR, '0001_init.sql'), 'select 1;\n');
+  }
+
+  const ONE_COLUMN = 'id: uuid().primaryKey()';
+  const TWO_COLUMNS = 'id: uuid().primaryKey(), body: text({ max: 4000 })';
+
+  test('a column added to an entity under apps/ is drift, though no db/src byte moved', async () => {
+    await withRoot(async (root) => {
+      await scaffold(root, ONE_COLUMN);
+      const recorded = await inFreshProcess(root, 'drift.writeSchemaHash');
+      // Read back through the same helper the check uses, so this is the recorded value and not a
+      // second spelling of it. `writeSchemaHash` returns the hash it wrote.
+      expect(recorded).toMatch(/^[0-9a-f]{16}$/);
+
+      await writeEntity(root, TWO_COLUMNS);
+      const findings = JSON.parse(
+        await inFreshProcess(root, 'async (r) => JSON.stringify(await drift.checkSourceDrift(r))'),
+      ) as readonly Finding[];
+      expect(findings).toHaveLength(1);
+      expect(findings[0]?.code).toBe('X_DB_DRIFT');
+      expect(findings[0]?.fix).toBe('x db gen "describe the change"');
+      expect(findings[0]?.cause).toContain(`recorded ${recorded}`);
+    });
+  });
+
+  // The direct statement of the mutation the case above catches: with the registry dropped from
+  // `schemaHash`, these two hashes are equal — `1a8ab3d182f3122d` in both processes, measured.
+  test('two entity shapes over identical packages/db bytes hash differently', async () => {
+    await withRoot(async (root) => {
+      await scaffold(root, ONE_COLUMN);
+      const before = await inFreshProcess(root, 'drift.schemaHash');
+      const dbBytes = await Bun.file(join(root, DB_PACKAGE, 'src', 'schema.ts')).text();
+
+      await writeEntity(root, TWO_COLUMNS);
+      const after = await inFreshProcess(root, 'drift.schemaHash');
+      // The premise: the glob's own input is byte-identical, so anything that differs is the
+      // registry. Asserted, not assumed — a fixture that quietly edited it would prove nothing.
+      expect(await Bun.file(join(root, DB_PACKAGE, 'src', 'schema.ts')).text()).toBe(dbBytes);
+      expect(after).not.toBe(before);
+    });
+  });
+
+  // The other direction, and the one that keeps `x verify` usable: a hash is a build input, so two
+  // machines and two runs must agree. Re-running the same app must not move it.
+  test('the same app hashes the same in two processes — the hash is a committed fact', async () => {
+    await withRoot(async (root) => {
+      await scaffold(root, TWO_COLUMNS);
+      expect(await inFreshProcess(root, 'drift.schemaHash')).toBe(
+        await inFreshProcess(root, 'drift.schemaHash'),
+      );
     });
   });
 });

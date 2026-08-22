@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { PurgeDriver } from '@ultimat3/cache';
 import { noopPurgeDriver, registeredTiers, resetTiers } from '@ultimat3/cache';
-import { UltimateError } from '@ultimat3/core';
+import { readinessCheckCount, UltimateError } from '@ultimat3/core';
 import { jobDriver } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
 import { createMemoryDriver, tryMailDriver } from '@ultimat3/mail';
@@ -320,6 +320,25 @@ describe('startServices', () => {
         // Handed to `PresenceRegistry` by the sync role. It is the transport's number, not the
         // role's, because the KV bucket's age limit was derived from the same one.
         expect(runtime.presenceTtlMs).toBe(DEFAULT_PRESENCE_TTL_MS);
+      } finally {
+        await runtime.stop();
+      }
+    },
+    { timeout: 60_000 },
+  );
+
+  test(
+    'the boot resolves the SHARED rate-limit store, over the pool it already opened',
+    async () => {
+      const runtime = await startServices(resolveServices(root, {}), {});
+      try {
+        // Observed before this landed: `undefined` — no boot in the tree installed a store, so
+        // `startWeb` derived `rateLimit.scope: 'process'` while the shipped chart runs three `web`
+        // replicas, each enforcing the whole of every declared limit.
+        expect(runtime.rateLimitStore?.scope).toBe('shared');
+        // The pool this boot opened, never a second one: `Bun.sql` does not satisfy `PgExecutor`
+        // at all, and the store has to be able to run its statement.
+        expect(readinessCheckCount()).toBeGreaterThan(0);
       } finally {
         await runtime.stop();
       }

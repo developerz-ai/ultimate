@@ -31,7 +31,7 @@ x version              # CLI version
 | `x dev` | all roles in one process: embedded services, sub-second reload, `/_x` mounted | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
 | `x db <sub>` | gen, migrate, reset, seed, studio, branch, backfill | shipped |
-| `x verify [--workers N]` | the gate — 19 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, manifest, roadmap | shipped |
+| `x verify [--only <step>] [--workers N]` | the gate — 19 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, manifest, roadmap. `--only <step>` runs ONE of them for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only`), writing no floor file; an unknown name is refused with the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
 | `x env [check\|example]` | validate the process env against `envSchema`, or regenerate `.env.example` from it | shipped |
 | `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
 | `x build` | container image, single binary, or prerendered static site | shipped |
@@ -73,7 +73,7 @@ x new <name> [--dir path] [--no-example] [--dry-run] [--force] [--json]
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
 | `--dir` | string | cwd | parent directory to create the app in |
-| `--example` / `--no-example` | boolean | `true` | include the example feature slice |
+| `--example` / `--no-example` | boolean | `true` | include the example feature slice (default: on; `--no-example` for an empty `app/`) |
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
 | `--force` | boolean | `false` | write into a directory that already exists |
 
@@ -357,7 +357,7 @@ either: reads and writes run on `@ultimat3/entity`'s hand-written `postgresDrive
 |---|---|
 | `packages/db/migrations/<id>.sql` | the `up`, then a lone `-- down` line, then the reverse |
 | `packages/db/migrations/<id>.snapshot.json` | the schema this migration leaves behind — what the *next* `x db gen` diffs against |
-| `packages/db/migrations/<id>.hash` | the entity-source hash `x verify`'s `drift` step checks |
+| `packages/db/migrations/<id>.hash` | the hash of the loaded entity **registry** that `x verify`'s `drift` step checks — the entity SOURCE text was what it hashed until 8.0.0, which could not see a change in what `describe()` means by that text |
 
 **And `x db gen` is that directory's only writer**, `As of 2026-08`. `x new` scaffolds no migration:
 a hand-written first file carried no `.snapshot.json` — the one artifact only the generator produces

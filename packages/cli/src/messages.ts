@@ -178,6 +178,9 @@ const CATALOG = {
   'cli.shot.canvasUnreadable': '  canvas   unreadable — {bytes} byte(s), not a decodable image',
   'cli.shot.islands': '  islands  {booted} of {declared} mounted ({strategies})',
   'cli.shot.islandsUnknown': '  islands  not counted — the page answered no probe',
+  // The failure a picture cannot show and a console count cannot see: a rejected mount promise
+  // calls no console method, so the FIRST one is named here rather than left to verdict.json.
+  'cli.shot.islandFailed': '{route}: {failed} island(s) failed to mount — {island}: {message}',
   'cli.shot.network': '  network  {requests} request(s), {refused} refused, {dropped} dropped',
   'cli.shot.console': '  console  {level}: {text}',
   'cli.shot.threw': '{route}: {thrown} uncaught exception(s) — {first}',

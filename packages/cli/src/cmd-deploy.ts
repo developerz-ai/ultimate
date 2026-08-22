@@ -63,6 +63,16 @@ export interface DeployPlan {
   readonly image: string;
   /** Ordered: migrate runs to completion before any role that serves traffic starts. */
   readonly steps: readonly { readonly role: string; readonly command: readonly string[] }[];
+  /**
+   * The environment every step runs with — how the COMPOSE method carries the image, because
+   * `docker-compose.prod.yml` resolves each service from `${IMAGE:-ultimate-app:latest}` and
+   * `docker compose` takes no image argument. Without it `--image` decided nothing: the plan
+   * reported the reference the operator asked for while the six steps read `IMAGE` off the
+   * ambient environment, or deployed `ultimate-app:latest` where it was unset. Helm carries none
+   * — the chart reads `--set image.repository/tag`, and an env var it never looks at would be a
+   * second answer to which image is being deployed.
+   */
+  readonly env: Readonly<Record<string, string>>;
 }
 
 /**
@@ -100,6 +110,7 @@ export function planDeploy(image: string, method: DeployMethod, root: string): D
     }
     return {
       image,
+      env: {},
       steps: [
         {
           role: 'all',
@@ -117,6 +128,10 @@ export function planDeploy(image: string, method: DeployMethod, root: string): D
   }
   return {
     image,
+    // The one place the compose file's own variable is named. `docker/docker-compose.prod.yml`'s
+    // header documents `IMAGE=… docker compose …` as the way to run it by hand; this is that line,
+    // performed.
+    env: { IMAGE: image },
     steps: DEPLOY_ROLES.map((role) => ({
       role,
       command: [
@@ -165,6 +180,9 @@ export const deployCommand: CliCommand = {
     const planJson: JsonValue = {
       image: plan.image,
       method,
+      // Reported, because it is what makes `image` above true on the compose method — a dry run
+      // that names an image the steps do not carry is the defect this field closed.
+      env: { ...plan.env },
       steps: plan.steps.map((step) => ({ role: step.role, command: step.command.join(' ') })),
     };
     if (flagBool(ctx.args, 'dry-run')) {
@@ -177,7 +195,7 @@ export const deployCommand: CliCommand = {
       };
     }
     for (const step of plan.steps) {
-      const result = await ctx.runner(step.command, { cwd: root });
+      const result = await ctx.runner(step.command, { cwd: root, env: plan.env });
       if (!result.ok) {
         return {
           ok: false,
