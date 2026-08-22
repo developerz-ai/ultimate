@@ -82,6 +82,40 @@ describe('checkBudget', () => {
     expect(() => assertBudget(entry, islands)).toThrow(BudgetExceededError);
   });
 
+  /**
+   * A budget message is read by a human deciding whether to raise a number. `5120kb` is the same
+   * bytes as `5mb` and the wrong unit to decide in — and `@ultimat3/pwa`'s precache warning already
+   * said `5mb` for the identical count, so the two halves of one build disagreed about the size of
+   * one artifact. One `formatBytes`, in `@ultimat3/core`.
+   */
+  test('a megabyte route reads in mb, not in four-digit kb', () => {
+    island({ src: `./huge${ISLAND_EXTENSION}` });
+    const entry = registerRoute({
+      file: 'apps/web/app/reports/page.tsx',
+      config: defineRoute({
+        render: 'ssr',
+        offline: 'runtime',
+        hydrate: 'visible',
+        budget: { js: '1mb' },
+        meta,
+      }),
+    });
+    const huge: readonly Island[] = [
+      {
+        id: 'huge',
+        file: 'apps/web/app/reports/huge.tsx',
+        graph: 'app',
+        strategy: 'visible',
+        bytes: 5 * 1024 * 1024,
+      },
+    ];
+
+    const report = checkBudget(entry, huge);
+    expect(report.ok).toBe(false);
+    expect(report.cause).toContain('js 5mb > 1mb');
+    expect(report.cause).not.toContain('kb');
+  });
+
   test('passes under the limit and reports zero for a site route with no islands', () => {
     const entry = registerRoute({
       file: 'apps/web/site/about/page.tsx',

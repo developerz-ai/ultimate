@@ -21,23 +21,28 @@ const source = (): string => {
 describe('unit · the app.config.ts x new writes', () => {
   test('names no config key the framework does not read', () => {
     const text = source();
-    // `installPrompt` is `PwaConfig`'s and NO file reads it — `packages/core/src/config.ts` carries
-    // the marker saying so. Scaffolding it wrote a switch with no wire into every generated app.
-    expect(text).not.toContain('installPrompt');
+    // All three were declared, defaulted and merged by `defineConfig` and read by NO file, and all
+    // three are DELETED from `packages/core/src/config.ts` as of 2026-08-22 — so scaffolding any of
+    // them would now be `TS2353` in every generated app's first `x verify`, rather than the silent
+    // switch-with-no-wire it was. This assertion is what keeps one from coming back.
+    for (const dead of ['installPrompt', 'afterSignInPath', 'modelEnv']) {
+      expect(`app.config.ts names ${dead}: ${String(text.includes(dead))}`).toBe(
+        `app.config.ts names ${dead}: false`,
+      );
+    }
   });
 
   test('the pwa block it does write is the half that is wired', () => {
     expect(source()).toContain("pwa: { enabled: true, offline: 'runtime' }");
   });
 
-  test('omitting the key still produces a config defineConfig accepts', () => {
-    // The half that makes the deletion safe rather than merely tidy: `installPrompt` is REQUIRED on
-    // `PwaConfig` and defaulted by `defineConfig`, so a scaffold that omits it still boots — and a
-    // future change that made it required-without-a-default would fail here rather than in a
-    // generated app's first `x dev`.
+  test('the block it writes is one defineConfig accepts, and it grows no key back', () => {
+    // The half that makes the deletion safe rather than merely tidy: the scaffold's literal block
+    // still builds, and the RESULT carries no `installPrompt` — `section()` copies every own key of
+    // the patch, so a default reinstated in core would reappear here without a scaffold change.
     const built = defineConfig({ name: 'ledger-demo', pwa: { enabled: true, offline: 'runtime' } });
 
     expect(built.pwa.offline).toBe('runtime');
-    expect(built.pwa.installPrompt).toBe(false);
+    expect(Object.keys(built.pwa).sort()).toEqual(['backgroundSync', 'enabled', 'offline', 'push']);
   });
 });

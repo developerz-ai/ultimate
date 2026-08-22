@@ -328,7 +328,7 @@ and a second copy of the number is a settle that shoots early and calls a health
 | `defineRoute` | the `route` primitive |
 | `island`, `createIslandCollector` | one interactive component on a static page |
 | `MODE_SPECS`, `assertModeShape`, `assertModeInvariants` | the mode invariant table |
-| `registerRoute`, `describeRoutes`, `matchRoute`, `routePathFromFile` | the route table |
+| `registerRoute`, `describeRoutes`, `routeFor`, `routePathFromFile` | the route table |
 | `checkSurfaceBoundary`, `assertSurfaceBoundary`, `surfaceOf` | the hard boundary |
 | `renderStatic`, `enumeratePrerender` | build-time render, content hashing |
 | `createIsrController`, `invalidateAndRevalidate` | SWR + single-flight + tag triggers |

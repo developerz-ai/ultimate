@@ -2,7 +2,13 @@
 // MailDriver contract — no SDK, `fetch` is the whole client. Construction fails fast on a
 // missing key or an empty from address, so a misconfiguration never waits for the first send.
 
-import { ConfigInvalidError, EnvMissingError, logger, nanoid } from '@ultimat3/core';
+import {
+  ConfigInvalidError,
+  EnvMissingError,
+  logger,
+  nanoid,
+  renderThrowable,
+} from '@ultimat3/core';
 import type { MailDriver, MailMessage, SendResult } from './driver';
 import { messageHeaders, resultFor } from './driver';
 import { sendFailed } from './errors';
@@ -156,8 +162,10 @@ export function createResendDriver(options: ResendDriverOptions): MailDriver {
       } catch (error) {
         // DNS/TLS/reset, or the timeout firing — none of them got far enough to have a status,
         // and every one of them can succeed unchanged on the job's next attempt.
-        const reason =
-          error instanceof Error ? error.message : 'the request failed before a response';
+        // `renderThrowable`, never `error instanceof Error` and `.message`: `fetch` is injected
+        // and the peer is a third party, so `instanceof` RUNS a `Proxy`'s `getPrototypeOf` trap
+        // and its throw escapes this `catch` — the queue's dead-letter row would lose the code.
+        const reason = renderThrowable(error);
         throw sendFailed({
           driver: 'resend',
           stage: 'request',

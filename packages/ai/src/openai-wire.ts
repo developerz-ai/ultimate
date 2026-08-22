@@ -6,6 +6,7 @@
 // order, or stops half way. An LLM response is untrusted input, so every field is parsed and
 // nothing is cast.
 
+import { renderThrowable } from '@ultimat3/core';
 import { AiTransportError } from './errors';
 import type { StopDetails, StopReason, StreamChunk, TokenUsage } from './provider';
 import type { SseFrame } from './sse';
@@ -148,9 +149,7 @@ function parseArguments(raw: unknown, name: string, provider: string): Record<st
   } catch (error) {
     throw malformed(
       provider,
-      `tool "${name}" returned arguments that are not JSON: ${
-        error instanceof Error ? error.message : 'unreadable'
-      }`,
+      `tool "${name}" returned arguments that are not JSON: ${renderThrowable(error)}`,
     );
   }
 }
@@ -321,9 +320,7 @@ export class ChatCompletionStream {
     } catch (error) {
       throw malformed(
         this.provider,
-        `unreadable "${frame.event}" frame: ${
-          error instanceof Error ? error.message : 'unreadable'
-        }`,
+        `unreadable "${frame.event}" frame: ${renderThrowable(error)}`,
       );
     }
   }

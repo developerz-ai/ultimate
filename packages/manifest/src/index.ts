@@ -10,7 +10,7 @@ export {
   checkAgentsMd,
 } from './agents-md';
 export type { ManifestSources } from './build';
-export { buildManifest, canonical, contentHash } from './build';
+export { buildManifest, contentHash } from './build';
 export type { ChangeKind, ManifestChange, ManifestDiff } from './diff';
 export { diffManifest, formatDiff } from './diff';
 export type { DocEntry, DocEntryKind } from './docs-scan';

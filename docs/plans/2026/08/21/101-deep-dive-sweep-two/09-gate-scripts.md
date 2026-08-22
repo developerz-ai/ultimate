@@ -28,6 +28,60 @@
 11. `verify.ts:114` → `renderThrowable`; `coverage-gate.ts:202` → `startsWith`; `doc-commands.ts:157` → say the direction; `version-stamps.ts:119` → semver compare.
 12. New script `scripts/config-readers.ts` (gate `unit` step via its `.test.ts`): for each leaf key of `AppConfig`, at least one read site in `packages/*/src` outside `config.ts`/`defaults()`. Reds on day one for `installPrompt`, `afterSignInPath`, `modelEnv` — the three slice 12 decides on; a ratchet with `--unpin` like `test-bare-error.ts` if they stay.
 
+## Carried in from slice 05 (found during execution, 2026-08-22)
+
+- **The FIFTH canonical serialiser lives in `scripts/lib/framework-manifest.ts`.**
+  `export function canonical(value: unknown): string { return JSON.stringify(sortKeys(value)); }` —
+  byte-for-byte the pair deleted from `packages/manifest/src/build.ts` in this sweep, and it feeds
+  `framework.manifest.json`'s own `buildId` and `manifestDrift`. `packages/core/src/canonical-json.ts`'s
+  header says "never add a fourth copy"; after slice 05 removed copies three and four, **this is the
+  one left, in the file that hashes the framework's own manifest**. Its consumer
+  `scripts/manifest.test.ts` imports `canonical` from it directly, so the barrel removal did not
+  break it and nothing flagged it. Replace with `canonicalJson` from `@ultimat3/core` and delete the
+  local pair. Note the consequence slice 05 already hit and pinned: a canonical form that
+  distinguishes `-0`/`NaN`/`±Infinity`/`Date` makes a fact carrying one fail `verifyBuildId`, because
+  `JSON.stringify` cannot write those values down — that is the honest answer, but check the
+  framework manifest holds none before landing it.
+
+- **`scripts/error-render.ts` cannot see the `catch` binding class, and this was PROVEN, not argued.**
+  It reads *parameters typed `unknown`* that reach a `cause:`; every
+  `catch (error) { error instanceof Error ? error.message : … }` site is a catch binding, which it
+  cannot see. Measured: the check was green **before and after** a seven-site fix in
+  `@ultimat3/ai` / `@ultimat3/mail`. The same pattern has now been found and fixed at **fifteen sites
+  across five packages** in this sweep (`cache`, `auth` ×4, `ai` ×4, `mail` ×3, plus the ones already
+  correct) — every one found by a human-style read, none by a gate. `instanceof` throws on a hostile
+  value and `String(x)` throws on a Symbol, so each site turns a coded refusal into an uncoded crash.
+  **Add the second rule**: a `catch` binding reaching a `cause:`/`fix:`/`detail:` through
+  `instanceof` / `String()` / `${}` / `JSON.stringify()`. A ratchet, like `test-bare-error.ts`.
+  Without it this defect class has no mechanical half at all, which is axiom 3 saying it does not exist.
+
+- **Nothing refuses a third `formatBytes`.** Slice 05 hoisted one into `@ultimat3/core` after finding
+  two divergent copies — render's had no `mb` branch, so a 5 MiB route read `5120kb` in
+  `X_BUDGET_EXCEEDED` while pwa's said `5mb` for the same number. `render-modes` refuses a second
+  `RENDER_MODES` on its literal member set; there is no equivalent for a shared *function*, so the
+  rule currently lives only as a sentence in `packages/core/CLAUDE.md` — which axiom 3 says means it
+  does not exist. Note `packages/ui/src/components/file-input-view.ts` has a genuinely different
+  byte formatter (base **1000**, `Intl` `style: 'unit'`, locale-aware) that must NOT be caught: the
+  guard has to key on behaviour, not on the name.
+
+- **No checker compiles a `wiki/` fence.** `scripts/readme-fences.ts` scans `packages/*/README.md`
+  only (`readme(pkg)`), so every ```ts``` block on the wiki — the framework's ONLY public
+  documentation surface — is unverified. Measured during slice 05: `wiki/Configuration.md`'s
+  top-level `app.config.ts` example failed with
+  `TS2353: 'urlEnv' does not exist in type 'Input<DatabaseConfig>'`, and the page went on to
+  document roughly **40 config fields that exist on no declaration** (`auth.providers`,
+  `auth.session.*`, `auth.passkeys`, `jobs.retry.*`, `jobs.retention.*`, `cache.redis.*`, all 8
+  `seo.*`, all 7 `budgets.*`, `storage.driver/bucket/dir`, `otel.endpoint/sampling`). The page is
+  rewritten and the fence now compiles — but **by hand**, so it will rot again silently. Widen the
+  fence check to `wiki/**/*.md`, on a ratchet.
+
+- **Add the cache-tier pair to `render-modes`' `VOCABULARIES` — see issue #293.** `CacheTier`
+  (`core`, `memo|lru|shared|isr|cdn`) and `TierName` (`cache`, `request-memo|lru|redis|cdn`) are one
+  set of rungs spelled twice, with `isr` accepted by config and served by nothing. Exactly the
+  literal-set-under-a-second-name defect `render-modes` was built for; it shares two members
+  (`lru`, `cdn`), which is that check's own stated threshold. **The divergence must be decided
+  (#293) before the guard lands**, or the guard just reds a known-bad pair.
+
 ## Tests
 - Each script above has a `.test.ts` beside it asserting against `repoRoot()` (the pattern `changelog-check.test.ts` uses); the lockfile one additionally runs against a fixture lock carrying an `i18n` and an `examples/x` block.
 - `scripts/gate-steps.test.ts` — a fixture `llms.txt` stating 18 → `kind: 'count'`; "16 of 18" under gate context → reported.

@@ -192,6 +192,12 @@ export function pageOverTarget(target: ScrapeTarget, ctx: PageContext): ScrapePa
   };
   return {
     ...frame,
+    // The DOCUMENT's URL is asked of the target, never of the frame's cached `lastUrl`. `ScrapeFrame`
+    // resolves its target asynchronously and `url()` is synchronous, so a child frame can only ever
+    // answer from a cache refreshed on its last wait — but the page HOLDS its target, so it has no
+    // such excuse. Spreading `...frame` without this override made `page.url()` answer the seed
+    // (`about:blank`) after every `goto`, which is what `x shot` reported as `finalUrl`.
+    url: () => target.url(),
     async goto(url, options): Promise<void> {
       await guardNavigation(url, ctx);
       await ctx.pace?.(ctx.signal);

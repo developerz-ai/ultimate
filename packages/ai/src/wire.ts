@@ -7,6 +7,7 @@
 // with no socket, which is the only way to cover a stream that arrives out of order or stops
 // half way. Imports from provider.ts are types only — the dependency runs one way.
 
+import { renderThrowable } from '@ultimat3/core';
 import { AiTransportError } from './errors';
 import type { StopDetails, StopReason, StreamChunk, TokenUsage } from './provider';
 import type { SseFrame } from './sse';
@@ -205,9 +206,7 @@ export class MessageStream {
     } catch (error) {
       throw new AiTransportError({
         provider: 'anthropic',
-        detail: `unreadable "${frame.event}" frame: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        detail: `unreadable "${frame.event}" frame: ${renderThrowable(error)}`,
       });
     }
   }
@@ -275,9 +274,7 @@ export class MessageStream {
     } catch (error) {
       throw new AiTransportError({
         provider: 'anthropic',
-        detail: `tool "${tool.name}" streamed arguments that are not JSON: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        detail: `tool "${tool.name}" streamed arguments that are not JSON: ${renderThrowable(error)}`,
       });
     }
   }

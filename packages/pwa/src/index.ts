@@ -6,6 +6,9 @@
  * re-exported here; a consumer still needs one import, and now it names the real type.
  */
 export type { OfflineStrategy, RenderMode } from '@ultimat3/core';
+// Moved to `@ultimat3/core` (one formatter, `b`/`kb`/`mb`/`gb`); still named here because a service
+// worker's size report is what a caller of this package prints.
+export { formatBytes } from '@ultimat3/core';
 export type { BackgroundSyncOptions, RetryPolicy } from './background-sync';
 export {
   backgroundSyncSource,
@@ -94,7 +97,6 @@ export type { PrecacheAsset, PrecacheEntry, PrecacheInput, PrecacheManifest } fr
 export {
   buildPrecacheManifest,
   DEFAULT_PRECACHE_WARN_BYTES,
-  formatBytes,
   serializePrecacheManifest,
 } from './precache';
 export type {

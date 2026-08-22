@@ -4,7 +4,13 @@
 // `driver-resend.ts`; swapping one for the other is an `app.config.ts` line and zero template
 // changes.
 
-import { type Environment, nanoid, logger as rootLogger } from '@ultimat3/core';
+import {
+  type Clock,
+  type Environment,
+  nanoid,
+  logger as rootLogger,
+  systemClock,
+} from '@ultimat3/core';
 import { driverUnavailable, mailCredentialMissing } from './errors';
 import { mailIdempotencyKey, mailMessageIdToken } from './idempotency';
 
@@ -94,14 +100,29 @@ export interface MemoryMailDriver extends MailDriver {
   clear(): void;
 }
 
-export function createMemoryDriver(): MemoryMailDriver {
+/**
+ * The same `{ clock }` shape `@ultimat3/jobs`' `createMemoryDriver` takes, deliberately: two
+ * in-memory drivers named the same thing in one test file may not want two spellings of "freeze
+ * time". An options object rather than a positional argument so the next seam is additive.
+ */
+export interface MemoryMailDriverOptions {
+  readonly clock?: Clock;
+}
+
+/**
+ * `at` comes from the clock, never from `new Date()`. `SentMail.at` is what `outbox()` and the
+ * `/_x` panel ORDER on, so a suite asserting which message is newest could only race the wall
+ * clock — two sends inside one millisecond tie, and nothing could state the intended order.
+ */
+export function createMemoryDriver(options: MemoryMailDriverOptions = {}): MemoryMailDriver {
+  const clock = options.clock ?? systemClock;
   const sent: SentMail[] = [];
   return {
     name: 'memory',
     sent,
     send(message: MailMessage): Promise<SendResult> {
       const result = resultFor('memory', message, `mem_${nanoid(12)}`);
-      sent.push({ at: new Date(), message, result });
+      sent.push({ at: clock.now(), message, result });
       return Promise.resolve(result);
     },
     outbox: () => [...sent].reverse(),

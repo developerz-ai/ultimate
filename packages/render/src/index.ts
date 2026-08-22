@@ -17,7 +17,10 @@ installRenderLoader();
  * second declaration, which is what makes re-exporting safe where copying was not.
  */
 export type { HydrateStrategy, OfflineStrategy, RenderMode } from '@ultimat3/core';
-export { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
+// `formatBytes` moved to `@ultimat3/core` (one formatter, with the `mb` branch this package's copy
+// never had); still named here because `@ultimat3/cli`'s budget reporter reads it beside the route
+// table it prints against.
+export { formatBytes, HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
 export type { CompiledStylesheet } from './css-modules';
 export { compileStylesheet, isCssModule, isGlobalStylesheet, scopeClasses } from './css-modules';
 export { parseTtlMs } from './duration';
@@ -86,7 +89,6 @@ export {
   assertBudget,
   checkBudget,
   checkBudgets,
-  formatBytes,
   graphFor,
   parseByteBudget,
   routeJsBytes,
@@ -116,13 +118,11 @@ export type {
   RegisterRouteInput,
   RouteDescriptor,
   RouteEntry,
-  RouteMatch,
 } from './registry';
 export {
   clearRoutes,
   compilePattern,
   describeRoutes,
-  matchRoute,
   ROUTE_FILENAME,
   registerRoute,
   routeCount,

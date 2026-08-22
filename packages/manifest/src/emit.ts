@@ -4,7 +4,8 @@
 // so a refactor that reorders a struct literal does not produce a diff. Two-space indent and
 // a trailing newline: the file is reviewed by humans and diffed by git.
 
-import { canonical, contentHash } from './build';
+import { canonicalJson } from '@ultimat3/core';
+import { contentHash } from './build';
 import { ManifestDriftError } from './errors';
 import type { Manifest } from './schema';
 import { isManifest } from './schema';
@@ -127,7 +128,8 @@ function describeDrift(onDisk: Manifest, fresh: Manifest): readonly string[] {
   const differences: string[] = [];
   for (const key of KEY_ORDER) {
     if (key === 'buildId') continue;
-    if (canonical(onDisk[key]) !== canonical(fresh[key])) differences.push(`${key} differs`);
+    if (canonicalJson(onDisk[key]) !== canonicalJson(fresh[key]))
+      differences.push(`${key} differs`);
   }
   return differences.length > 0 ? differences : ['buildId differs'];
 }

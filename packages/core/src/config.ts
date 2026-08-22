@@ -22,38 +22,30 @@ export interface ThemeConfig {
 }
 
 /**
- * Where a browser that failed `auth: 'required'` is sent, and where it lands afterwards.
+ * Where a browser that failed `auth: 'required'` is sent.
  *
  * `signInPath: null` is the default and the redirect stays off until an app names its page: the
  * framework may not invent one of its app's routes, and an app that spells it `/login` would send
  * every unauthenticated visitor to a 404. Null means the visitor gets the problem document — the
  * right answer for an agent, and what a browser got in production until this existed.
+ *
+ * `afterSignInPath` was removed 2026-08 for the reason `urlEnv`, `poolSize` and `schema` were
+ * (below): accepted, defaulted and merged here, and read by NO file — `dummy/social-media-clone`
+ * set `/dashboard` and got whatever its sign-in route did on its own. The landing path belongs to
+ * the app's sign-in route, which is the only code that can honour it.
  */
 export interface AuthConfig {
   readonly signInPath: string | null;
-  /**
-   * Where sign-in lands when there is nowhere to return to, or `?next=` is not same-origin.
-   *
-   * **Consulted by nothing, `As of 2026-08.`** Accepted, defaulted and merged here and read by no
-   * file in the repo — `dummy/social-media-clone/app.config.ts` sets `/dashboard` and gets
-   * whatever the sign-in route does on its own. Same shape `urlEnv`, `poolSize` and `schema` were
-   * deleted for below; this one is not deleted yet only because its writer is a tracked app's
-   * config, so removing the key and the line that sets it is one commit across two file sets.
-   */
-  readonly afterSignInPath: string;
 }
 
+/**
+ * `installPrompt` was removed 2026-08, same rule: `@ultimat3/pwa`'s `createInstallController` is
+ * real and complete, nothing ever threaded the flag into it, and both tracked apps plus every
+ * scaffolded app set a switch with no wire. Call the controller from your own affordance instead.
+ */
 export interface PwaConfig {
   readonly enabled: boolean;
   readonly offline: OfflineStrategy;
-  /**
-   * **Consulted by nothing, `As of 2026-08.`** `wiki/Configuration.md` describes it as "render
-   * your own install affordance from the deferred event", both tracked apps set it, and
-   * `x new`'s scaffold writes it into every generated app — and no file reads it.
-   * `@ultimat3/pwa`'s `install.ts` is real and complete; nothing threads this flag into it.
-   * Delete the key or thread it; leaving it is a switch with no wire.
-   */
-  readonly installPrompt: boolean;
   readonly backgroundSync: boolean;
   readonly push: boolean;
 }
@@ -123,18 +115,16 @@ export interface McpConfig {
   readonly path: string;
 }
 
+/**
+ * No `modelEnv`. It named the env KEY holding the model id, "so no model string is baked into the
+ * image" — and its only reader was this file's own merge, copying input to output. Nothing
+ * consumed the merged value, so `modelEnv: 'ANTHROPIC_MODEL'` selected no model: `@ultimat3/ai`
+ * reads env for API KEYS only, and the model is `request.model ?? DEFAULT_MODEL`, a compile-time
+ * constant in `models.ts`. The exact thing the key existed to prevent is what it delivered.
+ * Deleted 2026-08 — pass `model` on the request, or read your own env key and pass it.
+ */
 export interface AiConfig {
   readonly mcp: McpConfig;
-  /**
-   * Env key for the model id, so no model string is baked into the image — **an intention, not a
-   * behaviour, `As of 2026-08`.** The only read of it in the repo is the merge two hundred lines
-   * below, which copies it from input to output; nothing consumes the merged value, so
-   * `examples/dummy`'s `modelEnv: 'ANTHROPIC_MODEL'` selects no model. `@ultimat3/ai` reads env
-   * for API KEYS only (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`); the model is
-   * `request.model ?? DEFAULT_MODEL`, a compile-time constant in `models.ts`. So the exact thing
-   * this key exists to prevent — a model string baked into the image — is what actually happens.
-   */
-  readonly modelEnv: string | undefined;
 }
 
 export interface AppConfig {
@@ -156,7 +146,8 @@ export interface AppConfig {
 
 type Input<T> = { readonly [K in keyof T]?: T[K] | undefined };
 
-export interface AiConfigInput extends Input<Omit<AiConfig, 'mcp'>> {
+/** `mcp` is the only member, and it is NESTED — `Input<AiConfig>` would make it all-or-nothing. */
+export interface AiConfigInput {
   readonly mcp?: Input<McpConfig> | undefined;
 }
 
@@ -224,14 +215,8 @@ function defaults(name: string): Omit<AppConfig, 'name'> {
     defaultTimeZone: 'UTC',
     defaultCurrency: 'USD',
     theme: { defaultMode: 'system', tokens: {} },
-    auth: { signInPath: null, afterSignInPath: '/' },
-    pwa: {
-      enabled: false,
-      offline: 'network-only',
-      installPrompt: false,
-      backgroundSync: false,
-      push: false,
-    },
+    auth: { signInPath: null },
+    pwa: { enabled: false, offline: 'network-only', backgroundSync: false, push: false },
     roles: [...ROLES],
     database: { driver: 'postgres', ssl: false },
     cache: { driver: 'memory', urlEnv: undefined, defaultTtlMs: 60_000, tiers: ['memo', 'lru'] },
@@ -243,7 +228,7 @@ function defaults(name: string): Omit<AppConfig, 'name'> {
       visibilityTimeoutMs: 30_000,
     },
     realtime: { enabled: false, tier: 'channels', transport: 'memory', urlEnv: undefined },
-    ai: { mcp: { expose: true, path: '/mcp' }, modelEnv: undefined },
+    ai: { mcp: { expose: true, path: '/mcp' } },
   };
 }
 
@@ -337,10 +322,7 @@ export function defineConfig(
     cache: section(base.cache, merged.cache),
     jobs: section(base.jobs, merged.jobs),
     realtime: section(base.realtime, merged.realtime),
-    ai: {
-      mcp: section(base.ai.mcp, merged.ai?.mcp),
-      modelEnv: merged.ai?.modelEnv ?? base.ai.modelEnv,
-    },
+    ai: { mcp: section(base.ai.mcp, merged.ai?.mcp) },
   };
 
   validate(config);

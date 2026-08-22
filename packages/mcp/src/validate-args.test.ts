@@ -3,7 +3,7 @@
 // boolean/null, enum, const, anyOf, defaults, and unknown-property rejection.
 
 import { describe, expect, test } from 'bun:test';
-import { validateArgs } from './validate-args';
+import { compiledPatternCount, validateArgs } from './validate-args';
 import type { JsonSchema } from './wire';
 
 describe('validateArgs: object', () => {
@@ -340,5 +340,59 @@ describe('validateArgs: a property named after one of Object.prototype', () => {
       ok: false,
       issues: [{ path: 'constructor', message: 'must be a string' }],
     });
+  });
+});
+
+/**
+ * A tool's schema is registered once and validated on every `tools/call`, so compiling its
+ * patterns per call is per-request work over a constant. `@ultimat3/schema`'s `patternTester`
+ * already compiles once per schema; this is the same rule on the MCP side of the same contract.
+ */
+describe('validateArgs: a declared pattern is compiled once per schema, not once per call', () => {
+  const schema: JsonSchema = {
+    type: 'object',
+    properties: { slug: { type: 'string', pattern: '^[a-z][a-z0-9-]*$' } },
+    required: ['slug'],
+  };
+
+  test('a hundred calls against one registered schema compile it once', () => {
+    const before = compiledPatternCount();
+    for (let i = 0; i < 100; i += 1) validateArgs(schema, { slug: `post-${i}` });
+    expect(compiledPatternCount() - before).toBe(1);
+  });
+
+  test('the memo does not change the verdict, in either direction', () => {
+    expect(validateArgs(schema, { slug: 'a-good-slug' }).ok).toBe(true);
+    const bad = validateArgs(schema, { slug: 'Not A Slug' });
+    expect(bad.ok).toBe(false);
+    expect(bad.ok ? [] : bad.issues).toEqual([
+      { path: 'slug', message: 'must match ^[a-z][a-z0-9-]*$' },
+    ]);
+  });
+
+  test('a pattern this server cannot compile is still refused, and refused only once', () => {
+    const broken: JsonSchema = {
+      type: 'object',
+      properties: { id: { type: 'string', pattern: '[' } },
+      required: ['id'],
+    };
+    const before = compiledPatternCount();
+    const first = validateArgs(broken, { id: 'anything' });
+    const second = validateArgs(broken, { id: 'anything' });
+    expect(first.ok).toBe(false);
+    expect(second).toEqual(first);
+    expect(compiledPatternCount() - before).toBe(1);
+  });
+
+  test('two schemas declaring the same pattern each get their own entry', () => {
+    const twin: JsonSchema = {
+      type: 'object',
+      properties: { slug: { type: 'string', pattern: '^[a-z][a-z0-9-]*$' } },
+      required: ['slug'],
+    };
+    const before = compiledPatternCount();
+    validateArgs(twin, { slug: 'ok' });
+    validateArgs(twin, { slug: 'ok' });
+    expect(compiledPatternCount() - before).toBe(1);
   });
 });

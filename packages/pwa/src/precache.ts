@@ -4,6 +4,9 @@
  * hash, never the build id, or every deploy would re-fetch everything.
  */
 
+// One formatter, in `@ultimat3/core`: the copy that lived here stopped at `mb`, and the route
+// budget message on the other side of the build stopped at `kb`, for the same byte count.
+import { formatBytes } from '@ultimat3/core';
 import type { PwaRoute } from './strategies';
 
 export interface PrecacheAsset {
@@ -118,12 +121,6 @@ export function buildPrecacheManifest(input: PrecacheInput): PrecacheManifest {
   }
 
   return { buildId: input.buildId, entries: sorted, totalBytes, warnings };
-}
-
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes}b`;
-  if (bytes < 1024 * 1024) return `${Math.round((bytes / 1024) * 10) / 10}kb`;
-  return `${Math.round((bytes / (1024 * 1024)) * 10) / 10}mb`;
 }
 
 /** The manifest as it is embedded in `sw.js`; stable key order for determinism. */

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { escapeAttribute as seoEscapeAttribute } from '@ultimat3/seo';
 import { attributePair, escapeAttribute, escapeText, renderAttributes, styleValue } from './html';
 
 describe('escaping', () => {
@@ -12,6 +13,13 @@ describe('escaping', () => {
 
   test('an attribute additionally escapes the quote that would close it', () => {
     expect(escapeAttribute('" onload="alert(1)')).toBe('&quot; onload=&quot;alert(1)');
+  });
+
+  // Identity, not equivalence: two functions that agree today are exactly how one of them ends up
+  // missing a character. `@ultimat3/seo` owns the one attribute escaper and this package re-exports
+  // it, so re-introducing a local copy fails here rather than in a pentest.
+  test("the attribute escaper is seo's own function, never a second copy", () => {
+    expect(escapeAttribute).toBe(seoEscapeAttribute);
   });
 });
 
@@ -158,5 +166,60 @@ describe('attributePair beyond href/src', () => {
     expect(renderAttributes({ srcdoc: '<script>alert(1)</script>', title: 'a' })).toBe(
       ' title="a"',
     );
+  });
+});
+
+/**
+ * Two holes in one line. The prefix test was case-SENSITIVE while the two checks under it fold
+ * case, so `ONERROR` was emitted verbatim; and the attribute NAME was never validated at all, so a
+ * key containing a space carried a second attribute out of the quotes. Both are reachable by
+ * `<div {...row} />` over attacker-chosen keys — a JSON body, a JSONB column, a query string.
+ */
+describe('attributePair refuses an event handler in any casing', () => {
+  const handlers = ['onclick', 'ONCLICK', 'OnClick', 'ONERROR', 'onError', 'ONMOUSEOVER'];
+
+  test('every casing of a handler name emits nothing', () => {
+    for (const name of handlers) {
+      expect(attributePair(name, 'alert(1)')).toBeNull();
+    }
+  });
+
+  test('a spread row carrying one renders every other attribute and none of it', () => {
+    expect(renderAttributes({ ONERROR: 'alert(1)', id: 'a' })).toBe(' id="a"');
+  });
+
+  test('`on` alone and `On` are still real attribute names, not handler prefixes', () => {
+    expect(attributePair('on', 'x')).toBe('on="x"');
+    expect(attributePair('On', 'x')).toBe('On="x"');
+  });
+});
+
+describe('attributePair refuses a name that is not an attribute name', () => {
+  const injected = [
+    'x onmouseover=alert(1) y',
+    'a b=c',
+    'id="x" onload="alert(1)',
+    'a>b',
+    'a\tb',
+    'a\nb',
+    '',
+    '1abc',
+    'a="b"',
+  ];
+
+  test('a key that would carry a second attribute out of the quotes emits nothing', () => {
+    for (const name of injected) {
+      expect(attributePair(name, 'ok')).toBeNull();
+    }
+  });
+
+  test('a spread row carrying one renders every other attribute and none of it', () => {
+    expect(renderAttributes({ 'x onmouseover=alert(1) y': 'ok', id: 'a' })).toBe(' id="a"');
+  });
+
+  test('the names an app really writes still render', () => {
+    for (const name of ['data-x-id', 'aria-label', 'xlink:href', '_x', 'x.y', 'toString']) {
+      expect(attributePair(name, 'ok')).toBe(`${name}="ok"`);
+    }
   });
 });

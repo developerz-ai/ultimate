@@ -5,6 +5,7 @@
  */
 
 import { safeUrl, URL_ATTRIBUTES } from '@ultimat3/core';
+import { escapeAttribute } from '@ultimat3/seo';
 import type { JsxProps } from './jsx';
 
 /** Elements that never carry children, so the writer must not emit a closing tag. */
@@ -29,9 +30,13 @@ export function escapeText(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
-export function escapeAttribute(value: string): string {
-  return escapeText(value).replaceAll('"', '&quot;');
-}
+/**
+ * Re-exported, never re-implemented: `@ultimat3/seo` (tier 1) owns the one attribute escaper, and
+ * the copy that lived here was a second place for a character to go missing. It stays reachable
+ * from `./html` so this module remains the single import site every render-* file already uses —
+ * one implementation, one place to look.
+ */
+export { escapeAttribute };
 
 /**
  * `<script>` and `<style>` hold RAW TEXT: a character reference is not decoded inside them, so
@@ -115,6 +120,20 @@ const URL_BEARING_ATTRIBUTES: ReadonlySet<string> = new Set([
  */
 const REFUSED_ATTRIBUTES: ReadonlySet<string> = new Set(['srcdoc']);
 
+/**
+ * The only shape that can be written between `<div` and `>` without ending the attribute. A name
+ * is not escaped anywhere — it is emitted verbatim before the `=` — so a key carrying a space
+ * carries a whole second attribute with it: `{ 'x onmouseover=alert(1) y': 'ok' }` emitted a live
+ * event handler out of an object KEY, which is `<div {...row} />` over a JSON body or a JSONB
+ * column. Narrower than the HTML spec's name production on purpose: everything an app actually
+ * writes (`data-*`, `aria-*`, `xlink:href`, a `__proto__`-named column) matches, and the refusal
+ * is `null` — the same "emit nothing" this function already answers for a refused URL.
+ */
+const ATTRIBUTE_NAME = /^[A-Za-z_:][-A-Za-z0-9_:.]*$/;
+
+/** Exported for `head.ts`, the package's other attribute sink. One predicate, never two. */
+export const isAttributeName = (name: string): boolean => ATTRIBUTE_NAME.test(name);
+
 const cssProperty = (name: string): string =>
   name.startsWith('--') ? name : name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 
@@ -137,7 +156,11 @@ export function attributePair(name: string, value: unknown): string | null {
   if (NON_ATTRIBUTES.has(name)) return null;
   if (value === undefined || value === null || value === false) return null;
   if (typeof value === 'function') return null;
-  if (name.startsWith('on') && name.length > 2) return null;
+  if (!isAttributeName(name)) return null;
+  // Folded, because HTML attribute names are case-insensitive and the two checks below already
+  // fold: `ONERROR="alert(1)"` went out on the wire off a spread row for as long as this line was
+  // `name.startsWith('on')`.
+  if (name.toLowerCase().startsWith('on') && name.length > 2) return null;
 
   const attribute = ATTRIBUTE_ALIASES.get(name) ?? name;
   if (REFUSED_ATTRIBUTES.has(attribute.toLowerCase())) return null;

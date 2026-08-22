@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "de410d08972bf85c078b7434030995a4275886332860cbb6cf6220ff1c536df6",
+  "buildId": "ffe3a38db2fb9c0ba18667aecc0a34e805aaba3e33f56008829c5181a2eac41c",
   "tiers": {
     "0": [
       "core",
@@ -2199,6 +2199,11 @@
     },
     {
       "code": "X_SCRAPE_TIMEOUT",
+      "owner": "scraping",
+      "at": "packages/scraping/src/errors.ts"
+    },
+    {
+      "code": "X_SCRAPE_WATCHDOG_STOPPED",
       "owner": "scraping",
       "at": "packages/scraping/src/errors.ts"
     },

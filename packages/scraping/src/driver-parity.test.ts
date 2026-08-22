@@ -168,6 +168,25 @@ describe('unit · every driver answers the vocabulary the same way', () => {
     });
   });
 
+  /**
+   * `ScrapeTarget.url()` is live on all three drivers, and `pageOverTarget` used to answer from a
+   * frame-local `lastUrl` that only a `waitFor` refreshed — so `page.url()` answered `about:blank`
+   * after a `goto`. `x shot` reads it as `finalUrl` and so called every route a redirect to
+   * `about:blank`; `auth.ts` handed the same string to a `PromptHandler`. Nothing asserted on it.
+   */
+  test('page.url() answers the navigated URL, before and after a click, on all three', async () => {
+    await forEachDriver(async (session, name) => {
+      await session.page.goto(URL_A);
+      expect(session.page.url(), name).toBe(URL_A);
+      // Read again after an operation that navigates NOTHING: a `url()` that only refreshes on a
+      // wait would pass the line above and fail here if the two were wired the other way round.
+      expect(await session.page.text('#title'), name).toBe('Orders');
+      expect(session.page.url(), name).toBe(URL_A);
+      await session.page.click('#next');
+      expect(session.page.url(), name).toBe(URL_B);
+    });
+  });
+
   test('a click that navigates lands on the same page on all three', async () => {
     await forEachDriver(async (session, name) => {
       await session.page.goto(URL_A);

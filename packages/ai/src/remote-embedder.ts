@@ -6,7 +6,7 @@
 // vendor: `baseUrl` selects the provider and nothing else changes. A second class per vendor
 // would be a second thing to learn for a difference that does not exist on the wire.
 
-import { readWithinLimit } from '@ultimat3/core';
+import { readWithinLimit, renderThrowable } from '@ultimat3/core';
 import type { Embedder } from './embeddings';
 import { normalize } from './embeddings';
 import { AiKeyMissingError, AiTransportError, EmbedderDimMismatchError } from './errors';
@@ -95,7 +95,11 @@ export class RemoteEmbedder implements Embedder {
     } catch (error) {
       throw new AiTransportError({
         provider: this.name,
-        detail: `${error instanceof Error ? error.message : 'the request failed before a response'} — no answer within ${timeoutMs}ms (deadline, egress, DNS or TLS)`,
+        // `renderThrowable`, never `error instanceof Error` and `.message`: `fetch` is injected
+        // and the endpoint is app config, so the rejection is a value this package did not build —
+        // and `instanceof` RUNS a `Proxy`'s `getPrototypeOf` trap, whose throw escapes this very
+        // `catch` and replaces a coded refusal with an uncoded crash.
+        detail: `${renderThrowable(error)} — no answer within ${timeoutMs}ms (deadline, egress, DNS or TLS)`,
         envVar: API_KEY_ENV,
       });
     }

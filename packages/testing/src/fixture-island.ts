@@ -3,7 +3,7 @@
 // packages are tier 5, so importing it here would be the reverse of the one declared `cli → testing`
 // edge. A structural seam keeps the direction honest and survives the bundler changing underneath.
 
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { islandMountMissing, islandNotBuilt } from './errors';
@@ -76,8 +76,36 @@ function entryOf(module: unknown, file: string): IslandEntry {
   return { mount: mount as IslandEntry['mount'] };
 }
 
-/** One directory per process, outside the app under test — so no test leaves a `.mjs` behind. */
-const MODULE_DIR = mkdtempSync(join(tmpdir(), 'ultimate-island-'));
+let moduleDir: string | undefined;
+
+/**
+ * One directory per process, outside the app under test — so no test leaves a `.mjs` behind. Two
+ * properties the module-scope `mkdtempSync` it replaces had neither of:
+ *
+ * LAZY. This module is on the `.` barrel, so importing `@ultimat3/testing` for `expect` alone
+ * created a directory — in every test process in the repo, whether or not it ever mounts anything.
+ *
+ * REMOVED. `exit` and `rmSync`, because an exit handler runs synchronously and nothing else covers
+ * every path: `mountIsland` restores and rethrows on a failed mount, so that run never reaches the
+ * `Disposable`, and the directory is per PROCESS while the disposable is per mount.
+ */
+function moduleDirPath(): string {
+  const existing = moduleDir;
+  if (existing !== undefined) return existing;
+  const created = mkdtempSync(join(tmpdir(), 'ultimate-island-'));
+  process.on('exit', () => {
+    rmSync(created, { recursive: true, force: true });
+  });
+  moduleDir = created;
+  return created;
+}
+
+/**
+ * The scratch root, or `undefined` when nothing has been mounted. Read by the leak test, which
+ * asserts both halves of the above from a CHILD process — the only place where "this process
+ * created no directory" and "the directory is gone afterwards" are both observable.
+ */
+export const islandModuleDir = (): string | undefined => moduleDir;
 
 /**
  * A temp file named by the chunk's own hash, NOT a `data:` URL. The URL form read better and
@@ -90,7 +118,7 @@ const MODULE_DIR = mkdtempSync(join(tmpdir(), 'ultimate-island-'));
  * edited island is a different module rather than a cache hit on the same path.
  */
 const modulePathFor = (code: string): string =>
-  join(MODULE_DIR, `${Bun.SHA256.hash(code, 'hex').slice(0, 16)}.mjs`);
+  join(moduleDirPath(), `${Bun.SHA256.hash(code, 'hex').slice(0, 16)}.mjs`);
 
 /**
  * DESCRIPTORS, not values, and all-or-nothing.

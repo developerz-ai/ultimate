@@ -37,6 +37,11 @@
 - No hex outside `MAIL_TOKENS`. Base styling is inlined (clients strip `<style>`); dark mode is
   one `prefers-color-scheme` block keyed on short `data-x` role codes.
 - Never format a date without `options.tz`. The `Date:` header is UTC, stated as `+0000`.
+- **Every "now" in this package comes from a `Clock`, `createMemoryDriver` included** (`As of
+  2026-08-22`). It stamped `at: new Date()`, and `SentMail.at` is what `outbox()`, `lastTo()` and
+  the `/_x` panel ORDER on — so the one fact a test most needs to state was the one it could only
+  observe, and two sends inside one millisecond tied. `createMemoryDriver({ clock })`, the same
+  options shape `@ultimat3/jobs`' identically-named driver takes; omitted, it is `systemClock`.
 - New block kind: `MailBlock` + `blocks` + `htmlOf` + `textOf`, same commit.
 - A transport failure is `sendFailed({ stage, status, retryable, fix })` — never a bare throw, and
   never a `retryable` guess. **`retryable` becomes the error's `retry` classification, and

@@ -11,7 +11,7 @@
 // graceful-quit CEILING on shutdown, past which the same kill runs.
 
 import type { ScrapeClock } from './clock';
-import { wedged } from './error-throws';
+import { watchdogStopped, wedged } from './error-throws';
 
 export const DEFAULT_IDLE_MS = 120_000;
 export const DEFAULT_GRACE_MS = 5_000;
@@ -41,7 +41,10 @@ export interface WedgeGuard {
   touch(): void;
   /** Graceful quit under the ceiling, then kill. Idempotent, and never throws. */
   shutdown(): Promise<void>;
-  /** True once the watchdog fired — a run that ends after this ended because of it. */
+  /**
+   * True once the watchdog ended the run — the idle budget passed, or the guard's own loop died
+   * and stopped measuring. Either way a run that ends after this ended because of the watchdog.
+   */
   readonly fired: boolean;
 }
 
@@ -50,7 +53,13 @@ export function createWedgeGuard(init: WedgeGuardInit): WedgeGuard {
   const graceMs = init.graceMs ?? DEFAULT_GRACE_MS;
   const controller = new AbortController();
   let lastTouch = init.clock.monotonic();
+  // TWO latches, not one. `stopped` ends the watch loop; `shuttingDown` guards the teardown. They
+  // were the same flag, so a fire — which sets `stopped` — made `shutdown()` return on its first
+  // line and NEVER call `quit()`. `localBrowser()` hid it, because the fire's `kill()` still
+  // reaches a pid; `remoteBrowser()` is `driver-cdp.ts`'s primary path, `browser.process()` is
+  // `null` there, and `browser.close()` is then the only thing that ends the paid remote session.
   let stopped = false;
+  let shuttingDown = false;
   let fired = false;
 
   const watch = async (): Promise<void> => {
@@ -67,7 +76,17 @@ export function createWedgeGuard(init: WedgeGuardInit): WedgeGuard {
       controller.abort(wedged(init.what, idleMs));
     }
   };
-  void watch();
+  // Never floating. `ScrapeClock` is a seam an app implements and `init.kill()` comes from a
+  // driver, so this loop can reject on somebody else's code — and a bare `void` turned that into
+  // an unhandled rejection, a process-level event belonging to no run, with the guard silently
+  // dead behind it. A guard that stopped measuring is incident #1 with nothing armed, so the run
+  // is ended with an instruction instead of left unwatched.
+  void watch().catch((thrown: unknown) => {
+    if (stopped) return;
+    stopped = true;
+    fired = true;
+    controller.abort(watchdogStopped(init.what, thrown));
+  });
 
   return {
     signal: controller.signal,
@@ -78,7 +97,8 @@ export function createWedgeGuard(init: WedgeGuardInit): WedgeGuard {
       lastTouch = init.clock.monotonic();
     },
     async shutdown(): Promise<void> {
-      if (stopped) return;
+      if (shuttingDown) return;
+      shuttingDown = true;
       stopped = true;
       let quit = false;
       // A ceiling, not a hope: whichever finishes first wins, and if it is the clock the process
@@ -92,7 +112,11 @@ export function createWedgeGuard(init: WedgeGuardInit): WedgeGuard {
             quit = false;
           },
         ),
-        init.clock.sleep(graceMs),
+        // The ceiling's own sleep is caught for the same reason the quit is: this runs in
+        // `runScrape`'s `finally`, `close()` is documented never to throw, and a clock that
+        // rejected here would replace the run's real failure with a teardown one. A ceiling that
+        // cannot be timed has already expired, which lands on `kill()` — the safe direction.
+        init.clock.sleep(graceMs).catch(() => undefined),
       ]);
       if (!quit) init.kill();
     },

@@ -19,6 +19,14 @@ All findings here were reproduced on a fresh `x new` against the **published** 7
 5. `scaffold-smoke`: after `x verify` red, parse `--json`, run each `fix:` verbatim, re-run `x verify`; assert green within 3 rounds, on both default and `--no-example` scaffolds; then `x build --target static` and assert `lint` stays green; then `x db migrate` against the job's Postgres service. This is the assertion `scripts/scaffold-gate.ts` should own (slice 09 adds `declaredStepIssues` there).
 6. Fix `x new --help`: usage and flag table agree; state the default.
 
+## Carried in from slice 05 (found during execution, 2026-08-22)
+
+- **`packages/cli/src/templates/scaffold-repo.ts` carries prose that D3 just made false.** Its doc
+  comment reads *"No `installPrompt`. `PwaConfig` declares it, `defineConfig` defaults it, and NO
+  file reads it — `packages/core/src/config.ts` carries the marker saying so."* After the 8.0.0
+  deletion `PwaConfig` no longer declares it and `config.ts` carries no marker. Not a build error,
+  which is exactly why it will survive unless someone edits it. One line.
+
 ## Tests
 - `packages/cli/src/templates/scaffold-repo.test.ts` — the emitted `biome.json` excludes `.x`.
 - `packages/cli/src/cmd-new.test.ts` — scaffold contains `guards/*.ts` (4 files) and `.git` (unless `--no-git`).

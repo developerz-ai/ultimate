@@ -180,6 +180,17 @@ NOT — `@ultimat3/query`, whose `OrderKey` is a name and a direction — must n
 orders a `text` column of digits lexically and a comparator guessing would trade one disagreement
 with the SQL it printed for another.
 
+`format-bytes.ts` is the same rule at its smallest, `As of 2026-08-22`: one `formatBytes(bytes)`,
+1024-base, `b|kb|mb|gb`, for the byte count an error message carries. `@ultimat3/render` (t4) and
+`@ultimat3/pwa` (t4) each had one and they had diverged — render's stopped at `kb`, so a 5 MiB route
+read `5120kb` in `X_BUDGET_EXCEEDED` and `5mb` in the precache warning about the same bytes, and
+`@ultimat3/cli`'s budget error imported render's. Deliberately NOT
+`@ultimat3/ui`'s `formatBytes(bytes, locale)`, which is a different function and stays: that one is
+`Intl`-formatted and DECIMAL (kB = 1000 B, which is what `Intl`'s unit means), for a human reading a
+file picker, where this one must line up with a bundler's own KiB figures and must not move with the
+reader's locale. **Not mechanised** — no gate refuses a third copy, unlike `render-modes.ts` for the
+route vocabulary; a `formatBytes` reappearing in `packages/*/src` is caught by review only.
+
 `mcp-exposure.ts` is the same shape for a declaration rather than an algorithm: `isMcpExposed` is
 the ONE answer to "did this primitive opt into being an MCP tool?", asked by `action`, `query`
 (t3), `mcp`, `ai`, `manifest` (t4) — five packages that cannot import each other, so core is the

@@ -289,3 +289,47 @@ test('a custom baseUrl is honoured', async () => {
 
   expect(seen.url).toBe('https://relay.internal.test/resend/emails');
 });
+
+/**
+ * `fetch` is injectable and Resend is a third party, so what this transport catches on the request
+ * path is a value the framework did not build. `error instanceof Error` RUNS code on it — a
+ * `Proxy`'s `getPrototypeOf` trap — and a throw there escapes the `catch` that exists to turn a
+ * dead socket into `X_MAIL_SEND_FAILED`, so the job's dead-letter row loses the code it is read by.
+ */
+// Built once and thrown by reference: the value is the code-under-test's INPUT, not this file's
+// verdict — and `scripts/test-bare-error.ts` reads a thrown `new Error` literal as the latter.
+const TRAP = new Error('getPrototypeOf trap');
+
+const hostileRejection = (): unknown =>
+  new Proxy(
+    {},
+    {
+      getPrototypeOf(): never {
+        throw TRAP;
+      },
+    },
+  );
+
+test('a hostile rejection is still X_MAIL_SEND_FAILED, and still retryable', async () => {
+  const driver = createResendDriver({
+    apiKey: API_KEY,
+    from: FROM,
+    fetch: () => Promise.reject(hostileRejection()),
+  });
+  const error = await caught(driver.send(messageFixture()));
+  expect(codeOf(error)).toBe('X_MAIL_SEND_FAILED');
+  expect(metaOf(error)?.['retryable']).toBe(true);
+  expect(fixOf(error)).toContain('curl');
+});
+
+test('a rejection that is not an object at all is never interpolated into the cause', async () => {
+  const driver = createResendDriver({
+    apiKey: API_KEY,
+    from: FROM,
+    // `${symbol}` and `String(symbol)` both throw — the guard against the obvious repair.
+    fetch: () => Promise.reject(Symbol('nope')),
+  });
+  const error = await caught(driver.send(messageFixture()));
+  expect(codeOf(error)).toBe('X_MAIL_SEND_FAILED');
+  expect(causeOf(error)).toContain('egress, DNS or TLS');
+});

@@ -20,6 +20,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./icons/*": "./src/icons/glyphs/*.ts",
+    "./jsx-probe": "./src/jsx-probe.ts",
     "./tokens": "./src/tokens/_index.scss",
     "./theme.scss": "./src/tokens/theme.scss",
     "./reset.scss": "./src/tokens/reset.scss",
