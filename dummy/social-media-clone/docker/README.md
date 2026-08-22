@@ -8,7 +8,7 @@ nothing to rebuild between staging and production.
 | `web` | HTTP: pages, actions, assets | `$PORT` (default 3000) |
 | `sync` | websockets for live queries | `$PORT + 1` |
 | `worker` | the job queue | — |
-| `scheduler` | cron tasks; leadership is a Postgres advisory lock | — |
+| `scheduler` | cron tasks; leadership is an expiring lease row in `x_scheduler_leader` | — |
 | `replicator` | the logical replication slot, exactly one per database | — |
 | `migrate` | applies pending migrations and **exits** | — |
 

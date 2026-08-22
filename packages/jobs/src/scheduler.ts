@@ -1,7 +1,10 @@
 // The `scheduler` role: one node walks every registered task's cron, dispatches the occurrences
 // it owes and enqueues their jobs. The `task` primitive it reads lives in `task.ts`.
 //
-// Exactly one node dispatches per tick, enforced by a Postgres advisory lock. Two schedulers
+// Exactly one node dispatches per tick, enforced by leader election. Multi-node that is an
+// EXPIRING LEASE ROW in `x_scheduler_leader` (`createPgLeaseLeader`), never an advisory lock: an
+// advisory lock is session-scoped and dies with the pooled connection that took it, which hands
+// leadership to a second node while the first is still dispatching. Two schedulers
 // double-enqueue every task; the idempotency key would absorb it, but leader election means
 // the queue never sees the duplicate at all. One ROUND at a time is the same rule inside one
 // process: the loop re-arms on the round it just finished, and any other caller joins that
@@ -276,10 +279,10 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
     timer = undefined;
     logger.info('jobs.scheduler.draining', { reason, dispatching: round !== undefined });
     try {
-      // The round this stop races runs to the end first. Releasing the advisory lock under a
+      // The round this stop races runs to the end first. Releasing the lease under a
       // live dispatch hands the next node a task this one is still enqueueing for, and both
       // then own the same occurrence — the exact double-fire leader election exists to prevent.
-      // Settled, not awaited: a round that failed is its own caller's to see, and the lock still
+      // Settled, not awaited: a round that failed is its own caller's to see, and the lease still
       // has to go back.
       await Promise.allSettled([round]);
       if (isLeader) await leader.release();

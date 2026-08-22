@@ -271,8 +271,12 @@ Every primitive emits a test scaffold that fails until filled in — an untested
 
 The single gate. Green means shippable.
 
-Nineteen steps, one list, in cost order. There is no `--only` and no `--skip` — "green" has to mean
-the same thing for everyone. A step with nothing to check reports as skipped (`-`), never as passed.
+Nineteen steps, one list, in cost order. **The gate is this command with no flag** — "green" has to
+mean the same thing for everyone. `x verify --only <step>` runs one step for an iteration loop and
+says `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`), writing no floor file;
+there is no `--skip`, because a knob that removes a step from a run still calling itself the gate is
+the one thing this command must not offer. A step with nothing to check reports as skipped (`-`),
+never as passed.
 
 The list is defined once, as `VERIFY_STEP_NAMES` in
 [`packages/cli/src/verify-step.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/verify-step.ts).

@@ -283,7 +283,7 @@ the generator's output list, so it is an orphan the author deletes.
 
 | File | Why the generator leaves it alone | What a new resource costs |
 |---|---|---|
-| `packages/db/src/schema.ts` | registration, not declaration — the migration generator reads what this file re-exports, and the drift hash covers `packages/db/src/**`, which the feature slice is deliberately outside of | one `export { post } from '@myapp/web/app/post/entity';` |
+| `packages/db/src/schema.ts` | the db package's **public surface**, not the generator's input — `x db gen` and the `drift` step both read the entity registry (`describeEntities()`), which `loadApp` fills by importing every module under `apps/*/{site,app,api,shared}/**` and `packages/*/src/**`. `examples/dummy` has entities, migrations and no `schema.ts` at all. The re-export decides what `@myapp/db` hands out, and moves the text half of the drift hash (`packages/db/src/**`) | one `export { post } from '@myapp/web/app/post/entity';` |
 | `apps/admin/src/index.ts` | composition — `defineAdmin({ entities, resources })` is the app deciding which tables get an operator door and which stay shut | one entry in `entities`, plus the `--admin` override in `resources` |
 
 Neither is a second declaration of anything, and neither is a generator's file to overwrite.

@@ -73,6 +73,51 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **The framework's own production compose could not start `backfill` at all, and ran it as a second
+  `web`.** The service carried a `command:` and no `entrypoint:`, and the image's ENTRYPOINT reads
+  `ROLE`/`PORT` only — so argv was discarded and it served HTTP. It also could never have been
+  reached: `web`'s healthcheck probed `/app/x`, which exists only in the distroless CLI image that
+  this file's own header says serves no role, so `web` never became healthy and `backfill`'s
+  `depends_on: service_healthy` never fired. `sync`, `worker`, `scheduler` and `replicator` started
+  beside `migrate` rather than after it. Both tracked apps were missing `backfill` entirely, so
+  `x deploy` answered `X_DEPLOY_FAILED` after four roles had already rolled.
+  `scripts/compose-parity.test.ts` now checks all of it — including the compose `x new` writes, so
+  the reference shape cannot regress into a published tarball.
+
+- **`scaffold-smoke` never followed a printed fix.** `--fix-follow` shipped with no caller, which is
+  the class of thing this release spent eight PRs deleting. CI now runs it on **both** scaffolds —
+  the `--no-example` one matters most, since having no islands is precisely why it stayed green
+  while the default scaffold's fix chain was an infinite loop.
+
+- **The scheduler's documented fail-fast does not exist, and it was documented in the dangerous
+  direction.** `wiki/Scheduled-Tasks.md` promised that losing leadership exits the process non-zero
+  "rather than running degraded". It logs `jobs.scheduler.leadership-lost`, clears the flag, returns
+  no occurrences and keeps polling. The role that does exit is the `replicator`. The neighbouring
+  claim that "`/readyz` on the standby reports not-ready by design" was false twice over: no
+  leadership check is registered anywhere, and a scheduler serves no `/readyz` at all.
+
+- **Three role tables described a `/readyz` the framework does not serve.** Only `web` and `sync`
+  construct an HTTP server; `worker`, `scheduler` and `replicator` get a metrics endpoint that 404s
+  everything else. The documented per-role checks were invented, and the example response body had
+  the wrong shape for `HealthReport.checks`.
+
+- **`docs/idea/17-scale-ladder.md`'s seam table cited three config keys that do not exist** —
+  `database.urlEnv`, `database.poolSize` (deleted in 4.0.0) and `jobs.driver` (deleted in 5.0.0).
+  The new `doc-config-keys` check could not see them: its anchor needs the dotted key on a line that
+  also names `app.config.ts`, and a table row names it only in the header.
+
+- **`packages/db/src/schema.ts` is not the migration generator's input**, in three more places plus
+  the demo app's own copy. `x db gen` diffs the entity **registry**, and as of this release so does
+  `x verify`'s `drift` step. Proven by running it: `loadApp('examples/dummy')` reads 87 files and
+  registers six entities, and that app has no `schema.ts`.
+
+- **The scheduler leader is an expiring lease row in `x_scheduler_leader`, not a Postgres advisory
+  lock** — ten sites, including `packages/jobs/src/scheduler.ts`'s own file header, which had
+  disagreed with two other comments in the same file. An advisory lock is session-scoped and dies
+  with the pooled connection that took it, which is exactly the double-fire leader election exists
+  to prevent. (The **migration** advisory lock is real and is unchanged.)
+
+
 - **SECURITY — a sync grant never expired, so `logout` never closed the socket.** The scaffolded
   authenticator built `{ actor }` with no `expiresAt` and no `refresh`, and `GrantBook.expired()`
   skips such a grant — so `sweepGrants`, the only path to `onActorChange`/`reauthorize`, never

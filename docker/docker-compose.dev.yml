@@ -12,23 +12,17 @@
 
 name: ultimate-dev
 
+# Three backing services and NO `app` service, which is the whole point of the file. This stack had
+# one: it built `docker/Dockerfile`, which is the framework's CLI image (`/app/x` and nothing else),
+# and set `ROLE: web` on it — an image that reads no ROLE. `x` with no arguments prints the command
+# catalogue and exits 0, so the service printed help, exited, was restarted by compose and bound
+# nothing on the 3000 it published. The app in development is `x dev`, on the host, against these
+# three:
+#
+#   docker compose -f docker/docker-compose.dev.yml up -d
+#   DATABASE_URL=postgres://ultimate:ultimate@127.0.0.1:5432/ultimate \
+#   NATS_URL=nats://127.0.0.1:4222 S3_ENDPOINT=http://127.0.0.1:9000 x dev
 services:
-  app:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    environment:
-      ROLE: web
-      PORT: 3000
-      DATABASE_URL: postgres://ultimate:ultimate@db:5432/ultimate
-      NATS_URL: nats://events:4222
-      S3_ENDPOINT: http://storage:9000
-    ports: ['127.0.0.1:3000:3000']
-    depends_on:
-      db: { condition: service_healthy }
-      events: { condition: service_started }
-      storage: { condition: service_started }
-
   db:
     image: postgres:17-alpine
     # wal_level=logical is what the replicator decodes; a server started on the default `replica`

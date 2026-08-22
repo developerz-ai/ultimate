@@ -1,15 +1,22 @@
 # One image, one process per role. Each service differs only by ROLE and replica count.
-# `migrate` runs to completion before the rest start; it refuses to run concurrently with
-# a different build id.
+# `migrate` runs to completion before the rest start, and every other service says so in its own
+# `depends_on`; concurrent migrators serialise on the ledger's lock rather than racing.
 #
 # A published host port has exactly one binder, so `web` and `sync` run at 1 here. Compose is one
 # box; horizontal scaling of those two is the orchestrator's job (`docker/helm` in the framework
 # repo). To scale them on one box anyway, drop `ports:` and put your own proxy on this network.
 name: postly
 
+# `IMAGE`, because that is the variable `x deploy --image` sets when it runs this file
+# (`planDeploy`, packages/cli/src/cmd-deploy.ts — `env: { IMAGE: image }`). It was
+# `:${BUILD_ID:?…}`, which no deploy command sets: every one of the six steps failed on a variable
+# the operator had to export by hand, and `--image` decided nothing.
+#
+# `.env.production`, not `.env`: `.env` is the development file `x dev` reads on this box, and an
+# image is deployed with the environment of the deployment, never with a developer's.
 x-image: &image
-  image: ghcr.io/developerz-ai/postly:${BUILD_ID:?set BUILD_ID to the immutable build hash}
-  env_file: [../.env]
+  image: ${IMAGE:-ghcr.io/developerz-ai/postly:dev}
+  env_file: [../.env.production]
   restart: unless-stopped
   stop_grace_period: 30s # SIGTERM → drain in-flight requests, jobs, and sockets
 
@@ -17,6 +24,24 @@ services:
   migrate:
     <<: *image
     environment: [ROLE=migrate]
+    restart: 'no'
+
+  # Run-once, AFTER the new version serves — the last of `x deploy`'s six steps, and the one this
+  # file had no service for: the deploy rolled four roles and then exited X_DEPLOY_FAILED on
+  # `no such service: backfill`, having already restarted web, sync, worker and scheduler.
+  #
+  # The image's ENTRYPOINT is `bun apps/web/server.ts`, which reads ROLE and PORT and NOTHING ELSE
+  # — argv appended to it is discarded, so a bare `command:` here would serve HTTP as ROLE=web.
+  # Overriding the entrypoint is what makes the words below a command.
+  backfill:
+    <<: *image
+    entrypoint: ['bun', 'node_modules/@ultimat3/cli/src/bin.ts']
+    command: ['db', 'backfill', '--all', '--write', '--json']
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      # The barrier, not the ordering: `docker compose up -d` returns when a container STARTS. The
+      # image's own HEALTHCHECK (`/readyz`) is what makes "after the new version serves" true.
+      web: { condition: service_healthy }
     restart: 'no'
 
   web:
@@ -39,7 +64,10 @@ services:
 
   worker:
     <<: *image
-    environment: [ROLE=worker, QUEUES=default,mail,digest]
+    # `ROLE` and nothing else. `QUEUES=default,mail,digest` was here and NOTHING in `packages/*/src`
+    # reads a `QUEUES` variable — a queue list that looked like configuration, was never parsed, and
+    # would have read as a promise that this worker skips the queues it omits.
+    environment: [ROLE=worker]
     depends_on:
       migrate: { condition: service_completed_successfully }
     deploy: { replicas: 2 } # scales on queue depth
@@ -49,7 +77,10 @@ services:
     environment: [ROLE=scheduler]
     depends_on:
       migrate: { condition: service_completed_successfully }
-    deploy: { replicas: 1 } # fixed 1; leadership is a Postgres advisory lock
+    # Fixed 1. Leadership is an EXPIRING LEASE ROW in `x_scheduler_leader`, not an advisory lock:
+    # an advisory lock is session-scoped and dies with a pooled connection. A second instance is
+    # harmless but idle.
+    deploy: { replicas: 1 }
 
   replicator:
     <<: *image

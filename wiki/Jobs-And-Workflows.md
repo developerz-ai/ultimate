@@ -142,7 +142,7 @@ export const syncCrm = job({
 
 | Control | Meaning | Enforced by |
 |---|---|---|
-| `concurrency.limit` | max simultaneous runs sharing a key | advisory lock / lease count in the driver |
+| `concurrency.limit` | max simultaneous runs sharing a key | one `x_job_leases` row per **held slot**, keyed `(lease_key, slot)` — the primary key is what serialises two workers reaching for the same slot. A driver with no `LeaseStore` refuses the job at worker start (`X_JOB_CONCURRENCY_UNENFORCEABLE`) rather than capping per process |
 | `rateLimit` | max starts per window per key | token bucket row, checked at claim time |
 | `queue` | named pool; the `worker` role runs one pool per config (`WORKER_QUEUES=default,integrations`) | worker pool sizing, see [Deployment](Deployment) |
 | `retry.attempts` / `backoff` | `'exponential' \| 'linear' \| 'fixed'`, jittered | driver scheduler |

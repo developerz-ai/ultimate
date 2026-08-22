@@ -6,7 +6,7 @@ Rationale for the primitives themselves: [`../idea/02-primitives.md`](../idea/02
 
 ## Tiers
 
-A package may import from **strictly lower** tiers only. Never upward. Never sideways within its own tier, except the listed exceptions.
+A package may import from **strictly lower** tiers only. Never upward. Never sideways within its own tier, except the listed exceptions. And never **above its own floor** without a written reason — see [Floors](#floors-the-other-half-of-the-rule).
 
 ```
 tier 0  core, schema
@@ -19,17 +19,39 @@ tier 5  admin, testing, cli, scraping               (may import tier 0-4)
 
 [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) is the executable copy of this block; `bun run boundaries` reads that one. Prose and code must agree.
 
-`SIDEWAYS_ALLOW` in [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) is the executable copy of this table, `As of 2026-08`. Four edges, each earning its line:
+`SIDEWAYS_ALLOW` in [`scripts/lib/tiers.ts`](../../scripts/lib/tiers.ts) is the executable copy of this table, `As of 2026-08-22` — read it rather than counting rows here; nothing checks that these two agree. Each edge earns its line:
 
 | Sideways exception | Why |
 |---|---|
 | `realtime` → `query` | tier 3 is one feature: a live query is a query plus a subscription. Splitting duplicates the SQL shape. |
 | `cli` → `admin` | `x dev` **mounts** `/_x`; it does not reimplement it. The panels are a tier-5 product, and the alternative is a second dev dashboard inside the CLI. |
+| `cli` → `scraping` | `x shot` drives a real browser and `@ultimat3/scraping` is the one package that can: it declares the CDP library's shape structurally (`cdp-port.ts`) and takes no runtime dependency, so the CLI passes the app's own `puppeteer` in. Declared 2026-08-21, and moving `scraping` down to 4 instead was refused — see [Floors](#floors-the-other-half-of-the-rule). |
 | `cli` → `testing` | `@ultimat3/testing` **is** the framework's harness, and `serve.live.test.ts` spawns the scaffolded `server.ts` as a child, so one real port has to pass the seal. It was already live as a relative specifier the checker could not see, and was declared once `bun run boundaries` learned to follow those. |
 | `create-ultimate` → `cli` | a published shim whose whole job is `x new`. The alternative is a second copy of the templates. `create-ultimate` sits above the table at tier 6, and this is its **only** permitted import. |
 | everything else | none. Siblings share **types only**, declared in the lowest tier that needs them — see [`00-conventions.md`](00-conventions.md#one-declaration-at-the-lowest-tier-that-can-hold-it). |
 
 **Two rows left this table and neither was a rule change.** `schema` → `core` never existed: `packages/schema/src/errors.ts:2` says `SchemaError` reproduces `UltimateError`'s shape **structurally** rather than importing it, so tier 0 imports nothing and needs no exception. `admin` → `ui` is now an ordinary **downward** import: `ui` imports `core`, `i18n`, `money` and `time`, so tier 5 was two tiers above its floor, and moving it to 4 made the edge legal on the plain rule. `ui` sits at 4 rather than at its floor so `render` → `ui` stays forbidden — the static bundle graph may not reach the design system, which is axiom 6. An exception line in an enforcement table is a rule with a hole in it, and deleting the hole beats arguing for it.
+
+### Floors: the other half of the rule
+
+The tier is a **ceiling** on what a package may import and a **floor** on what may import it. `boundaries.ts` enforces both `As of 2026-08-22`: it derives each package's floor — one above the highest tier its shipped imports reach, declared sideways edges excluded — and refuses a package sitting above that floor with no row in `FLOOR_ABOVE` (`scripts/lib/tiers.ts`). A blank reason is the same failure; a row for a package that has reached its floor, or for a name the table does not carry, is the reverse one.
+
+| Fault | Code |
+|---|---|
+| above its floor, no row, or a row with a blank reason | `X_TIER_FLOOR_UNDECLARED` |
+| a row for a package at its floor, or for a name no tier lists | `X_TIER_FLOOR_STALE` |
+
+Every row states what moving the package **down** would legalise, never why its tier feels right — a floor exception is worth a line only when the tier itself is enforcing something.
+
+| Package | What moving it down would legalise |
+|---|---|
+| `policy` | `entity → policy`, `http → policy` and `auth → policy` become ordinary downward imports, and "never a second authz path" goes back to being prose. All three mirror what they need of policy structurally instead; `@ultimat3/action` is the one package that wires `evaluate()` in |
+| `pwa` | `render → pwa`, so the service-worker generator joins the static bundle graph — axiom 6 |
+| `render` | `pwa → render`, so `packages/pwa/CLAUDE.md`'s "never import render" — the rule keeping `PwaRoute` a structural view rather than a re-export of the route table — has nothing enforcing it |
+| `scraping` | nothing, and that is the point: tier 5 reserves room for `recover: 'agent'` to import `@ultimat3/ai` (tier 4), which a package at tier 4 could not do. The declared `cli → scraping` edge is the price |
+| `ui` | `render → ui`, so the static bundle graph reaches the design system — axiom 6 again. Its floor is tier 2 |
+
+`bun run boundaries --json` re-derives the whole set; nothing here is a number to keep in step by hand. **No package moved when the rule landed**: every row was a sentence that package's own `CLAUDE.md` already carried.
 
 ### Why `db` is tier 1
 

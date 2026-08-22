@@ -150,6 +150,8 @@ bunx x build --target static --out .x/static
 
 One HTML file per `render: 'static'` route — with the default scaffold that is `.x/static/index.html`. Every other render mode needs a running app and is reported as skipped, never emitted. Serve it from a CDN or an object store with no process behind it; set `SITE_ORIGIN` so `canonical` and `og:url` are built against the real host.
 
+`apps/web/prerender.ts` also writes **`sitemap.xml` and `robots.txt`** into the same directory, because a static export has no process to answer them at request time. `robots.txt` **fails closed**: anything that is not `ULTIMATE_ENV=production` emits `Disallow: /` and advertises no sitemap, so a preview build cannot outrank the real site.
+
 ```bash
 bunx x build --target binary --out .x/app
 ```

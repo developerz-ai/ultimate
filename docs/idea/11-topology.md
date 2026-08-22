@@ -34,20 +34,16 @@ Rules that keep this honest:
 
 Every role exposes both, on every replica.
 
-| Endpoint | Answers | Fails when | Consumer |
+| Endpoint | Answers | 503 when | Consumer |
 |---|---|---|---|
-| `/healthz` | "is this process alive?" | event loop wedged, unhandled fatal state | liveness probe → restart |
-| `/readyz` | "should traffic come here?" | DB unreachable, NATS down, migration version mismatch, **draining** | readiness probe → remove from rotation |
+| `/healthz` | "is this process alive?" | the lifecycle is `stopped`; the readiness checks are ignored on purpose | liveness probe → restart |
+| `/readyz` | "should traffic come here?" | starting, **draining**, stopped, or a registered check answers `failing` | readiness probe → remove from rotation |
 
-| Role | `/readyz` additionally checks |
-|---|---|
-| `web` | DB pool healthy, build ID matches the migration version |
-| `sync` | replication feed lag under threshold, NATS subscribed |
-| `worker` | queue reachable, at least one pool claiming |
-| `scheduler` | holds the leader lock (a standby reports not-ready, by design) |
-| `replicator` | slot active, WAL lag under threshold |
+**`web` and `sync` are the only roles that serve them**, `As of 2026-08-22`: they are the two that construct an HTTP server. `worker`, `scheduler` and `replicator` open the metrics listener alone and are probed on `/metrics`.
 
-Both return `{ ok, role, buildId, checks: [...] }` — machine-readable per [`09-ai-first.md`](./09-ai-first.md). Never a bare `200 OK` with no body.
+Two checks are registered — `database` always, `transport` only when the transport can report a connection (NATS can; the in-process bus cannot) — and **no per-role check exists**. This table claimed five, including a `scheduler` standby reporting not-ready, and none of them was ever wired.
+
+Both return `{ ...HealthReport, role }` — `state`, `ready`, `uptimeMs`, `inflight`, `buildId`, `checks` as a **map** of name → `ok`/`failing`, and `registered`. Never a bare `200 OK` with no body. `registered: 0` is the state the pair could not otherwise express: an empty registry is still ready, so a 200 there means no more than "the socket is bound" ([`13-topology-runtime.md`](../architecture/13-topology-runtime.md#healthz-vs-readyz)).
 
 ## Graceful drain on SIGTERM
 

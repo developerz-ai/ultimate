@@ -35,6 +35,25 @@ services:
     environment: [ROLE=migrate]
     restart: 'no'
 
+  # Run-once, AFTER the new version serves — the last of `x deploy`'s six steps, and the one this
+  # file had no service for: the deploy rolled four roles and then exited X_DEPLOY_FAILED on
+  # `no such service: backfill`, having already restarted web, sync, worker and scheduler.
+  #
+  # The image's ENTRYPOINT is `bun apps/web/server.ts`, which reads ROLE and PORT and NOTHING ELSE
+  # — argv appended to it is discarded, so a bare `command:` here would serve HTTP as ROLE=web.
+  # Overriding the entrypoint is what makes the words below a command.
+  backfill:
+    <<: *image
+    entrypoint: ['bun', 'node_modules/@ultimat3/cli/src/bin.ts']
+    command: ['db', 'backfill', '--all', '--write', '--json']
+    depends_on:
+      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+      # The barrier, not the ordering: `docker compose up -d` returns when a container STARTS. The
+      # image's own HEALTHCHECK (`/readyz`) is what makes "after the new version serves" true.
+      web: { condition: service_healthy }
+    restart: 'no'
+
   web:
     <<: *image
     environment: [ROLE=web]
@@ -68,7 +87,10 @@ services:
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
-    deploy: { replicas: 1 } # fixed 1; leadership is a Postgres advisory lock
+    # Fixed 1. Leadership is an EXPIRING LEASE ROW in `x_scheduler_leader`, not an advisory lock:
+    # an advisory lock is session-scoped and dies with a pooled connection. A second instance is
+    # harmless but idle.
+    deploy: { replicas: 1 }
 
 volumes:
   pgdata:

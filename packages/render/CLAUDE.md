@@ -9,8 +9,11 @@ second render mode — the same rule `llm()` and `backfill()` follow. It adds no
 `defineRoute`.
 
 Tier 4. May import tiers 0–3: `core`, `schema`, `i18n`, `money`, `time`, `cache`, `seo`,
-`entity`, `policy`, `http`, `action`, `query`. **Never** `pwa`, `mcp`, `ai`, `manifest`
-(sideways), never `ui`/`cli` (upward).
+`entity`, `policy`, `http`, `action`, `query`. **Never** `pwa`, `mcp`, `ai`, `manifest`, `ui`
+— all tier 4, so **sideways**, and an undeclared sideways edge is a build error. `ui` moved 5 → 4
+in 2026-08 and is held level with this package deliberately (`FLOOR_ABOVE` in
+`scripts/lib/tiers.ts`), so `render → ui` stays refused; this package sits above its own floor of 2
+for the mirror-image reason, keeping `render → pwa` refused. Never `cli` (upward).
 
 | Rule | Detail |
 |---|---|

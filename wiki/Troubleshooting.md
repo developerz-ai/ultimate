@@ -25,7 +25,7 @@ The `--json` form is the same content as the terminal form. Paste the JSON into 
 | `X_CONFIG_INVALID` at load | `app.config.ts` field invalid — `defaultLocale` not in `locales`, `db.pool < 1`, non-IANA `timeZone`, `realtime.transport` set without `realtime.urlEnv` | `x config show --json`, then edit the field named in `cause` |
 | `X_ROLE_INVALID` | `ROLE` is not one of `web sync worker scheduler migrate replicator all` | fix the env var on that service |
 | `X_BUN_VERSION` | below the Bun 1.3 floor | upgrade Bun |
-| Container starts then loops | `/readyz` failing, not `/healthz` — usually DB unreachable or a migration version mismatch | `curl /readyz` and read `checks[]`; it names the failing check |
+| Container starts then loops | `/readyz` failing, not `/healthz` — the `database` check is the one that fails in practice | `curl /readyz` and read `checks`, a map of name → `ok`/`failing`. Read `registered` with it: `0` means nothing was checked, so the 200 meant only that the socket was bound |
 | Config edits have no effect | you edited a per-environment file that does not exist — config is **one file** | put the difference in an env var ([Configuration](Configuration)) |
 
 ## Database
@@ -80,7 +80,7 @@ Boundaries run on pre-push and inside `x verify`. They are build errors, never l
 | Job in dead-letter | `retry.attempts` exhausted | `x jobs show <id> --json` for the step trace, then `x jobs retry <id>` — it replays from the failed step |
 | Nothing is processing | no `worker` for that queue name | check `WORKER_QUEUES` against `jobs.queues` |
 | A job ran but the row it needs doesn't exist | enqueued outside the transaction | enqueue via `<job>.enqueue` inside the action's `handle`; `X_OUTBOX_NO_TX` catches the rest |
-| Cron never fires | no `scheduler`, or the standby is holding | `scheduler` is fixed at 1 active; a standby reports not-ready by design — check `/readyz` |
+| Cron never fires | no `scheduler`, or another node holds the lease | `scheduler` is fixed at 1 active and leadership is a row: `select * from x_scheduler_leader` names the holder and its `expires_at`. A standby has no `/readyz` to check — it serves the metrics port only — so read the row, or `x jobs ls --json` |
 
 ## Realtime
 

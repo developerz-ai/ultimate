@@ -43,7 +43,7 @@ This file is a link map, not a status page. **It states no version, count or ver
 
 ## The gate
 
-- `x verify` runs nineteen steps in cost order, and the framework repo and a generated app run exactly that list, whole: `typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors`, `unit`, `contract`, `live`, `job`, `e2e`, `eval`, `drift`, `contract-diff`, `budgets`, `seo`, `i18n`, `manifest`, `roadmap`. There is no `--only` and no `--skip`.
+- `x verify` runs nineteen steps in cost order, and the framework repo and a generated app run exactly that list, whole: `typecheck`, `lint`, `boundaries`, `filesize`, `package-shape`, `errors`, `unit`, `contract`, `live`, `job`, `e2e`, `eval`, `drift`, `contract-diff`, `budgets`, `seo`, `i18n`, `manifest`, `roadmap`. `x verify --only <step>` runs one step for an iteration loop and announces `NOT A GATE RUN` in both the summary and `--json`; the gate is the command with no flag, and there is no `--skip`.
 - In this repo the gate is `bun run verify`; both tracked apps run their own on a ratchet with `bun run scripts/reference-app-gate.ts`.
 - [Testing internals](https://raw.githubusercontent.com/developerz-ai/ultimate/main/docs/architecture/14-testing-internals.md): the six test types, template-DB cloning, the frozen clock, the sealed network, and the exact order of the gate.
 - [wiki/Testing.md](https://raw.githubusercontent.com/developerz-ai/ultimate/main/wiki/Testing.md): the reference version, including how to write each test type.

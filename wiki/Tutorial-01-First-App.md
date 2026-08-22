@@ -168,16 +168,21 @@ myapp/
 │   │   ├── api/             actions only — no rendering, no components
 │   │   ├── shared/          actor type, tokens, primitives. A leaf both surfaces import
 │   │   ├── server.ts        the production entry: ROLE + PORT, nothing else
-│   │   └── prerender.ts     the static entry: one HTML file per `render: 'static'` route
+│   │   └── prerender.ts     the static entry: one HTML file per `render: 'static'` route,
+│   │                        plus sitemap.xml and robots.txt
 │   ├── admin/               the admin app, gated on `admin:read`
 │   ├── desktop/  mobile/    README stubs, no code
 ├── packages/
-│   ├── db/                  schema.ts (the entity export list) + migrations/
+│   ├── db/                  schema.ts (the entity export list — the package's public
+│   │                        surface, not the generator's input) + migrations/
 │   ├── domain/              pure types, no I/O
 │   ├── i18n/                catalogs/<locale>.json — one flat file per locale
 │   ├── mcp/                 the app's own MCP surface over its actions
 │   └── ui/                  app components on semantic tokens
-├── docker/                  Dockerfile, .dockerignore, dev + prod compose
+├── docker/                  Dockerfile, .dockerignore, dev + prod compose, helm/
+├── guards/                  one rule per file, run by `x verify`'s boundaries step.
+│                            Four ship: bare-error, raw-colour, untranslated-string,
+│                            unzoned-date. Delete one by deleting its file
 ├── bin/                     setup, dev, check
 └── AGENTS.md  CLAUDE.md     the two files an agent reads first
 ```

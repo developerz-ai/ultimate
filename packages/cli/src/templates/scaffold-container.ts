@@ -192,7 +192,10 @@ services:
     depends_on:
       db: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
-    deploy: { replicas: 1 } # fixed 1; leadership is a Postgres advisory lock
+    # Fixed 1. Leadership is an EXPIRING LEASE ROW in \`x_scheduler_leader\` (dev-roles.ts,
+    # driver-pg-ddl.ts), NOT an advisory lock: an advisory lock is session-scoped and dies with a
+    # pooled connection. A second instance is harmless but idle.
+    deploy: { replicas: 1 }
 
 volumes:
   pgdata:
@@ -208,7 +211,7 @@ nothing to rebuild between staging and production.
 | \`web\` | HTTP: pages, actions, assets | \`$PORT\` (default 3000) |
 | \`sync\` | websockets for live queries | \`$PORT + 1\` |
 | \`worker\` | the job queue | — |
-| \`scheduler\` | cron tasks; leadership is a Postgres advisory lock | — |
+| \`scheduler\` | cron tasks; leadership is an expiring lease row in \`x_scheduler_leader\` | — |
 | \`replicator\` | the logical replication slot, exactly one per database | — |
 | \`migrate\` | applies pending migrations and **exits** | — |
 

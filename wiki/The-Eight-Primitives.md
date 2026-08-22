@@ -217,7 +217,7 @@ export const nightlyDigest = task({
 
 | Aspect | Rule |
 |---|---|
-| Projects to | scheduler entry (advisory-lock leader), next-run introspection, a `tasks` row in `x.manifest.json` |
+| Projects to | scheduler entry (lease-row leader, `x_scheduler_leader`), next-run introspection, a `tasks` row in `x.manifest.json` |
 | Owns | cron expression + explicit `tz` |
 | Never | contain a handler body. If it does work, it is a `job` |
 

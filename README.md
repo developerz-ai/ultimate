@@ -122,7 +122,7 @@ X_DB_DRIFT: schema differs from migrations
 bun run verify        # this repo. In an app: x verify
 ```
 
-**Nineteen steps, in cost order**, and the same list runs in the framework repo and in a generated app — whole, or not at all. There is no `--only` and no `--skip`.
+**Nineteen steps, in cost order**, and the same list runs in the framework repo and in a generated app — whole, or not at all. `x verify --only <step>` runs one step for an iteration loop and announces `NOT A GATE RUN`; the gate is this command with no flag, and there is no `--skip`.
 
 `typecheck` · `lint` · `boundaries` · `filesize` · `package-shape` · `errors` · `unit` · `contract` · `live` · `job` · `e2e` · `eval` · `drift` · `contract-diff` · `budgets` · `seo` · `i18n` · `manifest` · `roadmap`
 
@@ -331,7 +331,7 @@ The 1,767 generated Lucide glyph files are excluded on purpose — leaving them 
 
 | Not claimed | Why |
 |---|---|
-| that the demo passes its own gate | **17 of 19**, `As of 2026-08`. `boundaries` and `budgets` are pinned red in [`scripts/lib/gated-apps.ts`](scripts/lib/gated-apps.ts) — `X_BOUNDARY_SITE_TO_APP` ×3, because the static feed imports the authed post service, and `X_BUDGET_UNMEASURED`, because no `.x/build-stats.json` has ever existed there. [`examples/dummy`](examples/dummy/README.md) is pinned on 4 steps including `typecheck` |
+| that the demo passes its own gate | it is **pinned red on 3 steps**, `As of 2026-08-22` — `boundaries` (`X_BOUNDARY_SITE_TO_APP` ×3, the static feed importing the authed post service), `budgets` (`X_BUDGET_UNMEASURED`, no `.x/build-stats.json` has ever existed there) and `drift` (`X_DB_DRIFT`, real and unreconciled). [`examples/dummy`](examples/dummy/README.md) is pinned on 4 steps including `typecheck`. The pins and their reasons are [`scripts/lib/gated-apps.ts`](scripts/lib/gated-apps.ts); `bun run scripts/reference-app-gate.ts` re-derives them |
 | that low lines means high leverage | partly it means **few features**. Roughly half of [`DOMAIN.md`](dummy/social-media-clone/DOMAIN.md) is a plan, not a build: `likes` and `comments` are entities with migrations and no write path |
 | that the framework wrote the auth | it did not. 13 non-test files hand-write argon2id parameters, `__Host-` cookie prefixes, session token hashing and a captcha, and **`@ultimat3/auth` is imported nowhere in that app**. `@ultimat3/storage` likewise, despite a media feature. The largest thing the framework could have projected and did not |
 | that live messaging works | the one live query is declared, unit-tested and **not wired**: nothing calls `installRealtimeTopics` at boot, and [`apps/web/api/realtime.ts`](dummy/social-media-clone/apps/web/api/realtime.ts) says so in its own header |

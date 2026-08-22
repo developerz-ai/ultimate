@@ -138,7 +138,7 @@ export function ${name}Page() {${translatorBinding(module)}
 };
 
 const styleSource =
-  (): string => `// Semantic tokens only — a raw hex here is a dark-theme bug and a lint failure.
+  (): string => `// Semantic tokens only — a raw hex here is refused by the boundaries step (guards/raw-colour.ts), not by lint — a dark-theme bug in every scheme but the one it was written in.
 @use '@ultimat3/ui/tokens' as tokens;
 
 .page {

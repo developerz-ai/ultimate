@@ -5,14 +5,18 @@ A router, not an encyclopedia. Facts live in `x.manifest.json`; this file holds 
 infer from the code.
 
 `x verify` here is **blocking on the framework repo's CI**, through the ratchet in
-`../../scripts/lib/gated-apps.ts`: this app's own `expectedRed` pins `boundaries` and `budgets` —
-2 red of 19 as of 2026-08-22 — and every other step must stay green. `boundaries` is
-`X_BOUNDARY_SITE_TO_APP` ×3, `apps/web/site/feed/page.tsx` reaching `apps/web/app/posts/service.ts`;
-`budgets` is `X_BUDGET_UNMEASURED` on every route declaring one, because no `.x/build-stats.json`
-has ever existed here — closed by running `x build` ahead of the gate. `drift` is **not** pinned and
-must stay green; that table is the executable copy, so read it rather than this line if they
-disagree. `examples/dummy` has its own
-table; neither app's pins excuse the other's red step. Turn a pinned step green and you must
+`../../scripts/lib/gated-apps.ts`: this app's own `expectedRed` pins `boundaries`, `budgets` and
+`drift`, and every other step must stay green. That table is the executable copy — read it, and
+`bun run ../../scripts/reference-app-gate.ts` re-derives the verdict, rather than trusting the
+sentence below it.
+
+| Pinned step | Why |
+|---|---|
+| `boundaries` | `X_BOUNDARY_SITE_TO_APP` ×3 — `apps/web/site/feed/page.tsx` reaching `apps/web/app/posts/service.ts`. The static feed needs a query, not the authed service |
+| `budgets` | `X_BUDGET_UNMEASURED` on every route declaring one, because no `.x/build-stats.json` has ever existed here — closed by running `x build` ahead of the gate |
+| `drift` | `X_DB_DRIFT`, and it was **vacuously green** before, not a regression: `checkSourceDrift` used to hash only the source text under `packages/db/src`, and now hashes the entity registry with it. Closed by a deliberate `x db gen "reconcile foreign key rules"`, never by re-recording the `.hash` sidecar |
+
+`examples/dummy` has its own table; neither app's pins excuse the other's red step. Turn a pinned step green and you must
 delete its pin in the same change
 (`bun run ../../scripts/reference-app-gate.ts --unpin dummy/social-media-clone:<step>`). This app is not the reference app — `examples/dummy` decides idiom — but it is deployed
 (`.github/workflows/deploy-social-demo.yml`), which is why it is gated.

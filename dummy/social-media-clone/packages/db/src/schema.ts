@@ -1,5 +1,7 @@
-// Every entity the app declares. The migration generator reads THIS list, so an entity missing
-// from it does not exist as far as the database is concerned — and `x db drift` will say so.
+// The public surface of @social-media-clone/db: every entity the app hands out, by name. NOT
+// what the migration generator reads — `x db gen` diffs the entity REGISTRY, which `loadApp`
+// fills by importing `packages/*/src/**` directly, so an entity missing from this list still
+// reaches the database. What it decides is what the rest of the app can import.
 //
 // Explicit re-exports, never `export *`: the public surface of a package is a decision, not a
 // side effect of what happens to live in a directory.

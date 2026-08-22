@@ -109,14 +109,16 @@ receives, per connection ([`scripts/bench/restart-bench-seq.ts`](scripts/bench/r
 sequence gaps** — no gap, no duplicate, no rewind on any client. A **lower bound**, not a proof of
 zero loss: a hole is only visible between two frames one connection received, so anything lost before
 a connection's first message or after its last is invisible, as is a connection that received nothing. It needs its own counter because a channel topic has
-no cursor and no re-snapshot: a frame `SyncSocket.send` drops under backpressure is unrecoverable,
-and `ChannelHub`'s bridge discards the `false` that would have said so. **`SocketRegistry.deliver`
-does not** — this file claimed it did until 2026-08, and
-[`packages/realtime/src/socket.ts`](packages/realtime/src/socket.ts) counts the drop, increments
-`channel_frames_dropped_total`, logs `channel.frames_dropped` and exposes `droppedChannelFrames`.
-Counted in three places and repaired in none is the accurate statement, and
-[`packages/realtime/CLAUDE.md`](packages/realtime/CLAUDE.md) always carried it; the bridge
-(`channel.ts`) is the one caller that still throws the answer away.
+no cursor and no re-snapshot: a frame `SyncSocket.send` drops under backpressure is **unrepairable,
+not uncounted**. `SocketRegistry.deliver`
+([`packages/realtime/src/socket.ts`](packages/realtime/src/socket.ts)) reads `send`'s answer, adds
+the drop to `channel_frames_dropped_total`, logs `channel.frames_dropped` with the topic, and
+exposes `droppedChannelFrames` for a test that cannot scrape — this file claimed it ignored the
+answer until 2026-08, and [`packages/realtime/CLAUDE.md`](packages/realtime/CLAUDE.md) always had it
+right. Counted in three places and repaired in none is the accurate statement. `ChannelHub`'s bridge
+(`channel.ts`) does discard `deliver`'s return, but that is a lost **count**, not a lost signal:
+nothing above it would have re-sent the frame either way, which is why the sequence check is the
+only thing that can say a run had no holes.
 `As of 2026-08` this is the only run with delivery accounting — the 50,000-client result predates
 the counter and carries no delivery number at all.
 
@@ -173,16 +175,21 @@ Milestone detail: [`docs/idea/14-roadmap.md`](docs/idea/14-roadmap.md).
 | **the app gate** | `bun run scripts/reference-app-gate.ts` — both tracked apps' own 19 steps (`examples/dummy`, `dummy/social-media-clone`), blocking on a ratchet: a step passing today must keep passing, a step pinned in that app's `expectedRed` (`scripts/lib/gated-apps.ts`) must still be failing, and a `typecheck` that goes green must join the root `tsconfig.json` references |
 | shrink the ratchet | `bun run scripts/reference-app-gate.ts --unpin <app>:<step>[,<step>]` — the edit `X_REFERENCE_APP_PIN_STALE` names, performed |
 | test (one file) | `bun test packages/core/src/errors.test.ts` |
-| test (one name) | `bun test -t 'formats the fix line'` |
+| test (one name) | `bun test packages/core/src/errors.test.ts -t 'notImplemented always carries a fix line'` — **always with a path**. `-t` filters test *names*, not files, so a bare `bun test -t <name>` still loads every test file in the repo into one process, where module-scope registrations from unrelated files collide and the run reports failures a scoped run does not |
 | import boundaries | `bun run boundaries` |
 | bare Errors in tests | `bun run scripts/test-bare-error.ts` — a step of the gate's `errors` check, standalone. A test may not report its own verdict by throwing a bare `Error`; `expect.unreachable` is the idiom. A ratchet, because 422 sites were already there — `--unpin <pkg>` lowers a count and refuses to raise one. A `new Error` **not thrown** is the subject's input and is never reported |
 | unsafe error rendering | `bun run error-render` — a step of the gate's `errors` check, standalone. Refuses an `unknown` reaching a `cause:`/`fix:` through `${x}`, `JSON.stringify(x)` or `String(x)`; all three throw on real app values, and the bug shipped three times before it was mechanised |
 | route vocabulary copies | `bun run render-modes` — a step of the gate's `unit` check, standalone. Refuses a second declaration of `RENDER_MODES` / `OFFLINE_STRATEGIES` / `HYDRATE_STRATEGIES` anywhere in `packages/*/src`, matched on the **literal set** rather than the name: the copy that did the damage was called `PwaRenderMode`. Two shared members is a copy, one is a coincidence — the highest innocent overlap in the tree is 1 |
-| open closed-key tables | `bun run frozen-records` — a step of the gate's `unit` check, standalone. Refuses `const X: Readonly<Record<K, V>> = Object.freeze({…})`, which infers `T` from the literal and so accepts an EXTRA key in silence. `Object.freeze<Record<K, V>>({…})` is the one form. 21 sites, 4 left deliberately open on `Record<string, …>` |
+| open closed-key tables | `bun run frozen-records` — a step of the gate's `unit` check, standalone. Refuses `const X: Readonly<Record<K, V>> = Object.freeze({…})`, which infers `T` from the literal and so accepts an EXTRA key in silence. `Object.freeze<Record<K, V>>({…})` is the one form. The command prints both tallies — closed-key freezes checked, and the `Record<string, …>` ones deliberately left open — so neither is written down here |
 | a second `AsyncLocalStorage` | `bun run async-context-guard` — a step of the gate's `unit` check, standalone. `packages/core/src/async-context.ts` is the one module that may construct one **or import the class**; every other scope opens through `asyncContext<T>(subject)`. A module-scope `new` throws `TypeError` at module evaluation in a browser bundle |
 | undocumented gate codes | `bun run gate-codes` — a step of the gate's `unit` check, standalone. `wiki/Error-Codes.md`'s never-ships list is a hand-copy of a derived set; nothing read it, because `checkErrorCodeDocs` counts any `X_*` in backticks **anywhere on the page** as documentation. A ratchet: 26 violations on day one |
 | dishonest `sideEffects` | `bun run side-effects` — a step of the gate's `unit` check, standalone. Refuses a package whose `sideEffects` excludes a module that provably runs at import time, and an entry matching no file — a stale entry protects nothing while reading as a rule still in force. **Never `false` where a `registerErrorCodes()` runs**: measured, `false` on `@ultimat3/core` drops `schema-error-codes.ts`, which registers `@ultimat3/schema`'s titles because schema (tier 0) cannot register its own. The array form costs ~376 B an island against the lie, and 22,214 → 5,948 B against declaring nothing. A ratchet — 24 of 30 packages silent on day one; `--explain --json` prints the array the tree measures |
 | changelog and migration drift | `bun run changelog-check` — a step of the gate's `unit` check, standalone. Two `##` headings sharing a version, an empty released section, `BREAKING —` still under `[Unreleased]` at a tagged commit, and each major's `wiki/Upgrading.md` count against **that section's own** entries — a count derived from the whole file cannot see a misplaced entry, because it only makes the number smaller |
+| a caught value rendered into a refusal | `bun run scripts/catch-render.ts` — a step of the gate's `unit` check, standalone. The **second** rule beside `error-render`, because that one reads a parameter annotated `unknown` and a `catch (error)` binding is annotated by nobody: it measured green through a seven-site fix. Refuses `instanceof` / `String()` / `JSON.stringify()` / `${…}` on a caught value reaching a `cause:`, `fix:` or `detail:`. `renderThrowable(value)` is the total form, one import. A ratchet |
+| a config key nothing reads | `bun run scripts/config-readers.ts` — a step of the gate's `unit` check, standalone. Every leaf key of `AppConfig` needs a reader in `packages/*/src`, or a pinned reason. Twelve keys across four releases were found by hand before this existed — `jobs.driver`, `realtime.heartbeatMs`, `database.poolSize`, `pwa.installPrompt`, `auth.afterSignInPath`, `ai.modelEnv` and the rest. A ratchet |
+| a documented config key that does not exist | `bun run scripts/doc-config-keys.ts` — a step of the gate's `unit` check, standalone, and the other half of `doc-fixes`: that one resolves the `x <command>` in a `fix:`, this one resolves the `<section>.<key>`. Narrow on purpose — a dotted key on a line that also names `app.config.ts` or `defineConfig` — so its findings never have to be argued with |
+| a factory counted instead of listed | `bun test scripts/primitive-factories.test.ts` — a step of the gate's `unit` check, standalone. An exported function returning an `Action` or a `JobHandle` needs a row in `PRIMITIVE_FACTORIES`, and a row needs a function. Lives in `scripts/` and not in `@ultimat3/core` because the table is tier 0 and the scan has to read `ai`, `jobs`, `scraping` and `action` |
+| a browser barrel that reaches `node:async_hooks` | `bun test scripts/browser-barrel.test.ts` — a step of the gate's `unit` check, standalone. Bundles every package that touches the ALS seam **for the browser and evaluates it**, closing the two blind spots `async-context-guard` names in its own header: `await import('node:async_hooks')` and `const C = hooks.AsyncLocalStorage; new C()`. The barrel set is derived from source; the hand-written line is a FLOOR that may only shrink |
 | regenerate manifest | `bun run manifest` |
 | list workspaces | `bun run workspaces:list` |
 | new framework package | `bun run scripts/new-package.ts <name> --tier <n>` |
@@ -235,11 +242,21 @@ which [`packages/render/CLAUDE.md`](packages/render/CLAUDE.md) requires — the 
 may not reach the design system, which is axiom 6. An exception line in an enforcement table is a
 rule with a hole in it, and deleting the hole beats arguing for it.
 
-`scripts/lib/tiers.ts` claims each package sits "at the lowest tier their real imports allow —
-checked by this file's own rule, not by opinion", and **no such check exists**: `boundaries.ts`
-enforces the ceiling only. `render`, `pwa` and `scraping` also sit above their floors `As of
-2026-08-19`. Adding a floor rule is deliberately not done yet — it reds three more packages the
-day it lands, and that is its own piece of work rather than a rider on this one.
+**The FLOOR is enforced too, `As of 2026-08-22`.** `boundaries.ts` derives each package's floor from
+its shipped imports and refuses a package sitting above that floor with no row in `FLOOR_ABOVE`
+([`scripts/lib/tiers.ts`](scripts/lib/tiers.ts)) — `X_TIER_FLOOR_UNDECLARED`, which also fires on a
+row whose reason is blank, because "there was a reason" is the documentation axiom 3 says does not
+exist. The reverse is a build error too: a row for a package that has since reached its floor, or
+for a name the tier table does not carry, is `X_TIER_FLOOR_STALE`. Until then the ceiling was the
+only half checked, while that file's own comment claimed the floor was checked "by this file's own
+rule, not by opinion".
+
+**Nothing moved when the rule landed.** Every package above its floor already had the sentence in
+its own `CLAUDE.md`; `FLOOR_ABOVE` collects them, and each states what moving the package DOWN
+would **legalise** rather than why the current tier feels right — `policy`, `pwa`, `render`,
+`scraping`, `ui`. `bun run boundaries --json` re-derives the set. `pwa` at its floor of 2 is the
+clearest case: `render → pwa` becomes an ordinary downward import, the service-worker generator
+joins the static bundle graph, and axiom 6 loses the build error both packages' `CLAUDE.md` rely on.
 
 **`cli → testing` was declared 2026-08**, when `bun run boundaries` learned to follow relative specifiers. `packages/cli/src/serve.live.test.ts` had been importing `../../testing/src/sealed-network` with a comment saying the package specifier "is a sideways import the boundary check refuses" — an evasion the check could not see. `@ultimat3/testing` was already a runtime `dependencies` entry of `@ultimat3/cli`, so the manifest had crossed the edge all along; declaring it makes the rule enforce what shipping already assumed. `create-ultimate` sits above the table at tier 6 and its declared edge is its *only* permitted import.
 
@@ -255,7 +272,16 @@ Everything in the framework is one of these. **If a feature doesn't fit one of t
 
 **`llm()` is an action factory, not a ninth primitive — decided 2026-08.** A model call is a server-authoritative operation with an input schema, an output schema and a policy, which is the definition of an `action`; so `llm()` ([`packages/ai/src/llm.ts`](packages/ai/src/llm.ts)) *returns* one. That is what gives a model call `.tool()`, `.openapi()`, `.client()`, `.job()` and `.contract()` for free, one authz object across every surface, and a place in the manifest — none of which a ninth primitive would have inherited. The rule generalises: a new capability arrives as a **factory over an existing primitive**, never as a new kind of thing.
 
-**`backfill()` is a job factory — the rule's second instance, decided 2026-08.** A one-pass sweep over a table is durable background work with an input schema, a retry policy, an idempotency key and a queue, which is the definition of a `job`; so `backfill()` ([`packages/jobs/src/backfill.ts`](packages/jobs/src/backfill.ts)) *returns* one, and inherits `.enqueue()`, the worker's cancellation, the dead-letter path, `x jobs show` and its manifest row. The pass is `inBatches()` — one statement per page — with every page in its own `step.run`, so a killed attempt resumes on the page it stopped at. What a step persists is a cursor, never the page. **`handle` is at least once**: it runs before its checkpoint lands, so an attempt cancelled between the two replays that page — the handler must be idempotent (`upsertAll`, `updateWhere`, a statement whose second run changes nothing), never `count + 1`.
+**`backfill()` is a job factory, decided 2026-08.** A one-pass sweep over a table is durable background work with an input schema, a retry policy, an idempotency key and a queue, which is the definition of a `job`; so `backfill()` ([`packages/jobs/src/backfill.ts`](packages/jobs/src/backfill.ts)) *returns* one, and inherits `.enqueue()`, the worker's cancellation, the dead-letter path, `x jobs show` and its manifest row. The pass is `inBatches()` — one statement per page — with every page in its own `step.run`, so a killed attempt resumes on the page it stopped at. What a step persists is a cursor, never the page. **`handle` is at least once**: it runs before its checkpoint lands, so an attempt cancelled between the two replays that page — the handler must be idempotent (`upsertAll`, `updateWhere`, a statement whose second run changes nothing), never `count + 1`.
+
+**The factories are a list, never a count and never an ordinal.** `PRIMITIVE_FACTORIES` in
+[`packages/core/src/registrar.ts`](packages/core/src/registrar.ts) is the executable set: an
+exported function outside its owning package that returns an `action` or a `job` has a row there or
+`scripts/primitive-factories.test.ts` fails, and a row nothing exports fails the same test. Adding a
+factory is adding a row, not editing a sentence. Three file headers each called themselves "the
+fourth instance" and at most one could have been right — the list is sorted by package then name, so
+**no ordinal is derivable from it**, and any prose ordinal is wrong the moment the next factory
+lands. `As of 2026-08-22`.
 
 ## Non-negotiables
 
@@ -314,7 +340,32 @@ Everything in the framework is one of these. **If a feature doesn't fit one of t
 
 ## CI
 
-Free GitHub Actions runners (`ubuntu-latest`) — never a paid runner. `ci.yml` runs three jobs, each answering a question no other job answers: `verify` (the gate, `x verify` verbatim — lint, typecheck, boundaries and every suite are its steps, never a second job), `reference-app-verify` (the app gate, on its ratchet) and `scaffold-smoke` (`x new` → `bun install` → `x verify` outside the checkout). Target under 5 minutes. Every job starts with `./.github/actions/setup` — bun, the install cache, a frozen install. Releases publish to npm via **OIDC trusted publishing**, with provenance — which 2.0.0 did not get, because no trusted publisher existed for the exchange to verify against. All 30 were attached on 2026-08-19, and 3.0.0, 4.0.0, 4.1.0 and 5.0.0 all went out through the workflow: `npm view @ultimat3/core@5.0.0 dist.attestations _npmUser`. A fourth workflow, `registry-audit.yml`, runs `scripts/registry-audit.ts` on a schedule and files a `registry-drift` issue when the tree's stamped version and the registry disagree — it is not a `ci.yml` job because it asks about the **registry**, which no commit changes. See [`PUBLISHING.md`](PUBLISHING.md).
+Free GitHub Actions runners (`ubuntu-latest`) — never a paid runner. Target under 5 minutes.
+
+`ci.yml`'s jobs, each answering a question no other job answers — `awk '/^jobs:/{j=1;next} j && /^  [a-z-]+:$/{print $1}' .github/workflows/ci.yml` re-derives the list:
+
+| Job | The question only it answers |
+|---|---|
+| `verify` | the gate, `x verify` verbatim — lint, typecheck, boundaries and every suite are its **steps**, never a second job |
+| `reference-app-verify` | both tracked apps' own gate, on its ratchet |
+| `scaffold-smoke` | `x new` → `bun install` → the documented first run (`x db gen`, `x db migrate`, **every** generator in `GENERATORS`) → the scaffolded app's own `x verify`, outside the checkout |
+| `container` | `docker/` as a built artifact — every stage of the image, ending in the runtime stage's own `/app/x --version`, plus `helm template` assertions the chart's own values can fail |
+| `package-list` | the matrix for the job below, **derived** from `scripts/list-package-dirs.ts` rather than hand-listed |
+| `package` | each package linted and covered **alone** — a suite that only passes because another package's preload registered something first is green in `verify` and red here |
+
+**`container` is the one job with no `./.github/actions/setup`, deliberately.** Nothing in it runs bun, so the composite's frozen install would be pure latency; `docker`, `helm` and `jq` come from the runner image and its first step refuses by name if one stops shipping. Every other job starts with the composite — bun, the install cache, a frozen install.
+
+The workflows, `As of 2026-08-22` — `ls .github/workflows`:
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `ci.yml` | push to `main`, every PR | the jobs above |
+| `release.yml` | a **published** GitHub Release | 30 tarballs to npm via OIDC trusted publishing, behind the `npm-publish` environment gate |
+| `registry-audit.yml` | daily cron | `scripts/registry-audit.ts`; files a `registry-drift` issue when the tree's stamped version and the registry disagree. Not a `ci.yml` job because it asks about the **registry**, which no commit changes |
+| `deploy-social-demo.yml` | push to `main` | builds and publishes the demo app's production image |
+| `wiki.yml` | push to `main` | mirrors `wiki/` into the GitHub wiki |
+
+Releases publish with **provenance** — which 2.0.0 did not get, because no trusted publisher existed for the exchange to verify against. All 30 were attached on 2026-08-19, and 3.0.0, 4.0.0, 4.1.0 and 5.0.0 all went out through the workflow: `npm view @ultimat3/core@5.0.0 dist.attestations _npmUser`. See [`PUBLISHING.md`](PUBLISHING.md).
 
 ## Note
 

@@ -47,11 +47,21 @@ services:
   # triggered by the deploy and never block it. Dry run is the default, so `--write` is explicit.
   backfill:
     <<: *common
+    # The image's ENTRYPOINT is `bun apps/web/server.ts`, and that entry reads ROLE and PORT and
+    # NOTHING ELSE — argv never reaches a parser. A bare `command:` is appended to it and silently
+    # discarded, so this service served HTTP as ROLE=web under a name that said otherwise: a second
+    # web replica, sharing the port-less half of the topology, sweeping nothing. Overriding the
+    # entrypoint is what makes the words below a command. The file path, not `node_modules/.bin/x`:
+    # it needs no bin symlink and no executable bit inside the image.
+    entrypoint: ['bun', 'node_modules/@ultimat3/cli/src/bin.ts']
     command: ['db', 'backfill', '--all', '--write', '--json']
     restart: 'no'
     # The barrier, not the ordering. `docker compose up -d` returns when a container STARTS, so
-    # listing this step last would only look like "after". `service_healthy` is what makes it true.
-    depends_on: { web: { condition: service_healthy } }
+    # listing this step last would only look like "after". `service_healthy` is what makes it true,
+    # and the image's own HEALTHCHECK — `/readyz`, on the port the role binds — is what answers it.
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      web: { condition: service_healthy }
 
   # Scales on RPS. Stateless, behind a CDN — and pinned to 1 because it publishes 3000, which a
   # second replica cannot also bind. See the header for the two ways to scale it.
@@ -60,9 +70,11 @@ services:
     environment: { ROLE: web, PORT: 3000 }
     ports: ['3000:3000']
     depends_on: { migrate: { condition: service_completed_successfully } }
-    healthcheck:
-      test: ['CMD', '/app/x', 'doctor', '--json']
-      interval: 15s
+    # No `healthcheck:` here on purpose. The app image declares its own — `/readyz` on $PORT, which
+    # this role does serve — and this file used to override it with `['CMD', '/app/x', 'doctor']`.
+    # `/app/x` exists ONLY in the framework's distroless CLI image, which the header above says
+    # serves no role, so in the app image the probe was a missing file: `web` never reported
+    # healthy and `backfill`, which waits on `service_healthy`, never ran at all.
     deploy:
       replicas: 1
 
@@ -72,6 +84,7 @@ services:
   sync:
     <<: *common
     environment: { ROLE: sync, PORT: 3000 }
+    depends_on: { migrate: { condition: service_completed_successfully } }
     ports: ['3001:3001']
     deploy:
       replicas: 1
@@ -80,6 +93,7 @@ services:
   worker:
     <<: *common
     environment: { ROLE: worker }
+    depends_on: { migrate: { condition: service_completed_successfully } }
     deploy:
       replicas: 2
 
@@ -89,6 +103,7 @@ services:
   scheduler:
     <<: *common
     environment: { ROLE: scheduler }
+    depends_on: { migrate: { condition: service_completed_successfully } }
     deploy:
       replicas: 1
 
@@ -96,5 +111,6 @@ services:
   replicator:
     <<: *common
     environment: { ROLE: replicator }
+    depends_on: { migrate: { condition: service_completed_successfully } }
     deploy:
       replicas: 1
