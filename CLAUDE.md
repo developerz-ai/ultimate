@@ -12,13 +12,13 @@ This repo is the framework itself: a monorepo of `@ultimat3/*` packages, the `x`
 
 CLI binary: `x`. npm scope: `@ultimat3`. Import paths: `@ultimat3/<pkg>`.
 
-**Status:** repository stamped **7.0.0**, registry still **6.0.0** — the release is in flight, `As of 2026-08-21`. 29 `@ultimat3/*` packages plus the unscoped
+**Status:** 7.0.0, released, `As of 2026-08-21`. 29 `@ultimat3/*` packages plus the unscoped
 `create-ultimate` — 30 in all — **versioned** in lockstep and **published** in lockstep: one version,
 one commit, one tag, 30 tarballs.
 
 **Repository, tag and registry agree.** Never read a number here as the installable one; run the
 command beside it — that is the only thing here that cannot go stale. `bun run scripts/registry-audit.ts --json`
-covers the **npm** rows in one call — it answers `30/30 publishable packages are on npm at 6.0.0,
+covers the **npm** rows in one call — it answers `30/30 publishable packages are on npm at 7.0.0,
 every one attested` or names each gap with a runnable `fix:` — and it asks nothing about the tag or
 the Release, which are the two rows below it.
 
@@ -26,10 +26,10 @@ the Release, which are the two rows below it.
 |---|---|---|
 | Repository version | **7.0.0**, every workspace stamped | `bun run scripts/release.ts --check 7.0.0` |
 | Publishable workspaces | 30 | `bun run scripts/release-workflow.ts --json` |
-| On the registry | **all 30 at 6.0.0**, no holes | `bun run scripts/registry-audit.ts --json` |
-| npm `latest` | **6.0.0** — `bunx create-ultimate myapp` installs it | `npm view @ultimat3/core version` |
-| Provenance | every 6.0.0 tarball attested, `_npmUser: GitHub Actions` | `npm view @ultimat3/core@6.0.0 dist.attestations _npmUser` |
-| Tag and Release | `v6.0.0` pushed **annotated**, GitHub Release published — the Release is what triggers the workflow | `git ls-remote --tags origin 'refs/tags/v6.0.0*'` — both the ref **and** its peeled `^{}` line, which is what proves it is annotated and on the remote; then `gh release view v6.0.0 --json tagName,isDraft,publishedAt`. **Not** `git tag --list`, which reads the local repository and answered `v4.0.0` throughout the window in which the tag had never been pushed |
+| On the registry | **all 30 at 7.0.0**, no holes | `bun run scripts/registry-audit.ts --json` |
+| npm `latest` | **7.0.0** — `bunx create-ultimate myapp` installs it | `npm view @ultimat3/core version` |
+| Provenance | every 7.0.0 tarball attested, `_npmUser: GitHub Actions` | `npm view @ultimat3/core@7.0.0 dist.attestations _npmUser` |
+| Tag and Release | `v7.0.0` pushed **annotated**, GitHub Release published — the Release is what triggers the workflow | `git ls-remote --tags origin 'refs/tags/v7.0.0*'` — both the ref **and** its peeled `^{}` line, which is what proves it is annotated and on the remote; then `gh release view v7.0.0 --json tagName,isDraft,publishedAt`. **Not** `git tag --list`, which reads the local repository and answered `v4.0.0` throughout the window in which the tag had never been pushed |
 | OIDC trusted publisher | attached to all 30, with `Environment: npm-publish` | `NPM_CONFIG_OTP=<code> bun run scripts/trust-publishers.ts --check --json` — without a fresh OTP every package reads as missing |
 
 **A lightweight tag is not a release trigger, and `--follow-tags` will not push one.** `v4.0.0` was
