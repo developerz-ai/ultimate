@@ -34,6 +34,7 @@ Two products, one package, **two entry points**: `@ultimat3/admin/dev` (`src/dev
 - **One cursor codec.** `pagination.ts` is the only file calling core's `encodeCursor`/`decodeCursor`; it wraps them as `encodeAdminCursor`/`decodeAdminCursor`, scoped `admin:<resource>`. An invalid cursor is page one here, not an error page — but the signature is checked first, so a forged one cannot seek.
 - Labels are i18n keys derived in `resource.ts` (`admin.<entity>.field.<name>`); only `.tsx` calls `t()`. MCP tool descriptions are literal English (protocol payload, not UI copy).
 - Colours only via `ThemeTokenRef` (`--x-*`). Raw hex does not typecheck.
+- **One owner of `globalThis.React`, and it is `@ultimat3/ui`'s.** `inert-jsx.ts` keeps the walkers (`nodesOf`, `shallowNodesOf`, `renderNodes`, `renderHtml`) and delegates install/restore to `probe`/`unprobe` from `@ultimat3/ui/jsx-probe` — tier 5 → tier 4, downward, no declared edge needed. It kept its own `depth`/`saved` pair until 2026-08-22 and two counters over one property restore in the wrong order: admin installs (saving the real binding), ui installs (saving ADMIN's factory), admin restores, ui restores admin's factory back over the top. `bun test` seats both packages in one process, so the interleave is reachable; `inert-jsx.test.ts` drives it in both orders.
 - Views are pure functions of props — no `createSignal`, no local state; the route owns it.
 
 ## Layout

@@ -1,5 +1,6 @@
-// `scrape()` — a browser run, declared as a `job` and NOT as a ninth primitive. The rule's fourth
-// instance after `llm()` (an action factory) and `backfill()` (a job factory).
+// `scrape()` — a browser run, declared as a `job` and NOT as a ninth primitive. One row of
+// `PRIMITIVE_FACTORIES` in `@ultimat3/core`, which is the derived list of every factory that
+// ships; an ordinal written here would be wrong the moment the next one lands, and was.
 //
 // It is a job by every field of the definition, not by analogy: a scrape has an input schema, a
 // tenant, a retry policy, a timeout, a concurrency cap, a queue, and — decisively — a REQUIRED

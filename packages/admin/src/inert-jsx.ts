@@ -8,6 +8,10 @@
 // both and the run's file order stops deciding. Recognising neither is what falls through to
 // `String(value)` and asserts against `"[object Object]"`.
 
+// The subpath, never the barrel: this is a test harness and the design system's `index.ts` is its
+// semver'd contract (`packages/ui/CLAUDE.md`). It is imported for `globalThis.React`'s ONE counter.
+import { probe, unprobe } from '@ultimat3/ui/jsx-probe';
+
 /** `@ultimat3/render`'s node brand, read off the GLOBAL symbol registry rather than imported. */
 const RENDER_NODE: symbol = Symbol.for('ultimate.render.jsx');
 
@@ -23,7 +27,11 @@ export function isInertNode(value: unknown): value is InertNode {
   return 'inert' in value || RENDER_NODE in value;
 }
 
-/** The classic factory these `.tsx` files fall back to under `jsx: 'preserve'`. */
+/**
+ * Build a node by hand, the shape the installed factory builds. NOT the installed factory — that is
+ * `@ultimat3/ui`'s, so there is one owner of `globalThis.React` (see `installFactory` below). This
+ * is what a test uses to construct a tree it did not render.
+ */
 export function h(
   type: string | InertComponent,
   props: Record<string, unknown> | null,
@@ -35,37 +43,24 @@ export function h(
 }
 
 /**
- * How many installs are live, and what `globalThis.React` was before the first one. A harness that
- * DELETED the property on the way out destroys a binding it did not create, and a nested install
- * would tear the factory out from under the suite still using it — the counter is what makes the
- * last restore the only one that acts.
+ * Install the classic-factory global, through `@ultimat3/ui`'s ONE counter over `globalThis.React`.
+ *
+ * This package kept its own `depth`/`saved` pair until 2026-08-22, and two counters over one
+ * property restore in the wrong order: admin installs (saving the real binding), ui installs
+ * (saving ADMIN's factory), admin restores (its counter hits 0 → the real binding is back), ui
+ * restores (its counter hits 0 → admin's factory goes back over it). `bun test` is one process and
+ * `packages/ui` and `packages/admin` are one run, so the interleave is reachable, and the global
+ * was left holding a harness the run had already torn down. `admin` is tier 5 and `ui` is tier 4,
+ * so importing down is the fix; the two factories build the same `{ inert, type, props }` shape,
+ * which is what `isInertNode` recognises.
  */
-let depth = 0;
-let saved: PropertyDescriptor | undefined;
-
 export function installFactory(): void {
-  if (depth === 0) {
-    // The descriptor, not the value: the property may be a getter or non-writable, and `assign`
-    // onto either throws or silently loses.
-    saved = Object.getOwnPropertyDescriptor(globalThis, 'React');
-    Object.defineProperty(globalThis, 'React', {
-      value: { createElement: h },
-      configurable: true,
-      writable: true,
-      enumerable: true,
-    });
-  }
-  depth += 1;
+  probe();
 }
 
 /** Undo the matching `installFactory()`. Unbalanced calls are inert. */
 export function restoreFactory(): void {
-  if (depth === 0) return;
-  depth -= 1;
-  if (depth > 0) return;
-  if (saved === undefined) Reflect.deleteProperty(globalThis, 'React');
-  else Object.defineProperty(globalThis, 'React', saved);
-  saved = undefined;
+  unprobe();
 }
 
 /**

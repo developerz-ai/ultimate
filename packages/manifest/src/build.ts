@@ -16,6 +16,7 @@
 // assembled per app — both outside what this tier may import — so the CLI supplies them and
 // this function stays pure and unit-testable.
 
+import { canonicalJson } from '@ultimat3/core';
 import type {
   ActionFact,
   EntityFact,
@@ -90,28 +91,17 @@ export function buildManifest(sources: ManifestSources): Manifest {
 }
 
 /**
- * Content hash of the manifest body. Deliberately excludes `buildId` itself, and is computed
- * over the same canonical serialisation `emit.ts` writes — so `buildId` is verifiable from
- * the file alone.
+ * Content hash of the manifest body. Deliberately excludes `buildId` itself, and is taken over
+ * `@ultimat3/core`'s `canonicalJson` — the same INJECTIVE form the diff compares on, so a fact
+ * that changed cannot hash the same as the fact it replaced.
+ *
+ * This is a HASH, never the published document: `manifestJson` in `emit.ts` is what reaches disk,
+ * and it is `JSON.stringify` with a fixed key order for exactly that reason.
  */
 export function contentHash(body: Omit<Manifest, 'buildId'>): string {
   const hasher = new Bun.CryptoHasher('sha256');
-  hasher.update(canonical(body));
+  hasher.update(canonicalJson(body));
   return hasher.digest('hex').slice(0, 16);
-}
-
-/** Sorted-key JSON. Never `JSON.stringify(value)` directly — key order is not a contract. */
-export function canonical(value: unknown): string {
-  return JSON.stringify(sortKeys(value));
-}
-
-function sortKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortKeys);
-  if (typeof value !== 'object' || value === null) return value;
-  const record = value as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(record).sort()) out[key] = sortKeys(record[key]);
-  return out;
 }
 
 function sortBy<T>(items: readonly T[], key: (item: T) => string): readonly T[] {

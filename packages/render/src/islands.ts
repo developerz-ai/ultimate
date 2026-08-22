@@ -6,6 +6,9 @@
  */
 
 import type { HydrateStrategy } from '@ultimat3/core';
+// One formatter, in `@ultimat3/core`: the copy that lived here had no `mb` branch, so a 5 MB route
+// read `5120kb` in `X_BUDGET_EXCEEDED` while `@ultimat3/pwa` said `5mb` for the same bytes.
+import { formatBytes } from '@ultimat3/core';
 import { BudgetExceededError } from './errors';
 import type { IslandDirective } from './hydrate';
 import { hydrateRuntimeBytes } from './hydrate';
@@ -53,11 +56,6 @@ export function parseByteBudget(budget: string | undefined): number | null {
   if (amount === undefined || unit === undefined) return null;
   const factor = UNITS[unit];
   return factor === undefined ? null : Math.round(Number(amount) * factor);
-}
-
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes}b`;
-  return `${Math.round((bytes / 1024) * 10) / 10}kb`;
 }
 
 export interface RouteBytes {

@@ -5,6 +5,9 @@
 // through to `String(value)` and asserts against `"[object Object]"`.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+// The OTHER harness over the same global. Importing it here is the whole point of the interleave
+// test below — `bun test` seats `packages/ui` and `packages/admin` in one process.
+import { probe, unprobe } from '@ultimat3/ui/jsx-probe';
 import {
   byComponent,
   byTag,
@@ -69,6 +72,44 @@ describe('installFactory / restoreFactory', () => {
     expect(installed()).toBe(true);
     restoreFactory();
     expect('React' in globalThis).toBe(false);
+  });
+
+  test('interleaved with @ultimat3/ui, the binding still comes back', () => {
+    // Two counters over ONE property restore in the wrong order: admin saves the real binding, ui
+    // saves ADMIN's factory, admin restores the real one, and ui then puts admin's back on top —
+    // so the global ends the run holding a harness that was already torn down.
+    const original = { createElement: (): string => 'someone else', own: true };
+    Object.defineProperty(globalThis, 'React', {
+      value: original,
+      configurable: true,
+      writable: true,
+    });
+
+    installFactory();
+    probe();
+    restoreFactory();
+    // Still installed: ui's suite is mid-run, and admin's teardown may not take its factory away.
+    expect(installed()).toBe(true);
+    unprobe();
+
+    expect(react()).toBe(original);
+  });
+
+  test('interleaved the other way round, the binding still comes back', () => {
+    const original = { createElement: (): string => 'someone else', own: true };
+    Object.defineProperty(globalThis, 'React', {
+      value: original,
+      configurable: true,
+      writable: true,
+    });
+
+    probe();
+    installFactory();
+    unprobe();
+    expect(installed()).toBe(true);
+    restoreFactory();
+
+    expect(react()).toBe(original);
   });
 
   test('an unbalanced restore touches nothing', () => {

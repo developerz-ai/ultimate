@@ -307,3 +307,48 @@ describe('emitManifest to stdout', () => {
     }
   }, 30_000);
 });
+
+/**
+ * The consequence of hashing over an INJECTIVE form rather than over what JSON can write down,
+ * stated here so nobody has to rediscover it from a drift line.
+ *
+ * `buildId` now distinguishes values the document cannot: `-0`, `NaN`, `±Infinity` and a `Date`.
+ * A fact carrying one of them therefore round-trips to a DIFFERENT body than the one that was
+ * hashed, and the committed file no longer verifies against itself. That is the honest answer —
+ * the file really does not describe the program — where the old `JSON.stringify(sortKeys(v))`
+ * agreed with itself in silence while the file said `0` and the code said `-0`. It is also
+ * unrepairable by regeneration, which is why it is pinned rather than left to be found: a manifest
+ * FACT must be a value JSON can write, and every producer in the framework emits one.
+ */
+describe('unit · a fact JSON cannot write down no longer verifies, and that is deliberate', () => {
+  const negativeZero: ManifestSources = {
+    app: { name: 'acme', version: '1.0.0' },
+    actions: [
+      {
+        name: 'setBalance',
+        input: { type: 'object', properties: { amount: { default: -0 } } },
+        output: {},
+        policy: null,
+        permissions: [],
+        cacheInvalidates: [],
+        mcp: { expose: true },
+      },
+    ],
+  };
+
+  test('a -0 default survives the build and does not survive the file', () => {
+    const fresh = buildManifest(negativeZero);
+    expect(verifyBuildId(fresh)).toBe(true);
+    const onDisk = JSON.parse(manifestJson(fresh)) as Manifest;
+    // `JSON.stringify(-0)` is `"0"`, so the parsed body is a different body.
+    expect(verifyBuildId(onDisk)).toBe(false);
+  });
+
+  test('an ordinary fact round-trips unchanged, which is every fact the framework emits', () => {
+    const fresh = buildManifest({
+      ...negativeZero,
+      actions: [{ ...((negativeZero.actions ?? [])[0] as ActionFact), input: { amount: 0 } }],
+    });
+    expect(verifyBuildId(JSON.parse(manifestJson(fresh)) as Manifest)).toBe(true);
+  });
+});

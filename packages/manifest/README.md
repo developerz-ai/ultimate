@@ -45,7 +45,7 @@ bytes. Enforced, not hoped for:
   filesystem.
 - Object keys are written in a fixed order, not `JSON.stringify` order, so reordering a
   struct literal produces no diff.
-- `buildId` is a sha256 of the canonical body, so it changes if and only if a fact changed —
+- `buildId` is a sha256 of `canonicalJson` (`@ultimat3/core`) over the body, so it changes if and only if a fact changed —
   and `verifyBuildId()` re-derives it from the file, catching a hand edit.
 - Job `steps` keep declared order. A job's steps are a sequence, not a set.
 

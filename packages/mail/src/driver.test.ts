@@ -4,7 +4,7 @@
 // deliberately does not, was unasserted.
 
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { createLogger } from '@ultimat3/core';
+import { createLogger, frozenClock } from '@ultimat3/core';
 import {
   createLogDriver,
   createMemoryDriver,
@@ -177,6 +177,31 @@ describe('the memory driver', () => {
     await memory.send({ ...message, mailId: 'second' });
     expect(memory.sent.map((entry) => entry.message.mailId)).toEqual(['first', 'second']);
     expect(memory.outbox().map((entry) => entry.message.mailId)).toEqual(['second', 'first']);
+  });
+
+  /**
+   * `SentMail.at` is what `outbox()` and the `/_x` panel present as the send time, so it is a fact
+   * a test has to be able to state. Stamped from `new Date()` it could only be observed, never
+   * chosen — an assertion about ordering by time had to compare against the wall clock it was
+   * racing.
+   */
+  test('at comes from the injected clock, not from the wall clock', async () => {
+    const clock = frozenClock('2026-08-22T09:00:00.000Z');
+    const memory = createMemoryDriver({ clock });
+    await memory.send({ ...message, mailId: 'first' });
+    clock.advance(60_000);
+    await memory.send({ ...message, mailId: 'second' });
+    expect(memory.sent.map((entry) => entry.at.toISOString())).toEqual([
+      '2026-08-22T09:00:00.000Z',
+      '2026-08-22T09:01:00.000Z',
+    ]);
+  });
+
+  test('omitting the clock still stamps a real instant', async () => {
+    const before = Date.now();
+    const memory = createMemoryDriver();
+    await memory.send(message);
+    expect(memory.sent[0]?.at.getTime()).toBeGreaterThanOrEqual(before);
   });
 });
 

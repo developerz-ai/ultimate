@@ -22,6 +22,7 @@ export const SCRAPE_OWNED_ERROR_CODES = [
   'X_SCRAPE_NOT_ACTIONABLE',
   'X_SCRAPE_TIMEOUT',
   'X_SCRAPE_WEDGED',
+  'X_SCRAPE_WATCHDOG_STOPPED',
   'X_SCRAPE_PAGE_CRASHED',
   'X_SCRAPE_OUTPUT_INVALID',
   'X_SCRAPE_YIELD_COLLAPSED',
@@ -68,6 +69,7 @@ export const SCRAPE_ERROR_TITLES: Readonly<Record<ScrapeOwnedErrorCode, string>>
   X_SCRAPE_NOT_ACTIONABLE: 'the element is present and cannot be acted on',
   X_SCRAPE_TIMEOUT: 'the step exceeded its wall-clock budget',
   X_SCRAPE_WEDGED: 'the browser stopped answering and was killed',
+  X_SCRAPE_WATCHDOG_STOPPED: 'the wedge watchdog stopped measuring and the run was ended',
   X_SCRAPE_PAGE_CRASHED: 'the renderer process died',
   X_SCRAPE_OUTPUT_INVALID: 'the extracted rows do not match the extract schema',
   X_SCRAPE_YIELD_COLLAPSED: 'the run succeeded and returned far too little',
@@ -138,6 +140,14 @@ export const SCRAPE_ERROR_RETRY = {
   // A declaration error, raised by `scrape()` before any attempt exists — there is no run to
   // retry, and the same definition would refuse identically forever.
   X_SCRAPE_YIELD_HISTORY_MISSING: 'terminal',
+  // TERMINAL where its sibling `X_SCRAPE_WEDGED` is retryable, and the difference IS the reason
+  // the two codes are separate. A wedge is the site or the browser being slow — the definition of
+  // "run it again and it may go differently". This is the guard's own loop dying on code the
+  // DEFINITION supplied: a `ScrapeClock` an app wrote, reached identically on attempt 2. Retrying
+  // launches a real browser five times to die at the first poll, and on an authenticated target
+  // that is five arrivals at a login for no chance of a different answer — the rule this whole
+  // table is written to, stated at the top of it. The fix is an edit, so a human decides.
+  X_SCRAPE_WATCHDOG_STOPPED: 'terminal',
   X_SCRAPE_ROBOTS_DISALLOWED: 'terminal',
   X_SCRAPE_FIXTURE_MISSING: 'terminal',
   X_SCRAPE_FIXTURE_STALE: 'terminal',

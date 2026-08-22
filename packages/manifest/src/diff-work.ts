@@ -2,7 +2,7 @@
 // nothing throws, the work simply stops happening — which is why a removal on either side is
 // breaking rather than a note in the diff.
 
-import { canonical } from './build';
+import { canonicalJson } from '@ultimat3/core';
 import type { ManifestChange } from './diff-change';
 import { diffScalar, index } from './diff-change';
 import type { JobFact, TaskFact } from './schema';
@@ -23,7 +23,7 @@ export function diffJobs(
       changes.push({ kind: 'breaking', path, detail: 'job removed' });
       continue;
     }
-    if (canonical(job.input) !== canonical(next.input)) {
+    if (canonicalJson(job.input) !== canonicalJson(next.input)) {
       changes.push({
         kind: 'breaking',
         path: `${path}.input`,
@@ -42,7 +42,7 @@ export function diffJobs(
       ),
     );
     changes.push(...diffRetry(path, job, next));
-    if (canonical(job.steps) !== canonical(next.steps)) {
+    if (canonicalJson(job.steps) !== canonicalJson(next.steps)) {
       changes.push({
         kind: 'internal',
         path: `${path}.steps`,
@@ -118,7 +118,7 @@ export function diffTasks(
     changes.push(
       ...diffScalar('internal', `${path}.tz`, task.tz, next.tz, (a, b) => `${a} -> ${b}`),
     );
-    if (canonical(task.enqueues) !== canonical(next.enqueues)) {
+    if (canonicalJson(task.enqueues) !== canonicalJson(next.enqueues)) {
       changes.push({ kind: 'internal', path: `${path}.enqueues`, detail: 'enqueued jobs changed' });
     }
   }

@@ -91,7 +91,12 @@ describe('the barrel re-exports the modules themselves, never copies', () => {
     const loader = await import('./module-loader');
     expect(barrel.registerRoute).toBe(registry.registerRoute);
     expect(barrel.describeRoutes).toBe(registry.describeRoutes);
-    expect(barrel.matchRoute).toBe(registry.matchRoute);
+    expect(barrel.routeFor).toBe(registry.routeFor);
+    // `matchRoute` is deleted, not renamed: two exported pattern matchers with different
+    // precedence rules is two answers to "which route is this?", and `@ultimat3/http`'s trie
+    // (`stages.ts`) is the one with callers. `routeFor` above is an exact-path lookup, not a
+    // second matcher.
+    expect(Object.keys(barrel)).not.toContain('matchRoute');
     expect(barrel.island).toBe(island.island);
     // The barrel calls this AND re-exports it — a host that installs it again must reach the same
     // `installed` flag, or `x dev` registers a second plugin over the first.

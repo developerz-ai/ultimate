@@ -10,6 +10,27 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Changed
 
+- **BREAKING — three config fields deleted: `pwa.installPrompt`, `auth.afterSignInPath`,
+  `ai.modelEnv`.** Each was declared, defaulted, merged, and read by nothing. Delete the key from
+  `app.config.ts`; there is no replacement key, because there was never a behaviour. Use
+  `createInstallController` from `@ultimat3/pwa`, send the visitor from your own sign-in route, and
+  pass `model` on the `llm()` request.
+
+  `ai.modelEnv`'s own doc comment already argued for its deletion: *"Env key for the model id, so no
+  model string is baked into the image — an intention, not a behaviour… nothing consumes the merged
+  value… So the exact thing this key exists to prevent — a model string baked into the image — is
+  what actually happens."* Same precedent as `JobsConfig.driver` in 5.0.0 and `realtime.heartbeatMs`
+  in 4.0.0. All three fail at typecheck only; an app that builds its config into a variable before
+  passing it loses excess-property checking and sees no error at all.
+
+- **BREAKING — `@ultimat3/manifest` no longer exports `canonical`.** Use `canonicalJson` from
+  `@ultimat3/core`. Nothing outside the package imported it.
+
+- **BREAKING — `@ultimat3/render` no longer exports `matchRoute` or `RouteMatch`.** Two exported
+  route matchers existed with different precedence; `@ultimat3/http`'s trie is the live one and
+  render's had zero consumers repo-wide.
+
+
 - **BREAKING — `@ultimat3/realtime` ships two entries: `.` (client) and `./server`.** One barrel
   carried `useLive` beside `openNatsClient`, so `bun build --target=browser` on an entry importing
   only `useLive` failed with *"Browser build cannot require() Node.js builtin: `stream/web`"*, out of
@@ -51,6 +72,70 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   `NaN`.
 
 ### Fixed
+
+- **Two ways to inject an event handler through a JSX attribute NAME.** `attributePair` tested
+  `name.startsWith('on')` **case-sensitively** while the lines beside it folded case, so
+  `ONERROR="alert(1)"` was emitted live; and the attribute name was never validated at all, so the
+  key `'q onmouseover=alert(1) r'` emitted ` q onmouseover=alert(1) r="ok"` — a second attribute
+  outside the quotes. Names must now match `/^[A-Za-z_:][-A-Za-z0-9_:.]*$/` and the handler test
+  folds case. `renderHead` had the identical hole, emitting
+  `<meta name="q" r onmouseover=alert(1) s="ok">`; it takes the same predicate.
+
+- **`x shot` reported failure on every route of every app.** `pageOverTarget` spread the frame and
+  overrode `goto`/`screenshot` but **not `url`**, and the frame seeds `lastUrl` at construction — so
+  `ScrapePage.url()` answered `about:blank` before a navigation, after it, and after reading text.
+  `x shot` compares that as `finalUrl`, so every run exited non-zero with *"redirected to
+  about:blank"*. One line. No test anywhere had ever called `ScrapePage.url()`, which is why it
+  shipped.
+
+- **A fired wedge watchdog never quit a remote browser.** `shutdown()` returned early on the same
+  flag `watch()` sets when it fires, so after a fire the graceful `quit()` never ran — and on
+  `remoteBrowser()`, which the driver calls "the PRIMARY production path", `browser.process()` is
+  `null`, so nothing ended the remote session. Measured `{ quits: 0, kills: 1 }`.
+
+- **`X_SCRAPE_WATCHDOG_STOPPED`** (new, terminal): an injected `ScrapeClock` whose `sleep()` rejects
+  killed the guard's poll loop as an unhandled rejection and left the run unwatched. A separate code
+  from `X_SCRAPE_WEDGED` deliberately — that one means the page stopped answering, and it would send
+  a reader to investigate a page that is fine. Terminal where its sibling is retryable, because
+  attempt 2 reaches the same clock identically.
+
+- **Two divergent `formatBytes` copies.** render's had no `mb` branch, so a 5 MiB route read
+  `5120kb` in `X_BUDGET_EXCEEDED` while pwa's said `5mb` for the same number. One now lives in
+  `@ultimat3/core`. `@ultimat3/ui`'s locale-aware base-1000 `Intl` formatter is a different question
+  and stays.
+
+- **The third and fourth copies of the canonical serialiser are gone**, per `canonical-json.ts`'s own
+  "never add a fourth copy". `@ultimat3/manifest`'s fed `buildId` **and the contract-diff equality**,
+  so a `-0`/`NaN`/`Date` fold could make a breaking API change diff as "no change" and ship silently.
+  Verified: two contracts differing only by `-0` vs `0` hashed identically before and differ now,
+  and the diff reports the change. `buildId` is unchanged for both tracked apps.
+
+- **`@ultimat3/mail`'s memory driver stamped `at: new Date()`** — the one unseamed clock in the
+  package, and `SentMail.at` is what `lastTo()` and the `/_x` panel order on.
+
+- **`@ultimat3/mcp` recompiled a `RegExp` on every argument validation.**
+
+- **Seven more `instanceof`-on-a-caught-value sites** in `@ultimat3/ai` and `@ultimat3/mail`, two
+  reachable through an injected `fetch`. `instanceof` throws on a hostile value and `String(x)`
+  throws on a Symbol, turning a coded refusal into an uncoded crash.
+
+- **`@ultimat3/testing` created a temp directory in every test process that imported its barrel** —
+  even one importing it for `expect` alone — and removed none of them. Now created on first island
+  mount and removed on exit.
+
+- **Two JSX probes kept separate depth counters over one `globalThis.React`**, so a nested
+  install/restore across `@ultimat3/admin` and `@ultimat3/ui` left the global holding a torn-down
+  harness. `@ultimat3/ui/jsx-probe` is now the single owner.
+
+- **`wiki/Configuration.md` documented roughly 40 config fields that exist on no declaration** —
+  `auth.providers`, `auth.session.*`, `auth.passkeys`, `auth.trustedOrigins`, `jobs.retry.*`,
+  `jobs.retention.*`, `cache.redis.*`, all eight `seo.*`, all seven `budgets.*`,
+  `storage.driver/bucket/dir`, `otel.endpoint/sampling` — and its top-level `app.config.ts` example
+  did not compile (`TS2353` on `database.urlEnv`). The page is now derived from the interfaces, the
+  example compiles, and capabilities that do not exist are stated as gaps rather than documented as
+  features. The documented session cookie name was wrong too: `'x_session'` where the real one is
+  `'__Host-x_session'`, whose `__Host-` prefix is the session-fixation defence.
+
 
 - **Five more `select *` / `returning *` statements in the jobs pg driver returned `NaN` timestamps.**
   The audit named one (`pgStepStore.list`); `introspect.job`, `introspect.list`,

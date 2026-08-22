@@ -2,7 +2,7 @@
 
 One file: `app.config.ts` at the repo root. There is no per-environment config directory, no `config/production.ts`, no `.env.local` cascade. Environment differences are **env vars**, validated once at boot.
 
-`As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Field names are covered by semver: renaming or removing one needs a major, and `x upgrade` codemods it.
+`As of 2026-08-22`. Stable API — semver from here ([Upgrading](Upgrading)). Field names are covered by semver: renaming or removing one needs a major, and the entry in [Upgrading](Upgrading) names the edit. **There is no codemod** — `x upgrade` is a `PLANNED_COMMANDS` entry ([`packages/cli/src/cmd-planned.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cli/src/cmd-planned.ts)), so every migration below is a hand edit.
 
 ```ts
 import { defineConfig, defineEnv } from '@ultimat3/core';
@@ -21,16 +21,20 @@ export const config = defineConfig({
   defaultLocale: 'en',
   defaultTimeZone: 'UTC',
   defaultCurrency: 'USD',
-  // Env KEYS, never the value: the same image deploys to every environment.
-  database: { urlEnv: 'DATABASE_URL', poolSize: 10 },
+  // No connection string and no pool size: both are env (`DATABASE_URL`, `DATABASE_POOL_MAX`),
+  // read where the client is built, so the same image deploys to every environment.
+  database: { ssl: true },
+  cache: { driver: 'redis', urlEnv: 'REDIS_URL', tiers: ['memo', 'lru', 'shared'] },
   jobs: { queues: ['postly-default'], concurrency: 8 },
   pwa: { enabled: true, offline: 'runtime' },
 });
 ```
 
+**This example compiles.** It did not until 2026-08-22 — it passed `database: { urlEnv, poolSize }`, two keys deleted from `DatabaseConfig`, so the first thing an agent copied off this page was `TS2353`. Every table below is now derived from the interfaces in [`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts) rather than curated beside them.
+
 Everything derivable from code is **not** in this file — routes, actions, policies, jobs, tags all live in the generated `x.manifest.json`. Inspect the resolved config with `x config show --json`.
 
-`AppConfigInput` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)) carries exactly thirteen keys `As of 2026-08`: `name`, `locales`, `defaultLocale`, `defaultTimeZone`, `defaultCurrency`, `theme`, `pwa`, `roles`, `database`, `cache`, `jobs`, `realtime`, `ai`. That type is the contract — a section below naming anything outside it describes a design-spec surface, not a field `defineConfig` accepts today.
+`AppConfigInput` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)) carries exactly fourteen keys `As of 2026-08-22`: `name`, `locales`, `defaultLocale`, `defaultTimeZone`, `defaultCurrency`, `theme`, `auth`, `pwa`, `roles`, `database`, `cache`, `jobs`, `realtime`, `ai`. That type is the contract, and **every table below names only its members** — a block with no key here (`seo`, `budgets`, `mail`, `storage`, `otel`) is not an `app.config.ts` field and its section says where the real knob is instead.
 
 ## Top level
 
@@ -48,40 +52,54 @@ There is no `url` field. The canonical origin is an env key the app reads at its
 
 ## `database`
 
+`DatabaseConfig` is **two fields**, deliberately — the connection itself is env, not config.
+
 | field | type | default | notes |
 |---|---|---|---|
-| `database.urlEnv` | `string` | `'DATABASE_URL'` | the env **key** holding the connection string, never the string itself |
 | `database.driver` | `'postgres'` | `'postgres'` | one driver; `postgresDriver()` from `@ultimat3/entity` is its only implementation |
-| `database.poolSize` | `number` | `10` | per process. `web`×replicas + `worker`×concurrency must stay under Postgres `max_connections` |
 | `database.ssl` | `boolean` | `false` | `true` on managed Postgres |
-| `database.schema` | `string` | `'public'` | the Postgres schema `entity()` tables live in |
+| ~~`database.urlEnv`~~ | — | — | **Deleted 2026-08.** `@ultimat3/db`'s `client.ts` reads `process.env['DATABASE_URL']` as a hardcoded literal, so a different key here could never be honoured. Migration: delete the key; the connection string is `DATABASE_URL` |
+| ~~`database.poolSize`~~ | — | — | **Deleted 2026-08.** A second, non-functioning spelling of `DATABASE_POOL_MAX`, which `baseClient()` layers over the role profile and which works. Migration: delete the key; set `DATABASE_POOL_MAX`. The sizing rule is unchanged — the pool is per PROCESS, so keep `replicas × poolMax` under Postgres `max_connections` |
+| ~~`database.schema`~~ | — | — | **Deleted 2026-08.** Nothing emits `SET search_path`. Migration: delete the key; there is no replacement, and `entity()` tables live in `public` |
+
+Wiring the three instead would have needed a tier-0 → tier-1 read the tier table forbids. Deleting is axiom 3 applied to configuration: a value that produces neither a build error nor a runtime effect is worse than no field, because an SRE sets `poolSize: 3`, redeploys, and nothing changes.
 
 ## `auth`
 
-Better Auth, wrapped. Sessions live in Postgres. Authorization is **not** here — it is [Policies and authz](Policies-And-Authz).
+`AuthConfig` on `app.config.ts` is **one field**. Authorization is **not** here — it is [Policies and authz](Policies-And-Authz), and the authentication policy is `defineAuth()`, below.
 
 | field | type | default | notes |
 |---|---|---|---|
-| `auth.providers` | `Provider[]` | `['password']` | `password`, `google`, `github`, `apple`, `microsoft`. Each needs its env pair or boot fails |
-| `auth.session.ttl` | duration | `'30d'` | absolute lifetime |
-| `auth.session.renew` | duration | `'7d'` | rolling renewal window |
-| `auth.session.cookie` | `string` | `'x_session'` | `HttpOnly`, `SameSite=Lax`, `Secure` outside dev |
-| `auth.passkeys.enabled` | `boolean` | `false` | WebAuthn; `passkeys.rpName` defaults to `name` |
-| `auth.trustedOrigins` | `string[]` | `[url]` | extra origins allowed to complete a flow |
+| `auth.signInPath` | `string \| null` | `null` | where a browser that failed `auth: 'required'` is sent. **`null` keeps the redirect off**, and that is the default on purpose: the framework may not invent one of its app's routes, and guessing `/login` would send every unauthenticated visitor to a 404. Null means the visitor gets the problem document — right for an agent, and what a browser got in production until this existed |
+| ~~`auth.afterSignInPath`~~ | — | — | **Deleted in 8.0.0.** Declared, defaulted and merged, and read by no file — an app that set `/dashboard` got whatever its own sign-in route already did. Migration: delete the key, and send the visitor where you mean from the sign-in route itself, which is the only code that can honour it |
+
+**The rest of authentication is `defineAuth()`, not `app.config.ts`** ([`packages/auth/src/auth.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/auth/src/auth.ts)). It takes an adapter and the policies, because each of them needs a value — a session store, a limiter, a clock — that a serialisable config field cannot carry:
+
+| `defineAuth` key | shape | notes |
+|---|---|---|
+| `adapter` | `AuthAdapter` | required; where users and sessions are read and written |
+| `session` | `Partial<SessionPolicy>` | `absoluteTtlMs` 30d, `idleTtlMs` 7d, `cookieName` **`'__Host-x_session'`**, `rotateOnPrivilegeChange` true. The `__Host-` prefix is a browser-enforced contract — Secure, `Path=/`, no `Domain` — so a subdomain (or an XSS on one) cannot overwrite it |
+| `password` | `Partial<PasswordPolicy>` | |
+| `rateLimit` | `Partial<AuthRateLimitPolicy>` | `scope: 'shared'` must be matched by a `limiter` that says the same, or `defineAuth` refuses at boot rather than at 3am on the first spray |
+| `limiter` / `orgLimiter` | `AuthLimiter` | omitted means one process' worth of state, i.e. `maxAttempts × N` for N replicas |
+| `mfa` | `Partial<AuthMfaPolicy>` | `required` is typed `false` and cannot be set true: both credential paths branch on `user.mfaSecret`, so a user who never enrolled would be locked out for good |
+| `providers` | `OAuthProviderId[]` | |
+| `link` | `OAuthLinkPolicy` | defaults to `'verified-email'` |
+
+There is no `auth.passkeys` and no `auth.trustedOrigins` in either place `As of 2026-08-22`.
 
 ## `jobs`
 
 | field | type | default | notes |
 |---|---|---|---|
 | ~~`jobs.driver`~~ | — | — | **Deleted in 5.0.0.** It accepted `'postgres' \| 'redis' \| 'nats'` and was read by nothing: boot always built `createPgDriver`, so `jobs: { driver: 'redis' }` did not throw, did not warn, and silently gave you Postgres. Which driver runs is `setJobDriver(driver)` and only that — `setJobDriver(createPgDriver({ executor }))`, or `setJobDriver(createMemoryDriver())` in a test ([Jobs and workflows](Jobs-And-Workflows)) |
-| `jobs.queues` | `string[]` | `['default']` | a `worker` runs one pool per queue in `WORKER_QUEUES` |
-| `jobs.concurrency` | `number` | `8` | per pool, per process |
-| `jobs.retry.attempts` | `number` | `5` | per-job `retry` overrides |
-| `jobs.retry.backoff` | `'exponential' \| 'linear' \| 'fixed'` | `'exponential'` | always jittered |
-| `jobs.visibilityTimeout` | duration | `'30s'` | lease length. Expiry is how a killed worker's job resumes |
-| `jobs.retention.completed` | duration | `'24h'` | |
-| `jobs.retention.failed` | duration | `'30d'` | dead-letter rows keep the full step trace |
-| `jobs.retention.idempotencyKey` | duration | `'24h'` | dedupe window after terminal state |
+| `jobs.queues` | `string[]` | `['<name>-default']` | derived from `name`, not the literal `['default']`. A `worker` runs one pool per queue in `WORKER_QUEUES`. Empty is `X_CONFIG_INVALID` |
+| `jobs.concurrency` | `number` | `8` | per pool, per process. Below 1 is `X_CONFIG_INVALID` |
+| `jobs.maxAttempts` | `number` | `5` | per-job `retry` overrides it |
+| `jobs.backoff` | `'exponential' \| 'fixed'` | `'exponential'` | **two values, not three** — there is no `'linear'` |
+| `jobs.visibilityTimeoutMs` | `number` | `30000` | milliseconds, not a duration string. Lease length; expiry is how a killed worker's job resumes |
+
+There is no `jobs.retry` object, no `jobs.visibilityTimeout` and no `jobs.retention` block `As of 2026-08-22` — `JobsConfig` is `{ queues, concurrency, maxAttempts, backoff, visibilityTimeoutMs }` and the flat spellings above are the whole surface.
 
 ## `realtime`
 
@@ -125,18 +143,25 @@ excess-property checking and gets **no error at all** → [Known gaps](Known-Gap
 
 ## `cache`
 
-Tiers are read in fixed order `memo → lru → redis → cdn → origin`. See [Caching and invalidation](Caching-And-Invalidation).
+`CacheConfig` is **four flat fields**. See [Caching and invalidation](Caching-And-Invalidation).
 
 | field | type | default | notes |
 |---|---|---|---|
-| `cache.tiers` | `CacheTier[]` | `['memo', 'lru']` | subset of `memo`, `lru`, `redis`, `cdn`; order is fixed regardless of listing |
-| `cache.memo.maxBytes` | size | `'8mb'` | per request, AsyncLocalStorage |
-| `cache.lru.maxBytes` | size | `'64mb'` | per process. Treat hits as probabilistic |
-| `cache.redis.url` | `string` | — | required if `redis` is in `tiers` |
-| `cache.redis.maxBytes` | size | `'2gb'` | advisory; drives eviction warnings in `x doctor` |
-| `cache.ttl.lru` | duration | `'60s'` | |
-| `cache.ttl.redis` | duration | `'15m'` | |
-| `cache.ttl.cdn` | duration | `'1h'` | emitted as `Cache-Control` + `stale-while-revalidate` |
+| `cache.driver` | `'memory' \| 'redis'` | `'memory'` | `'redis'` **requires** `cache.urlEnv`, or `X_CONFIG_INVALID` at boot |
+| `cache.urlEnv` | `string` | — | the env **key name**, never a URL |
+| `cache.defaultTtlMs` | `number` | `60000` | milliseconds, not a duration string |
+| `cache.tiers` | `CacheTier[]` | `['memo', 'lru']` | `'memo' \| 'lru' \| 'shared' \| 'isr' \| 'cdn'`; order is fixed regardless of listing order |
+
+**The per-tier byte caps and TTLs are constructor options, not config** — the same shape as the realtime caps above. `cache.memo.maxBytes`, `cache.lru.maxBytes`, `cache.redis.*` and `cache.ttl.*` are not fields and never were; writing one is `TS2353`, excess property on `Input<CacheConfig>`.
+
+| Option | Where | Default | Effect |
+|---|---|---|---|
+| `maxBytes` | `createLruTier({ … })` | 64 MiB | byte budget for the whole tier; a single value over it is `X_CACHE_TOO_LARGE` rather than a silent drop |
+| `defaultTtlMs` | same | `60_000` | applied when a `set` omits `ttlMs` |
+| `jitterFraction` | same | `DEFAULT_TTL_JITTER_FRACTION` | TTL spread in `[0, 1)`; `0` disables it, which is how a stampede is reproduced in a test |
+| `clock` / `rng` | same | system | injected so a jittered expiry is deterministic |
+
+**Two vocabularies name the tiers and no code maps one onto the other, `As of 2026-08-22`.** `CacheTier` — the config union this table documents — is `memo | lru | shared | isr | cdn` ([`packages/core/src/config.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/core/src/config.ts)). `TIER_ORDER`, which is what `sortTiers` actually orders a stack by, is `request-memo | lru | redis | cdn` ([`packages/cache/src/tiers.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/cache/src/tiers.ts)). `memo`/`request-memo` and `shared`/`redis` are the same rung spelled twice, and `isr` appears in the config union and in no `TierName`. Read the order off `TIER_ORDER`; the config union is what `defineConfig` accepts.
 
 ### CDN purge
 
@@ -170,7 +195,7 @@ FASTLY_API_TOKEN)`. The env **key** is reported, never its value.
 
 ## `pwa`
 
-`offline` is an `OfflineStrategy` **string**, not an object. Five booleans, one strategy — every field is optional and every default is off.
+`offline` is an `OfflineStrategy` **string**, not an object. Three booleans, one strategy — every field is optional and every default is off.
 
 ```ts
 pwa: { enabled: true, offline: 'runtime' },
@@ -180,36 +205,36 @@ pwa: { enabled: true, offline: 'runtime' },
 |---|---|---|---|
 | `pwa.enabled` | `boolean` | `false` | off means no service worker is generated at all |
 | `pwa.offline` | `'precache' \| 'runtime' \| 'network-only'` | `'network-only'` | the app-wide strategy; a `route` may narrow its own |
-| `pwa.installPrompt` | `boolean` | `false` | render your own install affordance from the deferred event |
 | `pwa.backgroundSync` | `boolean` | `false` | wires the SW sync event to the mutator queue |
 | `pwa.push` | `boolean` | `false` | generates the SW handler, the subscription action and the send job |
+| ~~`pwa.installPrompt`~~ | — | — | **Deleted in 8.0.0.** Declared, defaulted and merged, and read by nothing — `@ultimat3/pwa`'s `createInstallController` is real and complete and no code ever threaded this flag into it, so both tracked apps and every scaffolded app carried a switch with no wire. Migration: delete the key and call `createInstallController` from your own affordance ([PWA and offline](PWA-And-Offline)) |
 
 ## `seo`
 
-| field | type | default | notes |
-|---|---|---|---|
-| `seo.siteUrl` | `string` | `env.APP_URL` | absolute-URL base for sitemap, feeds, canonical, OG |
-| `seo.sitemap` | `boolean` | `true` | generated from the route table |
-| `seo.robots.allow` | `string[]` | `['/']` | |
-| `seo.robots.disallow` | `string[]` | `['/app', '/admin', '/_x']` | |
-| `seo.rss` | `{ title, route }` | — | one feed per declared route subtree |
-| `seo.lighthouse.seo` | `number` | `100` | below → `x verify` fails |
-| `seo.lighthouse.accessibility` | `number` | `95` | below → `x verify` fails |
-| `seo.ogImage` | `{ template, size }` | `{ size: '1200x630' }` | rendered at build for static/ISR, on demand for SSR |
+**Not an `app.config.ts` block.** There is no `seo` key on `AppConfigInput`. `@ultimat3/seo`'s builders take their options at the call site, from the route that renders them:
+
+| Call | Options | Notes |
+|---|---|---|
+| `buildRobots(config)` | `baseUrl`, `environment?`, `groups?`, `sitemaps?`, `extra?` | **fail-closed**: only the exact string `production` opts a deploy into indexing, so staging, a laptop, a typo and an unset `ULTIMATE_ENV` all emit `Disallow: /` — a branch deploy that gets indexed outranks and cannibalises the real site. `environment` omitted resolves from `ULTIMATE_ENV`, and an unreadable one falls back to core's default rather than 500ing a `robots.txt` |
+| `buildSitemap(routes, options)` | `baseUrl`, `locales?`, `localizePath?`, `defaultLocale?`, `maxUrls?`, `lastmod?` | splits into an index past `SITEMAP_MAX_URLS` (50,000). `maxUrls` must be a positive integer — `0` never advances the chunk cursor and used to allocate empty slices until the box ran out of memory |
+
+`baseUrl` is the argument every one of them takes, so the canonical origin stays an env key the app reads (`APP_URL`) and never a config field. There is no `seo.lighthouse` gate and no `seo.ogImage` renderer `As of 2026-08-22`.
 
 ## `budgets`
 
-Per surface, overridable per route via `budget` on `defineRoute`.
+**Not an `app.config.ts` block.** There is no `budgets` key on `AppConfigInput` and no per-surface default table. A budget is declared **per route**, as `budget` on `defineRoute` — `RouteBudget` in [`packages/render/src/route.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/render/src/route.ts):
 
-| field | type | default | notes |
-|---|---|---|---|
-| `budgets.site.js` | size | `'0kb'` | the 0kb baseline is structural, not aspirational |
-| `budgets.site.lcp` | ms | `2000` | |
-| `budgets.site.cls` | number | `0` | |
-| `budgets.app.js` | size | `'150kb'` | |
-| `budgets.app.lcp` | ms | `2500` | |
-| `budgets.app.cls` | number | `0.1` | |
-| `budgets.precache` | size | `'3mb'` | mirrors `pwa.precache.maxBytes` |
+| field | type | notes |
+|---|---|---|
+| `budget.js` | `string` | `'40kb'` — measured from the real bundle graph, not the source size |
+| `budget.css` | `string` | |
+| `budget.lcp` | `number` | milliseconds, median of N headless runs |
+| `budget.cls` | `number` | |
+| `budget.tbt` | `number` | |
+
+Every field is optional, and a declared budget with no measurement is itself a failure — the finding names the import chain that blew it, because "your bundle got bigger" is not actionable for a human or an agent. The **0 kb JS baseline on `site/`** is not a default in a table: a `site/` route off `hydrate: 'never'` with no `budget.js` is refused at registration, which is structural rather than aspirational.
+
+The precache warning is its own number and not a budget: `DEFAULT_PRECACHE_WARN_BYTES` is 5 MiB, overridable per build as `warnBytes` ([`packages/pwa/src/precache.ts`](https://github.com/developerz-ai/ultimate/blob/main/packages/pwa/src/precache.ts)).
 
 ## `mail`
 
@@ -232,24 +257,44 @@ A transport without `MAIL_FROM` is refused at boot rather than on the first send
 `x dev` prints which one it installed — `mail=embedded`, or `mail=external(smtp via SMTP_URL)`.
 The env **key** is reported, never its value, because `SMTP_URL` carries a password.
 
-## `storage`, `otel`
+## `storage`
 
-| field | type | default | notes |
-|---|---|---|---|
-| `storage.driver` | `'s3' \| 'local'` | `'local'` in dev, `'s3'` otherwise | `s3` is `Bun.s3`; `local` is a directory |
-| `storage.bucket` | `string` | — | required for `s3`; `local` uses `storage.dir`, default `'.x/storage'` |
-| `otel.endpoint` | `string` | — | OTLP collector. Absent = spans still recorded, exported nowhere |
-| `otel.sampling` | `number` | `0.1` | head sampling ratio; errors are always sampled. Tracing is **always on, not a flag** |
+**Not an `app.config.ts` block.** There is no `storage` key on `AppConfigInput`. Storage is `defineStorage()`, called from `app.config.ts`, and it declares **named disks** (Laravel's model) rather than a driver and a bucket — so `disk('uploads').put(…)` never changes when `local` becomes `s3`:
+
+```ts
+defineStorage({ disks: { uploads: localDriver({ root: '.storage/uploads' }) } });
+```
+
+| `defineStorage` key | shape | notes |
+|---|---|---|
+| `disks` | `Record<string, StorageDriver>` | required and non-empty. Drivers are `localDriver({ root })` and `s3Driver({ … })` (`Bun.s3`) |
+| `default` | `string` | the disk `disk()` resolves with no name. Defaults to the first declared disk; naming one that is not declared is `X_CONFIG_INVALID` |
+
+Two disks may not share one driver **instance**: a driver learns its disk name at boot (`registerAs`) and mints signed URLs under it, so one instance told two names would 404 every URL it wrote under the first. Two disks over one root are two `localDriver()` calls. There is no `storage.dir` and no `storage.bucket` field.
+
+## `otel`
+
+**Not an `app.config.ts` block.** Tracing is **always on, not a flag**, and the wire is configured by the standard OpenTelemetry environment variables — which is what lets a collector be attached to a running image without a rebuild:
+
+| var | notes |
+|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP/HTTP **JSON** only, port `:4318`. Absent = spans still recorded, exported nowhere. Invalid → `X_OTLP_ENDPOINT_INVALID` |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `..._METRICS_ENDPOINT` | per-signal override |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | anything but `http/json` → `X_OTLP_PROTOCOL_UNSUPPORTED`, naming `:4318`. gRPC (`:4317`) needs HTTP/2 and protobuf and is out of scope |
+| `OTEL_EXPORTER_OTLP_HEADERS` | percent-decoded, so `%zz` is `X_OTLP_HEADERS_INVALID` rather than a bare `URIError` at exporter construction. The header **key** appears in the cause and the fix; the **value** never does — it is the collector's credential |
+| `OTEL_TRACES_SAMPLER` / `OTEL_TRACES_SAMPLER_ARG` | read at the **first span**, never at module scope. `configureTelemetry({ sampler })` is the programmatic form |
+
+An empty `spanId` means "no inbound decision" and every reader honours it: a synthesised parent used to make the ratio sampler inherit a bit nobody sent, which exported **every HTTP root span at every ratio**.
 
 ## `ai`
 
-Three fields, and `ai.mcp` is where the app's own MCP surface is configured — there is no top-level `mcp` block.
+Two fields, and `ai.mcp` is where the app's own MCP surface is configured — there is no top-level `mcp` block.
 
 | field | type | default | notes |
 |---|---|---|---|
-| `ai.modelEnv` | `string` | — | the env **key** for the model id, so no model string is baked into the image |
 | `ai.mcp.expose` | `boolean` | `true` | the app's own MCP surface. Actions still opt in per action `mcp.expose` |
 | `ai.mcp.path` | `string` | `'/mcp'` | where the HTTP transport mounts. Never bound in `ROLE=web` |
+| ~~`ai.modelEnv`~~ | — | — | **Deleted in 8.0.0.** It named the env key holding the model id "so no model string is baked into the image", and its only reader was `defineConfig`'s own merge: `@ultimat3/ai` reads env for API keys only and the model is `request.model ?? DEFAULT_MODEL`, a compile-time constant. The one thing the key existed to prevent is what it delivered. Migration: delete the key and pass `model` on the request, reading your own env key if you want one |
 
 `ai.models`, `ai.fallback`, `ai.cache` and `ai.budget` are per-`llm()` declarations, not config ([MCP and AI](MCP-And-AI)). i18n has no config block either: top-level `locales` and `defaultLocale` are the whole surface.
 
@@ -275,7 +320,7 @@ One typed schema, declared with `defineEnv` at module scope **in `app.config.ts`
 | `BUILD_ID` | all | set by `x build` | content hash. Never a timestamp, never `latest` |
 | `DRAIN_TIMEOUT` | all | no — default `30s` | must be <= the orchestrator's `stop_grace_period` |
 | `LOG_LEVEL` | all | no — default `info` | `debug \| info \| warn \| error` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | all | no | overrides `otel.endpoint` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | all | no | the OTLP collector. There is no `otel` config block for it to override — see [`otel`](#otel) |
 
 Rules:
 
@@ -283,7 +328,7 @@ Rules:
 |---|---|
 | Secrets are env or a mounted file | the framework never talks to a vendor secret API ([axiom 7](Home)) |
 | `env.X` reads through `defineEnv`'s schema | a declared key that is missing or malformed is `X_ENV_MISSING` at boot, every offender in one error. A `process.env` read outside the schema is a lint error, never a runtime one |
-| `X_CONFIG_INVALID` is env **and** `app.config.ts` | one code for a configuration that cannot boot: what `defineConfig`'s own validation throws — a bad locale, an unknown time zone, `poolSize < 1` — and any env **combination** no boot can resolve, thrown by the selector that reads it. Both CDN pairs or half a pair (`selectPurgeDriver`), `SMTP_URL` + `RESEND_API_KEY` or a transport with no `MAIL_FROM` (`selectMailDriver`), or `REPLICATION_URL` naming a different host, port or database than `DATABASE_URL` (`selectChangeFeed`) |
+| `X_CONFIG_INVALID` is env **and** `app.config.ts` | one code for a configuration that cannot boot: what `defineConfig`'s own validation throws — a bad locale, an unknown time zone, `jobs.concurrency < 1`, a `realtime.transport` other than `memory` with no `realtime.urlEnv`, `cache.driver: 'redis'` with no `cache.urlEnv` — and any env **combination** no boot can resolve, thrown by the selector that reads it. Both CDN pairs or half a pair (`selectPurgeDriver`), `SMTP_URL` + `RESEND_API_KEY` or a transport with no `MAIL_FROM` (`selectMailDriver`), or `REPLICATION_URL` naming a different host, port or database than `DATABASE_URL` (`selectChangeFeed`) |
 | `X_ENV_MISSING` is one key, `X_CONFIG_INVALID` is the shape | absent or malformed key → `X_ENV_MISSING` at the `defineEnv` gate. Keys that each parse but contradict each other → `X_CONFIG_INVALID`. The two never overlap |
 | No runtime mutation | config is frozen after `defineConfig`; there is no `setConfig` |
 | Same image, all environments | only env differs. That is what makes staging a real rehearsal ([Deployment](Deployment)) |

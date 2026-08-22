@@ -4,8 +4,8 @@ import { RouteDuplicateError, RouteFileInvalidError, SurfaceBoundaryError } from
 import {
   clearRoutes,
   compilePattern,
+  decodeSegment,
   describeRoutes,
-  matchRoute,
   registerRoute,
   routeCount,
   routeEntries,
@@ -238,33 +238,46 @@ describe('route table', () => {
     expect(first.find((r) => r.path === '/blog/:slug')?.dynamic).toBe(true);
   });
 
-  test('matchRoute prefers the more specific pattern', () => {
-    registerRoute({ file: 'apps/web/site/blog/[slug]/page.tsx', config: staticConfig });
-    registerRoute({ file: 'apps/web/site/blog/feed/page.tsx', config: staticConfig });
+  // This package's own `matchRoute` is gone — `@ultimat3/http`'s trie (`stages.ts`) is the one
+  // matcher, and two exported matchers with different precedence rules is one too many. What it
+  // read stays exported and stays covered here: the compiled pattern a route registers, and the
+  // "is this segment decodable?" answer that keeps a typo from being a 500.
+  test('the compiled pattern is what ranks and captures, and it is on the entry', () => {
+    const entry = registerRoute({
+      file: 'apps/web/site/blog/[slug]/page.tsx',
+      config: staticConfig,
+    });
+    const literal = registerRoute({
+      file: 'apps/web/site/blog/feed/page.tsx',
+      config: staticConfig,
+    });
 
-    expect(matchRoute('/blog/feed')?.entry.path).toBe('/blog/feed');
-    const dynamic = matchRoute('/blog/hello-world');
-    expect(dynamic?.entry.path).toBe('/blog/:slug');
-    expect(dynamic?.params).toEqual({ slug: 'hello-world' });
-    expect(matchRoute('/nope')).toBe(null);
+    // A literal segment outranks a param, so a matcher sorting on specificity picks `/blog/feed`.
+    expect(literal.pattern.specificity).toBeGreaterThan(entry.pattern.specificity);
+    expect(entry.pattern.regex.exec('/blog/hello-world')?.[1]).toBe('hello-world');
+    expect(entry.pattern.keys).toEqual(['slug']);
+    expect(entry.pattern.regex.exec('/nope')).toBe(null);
   });
 
   // A pathname is whatever the client typed. `decodeURIComponent('%zz')` throws a bare `URIError`
   // — no code, no fix, a 500 and an error-monitor page for a typo — where `@ultimat3/http`'s own
   // router already answers "this branch does not match" for the same input.
-  test('a param segment that will not decode is not a match, and never a throw', () => {
-    registerRoute({ file: 'apps/web/site/blog/[slug]/page.tsx', config: staticConfig });
+  test('a segment that will not decode answers undefined, and never throws', () => {
     for (const bad of ['%zz', '%', '%A', 'a%2', '%E0%A4%A']) {
-      expect(() => matchRoute(`/blog/${bad}`)).not.toThrow();
-      expect(matchRoute(`/blog/${bad}`)).toBe(null);
+      expect(() => decodeSegment(bad)).not.toThrow();
+      expect(decodeSegment(bad)).toBeUndefined();
     }
-    expect(matchRoute('/blog/a%20b')?.params).toEqual({ slug: 'a b' });
+    expect(decodeSegment('a%20b')).toBe('a b');
   });
 
-  test('a literal route still wins over a sibling param that could not decode', () => {
-    registerRoute({ file: 'apps/web/site/blog/[slug]/page.tsx', config: staticConfig });
-    registerRoute({ file: 'apps/web/site/blog/%zz/page.tsx', config: staticConfig });
-    expect(matchRoute('/blog/%zz')?.entry.path).toBe('/blog/%zz');
+  test('a route path that is itself an undecodable escape still registers as a literal', () => {
+    const entry = registerRoute({
+      file: 'apps/web/site/blog/%zz/page.tsx',
+      config: staticConfig,
+    });
+    expect(entry.path).toBe('/blog/%zz');
+    expect(entry.pattern.keys).toEqual([]);
+    expect(entry.pattern.regex.exec('/blog/%zz')).not.toBe(null);
   });
 });
 
@@ -293,21 +306,39 @@ describe('a file outside every surface has no URL at all', () => {
 
 describe('a catch-all segment', () => {
   test('matches one segment, many segments, and the empty rest', () => {
-    registerRoute({ file: 'apps/web/site/docs/[...path]/page.tsx', config: staticConfig });
-    expect(matchRoute('/docs/a')?.params).toEqual({ path: 'a' });
-    expect(matchRoute('/docs/a/b/c')?.params).toEqual({ path: 'a/b/c' });
-    expect(matchRoute('/docs/')?.params).toEqual({ path: '' });
-    expect(matchRoute('/other/a')).toBe(null);
+    const entry = registerRoute({
+      file: 'apps/web/site/docs/[...path]/page.tsx',
+      config: staticConfig,
+    });
+    expect(entry.pattern.regex.exec('/docs/a')?.[1]).toBe('a');
+    expect(entry.pattern.regex.exec('/docs/a/b/c')?.[1]).toBe('a/b/c');
+    expect(entry.pattern.regex.exec('/docs/')?.[1]).toBe('');
+    expect(entry.pattern.regex.exec('/other/a')).toBe(null);
   });
 
   test('is the least specific pattern, so a literal and a param both outrank it', () => {
-    registerRoute({ file: 'apps/web/site/docs/[...path]/page.tsx', config: staticConfig });
-    registerRoute({ file: 'apps/web/site/docs/[slug]/page.tsx', config: staticConfig });
-    registerRoute({ file: 'apps/web/site/docs/intro/page.tsx', config: staticConfig });
+    const catchAll = registerRoute({
+      file: 'apps/web/site/docs/[...path]/page.tsx',
+      config: staticConfig,
+    });
+    const param = registerRoute({
+      file: 'apps/web/site/docs/[slug]/page.tsx',
+      config: staticConfig,
+    });
+    const literal = registerRoute({
+      file: 'apps/web/site/docs/intro/page.tsx',
+      config: staticConfig,
+    });
 
-    expect(matchRoute('/docs/intro')?.entry.path).toBe('/docs/intro');
-    expect(matchRoute('/docs/anything')?.entry.path).toBe('/docs/:slug');
-    expect(matchRoute('/docs/a/b')?.entry.path).toBe('/docs/*path');
+    expect(literal.pattern.specificity).toBeGreaterThan(param.pattern.specificity);
+    expect(param.pattern.specificity).toBeGreaterThan(catchAll.pattern.specificity);
+    // All three regexes claim `/docs/intro`; specificity is the only thing that separates them.
+    for (const entry of [catchAll, param, literal]) {
+      expect(entry.pattern.regex.exec('/docs/intro')).not.toBe(null);
+    }
+    expect(literal.pattern.regex.exec('/docs/a/b')).toBe(null);
+    expect(param.pattern.regex.exec('/docs/a/b')).toBe(null);
+    expect(catchAll.pattern.regex.exec('/docs/a/b')?.[1]).toBe('a/b');
   });
 
   test('compilePattern reports the key and the specificity it was ranked by', () => {

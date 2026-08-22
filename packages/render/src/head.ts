@@ -10,7 +10,13 @@
 import type { RouteMeta } from '@ultimat3/seo';
 import { BudgetExceededError } from './errors';
 // `html.ts` is this package's one escaper — a second one is how a character ends up missing.
-import { escapeAttribute, escapeJsonContent, escapeRawTextContent, escapeText } from './html';
+import {
+  escapeAttribute,
+  escapeJsonContent,
+  escapeRawTextContent,
+  escapeText,
+  isAttributeName,
+} from './html';
 
 export type HeadTagKind = 'title' | 'base' | 'meta' | 'link' | 'script' | 'style';
 
@@ -112,7 +118,11 @@ export function renderHead(tags: readonly HeadTag[]): string {
 }
 
 function renderTag(tag: HeadTag): string {
+  // The NAME is emitted verbatim before the `=` and is escaped nowhere, so a key carrying a space
+  // carries a whole second attribute with it — an app spreading a row into `attrs` put a live
+  // event handler in `<head>`. Same predicate `attributePair` uses, never a second copy.
   const attrs = Object.entries(tag.attrs ?? {})
+    .filter(([name]) => isAttributeName(name))
     .map(([name, value]) =>
       value === true ? ` ${name}` : ` ${name}="${escapeAttribute(String(value))}"`,
     )

@@ -43,7 +43,7 @@ delivers inline only when `{ sync: true }` is passed or no job driver is configu
 
 | Driver | Use | Behaviour |
 |---|---|---|
-| `createMemoryDriver()` | dev, tests | retains messages; `outbox()` / `lastTo()` feed the `/_x` mail panel |
+| `createMemoryDriver({ clock? })` | dev, tests | retains messages; `outbox()` / `lastTo()` feed the `/_x` mail panel, ordered by `SentMail.at` — pass a `frozenClock()` to choose it |
 | `createLogDriver()` | workers without credentials | one structured line per message through core's `logger`; bodies never logged |
 | `createUnconfiguredDriver(env)` | a deploy that configured no transport | refuses every send with `X_MAIL_CREDENTIAL_MISSING`; delivers nothing and claims nothing |
 | `createSmtpDriver({ url, from })` | prod | real ESMTP over `Bun.connect`: STARTTLS, `AUTH PLAIN`/`LOGIN`, quoted-printable MIME |

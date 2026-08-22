@@ -1,7 +1,8 @@
 # @ultimat3/scraping
 
-Browser automation as a **job**. `scrape()` returns a `JobHandle` — the rule's fourth instance
-after `llm()` (an action factory) and `backfill()` (a job factory). There is no ninth primitive.
+Browser automation as a **job**. `scrape()` returns a `JobHandle` — one row of
+`PRIMITIVE_FACTORIES` in `@ultimat3/core`, the derived list of every factory that ships. There is
+no ninth primitive, and no ordinal here to go stale when the next factory lands.
 
 ```ts
 import { t } from '@ultimat3/schema';

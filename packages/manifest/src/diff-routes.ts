@@ -2,7 +2,7 @@
 // now answers JSON breaks every link to it — while the delivery facts (`render`, `offline`,
 // `hydrate`, `budget`, `revalidateTags`) are internal and reported.
 
-import { canonical } from './build';
+import { canonicalJson } from '@ultimat3/core';
 import type { ManifestChange } from './diff-change';
 import { diffScalar, index } from './diff-change';
 import type { RouteFact } from './schema';
@@ -88,6 +88,6 @@ function diffJson(
   detail: string,
 ): readonly ManifestChange[] {
   if (before === undefined || after === undefined) return [];
-  if (canonical(before) === canonical(after)) return [];
+  if (canonicalJson(before) === canonicalJson(after)) return [];
   return [{ kind, path, detail }];
 }

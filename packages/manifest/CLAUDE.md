@@ -33,7 +33,16 @@ by the CLI, not imported.
 - **No nondeterminism.** No timestamp, git sha, hostname, counter, or unsorted iteration.
   `buildManifest` is pure — it must never read a registry, a clock, or the filesystem.
 - Top-level key order in the file is fixed by `KEY_ORDER` in `emit.ts`.
-- `buildId` = sha256 of the canonical body. Verifiable from the file alone.
+- `buildId` = sha256 of `@ultimat3/core`'s `canonicalJson` over the body — the framework's one
+  INJECTIVE form, and the same one every `diff-*.ts` equality is taken over. It was a local
+  `JSON.stringify(sortKeys(v))` until 2026-08-22, exported from `index.ts` as `canonical`
+  (**removed, breaking**): that form spells `-0` as `0` and `NaN`/`±Infinity` as `null`, so a
+  default a client is told to expect could move and the diff answered "no change". Ordinary JSON
+  is byte-identical between the two — both tracked apps' committed manifests hash to the same id
+  they already carried — so the swap is observable only where the old form folded. **The published
+  document is `manifestJson` and is still `JSON.stringify` with a fixed key order**: an injective
+  form emits tokens JSON cannot parse, which is why `@ultimat3/action`'s `stableStringify` exists
+  as a separate function and why this one may not be written to disk.
 - Job `steps` keep declared order. Everything else sorts.
 - `permissions` is derived, never a second declared list — and derived from each operation's own
   `permissions`, **never from `policy`**. `policy` is a DISPLAY label: a composite renders as

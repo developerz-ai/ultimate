@@ -223,3 +223,55 @@ describe('RemoteEmbedder outbound safety', () => {
     expect(await codeOf(() => remote.embed(['a']))).toBe('X_AI_PROVIDER_UNAVAILABLE');
   });
 });
+
+/**
+ * `baseUrl` is app config and `fetch` is injectable, so the value this transport catches is one
+ * the framework did not build. `error instanceof Error` RUNS code on it — the `getPrototypeOf`
+ * trap of a `Proxy` — and a throw there escapes the `catch` block that exists to turn a dead
+ * socket into an instruction, so the operator gets an uncoded crash instead.
+ */
+describe('RemoteEmbedder: a hostile rejection still comes back coded', () => {
+  /** A rejection value that fights being read. Legitimate INPUT here, never a verdict. */
+  // Built once and thrown by reference: the value is the code-under-test's INPUT, not this file's
+  // verdict — and `scripts/test-bare-error.ts` reads a thrown `new Error` literal as the latter.
+  const trap = new Error('getPrototypeOf trap');
+  const hostile = (): unknown =>
+    new Proxy(
+      {},
+      {
+        getPrototypeOf(): never {
+          throw trap;
+        },
+      },
+    );
+
+  const embedderRejecting = (value: unknown): RemoteEmbedder =>
+    new RemoteEmbedder({
+      name: 'voyage-3',
+      dimension: 2,
+      apiKey: 'key-1',
+      baseUrl: 'https://embeddings.test/v1',
+      timeoutMs: 30,
+      fetch: () => Promise.reject(value),
+    });
+
+  const codeFor = async (value: unknown): Promise<unknown> => {
+    const error = await embedderRejecting(value)
+      .embed(['a'])
+      .then(
+        () => undefined,
+        (caught: unknown) => caught,
+      );
+    return isUltimateError(error) ? error.code : error;
+  };
+
+  test('a Proxy whose prototype read throws is still X_AI_PROVIDER_UNAVAILABLE', async () => {
+    expect(await codeFor(hostile())).toBe('X_AI_PROVIDER_UNAVAILABLE');
+  });
+
+  test('a rejection that is not an object at all is described, never interpolated', async () => {
+    // `${symbol}` and `String(symbol)` both throw; the literal fallback and `renderThrowable`
+    // both survive. This is the guard against the obvious "just stringify it" repair.
+    expect(await codeFor(Symbol('nope'))).toBe('X_AI_PROVIDER_UNAVAILABLE');
+  });
+});

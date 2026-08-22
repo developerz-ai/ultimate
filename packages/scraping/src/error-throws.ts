@@ -106,6 +106,28 @@ export const wedged = (what: string, idleMs: number): ScrapeError =>
     meta: { what, idleMs },
   });
 
+/**
+ * The watchdog's SECOND way of ending a run, and its OWN code rather than `X_SCRAPE_WEDGED`.
+ *
+ * An exact `cause:` cannot rescue a wrong title. A reader who hits this runs
+ * `x errors explain X_SCRAPE_WEDGED`, reads "the browser stopped answering and was killed", and
+ * goes to investigate a page that is fine — the browser never stopped answering, the guard's own
+ * loop died on code the DEFINITION supplied. Two events with two different subsystems and two
+ * opposite fixes are two codes, and the classifications differ with them: a wedge is retryable,
+ * this is terminal (`errors.ts`).
+ *
+ * Reachable through the `ScrapeClock` seam and the driver's `kill()`, both of which a third party
+ * writes. Leaving the loop dead and quiet is the alternative, and that is incident #1 with no
+ * guard armed at all.
+ */
+export const watchdogStopped = (what: string, thrown: unknown): ScrapeError =>
+  new ScrapeError({
+    code: 'X_SCRAPE_WATCHDOG_STOPPED',
+    cause: `the wedge watchdog for ${what} stopped measuring browser activity: ${renderThrowable(thrown)}`,
+    fix: 'drop the custom clock: from the scrape() definition — systemScrapeClock is the only ScrapeClock whose sleep() cannot reject — then re-run',
+    meta: { what },
+  });
+
 export const pageCrashed = (url: string): ScrapeError =>
   new ScrapeError({
     code: 'X_SCRAPE_PAGE_CRASHED',

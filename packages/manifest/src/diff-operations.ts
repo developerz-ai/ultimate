@@ -1,7 +1,6 @@
 // The two callable surfaces — actions and queries — and the permissions they require.
 
-import { isMcpExposed } from '@ultimat3/core';
-import { canonical } from './build';
+import { canonicalJson, isMcpExposed } from '@ultimat3/core';
 import type { ManifestChange } from './diff-change';
 import { index } from './diff-change';
 import { diffRateLimit } from './diff-rate-limit';
@@ -23,10 +22,10 @@ export function diffActions(
       changes.push({ kind: 'breaking', path, detail: 'action removed' });
       continue;
     }
-    if (canonical(action.input) !== canonical(next.input)) {
+    if (canonicalJson(action.input) !== canonicalJson(next.input)) {
       changes.push({ kind: 'breaking', path: `${path}.input`, detail: 'input schema changed' });
     }
-    if (canonical(action.output) !== canonical(next.output)) {
+    if (canonicalJson(action.output) !== canonicalJson(next.output)) {
       changes.push({ kind: 'breaking', path: `${path}.output`, detail: 'output schema changed' });
     }
     if (action.policy !== next.policy) {
@@ -52,7 +51,7 @@ export function diffActions(
     }
     changes.push(...diffPermissions(path, action, next));
     changes.push(...diffRateLimit(path, action, next));
-    if (canonical(action.cacheInvalidates) !== canonical(next.cacheInvalidates)) {
+    if (canonicalJson(action.cacheInvalidates) !== canonicalJson(next.cacheInvalidates)) {
       changes.push({
         kind: 'internal',
         path: `${path}.cacheInvalidates`,
@@ -83,7 +82,7 @@ export function diffQueries(
       changes.push({ kind: 'breaking', path, detail: 'query removed' });
       continue;
     }
-    if (canonical(query.input) !== canonical(next.input)) {
+    if (canonicalJson(query.input) !== canonicalJson(next.input)) {
       changes.push({ kind: 'breaking', path: `${path}.input`, detail: 'input schema changed' });
     }
     if (query.policy !== next.policy) {
@@ -104,7 +103,7 @@ export function diffQueries(
     }
     // The same fact as an action's `cacheInvalidates`, and the same class: which tag flushes a
     // read is not a caller's contract, but a reviewer has to see it move.
-    if (canonical(query.cacheTags) !== canonical(next.cacheTags)) {
+    if (canonicalJson(query.cacheTags) !== canonicalJson(next.cacheTags)) {
       changes.push({ kind: 'internal', path: `${path}.cacheTags`, detail: 'cache tags changed' });
     }
   }

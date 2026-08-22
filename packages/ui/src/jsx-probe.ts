@@ -35,6 +35,14 @@ function h(
  * DELETED the property on the way out destroyed a binding it did not create, and a nested or
  * repeated probe tore the factory out from under the suite still using it — the counter is what
  * makes the last unprobe the only one that restores.
+ *
+ * There may be exactly ONE such counter in the framework, and it is this one — `globalThis.React`
+ * is a single property, so a second module counting its own depth over it restores in the wrong
+ * order. `@ultimat3/admin`'s `inert-jsx.ts` kept a second pair and the two interleaved: admin
+ * installs (saving the real binding), ui installs (saving ADMIN's factory), admin restores (both
+ * counters at 1 → the real binding is back), ui restores (its counter hits 0 → admin's factory is
+ * reinstalled over it). The global ended up holding a harness the run had already torn down.
+ * `admin` is tier 5 and `ui` is tier 4, so admin imports these rather than declaring them.
  */
 let depth = 0;
 let saved: PropertyDescriptor | undefined;

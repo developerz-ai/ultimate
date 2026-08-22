@@ -1,8 +1,10 @@
 /**
  * `agent()` — a multi-turn tool-using model call, declared as an `action`.
  *
- * The third instance of the framework's rule, after `llm()` and `backfill()`: a new capability
- * arrives as a FACTORY over an existing primitive, never as a ninth kind. A tool-using run is
+ * One more instance of the framework's rule — the whole list is `PRIMITIVE_FACTORIES` in
+ * `@ultimat3/core`: a new capability arrives as a FACTORY over an existing primitive, never as a
+ * ninth kind, and the list is what a reader counts instead of a sentence in one of them that
+ * cannot see the rest. A tool-using run is
  * still one server-authoritative operation with an input schema, an output schema and a policy —
  * so this returns an `action`, and inherits `.tool()`, `.openapi()`, `.client()`, `.job()`,
  * `.contract()` and its manifest row without a line here.

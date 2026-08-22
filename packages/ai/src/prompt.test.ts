@@ -114,3 +114,36 @@ describe('rendering', () => {
     expect(String(thrown.cause)).toContain('1.0.0');
   });
 });
+
+/**
+ * The hash is the identity an eval score is filed under, so it has one duty: two prompts that
+ * would behave differently may never share it. `JSON.stringify` spells `-0` as `0` and every
+ * non-finite number as `null`, so a schema default the model is told about could move without the
+ * ref moving with it — and every recorded score would go on claiming to describe the new one.
+ */
+describe('unit · the prompt hash is injective over its schemas', () => {
+  const withDefault = (fallback: unknown) => ({
+    ...base,
+    input: {
+      type: 'object' as const,
+      properties: { amount: { type: 'number' as const, default: fallback } },
+    },
+  });
+
+  test('a default of -0 does not hash as a default of 0', () => {
+    expect(contentHash(withDefault(-0))).not.toBe(contentHash(withDefault(0)));
+  });
+
+  test('a non-finite default is not folded onto null', () => {
+    const nan = contentHash(withDefault(Number.NaN));
+    const nul = contentHash(withDefault(null));
+    const infinity = contentHash(withDefault(Number.POSITIVE_INFINITY));
+    expect(new Set([nan, nul, infinity]).size).toBe(3);
+  });
+
+  test('an ordinary JSON schema hashes exactly as it always did — no baseline is invalidated', () => {
+    expect(
+      contentHash({ ...base, input: { type: 'object', properties: { a: { type: 'string' } } } }),
+    ).toBe('e0b11b6f5a8975c86d712d194d8d79fa');
+  });
+});

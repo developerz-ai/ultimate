@@ -73,6 +73,15 @@ import. The CLI wires it.
   the raw error, zero frames written, the request unanswered and every later request on that buffer
   never processed. Same shape `toolsCall` uses — a framework error keeps its code/cause/fix, anything
   else is `-32603` with no internals.
+- **A declared `pattern` is compiled once per schema NODE, never once per `tools/call`.** A tool's
+  schema is registered at boot and validated on every call, so `new RegExp(pattern)` in `string()`
+  was per-request work over a constant — `@ultimat3/schema`'s `patternTester` already draws the
+  line in the same place for the same contract. The memo is a `WeakMap` keyed on the node, not a
+  `Map` keyed on the pattern string: a process registering tools dynamically would otherwise
+  accumulate one entry per distinct pattern forever with nothing to evict it. An uncompilable
+  pattern caches its `null` verdict too — it is the branch with the highest per-call cost.
+  `compiledPatternCount()` is the test-only probe (not in `index.ts`); a count that climbs once
+  per CALL is the memo gone, which `validate-args.test.ts` asserts over 100 calls.
 - **`format` is NOT in the wire subset**, and `wire.ts` types it `never` so re-adding it does not
   compile. It names a rule whose meaning lives in `@ultimat3/schema` (`uuid`, `email`,
   `iana-time-zone`), and this package cannot check it without a second definition of each that can

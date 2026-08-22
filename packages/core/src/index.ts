@@ -370,6 +370,7 @@ export {
   writeMasterKeyFile,
   writeSecretsFile,
 } from './exports/secrets';
+export { formatBytes } from './format-bytes';
 export type { Brand, Id } from './ids';
 export {
   isSpanId,

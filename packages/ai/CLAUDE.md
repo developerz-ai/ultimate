@@ -302,8 +302,9 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   - `.stream()` is LAZY. Nothing is authorised, budgeted or sent until the first pull. `named()` is
     re-narrowed for the same reason `stream` is assigned in place: `action()`'s `named` builds a
     fresh twin that would silently not stream.
-- **`agent()` is a job for the tool loop, and the third instance of the factory rule** (after
-  `llm()` and `backfill()`) — it returns an `action`, never a ninth primitive. It exists because
+- **`agent()` is a job for the tool loop, and one of the factory rule's instances** — the list is
+  `PRIMITIVE_FACTORIES` in `@ultimat3/core`, never an ordinal in a header — it returns an `action`,
+  never a ninth primitive. It exists because
   the alternative is a hand-rolled loop, and a hand-rolled loop is where the dangerous mistake
   lives: **taking the actor from the model's output.** `ctx.actor` is read once and is the only
   identity any tool runs as; nothing the model emits can reach it. Bounded by `maxTurns`
@@ -379,8 +380,8 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
   - `AiMessage.content` widened to `string | readonly AiContentBlock[]` for this: a `tool_result`
     has to name the `tool_use` it answers and a string has nowhere to put the id. The block field
     names are the Messages API's, so `body()` passes them through untouched.
-- **`hive()` is a fan-out, and the FOURTH instance of the factory rule** (after `llm()`,
-  `backfill()` and `agent()`) — it returns an `action`, never a ninth primitive. It exists because
+- **`hive()` is a fan-out, and another of the factory rule's instances** (`PRIMITIVE_FACTORIES`
+  again) — it returns an `action`, never a ninth primitive. It exists because
   the alternative is a hand-rolled `Promise.all` over `agent()` calls, and that loop gets four
   things wrong every time: the actor, the order, the difference between ran-and-failed and
   never-ran, and the ceiling.
@@ -487,7 +488,20 @@ until 2026-08, naming a tool no catalog contained (`llm.test.ts`, `agent.test.ts
 - Server-side `fallbacks` (beta) are deliberately NOT sent. The provider speaks the stable
   `2023-06-01` surface, and a 1.0 package that promises semver cannot pin a beta wire contract;
   the typed refusal plus the gateway's own model routing is the framework's answer instead.
-- `definePrompt` refuses a re-registered version whose hash moved.
+- `definePrompt` refuses a re-registered version whose hash moved, and the hash is taken over
+  `@ultimat3/core`'s `canonicalJson` (`As of 2026-08-22`). It was a local sorted-key
+  `JSON.stringify` — the framework's third copy of one canonical form — which spells `-0` as `0`
+  and every non-finite number as `null`: a schema `default` the model is told about could move
+  while the ref did not, and every score already filed goes on claiming to describe the new prompt.
+  Ordinary JSON hashes byte-identically between the two, so **no committed baseline is
+  invalidated**; `prompt.test.ts` pins one hash literally to keep it that way. An ABSENT schema
+  stays the empty string rather than `canonicalJson(undefined)`'s `null`, for the same reason.
+- **A caught value is read with `renderThrowable`, never `error instanceof Error ? error.message :
+  String(error)`.** `instanceof` RUNS a `Proxy`'s `getPrototypeOf` trap, and a throw there escapes
+  the very `catch` that exists to produce a coded refusal — proven against `RemoteEmbedder`, whose
+  injected `fetch` made it reachable from app config. Five sites in this package
+  (`remote-embedder.ts`, `wire.ts` x2, `openai-wire.ts` x2); `scripts/error-render.ts` cannot see
+  any of them, because it reads PARAMETERS typed `unknown` and these are `catch` bindings.
 - Every eval result carries the prompt hash. A score without one is not a measurement.
 - An eval gates on the DROP from its recorded baseline, never on an absolute score. An absolute
   floor fails every eval at once the day a provider ships a slightly different model, which

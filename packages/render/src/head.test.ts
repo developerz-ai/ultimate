@@ -354,3 +354,34 @@ describe('themeScript encodes its options as JS string literals', () => {
     expect(tag.content).toContain('document.documentElement.setAttribute("data-x-theme"');
   });
 });
+
+/**
+ * The second attribute sink in this package. `attributePair` validates the NAME it is handed —
+ * a name is emitted verbatim before the `=` and is escaped nowhere, so a key carrying a space
+ * carries a whole second attribute with it — and `renderTag` interpolated `attrs` keys raw. Reach
+ * here is an app spreading a row into a head tag's `attrs`, which is narrower than JSX spread and
+ * is the same status every other author-controlled sink in this file already defends against.
+ */
+describe('a head tag attribute name is validated, not just its value', () => {
+  test('a key that would open a second attribute emits nothing', () => {
+    const html = renderHead([
+      {
+        kind: 'meta',
+        key: 'meta:x',
+        attrs: { name: 'x', 'y onmouseover=alert(1) z': 'ok', 'a b': true },
+      },
+    ]);
+    expect(html).toBe('<meta name="x">');
+  });
+
+  test('every name a real head tag writes still renders', () => {
+    const html = renderHead([
+      {
+        kind: 'link',
+        key: 'link:x',
+        attrs: { rel: 'alternate', hreflang: 'en-GB', 'data-x': '1', 'xlink:href': '/a' },
+      },
+    ]);
+    expect(html).toBe('<link rel="alternate" hreflang="en-GB" data-x="1" xlink:href="/a">');
+  });
+});

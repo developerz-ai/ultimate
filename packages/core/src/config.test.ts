@@ -17,6 +17,22 @@ describe('defineConfig', () => {
     expect(Object.isFrozen(config)).toBe(true);
   });
 
+  test('names no key the framework does not read', () => {
+    // `JobsConfig.driver`'s shape, three more times: `auth.afterSignInPath`, `pwa.installPrompt`
+    // and `ai.modelEnv` were each declared, defaulted and merged here and read by NO file, so an
+    // app setting one got silence. Key SETS, not spot checks — a spot check cannot see a fourth.
+    const config = defineConfig({ name: 'myapp' });
+
+    expect(Object.keys(config.auth).sort()).toEqual(['signInPath']);
+    expect(Object.keys(config.pwa).sort()).toEqual([
+      'backgroundSync',
+      'enabled',
+      'offline',
+      'push',
+    ]);
+    expect(Object.keys(config.ai).sort()).toEqual(['mcp']);
+  });
+
   test('overlays let config/ split by concern, last one wins', () => {
     const config = defineConfig(
       { name: 'myapp', locales: ['en', 'es'], defaultLocale: 'es' },

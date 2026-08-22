@@ -7,6 +7,7 @@ import {
   ConfigInvalidError,
   isUltimateError,
   nanoid,
+  renderThrowable,
   systemClock,
 } from '@ultimat3/core';
 import type { SendResult } from './driver';
@@ -210,6 +211,11 @@ export function createSmtpDriver(options: SmtpDriverOptions): MailDriver {
   }
 }
 
+/**
+ * `renderThrowable`, never `instanceof` + `.message` or `String(value)`: both RUN code on the
+ * caught value — a prototype read and a `toString` — and a throw here would escape the `catch`
+ * that exists to keep `X_MAIL_SEND_FAILED` on a dropped connection.
+ */
 function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return renderThrowable(error);
 }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { declaredErrorRetry, listErrorCodes, retryFor } from '@ultimat3/core';
 import { nextRetryForError } from '@ultimat3/jobs';
-import { authFailed, httpFailed, pageCrashed, wedged } from './error-throws';
+import { authFailed, httpFailed, pageCrashed, watchdogStopped, wedged } from './error-throws';
 import {
   isRetryableScrapeError,
   SCRAPE_ERROR_RETRY,
@@ -71,6 +71,21 @@ describe('unit · the classification is load-bearing, not documentation', () => 
     const decision = nextRetryForError(policy, 1, wedged('scrape "orders"', 120_000));
     expect(decision.retry).toBe(true);
     expect(decision.stoppedBy).toBeUndefined();
+  });
+
+  test('a guard that STOPPED MEASURING is terminal — the sibling code is the whole point', () => {
+    // The two ways the watchdog ends a run, side by side. A wedge is the site or the browser being
+    // slow, so attempt 2 may go differently; this one is the guard's own loop dying on a clock the
+    // DEFINITION supplied, which attempt 2 reaches identically — five browser launches and five
+    // arrivals at a login for no chance of a different answer. The `new Error` is the guard's
+    // input, not a verdict.
+    const decision = nextRetryForError(
+      policy,
+      1,
+      watchdogStopped('scrape "orders"', new Error('the clock stopped')),
+    );
+    expect(decision.retry).toBe(false);
+    expect(decision.stoppedBy).toBe('terminal');
   });
 
   test('a per-instance override is honoured because the CODE is registered', () => {

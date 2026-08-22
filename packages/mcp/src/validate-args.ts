@@ -136,9 +136,29 @@ function string(schema: JsonSchema, input: unknown, path: string, issues: ArgIss
   if (schema.maxLength !== undefined && input.length > schema.maxLength) {
     issues.push({ path, message: `must be at most ${schema.maxLength} characters` });
   }
-  if (schema.pattern !== undefined) matchesPattern(schema.pattern, input, path, issues);
+  if (schema.pattern !== undefined) matchesPattern(schema, schema.pattern, input, path, issues);
   return input;
 }
+
+/**
+ * Compiled ONCE per schema NODE, never once per call. A tool's schema is registered at boot and
+ * every `tools/call` validates against that same object, so `new RegExp(pattern)` in the hot path
+ * was per-request work over a constant — `@ultimat3/schema`'s `patternTester` already draws the
+ * line in the same place for the same contract.
+ *
+ * Keyed on the NODE rather than on the pattern STRING, and a `WeakMap` rather than a `Map`: a
+ * pattern reaches this file from a tool an app registered, and a process that registers tools
+ * dynamically would otherwise accumulate one entry per distinct pattern string forever, with no
+ * bound and nothing to evict it. Keyed on the node, the entry dies with the schema.
+ *
+ * `null` is a CACHED verdict, not a miss — an uncompilable pattern would otherwise re-enter the
+ * `try` on every call, which is the case with the highest per-call cost.
+ */
+const compiledPatterns = new WeakMap<JsonSchema, RegExp | null>();
+
+/** Test-only probe. A count that climbs once per CALL rather than once per schema is the memo gone. */
+let compilations = 0;
+export const compiledPatternCount = (): number => compilations;
 
 /**
  * A pattern this server cannot COMPILE is refused, not skipped. `tools/list` published it, so an
@@ -146,11 +166,24 @@ function string(schema: JsonSchema, input: unknown, path: string, issues: ArgIss
  * this whole module exists to prevent. Every framework-projected pattern is a `RegExp.source` and
  * compiles; only a hand-written tool can reach the second branch, and that is its author's bug.
  */
-function matchesPattern(pattern: string, input: string, path: string, issues: ArgIssue[]): void {
-  let compiled: RegExp;
-  try {
-    compiled = new RegExp(pattern);
-  } catch {
+function matchesPattern(
+  schema: JsonSchema,
+  pattern: string,
+  input: string,
+  path: string,
+  issues: ArgIssue[],
+): void {
+  let compiled = compiledPatterns.get(schema);
+  if (compiled === undefined) {
+    compilations += 1;
+    try {
+      compiled = new RegExp(pattern);
+    } catch {
+      compiled = null;
+    }
+    compiledPatterns.set(schema, compiled);
+  }
+  if (compiled === null) {
     issues.push({ path, message: `declares a pattern this server cannot compile: ${pattern}` });
     return;
   }

@@ -13,7 +13,7 @@ import {
   SurfaceBoundaryError,
 } from './errors';
 import { assertModeInvariants, defaultIslandBudget } from './modes';
-import type { RouteConfig, RouteData, RouteParams } from './route';
+import type { RouteConfig, RouteData } from './route';
 import { isRouteConfig, tagKeys } from './route';
 import type { RouteComponent } from './route-component';
 import type { Surface } from './surfaces';
@@ -334,46 +334,14 @@ export function describeRoutes(): readonly RouteDescriptor[] {
   }));
 }
 
-export interface RouteMatch {
-  readonly entry: RouteEntry;
-  readonly params: RouteParams;
-}
-
-/** Most specific pattern wins: static segments > dynamic > catch-all. */
-export function matchRoute(pathname: string): RouteMatch | null {
-  const candidates = routeEntries()
-    .slice()
-    .sort((a, b) => b.pattern.specificity - a.pattern.specificity);
-
-  for (const entry of candidates) {
-    const match = entry.pattern.regex.exec(pathname);
-    if (match === null) continue;
-    const params: Record<string, string> = {};
-    let undecodable = false;
-    entry.pattern.keys.forEach((key, index) => {
-      const value = match[index + 1];
-      if (value === undefined) return;
-      const decoded = decodeSegment(value);
-      if (decoded === undefined) undecodable = true;
-      else params[key] = decoded;
-    });
-    // A segment that will not decode fails only the branch that would have decoded it, exactly as
-    // `@ultimat3/http`'s router already answers: a literal route matching the same text still wins,
-    // and a pathname nothing else claims is the 404 it always was.
-    if (undecodable) continue;
-    return { entry, params };
-  }
-  return null;
-}
-
 /**
  * `undefined` for a malformed percent-escape. A pathname is whatever the client typed, and
- * `decodeURIComponent('%zz')` throws a bare `URIError` — no code, no fix line — which escaped
- * `matchRoute` as a 500 and an error-monitor page for somebody's typo.
+ * `decodeURIComponent('%zz')` throws a bare `URIError` — no code, no fix line — where a router
+ * already has an answer for "this branch does not match".
  *
- * Still exported after `router-client.ts` went with `createRouter`: it is the one answer to "is
- * this segment decodable?" on this side of the wire, and a second copy of it is how one of the two
- * ends up throwing where the other 404s.
+ * Still exported after this package's own `matchRoute` was deleted for `@ultimat3/http`'s trie
+ * (`stages.ts`): it is the one answer to "is this segment decodable?" on this side of the wire,
+ * and a second copy of it is how one of the two ends up throwing where the other 404s.
  */
 export function decodeSegment(value: string): string | undefined {
   try {

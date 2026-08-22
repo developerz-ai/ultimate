@@ -12,6 +12,7 @@ export type {
   MailDriver,
   MailMessage,
   MemoryMailDriver,
+  MemoryMailDriverOptions,
   SendResult,
   SentMail,
 } from './driver';

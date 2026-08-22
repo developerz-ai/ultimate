@@ -9,6 +9,7 @@
 // So: edit the template, bump the version. Re-registering a version whose hash moved is a
 // build error, not a warning.
 
+import { canonicalJson } from '@ultimat3/core';
 import { AiPromptRenderError, AiPromptVersionError } from './errors';
 import type { Effort, ModelId, ThinkingMode } from './models';
 import type { JsonSchema } from './tools';
@@ -141,34 +142,31 @@ function render(template: string, vars: PromptVars, ref: string): string {
 }
 
 /**
- * Canonical serialisation then sha256. Keys are written in a fixed order rather than
- * `JSON.stringify(object)` so the hash never depends on property insertion order.
+ * Canonical serialisation then sha256, over `@ultimat3/core`'s `canonicalJson` — the framework's
+ * one INJECTIVE form, so a schema that changed cannot hash as the schema it replaced. A local
+ * sorted-key `JSON.stringify` was here and spelled `-0` as `0` and every non-finite number as
+ * `null`, which is a `default` the model is told about moving under a ref that did not: every eval
+ * score already filed goes on claiming to describe the new prompt.
+ *
+ * An absent schema stays the empty string rather than becoming `canonicalJson(undefined)`'s
+ * `null` — that is what keeps every hash already recorded in a baseline the same value.
  */
 export function contentHash<V extends PromptVars>(input: DefinePromptInput<V>): string {
-  const canonical = [
+  const fields = [
     `id:${input.id}`,
     `version:${input.version}`,
     `system:${input.system ?? ''}`,
     `template:${input.template}`,
-    `input:${stableJson(input.input)}`,
-    `output:${stableJson(input.output)}`,
+    `input:${schemaField(input.input)}`,
+    `output:${schemaField(input.output)}`,
     `model:${input.model ?? ''}`,
     `effort:${input.effort ?? ''}`,
     `thinking:${input.thinking ?? ''}`,
   ].join('\n');
   const hasher = new Bun.CryptoHasher('sha256');
-  hasher.update(canonical);
+  hasher.update(fields);
   return hasher.digest('hex').slice(0, 32);
 }
 
-/** Sorted-key JSON so two structurally equal schemas hash identically. */
-function stableJson(value: unknown): string {
-  if (value === undefined) return '';
-  return JSON.stringify(value, (_key, val: unknown) => {
-    if (typeof val !== 'object' || val === null || Array.isArray(val)) return val;
-    const record = val as Record<string, unknown>;
-    const sorted: Record<string, unknown> = {};
-    for (const key of Object.keys(record).sort()) sorted[key] = record[key];
-    return sorted;
-  });
-}
+const schemaField = (schema: JsonSchema | undefined): string =>
+  schema === undefined ? '' : canonicalJson(schema);

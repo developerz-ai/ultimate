@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import type { ManifestSources } from './build';
 import { buildManifest } from './build';
+import { diffManifest } from './diff';
 import { manifestJson, verifyBuildId } from './emit';
-import type { Manifest } from './schema';
+import type { ActionFact, JsonValue, Manifest } from './schema';
 import { isCompatible, isManifest, MANIFEST_VERSION } from './schema';
 
 const sources: ManifestSources = {
@@ -305,5 +306,47 @@ describe('every collection is sorted by its own key', () => {
       errorCodes: [...(pairs.errorCodes ?? [])].reverse(),
     };
     expect(manifestJson(buildManifest(reversed))).toBe(manifestJson(buildManifest(pairs)));
+  });
+});
+
+/**
+ * `buildId` and the contract diff are both taken over ONE serialisation, and that serialisation
+ * must be injective or the gate's answer is "no change" for a change that shipped. `JSON.stringify`
+ * is not: it spells `-0` as `0`, every non-finite number as `null`, and a `Date` as whatever
+ * `toJSON` makes of it — four distinct declarations reduced to two strings.
+ */
+describe('unit · the manifest hash is injective, because the gate reads its verdict', () => {
+  // `JsonValue` is the published shape, and the DEFAULT is the value a client is told to expect
+  // when it sends nothing — so two spellings of it are two contracts, whatever a JSON document
+  // can write down.
+  const withDefault = (fallback: JsonValue): ManifestSources => {
+    const action: ActionFact = {
+      name: 'setBalance',
+      input: { type: 'object', properties: { amount: { type: 'number', default: fallback } } },
+      output: { ok: 'boolean' },
+      policy: null,
+      permissions: [],
+      cacheInvalidates: [],
+      mcp: { expose: true },
+    };
+    return { app: { name: 'acme', version: '1.4.2' }, actions: [action] };
+  };
+
+  test('two contracts differing only by -0 vs 0 in a default hash differently', () => {
+    const zero = buildManifest(withDefault(0));
+    const negativeZero = buildManifest(withDefault(-0));
+    expect(negativeZero.buildId).not.toBe(zero.buildId);
+  });
+
+  test('the diff reports a default that moved from 0 to -0', () => {
+    const diff = diffManifest(buildManifest(withDefault(0)), buildManifest(withDefault(-0)));
+    expect(diff.changes.map((change) => change.path)).toContain('actions.setBalance.input');
+  });
+
+  test('a non-finite default is not folded onto null, and neither is the other one', () => {
+    const nan = buildManifest(withDefault(Number.NaN)).buildId;
+    const nul = buildManifest(withDefault(null)).buildId;
+    const infinity = buildManifest(withDefault(Number.POSITIVE_INFINITY)).buildId;
+    expect(new Set([nan, nul, infinity]).size).toBe(3);
   });
 });
