@@ -70,8 +70,19 @@ export { derivePath, toKebabCase } from './naming';
  */
 export type { Page, PaginateArgs } from './pagination';
 export type { QueryPolicy, QuerySubject, QuerySurface } from './policy-gate';
-/** `policyCapability` is the display label; `policyPermissions` is what a report MATCHES on. */
-export { actorOf, guard, policyCapability, policyPermissions } from './policy-gate';
+/**
+ * `policyCapability` is the display label; `policyPermissions` is what a report MATCHES on.
+ * `admitsAnonymous` is `@ultimat3/policy`'s, re-exported here beside them: it is what
+ * `toQueryRoute` derives `meta.auth` from, so a plain `route` sets that field from the same walk
+ * rather than re-reading the root combinator.
+ */
+export {
+  actorOf,
+  admitsAnonymous,
+  guard,
+  policyCapability,
+  policyPermissions,
+} from './policy-gate';
 export type {
   AnyQuery,
   Query,

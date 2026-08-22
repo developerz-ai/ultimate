@@ -55,8 +55,8 @@ describe("a 'shared' declaration over a process store is refused at boot", () =>
       scope: 'shared',
       windowMs: inner.windowMs,
       reserve: (key, hash) => inner.reserve(key, hash),
-      settle: (key, value) => inner.settle(key, value),
-      fail: (key, failure) => inner.fail(key, failure),
+      settle: (key, value, id) => inner.settle(key, value, id),
+      fail: (key, failure, id) => inner.fail(key, failure, id),
       release: (key) => inner.release(key),
       get: (key) => inner.get(key),
     };
@@ -77,7 +77,7 @@ describe('the memory store is bounded and swept', () => {
     const store = new MemoryIdempotencyStore({ windowMs: 5_000, now: () => now });
     const first = await store.reserve('k', 'hash-a');
     expect(first.created).toBe(true);
-    await store.settle('k', 'v');
+    await store.settle('k', 'v', first.record.id);
 
     // Inside the window: the same key replays.
     expect((await store.reserve('k', 'hash-a')).created).toBe(false);
@@ -92,8 +92,8 @@ describe('the memory store is bounded and swept', () => {
   test('the cap holds under a flood of distinct keys', async () => {
     const store = new MemoryIdempotencyStore({ maxKeys: 100 });
     for (let i = 0; i < 5_000; i += 1) {
-      await store.reserve(`k${i}`, 'hash');
-      await store.settle(`k${i}`, i);
+      const { record } = await store.reserve(`k${i}`, 'hash');
+      await store.settle(`k${i}`, i, record.id);
     }
     expect(store.size).toBeLessThanOrEqual(100);
   });
@@ -103,8 +103,8 @@ describe('the memory store is bounded and swept', () => {
     // Reserved and never settled: dropping this one is what would let a concurrent duplicate run.
     await store.reserve('in-flight', 'hash');
     for (let i = 0; i < 500; i += 1) {
-      await store.reserve(`k${i}`, 'hash');
-      await store.settle(`k${i}`, i);
+      const { record } = await store.reserve(`k${i}`, 'hash');
+      await store.settle(`k${i}`, i, record.id);
     }
     expect((await store.get('in-flight'))?.status).toBe('in-flight');
   });

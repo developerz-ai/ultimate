@@ -4,8 +4,8 @@
 // predicate — so it may load the participants row the synchronous rule needs, which makes tier 1
 // the one realtime surface in this app that can enforce chat authorization end to end today.
 
-import type { ChannelHub, Topic, TopicGuard } from '@ultimat3/realtime';
-import { topic } from '@ultimat3/realtime';
+import type { ChannelHub, Topic, TopicGuard } from '@ultimat3/realtime/server';
+import { topic } from '@ultimat3/realtime/server';
 import { isParticipant } from './policy';
 import * as repo from './repo';
 

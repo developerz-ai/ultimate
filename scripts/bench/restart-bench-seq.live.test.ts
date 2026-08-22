@@ -12,7 +12,7 @@ import {
   RingChangeBuffer,
   SocketRegistry,
   type SyncNode,
-} from '@ultimat3/realtime';
+} from '@ultimat3/realtime/server';
 import { type ClientStats, newClientStats, runClient } from './restart-bench-client';
 import { summarizeSeq } from './restart-bench-seq';
 import { BENCH_TOPIC } from './restart-bench-shared';

@@ -16,8 +16,8 @@ import {
   selectMailDriver,
   setMailDriver,
 } from '@ultimat3/mail';
-import type { Transport, TransportSelection } from '@ultimat3/realtime';
-import { selectTransport } from '@ultimat3/realtime';
+import type { Transport, TransportSelection } from '@ultimat3/realtime/server';
+import { selectTransport } from '@ultimat3/realtime/server';
 import type { Storage } from '@ultimat3/storage';
 import { defineStorage, localDriver, s3Driver, usesDevStorageSecret } from '@ultimat3/storage';
 import { startCacheTiers } from './dev-cache';

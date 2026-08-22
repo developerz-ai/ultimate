@@ -12,7 +12,7 @@ import {
   defineHttpConfig,
   UltimateRequest,
 } from '@ultimat3/http';
-import type { SyncAuthenticator, SyncGrant } from '@ultimat3/realtime';
+import type { SyncAuthenticator, SyncGrant } from '@ultimat3/realtime/server';
 
 /**
  * The upgrade request, dressed as the request an `Authenticator` reads.

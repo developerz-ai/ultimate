@@ -8,6 +8,19 @@
 // point keeps the ONE import path every caller already uses.
 
 export { SQL_JOBS_TABLE, SQL_OUTBOX_TABLE } from './driver-pg-ddl';
+// The whole-`x_jobs`-row reads, split off at this file's size ceiling and re-exported for the
+// same reason the DDL is. `JOB_ROW_COLUMNS` is imported as a value because `SQL_CANCEL` also
+// returns a whole row and must project it identically — two spellings of one row shape is how
+// one of them goes back to `returning *`.
+export {
+  JOB_ROW_COLUMNS,
+  SQL_JOB_DEAD_LETTERS,
+  SQL_JOB_GET,
+  SQL_JOB_LIST,
+  SQL_JOB_REQUEUE,
+} from './driver-pg-jobs-sql';
+
+import { JOB_ROW_COLUMNS } from './driver-pg-jobs-sql';
 
 export const SQL_ENQUEUE = `
 insert into x_jobs
@@ -112,7 +125,7 @@ update x_jobs
    set state = 'cancelled', visible_at = null, claimed_by = null,
        last_error = coalesce($2, last_error), updated_at = now()
  where id = $1 and state <> 'done'
-returning *
+returning ${JOB_ROW_COLUMNS}
 `.trim();
 
 /**
@@ -368,6 +381,22 @@ select run_id, name, status, output, attempts, error,
        (extract(epoch from wake_at)      * 1000)::bigint as wake_at,
        event, correlation_key
   from x_job_steps where run_id = $1 and name = $2
+`.trim();
+
+/**
+ * `list`'s projection is `SQL_STEP_GET`'s, minus the name predicate. It exists as its own constant
+ * because `select *` was what `list` issued: a client that decodes `timestamptz` as text — most of
+ * them, without a type map — handed `toStepRecord` a date string, `Number()` made it `NaN`, and
+ * `x jobs show` printed one per step. Every other statement in this file asks Postgres to do the
+ * conversion; this is that rule applied to the one statement that had opted out of it.
+ */
+export const SQL_STEP_LIST = `
+select run_id, name, status, output, attempts, error,
+       (extract(epoch from started_at)   * 1000)::bigint as started_at,
+       (extract(epoch from completed_at) * 1000)::bigint as completed_at,
+       (extract(epoch from wake_at)      * 1000)::bigint as wake_at,
+       event, correlation_key
+  from x_job_steps where run_id = $1 order by started_at
 `.trim();
 
 export const SQL_STEP_PUT = `

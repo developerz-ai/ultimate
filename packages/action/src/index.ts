@@ -82,6 +82,7 @@ export {
   IdempotencyKeyInvalidError,
   IdempotencyNotSharedError,
   IdempotencyReplayedFailureError,
+  IdempotencyStatusUnknownError,
   InputInvalidError,
   OutputInvalidError,
   RemoteActionError,
@@ -116,7 +117,9 @@ export {
   configureIdempotency,
   DEFAULT_IDEMPOTENCY_CONFIG,
   getIdempotencyStore,
+  IDEMPOTENCY_STATUSES,
   idempotencyConfig,
+  isIdempotencyStatus,
   resetIdempotency,
   setIdempotencyStore,
   withIdempotency,
@@ -174,8 +177,19 @@ export { derivePath, inputSchemaName, outputSchemaName, pluralize } from './nami
 export type { BuildOpenApiOptions, OpenApiDocument, OpenApiInfo } from './openapi';
 export { buildOpenApi, serializeOpenApi } from './openapi';
 export type { ActionPolicy, PolicySubject, Surface } from './policy-gate';
-/** `policyCapability` is the display label; `policyPermissions` is what a report MATCHES on. */
-export { actorOf, guard, policyCapability, policyPermissions } from './policy-gate';
+/**
+ * `policyCapability` is the display label; `policyPermissions` is what a report MATCHES on.
+ * `admitsAnonymous` is `@ultimat3/policy`'s, re-exported here beside them: it is what `toRoute`
+ * derives `meta.auth` from, so a plain `route` sets that field from the same walk rather than
+ * re-reading the root combinator.
+ */
+export {
+  actorOf,
+  admitsAnonymous,
+  guard,
+  policyCapability,
+  policyPermissions,
+} from './policy-gate';
 export {
   describeActions,
   getAction,

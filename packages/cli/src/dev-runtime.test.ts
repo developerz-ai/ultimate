@@ -13,11 +13,8 @@ import { UltimateError } from '@ultimat3/core';
 import { jobDriver } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
 import { createMemoryDriver, tryMailDriver } from '@ultimat3/mail';
-import {
-  DEFAULT_PRESENCE_TTL_MS,
-  selectTransport,
-  TransportUnavailableError,
-} from '@ultimat3/realtime';
+import { TransportUnavailableError } from '@ultimat3/realtime';
+import { DEFAULT_PRESENCE_TTL_MS, selectTransport } from '@ultimat3/realtime/server';
 import {
   cdnLabel,
   describeCdn,

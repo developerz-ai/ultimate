@@ -8,7 +8,7 @@ import { createContext, isUltimateError, runWithContext, userActor } from '@ulti
 import type { HttpConfig } from '@ultimat3/http';
 import { createServer, defineHttpConfig, setRedirect } from '@ultimat3/http';
 import type { Actor as PolicyActor } from '@ultimat3/policy';
-import { allow, can } from '@ultimat3/policy';
+import { allow, and, can, or } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { AnyAction } from './action';
 import { action } from './action';
@@ -111,10 +111,48 @@ describe('an action route over the pipeline', () => {
     const evaluations = { count: 0 };
     const response = await publish(serve(publisher('u1', evaluations), null));
 
-    // The `auth` stage answers this one: `meta.auth` is 'required' for any non-`allow` policy.
-    // Authentication, not authorization — which is why the count stays at zero.
+    // The `auth` stage answers this one: `meta.auth` is 'required' when no branch of the policy
+    // admits an anonymous caller. Authentication, not authorization — hence the count of zero.
     expect(response.status).toBe(401);
     expect(evaluations.count).toBe(0);
+  });
+});
+
+/**
+ * `meta.auth` used to read the ROOT combinator — `policy.kind === 'allow'` — so a policy with a
+ * public BRANCH was 401'd by the `auth` stage before `invoke` ever ran, while the MCP tool and the
+ * job handle allowed the same caller through the same policy object. One policy, a different
+ * answer per surface, which is the thing `enforcedBy: 'handler'` exists to prevent.
+ */
+describe('an action whose policy has a public branch', () => {
+  const openOrEditor = () =>
+    action({
+      input: Input,
+      output: Output,
+      policy: or(allow('public'), can<Parsed, Draft>('post:publish')),
+      handle: ({ input }) => ({ id: input.postId, published: true }),
+    }).named('publishPost');
+
+  test('is reachable by an anonymous caller, because a branch admits one', async () => {
+    const response = await publish(serve(openOrEditor(), null));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ id: POST_ID, published: true });
+  });
+
+  test('projects auth: public, so the stage stands down and `invoke` decides', () => {
+    expect(toRoute(openOrEditor()).meta.auth).toBe('public');
+  });
+
+  test('a policy whose every branch needs a grant still projects auth: required', () => {
+    const guarded = action({
+      input: Input,
+      output: Output,
+      policy: and(allow('public'), can<Parsed, Draft>('post:publish')),
+      handle: ({ input }) => ({ id: input.postId, published: true }),
+    }).named('publishPost');
+
+    expect(toRoute(guarded).meta.auth).toBe('required');
   });
 });
 

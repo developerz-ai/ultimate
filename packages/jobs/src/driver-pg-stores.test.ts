@@ -15,6 +15,7 @@ import {
   SQL_LEASE_RENEW,
   SQL_STATS,
   SQL_STEP_GET,
+  SQL_STEP_LIST,
   SQL_STEP_PUT,
 } from './driver-pg-sql';
 import { DriverUnavailableError } from './errors';
@@ -48,6 +49,56 @@ function executorFor(answers: Readonly<Record<string, readonly unknown[]>> = {})
 }
 
 const driverWith = (executor: PgExecutor) => createPgDriver({ executor });
+
+/**
+ * A driver that decodes `timestamptz` as TEXT — which is what a client without a type map does,
+ * and what every statement here is written to survive by asking Postgres for epoch ms instead. It
+ * answers per statement rather than per fixture: a projection that stops asking gets the text back
+ * and `Number()` turns it into `NaN`, which is the whole failure mode.
+ */
+function textDecodingExecutor(): PgExecutor & { readonly calls: Call[] } {
+  const calls: Call[] = [];
+  return {
+    calls,
+    query<R>(sql: string, params: readonly unknown[]): Promise<readonly R[]> {
+      calls.push({ sql, params });
+      const epoch = sql.includes('extract(epoch from started_at)');
+      return Promise.resolve([
+        {
+          run_id: 'run-1',
+          name: 'charge',
+          status: 'completed',
+          output: null,
+          started_at: epoch ? '1767225600000' : '2026-01-01 00:00:00+00',
+          completed_at: epoch ? '1767225601000' : '2026-01-01 00:00:01+00',
+          wake_at: null,
+          event: null,
+          correlation_key: null,
+          attempts: 1,
+          error: null,
+        },
+      ] as unknown as readonly R[]);
+    },
+  };
+}
+
+/** `textDecodingExecutor`'s question, asked of the `x_jobs` projection instead. */
+function textDecodingJobExecutor(): PgExecutor {
+  return {
+    query<R>(sql: string): Promise<readonly R[]> {
+      const epoch = sql.includes('extract(epoch from run_at)');
+      return Promise.resolve([
+        {
+          ...row(),
+          run_at: epoch ? '1767225600000' : '2026-01-01 00:00:00+00',
+          visible_at: null,
+          created_at: epoch ? '1767225600000' : '2026-01-01 00:00:00+00',
+          updated_at: epoch ? '1767225601000' : '2026-01-01 00:00:01+00',
+        },
+      ] as unknown as readonly R[]);
+    },
+  };
+}
 
 describe('the pg step store', () => {
   test('a step nobody has written yet is undefined, which is what makes step.run execute', async () => {
@@ -127,6 +178,18 @@ describe('the pg step store', () => {
       attempts: 1,
     });
     expect(executor.calls[0]?.params[3]).toBe('null');
+  });
+
+  test('list projects epoch ms, so a text-decoding executor yields a number and not NaN', async () => {
+    // The defect this pins: `list` was `select *`, so `started_at` arrived as the raw
+    // `timestamptz` text every sibling statement asks Postgres to convert. `Number(...)` of it is
+    // `NaN`, and `x jobs show` printed one per step. The fake answers what Postgres would for the
+    // statement ACTUALLY issued, which is the only way a projection bug is visible to a fake.
+    const executor = textDecodingExecutor();
+    const [step] = (await driverWith(executor).steps?.list('run-1')) ?? [];
+    expect(step?.startedAt).toBe(1767225600000);
+    expect(step?.completedAt).toBe(1767225601000);
+    expect(executor.calls[0]?.sql).toBe(SQL_STEP_LIST);
   });
 
   test('list reads one run in start order, and del/clear scope by run', async () => {
@@ -230,6 +293,26 @@ describe('the pg driver`s introspection', () => {
     const executor = executorFor();
     expect(await driverWith(executor).introspect?.job('job-404')).toBeUndefined();
     expect(executor.calls[0]?.params).toEqual(['job-404']);
+  });
+
+  test('every whole-row read projects epoch ms, so a text-decoding client never yields NaN', async () => {
+    // Four of these were `select *` / `returning *`. `x jobs ls` and `x jobs show` then printed
+    // `NaN` for `runAt`, `createdAt` and `updatedAt` against any executor whose client decodes
+    // `timestamptz` as text — which is every client without a type map, and `PgExecutor` accepts
+    // all of them. `SQL_CLAIM` had always asked Postgres for the conversion; these had not.
+    const introspect = driverWith(textDecodingJobExecutor()).introspect;
+    const reads = [
+      await introspect?.job('job-1'),
+      (await introspect?.list())?.[0],
+      (await introspect?.deadLetters())?.[0],
+      await introspect?.requeue('job-1'),
+      await introspect?.cancel?.('job-1'),
+    ];
+    for (const record of reads) {
+      expect(record?.runAt).toBe(1767225600000);
+      expect(record?.createdAt).toBe(1767225600000);
+      expect(record?.updatedAt).toBe(1767225601000);
+    }
   });
 
   test('an unfiltered list passes three nulls and the default limit', async () => {

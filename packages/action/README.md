@@ -267,7 +267,16 @@ import {
   setIdempotencyStore,
 } from '@ultimat3/action';
 
-setIdempotencyStore(postgresIdempotencyStore({ executor: Bun.sql }));
+// NOT `executor: Bun.sql` — `Bun.sql.query` is `undefined` `As of 2026-08` (it is a tagged
+// template whose positional form is `unsafe`), so that line compiles and throws on the first
+// reservation.
+// The framework boot installs this store for you; reach for it by hand only from a host that
+// boots the framework itself, and wrap the client that host already opened.
+setIdempotencyStore(
+  postgresIdempotencyStore({
+    executor: { query: (text, values) => client.query({ text, values }) },
+  }),
+);
 configureIdempotency({ scope: 'shared' });
 ```
 
@@ -295,6 +304,12 @@ const outcome = await withIdempotency(
   () => refund(input),
 );
 ```
+
+`settle` and `fail` take the reservation's own id — `outcome`'s reservation, never the key alone.
+Both stores fence on it AND on `in-flight` `As of 2026-08`, the way `@ultimat3/jobs`' `SQL_ACK` fences on
+`id = $1 and state = 'running'`: a reservation whose window lapsed is reclaimed by the next caller,
+so a straggler from the first attempt satisfied a status-only fence exactly and overwrote a live
+reservation.
 
 A `query` has none and never will: a read has nothing to be idempotent about.
 
@@ -447,8 +462,9 @@ never a pass — the assertion says which code got in the way and names `input:`
 | `X_INPUT_INVALID` | input failed the Standard Schema | `x actions describe <name> --json` |
 | `X_IDEMPOTENCY_CONFLICT` | key reused with a new payload / still in flight | new key, or retry later |
 | `X_IDEMPOTENCY_KEY_INVALID` | `Idempotency-Key:` sent blank (`Headers.get()` answers `''`, not `null`) or past 255 characters | send one unique value per request, or omit the header |
-| `X_IDEMPOTENCY_NOT_SHARED` | `configureIdempotency({ scope: 'shared' })` over a per-process (or scope-less) store | install `postgresIdempotencyStore({ executor: Bun.sql })` at boot |
+| `X_IDEMPOTENCY_NOT_SHARED` | `configureIdempotency({ scope: 'shared' })` over a per-process (or scope-less) store | install `postgresIdempotencyStore({ executor })` at boot |
 | `X_IDEMPOTENCY_REPLAYED_FAILURE` | a retried key replays a first attempt that failed and carried no framework code of its own | read the first attempt, then send a fresh key |
+| `X_IDEMPOTENCY_STATUS_UNKNOWN` | `x_idempotency.status` holds a word this build has no branch for — written by a newer deploy | finish the rollout onto the build that writes it, then reconcile those requests — never DELETE the rows, which frees the key to run an already-committed action a second time |
 | `X_CONTRACT_DRIFT` | client/server build skew, missing spec entry | reload / `x verify --contract` |
 | `X_RPC_FAILED` | non-`problem+json` failure, or a body naming no `X_` code | check the gateway |
 | `X_ACTION_UNREGISTERED` | projected before `registerActions()` ran | register at boot |

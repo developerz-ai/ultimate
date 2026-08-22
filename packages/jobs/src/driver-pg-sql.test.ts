@@ -12,6 +12,23 @@
 import { describe, expect, test } from 'bun:test';
 import { SQL_JOBS_TABLE, SQL_OUTBOX_TABLE } from './driver-pg-sql';
 
+/** Prose quotes both forms on purpose — a scan that reads comments reports its own explanation. */
+const withoutComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^[ \t]*\/\/.*$/gm, ' ');
+
+/**
+ * Every production file in this package, DISCOVERED. A hand-kept list is a guard a new file opts
+ * out of by existing — `driver-pg-ddl.ts` was already missing from the one this replaces — so the
+ * scan reads the directory instead and a source added tomorrow is covered the day it lands.
+ */
+const pgSources = async (): Promise<readonly string[]> => {
+  const names: string[] = [];
+  for await (const name of new Bun.Glob('*.ts').scan({ cwd: import.meta.dir, absolute: false })) {
+    if (!name.endsWith('.test.ts')) names.push(name);
+  }
+  return names.sort();
+};
+
 const statements = SQL_JOBS_TABLE.split(';')
   .map((statement) => statement.trim())
   .filter((statement) => statement.length > 0);
@@ -82,5 +99,31 @@ describe('the queue DDL', () => {
       if (line.trim().length === 0) continue;
       expect(SQL_JOBS_TABLE).toContain(line.trim());
     }
+  });
+});
+
+describe("the pg driver's reads", () => {
+  // `PgExecutor` is an injected seam over any client that speaks `(text, values)`, and a client
+  // with no type map decodes `timestamptz` as TEXT. `toJobRecord`/`toStepRecord` then read
+  // `Number('2026-01-01 00:00:00+00')` — `NaN` for every epoch field, printed by `x jobs ls`,
+  // `x jobs show` and `x jobs cancel`. Six statements were `select *`/`returning *` and shipped
+  // that way; asking Postgres for epoch ms is what makes the decoding the statement's business.
+  test('no statement returns a whole row, so no epoch column depends on the client type map', async () => {
+    const sources = await pgSources();
+    // The discovery itself can fail — a glob that matches nothing passes every assertion below
+    // and reports a guard that ran over no files as green.
+    expect(sources).toContain('driver-pg-jobs-sql.ts');
+    expect(sources).toContain('driver-pg-ddl.ts');
+
+    const offenders: string[] = [];
+    for (const name of sources) {
+      const source = withoutComments(await Bun.file(`${import.meta.dir}/${name}`).text());
+      // Case-insensitive: Postgres reads `SELECT *` and `select *` alike, so a guard that reads
+      // only one of them is a spelling away from missing the statement it exists to catch.
+      for (const hit of source.matchAll(/\b(select|returning)\s+\*/gi)) {
+        offenders.push(`${name}: ${hit[0]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

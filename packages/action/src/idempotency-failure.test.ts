@@ -96,7 +96,7 @@ describe('a post-commit throw does not release the reservation', () => {
       scope: 'process',
       reserve: (key, hash) => inner.reserve(key, hash),
       settle: () => Promise.reject(new Error('store is down')),
-      fail: (key, failure: IdempotencyFailure) => inner.fail(key, failure),
+      fail: (key, failure: IdempotencyFailure, id) => inner.fail(key, failure, id),
       release: (key) => inner.release(key),
       get: (key) => inner.get(key),
     };
@@ -117,7 +117,7 @@ describe('a post-commit throw does not release the reservation', () => {
     const store: IdempotencyStore = {
       scope: 'process',
       reserve: (key, hash) => inner.reserve(key, hash),
-      settle: (key, value) => inner.settle(key, value),
+      settle: (key, value, id) => inner.settle(key, value, id),
       release: (key) => inner.release(key),
       get: (key) => inner.get(key),
     };

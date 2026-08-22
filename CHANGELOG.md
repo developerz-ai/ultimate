@@ -8,6 +8,89 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING — `@ultimat3/realtime` ships two entries: `.` (client) and `./server`.** One barrel
+  carried `useLive` beside `openNatsClient`, so `bun build --target=browser` on an entry importing
+  only `useLive` failed with *"Browser build cannot require() Node.js builtin: `stream/web`"*, out of
+  `nats`. An island calling the hook `wiki/Realtime.md` promises could not be bundled at all.
+
+  ```diff
+  - import { ChannelHub, createSyncNode, LiveQueryRegistry } from '@ultimat3/realtime';
+  + import { ChannelHub, createSyncNode, LiveQueryRegistry } from '@ultimat3/realtime/server';
+  ```
+
+  One line: a server import changes its specifier and nothing else. Client names are unchanged. A
+  file using both now needs two statements — three files in this repo did. The two barrels are
+  **disjoint**: `./server` re-exports no client name, so which half a symbol lives in is a
+  mechanical fact a test can check rather than a convention.
+
+  Measured, and worth stating because it corrects the reason: the `sideEffects` array **alone** is
+  what fixes the build — with it declared, Bun tree-shakes `nats` out even from the single barrel.
+  The split is what makes "the client entry cannot reach the bus" a *contract* instead of the
+  bundler's discretion, since a namespace import or an `export *` defeats tree-shaking. Both landed;
+  each has its own test.
+
+- **BREAKING — `IdempotencyStore.settle` and `fail` take the reservation id.**
+
+  ```diff
+  - await store.settle(key, value);
+  + await store.settle(key, value, reservation.record.id);
+  ```
+
+  Both statements now fence on **id and state**, copying `SQL_ACK`. Without the id a straggler from
+  a slow first attempt overwrote a *replacement* reservation that was still in flight — and the
+  `fail` half was worse: a straggler's failure marked a live replacement `failed`, so the
+  replacement's own settle was then fenced out.
+
+  A store implementing the old two-parameter shape **still compiles** — a shorter method is
+  assignable — and silently loses the fence. If you ship your own store, add the parameter.
+
+- **BREAKING — `SQL_CANCEL` projects its columns instead of `returning *`.** It fed `toJobRecord`,
+  which does `Number(row.run_at)`, so against a text-decoding `PgExecutor` every timestamp came back
+  `NaN`.
+
+### Fixed
+
+- **Five more `select *` / `returning *` statements in the jobs pg driver returned `NaN` timestamps.**
+  The audit named one (`pgStepStore.list`); `introspect.job`, `introspect.list`,
+  `introspect.deadLetters`, `introspect.requeue` and `SQL_CANCEL` have the identical defect and all
+  feed `toJobRecord`. So `x jobs ls`, `x jobs show` and `x jobs cancel` printed `NaN` for `runAt`,
+  `createdAt` and `updatedAt` against any injected text-decoding executor. `SQL_CLAIM` had projected
+  epoch ms all along, so the driver disagreed with itself. A source scan now keeps whole-row reads
+  out.
+
+- **A worker's heartbeat outlived its run when setup threw.** `createRunSignal` and the fleet-slot
+  renewal ran after the heartbeat started, outside the `try` — so a throw from either left the
+  interval live. Observed: the beat count still rose during a 60 ms sleep after the throw.
+
+- **The offline queue re-sent mutations that were acked mid-drain.** `ack()` during a pass did not
+  make the pass notice, so the mutation went out again and `DrainReport.sent` over-reported.
+  Observed `['like:p1','like:p2','like:p3']` where `['like:p1','like:p3']` was correct. Fixed by
+  re-checking membership at the top of each iteration rather than by bumping the epoch — an ack
+  arriving during a drain is the ordinary case, and bumping would abort every pass a prompt server
+  answers. The membership check also covers `clear()`, which the audit did not name.
+
+- **An idempotency record with an unknown status was reported as a successful replay.**
+  `row.status as IdempotencyStatus` fell past every branch of `withIdempotency`, which then answered
+  `{ value: null, replayed: true }` — "this already ran, here is its result" — for a record written
+  by a build the reader does not understand, which on a rolling deploy is the normal case. Now
+  narrowed and refused with `X_IDEMPOTENCY_STATUS_UNKNOWN`. `IdempotencyStatus` is derived from the
+  status list instead of restated beside it.
+
+- **`or(allow('public'), can('x:y'))` answered 401 over HTTP and allowed the call over MCP and job
+  surfaces.** `auth` was read off the root combinator alone. It is now derived by walking the policy
+  tree, which is exact rather than heuristic: with no actor, `can()` short-circuits before its
+  predicate and `allow()`/`deny()` ignore their arguments, so the tree alone decides.
+
+- **`sample-input` built its sample with a plain object literal.** A required field named
+  `__proto__` — reachable through a computed key or a provider IR parsed from JSON — was dropped
+  from the sample and replaced the sample's prototype. Same class as the `__proto__` readiness-check
+  bug fixed in #288.
+
+- **`postgresIdempotencyStore` hardcoded `Date.now()`** for `createdAt` while the memory store took
+  an injected clock.
+
 ### Fixed
 
 - **`arrayOf(json(…))` and `arrayOf(bytes())` were legal and lost the data.** `arrayElement`

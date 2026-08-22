@@ -44,23 +44,45 @@ frame handler is unchanged between rungs.
 
 `local` must be pure — no I/O, no `Date.now()`, no `Math.random()` — because rebase replays it.
 
+## Two entries, and which one an island may import
+
+`As of 2026-08`, `@ultimat3/realtime` is the **client** half — the hooks, the identity map, the offline queue, the
+wire and the reconnect vocabulary. `@ultimat3/realtime/server` is the bus, the Postgres replication
+path and the sync node. A name lives in exactly one of them; the `Entry` column below says which.
+
+The split is not cosmetic. `nats` `require()`s `stream/web`, so one barrel carrying `openNatsClient`
+beside `useLive` made the browser island this package promises **unbuildable** —
+`Browser build cannot require() Node.js builtin: "stream/web"`. `packages/cli/src/realtime-browser-barrel.test.ts`
+bundles an entry importing only `useLive` for `target: 'browser'` and fails the build if either
+half reaches the other; `barrel-split.test.ts` fails if one name is exported from both.
+
+Migrating from 7.x: an import of a **server** name changes its specifier and nothing else.
+
+```
+- import { ChannelHub, createSyncNode, LiveQueryRegistry } from '@ultimat3/realtime';
++ import { ChannelHub, createSyncNode, LiveQueryRegistry } from '@ultimat3/realtime/server';
+```
+
+Client names — `useLive`, `liveHookFor`, `LiveClient`, `OfflineQueue`, `RebaseLog`, `IdentityMap`,
+`encode`/`decode`, every `X_*` error class — are unchanged.
+
 ## Public API
 
-| Concern | Export |
-|---|---|
-| tier 1 | `topic`, `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry` |
-| tier 2 | `LiveQueryRegistry`, `InMemoryChangeFeed`, `PgLogicalReplicationFeed`, `selectChangeFeed`, `createReplicator`, `PgAdvisoryLock`, `matcherFor` |
-| replication | `parsePgUrl`, `bunPgStream`, `PgOutputDecoder`, `entityRow`, `changeLsn`, `commitPositionOf` |
-| fanout | `Transport`, `InProcessTransport`, `NatsTransport`, `selectTransport`, `subjectMatches` |
-| the bus, behind `NatsTransport` | the port — `NatsClient`, `NatsMessage`, `NatsSubscription`, `NatsConnect`, `NatsTarget`, `parseNatsUrl` — plus `openNatsClient` (the `nats` adapter), `NatsKvSet`, `ensureKvBucket`, `kvGet`/`kvLast`/`kvWrite`, `assertBucket`, `encodeToken`/`decodeToken`, and `FakeNatsBroker`/`fakeNatsConnect` for tests |
-| reconnect | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `RingChangeBuffer`, `backoffDelay`, `Scheduler`, `timeoutScheduler`, `drainPlan`, `AcceptBudget` |
-| the client store | `IdentityMap` — one row value per `(entity, id)` — plus `RowWindows`, `rowKey`, `privateScope`, `applyPatches`/`orderAfterPatches` |
-| tier 3 | `MemoryLocalStore`, `createOpfsLocalStore`, `OfflineQueue`, `RebaseLog`, `reconcile`, `custom` |
-| wire | `PROTOCOL_VERSION`, `encode`, `decode`, `Frame` |
-| halves | `LiveClient` (client), `createSyncNode` / `listenSyncNode` (`sync` role) |
-| a socket's identity | `SyncAuthenticator`, `SyncGrant`, `GrantBook`, `sweepGrants`, `DEFAULT_REAUTH_INTERVAL_MS` |
-| hooks | `setLiveClient`, `useLive`, `useConnection`, `useMutation`, `useMutationQueue` |
-| the typed projection | `liveHookFor` — one query bound to one named hook |
+| Concern | Entry | Export |
+|---|---|---|
+| tier 1 | `./server` | `topic`, `ChannelHub`, `PresenceRegistry`, `SyncSocket`, `SocketRegistry` |
+| tier 2 | `./server` | `LiveQueryRegistry`, `InMemoryChangeFeed`, `PgLogicalReplicationFeed`, `selectChangeFeed`, `createReplicator`, `PgAdvisoryLock`, `matcherFor` |
+| replication | `./server` | `parsePgUrl`, `bunPgStream`, `PgOutputDecoder`, `entityRow`, `changeLsn`, `commitPositionOf` |
+| fanout | `./server` | `Transport`, `InProcessTransport`, `NatsTransport`, `selectTransport`, `subjectMatches` |
+| the bus, behind `NatsTransport` | `./server` | the port — `NatsClient`, `NatsMessage`, `NatsSubscription`, `NatsConnect`, `NatsTarget`, `parseNatsUrl` — plus `openNatsClient` (the `nats` adapter), `NatsKvSet`, `ensureKvBucket`, `kvGet`/`kvLast`/`kvWrite`, `assertBucket`, `encodeToken`/`decodeToken`, and `FakeNatsBroker`/`fakeNatsConnect` for tests |
+| reconnect | both | `LiveCursor`, `resumeFrom`, `shouldResnapshot`, `defaultReconnectBudget`, `backoffDelay`, `Scheduler`, `timeoutScheduler` on `.`; `RingChangeBuffer`, `drainPlan`, `AcceptBudget`, `reconnectFrame` on `./server` — the node's half of the reconnect is the node's |
+| the client store | `.` | `IdentityMap` — one row value per `(entity, id)` — plus `RowWindows`, `rowKey`, `privateScope`, `applyPatches`/`orderAfterPatches` |
+| tier 3 | `.` | `MemoryLocalStore`, `createOpfsLocalStore`, `OfflineQueue`, `RebaseLog`, `reconcile`, `custom` |
+| wire | `.` | `PROTOCOL_VERSION`, `encode`, `decode`, `Frame` |
+| halves | both | `LiveClient` on `.`; `createSyncNode` / `listenSyncNode` (`sync` role) on `./server` |
+| a socket's identity | `./server` | `SyncAuthenticator`, `SyncGrant`, `GrantBook`, `sweepGrants`, `DEFAULT_REAUTH_INTERVAL_MS` |
+| hooks | `.` | `setLiveClient`, `useLive`, `useConnection`, `useMutation`, `useMutationQueue` |
+| the typed projection | `.` | `liveHookFor` — one query bound to one named hook |
 
 ## The four hooks
 

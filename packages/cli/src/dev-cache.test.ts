@@ -14,8 +14,8 @@ import {
 } from '@ultimat3/cache';
 import { createContext } from '@ultimat3/core';
 import { readThrough } from '@ultimat3/query';
-import type { Transport } from '@ultimat3/realtime';
-import { InProcessTransport } from '@ultimat3/realtime';
+import type { Transport } from '@ultimat3/realtime/server';
+import { InProcessTransport } from '@ultimat3/realtime/server';
 import { CACHE_INVALIDATE_SUBJECT, startCacheTiers } from './dev-cache';
 
 let release: (() => Promise<void>) | undefined;

@@ -217,6 +217,23 @@ export class OfflineQueue {
     await this.#persist();
   }
 
+  /**
+   * Re-asked at the top of every iteration, because `#sendable()` is a SNAPSHOT and the loop awaits
+   * a network `send` inside it. An `ack` landing mid-pass removes its entry from the queue, a
+   * `fail` marks it terminal and a `clear` drops all of them — and the pass, holding the snapshot,
+   * re-sent an intent the server had already settled AND counted it in `DrainReport.sent`, so the
+   * number a UI renders as "synced" was larger than the frames that left the tab.
+   *
+   * Deliberately NOT an `#epoch` bump in `ack`/`fail`: an ack arriving during a drain is the
+   * ordinary case — the server answers frame 1 while the pass is on frame 2 — and invalidating the
+   * pass would stop every drain against a server that answers promptly. The epoch means "the
+   * connection this pass was draining into is gone", which is one mutation's settlement away from
+   * nothing at all.
+   */
+  #stillSendable(mutation: QueuedMutation): boolean {
+    return mutation.status === 'pending' && this.#mutations.includes(mutation);
+  }
+
   /** Never sent on this connection. `inflight` is excluded: it is already on a socket. */
   #sendable(): readonly QueuedMutation[] {
     return this.#mutations
@@ -246,6 +263,9 @@ export class OfflineQueue {
           stoppedAt: mutation.key,
         };
       }
+      // Settled by the server, or dropped by `clear()`, since the snapshot was taken. Skipped
+      // rather than stopping the pass: nothing behind it moved, so the order invariant holds.
+      if (!this.#stillSendable(mutation)) continue;
       mutation.status = 'inflight';
       mutation.attempts += 1;
       try {

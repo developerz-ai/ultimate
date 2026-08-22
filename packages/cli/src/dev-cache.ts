@@ -17,7 +17,7 @@ import {
   resetTiers,
 } from '@ultimat3/cache';
 import { logger } from '@ultimat3/core';
-import type { Transport, TransportSubscription } from '@ultimat3/realtime';
+import type { Transport, TransportSubscription } from '@ultimat3/realtime/server';
 import type { Env } from './dev-services';
 
 /**

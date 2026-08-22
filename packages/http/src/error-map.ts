@@ -81,6 +81,12 @@ export const ERROR_STATUS = {
   // that attempt failed carrying no code at all: an unclassified throw whose commit state nobody
   // knows. That is the server's to explain, and it is worth reporting.
   X_IDEMPOTENCY_REPLAYED_FAILURE: 500,
+  // Same shape as the line above and 500 for the same reason: the store holds a record this
+  // build cannot turn into a result. Deliberately NOT 503 — a rolling deploy is the usual
+  // cause, so a retry may well reach a newer pod and succeed, but this code carries no
+  // `retry-after` and the two 503s above are the only ones that do. Telling a caller to come
+  // back without saying when is the load-shedding mistake, one layer up.
+  X_IDEMPOTENCY_STATUS_UNKNOWN: 500,
   // @ultimat3/auth — every one of these is reachable from a request: the OAuth route descriptors
   // are mounted by the app, and `authenticate` throws the session codes inside the pipeline. Without
   // a row each fell to 500, so a user pressing Cancel on a consent screen paged the on-call and a

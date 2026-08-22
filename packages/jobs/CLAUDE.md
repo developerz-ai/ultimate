@@ -567,6 +567,25 @@ Tier 3. The `job` + `task` primitives, durable steps, transactional outbox, queu
   The shed also wrote `last_error = 'limited: …'`, so `x jobs show` reported a failure for a job
   that never ran — it is a `jobs.worker.shed` log field now, and `worker.ts`'s one `shed()` is
   where both sheds go. `driver-parity.test.ts` pins which bucket each lands in, in both drivers.
+- **No read returns a WHOLE row, and `driver-pg-sql.test.ts` is what enforces it** (`As of
+  2026-08-22`). `PgExecutor` is an injected seam over any client that speaks `(text, values)`, and a
+  client with no type map decodes `timestamptz` as TEXT — so `toJobRecord`/`toStepRecord` read
+  `Number('2026-01-01 00:00:00+00')` and answered `NaN`. Six statements were `select *` /
+  `returning *` and shipped that way: `pgStepStore.list`, `introspect.job`, `introspect.list`,
+  `introspect.deadLetters`, `introspect.requeue` and `SQL_CANCEL`. Every one of them feeds a
+  surface an operator reads — `x jobs ls`, `x jobs show`, `x jobs cancel` — and `SQL_CLAIM` had
+  projected epoch ms all along, so the driver disagreed with itself. The guard is a scan of every
+  production file in this directory, DISCOVERED rather than listed and with comments stripped: a
+  `select *` anywhere in them, in either case, is a failing test rather than a review note. It
+  reads the directory because the hand-kept list it replaces had already missed one
+  (`driver-pg-ddl.ts`) — a registry a new SQL source opts out of by simply not joining it is a
+  guard with the shape of a rule and none of the force.
+- **A run's acquisitions are handed back even when the wiring throws.** `worker-run.ts` starts the
+  lease heartbeat first, so every line between it and the `try` can leak an interval renewing the
+  lease of a job that never ran, with nothing left holding a reference to stop it. `context()` was
+  moved ABOVE the heartbeat for that reason; `createRunSignal` and `fleetSlots.startRenewal` — the
+  second an injected seam whose production implementation reaches a lease store — are INSIDE the
+  `try`, with `undefined` meaning "never taken" and both handbacks idempotent.
 - Step results are persisted BEFORE the step returns. Keep it that way or replay breaks.
 - All time is epoch ms from an injected `Clock`, read via `nowMs()` in `clock.ts`.
 - Drivers implement exactly the six `JobDriver` methods plus optional `introspect`, `backfills`
@@ -655,6 +674,7 @@ picture from the other side.
 | `driver.ts` | `JobDriver` contract + wire records |
 | `driver-pg.ts` | default driver, real SQL constants, advisory-lock leader |
 | `driver-pg-ddl.ts` | `SQL_JOBS_TABLE` + `SQL_OUTBOX_TABLE` — the schema the driver installs. Whichever file holds the DDL is the one whose comments may carry no `;` and no `'` |
+| `driver-pg-jobs-sql.ts` | every statement returning a whole `x_jobs` row, and the `JOB_ROW_COLUMNS` projection they share. Split off at `driver-pg-sql.ts`'s size ceiling and re-exported from it |
 | `driver-pg-rows.ts` | a Postgres row → a wire record: `JobRow`/`StepRow`/`BackfillRow` and their mappings |
 | `driver-memory.ts` | `x dev` / tests |
 | `driver-redis.ts`, `driver-nats.ts` | honest `X_NOT_IMPLEMENTED` stubs |

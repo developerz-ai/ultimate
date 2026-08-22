@@ -7,7 +7,11 @@
 import type { Actor, Ctx } from '@ultimat3/core';
 import { assertNever, isAnonymous } from '@ultimat3/core';
 import type { Policy, Surface as PolicySurface } from '@ultimat3/policy';
-import { enforce, policyPermissions as flattenedPermissions } from '@ultimat3/policy';
+import {
+  enforce,
+  policyPermissions as flattenedPermissions,
+  admitsAnonymous as policyAdmitsAnonymous,
+} from '@ultimat3/policy';
 import { ActionDeniedError } from './errors';
 
 /**
@@ -90,4 +94,17 @@ export function policyCapability(policy: ActionPolicy): string {
  */
 export function policyPermissions(policy: ActionPolicy): readonly string[] {
   return flattenedPermissions(policy);
+}
+
+/**
+ * Whether a policy admits an ANONYMOUS caller — `@ultimat3/policy`'s answer, re-exported here so
+ * `http.ts` reads it through this file like every other authz question. `toRoute` derives
+ * `meta.auth` from it, never from `policy.kind === 'allow'`: that read looked at the ROOT
+ * combinator only, so `or(allow(), can('x:y'))` was 401'd by the pipeline before `invoke` ran
+ * while the MCP tool and the job handle allowed it. `true` is not "unguarded" — `invoke` still
+ * evaluates the policy for every call. Declared once in `policy.ts`, exactly as
+ * `policyPermissions` is: the answer is a property of the combinators it walks.
+ */
+export function admitsAnonymous(policy: ActionPolicy): boolean {
+  return policyAdmitsAnonymous(policy);
 }

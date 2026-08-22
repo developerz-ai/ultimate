@@ -32,7 +32,27 @@ export interface IdempotencyFailure {
   readonly docs?: string | undefined;
 }
 
-export type IdempotencyStatus = 'in-flight' | 'settled' | 'failed';
+/**
+ * The closed list, in the order a record moves through it — and the ONE declaration. The type is
+ * derived from it below rather than restated beside it, so a fourth status cannot be added to one
+ * and missed by the other, which is exactly how `isIdempotencyStatus` would start refusing a word
+ * this build writes itself.
+ */
+export const IDEMPOTENCY_STATUSES = Object.freeze(['in-flight', 'settled', 'failed'] as const);
+
+export type IdempotencyStatus = (typeof IDEMPOTENCY_STATUSES)[number];
+
+/**
+ * The one narrowing for the status column, and never a cast. A record crosses a process boundary —
+ * the row under this key was written by whatever build was deployed when the first attempt ran,
+ * which on a rolling deploy is not this one — so `row.status as IdempotencyStatus` made an unknown
+ * word answer `{ value: null, replayed: true }` in `withIdempotency`: the caller was told "this
+ * already ran, here is its result" for a row nobody could read. The rule `@ultimat3/jobs`'
+ * `statusIn` already writes out for the same column in the same situation.
+ */
+export function isIdempotencyStatus(value: string): value is IdempotencyStatus {
+  return (IDEMPOTENCY_STATUSES as readonly string[]).includes(value);
+}
 
 export interface IdempotencyRecord {
   readonly id: string;
@@ -68,14 +88,29 @@ export interface IdempotencyStore {
   readonly windowMs?: number | undefined;
   /** Atomically create-or-fetch the record for `key`. The atomicity is the point. */
   reserve(key: string, requestHash: string): Promise<IdempotencyReservation>;
-  settle(key: string, value: unknown): Promise<void>;
+  /**
+   * Settle the record `reservationId` owns — `IdempotencyReservation.record.id`, never the key
+   * alone. Fenced on the id AND the status, the way `@ultimat3/jobs`' `SQL_ACK` fences on
+   * `id = $1 and state = 'running'`.
+   *
+   * The status alone was not enough, and the gap it left is silent: a reservation whose window
+   * lapsed is reclaimed by the next caller, so the record under that key is `in-flight` AGAIN and
+   * belongs to someone else. A straggler from the first attempt satisfied the status fence
+   * exactly, overwrote a live reservation, and the replacement's own settle was then fenced out —
+   * so the retry replayed a value produced for a different request. A settlement that matches no
+   * record is logged, never thrown: it lands after the handler has committed.
+   */
+  settle(key: string, value: unknown, reservationId: string): Promise<void>;
   /**
    * Settle a FAILURE, so the retry replays it instead of re-running a handler that may already
-   * have committed. Optional so an existing store still type-checks — and when it is absent the
-   * gate leaves the reservation standing rather than releasing it, because refusing the retry is
-   * the safe answer and re-running it is the double charge.
+   * have committed. Fenced on the same reservation id as `settle`, for the same case — a
+   * straggler's failure marking a live reservation `failed` is the worse half of it.
+   *
+   * Optional so an existing store still type-checks — and when it is absent the gate leaves the
+   * reservation standing rather than releasing it, because refusing the retry is the safe answer
+   * and re-running it is the double charge.
    */
-  fail?(key: string, failure: IdempotencyFailure): Promise<void>;
+  fail?(key: string, failure: IdempotencyFailure, reservationId: string): Promise<void>;
   /** Drop a reservation, so a retry can run. Only ever correct BEFORE the handler starts. */
   release(key: string): Promise<void>;
   get(key: string): Promise<IdempotencyRecord | undefined>;
@@ -176,13 +211,16 @@ export async function withIdempotency<T>(
   try {
     value = await run();
   } catch (error) {
-    await settleFailure(store, key, error);
+    await settleFailure(store, key, record.id, error);
     throw error;
   }
   // Outside the `try` on purpose: a `settle` that refuses is itself post-commit, and the record
   // stays in flight rather than being released — a retry then gets a 409 it can act on instead of
   // re-running a handler that has already committed.
-  await store.settle(key, value);
+  //
+  // `record.id` is THIS reservation's, so a straggler from an attempt whose window has since
+  // lapsed cannot land on the replacement that reclaimed the key.
+  await store.settle(key, value, record.id);
   return { value, replayed: false };
 }
 
@@ -191,7 +229,12 @@ export async function withIdempotency<T>(
  * here would otherwise surface as the caller's error, hiding the `X_OUTPUT_INVALID` or the
  * handler's own throw that is the thing worth reading — the same rule `auditThrew` follows.
  */
-async function settleFailure(store: IdempotencyStore, key: string, error: unknown): Promise<void> {
+async function settleFailure(
+  store: IdempotencyStore,
+  key: string,
+  reservationId: string,
+  error: unknown,
+): Promise<void> {
   if (store.fail === undefined) {
     // Deliberately NOT `release`. A store with no failure slot cannot say "this already ran", and
     // the retry-safe reading of that is "refuse the retry", not "run it again".
@@ -199,7 +242,7 @@ async function settleFailure(store: IdempotencyStore, key: string, error: unknow
     return;
   }
   try {
-    await store.fail(key, failureOf(error));
+    await store.fail(key, failureOf(error), reservationId);
   } catch (sinkError) {
     // Never the error's own text: rendering an `unknown` into a message is the second throw this
     // branch exists to prevent. The logger takes it as a field and shapes it itself.

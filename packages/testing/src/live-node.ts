@@ -17,7 +17,7 @@ import type {
   UpgradeTarget,
   WsData,
   WsLike,
-} from '@ultimat3/realtime';
+} from '@ultimat3/realtime/server';
 import { liveNodeUnavailable, upgradeRefused } from './errors';
 
 /** Every frame this end received, in order, already parsed. */
@@ -121,7 +121,7 @@ let sequence = 0;
 export async function createLiveNode(options: LiveNodeOptions = {}): Promise<LiveNodeHandle> {
   const core = await import('@ultimat3/core');
   const query = await import('@ultimat3/query');
-  const realtime = await import('@ultimat3/realtime');
+  const realtime = await import('@ultimat3/realtime/server');
 
   const buildId = options.buildId ?? 'test-build';
   const transport = new realtime.InProcessTransport();

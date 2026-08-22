@@ -144,18 +144,22 @@ describe('idempotency', () => {
 describe('a settlement is fenced on the reservation still being in flight', () => {
   test('a late settle cannot overwrite a record another settlement already wrote', async () => {
     const store = new MemoryIdempotencyStore();
-    await store.reserve('k', 'hash');
-    await store.settle('k', { runs: 1 });
-    await store.settle('k', { runs: 2 });
+    const reservation = await store.reserve('k', 'hash');
+    await store.settle('k', { runs: 1 }, reservation.record.id);
+    await store.settle('k', { runs: 2 }, reservation.record.id);
 
     expect((await store.get('k'))?.value).toEqual({ runs: 1 });
   });
 
   test('a late failure cannot turn a settled record into a failed one', async () => {
     const store = new MemoryIdempotencyStore();
-    await store.reserve('k', 'hash');
-    await store.settle('k', { runs: 1 });
-    await store.fail('k', { code: 'X_OUTPUT_INVALID', cause: 'late', fix: 'none' });
+    const reservation = await store.reserve('k', 'hash');
+    await store.settle('k', { runs: 1 }, reservation.record.id);
+    await store.fail(
+      'k',
+      { code: 'X_OUTPUT_INVALID', cause: 'late', fix: 'send a fresh Idempotency-Key header' },
+      reservation.record.id,
+    );
 
     const record = await store.get('k');
     expect(record?.status).toBe('settled');
@@ -164,9 +168,64 @@ describe('a settlement is fenced on the reservation still being in flight', () =
 
   test('the first settlement of an in-flight reservation still lands', async () => {
     const store = new MemoryIdempotencyStore();
-    await store.reserve('k', 'hash');
-    await store.settle('k', { runs: 1 });
+    const reservation = await store.reserve('k', 'hash');
+    await store.settle('k', { runs: 1 }, reservation.record.id);
 
     expect((await store.get('k'))?.status).toBe('settled');
+  });
+});
+
+/**
+ * The case the status fence alone cannot see, and the reason `settle` carries a reservation id.
+ * A first attempt whose window lapsed has its key reclaimed by the next caller, so the record is
+ * `in-flight` AGAIN — belonging to someone else. A straggler from the first attempt satisfied the
+ * status fence exactly, overwrote the replacement's live reservation, and the replacement's own
+ * settle was then fenced out: the retry replayed a value produced for a different request.
+ */
+describe('a settlement is fenced on the reservation that produced it', () => {
+  /** Two reservations for one key: the first expires, the second reclaims it. */
+  const reclaimed = async (): Promise<{
+    store: MemoryIdempotencyStore;
+    first: string;
+    second: string;
+  }> => {
+    let clock = 1_000;
+    const store = new MemoryIdempotencyStore({ windowMs: 50, now: () => clock });
+    const first = await store.reserve('k', 'hash');
+    clock += 100;
+    const second = await store.reserve('k', 'hash');
+    expect(second.created).toBe(true);
+    expect(second.record.id).not.toBe(first.record.id);
+    return { store, first: first.record.id, second: second.record.id };
+  };
+
+  test('a straggler cannot settle a reservation it no longer owns', async () => {
+    const { store, first, second } = await reclaimed();
+    await store.settle('k', { from: 'first' }, first);
+
+    const record = await store.get('k');
+    expect(record?.status).toBe('in-flight');
+    expect(record?.id).toBe(second);
+  });
+
+  test('the reservation that DOES own the record still settles', async () => {
+    const { store, second } = await reclaimed();
+    await store.settle('k', { from: 'second' }, second);
+
+    expect((await store.get('k'))?.value).toEqual({ from: 'second' });
+  });
+
+  test("a straggler's FAILURE cannot fail a live reservation either", async () => {
+    const { store, first, second } = await reclaimed();
+    await store.fail(
+      'k',
+      { code: 'X_OUTPUT_INVALID', cause: 'late', fix: 'send a fresh Idempotency-Key header' },
+      first,
+    );
+
+    const record = await store.get('k');
+    expect(record?.status).toBe('in-flight');
+    expect(record?.failure).toBeUndefined();
+    expect(record?.id).toBe(second);
   });
 });

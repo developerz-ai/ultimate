@@ -7,7 +7,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { createContext } from '@ultimat3/core';
 import type { StandardSchemaV1 } from '@ultimat3/schema';
 import { createMemoryDriver } from './driver-memory';
-import { SQL_ACK, SQL_CANCEL, SQL_NACK } from './driver-pg-sql';
+import { JOB_ROW_COLUMNS, SQL_ACK, SQL_CANCEL, SQL_NACK } from './driver-pg-sql';
 import { cancelJob } from './inspect';
 import { job, resetJobs } from './job';
 import { createWorker } from './worker';
@@ -145,7 +145,9 @@ describe('the cancel SQL', () => {
     expect(SQL_NACK).toContain("where id = $1 and state = 'running'");
     expect(SQL_CANCEL).toContain("where id = $1 and state <> 'done'");
     expect(SQL_CANCEL).toContain("set state = 'cancelled'");
-    // Returns the row, so the caller can tell "cancelled it" from "there was nothing to cancel".
-    expect(SQL_CANCEL).toContain('returning *');
+    // Returns the row, so the caller can tell "cancelled it" from "there was nothing to cancel" —
+    // as a PROJECTION, never `returning *`: `PgExecutor` is any client, and one without a type map
+    // decodes `timestamptz` as text, which `toJobRecord` turns into `NaN` for every epoch field.
+    expect(SQL_CANCEL).toContain(`returning ${JOB_ROW_COLUMNS}`);
   });
 });

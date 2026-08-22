@@ -7,7 +7,11 @@
 import type { Actor, Ctx } from '@ultimat3/core';
 import { assertNever, isAnonymous } from '@ultimat3/core';
 import type { Policy, Surface as PolicySurface } from '@ultimat3/policy';
-import { enforce, policyPermissions as flattenedPermissions } from '@ultimat3/policy';
+import {
+  enforce,
+  policyPermissions as flattenedPermissions,
+  admitsAnonymous as policyAdmitsAnonymous,
+} from '@ultimat3/policy';
 import { QueryDeniedError } from './errors';
 
 /** Policies are opaque here: we evaluate them, we never introspect their rules. */
@@ -74,4 +78,17 @@ export function policyCapability(policy: QueryPolicy): string {
  */
 export function policyPermissions(policy: QueryPolicy): readonly string[] {
   return flattenedPermissions(policy);
+}
+
+/**
+ * Whether a policy admits an ANONYMOUS caller — `@ultimat3/policy`'s answer, re-exported here so
+ * `http.ts` reads it through this file like every other authz question. `toQueryRoute` derives
+ * `meta.auth` from it, never from `policy.kind === 'allow'`: that read looked at the ROOT
+ * combinator only, so `or(allow(), can('x:y'))` was 401'd by the pipeline before `runQuery` ran
+ * while the MCP tool and a direct server read allowed it. `true` is `meta.auth` only — the read is
+ * still `no-store` and `runQuery` still evaluates the policy per caller. Declared once in
+ * `policy.ts`, exactly as `policyPermissions` is: the answer is a property of the combinators.
+ */
+export function admitsAnonymous(policy: QueryPolicy): boolean {
+  return policyAdmitsAnonymous(policy);
 }

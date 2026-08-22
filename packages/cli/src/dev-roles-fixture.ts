@@ -16,7 +16,7 @@ import {
   resetTasks,
 } from '@ultimat3/jobs';
 import { createMemoryDriver as createMemoryMailDriver } from '@ultimat3/mail';
-import { DEFAULT_PRESENCE_TTL_MS, InProcessTransport } from '@ultimat3/realtime';
+import { DEFAULT_PRESENCE_TTL_MS, InProcessTransport } from '@ultimat3/realtime/server';
 import { defineStorage, localDriver } from '@ultimat3/storage';
 import type { RunningServices } from './dev-runtime';
 import { resolveServices } from './dev-services';

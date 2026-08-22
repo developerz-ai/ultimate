@@ -4,6 +4,31 @@ Three tiers, one ladder. Same mutator shape at every rung — climbing is a conf
 
 `As of 2026-08`. Stable API — semver from here ([Upgrading](Upgrading)). Tiers 1–2 ship. Tier 3 (local-first) is not in 4.0.0.
 
+## Two entries: `.` is the browser's, `./server` is the node's
+
+`@ultimat3/realtime` ships **two** entry points, and which one a name lives in is a mechanical fact
+rather than a convention — the barrels are disjoint, and a test asserts it.
+
+| Entry | Holds | Reaches |
+|---|---|---|
+| `@ultimat3/realtime` | `useLive`, `liveHookFor`, `LiveClient`, the offline queue, rebase, the wire protocol, cursors, the identity map | an island, a browser bundle |
+| `@ultimat3/realtime/server` | `createSyncNode`, `ChannelHub`, `SocketRegistry`, `LiveQueryRegistry`, `NatsTransport`, `openNatsClient`, the replicator, the change feed, pg replication | a `sync` node, a worker, `server.ts` |
+
+```ts
+import { useLive } from '@ultimat3/realtime';              // island
+import { createSyncNode } from '@ultimat3/realtime/server'; // sync node
+```
+
+A file that needs both writes both imports. **Nothing was deleted in the split** — if an import
+stops resolving after upgrading to 8.0.0, the name moved to `./server`.
+
+Why it is two entries and not one: a single barrel carried `useLive` beside `openNatsClient`, so
+`bun build --target=browser` on an entry importing *only* the hook failed with *"Browser build
+cannot require() Node.js builtin: `stream/web`"*, out of `nats` — the island this page tells you to
+write could not be bundled at all. The package's `sideEffects` array is what lets the bundler shake
+the bus out; the split is what makes "the client entry cannot reach the bus" something a build
+cannot quietly undo, since a namespace import or an `export *` defeats tree-shaking.
+
 ## The ladder
 
 | Tier | Name | You write | Server owns | Client owns | Cost |

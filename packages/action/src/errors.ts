@@ -1,6 +1,8 @@
 /**
  * Every failure @ultimat3/action can produce, one subclass per stable code so
  * callers `instanceof` a specific failure instead of string-matching a message.
+ * The idempotency five live in `errors-idempotency.ts` — this file reached the line ceiling —
+ * and are re-exported here, so `./errors` stays the one import path for all of them.
  */
 import {
   assertNever,
@@ -11,9 +13,17 @@ import {
   UltimateError,
 } from '@ultimat3/core';
 import type { SurfaceDenial } from '@ultimat3/policy';
-// Type-only: `idempotency.ts` imports the error classes below, and a runtime edge here would
-// close the cycle. `verbatimModuleSyntax` is what makes that guarantee mechanical.
-import type { IdempotencyFailure } from './idempotency';
+
+// Re-exported, not re-declared: the five idempotency failures moved to their own file when this
+// one reached the line ceiling, and every importer still reads them from `./errors`.
+export type { IdempotencyConflictReason, IdempotencyKeyProblem } from './errors-idempotency';
+export {
+  IdempotencyConflictError,
+  IdempotencyKeyInvalidError,
+  IdempotencyNotSharedError,
+  IdempotencyReplayedFailureError,
+  IdempotencyStatusUnknownError,
+} from './errors-idempotency';
 
 // Core's spelling, aliased — never a second one. A local template drifts from what
 // `x errors explain` prints the moment `ERROR_DOCS_BASE` moves.
@@ -41,6 +51,7 @@ const OWNED_TITLES: Readonly<Record<string, string>> = {
     'idempotency is declared fleet-wide and the installed store is per-process',
   X_IDEMPOTENCY_REPLAYED_FAILURE:
     'a retried Idempotency-Key replays a first attempt that failed after it may have committed',
+  X_IDEMPOTENCY_STATUS_UNKNOWN: 'an idempotency record holds a status this build cannot read',
   X_INPUT_INVALID: 'input failed schema validation',
   X_OUTPUT_INVALID: 'a handler returned a value its output schema rejects',
   X_RPC_FAILED: 'an RPC call failed without a problem+json body',
@@ -199,115 +210,6 @@ export class OutputInvalidError extends UltimateError {
       fix: `x actions describe ${name} --json  # compare the handler's return against \`output:\``,
       docs: docs('X_OUTPUT_INVALID'),
     });
-  }
-}
-
-export type IdempotencyConflictReason = 'payload-mismatch' | 'in-flight';
-
-export class IdempotencyConflictError extends UltimateError {
-  constructor(key: string, reason: IdempotencyConflictReason) {
-    super({
-      code: 'X_IDEMPOTENCY_CONFLICT',
-      cause:
-        reason === 'payload-mismatch'
-          ? `idempotency key "${key}" was already used with a different payload`
-          : `idempotency key "${key}" is still in flight from an earlier request`,
-      fix:
-        reason === 'payload-mismatch'
-          ? 'send a fresh Idempotency-Key header for a different payload'
-          : 'retry the same Idempotency-Key after the first request settles',
-      docs: docs('X_IDEMPOTENCY_CONFLICT'),
-    });
-  }
-}
-
-export type IdempotencyKeyProblem = 'empty' | 'too-long';
-
-/**
- * The header arrived and cannot name one request. Refused, never read as absent: `Headers.get()`
- * answers `''` for `Idempotency-Key:` rather than `null`, so a blank value became a live key that
- * every caller sending a blank header shared — and reading it as "no key" is the quieter failure,
- * because a client whose key interpolation produced nothing would lose the protection silently
- * and double-charge on its own retry. `@ultimat3/jobs` refuses an empty key at the enqueue for the
- * same reason; it uses `assert` because the empty key there is the app's own declaration, while
- * this one is a caller's header and therefore a 4xx.
- *
- * The length bound is the one the OpenAPI operation has always published (`maxLength: 255`).
- * A contract that disagrees with the runtime is worse than no contract.
- */
-export class IdempotencyKeyInvalidError extends UltimateError {
-  constructor(action: string, problem: IdempotencyKeyProblem, length: number) {
-    super({
-      code: 'X_IDEMPOTENCY_KEY_INVALID',
-      cause:
-        problem === 'empty'
-          ? `action "${action}" was called with an empty Idempotency-Key, which every caller sending a blank header would share`
-          : `action "${action}" was called with an Idempotency-Key of ${length} characters, past the 255 its OpenAPI operation publishes`,
-      fix: 'set the Idempotency-Key header to a fresh crypto.randomUUID() on the client, one per request — or omit the header entirely to run this call without idempotency',
-      docs: docs('X_IDEMPOTENCY_KEY_INVALID'),
-      meta: { action, problem, length },
-    });
-  }
-}
-
-/**
- * The deployment declared `scope: 'shared'` and the installed store cannot keep it. Refused at
- * registration, before a socket opens, because the failure it replaces is silent and expensive:
- * a per-process store under `replicas: 3` means the retry that lands on another replica finds no
- * record, re-runs the handler, and charges the card again — with nothing anywhere saying it did.
- * An UNDECLARED scope is refused the same way: what cannot be shown to be shared is not assumed
- * to be, the rule `assertRouteBuckets` already applies to a limiter that publishes no table.
- */
-export class IdempotencyNotSharedError extends UltimateError {
-  constructor(storeScope: string | undefined) {
-    super({
-      code: 'X_IDEMPOTENCY_NOT_SHARED',
-      cause:
-        storeScope === undefined
-          ? "configureIdempotency({ scope: 'shared' }) is declared and the installed idempotency store declares no scope"
-          : `configureIdempotency({ scope: 'shared' }) is declared and the installed idempotency store is ${storeScope}`,
-      // NOT `executor: Bun.sql` — `Bun.sql.query` is `undefined` (it is a tagged template whose
-      // positional form is `unsafe`), so that line compiled and would have thrown on the first
-      // reservation. The framework's own boot already installs this store; a host booting the
-      // framework itself wraps the client it opened.
-      fix: "the framework boot installs a shared store — reach this only from a host that boots it itself: setIdempotencyStore(postgresIdempotencyStore({ executor: { query: (text, values) => client.query({ text, values }) } })) from '@ultimat3/action', or drop the declaration to configureIdempotency({ scope: 'process' })",
-      docs: docs('X_IDEMPOTENCY_NOT_SHARED'),
-      meta: { storeScope: storeScope ?? null },
-    });
-  }
-}
-
-/**
- * The replay of a first attempt that FAILED. It is a replay and not a re-run on purpose: `guard()`
- * and the input parse both run before the idempotency gate, so everything the gate can see throw
- * is post-authorization and possibly post-commit — a handler that took the money and then failed
- * its own `output:` schema is the case this exists for. Releasing the reservation there let the
- * client's automatic retry charge a second time, which made idempotency the cause of the double
- * charge it exists to prevent.
- *
- * The first attempt's code is re-used verbatim, the way `RemoteActionError` re-uses the server's:
- * the caller is owed the failure it would have got, not a new one. `X_IDEMPOTENCY_REPLAYED_FAILURE`
- * is the code only when the original throw carried none of its own.
- */
-export class IdempotencyReplayedFailureError extends UltimateError {
-  /** The recorded first attempt, so a caller reads the original code without parsing a message. */
-  readonly failure: IdempotencyFailure;
-
-  constructor(key: string, failure: IdempotencyFailure | undefined) {
-    const recorded: IdempotencyFailure = failure ?? {
-      code: 'X_IDEMPOTENCY_REPLAYED_FAILURE',
-      cause: 'the first attempt under this key failed and the store kept no detail of it',
-      fix: 'read the first attempt in the logs, then send a fresh Idempotency-Key once the cause is fixed',
-    };
-    super({
-      code: recorded.code,
-      cause: `${recorded.cause} — replayed from the first attempt under Idempotency-Key "${key}", which may have committed before it failed`,
-      fix: recorded.fix,
-      ...(recorded.docs === undefined ? {} : { docs: recorded.docs }),
-      // `replayed` is what tells an operator this is not a second execution: nothing ran here.
-      meta: { origin: 'idempotent-replay', key, replayed: true, code: recorded.code },
-    });
-    this.failure = recorded;
   }
 }
 
