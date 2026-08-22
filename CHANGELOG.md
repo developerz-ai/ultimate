@@ -8,6 +8,10 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
 
 ## [Unreleased]
 
+Nothing yet.
+
+## 7.0.0 - 2026-08-21
+
 ### Added
 
 - **`x shot <route>` â€” a rendered route on disk, plus a `verdict.json` a picture cannot carry.**
@@ -382,6 +386,13 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major â
   `node_modules` symlink, whose blamed importer is a race between TypeScript's parallel workers. The
   diff is now scoped to diagnostics inside the app, where the rename is the only thing that can move
   them.
+
+### Commits
+
+- feat(cli,scraping,render): three commands an agent can actually see with (#285)
+- feat(cli): the dependency graph a repo declares, and the command that reads it (#284)
+- The island arc, and four premises that were false (#278)
+- Six mechanised conventions, and four vocabularies declared once (#269)
 
 ## 6.0.0
 
