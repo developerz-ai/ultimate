@@ -128,6 +128,22 @@ describe('describeValue reports the shape', () => {
     expect(describeValue('hunter2')).toBe('a string of 7 characters');
   });
 
+  test('a length is CHARACTERS, the unit the rule that rejected the value counts in', () => {
+    // `validators.ts` counts code points (`charCount`), `json-schema.ts` publishes `minLength` in
+    // them, and the message says "chars" — so a count in UTF-16 units sends an agent chasing an
+    // off-by-one that is not there. `'👍'.length` is 2.
+    expect(describeValue('👍')).toBe('a string of 1 character');
+    expect(describeValue('👍a')).toBe('a string of 2 characters');
+    expect(describeValue('é')).toBe('a string of 1 character');
+  });
+
+  test('the message and the rule quote the same number', () => {
+    const message = validate(builtinT.string.min(3), '👍a').issues?.[0]?.message ?? '';
+    expect(message).toBe(
+      'expected a non-empty string of at least 3 chars, received a string of 2 characters',
+    );
+  });
+
   test('a number is a number, except the four constants that are facts', () => {
     expect(describeValue(42)).toBe('a number');
     expect(describeValue(-0.5)).toBe('a number');

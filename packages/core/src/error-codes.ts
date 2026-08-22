@@ -53,6 +53,9 @@ const CORE_CODE_TITLES = {
   X_NO_CONTEXT: 'no request context is active',
   X_NOT_IMPLEMENTED: 'this driver does not implement the requested feature',
   X_OTLP_ENDPOINT_INVALID: 'the OTLP collector endpoint is missing or malformed',
+  // Its own code rather than the endpoint's, because a title is what an agent reads first:
+  // `x errors explain X_OTLP_ENDPOINT_INVALID` would send it to inspect a variable that is fine.
+  X_OTLP_HEADERS_INVALID: 'OTEL_EXPORTER_OTLP_HEADERS is malformed',
   X_OTLP_PROTOCOL_UNSUPPORTED: 'the OTLP protocol requested is not OTLP/HTTP JSON',
   X_READINESS_CHECK_DUPLICATE: 'a readiness check name is registered twice',
   X_REGISTRAR_CONFLICT: 'two different registrars are loaded for one primitive kind',

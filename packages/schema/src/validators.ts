@@ -17,6 +17,7 @@ import {
   type ShapeInput,
   type ShapeOutput,
 } from './builder';
+import { charCount } from './char-count';
 import { expected } from './describe-value';
 import { discriminatedUnionSchema } from './discriminated-union';
 import { isZonelessDateTime } from './iso-date';
@@ -59,21 +60,6 @@ function describePattern(node: SchemaNode): string {
   return node.patternFlags === undefined || node.patternFlags === ''
     ? String(node.pattern)
     : `/${node.pattern}/${node.patternFlags}`;
-}
-
-/**
- * Characters, not UTF-16 code units — the unit `json-schema.ts` already promises, since JSON
- * Schema defines `minLength`/`maxLength` over code points and the message here has always said
- * "chars". `'👍'.length` is 2, so `t.string.max(1)` refused a value the published schema, a human
- * and Postgres' `char_length` all count as one.
- *
- * Only a surrogate makes the two counts differ, so the string is walked only when one is present
- * — every ASCII value keeps the O(1) read this replaced.
- */
-const HAS_SURROGATE = /[\uD800-\uDBFF]/;
-
-function charCount(value: string): number {
-  return HAS_SURROGATE.test(value) ? [...value].length : value.length;
 }
 
 /**

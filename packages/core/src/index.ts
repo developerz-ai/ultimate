@@ -268,6 +268,7 @@ export {
   OTLP_PROTOCOL_KEY,
   OTLP_SCOPE,
   OtlpEndpointInvalidError,
+  OtlpHeadersInvalidError,
   OtlpProtocolUnsupportedError,
   OVERFLOW_ATTRIBUTE,
   otlpAttributes,
@@ -467,9 +468,15 @@ export {
 } from './listeners';
 export { isMcpExposed, type McpExposureDeclaration } from './mcp-exposure';
 export { type CappedBody, readWithinLimit } from './read-capped';
-export type { ModuleRegistrar, PrimitiveKind, RegisteredPrimitive } from './registrar';
+export type {
+  ModuleRegistrar,
+  PrimitiveFactory,
+  PrimitiveKind,
+  RegisteredPrimitive,
+} from './registrar';
 export {
   hasPrimitiveRegistrar,
+  PRIMITIVE_FACTORIES,
   PRIMITIVE_KINDS,
   primitiveRegistrar,
   registerPrimitiveRegistrar,

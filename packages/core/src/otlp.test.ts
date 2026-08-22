@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { describeErrorCode } from './error-codes';
 import { isUltimateError } from './errors';
 import {
   OTLP_ENDPOINT_KEY,
@@ -95,6 +96,42 @@ describe('otlpHeaders', () => {
   test('an explicit header wins over the env', () => {
     const headers = otlpHeaders({ 'Api-Key': 'explicit' }, { [OTLP_HEADERS_KEY]: 'api-key=env' });
     expect(headers['api-key']).toBe('explicit');
+  });
+
+  test('a bad percent escape is a coded misconfiguration, not a bare URIError', () => {
+    const env = { [OTLP_HEADERS_KEY]: 'api-key=%zz' };
+    // NOT `X_OTLP_ENDPOINT_INVALID`: its title says the ENDPOINT is malformed, which sends an
+    // agent running `x errors explain` to inspect a variable that is fine. A title that
+    // misdirects is not rescued by an accurate cause.
+    expect(codeOf(() => otlpHeaders(undefined, env))).toBe('X_OTLP_HEADERS_INVALID');
+    try {
+      otlpHeaders(undefined, env);
+    } catch (thrown) {
+      // The variable an operator set and the header KEY, never the value: a header value is the
+      // collector's credential and a `cause:` is folded into a log line.
+      expect(isUltimateError(thrown) && thrown.cause).toContain(OTLP_HEADERS_KEY);
+      expect(isUltimateError(thrown) && thrown.fix).toContain(OTLP_HEADERS_KEY);
+      expect(isUltimateError(thrown) && thrown.cause).not.toContain('%zz');
+      expect(isUltimateError(thrown) && thrown.fix).not.toContain('%zz');
+      expect(isUltimateError(thrown) && thrown.meta).toEqual({ header: 'api-key' });
+    }
+  });
+
+  test('a lone % is the same refusal — every malformed escape, not just %zz', () => {
+    expect(codeOf(() => otlpHeaders(undefined, { [OTLP_HEADERS_KEY]: 'api-key=100%' }))).toBe(
+      'X_OTLP_HEADERS_INVALID',
+    );
+  });
+
+  test('the endpoint code keeps its own meaning — the two never answer for each other', () => {
+    // `X_OTLP_ENDPOINT_INVALID` is shipped and stable; this is what stops the new code from
+    // being a rename of it.
+    expect(describeErrorCode('X_OTLP_HEADERS_INVALID').title).toBe(
+      'OTEL_EXPORTER_OTLP_HEADERS is malformed',
+    );
+    expect(describeErrorCode('X_OTLP_ENDPOINT_INVALID').title).toBe(
+      'the OTLP collector endpoint is missing or malformed',
+    );
   });
 });
 

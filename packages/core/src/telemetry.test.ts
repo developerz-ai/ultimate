@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { frozenClock } from './clock';
 import { createContext, runWithContext } from './context';
 import { traceId as newTraceId, spanId, uuid } from './ids';
-import { alwaysOffSampler, alwaysOnSampler } from './sampler';
+import { alwaysOffSampler, alwaysOnSampler, parentBasedRatioSampler } from './sampler';
 import {
   configureTelemetry,
   currentSpan,
@@ -171,6 +171,52 @@ describe('sampling', () => {
     configureTelemetry({ sampler: alwaysOffSampler });
     resetTelemetry();
     expect(startSpan('root').context.traceFlags).toBe(1);
+  });
+
+  /**
+   * `currentSpanContext()` answers a request context with a trace id and an EMPTY span id — it is
+   * a correlation id this process minted, not an upstream that said "sampled". Reading its
+   * `traceFlags` as an inbound decision made `parentBasedRatioSampler` inherit a bit nobody sent,
+   * so every HTTP root span was exported at every ratio: `pipeline.ts` is `runWithContext` then
+   * `withSpan`, which is this exact pair.
+   */
+  test('a request context is a trace id, never an upstream sampling decision', () => {
+    const exporter = memoryExporter();
+    configureTelemetry({ exporter, sampler: parentBasedRatioSampler(0) });
+
+    runWithContext(createContext({}), () => {
+      withSpan('GET /posts', () => undefined);
+    });
+
+    expect(exporter.spans).toHaveLength(0);
+  });
+
+  test('sampled inside a request context, the root span still has no parent span', () => {
+    const exporter = memoryExporter();
+    configureTelemetry({ exporter, sampler: parentBasedRatioSampler(1) });
+    const ctx = createContext({});
+
+    runWithContext(ctx, () => {
+      withSpan('GET /posts', () => undefined);
+    });
+
+    expect(exporter.spans).toHaveLength(1);
+    expect(exporter.spans[0]?.parentSpanId).toBeUndefined();
+    expect(exporter.spans[0]?.context.traceId).toBe(ctx.traceId);
+  });
+
+  test('a real inbound parent is still obeyed, sampled or not', () => {
+    const exporter = memoryExporter();
+    configureTelemetry({ exporter, sampler: parentBasedRatioSampler(0) });
+    const parent = { traceId: newTraceId(), spanId: spanId(), traceFlags: 1 } as const;
+
+    runWithContext(createContext({}), () => {
+      withSpan('GET /posts', () => undefined, { parent });
+    });
+
+    expect(exporter.spans).toHaveLength(1);
+    expect(exporter.spans[0]?.parentSpanId).toBe(parent.spanId);
+    expect(exporter.spans[0]?.context.traceId).toBe(parent.traceId);
   });
 });
 

@@ -1,20 +1,20 @@
 plan: 101-deep-dive-sweep-two
 title: Deep-dive sweep two — eight audits, one plan
-status: not_started        # not_started | in_progress | blocked | complete | superseded
+status: in_progress        # not_started | in_progress | blocked | complete | superseded
 created_by: sebi
-worked_by: ""
+worked_by: "claude (feature sweep 2026-08-22)"
 owner: sebi
 percent: 0
-current_focus: "decide 12-decisions.md rows 1, 3, 5 first (they gate 01/04/05/09); then 01"
+current_focus: "D1-D12 decided 2026-08-22; executing slices in tier order, one PR per wave"
 slices:
   - file: 01-tier0-core-schema.md
     tier: 0
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 02-tier1.md
     tier: 1
-    status: not_started
-    percent: 0
+    status: complete
+    percent: 100
   - file: 03-tier2-entity-policy-http-auth.md
     tier: 2
     status: not_started
@@ -55,10 +55,55 @@ slices:
     tier: 0
     status: not_started
     percent: 0
-evidence: []
+evidence:
+  - "slice 01: drain re-entrancy measured at 4,773 nested invocations before the fix, 1 after"
+  - "slice 01: parentBasedRatioSampler(0) exported 1 span inside runWithContext, 0 after"
+  - "slice 01: OFF-PLAN — registerReadinessCheck('__proto__') set the prototype, so /readyz answered 200 with a failing check. Fixed via Object.fromEntries"
+  - "slice 02: i18n leak +108.4 MB over 5,000 tags before, +11.0 MB after"
+  - "coordinator: bun.lock carries exactly 72 stale @ultimat3/* ranges under a green lockfile-pins (finding 10 confirmed)"
+  - "coordinator: trust-publishers --check reads 0/30 from a token — npm blocks account-level reads; OIDC proven live from 7.0.0 attestations instead"
+FALSIFIED:
+  - "plan 01 step 4 implies X_OTLP_ENDPOINT_INVALID is new; it already existed. Reuse was then OVERTURNED anyway - a bad header escape now raises the new X_OTLP_HEADERS_INVALID, because the endpoint code's title misdirects"
+  - "plan 01: describe-value.ts:28's own comment claimed validators.ts also used .length; validators.ts already counted code points, so the comment was the stale artifact"
+  - "plan 02: three file:line citations do not exist - context.ts:670-674 (file is 271 lines), tier-failures.ts:559 (~120), invalidate.ts:384 (~270). Findings real, addresses wrong"
+  - "plan 02 + root CLAUDE.md: `bun test -t 'formats the fix line'` matches ZERO tests in the repo; it is an illustrative example in the command table, not a gate" 
 notes: >
   Written 2026-08-21 from eight read-only audits (bug hunts tiers 0-1 / 2-3 / 4-5, concurrency,
   security, architecture, gate+CI+docs, scaffold DX against published 7.0.0). 13 findings proven by
   execution are tabled in overview.md. The ask named `x deps`; it is `x affected`. Prior sweep
   (2026/08/16/101) deferred items re-verified and carried where still open.
-last_updated: 2026-08-21
+
+  DECISIONS, recorded 2026-08-22 (12-decisions.md rows):
+  D1: ONE major, 8.0.0, AND IT SHIPS. All four breaking changes batched; CHANGELOG gains one
+      `BREAKING —` row per change under an `8.0.0` heading and `wiki/Upgrading.md` gains the
+      section with a count of 4 that `changelog-check` pins. Revised 2026-08-22 on the user's
+      instruction ("cleaned released all green"): the release IS in scope — every slice merged and
+      green on main, then `scripts/release.ts` stamps 8.0.0 across all 30 workspaces, an ANNOTATED
+      `git tag -a v8.0.0` is pushed, a GitHub Release is published (the Release is the workflow's
+      trigger; a lightweight tag is not), the `npm-publish` environment gate is approved by its
+      named reviewer — the operator, or the agent holding `workflow` scope, which is what that
+      scope means and what `.claude/commands/feature.md` documents — on a green run and on THIS
+      ask, and `scripts/registry-audit.ts --json` must then answer 30/30 at 8.0.0, every one
+      attested. The ask is the authorisation; the credential is only the reach.
+  D2: WIRE @ultimat3/seo. `x new` scaffolds `site/sitemap.xml/route.ts` and `site/robots.txt/route.ts`
+      over `buildSitemap`/`buildRobots`. Lands in the scaffold slice (08), not in slice 02.
+  D3: DELETE `PwaConfig.installPrompt`, `AuthConfig.afterSignInPath`, `AiConfig.modelEnv`.
+      Breaking; one-line migration each; slice 09's `config-readers` check keeps the class out.
+  D4: SHIP `postgresRateLimitStore` + `postgresAuthLimiter` over a `PgExecutor` seam, wired from
+      `startWeb`. The interim warning (slice 07) ships too, for the un-wired case.
+  D5: DECLARED FLOOR with a written reason (`FLOOR_ABOVE` in scripts/lib/tiers.ts) for all five
+      packages above their floor — `render`, `ui`, `scraping`, `policy`, `pwa`. DEVIATION from the
+      plan's recommendation: NO package is moved. Moving `pwa` 4 -> 2 is legal but orthogonal to
+      making the rule enforceable, and it risks a real regression inside a sweep that is already
+      landing four breaking changes. Write `policy`'s and `pwa`'s sentences; move nothing.
+  D6: ADD `x verify --only <step>`; header and `--json` both carry `NOT A GATE RUN`; the no-flag
+      run is still the gate.
+  D7: DEFER `updateSignal` / `x deploy --critical`. Not this plan's call — filed as #289 (wire
+      it behind a real `--critical`, or delete the export; #161 closed the flag's promise only).
+  D8: DELETE render's `matchRoute`/`RouteMatch` (`registry.ts:337-370`). http's trie is the live one.
+  D9: DELETE `invalidateWireTags` now (restore with `x cache`). `recentTierFailures` stays deferred
+      by #117.
+  D10: REFUSE `arrayOf(json(...))` / `arrayOf(bytes())` at declaration. Neither tracked app uses one.
+  D11: YES, `x new` runs `git init`, `--no-git` opts out.
+  D12: YES, `scaffold-smoke` follows the printed `fix:` lines. Accept the extra ~40s.
+last_updated: 2026-08-22

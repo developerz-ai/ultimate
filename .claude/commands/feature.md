@@ -110,6 +110,44 @@ There is no `test:changed`-style command here, and there should not be: a comman
 
 10. **Release + close.** Nothing deploys — this is a framework. `wiki.yml` syncs `wiki/` on merge, so confirm it ran if you touched the wiki. An npm release is deliberate and only when asked or when the change is user-facing and complete: publishing goes through **OIDC trusted publishing** — follow [`PUBLISHING.md`](../../PUBLISHING.md), then confirm the published version matches. Otherwise say so and stop at merged. Verify each `Fixes #NNN` actually closed, and close any straggler with a link to the merged PR.
 
+## Check what you can reach before you decide what to hand back
+
+**Credentials are REACH, and the ask is the authorisation.** Two different questions, and conflating them is how an agent publishes a version nobody asked for. A token answers *what could I do*; the user's own words answer *what am I here to do*. Neither substitutes for the other:
+
+- **Inside the ask, a credential you hold is a step you take.** Do not stop to request permission you were already handed — the arc ends where your credentials end, and nowhere earlier. A step you *could* have run and instead described is not delegation. So establish your reach at the START of the run, not when you hit the wall.
+- **Outside the ask, a credential authorises nothing.** `NPM_TOKEN` in `.env` is not a request to publish, and `workflow` scope is not a request to release. **An irreversible act needs the user's own words** — a release, a force-push, a deletion, anything a later commit cannot undo. "Fix this bug" does not carry "and ship 8.0.0" no matter what the token could reach.
+
+**One approval owner per irreversible act, named in advance.** For a release that is the `npm-publish` environment gate, and holding `workflow` scope is what makes *you* its reviewer for this run — the same person's credential either way. Approve on a green run, on an ask that named the release, and say that you did.
+
+This does not loosen the four things that always stop you (bottom of this section) — those stop you *with* full access, because no credential makes a shipped error code safe to change.
+
+**Probe first, once, at step 1.** Read only the *key names*, never the values:
+
+```bash
+ls -a | grep -i '^\.env'                                   # which env files exist
+grep -oE '^[A-Za-z_][A-Za-z0-9_]*' .env | sort -u          # key NAMES only — never cat .env
+gh auth status                                              # gh scopes: repo, workflow, read:org
+gh repo view --json nameWithOwner,viewerPermission          # can you push, can you merge
+git remote -v | sed -E 's#//[^/@]+@#//***@#'                # remotes, credentials redacted
+```
+
+**Never bare `git remote -v`.** A remote cloned by `gh` or by CI is `https://x-access-token:<token>@github.com/…`, so the unredacted form prints a live credential into your transcript — the one thing the line below forbids. `gh repo view` answers the permission question without touching the URL at all; the redacted `sed` is there only for *which* remotes exist.
+
+Then say in one line what you can do end-to-end and what you cannot. Do not print a value, a token, a password or a TOTP code — not in a message, not in a commit, not in a PR body, not in a log. `.env` is git-ignored and stays that way; if a command needs a secret, pass it through the environment (`NPM_CONFIG_OTP="$(…)" cmd`), never as literal text you wrote out.
+
+| Reachable when… | You own, without asking |
+|---|---|
+| `gh auth status` has `repo` | branch, push, open the PR, `claudetm merge-pr` / `gh pr merge --squash`, close issues |
+| `gh auth status` has `workflow` | re-run a red job, and **approve the `npm-publish` environment** — `gh api repos/{owner}/{repo}/actions/runs/<id>/pending_deployments -X POST -f state=approved -f comment='…' -F 'environment_ids[]=<id>'`. Holding `workflow` makes you the gate's reviewer — that is what the scope means. Approve only on a run whose CI is green **and** whose release the user asked for, and say you did |
+| `.env` has `NPM_TOKEN` | `npm view` / `npm whoami` reads, `registry-audit.ts`, the post-publish confirmation |
+| `.env` has `NPM_TOTP_SECRET` or `NPM_TOTP_URI` | a fresh OTP, generated at call time (a ~25-line Bun HMAC-SHA1 snippet; `oathtool` is usually not installed), never stored and never echoed |
+| **nothing** — `trust-publishers.ts --check` is NOT reachable from a token | Measured 2026-08-22: `npx npm@12 trust list <pkg>` answers `E401 … You must be logged in to publish packages` even with a valid `_authToken` and a fresh `NPM_CONFIG_OTP`, because npm restricts 2FA-bypass tokens for account-level reads. The script then reports **0/30 packages trust …**, which is a false negative, not a finding — do not "fix" it and do not treat it as a release blocker. The real signal is the LAST release's provenance: `npm view @ultimat3/core@<last> _npmUser dist.attestations` answering `GitHub Actions` + a `trustedPublisher.oidcConfigId` proves the OIDC path is live and the next release will publish the same way |
+| OIDC trusted publishers attached | the release publishes **from `release.yml`, with provenance**. Never `npm publish` from the laptop to "save a step" — that is exactly how 2.0.0 lost its attestations |
+
+**So when the user says "release it", the full arc is yours:** every slice merged and green on `main` → `scripts/release.ts` stamps every workspace → `git tag -a vX.Y.Z` (**annotated** — `--follow-tags` silently skips a lightweight tag, and no tag means no Release means no publish) → push → `gh release create` (the **Release** is the trigger, not the tag) → approve `npm-publish` if you hold `workflow` and standing approval → wait for the run → `bun run scripts/registry-audit.ts --json` must answer *N/N publishable packages on npm at X.Y.Z, every one attested*. Report that line verbatim. **A version bump that never published is not done.**
+
+**Stop and ask only for what credentials genuinely cannot settle** — the list is short and does not grow with the size of the job: a shipped `X_*` error code you would have to change, a ninth primitive, a new tier, a destructive or irreversible action outside the release path, or a red gate you cannot make green without narrowing it. Missing access is a *reason to say so plainly and finish everything else* — never a reason to hand back work you could have done.
+
 ## Hard rules (from CLAUDE.md — non-negotiable)
 
 **One way to do each thing** — never add a second path. **Define once, project everywhere.** **Enforced, not documented**: a convention that is not a build error does not exist. **Errors are instructions** — stable code + cause + exact `fix:` command + `--json`. **One command means shippable**: `bun run verify` is the contract. **Static path never pays for the app path.** **Deploy anywhere = containers only**; zero platform primitives in the framework. Imports go **down tiers only**. The **eight primitives**, no ninth. Bun only; no new dependencies without a stated reason; no `any`; never a bare `Error`; named exports only; `import type`; tests next to source; `--json` everywhere; no hardcoded strings; no raw colours; no unzoned dates; no float money; SRP under ~200 LOC. Biome owns formatting — don't argue with it. CI runs on free runners only. Never `--force`, `--no-verify`, `reset --hard`, or skipping hooks without permission. **Never `git stash`. No git worktrees.**
@@ -124,7 +162,8 @@ Falsified:   <docs/idea or roadmap claims that were wrong, now corrected>
 Gate:        bun run verify ✓  (typecheck · lint · boundaries · tests)
 Codes:       <new X_SCREAMING_SNAKE error codes, or none>   wiki updated: <y/n>
 Dummy app:   <what examples/dummy/ now demonstrates, or unchanged>
-Release:     <@ultimat3/x v… published | not released (merged only)>
+Release:     <all N packages published at vX.Y.Z, attested — the registry-audit line verbatim | not released (merged only), because …>
+Reach:       <what your credentials let you finish; what you could not and why>
 Issues:      <#NNN closed, or none>
 ```
 

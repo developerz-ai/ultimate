@@ -8,7 +8,89 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **`drain()` published its memo after the accept phase had already run, so a shutdown hook that
+  called it recursed.** `drainPromise` was assigned after the async IIFE body, and
+  `settleWithin` invokes `work()` synchronously — so an `{ phase: 'accept' }` hook calling
+  `drain()`, or `handle.stop()` (which is `drain('manual')`), re-entered with the memo still
+  `undefined`. Measured 4,773 nested invocations before stack exhaustion, each level swallowed by
+  `settleWithin` as `shutdown hook failed`. The memo is now a deferred promise assigned
+  **synchronously before** the drain body runs — guard and registration in one step, the rule
+  `packages/jobs/src/worker.ts` already wrote.
+
+- **Every HTTP root span was exported regardless of the sampling ratio.** `currentSpanContext()`
+  synthesises a parent `{ traceId, spanId: '', traceFlags: 1 }`, so `startSpan` read a request
+  context as a *sampled upstream decision* and never consulted `currentSampler()`. With
+  `parentBasedRatioSampler(0)`, one span exported inside `runWithContext` and zero outside it —
+  and `packages/http/src/pipeline.ts` is `runWithContext` then `withSpan`, so this was every
+  request. An empty `spanId` is now narrowed to "no inbound decision" (the discriminator `end()`
+  already used) and only the trace id is carried.
+
+- **A readiness check named `__proto__` set the prototype instead of registering, so `/readyz`
+  answered 200 while it was failing.** `readinessChecks()` built its record by assignment;
+  `results['__proto__'] = …` mutates the prototype, leaving `Object.keys()` empty and the
+  `ready` predicate computing over nothing. Now built with `Object.fromEntries`, which defines own
+  properties. Found while auditing the readiness registry, not reported by the sweep.
+
+- **`OTEL_EXPORTER_OTLP_HEADERS` with a bad percent-escape threw a bare `URIError`.** Now the new
+  coded `X_OTLP_HEADERS_INVALID`, naming the variable and the header **key** — never the value,
+  which is a credential.
+
+- **`CtxPatch` accepted `buildId` and silently ignored it.** It was
+  `Omit<CtxInit, 'requestId'>`, so `withChildContext({ buildId })` type-checked and kept the
+  parent's. Now omits both ids — a child context is the same deploy — and `type-pins.ts` holds it.
+
+- **`compareDecimalText('-0', '0')` answered `-1`; Postgres `numeric` says `0`.** The sign was
+  compared before the magnitude. Zero now orders as one value, whatever its spelling.
+
+- **`SchemaError.message` dropped the cause**, so an uncaught escape printed `code: title` and lost
+  the one field that says what was wrong. Now `code: title — cause`, matching `UltimateError`.
+
+- **A string's length was reported in UTF-16 units while the rule counted code points.**
+  `t.string.min(3).safeParse('👍a')` refused a 2-character string and said it "received a string of
+  3 characters". `charCount` is now one module in `@ultimat3/schema`, imported by both the rule and
+  the message; `@ultimat3/core`'s deliberate twin in `error-render.ts` answers identically.
+
+- **`@ultimat3/i18n`'s two module-level caches were unbounded and keyed on the caller's raw locale
+  spelling.** `translatorFor`, `pluralCategory` and `createTranslator` are exported raw and
+  `packages/mail/src/render.ts` passes an unnormalised value, so a locale arriving from a request
+  header was memory the client chose: **+108.4 MB** retained over 5,000 distinct valid tags,
+  **+11.0 MB** after. Both now run through `@ultimat3/core`'s `cachedFormatter` on a canonical key,
+  so `en-US` and `en-us` share one entry.
+
+- **`X_MONEY_NOT_INTEGER`'s `fix:` did not run.** It offered `fromDecimal('12.345', 'USD')`, which
+  raises the same code, and for `1e21` it offered `fromDecimal('1e+21', …)`, which `DECIMAL`
+  refuses. The fix now leads with `money(Math.round(v), 'CCY')` — the caller wrote `money(v, ccy)`,
+  so `v` is minor units, and offering `fromDecimal` first silently rescales it by the currency's
+  own exponent (100× for USD, 1,000× for KWD, and 1× for JPY, where the bug hides) — and withdraws
+  the offer entirely where no call could run. A test executes every call the fix names.
+
+- **The 53 shipped currency rows were mutable**, so `currencyInfo('USD').exponent = 3` silently
+  rescaled every USD amount. Rows and `CURRENCIES` are frozen at declaration and `CurrencyInfo`'s
+  fields are `readonly`.
+
+- **`purgePost` rendered an injected `fetch`'s rejection with `instanceof`**, which throws on a
+  hostile value. Now `renderThrowable`, as `@ultimat3/cache`'s own CLAUDE.md already required.
+
+- **A cache single-flight joiner's tags never reached the entry that landed.** The leader read
+  `shared()` once before `fill()`, so a joiner arriving during the fill merged tags nothing read
+  again and `invalidateTags` could not reach the entry. The leader now re-reads after the fill and
+  re-publishes every tier when a tag was added.
+
+- **A sitemap with `locales` and no `defaultLocale` emitted an `x-default` pointing at a path the
+  sitemap never lists.** `x-default` is now emitted only when the default locale names a URL the
+  route actually emits.
+
+### Added
+
+- **`PRIMITIVE_FACTORIES`** in `@ultimat3/core`'s registrar, beside `PRIMITIVE_KINDS`: the six
+  shipped factories over an existing primitive (`llm`, `agent`, `hive`, `agentJob` → `action`/`job`;
+  `backfill`, `scrape` → `job`). Three files each claimed to be "the fourth instance" of the rule;
+  with six shipped, at most one could be.
+
+- **`HealthReport.registered`** — the count of registered readiness checks, so a caller can tell
+  "every check passed" from "nobody registered one". Reported, not enforced.
 
 ## 7.0.0 - 2026-08-21
 

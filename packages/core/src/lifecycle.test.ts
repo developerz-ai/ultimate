@@ -17,6 +17,7 @@ import {
   markReady,
   onShutdown,
   readinessCheckCount,
+  readinessChecks,
   readyzPayload,
   registerReadinessCheck,
   resetLifecycle,
@@ -333,5 +334,68 @@ describe('readiness checks', () => {
     markReady();
     await drain('SIGTERM');
     expect(readyzPayload().status).toBe(503);
+  });
+
+  test('a check named __proto__ is a check, not a prototype assignment', () => {
+    // `results[name] = …` on an object literal SETS THE PROTOTYPE for this one name instead of
+    // adding a key: the check vanished from `checks`, `ready` computed over `{}` — vacuously true
+    // — and a failing check answered 200. `registered` is what makes the two tellable apart.
+    markReady();
+    registerReadinessCheck('__proto__', () => false);
+    expect(Object.keys(readinessChecks())).toEqual(['__proto__']);
+    expect(readyzPayload().body.registered).toBe(1);
+    expect(readyzPayload().status).toBe(503);
+  });
+
+  test('/readyz reports how many checks are registered, not only their verdicts', () => {
+    markReady();
+    // `checks: {}` reads identically for "every check passed" and "nobody registered one", and
+    // only the second is a process whose readiness means "the socket is bound".
+    expect(readyzPayload().body.registered).toBe(0);
+    registerReadinessCheck('postgres', () => true);
+    expect(readyzPayload().body.registered).toBe(1);
+  });
+});
+
+/**
+ * A hook may call back into `drain()`, and one does: `handle.stop()` in `@ultimat3/http` is
+ * `drain('manual')`, and an `accept` hook is exactly where a server stops listening. The memo has
+ * to exist before the first hook runs, because `settleWithin` invokes a hook synchronously.
+ */
+describe('drain re-entrancy', () => {
+  test('an accept hook calling drain() joins the in-flight drain instead of starting one', async () => {
+    configureLifecycle({ logger: createLogger({ writer: () => undefined }) });
+    let calls = 0;
+    let joined: Promise<void> | undefined;
+    onShutdown(
+      'stop-listening',
+      () => {
+        calls += 1;
+        joined = drain('nested');
+      },
+      { phase: 'accept' },
+    );
+
+    const outer = drain('SIGTERM');
+    await outer;
+    expect(calls).toBe(1);
+    expect(joined).toBe(outer);
+  });
+
+  test('every phase runs exactly once when a close hook re-enters', async () => {
+    configureLifecycle({ logger: createLogger({ writer: () => undefined }) });
+    const ran: string[] = [];
+    for (const phase of ['accept', 'inflight', 'close'] as const) {
+      onShutdown(
+        phase,
+        () => {
+          ran.push(phase);
+          void drain('nested');
+        },
+        { phase },
+      );
+    }
+    await drain('SIGTERM');
+    expect(ran).toEqual(['accept', 'inflight', 'close']);
   });
 });

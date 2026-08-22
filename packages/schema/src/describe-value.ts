@@ -3,6 +3,8 @@
 // comment — the rejected value's content never appears in an issue message. Its own file so that
 // rule has one place to live and one test file to enforce it.
 
+import { charCount } from './char-count';
+
 /**
  * The shape of a rejected value — **never its content**.
  *
@@ -25,10 +27,11 @@ export function describeValue(value: unknown): string {
   if (value === null) return 'null';
   switch (typeof value) {
     case 'string':
-      // Code units, not code points: the length checks in `validators.ts` use `.length` too, so a
-      // message quoting a different count than the rule that rejected it would send an agent
-      // chasing an off-by-one that is not there.
-      return countOf(value.length, 'string', 'character');
+      // `charCount`, never `.length`: the message has to quote the same unit as the rule that
+      // rejected the value, and `validators.ts` counts code points. Reading `.length` here made
+      // `t.string.min(3).safeParse('👍a')` say "at least 3 chars, received a string of
+      // 3 characters" — an off-by-one nobody can debug because it is not in the value.
+      return countOf(charCount(value), 'string', 'character');
     case 'number':
       return describeNumber(value);
     case 'boolean':

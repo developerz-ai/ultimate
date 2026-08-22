@@ -88,6 +88,7 @@ export {
   OTLP_PROTOCOL_KEY,
   OTLP_SCOPE,
   OtlpEndpointInvalidError,
+  OtlpHeadersInvalidError,
   OtlpProtocolUnsupportedError,
   otlpAttributes,
   otlpEndpoint,

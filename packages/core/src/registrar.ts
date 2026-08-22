@@ -27,6 +27,43 @@ export const PRIMITIVE_KINDS = [
 
 export type PrimitiveKind = (typeof PRIMITIVE_KINDS)[number];
 
+/** One factory over one primitive: the export's name, the package that ships it, what it returns. */
+export interface PrimitiveFactory {
+  readonly factory: string;
+  /** The package specifier the factory is imported from, so a `fix:` can be pasted. */
+  readonly pkg: string;
+  readonly kind: PrimitiveKind;
+}
+
+/**
+ * The other half of "never invent a ninth": the factories that already exist, in one table.
+ *
+ * Prose counted them — "the fourth instance of the framework's factory rule" — in three files that
+ * cannot see each other, so every ordinal was wrong the moment a fifth landed and none of them
+ * could be checked. A list here can be: `@ultimat3/cli` is tier 5, may import `ai`, `jobs` and
+ * `scraping`, and pins that every exported function returning an `Action`/`JobHandle` from outside
+ * their owning packages has a row. Adding a factory means adding a row, not editing a sentence.
+ *
+ * Sorted by package then name so the diff of a new row is one line.
+ *
+ * Every ROW is frozen, not just the list. `readonly` fields are a compile-time claim and this is a
+ * public export: freezing the array alone left `PRIMITIVE_FACTORIES[0].kind = 'entity'` a silent
+ * write from any untyped caller, which is the same defect `@ultimat3/money`'s currency rows
+ * carried — a table the framework hands out is a constant at RUNTIME or it is not a constant.
+ */
+export const PRIMITIVE_FACTORIES = Object.freeze<readonly PrimitiveFactory[]>(
+  (
+    [
+      { factory: 'agent', pkg: '@ultimat3/ai', kind: 'action' },
+      { factory: 'agentJob', pkg: '@ultimat3/ai', kind: 'job' },
+      { factory: 'hive', pkg: '@ultimat3/ai', kind: 'action' },
+      { factory: 'llm', pkg: '@ultimat3/ai', kind: 'action' },
+      { factory: 'backfill', pkg: '@ultimat3/jobs', kind: 'job' },
+      { factory: 'scrape', pkg: '@ultimat3/scraping', kind: 'job' },
+    ] satisfies readonly PrimitiveFactory[]
+  ).map((entry) => Object.freeze(entry)),
+);
+
 /**
  * What a registrar hands back: the primitives it actually took, each carrying the name
  * registration stamped on it. Returning the registered set — rather than nothing — is what lets

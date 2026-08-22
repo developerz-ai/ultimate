@@ -48,12 +48,16 @@ function decimalOf(value: unknown): Decimal | undefined {
  * a 38-digit `numeric` orders by its digits rather than by whatever a `Number` rounded it to.
  */
 function compare(left: Decimal, right: Decimal): number {
-  if (left.negative !== right.negative) return left.negative ? -1 : 1;
   const width = Math.max(left.fraction.length, right.fraction.length);
   const scaled = (value: Decimal): bigint =>
     BigInt(`${value.whole}${value.fraction.padEnd(width, '0')}`);
   const first = scaled(left);
   const second = scaled(right);
+  // Magnitude BEFORE sign, because a `numeric` has exactly one zero: `select '-0'::numeric =
+  // '0'::numeric` is true, and so is `'-0.00' = '0'`. Comparing the sign first answered `-1` for
+  // that pair and cut a keyset page boundary between two rows the database calls equal.
+  if (first === 0n && second === 0n) return 0;
+  if (left.negative !== right.negative) return left.negative ? -1 : 1;
   // Never a subtraction: the difference between two `bigint`s is exact and the return type is a
   // `number`, which cannot hold it.
   const order = first < second ? -1 : first > second ? 1 : 0;

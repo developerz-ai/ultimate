@@ -79,12 +79,17 @@ escape, so a cause could repaint the screen or hide the line above it. `@ultimat
 deliberate duplicate for the tier-0 reason below, pinned behaviourally by
 `single-line-pin.test.ts` in `@ultimat3/cli`.
 
-`describeValue` in `error-render.ts` is a character-for-character duplicate of `describeValue` in
+`describeValue` in `error-render.ts` is a deliberate duplicate of `describeValue` in
 `packages/schema/src/describe-value.ts`, for the same tier-0 reason `SCHEMA_ERROR_CODE_TITLES` is
 one: schema and core are both tier 0 and `core → schema` is **not** a declared edge in
-`scripts/lib/tiers.ts`, so neither may import the other. Keep the two identical; a pin test in
+`scripts/lib/tiers.ts`, so neither may import the other. Keep the two ANSWERING identically — that
+is the contract, and the source is no longer character-for-character: schema counts characters
+through `char-count.ts`, which core copies privately. A pin test in
 `@ultimat3/cli` (which may legally import both) is the mechanical half, the same shape as
-`schema-error-codes-pin.test.ts`. The rule it enforces: a `cause` reaches the log index AND the
+`schema-error-codes-pin.test.ts`. **A string's length is CODE POINTS in both, `As of 2026-08-22`**
+— `validators.ts` rejects in that unit and `json-schema.ts` publishes `minLength` in it, so
+`.length` made `t.string.min(3).safeParse('👍a')` say "at least 3 chars, received a string of 3
+characters". The rule it enforces: a `cause` reaches the log index AND the
 HTTP problem document, redaction is by log FIELD key, and a value baked into a message string has
 no key left to redact — so `parseId`/`uuidTimestamp` describe a rejected id and never echo it.
 
@@ -207,6 +212,16 @@ which is what stops an exporter from turning 40k rps into 40k rps of spans. `con
 takes a `Sampler`; the default reads `OTEL_TRACES_SAMPLER*` **at the first span, never at module
 scope** (same call-time rule as `cursor.ts`'s secret). `resetTelemetry()` drops both.
 
+**An empty `spanId` means "no inbound decision", and every reader must honour it, `As of
+2026-08-22`.** `currentSpanContext()` synthesises `{ traceId, spanId: '', traceFlags: 1 }` from the
+request context — a trace id this process minted, plus the header it would send onward. Handing
+that to `Sampler.shouldSample` as a parent made `parentBasedRatioSampler` inherit a bit nobody sent,
+so at ratio 0 a root span outside a request exported 0 and one inside exported 1 — and
+`@ultimat3/http`'s `pipeline.ts` is `runWithContext` then `withSpan`, so **every HTTP root span was
+exported at every ratio**. `startSpan` now narrows through `inboundParent()`: the trace id is
+carried, the decision is not. It is the same discriminator `end()` already used to drop a synthetic
+`parentSpanId`.
+
 The OTLP exporters are built, not wrapped, and the case is in
 [`docs/idea/18-build-vs-wrap.md`](../../docs/idea/18-build-vs-wrap.md): OTLP/HTTP JSON is `fetch`
 plus `JSON.stringify`, while `@opentelemetry/api` would put a SECOND `Span` type in the framework
@@ -215,6 +230,15 @@ plus `JSON.stringify`, while `@opentelemetry/api` would put a SECOND `Span` type
 **gRPC (`:4317`) is out of scope** — it needs HTTP/2 and protobuf, and both the `:4317` port and a
 non-`http/json` `OTEL_EXPORTER_OTLP_PROTOCOL` throw `X_OTLP_PROTOCOL_UNSUPPORTED` naming `:4318`.
 A boot that must not throw asks `tryOtlpEndpoint(signal)` first.
+
+**Three OTLP variables, three codes, `As of 2026-08-22`** — `X_OTLP_ENDPOINT_INVALID`,
+`X_OTLP_HEADERS_INVALID`, `X_OTLP_PROTOCOL_UNSUPPORTED`, one per variable an operator sets. The
+headers one is not a duplicate of the endpoint one: `otlpHeaders` percent-decodes, so `%zz` in
+`OTEL_EXPORTER_OTLP_HEADERS` used to take the process down with a bare `URIError` at exporter
+construction, and raising the ENDPOINT code instead would send the first reader of
+`x errors explain` to inspect a variable that is fine. A title is what an agent reads first, and an
+accurate `cause:` does not rescue one that misdirects. The header **key** is in the cause, the fix
+and `meta`; the **value** is in none of them — it is the collector's credential.
 
 `error-reporter.ts` is the same shape a third time: `ErrorReporter`, a no-op default, a memory
 reporter for tests, and a transport on the wire (`error-reporter-sentry.ts`, an optional separate
@@ -247,12 +271,31 @@ bun run typecheck
 `markReady()` means **bound**, and readiness means **usable** — two different facts since
 `registerReadinessCheck(name, check)`. `/readyz` is ready only when the state is `ready` AND every
 named check passes, and `HealthReport.checks` carries them by name because "alert on check
-failures by check name" is not writable against a boolean. Checks are **synchronous** on purpose:
+failures by check name" is not writable against a boolean. `HealthReport.registered` carries the
+COUNT beside it, `As of 2026-08-22`: `checks: {}` reads identically for "every check passed" and
+"nobody registered one", and only the second is a `/readyz` meaning no more than "the socket is
+bound". Reported, never enforced — **an empty registry is still `ready`, and `/readyz` still
+answers 200**: `Object.values({}).every(…)` is vacuously true, and that is deliberate so a role
+with no dependency does not have to invent a check to boot. `registered` is the field a caller
+reads to tell "all checks passed" from "there were none".
+
+`readinessChecks()` builds its record through `Object.fromEntries`, never by assigning
+`results[name]` — assignment to the one name `__proto__` sets the PROTOTYPE rather than adding a
+key, so a check by that name disappeared from the report and a `failing` one answered 200. Checks are **synchronous** on purpose:
 a probe that awaits a network call turns a slow dependency into a wedged endpoint and a restart
 loop, so the owner of the dependency keeps a boolean fresh and this reads it. Liveness ignores
 them — a database outage that failed `/healthz` would restart the whole fleet into the same
 outage. The registration returns its unregister, same shape and same ownership rule as
 `onShutdown`; `readinessCheckCount()` is the leak probe.
+
+**`drain()`'s memo is published BEFORE the first hook runs, `As of 2026-08-22`, and that ordering
+is the whole of the function.** A hook may call back into `drain()` and one does — `handle.stop()`
+in `@ultimat3/http` is `drain('manual')`, and an `accept` hook is exactly where a server stops
+listening — while `settleWithin` invokes a hook SYNCHRONOUSLY. `drainPromise = (async () => …)()`
+had therefore not assigned when the first hook ran: the re-entrant call read `undefined`, started a
+second whole drain and recursed **~4,700 deep** until the stack ran out, every level swallowed by
+`settleWithin` as `shutdown hook failed`. The guard and the registration are now one synchronous
+step (`jobs`' `worker.ts` states the same rule), with the phases in `runDrain`.
 
 **The drain deadline is enforced, not merely computed, and there is no unbounded state.**
 `ShutdownReason.deadlineAt` was always handed to every hook and **no hook has ever read it** —

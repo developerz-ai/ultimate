@@ -175,3 +175,28 @@ function codeOf(run: () => unknown): string {
   }
   return 'no-throw';
 }
+
+describe('the shipped rows are constants', () => {
+  test('a row handed out by currencyInfo cannot be rewritten', () => {
+    // `exponent` decides what every stored `minor` in that currency counts, so one write here
+    // silently rescales every USD amount in the process by a power of ten — and `registerCurrency`
+    // refuses exactly this change through its own door (`X_CURRENCY_REDEFINED`).
+    const usd = currencyInfo('USD');
+    // The compiler now refuses `usd.exponent = 3` outright; this is the caller that has no types
+    // — plain JS, or a cast. A module is always strict, so the write THROWS rather than being
+    // dropped in silence.
+    const untyped = usd as { exponent: number; name: string };
+    expect(() => {
+      untyped.exponent = 3;
+    }).toThrow(TypeError);
+    expect(currencyInfo('USD').exponent).toBe(2);
+    expect(fromDecimal('12.99', 'USD').minor).toBe(1299);
+  });
+
+  test('CURRENCIES is frozen, and so is every row in it', () => {
+    // Both halves: a frozen array holding writable rows guards the LIST while leaving every value
+    // in it open, which is the half that would have mattered.
+    expect(Object.isFrozen(CURRENCIES)).toBe(true);
+    expect(CURRENCIES.filter((row) => !Object.isFrozen(row))).toEqual([]);
+  });
+});

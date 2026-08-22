@@ -101,7 +101,14 @@ export class SchemaError extends Error {
     // failed validation, which is the request body.
     const code = singleLine(init.code);
     const title = singleLine(TITLES[init.code] ?? humanize(init.code));
-    super(`${code}: ${title}`, { cause: singleLine(init.cause) });
+    const cause = singleLine(init.cause);
+    // The cause is in `message` for the reason `UltimateError`'s constructor gives: `message` is
+    // the ONLY field a runtime prints when an error escapes uncaught — a worker log, a CI
+    // transcript, a stack trace — and `code: title` alone names which rule fired but not which
+    // field, row or value. `format()` still renders the canonical 3 lines from the fields, so the
+    // two cannot disagree. Kept identical to core's on purpose; both are tier 0 and neither may
+    // import the other.
+    super(`${code}: ${title} — ${cause}`, { cause });
     this.code = code;
     this.title = title;
     this.fix = singleLine(init.fix);

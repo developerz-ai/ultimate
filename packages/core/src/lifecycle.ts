@@ -82,6 +82,14 @@ export interface HealthReport {
   readonly buildId: string;
   /** Named, because "alert on check failures BY CHECK NAME" is not writable against a boolean. */
   readonly checks: Readonly<Record<string, ReadinessStatus>>;
+  /**
+   * How many checks are registered. `checks: {}` reads identically for "every check passed" and
+   * "nobody registered one", and only the second is a `/readyz` that means no more than "the
+   * socket is bound" — which is what the chart's and compose's healthchecks route traffic on.
+   * Reported rather than enforced: an empty registry is still ready, so a role that genuinely has
+   * no dependency does not have to invent a check to boot.
+   */
+  readonly registered: number;
 }
 
 export interface HealthPayload {
@@ -192,18 +200,25 @@ function report(level: 'info' | 'warn' | 'error', message: string, fields: LogFi
   }
 }
 
-/** Every check, run now, by name. A check that throws is `failing` — never an unhandled error. */
+/**
+ * Every check, run now, by name. A check that throws is `failing` — never an unhandled error.
+ *
+ * Built through `Object.fromEntries`, never by assigning `results[name]`: assignment to the one
+ * name `__proto__` sets the PROTOTYPE instead of adding a key, so that check vanished from the
+ * report, `ready` was computed over an empty object — vacuously true — and a failing check
+ * answered 200. `fromEntries` defines own properties and has no such name.
+ */
 export function readinessChecks(): Readonly<Record<string, ReadinessStatus>> {
-  const results: Record<string, ReadinessStatus> = {};
+  const results: [string, ReadinessStatus][] = [];
   for (const [name, check] of readiness) {
     try {
-      results[name] = check() ? 'ok' : 'failing';
+      results.push([name, check() ? 'ok' : 'failing']);
     } catch (thrown) {
-      results[name] = 'failing';
+      results.push([name, 'failing']);
       report('warn', 'readiness check threw', { check: name, error: thrown });
     }
   }
-  return results;
+  return Object.fromEntries(results);
 }
 
 export function inflightCount(): number {
@@ -328,43 +343,62 @@ async function runPhase(phase: ShutdownPhase, reason: ShutdownReason): Promise<v
   }
 }
 
-/** Idempotent: concurrent signals join the same drain. */
+/** The three phases, in order, under one budget. Never rejects — `drain()` depends on that. */
+async function runDrain(signal: string, reason: ShutdownReason): Promise<void> {
+  try {
+    report('info', 'draining', { signal, deadlineMs, inflight });
+    await runPhase('accept', reason);
+
+    // Real monotonic, like `deadlineAt` itself: `waitForIdle` sleeps on a real `setTimeout`, and
+    // a budget read off an injected clock is a number that timer will never honour.
+    const remaining = Math.max(0, reason.deadlineAt - systemClock.monotonic());
+    const idle = await waitForIdle(remaining);
+    if (!idle) {
+      report('warn', 'X_SHUTDOWN_TIMEOUT', {
+        code: 'X_SHUTDOWN_TIMEOUT',
+        cause: `${inflight} in-flight operations still running after ${deadlineMs}ms`,
+        fix: 'raise the budget past the slowest handler — configureLifecycle({ deadlineMs: 600_000 }) for a 10-minute one — and set terminationGracePeriodSeconds to at least as many seconds, or shorten the handler',
+      });
+    }
+
+    await runPhase('inflight', reason);
+    await runPhase('close', reason);
+  } catch (thrown) {
+    // Nothing above should reach here — every hook is caught by `settleWithin` and every line
+    // goes through `report`. If something does, the drain still ENDS: a rejected `drainPromise`
+    // is a memo that re-rejects for every later caller and an unhandled rejection that kills the
+    // process mid-drain, which is strictly worse than a drain that finished badly and said so.
+    report('error', 'drain failed', { signal, error: thrown });
+  } finally {
+    state = 'stopped';
+  }
+  report('info', 'stopped', { signal });
+}
+
+/**
+ * Idempotent: concurrent signals join the same drain, and so does a RE-ENTRANT one.
+ *
+ * The memo is published before `runDrain` is called, and that ordering is the whole of this
+ * function. A hook may call back in here — `handle.stop()` in `@ultimat3/http` is `drain('manual')`
+ * and an `accept` hook is exactly where a server stops listening — and `settleWithin` invokes a
+ * hook SYNCHRONOUSLY, so the old `drainPromise = (async () => …)()` had not assigned yet when the
+ * first hook ran: the re-entrant call saw `undefined`, started a second whole drain, and recursed
+ * ~4,700 deep until the stack ran out, every level swallowed by `settleWithin` as
+ * `shutdown hook failed`. Same rule as `packages/jobs/src/worker.ts` — guard and registration in
+ * one synchronous step.
+ */
 export function drain(signal = 'manual'): Promise<void> {
   if (drainPromise !== undefined) return drainPromise;
   state = 'draining';
   const reason: ShutdownReason = { signal, deadlineAt: systemClock.monotonic() + deadlineMs };
-
-  drainPromise = (async () => {
-    try {
-      report('info', 'draining', { signal, deadlineMs, inflight });
-      await runPhase('accept', reason);
-
-      // Real monotonic, like `deadlineAt` itself: `waitForIdle` sleeps on a real `setTimeout`, and
-      // a budget read off an injected clock is a number that timer will never honour.
-      const remaining = Math.max(0, reason.deadlineAt - systemClock.monotonic());
-      const idle = await waitForIdle(remaining);
-      if (!idle) {
-        report('warn', 'X_SHUTDOWN_TIMEOUT', {
-          code: 'X_SHUTDOWN_TIMEOUT',
-          cause: `${inflight} in-flight operations still running after ${deadlineMs}ms`,
-          fix: 'raise the budget past the slowest handler — configureLifecycle({ deadlineMs: 600_000 }) for a 10-minute one — and set terminationGracePeriodSeconds to at least as many seconds, or shorten the handler',
-        });
-      }
-
-      await runPhase('inflight', reason);
-      await runPhase('close', reason);
-    } catch (thrown) {
-      // Nothing above should reach here — every hook is caught by `settleWithin` and every line
-      // goes through `report`. If something does, the drain still ENDS: a rejected `drainPromise`
-      // is a memo that re-rejects for every later caller and an unhandled rejection that kills the
-      // process mid-drain, which is strictly worse than a drain that finished badly and said so.
-      report('error', 'drain failed', { signal, error: thrown });
-    } finally {
-      state = 'stopped';
-    }
-    report('info', 'stopped', { signal });
-  })();
-
+  let published!: () => void;
+  drainPromise = new Promise<void>((resolve) => {
+    published = resolve;
+  });
+  // Both settle paths, for the reason `installSignalHandlers` gives below: `runDrain` cannot
+  // reject today — that is its `try/finally`, not luck — and a rejected memo would re-reject for
+  // every later caller and end the process the drain was trying to end cleanly.
+  void runDrain(signal, reason).then(published, published);
   return drainPromise;
 }
 
@@ -410,6 +444,7 @@ export function healthReport(): HealthReport {
     inflight,
     buildId: process.env['BUILD_ID'] ?? 'dev',
     checks,
+    registered: readiness.size,
   };
 }
 

@@ -5,7 +5,7 @@ Tier 0. **Imports no `@ultimat3/*` package — not even `@ultimat3/core`.**
 | Rule | |
 |---|---|
 | Deps | none (`bun-types` only) |
-| Errors | `SchemaError` mirrors `UltimateError` field-for-field; keep `Symbol.for('ultimate.error')` |
+| Errors | `SchemaError` mirrors `UltimateError` field-for-field **and message-for-message** (`code: title — cause`); keep `Symbol.for('ultimate.error')` |
 | New validator | add to `validators.ts` **and** `TNamespace` **and** `t.ts` **and** `json-schema.ts` |
 | IR | every schema carries `.node: SchemaNode`; generators read that, never the closure |
 | **Issue messages** | the shape of the rejected value, **never its content** — see `describe-value.ts` |
@@ -14,7 +14,11 @@ Tier 0. **Imports no `@ultimat3/*` package — not even `@ultimat3/core`.**
 | Re-exports | `action`, `query`, `jobs`, `entity` re-export `t` verbatim so an authoring file imports one package — never let them wrap or copy it |
 
 Module order (no cycles):
-`describe-value → node → builder → money-value → validators → discriminated-union → provider → t`.
+`char-count → describe-value → node → builder → money-value → validators → discriminated-union →
+provider → t`. `char-count.ts` is imported by BOTH `validators.ts` (which rejects on length) and
+`describe-value.ts` (which renders the length in the same message), because they disagreed: the
+rule counted code points and the message counted UTF-16 units, so `t.string.min(3)` refused `'👍a'`
+with "at least 3 chars, received a string of 3 characters".
 `standard.ts` and `errors.ts` depend on nothing but each other. `iso-date.ts` imports nothing and
 is imported by `validators.ts` and `coerce.ts` — the two doors a `t.date` string comes through, so
 the rule that a clock time must carry an offset or `Z` has one copy, not one per door.
@@ -24,7 +28,8 @@ which is returned to the caller AND interpolated into the log line — and core'
 KEY, so a value baked into a string has no key left to redact. `'password'` being in `redactedKeys`
 did not help: `expected(…, value)` had already written `received "hunter2"` before the logger saw
 it. Every rejected value goes through `describeValue`, which reports length and type and nothing
-else. No dev flag re-enables the echo — one misconfigured environment is the same breach, and a dev
+else, in CHARACTERS (`char-count.ts`) — the unit the rule that rejected it counts in. No dev flag
+re-enables the echo — one misconfigured environment is the same breach, and a dev
 overlay already holds the raw body. `describe-value.test.ts` is the enforcement.
 
 `X_SCHEMA_DISCRIMINANT_INVALID` is thrown where a `discriminatedUnion` is BUILT, not where a value

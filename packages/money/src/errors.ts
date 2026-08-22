@@ -73,12 +73,49 @@ function codeLiteral(currency: string): string {
   return `'${codeExample(currency)}'`;
 }
 
+/** A number whose `String()` is source a decimal parser accepts — never `1e+21`, `1e-7` or `NaN`. */
+const PLAIN_DECIMAL = /^-?\d+(?:\.\d+)?$/;
+
 export function moneyNotInteger(minor: number, currency: string): MoneyError {
   return new MoneyError({
     code: 'X_MONEY_NOT_INTEGER',
     cause: `minor units must be a safe integer, got ${String(minor)} for ${currency}`,
-    fix: `use fromDecimal('${Number.isFinite(minor) ? minor : 0}', ${codeLiteral(currency)}) or round explicitly with multiply(m, factor, 'half-up')`,
+    fix: notIntegerFix(minor, currency),
   });
+}
+
+/**
+ * Three arrivals reach `money()` with an unusable `minor`, and each needs its own instruction.
+ * One line answered all three — `fromDecimal('<minor>', '<ccy>')` — and it raised THIS code back
+ * at the reader for every value past the currency's own digits, which is the anti-pattern
+ * `currencyDeclarationInvalid` below already names; for `1e21` it read `fromDecimal('1e+21', …)`,
+ * a spelling `fromDecimal`'s own `DECIMAL` refuses outright; and for `NaN` it read
+ * `fromDecimal('0', …)`, which runs and invents an amount nobody wrote.
+ */
+function notIntegerFix(minor: number, currency: string): string {
+  if (!Number.isFinite(minor)) {
+    return 'no rounding recovers a non-finite amount — trace it back to the division or float multiply upstream, then build the value from a decimal string';
+  }
+  // `Math.round` is offered only when its RESULT is storable: past a safe integer it answers the
+  // same unusable magnitude, so the instruction would raise the error it is answering.
+  if (!Number.isSafeInteger(Math.round(minor))) {
+    return `${String(minor)} is more minor units than a safe integer holds — split the amount, or carry it as two ${codeExample(currency)} values`;
+  }
+  const code = codeLiteral(currency);
+  // Safe to interpolate un-escaped, and only here: `PLAIN_DECIMAL` has just proved the spelling is
+  // digits, one dot and one leading `-`, so it closes no literal `renderFixLiteral` would escape.
+  const spelling = String(minor);
+  const rounded = `money(Math.round(${spelling}), ${code})`;
+  if (!PLAIN_DECIMAL.test(spelling)) {
+    return `${rounded} — the value counts minor units, and that is the whole one nearest it`;
+  }
+  const digits = countFractionDigits(spelling);
+  // `{ scale: d }` on a value with exactly `d` fraction digits can never be too precise for
+  // itself, whatever the currency's exponent is — so this branch needs no exponent and loses no
+  // digit. Past MAX_MONEY_SCALE no scale holds them all and rounding is the only offer left, the
+  // same withdrawal `decimalTooPrecise` makes.
+  const asAmount = digits <= MAX_MONEY_SCALE ? `{ scale: ${digits} }` : "{ rounding: 'half-up' }";
+  return `${rounded} if ${spelling} counts minor units, or fromDecimal('${spelling}', ${code}, ${asAmount}) if it is a ${codeExample(currency)} amount — a fractional minor is usually an unrounded multiply, whose third argument names the mode`;
 }
 
 /**

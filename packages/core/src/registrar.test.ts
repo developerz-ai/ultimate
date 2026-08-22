@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import {
   hasPrimitiveRegistrar,
   type ModuleRegistrar,
+  PRIMITIVE_FACTORIES,
   PRIMITIVE_KINDS,
   primitiveRegistrar,
   type RegisteredPrimitive,
@@ -80,6 +81,50 @@ describe('the eight primitives', () => {
       const resolved = PRIMITIVE_KINDS.filter(hasPrimitiveRegistrar);
       expect(resolved).toEqual([kind]);
     }
+  });
+});
+
+/**
+ * The other half of "don't invent a ninth": the factories that already exist. Prose counted them
+ * ("the fourth instance of the factory rule") in three files that could not see each other, so the
+ * ordinal was wrong the moment a fifth landed. This table is what a new factory is added to.
+ */
+describe('PRIMITIVE_FACTORIES', () => {
+  test('lists every shipped factory, each over one of the eight kinds', () => {
+    expect(PRIMITIVE_FACTORIES).toHaveLength(6);
+    for (const entry of PRIMITIVE_FACTORIES) {
+      expect(PRIMITIVE_KINDS).toContain(entry.kind);
+      expect(entry.pkg.startsWith('@ultimat3/')).toBe(true);
+    }
+  });
+
+  test('names the six the framework ships, and no factory is listed twice', () => {
+    expect(PRIMITIVE_FACTORIES.map((entry) => `${entry.pkg}#${entry.factory}`)).toEqual([
+      '@ultimat3/ai#agent',
+      '@ultimat3/ai#agentJob',
+      '@ultimat3/ai#hive',
+      '@ultimat3/ai#llm',
+      '@ultimat3/jobs#backfill',
+      '@ultimat3/scraping#scrape',
+    ]);
+  });
+
+  test('is frozen, so a caller cannot grow the vocabulary at runtime', () => {
+    expect(Object.isFrozen(PRIMITIVE_FACTORIES)).toBe(true);
+  });
+
+  test('every ROW is frozen too, so a caller cannot rewrite what a factory returns', () => {
+    // A frozen array holding writable rows guards the LIST while leaving every value in it open —
+    // the half that would have mattered, because `kind` is what `x affected` and the manifest read
+    // to decide which primitive a factory produces. `readonly` is a compile-time claim; this is the
+    // caller that has no types. A module is always strict, so the write THROWS rather than being
+    // dropped in silence.
+    expect(PRIMITIVE_FACTORIES.filter((entry) => !Object.isFrozen(entry))).toEqual([]);
+    const untyped = PRIMITIVE_FACTORIES[0] as unknown as { kind: string };
+    expect(() => {
+      untyped.kind = 'entity';
+    }).toThrow(TypeError);
+    expect(PRIMITIVE_FACTORIES[0]?.kind).toBe('action');
   });
 });
 

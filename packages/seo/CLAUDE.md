@@ -39,6 +39,13 @@ Tier 1. May import `@ultimat3/core`, `@ultimat3/schema`, `@ultimat3/i18n`. Nothi
   because `DEFAULT_WIDTHS` happens to ascend — `widths: [1200, 640]` handed every browser without
   `srcset` support the 640 variant of a 1200-wide image. Never re-derive it from position, and
   never sort inside `usableWidths`: the `srcset` order is the caller's to choose.
+- **`x-default` names a URL the sitemap CONTAINS, or it is not emitted.** `buildSitemap` pushed
+  the unprefixed `path` for every route with `locales` set — and with no `defaultLocale`,
+  `localize` prefixes every locale, so the whole hreflang cluster pointed at a URL the sitemap
+  never lists. A dangling `x-default` is the shape a search engine drops the entire cluster for,
+  which costs the alternates that WERE right. `defaultLocaleUrl` answers `undefined` unless the
+  default locale's own URL is among the ones this route emits — the same explicit-fallback shape
+  `meta.ts`'s `hreflangSet` takes. Never re-derive it from `path`.
 - **Errors name the file, not the URL.** `RouteRecord.file` is in every cause and every fix; an agent must be able to open the source without guessing.
 - **Fail closed, and core reads the key.** `isIndexable()` is `environment === 'production'` and
   nothing else — `staging`, a laptop, a typo and an unset variable all disallow. `ULTIMATE_ENV` has

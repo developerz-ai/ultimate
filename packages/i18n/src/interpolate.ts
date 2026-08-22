@@ -3,6 +3,8 @@
  * Pure string work: it never reads a catalog and never resolves a locale.
  */
 
+import { cachedFormatter, canonicalLocale } from '@ultimat3/core';
+
 export type InterpolationValue = string | number | boolean;
 export type InterpolationVars = Record<string, InterpolationValue>;
 
@@ -108,16 +110,25 @@ export function pluralVariantsOf(key: string): string[] {
 
 const rulesCache = new Map<string, Intl.PluralRules>();
 
+/**
+ * Bounded and canonically keyed, because `locale` reaches here from an `Accept-Language` header
+ * through `t()`. Keyed raw into an unbounded `Map`, every distinct spelling a client sent bought a
+ * PERMANENT `Intl.PluralRules` — memory the client chooses. `canonicalLocale` collapses `EN-us`
+ * and `en-US` onto one key and `cachedFormatter` caps the rest; neither half is sufficient alone,
+ * which is why both come from the one place `@ultimat3/money` and `@ultimat3/time` read them from.
+ */
 function pluralRulesFor(locale: string): Intl.PluralRules {
-  const cached = rulesCache.get(locale);
-  if (cached !== undefined) return cached;
-  // An unknown tag would throw inside Intl; degrade to `en` rather than break a render.
-  let rules: Intl.PluralRules;
-  try {
-    rules = new Intl.PluralRules(locale);
-  } catch {
-    rules = new Intl.PluralRules('en');
-  }
-  rulesCache.set(locale, rules);
-  return rules;
+  // The canonical tag is the key AND what reaches `Intl`, so the rules a key answers with never
+  // depend on which spelling of it arrived first. A tag `canonicalLocale` refuses is not a locale
+  // at all and this function already degrades to English for it — so `en` is the key too, rather
+  // than one bounded slot per junk string a client chose to send.
+  const tag = canonicalLocale(locale) ?? 'en';
+  return cachedFormatter(rulesCache, tag, () => {
+    try {
+      return new Intl.PluralRules(tag);
+    } catch {
+      // An unknown tag would throw inside Intl; degrade to `en` rather than break a render.
+      return new Intl.PluralRules('en');
+    }
+  });
 }
