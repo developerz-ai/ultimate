@@ -11,6 +11,7 @@ import type { JobExecution } from './execute';
 import { executeJob } from './execute';
 import { startLeaseHeartbeat } from './heartbeat';
 import { getJob } from './job';
+import type { RunSignal } from './run-signal';
 import { createRunSignal } from './run-signal';
 import type { EventLookup } from './steps';
 import type { FleetSlots } from './worker-fleet-slots';
@@ -77,33 +78,42 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
     ...(options.clock === undefined ? {} : { clock: options.clock }),
   });
 
-  // The caller's context plus this lease's cancellation, so a job cancelled from outside — or one
-  // this worker lost the lease on — stops at the next renewal. `steps.ts` refuses every write past
-  // the signal, which is what unwinds a body that never reads it. Composed through a controller
-  // this worker owns rather than `AbortSignal.any`, for two reasons: it is handed BACK when the run
-  // settles (an app whose `context()` carries a process-lifetime signal was accumulating one
-  // composite per job), and the worker can abort it itself — which is the only way a fleet slot
-  // taken by somebody else reaches the body running under it.
-  const runSignal = createRunSignal([base.signal, heartbeat.signal]);
-  const ctx: Ctx = { ...base, signal: runSignal.signal };
-
-  // The fleet slot this job already holds, kept alive for as long as the lease is and stopped in
-  // the same `finally`: one clock for "this worker still owns the job" and "this worker still owns
-  // the slot" is one fewer way for them to disagree. A renewal answering "not yours" means another
-  // worker is already running this job under a cap of one, so it CANCELS — discarding that boolean
-  // made `job.concurrency` a number the framework prints and does not hold.
-  const stopSlotRenewal = fleetSlots.startRenewal(claimed.id, (slot) => {
-    runSignal.abort(
-      new JobSlotLostError({ job: claimed.name, jobId: claimed.id, slot: slot.slot }),
-    );
-  });
-
-  // The job's span is a CHILD of the request that queued it when the row carries a trace. That
-  // link is what `04-jobs.md` promised and no column existed to hold: without it a checkout's
-  // `chargeCard` opens a fresh root two seconds later with nothing pointing back.
-  const parent = parseTraceparent(claimed.traceparent);
+  // Everything from here on is INSIDE the `finally`, because the heartbeat is now running.
+  // `createRunSignal` and `fleetSlots.startRenewal` are ordinary calls — the second is an injected
+  // seam whose production implementation reaches a lease store — and a throw from either used to
+  // land outside the `try`, leaving an interval renewing the lease of a job that never ran with
+  // nothing holding a reference to stop it. The same defect `context()` was moved ABOVE the
+  // heartbeat for; the acquisitions after it need the `finally` rather than a reordering, since
+  // each one depends on the last. `undefined` is "never taken", and both handbacks are idempotent.
+  let runSignal: RunSignal | undefined;
+  let stopSlotRenewal: (() => void) | undefined;
 
   try {
+    // The caller's context plus this lease's cancellation, so a job cancelled from outside — or
+    // one this worker lost the lease on — stops at the next renewal. `steps.ts` refuses every write
+    // past the signal, which is what unwinds a body that never reads it. Composed through a
+    // controller this worker owns rather than `AbortSignal.any`, for two reasons: it is handed BACK
+    // when the run settles (an app whose `context()` carries a process-lifetime signal was
+    // accumulating one composite per job), and the worker can abort it itself — which is the only
+    // way a fleet slot taken by somebody else reaches the body running under it.
+    runSignal = createRunSignal([base.signal, heartbeat.signal]);
+    const signal = runSignal;
+    const ctx: Ctx = { ...base, signal: signal.signal };
+
+    // The fleet slot this job already holds, kept alive for as long as the lease is and stopped in
+    // the same `finally`: one clock for "this worker still owns the job" and "this worker still
+    // owns the slot" is one fewer way for them to disagree. A renewal answering "not yours" means
+    // another worker is already running this job under a cap of one, so it CANCELS — discarding
+    // that boolean made `job.concurrency` a number the framework prints and does not hold.
+    stopSlotRenewal = fleetSlots.startRenewal(claimed.id, (slot) => {
+      signal.abort(new JobSlotLostError({ job: claimed.name, jobId: claimed.id, slot: slot.slot }));
+    });
+
+    // The job's span is a CHILD of the request that queued it when the row carries a trace. That
+    // link is what `04-jobs.md` promised and no column existed to hold: without it a checkout's
+    // `chargeCard` opens a fresh root two seconds later with nothing pointing back.
+    const parent = parseTraceparent(claimed.traceparent);
+
     return await withSpan(
       `job.${handle.name}`,
       () =>
@@ -126,10 +136,10 @@ export async function runClaimedJob(options: RunClaimedOptions): Promise<JobExec
       },
     );
   } finally {
-    stopSlotRenewal();
+    stopSlotRenewal?.();
     heartbeat.stop();
     // Nothing of the caller's is held past the run: `dispose` is what makes the composition above
     // reversible, and it is the whole reason this is not `AbortSignal.any`.
-    runSignal.dispose();
+    runSignal?.dispose();
   }
 }

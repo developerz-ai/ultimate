@@ -357,3 +357,77 @@ describe('clear', () => {
     expect(queue.pending().map((mutation) => mutation.seq)).toEqual([4]);
   });
 });
+
+// The server settles a mutation while the pass that would have sent it is parked one frame earlier.
+// `#sendable()` is a SNAPSHOT taken before the loop, so the pass held an entry `ack` had already
+// removed from the queue: it re-sent an intent the server had answered, on the same key, and
+// counted it in `DrainReport.sent` — the number a UI renders as "synced" larger than the frames on
+// the wire. Not fixed with an epoch bump: an ack arriving DURING a drain is the normal case, and
+// invalidating the pass would stop every drain a prompt server answers.
+describe('a mutation settled while the pass is parked', () => {
+  test('an ack mid-pass is not sent again, and `sent` equals the frames on the wire', async () => {
+    const { queue } = await seeded();
+    const parked = deferred();
+    const sent: string[] = [];
+
+    const pass = queue.drain(async (mutation) => {
+      sent.push(mutation.key);
+      if (mutation.key === 'like:p1') await parked.promise;
+    });
+
+    await Promise.resolve();
+    // The server answers p1 and p2 while the pass is still inside p1's `send`.
+    await queue.ack('like:p2');
+    parked.resolve();
+    const report = await pass;
+
+    expect(sent).toEqual(['like:p1', 'like:p3']);
+    expect(report.sent).toBe(sent.length);
+    expect(queue.find('like:p2')).toBeUndefined();
+  });
+
+  test('a terminal failure mid-pass is not sent again either', async () => {
+    const { queue } = await seeded();
+    const parked = deferred();
+    const sent: string[] = [];
+
+    const pass = queue.drain(async (mutation) => {
+      sent.push(mutation.key);
+      if (mutation.key === 'like:p1') await parked.promise;
+    });
+
+    await Promise.resolve();
+    // The wire error VERBATIM as `TopicForbiddenError` renders it — a fixture that invents a
+    // `fix:` is a fixture asserting against a shape no server sends.
+    await queue.fail('like:p2', {
+      code: 'X_TOPIC_FORBIDDEN',
+      cause: 'actor u1 may not subscribe to "org.o1.feed": not a member',
+      fix: `declare a guard for this topic: hub.guard('org.o1.feed', ({ actor }) => ...)`,
+    });
+    parked.resolve();
+    const report = await pass;
+
+    expect(sent).toEqual(['like:p1', 'like:p3']);
+    expect(report.sent).toBe(sent.length);
+    expect(queue.find('like:p2')?.status).toBe('failed');
+  });
+
+  test('a clear mid-pass stops the rest of it leaving the tab', async () => {
+    const { queue } = await seeded();
+    const parked = deferred();
+    const sent: string[] = [];
+
+    const pass = queue.drain(async (mutation) => {
+      sent.push(mutation.key);
+      if (mutation.key === 'like:p1') await parked.promise;
+    });
+
+    await Promise.resolve();
+    await queue.clear();
+    parked.resolve();
+    const report = await pass;
+
+    expect(sent).toEqual(['like:p1']);
+    expect(report.sent).toBe(sent.length);
+  });
+});

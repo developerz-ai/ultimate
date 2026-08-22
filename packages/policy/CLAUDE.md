@@ -32,6 +32,14 @@ two differ, and it is why a surface that decides on input alone needs no edit.
 
 - **Never add a second authz path.** If a surface cannot use `evaluate()`, add an
   adapter to `surfaces.ts` — nothing else.
+- **A derived question about a policy TREE is answered here, once.** `policyPermissions` and
+  `admitsAnonymous` both walk the combinators declared in `policy.ts`, so an answer computed in a
+  surface package would drift from them the first time one changes — and could not be shared:
+  `@ultimat3/action` and `@ultimat3/query` are the same tier and may not import each other, so a
+  copy in either is a second answer for the other. Both shipped that copy briefly and it was
+  hoisted here. `admitsAnonymous` in particular is EXACT for `actor === null` rather than a
+  heuristic, because `can()` short-circuits on the actor check before its predicate and
+  `allow()`/`deny()` ignore their arguments — no predicate is consulted, so the tree alone decides.
 - **One predicate shape.** A row-level rule reads `args.row`. Never pass a row through
   `input`, and never add a per-surface args type.
 - A policy is pure and synchronous. No I/O, no `await`. Load the row first, then decide.
@@ -111,7 +119,7 @@ reappearing there is a failing test.
 
 | File | Job |
 |---|---|
-| `policy.ts` | `can`/`allow`/`deny`/`and`/`or`/`not` + decision recording |
+| `policy.ts` | `can`/`allow`/`deny`/`and`/`or`/`not` + decision recording, and the two derived questions about a tree: `policyPermissions`, `admitsAnonymous` |
 | `evaluate.ts` | the single entry point; builds the trace, emits the one decision event |
 | `decisions.ts` | the `DecisionSink` seam — no-op default, one call site, never PII |
 | `surfaces.ts` | http/live/job/mcp adapters — the "one system" proof |

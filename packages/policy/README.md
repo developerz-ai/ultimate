@@ -84,6 +84,25 @@ every permission a tree references, `not()` clauses included. It is what a compl
 to read: `label` renders a composite as `and(post:publish, org:administer)`, which is a sentence,
 never a permission.
 
+`admitsAnonymous(policy)` is the other derived question, and it is a **walk, not a root read**:
+whether an anonymous caller can be allowed at all. `policy.kind === 'allow'` is the read it
+replaces, and it answered "needs a session" for `or(allow(), can('x:y'))` — so an HTTP route 401'd
+a caller the policy itself allows, while the same policy over MCP or a job let that caller in.
+
+```ts
+import { admitsAnonymous, allow, and, can, not, or } from '@ultimat3/policy';
+
+admitsAnonymous(or(allow('public'), can('post:publish'))); // true
+admitsAnonymous(and(allow('public'), can('post:publish'))); // false
+admitsAnonymous(not(can('order:internal'))); // false — X_UNAUTHENTICATED propagates
+```
+
+It is **exact for an anonymous caller, not a heuristic**: with `actor === null`, `can()`
+short-circuits on the actor check before its predicate runs and `allow()`/`deny()` ignore their
+arguments, so no predicate is ever consulted and the tree alone decides. `true` never means
+"unguarded" — it says only that a 401 before the handler is wrong; the surface still calls
+`enforce()`. `@ultimat3/action` and `@ultimat3/query` derive `RouteMeta.auth` from it.
+
 ## Four surfaces, four adapters, one rule
 
 `surfaces.ts` is the proof. Each adapter evaluates and maps a denial to that surface's

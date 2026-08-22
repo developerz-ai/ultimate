@@ -61,6 +61,21 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   author, and never reach the evaluation that had the row. `meta.policy` stays set — dropping
   it would read as "this action is unguarded" in `x routes` and the manifest. `http.test.ts`
   drives a row-level action over the real pipeline and counts the evaluations: exactly one.
+- **`meta.auth` is derived from a WALK of the policy tree**, never from the root combinator.
+  `def.policy.kind === 'allow'` answered `'required'` for `or(allow(), can('x:y'))`, so the
+  pipeline's `auth` stage 401'd an anonymous caller the policy itself ALLOWS — while the MCP tool
+  and the job handle let that caller through the same object. One policy, a different answer per
+  surface, which is the thing `enforcedBy: 'handler'` exists to prevent. `'public'` here is not
+  "unguarded": `invoke` still evaluates the policy for every call.
+  **`admitsAnonymous` is `@ultimat3/policy`'s** (`policy.ts`, beside `policyPermissions`) and
+  reaches this package through `policy-gate.ts` like every other authz question — never a copy
+  here. It cannot be one: `@ultimat3/query` needs the identical answer and is the same tier, so a
+  copy in either is a second answer for the other, and the walk is a property of the combinators
+  `policy.ts` declares. It is EXACT rather than heuristic — with `actor === null`, `can()`
+  short-circuits before its predicate and `allow()`/`deny()` ignore their arguments, so the tree
+  alone decides. `packages/policy/src/policy.test.ts` asserts it against
+  `policy.run({ actor: null })` itself, case for case; `http.test.ts` proves this projection reads
+  the answer, over the real pipeline.
 - **`stable.ts` holds the DOCUMENT form and NOTHING else, `As of 2026-08`.** `stableStringify` is
   published as `openapi.json` by `serializeOpenApi` and re-read with `JSON.parse` by
   `json-schema.ts`, so a non-finite number has to be `null` and a `Date` has to be its ISO string —
@@ -140,16 +155,25 @@ Owns the `action` + `mutator` primitives and their six projections. Tier 3.
   What this does NOT close: an anonymous actor is one identity, so anonymous callers of a public
   idempotent action still share a key space — nothing at this tier can tell two apart, and keying
   on an IP or a cookie would break the retry the header exists to serve.
-- **Both stores FENCE a settlement on `in-flight`**, as `@ultimat3/jobs`' `SQL_ACK` fences on
-  `state = 'running'`. A reservation whose window lapsed is reclaimed by the next caller
-  (`on conflict … do update`), so a straggler from the first one used to overwrite a record it no
-  longer owned and the next replay answered a retry with a value produced for a different request.
-  Postgres fences in SQL and returns `key`, so the no-op is observable and logged; memory checks
-  the status it holds. It is logged and never thrown — a settlement is post-commit, so raising
-  there would turn a durable write into the caller's error. The fence is on the STATUS only: the
-  reservation's own `id` would close the last case (a straggler landing while the replacement is
-  still in flight) and cannot be checked, because `IdempotencyStore.settle(key, value)` is public
-  API and does not carry it.
+- **Both stores FENCE a settlement on the reservation `id` AND on `in-flight`**, as
+  `@ultimat3/jobs`' `SQL_ACK` fences on `id = $1 and state = 'running'`. A reservation whose window
+  lapsed is reclaimed by the next caller (`on conflict … do update`), so a straggler from the first
+  one used to overwrite a record it no longer owned and the next replay answered a retry with a
+  value produced for a different request. Postgres fences in SQL and returns `key`, so the no-op is
+  observable and logged; memory checks the id and status it holds. It is logged and never thrown —
+  a settlement is post-commit, so raising there would turn a durable write into the caller's error.
+  **The status alone was not enough**, which is why `settle(key, value, reservationId)` and
+  `fail(key, failure, reservationId)` carry the id: a reclaimed record is `in-flight` AGAIN, so a
+  straggler satisfied a status-only fence exactly and overwrote a LIVE reservation — and the
+  replacement's own settle was then fenced out. Public API, changed in the 8.0.0 major; callers
+  pass `reservation.record.id`, which `withIdempotency` already holds.
+- **A stored status is NARROWED, never cast.** `isIdempotencyStatus` decides, and an unknown word
+  is `X_IDEMPOTENCY_STATUS_UNKNOWN` at `toRecord`. `row.status as IdempotencyStatus` let one
+  through and `withIdempotency` has no branch for it: the record fell past `in-flight` and
+  `failed` and answered `{ value: null, replayed: true }` — "this already ran, here is its result"
+  — for a row nobody could read. The record was written by whatever build was deployed when the
+  first attempt ran, which on a rolling deploy is not this one. Same rule, same column shape, as
+  `@ultimat3/jobs`' `statusIn`.
 - **Where the idempotency records live is DECLARED, and refused at registration.**
   `IdempotencyStore.scope` says what a driver provides; `configureIdempotency({ scope })` says what
   the deployment requires; `assertIdempotencyScope` compares them inside `registerAction` — the

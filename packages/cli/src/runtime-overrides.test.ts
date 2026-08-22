@@ -23,7 +23,7 @@ import {
   setJobDriver,
 } from '@ultimat3/jobs';
 import { createMemoryDriver as createMemoryMailDriver } from '@ultimat3/mail';
-import { DEFAULT_PRESENCE_TTL_MS, InProcessTransport } from '@ultimat3/realtime';
+import { DEFAULT_PRESENCE_TTL_MS, InProcessTransport } from '@ultimat3/realtime/server';
 import { defineStorage, localDriver } from '@ultimat3/storage';
 import type { RunningRoles } from './dev-roles';
 import { startRoles, trustedHopsFromEnv } from './dev-roles';

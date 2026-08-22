@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "6d2b8a35846f789ed28a9d0a5589739c832861ed98a3d4315f4b06d0b85432b2",
+  "buildId": "de410d08972bf85c078b7434030995a4275886332860cbb6cf6220ff1c536df6",
   "tiers": {
     "0": [
       "core",
@@ -1135,27 +1135,32 @@
     {
       "code": "X_IDEMPOTENCY_CONFLICT",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/errors-idempotency.ts"
     },
     {
       "code": "X_IDEMPOTENCY_KEY_INVALID",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/errors-idempotency.ts"
     },
     {
       "code": "X_IDEMPOTENCY_NOT_SHARED",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/errors-idempotency.ts"
     },
     {
       "code": "X_IDEMPOTENCY_REPLAYED_FAILURE",
       "owner": "action",
-      "at": "packages/action/src/errors.ts"
+      "at": "packages/action/src/errors-idempotency.ts"
     },
     {
       "code": "X_IDEMPOTENCY_REQUIRED",
       "owner": "jobs",
       "at": "packages/jobs/src/errors.ts"
+    },
+    {
+      "code": "X_IDEMPOTENCY_STATUS_UNKNOWN",
+      "owner": "action",
+      "at": "packages/action/src/errors-idempotency.ts"
     },
     {
       "code": "X_IMAGE_DECODE_FAILED",

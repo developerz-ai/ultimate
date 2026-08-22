@@ -14,7 +14,8 @@
 // still decides what a real node reads, and this is never in that decision.
 
 import type { RowBulkChange, RowChange, RowObserver } from '@ultimat3/entity';
-import type { ChangeEvent, ChangeOp, LiveQueryRegistry, Row } from '@ultimat3/realtime';
+import type { Row } from '@ultimat3/realtime';
+import type { ChangeEvent, ChangeOp, LiveQueryRegistry } from '@ultimat3/realtime/server';
 
 /** What a caller does with a change nobody could deliver. */
 export interface LiveReplicatorOptions {

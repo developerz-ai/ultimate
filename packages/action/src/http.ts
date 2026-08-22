@@ -25,7 +25,7 @@ import {
   schemaRef,
   toOperationId,
 } from './naming';
-import { policyCapability } from './policy-gate';
+import { admitsAnonymous, policyCapability } from './policy-gate';
 
 /** Matches `HttpConfig.buildIdHeader`; the pipeline reads it into `ctx.clientBuildId` — the
  * CLIENT's claim, never `ctx.buildId`, which is the build this process serves. */
@@ -86,9 +86,13 @@ export function toRoute(target: AnyAction): Route {
 
   const meta: RouteMeta = {
     name,
-    // `allow(...)` is the only way an action is public, and saying so explicitly is
-    // what keeps "forgot the policy" from ever looking like "meant to be public".
-    auth: def.policy.kind === 'allow' ? 'public' : 'required',
+    // Derived from a WALK of the policy tree, never from the root combinator alone. A saying that
+    // "`allow(...)` is the only way an action is public" is true of the leaf and was false of the
+    // read: `policy.kind === 'allow'` answered `required` for `or(allow(), can('x:y'))`, so the
+    // pipeline 401'd an anonymous caller the policy itself allows — while the MCP tool and the job
+    // handle let the same caller through the same object. `public` here is not "unguarded":
+    // `enforcedBy: 'handler'` below means `invoke` still evaluates the policy for every call.
+    auth: admitsAnonymous(def.policy) ? 'public' : 'required',
     policy: policyCapability(def.policy),
     // Named so the pipeline's authz stage stands down: `invoke` is this route's one
     // evaluation, and it is the only one that has run `row` by the time it decides. A

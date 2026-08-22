@@ -167,3 +167,42 @@ describe('a foreign format is looked up in the table, never on Object.prototype'
     expect(sampleInput(foreignFormat('email'))).toBe('sample@example.test');
   });
 });
+
+/**
+ * The WRITE half of the same prototype hazard, and the one that loses data. `sample['__proto__']`
+ * on a `{}` literal reaches `Object.prototype`'s SETTER: the required field never becomes an own
+ * key and the sample's prototype is replaced by whatever the field sampled to. So the contract
+ * test invokes with a payload its own schema rejects and reports the action as drifted — the
+ * failure the sample exists to prevent. A field named `__proto__` reaches the IR through any
+ * computed key (`t.object({ [name]: t.string })`) or a provider whose IR came from JSON.
+ */
+describe('a required field named after a prototype member becomes an own key', () => {
+  const withField = (field: string): AnySchema =>
+    ({
+      node: {
+        kind: 'object',
+        properties: Object.fromEntries([
+          ['keep', { kind: 'string' }],
+          [field, { kind: 'string' }],
+        ]),
+      },
+      '~standard': { version: 1, vendor: 'other', validate: (value: unknown) => ({ value }) },
+    }) as unknown as AnySchema;
+
+  // Held in a const, not written as a literal member access: `sample.__proto__` is the deprecated
+  // ACCESSOR (biome's `noProto`), and the whole point is that this is an ordinary own key.
+  const PROTO_KEY = '__proto__';
+
+  test('__proto__ is set as a key, not applied as a prototype', () => {
+    const sample = sampleInput(withField(PROTO_KEY)) as Record<string, unknown>;
+    expect(Object.hasOwn(sample, PROTO_KEY)).toBe(true);
+    expect(sample[PROTO_KEY]).toBe('sample');
+    expect(Object.keys(sample).sort()).toEqual([PROTO_KEY, 'keep']);
+  });
+
+  test('the sample carries nothing off the prototype chain it was not given', () => {
+    const sample = sampleInput(withField('keep2')) as Record<string, unknown>;
+    expect(sample['constructor']).toBeUndefined();
+    expect(sample['toString']).toBeUndefined();
+  });
+});

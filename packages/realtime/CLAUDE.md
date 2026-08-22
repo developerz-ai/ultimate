@@ -13,6 +13,35 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 
 ## Rules
 
+- **Two entries, and a name lives in exactly ONE of them (2026-08-22, BREAKING).** `.` is the
+  client half — `hooks`, `client*`, `identity-map`, `live-rows`, `apply-patches`, `offline-queue`,
+  `rebase`, `local-store`, `sync-protocol`, `json`, `cursor`, `errors`, and the client's half of
+  `thundering-herd`. `./server` (`src/server.ts`) is everything that touches `nats`, Postgres, the
+  sync node, the channel hub, the live-query registry or the fanout. The reason is measured, not
+  aesthetic: `nats` `require()`s `stream/web`, so one barrel carrying `openNatsClient` beside
+  `useLive` failed `bun build --target=browser` with
+  `Browser build cannot require() Node.js builtin: "stream/web"` — the island `wiki/Realtime.md`
+  promises could not be built at all. Two build errors hold it: `packages/cli/src/realtime-browser-barrel.test.ts`
+  bundles a `useLive`-only entry for the browser, and `barrel-split.test.ts` refuses a name
+  exported from both (values through the namespace objects, types off the source text, because a
+  type-only export leaves no runtime entry). `errors.ts` is deliberately whole on `.`: every code
+  reaches the wire through `toWireError`, so a client must be able to name any of them, and the
+  module is already in the client graph via `sync-protocol`.
+- **`sideEffects` is the ARRAY `["./src/errors.ts"]`, never `false` and never absent.** Absent was
+  what made the failure above unrecoverable — with no field a bundler must assume every module has
+  effects, so nothing was tree-shaken and `nats` came along with `useLive`. Measured, not guessed:
+  `bun run side-effects --explain --json` prints what the tree actually does at import time.
+  `false` would drop `registerErrorCodes()` and every `REALTIME_ERROR_TITLES` entry with it.
+  **The array alone would have fixed the build** and is not why the split exists: tree-shaking is
+  a bundler's discretion, `export * from` or a namespace import defeats it, and "the client entry
+  cannot reach the bus" is a contract rather than an optimisation.
+- **`@ultimat3/realtime/server` needs its own `paths` entry in `tsconfig.base.json`**, beside
+  `@ultimat3/admin/dev`'s. `@ultimat3/*` maps `realtime/server` to `packages/realtime/server/src`,
+  which does not exist, and the root program has no `node_modules/@ultimat3` symlink to fall back
+  through — so `scripts/**` (which the root `tsc -b` compiles) reports `TS2307` without it. The
+  workspace packages resolve through their own `node_modules` and never needed it, which is what
+  makes the failure look local to `scripts/`.
+
 - Policy is evaluated **once per subscriber**, never once per query. `live-query.test.ts` proves it
   for a hand-written definition and `live-definition.test.ts` proves it for a real declared
   `query({ live: true })` — the second one matters, because a rule that only holds for test fakes
@@ -640,6 +669,8 @@ Tier 3 package. Channels, live queries, local-first sync. One protocol for all t
 
 | File | Owns |
 |---|---|
+| `index.ts` | the `.` barrel: the client half, and the only thing a browser island may import |
+| `server.ts` | the `./server` barrel: the bus, the WAL path, the node. Disjoint from `index.ts` by test |
 | `sync-protocol.ts` | the wire: 10 frame kinds, `encode`/`decode`, `PROTOCOL_VERSION` |
 | `channel.ts` / `presence.ts` / `socket.ts` | tier 1 |
 | `live-query.ts` / `live-definition.ts` / `changefeed.ts` / `changefeed-env.ts` / `replicator.ts` / `pg-advisory-lock.ts` / `fanout.ts` / `transport-env.ts` / `matcher-bridge.ts` | tier 2 |

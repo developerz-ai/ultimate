@@ -16,7 +16,7 @@
 // than deleted for exactly that reason — this file is where the topics' authorization is written
 // down, and the day the seam lands it is one call, not a rewrite.
 
-import type { ChannelHub } from '@ultimat3/realtime';
+import type { ChannelHub } from '@ultimat3/realtime/server';
 import { guardConversations } from '../app/messages/topics';
 import { guardInboxes } from '../app/notifications/topics';
 

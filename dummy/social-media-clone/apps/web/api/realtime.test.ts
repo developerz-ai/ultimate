@@ -7,14 +7,14 @@
 
 import { db } from '@social-media-clone/db';
 import { userActor } from '@ultimat3/core';
-import type { WsLike } from '@ultimat3/realtime';
+import type { WsLike } from '@ultimat3/realtime/server';
 import {
   ChannelHub,
   InProcessTransport,
   SocketRegistry,
   SyncSocket,
   topic,
-} from '@ultimat3/realtime';
+} from '@ultimat3/realtime/server';
 import { expect, liveTest } from '@ultimat3/testing';
 import { addParticipant } from '../app/messages/repo';
 import { conversationTopic, inboxTopic, installRealtimeTopics } from './realtime';

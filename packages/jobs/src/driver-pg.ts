@@ -35,12 +35,17 @@ import {
   SQL_ENQUEUE,
   SQL_FIND_LIVE_BY_KEY,
   SQL_HEARTBEAT,
+  SQL_JOB_DEAD_LETTERS,
+  SQL_JOB_GET,
+  SQL_JOB_LIST,
+  SQL_JOB_REQUEUE,
   SQL_LEASE_ACQUIRE,
   SQL_LEASE_RELEASE,
   SQL_LEASE_RENEW,
   SQL_NACK,
   SQL_STATS,
   SQL_STEP_GET,
+  SQL_STEP_LIST,
   SQL_STEP_PUT,
   SQL_TRY_ADVISORY_LOCK,
 } from './driver-pg-sql';
@@ -102,10 +107,7 @@ function pgStepStore(exec: () => PgExecutor): StepStore {
       ]);
     },
     async list(runId) {
-      const rows = await exec().query<StepRow>(
-        `select * from x_job_steps where run_id = $1 order by started_at`,
-        [runId],
-      );
+      const rows = await exec().query<StepRow>(SQL_STEP_LIST, [runId]);
       return rows.map(toStepRecord);
     },
     async del(runId, name) {
@@ -189,27 +191,21 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
 
   const introspect: JobIntrospection = {
     async job(jobId) {
-      const rows = await exec().query<JobRow>(`select * from x_jobs where id = $1`, [jobId]);
+      const rows = await exec().query<JobRow>(SQL_JOB_GET, [jobId]);
       const row = rows[0];
       return row === undefined ? undefined : toJobRecord(row);
     },
     async list(filter: JobFilter = {}) {
-      const rows = await exec().query<JobRow>(
-        `select * from x_jobs
-          where ($1::text is null or queue = $1)
-            and ($2::text is null or name  = $2)
-            and ($3::text is null or state = $3)
-          order by created_at desc
-          limit $4`,
-        [filter.queue ?? null, filter.name ?? null, filter.state ?? null, filter.limit ?? 100],
-      );
+      const rows = await exec().query<JobRow>(SQL_JOB_LIST, [
+        filter.queue ?? null,
+        filter.name ?? null,
+        filter.state ?? null,
+        filter.limit ?? 100,
+      ]);
       return rows.map(toJobRecord);
     },
     async deadLetters(limit = 100) {
-      const rows = await exec().query<JobRow>(
-        `select * from x_jobs where state = 'dead' order by updated_at desc limit $1`,
-        [limit],
-      );
+      const rows = await exec().query<JobRow>(SQL_JOB_DEAD_LETTERS, [limit]);
       return rows.map(toJobRecord);
     },
     async requeue(jobId, requeueOptions) {
@@ -222,11 +218,7 @@ export function createPgDriver(options: PgDriverOptions = {}): JobDriver {
           ]);
         }
       }
-      const rows = await exec().query<JobRow>(
-        `update x_jobs set state = 'ready', attempt = 0, run_at = now(), updated_at = now()
-          where id = $1 returning *`,
-        [jobId],
-      );
+      const rows = await exec().query<JobRow>(SQL_JOB_REQUEUE, [jobId]);
       const row = rows[0];
       if (row === undefined) {
         throw new DriverUnavailableError({

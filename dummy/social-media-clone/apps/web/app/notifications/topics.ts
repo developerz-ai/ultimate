@@ -3,8 +3,8 @@
 // A notification is addressed to exactly one person, so the topic is scoped to a user id and the
 // guard is an identity comparison. No database read is needed — the fact is the topic name itself.
 
-import type { ChannelHub, Topic, TopicGuard } from '@ultimat3/realtime';
-import { topic } from '@ultimat3/realtime';
+import type { ChannelHub, Topic, TopicGuard } from '@ultimat3/realtime/server';
+import { topic } from '@ultimat3/realtime/server';
 
 /** `notifications.<userId>`. */
 export const INBOX_PATTERN = 'notifications.*';

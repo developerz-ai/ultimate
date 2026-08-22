@@ -56,6 +56,7 @@ export type {
 } from './policy';
 export {
   ALLOWED,
+  admitsAnonymous,
   allow,
   and,
   can,

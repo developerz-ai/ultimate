@@ -4,6 +4,9 @@
   "description": "Three-tier realtime: channels, live queries, local-first sync — one protocol, one mutator shape",
   "license": "MIT",
   "type": "module",
+  "sideEffects": [
+    "./src/errors.ts"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/developerz-ai/ultimate.git",
@@ -14,7 +17,8 @@
     "provenance": true
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts"
   },
   "files": [
     "src",

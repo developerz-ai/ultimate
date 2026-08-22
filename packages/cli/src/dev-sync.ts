@@ -13,7 +13,7 @@ import {
   PresenceRegistry,
   RingChangeBuffer,
   SocketRegistry,
-} from '@ultimat3/realtime';
+} from '@ultimat3/realtime/server';
 import type { StartRolesOptions } from './dev-roles';
 import { syncAuthenticator } from './sync-authenticator';
 

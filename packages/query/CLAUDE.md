@@ -145,6 +145,20 @@ Owns the `query` primitive: reads, live reads, cursors, the incremental matcher.
   authz stage deciding first would be a second authz system holding raw strings — and would
   demand an `authorize` hook to decide at all. `http.test.ts` drives both over the real pipeline
   with no hook wired and counts the evaluations: exactly one.
+- **`meta.auth` is derived from a WALK of the policy tree**, never from the root combinator.
+  `target.policy.kind === 'allow'` answered `'required'` for `or(allow(), can('x:y'))`, so the
+  pipeline's `auth` stage 401'd an anonymous caller the policy itself ALLOWS — while the MCP tool
+  and a direct server read let that caller through the same object. One policy, a different answer
+  per surface. `'public'` here is `meta.auth` only: the read is still `cache: no-store` and
+  `runQuery` still evaluates the policy per caller.
+  **`admitsAnonymous` is `@ultimat3/policy`'s** (`policy.ts`, beside `policyPermissions`) and
+  reaches this package through `policy-gate.ts` like every other authz question — never a copy
+  here. It cannot be one: `@ultimat3/action` needs the identical answer and is the same tier, so a
+  copy in either is a second answer for the other. It is EXACT rather than heuristic — with
+  `actor === null`, `can()` short-circuits before its predicate and `allow()`/`deny()` ignore their
+  arguments, so the tree alone decides. `packages/policy/src/policy.test.ts` asserts it against
+  `policy.run({ actor: null })` itself, case for case; `http.test.ts` proves this projection reads
+  the answer, over the real pipeline.
 - `registry.ts` announces `registerQueries` in core's registrar table at import. That is how
   `defineApi({ queries })` in `@ultimat3/action` registers a read without importing this package
   sideways. Never remove the announcement: `defineApi` would then throw `X_REGISTRAR_MISSING`.

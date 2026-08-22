@@ -5,14 +5,15 @@
  * Statements are spelled out so an agent can run the exact one it saw in a log.
  */
 import { logger, uuid } from '@ultimat3/core';
+import { IdempotencyStatusUnknownError } from './errors';
 import type {
   IdempotencyFailure,
   IdempotencyRecord,
   IdempotencyReservation,
   IdempotencyScope,
-  IdempotencyStatus,
   IdempotencyStore,
 } from './idempotency';
+import { IDEMPOTENCY_STATUSES, isIdempotencyStatus } from './idempotency';
 import { DEFAULT_IDEMPOTENCY_WINDOW_MS } from './idempotency-memory';
 
 /**
@@ -82,22 +83,26 @@ select key, id, request_hash, status, value, failure,
 `;
 
 /**
- * `and status = 'in-flight'` is a FENCE, not a filter — the one `@ultimat3/jobs`' `SQL_ACK` carries
- * as `and state = 'running'`, for the same failure. A reservation whose window lapsed is reclaimed
- * by the next caller (`do update` above), so a straggler from the first one arriving afterwards
- * overwrote a record it no longer owned: the next replay under that key answered a retry with a
- * value produced for a different request. `returning key` is what makes the refusal observable —
- * an update matching no row is indistinguishable from one that matched, otherwise.
+ * `and id = $3 and status = 'in-flight'` is a FENCE, not a filter — the one `@ultimat3/jobs`'
+ * `SQL_ACK` carries as `where id = $1 and state = 'running'`, for the same failure. A reservation
+ * whose window lapsed is reclaimed by the next caller (`do update` above), so a straggler from the
+ * first one arriving afterwards overwrote a record it no longer owned: the next replay under that
+ * key answered a retry with a value produced for a different request.
+ *
+ * BOTH halves, because either alone leaves a case open. The status alone misses the reclaimed
+ * record — it is `in-flight` again, belonging to someone else — and the id alone would let a
+ * straggler overwrite a record its own attempt had already settled. `returning key` is what makes
+ * the refusal observable: an update matching no row is indistinguishable from one that matched.
  */
 export const SQL_IDEMPOTENCY_SETTLE = `
 update x_idempotency set status = 'settled', value = $2::jsonb, failure = null
- where key = $1 and status = 'in-flight'
+ where key = $1 and id = $3::uuid and status = 'in-flight'
 returning key
 `;
 
 export const SQL_IDEMPOTENCY_FAIL = `
 update x_idempotency set status = 'failed', value = null, failure = $2::jsonb
- where key = $1 and status = 'in-flight'
+ where key = $1 and id = $3::uuid and status = 'in-flight'
 returning key
 `;
 
@@ -121,6 +126,12 @@ interface IdempotencyRow {
 export interface PostgresIdempotencyStoreOptions {
   readonly executor: PgExecutor;
   readonly windowMs?: number | undefined;
+  /**
+   * Injectable, exactly as `MemoryIdempotencyStoreOptions.now` is. The two stores are one seam and
+   * a caller must be able to drive either from the same clock; a hardcoded `Date.now()` here made
+   * the one record this store stamps itself untestable and unfreezable.
+   */
+  readonly now?: (() => number) | undefined;
 }
 
 export interface PostgresIdempotencyStore extends IdempotencyStore {
@@ -164,6 +175,7 @@ export function postgresIdempotencyStore(
   const windowMs = Math.max(1, Math.floor(options.windowMs ?? DEFAULT_IDEMPOTENCY_WINDOW_MS));
   const windowSecs = windowMs / 1000;
   const exec = options.executor;
+  const now = options.now ?? ((): number => Date.now());
 
   const fetch = async (key: string): Promise<IdempotencyRecord | undefined> => {
     const rows = await exec.query<IdempotencyRow>(SQL_IDEMPOTENCY_GET, [key, windowSecs]);
@@ -200,20 +212,28 @@ export function postgresIdempotencyStore(
           requestHash,
           status: 'in-flight',
           value: undefined,
-          createdAt: Date.now(),
+          createdAt: now(),
         },
         created: false,
       };
     },
 
-    async settle(key, value): Promise<void> {
-      const rows = await exec.query(SQL_IDEMPOTENCY_SETTLE, [key, JSON.stringify(value ?? null)]);
-      fenced(rows, key, 'settle');
+    async settle(key, value, reservationId): Promise<void> {
+      const rows = await exec.query(SQL_IDEMPOTENCY_SETTLE, [
+        key,
+        JSON.stringify(value ?? null),
+        reservationId,
+      ]);
+      fenced(rows, key, reservationId, 'settle');
     },
 
-    async fail(key, failure: IdempotencyFailure): Promise<void> {
-      const rows = await exec.query(SQL_IDEMPOTENCY_FAIL, [key, JSON.stringify(failure)]);
-      fenced(rows, key, 'fail');
+    async fail(key, failure: IdempotencyFailure, reservationId): Promise<void> {
+      const rows = await exec.query(SQL_IDEMPOTENCY_FAIL, [
+        key,
+        JSON.stringify(failure),
+        reservationId,
+      ]);
+      fenced(rows, key, reservationId, 'fail');
     },
 
     async release(key): Promise<void> {
@@ -238,18 +258,36 @@ export function postgresIdempotencyStore(
  * store that refuses. An operator still has to see it: a fenced settle means this attempt's record
  * belongs to another reservation, and the value this attempt produced is stored nowhere.
  */
-function fenced(rows: readonly unknown[], key: string, statement: 'settle' | 'fail'): void {
+function fenced(
+  rows: readonly unknown[],
+  key: string,
+  reservationId: string,
+  statement: 'settle' | 'fail',
+): void {
   if (rows.length > 0) return;
-  logger.warn('action.idempotency.settlement-fenced', { key, statement });
+  logger.warn('action.idempotency.settlement-fenced', { key, reservationId, statement });
 }
 
+/**
+ * The narrowing, never a cast. `row.status as IdempotencyStatus` let an unknown word through, and
+ * `withIdempotency` has no branch for one: it fell past `in-flight` and `failed` and answered
+ * `{ value: null, replayed: true }` — "this already ran, here is its result" — for a record nobody
+ * could read. The rule `@ultimat3/jobs`' `statusIn` already writes out for the same column.
+ */
 function toRecord(row: IdempotencyRow): IdempotencyRecord {
   const failure = toFailure(row.failure);
+  if (!isIdempotencyStatus(row.status)) {
+    throw new IdempotencyStatusUnknownError({
+      key: row.key,
+      value: row.status,
+      known: IDEMPOTENCY_STATUSES,
+    });
+  }
   return {
     id: row.id,
     key: row.key,
     requestHash: row.request_hash,
-    status: row.status as IdempotencyStatus,
+    status: row.status,
     value: row.value,
     ...(failure === undefined ? {} : { failure }),
     createdAt: Number(row.created_at),

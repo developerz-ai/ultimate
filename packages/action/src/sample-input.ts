@@ -75,13 +75,25 @@ function sampleNumber(node: SchemaNode): number {
   return node.integer === true ? Math.floor(node.maximum) : node.maximum;
 }
 
+/**
+ * `Object.create(null)`, the shape `@ultimat3/schema`'s own object check already builds: on a `{}`
+ * literal `sample['__proto__'] = value` reaches `Object.prototype`'s SETTER, so a required field
+ * named `__proto__` never became an own key and REPLACED the sample's prototype instead. The
+ * payload then failed the very schema it was derived from, and the contract test reported the
+ * action as drifted. A field can carry that name through any computed key
+ * (`t.object({ [name]: t.string })`) or a provider whose IR was parsed from JSON.
+ *
+ * The read is guarded for the same reason `patternAt` guards its own: `requiredKeys` happens to
+ * answer own keys only (`Object.entries`), so this is the invariant stated locally rather than
+ * borrowed from a function two packages away.
+ */
 function sampleObject(node: SchemaNode): Record<string, unknown> {
   const properties = node.properties ?? {};
-  const sample: Record<string, unknown> = {};
+  const sample: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   // Required-only is what "minimal" means: an optional key and a defaulted one are both
   // absences the schema already accepts, so adding them would only widen what can go wrong.
   for (const key of requiredKeys(node)) {
-    const child = properties[key];
+    const child = Object.hasOwn(properties, key) ? properties[key] : undefined;
     if (child !== undefined) sample[key] = sampleFor(child);
   }
   return sample;
@@ -157,7 +169,7 @@ function gapsIn(node: SchemaNode, path: string): string[] {
     const properties = node.properties ?? {};
     const out: string[] = [];
     for (const key of requiredKeys(node)) {
-      const child = properties[key];
+      const child = Object.hasOwn(properties, key) ? properties[key] : undefined;
       if (child !== undefined) out.push(...gapsIn(child, path === '' ? key : `${path}.${key}`));
     }
     return out;

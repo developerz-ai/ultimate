@@ -14,7 +14,7 @@ import type { Deprecation } from './deprecation';
 import { applyHeaders, recordDeprecatedCall, renderDeprecation } from './deprecation';
 import { QueryDeprecationInvalidError } from './errors';
 import { derivePath } from './naming';
-import { policyCapability } from './policy-gate';
+import { admitsAnonymous, policyCapability } from './policy-gate';
 import type { AnyQuery } from './query';
 import { queryName, runQuery } from './read';
 
@@ -58,9 +58,12 @@ export function toQueryRoute(target: AnyQuery): Route {
 
   const meta: RouteMeta = {
     name,
-    // `allow(...)` is the only way a read is public, and saying so explicitly is what
-    // keeps "forgot the policy" from ever looking like "meant to be readable".
-    auth: target.policy.kind === 'allow' ? 'public' : 'required',
+    // Derived from a WALK of the policy tree, never from the root combinator alone.
+    // `policy.kind === 'allow'` answered `required` for `or(allow(), can('x:y'))`, so the pipeline
+    // 401'd an anonymous caller the policy itself allows — while the MCP tool and a direct server
+    // read let the same caller through the same object. `public` here is not "unguarded":
+    // `enforcedBy: 'handler'` below means `runQuery` still evaluates the policy for every read.
+    auth: admitsAnonymous(target.policy) ? 'public' : 'required',
     policy: policyCapability(target.policy),
     // `runQuery` is this route's one evaluation and it decides from the PARSED input the
     // rule reads (`ownsOrg(actor, input.orgId)`); the stage would decide the same policy

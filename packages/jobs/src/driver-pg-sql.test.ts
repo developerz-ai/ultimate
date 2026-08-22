@@ -12,6 +12,20 @@
 import { describe, expect, test } from 'bun:test';
 import { SQL_JOBS_TABLE, SQL_OUTBOX_TABLE } from './driver-pg-sql';
 
+/** Every file in this package that compiles SQL. A new one joins the list or it is unguarded. */
+const PG_SOURCES = [
+  'driver-pg.ts',
+  'driver-pg-sql.ts',
+  'driver-pg-jobs-sql.ts',
+  'events-pg.ts',
+  'outbox-pg.ts',
+  'scheduler-pg.ts',
+] as const;
+
+/** Prose quotes both forms on purpose — a scan that reads comments reports its own explanation. */
+const withoutComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^[ \t]*\/\/.*$/gm, ' ');
+
 const statements = SQL_JOBS_TABLE.split(';')
   .map((statement) => statement.trim())
   .filter((statement) => statement.length > 0);
@@ -82,5 +96,23 @@ describe('the queue DDL', () => {
       if (line.trim().length === 0) continue;
       expect(SQL_JOBS_TABLE).toContain(line.trim());
     }
+  });
+});
+
+describe("the pg driver's reads", () => {
+  // `PgExecutor` is an injected seam over any client that speaks `(text, values)`, and a client
+  // with no type map decodes `timestamptz` as TEXT. `toJobRecord`/`toStepRecord` then read
+  // `Number('2026-01-01 00:00:00+00')` — `NaN` for every epoch field, printed by `x jobs ls`,
+  // `x jobs show` and `x jobs cancel`. Five statements were `select *`/`returning *` and shipped
+  // that way; asking Postgres for epoch ms is what makes the decoding the statement's business.
+  test('no statement returns a whole row, so no epoch column depends on the client type map', async () => {
+    const offenders: string[] = [];
+    for (const name of PG_SOURCES) {
+      const source = withoutComments(await Bun.file(`${import.meta.dir}/${name}`).text());
+      for (const hit of source.matchAll(/\b(select|returning)\s+\*/g)) {
+        offenders.push(`${name}: ${hit[0]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });

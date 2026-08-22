@@ -81,26 +81,36 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
   }
 
   /**
-   * Both settlements are FENCED on `in-flight`, as `SQL_IDEMPOTENCY_SETTLE` is and as
-   * `@ultimat3/jobs`' `SQL_ACK` is: a record past the window is reclaimed by the next caller, so a
-   * straggler from the reservation before it would otherwise overwrite a record it no longer owns
-   * and the next replay would answer one request with another's value. Both stores fence, or the
-   * guarantee is whichever store the deployment happens to install.
+   * Both settlements are FENCED on the reservation's own `id` AND on `in-flight`, as
+   * `SQL_IDEMPOTENCY_SETTLE` is and as `@ultimat3/jobs`' `SQL_ACK` is. A record past the window is
+   * reclaimed by the next caller, so a straggler from the reservation before it would otherwise
+   * overwrite a record it no longer owns and the next replay would answer one request with
+   * another's value. The status alone does not catch it — the reclaimed record is `in-flight`
+   * again — which is why the id is half the fence. Both stores fence, or the guarantee is
+   * whichever store the deployment happens to install.
    */
-  settle(key: string, value: unknown): Promise<void> {
-    const existing = this.#records.get(key);
-    if (existing?.status === 'in-flight') {
+  settle(key: string, value: unknown, reservationId: string): Promise<void> {
+    const existing = this.#owned(key, reservationId);
+    if (existing !== undefined) {
       this.#records.set(key, { ...existing, status: 'settled', value });
     }
     return Promise.resolve();
   }
 
-  fail(key: string, failure: IdempotencyFailure): Promise<void> {
-    const existing = this.#records.get(key);
-    if (existing?.status === 'in-flight') {
+  fail(key: string, failure: IdempotencyFailure, reservationId: string): Promise<void> {
+    const existing = this.#owned(key, reservationId);
+    if (existing !== undefined) {
       this.#records.set(key, { ...existing, status: 'failed', value: undefined, failure });
     }
     return Promise.resolve();
+  }
+
+  /** The record this reservation may still write, or nothing — the fence, in one place. */
+  #owned(key: string, reservationId: string): IdempotencyRecord | undefined {
+    const existing = this.#records.get(key);
+    if (existing === undefined) return undefined;
+    if (existing.status !== 'in-flight' || existing.id !== reservationId) return undefined;
+    return existing;
   }
 
   release(key: string): Promise<void> {

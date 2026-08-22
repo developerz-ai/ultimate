@@ -18,7 +18,8 @@ An entry is a line `CHANGELOG.md` marks `BREAKING —`. The count is derived, ne
 
 ```sh
 grep -cE '^(- \*\*|### )BREAKING —' CHANGELOG.md
-# 81 As of 2026-08-21 — all 81 inside the section of the major that shipped it, 0 under [Unreleased]
+# 84 As of 2026-08-22 — 81 inside the section of the major that shipped it, and 3 under
+# [Unreleased], staged for the next major. A released section's count is what the table above reads.
 ```
 
 Each entry changes a surface the table below covers.

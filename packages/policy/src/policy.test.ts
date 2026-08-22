@@ -2,7 +2,8 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { evaluate, explain, renderTrace } from './evaluate';
 import { actorHas } from './grant-index';
 import { clearPermissions, definePermissions } from './permissions';
-import { allow, and, can, deny, not, or, policyPermissions } from './policy';
+import type { Policy } from './policy';
+import { admitsAnonymous, allow, and, can, deny, not, or, policyPermissions } from './policy';
 import { clearRoles, defineRoles, expandRoles } from './roles';
 import { testActor } from './test-kit';
 
@@ -166,5 +167,68 @@ describe('trace', () => {
     const reason = result.decision.allowed ? '' : result.decision.reason;
     expect(reason).toBe('actor lacks post:delete');
     expect(reason).not.toContain('p1');
+  });
+});
+
+/**
+ * The walk, against the thing it models: every case asserts what the POLICY ITSELF decides for
+ * `actor: null`, so a surface's `auth` flag and the runtime's decision cannot drift apart.
+ */
+describe('admitsAnonymous', () => {
+  const guarded = (): Policy => can('post:publish');
+  const other = (): Policy => can('post:read');
+
+  /** What the policy object answers an anonymous caller — the ground truth this walk models. */
+  const runsForAnonymous = (policy: Policy): boolean =>
+    policy.run({ input, actor: null, row: null }).allowed;
+
+  /** Built inside the test, never at module scope: `can()` asserts against `beforeEach`'s set. */
+  const cases = (): readonly (readonly [string, Policy])[] => [
+    ['allow()', allow()],
+    ['deny()', deny('nope')],
+    ['can()', guarded()],
+    ['or(allow, can)', or(allow(), guarded())],
+    ['or(can, allow)', or(guarded(), allow())],
+    ['or(can, can)', or(guarded(), other())],
+    ['and(allow, can)', and(allow(), guarded())],
+    ['and(allow, allow)', and(allow(), allow())],
+    ['not(can)', not(guarded())],
+    ['not(allow)', not(allow())],
+    ['not(deny)', not(deny('nope'))],
+    ['or(and(allow, allow), can)', or(and(allow(), allow()), guarded())],
+    ['and(or(allow, can), deny)', and(or(allow(), guarded()), deny('nope'))],
+  ];
+
+  test('answers exactly what running the policy with no actor answers', () => {
+    // Named, never counted: a failure has to say WHICH shape the walk got wrong.
+    const wrong = cases()
+      .filter(([, policy]) => admitsAnonymous(policy) !== runsForAnonymous(policy))
+      .map(([label]) => label);
+    expect(wrong).toEqual([]);
+  });
+
+  // The case the root-combinator read got wrong, spelled out on its own: it is the shape a
+  // "public, but richer when signed in" declaration takes, and `@ultimat3/http`'s auth stage
+  // 401'd it before the surface's own evaluation ever ran.
+  test('a public branch under `or` admits an anonymous caller', () => {
+    expect(admitsAnonymous(or(allow('public'), guarded()))).toBe(true);
+  });
+
+  test('a permission clause under `and` still requires authentication', () => {
+    expect(admitsAnonymous(and(allow('public'), guarded()))).toBe(false);
+  });
+
+  test('a bare permission is unchanged — this is the common case and it must not move', () => {
+    expect(admitsAnonymous(guarded())).toBe(false);
+  });
+
+  // A foreign `Policy` is a plain object, so `kind` can be any string — including one that reads a
+  // function off `Object.prototype` rather than answering `undefined`. `valueOf` is the one that
+  // proves the guard: called with no receiver it THROWS, so an unguarded table read would kill a
+  // route projection at mount rather than answering "needs a session".
+  test('a kind this build has never heard of requires authentication, and never throws', () => {
+    for (const kind of ['constructor', 'valueOf', 'toString', 'invented-by-a-provider']) {
+      expect(admitsAnonymous({ ...allow(), kind } as unknown as Policy)).toBe(false);
+    }
   });
 });

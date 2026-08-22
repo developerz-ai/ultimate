@@ -16,7 +16,7 @@ import {
   LiveQueryRegistry,
   RingChangeBuffer,
   SocketRegistry,
-} from '@ultimat3/realtime';
+} from '@ultimat3/realtime/server';
 import { BENCH_TOPIC } from './restart-bench-shared';
 
 function parsePort(argv: readonly string[]): number {

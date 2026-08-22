@@ -7,7 +7,7 @@ import { userActor } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
 import { createServer, defineHttpConfig } from '@ultimat3/http';
 import type { Actor } from '@ultimat3/policy';
-import { allow, can } from '@ultimat3/policy';
+import { allow, and, can, or } from '@ultimat3/policy';
 import { t } from '@ultimat3/schema';
 import type { FetchLike } from './client';
 import { toQueryRoute } from './http';
@@ -108,7 +108,7 @@ describe('the route a query projects', () => {
     expect(meta.tags).toEqual(['query']);
   });
 
-  test('is public only when the policy is allow()', () => {
+  test('is public only when the policy admits an anonymous caller', () => {
     const guarded = toQueryRoute(feed({ count: 0 }));
     const open = toQueryRoute(
       query({ input: Input, policy: allow(), sql: () => from<Post>('posts', posts) }).named(
@@ -118,6 +118,35 @@ describe('the route a query projects', () => {
 
     expect(guarded.meta.auth).toBe('required');
     expect(open.meta.auth).toBe('public');
+  });
+
+  /**
+   * `meta.auth` used to read the ROOT combinator — `policy.kind === 'allow'` — so a read with a
+   * public BRANCH was 401'd by the `auth` stage before `runQuery` ran, while the MCP tool and a
+   * direct server read allowed the same caller through the same policy object.
+   */
+  test('a public branch under `or` projects auth: public, so the stage stands down', () => {
+    const open = toQueryRoute(
+      query({
+        input: Input,
+        policy: or(allow('public'), can('feed:read')),
+        sql: () => from<Post>('posts', posts),
+      }).named('publicFeed'),
+    );
+
+    expect(open.meta.auth).toBe('public');
+  });
+
+  test('a read whose every branch needs a grant still projects auth: required', () => {
+    const guarded = toQueryRoute(
+      query({
+        input: Input,
+        policy: and(allow('public'), can('feed:read')),
+        sql: () => from<Post>('posts', posts),
+      }).named('publicFeed'),
+    );
+
+    expect(guarded.meta.auth).toBe('required');
   });
 });
 

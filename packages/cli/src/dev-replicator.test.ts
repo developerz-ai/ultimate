@@ -4,8 +4,8 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { clearRegistry, entity, text, uuid } from '@ultimat3/entity';
-import type { Transport } from '@ultimat3/realtime';
-import { InProcessTransport } from '@ultimat3/realtime';
+import type { Transport } from '@ultimat3/realtime/server';
+import { InProcessTransport } from '@ultimat3/realtime/server';
 import { startReplicator } from './dev-replicator';
 import type { DevServices } from './dev-services';
 

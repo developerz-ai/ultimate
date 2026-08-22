@@ -3,6 +3,7 @@
 // else owns the reservation, and a row outside the window is reclaimed rather than replayed.
 
 import { describe, expect, test } from 'bun:test';
+import { IDEMPOTENCY_STATUSES } from './idempotency';
 import type { PgExecutor } from './idempotency-postgres';
 import {
   postgresIdempotencyStore,
@@ -34,9 +35,12 @@ function executor(answers: readonly (readonly Record<string, unknown>[])[]): {
   return { exec, calls };
 }
 
+/** The id `reserve` handed back — what both settlements must now carry. */
+const RESERVATION_ID = '00000000-0000-4000-8000-0000000000aa';
+
 const row = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
   key: 'chargeCard:k1',
-  id: '00000000-0000-4000-8000-0000000000aa',
+  id: RESERVATION_ID,
   request_hash: 'hash',
   status: 'in-flight',
   value: null,
@@ -108,7 +112,64 @@ describe('the postgres idempotency store', () => {
     // `returning key` is what makes the no-op observable — an update that matched nothing looks
     // exactly like one that matched, otherwise.
     expect(SQL_IDEMPOTENCY_SETTLE).toContain('returning key');
-    await store.settle('chargeCard:k1', { ok: true });
+    await store.settle('chargeCard:k1', { ok: true }, RESERVATION_ID);
+  });
+
+  // The status alone cannot see the case that matters: a reservation whose window lapsed is
+  // reclaimed by the next caller, so the row is `in-flight` AGAIN and belongs to someone else. A
+  // straggler satisfied `status = 'in-flight'` exactly and overwrote a live reservation.
+  test('both settlements are fenced on the reservation id as well as the status', () => {
+    expect(SQL_IDEMPOTENCY_SETTLE).toContain('id = $3::uuid');
+    expect(SQL_IDEMPOTENCY_FAIL).toContain('id = $3::uuid');
+  });
+
+  test('the reservation id travels as the third parameter of both statements', async () => {
+    const { exec, calls } = executor([[{ key: 'chargeCard:k1' }], [{ key: 'chargeCard:k1' }]]);
+    const store = postgresIdempotencyStore({ executor: exec });
+    await store.settle('chargeCard:k1', { ok: true }, RESERVATION_ID);
+    await store.fail?.(
+      'chargeCard:k1',
+      { code: 'X_OUTPUT_INVALID', cause: 'late', fix: 'none' },
+      RESERVATION_ID,
+    );
+
+    expect(calls[0]?.params[2]).toBe(RESERVATION_ID);
+    expect(calls[1]?.params[2]).toBe(RESERVATION_ID);
+  });
+
+  // The memory store has taken an injectable `now` since it shipped; this one hardcoded
+  // `Date.now()` for the one record it stamps itself, so the two halves of one seam could not be
+  // driven from one clock.
+  test('the clock is injectable, so the fallback record is stamped by the caller', async () => {
+    const { exec } = executor([[], [], [], [], [], []]);
+    const store = postgresIdempotencyStore({ executor: exec, now: () => 1_700_000_000_000 });
+    // Three attempts, both statements empty each time: the honest in-flight refusal.
+    const reservation = await store.reserve('chargeCard:k1', 'hash');
+    expect(reservation.created).toBe(false);
+    expect(reservation.record.createdAt).toBe(1_700_000_000_000);
+  });
+
+  // `row.status as IdempotencyStatus` is not a check, and this row crossed a process boundary: it
+  // was written by whatever build was deployed when the first attempt ran, which on a rolling
+  // deploy is not this one. An unknown word fell through every branch of `withIdempotency` and
+  // came back as `{ value: null, replayed: true }` — "this already ran, here is its result" —
+  // for a record nobody could read.
+  test('a status this build cannot read is refused, never replayed as a null result', async () => {
+    const { exec } = executor([[], [row({ status: 'archived' })]]);
+    const store = postgresIdempotencyStore({ executor: exec });
+    const failure = await store.reserve('chargeCard:k1', 'hash').catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as { code?: string }).code).toBe('X_IDEMPOTENCY_STATUS_UNKNOWN');
+    expect((failure as { cause?: string }).cause).toContain('archived');
+  });
+
+  test('every status this build does read still comes back', async () => {
+    for (const status of IDEMPOTENCY_STATUSES) {
+      const { exec } = executor([[], [row({ status })]]);
+      const store = postgresIdempotencyStore({ executor: exec });
+      expect((await store.reserve('chargeCard:k1', 'hash')).record.status).toBe(status);
+    }
   });
 
   test('the install statement creates the table and its sweep index', () => {

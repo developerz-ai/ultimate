@@ -8,7 +8,7 @@ import type { PurgeDriver } from '@ultimat3/cache';
 import type { Middleware, RateLimitStore } from '@ultimat3/http';
 import type { JobDriver } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
-import type { SyncAuthenticator, Transport } from '@ultimat3/realtime';
+import type { SyncAuthenticator, Transport } from '@ultimat3/realtime/server';
 import type { IsrStore } from '@ultimat3/render';
 import type { ImageTransformDriver } from '@ultimat3/seo';
 import type { Storage } from '@ultimat3/storage';

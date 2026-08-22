@@ -4,13 +4,9 @@
 // roles reading the other end of that transport.
 
 import { describeEntities } from '@ultimat3/entity';
-import type { Replicator, Transport } from '@ultimat3/realtime';
-import {
-  createReplicator,
-  ReplicatorSlotHeldError,
-  replicatorLockKey,
-  selectChangeFeed,
-} from '@ultimat3/realtime';
+import { ReplicatorSlotHeldError } from '@ultimat3/realtime';
+import type { Replicator, Transport } from '@ultimat3/realtime/server';
+import { createReplicator, replicatorLockKey, selectChangeFeed } from '@ultimat3/realtime/server';
 import type { DevServices, Env } from './dev-services';
 import { BadFlagError } from './errors';
 
