@@ -6,6 +6,7 @@
 
 import type { ActionDescriptor, AnyAction } from '@ultimat3/action';
 import { describeActions, getAction, jsonSchemaOf } from '@ultimat3/action';
+import { nearestName } from '@ultimat3/core';
 import type { EntityDescription, RegistryEntry } from '@ultimat3/entity';
 import { describeEntities, getEntity } from '@ultimat3/entity';
 import type { AnyQuery, QueryDescriptor } from '@ultimat3/query';
@@ -17,7 +18,7 @@ import { DeclarationUnknownError, MissingPositionalError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
 import type { CommandSpec } from './parse';
-import { nearest } from './parse';
+
 import { renderTable } from './table';
 
 /**
@@ -154,7 +155,7 @@ function describeResult<D extends { readonly name: string }, Raw extends { descr
   const raw = kind.find(name);
   if (raw === undefined) {
     const known = kind.list().map((item) => item.name);
-    const suggestion = nearest(name, known);
+    const suggestion = nearestName(name, known);
     throw new DeclarationUnknownError(
       suggestion === undefined
         ? { kind: kind.kind, singular: kind.singular, name, known }

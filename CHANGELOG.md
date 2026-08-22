@@ -110,6 +110,35 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   sitemap never lists.** `x-default` is now emitted only when the default locale names a URL the
   route actually emits.
 
+- **`postgresAuthLimiter.recordFailure` could be raced past its own threshold from a transaction.**
+  `PgExecutor` accepts a transaction handle, and the failure insert and the sliding-window count are
+  two statements — so two OUTER transactions recording a failure for one account each counted the
+  committed rows plus their own, both read one short of `maxAttempts`, and both committed. Three
+  failures, no lockout, on the credential path. The insert now takes `pg_advisory_xact_lock` on the
+  key before the row lands, so the second transaction's count runs against a snapshot that holds
+  the first's row. Autocommit is unchanged and pays no extra round trip; the guarantee is READ
+  COMMITTED, which is what `withTransaction` opens with no `isolation:`.
+
+- **`x_rate_limit` was never created by the boot, so the first request a shared-limit deployment
+  served died on a missing relation.** `applySchema` (`@ultimat3/cli`'s `dev-queue.ts`) installed
+  `SQL_JOBS_TABLE` and `SQL_IDEMPOTENCY_TABLE` and not `SQL_RATE_LIMIT_TABLE`, while
+  `runtime.rateLimitStore` accepted `postgresRateLimitStore` — a store whose table only a manual
+  DDL run could have created. It is applied on every boot, whether or not this process installs the
+  store: `create table if not exists` on an unused table costs one round trip.
+
+- **`arrayOf()`'s four refusals handed back prose and one placeholder.** `json(t.array(<element
+  schema>))` is a syntax error when pasted, and the other three named no edit at all. Each is now a
+  mechanical one-line repair with nothing for the reader to supply, and `columns-data.test.ts`
+  asserts the complete string rather than a substring of it.
+
+- **The edit-distance suggester existed twice, kept in agreement by hand.**
+  `packages/cli/src/parse.ts`'s `nearest` (tier 5) and `packages/policy/src/nearest-permission.ts`
+  (tier 2, which could not import it — tier 5 from tier 2 is an upward import): same algorithm, same
+  ≤ 3 cutoff, two places for either to drift. Both are deleted; the one implementation is
+  `nearestName` in `@ultimat3/core` (tier 0), which every package can reach. `@ultimat3/cli` still
+  exports `nearest` — it shipped on that surface, so removing it would be a major for a rename —
+  and it is now one line delegating to core's function, not a second copy of the algorithm.
+
 ### Added
 
 - **A shared rate-limit store and a shared auth limiter** — `postgresRateLimitStore`

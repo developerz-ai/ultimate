@@ -460,13 +460,9 @@ export {
   SHUTDOWN_PHASES,
   shutdownHookCount,
 } from './lifecycle';
-export {
-  isSelfOrigin,
-  listeningOrigins,
-  markListening,
-  resetListeners,
-} from './listeners';
+export { isSelfOrigin, listeningOrigins, markListening, resetListeners } from './listeners';
 export { isMcpExposed, type McpExposureDeclaration } from './mcp-exposure';
+export { nearestName } from './nearest-name';
 export { type CappedBody, readWithinLimit } from './read-capped';
 export type {
   ModuleRegistrar,

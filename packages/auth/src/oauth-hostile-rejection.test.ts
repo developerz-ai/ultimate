@@ -1,7 +1,10 @@
 // One question, four call sites: does a coded refusal survive a `fetch` rejection the framework
 // did not build? `fetch` is INJECTED on every OAuth path here, so the rejected value is whatever a
 // driver, a proxy or a test double threw — and `value instanceof Error` runs the value's own
-// `getPrototypeOf` trap, inside the catch block that has nothing left to answer with.
+// `getPrototypeOf` trap, inside the catch block that has nothing left to answer with. It is one
+// file rather than four because the fixture IS the subject: split across `jwks.test.ts`,
+// `oauth-discovery.test.ts`, `oauth-exchange.test.ts` and `oauth-profile.test.ts` it becomes four
+// copies of `hostile()`, and a fifth path added later inherits none of them.
 import { describe, expect, test } from 'bun:test';
 import { frozenClock, isUltimateError } from '@ultimat3/core';
 import { createJwksClient } from './jwks';
@@ -17,6 +20,13 @@ const credentials = { clientId: 'client-id', clientSecret: 'client-secret' };
  * The value the four catch blocks must survive. `instanceof` consults `[[GetPrototypeOf]]`, so
  * this trap fires DURING the test that was meant to decide how to render it — a stranger with a
  * misbehaving egress proxy turns a 502-shaped refusal into an uncoded `TypeError`.
+ *
+ * Both built-in errors here are the SUBJECT'S INPUT, never this file's verdict, which is the line
+ * the no-bare-`Error` rule draws (`scripts/test-bare-error.ts` reports a thrown verdict and never a
+ * value handed to the code under test). The `Error` target is only a realistic thing for a driver
+ * to reject with, and the `TypeError` from the trap is the hostile behaviour being reproduced — an
+ * `UltimateError` thrown there would be a CODED value, which is the case that already worked and
+ * the one this file exists to distinguish from. Every verdict below is an `expect`.
  */
 const hostile = (): unknown =>
   new Proxy(new Error('unreachable'), {

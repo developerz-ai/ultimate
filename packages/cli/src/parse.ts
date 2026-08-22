@@ -2,7 +2,16 @@
 // same way and `--json` / `--help` behave identically everywhere. Pure: no I/O, no process
 // access, so the parser is unit-testable and the dispatcher owns all side effects.
 
+import { nearestName } from '@ultimat3/core';
 import { BadFlagError, MissingSubcommandError, UnknownCommandError } from './errors';
+
+/**
+ * The historical name for `@ultimat3/core`'s `nearestName`, kept because it shipped on this
+ * package's exported surface and removing it would be a major for a rename. One implementation
+ * behind both — this is a delegation, not the second copy of the algorithm that `@ultimat3/policy`
+ * used to carry. New callers import `nearestName` from core.
+ */
+export const nearest = nearestName;
 
 export type FlagValue = string | boolean;
 
@@ -87,41 +96,11 @@ export const wantsJson = (argv: readonly string[]): boolean =>
 const HELP_ALIASES = new Set(['--help', '-h', 'help']);
 const VERSION_ALIASES = new Set(['--version', '-v', '-V']);
 
-function distance(a: string, b: string): number {
-  const rows = a.length + 1;
-  const cols = b.length + 1;
-  const grid: number[] = new Array<number>(rows * cols).fill(0);
-  const at = (r: number, c: number): number => grid[r * cols + c] ?? 0;
-  for (let r = 0; r < rows; r += 1) grid[r * cols] = r;
-  for (let c = 0; c < cols; c += 1) grid[c] = c;
-  for (let r = 1; r < rows; r += 1) {
-    for (let c = 1; c < cols; c += 1) {
-      const cost = a[r - 1] === b[c - 1] ? 0 : 1;
-      grid[r * cols + c] = Math.min(at(r - 1, c) + 1, at(r, c - 1) + 1, at(r - 1, c - 1) + cost);
-    }
-  }
-  return at(rows - 1, cols - 1);
-}
-
-/** Nearest known name within an edit distance of 3, so the error can suggest a retry. */
-export function nearest(input: string, candidates: readonly string[]): string | undefined {
-  let best: string | undefined;
-  let bestScore = 4;
-  for (const candidate of candidates) {
-    const score = distance(input, candidate);
-    if (score < bestScore) {
-      best = candidate;
-      bestScore = score;
-    }
-  }
-  return best;
-}
-
 function resolveCommand(token: string, specs: readonly CommandSpec[]): CommandSpec {
   const found = specs.find((spec) => spec.name === token || (spec.aliases ?? []).includes(token));
   if (found !== undefined) return found;
   const names = specs.map((spec) => spec.name);
-  const suggestion = nearest(token, names);
+  const suggestion = nearestName(token, names);
   throw new UnknownCommandError(
     suggestion === undefined
       ? { path: token, known: names }
@@ -183,7 +162,7 @@ export function parseArgs(argv: readonly string[], specs: readonly CommandSpec[]
     const flag = findFlag(name, spec);
     if (flag === undefined) {
       const known = [...GLOBAL_FLAGS, ...(spec.flags ?? [])].map((entry) => entry.name);
-      const suggestion = nearest(name, known);
+      const suggestion = nearestName(name, known);
       throw new BadFlagError({
         flag: name,
         command: spec.name,
@@ -243,7 +222,7 @@ function readSubcommand(spec: CommandSpec, positionals: readonly string[]): stri
     throw new MissingSubcommandError({ command: spec.name, known: allowed });
   }
   if (allowed.includes(token)) return token;
-  const suggestion = nearest(token, allowed);
+  const suggestion = nearestName(token, allowed);
   throw new UnknownCommandError(
     suggestion === undefined
       ? { path: `${spec.name} ${token}`, known: allowed }

@@ -3,6 +3,7 @@
 // `x db branch ls` used to clone a database called `ls`, because the argument was the name.
 // The facts (what a branch is, per mode) are `db-branch.ts`; the client lifetime is here.
 
+import { nearestName } from '@ultimat3/core';
 import { createPostgresClient, type DbClient } from '@ultimat3/db';
 import type { CommandContext } from './command';
 import type { BranchRow } from './db-branch';
@@ -27,7 +28,7 @@ import { resolveServices } from './dev-services';
 import { MissingPositionalError, UnknownCommandError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding } from './output';
-import { flagString, nearest } from './parse';
+import { flagString } from './parse';
 import { portFromEnv } from './serve';
 import { renderTable } from './table';
 
@@ -46,7 +47,7 @@ const LIST_FIX = `x ${LIST_ARGV}`;
  * `x` excluded — the error class adds it.
  */
 function branchRetry(word: string, name: string | undefined): string {
-  const near = nearest(word, [...BRANCH_SUBCOMMANDS]);
+  const near = nearestName(word, [...BRANCH_SUBCOMMANDS]);
   if (near !== undefined) return name === undefined ? LIST_ARGV : `db branch ${near} ${name}`;
   return isBranchName(word) ? `db branch create ${word}` : LIST_ARGV;
 }

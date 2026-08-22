@@ -1,9 +1,7 @@
-/**
- * The shared credential limiter: two Postgres tables, so N replicas count one spray once and a
- * lockout one pod established is visible to the rest. Without it `rateLimit.scope: 'shared'` is a
- * declaration nothing can satisfy — `assertAuthLimiterPolicy` refuses every limiter this package
- * shipped — while `x new` scaffolds `replicas: 2`, which is `maxAttempts × 2` guesses per account.
- */
+// The shared credential limiter: two Postgres tables, so N replicas count one spray once and a
+// lockout one pod established is visible to the rest. Without it `rateLimit.scope: 'shared'` is a
+// declaration nothing can satisfy, while `x new` scaffolds `replicas: 2` — which is
+// `maxAttempts × 2` guesses per account.
 import type { Clock } from '@ultimat3/core';
 import { accountLocked } from './errors';
 import type { AuthLimiter, AuthRateLimitPolicy } from './rate-limit';
@@ -48,8 +46,37 @@ create table if not exists x_auth_lockouts (
 create index if not exists x_auth_lockouts_until_idx on x_auth_lockouts (locked_until_ms);
 `;
 
-export const SQL_AUTH_RECORD_FAILURE =
-  'insert into x_auth_failures (key, at_ms) values ($1, $2::bigint)';
+/**
+ * The per-key serializer, spelled from documented functions only: `md5` and a hex bit-string cast,
+ * never `hashtext`, which is an internal with no compatibility promise.
+ */
+export const SQL_AUTH_KEY_LOCK = "pg_advisory_xact_lock(('x' || md5($1))::bit(64)::bigint)";
+
+/**
+ * `$1` key, `$2` nowMs — and a **transaction-scoped advisory lock on the key**, taken in the same
+ * statement, before the row lands.
+ *
+ * `PgExecutor` accepts a transaction handle (see its doc comment), and the insert and the count
+ * below are two statements. Without this lock two OUTER transactions recording a failure for one
+ * account each counted only what had COMMITTED plus their own row: with `maxAttempts: 3` and one
+ * failure already committed, both read two, neither locked, and both committed — three failures
+ * and an open account. The lock makes the second transaction wait at the insert until the first
+ * commits, so its count is taken against a snapshot that already holds the first's row.
+ *
+ * Autocommit is unaffected: the lock is taken and released inside the statement's own implicit
+ * transaction, which is one extra no-op per failure and no extra round trip. The guarantee is
+ * READ COMMITTED, which is what `withTransaction` opens with no `isolation:` — a caller that opts
+ * into `'repeatable read'` or `'serializable'` pins the count's snapshot at transaction start, and
+ * no lock can make a statement see a commit its own snapshot precedes.
+ *
+ * `recordFailure` always locks account → ip → org (`auth.ts`), one fixed order, so two concurrent
+ * sign-ins cannot take two of these locks in opposite orders and deadlock.
+ */
+export const SQL_AUTH_RECORD_FAILURE = `
+with locked as (select ${SQL_AUTH_KEY_LOCK})
+insert into x_auth_failures (key, at_ms)
+select $1, $2::bigint from locked
+`;
 
 /**
  * `$1` key, `$2` nowMs, `$3` windowMs, `$4` lockoutMs, `$5` maxAttempts.
@@ -57,7 +84,8 @@ export const SQL_AUTH_RECORD_FAILURE =
  * A SECOND statement, deliberately, and not a CTE beside the insert above: every CTE in one
  * statement reads that statement's snapshot, so a `count(*)` sharing it cannot see the failure
  * being inserted beside it and the lock would fire one attempt late. Run afterwards, the count
- * sees this caller's own row and every other replica's that has committed.
+ * sees this caller's own row and every other replica's that has committed — and, because the
+ * insert holds `SQL_AUTH_KEY_LOCK`, every row a concurrent transaction on this key committed too.
  *
  * `greatest` on conflict EXTENDS a live lockout and never shortens one — a spray arriving during
  * a lockout must not be able to reset it to a nearer deadline.

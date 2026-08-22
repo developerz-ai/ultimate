@@ -11,6 +11,7 @@ import type { PgExecutor } from './rate-limit-postgres';
 import {
   postgresRateLimitStore,
   SQL_RATE_LIMIT_PURGE,
+  SQL_RATE_LIMIT_RESET,
   SQL_RATE_LIMIT_TABLE,
   SQL_RATE_LIMIT_TAKE,
 } from './rate-limit-postgres';
@@ -91,6 +92,16 @@ describe('the postgres rate-limit store', () => {
     if (!isUltimateError(failed)) expect.unreachable('an unanswered take was allowed through');
     expect(failed.code).toBe('X_RATE_LIMIT_STORE_UNAVAILABLE');
     expect(failed.fix).toContain('x_rate_limit');
+  });
+
+  // A reset with no `where` empties the whole fleet's buckets, which is every other caller handed
+  // a full allowance by one caller's reset. The `.live.` twin proves a neighbour survives it.
+  test('reset deletes ONE key, named as a parameter', async () => {
+    const { exec, calls } = executor([[]]);
+    await postgresRateLimitStore({ executor: exec }).reset('posts.create|ip:1.2.3.4');
+    expect(calls[0]?.sql).toBe(SQL_RATE_LIMIT_RESET);
+    expect(calls[0]?.params).toEqual(['posts.create|ip:1.2.3.4']);
+    expect(SQL_RATE_LIMIT_RESET).toContain('where key = $1');
   });
 
   test('purgeExpired answers how many buckets it forgot', async () => {

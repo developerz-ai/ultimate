@@ -12,6 +12,7 @@ import {
 import type { PgExecutor } from './rate-limit-postgres';
 import {
   postgresAuthLimiter,
+  SQL_AUTH_KEY_LOCK,
   SQL_AUTH_LIMIT_TABLES,
   SQL_AUTH_LOCK,
   SQL_AUTH_PURGE,
@@ -114,6 +115,24 @@ describe('the postgres auth limiter', () => {
     await limiter.assertAllowed('account:ada');
     expect(await limiter.lockedUntil('account:ada')).toBeNull();
     expect(calls[0]?.params).toEqual(['account:ada', NOW.getTime()]);
+  });
+
+  // `PgExecutor` accepts a transaction handle, and the insert and the count are two statements —
+  // so two OUTER transactions each counted committed rows plus their own, both read one short of
+  // `maxAttempts`, and both committed. Three failures, no lockout. The insert therefore takes a
+  // transaction-scoped advisory lock on the KEY, which is what makes the second transaction's
+  // count run after the first has committed. `rate-limit-postgres.live.test.ts` runs the race.
+  test('the failure insert serializes on the key before the row lands', () => {
+    expect(SQL_AUTH_RECORD_FAILURE).toContain(SQL_AUTH_KEY_LOCK);
+    // Locked BEFORE the insert, never after it: a lock taken afterwards leaves the window open.
+    expect(SQL_AUTH_RECORD_FAILURE.indexOf(SQL_AUTH_KEY_LOCK)).toBeLessThan(
+      SQL_AUTH_RECORD_FAILURE.indexOf('insert into x_auth_failures'),
+    );
+    // Transaction-scoped, never session-scoped: `pg_advisory_lock` outlives the statement and is
+    // released when the CONNECTION goes back to the pool, which strands the lock on a pooled key.
+    expect(SQL_AUTH_KEY_LOCK).toContain('pg_advisory_xact_lock');
+    // Documented functions only — `hashtext` is an internal with no compatibility promise.
+    expect(SQL_AUTH_KEY_LOCK).not.toContain('hashtext');
   });
 
   test('a bigint handed back as a string is still a Date', async () => {

@@ -93,10 +93,23 @@ describeLive('live · postgres · the shared rate-limit store', () => {
     expect(Number((rows as { readonly tokens: number }[])[0]?.tokens)).toBe(0);
   });
 
+  // The second key is the assertion, not scenery: `delete from x_rate_limit` with no `where` also
+  // empties the target, so a test that only looks at `resettable` passes on a store that drops
+  // every bucket in the fleet — one caller's reset handing every other caller a full allowance.
   test('reset empties one key and leaves the others', async () => {
-    await store.take('resettable', bucket, 4, Date.now());
+    const nowMs = Date.now();
+    await store.take('resettable', bucket, 4, nowMs);
+    await store.take('untouched', bucket, 4, nowMs);
+
     await store.reset('resettable');
-    const rows = await sql.unsafe('select key from x_rate_limit where key = $1', ['resettable']);
-    expect(rows).toHaveLength(0);
+
+    const rows = await sql.unsafe(
+      'select key from x_rate_limit where key in ($1, $2) order by key',
+      ['resettable', 'untouched'],
+    );
+    expect((rows as { readonly key: string }[]).map((row) => row.key)).toEqual(['untouched']);
+    // And the survivor kept its SPEND, not just its row: a reset that refilled a neighbour's
+    // bucket is the same free allowance one `delete` further along.
+    expect((await store.take('untouched', bucket, 1, nowMs)).allowed).toBe(false);
   });
 });

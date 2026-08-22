@@ -3,6 +3,7 @@
 // (`docs/architecture/02-boundaries.md`) — a caller runs the printed edit, or the generated
 // `git mv`, itself.
 
+import { nearestName } from '@ultimat3/core';
 import { appImportGraph, readAppSources } from './app-boundaries';
 import { requireAppRoot } from './app-root';
 import type { BoundaryCut } from './boundary-cuts';
@@ -11,7 +12,6 @@ import type { CliCommand, CommandContext } from './command';
 import { BadFlagError, FixTargetUnknownError, MissingPositionalError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, Finding, JsonValue } from './output';
-import { nearest } from './parse';
 
 export type { BoundaryCut };
 export { planBoundaryCuts };
@@ -39,7 +39,7 @@ function resolveTarget(input: string, paths: readonly string[]): string {
   // Compare on the last segment too: a wrong directory is the common miss, and edit distance
   // over the whole path would score every file in the right directory as equally far away.
   const suggestion =
-    nearest(input, [...paths]) ??
+    nearestName(input, [...paths]) ??
     paths.find((path) => path.split('/').at(-1) === input.split('/').at(-1));
   throw new FixTargetUnknownError({
     file: input,
@@ -105,7 +105,7 @@ export const fixCommand: CliCommand = {
     const root = requireAppRoot('fix', ctx.cwd).dir;
     // Refused before the scan, never defaulted to `''`: an empty string reached `resolveTarget` as
     // a file NAME, so a bare `x fix` answered X_FIX_TARGET_UNKNOWN with `"" is not one of the 42
-    // source file(s)…` — and `nearest('')` almost never suggests anything, so the fix degraded to
+    // source file(s)…` — and `nearestName('')` almost never suggests anything, so the fix degraded to
     // `x routes --json` for a caller who had simply not said which file.
     const file = ctx.args.positionals[0];
     if (file === undefined) {

@@ -99,7 +99,7 @@ so nothing can be wrong.
 `rateLimitStore` feeds the `PipelineDeps.limiter` seam rather than sitting beside it: the bucket
 maths stays in `createRateLimiter`, so every driver agrees on the numbers.
 
-**A shared store ships, `As of 2026-08-22`** — `postgresRateLimitStore({ executor })`, one table
+**A shared store ships, `As of 2026-08`** — `postgresRateLimitStore({ executor })`, one table
 and one `insert … on conflict` per take, so N replicas count against one bucket. Until it landed,
 `scope: 'shared'` was a declaration nothing in the framework could satisfy while `x new` scaffolded
 `replicas: 2`. `executor` is a `PgExecutor` — anything speaking `query(text, values)`, which is one

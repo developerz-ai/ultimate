@@ -263,6 +263,7 @@ export type {
 export {
   postgresAuthLimiter,
   SQL_AUTH_FORGET_KEY,
+  SQL_AUTH_KEY_LOCK,
   SQL_AUTH_LIMIT_TABLES,
   SQL_AUTH_LOCK,
   SQL_AUTH_LOCKED_UNTIL,

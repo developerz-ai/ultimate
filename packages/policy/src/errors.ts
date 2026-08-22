@@ -3,8 +3,7 @@
 // an action with no policy never compiles. The code and its factory stay published for a
 // declaration site that cannot express the requirement in a type — a config-driven route table,
 // a policy resolved by name — and `policyMissing()` is how such a site says it.
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
-import { nearestPermission } from './nearest-permission';
+import { nearestName, registerErrorCodes, UltimateError } from '@ultimat3/core';
 
 export const POLICY_ERROR_CODES = [
   'X_FORBIDDEN',
@@ -94,7 +93,7 @@ export const roleRedefined = (role: string, first: string, second: string): Poli
  * caught it. A typo is by far the likelier of the two readings, so it leads.
  */
 export const permissionUnknown = (permission: string, known: readonly string[]): PolicyError => {
-  const nearest = nearestPermission(permission, known);
+  const nearest = nearestName(permission, known);
   return new PolicyError({
     code: 'X_PERMISSION_UNKNOWN',
     // The COUNT, never the set: an app with 200 permissions would bury the fix line under names

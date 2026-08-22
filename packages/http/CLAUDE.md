@@ -144,7 +144,7 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   because `@ultimat3/action`'s `invoke` loads the row a row-level rule reads and this stage
   cannot. Deciding in both places is two authz systems, and the one that answers first is the
   one holding less.
-- **A 403's `fix:` names the POLICY, never the pathname** (`As of 2026-08-22`). `forbidden` emitted
+- **A 403's `fix:` names the POLICY, never the pathname** (`As of 2026-08`). `forbidden` emitted
   `x policy explain ${ctx.url.pathname}`, and `x policy explain` resolves a policy SUBJECT — a
   permission, an action name or a query name. A page pathname is none of them, so the one command
   the error told the reader to run exited `X_DECLARATION_UNKNOWN` (`x policy explain /settings`,
@@ -289,8 +289,8 @@ Owned request lifecycle over `Bun.serve`. Tier 2.
   through `createRateLimiter` and hands it to the `PipelineDeps.limiter` seam that already
   existed; never add a second limiter entry point beside it.
 - **The shared store is `postgresRateLimitStore({ executor })`, and it is what makes
-  `scope: 'shared'` satisfiable** (`As of 2026-08-22`). Before it, `assertRateLimitScope` refused
-  every store the framework shipped, so the declaration the chart's `replicas: 3` requires had no
+  `scope: 'shared'` satisfiable** (`As of 2026-08`). Before it, `assertRateLimitScope` refused
+  every store the framework shipped, so the declaration required by a chart with `replicas: 3` had no
   answer. `PgExecutor` is declared STRUCTURALLY here, exactly as `@ultimat3/action`'s idempotency
   store declares it: this package has no `@ultimat3/db` dependency, and taking one to type a single
   method would put the database package in http's install graph. The refill expression is repeated

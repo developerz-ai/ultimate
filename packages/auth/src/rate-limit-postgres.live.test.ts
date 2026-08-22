@@ -1,7 +1,7 @@
 // The lockout's SQL, against a real server. The scripted-executor twin proves the protocol and
 // can prove nothing about the statements: a limiter whose sliding-window count was never executed
 // is a credential control nobody has run. The cases only a server can answer are the sliding
-// window itself and two replicas counting one spray once.
+// window itself, two replicas counting one spray once, and two OPEN transactions doing the same.
 //
 // Skips unless `TEST_DATABASE_URL` is set — never `DATABASE_URL`, because this file drops its
 // tables. Locally:
@@ -49,6 +49,16 @@ const laggingClock: Clock = {
 };
 
 let sql: Bun.SQL;
+
+/**
+ * The one-line wrapping every host does, over the pool OR over a transaction handle — `PgExecutor`
+ * accepts both, which is the whole reason `SQL_AUTH_KEY_LOCK` exists.
+ */
+const executorOn = (client: Bun.SQL): PgExecutor => ({
+  query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
+    (await client.unsafe(text, [...values])) as readonly R[],
+});
+
 /** Two limiters over ONE table is the deployment being modelled: two replicas, one database. */
 let podA: PostgresAuthLimiter;
 let podB: PostgresAuthLimiter;
@@ -57,18 +67,14 @@ let laggingPod: PostgresAuthLimiter;
 
 beforeAll(async () => {
   if (url === undefined) return;
-  sql = new Bun.SQL(url, { max: 4 });
+  sql = new Bun.SQL(url, { max: 6 });
   await sql.unsafe('drop table if exists x_auth_failures', []);
   await sql.unsafe('drop table if exists x_auth_lockouts', []);
   await sql.unsafe(SQL_AUTH_LIMIT_TABLES, []);
-  const executor: PgExecutor = {
-    query: async <R>(text: string, values: readonly unknown[]): Promise<readonly R[]> =>
-      (await sql.unsafe(text, [...values])) as readonly R[],
-  };
-  podA = postgresAuthLimiter({ executor, clock, policy });
-  podB = postgresAuthLimiter({ executor, clock, policy });
+  podA = postgresAuthLimiter({ executor: executorOn(sql), clock, policy });
+  podB = postgresAuthLimiter({ executor: executorOn(sql), clock, policy });
   laggingPod = postgresAuthLimiter({
-    executor,
+    executor: executorOn(sql),
     clock: laggingClock,
     policy,
   });
@@ -86,6 +92,33 @@ beforeEach(async () => {
   clock.set(START_MS);
   await podA.reset();
 });
+
+/**
+ * Two numbers, and the ORDER between them is the point: the wait must give up well inside the
+ * test's own budget, or a missing lock is reported as "timed out after 5000ms" — which reads as a
+ * flaky runner — instead of as the sentence naming what did not happen.
+ */
+const LOCK_WAIT_DEADLINE_MS = 2_000;
+const RACE_TIMEOUT_MS = 20_000;
+
+/**
+ * Answer whether Postgres itself reports a session parked on an ungranted advisory lock, waiting
+ * for the CONDITION rather than for a duration. `pg_locks` is the server's own answer to "is
+ * anything waiting?", so the interleaving is observed instead of assumed — a fixed sleep would
+ * flake on a slow runner rather than fail on a real regression.
+ */
+const keyLockHasWaiter = async (): Promise<boolean> => {
+  const deadline = Bun.nanoseconds() + LOCK_WAIT_DEADLINE_MS * 1_000_000;
+  while (Bun.nanoseconds() < deadline) {
+    const rows = (await sql.unsafe(
+      "select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted",
+      [],
+    )) as { readonly n: number }[];
+    if ((rows[0]?.n ?? 0) > 0) return true;
+    await Bun.sleep(10);
+  }
+  return false;
+};
 
 const codeOf = async (call: Promise<unknown>): Promise<string> => {
   try {
@@ -175,4 +208,53 @@ describeLive('live · postgres · the shared auth limiter', () => {
     await Promise.all(Array.from({ length: 8 }, () => podA.recordFailure(key)));
     expect(await codeOf(podB.assertAllowed(key))).toBe('X_ACCOUNT_LOCKED');
   });
+
+  // The case only a TRANSACTION can produce, and the one `SQL_AUTH_KEY_LOCK` exists for. Two open
+  // transactions each see committed rows plus their own, so with one failure already committed
+  // both read two against `maxAttempts: 3`, neither locks, and both commit — three failures and an
+  // account still open. Failing-first: without the lock in the insert this test does not lock.
+  test(
+    'failures from two OPEN transactions still add up to a lockout',
+    async () => {
+      const key = accountKey('interleaved@example.com');
+      await podA.recordFailure(key);
+
+      let releaseFirst!: () => void;
+      const firstMayCommit = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      let firstHasRecorded!: () => void;
+      const firstRecorded = new Promise<void>((resolve) => {
+        firstHasRecorded = resolve;
+      });
+
+      const first = sql.begin(async (tx: Bun.SQL) => {
+        await postgresAuthLimiter({ executor: executorOn(tx), clock, policy }).recordFailure(key);
+        firstHasRecorded();
+        await firstMayCommit;
+      });
+
+      let waited = false;
+      try {
+        await firstRecorded;
+        // Opened while the first transaction is still uncommitted, which is the whole case: two
+        // outer transactions counting one account's failures at the same time.
+        const second = sql.begin(async (tx: Bun.SQL) => {
+          await postgresAuthLimiter({ executor: executorOn(tx), clock, policy }).recordFailure(key);
+        });
+        waited = await keyLockHasWaiter();
+        releaseFirst();
+        await Promise.all([first, second]);
+      } finally {
+        // The open transaction is released whatever happened above, or every later case in this
+        // file inherits a wedged connection and reports a hook timeout instead of its own verdict.
+        releaseFirst();
+        await first.catch(() => undefined);
+      }
+
+      expect(waited).toBe(true);
+      expect(await codeOf(podB.assertAllowed(key))).toBe('X_ACCOUNT_LOCKED');
+    },
+    RACE_TIMEOUT_MS,
+  );
 });

@@ -1,10 +1,7 @@
-/**
- * The shared rate-limit store: one Postgres table, one `insert … on conflict` per take, so N
- * replicas count against one bucket. Without it `config.rateLimit.scope: 'shared'` is a
- * declaration nothing can satisfy — `assertRateLimitScope` refuses every store the framework
- * shipped — and `docker/helm/values.yaml` runs `roles.web.replicas: 3`. Statements are spelled
- * out so an agent can run the exact one it saw in a log.
- */
+// The shared rate-limit store: one Postgres table, one `insert … on conflict` per take, so N
+// replicas count against one bucket. Without it `config.rateLimit.scope: 'shared'` is a
+// declaration nothing can satisfy while `docker/helm/values.yaml` runs `roles.web.replicas: 3`.
+// Statements are spelled out so an agent can run the exact one it saw in a log.
 
 import type { RateLimitDecision, RateLimitScope, RateLimitStore } from './rate-limit';
 import { rateLimitDecision } from './rate-limit';

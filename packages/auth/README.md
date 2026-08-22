@@ -109,7 +109,7 @@ exemption here — the token arrived in a header.
 does **not** own its own configuration: the policy stays the app's single statement of the limits,
 and the boot check is what keeps it true.
 
-**A shared limiter ships, `As of 2026-08-22`** — `postgresAuthLimiter({ executor, clock, policy })`,
+**A shared limiter ships, `As of 2026-08`** — `postgresAuthLimiter({ executor, clock, policy })`,
 two tables, a row per failure so the window still SLIDES across replicas. Until it landed,
 `scope: 'shared'` was a declaration nothing in the framework could satisfy while `x new` scaffolded
 `replicas: 2` — `maxAttempts × 2` guesses per account. `executor` is a `PgExecutor`, anything
