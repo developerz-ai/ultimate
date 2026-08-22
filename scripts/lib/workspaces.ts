@@ -3,6 +3,7 @@
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { renderThrowable } from '@ultimat3/core';
 import { tierOf } from './tiers';
 
 export interface Workspace {
@@ -46,22 +47,41 @@ export const publishOrder = (workspaces: readonly Workspace[]): readonly Workspa
   workspaces.filter((workspace) => !workspace.private);
 
 /**
- * The `workspaces` patterns the root manifest declares, or `undefined` when there is no readable
- * root manifest at all.
- *
- * The two answers are different facts and a caller has to be able to tell them apart: an empty
- * list is a repo declaring no workspaces, `undefined` is a directory that is not a repo. Reading
- * the second as the first is how a rule reports a clean tree it never scanned.
+ * What the root `package.json` answered — THREE facts, because a caller has to be able to tell
+ * them apart. An empty `patterns` is a repo declaring no workspaces; `absent` is a directory that
+ * is not a repo; `unparsable` is a repo whose manifest is broken. Reading the second as the first
+ * is how a rule reports a clean tree it never scanned, and reading the THIRD as the second is how a
+ * root `package.json` with a trailing comma was reported as "not a repo" — whose fix line,
+ * `scripts/version-stamps.ts`'s `run this from the repository root`, names the directory the
+ * operator is already standing in and cannot be run.
+ */
+export type RootManifest =
+  | { readonly kind: 'read'; readonly patterns: readonly string[] }
+  | { readonly kind: 'absent' }
+  | { readonly kind: 'unparsable'; readonly problem: string };
+
+/** Never throws: this runs inside a `HostCheck`, where a throw is a stack trace, not a finding. */
+export async function readRootManifest(root: string): Promise<RootManifest> {
+  const file = Bun.file(join(root, 'package.json'));
+  if (!(await file.exists())) return { kind: 'absent' };
+  try {
+    const manifest = (await file.json()) as { readonly workspaces?: readonly string[] };
+    return { kind: 'read', patterns: manifest.workspaces ?? [] };
+  } catch (error) {
+    // The thrown value is genuinely unknown, and core's renderer is the one spelling that cannot
+    // itself throw on a hostile `toString` — the rule `packages/cli/src/cmd-new.ts` states.
+    return { kind: 'unparsable', problem: renderThrowable(error) };
+  }
+}
+
+/**
+ * The `workspaces` patterns the root manifest declares, or `undefined` when it could not be read.
+ * The two unreadable states are one answer HERE on purpose: this is the discovery half, and both
+ * mean "scan nothing". A caller REPORTING the condition reads `readRootManifest` instead.
  */
 export async function rootWorkspacePatterns(root: string): Promise<readonly string[] | undefined> {
-  try {
-    const manifest = (await Bun.file(join(root, 'package.json')).json()) as {
-      readonly workspaces?: readonly string[];
-    };
-    return manifest.workspaces ?? [];
-  } catch {
-    return undefined;
-  }
+  const manifest = await readRootManifest(root);
+  return manifest.kind === 'read' ? manifest.patterns : undefined;
 }
 
 /**

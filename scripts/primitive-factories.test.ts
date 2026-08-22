@@ -59,10 +59,17 @@ const read = (path: string): Promise<string> => Bun.file(`${repoRoot()}/${path}`
  * Every type that IS an `Action`/`JobHandle`, to a fixpoint. One hop is not enough and never was:
  * `llm()` returns `LlmAction`, which `extends Action` — so a scan keyed on the two root names alone
  * misses the framework's most-cited factory, which is exactly what a first draft of this file did.
+ *
+ * No pass ceiling, deliberately. `kinds` only ever GROWS, `kinds.has(name)` refuses a second entry
+ * for a name, and the names come from a finite set of `extends` matches — so `!grew` is reached in
+ * at most one pass per name and the loop cannot run forever. A `pass < 5` bound added nothing to
+ * that and subtracted the tail: an inheritance chain six links deep stopped the scan with no
+ * signal, and every factory below that link read as "not a primitive" — the vacuous green this
+ * file's neighbours (`checkVocabulary` in `scripts/render-modes.ts`) each refuse by name.
  */
 export function primitiveTypes(sources: readonly string[]): ReadonlyMap<string, 'action' | 'job'> {
   const kinds = new Map(ROOTS);
-  for (let pass = 0; pass < 5; pass += 1) {
+  for (;;) {
     let grew = false;
     for (const source of sources) {
       for (const match of source.matchAll(EXTENDS)) {
@@ -189,5 +196,30 @@ describe('unit · the scan itself can fail', () => {
     expect(factoriesIn('packages/jobs/src/sweep.ts', source, ROOTS)).toEqual([
       { factory: 'sweep', pkg: '@ultimat3/jobs', kind: 'job', at: 'packages/jobs/src/sweep.ts' },
     ]);
+  });
+
+  /**
+   * Seven links, declared in the order that forces one hop per pass — a `pass < 5` ceiling stopped
+   * at `A5` and every factory returning `A6`/`A7` read as "not a primitive", with nothing red.
+   * Declared LAST-first so the walk cannot shortcut the chain within a single pass.
+   */
+  test('an inheritance chain deeper than any fixed pass count still reaches the root', () => {
+    const chain = [7, 6, 5, 4, 3, 2, 1]
+      .map(
+        (n) =>
+          `export interface A${String(n)} extends ${n === 1 ? 'Action' : `A${String(n - 1)}`}<I, O> {}`,
+      )
+      .join('\n');
+    const kinds = primitiveTypes([chain]);
+    expect(kinds.get('A7')).toBe('action');
+    expect([...kinds.keys()]).toHaveLength(9);
+  });
+
+  /** A cycle in `extends` terminates too: a name already in the map is never re-entered. */
+  test('a cycle among unknown bases neither hangs nor adds a kind', () => {
+    const kinds = primitiveTypes([
+      'interface P extends Q<I, O> {}\ninterface Q extends P<I, O> {}',
+    ]);
+    expect([...kinds.keys()].sort()).toEqual([...ROOTS.keys()].sort());
   });
 });

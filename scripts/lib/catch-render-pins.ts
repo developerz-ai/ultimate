@@ -62,11 +62,15 @@ export async function applyCatchRenderUnpin(
     const found = counts[pkg] ?? 0;
     const pinned = catchRenderPinnedFor(pkg, pins);
     if (found >= pinned) continue;
-    const entry = new RegExp(`^(\\s*)${pkg}: \\d+,$`, 'm');
+    // `RegExp.escape`, never the raw key: a workspace name holding regex syntax matches a
+    // NEIGHBOURING row — `a.b` matches `axb` — so the ratchet lowers a count on the wrong package
+    // and then enforces it there. One escape, both expressions.
+    const key = RegExp.escape(pkg);
+    const entry = new RegExp(`^(\\s*)${key}: \\d+,$`, 'm');
     if (!entry.test(text)) continue;
     text =
       found === 0
-        ? text.replace(new RegExp(`^\\s*${pkg}: \\d+,\\n`, 'm'), '')
+        ? text.replace(new RegExp(`^\\s*${key}: \\d+,\\n`, 'm'), '')
         : text.replace(entry, `$1${pkg}: ${String(found)},`);
     written.push(`${pkg} -> ${String(found)}`);
   }

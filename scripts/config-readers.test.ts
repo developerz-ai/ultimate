@@ -3,6 +3,8 @@
 // matters is a fact about THIS tree, not about a fixture.
 
 import { describe, expect, test } from 'bun:test';
+// `node:fs/promises`'s `mkdtemp` + `node:os`'s `tmpdir` — Bun ships no temp-directory API;
+// `node:path`'s `join` — no Bun path joiner. No `mkdir`: `Bun.write()` creates the parents.
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -119,6 +121,26 @@ describe('unit · the ratchet', () => {
     expect(configReaderFindingFor(gaps[0] as never).fix).toBe(
       'bun run scripts/config-readers.ts --unpin jobs.concurrency',
     );
+    expect(configReaderFindingFor(gaps[0] as never).cause).toContain('now has a reader');
+  });
+
+  /**
+   * The second way a pin stops holding, and the one that used to be invisible: `read` is built from
+   * the CURRENT leaves, so a pin whose `AppConfig` member was deleted matched neither loop and
+   * stayed green forever — the orphan waiver this ratchet exists to refuse.
+   */
+  test('a pin for a key AppConfig no longer declares is stale too, with its own cause', () => {
+    const gaps = checkConfigReaders({
+      leaves: ['jobs.concurrency'],
+      files: [{ path: 'packages/jobs/src/worker.ts', text: 'const n = options.concurrency;' }],
+      pins: { 'jobs.driver': 'deleted in 5.0.0, and the pin outlived it' },
+    });
+    expect(gaps.map((gap) => [gap.kind, gap.leaf, gap.stale])).toEqual([
+      ['stale', 'jobs.driver', 'key-deleted'],
+    ]);
+    const finding = configReaderFindingFor(gaps[0] as never);
+    expect(finding.cause).toContain('no longer declares it');
+    expect(finding.fix).toBe('bun run scripts/config-readers.ts --unpin jobs.driver');
   });
 
   /**

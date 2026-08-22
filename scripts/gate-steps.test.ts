@@ -8,6 +8,7 @@ import {
   gateStepFinding,
   RUN_THRESHOLD,
   readStepPages,
+  STEP_GLOBS,
   skipStepPath,
 } from './gate-steps';
 import { repoRoot } from './lib/run';
@@ -151,6 +152,23 @@ describe('a list that WRAPS, which a line-at-a-time rule cannot see', () => {
     expect(RUN_THRESHOLD).toBe(5);
     expect(gaps('`lint` `contract` `contract-diff` `seo`')).toEqual([]);
   });
+
+  /**
+   * A one-line paragraph IS its own line, so a bare run holding the first and last step satisfies
+   * `enumeratesGate` and `bareRun` both, at the same `at` — and reported twice, one stale list read
+   * as two defects.
+   */
+  test('a one-line bare run holding the first and last step is reported once', () => {
+    const found = gaps('typecheck lint contract contract-diff roadmap');
+    expect(found.map((gap) => `${gap.kind} ${gap.at} ${gap.detail}`)).toEqual([
+      'list wiki/Fixture.md:1 omits seo, i18n',
+    ]);
+  });
+
+  /** And the wrapped case must still be seen: dedupe by position may not cost the run rule a line. */
+  test('a run the line rule cannot see is still reported by the paragraph rule', () => {
+    expect(gaps('lint contract contract-diff seo i18n').map((gap) => gap.kind)).toEqual(['list']);
+  });
 });
 
 describe('the vacuous guard', () => {
@@ -186,6 +204,16 @@ describe('the surfaces the scan reaches', () => {
     expect(paths).toContain('.github/workflows/ci.yml');
     expect(paths).toContain('scripts/reference-app-gate.ts');
     expect(paths.some((path) => path.startsWith('.claude/'))).toBe(true);
+  });
+
+  /**
+   * GitHub Actions accepts both spellings, so a rule reading one of them is a rule a single
+   * `git mv ci.yml ci.yaml` walks out of. Asserted on the GLOB list rather than on a file, because
+   * this repo happens to spell every workflow `.yml` and a discovery test cannot prove the absence.
+   */
+  test('a .yaml workflow is in the scanned set, not only .yml', () => {
+    expect(STEP_GLOBS).toContain('.github/workflows/*.yaml');
+    expect(STEP_GLOBS).toContain('.github/workflows/*.yml');
   });
 
   test("and packages/cli/README.md's wrapped list is read as a run, not as nothing", async () => {

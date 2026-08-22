@@ -50,8 +50,10 @@ export async function applyConfigReaderUnpin(
     if (!stale.has(leaf)) continue;
     // The entry spans from its key line to the line before the next key or the closing brace —
     // Biome wraps a long reason across several lines, so a one-line delete would leave the tail.
+    // `RegExp.escape`, never a single `.replace('.', …)`: that form replaces the FIRST dot only,
+    // so `ai.mcp.path` reached the pattern with its second dot live and matched a neighbouring row.
     const entry = new RegExp(
-      `^\\s*'?${leaf.replace('.', '\\.')}'?:[\\s\\S]*?,\\n(?=\\s*(?:'|\\w|\\}))`,
+      `^\\s*'?${RegExp.escape(leaf)}'?:[\\s\\S]*?,\\n(?=\\s*(?:'|\\w|\\}))`,
       'm',
     );
     if (!entry.test(text)) continue;

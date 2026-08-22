@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "4af3e9ae6c27097cfccc67e8d5bcfff49a215df01512691101ba4e4b6b5bc710",
+  "buildId": "ce148f7d958d189bd7fb0f7c43f434278b10d934eae3730a19bd453f2d76915d",
   "tiers": {
     "0": [
       "core",
@@ -861,6 +861,11 @@
       "code": "X_DOC_COMMAND_UNSCANNED",
       "owner": "scripts",
       "at": "scripts/doc-commands.ts"
+    },
+    {
+      "code": "X_DOC_CONFIG_ALLOWANCE_STALE",
+      "owner": "scripts",
+      "at": "scripts/doc-config-keys.ts"
     },
     {
       "code": "X_DOC_CONFIG_KEY_UNKNOWN",
@@ -2131,6 +2136,11 @@
       "code": "X_SCAFFOLD_PATH_ESCAPE",
       "owner": "cli",
       "at": "packages/cli/src/error-codes.ts"
+    },
+    {
+      "code": "X_SCAFFOLD_VERIFY_UNREADABLE",
+      "owner": "scripts",
+      "at": "scripts/scaffold-fix-follow.ts"
     },
     {
       "code": "X_SCHEDULE_INVALID",

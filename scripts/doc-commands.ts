@@ -198,18 +198,27 @@ const vacuousFinding = (gap: DocCommandGap): Finding => ({
   at: gap.at,
 });
 
-/** The pin is ABOVE what the file holds: the file improved and the ratchet has to follow it down. */
+/**
+ * The pin is ABOVE what the file holds: the file improved and the ratchet has to follow it down.
+ *
+ * `at` is `gap.at`, which is `PINS_FILE` — the file this finding's `fix:` edits. It was the doc
+ * page, so review tooling anchored the finding on a file the repair never touches.
+ */
 const pinFinding = (gap: DocCommandGap): Finding => ({
   code: 'X_DOC_COMMAND_PIN_STALE',
   cause: `${gap.subject} holds ${gap.detail} unresolved x citations`,
   fix: `set DOC_COMMAND_PINS['${gap.subject}'] in ${PINS_FILE} to the first number in "${gap.detail}", or delete the entry when it reaches 0`,
-  at: gap.subject,
+  at: gap.at,
 });
 
 /**
  * The other direction, and the one the shared fix line was wrong for: the file now holds MORE than
  * its pin. Raising the number is the one edit that must not be offered, so this finding does not
  * mention it.
+ *
+ * `at` stays the doc PAGE, deliberately unlike `pinFinding` above: the two findings differ in which
+ * file the reader edits, and this one's edits are the page's citations or `ALLOW_FILE` — never the
+ * pin table.
  */
 const pinExceededFinding = (gap: DocCommandGap): Finding => ({
   code: 'X_DOC_COMMAND_PIN_EXCEEDED',

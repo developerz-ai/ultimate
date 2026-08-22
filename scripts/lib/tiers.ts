@@ -251,7 +251,11 @@ export function floorFindingFor(violation: FloorViolation): Finding {
       cause:
         `FLOOR_ABOVE keeps a row for "${violation.package}" that ${why} — a waiver for a ` +
         'position nothing holds reads as a rule still in force',
-      fix: `delete the "${violation.package}" row from FLOOR_ABOVE in ${TIERS_FILE}`,
+      // An EDIT plus the command that CONFIRMS it, which is the house shape for a fix whose repair
+      // is a source change (`X_DB_DRIFT`, `X_DOC_COMMAND_UNKNOWN`): a gate that rewrote its own
+      // tier table would ratchet in both directions, so the edit stays the reader's and the line
+      // ends in something runnable that says whether it took.
+      fix: `delete the "${violation.package}" row from FLOOR_ABOVE in ${TIERS_FILE}, then bun run boundaries --json`,
       at: TIERS_FILE,
     };
   }
@@ -268,7 +272,7 @@ export function floorFindingFor(violation: FloorViolation): Finding {
       `write the "${violation.package}" row in FLOOR_ABOVE in ${TIERS_FILE}, saying what moving ` +
       `it to tier ${violation.floor} would LEGALISE, or move it to tier ${violation.floor} in ` +
       'TIERS and in the two prose tables scripts/tier-table-drift.test.ts pins (CLAUDE.md, ' +
-      'docs/architecture/01-package-map.md)',
+      'docs/architecture/01-package-map.md); then bun run boundaries --json',
     at: TIERS_FILE,
   };
 }

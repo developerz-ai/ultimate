@@ -143,6 +143,23 @@ describe('unit · x new · each shipped guard refuses the mistake it names', () 
     expect(findings[0]?.cause).toContain('Read this first');
   }, 30_000);
 
+  // `x new` scaffolds a `packages/ui` workspace whose components render to a user, and the guard
+  // scanned an app's own two surfaces only — so this exact file was green. The widened scan runs
+  // TWO globs: `Bun.Glob.scan()` answers nothing at all for a pattern that BEGINS with a brace
+  // group, so folding the two into one line would have turned the guard off, not widened it.
+  test('a hardcoded string in the scaffolded packages/ui is reported too', async () => {
+    const findings = await findingsWith({
+      'packages/ui/src/banner.tsx': [
+        'export function Banner() {',
+        '  return <aside><p>Read this first</p></aside>;',
+        '}',
+        '',
+      ].join('\n'),
+    });
+    expect(codes(findings)).toEqual(['X_UNTRANSLATED_STRING']);
+    expect(findings[0]?.cause).toContain('Read this first');
+  }, 30_000);
+
   // The reason the JSX rule reads a closing tag rather than the next `<`. Measured by mutation: a
   // pattern that stops at the next `<` reports this file AND reds the pristine-scaffold case above,
   // because every generic and every type annotation in the tree becomes a "typed string".

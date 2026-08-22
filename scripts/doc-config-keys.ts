@@ -18,6 +18,8 @@
 
 import { CONFIG_FILE, configLeaves } from './config-readers';
 import { parseScriptArgs } from './lib/args';
+import type { DocConfigKeyAllowance } from './lib/doc-config-key-pins';
+import { DOC_CONFIG_KEY_ALLOWANCES, DOC_CONFIG_PINS_FILE } from './lib/doc-config-key-pins';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
@@ -55,9 +57,21 @@ export interface ConfigCitation {
 }
 
 /**
+ * The imperative shape, and the one an agent pastes: `set http.rateLimit.scope: 'process' in
+ * app.config.ts`. It takes ANY dotted identifier, because `set …` is what removes the ambiguity the
+ * section anchor below exists for — nothing reads "set `auth.adapter.putApiKey(record)`". Without
+ * it an unknown top-level SECTION was invisible: `sections.join('|')` can only match a section that
+ * exists, so `set billing.currency in app.config.ts` matched nothing, `isKnownKey` was never asked,
+ * and the gate reported green over a section `AppConfig` has never declared. Measured on this tree
+ * the day it landed: four citations of `http.*`, a section that does not exist.
+ */
+const SET_FORM = /\bset\s+`?([A-Za-z][\w$]*(?:\.[A-Za-z][\w$]*)+)/g;
+
+/**
  * Every `<section>.<key>` on an anchored line, where `<section>` is a real top-level section of
- * `AppConfig`. Anchoring on the SECTION set rather than on "any dotted word" is what keeps
- * `x.manifest.json` and `package.json` out of the answer.
+ * `AppConfig`, plus every `set <dotted>` on one whatever its section. Anchoring the general case on
+ * the SECTION set rather than on "any dotted word" is what keeps `x.manifest.json` and
+ * `package.json` out of the answer; `SET_FORM` is what keeps an unknown section from being invisible.
  */
 export function configCitations(
   path: string,
@@ -73,9 +87,18 @@ export function configCitations(
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] as string;
     if (!ANCHOR.test(line) || NEGATED.test(line)) continue;
-    for (const match of line.matchAll(token)) {
-      if (FILE_EXTENSION.test(match[0])) continue;
-      found.push({ path, line: index + 1, cited: match[0] });
+    // One finding per line per key: the two matchers overlap on every citation whose section does
+    // exist, and two identical findings read as two defects.
+    const seen = new Set<string>();
+    for (const match of [...line.matchAll(token)].map((one) => one[0] as string)) {
+      if (FILE_EXTENSION.test(match) || seen.has(match)) continue;
+      seen.add(match);
+      found.push({ path, line: index + 1, cited: match });
+    }
+    for (const match of [...line.matchAll(SET_FORM)].map((one) => one[1] as string)) {
+      if (FILE_EXTENSION.test(match) || seen.has(match)) continue;
+      seen.add(match);
+      found.push({ path, line: index + 1, cited: match });
     }
   }
   return found;
@@ -92,42 +115,79 @@ export const isKnownKey = (cited: string, leaves: readonly string[]): boolean =>
 export const configKeyFindingFor = (citation: ConfigCitation): Finding => ({
   code: 'X_DOC_CONFIG_KEY_UNKNOWN',
   cause: `${citation.path}:${String(citation.line)} tells a reader to set ${citation.cited} in app.config.ts and ${CONFIG_FILE} declares no such key — the instruction type-errors in the app it is pasted into`,
-  fix: `name a key AppConfig declares at ${citation.path}:${String(citation.line)} — read the current set with bun run scripts/config-readers.ts --json`,
+  fix: `name a key AppConfig declares at ${citation.path}:${String(citation.line)} — read the current set with bun run scripts/config-readers.ts --json — or record a deliberate citation as { path, cites, why } in DOC_CONFIG_KEY_ALLOWANCES in ${DOC_CONFIG_PINS_FILE}`,
   at: `${citation.path}:${String(citation.line)}`,
 });
 
-/** Every published page that cites a key `AppConfig` does not declare. */
-export async function unknownConfigKeys(root: string): Promise<readonly ConfigCitation[]> {
+/** The allowance list's own hygiene: an entry matching nothing is a waiver nobody reads. */
+export const staleAllowanceFindingFor = (allowance: DocConfigKeyAllowance): Finding => ({
+  code: 'X_DOC_CONFIG_ALLOWANCE_STALE',
+  cause: `${DOC_CONFIG_PINS_FILE} allows ${allowance.path} to cite ${allowance.cites} and that page no longer does — a waiver nobody removes is a waiver nobody reads`,
+  fix: `delete the { path: '${allowance.path}', cites: '${allowance.cites}' } entry from DOC_CONFIG_KEY_ALLOWANCES in ${DOC_CONFIG_PINS_FILE}`,
+  at: DOC_CONFIG_PINS_FILE,
+});
+
+export interface ConfigKeyReport {
+  /** Cited, unknown, and not allowed. */
+  readonly unknown: readonly ConfigCitation[];
+  /** Allowed, and matching no citation on the page it names. */
+  readonly staleAllowances: readonly DocConfigKeyAllowance[];
+}
+
+/** Every published page that cites a key `AppConfig` does not declare, minus the recorded ones. */
+export async function unknownConfigKeys(
+  root: string,
+  allow: readonly DocConfigKeyAllowance[] = DOC_CONFIG_KEY_ALLOWANCES,
+): Promise<ConfigKeyReport> {
   const leaves = configLeaves(await Bun.file(`${root}/${CONFIG_FILE}`).text());
   const found: ConfigCitation[] = [];
+  const used = new Set<DocConfigKeyAllowance>();
   for (const glob of DOC_GLOBS) {
     for (const entry of new Bun.Glob(glob).scanSync({ cwd: root })) {
       const path = entry.split('\\').join('/');
       if (EXCLUDED.test(path)) continue;
       const citations = configCitations(path, await Bun.file(`${root}/${path}`).text(), leaves);
-      found.push(...citations.filter((citation) => !isKnownKey(citation.cited, leaves)));
+      for (const citation of citations) {
+        if (isKnownKey(citation.cited, leaves)) continue;
+        const allowance = allow.find(
+          (one) => one.path === citation.path && one.cites === citation.cited,
+        );
+        if (allowance !== undefined) {
+          used.add(allowance);
+          continue;
+        }
+        found.push(citation);
+      }
     }
   }
-  return found.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : a.line - b.line));
+  return {
+    unknown: found.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : a.line - b.line)),
+    staleAllowances: allow.filter((one) => !used.has(one)),
+  };
 }
 
 /** What this rule contributes to `x verify`'s `errors` step, through `docFixFindings`. */
-export const docConfigKeyFindings = async (root: string): Promise<readonly Finding[]> =>
-  (await unknownConfigKeys(root)).map(configKeyFindingFor);
+export const docConfigKeyFindings = async (root: string): Promise<readonly Finding[]> => {
+  const found = await unknownConfigKeys(root);
+  return [
+    ...found.unknown.map(configKeyFindingFor),
+    ...found.staleAllowances.map(staleAllowanceFindingFor),
+  ];
+};
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
-  const unknown = await unknownConfigKeys(root);
+  const findings = await docConfigKeyFindings(root);
   report(
     {
-      ok: unknown.length === 0,
+      ok: findings.length === 0,
       script: 'doc-config-keys',
       summary:
-        unknown.length === 0
-          ? 'every app.config.ts key cited by the docs is one AppConfig declares'
-          : `${String(unknown.length)} documented app.config.ts key(s) do not exist`,
-      findings: unknown.map(configKeyFindingFor),
+        findings.length === 0
+          ? `every app.config.ts key cited by the docs is one AppConfig declares (${String(DOC_CONFIG_KEY_ALLOWANCES.length)} recorded exception(s), which may only shrink)`
+          : `${String(findings.length)} documented app.config.ts key(s) do not exist`,
+      findings,
     },
     args.json,
   );

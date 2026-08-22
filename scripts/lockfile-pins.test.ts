@@ -9,6 +9,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRoot } from './lib/run';
+import type { DeclaredFacts } from './lockfile-pins';
 import { correctLockfile, declaredFacts } from './lockfile-pins';
 
 const ROOT = repoRoot();
@@ -152,10 +153,21 @@ describe('a root that is not a repo', () => {
   });
 });
 
+/**
+ * Both halves of the fixture, frozen together. `lockfile-pins.stale-fixture.lock` is the 7.0.0 tree
+ * as it stood before the fix; comparing it against LIVE manifests reds the day a workspace or an
+ * `@ultimat3/*` dependency is added — `toHaveLength(72)` fails, and the failure reads as a bug in
+ * `correctLockfile` rather than as a fixture that aged. The live invariant is asserted once, at the
+ * bottom of this block, where it belongs: `bun.lock` against the manifests it was generated from.
+ */
+const STALE_FACTS = (await Bun.file(
+  `${ROOT}/scripts/lockfile-pins.stale-fixture.facts.json`,
+).json()) as DeclaredFacts;
+
 describe('the lockfile as committed', () => {
   test('the frozen pre-fix lock carries 72 stale ranges, which the shipped pattern reported as 0', async () => {
     const stale = await Bun.file(`${ROOT}/scripts/lockfile-pins.stale-fixture.lock`).text();
-    const { edits } = correctLockfile(stale, await declaredFacts(ROOT));
+    const { edits } = correctLockfile(stale, STALE_FACTS);
     expect(edits.filter((edit) => edit.kind === 'range')).toHaveLength(72);
     // The three shapes named in the finding, each from a block the old anchor could not reach.
     expect(edits.some((edit) => edit.dir === 'packages/i18n')).toBe(true);
@@ -167,7 +179,7 @@ describe('the lockfile as committed', () => {
     // The second fact per block, and the one `bun install --frozen-lockfile` accepted at every
     // framework workspace: 6.0.0 recorded against a manifest that says 7.0.0.
     const stale = await Bun.file(`${ROOT}/scripts/lockfile-pins.stale-fixture.lock`).text();
-    const { edits } = correctLockfile(stale, await declaredFacts(ROOT));
+    const { edits } = correctLockfile(stale, STALE_FACTS);
     const versions = edits.filter((edit) => edit.kind === 'version');
     expect(versions).toHaveLength(30);
     expect(versions.every((edit) => edit.locked === '6.0.0')).toBe(true);
@@ -175,9 +187,9 @@ describe('the lockfile as committed', () => {
 
   test('and correcting it rewrites facts only — never a line more', async () => {
     const stale = await Bun.file(`${ROOT}/scripts/lockfile-pins.stale-fixture.lock`).text();
-    const { text } = correctLockfile(stale, await declaredFacts(ROOT));
+    const { text } = correctLockfile(stale, STALE_FACTS);
     expect(text.split('\n')).toHaveLength(stale.split('\n').length);
-    expect(correctLockfile(text, await declaredFacts(ROOT)).edits).toEqual([]);
+    expect(correctLockfile(text, STALE_FACTS).edits).toEqual([]);
   });
 
   test('bun.lock itself agrees with every package.json it was generated from', async () => {

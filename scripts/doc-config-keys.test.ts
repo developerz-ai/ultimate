@@ -8,8 +8,10 @@ import {
   configCitations,
   configKeyFindingFor,
   isKnownKey,
+  staleAllowanceFindingFor,
   unknownConfigKeys,
 } from './doc-config-keys';
+import { DOC_CONFIG_KEY_ALLOWANCES, DOC_CONFIG_PINS_FILE } from './lib/doc-config-key-pins';
 import { repoRoot } from './lib/run';
 
 const leaves = configLeaves(await Bun.file(`${repoRoot()}/${CONFIG_FILE}`).text());
@@ -83,7 +85,53 @@ describe('unit · this tree', () => {
    * it goes green only while they are unfixed, and reds the moment someone repairs one.
    */
   test('this tree tells no reader to set a config key that does not exist', async () => {
-    expect(await unknownConfigKeys(repoRoot())).toEqual([]);
+    expect((await unknownConfigKeys(repoRoot())).unknown).toEqual([]);
+  });
+
+  /**
+   * The allowance list's own hygiene, and the half that makes the assertion above mean something:
+   * every recorded exception still matches a citation on the page it names, so the four `http.*`
+   * rows cannot outlive the defect they record.
+   */
+  test('every recorded exception is still earned by the page it names', async () => {
+    expect((await unknownConfigKeys(repoRoot())).staleAllowances).toEqual([]);
+    expect(DOC_CONFIG_KEY_ALLOWANCES.length).toBeGreaterThan(0);
+    for (const one of DOC_CONFIG_KEY_ALLOWANCES) {
+      expect(one.why.length).toBeGreaterThan(40);
+    }
+  });
+
+  /** An entry matching nothing is a finding, not slack — the rule `DOC_COMMAND_ALLOWANCES` runs. */
+  test('an allowance no page earns is reported against the pins file', async () => {
+    const found = await unknownConfigKeys(repoRoot(), [
+      { path: 'wiki/Nowhere.md', cites: 'made.up', why: 'x' },
+    ]);
+    expect(found.staleAllowances.map((one) => one.cites)).toEqual(['made.up']);
+    const finding = staleAllowanceFindingFor(found.staleAllowances[0] as never);
+    expect(finding.code).toBe('X_DOC_CONFIG_ALLOWANCE_STALE');
+    expect(finding.at).toBe(DOC_CONFIG_PINS_FILE);
+  });
+
+  /**
+   * The gap the section-anchored token could not see: `sections.join('|')` only ever matches a
+   * section that EXISTS, so an instruction naming a section `AppConfig` has never declared matched
+   * nothing and `isKnownKey` was never asked. Measured on this tree the day it landed: four
+   * citations of `http.*`, which is why `DOC_CONFIG_KEY_ALLOWANCES` has four rows.
+   */
+  test('an unknown top-level SECTION is reported, not passed over', () => {
+    const cited = configCitations(
+      'wiki/Made-Up.md',
+      ['set `billing.currency` in `app.config.ts` to change the ledger'].join('\n'),
+      leaves,
+    );
+    expect(cited.map((one) => one.cited)).toEqual(['billing.currency']);
+  });
+
+  /** Both matchers see a citation whose section does exist; two identical findings are one defect. */
+  test('a known section matched by both matchers is reported once', () => {
+    expect(
+      configCitations('wiki/Made-Up.md', 'set `jobs.driver` in `app.config.ts`', leaves).length,
+    ).toBe(1);
   });
 
   /** The failure path, on a fixture, so the assertion above cannot pass by the scan being broken. */

@@ -59,9 +59,10 @@ const GIT_STEPS: readonly (readonly string[])[] = [
 const NO_GIT: RepositoryInit = { initialized: false, committed: false, problem: SKIPPED };
 
 /**
- * A scaffold is a REPOSITORY, because four surfaces of this CLI already assume one and answered
- * `not a git repository` in a fresh app: `x affected`, `x ci`, `x pr` — and
- * `X_ROUTE_FILE_INVALID`, whose `fix:` is a `git mv` that exits 128 with no `.git` to run in.
+ * A scaffold is a REPOSITORY, because three surfaces of this CLI already assume one and answered
+ * `not a git repository` in a fresh app: `x affected`, `x ci` and `x pr`. It was four —
+ * `X_ROUTE_FILE_INVALID`'s `fix:` was a `git mv` that exits 128 with no `.git` to run in, and that
+ * one is now a plain `mv -n` (`packages/render/src/registry.ts`) rather than a reason to init.
  *
  * It never fails `x new`. The command's job is the tree, that tree is on disk by the time this
  * runs, and a box with no `git` or no configured `user.email` would otherwise get an app it cannot
@@ -203,11 +204,11 @@ export const newCommand: CliCommand = {
     const written = await writeNewApp(target, options);
     const git =
       ctx.args.flags.get('git') === false ? NO_GIT : await initRepository(ctx.runner, target);
-    const lines = [`  ${written.files.length} files in ${target}`];
-    // Raw, like the count above it: this line is an instruction to run verbatim, and a translated
-    // command is a broken one (`packages/cli/CLAUDE.md`).
+    const lines = [msg('cli.new.wrote', { count: written.files.length, dir: target })];
     if (git.problem !== null && git.problem !== SKIPPED) {
-      lines.push(`  no repository — ${git.problem}`);
+      lines.push(msg('cli.new.noRepository', { problem: git.problem }));
+      // Raw, unlike the two prose lines around it: this one is an instruction to run verbatim, and
+      // a translated command is a broken one (`packages/cli/CLAUDE.md`).
       lines.push(`  run: cd ${target} && git init && git add -A && git commit -m 'x new'`);
     }
     return {

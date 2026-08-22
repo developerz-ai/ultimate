@@ -3,6 +3,8 @@
 // `scripts/error-render.ts` was measured GREEN over, before and after a seven-site fix.
 
 import { describe, expect, test } from 'bun:test';
+// `node:fs/promises`'s `mkdtemp` + `node:os`'s `tmpdir` — Bun ships no temp-directory API;
+// `node:path`'s `join` — no Bun path joiner. No `mkdir`: `Bun.write()` creates the parents.
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -161,6 +163,23 @@ describe('unit · the ratchet moves in one direction', () => {
    * The `fix:` line, RUN. `--unpin` is a text transform over the pins file, so an untested one is a
    * gate that edits a source file on a regex nobody checked.
    */
+  /**
+   * A key holding regex syntax, beside a neighbour it would match unescaped: `a.b`'s `.` is any
+   * character, so the raw form finds `axb` first and lowers the wrong row — the ratchet then
+   * enforces the wrong count on the wrong package, with nothing red anywhere.
+   */
+  test('a key with a metacharacter lowers its own row, never a similarly shaped neighbour', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ultimate-catch-meta-'));
+    const path = join(dir, CATCH_PINS_FILE);
+    await Bun.write(path, 'export const CATCH_RENDER_PINS = {\n  axb: 4,\n  "a.b": 3,\n};\n');
+
+    // `axb` sorts first in the file, so an unescaped `a.b` would match and rewrite that line.
+    expect(await applyCatchRenderUnpin(dir, ['a.b'], { 'a.b': 1 }, { axb: 4, 'a.b': 3 })).toEqual(
+      [],
+    );
+    expect(await Bun.file(path).text()).toContain('axb: 4');
+  });
+
   test('--unpin lowers a stale pin and refuses to raise one', async () => {
     const FIXTURE_PINS = { realtime: 3, ui: 2 };
     const dir = await mkdtemp(join(tmpdir(), 'ultimate-catch-pins-'));

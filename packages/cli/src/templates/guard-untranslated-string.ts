@@ -78,14 +78,20 @@ export const guard: Guard = {
   summary: 'a rendered string comes from t(), never typed into the page',
   async check(root) {
     const files: SourceFile[] = [];
-    // The two rendered surfaces. \`api/\` renders nothing and \`shared/\` is a leaf of helpers.
-    for await (const entry of new Bun.Glob('apps/*/{site,app}/**/*.tsx').scan({
-      cwd: root,
-      absolute: false,
-    })) {
-      const path = entry.split('\\\\').join('/');
-      if (path.includes('node_modules/') || /\\.test\\.tsx?$/.test(path)) continue;
-      files.push({ path, source: await Bun.file(\`\${root}/\${path}\`).text() });
+    // Every rendered surface: an app's \`site/\` and \`app/\`, and the shared components under
+    // \`packages/*/src\` — \`x new\` scaffolds a \`packages/ui\` whose components render to a user, so
+    // a hardcoded string there used to be green. \`api/\` renders nothing and \`shared/\` is a leaf of
+    // helpers; \`packages/*/dist\` is a build output, not source.
+    //
+    // TWO globs, never one with a leading \`{a,b}\` group: \`Bun.Glob.scan()\` matches nothing at all
+    // for a pattern that starts with a brace group — measured — so folding these into one line
+    // silently turns the guard off, which is worse than the hole it closes.
+    for (const pattern of ['apps/*/{site,app}/**/*.tsx', 'packages/*/src/**/*.tsx']) {
+      for await (const entry of new Bun.Glob(pattern).scan({ cwd: root, absolute: false })) {
+        const path = entry.split('\\\\').join('/');
+        if (path.includes('node_modules/') || /\\.test\\.tsx?$/.test(path)) continue;
+        files.push({ path, source: await Bun.file(\`\${root}/\${path}\`).text() });
+      }
     }
     return untranslatedStrings(files);
   },

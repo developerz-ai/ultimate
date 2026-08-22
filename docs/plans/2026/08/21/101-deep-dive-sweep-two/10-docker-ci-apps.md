@@ -26,6 +26,10 @@ The scaffold template (`packages/cli/src/templates/scaffold-container.ts`) is th
 4. Delete `ci.yml:480-481`; fix the six stale claims.
 5. `docker-compose.dev.yml`: remove `app`.
 6. `scaffold-container.ts:195,211`: "expiring lease row" wording.
+7. `ci.yml` `scaffold-smoke`: replace the single `scaffold-gate.ts` invocation with **two**, each
+   with `--fix-follow` — the default scaffold and `--no-example`. Raise the job's
+   `timeout-minutes: 10` to cover up to three extra `x verify` runs per scaffold plus one
+   `x build --target static`.
 
 ## Carried in from slices 08/09 (found during execution, 2026-08-22)
 
@@ -40,9 +44,14 @@ The scaffold template (`packages/cli/src/templates/scaffold-container.ts`) is th
 
 ## Tests
 - `scripts/bun-pin.test.ts` reds before step 2, green after.
+- New `scripts/scaffold-smoke-parity.test.ts`: `ci.yml`'s `scaffold-smoke` job invokes
+  `scaffold-gate.ts` **twice**, one of them with `--no-example`, and both with `--fix-follow`.
+  Reds on `main` and on this branch — the flag ships with no caller until step 7 lands, which is
+  what makes it a step rather than a paragraph (axiom 3).
 - New `scripts/compose-parity.test.ts`: for each compose file in `docker/`, `examples/*/docker`, `dummy/*/docker` — every role in `DEPLOY_ROLES` is a service; `backfill` declares `entrypoint`; every serving role `depends_on` `migrate`; no `healthcheck` invokes `/app/x`. Reds on `main` for all three files.
 - `bun run scripts/gate-steps.ts` green after slice 09 widens it and these lines are fixed.
-- Command: `bun test scripts/bun-pin.test.ts scripts/compose-parity.test.ts`.
+- Command: `bun test scripts/bun-pin.test.ts scripts/compose-parity.test.ts scripts/scaffold-smoke-parity.test.ts`.
 
 ## Done when
+- `scaffold-smoke` runs both scaffolds with `--fix-follow` and `scaffold-smoke-parity.test.ts` is green.
 - `x deploy --method compose --dry-run --json` in both apps lists six steps with no unknown service; the parity test is green; `deploy-social-demo.yml` builds on 1.4 and the demo still answers.

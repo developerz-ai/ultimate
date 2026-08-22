@@ -99,7 +99,11 @@ describe('floorFindingFor', () => {
   test('a stale row is told to be deleted', () => {
     const finding = floorFindingFor({ package: 'mail', tier: 4, floor: 4, fault: 'stale-row' });
     expect(finding.code).toBe('X_TIER_FLOOR_STALE');
-    expect(finding.fix).toBe('delete the "mail" row from FLOOR_ABOVE in scripts/lib/tiers.ts');
+    // The edit AND the command that confirms it took: a fix line whose repair is a source change
+    // still ends in something an agent can run and read (`X_DB_DRIFT`'s shape).
+    expect(finding.fix).toBe(
+      'delete the "mail" row from FLOOR_ABOVE in scripts/lib/tiers.ts, then bun run boundaries --json',
+    );
   });
 });
 

@@ -239,12 +239,15 @@ describe('unit · x new · writing into the parent directory', () => {
     bunVersion: '1.3.0',
   });
 
+  // `--no-git`, so the report is the count line and nothing else on every box. The default path
+  // appends `no repository — …` wherever `git commit` cannot run, and a CI runner configures no
+  // `user.email` — so an exact-lines assertion against the default is a test that reads the
+  // machine's git config, not the command. The repository is `cmd-new-git.test.ts`'s subject.
   test('the app lands under <parent>/<kebab-name>, and the report counts what it wrote', async () => {
     const parent = mkdtempSync(join(tmpdir(), 'x-new-run-'));
     try {
       // A name that is NOT already kebab: the directory is the kebab form, never the argument.
-      const result = (await newContext(['new', 'Demo App'], parent)) satisfies CommandContext;
-      const written = await newCommand.run(result);
+      const written = await newCommand.run(newContext(['new', 'Demo App', '--no-git'], parent));
       expect(written.ok).toBe(true);
       const target = join(parent, 'demo-app');
       const data = written.data as { dir: string; files: readonly string[] };

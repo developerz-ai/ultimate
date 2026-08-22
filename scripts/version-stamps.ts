@@ -22,7 +22,8 @@ import { readMarkdown } from './lib/doc-citations';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
-import { listWorkspaces, rootWorkspacePatterns, workspaceManifests } from './lib/workspaces';
+import type { RootManifest } from './lib/workspaces';
+import { listWorkspaces, readRootManifest, workspaceManifests } from './lib/workspaces';
 
 /** The one page allowed to name a version, and the one page required to. */
 export const STAMP_PAGE = 'wiki/_Footer.md';
@@ -167,11 +168,13 @@ export interface VersionInput {
    */
   readonly lockedDeps?: Readonly<Record<string, Readonly<Record<string, string>>>>;
   /**
-   * Whether the root `package.json` — the file naming every workspace — could be read at all.
-   * `false` is NOT the same fact as "no internal dependencies", and reading the two as one answer
-   * is how a directory that is not a repo passes as a clean one.
+   * What the root `package.json` — the file naming every workspace — answered. Unread is NOT the
+   * same fact as "no internal dependencies", and reading the two as one answer is how a directory
+   * that is not a repo passes as a clean one. `absent` and `unparsable` are not the same fact
+   * either: the fix below tells the reader to run from the repository root, which is unrunnable
+   * advice for someone already in one whose manifest has a trailing comma.
    */
-  readonly rootManifestRead?: boolean;
+  readonly rootManifest?: RootManifest;
 }
 
 /** Pure, so the negative case is a fixture rather than a hand-edit to a published page. */
@@ -180,11 +183,14 @@ export function checkVersionStamps(input: VersionInput): readonly VersionGap[] {
   // Before the early return below, not after it: a root this rule could not read is the CAUSE of
   // the empty corpus, and a finding that reports only the symptom sends the reader to the wrong
   // file.
-  if (input.rootManifestRead === false) {
+  if (input.rootManifest !== undefined && input.rootManifest.kind !== 'read') {
     gaps.push({
       kind: 'vacuous',
       at: ROOT_MANIFEST,
-      detail: 'declares no workspaces this rule could read, so no dependency range was compared',
+      detail:
+        input.rootManifest.kind === 'unparsable'
+          ? `is not valid JSON (${input.rootManifest.problem}), so no dependency range was compared`
+          : 'declares no workspaces this rule could read, so no dependency range was compared',
     });
   }
   const declared = [...new Set(Object.values(input.versions))].sort(compareVersions);
@@ -303,8 +309,11 @@ const vacuousFinding = (gap: VersionGap): Finding =>
     ? {
         code: 'X_VERSION_STAMP_UNSCANNED',
         cause: `${ROOT_MANIFEST} ${gap.detail}`,
-        // A literal command, not an interpolation: the fix-line rule reads these statically.
-        fix: 'run this from the repository root — the directory whose package.json declares "workspaces" — then bun run scripts/version-stamps.ts --json',
+        // Two fixes, because the two causes ask for opposite actions. A literal command either
+        // way, not an interpolation: the fix-line rule reads these statically.
+        fix: gap.detail.startsWith('is not valid JSON')
+          ? 'repair package.json so it parses — bun -e "await Bun.file(\'package.json\').json()" prints the offending position — then bun run scripts/version-stamps.ts --json'
+          : 'run this from the repository root — the directory whose package.json declares "workspaces" — then bun run scripts/version-stamps.ts --json',
         at: gap.at,
       }
     : {
@@ -393,7 +402,7 @@ export async function versionStampFindings(root: string): Promise<readonly Findi
     versions,
     internalDeps: await readInternalDeps(root),
     lockedDeps: await readLockedDeps(root),
-    rootManifestRead: (await rootWorkspacePatterns(root)) !== undefined,
+    rootManifest: await readRootManifest(root),
   }).map((gap) => versionGapFindingFor(gap, shipped));
 }
 
@@ -407,7 +416,7 @@ if (import.meta.main) {
     versions,
     internalDeps: await readInternalDeps(root),
     lockedDeps: await readLockedDeps(root),
-    rootManifestRead: (await rootWorkspacePatterns(root)) !== undefined,
+    rootManifest: await readRootManifest(root),
   });
   report(
     {

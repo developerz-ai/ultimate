@@ -92,10 +92,19 @@ export interface ConfigSource {
 
 export type ConfigReaderGapKind = 'unread' | 'stale' | 'unscanned';
 
+/**
+ * The two ways a pin stops holding. One kind and one code, because the repair is the same edit
+ * either way (`--unpin <leaf>`) — but the CAUSE has to say which, or the finding for a key that no
+ * longer exists reads as a key that gained a reader.
+ */
+export type StaleCause = 'now-read' | 'key-deleted';
+
 export interface ConfigReaderGap {
   readonly kind: ConfigReaderGapKind;
   readonly leaf: string;
   readonly reason?: string;
+  /** Set on `stale` only. */
+  readonly stale?: StaleCause;
 }
 
 export interface ConfigReaderInput {
@@ -124,8 +133,13 @@ export function checkConfigReaders(input: ConfigReaderInput): readonly ConfigRea
     if (read.has(leaf) || leaf in input.pins) continue;
     gaps.push({ kind: 'unread', leaf });
   }
+  // A pin outlives its key as easily as it outlives its reader: `read` only ever holds current
+  // leaves, so a pin whose `AppConfig` member was DELETED matched nothing here and stayed green
+  // forever — the exact shape of waiver this ratchet exists to refuse, one level up.
+  const declared = new Set(input.leaves);
   for (const [leaf, reason] of Object.entries(input.pins)) {
-    if (read.has(leaf)) gaps.push({ kind: 'stale', leaf, reason });
+    if (read.has(leaf)) gaps.push({ kind: 'stale', leaf, reason, stale: 'now-read' });
+    else if (!declared.has(leaf)) gaps.push({ kind: 'stale', leaf, reason, stale: 'key-deleted' });
   }
   return gaps;
 }
@@ -139,7 +153,10 @@ const unreadFinding = (gap: ConfigReaderGap): Finding => ({
 
 const staleFinding = (gap: ConfigReaderGap): Finding => ({
   code: 'X_CONFIG_READER_PIN_STALE',
-  cause: `${gap.leaf} is pinned as read by nobody in packages/*/src ("${gap.reason ?? ''}") and now has a reader — the pin would let the next dead key in beside it`,
+  cause:
+    gap.stale === 'key-deleted'
+      ? `${gap.leaf} is pinned as read by nobody in packages/*/src ("${gap.reason ?? ''}") and ${CONFIG_FILE} no longer declares it — the pin outlived its key, so it records a debt that cannot come due`
+      : `${gap.leaf} is pinned as read by nobody in packages/*/src ("${gap.reason ?? ''}") and now has a reader — the pin would let the next dead key in beside it`,
   fix: `bun run scripts/config-readers.ts --unpin ${gap.leaf}`,
   at: CONFIG_PINS_FILE,
 });

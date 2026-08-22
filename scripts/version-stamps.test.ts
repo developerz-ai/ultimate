@@ -3,10 +3,13 @@
 // stamps nothing would otherwise let this rule compare the shipped version against no sentence.
 
 import { describe, expect, test } from 'bun:test';
+// `node:fs/promises`'s `mkdtemp` + `node:os`'s `tmpdir` — Bun ships no temp-directory API;
+// `node:path`'s `join` — no Bun path joiner. No `mkdir`: `Bun.write()` creates the parents.
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { repoRoot } from './lib/run';
+import { readRootManifest } from './lib/workspaces';
 import {
   checkVersionStamps,
   compareVersions,
@@ -204,6 +207,32 @@ describe('a root that is not a repo', () => {
       await Bun.write(join(dir, 'package.json'), '{ "workspaces": ["packages/*"] }\n');
       const findings = await versionStampFindings(dir);
       expect(findings.some((finding) => finding.at === 'package.json')).toBe(false);
+    });
+  });
+
+  /**
+   * A repo whose manifest is BROKEN is not a directory that is not a repo, and the two used to
+   * share one `catch`. The fix line for the second one — `run this from the repository root` —
+   * names the directory the operator is already standing in, which is the one thing the error
+   * contract refuses: a fix that cannot be run.
+   */
+  test('a manifest that exists and does not parse names the JSON, not the working directory', async () => {
+    await withoutRoot(async (dir) => {
+      await Bun.write(join(dir, 'package.json'), '{ "workspaces": ["packages/*"], }\n');
+      expect(await readRootManifest(dir)).toMatchObject({ kind: 'unparsable' });
+      const finding = (await versionStampFindings(dir)).find((one) => one.at === 'package.json');
+      if (finding === undefined) return expect.unreachable('a broken root manifest is a finding');
+      expect(finding.cause).toContain('is not valid JSON');
+      expect(finding.fix).toContain('repair package.json so it parses');
+      expect(finding.fix).not.toContain('run this from the repository root');
+    });
+  });
+
+  test('and an ABSENT one still says what it always said', async () => {
+    await withoutRoot(async (dir) => {
+      expect(await readRootManifest(dir)).toEqual({ kind: 'absent' });
+      const finding = (await versionStampFindings(dir)).find((one) => one.at === 'package.json');
+      expect(finding?.fix).toContain('run this from the repository root');
     });
   });
 });

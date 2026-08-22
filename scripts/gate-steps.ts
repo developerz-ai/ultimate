@@ -42,7 +42,10 @@ export const STEP_GLOBS: readonly string[] = [
   'packages/*/*.md',
   'examples/*/*.md',
   'dummy/*/*.md',
+  // Both extensions: GitHub Actions accepts `.yaml` as readily as `.yml`, so a glob reading one of
+  // them is a rule a single renamed workflow walks out of.
   '.github/workflows/*.yml',
+  '.github/workflows/*.yaml',
   '.claude/**/*.md',
   'scripts/**/*.ts',
 ];
@@ -239,6 +242,11 @@ export function checkGateSteps(input: StepInput): readonly StepGap[] {
   let claims = 0;
 
   for (const page of input.pages) {
+    // Where the line rule already reported a list. A one-line bare run of five or more names
+    // satisfies BOTH detectors — `enumeratesGate` sees the first and last step, `bareRun` sees a
+    // line that is nothing but names — and a one-line paragraph starts on the line it is, so the
+    // two produce byte-identical findings. One condition, one finding (axiom 1).
+    const listed = new Set<string>();
     const lines = page.text.split('\n');
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index] ?? '';
@@ -307,6 +315,7 @@ export function checkGateSteps(input: StepInput): readonly StepGap[] {
 
       if (!enumeratesGate(line, input.steps)) continue;
       claims += 1;
+      listed.add(at);
       const named = namedInOrder(line, input.steps);
       if (named.join(', ') === ordered) continue;
       const missing = input.steps.filter((name) => !named.includes(name));
@@ -323,7 +332,7 @@ export function checkGateSteps(input: StepInput): readonly StepGap[] {
 
     for (const paragraph of paragraphsOf(page)) {
       const named = bareRun(paragraph.text, input.steps);
-      if (named === undefined) continue;
+      if (named === undefined || listed.has(`${page.path}:${paragraph.line}`)) continue;
       claims += 1;
       if (named.join(', ') === ordered) continue;
       const missing = input.steps.filter((name) => !named.includes(name));

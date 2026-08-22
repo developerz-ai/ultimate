@@ -123,6 +123,21 @@ export const reproduceFollow = (dir: string): string =>
   `cd ${dir} && bun run verify --json && bun run ../../scripts/scaffold-gate.ts ${dir} --fix-follow`;
 
 /**
+ * A step table `parseSteps` could not read is its OWN failure, not a red step — the loop knows
+ * nothing about which steps ran, so every finding built from `result.red` states a fact it does not
+ * have. Both call sites used to fold it into a neighbouring code: `fixFollowFindings` reported
+ * `X_SCAFFOLD_FIX_LOOP` over a gate that printed no rounds to loop on, and `staticBuildFindings`
+ * substituted `[step]` for the missing table and reported `X_SCAFFOLD_BUILD_REGRESSED` — a claim
+ * that the build broke `lint`, from a run in which `lint`'s result was never read.
+ */
+const unreadableFinding = (dir: string, when: string): Finding => ({
+  code: 'X_SCAFFOLD_VERIFY_UNREADABLE',
+  cause: `x verify --json in the scaffolded app at ${dir} printed no step table this gate could parse ${when}, so no step's verdict is known and every finding below it would name a step that was never reported`,
+  fix: `cd ${dir} && bun run verify --json`,
+  at: dir,
+});
+
+/**
  * What the loop contributes to `scaffold-smoke`. Three separate failures, because they are three
  * different bugs: a fix line that is prose, a gate still red after its own instructions, and a
  * table that stopped being readable mid-loop.
@@ -130,6 +145,9 @@ export const reproduceFollow = (dir: string): string =>
 export function fixFollowFindings(dir: string, result: FixFollowResult): readonly Finding[] {
   const findings: Finding[] = [];
   const unfollowable = result.rounds.flatMap((round) => round.skipped);
+  if (!result.green && result.steps === undefined) {
+    return [unreadableFinding(dir, `after ${String(result.rounds.length)} round(s)`)];
+  }
   if (!result.green && unfollowable.length > 0) {
     const first = unfollowable[0] as { fix: string; reason: string };
     findings.push({
@@ -178,8 +196,11 @@ export async function staticBuildFindings(
     ];
   }
   const steps = await verifyOnce(dir, runner);
-  const red = steps === undefined ? [step] : redSteps(steps);
-  if (!red.includes(step)) return [];
+  // Never `[step]` for a table that did not parse: substituting the step under test turns "I could
+  // not read the answer" into "the build broke lint", which sends the reader to biome.json over a
+  // gate that printed nothing.
+  if (steps === undefined) return [unreadableFinding(dir, 'after x build --target static')];
+  if (!redSteps(steps).includes(step)) return [];
   return [
     {
       code: 'X_SCAFFOLD_BUILD_REGRESSED',

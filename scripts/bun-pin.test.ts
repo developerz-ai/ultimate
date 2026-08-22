@@ -10,6 +10,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
+import { APP_ROOTS } from './boundaries';
 
 const ROOT = join(import.meta.dir, '..');
 
@@ -33,10 +34,12 @@ const imagePins = (dockerfile: string): string[] =>
   [...dockerfile.matchAll(/^FROM oven\/bun:(\S+)/gm)].map((match) => match[1] ?? '');
 
 /**
- * Every Dockerfile the two tracked apps ship. `Dockerfile*` also matches the `.dockerignore` beside
- * each one, which carries no `FROM` and would otherwise read as a site with no pin.
+ * Every Dockerfile the tracked apps ship, DERIVED from `APP_ROOTS` rather than restated: a new
+ * application root added to that constant would otherwise leave its images' Bun pin unchecked, with
+ * nothing red — the same class of hole this whole file exists for. `Dockerfile*` also matches the
+ * `.dockerignore` beside each one, which carries no `FROM` and would read as a site with no pin.
  */
-const APP_DOCKERFILES = '{examples,dummy}/*/docker/Dockerfile*';
+const APP_DOCKERFILES = `${APP_ROOTS}/*/docker/Dockerfile*`;
 
 const appDockerfiles = (): readonly string[] =>
   [...new Bun.Glob(APP_DOCKERFILES).scanSync({ cwd: ROOT })]

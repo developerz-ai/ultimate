@@ -159,6 +159,19 @@ describe('unit · the loop', () => {
     expect(followed.green).toBe(false);
     expect(followed.steps).toBeUndefined();
   });
+
+  /**
+   * And it gets a code of its OWN. It used to report `X_SCAFFOLD_FIX_LOOP`, whose cause names the
+   * steps that stayed red and the rounds that ran — over a gate that printed neither, so the
+   * fix line told an agent to rerun a fix that was never printed.
+   */
+  test('an unreadable table is its own finding, never a loop that never looped', async () => {
+    const { runner } = fakeRunner(['nothing here is json']);
+    const findings = fixFollowFindings(DIR, await followFixes(DIR, runner));
+    expect(findings.map((finding) => finding.code)).toEqual(['X_SCAFFOLD_VERIFY_UNREADABLE']);
+    expect(findings[0]?.fix).toBe(`cd ${DIR} && bun run verify --json`);
+    expect(findings[0]?.cause).toContain('no step table this gate could parse');
+  });
 });
 
 describe('unit · the build that must not break lint', () => {
@@ -191,5 +204,17 @@ describe('unit · the build that must not break lint', () => {
   test('lint green after the build raises nothing', async () => {
     const { runner } = script(result(''), table([{ name: 'lint', ok: true }]));
     expect(await staticBuildFindings(DIR, runner)).toEqual([]);
+  });
+
+  /**
+   * The substitution that made the wrong claim: a table that did not parse became `[step]`, so a
+   * run in which `lint`'s verdict was never read reported that the build had broken `lint` — and
+   * sent the reader to `biome.json` over a gate that printed nothing.
+   */
+  test('a table the gate could not parse is not read as lint going red', async () => {
+    const { runner } = script(result(''), 'not json at all');
+    const findings = await staticBuildFindings(DIR, runner);
+    expect(findings.map((finding) => finding.code)).toEqual(['X_SCAFFOLD_VERIFY_UNREADABLE']);
+    expect(findings[0]?.cause).toContain('x build --target static');
   });
 });

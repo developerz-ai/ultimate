@@ -1,8 +1,10 @@
 #!/usr/bin/env bun
-// One rule: a closed set of string literals is declared in ONE module and nowhere else — compared
-// by LITERAL SET, never by name, because the copy that did the damage was called `PwaRenderMode`
-// and a rule keyed on the word `RenderMode` reads straight past it. Six vocabularies, each with its
-// own owning module, and two known divergences held out until a decision lands (see below).
+// One rule: a closed set of string literals is declared in ONE module and nowhere else. TWO ways to
+// recognise a second declaration, and `by` below says which each vocabulary takes: by LITERAL SET,
+// which is how the copy called `PwaRenderMode` was caught — a rule keyed on the word `RenderMode`
+// reads straight past that one — and by NAME, which is what a vocabulary of ordinary English words
+// needs. `VOCABULARIES` is the list; `render-modes.test.ts` pins its length, so no count is written
+// here to go stale. Two known divergences are held out until a decision lands (see below).
 //   bun run scripts/render-modes.ts [--json]
 
 import { maskLiterals, stripComments } from '@ultimat3/cli';
@@ -38,8 +40,9 @@ export interface Vocabulary {
    * reports ELEVEN sets that are legitimately related and not copies — `SERIAL_TYPES` (a subset of
    * the test types), `ENCODABLE_FORMATS` (what the static codecs write), `VERIFY_STEP_NAMES` (a
    * superset by construction). A rule reporting those is one readers learn to silence, which is
-   * this file's own stated reason for `COPY_THRESHOLD`. It still catches the copy that mattered:
-   * `packages/core/src/image/probe.ts` exports `IMAGE_FORMATS` under that exact name.
+   * this file's own stated reason for `COPY_THRESHOLD`. `name` is also what WOULD catch
+   * `IMAGE_FORMATS`, which `packages/core/src/image/probe.ts` exports under that exact name — held
+   * out below, with no row here, until the rename decision lands.
    */
   readonly by: 'members' | 'name';
 }
@@ -68,7 +71,7 @@ export const VOCABULARIES: readonly Vocabulary[] = [
     members: [...HYDRATE_STRATEGIES],
     by: 'members',
   },
-  // Three more, added 2026-08-22. Each had a copy that shipped and each was invisible here: the
+  // Two more, added 2026-08-22. Each had a copy that shipped and each was invisible here: the
   // rule only knew the route vocabulary, so `packages/cli/src/jobs-report.ts`'s `JOB_STATES` copy
   // — one member short, so `x jobs cancel` created a state `x jobs ls --state cancelled` refused
   // to filter on — was outside its reach by construction.
@@ -93,9 +96,10 @@ export const VOCABULARIES: readonly Vocabulary[] = [
   //   request-memo|lru|redis|cdn) — issue #293. Two shared members, which is this rule's own
   //   threshold, and `isr` is accepted by config and served by nothing.
   //
-  // Add each row the day its decision lands. `IMAGE_FORMATS` is imported above so the row is one
-  // uncommented line: `{ name: 'IMAGE_FORMATS', at: <winner>, members: [...IMAGE_FORMATS], by:
-  // 'name' }`.
+  // Add each row the day its decision lands: import `IMAGE_FORMATS` from the package that keeps
+  // the name, then add `{ name: 'IMAGE_FORMATS', at: <winner>, members: [...IMAGE_FORMATS], by:
+  // 'name' }`. It is NOT imported above — an instruction to uncomment a row naming a binding this
+  // file does not hold is one a reader follows into a compile error.
 ];
 
 /**

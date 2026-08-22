@@ -74,7 +74,7 @@ x new <name> [--dir path] [--no-example] [--no-git] [--dry-run] [--force] [--jso
 |---|---|---|---|
 | `--dir` | string | cwd | parent directory to create the app in |
 | `--example` / `--no-example` | boolean | `true` | include the example feature slice (default: on; `--no-example` for an empty `app/`) |
-| `--git` / `--no-git` | boolean | `true` | `git init`, then one commit named `x new`. On by default because four surfaces assume a repository — `X_ROUTE_FILE_INVALID`'s fix, `x affected`, `x ci` and `x pr`. A git that is absent or fails never fails `x new`: the tree is the verdict, and `data.git` carries `{ initialized, committed, problem }` |
+| `--git` / `--no-git` | boolean | `true` | `git init`, then one commit named `x new`. On by default because three surfaces assume a repository — `x affected`, `x ci` and `x pr`. A git that is absent or fails never fails `x new`: the tree is the verdict, and `data.git` carries `{ initialized, committed, problem }` |
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
 | `--force` | boolean | `false` | write into a directory that already exists |
 

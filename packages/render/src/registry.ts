@@ -159,13 +159,16 @@ function assertRouteFilename(file: string, surface: Surface, basename: string | 
   // shipped `git mv` answered `fatal: not a git repository` — a fix line that fails is worse than
   // no fix line, because the reader debugs git instead of moving the file. `mv` works in both
   // cases: git detects the rename at `git add` time, so the only thing given up is a nicety, and
-  // the instruction is the same one either way.
+  // the instruction is the same one either way. `-n` keeps the one guarantee `git mv` did carry:
+  // an author who adds the correct `site/pricing/page.tsx` and leaves `site/pricing.tsx` behind is
+  // reported against the stale file, and `target` is then the GOOD file — a clobber deletes a
+  // working route, and this fix line is pasted unread.
   throw new RouteFileInvalidError(
     `${file} is a route on the ${surface} surface, so it must be named ${expected}: the URL is the ` +
       'directory path and the filename names the kind of file',
     inPlace
-      ? `mv -- ${shellQuote(file)} ${shellQuote(target)}`
-      : `mkdir -p -- ${shellQuote(stem)} && mv -- ${shellQuote(file)} ${shellQuote(target)}`,
+      ? `mv -n -- ${shellQuote(file)} ${shellQuote(target)}`
+      : `mkdir -p -- ${shellQuote(stem)} && mv -n -- ${shellQuote(file)} ${shellQuote(target)}`,
   );
 }
 

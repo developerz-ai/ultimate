@@ -1,8 +1,8 @@
 // The repository `x new` leaves behind, and the one thing it must never do: fail the command.
 //
-// Four surfaces of this CLI already assumed a repository and answered `not a git repository` in a
-// fresh scaffold — `x affected`, `x ci`, `x pr`, and `X_ROUTE_FILE_INVALID`, whose `fix:` is a
-// `git mv` that exits 128 with no `.git` to run in. Its own file because `cmd-new.test.ts` is at
+// Three surfaces of this CLI already assumed a repository and answered `not a git repository` in
+// a fresh scaffold — `x affected`, `x ci` and `x pr`. The fourth, `X_ROUTE_FILE_INVALID`, is now a
+// plain `mv -n` and needs no repository at all. Its own file because `cmd-new.test.ts` is at
 // the 500-line ceiling and this is a subject of its own, not a case of the ones there.
 
 import { describe, expect, test } from 'bun:test';
@@ -80,6 +80,38 @@ describe('unit · x new · the repository it initializes', () => {
       problem: 'RangeError: Executable not found in $PATH',
     });
   });
+
+  // The report's git half, driven by a fake `Runner` rather than by the box's own git config: the
+  // real path is green on a laptop with a `user.email` and red on a CI runner without one, so this
+  // is the only way the two lines can be asserted verbatim anywhere.
+  test('a commit that cannot run adds two report lines: the reason, then the commands', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'x-new-git-'));
+    try {
+      const runner: Runner = async (command) => ({
+        command,
+        code: command.includes('commit') ? 128 : 0,
+        ok: !command.includes('commit'),
+        stdout: '',
+        stderr: 'Author identity unknown',
+        durationMs: 0,
+      });
+      const written = await newCommand.run({
+        args: parseArgs(['new', 'unsigned-app', '--no-example'], SPECS),
+        cwd: parent,
+        runner,
+        env: {},
+        bunVersion: '1.3.0',
+      });
+      const target = join(parent, 'unsigned-app');
+      expect(written.ok).toBe(true);
+      expect(written.lines?.slice(1)).toEqual([
+        '  no repository — git commit -m x new: Author identity unknown',
+        `  run: cd ${target} && git init && git add -A && git commit -m 'x new'`,
+      ]);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   test('x new leaves a real repository behind, and --no-git leaves a bare directory', async () => {
     const parent = mkdtempSync(join(tmpdir(), 'x-new-git-'));

@@ -193,9 +193,15 @@ For deliberately unimplemented paths, the throw is still typed and still actiona
 throw new UltimateError({
   code: 'X_NOT_IMPLEMENTED',
   cause: 'jobs driver "nats" has no claim implementation yet',
-  fix: 'set auth.signInPath = "/signin" in app.config.ts',
+  fix: 'call setJobDriver(createPgDriver()) at boot instead of this driver, then move what is already queued: x jobs drain --to memory --json',
 });
 ```
+
+Not a config edit. `JobsConfig.driver` was deleted in 5.0.0 for having no reader, so there is no
+key that selects a driver — `setJobDriver` is the seam, and the fix has to name the one that
+actually replaces the stub. This is `packages/jobs/src/driver-nats.ts`'s own line, quoted rather
+than invented: a worked example in the page that DEFINES the rule may not be the one place it is
+broken.
 
 ## Cross-cutting codes
 
