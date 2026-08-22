@@ -1,8 +1,7 @@
-// The two writes every published entry point uses — one per fd. Its own module because there are
-// two entry points too — `packages/cli/src/bin.ts` and `create-ultimate`'s — and the second
-// shipped `process.stdout.write` + `process.exit`, the exact pair the note below exists to rule
-// out. fd 2 exists because fd 1 is not always a log: under `x mcp serve --transport stdio` it is
-// the protocol, and under `--json` it is one document a caller parses.
+// The two writes every published entry point uses, one per fd — `packages/cli/src/bin.ts` and
+// `create-ultimate`'s, the second of which shipped the `process.stdout.write` + `process.exit`
+// pair the note below rules out. fd 2 exists because fd 1 is not always a log: under
+// `x mcp serve --transport stdio` it is the protocol, under `--json` one document a caller parses.
 
 // `node:fs`, and unavoidable: Bun has no synchronous stdout write of its own.
 import { writeSync } from 'node:fs';

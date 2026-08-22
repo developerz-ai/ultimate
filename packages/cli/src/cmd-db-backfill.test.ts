@@ -126,6 +126,72 @@ describe('unit · x db backfill', () => {
     expect((thrown as BadFlagError).cause).toContain('--pending');
   });
 
+  // Precedence, measured before this landed: `--all` won and every pending sweep was enqueued
+  // while the operator had NAMED one. `--list --pending` reported the ledger for a question about
+  // what is unswept. Both ran, neither said anything, and one of them writes.
+  test.each([
+    [['db', 'backfill', 'cleanup', '--all', '--write'], 'cleanup'],
+    [['db', 'backfill', '--list', '--pending'], '--pending'],
+    [['db', 'backfill', '--pending', '--all'], '--all'],
+    [['db', 'backfill', '--pending', 'cleanup'], 'cleanup'],
+  ])('%o asks two questions, so it is refused rather than resolved', async (argv, second) => {
+    const driver = createMemoryDriver();
+    const thrown: unknown = await runBackfill(driver, argv).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(thrown).toBeInstanceOf(BadFlagError);
+    expect((thrown as BadFlagError).cause).toContain(second);
+    expect((thrown as BadFlagError).fix).toStartWith('x db backfill ');
+    expect(await queuedCount(driver)).toBe(0);
+  });
+
+  // A filter for a shape that has none is not "ignored", it is a different command than the one
+  // the caller typed: `--status` narrows the ledger and a PASS has no ledger to narrow.
+  test.each([
+    [
+      ['db', 'backfill', '--pending', '--status', 'failed'],
+      'status',
+      'x db backfill --list --json',
+    ],
+    [['db', 'backfill', '--all', '--limit', '5'], 'limit', 'x db backfill --list --json'],
+    [['db', 'backfill', '--list', '--write'], 'write', 'x db backfill --all --write --json'],
+  ])('%o carries a flag its shape cannot read', async (argv, flag, fix) => {
+    const thrown: unknown = await runBackfill(createMemoryDriver(), argv).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(thrown).toBeInstanceOf(BadFlagError);
+    expect((thrown as BadFlagError).cause).toStartWith(`--${flag} on "x db"`);
+    expect((thrown as BadFlagError).fix).toBe(fix);
+  });
+
+  // `--name` keeps both meanings, and each is still reachable: a filter under `--list`, a target
+  // without it. Two spellings of the target in one argv is the ambiguity, not the flag itself.
+  test('--name filters the ledger under --list, and names the pass without it', async () => {
+    const listed = await runBackfill(createMemoryDriver(), [
+      'db',
+      'backfill',
+      '--list',
+      '--name',
+      'cmd-db-filtered',
+    ]);
+    expect(listed.ok).toBe(true);
+
+    const thrown: unknown = await runBackfill(createMemoryDriver(), [
+      'db',
+      'backfill',
+      'cleanup',
+      '--name',
+      'other',
+    ]).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(thrown).toBeInstanceOf(BadFlagError);
+    expect((thrown as BadFlagError).cause).toContain('other');
+  });
+
   test('--pending names a declared sweep the ledger has never recorded, and exits non-zero', async () => {
     // Declared in the test body, never at module scope: the jobs registry is process-wide and
     // this file shares it with every other suite in the run.

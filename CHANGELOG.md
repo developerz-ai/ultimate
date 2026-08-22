@@ -141,14 +141,25 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
   with a second copy of the test-type vocabulary.
 
 - **`x deploy --method compose` ignored `--image`** — `--json` reported the requested ref while
-  `docker compose` resolved `${IMAGE:-…}` from the ambient environment.
+  `docker compose` resolved `${IMAGE:-…}` from the ambient environment. The human `--dry-run` plan
+  and the `X_DEPLOY_FAILED` fix line now carry the `IMAGE=…` prefix too: a copied line that omits it
+  deploys the compose file's default image, which is the same defect one render further out.
 
 - **`x g rout x` answered `fix: x g resource`** — hardcoded, not runnable alone, and the wrong
   primitive.
 
 - **`x dev`'s lock was a check-then-act**, so two boots both passed preflight and both opened
   `.x/pgdata`; `X_DEV_ALREADY_RUNNING` was unreachable and the operator got `X_DB_UNAVAILABLE` with
-  `fix: x dev`. The lock is now claimed inside preflight and released if boot fails.
+  `fix: x dev`. The lock is now claimed inside preflight and released if boot fails. A lock file
+  that parses as nothing and cannot be removed is its own refusal — `X_DEV_LOCK_UNREADABLE`, with
+  `rm <path>` — rather than `X_DEV_ALREADY_RUNNING` naming the reader's OWN pid as the holder and
+  handing back `kill <self>`.
+
+- **`x db backfill` resolved conflicting shapes by precedence instead of refusing them.**
+  `x db backfill cleanup --all --write` enqueued **every** pending sweep and silently dropped the
+  name it was given; `--list --pending` reported the ledger for a question about what is unswept,
+  and a list-only filter on a pass shape was ignored. One shape per invocation now, and a flag the
+  chosen shape cannot read is `X_CLI_BAD_FLAG` naming the shape that reads it.
 
 - **`/readyz` meant "the socket is bound".** `registerReadinessCheck` had **zero callers** anywhere,
   while the Helm chart and the container healthcheck both route on it. The boot now registers a

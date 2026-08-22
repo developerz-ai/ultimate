@@ -13,14 +13,17 @@ import {
   verifyCommand,
   verifyStepNames,
 } from './cmd-verify';
+import { msg } from './messages';
 import { exitCodeFor } from './output';
 import { parseArgs } from './parse';
 import { SPECS } from './registry';
 import { thrownBy } from './thrown-by';
 import { VERIFY_FLOOR_FILE } from './verify-floor';
-import { NOT_A_GATE_RUN } from './verify-run';
 import type { VerifyContext, VerifyStep } from './verify-step';
 import { VERIFY_STEP_NAMES } from './verify-step';
+
+/** The banner a narrowed run carries, from the catalog that renders it — never a second literal. */
+const NOT_A_GATE_RUN = msg('cli.verify.notAGateRun', { summary: '' }).trim();
 
 const ctx: VerifyContext = {
   root: '/nowhere',

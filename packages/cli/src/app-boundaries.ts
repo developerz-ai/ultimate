@@ -17,6 +17,7 @@ import { dirname, join, normalize, relative } from 'node:path/posix';
 import type { BoundaryRule, ImportGraph } from '@ultimat3/render';
 import { checkSurfaceBoundary, importGraph, SURFACES } from '@ultimat3/render';
 import type { Finding } from './output';
+import { quoteArg } from './shell-quote';
 
 export const BOUNDARY_CODES = [
   'X_BOUNDARY_SITE_TO_APP',
@@ -153,14 +154,36 @@ function subjectOf(path: string): string | undefined {
 }
 
 /**
+ * Control characters, `\u00xx`-escaped. The path is a value read off the repository being scanned,
+ * and it rides in a `#` comment: a directory holding a NEWLINE ends that comment, so everything
+ * after it is a second command in a line whose whole purpose is to be pasted into a shell.
+ * Escaped rather than deleted, because the comment still has to name the file the reader owns.
+ */
+const commentSafe = (path: string): string =>
+  [...path]
+    .map((char) => {
+      const code = char.codePointAt(0) ?? 0;
+      return code < 0x20 || code === 0x7f ? `\\u${code.toString(16).padStart(4, '0')}` : char;
+    })
+    .join('');
+
+/**
  * `x g query posts` where the path names a resource, `x g query <name>` where it names a surface.
  * The placeholder form is the shape `MissingPositionalError` already hands out (`x g route
  * <name>`) and the one the `errors` step leaves unjudged in that slot — an open positional, where
  * a reader substituting a word makes the line run. The path rides in the `#` comment because a
  * `fix:` is copied on its own, and `Finding.at` is a field an agent pasting one line never sees.
+ *
+ * BOTH halves come from the scanned path, so both are hostile: the subject is an ARGUMENT and goes
+ * through `quoteArg` — a directory named `posts; id` emitted a fix that ran `id` — and the comment
+ * goes through `commentSafe`. `<name>` alone stays literal: it is a placeholder a reader replaces,
+ * and `'<name>'` would be pasted as a resource actually called that.
  */
-const generate = (kind: 'query' | 'action', path: string, then: string): string =>
-  `x g ${kind} ${subjectOf(path) ?? '<name>'}   # ${then} ${path}`;
+const generate = (kind: 'query' | 'action', path: string, then: string): string => {
+  const subject = subjectOf(path);
+  const named = subject === undefined ? '<name>' : quoteArg(subject);
+  return `x g ${kind} ${named}   # ${then} ${commentSafe(path)}`;
+};
 
 /**
  * Both fixes are one runnable line, with the rest of the instruction behind a `#` — a fix a

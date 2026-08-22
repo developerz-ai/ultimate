@@ -8,10 +8,14 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { msg } from './messages';
 import { exitCodeFor } from './output';
 import { VERIFY_FLOOR_FILE } from './verify-floor';
-import { NOT_A_GATE_RUN, runVerify } from './verify-run';
+import { runVerify } from './verify-run';
 import type { VerifyContext, VerifyStep } from './verify-step';
+
+/** The banner a narrowed run carries, from the catalog that renders it — never a second literal. */
+const NOT_A_GATE_RUN = msg('cli.verify.notAGateRun', { summary: '' }).trim();
 
 const runner: VerifyContext['runner'] = async () => ({
   command: ['true'],

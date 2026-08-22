@@ -84,12 +84,15 @@ describe('the sync node reads the app’s own authenticator', () => {
 
   test('a live credential is REFRESHED, not revoked — and the window moves forward', async () => {
     configureAuthenticator(() => userActor({ id: 'u1', roles: ['member'] }));
-    const grant = await syncAuthenticator('test', { clock: frozenClock(NOW) })?.(
-      upgrade({ cookie: 'sid=abc' }),
-    );
+    const clock = frozenClock(NOW);
+    const grant = await syncAuthenticator('test', { clock })?.(upgrade({ cookie: 'sid=abc' }));
     const book = new GrantBook();
     book.set('socket-1', grant as SyncGrant);
 
+    // The adapter's clock is at the sweep instant when the resolver answers — frozen at NOW for
+    // the whole test, the refreshed grant reports `NOW + TTL`, which is what it already carried,
+    // so an implementation returning `expiresAt` UNCHANGED passed the assertion below.
+    clock.advance(SYNC_GRANT_TTL_MS);
     const swept = await sweepGrants({
       grants: book,
       clock: frozenClock(NOW + SYNC_GRANT_TTL_MS),
@@ -99,7 +102,7 @@ describe('the sync node reads the app’s own authenticator', () => {
     expect(swept.refreshed).toBe(1);
     // The clock the ADAPTER holds, not the sweep's: the renewed grant is re-decided one TTL after
     // the resolver answered. A refresh that returned the same instant would expire on every pass.
-    expect(book.get('socket-1')?.expiresAt).toBe(NOW + SYNC_GRANT_TTL_MS);
+    expect(book.get('socket-1')?.expiresAt).toBe(NOW + 2 * SYNC_GRANT_TTL_MS);
   });
 
   test('the refresh re-reads the upgrade’s own cookie, never a header it never saw', async () => {

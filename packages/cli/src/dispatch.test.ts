@@ -5,6 +5,9 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+// `node:process`, and unavoidable: the assertion below is about which of the process's OWN streams
+// core's default log writer reaches, so the writers it targets are what this test has to intercept.
+import process from 'node:process';
 import { logger, setLogStream } from '@ultimat3/core';
 import { PLANNED_COMMANDS } from './cmd-planned';
 import { dispatch, sinkFor } from './dispatch';
@@ -222,7 +225,9 @@ describe('unit · the dispatcher owns fd 1', () => {
       expect(out).toEqual([]);
       expect(err.join('')).toContain('ultimate migrate applied');
 
-      setLogStream('stdout');
+      // No `setLogStream('stdout')` here, deliberately: the dispatcher RESETS the stream on every
+      // run, and this call standing in for it is what hid a JSON dispatch leaving stderr behind
+      // for the next non-JSON one.
       await run(['help']);
       probe();
       expect(out.join('')).toContain('ultimate migrate applied');

@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+// `node:process`, and unavoidable: `defaultWriter` writes to this process's own stdout/stderr, so
+// proving which of the two a line lands on means intercepting those exact writers.
+import process from 'node:process';
 import { type Clock, frozenClock } from './clock';
 import { UltimateError } from './errors';
 import { createLogger, REDACTED, redactKeys, setLogStream } from './logger';

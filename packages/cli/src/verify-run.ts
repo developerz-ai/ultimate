@@ -14,13 +14,6 @@ import {
 import type { StepOutcome, VerifyContext, VerifyStep } from './verify-step';
 
 /**
- * What a narrowed run says, in both renderers. A TOKEN and not a `msg()` key, deliberately: it
- * rides in `--json` verbatim, and a string that changed with the locale would be a string a
- * machine cannot test for — the same reason an `X_*` code is never translated.
- */
-export const NOT_A_GATE_RUN = 'NOT A GATE RUN';
-
-/**
  * Run every step in order, never bailing early: an agent fixing three things at once needs all
  * three findings from one run, not one per round-trip.
  *
@@ -88,7 +81,10 @@ export async function runVerify(
   return {
     ok: failedSteps.length === 0,
     command: 'verify',
-    summary: ctx.only === undefined ? summary : `${NOT_A_GATE_RUN} — ${summary}`,
+    // Rendered through the catalog like every other summary this file emits; the machine marker
+    // is `data.notAGateRun` below. It was a bare `NOT A GATE RUN` constant, which put one
+    // user-facing string outside `messages.ts` for a fact `--json` was already carrying twice.
+    summary: ctx.only === undefined ? summary : msg('cli.verify.notAGateRun', { summary }),
     steps: results,
     // `skipped` is a list beside `failed` and not a count, because the two answer the same kind of
     // question — *which* steps, not how many — and a caller ratcheting on coverage needs the names.

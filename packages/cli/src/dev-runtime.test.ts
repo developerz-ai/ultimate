@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { PurgeDriver } from '@ultimat3/cache';
 import { noopPurgeDriver, registeredTiers, resetTiers } from '@ultimat3/cache';
-import { readinessCheckCount, UltimateError } from '@ultimat3/core';
+import { UltimateError } from '@ultimat3/core';
 import { jobDriver } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
 import { createMemoryDriver, tryMailDriver } from '@ultimat3/mail';
@@ -336,9 +336,17 @@ describe('startServices', () => {
         // `startWeb` derived `rateLimit.scope: 'process'` while the shipped chart runs three `web`
         // replicas, each enforcing the whole of every declared limit.
         expect(runtime.rateLimitStore?.scope).toBe('shared');
-        // The pool this boot opened, never a second one: `Bun.sql` does not satisfy `PgExecutor`
-        // at all, and the store has to be able to run its statement.
-        expect(readinessCheckCount()).toBeGreaterThan(0);
+        // The store has to be able to RUN its statement, on the executor this boot handed it:
+        // `Bun.sql` does not satisfy `PgExecutor` at all, so a wrong one rejects here instead of
+        // limiting. `readinessCheckCount()` proved none of that — it is process-global, so any
+        // check another suite in this run registered satisfied it.
+        const decision = await runtime.rateLimitStore?.take(
+          'x-dev-runtime-boot',
+          { capacity: 2, refillPerSecond: 1 },
+          1,
+          1_760_000_000_000,
+        );
+        expect(decision).toMatchObject({ allowed: true, limit: 2, remaining: 1 });
       } finally {
         await runtime.stop();
       }

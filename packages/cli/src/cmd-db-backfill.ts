@@ -25,7 +25,95 @@ import { backfillToJson } from './jobs-json';
 import { msg } from './messages';
 import type { CommandResult } from './output';
 import { findingFrom } from './output';
+import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
+
+/** Which of the four questions an invocation asked. `pass` is `<name>` and `--all` both. */
+type BackfillShape = 'list' | 'pending' | 'pass';
+
+/**
+ * Every flag that belongs to exactly ONE shape — `x db backfill`'s own usage line, executable.
+ *
+ * `--name` is absent because it is two things: `--list`'s filter and the pass's target, decided by
+ * `readShape` below. Everything else reads for one shape and is ignored by the other two, which is
+ * the silence this table ends.
+ */
+const SHAPE_OF_FLAG = Object.freeze<Record<string, BackfillShape>>({
+  status: 'list',
+  limit: 'list',
+  write: 'pass',
+  force: 'pass',
+});
+
+/** One runnable line per shape, so a refusal hands back the invocation the caller meant. */
+const FIX_OF_SHAPE = Object.freeze<Record<BackfillShape, string>>({
+  list: 'x db backfill --list --json',
+  pending: 'x db backfill --pending --json',
+  pass: 'x db backfill --all --write --json',
+});
+
+const refuseShape = (flag: string, reason: string, fix: string): never => {
+  throw new BadFlagError({ flag, command: 'db', reason, fix });
+};
+
+/**
+ * Exactly one shape, and only the flags that shape reads — refused before anything opens a
+ * database, never resolved by precedence.
+ *
+ * Precedence is what this replaces, and it was silent in the dangerous direction:
+ * `x db backfill cleanup --all --write` took the `--all` branch and ENQUEUED every pending sweep
+ * while the operator had named one, and `--list --pending` reported the ledger for a command that
+ * asked what was unswept. Axiom 1 — one way to do each thing — makes a second reading of one argv
+ * a refusal rather than a choice the command makes on the caller's behalf.
+ */
+function readShape(args: ParsedArgs): { readonly shape: BackfillShape; readonly name?: string } {
+  const list = flagBool(args, 'list');
+  const positional = args.positionals[0];
+  const named = flagString(args, 'name');
+  // `--name` is a FILTER under `--list` and a target everywhere else, so it selects a shape only
+  // where `--list` is absent. Two spellings of one target are still two, and are refused.
+  const target = list ? undefined : (positional ?? named);
+  if (!list && positional !== undefined && named !== undefined) {
+    return refuseShape(
+      'name',
+      `x db backfill names two backfills ("${positional}" and "${named}") — a pass sweeps the positional or --name, never both`,
+      `x db backfill ${positional} --write --json`,
+    );
+  }
+  const asked = [
+    ...(list ? ['--list'] : []),
+    ...(flagBool(args, 'pending') ? ['--pending'] : []),
+    ...(flagBool(args, 'all') ? ['--all'] : []),
+    ...(target === undefined ? [] : [target]),
+  ];
+  if (asked.length > 1) {
+    // The SECOND shape is the one that would have been dropped, so it is the one the cause names:
+    // `--all` won over a named sweep and the operator was never told which of the two ran.
+    const second = asked[1] ?? '';
+    return refuseShape(
+      second.startsWith('--') ? second.slice(2) : 'name',
+      `x db backfill was asked for ${asked.join(' and ')} — one shape per invocation: --list, --pending, <name> or --all`,
+      `x db backfill ${asked[0]} --json`,
+    );
+  }
+  if (asked.length === 0) {
+    return refuseShape(
+      'list',
+      'x db backfill needs a shape: --list (the ledger), --pending (declared minus completed), <name> or --all (run one, or every pending one)',
+      'x db backfill --pending --json',
+    );
+  }
+  const shape: BackfillShape = list ? 'list' : flagBool(args, 'pending') ? 'pending' : 'pass';
+  for (const [flag, owner] of Object.entries(SHAPE_OF_FLAG)) {
+    if (owner === shape || !args.flags.has(flag)) continue;
+    refuseShape(
+      flag,
+      `x db backfill --${flag} belongs to ${owner === 'pass' ? 'a <name>/--all pass' : `--${owner}`}, and this invocation asked for ${asked[0]}`,
+      FIX_OF_SHAPE[owner],
+    );
+  }
+  return target === undefined ? { shape } : { shape, name: target };
+}
 
 /**
  * Four shapes, one subcommand: `--list` reads the `x_backfills` ledger, `--pending` diffs it
@@ -40,19 +128,10 @@ export async function runBackfillCommand(
   ctx: CommandContext,
   root: string,
 ): Promise<CommandResult> {
-  if (flagBool(ctx.args, 'list')) return runBackfillList(ctx, root);
-  const all = flagBool(ctx.args, 'all');
-  const name = ctx.args.positionals[0] ?? flagString(ctx.args, 'name');
-  if (flagBool(ctx.args, 'pending')) return runBackfillPending(ctx, root);
-  if (all) return runBackfillPass(ctx, root, 'all');
-  if (name !== undefined) return runBackfillPass(ctx, root, [name]);
-  throw new BadFlagError({
-    flag: 'list',
-    command: 'db',
-    reason:
-      'x db backfill needs a shape: --list (the ledger), --pending (declared minus completed), <name> or --all (run one, or every pending one)',
-    fix: 'x db backfill --pending --json',
-  });
+  const asked = readShape(ctx.args);
+  if (asked.shape === 'list') return runBackfillList(ctx, root);
+  if (asked.shape === 'pending') return runBackfillPending(ctx, root);
+  return runBackfillPass(ctx, root, asked.name === undefined ? 'all' : [asked.name]);
 }
 
 async function runBackfillList(ctx: CommandContext, root: string): Promise<CommandResult> {

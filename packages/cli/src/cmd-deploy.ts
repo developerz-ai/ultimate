@@ -9,6 +9,7 @@ import { BadFlagError, UnknownCommandError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagBool, flagString } from './parse';
+import { quoteArg } from './shell-quote';
 
 /**
  * Ordered, and the order is the design. `migrate` GATES — it runs to completion before anything
@@ -147,6 +148,19 @@ export function planDeploy(image: string, method: DeployMethod, root: string): D
   };
 }
 
+/**
+ * One step, as the line an operator would type — the environment first, then the command.
+ *
+ * `plan.env` is the compose file's own `IMAGE=…` variable, and it is what makes `--image` true on
+ * that method: a rendered line without it deploys `docker-compose.prod.yml`'s DEFAULT image. Both
+ * renderers and the failure `fix:` go through here, so the plan `--json` reports, the plan the
+ * terminal shows and the line the refusal hands back can never name three different deployments.
+ */
+const stepLine = (env: Readonly<Record<string, string>>, command: readonly string[]): string =>
+  [...Object.entries(env).map(([name, value]) => `${name}=${quoteArg(value)}`), ...command].join(
+    ' ',
+  );
+
 export const deployCommand: CliCommand = {
   spec: {
     name: 'deploy',
@@ -191,7 +205,9 @@ export const deployCommand: CliCommand = {
         command: 'deploy',
         summary: msg('cli.deploy.plan', { images: 1, roles: DEPLOY_ROLES.join(',') }),
         data: planJson,
-        lines: plan.steps.map((step) => `  ${step.role.padEnd(10)} ${step.command.join(' ')}`),
+        lines: plan.steps.map(
+          (step) => `  ${step.role.padEnd(10)} ${stepLine(plan.env, step.command)}`,
+        ),
       };
     }
     for (const step of plan.steps) {
@@ -205,7 +221,7 @@ export const deployCommand: CliCommand = {
             {
               code: 'X_DEPLOY_FAILED',
               cause: `role "${step.role}" step exited ${result.code}`,
-              fix: `${step.command.join(' ')}   # run it directly to see the full output`,
+              fix: `${stepLine(plan.env, step.command)}   # run it directly to see the full output`,
               docs: 'https://ultimate.dev/errors/X_DEPLOY_FAILED',
             },
           ],

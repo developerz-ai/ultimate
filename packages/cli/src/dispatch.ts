@@ -131,7 +131,10 @@ export async function dispatch(options: DispatchOptions): Promise<number> {
     // of a command whose whole contract is `--json` raised on the second. Decided HERE, once, for
     // all thirty commands — a rule each booting command had to remember is a rule the next one
     // forgets. A server's stdout stays its log stream; this is about the CLI process only.
-    if (args.json) setLogStream('stderr');
+    // Set on EVERY dispatch, both ways: the stream is process-wide state, so `if (args.json)`
+    // alone left a JSON run's `stderr` in place for the next non-JSON one — one `x` process
+    // dispatching twice (the MCP host, a test, an embedding caller) lost its boot logs off stdout.
+    setLogStream(args.json ? 'stderr' : 'stdout');
     // The reader `CommandSpec.requiresApp` never had. Its doc said "the dispatcher enforces it" and
     // `dispatch` did not read the field at all: the guarantee held only because all 17 declaring
     // commands happen to call `requireAppRoot` themselves, so a new command that declares it and

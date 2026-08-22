@@ -205,6 +205,17 @@ const BLOCK_OPEN = '<comment id=';
 const BLOCK_CLOSE = '</comment>';
 
 /**
+ * The fence, as a READER would parse it rather than as this file spells it.
+ *
+ * Two literal `replaceAll`s were the whole neutralisation, and markup is not spelled one way:
+ * `</comment >`, `</COMMENT>` and `< comment id=` all end or open a block for anything reading
+ * tags, and none of the three matched. One pattern over `<`, an optional `/`, and whitespace
+ * around a case-insensitive `comment` covers every spelling of the delimiter; the escape goes on
+ * the `<`, so what the reviewer wrote after it survives byte for byte.
+ */
+const BLOCK_DELIMITER = /<(\s*\/?\s*comment\b)/gi;
+
+/**
  * One comment body, fenced and labelled with the thread id it came from — `@ultimat3/ai`'s
  * `documentBlock` (`rag.ts`), applied to the other place foreign text enters an agent's context.
  * `x pr review` exists because an agent cannot read the GitHub web UI, and a review body is
@@ -219,11 +230,7 @@ const BLOCK_CLOSE = '</comment>';
  */
 export function commentBlock(id: string, lines: readonly string[]): readonly string[] {
   const label = id.replaceAll('"', "'").replaceAll('>', ')').replaceAll('<', '(');
-  const body = lines.map((line) =>
-    line
-      .replaceAll(BLOCK_CLOSE, String.raw`<\/comment>`)
-      .replaceAll(BLOCK_OPEN, String.raw`<\comment id=`),
-  );
+  const body = lines.map((line) => line.replace(BLOCK_DELIMITER, '<\\$1'));
   return [`${BLOCK_OPEN}"${label}">`, ...body, BLOCK_CLOSE];
 }
 

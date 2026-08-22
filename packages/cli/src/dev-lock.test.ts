@@ -2,7 +2,7 @@
 // what matters here is that each refusal names the right cause and offers a remedy that RUNS.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
@@ -10,6 +10,7 @@ import {
   clearLock,
   DEV_LOCK_FILE,
   DevAlreadyRunningError,
+  DevLockUnreadableError,
   DevPortInUseError,
   isProcessAlive,
   lockPath,
@@ -287,6 +288,34 @@ describe('preflight', () => {
         alive: () => true,
       }).catch((error: unknown) => error);
       expect(thrown).toBeInstanceOf(DevAlreadyRunningError);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('a lock file this process can neither read nor remove', () => {
+  // A DIRECTORY at `dev.lock` reaches every branch of that path for real: `openSync(…, 'wx')` is
+  // EEXIST so the claim fails, `Bun.file(…).exists()` is false so both reads answer `null`, and
+  // `unlinkSync` is EISDIR so the file survives the clear. Nothing is stubbed.
+  test('is its own refusal, and never this process reported as the holder', async () => {
+    const dir = scratch();
+    try {
+      mkdirSync(lockPath(dir));
+      const thrown = (await preflight({
+        stateDir: dir,
+        port: 3000,
+        hostname: 'localhost',
+        portBound: () => false,
+        alive: () => true,
+      }).catch((error: unknown) => error)) as DevLockUnreadableError;
+
+      // Measured before this landed: `X_DEV_ALREADY_RUNNING`, `pid <this process> is already
+      // running x dev`, and `fix: … kill <this process>` — a remedy that kills its own reader.
+      expect(thrown).toBeInstanceOf(DevLockUnreadableError);
+      expect(thrown.code).toBe('X_DEV_LOCK_UNREADABLE');
+      expect(thrown.cause).not.toContain(String(process.pid));
+      expect(thrown.fix).toBe(`rm ${lockPath(dir)}   # then re-run x dev`);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import { docsFor } from './error-codes';
 import { exec, type Runner } from './exec';
+import { quoteArg } from './shell-quote';
 
 /** Where the running dev server records itself, inside the state directory it already owns. */
 export const DEV_LOCK_FILE = 'dev.lock';
@@ -97,6 +98,28 @@ export class DevAlreadyRunningError extends UltimateError {
       fix: `use the one already running at ${input.lock.url}, or stop it: kill ${input.lock.pid}`,
       docs: docsFor('X_DEV_ALREADY_RUNNING'),
       meta: { pid: input.lock.pid, port: input.lock.port, stateDir: input.stateDir },
+    });
+  }
+}
+
+/**
+ * The lock file exists, this process could not read it and could not remove it — which is not
+ * "another x dev is running", and was reported as exactly that.
+ *
+ * `DevAlreadyRunningError` needs a `DevLock`, and the only one in hand on that path was `mine`:
+ * the refusal then read `pid <this process> is already running x dev` with `fix: … kill <this
+ * process>`, a remedy that kills the reader and a cause naming the wrong holder. Axiom 4 wants a
+ * runnable fix and an honest cause, so the honest answer is its own code — the file is the
+ * problem, and removing it is what a reader can actually do.
+ */
+export class DevLockUnreadableError extends UltimateError {
+  constructor(input: { readonly path: string; readonly stateDir: string }) {
+    super({
+      code: 'X_DEV_LOCK_UNREADABLE',
+      cause: `${input.path} could not be parsed as a dev lock and could not be removed, so x dev cannot tell whether another process owns ${input.stateDir}`,
+      fix: `rm ${quoteArg(input.path)}   # then re-run x dev`,
+      docs: docsFor('X_DEV_LOCK_UNREADABLE'),
+      meta: { path: input.path, stateDir: input.stateDir },
     });
   }
 }
@@ -318,8 +341,14 @@ export const preflight = async (input: PreflightInput): Promise<PreflightResult>
       // Lost the race for the slot we just cleared. `held` is the best identity available — a
       // half-written file parses as `null` for microseconds — and refusing on a stale pid beats
       // the alternative, which is two processes writing one single-writer data directory.
+      //
+      // NEVER `mine`, which is what it fell back to: with an unparseable lock and a failed
+      // `unlinkSync`, both reads answer `null` and the refusal named THIS pid as the holder —
+      // `kill <self>` as the remedy for a file nobody could read.
+      const holder = (await readLock(path)) ?? held;
+      if (holder === null) throw new DevLockUnreadableError({ path, stateDir: input.stateDir });
       throw new DevAlreadyRunningError({
-        lock: (await readLock(path)) ?? held ?? mine,
+        lock: holder,
         stateDir: input.stateDir,
         ...(input.embeddedDb === undefined ? {} : { embeddedDb: input.embeddedDb }),
       });

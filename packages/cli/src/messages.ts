@@ -231,6 +231,10 @@ const CATALOG = {
   'cli.test.sampled': 'sampled {kept} of {total} {type} file(s)',
   'cli.test.type.fail': '{type} — {failed} of {workers} shard(s) failed',
   'cli.test.type.pass': '{type} — {files} test file(s) on {workers} worker(s) passed in {ms}ms',
+  // The banner a `--only` run carries, in front of whichever summary above it renders. Rendered
+  // output, so it lives here — `data.notAGateRun` is the machine marker, and a reader testing for
+  // one narrowed run reads that boolean rather than substring-matching this line.
+  'cli.verify.notAGateRun': 'NOT A GATE RUN — {summary}',
   'cli.verify.pass': 'all {count} steps passed in {ms}ms',
   'cli.verify.fail': '{failed} of {count} steps failed',
   // A skipped step is not a passed one, so the two counts never share a sentence — and the skipped
