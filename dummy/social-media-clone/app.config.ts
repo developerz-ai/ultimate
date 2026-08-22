@@ -58,7 +58,7 @@ export const config = defineConfig({
   // Without `signInPath` a browser that opens /dashboard with no session is answered with the
   // problem+json document — correct for an agent, and rendered as raw JSON text to a person.
   // Naming the page turns that into a 303 carrying `?next=`, and the page sends them back.
-  auth: { signInPath: '/signin', afterSignInPath: '/dashboard' },
+  auth: { signInPath: '/signin' },
   // Env KEYS, never the value: the same image deploys to every environment. The database URL is
   // `DATABASE_URL` and the pool is sized by `DATABASE_POOL_MAX` — both read from the environment,
   // because `config.database`'s `urlEnv`/`poolSize` were read by nothing and were deleted
@@ -67,6 +67,6 @@ export const config = defineConfig({
   jobs: { queues: ['social-media-clone-default'], concurrency: 4 },
   // In-process transport by default; set urlEnv and transport: 'nats' to scale past one node.
   realtime: { enabled: true, tier: 'live-queries', transport: 'memory' },
-  pwa: { enabled: true, offline: 'runtime', installPrompt: true },
+  pwa: { enabled: true, offline: 'runtime' },
   ai: { mcp: { expose: true, path: '/mcp' } },
 });

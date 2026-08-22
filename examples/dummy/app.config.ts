@@ -39,7 +39,7 @@ export const config = defineConfig({
   /** Tier 3: live queries plus a durable client store, because the feed must work offline. */
   realtime: { enabled: true, tier: 'local-first', transport: 'nats', urlEnv: 'NATS_URL' },
 
-  pwa: { enabled: true, offline: 'runtime', installPrompt: true, backgroundSync: true },
+  pwa: { enabled: true, offline: 'runtime', backgroundSync: true },
 
-  ai: { mcp: { expose: true, path: '/mcp' }, modelEnv: 'ANTHROPIC_MODEL' },
+  ai: { mcp: { expose: true, path: '/mcp' } },
 });
