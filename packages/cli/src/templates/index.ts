@@ -39,6 +39,9 @@ export { claudeAgentFiles } from './scaffold-claude-agents';
 export { claudeCommandFiles } from './scaffold-claude-commands';
 export { containerFiles } from './scaffold-container';
 export { docsFiles, EXECUTABLE_FILES } from './scaffold-docs';
+export { entryFiles } from './scaffold-entries';
+// The four guards `x new` ships, distinct from `guardFiles` above, which is `x g guard <name>`.
+export { scaffoldGuardFiles } from './scaffold-guards';
 export { i18nIndex } from './scaffold-i18n';
 export { repoFiles } from './scaffold-repo';
 export type { SliceModule } from './slice-foundation';

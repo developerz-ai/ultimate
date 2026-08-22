@@ -5,6 +5,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
+import { JOB_STATES } from '@ultimat3/jobs';
+import { TEST_TYPES } from '@ultimat3/testing';
 import { repoRoot } from './lib/run';
 import type { SourceFile } from './render-modes';
 import {
@@ -19,24 +21,38 @@ import {
 
 const ROOT = repoRoot();
 
-/** A stand-in for the real tier-0 module, so a unit test never depends on the repo's own text. */
+const asConst = (name: string, members: readonly string[]): string =>
+  `export const ${name} = [${members.map((m) => `'${m}'`).join(', ')}] as const;`;
+
+/** Stand-ins for the real owning modules, so a unit test never depends on the repo's own text. */
 const sanctioned: SourceFile = {
   at: VOCABULARY_MODULE,
   text: [
-    `export const RENDER_MODES = [${RENDER_MODES.map((m) => `'${m}'`).join(', ')}] as const;`,
+    asConst('RENDER_MODES', RENDER_MODES),
     'export type RenderMode = (typeof RENDER_MODES)[number];',
-    `export const OFFLINE_STRATEGIES = [${OFFLINE_STRATEGIES.map((m) => `'${m}'`).join(', ')}] as const;`,
-    `export const HYDRATE_STRATEGIES = [${HYDRATE_STRATEGIES.map((m) => `'${m}'`).join(', ')}] as const;`,
+    asConst('OFFLINE_STRATEGIES', OFFLINE_STRATEGIES),
+    asConst('HYDRATE_STRATEGIES', HYDRATE_STRATEGIES),
     '',
   ].join('\n'),
 };
+
+/**
+ * Every vocabulary needs its owner in the walk, not just the route one: the vacuity guard reports
+ * an owning module missing from the scan rather than answering "no copies", which is the same
+ * answer a clean repo gives.
+ */
+const OWNERS: readonly SourceFile[] = [
+  sanctioned,
+  { at: 'packages/jobs/src/driver.ts', text: asConst('JOB_STATES', JOB_STATES) },
+  { at: 'packages/testing/src/test-types.ts', text: asConst('TEST_TYPES', TEST_TYPES) },
+];
 
 const file = (at: string, text: string): SourceFile => ({ at, text });
 
 describe('a second declaration of the vocabulary', () => {
   test('is reported even under a different NAME — that is how PwaRenderMode survived', () => {
     const findings = checkVocabulary([
-      sanctioned,
+      ...OWNERS,
       file('packages/pwa/src/strategies.ts', "export type PwaRenderMode = 'static' | 'isr';\n"),
     ]);
     expect(findings).toHaveLength(1);
@@ -48,7 +64,7 @@ describe('a second declaration of the vocabulary', () => {
 
   test('is reported when it is a PARTIAL copy — the drift shape, not just the whole set', () => {
     const findings = checkVocabulary([
-      sanctioned,
+      ...OWNERS,
       file('packages/seo/src/routes.ts', "\nexport type RenderMode = 'static' | 'isr' | 'ssr';\n"),
     ]);
     expect(findings).toHaveLength(1);
@@ -57,7 +73,7 @@ describe('a second declaration of the vocabulary', () => {
 
   test('is reported when it is an as-const ARRAY rather than a union', () => {
     const findings = checkVocabulary([
-      sanctioned,
+      ...OWNERS,
       file('packages/http/src/router.ts', "const MODES = ['precache', 'runtime'] as const;\n"),
     ]);
     expect(findings).toHaveLength(1);
@@ -66,7 +82,7 @@ describe('a second declaration of the vocabulary', () => {
 
   test('is reported when it gains a member the vocabulary does not have', () => {
     const drifted = "export type RenderMode = 'static' | 'isr' | 'ssr' | 'stream' | 'spa';\n";
-    expect(checkVocabulary([sanctioned, file('packages/x/src/a.ts', drifted)])).toHaveLength(1);
+    expect(checkVocabulary([...OWNERS, file('packages/x/src/a.ts', drifted)])).toHaveLength(1);
   });
 
   test('is NOT reported for a set that merely shares one member', () => {
@@ -74,7 +90,7 @@ describe('a second declaration of the vocabulary', () => {
     const strategy = "export type StrategyName = 'cache-first' | 'network-only';\n";
     expect(
       checkVocabulary([
-        sanctioned,
+        ...OWNERS,
         file('packages/core/src/config.ts', cacheTier),
         file('packages/pwa/src/strategies.ts', strategy),
       ]),
@@ -82,7 +98,7 @@ describe('a second declaration of the vocabulary', () => {
   });
 
   test('is not reported against the one module allowed to declare it', () => {
-    expect(checkVocabulary([sanctioned])).toEqual([]);
+    expect(checkVocabulary([...OWNERS])).toEqual([]);
   });
 });
 
@@ -103,6 +119,7 @@ describe('the scan cannot pass by reading nothing', () => {
     const opaque = file(VOCABULARY_MODULE, 'export const RENDER_MODES = modesFromSomewhere();\n');
     const findings = checkVocabulary([
       opaque,
+      ...OWNERS.slice(1),
       file('packages/pwa/src/a.ts', "export type P = 'static' | 'isr' | 'ssr';\n"),
     ]);
     expect(findings).toHaveLength(1);
@@ -116,7 +133,7 @@ describe('a declaration the old scan could not see', () => {
       'export namespace Compat {\n' +
       "  export type PwaRenderMode = 'static' | 'isr' | 'ssr';\n" +
       '}\n';
-    const findings = checkVocabulary([sanctioned, file('packages/pwa/src/compat.ts', nested)]);
+    const findings = checkVocabulary([...OWNERS, file('packages/pwa/src/compat.ts', nested)]);
     expect(findings).toHaveLength(1);
     expect(findings[0]?.at).toBe('packages/pwa/src/compat.ts:2');
   });
@@ -128,7 +145,7 @@ describe('a declaration the old scan could not see', () => {
       "  | 'static'\n" +
       '  /** Revalidated on a tag. */\n' +
       "  | 'isr';\n";
-    const findings = checkVocabulary([sanctioned, file('packages/seo/src/m.ts', documented)]);
+    const findings = checkVocabulary([...OWNERS, file('packages/seo/src/m.ts', documented)]);
     expect(findings).toHaveLength(1);
   });
 
@@ -138,17 +155,56 @@ describe('a declaration the old scan could not see', () => {
       "export type RenderMode = 'static' | 'isr' | 'ssr';\n" +
       '`;\n';
     expect(
-      checkVocabulary([sanctioned, file('packages/cli/src/templates/route.ts', template)]),
+      checkVocabulary([...OWNERS, file('packages/cli/src/templates/route.ts', template)]),
     ).toEqual([]);
   });
 
   test('is NOT reported when it is COMMENTED OUT', () => {
     const commented = "// export type RenderMode = 'static' | 'isr' | 'ssr';\n";
-    expect(checkVocabulary([sanctioned, file('packages/pwa/src/a.ts', commented)])).toEqual([]);
+    expect(checkVocabulary([...OWNERS, file('packages/pwa/src/a.ts', commented)])).toEqual([]);
+  });
+});
+
+describe('a vocabulary of ordinary words, compared by NAME', () => {
+  test('a second JOB_STATES is reported wherever it is declared', () => {
+    // `packages/cli/src/jobs-report.ts` carried one, and it was ONE MEMBER SHORT: `x jobs cancel`
+    // created a state `x jobs ls --state cancelled` then refused to filter on.
+    const copy = asConst('JOB_STATES', ['ready', 'running', 'done']);
+    const findings = checkVocabulary([...OWNERS, file('packages/cli/src/jobs-report.ts', copy)]);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.fix).toContain("import JOB_STATES from '@ultimat3/jobs'");
+  });
+
+  test('a RELATED set under its own name is not a copy — the eleven that would have red', () => {
+    // `SERIAL_TYPES` is a subset of the test types, `ENCODABLE_FORMATS` is what the codecs write,
+    // `VERIFY_STEP_NAMES` is a superset by construction. Comparing these by literal set reports
+    // all three, which is a rule its readers learn to silence.
+    const subset = asConst('SERIAL_TYPES', ['live', 'job', 'e2e']);
+    const superset = asConst('VERIFY_STEP_NAMES', ['typecheck', ...TEST_TYPES, 'roadmap']);
+    expect(
+      checkVocabulary([
+        ...OWNERS,
+        file('packages/cli/src/verify-tests.ts', subset),
+        file('packages/cli/src/verify-step.ts', superset),
+      ]),
+    ).toEqual([]);
   });
 });
 
 describe('what the scanner reads', () => {
+  test('a TYPED array literal is a declaration — `as const` is not the only shape', () => {
+    // The shape the `JOB_STATES` copy was actually written in, and the one the scan could not see.
+    const typed = "const PENDING: readonly JobState[] = ['precache', 'runtime'];\n";
+    const [set] = scanLiteralSets(typed);
+    expect(set?.name).toBe('PENDING');
+    expect(set?.members).toEqual(['precache', 'runtime']);
+    expect(checkVocabulary([...OWNERS, file('packages/pwa/src/a.ts', typed)])).toHaveLength(1);
+  });
+
+  test('a bare array of strings is still not read — that is any list, not a vocabulary', () => {
+    expect(scanLiteralSets("const PENDING = ['precache', 'runtime'];\n")).toEqual([]);
+  });
+
   test('a set below the copy threshold is not a set it reports at all', () => {
     expect(scanLiteralSets("export type One = 'static';\n")).toEqual([]);
     expect(scanLiteralSets("export type Two = 'static' | 'isr';\n")).toHaveLength(1);
@@ -175,8 +231,10 @@ describe('this repository', () => {
   test('and the scan found all three vocabularies in the module that owns them', async () => {
     const text = await Bun.file(`${ROOT}/${VOCABULARY_MODULE}`).text();
     const names = scanLiteralSets(text).map((one) => one.name);
-    for (const vocabulary of VOCABULARIES) expect(names).toContain(vocabulary.name);
-    expect(VOCABULARIES).toHaveLength(3);
+    for (const vocabulary of VOCABULARIES.filter((one) => one.at === VOCABULARY_MODULE)) {
+      expect(names).toContain(vocabulary.name);
+    }
+    expect(VOCABULARIES).toHaveLength(5);
   });
 
   test('and it reads a real union whose members carry a doc comment each', async () => {

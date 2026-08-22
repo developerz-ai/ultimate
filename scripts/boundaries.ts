@@ -1,13 +1,26 @@
 #!/usr/bin/env bun
-// Enforce the repo's import rules as BUILD ERRORS, not lint warnings (axiom 3). Two rules in one
-// script, because both are answered by reading source through Bun's own transpiler — which is why
-// this file imports no workspace package and the CI job that runs it needs no `bun install`.
+// Enforce the repo's import rules as BUILD ERRORS, not lint warnings (axiom 3). Four rules in one
+// script, because every one of them is answered by reading source and none needs a type-checker.
 //
-//   1. The tier table across `packages/*/src`: a package may import only from a strictly lower
+//   1. The tier CEILING across `packages/*/src`: a package may import only from a strictly lower
 //      tier. Sideways within a tier and upward are both failures, and the report names the file,
 //      the import and the tiers that were allowed.
-//   2. The leaf rule across an example app's `shared/`: a leaf may name an `app/` or `site/`
+//   2. The tier FLOOR: a package sitting ABOVE the lowest tier its own imports allow needs a
+//      written reason in `FLOOR_ABOVE` (`scripts/lib/tiers.ts`), which is the half that did not
+//      exist until 2026-08-22 while that file claimed it did.
+//   3. The leaf rule across an example app's `shared/`: a leaf may name an `app/` or `site/`
 //      type, never load its module.
+//   4. `@ultimat3/admin`'s one-flattener rule: one file may read `$meta`/`$describe()`.
+//
+// The scan below is Bun's transpiler and is a SECOND import scanner beside
+// `packages/cli/src/workspace-graph.ts`'s regex one. The reason this header used to give for the
+// copy — "the CI job that runs it needs no `bun install`" — names a job that does not exist:
+// `ci.yml` runs `boundaries` only as a step of `x verify`, and `scripts/verify.ts` imports
+// `@ultimat3/cli` to do it. Measured 2026-08-22: over all 4,007 scanned files under `packages/`,
+// the two scanners resolve the SAME framework package for every specifier, zero either way — so
+// the copy can go as soon as `workspace-graph.ts` exports raw SPECIFIERS. `importedPackages`
+// answers package names and drops relative ones, and a relative cross-package import is exactly
+// what rule 1 learned to follow.
 //
 //   bun run scripts/boundaries.ts [--json] [--package cli]
 
@@ -17,7 +30,14 @@ import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
-import { allowedImportsFor, checkTier, tierOf } from './lib/tiers';
+import {
+  allowedImportsFor,
+  checkFloors,
+  checkTier,
+  FLOOR_ABOVE,
+  floorFindingFor,
+  tierOf,
+} from './lib/tiers';
 
 export interface SourceFile {
   /** Path relative to the repo root, POSIX separators. */
@@ -155,6 +175,32 @@ export function checkBoundaries(files: readonly SourceFile[]): readonly Violatio
     }
   }
   return violations;
+}
+
+/** The floor rule over an already-collected scan, so no caller reads the tree twice for it. */
+export const floorFindings = (files: readonly SourceFile[]): readonly Finding[] =>
+  checkFloors(packageEdges(files), FLOOR_ABOVE).map(floorFindingFor);
+
+/**
+ * Every framework package each package imports, read from the same files and the same specifiers
+ * the tier rule is judged on — so the FLOOR a package is held to can never be computed from a
+ * different set of edges than the CEILING it is already checked against.
+ */
+export function packageEdges(
+  files: readonly SourceFile[],
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const edges = new Map<string, Set<string>>();
+  for (const file of files) {
+    const from = packageOf(file.path);
+    if (from === undefined) continue;
+    const targets = edges.get(from) ?? new Set<string>();
+    edges.set(from, targets);
+    for (const specifier of allImportsOf(file)) {
+      const to = targetPackage(file.path, specifier);
+      if (to !== undefined && to !== from) targets.add(to);
+    }
+  }
+  return edges;
 }
 
 const REASON_CAUSE: Readonly<Record<string, string>> = {
@@ -369,10 +415,16 @@ if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
   const root = repoRoot();
   const only = args.flags.get('package');
-  const files = (await collectSourceFiles(root)).filter(
+  const everySource = await collectSourceFiles(root);
+  const files = everySource.filter(
     (file) => typeof only !== 'string' || packageOf(file.path) === only,
   );
   const violations = checkBoundaries(files);
+  // The floor rule reads the WHOLE tree even under `--package`, and is skipped when one is given: a
+  // floor is a statement about one package's position among all of them, so a filtered scan answers
+  // 0 for every package the filter dropped and reports the rest as stale rows.
+  const floors =
+    typeof only === 'string' ? [] : checkFloors(packageEdges(everySource), FLOOR_ABOVE);
   // `--package` narrows to one framework package; the leaf and flattener rules are each about one
   // fixed location (an app's `shared/`, `@ultimat3/admin`), not "whichever package was asked for".
   const sharedFiles = typeof only === 'string' ? [] : await collectSharedFiles(root);
@@ -381,6 +433,7 @@ if (import.meta.main) {
   const adminLeaks = checkAdminFlattener(adminFiles);
   const findings = [
     ...violations.map(findingFor),
+    ...floors.map(floorFindingFor),
     ...leaks.map(sharedLeafFindingFor),
     ...adminLeaks.map(adminFlattenerFindingFor),
   ];
@@ -394,7 +447,7 @@ if (import.meta.main) {
           ? `${scanned} files, no boundary violations`
           : `${findings.length} boundary violation(s) across ${scanned} files`,
       findings,
-      data: { files: scanned, violations, leaks, adminLeaks },
+      data: { files: scanned, violations, floors, leaks, adminLeaks },
     },
     args.json,
   );

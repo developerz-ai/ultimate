@@ -271,7 +271,7 @@ Every primitive emits a test scaffold that fails until filled in — an untested
 
 The single gate. Green means shippable.
 
-Seventeen steps, one list, in cost order. There is no `--only` and no `--skip` — "green" has to mean
+Nineteen steps, one list, in cost order. There is no `--only` and no `--skip` — "green" has to mean
 the same thing for everyone. A step with nothing to check reports as skipped (`-`), never as passed.
 
 The list is defined once, as `VERIFY_STEP_NAMES` in
@@ -295,6 +295,8 @@ This table is a hand-synced copy of it ([Contributing](Contributing)).
 | `drift` | schema differs from migrations, or a migration is not reversible-or-marked |
 | `contract-diff` | a breaking change to a published action/query without a version bump |
 | `budgets` | per-route JS bytes and LCP |
+| `seo` | an indexable `site/` route with no title, or no description a search result can render |
+| `i18n` | a key missing from a locale's catalog, or a catalog no module ever registered |
 | `manifest` | `x.manifest.json` / `openapi.json` differ from what the code produces, or `AGENTS.md` is missing or over its byte cap |
 | `roadmap` | framework repo only — a milestone missing its status marker, or a shipped milestone missing an artifact its own row names |
 

@@ -239,12 +239,15 @@ describe('unit · x new · writing into the parent directory', () => {
     bunVersion: '1.3.0',
   });
 
+  // `--no-git`, so the report is the count line and nothing else on every box. The default path
+  // appends `no repository — …` wherever `git commit` cannot run, and a CI runner configures no
+  // `user.email` — so an exact-lines assertion against the default is a test that reads the
+  // machine's git config, not the command. The repository is `cmd-new-git.test.ts`'s subject.
   test('the app lands under <parent>/<kebab-name>, and the report counts what it wrote', async () => {
     const parent = mkdtempSync(join(tmpdir(), 'x-new-run-'));
     try {
       // A name that is NOT already kebab: the directory is the kebab form, never the argument.
-      const result = (await newContext(['new', 'Demo App'], parent)) satisfies CommandContext;
-      const written = await newCommand.run(result);
+      const written = await newCommand.run(newContext(['new', 'Demo App', '--no-git'], parent));
       expect(written.ok).toBe(true);
       const target = join(parent, 'demo-app');
       const data = written.data as { dir: string; files: readonly string[] };
@@ -356,10 +359,43 @@ describe('unit · x new · the API surface registers the app own primitives by n
 /**
  * `x new --help` used to contradict itself: the usage line offered `--no-example`, the flag table
  * listed `--example`, and neither said which way the scaffold goes when you type neither. The
- * example slice is 126 files against 99, so "which one do I get" is the first question the page has
+ * example slice is 134 files against 107, so "which one do I get" is the first question the page has
  * to answer — and `default: true` is a field only `--json` renders.
  */
+describe('unit · x new · the sitemap and robots.txt it wires', () => {
+  // Decision D2: `@ultimat3/seo` had eleven exports with zero callers anywhere, and `buildSitemap`
+  // / `buildRobots` are the two the framework has no live equivalent for. They are wired into the
+  // STATIC ENTRY rather than into a route because both belong to the artifact: a static export is
+  // served with no process behind it, so a route answering them is a file the CDN never has.
+  test('the static entry builds both, and the app declares the package it builds them with', () => {
+    const entry = emitted('apps/web/prerender.ts', true);
+    expect(entry).toContain("from '@ultimat3/seo'");
+    expect(entry).toContain('buildSitemap(');
+    expect(entry).toContain('buildRobots(');
+    expect(entry).toContain("'robots.txt'");
+    expect(emitted('package.json', true)).toContain('"@ultimat3/seo"');
+  });
+});
+
 describe('unit · x new --help states the default it scaffolds with', () => {
+  // The usage line and the flag table are one page and were two answers: usage offered
+  // `--no-example`, the table listed `--example`, and neither said which you get by typing
+  // neither. Derived rather than restated — every boolean flag defaulting ON must appear in usage
+  // in the spelling that turns it off, so a flag added later cannot reopen the gap.
+  test('every flag that defaults on appears in usage as --no-<flag>', () => {
+    const defaultsOn = (newCommand.spec.flags ?? []).filter(
+      (flag) => flag.type === 'boolean' && flag.default === true,
+    );
+    expect(defaultsOn.map((flag) => flag.name)).toEqual(['example', 'git']);
+    for (const flag of defaultsOn) {
+      const negation = `--no-${flag.name}`;
+      expect(`usage names ${negation}: ${String(newCommand.spec.usage.includes(negation))}`).toBe(
+        `usage names ${negation}: true`,
+      );
+      expect(flag.summary).toContain('default');
+    }
+  });
+
   test('the example flag names its default and the spelling that turns it off', () => {
     const flag = newCommand.spec.flags?.find((entry) => entry.name === 'example');
     expect(flag?.default).toBe(true);

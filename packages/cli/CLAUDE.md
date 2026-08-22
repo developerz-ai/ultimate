@@ -835,6 +835,18 @@ refuses). A guard returning `[1n]` is `X_GUARD_FINDING_INVALID`, per candidate, 
 entry costs its own line and not the real findings beside it. The mechanism whose job is producing
 structured failures handing back a stack trace is the one outcome it exists to prevent.
 
+**`x new` ships four guards, `As of 2026-08-22`.** The scaffolded `AGENTS.md` states nine
+non-negotiables, and five of them used to be prose — each proven green on `x verify`: a hardcoded
+JSX string beside a `t()` call, `color: #ff0000` in a stylesheet whose own scaffolded header called
+it "a lint failure", `toLocaleDateString('en-US')` with no `timeZone`, `t.number` money, and a bare
+`throw new Error` in a repo. Four of the five are now guards the scaffold writes —
+`guard-raw-colour`, `guard-unzoned-date`, `guard-bare-error`, `guard-untranslated-string` — so the
+rule is a build error the day the app is created rather than a sentence an agent may skip. The
+fifth, money-as-float, has **no static signature**; the scaffolded `AGENTS.md` row now points at the
+`MoneyInput` type error that already fires, because shipping a guard that cannot work is worse than
+naming the mechanism that does. Their codes are app codes derived from the guard name, so none of
+them appears in `wiki/Error-Codes.md` or the manifest.
+
 `x g guard <name>` writes `guards/<name>.ts` and its test, and nothing else — no index, no
 registry row, no manifest entry. The emitted rule is the class of failure a guard exists for: a
 migration that adds a `NOT NULL` column with no `DEFAULT` applies cleanly to an empty local

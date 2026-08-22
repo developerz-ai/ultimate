@@ -1,23 +1,50 @@
 #!/usr/bin/env bun
-// One rule: NOTHING outside `packages/core/src/route-vocabulary.ts` may declare the route
-// vocabulary — compared by LITERAL SET, never by name, because the copy that did the damage was
-// called `PwaRenderMode` and a rule keyed on the word `RenderMode` reads straight past it.
+// One rule: a closed set of string literals is declared in ONE module and nowhere else. TWO ways to
+// recognise a second declaration, and `by` below says which each vocabulary takes: by LITERAL SET,
+// which is how the copy called `PwaRenderMode` was caught — a rule keyed on the word `RenderMode`
+// reads straight past that one — and by NAME, which is what a vocabulary of ordinary English words
+// needs. `VOCABULARIES` is the list; `render-modes.test.ts` pins its length, so no count is written
+// here to go stale. Two known divergences are held out until a decision lands (see below).
 //   bun run scripts/render-modes.ts [--json]
 
 import { maskLiterals, stripComments } from '@ultimat3/cli';
 import { HYDRATE_STRATEGIES, OFFLINE_STRATEGIES, RENDER_MODES } from '@ultimat3/core';
+import { JOB_STATES } from '@ultimat3/jobs';
+import { TEST_TYPES } from '@ultimat3/testing';
 import { parseScriptArgs } from './lib/args';
 import { report } from './lib/log';
 import { repoRoot } from './lib/run';
 
 const SCRIPT = 'render-modes';
 
-/** The one file allowed to declare any of them, and the fix line every finding points at. */
+/** The one file allowed to declare the three ROUTE vocabularies. Each other set names its own. */
 export const VOCABULARY_MODULE = 'packages/core/src/route-vocabulary.ts';
+
+/** Which package a module belongs to, so a finding can name the import a reader would write. */
+const packageOf = (module: string): string => `@ultimat3/${module.split('/')[1] ?? ''}`;
 
 export interface Vocabulary {
   readonly name: string;
+  /** The ONE module allowed to declare it, and the module a finding tells the reader to import. */
+  readonly at: string;
   readonly members: readonly string[];
+  /**
+   * How a second declaration is recognised, and it is NOT one rule for all six.
+   *
+   * `members` compares the literal SET, which is what catches a copy under another name —
+   * `PwaRenderMode` is why this file exists. It only works where the members are distinctive:
+   * `isr`, `precache`, `interaction` appear nowhere else in the tree.
+   *
+   * `name` compares the identifier, which is what a vocabulary of ordinary English words needs.
+   * Measured 2026-08-22: comparing `JOB_STATES`, `TEST_TYPES` and `IMAGE_FORMATS` by members
+   * reports ELEVEN sets that are legitimately related and not copies — `SERIAL_TYPES` (a subset of
+   * the test types), `ENCODABLE_FORMATS` (what the static codecs write), `VERIFY_STEP_NAMES` (a
+   * superset by construction). A rule reporting those is one readers learn to silence, which is
+   * this file's own stated reason for `COPY_THRESHOLD`. `name` is also what WOULD catch
+   * `IMAGE_FORMATS`, which `packages/core/src/image/probe.ts` exports under that exact name — held
+   * out below, with no row here, until the rename decision lands.
+   */
+  readonly by: 'members' | 'name';
 }
 
 /**
@@ -31,9 +58,48 @@ export interface Vocabulary {
  * strategy that gives an `app/` route a SHARED cache entry. This is what stops copy #13.
  */
 export const VOCABULARIES: readonly Vocabulary[] = [
-  { name: 'RENDER_MODES', members: [...RENDER_MODES] },
-  { name: 'OFFLINE_STRATEGIES', members: [...OFFLINE_STRATEGIES] },
-  { name: 'HYDRATE_STRATEGIES', members: [...HYDRATE_STRATEGIES] },
+  { name: 'RENDER_MODES', at: VOCABULARY_MODULE, members: [...RENDER_MODES], by: 'members' },
+  {
+    name: 'OFFLINE_STRATEGIES',
+    at: VOCABULARY_MODULE,
+    members: [...OFFLINE_STRATEGIES],
+    by: 'members',
+  },
+  {
+    name: 'HYDRATE_STRATEGIES',
+    at: VOCABULARY_MODULE,
+    members: [...HYDRATE_STRATEGIES],
+    by: 'members',
+  },
+  // Two more, added 2026-08-22. Each had a copy that shipped and each was invisible here: the
+  // rule only knew the route vocabulary, so `packages/cli/src/jobs-report.ts`'s `JOB_STATES` copy
+  // — one member short, so `x jobs cancel` created a state `x jobs ls --state cancelled` refused
+  // to filter on — was outside its reach by construction.
+  { name: 'JOB_STATES', at: 'packages/jobs/src/driver.ts', members: [...JOB_STATES], by: 'name' },
+  {
+    name: 'TEST_TYPES',
+    at: 'packages/testing/src/test-types.ts',
+    members: [...TEST_TYPES],
+    by: 'name',
+  },
+  // TWO pairs are deliberately absent, both for the same reason: each is a genuine divergence
+  // whose resolution is a DECISION nobody has made, and a gate that reds a known-bad pair with no
+  // edit that clears it is the one thing a gate must never be.
+  //
+  //   IMAGE_FORMATS — `packages/core/src/image/probe.ts` exports png|jpeg|webp|avif|gif|svg and
+  //   `packages/storage/src/image.ts` exports avif|webp|jpeg|png, under the SAME name, both from
+  //   their package barrels, with `ImageFormat` spelled twice to match. Found 2026-08-22 by this
+  //   very widening. They are different concepts — what core can PROBE against what storage can
+  //   TRANSFORM — so the fix is a rename plus a breaking barrel change, not an import.
+  //
+  //   CacheTier (`core`: memo|lru|shared|isr|cdn) against TierName (`cache`:
+  //   request-memo|lru|redis|cdn) — issue #293. Two shared members, which is this rule's own
+  //   threshold, and `isr` is accepted by config and served by nothing.
+  //
+  // Add each row the day its decision lands: import `IMAGE_FORMATS` from the package that keeps
+  // the name, then add `{ name: 'IMAGE_FORMATS', at: <winner>, members: [...IMAGE_FORMATS], by:
+  // 'name' }`. It is NOT imported above — an instruction to uncomment a row naming a binding this
+  // file does not hold is one a reader follows into a compile error.
 ];
 
 /**
@@ -67,6 +133,14 @@ const LITERAL = /(['"])([^'"]*)\1/g;
 const UNION = /^[\t ]*(?:export )?(?:declare )?type ([A-Za-z_$][\w$]*)\s*=([^;]*);/gm;
 const AS_CONST =
   /^[\t ]*(?:export )?(?:declare )?const ([A-Za-z_$][\w$]*)\s*=\s*\[([^\]]*)\]\s*as const;/gm;
+/**
+ * The same array with a TYPE ANNOTATION instead of `as const` — `const X: readonly JobState[] = […]`
+ * — which is the shape `packages/cli/src/jobs-report.ts`'s `JOB_STATES` copy was written in, and
+ * which the `as const` rule above reads as no declaration at all. A bare `const X = ['a','b'];` is
+ * deliberately still not read: it is any array of strings, not a vocabulary asserting itself.
+ */
+const TYPED_ARRAY =
+  /^[\t ]*(?:export )?(?:declare )?const ([A-Za-z_$][\w$]*)\s*:\s*(?:readonly\s+)?[\w$.]+\[\]\s*=\s*\[([^\]]*)\];/gm;
 
 const lineOf = (text: string, index: number): number => text.slice(0, index).split('\n').length;
 
@@ -106,6 +180,7 @@ export function scanLiteralSets(source: string): readonly LiteralSet[] {
   for (const [pattern, separators] of [
     [UNION, /[|\s]/g],
     [AS_CONST, /[,\s]/g],
+    [TYPED_ARRAY, /[,\s]/g],
   ] as const) {
     for (const match of text.matchAll(pattern)) {
       if (!isCode(masked, match.index, match[0] as string)) continue;
@@ -122,10 +197,16 @@ export function scanLiteralSets(source: string): readonly LiteralSet[] {
 const overlap = (set: LiteralSet, vocabulary: Vocabulary): readonly string[] =>
   set.members.filter((member) => vocabulary.members.includes(member));
 
+/** Whether this set, declared outside the owning module, is a second declaration of `vocabulary`. */
+const isCopy = (set: LiteralSet, vocabulary: Vocabulary): boolean =>
+  vocabulary.by === 'name'
+    ? set.name === vocabulary.name
+    : overlap(set, vocabulary).length >= COPY_THRESHOLD;
+
 const copyFinding = (file: SourceFile, set: LiteralSet, vocabulary: Vocabulary): Finding => ({
   at: `${file.at}:${set.line}`,
-  cause: `${set.name} in ${file.at} redeclares ${vocabulary.name}, which is declared at tier 0`,
-  fix: `delete ${set.name} from ${file.at} and import it from '@ultimat3/core' — the set is declared once, in packages/core/src/route-vocabulary.ts`,
+  cause: `${set.name} in ${file.at} redeclares ${vocabulary.name}, which ${vocabulary.at} declares`,
+  fix: `delete ${set.name} from ${file.at} and import ${vocabulary.name} from '${packageOf(vocabulary.at)}' — the set is declared once, in ${vocabulary.at}`,
 });
 
 const vacuous = (cause: string): Finding => ({
@@ -142,30 +223,31 @@ const vacuous = (cause: string): Finding => ({
  */
 export function checkVocabulary(files: readonly SourceFile[]): readonly Finding[] {
   if (files.length === 0) return [vacuous('the scan walked no files, so no copy could be found')];
-  const sanctioned = files.find((file) => file.at === VOCABULARY_MODULE);
-  if (sanctioned === undefined) {
-    return [vacuous(`${VOCABULARY_MODULE} was not among the files scanned`)];
-  }
-  const declared = scanLiteralSets(sanctioned.text);
-  const missing = VOCABULARIES.filter(
-    (vocabulary) => !declared.some((set) => set.name === vocabulary.name),
-  );
-  if (missing.length > 0) {
-    return [
-      vacuous(
-        `${VOCABULARY_MODULE} does not declare ${missing.map((one) => one.name).join(', ')} in a shape this scan can read`,
-      ),
-    ];
+  const owned = new Set(VOCABULARIES.map((vocabulary) => vocabulary.at));
+  for (const at of owned) {
+    const sanctioned = files.find((file) => file.at === at);
+    if (sanctioned === undefined) return [vacuous(`${at} was not among the files scanned`)];
+    const declared = scanLiteralSets(sanctioned.text).map((set) => set.name);
+    const missing = VOCABULARIES.filter(
+      (vocabulary) => vocabulary.at === at && !declared.includes(vocabulary.name),
+    );
+    if (missing.length > 0) {
+      return [
+        vacuous(
+          `${at} does not declare ${missing.map((one) => one.name).join(', ')} in a shape this scan can read`,
+        ),
+      ];
+    }
   }
 
   const findings: Finding[] = [];
   for (const file of files) {
-    if (file.at === VOCABULARY_MODULE) continue;
     for (const set of scanLiteralSets(file.text)) {
       for (const vocabulary of VOCABULARIES) {
-        if (overlap(set, vocabulary).length >= COPY_THRESHOLD) {
-          findings.push(copyFinding(file, set, vocabulary));
-        }
+        // A module is skipped only for the vocabularies IT owns: `route-vocabulary.ts` declares
+        // three, and a fourth set appearing there would still be a copy.
+        if (file.at === vocabulary.at && set.name === vocabulary.name) continue;
+        if (isCopy(set, vocabulary)) findings.push(copyFinding(file, set, vocabulary));
       }
     }
   }
@@ -205,7 +287,7 @@ if (import.meta.main) {
       summary:
         findings.length === 0
           ? `${files.length} files, one declaration each of ${VOCABULARIES.map((one) => one.name).join(', ')}`
-          : `${findings.length} second declaration(s) of the route vocabulary`,
+          : `${findings.length} second declaration(s) of a closed vocabulary`,
       lines: findings.map((one) => `  ${one.at}\n    cause: ${one.cause}\n    fix:   ${one.fix}`),
       data: { scanned: files.length, findings },
     },

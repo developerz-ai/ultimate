@@ -28,13 +28,26 @@ import { repoRoot } from './lib/run';
 
 const SCRIPT = 'gate-steps';
 
+/**
+ * Not only `.md`. `llms.txt` is the machine-readable repo map and stated `eighteen steps` while
+ * omitting `i18n`; a workflow, a script header and an agent brief make the same claim in the same
+ * words. `readMarkdown` reads any glob, so the file set was the only thing keeping four whole
+ * surfaces outside a rule that already knew how to judge them.
+ */
 export const STEP_GLOBS: readonly string[] = [
   '*.md',
+  'llms.txt',
   'wiki/**/*.md',
   'docs/**/*.md',
   'packages/*/*.md',
   'examples/*/*.md',
   'dummy/*/*.md',
+  // Both extensions: GitHub Actions accepts `.yaml` as readily as `.yml`, so a glob reading one of
+  // them is a rule a single renamed workflow walks out of.
+  '.github/workflows/*.yml',
+  '.github/workflows/*.yaml',
+  '.claude/**/*.md',
+  'scripts/**/*.ts',
 ];
 
 /**
@@ -42,9 +55,12 @@ export const STEP_GLOBS: readonly string[] = [
  * by design — 1.0.0 really did ship 17. Both are history: a rule that read them would demand the
  * past be rewritten, which is what `scripts/release-facts.ts` and `scripts/doc-commands.ts` both
  * say about the same two paths.
+ *
+ * A `.test.ts` is skipped for the reason `scripts/render-modes.ts` skips one: a fixture stating a
+ * wrong count is INPUT to the rule under test, never a claim a reader could be misled by.
  */
 export const skipStepPath = (path: string): boolean =>
-  path.startsWith('docs/plans/') || path === 'CHANGELOG.md';
+  path.startsWith('docs/plans/') || path === 'CHANGELOG.md' || /\.test\.tsx?$/.test(path);
 
 /** A line pinning an OLDER release states that release's count — "1.0.0 shipped 17 steps". */
 const HISTORICAL =
@@ -78,6 +94,43 @@ const WORD_NUMBERS: Readonly<Record<string, number>> = {
 
 /** `N of M steps` — the gate's own summary format. `M` is the total; `N` may never exceed it. */
 const OF_TOTAL = /\b(\d+)\s+of\s+(\d+)\s+steps\b/g;
+
+/**
+ * The same tally with the word `steps` somewhere else in the sentence: a table cell writing the
+ * numerals alone, an app's CLAUDE.md writing `N red of M`. Both shipped green, because the rule
+ * above demands the literal word BESIDE the numerals.
+ *
+ * TWO shapes, not one loose pattern. `N red of M` is unambiguous wherever it appears. A bare tally
+ * is only read when nothing follows it — a lowercase word after the second numeral makes it a count
+ * of that noun (`24 of 30 packages`, `29 of 30 package tsconfigs`), which is three sentences in
+ * this tree and none of them about the gate.
+ */
+const OF_TOTAL_LOOSE = /\b(\d+)\s+red\s+of\s+(\d+)\b|\b(\d+)\s+of\s+(\d+)\b(?!\s*[a-z])/g;
+
+/** A line that says `step` is talking about steps — the context the loose tally needs. */
+const STEP_WORD = /\bsteps?\b/i;
+
+/**
+ * A count SPELLED OUT with no `steps` after it — `packages/cli/README.md` wrote "Seventeen, in cost
+ * order" above a list of 17 names and was green, because every count rule here wants a numeral or
+ * the literal word beside it.
+ *
+ * Capitalised and sentence-initial, which is the only form that states a total on its own: a
+ * lowercase one is a measurement of something else, and `wiki/Tutorial-02-First-Feature.md`'s
+ * "a twenty-line script" is exactly the sentence a looser rule reports and a reader learns to
+ * silence. The lowercase form beside the word `steps` is already the rule above.
+ */
+const WORD_TOTAL = /(?:^|[.!?)]\s+)(Fifteen|Sixteen|Seventeen|Eighteen|Nineteen|Twenty)\b/g;
+
+/**
+ * A paragraph that is step names and separators and NOTHING else is a list claiming to be the whole
+ * gate, whatever it says about itself. `packages/cli/README.md` presents the list exactly this way
+ * and shipped 17 of the names; the enumeration rule below could not see it, because that rule reads
+ * one LINE and the list wraps. Five is the floor: four names is a citation, not a list.
+ */
+export const RUN_THRESHOLD = 5;
+
+const RUN_SEPARATORS = /[\s,;·`|*_()[\]]+/g;
 
 /** A bare total, once the `N of M` spans have been consumed. Word form included: `wiki/FAQ.md`
  * spells it "Seventeen steps", which a digit-only rule reads as no claim at all. */
@@ -136,6 +189,52 @@ function enumeratesGate(line: string, steps: readonly string[]): boolean {
   return named.includes(steps[0] ?? '') && named.includes(steps[steps.length - 1] ?? '');
 }
 
+/** One paragraph of a page — blank-line separated, code fences dropped — with where it starts. */
+interface Paragraph {
+  readonly line: number;
+  readonly text: string;
+}
+
+function paragraphsOf(page: MarkdownFile): readonly Paragraph[] {
+  const found: Paragraph[] = [];
+  const lines = page.text.split('\n');
+  let fenced = false;
+  let buffer: string[] = [];
+  let start = 1;
+  const flush = (): void => {
+    if (buffer.length > 0) found.push({ line: start, text: buffer.join(' ') });
+    buffer = [];
+  };
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? '';
+    if (/^\s*(?:```|~~~)/.test(line)) {
+      flush();
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced || line.trim() === '') {
+      flush();
+      continue;
+    }
+    if (buffer.length === 0) start = index + 1;
+    buffer.push(line.trim());
+  }
+  flush();
+  return found;
+}
+
+/**
+ * Whether this paragraph is step names and separators and nothing else. Read after the names are
+ * removed rather than by counting them: a paragraph with prose in it is a SENTENCE about some
+ * steps, and only a bare run is a page presenting the list itself.
+ */
+function bareRun(text: string, steps: readonly string[]): readonly string[] | undefined {
+  const named = namedInOrder(text, steps);
+  if (named.length < RUN_THRESHOLD) return undefined;
+  const left = text.replace(stepPattern(steps), '').replace(RUN_SEPARATORS, '');
+  return left === '' ? named : undefined;
+}
+
 export function checkGateSteps(input: StepInput): readonly StepGap[] {
   const gaps: StepGap[] = [];
   const total = input.steps.length;
@@ -143,6 +242,11 @@ export function checkGateSteps(input: StepInput): readonly StepGap[] {
   let claims = 0;
 
   for (const page of input.pages) {
+    // Where the line rule already reported a list. A one-line bare run of five or more names
+    // satisfies BOTH detectors — `enumeratesGate` sees the first and last step, `bareRun` sees a
+    // line that is nothing but names — and a one-line paragraph starts on the line it is, so the
+    // two produce byte-identical findings. One condition, one finding (axiom 1).
+    const listed = new Set<string>();
     const lines = page.text.split('\n');
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index] ?? '';
@@ -176,8 +280,27 @@ export function checkGateSteps(input: StepInput): readonly StepGap[] {
 
       for (const match of rest.matchAll(SUBSET_SPANS)) rest = rest.replace(match[0] ?? '', ' ');
 
+      if (GATE_CONTEXT.test(line) || STEP_WORD.test(line)) {
+        for (const match of rest.matchAll(OF_TOTAL_LOOSE)) {
+          claims += 1;
+          const claimed = numberOf(match[2] ?? match[4] ?? '0');
+          rest = rest.replace(match[0] ?? '', ' ');
+          if (claimed === total) continue;
+          gaps.push({
+            kind: 'count',
+            at,
+            quote: (match[0] ?? '').trim(),
+            detail: `states ${claimed} steps; \`x verify\` runs ${total}`,
+          });
+        }
+      }
+
       if (GATE_CONTEXT.test(line)) {
-        for (const match of rest.matchAll(BARE_TOTAL)) {
+        // BARE_TOTAL is matched first and its spans consumed, so `Nineteen steps` is one claim
+        // rather than two — the word rule below reads only what is left.
+        const bare = [...rest.matchAll(BARE_TOTAL)];
+        for (const match of bare) rest = rest.replace(match[0] ?? '', ' ');
+        for (const match of [...bare, ...rest.matchAll(WORD_TOTAL)]) {
           claims += 1;
           const claimed = numberOf(match[1] ?? '0');
           if (claimed === total) continue;
@@ -192,12 +315,30 @@ export function checkGateSteps(input: StepInput): readonly StepGap[] {
 
       if (!enumeratesGate(line, input.steps)) continue;
       claims += 1;
+      listed.add(at);
       const named = namedInOrder(line, input.steps);
       if (named.join(', ') === ordered) continue;
       const missing = input.steps.filter((name) => !named.includes(name));
       gaps.push({
         kind: 'list',
         at,
+        quote: named.join(', '),
+        detail:
+          missing.length > 0
+            ? `omits ${missing.join(', ')}`
+            : 'names every step, but not in the order the gate runs them',
+      });
+    }
+
+    for (const paragraph of paragraphsOf(page)) {
+      const named = bareRun(paragraph.text, input.steps);
+      if (named === undefined || listed.has(`${page.path}:${paragraph.line}`)) continue;
+      claims += 1;
+      if (named.join(', ') === ordered) continue;
+      const missing = input.steps.filter((name) => !named.includes(name));
+      gaps.push({
+        kind: 'list',
+        at: `${page.path}:${paragraph.line}`,
         quote: named.join(', '),
         detail:
           missing.length > 0

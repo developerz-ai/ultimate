@@ -41,6 +41,19 @@ Every row was checked against the tree during the audit. Counts are measured `As
 
 **Note on this plan's own citations.** Three `file:line` references in `02-tier1.md` point at lines that do not exist (`context.ts:670-674` in a 271-line file; `tier-failures.ts:559`; `invalidate.ts:384`), and `01`'s step 4 implies an error code was new when it already existed. The findings were all real. Left as written — this file is the historical record of what the audit saw — but any future slice must locate defects **by content, not by line number**.
 
+## Carried in from slice 08 (found during execution, 2026-08-22)
+
+| File | Says | Tree |
+|---|---|---|
+| `docs/architecture/12-generated-app.md:286` | the migration generator reads `schema.ts` | it reads the entity **registry**; the template's copy of this claim was deleted in slice 08 |
+| `wiki/Tutorial-02-First-Feature.md:178` | same claim | same |
+| `dummy/social-media-clone/packages/db/src/schema.ts:1` | same claim, shipped into the demo app | same |
+| `wiki/Error-Codes.md:425` | a `fix:` citing `pwa.backgroundSync.retry.maxAttempts` | `PwaConfig.backgroundSync` is a **boolean** — no such nested key. Newly visible because `scripts/doc-config-keys.ts` now resolves `<section>.<key>` citations |
+| `wiki/Troubleshooting.md:25` | a `fix:` citing `realtime.url` | the field is `realtime.urlEnv` |
+
+The last two are **not** on this slice's original list (which named only the four `jobs.driver`
+sites) and `bun run scripts/doc-fixes.ts` stays red until all of them are fixed.
+
 ## Steps
 1. Land slice 09's widened `gate-steps` first; fix every line it reports (the 17/18 rows above are its output).
 2. Edit the remaining rows by hand; where a number can be derived (`Error-Codes.md` per-package counts, `frozen-records` sites, package count), derive it in the script that already reads the set and delete the prose number, per axiom 3.

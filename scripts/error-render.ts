@@ -37,6 +37,7 @@
 
 import { maskLiterals } from '@ultimat3/cli';
 import { collectSourceFiles, type SourceFile } from './boundaries';
+import { catchRenderFindings } from './catch-render';
 import { parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
@@ -217,8 +218,14 @@ export function topLevelSegments(masked: string): readonly Range[] {
   return segments;
 }
 
-/** End of the property's value: the next `,` or `;` at the property's own bracket depth. */
-function valueEnd(masked: string, from: number): number {
+/**
+ * End of the property's value: the next `,` or `;` at the property's own bracket depth.
+ *
+ * Exported for `catch-render.ts`, which asks the same question of the same mask about a different
+ * binding. A second copy there would be a second answer to "where does this `cause:` end", and the
+ * two rules would disagree about the same line the day either one was tuned.
+ */
+export function valueEnd(masked: string, from: number): number {
   let depth = 0;
   for (let i = from; i < masked.length; i += 1) {
     const ch = masked[i] as string;
@@ -231,8 +238,11 @@ function valueEnd(masked: string, from: number): number {
   return masked.length;
 }
 
-/** The callee of the innermost call enclosing `at`, or `undefined` when nothing encloses it. */
-function enclosingCallee(span: string, at: number): string | undefined {
+/**
+ * The callee of the innermost call enclosing `at`, or `undefined` when nothing encloses it.
+ * Exported for `catch-render.ts` — same reason as `valueEnd`.
+ */
+export function enclosingCallee(span: string, at: number): string | undefined {
   let depth = 0;
   for (let i = at - 1; i >= 0; i -= 1) {
     const ch = span[i] as string;
@@ -253,7 +263,8 @@ function enclosingCallee(span: string, at: number): string | undefined {
   return undefined;
 }
 
-const lineOf = (text: string, index: number): number => {
+/** 1-based line of a character index. Exported for `catch-render.ts`, which reports the same way. */
+export const lineOf = (text: string, index: number): number => {
   let line = 1;
   for (let i = 0; i < index; i += 1) if (text[i] === '\n') line += 1;
   return line;
@@ -418,21 +429,37 @@ export function unsafeRenderFindingFor(unsafe: UnsafeRender): Finding {
   };
 }
 
-/** What this repo contributes to `x verify`'s `errors` step. */
-export const errorRendering = async (root: string): Promise<readonly Finding[]> =>
-  checkErrorRendering(await collectSourceFiles(root)).map(unsafeRenderFindingFor);
+/**
+ * What this repo contributes to `x verify`'s `errors` step: BOTH halves of the render rule.
+ *
+ * The catch half joins here rather than as a step of its own because it is the same rule about the
+ * same two fields — a value that may not be a string reaching a refusal's text — split only by how
+ * the value is bound. Keeping them one step is also what makes the gap visible: this check has been
+ * green over `catch (error) { cause: error instanceof Error ? … }` since it shipped, because a
+ * catch binding carries no `: unknown` annotation for `UNKNOWN_BINDING` to match.
+ *
+ * Composed here, not in `scripts/verify.ts`: one caller, one import, and a new sub-rule of the same
+ * class arrives without an edit to the gate's own file.
+ */
+export const errorRendering = async (root: string): Promise<readonly Finding[]> => [
+  ...checkErrorRendering(await collectSourceFiles(root)).map(unsafeRenderFindingFor),
+  ...(await catchRenderFindings(root)),
+];
 
 if (import.meta.main) {
   const args = parseScriptArgs(Bun.argv.slice(2));
-  const files = await collectSourceFiles(repoRoot());
-  const findings = checkErrorRendering(files).map(unsafeRenderFindingFor);
+  const root = repoRoot();
+  const files = await collectSourceFiles(root);
+  // `errorRendering`, not `checkErrorRendering`: the standalone command must answer exactly what
+  // the gate step answers, or `bun run error-render` prints green over a red `errors` step.
+  const findings = await errorRendering(root);
   report(
     {
       ok: findings.length === 0,
       script: 'error-render',
       summary:
         findings.length === 0
-          ? `${files.length} files, every cause: and fix: renders safely`
+          ? `${files.length} files, every cause: and fix: renders safely — annotated bindings and caught ones`
           : `${findings.length} unsafe render(s) in ${files.length} files`,
       findings,
     },

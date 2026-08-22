@@ -12,23 +12,28 @@
 // so pasting the OLD example from an earlier copy of this line reports `stale` immediately — which
 // is why `scaffold-gate.test.ts` holds every example in this file to what `ci.yml` actually allows.
 //
-//   bun run scripts/scaffold-gate.ts <app dir> [--allow-red budgets] [--json]
+//   bun run scripts/scaffold-gate.ts <app dir> [--allow-red budgets] [--fix-follow] [--json]
 
 import type { Runner } from '@ultimat3/cli';
-import { exec } from '@ultimat3/cli';
-import { flagList, parseScriptArgs } from './lib/args';
+import { exec, quoteArg, VERIFY_STEP_NAMES } from '@ultimat3/cli';
+import { flagBool, flagList, parseScriptArgs } from './lib/args';
 import type { Finding } from './lib/log';
 import { report } from './lib/log';
 import type { GateStep } from './reference-app-gate';
-import { parseSteps, redSteps } from './reference-app-gate';
+import { declaredStepIssues, parseSteps, redSteps } from './reference-app-gate';
+import { fixFollowFindings, followFixes, staticBuildFindings } from './scaffold-fix-follow';
 
 /** Where the allowance is declared, so a stale waiver's `fix:` names the file that carries it. */
 export const WAIVER_FILE = '.github/workflows/ci.yml';
 
 const SCRIPT = 'scaffold-gate';
 
-/** Runnable in the scaffolded app itself, which is the only place the gate can be reproduced. */
-export const reproduce = (dir: string): string => `cd ${dir} && bun run verify --json`;
+/**
+ * Runnable in the scaffolded app itself, which is the only place the gate can be reproduced.
+ * `quoteArg` because the directory is the runner's, not ours: `x new --dir` accepts a path with a
+ * space in it, and `cd /tmp/my app` enters `/tmp/my` or nothing at all.
+ */
+export const reproduce = (dir: string): string => `cd ${quoteArg(dir)} && bun run verify --json`;
 
 export interface ScaffoldGateInput {
   /** The scaffolded app's root, as given — a temp directory on a runner, a path on a laptop. */
@@ -36,6 +41,12 @@ export interface ScaffoldGateInput {
   readonly steps: readonly GateStep[] | undefined;
   /** Steps allowed to fail today. Every entry must STILL fail, exactly as `expectedRed` does. */
   readonly allowRed: readonly string[];
+  /**
+   * The complete step set a real run reports against — `VERIFY_STEP_NAMES` at the real call site.
+   * A parameter and not a hardcoded import, the same shape `GateInput` uses, so a test pins a
+   * small closed world instead of asserting against every step this repo declares today.
+   */
+  readonly declaredSteps: readonly string[];
 }
 
 /**
@@ -45,7 +56,7 @@ export interface ScaffoldGateInput {
  * waiver was written for keeps excusing whatever lands behind it.
  */
 export const scaffoldFindings = (input: ScaffoldGateInput): readonly Finding[] => {
-  const { dir, steps, allowRed } = input;
+  const { dir, steps, allowRed, declaredSteps } = input;
   if (steps === undefined || steps.length === 0) {
     return [
       {
@@ -57,6 +68,20 @@ export const scaffoldFindings = (input: ScaffoldGateInput): readonly Finding[] =
     ];
   }
   const findings: Finding[] = [];
+
+  // Before red and stale even get a say, exactly as `gateFindings` does it: a step MISSING from the
+  // table is neither red nor allowed, it is a step nobody checked — so a gate that crashes mid-run
+  // and prints a short table passed this whole check, and `scaffold-smoke` reported it as a green
+  // scaffold. A duplicate or an unknown name means the table cannot answer either question either.
+  const shapeIssues = declaredStepIssues(steps, declaredSteps);
+  if (shapeIssues.length > 0) {
+    findings.push({
+      code: 'X_SCAFFOLD_GATE_RED',
+      cause: `the scaffolded app at ${dir} printed a step table that does not match the declared steps: ${shapeIssues.join('; ')}`,
+      fix: reproduce(dir),
+      at: dir,
+    });
+  }
   const red = redSteps(steps);
   const unexpected = red.filter((name) => !allowRed.includes(name));
   if (unexpected.length > 0) {
@@ -111,8 +136,21 @@ if (import.meta.main) {
   }
   // `flagList` is the parser every other script's comma flag already goes through.
   const allowRed = flagList(args, 'allow-red');
-  const steps = await runScaffoldGate(dir, exec);
-  const findings = scaffoldFindings({ dir, steps, allowRed });
+  /**
+   * OFF by default, and that is deliberate: the loop RUNS commands inside the app directory, so a
+   * caller opts in. `scaffold-smoke` is the one caller that should — it owns a throwaway checkout
+   * outside this repo, which is the only place a gate may repair the tree it is measuring.
+   */
+  const follow = flagBool(args, 'fix-follow');
+  const followed = follow ? await followFixes(dir, exec) : undefined;
+  const steps = followed === undefined ? await runScaffoldGate(dir, exec) : followed.steps;
+  const findings = [
+    ...scaffoldFindings({ dir, steps, allowRed, declaredSteps: VERIFY_STEP_NAMES }),
+    ...(followed === undefined ? [] : fixFollowFindings(dir, followed)),
+    // Only after the loop reached green: a build over an app that is already red says nothing
+    // about whether the BUILD is what broke `lint`.
+    ...(followed?.green === true ? await staticBuildFindings(dir, exec) : []),
+  ];
   const red = steps === undefined ? [] : redSteps(steps);
   const total = steps?.length ?? 0;
   report(

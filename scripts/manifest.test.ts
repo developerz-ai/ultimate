@@ -3,9 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { registeredErrorCodes } from '@ultimat3/cli';
+import { canonicalJson as canonical } from '@ultimat3/core';
 import type { FrameworkManifest } from './lib/framework-manifest';
 import {
-  canonical,
   contentHash,
   frameworkManifestJson,
   KEY_ORDER,

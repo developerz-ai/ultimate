@@ -8,6 +8,7 @@ import {
   checkDocCommands,
   docCommandFindingFor,
   docCommandGaps,
+  PINS_FILE,
   skipDocPath,
 } from './doc-commands';
 import type { DocCommandAllowance } from './doc-commands-allow';
@@ -154,18 +155,35 @@ describe('the pin is a ratchet, so it may only shrink', () => {
     expect(pinned({ 'wiki/Pinned.md': 2 }, two)).toEqual([]);
   });
 
-  test('one more than the pin is a finding, and it names the count to write', () => {
+  test('one more than the pin never offers to raise it', () => {
+    // This test asserted the defect until 2026-08-22: it expected the SAME code and the same fix
+    // the improved direction gets, which is `set DOC_COMMAND_PINS[…] to the first number in the
+    // detail` — the bigger number. A ratchet printing the instruction for raising itself.
     const found = pinned({ 'wiki/Pinned.md': 1 }, two);
-    expect(found.map((one) => one.kind)).toEqual(['pin']);
+    expect(found.map((one) => one.kind)).toEqual(['pin-exceeded']);
     expect(found[0]?.subject).toBe('wiki/Pinned.md');
     expect(found[0]?.detail).toBe('2 now, pinned at 1');
-    expect(docCommandFindingFor(found[0] as never).code).toBe('X_DOC_COMMAND_PIN_STALE');
+    const finding = docCommandFindingFor(found[0] as never);
+    expect(finding.code).toBe('X_DOC_COMMAND_PIN_EXCEEDED');
+    expect(finding.fix).not.toContain('DOC_COMMAND_PINS');
+    expect(finding.cause).toContain('may only come down');
   });
 
   test('a pin ABOVE what the page holds is a finding too — slack is a waiver nobody reads', () => {
     const found = pinned({ 'wiki/Pinned.md': 2 }, page('`x db query`', 'wiki/Pinned.md'));
     expect(found.map((one) => one.kind)).toEqual(['pin']);
     expect(found[0]?.detail).toBe('1 now, pinned at 2');
+    // The direction that DOES ask for the number, so the two fixes are provably not one string.
+    const finding = docCommandFindingFor(found[0] as never);
+    expect(finding.fix).toContain(
+      "set DOC_COMMAND_PINS['wiki/Pinned.md'] in scripts/doc-commands.ts",
+    );
+    // `at` is the file the fix EDITS, and the two directions edit different files: this one lowers
+    // a number in the pin table, `pin-exceeded` above corrects citations in the page itself.
+    expect(finding.at).toBe(PINS_FILE);
+    expect(docCommandFindingFor(pinned({ 'wiki/Pinned.md': 1 }, two)[0] as never).at).toBe(
+      'wiki/Pinned.md',
+    );
   });
 
   test('a pin that no page contradicts is still checked against zero', () => {

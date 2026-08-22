@@ -8,7 +8,7 @@
 # syntax=docker/dockerfile:1
 
 # ---------- deps: runtime dependencies only, cached on the workspace manifests ----------
-FROM oven/bun:1.3-alpine AS deps
+FROM oven/bun:1.4-alpine AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
 # The workspace members' manifests are what `bun install` resolves against; their sources are not.
@@ -21,7 +21,7 @@ RUN bun install --frozen-lockfile --production
 # before it ever calls `docker build`. Re-running typecheck and lint here would need the
 # devDependencies the `--production` install above deliberately leaves out — which is exactly how
 # a build stage came to run `tsc` and `biome` against a tree that had neither.
-FROM oven/bun:1.3-alpine AS runtime
+FROM oven/bun:1.4-alpine AS runtime
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

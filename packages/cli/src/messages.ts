@@ -139,6 +139,11 @@ const CATALOG = {
   // the app has a schema no migration records and `x verify`'s drift step says so until it runs.
   'cli.new.done':
     'created {name} — next: cd {name} && bun install && x db gen "initial" && x db migrate && x dev',
+  // The two prose lines of `x new`'s report. The `run: cd … && git init …` line beneath the second
+  // one stays inline in `cmd-new.ts`: it is an instruction to paste verbatim, and a translated
+  // command is a broken one — the same split `Finding.fix` already makes.
+  'cli.new.wrote': '  {count} files in {dir}',
+  'cli.new.noRepository': '  no repository — {problem}',
   'cli.policy.count':
     '{permissions} permission(s), {roles} role(s), {enforced} enforced by a declaration',
   // One row per (declaration, actor) pair, never per role: a permission two declarations enforce

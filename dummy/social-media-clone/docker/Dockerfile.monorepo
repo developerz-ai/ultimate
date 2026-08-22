@@ -22,7 +22,7 @@
 # lockfile it was told not to touch. Copying only what this app imports looked tidier and failed
 # with "lockfile had changes, but lockfile is frozen" — the lockfile is a property of the repo,
 # not of one app inside it. `.dockerignore` is what keeps this cheap.
-FROM oven/bun:1.3-alpine AS deps
+FROM oven/bun:1.4-alpine AS deps
 WORKDIR /repo
 COPY . .
 RUN bun install --frozen-lockfile
@@ -30,7 +30,7 @@ RUN bun install --frozen-lockfile
 # ---------- runtime ----------
 # No build stage: `x verify` is the gate and it runs in CI, before this image is ever built. A
 # second gate here would be a slower copy of one that already passed.
-FROM oven/bun:1.3-alpine AS runtime
+FROM oven/bun:1.4-alpine AS runtime
 WORKDIR /repo
 
 COPY --from=deps /repo /repo

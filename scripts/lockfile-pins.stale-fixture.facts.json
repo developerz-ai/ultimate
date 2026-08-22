@@ -1,0 +1,323 @@
+{
+  "deps": {
+    "dummy/social-media-clone": {
+      "@ultimat3/action": "7.0.0",
+      "@ultimat3/admin": "7.0.0",
+      "@ultimat3/cache": "7.0.0",
+      "@ultimat3/cli": "7.0.0",
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/db": "7.0.0",
+      "@ultimat3/entity": "7.0.0",
+      "@ultimat3/http": "7.0.0",
+      "@ultimat3/i18n": "7.0.0",
+      "@ultimat3/jobs": "7.0.0",
+      "@ultimat3/mcp": "7.0.0",
+      "@ultimat3/policy": "7.0.0",
+      "@ultimat3/pwa": "7.0.0",
+      "@ultimat3/query": "7.0.0",
+      "@ultimat3/realtime": "7.0.0",
+      "@ultimat3/render": "7.0.0",
+      "@ultimat3/ui": "7.0.0",
+      "@ultimat3/testing": "7.0.0"
+    },
+    "dummy/social-media-clone/packages/i18n": {
+      "@ultimat3/i18n": "7.0.0"
+    },
+    "examples/dummy/apps/admin": {
+      "@ultimat3/action": "7.0.0",
+      "@ultimat3/admin": "7.0.0",
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/policy": "7.0.0",
+      "@ultimat3/schema": "7.0.0"
+    },
+    "examples/dummy/apps/web": {
+      "@ultimat3/action": "7.0.0",
+      "@ultimat3/ai": "7.0.0",
+      "@ultimat3/auth": "7.0.0",
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/entity": "7.0.0",
+      "@ultimat3/flags": "7.0.0",
+      "@ultimat3/http": "7.0.0",
+      "@ultimat3/jobs": "7.0.0",
+      "@ultimat3/mail": "7.0.0",
+      "@ultimat3/policy": "7.0.0",
+      "@ultimat3/query": "7.0.0",
+      "@ultimat3/realtime": "7.0.0",
+      "@ultimat3/render": "7.0.0",
+      "@ultimat3/schema": "7.0.0",
+      "@ultimat3/seo": "7.0.0",
+      "@ultimat3/storage": "7.0.0",
+      "@ultimat3/testing": "7.0.0",
+      "@ultimat3/time": "7.0.0",
+      "@ultimat3/ui": "7.0.0"
+    },
+    "examples/dummy": {
+      "@ultimat3/cli": "7.0.0",
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/cache": "7.0.0",
+      "@ultimat3/entity": "7.0.0",
+      "@ultimat3/testing": "7.0.0"
+    },
+    "examples/dummy/packages/core": {
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/money": "7.0.0",
+      "@ultimat3/time": "7.0.0"
+    },
+    "examples/dummy/packages/db": {
+      "@ultimat3/cache": "7.0.0",
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/entity": "7.0.0"
+    },
+    "examples/dummy/packages/domain": {
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/money": "7.0.0"
+    },
+    "examples/dummy/packages/i18n": {
+      "@ultimat3/i18n": "7.0.0"
+    },
+    "examples/dummy/packages/mcp": {
+      "@ultimat3/action": "7.0.0",
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/mcp": "7.0.0",
+      "@ultimat3/testing": "7.0.0"
+    },
+    "examples/dummy/packages/ui": {
+      "@ultimat3/money": "7.0.0",
+      "@ultimat3/render": "7.0.0",
+      "@ultimat3/ui": "7.0.0"
+    },
+    "packages/action": {
+      "@ultimat3/cache": "7.0.0",
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/http": "7.0.0",
+      "@ultimat3/policy": "7.0.0",
+      "@ultimat3/schema": "7.0.0"
+    },
+    "packages/admin": {
+      "@ultimat3/action": "7.0.0",
+      "@ultimat3/ai": "7.0.0",
+      "@ultimat3/cache": "7.0.0",
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/db": "7.0.0",
+      "@ultimat3/entity": "7.0.0",
+      "@ultimat3/i18n": "7.0.0",
+      "@ultimat3/jobs": "7.0.0",
+      "@ultimat3/mcp": "7.0.0",
+      "@ultimat3/money": "7.0.0",
+      "@ultimat3/policy": "7.0.0",
+      "@ultimat3/query": "7.0.0",
+      "@ultimat3/render": "7.0.0",
+      "@ultimat3/schema": "7.0.0",
+      "@ultimat3/ui": "7.0.0"
+    },
+    "packages/ai": {
+      "@ultimat3/action": "7.0.0",
+      "@ultimat3/cache": "7.0.0",
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/db": "7.0.0",
+      "@ultimat3/jobs": "7.0.0",
+      "@ultimat3/money": "7.0.0",
+      "@ultimat3/policy": "7.0.0",
+      "@ultimat3/schema": "7.0.0",
+      "@ultimat3/time": "7.0.0"
+    },
+    "packages/auth": {
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/db": "7.0.0",
+      "@ultimat3/schema": "7.0.0"
+    },
+    "packages/cache": {
+      "@ultimat3/core": "7.0.0"
+    },
+    "packages/cli": {
+      "@ultimat3/action": "7.0.0",
+      "@ultimat3/admin": "7.0.0",
+      "@ultimat3/ai": "7.0.0",
+      "@ultimat3/cache": "7.0.0",
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/db": "7.0.0",
+      "@ultimat3/entity": "7.0.0",
+      "@ultimat3/http": "7.0.0",
+      "@ultimat3/i18n": "7.0.0",
+      "@ultimat3/jobs": "7.0.0",
+      "@ultimat3/mail": "7.0.0",
+      "@ultimat3/manifest": "7.0.0",
+      "@ultimat3/mcp": "7.0.0",
+      "@ultimat3/policy": "7.0.0",
+      "@ultimat3/pwa": "7.0.0",
+      "@ultimat3/query": "7.0.0",
+      "@ultimat3/realtime": "7.0.0",
+      "@ultimat3/render": "7.0.0",
+      "@ultimat3/schema": "7.0.0",
+      "@ultimat3/scraping": "7.0.0",
+      "@ultimat3/seo": "7.0.0",
+      "@ultimat3/storage": "7.0.0",
+      "@ultimat3/testing": "7.0.0",
+      "@ultimat3/time": "7.0.0"
+    },
+    "packages/create-ultimate": {
+      "@ultimat3/cli": "7.0.0"
+    },
+    "packages/db": {
+      "@ultimat3/core": "7.0.0"
+    },
+    "packages/entity": {
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/db": "7.0.0",
+      "@ultimat3/schema": "7.0.0",
+      "@ultimat3/time": "7.0.0"
+    },
+    "packages/flags": {
+      "@ultimat3/core": "7.0.0"
+    },
+    "packages/http": {
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/i18n": "7.0.0",
+      "@ultimat3/schema": "7.0.0",
+      "@ultimat3/time": "7.0.0"
+    },
+    "packages/i18n": {
+      "@ultimat3/core": "7.0.0"
+    },
+    "packages/jobs": {
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/entity": "7.0.0",
+      "@ultimat3/schema": "7.0.0",
+      "@ultimat3/time": "7.0.0"
+    },
+    "packages/mail": {
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/i18n": "7.0.0",
+      "@ultimat3/jobs": "7.0.0",
+      "@ultimat3/schema": "7.0.0",
+      "@ultimat3/time": "7.0.0"
+    },
+    "packages/manifest": {
+      "@ultimat3/action": "7.0.0",
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/entity": "7.0.0",
+      "@ultimat3/jobs": "7.0.0",
+      "@ultimat3/query": "7.0.0"
+    },
+    "packages/mcp": {
+      "@ultimat3/action": "7.0.0",
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/entity": "7.0.0",
+      "@ultimat3/jobs": "7.0.0",
+      "@ultimat3/policy": "7.0.0",
+      "@ultimat3/query": "7.0.0",
+      "@ultimat3/schema": "7.0.0"
+    },
+    "packages/money": {
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/schema": "7.0.0"
+    },
+    "packages/policy": {
+      "@ultimat3/core": "7.0.0"
+    },
+    "packages/pwa": {
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/seo": "7.0.0"
+    },
+    "packages/query": {
+      "@ultimat3/cache": "7.0.0",
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/http": "7.0.0",
+      "@ultimat3/policy": "7.0.0",
+      "@ultimat3/schema": "7.0.0"
+    },
+    "packages/realtime": {
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/query": "7.0.0"
+    },
+    "packages/render": {
+      "@ultimat3/cache": "7.0.0",
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/i18n": "7.0.0",
+      "@ultimat3/seo": "7.0.0"
+    },
+    "packages/scraping": {
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/jobs": "7.0.0",
+      "@ultimat3/schema": "7.0.0",
+      "@ultimat3/storage": "7.0.0"
+    },
+    "packages/seo": {
+      "@ultimat3/core": "7.0.0"
+    },
+    "packages/storage": {
+      "@ultimat3/core": "7.0.0"
+    },
+    "packages/testing": {
+      "@ultimat3/cache": "7.0.0",
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/db": "7.0.0",
+      "@ultimat3/entity": "7.0.0",
+      "@ultimat3/i18n": "7.0.0",
+      "@ultimat3/jobs": "7.0.0",
+      "@ultimat3/mail": "7.0.0",
+      "@ultimat3/policy": "7.0.0",
+      "@ultimat3/query": "7.0.0",
+      "@ultimat3/realtime": "7.0.0",
+      "@ultimat3/time": "7.0.0"
+    },
+    "packages/time": {
+      "@ultimat3/core": "7.0.0"
+    },
+    "packages/ui": {
+      "@ultimat3/core": "7.0.0",
+      "@ultimat3/i18n": "7.0.0",
+      "@ultimat3/money": "7.0.0",
+      "@ultimat3/time": "7.0.0"
+    }
+  },
+  "versions": {
+    "dummy/social-media-clone/apps/admin": "0.0.0",
+    "dummy/social-media-clone/apps/web": "0.0.0",
+    "dummy/social-media-clone": "0.1.0",
+    "dummy/social-media-clone/packages/db": "0.0.0",
+    "dummy/social-media-clone/packages/domain": "0.0.0",
+    "dummy/social-media-clone/packages/i18n": "0.0.0",
+    "dummy/social-media-clone/packages/mcp": "0.0.0",
+    "dummy/social-media-clone/packages/ui": "0.0.0",
+    "examples/dummy/apps/admin": "0.0.1",
+    "examples/dummy/apps/web": "0.0.1",
+    "examples/dummy": "0.0.1",
+    "examples/dummy/packages/core": "0.0.1",
+    "examples/dummy/packages/db": "0.0.1",
+    "examples/dummy/packages/domain": "0.0.1",
+    "examples/dummy/packages/i18n": "0.0.1",
+    "examples/dummy/packages/mcp": "0.0.1",
+    "examples/dummy/packages/ui": "0.0.1",
+    "packages/action": "7.0.0",
+    "packages/admin": "7.0.0",
+    "packages/ai": "7.0.0",
+    "packages/auth": "7.0.0",
+    "packages/cache": "7.0.0",
+    "packages/cli": "7.0.0",
+    "packages/core": "7.0.0",
+    "packages/create-ultimate": "7.0.0",
+    "packages/db": "7.0.0",
+    "packages/entity": "7.0.0",
+    "packages/flags": "7.0.0",
+    "packages/http": "7.0.0",
+    "packages/i18n": "7.0.0",
+    "packages/jobs": "7.0.0",
+    "packages/mail": "7.0.0",
+    "packages/manifest": "7.0.0",
+    "packages/mcp": "7.0.0",
+    "packages/money": "7.0.0",
+    "packages/policy": "7.0.0",
+    "packages/pwa": "7.0.0",
+    "packages/query": "7.0.0",
+    "packages/realtime": "7.0.0",
+    "packages/render": "7.0.0",
+    "packages/schema": "7.0.0",
+    "packages/scraping": "7.0.0",
+    "packages/seo": "7.0.0",
+    "packages/storage": "7.0.0",
+    "packages/testing": "7.0.0",
+    "packages/time": "7.0.0",
+    "packages/ui": "7.0.0"
+  }
+}

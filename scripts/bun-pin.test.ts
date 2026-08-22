@@ -1,10 +1,16 @@
-// Single responsibility: the Bun series is pinned in five places, and they must name the same one.
-// Prose in `.github/actions/setup/action.yml` said so and could not enforce it, which is how CI sat
-// on 1.3 while every dev box ran 1.4 — a green local `bun run verify` that was not evidence of a
-// green CI, and one PR merged red on a bundling difference between the two series.
+// Single responsibility: the Bun series is pinned in one place per site, and every site must name
+// the same one. Prose in `.github/actions/setup/action.yml` said so and could not enforce it, which
+// is how CI sat on 1.3 while every dev box ran 1.4 — a green local `bun run verify` that was not
+// evidence of a green CI, and one PR merged red on a bundling difference between the two series.
+//
+// The tracked apps' own Dockerfiles are sites too, and were outside this test until 2026-08-22:
+// six `FROM oven/bun:1.3-alpine` lines, `dummy/social-media-clone/docker/Dockerfile.monorepo`
+// among them — the image `.github/workflows/deploy-social-demo.yml` builds on every push to main.
+// A series nothing in CI exercises, installing a lockfile written by 1.4 under `--frozen-lockfile`.
 
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
+import { APP_ROOTS } from './boundaries';
 
 const ROOT = join(import.meta.dir, '..');
 
@@ -26,6 +32,19 @@ const workflowPins = (yaml: string): string[] =>
 /** Every `FROM oven/bun:<tag>` — anchored, so the historical tags in comments are not pins. */
 const imagePins = (dockerfile: string): string[] =>
   [...dockerfile.matchAll(/^FROM oven\/bun:(\S+)/gm)].map((match) => match[1] ?? '');
+
+/**
+ * Every Dockerfile the tracked apps ship, DERIVED from `APP_ROOTS` rather than restated: a new
+ * application root added to that constant would otherwise leave its images' Bun pin unchecked, with
+ * nothing red — the same class of hole this whole file exists for. `Dockerfile*` also matches the
+ * `.dockerignore` beside each one, which carries no `FROM` and would read as a site with no pin.
+ */
+const APP_DOCKERFILES = `${APP_ROOTS}/*/docker/Dockerfile*`;
+
+const appDockerfiles = (): readonly string[] =>
+  [...new Bun.Glob(APP_DOCKERFILES).scanSync({ cwd: ROOT })]
+    .filter((path) => !path.endsWith('.dockerignore'))
+    .sort();
 
 /** `scripts/setup.ts`'s contributor floor, read as source rather than imported: the module installs. */
 const requiredBunSeries = (source: string): string => {
@@ -53,11 +72,20 @@ describe('the Bun series is pinned once, in agreement', () => {
     expect(frameworkTags).toHaveLength(3);
     expect(appTags).toHaveLength(2);
 
+    const tracked: Record<string, readonly string[]> = {};
+    for (const path of appDockerfiles()) tracked[path] = imagePins(await slurp(path)).map(seriesOf);
+    // Three Dockerfiles across the two apps, and a glob matching none would agree with everything.
+    expect(Object.keys(tracked).length).toBeGreaterThanOrEqual(3);
+    for (const [path, series] of Object.entries(tracked)) {
+      expect(series.length, `${path} pins no oven/bun image`).toBeGreaterThan(0);
+    }
+
     const found = {
       ci: seriesOf(ciPins[0] ?? ''),
       release: seriesOf(releasePins[0] ?? ''),
       frameworkImage: frameworkTags.map(seriesOf),
       appImage: appTags.map(seriesOf),
+      trackedApps: tracked,
       contributorFloor: requiredBunSeries(setupScript),
     };
 
@@ -66,6 +94,7 @@ describe('the Bun series is pinned once, in agreement', () => {
       found.release,
       ...found.frameworkImage,
       ...found.appImage,
+      ...Object.values(tracked).flat(),
       found.contributorFloor,
     ];
     expect(
@@ -86,9 +115,17 @@ describe('the Bun series is pinned once, in agreement', () => {
   test('every `oven/bun` image tag carries an explicit series, never `latest`', async () => {
     const frameworkImage = await slurp('docker/Dockerfile');
     const appImage = await slurp('packages/cli/src/templates/scaffold-container.ts');
+    const tracked: string[] = [];
+    for (const path of appDockerfiles()) tracked.push(...imagePins(await slurp(path)));
 
-    for (const tag of [...imagePins(frameworkImage), ...imagePins(appImage)]) {
+    for (const tag of [...imagePins(frameworkImage), ...imagePins(appImage), ...tracked]) {
       expect(tag).toMatch(/^\d+\.\d+-(slim|alpine)$/);
     }
+  });
+
+  test('the image the demo DEPLOYS is one of the files this test reads', () => {
+    // `.github/workflows/deploy-social-demo.yml` builds this file on every push to main, and it
+    // was the furthest thing from CI's reach: nothing exercised the series it names.
+    expect(appDockerfiles()).toContain('dummy/social-media-clone/docker/Dockerfile.monorepo');
   });
 });

@@ -186,20 +186,38 @@ export function scopeLcov(lcov: string, pkg: string): CoverageReading {
   return { pkg, lines: pct(lh, lf), funcs: pct(fnh, fnf), measured: lf, unimported: [] };
 }
 
+/**
+ * An `SF:` path as a path relative to `root`, which is the only form a glob result can be compared
+ * against. Bun writes them root-relative; an absolute one and a `./`-prefixed one are normalised
+ * rather than matched by suffix.
+ *
+ * `endsWith('/' + rel)` was the compare, and it re-introduced the exact collision `scopeLcov` has a
+ * paragraph about one screen above: both tracked apps carry `packages/<name>/src/`, so the app's
+ * `examples/dummy/packages/mcp/src/mcp.ts` ENDS WITH `/packages/mcp/src/mcp.ts` and answered for
+ * the framework file of that name. A framework module no suite imports then read as recorded, and
+ * `X_COVERAGE_UNIMPORTED` — the check whose whole job is to notice a file no test ever loads — went
+ * quiet for every name an app happens to share.
+ */
+const rootRelative = (root: string, file: string): string => {
+  const prefix = root.endsWith('/') ? root : `${root}/`;
+  if (file.startsWith(prefix)) return file.slice(prefix.length);
+  return file.startsWith('./') ? file.slice(2) : file;
+};
+
 /** Every non-test source file under the package that has executable code and no lcov record. */
 export function unimportedSources(root: string, pkg: string, lcov: string): readonly string[] {
   const recorded = new Set(
     lcov
       .split('\n')
       .filter((line) => line.startsWith('SF:'))
-      .map((line) => line.slice(3)),
+      .map((line) => rootRelative(root, line.slice(3))),
   );
   const missing: string[] = [];
   for (const rel of new Bun.Glob(`packages/${pkg}/src/**/*.{ts,tsx}`).scanSync({ cwd: root })) {
     if (/\.test\.[cm]?[jt]sx?$/.test(rel)) continue;
     if (/\.d\.ts$/.test(rel)) continue;
     if (COVERAGE_EXCLUDED.some((fragment) => rel.includes(fragment))) continue;
-    if ([...recorded].some((file) => file.endsWith(`/${rel}`) || file === rel)) continue;
+    if (recorded.has(rel)) continue;
     if (!hasExecutableCode(readFileSync(join(root, rel), 'utf8'))) continue;
     missing.push(rel);
   }

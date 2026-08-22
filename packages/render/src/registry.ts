@@ -155,12 +155,20 @@ function assertRouteFilename(file: string, surface: Surface, basename: string | 
   const dir = stem.slice(0, stem.lastIndexOf('/'));
   const inPlace = DIRECTORY_STEMS.has(stem.slice(dir.length + 1));
   const target = inPlace ? `${dir}/${expected}` : `${stem}/${expected}`;
+  // Plain `mv`, never `git mv`. `x new --no-git` scaffolds a tree with no repository, and there the
+  // shipped `git mv` answered `fatal: not a git repository` — a fix line that fails is worse than
+  // no fix line, because the reader debugs git instead of moving the file. `mv` works in both
+  // cases: git detects the rename at `git add` time, so the only thing given up is a nicety, and
+  // the instruction is the same one either way. `-n` keeps the one guarantee `git mv` did carry:
+  // an author who adds the correct `site/pricing/page.tsx` and leaves `site/pricing.tsx` behind is
+  // reported against the stale file, and `target` is then the GOOD file — a clobber deletes a
+  // working route, and this fix line is pasted unread.
   throw new RouteFileInvalidError(
     `${file} is a route on the ${surface} surface, so it must be named ${expected}: the URL is the ` +
       'directory path and the filename names the kind of file',
     inPlace
-      ? `git mv -- ${shellQuote(file)} ${shellQuote(target)}`
-      : `mkdir -p -- ${shellQuote(stem)} && git mv -- ${shellQuote(file)} ${shellQuote(target)}`,
+      ? `mv -n -- ${shellQuote(file)} ${shellQuote(target)}`
+      : `mkdir -p -- ${shellQuote(stem)} && mv -n -- ${shellQuote(file)} ${shellQuote(target)}`,
   );
 }
 

@@ -391,3 +391,62 @@ describe.each([...BARRELS])('a browser bundle of @ultimat3/%s', (name) => {
     BUILD_TIMEOUT_MS,
   );
 });
+
+/**
+ * The barrels an app's BROWSER bundle actually reaches, which is a different question from the seam
+ * above and is why they are listed rather than derived: `@ultimat3/realtime`'s `"."` is its CLIENT
+ * entry (`"./server"` is the other half, split 2026-08), `@ultimat3/pwa` runs in a service worker
+ * and `@ultimat3/ui` is the design system. `packages/cli/src/island-bundle.ts:80` is the build that
+ * consumes them — `Bun.build({ target: 'browser' })` over an app's island graph — so a barrel that
+ * cannot be bundled is a `bun run build` failure in an app, not a theoretical one.
+ *
+ * `@ultimat3/render` is deliberately NOT here; see the pin below it.
+ */
+const CLIENT_BARRELS = ['realtime', 'pwa', 'ui'] as const;
+
+describe.each([...CLIENT_BARRELS])('the client barrel @ultimat3/%s', (name) => {
+  test(
+    'bundles for the browser at all',
+    async () => {
+      const built = await browserBuild(barrelPath(name));
+      expect(built.ok ? '' : built.output).toBe('');
+    },
+    BUILD_TIMEOUT_MS,
+  );
+
+  test(
+    'evaluates, carries its code, and drags no node:async_hooks in',
+    async () => {
+      const chunk = await barrelChunk(name);
+      expect(await evaluationError(chunk)).toBeUndefined();
+      expect(bodyOf(chunk)).not.toBe('');
+      expect(HOOKS_SPECIFIER.test(chunk.text)).toBe(false);
+    },
+    BUILD_TIMEOUT_MS,
+  );
+});
+
+/**
+ * A PIN on a known gap, not an endorsement of it: `@ultimat3/render`'s single `"."` barrel does NOT
+ * bundle for the browser. `packages/render/src/css-modules.ts:9` imports `fileURLToPath` and
+ * `pathToFileURL` from `node:url`, and Bun's browser polyfill for that module exports neither, so
+ * the build FAILS rather than shipping something broken.
+ *
+ * That barrel mixes the build-time half (`compileStylesheet`, which also pulls `sass`;
+ * `render-static`; `module-loader`) with the client half (`h`, `Fragment`, `island`, `hydrate`) —
+ * exactly the shape `@ultimat3/realtime` had before its `"."` / `"./server"` split, and axiom 6
+ * says the static path may not pay for the app path. The repair is that split, in
+ * `packages/render`, and it is not this file's to make.
+ *
+ * WHEN THIS TEST REDS, render bundles: delete this test and add `'render'` to `CLIENT_BARRELS`.
+ */
+test(
+  'PIN: @ultimat3/render has no browser-bundlable barrel, and the reason is node:url in css-modules',
+  async () => {
+    const built = await browserBuild(barrelPath('render'));
+    expect(built.ok).toBe(false);
+    expect(built.output).toContain('node:url');
+    expect(built.output).toContain('css-modules.ts');
+  },
+  BUILD_TIMEOUT_MS,
+);
