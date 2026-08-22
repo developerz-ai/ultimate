@@ -1,0 +1,64 @@
+plan: 101-deep-dive-sweep-two
+title: Deep-dive sweep two — eight audits, one plan
+status: not_started        # not_started | in_progress | blocked | complete | superseded
+created_by: sebi
+worked_by: ""
+owner: sebi
+percent: 0
+current_focus: "decide 12-decisions.md rows 1, 3, 5 first (they gate 01/04/05/09); then 01"
+slices:
+  - file: 01-tier0-core-schema.md
+    tier: 0
+    status: not_started
+    percent: 0
+  - file: 02-tier1.md
+    tier: 1
+    status: not_started
+    percent: 0
+  - file: 03-tier2-entity-policy-http-auth.md
+    tier: 2
+    status: not_started
+    percent: 0
+  - file: 04-tier3-action-query-jobs-realtime.md
+    tier: 3
+    status: not_started
+    percent: 0
+  - file: 05-tier4-render-pwa-mail-manifest-ai.md
+    tier: 4
+    status: not_started
+    percent: 0
+  - file: 06-tier5-scraping-testing.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 07-cli.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 08-scaffold-dx.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 09-gate-scripts.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 10-docker-ci-apps.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 11-docs-drift.md
+    tier: 5
+    status: not_started
+    percent: 0
+  - file: 12-decisions.md
+    tier: 0
+    status: not_started
+    percent: 0
+evidence: []
+notes: >
+  Written 2026-08-21 from eight read-only audits (bug hunts tiers 0-1 / 2-3 / 4-5, concurrency,
+  security, architecture, gate+CI+docs, scaffold DX against published 7.0.0). 13 findings proven by
+  execution are tabled in overview.md. The ask named `x deps`; it is `x affected`. Prior sweep
+  (2026/08/16/101) deferred items re-verified and carried where still open.
+last_updated: 2026-08-21
