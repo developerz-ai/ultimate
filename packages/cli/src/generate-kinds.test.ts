@@ -17,7 +17,28 @@ describe('readKind', () => {
     expect(thrown.code).toBe('X_CLI_UNKNOWN_COMMAND');
     expect(thrown.cause).toContain('"x g resourse" is not a command');
     for (const kind of GENERATORS) expect(thrown.cause).toContain(kind);
-    expect(thrown.fix).toBe('x g resource');
+    expect(thrown.fix).toBe('x g resource invoice');
+  });
+
+  /**
+   * The fix used to be the literal `x g resource`, for every typo of every generator: `x g rout x`
+   * — one edit from `route` — answered with the WRONG PRIMITIVE, and answered with a command that
+   * refuses in turn, because `x g resource` carries no `<name>`. `nearestName` is what the
+   * top-level dispatcher already does with a mistyped command.
+   */
+  test('a near-miss leads with the generator it is near, and a runnable name', () => {
+    for (const [raw, fix] of [
+      ['rout', 'x g route posts'],
+      ['jobb', 'x g job send-digest'],
+      ['policies', 'x g policy post'],
+      ['admin:pages', 'x g admin:page ops'],
+    ] as const) {
+      expect([raw, thrownBy(() => readKind(raw)).fix]).toEqual([raw, fix]);
+    }
+  });
+
+  test('a word near nothing gets the page, never an invented lead', () => {
+    expect(thrownBy(() => readKind('zzzzzzzzzz')).fix).toBe('x help g');
   });
 
   test('no kind at all is refused as `g`, not as `g undefined`', () => {

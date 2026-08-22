@@ -18,23 +18,20 @@ import {
   inspectJob,
   inspectJobList,
   inspectQueues,
+  isJobState,
+  JOB_STATES,
   retryFromStep,
 } from '@ultimat3/jobs';
 import { BadFlagError, JobUnknownError } from './errors';
 
-/** Mirrors `JobState` from `@ultimat3/jobs`, which exports the type but no runtime list. */
-export const JOB_STATES: readonly JobState[] = [
-  'ready',
-  'delayed',
-  'running',
-  'suspended',
-  'done',
-  'failed',
-  'dead',
-];
-
-const isJobState = (value: string): value is JobState =>
-  (JOB_STATES as readonly string[]).includes(value);
+/**
+ * The queue's own vocabulary, re-exported rather than restated — this file carried a copy of it,
+ * and the copy was one member short. `cancelled` shipped in `@ultimat3/jobs` and never here, so
+ * `x jobs cancel` created a state `x jobs ls --state cancelled` then refused to filter on: two
+ * commands of one CLI disagreeing about what a job can be. Kept on this module's surface because
+ * `index.ts` exports it from here.
+ */
+export { JOB_STATES } from '@ultimat3/jobs';
 
 export function parseStateFlag(value: string | undefined): JobState | undefined {
   if (value === undefined) return undefined;

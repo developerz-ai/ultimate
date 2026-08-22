@@ -4,10 +4,22 @@
 // The loader is injected so a fixture can be exactly "the app loaded and registered nothing".
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { Catalog, Extraction, Locale } from '@ultimat3/i18n';
-import { flattenCatalog, registerCatalog, resetCatalogs, resetLocaleConfig } from '@ultimat3/i18n';
+import type { Catalog, Extraction, ExtractReport, Locale } from '@ultimat3/i18n';
+import {
+  auditCatalogs,
+  flattenCatalog,
+  registerCatalog,
+  resetCatalogs,
+  resetLocaleConfig,
+} from '@ultimat3/i18n';
 import { VERIFY_STEPS } from './cmd-verify';
-import { checkRegistration } from './i18n-registration';
+import {
+  checkRegistration,
+  isLoudMiss,
+  loudMiss,
+  missingKeyFindings,
+  withPlaceholdersMissing,
+} from './i18n-registration';
 
 const shipped: Readonly<Record<Locale, Catalog>> = {
   en: flattenCatalog({ app: { play: { title: 'Play' } }, site: { home: { title: 'Home' } } }),
@@ -191,5 +203,76 @@ describe('unit · the gate asks the same question the command does', () => {
         runner: unusedRunner,
       }),
     ).toBe(true);
+  });
+});
+
+// `auditCatalogs` asks `Object.hasOwn` and nothing else (`packages/i18n/src/extract.ts`), so a key
+// present with ANY value is complete — including `⟦key⟧`, which is exactly what
+// `x i18n sync <defaultLocale>` writes for every gap it closes. A gate that goes green there
+// certifies untranslated strings as shippable, and the command the error recommends is what gets
+// you there in one step.
+describe('unit · a placeholder is not a translation', () => {
+  const report = (catalogs: Readonly<Record<Locale, Catalog>>): ExtractReport =>
+    auditCatalogs({ extraction, catalogs });
+
+  test('a value that IS the loud miss is reported missing, though the key is defined', () => {
+    const catalogs = {
+      en: flattenCatalog({
+        app: { play: { title: loudMiss('app.play.title') } },
+        site: { home: { title: 'Home' } },
+      }),
+    };
+    // The premise, asserted rather than assumed: the unaudited report calls this catalog complete.
+    expect(report(catalogs).locales[0]?.missing).toEqual([]);
+
+    const corrected = withPlaceholdersMissing(report(catalogs), catalogs);
+    expect(corrected.locales[0]?.missing).toEqual(['app.play.title']);
+    expect(corrected.ok).toBe(false);
+    // And it reaches the gate as the same finding a genuinely absent key would.
+    expect(missingKeyFindings(corrected).map((finding) => finding.code)).toEqual([
+      'X_CATALOG_MISSING_KEYS',
+    ]);
+  });
+
+  test('a catalog of real strings is untouched — the correction adds nothing on a pass', () => {
+    const corrected = withPlaceholdersMissing(report(shipped), shipped);
+    expect(corrected.locales.map((audit) => audit.missing)).toEqual([[], []]);
+    expect(corrected.ok).toBe(true);
+  });
+
+  // A key never used renders nowhere, so a stale placeholder under it is `unused`, not missing —
+  // reporting it would send an author to edit a string no page asks for.
+  test('a placeholder under a key source never uses is not a missing key', () => {
+    const catalogs = {
+      en: flattenCatalog({
+        app: { play: { title: 'Play' } },
+        site: { home: { title: 'Home' } },
+        dead: { key: loudMiss('dead.key') },
+      }),
+    };
+    expect(withPlaceholdersMissing(report(catalogs), catalogs).ok).toBe(true);
+  });
+
+  // The plural family: `items` has no entry of its own and `items_other` is what renders, so the
+  // marker has to be looked for at every spelling `definesKey` accepts. `some`, not `every` — one
+  // untranslated category is a placeholder on exactly the rows that hit it.
+  test('a plural variant holding the marker is found, though the stem is undefined', () => {
+    const plural: Extraction = { usages: [usage('items')], dynamic: [] };
+    const catalogs = {
+      en: flattenCatalog({ items_one: '1 item', items_other: loudMiss('items') }),
+    };
+    const audited = auditCatalogs({ extraction: plural, catalogs });
+    expect(audited.locales[0]?.missing).toEqual([]);
+    expect(withPlaceholdersMissing(audited, catalogs).locales[0]?.missing).toEqual(['items']);
+  });
+
+  // One definition of the marker for the whole CLI: `cmd-i18n.ts` seeds through `loudMiss` and the
+  // two checks refuse through `isLoudMiss`, so what sync writes is exactly what the gate reads.
+  test('the seeder and the detector agree, and a real string is never a placeholder', () => {
+    expect(isLoudMiss(loudMiss('any.key'))).toBe(true);
+    expect(isLoudMiss('Play')).toBe(false);
+    expect(isLoudMiss(undefined)).toBe(false);
+    // Any marker, not just this key's: a renamed key leaves the old one behind.
+    expect(isLoudMiss(loudMiss('some.other.key'))).toBe(true);
   });
 });

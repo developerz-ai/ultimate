@@ -4,6 +4,9 @@
 
 import { nearestName } from '@ultimat3/core';
 import { BadFlagError, MissingSubcommandError, UnknownCommandError } from './errors';
+// `shell-quote.ts` is a leaf — it imports nothing — so the parser stays pure and importable from
+// anywhere while still refusing with a fix line a shell reads as one argument.
+import { quoteArg } from './shell-quote';
 
 /**
  * The historical name for `@ultimat3/core`'s `nearestName`, kept because it shipped on this
@@ -21,6 +24,15 @@ export interface FlagSpec {
   readonly summary: string;
   readonly short?: string;
   readonly default?: FlagValue;
+  /**
+   * The subcommands that READ this flag, where it is not command-wide. Absent means every one —
+   * opt-in, because most flags really are. Declared from the same fact the summary states, and
+   * enforced: `x db gen --dry-run` parsed, ran the generator and WROTE the migration, because the
+   * parser validates a flag against the COMMAND and nothing then validates it against the word
+   * that decides what runs. A dry run that writes a file is the direction a mistake may never
+   * fail in. `parse.test.ts` pins that every entry names a subcommand its command declares.
+   */
+  readonly subcommands?: readonly string[];
 }
 
 export interface CommandSpec {
@@ -147,6 +159,9 @@ export function parseArgs(argv: readonly string[], specs: readonly CommandSpec[]
   const spec = resolveCommand(first, specs);
   const flags = defaults(spec);
   const positionals: string[] = [];
+  // What argv actually SET, as against what `defaults()` seeded: a default is nobody's request,
+  // and refusing a flag the caller never typed would refuse the command itself.
+  const given = new Set<string>();
   let index = 1;
 
   while (index < tokens.length) {
@@ -172,6 +187,7 @@ export function parseArgs(argv: readonly string[], specs: readonly CommandSpec[]
             : `unknown flag — did you mean --${suggestion}?`,
       });
     }
+    given.add(flag.name);
     if (flag.type === 'boolean') {
       if (inlineValue !== undefined) {
         throw new BadFlagError({
@@ -183,28 +199,77 @@ export function parseArgs(argv: readonly string[], specs: readonly CommandSpec[]
       flags.set(flag.name, !negated);
       continue;
     }
-    const value = inlineValue ?? tokens[index];
-    if (value === undefined || value.startsWith('--')) {
+    // `--no-<string flag>` used to fall through to the value read below, so `--no-name feat` set
+    // `name` to `feat`: the caller asked for the flag to be OFF and argv's next token became its
+    // value. There is nothing a string flag can be negated to, so this is a refusal.
+    if (negated) {
       throw new BadFlagError({
         flag: flag.name,
         command: spec.name,
-        reason: 'expects a value',
+        reason: `--no- negates a boolean flag, and --${flag.name} takes a value`,
+      });
+    }
+    const value = inlineValue ?? tokens[index];
+    if (value === undefined) {
+      throw new BadFlagError({ flag: flag.name, command: spec.name, reason: 'expects a value' });
+    }
+    // A value beginning `--` is a flag as far as this loop can tell, and the caller who really
+    // meant it as a value has one form available — so the refusal names it rather than leaving
+    // `--filter --json` looking like a parser that cannot express the input.
+    if (value.startsWith('--')) {
+      throw new BadFlagError({
+        flag: flag.name,
+        command: spec.name,
+        reason: `expects a value, and "${value}" is a flag — write --${flag.name}=${value} to pass it as the value`,
       });
     }
     if (inlineValue === undefined) index += 1;
     flags.set(flag.name, value);
   }
 
-  const subcommand = readSubcommand(spec, positionals);
+  // Before `readSubcommand`, which THROWS on a missing or unknown one: `x db --help`, `x mcp
+  // --help` and `x pr --help` all exited 1 with `X_CLI_BAD_FLAG` — usage refused to the caller
+  // asking what the usage is, on every command that takes a subcommand. Help is answered by
+  // `dispatch`, which needs only the command name.
+  const help = flags.get('help') === true;
+  const subcommand = help ? undefined : readSubcommand(spec, positionals);
+  if (subcommand !== undefined) assertFlagsApply(spec, subcommand, given, flags);
   return {
     command: spec.name,
     subcommand,
     positionals: subcommand === undefined ? positionals : positionals.slice(1),
     flags,
     json: flags.get('json') === true,
-    help: flags.get('help') === true,
+    help,
     passthrough,
   };
+}
+
+/**
+ * A flag the resolved subcommand does not read is refused, never ignored. Only what argv SET is
+ * judged, and only against a flag that declared a scope: an undeclared flag stays command-wide.
+ *
+ * The fix carries the caller's own value through `quoteArg`, because it is pasted into a shell
+ * verbatim — `x db backfill --status 'a b'` runs, `--status a b` runs something else.
+ */
+function assertFlagsApply(
+  spec: CommandSpec,
+  subcommand: string,
+  given: ReadonlySet<string>,
+  flags: ReadonlyMap<string, FlagValue>,
+): void {
+  for (const flag of spec.flags ?? []) {
+    const only = flag.subcommands;
+    if (only === undefined || only.includes(subcommand) || !given.has(flag.name)) continue;
+    const value = flags.get(flag.name);
+    const argument = typeof value === 'string' ? ` ${quoteArg(value)}` : '';
+    throw new BadFlagError({
+      flag: flag.name,
+      command: `${spec.name} ${subcommand}`,
+      reason: `read by ${only.map((word) => `x ${spec.name} ${word}`).join(' / ')} only — "${subcommand}" would ignore it`,
+      fix: `x ${spec.name} ${only[0]} --${flag.name}${argument}`,
+    });
+  }
 }
 
 function splitInline(raw: string): [string, string | undefined] {

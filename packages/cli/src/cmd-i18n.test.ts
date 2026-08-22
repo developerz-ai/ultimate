@@ -144,7 +144,9 @@ describe('unit · x i18n check', () => {
     expect(finding?.code).toBe('X_CATALOG_MISSING_KEYS');
     expect(finding?.at).toBe('packages/i18n/catalogs/es.json');
     expect(finding?.cause).toContain('farewell');
-    expect(finding?.fix).toBe('x i18n sync es');
+    expect(finding?.fix).toBe(
+      'x i18n sync es   # writes each key above as ⟦key⟧ — replace every one with the real string',
+    );
     expect(result.summary).toBe(msg('cli.i18n.gaps', { missing: 1, locales: 1 }));
   });
 
@@ -220,6 +222,8 @@ describe('unit · x i18n sync', () => {
       added: ['extra', 'farewell', 'nav.about'],
       total: 5,
       path: 'packages/i18n/catalogs/es.json',
+      // A real merge copies real strings, so nothing here is waiting on a human.
+      placeholders: [],
     });
 
     const after = await readCatalog(join(appRoot, 'packages/i18n/catalogs/es.json'));
@@ -236,6 +240,98 @@ describe('unit · x i18n sync', () => {
     await i18nCommand.run(contextFor(appRoot, ['sync', 'es']));
     const result = await i18nCommand.run(contextFor(appRoot, ['sync', 'es']));
     expect((result.data as { added: readonly string[] }).added).toEqual([]);
+  });
+
+  // `X_CATALOG_MISSING_KEYS` says `x i18n sync <locale>`, `i18n` is a step of the gate, and for the
+  // DEFAULT locale that command merged the catalog into itself: `added` was empty by construction.
+  // Measured before the fix, on this fixture: `ok: true`, "0 key(s) added", the file byte-identical
+  // and `check` still red — the only escape left was a hand edit nothing named.
+  test('the default locale syncs from SOURCE, seeding every key it does not define', async () => {
+    const appRoot = await seedApp();
+    await Bun.write(join(appRoot, 'app/extra.ts'), "t('app.new.title'); t('app.new.cta');\n");
+    const before = await readCatalog(join(appRoot, 'packages/i18n/catalogs/en.json'));
+    expect(before['app.new.title']).toBeUndefined();
+
+    const result = await i18nCommand.run(contextFor(appRoot, ['sync', 'en']));
+
+    const data = result.data as { added: readonly string[]; placeholders: readonly string[] };
+    expect(data.added).toEqual(['app.new.cta', 'app.new.title']);
+    // Named separately from `added`, because `--json` has to tell a copied translation from a
+    // placeholder waiting on a human and the two arrive through the same field.
+    expect(data.placeholders).toEqual(['app.new.cta', 'app.new.title']);
+  });
+
+  test('a seeded key is the loud miss the framework already renders, and lands where it is edited', async () => {
+    const appRoot = await seedApp();
+    await Bun.write(join(appRoot, 'app/extra.ts'), "t('app.new.title');\n");
+    await i18nCommand.run(contextFor(appRoot, ['sync', 'en']));
+
+    const after = await readCatalog(join(appRoot, 'packages/i18n/catalogs/en.json'));
+    expect(after['app.new.title']).toBe('⟦app.new.title⟧');
+    // Every key that already had a translation keeps it — seeding is never a rewrite.
+    expect(after['greeting']).toBe('Hello');
+    expect(after['nav.about']).toBe('About');
+    // Written NESTED, like every other catalog this command writes: a flat dot-key file is one
+    // `loadCatalog` refuses on the very next read, so `readCatalog` above is the whole assertion.
+    const raw: unknown = await Bun.file(join(appRoot, 'packages/i18n/catalogs/en.json')).json();
+    expect(raw).toMatchObject({ app: { new: { title: '⟦app.new.title⟧' } } });
+  });
+
+  // The half that keeps the seeding honest. Following the fix moves the author from "stuck" to
+  // "one obvious edit per key" — it does NOT make the app shippable, and the gate must not say it
+  // does. `auditCatalogs` asks `Object.hasOwn` and nothing else, so before
+  // `withPlaceholdersMissing` this exact sequence answered `[]` and turned the `i18n` gate step
+  // green over strings no human had read: issue #249's ending, reached by running the command the
+  // error recommends.
+  test('a seeded placeholder is still a missing key — sync does not certify the app', async () => {
+    const appRoot = await seedApp();
+    await Bun.write(join(appRoot, 'app/extra.ts'), "t('app.new.title');\n");
+    await i18nCommand.run(contextFor(appRoot, ['sync', 'en']));
+    await registerSeededCatalogs(appRoot);
+
+    const result = await i18nCommand.run(contextFor(appRoot, ['check']));
+    // `es` is red too and for the ordinary reason — it was never synced. The claim here is about
+    // `en`, the locale `sync` just wrote, whose only remaining gap is the placeholder it wrote.
+    const seeded = (result.findings ?? []).find(
+      (f) => f.code === 'X_CATALOG_MISSING_KEYS' && f.at === 'packages/i18n/catalogs/en.json',
+    );
+    expect(seeded?.cause).toContain('app.new.title');
+    expect(result.ok).toBe(false);
+  });
+
+  // And the edit the placeholder is asking for is what clears it — the instruction terminates.
+  test('replacing the placeholder with a real string clears the finding', async () => {
+    const appRoot = await seedApp();
+    await Bun.write(join(appRoot, 'app/extra.ts'), "t('app.new.title');\n");
+    await i18nCommand.run(contextFor(appRoot, ['sync', 'en']));
+
+    const path = join(appRoot, 'packages/i18n/catalogs/en.json');
+    const raw = await Bun.file(path).text();
+    await Bun.write(path, raw.replace('⟦app.new.title⟧', 'New'));
+    await i18nCommand.run(contextFor(appRoot, ['sync', 'es']));
+    await registerSeededCatalogs(appRoot);
+
+    const result = await i18nCommand.run(contextFor(appRoot, ['check']));
+    const missing = result.findings?.filter((f) => f.code === 'X_CATALOG_MISSING_KEYS') ?? [];
+    expect(missing).toEqual([]);
+  });
+
+  // A placeholder propagates: `sync es` copies `en`'s values verbatim, marker included, so a key
+  // nobody has translated is red in every locale rather than red in one and silently wrong in the
+  // rest. The `en` finding above is the one an author acts on.
+  test('a placeholder copied into another locale is missing there too', async () => {
+    const appRoot = await seedApp();
+    await Bun.write(join(appRoot, 'app/extra.ts'), "t('app.new.title');\n");
+    await i18nCommand.run(contextFor(appRoot, ['sync', 'en']));
+    await i18nCommand.run(contextFor(appRoot, ['sync', 'es']));
+    await registerSeededCatalogs(appRoot);
+
+    const result = await i18nCommand.run(contextFor(appRoot, ['check']));
+    const missing = result.findings?.filter((f) => f.code === 'X_CATALOG_MISSING_KEYS') ?? [];
+    expect(missing.map((f) => f.at)).toEqual([
+      'packages/i18n/catalogs/en.json',
+      'packages/i18n/catalogs/es.json',
+    ]);
   });
 
   test('a locale with no catalog on disk is refused, naming x i18n add as the fix', async () => {

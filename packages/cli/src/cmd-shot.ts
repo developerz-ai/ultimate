@@ -22,7 +22,8 @@ import { intFlagOr, PORT_RANGE } from './flag-number';
 import type { CommandResult } from './output';
 import type { ParsedArgs } from './parse';
 import { flagBool, flagString } from './parse';
-import type { ShotArtifacts } from './shot-verdict';
+import { SETTLE_POLL_MS, settleIslands } from './shot-settle';
+import type { IslandCount, ShotArtifacts } from './shot-verdict';
 import {
   buildVerdict,
   ISLAND_PROBE,
@@ -63,9 +64,49 @@ const pathOf = (url: string): string => {
 };
 
 /**
+ * A reserved name (RFC 2606) that resolves nowhere, so the origin check below can never be
+ * satisfied by an accident of what the app's own host happens to be.
+ */
+const ROUTE_BASE = 'http://route.invalid';
+
+/**
+ * Where a browser would actually go. The refusal above reads `scheme:` and nothing else, and this
+ * is the question it was standing in for: a path is a path only if resolving it lands back on the
+ * origin it was resolved against.
+ */
+const resolvedOrigin = (path: string): string => {
+  try {
+    return new URL(path, ROUTE_BASE).origin;
+  } catch {
+    // A path `new URL` will not parse is one no browser will fetch either, and reporting it as the
+    // origin it is not is the honest answer here.
+    return '';
+  }
+};
+
+const refuseRoute = (reason: string): never => {
+  throw new BadFlagError({
+    flag: 'route',
+    command: 'shot',
+    reason,
+    // A placeholder, because there is nothing safe to substitute: unlike an absolute URL, an
+    // origin-escaping route carries no path the caller can be assumed to have meant.
+    fix: 'x shot /<path> --json',
+  });
+};
+
+/**
  * A path on the app, never a URL. `x shot https://example.com` would photograph somebody else's
  * site through a headless browser inside your network, which is the SSRF shape `allowHosts` exists
  * to refuse — so it is refused here, at the argument, where the reader can still see why.
+ *
+ * `scheme:` was the ONLY spelling refused until 2026-08-22, and it is one of four: `//evil/x` is a
+ * protocol-relative URL, `\evil\x` is the same thing to every URL parser (a backslash IS a slash
+ * for a special scheme), and a TAB inside the path is deleted by the parser before the host is
+ * read, so `/⇥/evil/x` becomes `//evil/x`. Each one reached `new URL(route, server.url)` and came
+ * back pointed at another host. `allowHostsFrom` one layer down could not catch any of them: it
+ * allows a HOSTNAME, and the hostname it is given is the one the page has already left — which is
+ * how `x shot //localhost:9200/_cat/indices` photographed whatever else was on the dev box.
  */
 export function readRoute(raw: string | undefined): string {
   if (raw === undefined || raw.trim() === '') {
@@ -82,7 +123,20 @@ export function readRoute(raw: string | undefined): string {
       fix: `x shot ${pathOf(route)} --json`,
     });
   }
-  return route.startsWith('/') ? route : `/${route}`;
+  const path = route.startsWith('/') ? route : `/${route}`;
+  // Its own refusal rather than folded into the origin check: `/a\b` stays on this origin and is
+  // still not the route that was typed — the verdict would record `/a\b` beside a picture of
+  // `/a/b`, which is the artifact lying about its own subject.
+  if (path.includes('\\')) {
+    return refuseRoute(`"${route}" contains a backslash, which a URL parser reads as "/"`);
+  }
+  const origin = resolvedOrigin(path);
+  if (origin !== ROUTE_BASE) {
+    return refuseRoute(
+      `"${route}" is not a path on the app: a browser resolves it to ${origin === '' ? 'no URL at all' : origin}`,
+    );
+  }
+  return path;
 }
 
 /**
@@ -164,10 +218,18 @@ export async function runShot(options: ShotRun): Promise<ShotArtifacts> {
     // The probe may legitimately answer nothing — a page that refuses evaluation, a driver with no
     // JS engine. `null` says so; a `0` would read as "the route renders no islands", which is a
     // different and much more alarming claim.
-    const islands = await page
-      .evaluate(ISLAND_PROBE)
-      .then(parseIslandProbe)
-      .catch(() => null);
+    const probe = (): Promise<IslandCount | null> =>
+      page
+        .evaluate(ISLAND_PROBE)
+        .then(parseIslandProbe)
+        .catch(() => null);
+    // The same budget again, and deliberately no new flag: `settleMs` is the deadline at which the
+    // runtime CALLS `import()`, so a mount gets exactly as long to settle as the runtime got to
+    // start it — and `--settle 0`, which asks for no wait, still gets none.
+    const islands = await settleIslands(probe, {
+      windowMs: options.settleMs,
+      pollMs: SETTLE_POLL_MS,
+    });
     const bytes = await page.screenshot({ fullPage: options.fullPage });
     // Read AFTER the capture, so an error logged while the page settled is in the verdict that
     // ships with the picture it explains.

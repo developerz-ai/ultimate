@@ -31,7 +31,7 @@ x version              # CLI version
 | `x dev` | all roles in one process: embedded services, sub-second reload, `/_x` mounted | shipped |
 | `x g <kind> <name>` | scaffold a primitive with its test | shipped |
 | `x db <sub>` | gen, migrate, reset, seed, studio, branch, backfill | shipped |
-| `x verify [--workers N]` | the gate — 19 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, manifest, roadmap | shipped |
+| `x verify [--only <step>] [--workers N]` | the gate — 19 steps, in this order: typecheck, lint, boundaries, filesize, package-shape, errors, unit, contract, live, job, e2e, eval, drift, contract-diff, budgets, seo, i18n, manifest, roadmap. `--only <step>` runs ONE of them for an iteration loop and announces `NOT A GATE RUN` in the summary and in `--json` (`data.notAGateRun`, `data.only`), writing no floor file; an unknown name is refused with the nearest match. **The gate is this command with no flag.** There is no `--skip` | shipped |
 | `x env [check\|example]` | validate the process env against `envSchema`, or regenerate `.env.example` from it | shipped |
 | `x secrets <sub>` | the committed encrypted secrets file: show, init, edit, set, rotate | shipped |
 | `x build` | container image, single binary, or prerendered static site | shipped |
@@ -73,7 +73,7 @@ x new <name> [--dir path] [--no-example] [--dry-run] [--force] [--json]
 | Flag | Type | Default | Meaning |
 |---|---|---|---|
 | `--dir` | string | cwd | parent directory to create the app in |
-| `--example` / `--no-example` | boolean | `true` | include the example feature slice |
+| `--example` / `--no-example` | boolean | `true` | include the example feature slice (default: on; `--no-example` for an empty `app/`) |
 | `--dry-run` | boolean | `false` | print the file list, write nothing |
 | `--force` | boolean | `false` | write into a directory that already exists |
 
@@ -357,7 +357,7 @@ either: reads and writes run on `@ultimat3/entity`'s hand-written `postgresDrive
 |---|---|
 | `packages/db/migrations/<id>.sql` | the `up`, then a lone `-- down` line, then the reverse |
 | `packages/db/migrations/<id>.snapshot.json` | the schema this migration leaves behind — what the *next* `x db gen` diffs against |
-| `packages/db/migrations/<id>.hash` | the entity-source hash `x verify`'s `drift` step checks |
+| `packages/db/migrations/<id>.hash` | the hash of the loaded entity **registry** that `x verify`'s `drift` step checks — the entity SOURCE text was what it hashed until 8.0.0, which could not see a change in what `describe()` means by that text |
 
 **And `x db gen` is that directory's only writer**, `As of 2026-08`. `x new` scaffolds no migration:
 a hand-written first file carried no `.snapshot.json` — the one artifact only the generator produces
@@ -371,8 +371,10 @@ clause inside `create table`, so the order entities happen to register in cannot
 unappliable.
 
 **`X_DB_DRIFT` has two detectors, and each answers what the other cannot.** `x verify`'s `drift`
-step hashes the entity source against the `.hash` sidecars — no database, so it runs in a CI with
-nothing listening, and it catches "you edited an entity and never generated". `x db migrate` diffs
+step hashes the loaded entity **registry** against the `.hash` sidecars — no database, so it runs
+in a CI with nothing listening, and it catches "you edited an entity and never generated". The
+entity SOURCE text was what it hashed until 8.0.0, which read every byte under `packages/db/src`
+and could not see an entity declared under `apps/` at all. `x db migrate` diffs
 the live catalog against the `x_migrations` ledger — a database, so it runs only where one is open,
 and it catches "someone changed the schema by hand". A table in the `x_` namespace is framework
 bookkeeping (the ledger, the queue, the outbox, the auth tables) and is never counted as drift.
@@ -389,12 +391,15 @@ Errors, backfill: `X_BACKFILL_PENDING` (`--pending`, and the only one that is no
 ## x verify
 
 ```bash
-x verify [--workers N] [--json]
+x verify [--only <step>] [--workers N] [--json]
 ```
 
 The single gate. Green means shippable; CI runs exactly this. One step list, in cost order, shared
-with the framework repo's own `bun run verify` — there is no `--only` and no `--skip`, because
-"green" has to mean the same thing for everyone. A step with nothing to check in this project
+with the framework repo's own `bun run verify` — and **the gate is this command with no flag**,
+because "green" has to mean the same thing for everyone. `--only <step>` runs ONE step for an
+iteration loop and is not a gate run: it announces `NOT A GATE RUN` in the summary and in `--json`
+(`data.notAGateRun`, `data.only`), exits with that step's own status, and writes no floor file. An
+unknown name is refused with the nearest match. There is no `--skip`. A step with nothing to check in this project
 reports as skipped (`-`), never as passed — and the summary counts skips apart from passes and
 names them, so a gate that is green because a suite does not exist has to say so on the one line
 every reader sees:
@@ -864,7 +869,7 @@ x test [unit|contract|live|job|e2e|eval] [--filter text] [--sample N]
 
 The type rule is `x verify`'s, not a second one — so `x test contract` runs exactly what the gate's `contract` step runs. A selection that matches no files is `X_TEST_NO_FILES`; an unknown type is `X_CLI_BAD_FLAG` naming the six and suggesting the nearest.
 
-`--affected` narrows the FEEDBACK, never the gate. `x verify` stays un-narrowable — there is no `--only` and no `--skip` — because a gate that can be scoped is a gate that can be scoped wrong. Nothing affected is **green with zero spawns**, not a failure: editing a `.md` should not fail a build. A failing shard's `fix:` carries `--affected --base <ref>` back with it, because `--affected` decides which files exist to shard at all and a rerun without it re-splits the whole corpus into a different shard 2.
+`--affected` narrows the FEEDBACK, never the gate. The GATE stays un-narrowable — `x verify` with no flag is the gate, and `x verify --only <step>` announces `NOT A GATE RUN` in both renderers precisely so a narrowed run can never be read as one — because a gate that can be scoped is a gate that can be scoped wrong. Nothing affected is **green with zero spawns**, not a failure: editing a `.md` should not fail a build. A failing shard's `fix:` carries `--affected --base <ref>` back with it, because `--affected` decides which files exist to shard at all and a rerun without it re-splits the whole corpus into a different shard 2.
 
 ## x affected
 

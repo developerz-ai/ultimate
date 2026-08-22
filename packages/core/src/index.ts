@@ -304,6 +304,7 @@ export {
   sentryErrorReporter,
   serviceResource,
   setLoggerContextFields,
+  setLogStream,
   startMetricExport,
   startSpan,
   traceparent,

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { singleLine } from '@ultimat3/core';
 import { msg } from './messages';
 import type { CommandResult, StepResult, UltimateErrorShape } from './output';
 import {
@@ -202,5 +203,69 @@ describe('unit · renderHuman says how a step was run', () => {
     expect(
       renderHuman({ ok: true, command: 'verify', summary: 'ok', steps: [stepResult({})] }),
     ).not.toContain(msg('cli.verify.serial'));
+  });
+});
+
+/**
+ * `lines` is where a command puts text it did not write: a GitHub review body (`x pr`), a CI log
+ * tail (`x ci`), a page's own console (`x shot`). It reached fd 1 VERBATIM while `renderFinding`
+ * one function above ran `singleLine` over every field — so the format's one renderer was safe and
+ * the free-text path beside it was not.
+ */
+describe('unit · foreign text reaches the terminal escaped, or not at all', () => {
+  // Clear the screen, retitle the window, and reset the terminal: CSI, OSC and a bare `ESC c`.
+  // `ci-log.ts` strips the first of those only, which is why the escape has to be HERE.
+  const HOSTILE = '\u001b[2Jcleared\u001b]0;retitled\u0007 and \u001bc';
+
+  const rendered = (result: Partial<CommandResult>): string =>
+    renderHuman({ ok: true, command: 'pr', summary: 'ok', ...result });
+
+  test('a line is escaped by exactly the rule a finding is', () => {
+    const text = rendered({ lines: [HOSTILE] });
+    expect(text).not.toContain('\u001b');
+    // Byte-equal to what the 3-line format would have made of the same string: one rule for the
+    // terminal, not one per path.
+    const cause = renderFinding({ code: 'X_T', cause: HOSTILE, fix: 'x doctor --json' })
+      .split('\n')[1]
+      ?.replace('  cause: ', '');
+    expect(text.split('\n')[0]).toBe(cause);
+    expect(text.split('\n')[0]).toBe(singleLine(HOSTILE));
+  });
+
+  // One entry of `lines` is ONE line. A newline inside it prints a line a reader takes for the
+  // renderer's own — which is how a comment body forges a finding, or a summary.
+  test('a newline inside one line cannot become two', () => {
+    const text = rendered({ lines: ['a\nX_DB_DRIFT'] });
+    expect(text.split('\n')).toHaveLength(2);
+    expect(text).toContain(String.raw`a\nX_DB_DRIFT`);
+  });
+
+  // The summary interpolates foreign values too — `cli.shot.threw` carries a page's own error
+  // message, `cli.pr.replied` a URL GitHub answered with.
+  test('the summary is escaped as well as the lines', () => {
+    expect(rendered({ summary: HOSTILE })).not.toContain('\u001b');
+  });
+});
+
+/**
+ * `hold` and `stream` are BEHAVIOUR — how long the process stays up, which fd the line goes to —
+ * and neither renderer may carry either. A payload that also declared the fd would be a second
+ * answer to a question `dispatch` settled by choosing the sink, and the two would drift.
+ */
+describe('unit · the payload carries facts, never the dispatcher instructions', () => {
+  test('neither renderer shows hold or stream', () => {
+    const result: CommandResult = {
+      ok: true,
+      command: 'mcp',
+      summary: 'mcp stdio serving 13 tools',
+      stream: 'stderr',
+      hold: async () => undefined,
+    };
+    expect(Object.keys(JSON.parse(renderJson(result)) as object)).toEqual([
+      'ok',
+      'command',
+      'summary',
+    ]);
+    expect(renderHuman(result)).toBe('✓ mcp stdio serving 13 tools');
   });
 });

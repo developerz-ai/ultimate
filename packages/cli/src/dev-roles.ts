@@ -8,7 +8,7 @@
 
 import type { Role } from '@ultimat3/core';
 import { createContext, isRole, logger, ROLES } from '@ultimat3/core';
-import type { Route, ServerHandle, ServerHooks } from '@ultimat3/http';
+import type { RateLimitStore, Route, ServerHandle, ServerHooks } from '@ultimat3/http';
 import { configuredAuthenticator, createServer, defineHttpConfig } from '@ultimat3/http';
 import type { OutboxRelay, Scheduler, Worker } from '@ultimat3/jobs';
 import {
@@ -195,11 +195,43 @@ export function trustedHopsFromEnv(env: Env): number | null {
   return hops;
 }
 
+/**
+ * A deployment that substituted a PER-PROCESS store is enforcing every declared number once per
+ * replica, and the shipped chart runs three. Not refused — `assertRateLimitScope` only fires on a
+ * `'shared'` declaration, and the scope below is DERIVED from the store, so the two can never
+ * contradict each other — but the multiplier is stated, in the `warnIfUnauthenticatable` shape:
+ * loud, coded, and naming the call that fixes it.
+ *
+ * Only for a store the host SUPPLIED. A boot with no store at all resolved one of its own
+ * (`startServices`), so the remaining silent case is a hand-built `RunningServices` in a test.
+ */
+function warnIfProcessScoped(store: RateLimitStore): void {
+  if (store.scope === 'shared') return;
+  logger.warn(
+    `X_CONFIG_INVALID: the rate-limit store this deployment passed keeps its counters per process, so every limit the app declares is enforced once per replica — docker/helm/values.yaml runs roles.web.replicas: 3, which is 3x every number — fix: drop runtime.rateLimitStore and the boot installs postgresRateLimitStore({ executor }) on the pool it already opened`,
+  );
+}
+
+/**
+ * Where this web role's limiter keeps its counters: what the deployment SUBSTITUTED, else the
+ * shared Postgres store `startServices` resolved over the pool this boot already opened.
+ *
+ * One expression, one answer, in the order `RuntimeOverrides` documents — an override REPLACES the
+ * resolved default rather than sitting beside it. `undefined` is reachable only from a hand-built
+ * runtime, which is `createServer`'s per-process memory store and `scope: 'process'` below.
+ */
+function rateLimitStoreFor(options: StartRolesOptions): RateLimitStore | undefined {
+  const supplied = options.overrides?.rateLimitStore;
+  if (supplied === undefined) return options.runtime.rateLimitStore;
+  warnIfProcessScoped(supplied);
+  return supplied;
+}
+
 function startWeb(options: StartRolesOptions): ServerHandle {
   warnIfUnauthenticatable(options.routes);
   const binding = options.http ?? DEV_BINDING;
   const hops = trustedHopsFromEnv(options.env);
-  const store = options.overrides?.rateLimitStore;
+  const store = rateLimitStoreFor(options);
   return createServer({
     routes: options.routes,
     role: 'web',
@@ -218,12 +250,12 @@ function startWeb(options: StartRolesOptions): ServerHandle {
       signInPath: options.signInPath ?? null,
       // One declaration, never half of one: `defineHttpConfig` refuses `trustProxy` without hops.
       ...(hops === null ? {} : { trustProxy: true, trustedProxyHops: hops }),
-      // `scope` is mandatory since @ultimat3/http made an undeclared limiter a boot error: the
-      // old `'process'` default meant the shipped chart's three `web` replicas enforced
-      // `login: { limit: 5 }` as fifteen attempts, with `x verify` green. It is DERIVED from the
-      // store rather than hardcoded — a deployment that hands `runtime.rateLimitStore` a shared
-      // store is declaring the fleet-wide numbers, and `assertRateLimitScope` then holds the two
-      // halves together instead of a literal here quietly contradicting the store beside it.
+      // `scope` is mandatory since @ultimat3/http made an undeclared limiter a boot error, and it
+      // is DERIVED from the store rather than hardcoded — a literal here would be a second
+      // declaration quietly contradicting the object beside it, and `assertRateLimitScope` holds
+      // the two halves together. It answered `'process'` on every real boot until `startServices`
+      // resolved a store, so the shipped chart's three `web` replicas enforced `login: { limit: 5 }`
+      // as fifteen attempts, with `x verify` green.
       rateLimit: { scope: store?.scope ?? 'process' },
       // Hashes, never `'unsafe-inline'`: a `render: 'static'` page is a file on disk, so
       // nothing can stamp a per-response nonce into it, but its body is fixed and a hash is a

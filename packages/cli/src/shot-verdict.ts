@@ -33,6 +33,7 @@ export const SHOT_MESSAGE_KEYS = [
   'cli.shot.canvasUnreadable',
   'cli.shot.islands',
   'cli.shot.islandsUnknown',
+  'cli.shot.islandFailed',
   'cli.shot.network',
   'cli.shot.console',
   'cli.shot.threw',
@@ -176,19 +177,28 @@ const levelCount = (lines: readonly ConsoleLine[], level: ConsoleLine['level']):
   lines.filter((line) => line.level === level).length;
 
 /**
- * `ok` is three conditions, and every one is something a picture cannot show: nothing on the page
- * logged an error, nothing THREW, and the document photographed is the route that was asked for.
+ * `ok` is four conditions, and every one is something a picture cannot show: nothing on the page
+ * logged an error, nothing THREW, no island's `mount()` REJECTED, and the document photographed is
+ * the route that was asked for.
  *
  * The throw is its own clause rather than folded into `errors` because an uncaught exception calls
  * no console method — a page whose island died can log nothing at all, and `errors === 0` would
- * then pass it. A redirect is a failure of the CAPTURE rather than of the app: an agent that
+ * then pass it. A rejected mount is a third silent one and was read by NOTHING until 2026-08-22:
+ * the prelude pays 129 B an island to write `data-x-failed`, the probe counted it into the
+ * artifact, and every island on a page could reject while the run reported "clean". `?? 0` keeps
+ * an uncounted probe (`null`) out of the verdict — "not counted" is not "none failed".
+ * A redirect is a failure of the CAPTURE rather than of the app: an agent that
  * photographs the sign-in page and files "the island did not mount" is the outcome this prevents.
  */
 export function buildVerdict(input: ShotInput): ShotVerdict {
   const errors = levelCount(input.console, 'error');
   return {
     ...input,
-    ok: errors === 0 && input.pageErrors.length === 0 && input.requestedUrl === input.finalUrl,
+    ok:
+      errors === 0 &&
+      input.pageErrors.length === 0 &&
+      (input.islands?.failed ?? 0) === 0 &&
+      input.requestedUrl === input.finalUrl,
     redirected: input.requestedUrl !== input.finalUrl,
     errors,
     warnings: levelCount(input.console, 'warn'),
@@ -326,6 +336,19 @@ export const shotSummary = (verdict: ShotVerdict): string => {
       route: verdict.route,
       thrown: verdict.pageErrors.length,
       first: verdict.pageErrors[0]?.message ?? '',
+    });
+  }
+  // Ahead of the console count for the same reason, and it is the same silence: a rejected mount
+  // promise calls no console method either, so a page whose every island died can read `errors: 0`.
+  // The first failure is NAMED — "1 island failed" sends a reader back to the artifact for the one
+  // fact they need to start.
+  const failure = verdict.islands?.failures[0];
+  if (failure !== undefined) {
+    return msg('cli.shot.islandFailed', {
+      route: verdict.route,
+      failed: verdict.islands?.failed ?? 0,
+      island: failure.island,
+      message: failure.message,
     });
   }
   if (verdict.errors > 0) {

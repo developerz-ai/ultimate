@@ -88,6 +88,32 @@ describe('unit · a shot is not ok just because a picture came back', () => {
     expect([verdict.ok, verdict.redirected]).toEqual([true, false]);
   });
 
+  // The half a picture cannot show, and the half the verdict did not read: every island's
+  // `mount()` REJECTED, the console is empty because a rejected promise calls no console method,
+  // and the run reported `ok: true` — the marker the prelude pays 129 B an island to emit was
+  // counted into the artifact and read by nothing.
+  test('an island whose mount rejected fails the verdict, with a clean console', () => {
+    const verdict = buildVerdict(
+      inputFor({
+        islands: {
+          declared: 2,
+          booted: 2,
+          mounted: 1,
+          failed: 1,
+          byStrategy: { idle: 2 },
+          failures: [{ island: 'cart', message: 'TypeError: total is not a function' }],
+        },
+      }),
+    );
+    expect([verdict.ok, verdict.errors, verdict.pageErrors.length]).toEqual([false, 0, 0]);
+  });
+
+  // A `null` probe is "not counted", never "none failed": a page that answered no probe must not
+  // be failed by a zero the tool invented.
+  test('an uncounted island neither fails the verdict nor passes it as a zero', () => {
+    expect(buildVerdict(inputFor({ islands: null })).ok).toBe(true);
+  });
+
   test('a refused request is counted without failing the shot', () => {
     const verdict = buildVerdict(
       inputFor({ network: [entry(), entry({ refused: 'host' }), entry({ refused: 'blocked' })] }),
@@ -308,6 +334,38 @@ describe('unit · the artifact says what it does not know', () => {
       1,
       4,
     ]);
+  });
+});
+
+describe('unit · a failed mount is what the summary leads with', () => {
+  const failedIslands = (message: string): Partial<ShotInput> => ({
+    islands: {
+      declared: 3,
+      booted: 2,
+      mounted: 1,
+      failed: 1,
+      byStrategy: { idle: 2, never: 1 },
+      failures: [{ island: 'cart', message }],
+    },
+  });
+
+  test('the summary names the island that failed and what it said', () => {
+    const summary = shotSummary(buildVerdict(inputFor(failedIslands('TypeError: total'))));
+    expect(summary).toContain('cart');
+    expect(summary).toContain('TypeError: total');
+  });
+
+  // Ahead of the console count for the same reason a throw is: a rejected mount promise calls no
+  // console method, and `errors` alone would report the page clean.
+  test('a failed mount outranks a console error and is outranked by a redirect', () => {
+    const withError = buildVerdict(
+      inputFor({ ...failedIslands('boom'), console: [line('error', 'unrelated')] }),
+    );
+    expect(shotSummary(withError)).toContain('cart');
+    const redirected = buildVerdict(
+      inputFor({ ...failedIslands('boom'), finalUrl: 'http://localhost:4321/auth/sign-in' }),
+    );
+    expect(shotSummary(redirected)).toContain('/auth/sign-in');
   });
 });
 

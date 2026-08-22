@@ -138,7 +138,12 @@ export const tasksCommand: CliCommand = {
     subcommands: ['list', 'show'],
     defaultSubcommand: 'list',
     flags: [
-      { name: 'count', type: 'string', summary: 'show: how many upcoming occurrences to list' },
+      {
+        name: 'count',
+        type: 'string',
+        summary: 'show: how many upcoming occurrences to list',
+        subcommands: ['show'],
+      },
     ],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {

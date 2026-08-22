@@ -178,6 +178,9 @@ const CATALOG = {
   'cli.shot.canvasUnreadable': '  canvas   unreadable — {bytes} byte(s), not a decodable image',
   'cli.shot.islands': '  islands  {booted} of {declared} mounted ({strategies})',
   'cli.shot.islandsUnknown': '  islands  not counted — the page answered no probe',
+  // The failure a picture cannot show and a console count cannot see: a rejected mount promise
+  // calls no console method, so the FIRST one is named here rather than left to verdict.json.
+  'cli.shot.islandFailed': '{route}: {failed} island(s) failed to mount — {island}: {message}',
   'cli.shot.network': '  network  {requests} request(s), {refused} refused, {dropped} dropped',
   'cli.shot.console': '  console  {level}: {text}',
   'cli.shot.threw': '{route}: {thrown} uncaught exception(s) — {first}',
@@ -228,6 +231,10 @@ const CATALOG = {
   'cli.test.sampled': 'sampled {kept} of {total} {type} file(s)',
   'cli.test.type.fail': '{type} — {failed} of {workers} shard(s) failed',
   'cli.test.type.pass': '{type} — {files} test file(s) on {workers} worker(s) passed in {ms}ms',
+  // The banner a `--only` run carries, in front of whichever summary above it renders. Rendered
+  // output, so it lives here — `data.notAGateRun` is the machine marker, and a reader testing for
+  // one narrowed run reads that boolean rather than substring-matching this line.
+  'cli.verify.notAGateRun': 'NOT A GATE RUN — {summary}',
   'cli.verify.pass': 'all {count} steps passed in {ms}ms',
   'cli.verify.fail': '{failed} of {count} steps failed',
   // A skipped step is not a passed one, so the two counts never share a sentence — and the skipped

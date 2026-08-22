@@ -4,7 +4,8 @@
 // per-tenant subscription cap all decided against an anonymous actor. Realtime was single-tenant
 // by wiring, not by design.
 
-import type { Actor } from '@ultimat3/core';
+import type { Actor, Clock } from '@ultimat3/core';
+import { systemClock } from '@ultimat3/core';
 import type { HttpConfig } from '@ultimat3/http';
 import {
   configuredAuthenticator,
@@ -13,6 +14,36 @@ import {
   UltimateRequest,
 } from '@ultimat3/http';
 import type { SyncAuthenticator, SyncGrant } from '@ultimat3/realtime/server';
+
+/**
+ * How long one grant stands before the node re-decides it.
+ *
+ * A grant with no expiry never appears in `GrantBook.expired()`, so `sweepGrants` — the only path
+ * to `hub.onActorChange` and `registry.reauthorize` — never fired for a socket this adapter opened.
+ * `logout`, `revokeSession`, `disableUser` and `updatePrivileges` closed the HTTP session and never
+ * the websocket, and the client's 15s heartbeat beats the 120s idle sweep, so the socket stayed up
+ * with the revoked actor's authority for as long as the tab was open.
+ *
+ * Five minutes, against `DEFAULT_REAUTH_INTERVAL_MS` (30s): the window a revoked actor keeps its
+ * socket is this plus one sweep, and the cost is one resolver call per socket per window — 167/s
+ * on the 50,000-socket node this repo has measured, against 1,667/s at a 30s TTL. A deployment
+ * whose credential has a shorter real lifetime passes `runtime.syncAuthenticate` and states it.
+ */
+export const SYNC_GRANT_TTL_MS = 5 * 60_000;
+
+/**
+ * The credential this adapter retains per socket, and nothing else.
+ *
+ * `sync-auth.ts` says the seam is a closure precisely so a node does not hold one `Request` per
+ * connection for the life of that connection: `SyncSocket`'s budget is ~1KB and the grant sits
+ * beside it. Two header values is what an app that closes over a token string would hold.
+ *
+ * Dropping the rest can only make a refresh MORE restrictive, never more permissive: an app that
+ * resolves identity from some other header sees its refresh answer `null`, which closes the socket
+ * with `1008` and the client re-dials carrying that header again. One reconnect per window, not an
+ * escalation — and `runtime.syncAuthenticate` is the declared seam for stating something else.
+ */
+const CREDENTIAL_HEADERS = ['cookie', 'authorization'] as const;
 
 /**
  * The upgrade request, dressed as the request an `Authenticator` reads.
@@ -27,33 +58,74 @@ function upgradeConfig(buildId: string): HttpConfig {
   return defineHttpConfig({ buildId, rateLimit: { enabled: false, scope: 'process' } });
 }
 
+/** What the closure keeps: enough to ask the app's resolver the same question a second time. */
+interface Credential {
+  readonly url: string;
+  readonly method: string;
+  readonly headers: Headers;
+}
+
+function credentialOf(request: Request): Credential {
+  const headers = new Headers();
+  for (const name of CREDENTIAL_HEADERS) {
+    const value = request.headers.get(name);
+    if (value !== null) headers.set(name, value);
+  }
+  return { url: request.url, method: request.method, headers };
+}
+
+export interface SyncAuthenticatorOptions {
+  /** The clock a grant's window is measured on. Injected so a re-auth is provable without sleeping. */
+  readonly clock?: Clock;
+  /** Overrides `SYNC_GRANT_TTL_MS`. A test names its own window; nothing in the boot passes one. */
+  readonly ttlMs?: number;
+}
+
 /**
  * What the sync node is given when the app configured an authenticator, and `undefined` when it
  * did not — which keeps `x dev` anonymous and makes the node log that it is, exactly as
  * `createSyncNode` documents. A stub that answered `{ actor: anonymous }` would look configured.
  *
- * The grant carries **no `expiresAt` and no `refresh`**, and that is the honest limit of this
- * adapter rather than an omission: `configureAuthenticator()` resolves an `Actor` and says nothing
- * about how long it stays true, so inventing a window here would either close live sockets that
- * are still authorized or claim a lifetime the app never promised. A deployment whose credential
- * has a real expiry passes `runtime.syncAuthenticate` and gets re-authorization; the timer for it
- * already lives in `createSyncNode.start()`.
+ * The grant carries an `expiresAt` and a `refresh`, and both are the app's own resolver asked
+ * again: `configureAuthenticator` says who is dialling, and the only honest way to learn that it
+ * has stopped being true is to ask. A `null` second answer is a revocation the node turns into a
+ * `1008`; a THROW is a backend failure, and `sweepGrants` keeps the grant and retries — the
+ * adapter must not collapse those two, here or on the refresh path.
  */
-export function syncAuthenticator(buildId: string): SyncAuthenticator | undefined {
+export function syncAuthenticator(
+  buildId: string,
+  options: SyncAuthenticatorOptions = {},
+): SyncAuthenticator | undefined {
   const authenticate = configuredAuthenticator();
   if (authenticate === undefined) return undefined;
   // Once per node, not once per upgrade: resolving a config is pure and a 50k-socket node pays
   // this per connection otherwise.
   const config = upgradeConfig(buildId);
-  return async (request: Request): Promise<SyncGrant | null> => {
+  const clock = options.clock ?? systemClock;
+  const ttlMs = options.ttlMs ?? SYNC_GRANT_TTL_MS;
+
+  const resolve = async (credential: Credential): Promise<SyncGrant | null> => {
+    const request = new Request(credential.url, {
+      method: credential.method,
+      headers: credential.headers,
+    });
     const ctx = createRequestContext({
-      url: new URL(request.url),
-      method: request.method,
+      url: new URL(credential.url),
+      method: credential.method,
       role: 'sync',
       config,
-      requestHeaders: request.headers,
+      requestHeaders: credential.headers,
     });
     const actor: Actor | null = await authenticate(new UltimateRequest(request, ctx), ctx);
-    return actor === null ? null : { actor };
+    if (actor === null) return null;
+    return {
+      // The window is measured from the answer, not from the upgrade: a refreshed grant that
+      // returned its original instant would be expired again on the very next pass.
+      actor,
+      expiresAt: clock.now().getTime() + ttlMs,
+      refresh: () => resolve(credential),
+    };
   };
+
+  return async (request: Request): Promise<SyncGrant | null> => resolve(credentialOf(request));
 }

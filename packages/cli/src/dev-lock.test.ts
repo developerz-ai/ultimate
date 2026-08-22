@@ -2,7 +2,7 @@
 // what matters here is that each refusal names the right cause and offers a remedy that RUNS.
 
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
@@ -10,6 +10,7 @@ import {
   clearLock,
   DEV_LOCK_FILE,
   DevAlreadyRunningError,
+  DevLockUnreadableError,
   DevPortInUseError,
   isProcessAlive,
   lockPath,
@@ -79,14 +80,95 @@ describe('preflight', () => {
   test('a clean directory and a free port pass, clearing nothing', async () => {
     const dir = scratch();
     try {
-      expect(
-        await preflight({
-          stateDir: dir,
-          port: 3000,
-          hostname: 'localhost',
-          portBound: () => false,
-        }),
-      ).toEqual({ clearedStale: false });
+      const result = await preflight({
+        stateDir: dir,
+        port: 3000,
+        hostname: 'localhost',
+        portBound: () => false,
+      });
+      expect(result.clearedStale).toBe(false);
+      // The claim is the pass: `preflight` returns having ALREADY taken the directory, so there is
+      // no window between the check and the boot for a second one to walk through.
+      expect(parseLock(await Bun.file(lockPath(dir)).text())?.pid).toBe(process.pid);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('two boots racing the preflight: the SECOND is refused, before either opens .x/pgdata', async () => {
+    const dir = scratch();
+    try {
+      const first = await preflight({
+        stateDir: dir,
+        port: 3000,
+        hostname: 'localhost',
+        embeddedDb: true,
+        portBound: () => false,
+      });
+      // `startDev` takes seconds — embedded Postgres, the queue, the transport, the app's modules
+      // — and the lock was written AFTER all of it. So this second preflight ran while the first
+      // boot was still in progress. Observed before the fix: `{ clearedStale: false }`, no throw,
+      // both boots opening one single-writer `.x/pgdata`, and the operator getting
+      // X_DB_UNAVAILABLE whose own `fix:` says to run `x dev`.
+      const thrown = await preflight({
+        stateDir: dir,
+        port: 3000,
+        hostname: 'localhost',
+        embeddedDb: true,
+        portBound: () => false,
+      }).catch((error: unknown) => error);
+
+      expect(thrown).toBeInstanceOf(DevAlreadyRunningError);
+      expect((thrown as DevAlreadyRunningError).code).toBe('X_DEV_ALREADY_RUNNING');
+      // This process IS the holder here, which is the honest answer: the pid in the file is alive.
+      expect((thrown as DevAlreadyRunningError).cause).toContain(String(process.pid));
+      first.release();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a boot that fails releases the claim, so the retry is not refused by its own corpse', async () => {
+    const dir = scratch();
+    try {
+      const first = await preflight({
+        stateDir: dir,
+        port: 3000,
+        hostname: 'localhost',
+        portBound: () => false,
+      });
+      // What `cmd-dev.ts` does when `startDev` throws: give the directory back. Without it the
+      // rollback is worse than the bug — every later boot in this shell is refused by a lock whose
+      // pid is a process that gave up.
+      first.release();
+      expect(await Bun.file(lockPath(dir)).exists()).toBe(false);
+
+      const second = await preflight({
+        stateDir: dir,
+        port: 3000,
+        hostname: 'localhost',
+        portBound: () => false,
+      });
+      expect(second.clearedStale).toBe(false);
+      second.release();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('a refused port leaves no claim behind — the remedy is --port, and it must work', async () => {
+    const dir = scratch();
+    try {
+      await preflight({
+        stateDir: dir,
+        port: 3000,
+        hostname: 'localhost',
+        portBound: () => true,
+        holder: async () => ({}),
+      }).catch(() => undefined);
+      // A claim held past a refusal would make `x dev --port 3001` — the fix line this very
+      // refusal prints — fail with X_DEV_ALREADY_RUNNING naming the process that just exited.
+      expect(await Bun.file(lockPath(dir)).exists()).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -130,7 +212,9 @@ describe('preflight', () => {
         alive: () => false,
       });
       expect(result.clearedStale).toBe(true);
-      expect(await Bun.file(lockPath(dir)).exists()).toBe(false);
+      // The dead pid's lock is gone and THIS process holds the directory: cleared, then claimed,
+      // in one pass. An empty path here would be the check-then-act window reopened.
+      expect(parseLock(await Bun.file(lockPath(dir)).text())?.pid).toBe(process.pid);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -204,6 +288,34 @@ describe('preflight', () => {
         alive: () => true,
       }).catch((error: unknown) => error);
       expect(thrown).toBeInstanceOf(DevAlreadyRunningError);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('a lock file this process can neither read nor remove', () => {
+  // A DIRECTORY at `dev.lock` reaches every branch of that path for real: `openSync(…, 'wx')` is
+  // EEXIST so the claim fails, `Bun.file(…).exists()` is false so both reads answer `null`, and
+  // `unlinkSync` is EISDIR so the file survives the clear. Nothing is stubbed.
+  test('is its own refusal, and never this process reported as the holder', async () => {
+    const dir = scratch();
+    try {
+      mkdirSync(lockPath(dir));
+      const thrown = (await preflight({
+        stateDir: dir,
+        port: 3000,
+        hostname: 'localhost',
+        portBound: () => false,
+        alive: () => true,
+      }).catch((error: unknown) => error)) as DevLockUnreadableError;
+
+      // Measured before this landed: `X_DEV_ALREADY_RUNNING`, `pid <this process> is already
+      // running x dev`, and `fix: … kill <this process>` — a remedy that kills its own reader.
+      expect(thrown).toBeInstanceOf(DevLockUnreadableError);
+      expect(thrown.code).toBe('X_DEV_LOCK_UNREADABLE');
+      expect(thrown.cause).not.toContain(String(process.pid));
+      expect(thrown.fix).toBe(`rm ${lockPath(dir)}   # then re-run x dev`);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

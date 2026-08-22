@@ -101,8 +101,28 @@ export function setLoggerContextFields(provider: () => LogFields | undefined): v
   contextFields = provider;
 }
 
+/**
+ * Where a line with no explicit writer lands, for everything below `error`. A fact about the
+ * PROCESS and not about the line: a container's stdout IS its log stream (12-factor), while a
+ * CLI's stdout is the answer it was asked for. `x db migrate --json` printed the boot logger's
+ * `ultimate migrate applied` and then the command's own JSON to fd 1, so a caller doing what
+ * `--json` exists for — parsing the output — raised on the second object.
+ */
+let logStream: 'stdout' | 'stderr' = 'stdout';
+
+/**
+ * Send everything below `error` to stderr, or back to stdout. The process's own call, made once at
+ * entry: a per-line choice would be the second logging path axiom 1 refuses, and a per-logger one
+ * already exists as `LoggerOptions.writer` — what had no seam is the module-scope `logger`, which
+ * is the one `serve.ts` and every boot path write through.
+ */
+export function setLogStream(stream: 'stdout' | 'stderr'): void {
+  logStream = stream;
+}
+
 function defaultWriter(line: string, level: LogLevel): void {
-  const stream = LEVEL_WEIGHT[level] >= LEVEL_WEIGHT.error ? process.stderr : process.stdout;
+  const toStderr = logStream === 'stderr' || LEVEL_WEIGHT[level] >= LEVEL_WEIGHT.error;
+  const stream = toStderr ? process.stderr : process.stdout;
   stream.write(`${line}\n`);
 }
 

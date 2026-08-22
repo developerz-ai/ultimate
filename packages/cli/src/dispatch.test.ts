@@ -5,8 +5,13 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+// `node:process`, and unavoidable: the assertion below is about which of the process's OWN streams
+// core's default log writer reaches, so the writers it targets are what this test has to intercept.
+import process from 'node:process';
+import { logger, setLogStream } from '@ultimat3/core';
 import { PLANNED_COMMANDS } from './cmd-planned';
-import { dispatch } from './dispatch';
+import { dispatch, sinkFor } from './dispatch';
+import type { CommandResult } from './output';
 import { SPECS } from './registry';
 
 const REQUIRED_BUN = '1.3.14';
@@ -151,5 +156,83 @@ describe('unit · a planned command answers X_NOT_IMPLEMENTED however it is invo
     });
     expect(code).toBe(1);
     expect(finding(lines.join('\n')).code).toBe('X_BUN_VERSION');
+  });
+});
+
+/**
+ * Two facts about fd 1 that every command depends on and no command can enforce alone: the answer
+ * goes there, and NOTHING ELSE does. Both were false — `x mcp serve --transport stdio` printed a
+ * `✓ …` banner onto a stream carrying JSON-RPC frames, and every command that boots the app wrote
+ * the boot logger's lines onto the stdout a `--json` caller was about to parse.
+ */
+describe('unit · the dispatcher owns fd 1', () => {
+  const answer = (extra: Partial<CommandResult> = {}): CommandResult => ({
+    ok: true,
+    command: 'mcp',
+    summary: 'mcp stdio serving 13 tools',
+    ...extra,
+  });
+
+  test('a result that declares stderr goes to the error sink, and nothing else does', () => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const options = {
+      write: (line: string) => out.push(line),
+      writeError: (line: string) => err.push(line),
+    };
+    sinkFor(answer({ stream: 'stderr' }), options)('banner');
+    sinkFor(answer(), options)('{"ok":true}');
+    // The default is unchanged and is the one every other command takes.
+    sinkFor(answer({ stream: 'stdout' }), options)('also stdout');
+    expect(err).toEqual(['banner']);
+    expect(out).toEqual(['{"ok":true}', 'also stdout']);
+  });
+
+  // An embedding caller that supplies one sink still gets output: the fallback is deliberate, and
+  // it is why `writeError` is optional rather than a fifth required field on every call site.
+  test('with no error sink the line still lands, on the one sink there is', () => {
+    const out: string[] = [];
+    sinkFor(answer({ stream: 'stderr' }), { write: (line: string) => out.push(line) })('banner');
+    expect(out).toEqual(['banner']);
+  });
+
+  test('--json moves the boot logger off stdout, for every command', async () => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const stdout = process.stdout.write.bind(process.stdout);
+    const stderr = process.stderr.write.bind(process.stderr);
+    const probe = (): void => {
+      process.stdout.write = (chunk: unknown): boolean => {
+        out.push(String(chunk));
+        return true;
+      };
+      process.stderr.write = (chunk: unknown): boolean => {
+        err.push(String(chunk));
+        return true;
+      };
+      try {
+        logger.info('ultimate migrate applied');
+      } finally {
+        process.stdout.write = stdout;
+        process.stderr.write = stderr;
+      }
+    };
+    try {
+      // `x help` boots nothing, which is the point: the decision is the DISPATCHER's and is taken
+      // for all thirty commands, not remembered by each one that happens to open a database.
+      await run(['help', '--json']);
+      probe();
+      expect(out).toEqual([]);
+      expect(err.join('')).toContain('ultimate migrate applied');
+
+      // No `setLogStream('stdout')` here, deliberately: the dispatcher RESETS the stream on every
+      // run, and this call standing in for it is what hid a JSON dispatch leaving stderr behind
+      // for the next non-JSON one.
+      await run(['help']);
+      probe();
+      expect(out.join('')).toContain('ultimate migrate applied');
+    } finally {
+      setLogStream('stdout');
+    }
   });
 });

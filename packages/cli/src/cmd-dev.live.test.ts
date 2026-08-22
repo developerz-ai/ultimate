@@ -24,9 +24,15 @@ const HOLD_ROOT = join(import.meta.dir, '..', '.dev-hold-fixture');
 const BIN = join(import.meta.dir, 'bin.ts');
 
 /**
- * One pump per stream, into one buffer. Reading the stream twice is what a naive version does,
- * and abandoning a `for await` closes the underlying reader — the second read then waits forever
- * on a stream nothing will ever write to again.
+ * One pump per stream, into one buffer per stream. Reading a stream twice is what a naive version
+ * does, and abandoning a `for await` closes the underlying reader — the second read then waits
+ * forever on a stream nothing will ever write to again.
+ *
+ * TWO of them, because `--json` splits this process's output across both descriptors:
+ * `dispatch.ts` calls `setLogStream('stderr')` when `args.json` is set, so fd 1 carries the
+ * command's one JSON object and fd 2 carries every `{"msg":…}` line the boot and the drain write.
+ * A single buffer over `child.stdout` waited out this file's whole 60s budget for a `stopped` line
+ * that was never going to arrive on it.
  */
 function pump(stream: ReadableStream<Uint8Array>): { seen: () => string } {
   const decoder = new TextDecoder();
@@ -70,6 +76,7 @@ describe('x dev stays up until it is signalled', () => {
         stderr: 'pipe',
       });
       const output = pump(child.stdout);
+      const logs = pump(child.stderr);
       try {
         expect(await waitFor(output, '"command":"dev"')).toContain('"ok":true');
 
@@ -79,12 +86,15 @@ describe('x dev stays up until it is signalled', () => {
         expect(child.exitCode).toBeNull();
 
         child.kill('SIGINT');
-        const drained = await waitFor(output, '"msg":"stopped"');
+        // On fd 2, and asserted there rather than against a merged buffer: `x dev --json`'s stdout
+        // is one document, and a log line reaching it is what made `json.load` raise on the second.
+        const drained = await waitFor(logs, '"msg":"stopped"');
         const code = await child.exited;
 
         // Drained, not killed: a hard kill leaves the embedded Postgres directory locked and never
         // reaches core's phases, so this line is the whole difference.
         expect(drained).toContain('"msg":"stopped"');
+        expect(output.seen()).not.toContain('"msg":');
         expect(code).toBe(0);
       } finally {
         child.kill('SIGKILL');

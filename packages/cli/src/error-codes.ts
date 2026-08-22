@@ -56,6 +56,10 @@ export const CLI_OWNED_ERROR_CODES = [
   'X_ROLE_UNKNOWN',
   'X_PORT_INVALID',
   'X_DEV_ALREADY_RUNNING',
+  // The OTHER thing the preflight can find, and it was reported as the one above: an unreadable
+  // lock this process could not remove made `DevAlreadyRunningError` name THIS pid as the holder,
+  // so the remedy printed was `kill <self>` — unrunnable, and a cause that was simply untrue.
+  'X_DEV_LOCK_UNREADABLE',
   // The boot's own consistency check. `startServices` captures the drivers it built, and
   // `loadApp` runs AFTER it — so an app module calling `setJobDriver(theirs)` moved the ambient
   // slot and left the captured object alone: every `handle.enqueue()` went to their queue while
@@ -177,6 +181,7 @@ export const CLI_ERROR_TITLES: Readonly<Record<CliOwnedErrorCode, string>> = {
   X_ROLE_UNKNOWN: 'ROLE names something that is not a role',
   X_PORT_INVALID: 'PORT is not a TCP port number',
   X_DEV_ALREADY_RUNNING: 'another x dev already owns this checkout',
+  X_DEV_LOCK_UNREADABLE: 'the dev lock file cannot be read or removed',
   X_RUNTIME_DRIVER_SPLIT: 'the ambient driver is not the one this process serves',
   X_GENERATE_CONFLICT: 'a generator would overwrite a file',
   X_PORT_IN_USE: 'the dev port is taken',

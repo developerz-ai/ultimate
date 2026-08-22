@@ -102,6 +102,9 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_PORT_IN_USE: 'x dev --port 3001 --json',
   X_DEV_ALREADY_RUNNING:
     'x dev --json   # after stopping the x dev that already owns this checkout',
+  // The path, not `x dev`: the boot has already refused and rerunning it refuses again. The
+  // error's own `fix:` carries the resolved `.x/dev.lock`; this table cannot know the state dir.
+  X_DEV_LOCK_UNREADABLE: 'rm .x/dev.lock   # then: x dev --json',
   // Not `x db status`: there is no such subcommand (`x db` is gen, migrate, reset, studio, branch),
   // so the fix answered a failed step with X_CLI_UNKNOWN_COMMAND. `x doctor` is what reports
   // reachability and drift, and is already this table's answer for X_DB_STUDIO_FAILED.

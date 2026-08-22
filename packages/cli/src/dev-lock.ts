@@ -14,11 +14,12 @@
 // The lock file is what makes the second one nameable at all: nothing else in the process can tell
 // "another dev server owns this directory" from "the database is broken".
 
-import { unlinkSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { UltimateError } from '@ultimat3/core';
 import { docsFor } from './error-codes';
 import { exec, type Runner } from './exec';
+import { quoteArg } from './shell-quote';
 
 /** Where the running dev server records itself, inside the state directory it already owns. */
 export const DEV_LOCK_FILE = 'dev.lock';
@@ -97,6 +98,28 @@ export class DevAlreadyRunningError extends UltimateError {
       fix: `use the one already running at ${input.lock.url}, or stop it: kill ${input.lock.pid}`,
       docs: docsFor('X_DEV_ALREADY_RUNNING'),
       meta: { pid: input.lock.pid, port: input.lock.port, stateDir: input.stateDir },
+    });
+  }
+}
+
+/**
+ * The lock file exists, this process could not read it and could not remove it — which is not
+ * "another x dev is running", and was reported as exactly that.
+ *
+ * `DevAlreadyRunningError` needs a `DevLock`, and the only one in hand on that path was `mine`:
+ * the refusal then read `pid <this process> is already running x dev` with `fix: … kill <this
+ * process>`, a remedy that kills the reader and a cause naming the wrong holder. Axiom 4 wants a
+ * runnable fix and an honest cause, so the honest answer is its own code — the file is the
+ * problem, and removing it is what a reader can actually do.
+ */
+export class DevLockUnreadableError extends UltimateError {
+  constructor(input: { readonly path: string; readonly stateDir: string }) {
+    super({
+      code: 'X_DEV_LOCK_UNREADABLE',
+      cause: `${input.path} could not be parsed as a dev lock and could not be removed, so x dev cannot tell whether another process owns ${input.stateDir}`,
+      fix: `rm ${quoteArg(input.path)}   # then re-run x dev`,
+      docs: docsFor('X_DEV_LOCK_UNREADABLE'),
+      meta: { path: input.path, stateDir: input.stateDir },
     });
   }
 }
@@ -207,6 +230,41 @@ export const isPortBound = (port: number, hostname: string): boolean => {
   }
 };
 
+/**
+ * Take the lock, or answer `false` because someone else holds it.
+ *
+ * `wx` is the whole mechanism: the create and the exclusivity are ONE syscall, so two boots racing
+ * this cannot both come back `true`. A check followed by a write is what this replaces, and the
+ * window between those two was seconds wide — `startDev` boots embedded Postgres, the queue, the
+ * transport and the app's modules before anything was written down.
+ *
+ * Only `EEXIST` is "someone else has it". Anything else — a read-only checkout, a `.x/` nobody may
+ * write — is rethrown as it arrives: it is the same failure `writeLock` would have raised seconds
+ * later, and inventing a code for it here would be a second answer to one condition.
+ */
+function claimExclusive(path: string, lock: DevLock): boolean {
+  let fd: number;
+  try {
+    fd = openSync(path, 'wx');
+  } catch (error) {
+    if ((error as { code?: string }).code === 'EEXIST') return false;
+    throw error;
+  }
+  try {
+    writeFileSync(fd, `${JSON.stringify(lock, null, 2)}\n`);
+  } finally {
+    closeSync(fd);
+  }
+  return true;
+}
+
+/** Whatever is on disk right now, or `null` if it is absent or half-written. */
+const readLock = async (path: string): Promise<DevLock | null> => {
+  const file = Bun.file(path);
+  if (!(await file.exists())) return null;
+  return parseLock(await file.text());
+};
+
 export interface PreflightInput {
   readonly stateDir: string;
   readonly port: number;
@@ -220,22 +278,53 @@ export interface PreflightInput {
   readonly holder?: (port: number) => Promise<PortHolder>;
 }
 
+export interface PreflightResult {
+  readonly clearedStale: boolean;
+  /**
+   * Give the directory back. The caller runs it when the boot it was preflighting FAILED —
+   * `serve.ts`'s `releaseBoot` shape — because a claim held by a process that gave up refuses
+   * every later boot in that shell for a pid that is gone.
+   */
+  release(): void;
+}
+
 /**
- * Run before anything boots. Throws the coded refusal, or returns the stale lock it cleared so the
- * caller can say so — a lock left by a hard kill is normal and worth one line, not a failure.
+ * Run before anything boots, and it CLAIMS: it returns holding the directory, never having merely
+ * looked at it.
+ *
+ * That is the fix, not a detail. `preflight` read the lock, `startDev` booted for seconds, and
+ * `writeLock` ran last — so two `x dev` in one checkout both passed the check and both opened
+ * `.x/pgdata`, `X_DEV_ALREADY_RUNNING` was unreachable, and what the operator actually got was
+ * `X_DB_UNAVAILABLE` whose `fix:` reads "run `x dev`" — the incident this file's own header
+ * records. The claim closes the window it names.
+ *
+ * The stale path still exists and is still normal (a hard kill leaves a lock behind): the file is
+ * removed and the claim retried once. A retry that ALSO loses is another boot that claimed the
+ * cleared slot in that instant, which is a refusal and not a third boot.
  */
-export const preflight = async (input: PreflightInput): Promise<{ clearedStale: boolean }> => {
+export const preflight = async (input: PreflightInput): Promise<PreflightResult> => {
   const alive = input.alive ?? isProcessAlive;
   const bound = input.portBound ?? isPortBound;
   const path = lockPath(input.stateDir);
-  const file = Bun.file(path);
+  const release = (): void => clearLock(input.stateDir);
+  // The lock lives inside the state directory, which the database has not created yet — this runs
+  // before anything boots, which is the whole point of it.
+  mkdirSync(input.stateDir, { recursive: true });
+  const mine: DevLock = {
+    pid: process.pid,
+    port: input.port,
+    // Refined by `writeLock` once the server reports the address it really bound; until then this
+    // is what the refusal prints, and it is the address the boot is about to ask for.
+    url: `http://${input.hostname}:${input.port}`,
+    startedAt: new Date().toISOString(),
+  };
   let clearedStale = false;
 
-  if (await file.exists()) {
-    const lock = parseLock(await file.text());
-    if (lock !== null && alive(lock.pid)) {
+  if (!claimExclusive(path, mine)) {
+    const held = await readLock(path);
+    if (held !== null && alive(held.pid)) {
       throw new DevAlreadyRunningError({
-        lock,
+        lock: held,
         stateDir: input.stateDir,
         ...(input.embeddedDb === undefined ? {} : { embeddedDb: input.embeddedDb }),
       });
@@ -245,22 +334,45 @@ export const preflight = async (input: PreflightInput): Promise<{ clearedStale: 
     try {
       unlinkSync(path);
     } catch {
-      // Already gone, or not ours to remove. Either way the boot below is what decides.
+      // Already gone, or not ours to remove. The claim below is what decides.
     }
     clearedStale = true;
+    if (!claimExclusive(path, mine)) {
+      // Lost the race for the slot we just cleared. `held` is the best identity available — a
+      // half-written file parses as `null` for microseconds — and refusing on a stale pid beats
+      // the alternative, which is two processes writing one single-writer data directory.
+      //
+      // NEVER `mine`, which is what it fell back to: with an unparseable lock and a failed
+      // `unlinkSync`, both reads answer `null` and the refusal named THIS pid as the holder —
+      // `kill <self>` as the remedy for a file nobody could read.
+      const holder = (await readLock(path)) ?? held;
+      if (holder === null) throw new DevLockUnreadableError({ path, stateDir: input.stateDir });
+      throw new DevAlreadyRunningError({
+        lock: holder,
+        stateDir: input.stateDir,
+        ...(input.embeddedDb === undefined ? {} : { embeddedDb: input.embeddedDb }),
+      });
+    }
   }
 
   if (bound(input.port, input.hostname)) {
+    // Released before the throw: the remedy this refusal prints is `x dev --port <n>`, and a claim
+    // left behind would answer that command with X_DEV_ALREADY_RUNNING naming the process that
+    // just exited on it.
+    release();
     throw new DevPortInUseError({
       port: input.port,
       suggestion: suggestPort(input.port),
       holder: await (input.holder ?? portHolder)(input.port),
     });
   }
-  return { clearedStale };
+  return { clearedStale, release };
 };
 
-/** Record this process. Written after the preflight passes and before the roles start. */
+/**
+ * Record this process. The claim is already on disk — `preflight` took it — so this REFINES it
+ * with the address the server actually bound, which is the one field the preflight could not know.
+ */
 export const writeLock = async (stateDir: string, lock: DevLock): Promise<void> => {
   await Bun.write(lockPath(stateDir), `${JSON.stringify(lock, null, 2)}\n`);
 };

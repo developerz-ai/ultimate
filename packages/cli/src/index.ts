@@ -323,4 +323,4 @@ export type { WorkspaceNode, WorkspaceScan } from './workspace-graph';
 // nothing to read. `checkWorkspaceDependencies` stays internal — it is reached through
 // `x verify`, which is the one way a rule is enforced here.
 export { readWorkspaceGraph, scanWorkspaces } from './workspace-graph';
-export { writeLine } from './write-line';
+export { writeErrorLine, writeLine } from './write-line';

@@ -73,6 +73,111 @@ Semver applies from 1.0.0. A breaking change to a documented API needs a major �
 
 ### Fixed
 
+- **SECURITY — a sync grant never expired, so `logout` never closed the socket.** The scaffolded
+  authenticator built `{ actor }` with no `expiresAt` and no `refresh`, and `GrantBook.expired()`
+  skips such a grant — so `sweepGrants`, the only path to `onActorChange`/`reauthorize`, never
+  fired. `logout`, `revokeSession`, `disableUser` and `updatePrivileges` closed the HTTP session and
+  left the **WebSocket open**, with the 15 s heartbeat outliving the 120 s idle sweep indefinitely.
+  A sweep one year later answered `{ refreshed: 0, revoked: 0 }`. Grants now carry a TTL and a
+  `refresh` that re-asks the app's own authenticator with the upgrade request's captured
+  credential; a `null` second answer closes the socket with `1008`. Proven by a live test against
+  real Postgres: delete the session row, advance past the TTL, socket closes.
+
+- **SECURITY — `x pr` rendered GitHub comment bodies raw to the terminal.** `renderHuman` emitted
+  `result.lines` verbatim while `renderFinding` beside it ran `singleLine`, so ESC/OSC bytes from an
+  attacker-controlled PR comment reached fd 1 — terminal control, and **prompt injection into the
+  agent this command exists to serve**. Every line and every summary is now escaped at the one
+  renderer, and each foreign body is fenced in an id-labelled block the way retrieved documents are
+  fenced for a model, with the fence neutralised inside the payload so a body cannot forge it.
+
+- **SECURITY — `x shot` could photograph another origin.** `readRoute` refused `scheme:` only, so
+  `//evil.example/x`, `\\evil.example/x`, `/\/evil.example/x` and a **tab-smuggled**
+  `/⇥/evil.example/x` all escaped — the WHATWG parser deletes the tab before reading the host. The
+  audit found two of the four. Now refused by resolving against the route origin rather than by
+  blocklist, so anything of that shape is caught.
+
+- **`x shot` reported `ok: true` when every island failed to mount.** `buildVerdict` never read
+  `islands.failed`, and the probe marker it ignored costs 129 B per island prelude — the framework
+  paid to emit a signal nothing read. The existing test had `failed: 1` in its fixture and asserted
+  only the artifact: a test pinning the defect. The verdict was also taken at the deadline when
+  `import()` is *called*, before `mounted` lands; it now polls until the mounts settle.
+
+- **`x verify`'s `drift` step read files no app entity lives in.** It hashed source text under
+  `packages/db/src/**`, so a scaffolded app could ship unmigrated tables under a green gate. It now
+  hashes the loaded entity registry — the same fact `x db gen` diffs. This immediately exposed real
+  drift in the deployed demo app that the old check could not see even though its entities *are*
+  inside that glob: a source-text hash is blind to a change in what `describe()` means by the text,
+  and 4.0.0 made `on delete` reach the generated SQL. Pinned and filed rather than auto-migrated.
+
+- **`x errors explain` and `x docs` saw 1 package of 18 inside an installed app.** The scope walked
+  to the parent of the resolved `@ultimat3/core`, which under Bun's isolated layout holds exactly
+  one entry — so **400 of 405 codes answered "nothing in the installed framework raises this" with
+  `ok: true`**, a confident wrong answer rather than an error.
+
+- **`x i18n sync <defaultLocale>` was a no-op, and it is the fix line the gate hands you.** `runSync`
+  merged from the default locale's own catalog, so `added` was empty by construction: exit 0,
+  "0 key(s) added", check still red, and no other command named. It now seeds every
+  extracted-but-absent key as `⟦key⟧` — and, because that would otherwise let the gate go green over
+  untranslated strings, a value that IS the placeholder now counts as missing.
+
+- **`X_BOUNDARY_ROUTE_TO_DB` on a surface-root route told you to generate a table.**
+  `apps/web/site/page.tsx` produced `fix: x g query site` — seven files and a `sites` table. Surface
+  names are now refused as resource names.
+
+- **`--help` was broken on every command that takes a subcommand.** `x db --help`, `x mcp --help`
+  and `x pr --help` all exited 1, because the subcommand was resolved before the flag was honoured.
+
+- **`x db gen --dry-run` was accepted, ignored, and wrote the migration anyway.** Fixed generally: a
+  flag now declares which subcommands read it, and one that does not apply is refused with the
+  subcommand that does. A dry run that writes a file is the direction a mistake must not fail in.
+
+- **`x db migrate --json` printed two JSON objects**, so `json.load` raised. The boot logger now
+  moves to stderr for every command under `--json` — `x dev`, `x jobs`, `x tasks` and `x mcp` were
+  all doing this. Under stdio transport `x mcp` was worse than untidy: its banner landed on the
+  wire.
+
+- **`x jobs ls --state cancelled` was refused while `x jobs cancel` creates that state** — the CLI
+  kept a 7-member copy of an 8-member vocabulary, and its test looped over the copy. Deleted, along
+  with a second copy of the test-type vocabulary.
+
+- **`x deploy --method compose` ignored `--image`** — `--json` reported the requested ref while
+  `docker compose` resolved `${IMAGE:-…}` from the ambient environment. The human `--dry-run` plan
+  and the `X_DEPLOY_FAILED` fix line now carry the `IMAGE=…` prefix too: a copied line that omits it
+  deploys the compose file's default image, which is the same defect one render further out.
+
+- **`x g rout x` answered `fix: x g resource`** — hardcoded, not runnable alone, and the wrong
+  primitive.
+
+- **`x dev`'s lock was a check-then-act**, so two boots both passed preflight and both opened
+  `.x/pgdata`; `X_DEV_ALREADY_RUNNING` was unreachable and the operator got `X_DB_UNAVAILABLE` with
+  `fix: x dev`. The lock is now claimed inside preflight and released if boot fails. A lock file
+  that parses as nothing and cannot be removed is its own refusal — `X_DEV_LOCK_UNREADABLE`, with
+  `rm <path>` — rather than `X_DEV_ALREADY_RUNNING` naming the reader's OWN pid as the holder and
+  handing back `kill <self>`.
+
+- **`x db backfill` resolved conflicting shapes by precedence instead of refusing them.**
+  `x db backfill cleanup --all --write` enqueued **every** pending sweep and silently dropped the
+  name it was given; `--list --pending` reported the ledger for a question about what is unswept,
+  and a list-only filter on a pass shape was ignored. One shape per invocation now, and a flag the
+  chosen shape cannot read is `X_CLI_BAD_FLAG` naming the shape that reads it.
+
+- **`/readyz` meant "the socket is bound".** `registerReadinessCheck` had **zero callers** anywhere,
+  while the Helm chart and the container healthcheck both route on it. The boot now registers a
+  database probe, and a transport probe where the transport can be disconnected.
+
+- **Every rate limit was per-pod while the charts run 2–3 replicas.** The Postgres store shipped
+  earlier in this release is now the default for every web role, so `scope` reports `'shared'` on a
+  real boot. Proven: 12 of 12 requests were served against `capacity: 10` across two replicas
+  before; correctly limited after. The auth limiter is **not** yet installable (#295).
+
+### Added
+
+- **`x verify --only <step>`** — one step, for an iteration loop where the full gate costs ~18 s.
+  It prints `NOT A GATE RUN` in the human summary **and** in `--json`, exits with that step's own
+  status, and writes no floor file. There is still no `--skip`: **the gate is this command with no
+  flag.**
+
+
 - **Two ways to inject an event handler through a JSX attribute NAME.** `attributePair` tested
   `name.startsWith('on')` **case-sensitively** while the lines beside it folded case, so
   `ONERROR="alert(1)"` was emitted live; and the attribute name was never validated at all, so the

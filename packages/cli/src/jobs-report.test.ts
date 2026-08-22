@@ -4,10 +4,12 @@
 
 import { describe, expect, test } from 'bun:test';
 import type { JobDriver, StepRecord } from '@ultimat3/jobs';
-import { createMemoryDriver } from '@ultimat3/jobs';
+// `JOB_STATES` from the package that OWNS the vocabulary, never from the module under test: the
+// loop below is only a test while the list it walks is the queue's own.
+import { createMemoryDriver, JOB_STATES } from '@ultimat3/jobs';
 import { BadFlagError, JobUnknownError } from './errors';
 import {
-  JOB_STATES,
+  JOB_STATES as CLI_JOB_STATES,
   listJobs,
   parseLimitFlag,
   parseStateFlag,
@@ -58,8 +60,18 @@ const completedStep = (runId: string, name: string): StepRecord => ({
 
 describe('unit · jobs flag parsing', () => {
   test('every JobState the drivers can report is accepted', () => {
-    for (const state of JOB_STATES) expect(parseStateFlag(state)).toBe(state);
+    for (const state of JOB_STATES) expect([state, parseStateFlag(state)]).toEqual([state, state]);
     expect(parseStateFlag(undefined)).toBeUndefined();
+  });
+
+  /**
+   * `cancelled` is the one this loop could not see while it walked the CLI's own seven-member
+   * copy: `x jobs cancel` CREATES that state and `x jobs ls --state cancelled` refused to filter
+   * on it. One list, so the two commands cannot disagree about what a job can be.
+   */
+  test('the state vocabulary is the queue package own list, not a copy of it', () => {
+    expect(CLI_JOB_STATES).toBe(JOB_STATES);
+    expect(parseStateFlag('cancelled')).toBe('cancelled');
   });
 
   test('an unknown --state throws X_CLI_BAD_FLAG naming the known states', () => {

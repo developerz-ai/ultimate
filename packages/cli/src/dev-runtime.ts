@@ -6,7 +6,14 @@
 import { mkdirSync } from 'node:fs';
 import type { PurgeDriver } from '@ultimat3/cache';
 import { isNoopPurgeDriver, selectPurgeDriver } from '@ultimat3/cache';
-import { isLocal, renderThrowable, resolveEnvironment } from '@ultimat3/core';
+import {
+  isLocal,
+  registerReadinessCheck,
+  renderThrowable,
+  resolveEnvironment,
+} from '@ultimat3/core';
+import type { RateLimitStore } from '@ultimat3/http';
+import { postgresRateLimitStore } from '@ultimat3/http';
 import type { EventBus, JobDriver, OutboxStore } from '@ultimat3/jobs';
 import type { MailDriver } from '@ultimat3/mail';
 import {
@@ -22,7 +29,7 @@ import type { Storage } from '@ultimat3/storage';
 import { defineStorage, localDriver, s3Driver, usesDevStorageSecret } from '@ultimat3/storage';
 import { startCacheTiers } from './dev-cache';
 import type { DevDbClient } from './dev-queue';
-import { startQueue } from './dev-queue';
+import { pgExecutorFor, startQueue } from './dev-queue';
 import type { DevServices, Env } from './dev-services';
 import { LocalDiskUnsafeError, StorageUnwritableError } from './errors';
 import { msg } from './messages';
@@ -51,6 +58,20 @@ export interface RunningServices {
    * would show members leaving that never left.
    */
   readonly presenceTtlMs: number;
+  /**
+   * Where the HTTP rate limiter keeps its counters, over the pool this boot already opened.
+   *
+   * Resolved HERE and not at `startWeb` for the reason every other driver is: `startServices` is
+   * what holds the connection, and a store built anywhere else would open a second pool against a
+   * url this boot resolved once. Until it did, no boot installed one at all — so `rateLimit.scope`
+   * derived to `'process'` on every deployment the framework produces, while `docker/helm` runs
+   * `roles.web.replicas: 3` and `x new` scaffolds two.
+   *
+   * OPTIONAL because a `RunningServices` can be hand-built: a test's fixture runtime has a stub
+   * client and no shared store, which is `createServer`'s memory store and `scope: 'process'` —
+   * the honest answer for it, and the one `startWeb` derives.
+   */
+  readonly rateLimitStore?: RateLimitStore;
   readonly purge: PurgeDriver;
   /** Same rule as `mailDetail`: the env key that selected the CDN, never the token behind it. */
   readonly purgeDetail: string;
@@ -177,6 +198,59 @@ export function startStorage(services: DevServices, env: Env, override?: Storage
 }
 
 /**
+ * A readiness check over a dependency that can only be asked asynchronously.
+ *
+ * `ReadinessCheck` is synchronous and that is the mechanism, not a limitation: a probe that awaits
+ * a network call takes as long as the dependency does, so a slow database makes `/readyz` miss its
+ * `timeoutSeconds`, the kubelet reads that as unready, and capacity is pulled from an already
+ * struggling system — the outage the probe existed to prevent, caused by the probe.
+ *
+ * So the read answers the PREVIOUS probe and schedules the next, which is the standard cached
+ * health shape: staleness is one poll period, and the poll period is the operator's own
+ * `periodSeconds`. Deliberately not a `setInterval`: a timer would probe a process nobody is
+ * asking about, and in `x dev` every probe is a statement — one span, one trace id — so a
+ * one-per-second heartbeat would evict every real request from `/_x/timeline` inside a minute.
+ *
+ * It starts `true` because it is already proven: `startQueue` pinged this pool before this line
+ * ran, and a boot that could not would have thrown instead of reaching here.
+ */
+function probedReadinessCheck(name: string, probe: () => Promise<unknown>): () => void {
+  let live = true;
+  let inFlight = false;
+  const refresh = (): void => {
+    if (inFlight) return;
+    inFlight = true;
+    void probe()
+      .then(
+        () => {
+          live = true;
+        },
+        // Every rejection, including the coded `X_DB_UNAVAILABLE` a closed pool answers with. A
+        // check that threw would be reported as failing anyway; catching it here keeps the reason
+        // out of the endpoint's own path, where nothing could report it.
+        () => {
+          live = false;
+        },
+      )
+      .finally(() => {
+        inFlight = false;
+      });
+  };
+  return registerReadinessCheck(name, () => {
+    refresh();
+    return live;
+  });
+}
+
+/** A transport that says whether it is connected. NATS does; the in-process bus has nothing to be. */
+interface ConnectableTransport {
+  readonly connected: boolean;
+}
+
+const saysConnected = (transport: Transport): transport is Transport & ConnectableTransport =>
+  typeof (transport as Partial<ConnectableTransport>).connected === 'boolean';
+
+/**
  * Release what has already started, newest first, and return every failure instead of throwing on
  * the first: a step that rejects must not skip the ones after it, or one transport that will not
  * close strands the CDN tier, the ambient mail driver and the queue in the next boot of this
@@ -217,6 +291,12 @@ export async function startServices(
   // Boot is a sequence of external resources, and every step after the first can reject — the
   // queue is already up, so from here an unwind must release it exactly like everything after it.
   const started: (() => void | Promise<void>)[] = [() => queue.stop()];
+  // One readiness check per resource this boot OWNS, released with it. Nothing in the tree
+  // registered one, so `/readyz` was `markReady()` alone — "this process bound a socket" — and
+  // `packages/http/src/server.ts` calls that BEFORE `Bun.serve`, while `dev-roles.ts` calls it
+  // before `sync`, `worker` and `scheduler` start. The chart's `readinessProbe` and the container
+  // healthcheck both route on it, so a replica whose pool was gone kept taking traffic.
+  started.push(probedReadinessCheck('database', () => db.ping()));
   try {
     // Dialled here rather than at selection: an unreachable bus must fail at `x dev`, not on the
     // first change nobody receives, and the socket is a resource the unwind below has to release.
@@ -227,6 +307,14 @@ export async function startServices(
       await bus.connect();
       started.push(() => bus.transport.close());
       transport = bus.transport;
+    }
+    // Only a transport that can be disconnected gets a check. `NatsTransport.connected` is a
+    // synchronous getter over the client's own state, so no probe is needed; the in-process bus
+    // has nothing to lose a connection to, and a check that can only answer `true` is a number in
+    // `registered` that means nothing.
+    if (saysConnected(transport)) {
+      const connectable = transport;
+      started.push(registerReadinessCheck('transport', () => connectable.connected));
     }
     const storage = startStorage(services, env, overrides?.storage);
     // With no credential this is the memory driver: caught, not sent, so the `/_x` mail panel can
@@ -257,6 +345,10 @@ export async function startServices(
       mailDetail: selection.detail,
       // The env key that selected the bus — or the honest answer that no env key did, because a
       // boot line reading `NATS_URL` over a transport the host handed in is a lie a script parses.
+      // The same executor the jobs driver, the outbox, the event bus and the idempotency store
+      // run on — one pool, one `Bun.sql` that does NOT satisfy `PgExecutor` (`Bun.sql.query` is
+      // `undefined`), one wrapper. `startWeb` is what an override replaces it at.
+      rateLimitStore: postgresRateLimitStore({ executor: pgExecutorFor(db) }),
       transportDetail: overrides?.transport === undefined ? bus.detail : 'runtime override',
       presenceTtlMs: bus.presenceTtlMs,
       purge,

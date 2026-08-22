@@ -53,13 +53,18 @@ x verify --json
 ## `x verify` steps
 
 `typecheck lint boundaries filesize package-shape errors unit contract live job e2e eval drift
-contract-diff budgets manifest roadmap`
+contract-diff budgets seo i18n manifest roadmap`
 
-Seventeen, in cost order, defined once as `VERIFY_STEP_NAMES` (`verify-step.ts`) — the summary
+Nineteen, in cost order, defined once as `VERIFY_STEP_NAMES` (`verify-step.ts`) — the summary
 count above is projected from that list, and the framework repo's own gate (`bun run verify`)
 runs exactly it. A step with nothing to check here reports as skipped, never as
 passed. Never bails early: an agent fixing three things needs all three findings from one run.
-There is no `--only` and no `--skip`; the exit code is non-zero if any step fails.
+
+`--only <step>` runs one step, for an iteration loop — it prints `NOT A GATE RUN` in the human
+summary **and** in `--json` (`data.notAGateRun`), and it writes no floor file. **The gate is this
+command with no flag**, which is what "one command means shippable" means. There is no `--skip`:
+a knob that removes a step from a run that still calls itself the gate is the one thing this
+command must not offer. The exit code is non-zero if any step fails.
 
 A committed `x.verify.json` is the floor, `As of 2026-08`: it names the steps this repo has already
 proved it can run, and a step it names that reports nothing is `X_VERIFY_SUITE_VANISHED` rather

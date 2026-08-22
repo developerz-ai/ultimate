@@ -172,14 +172,17 @@ describe('unit · x deploy --method is a closed set', () => {
 function recordingRunner(failing?: { role: string; code: number }): {
   runner: CommandContext['runner'];
   ran: string[][];
+  envs: (Readonly<Record<string, string>> | undefined)[];
 } {
   const ran: string[][] = [];
-  const runner: CommandContext['runner'] = async (command) => {
+  const envs: (Readonly<Record<string, string>> | undefined)[] = [];
+  const runner: CommandContext['runner'] = async (command, options) => {
     ran.push([...command]);
+    envs.push(options.env);
     const code = failing !== undefined && command.at(-1) === failing.role ? failing.code : 0;
     return { command, code, ok: code === 0, stdout: '', stderr: '', durationMs: 3 };
   };
-  return { runner, ran };
+  return { runner, ran, envs };
 }
 
 const runContext = (
@@ -212,9 +215,11 @@ describe('unit · x deploy actually runs the plan it printed', () => {
     const finding = result.findings?.[0];
     expect(finding?.code).toBe('X_DEPLOY_FAILED');
     expect(finding?.cause).toBe('role "worker" step exited 137');
-    // The fix is the exact argv that failed — copy, paste, see the output.
+    // The fix is the exact argv that failed, with the environment it ran WITH — copy, paste, see
+    // the output. Without the `IMAGE=` prefix the rerun reads `docker-compose.prod.yml`'s default
+    // image, so the line handed back would diagnose a different deployment than the one that broke.
     expect(finding?.fix).toBe(
-      `${(ran.at(-1) ?? []).join(' ')}   # run it directly to see the full output`,
+      `IMAGE=repo/app:1.2.3 ${(ran.at(-1) ?? []).join(' ')}   # run it directly to see the full output`,
     );
     // and nothing after `worker` was attempted.
     expect(ran.at(-1)?.at(-1)).toBe('worker');
@@ -231,7 +236,13 @@ describe('unit · x deploy actually runs the plan it printed', () => {
     expect(plan.data).toMatchObject({ image: 'repo/app:1.2.3', method: 'compose' });
     // `toMatchObject` cannot see an extra key, so the absence is asserted directly: this field was
     // the flag's only destination, and an operator reading it back was reading their own input.
-    expect(Object.keys(plan.data as Record<string, unknown>)).toEqual(['image', 'method', 'steps']);
+    // `env` is the counter-example the rule allows — every step below is spawned with it.
+    expect(Object.keys(plan.data as Record<string, unknown>)).toEqual([
+      'image',
+      'method',
+      'env',
+      'steps',
+    ]);
   });
 
   test('--critical is refused now, and the refusal names the flags that exist', async () => {
@@ -304,5 +315,60 @@ describe('unit · x deploy --method helm runs the chart the scaffold writes', ()
     expect(result.findings?.[0]?.fix).toBe(
       `${(ran.at(-1) ?? []).join(' ')}   # run it directly to see the full output`,
     );
+  });
+});
+
+/**
+ * `docker-compose.prod.yml` resolves every service's image from `${IMAGE:-ultimate-app:latest}`,
+ * so `--image` decided nothing at all on the compose method: `--json` reported the reference the
+ * operator asked for while the six `docker compose` steps read `IMAGE` out of the ambient
+ * environment — or, unset, deployed `ultimate-app:latest`. The flag and the deploy have to be the
+ * same fact.
+ */
+describe('unit · x deploy --method compose passes the image it reports', () => {
+  test('every compose step runs with IMAGE set to the requested reference', async () => {
+    const root = appRoot();
+    const { runner, ran, envs } = recordingRunner();
+    const result = await deployCommand.run(
+      runContext(['deploy', '--image', 'ghcr.io/you/app:1.2.3'], root, runner),
+    );
+    expect(result.ok).toBe(true);
+    expect(ran).toHaveLength(DEPLOY_ROLES.length);
+    for (const env of envs) expect(env).toEqual({ IMAGE: 'ghcr.io/you/app:1.2.3' });
+  });
+
+  // The human render and `--json` are one plan or they are two plans. The terminal showed
+  // `docker compose -f … up -d web` with no `IMAGE=` in front of it, so an operator copying the
+  // line they were shown deployed the compose file's DEFAULT image while `--json` reported theirs.
+  test('the human dry run carries the same IMAGE the JSON plan does', async () => {
+    const result = await deployCommand.run(
+      contextFor(['deploy', '--image', 'ghcr.io/you/app:1.2.3', '--dry-run'], appRoot()),
+    );
+    const lines = (result.lines ?? []).join('\n');
+    const { env } = result.data as { env: Record<string, string> };
+    expect(env).toEqual({ IMAGE: 'ghcr.io/you/app:1.2.3' });
+    for (const line of result.lines ?? []) {
+      expect(line).toContain('IMAGE=ghcr.io/you/app:1.2.3 docker compose');
+    }
+    expect(lines).not.toContain('  docker compose');
+  });
+
+  // Helm's plan carries no environment, so its rendered line must gain no prefix — a `IMAGE=` in
+  // front of `helm upgrade` would name a variable the chart never reads.
+  test('a helm dry run renders the bare command, because its env is empty', async () => {
+    const result = await deployCommand.run(
+      contextFor(
+        ['deploy', '--image', 'repo/app:1.2.3', '--method', 'helm', '--dry-run'],
+        appRoot(),
+      ),
+    );
+    expect((result.lines ?? []).join('\n')).toContain('all        helm upgrade --install');
+  });
+
+  test('the dry run says so too, so the plan an operator reads is the plan that runs', () => {
+    expect(planDeploy('repo/app:tag', 'compose', '/app').env).toEqual({ IMAGE: 'repo/app:tag' });
+    // Helm carries no IMAGE: the chart reads `--set image.repository/tag`, and an env var the
+    // chart never looks at would be a second answer to "which image is this".
+    expect(planDeploy('repo/app:tag', 'helm', '/app').env).toEqual({});
   });
 });

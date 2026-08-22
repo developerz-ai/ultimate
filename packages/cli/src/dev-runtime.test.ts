@@ -327,6 +327,33 @@ describe('startServices', () => {
     { timeout: 60_000 },
   );
 
+  test(
+    'the boot resolves the SHARED rate-limit store, over the pool it already opened',
+    async () => {
+      const runtime = await startServices(resolveServices(root, {}), {});
+      try {
+        // Observed before this landed: `undefined` — no boot in the tree installed a store, so
+        // `startWeb` derived `rateLimit.scope: 'process'` while the shipped chart runs three `web`
+        // replicas, each enforcing the whole of every declared limit.
+        expect(runtime.rateLimitStore?.scope).toBe('shared');
+        // The store has to be able to RUN its statement, on the executor this boot handed it:
+        // `Bun.sql` does not satisfy `PgExecutor` at all, so a wrong one rejects here instead of
+        // limiting. `readinessCheckCount()` proved none of that — it is process-global, so any
+        // check another suite in this run registered satisfied it.
+        const decision = await runtime.rateLimitStore?.take(
+          'x-dev-runtime-boot',
+          { capacity: 2, refillPerSecond: 1 },
+          1,
+          1_760_000_000_000,
+        );
+        expect(decision).toMatchObject({ allowed: true, limit: 2, remaining: 1 });
+      } finally {
+        await runtime.stop();
+      }
+    },
+    { timeout: 60_000 },
+  );
+
   test('a half-set CDN pair refuses before any service starts', async () => {
     const unusable = { stateDir: '/nonexistent/x-dev-should-never-be-read' } as DevServices;
     const failure = await startServices(unusable, { FASTLY_API_TOKEN: 'fastly-token' }).then(

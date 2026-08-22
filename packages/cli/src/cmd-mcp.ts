@@ -114,19 +114,28 @@ export function startMcpHttp(host: CliMcpServer, port: number): McpHttpServer {
 }
 
 /**
- * stdout is the WIRE. `dispatch.ts` renders a `CommandResult` only after `run` resolves, and this
- * resolves when the peer closes stdin — so the command's own output cannot reach stdout while a
- * session is live, and nothing here writes to it directly.
+ * What the session reports when it is over — on STDERR, which is the half this file's header
+ * claimed and did not have. `dispatch` renders a `CommandResult` only after `run` resolves, and
+ * this resolves when the peer closes stdin, so nothing lands mid-session; but fd 1 under this
+ * transport carries JSON-RPC frames, and `✓ mcp stdio serving 13 tools` arriving on it after the
+ * loop is a malformed frame to a peer still draining, and a second document under `--json`.
+ *
+ * Its own function so the addressing is testable without a live peer: `serveStdio` resolves only
+ * when stdin closes, so a test that had to reach it could not assert anything about it.
  */
+export const stdioResult = (tools: number): CommandResult => ({
+  ok: true,
+  command: 'mcp',
+  summary: msg('cli.mcp.serving', { transport: 'stdio', tools }),
+  data: { transport: 'stdio', tools },
+  stream: 'stderr',
+});
+
+/** stdout is the WIRE: `serveStdio` owns fd 1 for as long as the peer holds stdin open. */
 async function serveOverStdio(host: CliMcpServer): Promise<CommandResult> {
   await serveStdio({ server: host.server, caller: host.caller });
   await host.close();
-  return {
-    ok: true,
-    command: 'mcp',
-    summary: msg('cli.mcp.serving', { transport: 'stdio', tools: host.tools.length }),
-    data: { transport: 'stdio', tools: host.tools.length },
-  };
+  return stdioResult(host.tools.length);
 }
 
 /**

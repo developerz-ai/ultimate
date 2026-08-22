@@ -42,6 +42,7 @@ export {
   REDACTED,
   redactKeys,
   setLoggerContextFields,
+  setLogStream,
 } from '../logger';
 export type {
   Counter,

@@ -60,9 +60,27 @@ export const prCommand: CliCommand = {
     flags: [
       { name: 'repo', type: 'string', summary: 'owner/name; the checkout own remote by default' },
       { name: 'pr', type: 'string', summary: 'pull request number; this branch own by default' },
-      { name: 'all', type: 'boolean', summary: 'review: resolved threads too, not just open ones' },
-      { name: 'full', type: 'boolean', summary: 'review: whole comment bodies, never truncated' },
-      { name: 'body', type: 'string', summary: 'reply: the comment text to post in the thread' },
+      // Scoped to the subcommand each summary already names: `resolve` and `reply` WRITE to
+      // somebody else's pull request, and a flag they silently ignore is a flag whose caller
+      // believed it did something to a request that cannot be re-run.
+      {
+        name: 'all',
+        type: 'boolean',
+        summary: 'review: resolved threads too, not just open ones',
+        subcommands: ['review'],
+      },
+      {
+        name: 'full',
+        type: 'boolean',
+        summary: 'review: whole comment bodies, never truncated',
+        subcommands: ['review'],
+      },
+      {
+        name: 'body',
+        type: 'string',
+        summary: 'reply: the comment text to post in the thread',
+        subcommands: ['reply'],
+      },
     ],
   },
   async run(ctx: CommandContext): Promise<CommandResult> {
@@ -175,12 +193,45 @@ function threadLines(thread: PrThread, bodyLines: number): readonly string[] {
       msg('cli.pr.thread.comment', { author: comment.author, createdAt: comment.createdAt }),
     );
     const clamped = clampBody(comment.body, bodyLines);
-    for (const line of clamped.lines) out.push(`      | ${line}`);
+    out.push(...commentBlock(thread.id, clamped.lines));
     if (clamped.hidden > 0) out.push(msg('cli.pr.body.truncated', { hidden: clamped.hidden }));
   }
   const hidden = thread.commentCount - thread.comments.length;
   if (hidden > 0) out.push(msg('cli.pr.thread.more', { hidden }));
   return out;
+}
+
+const BLOCK_OPEN = '<comment id=';
+const BLOCK_CLOSE = '</comment>';
+
+/**
+ * The fence, as a READER would parse it rather than as this file spells it.
+ *
+ * Two literal `replaceAll`s were the whole neutralisation, and markup is not spelled one way:
+ * `</comment >`, `</COMMENT>` and `< comment id=` all end or open a block for anything reading
+ * tags, and none of the three matched. One pattern over `<`, an optional `/`, and whitespace
+ * around a case-insensitive `comment` covers every spelling of the delimiter; the escape goes on
+ * the `<`, so what the reviewer wrote after it survives byte for byte.
+ */
+const BLOCK_DELIMITER = /<(\s*\/?\s*comment\b)/gi;
+
+/**
+ * One comment body, fenced and labelled with the thread id it came from — `@ultimat3/ai`'s
+ * `documentBlock` (`rag.ts`), applied to the other place foreign text enters an agent's context.
+ * `x pr review` exists because an agent cannot read the GitHub web UI, and a review body is
+ * written by anyone who can comment on the pull request: rendered as bare indented text it arrived
+ * in that agent's context indistinguishable from the command's own output, which is prompt
+ * injection with a shell attached.
+ *
+ * The fence is neutralised INSIDE the payload rather than deleted, so every word the reviewer
+ * wrote still reads, and the label is stripped of the three characters that would end the
+ * attribute. Influence only, and deliberately not sold as more: a fence tells a reader this text
+ * is data, and it can never stop one that decides otherwise.
+ */
+export function commentBlock(id: string, lines: readonly string[]): readonly string[] {
+  const label = id.replaceAll('"', "'").replaceAll('>', ')').replaceAll('<', '(');
+  const body = lines.map((line) => line.replace(BLOCK_DELIMITER, '<\\$1'));
+  return [`${BLOCK_OPEN}"${label}">`, ...body, BLOCK_CLOSE];
 }
 
 /**

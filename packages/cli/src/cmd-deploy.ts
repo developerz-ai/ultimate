@@ -9,6 +9,7 @@ import { BadFlagError, UnknownCommandError } from './errors';
 import { msg } from './messages';
 import type { CommandResult, JsonValue } from './output';
 import { flagBool, flagString } from './parse';
+import { quoteArg } from './shell-quote';
 
 /**
  * Ordered, and the order is the design. `migrate` GATES — it runs to completion before anything
@@ -63,6 +64,16 @@ export interface DeployPlan {
   readonly image: string;
   /** Ordered: migrate runs to completion before any role that serves traffic starts. */
   readonly steps: readonly { readonly role: string; readonly command: readonly string[] }[];
+  /**
+   * The environment every step runs with — how the COMPOSE method carries the image, because
+   * `docker-compose.prod.yml` resolves each service from `${IMAGE:-ultimate-app:latest}` and
+   * `docker compose` takes no image argument. Without it `--image` decided nothing: the plan
+   * reported the reference the operator asked for while the six steps read `IMAGE` off the
+   * ambient environment, or deployed `ultimate-app:latest` where it was unset. Helm carries none
+   * — the chart reads `--set image.repository/tag`, and an env var it never looks at would be a
+   * second answer to which image is being deployed.
+   */
+  readonly env: Readonly<Record<string, string>>;
 }
 
 /**
@@ -100,6 +111,7 @@ export function planDeploy(image: string, method: DeployMethod, root: string): D
     }
     return {
       image,
+      env: {},
       steps: [
         {
           role: 'all',
@@ -117,6 +129,10 @@ export function planDeploy(image: string, method: DeployMethod, root: string): D
   }
   return {
     image,
+    // The one place the compose file's own variable is named. `docker/docker-compose.prod.yml`'s
+    // header documents `IMAGE=… docker compose …` as the way to run it by hand; this is that line,
+    // performed.
+    env: { IMAGE: image },
     steps: DEPLOY_ROLES.map((role) => ({
       role,
       command: [
@@ -131,6 +147,19 @@ export function planDeploy(image: string, method: DeployMethod, root: string): D
     })),
   };
 }
+
+/**
+ * One step, as the line an operator would type — the environment first, then the command.
+ *
+ * `plan.env` is the compose file's own `IMAGE=…` variable, and it is what makes `--image` true on
+ * that method: a rendered line without it deploys `docker-compose.prod.yml`'s DEFAULT image. Both
+ * renderers and the failure `fix:` go through here, so the plan `--json` reports, the plan the
+ * terminal shows and the line the refusal hands back can never name three different deployments.
+ */
+const stepLine = (env: Readonly<Record<string, string>>, command: readonly string[]): string =>
+  [...Object.entries(env).map(([name, value]) => `${name}=${quoteArg(value)}`), ...command].join(
+    ' ',
+  );
 
 export const deployCommand: CliCommand = {
   spec: {
@@ -165,6 +194,9 @@ export const deployCommand: CliCommand = {
     const planJson: JsonValue = {
       image: plan.image,
       method,
+      // Reported, because it is what makes `image` above true on the compose method — a dry run
+      // that names an image the steps do not carry is the defect this field closed.
+      env: { ...plan.env },
       steps: plan.steps.map((step) => ({ role: step.role, command: step.command.join(' ') })),
     };
     if (flagBool(ctx.args, 'dry-run')) {
@@ -173,11 +205,13 @@ export const deployCommand: CliCommand = {
         command: 'deploy',
         summary: msg('cli.deploy.plan', { images: 1, roles: DEPLOY_ROLES.join(',') }),
         data: planJson,
-        lines: plan.steps.map((step) => `  ${step.role.padEnd(10)} ${step.command.join(' ')}`),
+        lines: plan.steps.map(
+          (step) => `  ${step.role.padEnd(10)} ${stepLine(plan.env, step.command)}`,
+        ),
       };
     }
     for (const step of plan.steps) {
-      const result = await ctx.runner(step.command, { cwd: root });
+      const result = await ctx.runner(step.command, { cwd: root, env: plan.env });
       if (!result.ok) {
         return {
           ok: false,
@@ -187,7 +221,7 @@ export const deployCommand: CliCommand = {
             {
               code: 'X_DEPLOY_FAILED',
               cause: `role "${step.role}" step exited ${result.code}`,
-              fix: `${step.command.join(' ')}   # run it directly to see the full output`,
+              fix: `${stepLine(plan.env, step.command)}   # run it directly to see the full output`,
               docs: 'https://ultimate.dev/errors/X_DEPLOY_FAILED',
             },
           ],

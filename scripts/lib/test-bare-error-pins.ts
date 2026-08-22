@@ -34,7 +34,7 @@ export const BARE_ERROR_PINS: Readonly<Record<string, number>> = {
   ai: 18,
   auth: 7,
   cache: 3,
-  cli: 11,
+  cli: 9,
   core: 30,
   db: 24,
   entity: 18,

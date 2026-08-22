@@ -57,7 +57,7 @@ export function catalogMissingKeys(locale: string, keys: readonly string[]): I18
   return new I18nError({
     code: 'X_CATALOG_MISSING_KEYS',
     cause: `packages/i18n/catalogs/${locale}.json is missing ${keys.length} key(s) used in source: ${shown.join(', ')}${suffix}`,
-    fix: `x i18n sync ${locale}`,
+    fix: `x i18n sync ${locale}   # writes each key above as ⟦key⟧ — replace every one with the real string`,
   });
 }
 

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "buildId": "ffe3a38db2fb9c0ba18667aecc0a34e805aaba3e33f56008829c5181a2eac41c",
+  "buildId": "9b081912650d8aa6101bbae40935886b60d63237c6baba4f91bff161003f12a8",
   "tiers": {
     "0": [
       "core",
@@ -791,6 +791,11 @@
       "code": "X_DEV_DASHBOARD_IN_PROD",
       "owner": "admin",
       "at": "packages/admin/src/errors.ts"
+    },
+    {
+      "code": "X_DEV_LOCK_UNREADABLE",
+      "owner": "cli",
+      "at": "packages/cli/src/error-codes.ts"
     },
     {
       "code": "X_DOC_CHANGELOG_SECTION_INVALID",
