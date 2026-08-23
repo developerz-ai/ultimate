@@ -193,6 +193,7 @@ cast: a `null` where an id was expected would otherwise become a mutation agains
 | `fix-imports.ts` | which of those factories a file can call that it did not declare — one relative specifier, one file read |
 | `error-contract.ts` | the rules, the two checks that turn them into findings, and `collectDeclaredCodes` |
 | `fix-command.ts` | resolving an `x <command>` a `fix:` cites against the registry |
+| `fix-path.ts` | resolving a PATH or a glob a `fix:` cites against the root the gate is running in |
 | `source-files.ts` | which files are shipped source — shared with `filesize`, never a second list |
 
 **A `fix:` may not cite a command this build does not ship.** Six shipped fix lines named
@@ -200,6 +201,26 @@ cast: a `null` where an id was expected would otherwise become a mutation agains
 one passed — the text rule checks that a fix NAMES a command, never that the registry holds it.
 `fix-command.ts` resolves the citation, and a PLANNED command fails too: `x logs` parses, `x help`
 lists it, and running it hands the reader `X_NOT_IMPLEMENTED` instead of the fix.
+
+**A `fix:` may not cite a file this repo does not have, either.** That was the other half, and
+nothing resolved it: `X_UI_RUNTIME_MISSING` told its reader to paste a line no generator ever wrote,
+through every gate since it shipped (#274, #246). A file token is one of the four things that make a
+fix an instruction at all (`COMMAND_TOKENS`), so `fix-path.ts` is built from the SAME extension list
+— a token that satisfies the instruction rule is exactly the token this one has to resolve, and two
+lists would be a citation the second rule cannot see. `X_ERROR_FIX_PATH_MISSING` is its own code:
+`X_ERROR_FIX_INVALID` means the fix is not an instruction, this one means it is one and points at
+nothing, and the repairs differ.
+
+It is narrow so a finding never has to be argued with — three shapes are not judged at all, because
+each resolves against something other than the root the gate is running in: a scoped specifier
+(`@ultimat3/ui/global.scss`, which resolves through `node_modules`), a dot-relative path
+(`./global.scss`, which resolves against the reader's own file) and any path whose **parent
+directory** this root does not have (`src/errors.ts`, `apps/web/server.ts`,
+`packages/i18n/catalogs/en.json` — all three name a directory a generated app has and this repo does
+not). What is left is the citation a root really can answer: a directory that exists, named as
+holding a file it does not hold. A glob must match at least one file. Measured over all three roots
+the gate runs in — the framework, `examples/dummy`, `dummy/social-media-clone` — **117 path citations
+read, 0 findings**, so it enforces outright with no pin table.
 
 The rule is **conditional, and that is load-bearing**: *if* a fix cites `x <command>`, it must
 resolve. It does not require every fix to name one — `set OTEL_EXPORTER_OTLP_ENDPOINT=…` and
@@ -543,6 +564,7 @@ hand-written layout and `readMigrations` skips it — read as a migration it sor
 | `dev-render.ts` | one HTTP route per registered `route`, through render's own mode function |
 | `style-csp.ts` | the `style-src` sha256 of every inline `<style>` the web role serves |
 | `dev-assets.ts` | the image pipeline's only HTTP surface: `/icons/*` and `/media/*` |
+| `favicon.ts` | `/favicon.ico`: the app's own file, and the bytes the framework answers with when there is none |
 | `dev-hooks.ts` | the pipeline's `authorize` seam, decided from the app's own `Policy` objects |
 | `dev-roles.ts` | `--role` selection plus start/stop for `web`, `sync`, `worker`, `scheduler` |
 | `dev-dashboard.ts` | the `DevSources` hooks only this process can answer, and the two CLI panels |
@@ -718,6 +740,21 @@ puts in a `srcset` — the constant alone would refuse the widest entry of any i
 width is not one of the eight. Anything outside it is still served; only the `put` is refused, so
 no caller gains a new 4xx. `?q=` is deliberately still unbounded here — the closed set for quality
 is `@ultimat3/seo`'s to declare, not this file's.
+
+**`/favicon.ico` is a mechanism, not a scaffolded file.** Every browser requests it unprompted, the
+scaffold wrote none and neither served surface mounted a route, so a permanent 404 sat in the console
+of every app the framework produces — noise that trains the reader to ignore console errors, which is
+the opposite of what `--json` and an executable `fix:` are for (#272). Two rungs and one path: the
+app's own `apps/web/site/favicon.ico` wins, and `favicon.ts` answers a 32x32 PNG encoded through
+`@ultimat3/core`'s own pipeline when there is none — the same encoder `x new`'s icon goes through, so
+there is no second image format in the tree and no base64 blob nobody can verify. It is deliberately
+NOT derived from `ICON_SOURCE`: resizing the install icon needs `@ultimat3/pwa`'s pipeline and would
+make the answer depend on a file that may be absent, which is a third rung under a mechanism that has
+exactly two. The file is read per REQUEST, so dropping one into a running `x dev` takes effect
+without a restart. It mounts through `assetRoutes`, which is the one route set `serve.ts` and
+`cmd-dev.ts` both compose — a favicon added to one of them alone is a 404 that comes back in
+production only — and `prerenderSite` writes the same bytes into the static export, because an
+artifact served with no process behind it has to carry every byte the browser will ask for.
 
 `ICON_SOURCE` lives here, not in `cmd-doctor.ts`, because this is the module that reads it: the
 diagnostic checks what `x dev` serves, so one constant cannot pass the check and serve nothing.

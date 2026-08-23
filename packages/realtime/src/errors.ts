@@ -1,7 +1,8 @@
 // Realtime's X_* codes. Every throw in this package goes through one of these classes so
 // the same string renders in the terminal, the browser overlay, and `--json`.
 
-import { registerErrorCodes, UltimateError } from '@ultimat3/core';
+import { registerErrorCodes } from '@ultimat3/core';
+import { RealtimeError } from './realtime-error';
 
 /** Codes this package declares and owns. */
 export const REALTIME_OWNED_ERROR_CODES = [
@@ -18,6 +19,7 @@ export const REALTIME_OWNED_ERROR_CODES = [
   'X_REPLICATION_FAILED',
   'X_REPLICATOR_SLOT_HELD',
   'X_LIVE_CLIENT_MISSING',
+  'X_LIVE_SERVER_RENDER',
   'X_LIVE_ROW_UNIDENTIFIED',
   'X_LIVE_QUERY_UNKNOWN',
   'X_LIVE_REPLICA_IDENTITY',
@@ -111,7 +113,8 @@ export const REALTIME_ERROR_TITLES: Readonly<Record<RealtimeOwnedErrorCode, stri
   X_REPLICATION_PROTOCOL: 'the WAL stream cannot be decoded',
   X_REPLICATION_FAILED: 'the replication connection was refused',
   X_REPLICATOR_SLOT_HELD: 'another replicator already owns this database',
-  X_LIVE_CLIENT_MISSING: 'a realtime hook ran with no LiveClient registered',
+  X_LIVE_CLIENT_MISSING: 'a realtime hook ran in a browser with no LiveClient registered',
+  X_LIVE_SERVER_RENDER: 'a browser-only live operation ran during a server render',
   X_LIVE_ROW_UNIDENTIFIED: 'a live query returned a row with no id',
   X_LIVE_QUERY_UNKNOWN: 'no live query is registered under the name a subscribe frame asked for',
   X_LIVE_REPLICA_IDENTITY: 'a replicated table sends a key-only row on delete',
@@ -128,23 +131,17 @@ registerErrorCodes(
   ),
 );
 
-/**
- * Base for every realtime error. No `docs:` — `UltimateError` fills it from
- * `describeErrorCode(code).docs`, which is `@ultimat3/core`'s `ERROR_DOCS_URL`: one page for every
- * code, never one per code, because `wiki/` is the framework's only public documentation surface
- * and a code lives there in a TABLE ROW, which has no anchor. The
- * `https://ultimate.dev/errors/<code>` links this class built until 9.x answered 404, host
- * included, on every error it has ever thrown — including the ones `toWireError` puts on the wire.
- */
-export class RealtimeError extends UltimateError {
-  constructor(opts: { code: RealtimeErrorCode; cause: string; fix: string }) {
-    super({
-      code: opts.code,
-      cause: opts.cause,
-      fix: opts.fix,
-    });
-  }
-}
+// Re-exported, never re-declared: `RealtimeError` lives in `realtime-error.ts` and the four
+// replication errors in `replication-errors.ts`, so this file stays the CODE TABLE plus the
+// client-reachable refusals. Every name is still importable from `./errors`, which is what the
+// seventeen `pg-*` modules and the barrel already do.
+export { RealtimeError } from './realtime-error';
+export {
+  ReplicaIdentityError,
+  ReplicationFailedError,
+  ReplicationProtocolError,
+  ReplicatorSlotHeldError,
+} from './replication-errors';
 
 /** Subscribe (or an actor change) denied by the topic's policy. Never leaks the topic's data. */
 export class TopicForbiddenError extends RealtimeError {
@@ -284,93 +281,39 @@ export class TransportProtocolError extends RealtimeError {
 }
 
 /**
- * The bytes on the replication socket are not the bytes the protocol allows: a truncated message,
- * an unknown pgoutput tag, an auth method we do not speak. Always a version or configuration
- * mismatch rather than a transient fault, so retrying the same connection cannot help.
- */
-export class ReplicationProtocolError extends RealtimeError {
-  constructor(args: { stage: string; detail: string; fix?: string }) {
-    super({
-      code: 'X_REPLICATION_PROTOCOL',
-      cause: `postgres replication ${args.stage}: ${args.detail}`,
-      fix:
-        args.fix ??
-        'x doctor db — the server must be postgres >= 14 with a pgoutput publication and wal_level=logical',
-    });
-  }
-}
-
-/**
- * The replication connection itself failed — refused credentials, a slot another process holds,
- * an `ErrorResponse` from the server. The server's own message is passed through verbatim
- * because it names the object that has to change.
- */
-export class ReplicationFailedError extends RealtimeError {
-  constructor(args: { stage: string; detail: string; fix: string }) {
-    super({
-      code: 'X_REPLICATION_FAILED',
-      cause: `postgres replication ${args.stage} failed: ${args.detail}`,
-      fix: args.fix,
-    });
-  }
-}
-
-/**
- * A second replicator found the advisory lock held. Distinct from `X_REPLICATION_FAILED` because
- * nothing is wrong with this process: the database already has its one replicator, and a second
- * one that started anyway would publish every change twice. Terminal for a container whose whole
- * job is that role — the scheduler is the thing that has to change, not the connection.
- */
-export class ReplicatorSlotHeldError extends RealtimeError {
-  constructor(args: { key: string; holder?: string | undefined }) {
-    super({
-      code: 'X_REPLICATOR_SLOT_HELD',
-      cause:
-        `advisory lock ${args.key} is held${args.holder === undefined ? '' : ` by ${args.holder}`}` +
-        ' — one database has exactly one replicator',
-      fix: 'scale the replicator to 1 per database: kubectl scale deploy/replicator --replicas=1',
-    });
-  }
-}
-
-/**
- * A table in the entity list replicates with a replica identity other than FULL, so its `delete`
- * (and any key-changing `update`) carries the KEY COLUMNS ONLY. `toRow` accepts that tuple —
- * it only requires a text `id` — so the live matcher decides "did this row leave the result set"
- * from a one-column row, and a row policy written against `!row.private` reads `undefined`.
+ * A hook was called IN A BROWSER before the app entry registered its client. Never a transient
+ * fault: the registration is a single call in the entry, so the fix is the call itself rather than
+ * a retry.
  *
- * **Raised at preflight and LOGGED, never thrown.** Every app running today on the default
- * identity would stop booting, and the replicator refusing to start is a worse outcome than the
- * partial rows it is warning about. The runtime half is `ReplicationStreamStats.partialBefore`,
- * which counts the changes this actually affects. Refusing it at `x verify` time is the follow-up.
- *
- * The tables are named because the fix is per table, and they are the entity list's own names —
- * every one has already passed `assertIdentifier`, so the `fix:` is SQL that can be pasted.
- */
-export class ReplicaIdentityError extends RealtimeError {
-  constructor(args: { tables: readonly string[] }) {
-    super({
-      code: 'X_LIVE_REPLICA_IDENTITY',
-      cause:
-        `${args.tables.join(', ')} replicate with a replica identity other than FULL, so a ` +
-        'delete carries the key columns only and a live query decides visibility from a partial row',
-      fix:
-        `${args.tables.map((table) => `ALTER TABLE ${table} REPLICA IDENTITY FULL;`).join(' ')}` +
-        ' -- rows already written to the WAL keep the identity they were written with',
-    });
-  }
-}
-
-/**
- * A hook was called before the app entry registered its client. Never a transient fault: the
- * registration is a single call in the entry, so the fix is the call itself rather than a retry.
+ * A server render is deliberately not this error, and never was a missing registration: there is
+ * no socket to register a client for. It gets `serverRenderLiveClient()` instead — the same rule
+ * `@ultimat3/ui`'s `solid()` follows for a missing Solid runtime, one package over.
  */
 export class LiveClientMissingError extends RealtimeError {
   constructor(args: { hook: string }) {
     super({
       code: 'X_LIVE_CLIENT_MISSING',
-      cause: `${args.hook}() ran before any LiveClient was registered`,
+      cause: `${args.hook}() ran in a browser before any LiveClient was registered`,
       fix: 'setLiveClient(new LiveClient({ signal: createSignal, connect, buildId })) in the app entry, above the first render',
+    });
+  }
+}
+
+/**
+ * Something that can only mean "talk to the socket" ran on the server client — a mutation, a
+ * publish, a topic subscription, a dial. There is no socket during a server render and there never
+ * will be one: the document is built and sent, and the browser opens the connection.
+ *
+ * A refusal rather than a silent no-op, because both alternatives are worse. Queueing it would
+ * hold one process-wide queue on behalf of whichever request happened to render, and dropping it
+ * would make a write that never happened look like one that did.
+ */
+export class ServerRenderLiveError extends RealtimeError {
+  constructor(args: { operation: string }) {
+    super({
+      code: 'X_LIVE_SERVER_RENDER',
+      cause: `${args.operation} ran during a server render, where this app has no live socket`,
+      fix: 'call it from an island mount() instead of from the page — or guard it with hasLiveClient(), which answers false on the server',
     });
   }
 }

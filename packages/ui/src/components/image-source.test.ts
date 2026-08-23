@@ -52,6 +52,31 @@ describe('srcsetFor', () => {
     expect(srcsetFor([{ src: '  /a.webp\n', width: 800 }])).toBe('/a.webp 800w');
   });
 
+  /**
+   * `srcset` is a COMMA-separated list of `<url> <descriptor>` pairs, split on whitespace — so a
+   * src carrying either character is not a src the browser can read back. Trimming the ends, which
+   * is all this file did, leaves the middle: `/my file.webp 800w` parses as the URL `/my` with the
+   * descriptor `file.webp`, which is not a descriptor, so the candidate is dropped in silence and
+   * the `<img>` falls back to `src`. That is exactly the "srcset the browser silently ignores"
+   * this module's own header says it exists to prevent.
+   */
+  test.each([
+    ['interior whitespace', '/my file.webp'],
+    ['a tab', '/a\tb.webp'],
+    ['a trailing comma, which the parser strips', '/a.webp,'],
+    ['a leading comma', ',/a.webp'],
+  ])('a variant src carrying %s is rejected, not emitted', (_why, src) => {
+    const error = rejected(() => srcsetFor([{ src, width: 800 }]));
+    expect(error.code).toBe(UI_ERROR_CODES.invalidValue);
+    expect(String(error.cause)).toContain('srcset');
+  });
+
+  /** …and an interior comma is NOT rejected: the parser reads a URL up to whitespace, so a path
+   *  with a comma in it round-trips. Refusing it would be a rule this microsyntax does not have. */
+  test('an interior comma is left alone, because srcset splits on whitespace first', () => {
+    expect(srcsetFor([{ src: '/img/a,b.webp', width: 800 }])).toBe('/img/a,b.webp 800w');
+  });
+
   test('mixing w and x descriptors is rejected — HTML forbids it', () => {
     const error = rejected(() =>
       srcsetFor([

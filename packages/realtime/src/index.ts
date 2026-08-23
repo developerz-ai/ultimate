@@ -9,6 +9,7 @@ export { applyPatches, orderAfterPatches } from './apply-patches';
 export {
   type ClientSocket,
   LiveClient,
+  type LiveClientLike,
   type LiveClientOptions,
   type LiveHandle,
   type LiveQueryRef,
@@ -54,6 +55,7 @@ export {
   ReplicationFailedError,
   ReplicationProtocolError,
   ReplicatorSlotHeldError,
+  ServerRenderLiveError,
   SubscriptionLimitError,
   TopicForbiddenError,
   TransportProtocolError,
@@ -139,6 +141,8 @@ export {
   type ServerAck,
   strategyName,
 } from './rebase';
+// ---- what a LiveClient IS on the server: it serves the first render and opens no socket --------
+export { serverRenderLiveClient } from './server-render-client';
 // ---- the wire -------------------------------------------------------------------------------------
 export {
   type AckFrame,

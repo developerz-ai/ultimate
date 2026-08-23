@@ -3,12 +3,18 @@
 // quieter half of it — the agent that ran a machine-readable command to get here is handed prose.
 
 import { describe, expect, test } from 'bun:test';
+// why: Bun exposes no path-join primitive, and the fix table's file citations are repo-relative.
+import { join } from 'node:path';
 import { buildManifest } from '@ultimat3/manifest';
 import { checkBudgets } from './budgets';
 import { CLI_ERROR_CODES } from './error-codes';
+import { staticFix } from './error-contract';
+import { citedCommandProblem, loadCommandCatalog } from './fix-command';
+import { citedPathProblem } from './fix-path';
 import { explainErrorCode, explainEveryErrorCode } from './mcp-errors';
-import { parseArgs } from './parse';
-import { SPECS } from './registry';
+
+/** This repo's root: the two `bun test <path>` fixes in the table are resolved against it. */
+const REPO_ROOT = join(import.meta.dir, '..', '..', '..');
 
 /**
  * The `x` invocations inside one fix line: `&&` chains are two commands, and the trailing `# …`
@@ -39,16 +45,33 @@ describe('unit · errors.explain', () => {
     }
   });
 
-  // The quieter half of the same defect: a fix naming a command the registry does not have. Read
-  // through the real parser, which is how `x db status --json` — two rows, no such `x db`
-  // subcommand — was answering a failed step with X_CLI_UNKNOWN_COMMAND.
-  test('every `x` command it hands out is one the parser resolves', () => {
+  // The quieter half of the same defect: a fix naming a command the registry does not have. This
+  // used to read the invocation through `parseArgs`, which is a strictly WEAKER rule than the one
+  // every shipped `fix:` literal is held to — a PLANNED command is in the registry and parses, so
+  // `x logs tail --json` in this table would have passed here and answered its reader
+  // `X_NOT_IMPLEMENTED`, which is the exact defect `fix-command.ts` exists for. The table is a
+  // `fix:` in every sense except the key it is written under, so it is judged by the same function.
+  test('every `x` command it hands out resolves — planned commands included', async () => {
+    const catalog = await loadCommandCatalog();
+    const unresolved = CLI_ERROR_CODES.map((code) => {
+      const problem = citedCommandProblem(staticFix(explainErrorCode(code)?.fix ?? ''), catalog);
+      return problem === undefined ? '' : `${code}: ${problem}`;
+    }).filter((line) => line !== '');
+    expect(unresolved).toEqual([]);
+  });
+
+  // The third rule, for the same reason: two rows hand the reader a `bun test <path>` because the
+  // condition can only fire in this repo, and a renamed suite would leave a fix naming nothing.
+  test('every file it names is a file this repository has', async () => {
+    const missing: string[] = [];
     for (const code of CLI_ERROR_CODES) {
-      for (const command of xCommands(explainErrorCode(code)?.fix ?? '')) {
-        const argv = command.split(/\s+/).slice(1);
-        expect(() => parseArgs(argv, SPECS)).not.toThrow();
-      }
+      const problem = await citedPathProblem(
+        staticFix(explainErrorCode(code)?.fix ?? ''),
+        REPO_ROOT,
+      );
+      if (problem !== undefined) missing.push(`${code}: ${problem}`);
     }
+    expect(missing).toEqual([]);
   });
 
   // The rule is about the `x` CLI and stops there: `--json` on `bun upgrade` is not a flag, it is a

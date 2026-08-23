@@ -134,6 +134,10 @@ describe('unit · x db backfill', () => {
     [['db', 'backfill', '--list', '--pending'], '--pending'],
     [['db', 'backfill', '--pending', '--all'], '--all'],
     [['db', 'backfill', '--pending', 'cleanup'], 'cleanup'],
+    // The one shape that DROPPED it instead of refusing: `--list` forces the target to undefined,
+    // so `x db backfill cleanup --list` listed the whole ledger and reported ok while the operator
+    // had named one sweep — the same argv one flag over has always been refused.
+    [['db', 'backfill', 'cleanup', '--list'], 'cleanup'],
   ])('%o asks two questions, so it is refused rather than resolved', async (argv, second) => {
     const driver = createMemoryDriver();
     const thrown: unknown = await runBackfill(driver, argv).then(
@@ -190,6 +194,21 @@ describe('unit · x db backfill', () => {
     );
     expect(thrown).toBeInstanceOf(BadFlagError);
     expect((thrown as BadFlagError).cause).toContain('other');
+  });
+
+  // The instructive half of the refusal above: the fix hands back the SAME question in the one
+  // spelling `--list` reads, so the reader retypes nothing.
+  test('a positional under --list is answered with the --name form of the same question', async () => {
+    const thrown: unknown = await runBackfill(createMemoryDriver(), [
+      'db',
+      'backfill',
+      'cleanup',
+      '--list',
+    ]).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect((thrown as BadFlagError).fix).toBe('x db backfill --list --name cleanup --json');
   });
 
   test('--pending names a declared sweep the ledger has never recorded, and exits non-zero', async () => {

@@ -6,14 +6,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { UI_ERROR_CODES } from '../errors';
 import { INERT_SOLID_RUNTIME } from './inert-runtime';
-import {
-  clearSolidRuntime,
-  hasSolidRuntime,
-  type SolidContext,
-  type SolidRuntime,
-  setSolidRuntime,
-  solid,
-} from './solid-adapter';
+import { clearSolidRuntime, hasSolidRuntime, setSolidRuntime } from './runtime-slot';
+import { type SolidContext, type SolidRuntime, solid } from './solid-adapter';
 
 /** Bun's test process has no DOM, so a browser is what has to be faked, never a server. */
 function withDom<T>(fn: () => T): T {

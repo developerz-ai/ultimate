@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { hasErrorCode, listErrorCodes } from '@ultimat3/core';
 import {
   buildErrorCatalog,
+  CATALOG_OPTIONAL_HOSTS,
   CATALOG_PACKAGES,
   loadErrorCatalog,
   registeredErrorCodes,
@@ -43,7 +44,37 @@ describe('unit · the catalog list', () => {
   test('excludes the CLI itself, whose errors.ts registers at import', () => {
     expect(CATALOG_PACKAGES).not.toContain('@ultimat3/cli');
   });
+
+  /**
+   * The list is a runtime import graph written as strings, so `bun run boundaries` — which reads
+   * import STATEMENTS — cannot see any of it, and neither can `checkWorkspaceDependencies`. Four
+   * entries were undeclared for that reason: in this repo they resolve through workspace symlinks,
+   * in an installed app they resolve only if the app happens to depend on them, and `x errors
+   * explain X_FLAG_EXPIRED` then answers `X_ERROR_CODE_UNKNOWN` for a code `wiki/Error-Codes.md`
+   * promises resolves. Derived from the manifest on disk, never a second hand-kept list.
+   */
+  test('every package it imports is a declared dependency, bar the two optional hosts', async () => {
+    const manifest = (await Bun.file(
+      join(import.meta.dir, '..', 'package.json'),
+    ).json()) as CliManifest;
+    const declared = new Set(Object.keys(manifest.dependencies ?? {}));
+    const undeclared = CATALOG_PACKAGES.filter(
+      (name) => !declared.has(name) && !CATALOG_OPTIONAL_HOSTS.includes(name),
+    );
+    expect(undeclared).toEqual([]);
+  });
+
+  test('the optional hosts are packages the catalog actually imports', () => {
+    for (const host of CATALOG_OPTIONAL_HOSTS) {
+      expect(CATALOG_PACKAGES).toContain(host as (typeof CATALOG_PACKAGES)[number]);
+    }
+  });
 });
+
+/** The one field of `packages/cli/package.json` this file reads — parsed, never asserted with `any`. */
+interface CliManifest {
+  readonly dependencies?: Readonly<Record<string, string>>;
+}
 
 describe('unit · loading it', () => {
   // Imports EVERY `@ultimat3/*` package, which is the point — and the reason Bun's 5s default no

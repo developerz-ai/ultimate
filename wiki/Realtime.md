@@ -19,6 +19,8 @@ import { useLive } from '@ultimat3/realtime';              // island
 import { createSyncNode } from '@ultimat3/realtime/server'; // sync node
 ```
 
+A server render is not a missing registration — with no DOM every hook falls back to `serverRenderLiveClient()`: `loading`, no rows, no subscription, and `mutate`/`drain` refuse with `X_LIVE_SERVER_RENDER`. `hasLiveClient()` still answers `false` there, so a component with a static fallback keeps its guard.
+
 A file that needs both writes both imports. **Nothing was deleted in the split** — if an import
 stops resolving after upgrading to 8.0.0, the name moved to `./server`.
 

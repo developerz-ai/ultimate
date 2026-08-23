@@ -84,6 +84,12 @@ describe('unit · dev assets · pwa icons', () => {
     expect(paths).toContain('/icons/apple-touch-icon.png');
   });
 
+  // Mounted through THIS composition, which is what `x dev` and the container both call — a
+  // favicon route added to one of them alone is a 404 that comes back in production only.
+  test('the favicon rides on the same asset surface both boots mount', () => {
+    expect(assetRoutes({ root, storage }).map((route) => route.path)).toContain('/favicon.ico');
+  });
+
   test('an icon stays public while /media is not', () => {
     const routes = assetRoutes({ root, storage });
     // An install prompt fetches these before anyone signs in, and they are rendered from a file

@@ -247,6 +247,7 @@ export const ERROR_STATUS_BACKLOG: Readonly<Record<string, readonly string[]>> =
     'X_LIVE_QUERY_UNKNOWN',
     'X_LIVE_REPLICA_IDENTITY',
     'X_LIVE_ROW_UNIDENTIFIED',
+    'X_LIVE_SERVER_RENDER',
     'X_PROTOCOL_VERSION',
     'X_QUERY_NOT_SUBSCRIBABLE',
     'X_REBASE_CONFLICT',

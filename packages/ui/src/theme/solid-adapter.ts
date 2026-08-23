@@ -1,10 +1,15 @@
-// Solid runtime adapter. @ultimat3/ui imports *types* from solid-js and nothing
-// else, so the package installs, typechecks, and tests with no reactive runtime
-// present. The CLIENT entry registers the real one once; a server render gets the inert one.
+// Solid runtime adapter: the shape of the runtime, and the ONE rule that decides which runtime a
+// render gets. @ultimat3/ui imports *types* from solid-js and nothing else, so the package
+// installs, typechecks, and tests with no reactive runtime present.
+//
+// The slot itself is `runtime-slot.ts`, not this file: `runtimeMissingError` below reaches
+// `../errors`, which is side-effectful and unshakeable, so an island that only registers a runtime
+// would pay the error registry for it (`barrel-bytes.test.ts`).
 
 import type { JSX } from 'solid-js';
 import { runtimeMissingError } from '../errors';
 import { INERT_SOLID_RUNTIME } from './inert-runtime';
+import { registeredSolidRuntime } from './runtime-slot';
 
 export type Accessor<T> = () => T;
 export type Setter<T> = (next: T) => void;
@@ -34,22 +39,6 @@ export interface SolidRuntime {
   onCleanup(fn: () => void): void;
 }
 
-let runtime: SolidRuntime | null = null;
-
-/** Register once, in the app entry, before the first render. */
-export function setSolidRuntime(next: SolidRuntime): void {
-  runtime = next;
-}
-
-export function hasSolidRuntime(): boolean {
-  return runtime !== null;
-}
-
-/** For tests: drop the registration so cases stay independent. */
-export function clearSolidRuntime(): void {
-  runtime = null;
-}
-
 /**
  * A DOM is the whole of the question. With one, a component that reaches for a runtime nobody
  * registered is a real bug — the theme toggle that does nothing — so it throws. Without one there
@@ -63,6 +52,7 @@ function hasDom(): boolean {
 }
 
 export function solid(): SolidRuntime {
+  const runtime = registeredSolidRuntime();
   if (runtime !== null) return runtime;
   if (hasDom()) {
     // Two lines to paste, and both are real: `x g resource` writes exactly them into the slice's

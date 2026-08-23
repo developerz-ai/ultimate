@@ -45,6 +45,7 @@ const ADDED_SINCE = [
   'X_SOCKET_AUTH_UNAVAILABLE',
   'X_FRAME_RATE_LIMIT',
   'X_LIVE_REPLICA_IDENTITY',
+  'X_LIVE_SERVER_RENDER',
 ];
 
 /** Widened once: these lists are compared against plain strings, not against the literal union. */
@@ -59,7 +60,7 @@ describe('REALTIME_ERROR_CODES', () => {
 
   test('is exactly the original members plus the ones added since', () => {
     // Read into a `number` first: `REALTIME_ERROR_CODES` is a readonly tuple, so `.length` is the
-    // LITERAL `20` and the matcher would only accept that literal back.
+    // LITERAL `21` and the matcher would only accept that literal back.
     const declared: number = REALTIME_ERROR_CODES.length;
     expect(declared).toBe(ORIGINAL_MEMBERS.length + ADDED_SINCE.length);
     expect([...EVERY_CODE].sort()).toEqual([...ORIGINAL_MEMBERS, ...ADDED_SINCE].sort());

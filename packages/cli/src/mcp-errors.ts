@@ -48,6 +48,8 @@ const CLI_FIXES: Readonly<Record<CliErrorCode, string>> = {
   X_JOB_UNKNOWN: 'x jobs ls --json',
   X_FIX_TARGET_UNKNOWN: 'x fix boundary apps/web/site/page.tsx --json',
   X_ERROR_FIX_INVALID: 'x verify --json   # the finding names the file, the line and the fix text',
+  X_ERROR_FIX_PATH_MISSING:
+    'x verify --json   # the finding names the fix line and the path it cites',
   X_WORKSPACE_DEP_UNDECLARED:
     'x verify --json   # the package-shape finding carries the dependency line to add',
   X_SHOT_BROWSER_MISSING: 'bun add -d puppeteer-core',

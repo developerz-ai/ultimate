@@ -274,20 +274,28 @@ as text, because `t()`'s catalog does not cross the seam and neither does a call
 what is rendered. `UiProvider` sets `lang` + `dir` on `<html>` from `locale`, so
 `ar-EG` needs no second stylesheet and no second component.
 
-**An island pays for the barrel, not for the component it named.** Measured through
-`buildIslands` — minified, production Solid, `As of 2026-08-21`:
+**An island pays for what it names, and `import { … } from '@ultimat3/ui'` is the one way to
+name it.** Measured through `buildIslands` — minified, production Solid, `As of 2026-08-23`:
 
 | An island that imports | Chunk |
 |---|---|
 | nothing | 52 B |
-| `setSolidRuntime` alone | 5.7 kB |
-| `<UiProvider>` + one `<Button>` | 49.0 kB, of which Solid's own runtime is 12.2 kB |
-| `<UiProvider>` + `<Form>` + `<Input>` + `<Button>` | 54.8 kB |
+| `setSolidRuntime` alone | 74 B |
+| `<UiProvider>` + one `<Button>` | 49.4 kB, of which Solid's own runtime is 12.6 kB |
+| `<UiProvider>` + `<Form>` + `<Input>` + `<Button>` | 55.3 kB |
 
-There are no component subpath exports, so `import { Button }` reaches the whole index —
-issue **#275**. `@ultimat3/ui/icons/*` is the one part of the package already shaped the
-other way, and is what the components want. Budget an island against these numbers, not
-against the component's own source.
+**There are no component subpath exports, and there will not be** — measured, not asserted:
+`import { Button } from '@ultimat3/ui'` and a deep path into `components/Button` produce the
+same chunk to within the bytes of the entry's own name, and so do `useUi` (14 kB) and
+`moneyText` (25 kB). `@ultimat3/ui/button` would be a second way to import one name for zero
+bytes, which is axiom 1 for nothing. `src/barrel-bytes.test.ts` is the build error, and it will
+red the day the barrel stops shaking. `@ultimat3/ui/icons/*` is a subpath for the opposite
+reason: 1,767 glyph modules are data, and no bundler splits one module holding all of them.
+
+What a component's 49 kB actually is: Solid's runtime, `@ultimat3/i18n`'s translator and plural
+machinery reached through `useUi()`, and `@ultimat3/core`'s error registry reached through
+`errors.ts` — none of which a different export shape removes. Budget an island against these
+numbers, not against the component's own source.
 
 ## `<Text>` and `<Image>`
 

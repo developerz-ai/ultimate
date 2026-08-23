@@ -14,7 +14,8 @@ import {
   type UiContextValue,
   uiContext,
 } from './context';
-import { hasSolidRuntime, solid } from './solid-adapter';
+import { hasSolidRuntime } from './runtime-slot';
+import { solid } from './solid-adapter';
 
 export interface UiProviderProps {
   theme?: Theme | undefined;

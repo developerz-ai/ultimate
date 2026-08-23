@@ -12,8 +12,8 @@ import { probe, renderNodes, unprobe } from '../jsx-probe';
 import type { UiContextValue } from './context';
 import { UI_DEFAULT_CURRENCY, UI_DEFAULT_LOCALE, UI_DEFAULT_TIME_ZONE } from './context';
 import { UiProvider } from './provider';
+import { clearSolidRuntime, setSolidRuntime } from './runtime-slot';
 import type { SolidContext, SolidRuntime } from './solid-adapter';
-import { clearSolidRuntime, setSolidRuntime } from './solid-adapter';
 
 interface Harness {
   /** Effects queued during the render, run in order once the tree exists. */

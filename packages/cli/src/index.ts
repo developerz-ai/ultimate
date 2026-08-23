@@ -116,6 +116,7 @@ export {
 export type { ErrorCatalog } from './error-catalog';
 export {
   buildErrorCatalog,
+  CATALOG_OPTIONAL_HOSTS,
   CATALOG_PACKAGES,
   loadErrorCatalog,
   registeredErrorCodes,
@@ -167,6 +168,13 @@ export {
 } from './errors';
 export type { ExecOptions, ExecResult, Runner } from './exec';
 export { exec, execOutput } from './exec';
+export {
+  defaultFavicon,
+  FAVICON_PATH,
+  FAVICON_SOURCE,
+  faviconResponse,
+  faviconRoute,
+} from './favicon';
 export type { CitationFault, CitationRules, CommandCatalog, FixCitation } from './fix-command';
 export {
   citationFault,
@@ -177,6 +185,12 @@ export {
 } from './fix-command';
 export type { HelperResolver } from './fix-imports';
 export { candidatePaths, createHelperResolver, scanImports } from './fix-imports';
+export {
+  CITED_FILE_EXTENSIONS,
+  citedPathProblem,
+  FILE_TOKEN_PATTERN,
+  pathCitations,
+} from './fix-path';
 export type { FixHelper, FixScan } from './fix-scan';
 export { scanFixes, scanFixHelpers, scanFixSites } from './fix-scan';
 export type { DeclaredFlag } from './flag-reads';

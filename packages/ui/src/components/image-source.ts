@@ -116,8 +116,25 @@ export function assertNonEmptySrc(kind: string, value: unknown, src: string): st
   return trimmed;
 }
 
+/**
+ * `srcset` is a comma-separated list whose entries are split on WHITESPACE — so the two characters
+ * a src may not carry are whitespace anywhere and a comma at either end. Trimming the ends is not
+ * enough: `'/my file.webp 800w'` parses as the URL `/my` with the descriptor `file.webp`, which is
+ * not a descriptor, so the candidate is dropped and the `<img>` silently falls back to `src`. An
+ * INTERIOR comma is fine and is deliberately allowed — the parser reads a URL up to the first
+ * whitespace, so `/img/a,b.webp` round-trips.
+ */
+const SRCSET_UNSAFE = /\s|^,|,$/;
+
 function toCandidate(variant: ImageVariant): Candidate {
   const src = assertNonEmptySrc('Image', variant, variant.src);
+  if (SRCSET_UNSAFE.test(src)) {
+    throw invalidValueError(
+      'Image',
+      variant,
+      'a variant src with no whitespace and no leading or trailing comma — srcset splits on both, so such a src is dropped by the browser rather than reported',
+    );
+  }
 
   const width = variant.width;
   const density = variant.density;
